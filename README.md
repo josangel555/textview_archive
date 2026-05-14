@@ -19,17 +19,29 @@ See [`DESIGN.md` §10](./DESIGN.md) for the up-to-date roadmap.
 
 ## Build & run
 
+Two paths — the SPM executable (dev loop) or the assembled `.app` bundle
+(closer to shipped).
+
 ```sh
-swift build
+# Dev loop — fastest iteration
 swift run MarkdownViewer DESIGN.md
+
+# Assemble a real macOS .app bundle
+bash scripts/build-app.sh        # debug
+bash scripts/build-app.sh release
+
+# Open files with it like any Mac app
+open -a "$(pwd)/dist/MarkdownViewer.app" DESIGN.md
 ```
 
-`⌘O` opens the file picker. Pass a path on the command line to open it directly.
+`⌘O` opens the file picker. Pass a path on the command line / Finder to
+open it directly.
 
 ## Test
 
 ```sh
-swift test
+swift test                  # all unit + plist tests (~35 ms)
+bash scripts/verify-app.sh  # validates the assembled bundle (run after build-app.sh)
 ```
 
 ## Project layout

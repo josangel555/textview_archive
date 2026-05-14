@@ -20,16 +20,21 @@ swift test --filter ViewerKitTests
 swift test --filter ViewerCoreTests.DocumentControllerTests/test_oversizedFile_reportsSizeInMB
 ```
 
-## Current coverage (Phase 0.2)
+## Current coverage (Phase 0.4)
 
 - **ViewerKitTests/FileTypeDetectorTests** — 7 cases. Extension table, case
   insensitivity, UTType fallback, extensionless files.
+- **ViewerKitTests/InfoPlistTests** — 7 cases. Bundle plist parseable,
+  required scalar keys, document types declare markdown + plain text, version
+  strings shaped sensibly.
 - **ViewerCoreTests/TextFileLoaderTests** — 5 cases. UTF-8 / Latin-1 / size
   cap / missing file / empty file.
 - **ViewerCoreTests/DocumentControllerTests** — 4 cases. State mapping,
   human-readable error messages.
+- **scripts/verify-app.sh** — 15 structural assertions on the built bundle
+  (executable bit, plist lint, required keys, document type UTIs).
 
-Total: **16 cases, ~35 ms**.
+Total: **23 swift cases, ~40 ms** + bundle verify script.
 
 ## What is *not* yet tested
 

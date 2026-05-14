@@ -24,3 +24,9 @@ jobs:
 
       - name: Test
         run: swift test --parallel
+
+      - name: Assemble .app bundle
+        run: bash scripts/build-app.sh debug
+
+      - name: Verify .app bundle
+        run: bash scripts/verify-app.sh
