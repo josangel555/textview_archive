@@ -44,30 +44,84 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         Coordinator()
     }
 
+    /// Outcome of a single navigation policy decision. Exposed as a pure value
+    /// so the (otherwise hard-to-test) Coordinator delegate method has a
+    /// testable kernel — see `Coordinator.decide(url:navigationType:currentDocumentURL:)`.
+    public enum LinkDecision: Equatable, Sendable {
+        case allow
+        case cancel
+        case openExternally(URL)
+    }
+
     @MainActor
     public final class Coordinator: NSObject, WKNavigationDelegate {
+        /// Last HTML payload sent to `loadHTMLString`. Updated only when the
+        /// view actually changed, so repeated `updateNSView` calls with the
+        /// same content don't re-load the page (CRIT-4 fix for the
+        /// "vanishing tabs" reload storm).
         var lastHTML: String?
 
-        /// Intercept link clicks so http(s) go to the user's browser instead of
-        /// loading inside the viewer. Local anchors and the initial HTML load
-        /// pass through.
         public func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
             decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
         ) {
-            guard let url = navigationAction.request.url else {
+            let decision = Coordinator.decide(
+                url: navigationAction.request.url,
+                navigationType: navigationAction.navigationType,
+                currentDocumentURL: webView.url
+            )
+            switch decision {
+            case .allow:
                 decisionHandler(.allow)
-                return
-            }
-            if navigationAction.navigationType == .linkActivated,
-               let scheme = url.scheme?.lowercased(),
-               scheme == "http" || scheme == "https" || scheme == "mailto" {
+            case .cancel:
+                decisionHandler(.cancel)
+            case .openExternally(let url):
                 NSWorkspace.shared.open(url)
                 decisionHandler(.cancel)
-                return
             }
-            decisionHandler(.allow)
+        }
+
+        /// Decide what to do with a navigation. Pure function so it can be
+        /// unit-tested. Allowlist semantics (CRIT-1 / S4):
+        /// - Anything other than a `linkActivated` click (initial load,
+        ///   programmatic reload, etc.) is allowed.
+        /// - Same-document fragment navigation (`#anchor`) is allowed.
+        /// - Otherwise: only `http`/`https`/`mailto` are honored — they route
+        ///   to the user's browser. `javascript:`, `data:`, `file:`, custom
+        ///   app schemes, etc. are cancelled.
+        public static func decide(
+            url: URL?,
+            navigationType: WKNavigationType,
+            currentDocumentURL: URL?
+        ) -> LinkDecision {
+            guard navigationType == .linkActivated else { return .allow }
+            guard let url else { return .cancel }
+            if isSameDocumentFragment(url, currentDocumentURL: currentDocumentURL) {
+                return .allow
+            }
+            switch url.scheme?.lowercased() ?? "" {
+            case "http", "https", "mailto":
+                return .openExternally(url)
+            default:
+                return .cancel
+            }
+        }
+
+        private static func isSameDocumentFragment(_ url: URL, currentDocumentURL: URL?) -> Bool {
+            guard let fragment = url.fragment, !fragment.isEmpty else { return false }
+            guard let cur = currentDocumentURL else {
+                // No current page yet — treat as a stand-alone fragment OK
+                // (rare; happens before first load completes).
+                return url.scheme == nil
+            }
+            return strippedFragment(url) == strippedFragment(cur)
+        }
+
+        private static func strippedFragment(_ url: URL) -> URL? {
+            var c = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            c?.fragment = nil
+            return c?.url
         }
     }
 }
