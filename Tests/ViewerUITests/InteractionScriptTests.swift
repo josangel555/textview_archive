@@ -189,14 +189,17 @@ final class InteractionScriptTests: XCTestCase {
         }
         let md = try writeMarkdown()
         // Force source mode so we can read NSTextView's font from the dump,
-        // then zoom in and verify font size grew.
+        // then zoom in and verify font size grew. Reset first because
+        // PreferencesStore persists zoom across runs and earlier tests
+        // may have left it non-1.0.
         let dumps = try runScript("""
+            zoom-reset
             toggle-view
             zoom-in
             zoom-in
             zoom-reset
             """, with: md)
-        XCTAssertEqual(dumps.count, 4)
+        XCTAssertEqual(dumps.count, 5)
         func fontSize(_ tree: [String: Any]) -> Double? {
             guard let tv = nodesOfClass("NSTextView", in: tree).first,
                   let info = tv["nsTextView"] as? [String: Any],
@@ -208,10 +211,14 @@ final class InteractionScriptTests: XCTestCase {
             }
             return nil
         }
-        let baseline = fontSize(dumps[0])
-        let oneStep = fontSize(dumps[1])
-        let twoStep = fontSize(dumps[2])
-        let reset   = fontSize(dumps[3])
+        // Step 0: zoom-reset, source view not yet active → no NSTextView (skip).
+        // Step 1: toggle-view → source view appears at zoom=1 baseline.
+        // Step 2-3: zoom-in twice.
+        // Step 4: zoom-reset → back to baseline.
+        let baseline = fontSize(dumps[1])
+        let oneStep = fontSize(dumps[2])
+        let twoStep = fontSize(dumps[3])
+        let reset   = fontSize(dumps[4])
         XCTAssertNotNil(baseline)
         XCTAssertNotNil(oneStep)
         XCTAssertNotNil(twoStep)
