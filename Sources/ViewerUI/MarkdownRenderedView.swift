@@ -8,10 +8,12 @@ import WebKit
 public struct MarkdownRenderedView: NSViewRepresentable {
     public let html: String
     public let baseURL: URL?
+    public let zoom: Double
 
-    public init(html: String, baseURL: URL? = nil) {
+    public init(html: String, baseURL: URL? = nil, zoom: Double = 1.0) {
         self.html = html
         self.baseURL = baseURL
+        self.zoom = zoom
     }
 
     public func makeNSView(context: Context) -> WKWebView {
@@ -37,6 +39,9 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         if context.coordinator.lastHTML != html {
             webView.loadHTMLString(html, baseURL: baseURL)
             context.coordinator.lastHTML = html
+        }
+        if abs(webView.pageZoom - CGFloat(zoom)) > 0.001 {
+            webView.pageZoom = CGFloat(zoom)
         }
     }
 

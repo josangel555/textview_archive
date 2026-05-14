@@ -87,10 +87,11 @@ public struct ContentView: View {
         if category == .markdown && model.currentViewMode == .rendered {
             MarkdownRenderedView(
                 html: renderer.renderPage(file.contents, stylesheet: stylesheet),
-                baseURL: file.url.deletingLastPathComponent()
+                baseURL: file.url.deletingLastPathComponent(),
+                zoom: model.zoom
             )
         } else {
-            TextDisplayView(text: file.contents)
+            TextDisplayView(text: file.contents, fontSize: 13 * model.zoom)
         }
     }
 }

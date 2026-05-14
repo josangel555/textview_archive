@@ -15,6 +15,12 @@ public final class DocumentModel: ObservableObject {
     /// see `setSidebarWidthLive` (no persistence) vs `setSidebarWidth`
     /// (persists immediately).
     @Published public var sidebarWidth: Double
+
+    /// Zoom multiplier applied to both the rendered view (`WKWebView.pageZoom`)
+    /// and the source view (font-size). 1.0 = system default.
+    @Published public var zoom: Double {
+        didSet { preferences.zoom = zoom }
+    }
     @Published public var isPalettePresented: Bool = false
     public let sidebar: SidebarModel
 
@@ -36,6 +42,19 @@ public final class DocumentModel: ObservableObject {
         self.preferences = preferences
         self.recents = history.recent()
         self.sidebarWidth = preferences.sidebarWidth
+        self.zoom = preferences.zoom
+    }
+
+    public func zoomIn() {
+        zoom = min(zoom + PreferencesStore.zoomStep, PreferencesStore.maxZoom)
+    }
+
+    public func zoomOut() {
+        zoom = max(zoom - PreferencesStore.zoomStep, PreferencesStore.minZoom)
+    }
+
+    public func zoomReset() {
+        zoom = 1.0
     }
 
     public func openFolder(_ url: URL) {

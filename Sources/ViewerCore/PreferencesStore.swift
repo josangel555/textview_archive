@@ -8,6 +8,7 @@ public final class PreferencesStore: @unchecked Sendable {
     private enum Key {
         static let sidebarWidth = "MarkdownViewer.sidebarWidth"
         static let lastFolder = "MarkdownViewer.lastFolderPath"
+        static let zoom = "MarkdownViewer.zoom"
     }
 
     public init(defaults: UserDefaults = .standard) {
@@ -27,6 +28,23 @@ public final class PreferencesStore: @unchecked Sendable {
     public func setSidebarWidth(_ width: Double) {
         let clamped = min(max(width, Self.minSidebarWidth), Self.maxSidebarWidth)
         sidebarWidth = clamped
+    }
+
+    // MARK: Zoom
+
+    public static let minZoom: Double = 0.5
+    public static let maxZoom: Double = 3.0
+    public static let zoomStep: Double = 0.1
+
+    public var zoom: Double {
+        get {
+            let raw = defaults.object(forKey: Key.zoom) as? Double ?? 1.0
+            return min(max(raw, Self.minZoom), Self.maxZoom)
+        }
+        set {
+            let clamped = min(max(newValue, Self.minZoom), Self.maxZoom)
+            defaults.set(clamped, forKey: Key.zoom)
+        }
     }
 
     // MARK: Last open folder

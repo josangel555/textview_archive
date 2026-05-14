@@ -505,26 +505,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.mainMenu = mainMenu
     }
 
-    // MARK: U7 — Zoom for rendered view
-
     @objc func zoomIn(_ sender: Any?) {
-        adjustZoom(by: 0.1)
-    }
-    @objc func zoomOut(_ sender: Any?) {
-        adjustZoom(by: -0.1)
-    }
-    @objc func zoomReset(_ sender: Any?) {
-        // Force a refresh; the WKWebView is rebuilt by SwiftUI on viewMode
-        // changes, but we can also poke its pageZoom directly if accessible.
-        // For now resetting model state is the cheapest path: the user
-        // re-renders and gets default zoom.
+        model.zoomIn()
     }
 
-    private func adjustZoom(by delta: Double) {
-        // Placeholder — WKWebView zoom wiring lands with the FinderBar UI
-        // (Phase 4.5 UI) which gives us a path into the WKWebView instance
-        // from the AppDelegate. Today the menu items exist so HIG / a11y
-        // contracts hold, and we don't break shortcut discovery.
+    @objc func zoomOut(_ sender: Any?) {
+        model.zoomOut()
+    }
+
+    @objc func zoomReset(_ sender: Any?) {
+        model.zoomReset()
     }
 }
 
