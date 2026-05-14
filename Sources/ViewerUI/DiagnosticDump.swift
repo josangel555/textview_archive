@@ -1,4 +1,5 @@
 import AppKit
+import CoreGraphics
 import WebKit
 
 /// Runtime introspection of the realized NSView/CALayer/NSTextView tree.
@@ -208,5 +209,37 @@ public enum DiagnosticDump {
 
     private static func sizeString(_ s: NSSize) -> String {
         String(format: "%.1fx%.1f", s.width, s.height)
+    }
+
+    /// Capture the app's own window to a PNG. Same-process window capture
+    /// does **not** require Screen Recording permission on macOS — the
+    /// permission gate is for capturing *other* processes' windows. The
+    /// resulting PNG can be opened by any image viewer or piped into
+    /// vision-LLM analysis without OCR/manual screenshot tooling.
+    ///
+    /// Returns true on success, false if the window can't be captured
+    /// (e.g. windowNumber=0 because the window isn't yet ordered front).
+    @discardableResult
+    public static func captureWindowToPNG(_ window: NSWindow, path: String) -> Bool {
+        guard window.windowNumber > 0 else { return false }
+        let opts: CGWindowImageOption = [.boundsIgnoreFraming, .bestResolution]
+        guard let cgImage = CGWindowListCreateImage(
+            .null,
+            .optionIncludingWindow,
+            CGWindowID(window.windowNumber),
+            opts
+        ) else {
+            return false
+        }
+        let rep = NSBitmapImageRep(cgImage: cgImage)
+        guard let pngData = rep.representation(using: .png, properties: [:]) else {
+            return false
+        }
+        do {
+            try pngData.write(to: URL(fileURLWithPath: path))
+            return true
+        } catch {
+            return false
+        }
     }
 }

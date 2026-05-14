@@ -109,12 +109,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // shell cwd when launched from terminal; "/" when launched via
         // Launch Services). `expandingTildeInPath` handles ~/foo paths.
         // Flags accepted (parsed positionally for simplicity):
-        //   --diagnose          Dump JSON view tree to stdout and exit.
-        //   --source            Force source view mode (with --diagnose).
+        //   --diagnose            Dump JSON view tree to stdout and exit.
+        //   --source              Force source view mode (with --diagnose / --auto-snapshot).
+        //   --auto-snapshot SECS  Wait SECS, write PNG+JSON to /tmp, exit. No external signaling.
+        //                         Lets us snapshot without terminal stealing focus.
         let rawArgs = Array(CommandLine.arguments.dropFirst())
         let diagnoseMode = rawArgs.contains("--diagnose")
         let forceSource = rawArgs.contains("--source")
-        let pathArgs = rawArgs.filter { !$0.hasPrefix("--") }
+        var autoSnapshotDelay: Double = -1
+        var skipNext = false
+        var pathArgs: [String] = []
+        for (i, a) in rawArgs.enumerated() {
+            if skipNext { skipNext = false; continue }
+            if a == "--auto-snapshot" {
+                if i + 1 < rawArgs.count, let s = Double(rawArgs[i + 1]) {
+                    autoSnapshotDelay = s
+                    skipNext = true
+                }
+                continue
+            }
+            if a.hasPrefix("--") { continue }
+            pathArgs.append(a)
+        }
         if let path = pathArgs.first {
             let expanded = (path as NSString).expandingTildeInPath
             let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
@@ -132,6 +148,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if diagnoseMode {
             runDiagnoseAndExit(forceSource: forceSource)
         }
+        if autoSnapshotDelay >= 0 {
+            scheduleAutoSnapshot(after: autoSnapshotDelay, forceSource: forceSource)
+        }
+    }
+
+    /// Wait the given delay (during which we DON'T cede focus to a
+    /// caller terminal), then dump JSON + PNG of our own window to
+    /// /tmp/mdv-auto-{json,png}, then exit. Avoids the AppleScript /
+    /// terminal-focus problems of SIGUSR1-driven snapshots.
+    private func scheduleAutoSnapshot(after delay: Double, forceSource: Bool) {
+        if forceSource, model.supportsViewModeToggle, model.currentViewMode != .source {
+            DispatchQueue.main.async { self.model.toggleViewMode() }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            guard let win = self.window else {
+                FileHandle.standardError.write(Data("auto-snapshot: no window\n".utf8))
+                exit(2)
+            }
+            NSApp.activate(ignoringOtherApps: true)
+            win.makeKeyAndOrderFront(nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                let json = "/tmp/mdv-auto.json"
+                let png  = "/tmp/mdv-auto.png"
+                let dump = DiagnosticDump.dump(window: win)
+                let data = (try? JSONSerialization.data(
+                    withJSONObject: dump,
+                    options: [.prettyPrinted, .sortedKeys]
+                )) ?? Data()
+                try? data.write(to: URL(fileURLWithPath: json))
+                let captured = DiagnosticDump.captureWindowToPNG(win, path: png)
+                FileHandle.standardError.write(
+                    Data("auto-snapshot → \(json) + \(captured ? png : "PNG-failed")\n".utf8))
+                exit(captured ? 0 : 3)
+            }
+        }
     }
 
     /// Trap SIGUSR1 to dump the live NSView tree to
@@ -143,19 +194,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let src = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
         src.setEventHandler { [weak self] in
             guard let self, let win = self.window else { return }
-            let dump = DiagnosticDump.dump(window: win)
-            let path = "/tmp/mdv-diagnostic-\(getpid()).json"
-            do {
-                let data = try JSONSerialization.data(
-                    withJSONObject: dump,
-                    options: [.prettyPrinted, .sortedKeys]
-                )
-                try data.write(to: URL(fileURLWithPath: path))
+            // FIRST: force window to front and key so AppKit's
+            // occlusion-suspends-drawing optimization doesn't yield a
+            // stale snapshot. We capture the realized-on-screen state,
+            // so the window must actually be on-screen + drawing.
+            NSApp.activate(ignoringOtherApps: true)
+            win.makeKeyAndOrderFront(nil)
+            // Give the compositor one runloop tick to flush after
+            // activation before we capture.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                let pid = getpid()
+                let jsonPath = "/tmp/mdv-diagnostic-\(pid).json"
+                let pngPath  = "/tmp/mdv-snapshot-\(pid).png"
+                let dump = DiagnosticDump.dump(window: win)
+                do {
+                    let data = try JSONSerialization.data(
+                        withJSONObject: dump,
+                        options: [.prettyPrinted, .sortedKeys]
+                    )
+                    try data.write(to: URL(fileURLWithPath: jsonPath))
+                } catch {
+                    FileHandle.standardError.write(
+                        Data("diagnostic dump failed: \(error)\n".utf8))
+                }
+                let captured = DiagnosticDump.captureWindowToPNG(win, path: pngPath)
                 FileHandle.standardError.write(
-                    Data("diagnostic dump → \(path)\n".utf8))
-            } catch {
-                FileHandle.standardError.write(
-                    Data("diagnostic dump failed: \(error)\n".utf8))
+                    Data("diagnostic → \(jsonPath)\(captured ? " + \(pngPath)" : " (PNG capture failed)")\n".utf8))
             }
         }
         signal(SIGUSR1, SIG_IGN)   // Required so DispatchSource gets it

@@ -81,10 +81,39 @@ public final class DocumentModel: ObservableObject {
     }
 
     /// Restores the most recently opened folder (if any). Call from app launch.
+    ///
+    /// Skips restoration if the folder is under a TCC-protected location
+    /// (`~/Documents`, `~/Desktop`, `~/Downloads`, `~/Pictures`, iCloud
+    /// Drive). Even just enumerating those folders triggers a per-launch
+    /// TCC prompt on macOS 14+, which makes auto-restore *worse* than
+    /// helpful for those paths. The user can always re-open via File →
+    /// Open Folder or by dragging the folder onto the app.
     public func restorePreviousFolderIfAvailable() {
-        guard let url = preferences.lastFolderURL,
-              FileManager.default.fileExists(atPath: url.path) else { return }
+        guard let url = preferences.lastFolderURL else { return }
+        if Self.isUnderTCCProtectedRoot(url) {
+            return  // explicit no-op; user can re-open manually
+        }
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
         openFolder(url)
+    }
+
+    /// True if `url` sits inside one of the macOS TCC-protected roots
+    /// (Documents / Desktop / Downloads / Pictures / iCloud Drive
+    /// container). These paths trigger a permission prompt on first
+    /// access from any app; for an ad-hoc-signed dev build the prompt
+    /// repeats on every rebuild (new CDHash → new app to TCC). We avoid
+    /// touching them implicitly on launch.
+    static func isUnderTCCProtectedRoot(_ url: URL) -> Bool {
+        let path = url.standardizedFileURL.path
+        let home = NSHomeDirectory()
+        let protectedPrefixes: [String] = [
+            home + "/Documents",
+            home + "/Desktop",
+            home + "/Downloads",
+            home + "/Pictures",
+            home + "/Library/Mobile Documents",  // iCloud Drive
+        ]
+        return protectedPrefixes.contains { path == $0 || path.hasPrefix($0 + "/") }
     }
 
     public func setSidebarWidth(_ width: Double) {
