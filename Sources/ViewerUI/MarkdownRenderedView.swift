@@ -127,8 +127,15 @@ public struct MarkdownRenderedView: NSViewRepresentable {
 }
 
 /// Loads the bundled `markdown.css` from the ViewerUI module bundle.
+/// Cached in a `static let` (P3) so the disk read happens exactly once
+/// per process — `ContentView.init` is called on every parent recomposition.
 public enum MarkdownStylesheet {
-    public static func load() -> String {
+    public static let cached: String = loadFromBundle()
+
+    /// Force a reload from disk. Used by tests; production callers use `cached`.
+    public static func load() -> String { cached }
+
+    private static func loadFromBundle() -> String {
         guard let url = Bundle.module.url(forResource: "markdown", withExtension: "css"),
               let data = try? Data(contentsOf: url),
               let s = String(data: data, encoding: .utf8) else {

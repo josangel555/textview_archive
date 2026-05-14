@@ -48,13 +48,15 @@ public struct FileTreeService: Sendable {
             throw FileTreeError.notReadable
         }
 
+        // P9: use the .isDirectoryKey we already requested above instead of
+        // doing an extra fileExists(_:isDirectory:) stat per child. For a
+        // 10k-entry folder that's 10k saved syscalls on the main thread.
         let nodes: [FileNode] = contents.map { child in
-            var childIsDir: ObjCBool = false
-            FileManager.default.fileExists(atPath: child.path, isDirectory: &childIsDir)
+            let isDir = (try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
             return FileNode(
                 url: child,
                 name: child.lastPathComponent,
-                isDirectory: childIsDir.boolValue
+                isDirectory: isDir
             )
         }
 

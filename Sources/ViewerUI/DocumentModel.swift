@@ -11,9 +11,10 @@ public final class DocumentModel: ObservableObject {
     @Published public private(set) var tabs: TabsState = .init()
     @Published public private(set) var windowTitle: String = "MarkdownViewer"
     @Published public private(set) var recents: [HistoryEntry] = []
-    @Published public var sidebarWidth: Double {
-        didSet { preferences.setSidebarWidth(sidebarWidth) }
-    }
+    /// Width of the sidebar in points. Mutated frequently during a drag —
+    /// see `setSidebarWidthLive` (no persistence) vs `setSidebarWidth`
+    /// (persists immediately).
+    @Published public var sidebarWidth: Double
     @Published public var isPalettePresented: Bool = false
     public let sidebar: SidebarModel
 
@@ -56,6 +57,19 @@ public final class DocumentModel: ObservableObject {
         let clamped = min(max(width, PreferencesStore.minSidebarWidth),
                           PreferencesStore.maxSidebarWidth)
         sidebarWidth = clamped
+        preferences.setSidebarWidth(clamped)
+    }
+
+    /// P15: assigns the published width without persisting. Use this from a
+    /// continuous gesture; call `persistSidebarWidth()` on gesture end.
+    public func setSidebarWidthLive(_ width: Double) {
+        let clamped = min(max(width, PreferencesStore.minSidebarWidth),
+                          PreferencesStore.maxSidebarWidth)
+        sidebarWidth = clamped
+    }
+
+    public func persistSidebarWidth() {
+        preferences.setSidebarWidth(sidebarWidth)
     }
 
     public func showPalette() { isPalettePresented = true }

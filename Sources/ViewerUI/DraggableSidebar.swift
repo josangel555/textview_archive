@@ -24,9 +24,15 @@ struct DraggableSidebar: View {
                             .onChanged { value in
                                 let start = dragStart ?? model.sidebarWidth
                                 if dragStart == nil { dragStart = model.sidebarWidth }
-                                model.setSidebarWidth(start + value.translation.width)
+                                // P15: setSidebarWidthLive avoids writing
+                                // to UserDefaults at ~60 Hz during the drag.
+                                // We persist only on .onEnded below.
+                                model.setSidebarWidthLive(start + value.translation.width)
                             }
-                            .onEnded { _ in dragStart = nil }
+                            .onEnded { _ in
+                                model.persistSidebarWidth()
+                                dragStart = nil
+                            }
                     )
             }
     }
