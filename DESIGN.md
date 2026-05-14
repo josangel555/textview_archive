@@ -340,14 +340,78 @@ Split into two sub-phases so the engine swap doesn't gate basic functionality.
 
 ---
 
-## 7. Testing Strategy — Four Tiers
+## 7. Testing Strategy — Five Tiers (incl. manual)
 
-| Tier | Tool | Speed | What it tests | Where it runs |
+| Tier | Tool | Speed | What it catches well | What it can't see |
 |---|---|---|---|---|
-| **1. Unit** | XCTest on `ViewerCore`/`ViewerKit` | ms | Pure logic — parsing, history, watcher state machine, git output parsing, Claude JSONL parsing | `swift test`, CI, local |
-| **2. View snapshot** | swift-snapshot-testing | ~100 ms | SwiftUI views rendered offscreen, PNG diffed against golden | CI macOS runner |
-| **3. Headless UI behavior** | XCTest + `NSHostingView` + ViewInspector | ~s | SwiftUI views constructed, interactions simulated, no display server | CI macOS runner |
-| **4. End-to-end on real macOS** | XCUITest in **tart VM** | ~min | Full app: open file from Finder, click sidebar, see render | Nightly CI / pre-release |
+| **0. Manual smoke** | A checklist + a built `.app` | ~5 min | Drag-and-drop from Finder, native window-tab leakage, Launch Services discovery, accessibility issues, "feels wrong" perception bugs | Slow, can't run in CI, no regression history |
+| **1. Unit (pure)** | XCTest on `ViewerCore`/`ViewerKit` | ms | All pure logic: parsing, history, fuzzy matching, git output, Claude JSONL, find engine, file watcher behavior | Anything that depends on `@MainActor` / SwiftUI render loop |
+| **1m. Main-actor unit** | XCTest on `ViewerUI` models | ms | `DocumentModel` & `SidebarModel` state transitions, `@Published` correctness, view-mode persistence across tab selection, sidebar cache contract | Pixel layout, gesture order, NSView lifecycle |
+| **2. View snapshot** | swift-snapshot-testing | ~100 ms each | Visual regressions in SwiftUI views (TabBar empty/loaded/many, palette, sidebar, mode bar) | Behavior over time, gestures, OS-version rendering drift (must pin runner) |
+| **3. Headless behavior** | XCTest + ViewInspector | ~s | "Tap the close button → onClose fires" style behavioral assertions on SwiftUI views without a display | Anything that needs a real responder chain (find bar, focus, key events) |
+| **4. Real-macOS E2E** | XCUITest in **tart VM** | ~min | Finder right-click → Open With, drag from Finder onto dock, gatekeeper notarization, Quick Look, full app launch | Cost & flake; reserve for OS-integration smoke |
+
+### What's actually wired today (Phases 0–4)
+- **Tier 0** — informal so far; this commit lands the formal checklist in `MANUAL_TESTING.md`.
+- **Tier 1** — `ViewerCoreTests`, `ViewerKitTests` — ~138 cases; covers all of `ViewerCore`'s production code paths.
+- **Tier 1m** — `ViewerUITests` (new) — covers `DocumentModel` open/close/select/reload flows and the `SidebarModel` cache contract (the two places where the most recent bugs hid).
+- **Tier 2/3/4** — **not yet wired**; deferred until they pay off (see decision matrix below).
+
+### Why Tier 2/3 are deferred, not yet adopted
+
+We've seen which bugs *actually* slipped past Tier 1 — and almost all of them were either:
+1. **SwiftUI side-effect-in-body** patterns (sidebar cache write during render) → caught by **Tier 1m**.
+2. **NSViewRepresentable lifecycle quirks** (WKWebView reloading on every body tick) → no tier catches this cheaply except **Tier 0**, because the bug is "blank flash followed by recovery" and a snapshot test wouldn't see it unless we time-skewed.
+3. **macOS integration** (Launch Services name lookup, native window tabbing, drag receivers) → only **Tier 0** + **Tier 4** can see these.
+
+Snapshot tests (Tier 2) would have caught zero of the bugs reported so far. ViewInspector (Tier 3) would have caught maybe one (the duplicate `.onTapGesture` in `FileRowView`). Both add a runtime dep and recording/replay infrastructure for marginal ROI right now.
+
+**Decision**: defer Tier 2 and Tier 3 to **after Phase 5b** (TreeSitter), when the UI surface becomes branchier and visual regressions become the dominant failure mode. Until then, double down on Tier 0 + Tier 1m.
+
+### Tier 0 — Manual smoke checklist
+Lives in [`MANUAL_TESTING.md`](./MANUAL_TESTING.md). Run before every release-candidate tag. ≤5 min. Catches what tools can't: drag-and-drop, window tabbing, palette focus, native menus.
+
+### Tier 1: Unit (target 80% of test value)
+Because `ViewerCore` has no UI imports, every behavior is straightforwardly testable:
+```swift
+func test_markdownTable_rendersAsHTMLTable() throws {
+    let html = HTMLRenderer().render("| a | b |\n|---|---|\n| 1 | 2 |")
+    XCTAssert(html.contains("<table>"))
+}
+func test_fileWatcher_emitsChangeOnAppend() throws { ... }
+func test_history_dedupesAndOrdersByRecency() { ... }
+func test_claudeLogParser_extractsEditTool() throws { ... }
+```
+
+### Tier 1m: Main-actor unit (new, where the *@MainActor* objects live)
+```swift
+@MainActor
+final class DocumentModelTests: XCTestCase {
+    func test_open_missingFile_keepsExistingTabAndAppendsError() throws {
+        let model = makeModel()
+        model.open(url: existingFile)
+        model.open(url: ghostFile)
+        XCTAssertEqual(model.tabs.tabs.count, 2)   // ← was 0 in the bug
+    }
+}
+```
+
+These run in `swift test` without a display server. The trick: use a fresh
+`UserDefaults(suiteName:)` and a temp `HistoryStore` per test so persistence
+doesn't bleed across tests.
+
+### Tier 2: Snapshot (when adopted)
+```swift
+func test_tabBar_threeTabs_snapshot() {
+    let model = DocumentModel(...)
+    model.open(url: aFile)
+    model.open(url: bFile)
+    model.open(url: cFile)
+    let view = TabBar(model: model).frame(width: 700, height: 30)
+    assertSnapshot(matching: view, as: .image)
+}
+```
+Run on CI's macOS runner — pin the runner OS version to avoid AA-rendering drift.
 
 ### Tier 1: Unit (target 80% of test value)
 Because `ViewerCore` has no UI imports, every behavior is straightforwardly testable:
