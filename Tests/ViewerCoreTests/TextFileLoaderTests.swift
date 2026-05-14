@@ -66,4 +66,57 @@ final class TextFileLoaderTests: XCTestCase {
             XCTAssertEqual(bytes, 100)
         }
     }
+
+    // MARK: B4 — UTF-16 BOM detection
+
+    func test_loadsUTF16LE_withBOM() throws {
+        let bom: [UInt8] = [0xFF, 0xFE]
+        // "hi" in UTF-16-LE: h = 0x68, 0x00, i = 0x69, 0x00
+        let body: [UInt8] = [0x68, 0x00, 0x69, 0x00]
+        let url = try writeBytes("u16le.txt", bom + body)
+        let file = try TextFileLoader().load(url: url)
+        XCTAssertEqual(file.contents, "hi")
+        XCTAssertEqual(file.encoding, .utf16LittleEndian)
+    }
+
+    func test_loadsUTF16BE_withBOM() throws {
+        let bom: [UInt8] = [0xFE, 0xFF]
+        let body: [UInt8] = [0x00, 0x68, 0x00, 0x69]
+        let url = try writeBytes("u16be.txt", bom + body)
+        let file = try TextFileLoader().load(url: url)
+        XCTAssertEqual(file.contents, "hi")
+        XCTAssertEqual(file.encoding, .utf16BigEndian)
+    }
+
+    func test_loadsUTF8_withBOM() throws {
+        let bom: [UInt8] = [0xEF, 0xBB, 0xBF]
+        let body = Array("héllo".utf8)
+        let url = try writeBytes("u8bom.txt", bom + body)
+        let file = try TextFileLoader().load(url: url)
+        XCTAssertEqual(file.contents, "héllo")
+        XCTAssertEqual(file.encoding, .utf8)
+    }
+
+    // MARK: B5 — binary blob guard
+
+    func test_binaryFile_isRejected() throws {
+        let bytes: [UInt8] = [0x7F, 0x45, 0x4C, 0x46, 0x00, 0x01, 0x00, 0x00] // ELF-like
+        let url = try writeBytes("binary.bin", bytes)
+        XCTAssertThrowsError(try TextFileLoader().load(url: url)) { error in
+            XCTAssertEqual(error as? FileLoadError, .binaryFile)
+        }
+    }
+
+    func test_textFileWithoutNUL_loadsCleanly() throws {
+        let url = try writeFile("clean.txt", "no NULs here, just text\n")
+        XCTAssertNoThrow(try TextFileLoader().load(url: url))
+    }
+
+    func test_binaryGuard_onlySamplesFirst8KB() throws {
+        // 8 KB of clean text + a NUL way past the sample boundary -> still accepted
+        // (we trade some false negatives for fast, allocation-free sniffing).
+        let prefix = String(repeating: "a", count: 9000)
+        let url = try writeBytes("late-nul.txt", Array(prefix.utf8) + [0x00])
+        XCTAssertNoThrow(try TextFileLoader().load(url: url))
+    }
 }

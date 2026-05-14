@@ -45,7 +45,16 @@ public struct DocumentController: Sendable {
             return "File is not valid UTF-8 or Latin-1 text."
         case .tooLarge(let bytes):
             let mb = Double(bytes) / 1_048_576.0
-            return String(format: "File is too large (%.1f MB).", mb)
+            // T9: pin to en-US-POSIX so "5.0 MB" doesn't become "5,0 MB" on fr_FR.
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .decimal
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.minimumFractionDigits = 1
+            formatter.maximumFractionDigits = 1
+            let formatted = formatter.string(from: NSNumber(value: mb)) ?? "\(mb)"
+            return "File is too large (\(formatted) MB)."
+        case .binaryFile:
+            return "File appears to be binary (contains NUL bytes)."
         }
     }
 }
