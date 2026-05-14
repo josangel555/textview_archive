@@ -10,11 +10,31 @@ The manual smoke checklist for things tools can't see is
 | Tier | Tool | Status | Runs in CI? |
 |---|---|---|---|
 | **0. Manual smoke** | [`MANUAL_TESTING.md`](./MANUAL_TESTING.md) checklist | ✅ documented; ~5 min/run | No — pre-release only |
-| **1. Pure unit** | XCTest on `ViewerCore` / `ViewerKit` | ✅ 151 cases | Yes (every push) |
-| **1m. Main-actor unit** | XCTest on `ViewerUI` (`DocumentModel`, `SidebarModel`) | ✅ 23 cases (`ViewerUITests`) | Yes (every push) |
-| **2. SwiftUI snapshot** | swift-snapshot-testing | ⏸ deferred (see DESIGN.md §7 decision matrix) | — |
-| **3. Headless behavior** | ViewInspector | ⏸ deferred | — |
-| **4. Real-macOS E2E** | XCUITest in tart VM | ⏸ Phase 17 (infra task), nightly only | Nightly only |
+| **1. Pure unit** | XCTest on `ViewerCore` / `ViewerKit` | ✅ ~200 cases | Yes (every push) |
+| **1m. Main-actor unit** | XCTest on `ViewerUI` (`DocumentModel`, `SidebarModel`) | ✅ ~40 cases | Yes (every push) |
+| **1m+. Hosted view (structural)** | XCTest + `NSHostingView`, walk NSView subtree | ✅ `ContentViewHostingTests` | Yes |
+| **1m+. Hosted view (pixel)** | XCTest + `SwiftUI.ImageRenderer`, sample pixels | ✅ `ContentViewPixelTests` | Yes |
+| **4. Live-app launch** | XCTest + `Process` + `osascript` AX queries on running `.app` | ✅ `LiveAppLaunchTests`; auto-skips without Accessibility permission | Local + nightly with Accessibility |
+| **2. SwiftUI snapshot (PNG golden)** | swift-snapshot-testing | ⏸ deferred (see DESIGN.md §7) | — |
+| **3. Headless ViewInspector** | ViewInspector | ⏸ deferred | — |
+| **Tier 4 VM** | XCUITest in tart VM | ⏸ Phase 17 infra task, nightly only | Nightly only |
+
+### What each tier catches
+
+| Bug class | Tier that catches it |
+|---|---|
+| Pure logic regression (parsing, history, fuzzy, find, git output) | **1** |
+| `@MainActor` state-machine drift (e.g. "vanishing tabs") | **1m** |
+| SwiftUI view fails to construct, misses a state | **1m** |
+| NSView hierarchy missing or zero-sized after `model.open(...)` | **1m+ structural** |
+| Views structurally present but visually empty/transparent | **1m+ pixel** |
+| Real-app window off-screen / wrong size after launch | **4 live-app** |
+| AppDelegate sequencing bugs (argv, application(_:open:)) | **4 live-app** |
+| Visual pixel regression on a specific layout | **2 snapshot** (deferred) |
+| Gesture / focus / responder chain | **3 ViewInspector** (deferred) |
+| OS-integration smoke (Finder Services, Quick Look) | **4 VM** (deferred) |
+
+The pixel + live-app tiers were added after the "source view shows only line numbers" regression — they're the layers that would have caught it before the user did.
 
 ## How to run
 
