@@ -117,6 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let diagnoseMode = rawArgs.contains("--diagnose")
         let forceSource = rawArgs.contains("--source")
         var autoSnapshotDelay: Double = -1
+        var scriptPath: String? = nil
         var skipNext = false
         var pathArgs: [String] = []
         for (i, a) in rawArgs.enumerated() {
@@ -124,6 +125,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if a == "--auto-snapshot" {
                 if i + 1 < rawArgs.count, let s = Double(rawArgs[i + 1]) {
                     autoSnapshotDelay = s
+                    skipNext = true
+                }
+                continue
+            }
+            if a == "--script" {
+                if i + 1 < rawArgs.count {
+                    scriptPath = rawArgs[i + 1]
                     skipNext = true
                 }
                 continue
@@ -151,6 +159,97 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if autoSnapshotDelay >= 0 {
             scheduleAutoSnapshot(after: autoSnapshotDelay, forceSource: forceSource)
         }
+        if let scriptPath {
+            runScript(at: scriptPath)
+        }
+    }
+
+    /// Reads a newline-separated command script and executes it
+    /// step-by-step against the model. After each step, writes a JSON
+    /// diagnostic + PNG snapshot to /tmp/mdv-step-NN.{json,png}. Exits
+    /// 0 after the final step. Used by L4 / L5 interaction tests.
+    ///
+    /// Commands (one per line, # for comments):
+    ///   toggle-view             cycle rendered <-> source
+    ///   toggle-sidebar
+    ///   zoom-in / zoom-out / zoom-reset
+    ///   open PATH               open a file or folder
+    ///   close-tab
+    ///   new-tab
+    ///   next-tab / prev-tab
+    ///   select-tab N            (1-indexed)
+    ///   show-palette / dismiss-palette
+    ///   delay SECS              pause without action
+    ///   snapshot                explicit snapshot (otherwise done after each command)
+    private func runScript(at path: String) {
+        guard let data = try? String(contentsOfFile: path, encoding: .utf8) else {
+            FileHandle.standardError.write(Data("script: cannot read \(path)\n".utf8))
+            exit(2)
+        }
+        let lines = data.split(whereSeparator: { $0.isNewline })
+            .map(String.init)
+            .filter { !$0.hasPrefix("#") && !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        Task { @MainActor in
+            // Give launch one full second to settle (window appears, file loads).
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            for (step, line) in lines.enumerated() {
+                self.runScriptStep(line)
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                self.captureStepArtifacts(step: step + 1, label: line)
+            }
+            exit(0)
+        }
+    }
+
+    private func runScriptStep(_ line: String) {
+        let parts = line.split(separator: " ", maxSplits: 1).map(String.init)
+        guard let cmd = parts.first else { return }
+        let arg = parts.count > 1 ? parts[1] : ""
+        switch cmd {
+        case "toggle-view":    model.toggleViewMode()
+        case "toggle-sidebar": model.sidebar.toggleVisibility()
+        case "zoom-in":        model.zoomIn()
+        case "zoom-out":       model.zoomOut()
+        case "zoom-reset":     model.zoomReset()
+        case "open":           model.openPath(URL(fileURLWithPath: arg))
+        case "close-tab":      model.closeCurrentTab()
+        case "new-tab":        model.newTab()
+        case "next-tab":       model.selectNextTab()
+        case "prev-tab":       model.selectPreviousTab()
+        case "select-tab":
+            if let n = Int(arg), n >= 1 { model.selectTab(at: n - 1) }
+        case "show-palette":    model.showPalette()
+        case "dismiss-palette": model.dismissPalette()
+        case "delay":
+            // Handled by caller's sleep; no-op here.
+            _ = arg
+        case "snapshot":
+            // Handled by caller after this returns.
+            _ = arg
+        default:
+            FileHandle.standardError.write(
+                Data("script: unknown command '\(cmd)'\n".utf8))
+        }
+    }
+
+    private func captureStepArtifacts(step: Int, label: String) {
+        guard let win = window else { return }
+        let n = String(format: "%02d", step)
+        let json = "/tmp/mdv-step-\(n).json"
+        let png  = "/tmp/mdv-step-\(n).png"
+        let dump = DiagnosticDump.dump(window: win)
+        var enriched = dump
+        enriched["step"] = step
+        enriched["label"] = label
+        if let data = try? JSONSerialization.data(
+            withJSONObject: enriched,
+            options: [.prettyPrinted, .sortedKeys]
+        ) {
+            try? data.write(to: URL(fileURLWithPath: json))
+        }
+        _ = DiagnosticDump.captureWindowToPNG(win, path: png)
+        FileHandle.standardError.write(
+            Data("step \(n) [\(label)] → \(json) + \(png)\n".utf8))
     }
 
     /// Wait the given delay (during which we DON'T cede focus to a
