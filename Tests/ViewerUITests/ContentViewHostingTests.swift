@@ -174,6 +174,34 @@ final class ContentViewHostingTests: XCTestCase {
 
     // MARK: Layout invariant under "no sidebar" (the user's reported configuration)
 
+    // Reproduces the "ruler only, nothing else visible" symptom.
+    // If the window is narrower than the gutter (~40pt) the TabBar /
+    // Sidebar / ModeBar / NSTextView all squash to zero. This is the
+    // configuration `window.contentMinSize` in main.swift now prevents
+    // at the AppKit layer. The hosted-view test verifies the SwiftUI
+    // layer also doesn't catastrophically collapse — the source scroll
+    // view should still be present and visible even at 200pt wide.
+    func test_openXML_atNarrowWidth_scrollViewStillRenders() throws {
+        let model = makeModel()
+        let url = try writeFile("narrow.xml", "<root>\n<a/>\n<b/>\n</root>\n")
+        model.open(url: url)
+
+        let host = host(ContentView(model: model), size: NSSize(width: 200, height: 400))
+        let scrollViews = allDescendants(of: host).compactMap { $0 as? NSScrollView }
+        let sourceScroll = scrollViews.first { ($0.documentView as? NSTextView)?.string.contains("<root>") == true }
+        XCTAssertNotNil(sourceScroll, "Source scroll view should exist even at narrow widths")
+        if let s = sourceScroll {
+            XCTAssertGreaterThan(
+                s.frame.width, 80,
+                "Source scroll view should be wider than the ruler even when window is narrow. Got \(s.frame.width)"
+            )
+            XCTAssertGreaterThan(
+                s.frame.height, 0,
+                "Source scroll view should have non-zero height"
+            )
+        }
+    }
+
     func test_openXML_withSidebarHidden_scrollViewClaimsFullViewportWidth() throws {
         let model = makeModel()
         // sidebar.isVisible defaults to false (no folder open).

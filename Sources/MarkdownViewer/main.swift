@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let root = ContentView(model: model)
         let hosting = NSHostingView(rootView: root)
 
+        let minContentSize = NSSize(width: 600, height: 360)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 900, height: 650),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -33,6 +34,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         window.contentView = hosting
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
+        // Hard minimum content size enforced by AppKit. SwiftUI's
+        // `.frame(minWidth:minHeight:)` is a layout request to the parent,
+        // not an OS-level floor — without contentMinSize the user can drag
+        // the window narrower than our gutter (40pt) and only line numbers
+        // show; the TabBar/Sidebar/text view collapse to zero width.
+        window.contentMinSize = minContentSize
         // B20: setFrameAutosaveName registers the autosave name AND restores
         // any saved frame for that name. Previously we called center()
         // *before* this, so the centered frame was immediately overwritten
@@ -44,6 +51,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let savedFrameKey = "NSWindow Frame \(autosaveName)"
         _ = window.setFrameAutosaveName(autosaveName)
         if UserDefaults.standard.string(forKey: savedFrameKey) == nil {
+            window.center()
+        }
+        // After restoring the autosaved frame, clamp it back up to the
+        // minimum content size in case a prior session left a tiny window.
+        var frame = window.frame
+        let minWindowSize = window.frameRect(forContentRect:
+            NSRect(origin: .zero, size: minContentSize)).size
+        if frame.size.width < minWindowSize.width || frame.size.height < minWindowSize.height {
+            frame.size.width = max(frame.size.width, minWindowSize.width)
+            frame.size.height = max(frame.size.height, minWindowSize.height)
+            window.setFrame(frame, display: false)
             window.center()
         }
         window.makeKeyAndOrderFront(nil)
