@@ -102,6 +102,70 @@ final class FileWatcherTests: XCTestCase {
         wait(for: [exp2], timeout: 2.0)
     }
 
+    // B1/B2: deleting the watched file without re-creating it should
+    // eventually exhaust reattach attempts and call onLost.
+    func test_deletedFile_eventuallyCallsOnLost() throws {
+        let url = tmpDir.appendingPathComponent("gone.txt")
+        try "x".write(to: url, atomically: false, encoding: .utf8)
+
+        let lost = expectation(description: "onLost fires after max attempts")
+        let watcher = try FileWatcher(
+            url: url,
+            queue: .global(),
+            reattachDelay: 0.005,    // fast backoff for tests
+            maxReattachAttempts: 3,
+            onLost: { lost.fulfill() },
+            handler: {}
+        )
+        defer { watcher.stop() }
+
+        // Brief wait so the source is fully attached, then delete the file.
+        Thread.sleep(forTimeInterval: 0.05)
+        try FileManager.default.removeItem(at: url)
+
+        wait(for: [lost], timeout: 2.0)
+        XCTAssertTrue(watcher.isStopped, "watcher should mark itself stopped after giving up")
+    }
+
+    // After a delete + recreate, the watcher reattaches successfully and
+    // future writes still fire.
+    func test_deletedThenRecreated_watcherReattaches() throws {
+        let url = tmpDir.appendingPathComponent("recreate.txt")
+        try "v1".write(to: url, atomically: false, encoding: .utf8)
+
+        let counter = Counter()
+        let firstEvent = expectation(description: "delete event")
+        let secondEvent = expectation(description: "post-recreate write event")
+
+        let watcher = try FileWatcher(
+            url: url,
+            queue: .global(),
+            reattachDelay: 0.01,
+            maxReattachAttempts: 20,
+            handler: {
+                let n = counter.tick()
+                if n == 1 { firstEvent.fulfill() }
+                else if n >= 2 { secondEvent.fulfill() }
+            }
+        )
+        defer { watcher.stop() }
+
+        Thread.sleep(forTimeInterval: 0.05)
+        try FileManager.default.removeItem(at: url)
+        wait(for: [firstEvent], timeout: 2.0)
+
+        // Recreate before retries exhaust. The watcher reattaches and the
+        // next write should fire normally.
+        try "v2".write(to: url, atomically: false, encoding: .utf8)
+        Thread.sleep(forTimeInterval: 0.05)  // let reattach succeed
+        let fh = try FileHandle(forWritingTo: url)
+        try fh.seekToEnd()
+        try fh.write(contentsOf: Data(" more".utf8))
+        try fh.close()
+        wait(for: [secondEvent], timeout: 2.0)
+        XCTAssertFalse(watcher.isStopped)
+    }
+
     func test_stop_preventsFurtherFires() throws {
         let url = tmpDir.appendingPathComponent("stop.txt")
         try "initial".write(to: url, atomically: false, encoding: .utf8)
