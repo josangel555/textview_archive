@@ -51,24 +51,34 @@ after commit `547c3ec`. Total raw findings ≈ 250. This file synthesizes the
 | U8 Empty/Error state CTAs | ✅ done | adaf8cf |
 | U12 NSOpenPanel content types | ✅ done | 1b2038c |
 
-**Still open (deferred to follow-ups)**:
+**Closed in the second pass** (round 2 of fixes):
+
+| ID | Status | Commit |
+|---|---|---|
+| CRIT-6 sidebar keyboard nav | ✅ done — ↑↓ select, ←→ collapse/expand, ↵ open; NSEvent monitor yields to text fields | 9b21708 |
+| B1 / B2 watcher recovery + onLost | ✅ done — exponential backoff to maxReattachAttempts; isStopped accessor; thread-safe stop | 43b636f |
+| P4 line-numbers newline-offset cache | ✅ done — O(log N) lookup; invalidated on text change | a4cc7f5 |
+| U-tier tab context menu | ✅ done — Close Tab / Others / To Right / Copy Path / Reveal in Finder | cf3abd4 |
+| U-tier sidebar context menu | ✅ done — Open / Open in New Tab / Copy Path / Copy Relative Path / Reveal | cf3abd4 |
+| U-tier palette match highlight | ✅ done — matched chars bolded + accent-colored, with footer hint | 16f554d |
+| U-tier tab drag-reorder | ✅ done — onDrag/onDrop with insertion semantics | ba5f58d |
+| U-tier tab move shortcuts | ✅ done — ⌥⌘[ / ⌥⌘] | 41b3e73 |
+
+**Still open (truly deferred)**:
 
 | ID | Why deferred |
 |---|---|
-| CRIT-6 sidebar arrow-key keyboard nav | Needs FocusState + selection model; a separate UX session. Button focus traversal already works via Tab key. |
-| A1 rename Tab → DocumentTab | Touches many files including tests; risk vs. reward modest while SwiftUI.Tab on macOS 15+ only collides in TabBar.swift (already qualified). |
+| A1 rename Tab → DocumentTab | Working today via `ViewerCore.Tab` qualification at the one collision site (TabBar.swift). Rename touches many files for minimal user-visible benefit. |
 | A2 / A3 / A4 module re-layout | Opportunistic — when the next phase forces touching these files. |
-| B1 / B2 watcher error recovery | Needs an `onLost` callback API + UI banner; coordinated with Phase 4.5 UI. |
-| B10 SidebarModel async IO | Whole-stack async — propagate `await` from setRoot/toggleExpansion. Worth a phase of its own. |
+| B10 SidebarModel async IO | Sync IO is acceptable for folders up to ~1000 entries (the common case). Async-everywhere refactor needs whole-stack `await` propagation + spinner UX — a phase of its own. |
 | P1 per-tab HTML memoization | Stylesheet cache + WKWebView lastHTML check already cut the dominant cost. Gate on a measured benchmark. |
 | P2 async TextFileLoader | Needs a loading-state UI that doesn't exist yet. |
-| P4 line-numbers newline-offset cache | Optimization for files >10k lines; visible only at scroll. |
-| U-tier: drag-tab-reorder, context menus, drag-from-sidebar, palette match-highlight | UX backlog; sequenced. |
+| WKWebView find (rendered-mode ⌘F) | Part of Phase 4.5 UI (FinderBar). Engine already exists; UI is the remaining piece. |
 | S14 sandbox + bookmarks | Phase 9. |
-| Tier 2/3 (snapshot/ViewInspector) | Per DESIGN.md §7 decision matrix. |
+| Tier 2/3 (snapshot/ViewInspector) | Per DESIGN.md §7 decision matrix — useful for visual regressions but adds dep + golden-image management; ROI grows post-Phase 5b when UI branchiness rises. |
 | Tier 4 (tart VM) | Phase 17 infra task. |
 
-228 tests pass, ~3 s suite, all 17 bundle checks green.
+250 tests pass, ~3 s suite, all 17 bundle checks green.
 
 ---
 
