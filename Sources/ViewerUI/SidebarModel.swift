@@ -9,7 +9,10 @@ public final class SidebarModel: ObservableObject {
     @Published public private(set) var rootURL: URL?
     @Published public private(set) var expanded: Set<URL> = []
     @Published public var includeHidden: Bool = false {
-        didSet { clearCache() }
+        didSet {
+            clearCache()
+            for url in expanded { ensureLoaded(url: url) }
+        }
     }
     @Published public var isVisible: Bool = false
     @Published public private(set) var gitStatuses: [URL: GitStatusEntry.Status] = [:]
@@ -35,7 +38,7 @@ public final class SidebarModel: ObservableObject {
         gitRepoRoot = nil
         if let url = rootURL {
             expanded.insert(url)  // root always expanded
-            _ = children(of: url)
+            ensureLoaded(url: url)
             refreshGitStatus()
         }
         isVisible = (rootURL != nil)
@@ -81,7 +84,7 @@ public final class SidebarModel: ObservableObject {
             expanded.remove(url)
         } else {
             expanded.insert(url)
-            _ = children(of: url)
+            ensureLoaded(url: url)
         }
     }
 
@@ -89,11 +92,20 @@ public final class SidebarModel: ObservableObject {
         expanded.contains(url)
     }
 
+    /// Cache-only read. Safe to call from SwiftUI bodies; never does IO.
     public func children(of url: URL) -> [FileNode] {
+        childrenCache[url] ?? []
+    }
+
+    /// Loads (synchronously) and caches the directory's children if not yet
+    /// cached. Call from event handlers (setRoot, toggleExpansion), never
+    /// from a SwiftUI body.
+    @discardableResult
+    public func ensureLoaded(url: URL) -> [FileNode] {
         if let cached = childrenCache[url] { return cached }
-        let children = (try? service.children(of: url, includeHidden: includeHidden)) ?? []
-        childrenCache[url] = children
-        return children
+        let kids = (try? service.children(of: url, includeHidden: includeHidden)) ?? []
+        childrenCache[url] = kids
+        return kids
     }
 
     public func clearCache() {

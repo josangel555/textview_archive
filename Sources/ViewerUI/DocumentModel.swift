@@ -116,8 +116,6 @@ public final class DocumentModel: ObservableObject {
         var t = tabs.tabs[i]
         t.state = state
         tabs.replace(at: i, with: t)
-        let snapshot = tabs
-        tabs = snapshot
         updateDerived()
     }
 
@@ -180,10 +178,6 @@ public final class DocumentModel: ObservableObject {
         var t = tabs.tabs[i]
         t.viewMode = mode
         tabs.replace(at: i, with: t)
-        // Manually publish — tabs is @Published but mutating a property of a
-        // value in an array doesn't always re-emit. Re-assign explicitly.
-        let snapshot = tabs
-        tabs = snapshot
     }
 
     // MARK: Recents

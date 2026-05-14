@@ -8,8 +8,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let model = DocumentModel()
     var window: NSWindow?
     private var openRecentMenu: NSMenu?
+    private var windowMenu: NSMenu?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Opt out of macOS's automatic window tabbing — we ship our own in-app
+        // tab bar; the system "Show Tab Bar" menu item is confusing here.
+        NSWindow.allowsAutomaticWindowTabbing = false
+
         buildMenu()
 
         let root = ContentView(model: model)
@@ -26,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         window.center()
         window.setFrameAutosaveName("MainWindow")
         window.isReleasedWhenClosed = false
+        window.tabbingMode = .disallowed
         window.makeKeyAndOrderFront(nil)
         self.window = window
 
@@ -153,7 +159,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: NSMenuDelegate
 
     func menuNeedsUpdate(_ menu: NSMenu) {
-        guard menu === openRecentMenu else { return }
+        if menu === openRecentMenu {
+            rebuildRecentsMenu(menu)
+        } else if menu === windowMenu {
+            rebuildWindowMenu(menu)
+        }
+    }
+
+    private func rebuildRecentsMenu(_ menu: NSMenu) {
         menu.removeAllItems()
         let entries = model.recents.prefix(20)
         if entries.isEmpty {
@@ -184,6 +197,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         clear.target = self
         clear.isEnabled = !model.recents.isEmpty
         menu.addItem(clear)
+    }
+
+    private func rebuildWindowMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let nextItem = NSMenuItem(
+            title: "Next Tab",
+            action: #selector(nextTab(_:)),
+            keyEquivalent: "\u{2192}"
+        )
+        nextItem.keyEquivalentModifierMask = [.command, .option]
+        nextItem.target = self
+        menu.addItem(nextItem)
+
+        let prevItem = NSMenuItem(
+            title: "Previous Tab",
+            action: #selector(previousTab(_:)),
+            keyEquivalent: "\u{2190}"
+        )
+        prevItem.keyEquivalentModifierMask = [.command, .option]
+        prevItem.target = self
+        menu.addItem(prevItem)
+
+        if model.tabs.tabs.isEmpty {
+            menu.addItem(.separator())
+            let placeholder = NSMenuItem(title: "(no open tabs)", action: nil, keyEquivalent: "")
+            placeholder.isEnabled = false
+            menu.addItem(placeholder)
+            return
+        }
+
+        menu.addItem(.separator())
+        for (i, tab) in model.tabs.tabs.enumerated() {
+            let key = i < 9 ? "\(i + 1)" : ""
+            let item = NSMenuItem(
+                title: tab.title.isEmpty ? "Untitled" : tab.title,
+                action: #selector(selectTabByNumber(_:)),
+                keyEquivalent: key
+            )
+            item.tag = i + 1
+            item.target = self
+            if model.tabs.selectedIndex == i {
+                item.state = .on
+            }
+            menu.addItem(item)
+        }
     }
 
     private func buildMenu() {
@@ -301,33 +359,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let windowMenuItem = NSMenuItem()
         mainMenu.addItem(windowMenuItem)
         let windowMenu = NSMenu(title: "Window")
-        let nextItem = NSMenuItem(
-            title: "Next Tab",
-            action: #selector(nextTab(_:)),
-            keyEquivalent: "\u{2192}"  // →
-        )
-        nextItem.keyEquivalentModifierMask = [.command, .option]
-        nextItem.target = self
-        windowMenu.addItem(nextItem)
-        let prevItem = NSMenuItem(
-            title: "Previous Tab",
-            action: #selector(previousTab(_:)),
-            keyEquivalent: "\u{2190}"  // ←
-        )
-        prevItem.keyEquivalentModifierMask = [.command, .option]
-        prevItem.target = self
-        windowMenu.addItem(prevItem)
-        windowMenu.addItem(.separator())
-        for n in 1...9 {
-            let item = NSMenuItem(
-                title: "Show Tab \(n)",
-                action: #selector(selectTabByNumber(_:)),
-                keyEquivalent: "\(n)"
-            )
-            item.tag = n
-            item.target = self
-            windowMenu.addItem(item)
-        }
+        windowMenu.delegate = self
+        windowMenu.autoenablesItems = false
+        self.windowMenu = windowMenu
+        // Items are populated lazily in rebuildWindowMenu() via menuNeedsUpdate.
         windowMenuItem.submenu = windowMenu
 
         let editMenuItem = NSMenuItem()

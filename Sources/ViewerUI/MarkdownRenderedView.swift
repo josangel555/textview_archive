@@ -23,11 +23,21 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = context.coordinator
+        // WKWebView eats file-URL drags by default; releasing those so the
+        // SwiftUI .onDrop on the parent receives them instead.
+        webView.unregisterDraggedTypes()
         return webView
     }
 
     public func updateNSView(_ webView: WKWebView, context: Context) {
-        webView.loadHTMLString(html, baseURL: baseURL)
+        // Only reload when the HTML actually changed. body() re-runs on every
+        // @Published mutation, and reloading the page on each tick causes
+        // a render storm + a brief blank-content flash that was being
+        // perceived as "tabs vanishing".
+        if context.coordinator.lastHTML != html {
+            webView.loadHTMLString(html, baseURL: baseURL)
+            context.coordinator.lastHTML = html
+        }
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -36,6 +46,8 @@ public struct MarkdownRenderedView: NSViewRepresentable {
 
     @MainActor
     public final class Coordinator: NSObject, WKNavigationDelegate {
+        var lastHTML: String?
+
         /// Intercept link clicks so http(s) go to the user's browser instead of
         /// loading inside the viewer. Local anchors and the initial HTML load
         /// pass through.

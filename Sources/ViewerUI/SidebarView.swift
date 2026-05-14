@@ -122,13 +122,6 @@ private struct FileRowView: View {
             .padding(.trailing, 8)
             .contentShape(Rectangle())
             .background(isCurrent ? Color.accentColor.opacity(0.18) : Color.clear)
-            .onTapGesture(count: 2) {
-                if node.isDirectory {
-                    sidebar.toggleExpansion(node.url)
-                } else {
-                    model.open(url: node.url)
-                }
-            }
             .onTapGesture {
                 if node.isDirectory {
                     sidebar.toggleExpansion(node.url)
