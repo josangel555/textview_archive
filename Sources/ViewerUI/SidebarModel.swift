@@ -12,23 +12,64 @@ public final class SidebarModel: ObservableObject {
         didSet { clearCache() }
     }
     @Published public var isVisible: Bool = false
+    @Published public private(set) var gitStatuses: [URL: GitStatusEntry.Status] = [:]
+    @Published public private(set) var gitRepoRoot: URL?
 
     private let service: FileTreeService
+    private let git: GitService
     private var childrenCache: [URL: [FileNode]] = [:]
 
-    public init(service: FileTreeService = FileTreeService()) {
+    public init(
+        service: FileTreeService = FileTreeService(),
+        git: GitService = GitService()
+    ) {
         self.service = service
+        self.git = git
     }
 
     public func setRoot(_ url: URL?) {
         rootURL = url?.standardizedFileURL.resolvingSymlinksInPath()
         expanded.removeAll()
         clearCache()
+        gitStatuses = [:]
+        gitRepoRoot = nil
         if let url = rootURL {
             expanded.insert(url)  // root always expanded
             _ = children(of: url)
+            refreshGitStatus()
         }
         isVisible = (rootURL != nil)
+    }
+
+    public func gitStatus(for url: URL) -> GitStatusEntry.Status? {
+        gitStatuses[url.standardizedFileURL.resolvingSymlinksInPath()]
+    }
+
+    public func refreshGitStatus() {
+        guard let root = rootURL else {
+            gitStatuses = [:]
+            gitRepoRoot = nil
+            return
+        }
+        guard let repoRoot = git.repoRoot(for: root) else {
+            gitStatuses = [:]
+            gitRepoRoot = nil
+            return
+        }
+        gitRepoRoot = repoRoot
+        let service = git
+        Task.detached(priority: .userInitiated) {
+            let entries = (try? service.status(at: repoRoot)) ?? []
+            var map: [URL: GitStatusEntry.Status] = [:]
+            for entry in entries {
+                let url = repoRoot.appendingPathComponent(entry.path)
+                    .standardizedFileURL.resolvingSymlinksInPath()
+                map[url] = entry.status
+            }
+            await MainActor.run {
+                self.gitStatuses = map
+            }
+        }
     }
 
     public func toggleVisibility() {

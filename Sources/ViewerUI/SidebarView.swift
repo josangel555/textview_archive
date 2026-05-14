@@ -51,6 +51,42 @@ struct SidebarView: View {
     }
 }
 
+struct GitStatusBadge: View {
+    let status: GitStatusEntry.Status
+
+    var body: some View {
+        Text(status.rawValue)
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(color)
+            .frame(width: 12, height: 12)
+            .help(label)
+    }
+
+    private var color: Color {
+        switch status {
+        case .modified:   return .orange
+        case .added:      return .green
+        case .deleted:    return .red
+        case .renamed, .copied: return .blue
+        case .untracked, .ignored: return .secondary
+        case .conflicted: return .red
+        }
+    }
+
+    private var label: String {
+        switch status {
+        case .modified:   return "Modified"
+        case .added:      return "Added"
+        case .deleted:    return "Deleted"
+        case .renamed:    return "Renamed"
+        case .copied:     return "Copied"
+        case .untracked:  return "Untracked"
+        case .ignored:    return "Ignored"
+        case .conflicted: return "Conflict"
+        }
+    }
+}
+
 private struct FileRowView: View {
     let node: FileNode
     let depth: Int
@@ -77,6 +113,9 @@ private struct FileRowView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 0)
+                if let status = sidebar.gitStatus(for: node.url) {
+                    GitStatusBadge(status: status)
+                }
             }
             .padding(.leading, CGFloat(depth) * 14 + 8)
             .padding(.vertical, 3)
@@ -109,6 +148,19 @@ private struct FileRowView: View {
 
     private var isCurrent: Bool {
         model.currentURL == node.url
+    }
+
+    private func gitColor(_ status: GitStatusEntry.Status) -> Color {
+        switch status {
+        case .modified:   return .orange
+        case .added:      return .green
+        case .deleted:    return .red
+        case .renamed:    return .blue
+        case .copied:     return .blue
+        case .untracked:  return .secondary
+        case .ignored:    return .secondary
+        case .conflicted: return .red
+        }
     }
 
     private func icon(for node: FileNode) -> String {
