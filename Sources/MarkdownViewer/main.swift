@@ -4,9 +4,10 @@ import ViewerCore
 import ViewerUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let model = DocumentModel()
     var window: NSWindow?
+    private var openRecentMenu: NSMenu?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
@@ -66,6 +67,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.toggleViewMode()
     }
 
+    @objc func openRecentItem(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        model.open(url: url)
+        window?.title = model.windowTitle
+    }
+
+    @objc func clearRecents(_ sender: Any?) {
+        model.clearRecents()
+    }
+
+    // MARK: NSMenuDelegate
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu === openRecentMenu else { return }
+        menu.removeAllItems()
+        let entries = model.recents.prefix(20)
+        if entries.isEmpty {
+            let placeholder = NSMenuItem(
+                title: "(no recent files)", action: nil, keyEquivalent: ""
+            )
+            placeholder.isEnabled = false
+            menu.addItem(placeholder)
+        } else {
+            for entry in entries {
+                let item = NSMenuItem(
+                    title: entry.displayName,
+                    action: #selector(openRecentItem(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = entry.url
+                item.toolTip = entry.url.path
+                menu.addItem(item)
+            }
+        }
+        menu.addItem(.separator())
+        let clear = NSMenuItem(
+            title: "Clear Menu",
+            action: #selector(clearRecents(_:)),
+            keyEquivalent: ""
+        )
+        clear.target = self
+        clear.isEnabled = !model.recents.isEmpty
+        menu.addItem(clear)
+    }
+
     private func buildMenu() {
         let mainMenu = NSMenu()
 
@@ -100,6 +147,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         openItem.target = self
         fileMenu.addItem(openItem)
+
+        let recentItem = NSMenuItem(
+            title: "Open Recent", action: nil, keyEquivalent: ""
+        )
+        let recentMenu = NSMenu(title: "Open Recent")
+        recentMenu.delegate = self
+        recentMenu.autoenablesItems = false
+        recentItem.submenu = recentMenu
+        openRecentMenu = recentMenu
+        fileMenu.addItem(recentItem)
+
+        fileMenu.addItem(.separator())
         fileMenu.addItem(NSMenuItem(
             title: "Close Window",
             action: #selector(NSWindow.performClose(_:)),

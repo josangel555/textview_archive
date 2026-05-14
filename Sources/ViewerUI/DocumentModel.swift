@@ -9,11 +9,18 @@ public final class DocumentModel: ObservableObject {
     @Published public private(set) var state: DocumentState = .empty
     @Published public private(set) var windowTitle: String = "MarkdownViewer"
     @Published public var viewMode: ViewMode = .rendered
+    @Published public private(set) var recents: [HistoryEntry] = []
 
     private let controller: DocumentController
+    public let history: HistoryStore
 
-    public init(controller: DocumentController = DocumentController()) {
+    public init(
+        controller: DocumentController = DocumentController(),
+        history: HistoryStore = HistoryStore(storeURL: HistoryStore.defaultStoreURL())
+    ) {
         self.controller = controller
+        self.history = history
+        self.recents = history.recent()
     }
 
     public func open(url: URL) {
@@ -22,11 +29,20 @@ public final class DocumentModel: ObservableObject {
         switch state {
         case .loaded(let file):
             windowTitle = file.url.lastPathComponent
+            history.record(url: file.url, kind: .file)
+            recents = history.recent()
         case .error(let failure):
             windowTitle = failure.url.lastPathComponent
+            // Don't record failed opens; user expects "Recent" to mean "things
+            // I actually saw."
         case .empty:
             windowTitle = "MarkdownViewer"
         }
+    }
+
+    public func clearRecents() {
+        history.clear()
+        recents = []
     }
 
     /// Whether the user can toggle Rendered/Source for the current document.

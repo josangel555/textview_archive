@@ -30,11 +30,14 @@ swift test --filter ViewerCoreTests.DocumentControllerTests/test_oversizedFile_r
   blockquote, code fences w/ + w/o language, table, hr), inline (em, strong,
   strikethrough, inline code, link incl. href escaping, image), text-escape
   table, GFM strikethrough, page wrapper with stylesheet, complex round-trip.
+- **ViewerCoreTests/HistoryStoreTests** — 13 cases. Record, dedupe + bump,
+  URL normalization, cap limit, remove, clear, persistence round-trip,
+  corrupt-file recovery, cap applied on load, folder kind, recent limit.
 - **scripts/verify-app.sh** — 17 structural assertions on the built bundle
   (executable bit, plist lint, required keys, document type UTIs, ViewerUI
   resource bundle + markdown.css presence).
 
-Total: **43 swift cases, ~45 ms** + bundle verify script.
+Total: **56 swift cases, ~85 ms** + bundle verify script.
 
 ## What is *not* yet tested
 
