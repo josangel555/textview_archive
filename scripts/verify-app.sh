@@ -55,6 +55,9 @@ pass "declares net.daringfireball.markdown"
 echo "$dt_xml" | grep -q "public.plain-text" \
   || fail "CFBundleDocumentTypes does not declare public.plain-text"
 pass "declares public.plain-text"
+echo "$dt_xml" | grep -q "public.folder" \
+  || fail "CFBundleDocumentTypes does not declare public.folder"
+pass "declares public.folder"
 
 # Resource bundles (SPM-generated .bundle dirs for targets with resources).
 res_bundle="$APP_DIR/Contents/Resources/MarkdownViewer_ViewerUI.bundle"

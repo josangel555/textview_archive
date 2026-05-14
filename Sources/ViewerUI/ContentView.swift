@@ -1,9 +1,11 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import ViewerKit
 import ViewerCore
 
 public struct ContentView: View {
     @ObservedObject var model: DocumentModel
+    @State private var isDropTargeted = false
     private let renderer = HTMLRenderer()
     private let stylesheet: String
 
@@ -31,6 +33,17 @@ public struct ContentView: View {
                 }
             }
             .frame(minWidth: 600, minHeight: 360)
+            .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+                handleDrop(providers)
+            }
+            .overlay {
+                if isDropTargeted {
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color.accentColor, lineWidth: 3)
+                        .padding(2)
+                        .allowsHitTesting(false)
+                }
+            }
 
             if model.isPalettePresented {
                 Color.black.opacity(0.18)
@@ -41,6 +54,25 @@ public struct ContentView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         }
+    }
+
+    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
+        for provider in providers {
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                guard let url else { return }
+                Task { @MainActor in
+                    var isDir: ObjCBool = false
+                    let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+                    guard exists else { return }
+                    if isDir.boolValue {
+                        model.openFolder(url)
+                    } else {
+                        model.open(url: url)
+                    }
+                }
+            }
+        }
+        return true
     }
 
     @ViewBuilder

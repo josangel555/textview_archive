@@ -67,6 +67,14 @@ final class InfoPlistTests: XCTestCase {
                       "missing public.plain-text; got \(allContentTypes)")
     }
 
+    func test_declaresFolderDocumentType() throws {
+        let p = try loadPlist()
+        let docTypes = p["CFBundleDocumentTypes"] as? [[String: Any]] ?? []
+        let allContentTypes = docTypes.flatMap { ($0["LSItemContentTypes"] as? [String]) ?? [] }
+        XCTAssertTrue(allContentTypes.contains("public.folder"),
+                      "missing public.folder; got \(allContentTypes)")
+    }
+
     func test_eachDocumentTypeHasViewerRole() throws {
         let p = try loadPlist()
         let docTypes = p["CFBundleDocumentTypes"] as? [[String: Any]] ?? []
