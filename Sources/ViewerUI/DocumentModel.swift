@@ -20,6 +20,7 @@ public final class DocumentModel: ObservableObject {
     private let controller: DocumentController
     public let history: HistoryStore
     private let preferences: PreferencesStore
+    private var fileWatcher: FileWatcher?
 
     public init(
         controller: DocumentController = DocumentController(),
@@ -103,6 +104,33 @@ public final class DocumentModel: ObservableObject {
             history.record(url: resolved, kind: .file)
             recents = history.recent()
         }
+        startWatchingCurrentFile()
+    }
+
+    /// Re-reads the current tab's file and refreshes its state. Used by the
+    /// file watcher and the menu's "Reload" item.
+    public func reloadCurrentFile() {
+        guard let i = tabs.selectedIndex, tabs.tabs.indices.contains(i),
+              let url = tabs.tabs[i].url else { return }
+        let state = controller.open(url: url)
+        var t = tabs.tabs[i]
+        t.state = state
+        tabs.replace(at: i, with: t)
+        let snapshot = tabs
+        tabs = snapshot
+        updateDerived()
+    }
+
+    private func startWatchingCurrentFile() {
+        fileWatcher?.stop()
+        fileWatcher = nil
+        guard let url = currentURL,
+              FileManager.default.fileExists(atPath: url.path) else { return }
+        fileWatcher = try? FileWatcher(url: url, queue: .main) { [weak self] in
+            Task { @MainActor in
+                self?.reloadCurrentFile()
+            }
+        }
     }
 
     // MARK: Tab management
@@ -115,6 +143,7 @@ public final class DocumentModel: ObservableObject {
     public func closeTab(at index: Int) {
         tabs.close(at: index)
         updateDerived()
+        startWatchingCurrentFile()
     }
 
     public func closeCurrentTab() {
@@ -126,6 +155,7 @@ public final class DocumentModel: ObservableObject {
     public func selectTab(at index: Int) {
         tabs.select(at: index)
         updateDerived()
+        startWatchingCurrentFile()
     }
 
     public func selectNextTab() {

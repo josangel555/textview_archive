@@ -101,6 +101,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.showPalette()
     }
 
+    @objc func reloadCurrentFile(_ sender: Any?) {
+        model.reloadCurrentFile()
+    }
+
     @objc func toggleViewMode(_ sender: Any?) {
         model.toggleViewMode()
     }
@@ -277,6 +281,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         viewMenu.addItem(sidebarItem)
 
         viewMenu.addItem(.separator())
+        let reloadItem = NSMenuItem(
+            title: "Reload",
+            action: #selector(reloadCurrentFile(_:)),
+            keyEquivalent: "r"
+        )
+        reloadItem.target = self
+        viewMenu.addItem(reloadItem)
+
         let paletteItem = NSMenuItem(
             title: "Quick Open…",
             action: #selector(showPalette(_:)),
