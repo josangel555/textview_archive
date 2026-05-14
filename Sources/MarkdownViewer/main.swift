@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 import ViewerCore
@@ -10,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var window: NSWindow?
     private var openRecentMenu: NSMenu?
     private var windowMenu: NSMenu?
+    private var cancellables: Set<AnyCancellable> = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Opt out of macOS's automatic window tabbing — we ship our own in-app
@@ -47,6 +49,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         window.makeKeyAndOrderFront(nil)
         self.window = window
 
+        // A5: keep window.title in sync with model.$windowTitle. Eliminates
+        // the eight manual `window?.title = model.windowTitle` syncs that
+        // were sprinkled across action handlers (and easy to forget on new
+        // actions).
+        model.$windowTitle
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] title in
+                self?.window?.title = title
+            }
+            .store(in: &cancellables)
+
         // Restore last-opened folder (silently no-ops if path no longer exists).
         model.restorePreviousFolderIfAvailable()
 
@@ -60,14 +73,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             let url = URL(fileURLWithPath: expanded, relativeTo: cwd)
                 .standardizedFileURL
-            var isDir: ObjCBool = false
-            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) {
-                if isDir.boolValue {
-                    model.openFolder(url)
-                } else {
-                    model.open(url: url)
-                }
-                window.title = model.windowTitle
+            if FileManager.default.fileExists(atPath: url.path) {
+                model.openPath(url)
             }
         }
 
@@ -75,18 +82,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls {
-            var isDir: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) else {
-                continue
-            }
-            if isDir.boolValue {
-                model.openFolder(url)
-            } else {
-                model.open(url: url)
-            }
+        for url in urls where FileManager.default.fileExists(atPath: url.path) {
+            model.openPath(url)
         }
-        window?.title = model.windowTitle
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -108,7 +106,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         if panel.runModal() == .OK, let url = panel.url {
             model.open(url: url)
-            window?.title = model.windowTitle
         }
     }
 
@@ -141,7 +138,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func newTab(_ sender: Any?) {
         model.newTab()
-        window?.title = model.windowTitle
     }
 
     @objc func closeCurrentTab(_ sender: Any?) {
@@ -150,30 +146,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         model.closeCurrentTab()
-        window?.title = model.windowTitle
     }
 
     @objc func nextTab(_ sender: Any?) {
         model.selectNextTab()
-        window?.title = model.windowTitle
     }
 
     @objc func previousTab(_ sender: Any?) {
         model.selectPreviousTab()
-        window?.title = model.windowTitle
     }
 
     @objc func selectTabByNumber(_ sender: NSMenuItem) {
         let index = sender.tag - 1
         guard model.tabs.tabs.indices.contains(index) else { return }
         model.selectTab(at: index)
-        window?.title = model.windowTitle
     }
 
     @objc func openRecentItem(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
-        model.open(url: url)
-        window?.title = model.windowTitle
+        model.openPath(url)  // recents may include folders
     }
 
     @objc func clearRecents(_ sender: Any?) {

@@ -61,14 +61,8 @@ public struct ContentView: View {
             _ = provider.loadObject(ofClass: URL.self) { url, _ in
                 guard let url else { return }
                 Task { @MainActor in
-                    var isDir: ObjCBool = false
-                    let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
-                    guard exists else { return }
-                    if isDir.boolValue {
-                        model.openFolder(url)
-                    } else {
-                        model.open(url: url)
-                    }
+                    guard FileManager.default.fileExists(atPath: url.path) else { return }
+                    model.openPath(url)
                 }
             }
         }

@@ -46,6 +46,21 @@ public final class DocumentModel: ObservableObject {
         preferences.lastFolderURL = resolved
     }
 
+    /// A6: single dispatch point for "open this URL" — checks whether it's a
+    /// folder or a file and routes appropriately. Used by drag-drop,
+    /// application(_:open:) and the argv handler. If the path doesn't exist
+    /// we still call `open(url:)` so the user sees the "File not found"
+    /// error tab rather than a silent no-op.
+    public func openPath(_ url: URL) {
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir),
+           isDir.boolValue {
+            openFolder(url)
+        } else {
+            open(url: url)
+        }
+    }
+
     /// Restores the most recently opened folder (if any). Call from app launch.
     public func restorePreviousFolderIfAvailable() {
         guard let url = preferences.lastFolderURL,
