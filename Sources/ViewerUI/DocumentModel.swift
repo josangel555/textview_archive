@@ -125,10 +125,23 @@ public final class DocumentModel: ObservableObject {
     /// Opens a URL into the current tab if it's blank, switches to an existing
     /// tab that shows the URL, or appends a new tab.
     public func open(url: URL) {
+        openResolved(url, forceNewTab: false)
+    }
+
+    /// Always opens a new tab — does NOT reuse an existing tab that shows
+    /// the same URL or a blank tab. Used by "Open in New Tab" context menu.
+    public func openInNewTab(_ url: URL) {
+        openResolved(url, forceNewTab: true)
+    }
+
+    private func openResolved(_ url: URL, forceNewTab: Bool) {
         let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
         let state = controller.open(url: resolved)
-        let viewMode = currentViewMode
-        tabs.openOrReveal(url: resolved, state: state, viewMode: viewMode)
+        if forceNewTab {
+            tabs.append(Tab(url: resolved, state: state, viewMode: .rendered))
+        } else {
+            tabs.openOrReveal(url: resolved, state: state, viewMode: currentViewMode)
+        }
         updateDerived()
         if case .loaded = state {
             history.record(url: resolved, kind: .file)
@@ -219,33 +232,17 @@ public final class DocumentModel: ObservableObject {
     }
 
     public func moveCurrentTabLeft() {
-        guard let i = tabs.selectedIndex, i > 0 else { return }
-        tabs.move(from: i, to: i - 1)
+        guard let i = tabs.selectedIndex else { return }
+        tabs.swapWithPrevious(at: i)
         updateDerived()
     }
 
     public func moveCurrentTabRight() {
-        guard let i = tabs.selectedIndex, i < tabs.tabs.count - 1 else { return }
-        // move(from:to:) interprets `to` as the destination index in the
-        // post-removal list; moving right by one means destination = i + 2
-        // (insert *after* the next neighbor's original position).
-        tabs.move(from: i, to: i + 2)
+        guard let i = tabs.selectedIndex else { return }
+        tabs.swapWithNext(at: i)
         updateDerived()
     }
 
-    /// Always opens a new tab — does NOT reuse an existing tab that shows
-    /// the same URL or a blank tab. Used by "Open in New Tab" context menu.
-    public func openInNewTab(_ url: URL) {
-        let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
-        let state = controller.open(url: resolved)
-        tabs.append(Tab(url: resolved, state: state, viewMode: .rendered))
-        updateDerived()
-        if case .loaded = state {
-            history.record(url: resolved, kind: .file)
-            recents = history.recent()
-        }
-        startWatchingCurrentFile()
-    }
 
     public func selectTab(at index: Int) {
         tabs.select(at: index)

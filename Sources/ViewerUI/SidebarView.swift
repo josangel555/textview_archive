@@ -98,24 +98,23 @@ private struct FileRowContextMenu: View {
             }
             Divider()
         }
-        Button("Copy Path") {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(node.url.path, forType: .string)
+        Button("Copy Path") { Pasteboard.copy(node.url.path) }
+        Button("Copy Relative Path") { Pasteboard.copy(relativePath) }
+        Button("Reveal in Finder") { Finder.reveal(node.url) }
+    }
+
+    /// Path relative to the sidebar root. Falls back to the filename when
+    /// `node.url` isn't under the root (shouldn't happen via the UI, but
+    /// it's defensive).
+    private var relativePath: String {
+        guard let root = sidebar.rootURL else { return node.url.lastPathComponent }
+        let rootComponents = root.standardizedFileURL.pathComponents
+        let nodeComponents = node.url.standardizedFileURL.pathComponents
+        if nodeComponents.count > rootComponents.count,
+           Array(nodeComponents.prefix(rootComponents.count)) == rootComponents {
+            return nodeComponents.dropFirst(rootComponents.count).joined(separator: "/")
         }
-        Button("Copy Relative Path") {
-            let rel: String
-            if let root = sidebar.rootURL,
-               node.url.path.hasPrefix(root.path) {
-                rel = String(node.url.path.dropFirst(root.path.count + 1))
-            } else {
-                rel = node.url.lastPathComponent
-            }
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(rel, forType: .string)
-        }
-        Button("Reveal in Finder") {
-            NSWorkspace.shared.activateFileViewerSelecting([node.url])
-        }
+        return node.url.lastPathComponent
     }
 }
 

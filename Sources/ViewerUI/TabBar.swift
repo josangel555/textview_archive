@@ -80,13 +80,8 @@ private struct TabContextMenu: View {
             .disabled(tabIndex >= model.tabs.tabs.count - 1)
         Divider()
         if let url = tab.url {
-            Button("Copy Path") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(url.path, forType: .string)
-            }
-            Button("Reveal in Finder") {
-                NSWorkspace.shared.activateFileViewerSelecting([url])
-            }
+            Button("Copy Path") { Pasteboard.copy(url.path) }
+            Button("Reveal in Finder") { Finder.reveal(url) }
         }
     }
 }

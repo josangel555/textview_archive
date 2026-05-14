@@ -82,6 +82,21 @@ public struct TabsState: Equatable, Sendable {
         tabs[index] = tab
     }
 
+    /// Swap the tab at `index` with its left neighbor. No-op at index 0.
+    public mutating func swapWithPrevious(at index: Int) {
+        guard tabs.indices.contains(index), index > 0 else { return }
+        move(from: index, to: index - 1)
+    }
+
+    /// Swap the tab at `index` with its right neighbor. No-op at last index.
+    /// (Internally, "move right by one" requires `to = index + 2` because
+    /// `move` interprets `to` as the destination index in the post-removal
+    /// list. Callers express intent here so they don't have to know that.)
+    public mutating func swapWithNext(at index: Int) {
+        guard tabs.indices.contains(index), index < tabs.count - 1 else { return }
+        move(from: index, to: index + 2)
+    }
+
     /// Keeps only the tab at `index`; everything else is removed.
     public mutating func closeAll(except index: Int) {
         guard tabs.indices.contains(index) else { return }
