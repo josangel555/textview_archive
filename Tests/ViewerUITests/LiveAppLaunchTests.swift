@@ -212,4 +212,73 @@ final class LiveAppLaunchTests: XCTestCase {
         XCTAssertGreaterThan(widest, 200,
             "Widest scroll area should be > 200pt (otherwise the source view collapsed to the line-number gutter). Got \(widest)pt — raw: '\(raw)'")
     }
+
+    /// Regression test for the "SwiftUI hosted view doesn't grow with the
+    /// window" bug. Symptom: opening a file in a window whose autosaved
+    /// frame is larger than the initial 900×650 content rect — or simply
+    /// resizing the window after launch — leaves the SwiftUI content
+    /// frozen at the original frame, with the rest of the window showing
+    /// empty background. Caused by `window.contentView = NSHostingView()`
+    /// without autoresizing; fixed by using `window.contentViewController =
+    /// NSHostingController(...)` which installs auto-layout constraints.
+    func test_resizingWindow_swiftUIContentTracksWindowSize() async throws {
+        guard FileManager.default.isExecutableFile(atPath: appExecutable.path) else {
+            throw XCTSkip("Build the .app first: `bash scripts/build-app.sh debug`")
+        }
+        if runAppleScript(#"tell application "System Events" to return "ok""#) != "ok" {
+            throw XCTSkip("Accessibility permission required")
+        }
+
+        let xml = tmpDir.appendingPathComponent("resize.xml")
+        try "<root>\n<a/>\n</root>\n".write(to: xml, atomically: true, encoding: .utf8)
+
+        let p = Process()
+        p.executableURL = appExecutable
+        p.arguments = [xml.path]
+        try p.run()
+        self.process = p
+
+        try await Task.sleep(nanoseconds: 2_500_000_000)
+        XCTAssertTrue(p.isRunning)
+
+        let measurement = runAppleScript("""
+        tell application "System Events"
+            tell process "MarkdownViewer"
+                set w to front window
+                set size of w to {1500, 1100}
+                delay 0.3
+                set wsz to size of w
+                set gsz to size of UI element 1 of w
+                return ((item 1 of wsz) as text) & "x" & ((item 2 of wsz) as text) & "|" & ((item 1 of gsz) as text) & "x" & ((item 2 of gsz) as text)
+            end tell
+        end tell
+        """)
+        guard let raw = measurement else {
+            return XCTFail("Could not measure window vs group sizes")
+        }
+        // Format: "WxH|GWxGH" where W,H = window outer size, GW,GH = SwiftUI content size.
+        let parts = raw.split(separator: "|")
+        guard parts.count == 2 else {
+            return XCTFail("Unexpected measurement format: '\(raw)'")
+        }
+        let winDims = parts[0].split(separator: "x").compactMap { Int($0) }
+        let grpDims = parts[1].split(separator: "x").compactMap { Int($0) }
+        guard winDims.count == 2, grpDims.count == 2 else {
+            return XCTFail("Could not parse measurement: '\(raw)'")
+        }
+        let (windowW, _) = (winDims[0], winDims[1])
+        let (groupW, groupH) = (grpDims[0], grpDims[1])
+
+        // SwiftUI content width should match window width exactly.
+        XCTAssertEqual(
+            groupW, windowW,
+            "SwiftUI content width must match window width after resize. Window=\(windowW), content=\(groupW). raw='\(raw)'"
+        )
+        // Content height should be the window height minus the titlebar
+        // (~28-32pt). Tolerate that range.
+        XCTAssertGreaterThan(
+            groupH, 1100 - 50,
+            "SwiftUI content height should be near (windowH - titlebar). Got \(groupH). raw='\(raw)'"
+        )
+    }
 }

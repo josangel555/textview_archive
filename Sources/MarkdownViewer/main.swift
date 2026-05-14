@@ -20,8 +20,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         buildMenu()
 
-        let root = ContentView(model: model)
-        let hosting = NSHostingView(rootView: root)
+        // CRITICAL: use NSHostingController.view (not a bare NSHostingView
+        // set as contentView). The controller's view installs auto-layout
+        // constraints that pin it to fill the window's contentView, so when
+        // the window's frame is restored from autosave or the user resizes,
+        // the SwiftUI content grows with it. The bare-NSHostingView pattern
+        // froze the hosted view at the window's *initial* content size and
+        // never resized it — that's the bug where opening any non-markdown
+        // file revealed a sliver of UI (line numbers only) inside a vast
+        // empty white background.
+        let hostingController = NSHostingController(rootView: ContentView(model: model))
 
         let minContentSize = NSSize(width: 600, height: 360)
         let window = NSWindow(
@@ -31,14 +39,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             defer: false
         )
         window.title = model.windowTitle
-        window.contentView = hosting
+        window.contentViewController = hostingController
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
         // Hard minimum content size enforced by AppKit. SwiftUI's
         // `.frame(minWidth:minHeight:)` is a layout request to the parent,
-        // not an OS-level floor — without contentMinSize the user can drag
-        // the window narrower than our gutter (40pt) and only line numbers
-        // show; the TabBar/Sidebar/text view collapse to zero width.
+        // not an OS-level floor.
         window.contentMinSize = minContentSize
         // B20: setFrameAutosaveName registers the autosave name AND restores
         // any saved frame for that name. Previously we called center()
