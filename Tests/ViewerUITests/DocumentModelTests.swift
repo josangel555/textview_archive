@@ -233,4 +233,51 @@ final class DocumentModelTests: XCTestCase {
         let model2 = makeModel()
         XCTAssertEqual(model2.sidebarWidth, PreferencesStore.minSidebarWidth)
     }
+
+    func test_setSidebarWidthLive_doesNotPersistUntilPersist() {
+        let model = makeModel()
+        model.setSidebarWidthLive(300)
+        XCTAssertEqual(model.sidebarWidth, 300)
+        // A fresh model from the same defaults still reads the original value
+        // because we never called persist.
+        let model2 = makeModel()
+        XCTAssertNotEqual(model2.sidebarWidth, 300)
+
+        // Now persist and the next model picks it up.
+        model.persistSidebarWidth()
+        let model3 = makeModel()
+        XCTAssertEqual(model3.sidebarWidth, 300)
+    }
+
+    // MARK: T7 — watcher rotates on tab select
+
+    func test_selectTab_rotatesFileWatcher() throws {
+        let model = makeModel()
+        let a = try writeFile("a.md", "v1-a")
+        let b = try writeFile("b.md", "v1-b")
+        model.open(url: a)
+        model.open(url: b)
+        XCTAssertEqual(model.currentURL?.lastPathComponent, "b.md")
+
+        // Mutate `a` while `b` is selected — no reload should happen on `b`
+        // (CRIT-4: watcher events for `a` must not corrupt `b`'s state).
+        try "v2-a".write(to: a, atomically: true, encoding: .utf8)
+        let preB: String
+        if case .loaded(let f) = model.tabs.tabs[0].state { preB = f.contents } else { preB = "" }
+        // Note: tabs.tabs[0] is `a`, tabs.tabs[1] is `b`. Check b stays unchanged.
+        Thread.sleep(forTimeInterval: 0.2)
+        if case .loaded(let f) = model.tabs.tabs[1].state {
+            XCTAssertEqual(f.contents, "v1-b")  // /b unchanged
+        }
+        _ = preB  // silence unused warning if compiler complains
+
+        // Now switch to `a` and reload — should pick up the new contents.
+        model.selectTab(at: 0)
+        model.reloadCurrentFile()
+        if case .loaded(let f) = model.currentState {
+            XCTAssertEqual(f.contents, "v2-a")
+        } else {
+            XCTFail("expected .loaded")
+        }
+    }
 }

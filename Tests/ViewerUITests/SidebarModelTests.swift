@@ -136,4 +136,41 @@ final class SidebarModelTests: XCTestCase {
         XCTAssertFalse(model.isVisible)
         XCTAssertTrue(model.expanded.isEmpty)
     }
+
+    // MARK: T6 — refreshGitStatus integration (no test existed previously)
+
+    func test_refreshGitStatus_populatesFromRepo() async throws {
+        // Set up a tiny git repo with one untracked file.
+        let git = GitService()
+        try git.run(["-c", "init.defaultBranch=main", "init"], in: tmpDir)
+        try git.run(["config", "user.email", "test@example.com"], in: tmpDir)
+        try git.run(["config", "user.name", "Test"], in: tmpDir)
+        try touch("a.md")
+
+        let model = SidebarModel()
+        model.setRoot(tmpDir)
+
+        // refreshGitStatus dispatches a detached task; poll up to ~1 s.
+        var statuses: [URL: GitStatusEntry.Status] = [:]
+        let deadline = Date().addingTimeInterval(1.5)
+        while Date() < deadline {
+            statuses = model.gitStatuses
+            if !statuses.isEmpty { break }
+            try await Task.sleep(nanoseconds: 50_000_000)  // 50 ms
+        }
+        XCTAssertFalse(statuses.isEmpty, "git status should have populated the map")
+        let aURL = tmpDir.appendingPathComponent("a.md")
+            .standardizedFileURL.resolvingSymlinksInPath()
+        XCTAssertEqual(statuses[aURL], .untracked)
+    }
+
+    func test_refreshGitStatus_outsideRepo_clearsMap() async throws {
+        let model = SidebarModel()
+        try touch("a.md")
+        model.setRoot(tmpDir)
+        // tmpDir is not a git repo → gitRepoRoot stays nil and statuses are empty.
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertTrue(model.gitStatuses.isEmpty)
+        XCTAssertNil(model.gitRepoRoot)
+    }
 }
