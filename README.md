@@ -33,9 +33,15 @@ swift run MarkdownViewer DESIGN.md
 bash scripts/build-app.sh        # debug
 bash scripts/build-app.sh release
 
-# Open files with it like any Mac app
-open -a "$(pwd)/dist/MarkdownViewer.app" DESIGN.md
+# Open files with it like any Mac app:
+open -a MarkdownViewer DESIGN.md          # name lookup (after build-app.sh registers)
+open -a "$PWD/dist/MarkdownViewer.app" DESIGN.md  # path lookup, no registration needed
+open DESIGN.md                            # use the system default app
 ```
+
+> `open -a` resolves a relative path through Launch Services' name lookup, not as
+> a filesystem path. Use either an **absolute path** or the **app name** (the
+> build script registers the bundle automatically).
 
 `⌘O` opens the file picker. Pass a path on the command line / Finder to
 open it directly.

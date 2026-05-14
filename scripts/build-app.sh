@@ -48,9 +48,18 @@ plutil -lint "$CONTENTS/Info.plist"
 # Gatekeeper for local use). Real signing is Phase 9.
 codesign --force --sign - "$APP_DIR" >/dev/null 2>&1 || true
 
+# Register with Launch Services so `open -a MarkdownViewer` works by name.
+# Without this, only an absolute-path `open -a /path/to/App.app` works.
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
+if [[ -x "$LSREGISTER" ]]; then
+  "$LSREGISTER" -f "$APP_DIR" >/dev/null 2>&1 || true
+fi
+
 echo "==> Built $APP_DIR"
 echo
-echo "Open a file with it:"
+echo "Open a file with it (any of these work):"
+echo "  open -a MarkdownViewer DESIGN.md            # name lookup (after lsregister)"
 echo "  open -a \"$APP_DIR\" DESIGN.md"
-echo "Or set as default for .md:"
-echo "  (right-click a .md in Finder → Get Info → Open with → MarkdownViewer)"
+echo "  open DESIGN.md -a \"$APP_DIR\""
+echo
+echo "Right-click a .md file in Finder → Open With → MarkdownViewer"
