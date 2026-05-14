@@ -36,7 +36,7 @@ struct SidebarView: View {
             }
         }
         .frame(minWidth: 180, idealWidth: 240)
-        .background(Color(nsColor: .underPageBackgroundColor))
+        .background(Color(nsColor: .textBackgroundColor))
         .background(
             SidebarKeyMonitor(
                 isActive: sidebar.isVisible && !model.isPalettePresented
@@ -65,7 +65,17 @@ struct SidebarView: View {
     }
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 6) {
+            if canGoUp {
+                Button(action: goUp) {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 10, weight: .semibold))
+                        .frame(width: 18, height: 18)
+                }
+                .buttonStyle(.borderless)
+                .help("Open parent folder")
+                .accessibilityLabel("Open parent folder")
+            }
             Text(sidebar.rootURL?.lastPathComponent ?? "Files")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.secondary)
@@ -79,6 +89,21 @@ struct SidebarView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
+    }
+
+    /// True when the current root has a parent we can navigate to (not `/`).
+    private var canGoUp: Bool {
+        guard let root = sidebar.rootURL else { return false }
+        let parent = root.deletingLastPathComponent()
+        return parent.path != root.path  // false at filesystem root
+    }
+
+    private func goUp() {
+        guard let root = sidebar.rootURL else { return }
+        let parent = root.deletingLastPathComponent()
+        if parent.path != root.path {
+            model.openFolder(parent)
+        }
     }
 }
 
