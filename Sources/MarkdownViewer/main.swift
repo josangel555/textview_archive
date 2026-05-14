@@ -29,22 +29,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         window.makeKeyAndOrderFront(nil)
         self.window = window
 
-        // Open file from argv if provided.
+        // Restore last-opened folder (silently no-ops if path no longer exists).
+        model.restorePreviousFolderIfAvailable()
+
+        // Open file from argv if provided. Detects folder vs file.
         let args = CommandLine.arguments.dropFirst()
         if let path = args.first {
             let expanded = (path as NSString).expandingTildeInPath
-            model.open(url: URL(fileURLWithPath: expanded))
-            window.title = model.windowTitle
+            let url = URL(fileURLWithPath: expanded)
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: expanded, isDirectory: &isDir) {
+                if isDir.boolValue {
+                    model.openFolder(url)
+                } else {
+                    model.open(url: url)
+                }
+                window.title = model.windowTitle
+            }
         }
 
         NSApp.activate()
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        if let url = urls.first {
-            model.open(url: url)
-            window?.title = model.windowTitle
+        for url in urls {
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) else {
+                continue
+            }
+            if isDir.boolValue {
+                model.openFolder(url)
+            } else {
+                model.open(url: url)
+            }
         }
+        window?.title = model.windowTitle
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -76,6 +95,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func toggleSidebar(_ sender: Any?) {
         model.sidebar.toggleVisibility()
+    }
+
+    @objc func showPalette(_ sender: Any?) {
+        model.showPalette()
     }
 
     @objc func toggleViewMode(_ sender: Any?) {
@@ -252,6 +275,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sidebarItem.keyEquivalentModifierMask = [.command, .control]
         sidebarItem.target = self
         viewMenu.addItem(sidebarItem)
+
+        viewMenu.addItem(.separator())
+        let paletteItem = NSMenuItem(
+            title: "Quick Open…",
+            action: #selector(showPalette(_:)),
+            keyEquivalent: "k"
+        )
+        paletteItem.target = self
+        viewMenu.addItem(paletteItem)
         viewMenuItem.submenu = viewMenu
 
         let windowMenuItem = NSMenuItem()

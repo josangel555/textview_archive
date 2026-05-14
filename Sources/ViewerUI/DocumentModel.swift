@@ -11,20 +11,28 @@ public final class DocumentModel: ObservableObject {
     @Published public private(set) var tabs: TabsState = .init()
     @Published public private(set) var windowTitle: String = "MarkdownViewer"
     @Published public private(set) var recents: [HistoryEntry] = []
+    @Published public var sidebarWidth: Double {
+        didSet { preferences.setSidebarWidth(sidebarWidth) }
+    }
+    @Published public var isPalettePresented: Bool = false
     public let sidebar: SidebarModel
 
     private let controller: DocumentController
     public let history: HistoryStore
+    private let preferences: PreferencesStore
 
     public init(
         controller: DocumentController = DocumentController(),
         history: HistoryStore = HistoryStore(storeURL: HistoryStore.defaultStoreURL()),
-        sidebar: SidebarModel = SidebarModel()
+        sidebar: SidebarModel = SidebarModel(),
+        preferences: PreferencesStore = PreferencesStore()
     ) {
         self.controller = controller
         self.history = history
         self.sidebar = sidebar
+        self.preferences = preferences
         self.recents = history.recent()
+        self.sidebarWidth = preferences.sidebarWidth
     }
 
     public func openFolder(_ url: URL) {
@@ -32,7 +40,24 @@ public final class DocumentModel: ObservableObject {
         sidebar.setRoot(resolved)
         history.record(url: resolved, kind: .folder)
         recents = history.recent()
+        preferences.lastFolderURL = resolved
     }
+
+    /// Restores the most recently opened folder (if any). Call from app launch.
+    public func restorePreviousFolderIfAvailable() {
+        guard let url = preferences.lastFolderURL,
+              FileManager.default.fileExists(atPath: url.path) else { return }
+        openFolder(url)
+    }
+
+    public func setSidebarWidth(_ width: Double) {
+        let clamped = min(max(width, PreferencesStore.minSidebarWidth),
+                          PreferencesStore.maxSidebarWidth)
+        sidebarWidth = clamped
+    }
+
+    public func showPalette() { isPalettePresented = true }
+    public func dismissPalette() { isPalettePresented = false }
 
     // MARK: Derived from current tab
 

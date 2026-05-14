@@ -13,24 +13,34 @@ public struct ContentView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            TabBar(model: model)
-            Divider()
-            ModeBar(model: model)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-            Divider()
-            HStack(spacing: 0) {
-                if model.sidebar.isVisible {
-                    SidebarView(sidebar: model.sidebar, model: model)
-                        .frame(width: 240)
-                    Divider()
+        ZStack {
+            VStack(spacing: 0) {
+                TabBar(model: model)
+                Divider()
+                ModeBar(model: model)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                Divider()
+                HStack(spacing: 0) {
+                    if model.sidebar.isVisible {
+                        DraggableSidebar(model: model)
+                        Divider()
+                    }
+                    content
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                content
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .frame(minWidth: 600, minHeight: 360)
+
+            if model.isPalettePresented {
+                Color.black.opacity(0.18)
+                    .ignoresSafeArea()
+                    .onTapGesture { model.dismissPalette() }
+                CommandPaletteView(model: model)
+                    .padding(.top, 80)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         }
-        .frame(minWidth: 600, minHeight: 360)
     }
 
     @ViewBuilder
