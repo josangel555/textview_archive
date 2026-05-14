@@ -62,6 +62,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc func toggleViewMode(_ sender: Any?) {
+        model.toggleViewMode()
+    }
+
     private func buildMenu() {
         let mainMenu = NSMenu()
 
@@ -102,6 +106,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             keyEquivalent: "w"
         ))
         fileMenuItem.submenu = fileMenu
+
+        let viewMenuItem = NSMenuItem()
+        mainMenu.addItem(viewMenuItem)
+        let viewMenu = NSMenu(title: "View")
+        let toggleItem = NSMenuItem(
+            title: "Toggle Rendered / Source",
+            action: #selector(toggleViewMode(_:)),
+            keyEquivalent: "r"
+        )
+        toggleItem.keyEquivalentModifierMask = [.command, .shift]
+        toggleItem.target = self
+        viewMenu.addItem(toggleItem)
+        viewMenuItem.submenu = viewMenu
 
         let editMenuItem = NSMenuItem()
         mainMenu.addItem(editMenuItem)

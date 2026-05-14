@@ -1,25 +1,77 @@
 import SwiftUI
+import ViewerKit
 import ViewerCore
 
 public struct ContentView: View {
     @ObservedObject var model: DocumentModel
+    private let renderer = HTMLRenderer()
+    private let stylesheet: String
 
     public init(model: DocumentModel) {
         self.model = model
+        self.stylesheet = MarkdownStylesheet.load()
     }
 
     public var body: some View {
-        Group {
-            switch model.state {
-            case .empty:
-                EmptyStateView()
-            case .loaded(let file):
-                TextDisplayView(text: file.contents)
-            case .error(let failure):
-                ErrorView(failure: failure)
-            }
+        VStack(spacing: 0) {
+            ModeBar(model: model)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+            Divider()
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(minWidth: 480, minHeight: 320)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch model.state {
+        case .empty:
+            EmptyStateView()
+        case .loaded(let file):
+            loadedView(for: file)
+        case .error(let failure):
+            ErrorView(failure: failure)
+        }
+    }
+
+    @ViewBuilder
+    private func loadedView(for file: TextFile) -> some View {
+        let category = FileTypeDetector.category(for: file.url)
+        if category == .markdown && model.viewMode == .rendered {
+            MarkdownRenderedView(
+                html: renderer.renderPage(file.contents, stylesheet: stylesheet),
+                baseURL: file.url.deletingLastPathComponent()
+            )
+        } else {
+            TextDisplayView(text: file.contents)
+        }
+    }
+}
+
+struct ModeBar: View {
+    @ObservedObject var model: DocumentModel
+
+    var body: some View {
+        HStack(spacing: 12) {
+            if model.supportsViewModeToggle {
+                Picker("", selection: $model.viewMode) {
+                    Text("Rendered").tag(ViewMode.rendered)
+                    Text("Source").tag(ViewMode.source)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 180)
+            }
+            Spacer()
+            Text(model.windowTitle)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .frame(height: 22)
     }
 }
 

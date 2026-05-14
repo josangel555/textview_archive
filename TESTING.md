@@ -20,21 +20,21 @@ swift test --filter ViewerKitTests
 swift test --filter ViewerCoreTests.DocumentControllerTests/test_oversizedFile_reportsSizeInMB
 ```
 
-## Current coverage (Phase 0.4)
+## Current coverage (Phase 1)
 
-- **ViewerKitTests/FileTypeDetectorTests** — 7 cases. Extension table, case
-  insensitivity, UTType fallback, extensionless files.
-- **ViewerKitTests/InfoPlistTests** — 7 cases. Bundle plist parseable,
-  required scalar keys, document types declare markdown + plain text, version
-  strings shaped sensibly.
-- **ViewerCoreTests/TextFileLoaderTests** — 5 cases. UTF-8 / Latin-1 / size
-  cap / missing file / empty file.
-- **ViewerCoreTests/DocumentControllerTests** — 4 cases. State mapping,
-  human-readable error messages.
-- **scripts/verify-app.sh** — 15 structural assertions on the built bundle
-  (executable bit, plist lint, required keys, document type UTIs).
+- **ViewerKitTests/FileTypeDetectorTests** — 7 cases.
+- **ViewerKitTests/InfoPlistTests** — 7 cases.
+- **ViewerCoreTests/TextFileLoaderTests** — 5 cases.
+- **ViewerCoreTests/DocumentControllerTests** — 4 cases.
+- **ViewerCoreTests/HTMLRendererTests** — 20 cases. Blocks (headings, lists,
+  blockquote, code fences w/ + w/o language, table, hr), inline (em, strong,
+  strikethrough, inline code, link incl. href escaping, image), text-escape
+  table, GFM strikethrough, page wrapper with stylesheet, complex round-trip.
+- **scripts/verify-app.sh** — 17 structural assertions on the built bundle
+  (executable bit, plist lint, required keys, document type UTIs, ViewerUI
+  resource bundle + markdown.css presence).
 
-Total: **23 swift cases, ~40 ms** + bundle verify script.
+Total: **43 swift cases, ~45 ms** + bundle verify script.
 
 ## What is *not* yet tested
 

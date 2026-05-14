@@ -10,10 +10,23 @@ let package = Package(
         .library(name: "ViewerUI", targets: ["ViewerUI"]),
         .executable(name: "MarkdownViewer", targets: ["MarkdownViewer"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/apple/swift-markdown.git", from: "0.3.0"),
+    ],
     targets: [
         .target(name: "ViewerKit"),
-        .target(name: "ViewerCore", dependencies: ["ViewerKit"]),
-        .target(name: "ViewerUI", dependencies: ["ViewerKit", "ViewerCore"]),
+        .target(
+            name: "ViewerCore",
+            dependencies: [
+                "ViewerKit",
+                .product(name: "Markdown", package: "swift-markdown"),
+            ]
+        ),
+        .target(
+            name: "ViewerUI",
+            dependencies: ["ViewerKit", "ViewerCore"],
+            resources: [.process("Resources")]
+        ),
         .executableTarget(
             name: "MarkdownViewer",
             dependencies: ["ViewerKit", "ViewerCore", "ViewerUI"]

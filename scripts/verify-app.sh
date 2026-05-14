@@ -56,5 +56,13 @@ echo "$dt_xml" | grep -q "public.plain-text" \
   || fail "CFBundleDocumentTypes does not declare public.plain-text"
 pass "declares public.plain-text"
 
+# Resource bundles (SPM-generated .bundle dirs for targets with resources).
+res_bundle="$APP_DIR/Contents/Resources/MarkdownViewer_ViewerUI.bundle"
+[[ -d "$res_bundle" ]] || fail "ViewerUI resource bundle missing at $res_bundle"
+pass "ViewerUI resource bundle present"
+
+[[ -f "$res_bundle/markdown.css" ]] || fail "markdown.css not in resource bundle"
+pass "markdown.css present in resource bundle"
+
 echo
 echo "==> All bundle checks passed"

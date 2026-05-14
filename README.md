@@ -7,8 +7,11 @@ See [`DESIGN.md`](./DESIGN.md) for the full plan.
 
 ## Status
 
-Phase 0 complete — skeleton, AppKit window, NSTextView display, CI workflow.
-Next: Phase 0.4 (`.app` bundle), Phase 1 (markdown rendering via WKWebView).
+Phase 0 + Phase 1 complete — `.app` bundle, NSTextView for plain text, WKWebView
+rendering of markdown (CommonMark + GFM tables/strikethrough) with bundled CSS
+that follows light/dark. `⇧⌘R` toggles Source / Rendered.
+
+Next: Phase 2 — tabs, sidebar, history.
 
 See [`DESIGN.md` §10](./DESIGN.md) for the up-to-date roadmap.
 

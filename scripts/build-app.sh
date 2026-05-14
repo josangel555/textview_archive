@@ -34,6 +34,14 @@ mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
 cp "$BIN_PATH" "$CONTENTS/MacOS/$APP_NAME"
 cp "$SCRIPT_DIR/Info.plist" "$CONTENTS/Info.plist"
 
+# Copy SPM-generated resource bundles (one per target with resources, e.g.
+# MarkdownViewer_ViewerUI.bundle containing markdown.css).
+shopt -s nullglob
+for bundle in "$BIN_DIR"/*.bundle; do
+  cp -R "$bundle" "$CONTENTS/Resources/"
+done
+shopt -u nullglob
+
 plutil -lint "$CONTENTS/Info.plist"
 
 # Ad-hoc sign so Launch Services treats it as a real bundle (and survives
