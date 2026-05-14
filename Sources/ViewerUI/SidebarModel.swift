@@ -80,21 +80,22 @@ public final class SidebarModel: ObservableObject {
     }
 
     public func toggleExpansion(_ url: URL) {
-        if expanded.contains(url) {
-            expanded.remove(url)
+        let key = normalize(url)
+        if expanded.contains(key) {
+            expanded.remove(key)
         } else {
-            expanded.insert(url)
-            ensureLoaded(url: url)
+            expanded.insert(key)
+            ensureLoaded(url: key)
         }
     }
 
     public func isExpanded(_ url: URL) -> Bool {
-        expanded.contains(url)
+        expanded.contains(normalize(url))
     }
 
     /// Cache-only read. Safe to call from SwiftUI bodies; never does IO.
     public func children(of url: URL) -> [FileNode] {
-        childrenCache[url] ?? []
+        childrenCache[normalize(url)] ?? []
     }
 
     /// Loads (synchronously) and caches the directory's children if not yet
@@ -102,10 +103,15 @@ public final class SidebarModel: ObservableObject {
     /// from a SwiftUI body.
     @discardableResult
     public func ensureLoaded(url: URL) -> [FileNode] {
-        if let cached = childrenCache[url] { return cached }
-        let kids = (try? service.children(of: url, includeHidden: includeHidden)) ?? []
-        childrenCache[url] = kids
+        let key = normalize(url)
+        if let cached = childrenCache[key] { return cached }
+        let kids = (try? service.children(of: key, includeHidden: includeHidden)) ?? []
+        childrenCache[key] = kids
         return kids
+    }
+
+    private func normalize(_ url: URL) -> URL {
+        url.standardizedFileURL.resolvingSymlinksInPath()
     }
 
     public func clearCache() {

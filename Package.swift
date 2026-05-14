@@ -33,5 +33,9 @@ let package = Package(
         ),
         .testTarget(name: "ViewerKitTests", dependencies: ["ViewerKit"]),
         .testTarget(name: "ViewerCoreTests", dependencies: ["ViewerCore"]),
+        .testTarget(
+            name: "ViewerUITests",
+            dependencies: ["ViewerUI", "ViewerCore", "ViewerKit"]
+        ),
     ]
 )
