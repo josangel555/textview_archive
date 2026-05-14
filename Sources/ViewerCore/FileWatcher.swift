@@ -16,7 +16,6 @@ public final class FileWatcher: @unchecked Sendable {
     private let handler: Handler
     private let queue: DispatchQueue
     private var source: DispatchSourceFileSystemObject?
-    private var fileDescriptor: CInt = -1
     private var stopped: Bool = false
 
     public init(url: URL, queue: DispatchQueue = .main, handler: @escaping Handler) throws {
@@ -58,7 +57,6 @@ public final class FileWatcher: @unchecked Sendable {
         }
         src.setCancelHandler { [fd] in close(fd) }
         src.resume()
-        fileDescriptor = fd
         source = src
     }
 

@@ -61,7 +61,12 @@ public final class SidebarModel: ObservableObject {
         }
         gitRepoRoot = repoRoot
         let service = git
-        Task.detached(priority: .userInitiated) {
+        // CRIT-5: capture the repo root as a token so the main-actor hop
+        // can refuse to write stale results if `setRoot(_:)` switched us
+        // to a different folder while git was running. Weak-self so the
+        // detached Task doesn't keep this model alive across shutdown.
+        let token = repoRoot
+        Task.detached(priority: .userInitiated) { [weak self] in
             let entries = (try? service.status(at: repoRoot)) ?? []
             var map: [URL: GitStatusEntry.Status] = [:]
             for entry in entries {
@@ -70,6 +75,8 @@ public final class SidebarModel: ObservableObject {
                 map[url] = entry.status
             }
             await MainActor.run {
+                guard let self else { return }
+                guard self.gitRepoRoot == token else { return }
                 self.gitStatuses = map
             }
         }

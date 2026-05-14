@@ -21,6 +21,7 @@ public final class DocumentModel: ObservableObject {
     public let history: HistoryStore
     private let preferences: PreferencesStore
     private var fileWatcher: FileWatcher?
+    private var watchedURL: URL?
 
     public init(
         controller: DocumentController = DocumentController(),
@@ -85,8 +86,8 @@ public final class DocumentModel: ObservableObject {
 
     public var viewModeBinding: Binding<ViewMode> {
         Binding(
-            get: { [unowned self] in self.currentViewMode },
-            set: { [unowned self] in self.setCurrentViewMode($0) }
+            get: { [weak self] in self?.currentViewMode ?? .rendered },
+            set: { [weak self] in self?.setCurrentViewMode($0) }
         )
     }
 
@@ -108,25 +109,46 @@ public final class DocumentModel: ObservableObject {
     }
 
     /// Re-reads the current tab's file and refreshes its state. Used by the
-    /// file watcher and the menu's "Reload" item.
+    /// menu's "Reload" item and (indirectly) by the file watcher.
     public func reloadCurrentFile() {
         guard let i = tabs.selectedIndex, tabs.tabs.indices.contains(i),
               let url = tabs.tabs[i].url else { return }
+        reload(url: url, at: i)
+    }
+
+    /// CRIT-4: only reload when the currently-selected tab's URL still
+    /// matches the URL the file watcher was bound to. Without this, an
+    /// in-flight watcher event for a file the user just navigated away
+    /// from would silently rewrite a different tab's state.
+    private func reloadCurrentFile(matching watchedURL: URL) {
+        guard let i = tabs.selectedIndex,
+              tabs.tabs.indices.contains(i),
+              tabs.tabs[i].url == watchedURL else { return }
+        reload(url: watchedURL, at: i)
+    }
+
+    private func reload(url: URL, at index: Int) {
         let state = controller.open(url: url)
-        var t = tabs.tabs[i]
+        var t = tabs.tabs[index]
         t.state = state
-        tabs.replace(at: i, with: t)
+        tabs.replace(at: index, with: t)
         updateDerived()
     }
 
     private func startWatchingCurrentFile() {
+        let url = currentURL
+        // B9: idempotent — no-op if already watching the same URL.
+        if fileWatcher != nil && watchedURL == url { return }
         fileWatcher?.stop()
         fileWatcher = nil
-        guard let url = currentURL,
-              FileManager.default.fileExists(atPath: url.path) else { return }
+        watchedURL = url
+        guard let url, FileManager.default.fileExists(atPath: url.path) else { return }
+        // CRIT-4: capture the URL the watcher is bound to so the handler
+        // can verify the user is still viewing it before reloading.
+        let boundURL = url
         fileWatcher = try? FileWatcher(url: url, queue: .main) { [weak self] in
             Task { @MainActor in
-                self?.reloadCurrentFile()
+                self?.reloadCurrentFile(matching: boundURL)
             }
         }
     }

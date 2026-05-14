@@ -143,19 +143,6 @@ private struct FileRowView: View {
         model.currentURL == node.url
     }
 
-    private func gitColor(_ status: GitStatusEntry.Status) -> Color {
-        switch status {
-        case .modified:   return .orange
-        case .added:      return .green
-        case .deleted:    return .red
-        case .renamed:    return .blue
-        case .copied:     return .blue
-        case .untracked:  return .secondary
-        case .ignored:    return .secondary
-        case .conflicted: return .red
-        }
-    }
-
     private func icon(for node: FileNode) -> String {
         if node.isDirectory {
             return sidebar.isExpanded(node.url) ? "folder.fill" : "folder"
