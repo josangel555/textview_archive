@@ -144,4 +144,29 @@ final class FindEngineTests: XCTestCase {
     func test_nextMatch_emptyReturnsNil() {
         XCTAssertNil(FindEngine.nextMatch(in: [], after: 0))
     }
+
+    // P11 — line/col computed in O(N) total. Pin: many matches in a
+    // long file still produces correct line/col without quadratic cost.
+    func test_lineColumn_manyMatchesAcrossManyLines() throws {
+        var text = ""
+        for i in 0..<100 {
+            text += "line\(i) hit here\n"
+        }
+        let matches = try engine.search(in: text, query: FindQuery(pattern: "hit"))
+        XCTAssertEqual(matches.count, 100)
+        XCTAssertEqual(matches.first?.line, 1)
+        XCTAssertEqual(matches.last?.line, 100)
+        for (i, m) in matches.enumerated() {
+            XCTAssertEqual(m.line, i + 1, "match #\(i) on wrong line")
+        }
+    }
+
+    func test_lineColumn_singleHit_in10kLineFile_isCorrect() throws {
+        let prefix = Array(repeating: "noise\n", count: 9999).joined()
+        let text = prefix + "needle"
+        let matches = try engine.search(in: text, query: FindQuery(pattern: "needle"))
+        XCTAssertEqual(matches.count, 1)
+        XCTAssertEqual(matches[0].line, 10000)
+        XCTAssertEqual(matches[0].column, 1)
+    }
 }

@@ -146,6 +146,17 @@ struct HTMLVisitor: MarkupVisitor {
         return out
     }
 
+    /// A9 — Raw HTML pass-through. We deliberately emit CommonMark's
+    /// HTMLBlock / InlineHTML payloads verbatim so authored markdown can
+    /// embed legitimate HTML (figures, asides, etc). The trust assumption is
+    /// "the markdown file is something the user opened", and the WKWebView
+    /// host neutralizes the dangerous payloads via:
+    ///  • allowsContentJavaScript = false (no inline `<script>` execution)
+    ///  • CSP `<meta>` injected by renderPage (no remote resources,
+    ///    no iframes/objects/forms/connect)
+    /// If we ever render markdown from a truly untrusted source (network
+    /// fetch, etc.), this method should be swapped for one that sanitizes
+    /// against an allowlist.
     mutating func visitHTMLBlock(_ html: HTMLBlock) -> String {
         html.rawHTML
     }

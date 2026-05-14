@@ -56,11 +56,35 @@ public struct FindEngine: Sendable {
         let nsText = text as NSString
         let fullRange = NSRange(location: 0, length: nsText.length)
 
+        // P11: compute line/col in a single sweep across matches instead of
+        // walking from 0 to each match's location independently. That was
+        // O(M·N) for M matches in an N-char text (catastrophic for a regex
+        // with thousands of hits in a megabyte log). Now O(N): we advance a
+        // cursor monotonically alongside the (already-sorted) match list.
         var matches: [FindMatch] = []
         regex.enumerateMatches(in: text, options: [], range: fullRange) { result, _, _ in
             guard let r = result, r.range.location != NSNotFound else { return }
-            let (line, column) = Self.lineColumn(in: nsText, location: r.range.location)
-            matches.append(FindMatch(range: r.range, line: line, column: column))
+            matches.append(FindMatch(range: r.range, line: 0, column: 0))  // line/col filled below
+        }
+        guard !matches.isEmpty else { return matches }
+
+        var line = 1
+        var lineStart = 0
+        var cursor = 0
+        for i in 0..<matches.count {
+            let target = matches[i].range.location
+            while cursor < target && cursor < nsText.length {
+                if nsText.character(at: cursor) == 0x0A {
+                    line += 1
+                    lineStart = cursor + 1
+                }
+                cursor += 1
+            }
+            matches[i] = FindMatch(
+                range: matches[i].range,
+                line: line,
+                column: target - lineStart + 1
+            )
         }
         return matches
     }
@@ -100,20 +124,4 @@ public struct FindEngine: Sendable {
         }
     }
 
-    private static func lineColumn(in nsText: NSString, location: Int) -> (Int, Int) {
-        var line = 1
-        var lineStart = 0
-        var i = 0
-        let end = min(location, nsText.length)
-        while i < end {
-            let ch = nsText.character(at: i)
-            if ch == 0x0A { // \n
-                line += 1
-                lineStart = i + 1
-            }
-            i += 1
-        }
-        let column = location - lineStart + 1
-        return (line, column)
-    }
 }
