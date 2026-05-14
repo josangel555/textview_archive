@@ -4,6 +4,74 @@ Six review agents ran in parallel across distinct dimensions on 2026-05-14
 after commit `547c3ec`. Total raw findings ≈ 250. This file synthesizes the
 **top items by severity × dimension**, then ranks the unified backlog.
 
+## Status snapshot (after the "address all of these" pass)
+
+**All 8 CRITs addressed**, plus the bulk of Important items:
+
+| ID | Status | Commit |
+|---|---|---|
+| CRIT-1 CSP + scheme allowlist | ✅ done | e646a7b (HTMLRenderer) + c181b38 (WKWebView policy) |
+| CRIT-2 git env + flags | ✅ done | 1980544 |
+| CRIT-3 git pipe deadlock | ✅ done | 1980544 |
+| CRIT-4 watcher URL race | ✅ done | c284bc2 |
+| CRIT-5 refreshGitStatus race | ✅ done | c284bc2 |
+| CRIT-6 sidebar/tab a11y | ✅ partial (Button semantics + labels) | 2b15903 |
+| CRIT-7 ClaudeLogParser thinking | ✅ done | d9cfe7e |
+| CRIT-8 heading anchor IDs | ✅ done | e646a7b |
+| A7, A8 dead code | ✅ done | c284bc2 |
+| A5 windowTitle Combine binding | ✅ done | 5617c55 |
+| A6 openPath helper | ✅ done | 5617c55 |
+| A9 raw-HTML doc note | ✅ done | 5675959 |
+| A10 / B13 fuzzy tie stability | ✅ done | e325368 |
+| B3 viewModeBinding weak self | ✅ done | c284bc2 |
+| B4 UTF-16 BOM detection | ✅ done | 9e6be7b |
+| B5 binary blob guard | ✅ done | 9e6be7b |
+| B6 git status path " -> " parse | ✅ done | 1980544 |
+| B7 git path quoting | ✅ done | 1980544 (core.quotePath=false) |
+| B9 watcher idempotent rotation | ✅ done | c284bc2 |
+| B19 argv cwd resolution | ✅ done | b54a1ca |
+| B20 window centering on launch | ✅ done | b54a1ca |
+| P3 stylesheet static let | ✅ done | e515564 |
+| P9 cached isDirectory | ✅ done | e515564 |
+| P11 lineColumn O(M·N) → O(N) | ✅ done | 5675959 |
+| P15 sidebar-width debounce | ✅ done | e515564 |
+| S5 / F-06 scheme filter on hrefs | ✅ done | e646a7b |
+| S8 history file size cap | ✅ done | b54a1ca |
+| S6 / S7 ClaudeLogParser caps | ✅ done | d9cfe7e |
+| T1 Coordinator load count | ✅ done | c181b38 |
+| T3 FileWatcher de-flake | ✅ done | 7863253 |
+| T4 fuzzy tie stability test | ✅ done | e325368 |
+| T5 TabsState move round-trip | ✅ done | e325368 |
+| T6 refreshGitStatus test | ✅ done | 6c70e1f |
+| T7 watcher rotation test | ✅ done | 6c70e1f |
+| T9 locale-stable MB message | ✅ done | 9e6be7b |
+| T2 thinking-block test | ✅ done | d9cfe7e |
+| U6 wide-table overflow CSS | ✅ done | adaf8cf |
+| U7 Help / Find / Window menus | ✅ done | 1b2038c |
+| U8 Empty/Error state CTAs | ✅ done | adaf8cf |
+| U12 NSOpenPanel content types | ✅ done | 1b2038c |
+
+**Still open (deferred to follow-ups)**:
+
+| ID | Why deferred |
+|---|---|
+| CRIT-6 sidebar arrow-key keyboard nav | Needs FocusState + selection model; a separate UX session. Button focus traversal already works via Tab key. |
+| A1 rename Tab → DocumentTab | Touches many files including tests; risk vs. reward modest while SwiftUI.Tab on macOS 15+ only collides in TabBar.swift (already qualified). |
+| A2 / A3 / A4 module re-layout | Opportunistic — when the next phase forces touching these files. |
+| B1 / B2 watcher error recovery | Needs an `onLost` callback API + UI banner; coordinated with Phase 4.5 UI. |
+| B10 SidebarModel async IO | Whole-stack async — propagate `await` from setRoot/toggleExpansion. Worth a phase of its own. |
+| P1 per-tab HTML memoization | Stylesheet cache + WKWebView lastHTML check already cut the dominant cost. Gate on a measured benchmark. |
+| P2 async TextFileLoader | Needs a loading-state UI that doesn't exist yet. |
+| P4 line-numbers newline-offset cache | Optimization for files >10k lines; visible only at scroll. |
+| U-tier: drag-tab-reorder, context menus, drag-from-sidebar, palette match-highlight | UX backlog; sequenced. |
+| S14 sandbox + bookmarks | Phase 9. |
+| Tier 2/3 (snapshot/ViewInspector) | Per DESIGN.md §7 decision matrix. |
+| Tier 4 (tart VM) | Phase 17 infra task. |
+
+228 tests pass, ~3 s suite, all 17 bundle checks green.
+
+---
+
 Reviewer dimensions:
 1. **Architecture / design / consistency** — naming, modularity, dead code, API surface, doc accuracy.
 2. **Bugs / concurrency / Swift 6 strict concurrency** — races, weak/unowned, error swallowing, encoding edges.
