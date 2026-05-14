@@ -67,18 +67,28 @@ public enum FuzzyMatcher {
         query: String,
         by key: (T) -> String
     ) -> [T] {
-        if query.isEmpty { return items }
-        // Pair each match with its original index; on score ties, the lower
-        // index wins so input order is preserved.
-        let scored: [(index: Int, item: T, score: Int)] =
+        filterWithMatches(items, query: query, by: key).map { $0.item }
+    }
+
+    /// Like `filter` but also returns the `Match` (with matched character
+    /// indices) for each item — used by the palette to highlight matched
+    /// characters in the displayed string.
+    public static func filterWithMatches<T>(
+        _ items: [T],
+        query: String,
+        by key: (T) -> String
+    ) -> [(item: T, match: Match)] {
+        if query.isEmpty {
+            return items.map { ($0, Match(score: 0, matchedIndices: [])) }
+        }
+        let scored: [(index: Int, item: T, match: Match)] =
             items.enumerated().compactMap { (i, item) in
                 guard let m = match(query, against: key(item)) else { return nil }
-                return (i, item, m.score)
+                return (i, item, m)
             }
-        let sorted = scored.sorted { lhs, rhs in
-            if lhs.score != rhs.score { return lhs.score > rhs.score }
+        return scored.sorted { lhs, rhs in
+            if lhs.match.score != rhs.match.score { return lhs.match.score > rhs.match.score }
             return lhs.index < rhs.index
-        }
-        return sorted.map { $0.item }
+        }.map { ($0.item, $0.match) }
     }
 }

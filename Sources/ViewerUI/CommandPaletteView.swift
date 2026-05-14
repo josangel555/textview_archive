@@ -36,9 +36,10 @@ struct CommandPaletteView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            ForEach(Array(filtered.enumerated()), id: \.element.id) { index, entry in
+                            ForEach(Array(filtered.enumerated()), id: \.element.item.id) { index, hit in
                                 PaletteRow(
-                                    entry: entry,
+                                    entry: hit.item,
+                                    matchedIndices: hit.match.matchedIndices,
                                     isSelected: index == selectedIndex
                                 ) {
                                     selectedIndex = index
@@ -55,6 +56,18 @@ struct CommandPaletteView: View {
                         }
                     }
                 }
+            }
+            // Keyboard-shortcut hint footer (U-tier).
+            if !filtered.isEmpty {
+                Divider()
+                HStack(spacing: 12) {
+                    Text("↑↓ navigate").font(.caption2).foregroundStyle(.secondary)
+                    Text("↵ open").font(.caption2).foregroundStyle(.secondary)
+                    Text("esc cancel").font(.caption2).foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
             }
         }
         .frame(width: 540)
@@ -83,8 +96,8 @@ struct CommandPaletteView: View {
         .accessibilityHidden(true)
     }
 
-    private var filtered: [HistoryEntry] {
-        FuzzyMatcher.filter(model.recents, query: query) { $0.displayName }
+    private var filtered: [(item: HistoryEntry, match: FuzzyMatcher.Match)] {
+        FuzzyMatcher.filterWithMatches(model.recents, query: query) { $0.displayName }
     }
 
     private func moveSelection(_ delta: Int) {
@@ -95,7 +108,7 @@ struct CommandPaletteView: View {
 
     private func openSelected() {
         guard filtered.indices.contains(selectedIndex) else { return }
-        let entry = filtered[selectedIndex]
+        let entry = filtered[selectedIndex].item
         model.open(url: entry.url)
         model.dismissPalette()
         query = ""
@@ -115,6 +128,7 @@ struct CommandPaletteView: View {
 
 private struct PaletteRow: View {
     let entry: HistoryEntry
+    let matchedIndices: [Int]
     let isSelected: Bool
     let action: () -> Void
 
@@ -122,12 +136,11 @@ private struct PaletteRow: View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: entry.kind == .folder ? "folder" : "doc.text")
-                    .foregroundStyle(isSelected ? Color.white : .secondary)
+                    .foregroundStyle(isSelected ? .white : .secondary)
                     .frame(width: 16)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(entry.displayName)
+                    Text(attributedName)
                         .font(.system(size: 13))
-                        .foregroundStyle(isSelected ? Color.white : Color.primary)
                     Text(entry.url.path)
                         .font(.system(size: 11))
                         .foregroundStyle(isSelected ? Color.white.opacity(0.85) : .secondary)
@@ -142,5 +155,42 @@ private struct PaletteRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    /// Builds an AttributedString where matched characters are bolded (and
+    /// painted white-on-accent when the row is selected). Uses Unicode-safe
+    /// scalar iteration to align with the matcher's index domain.
+    private var attributedName: AttributedString {
+        let name = entry.displayName
+        var out = AttributedString(name)
+        let regularColor: Color = isSelected ? .white : .primary
+        let matchColor: Color = isSelected ? .white : .accentColor
+        out.foregroundColor = regularColor
+        let chars = Array(name.lowercased())
+        let setMatched = Set(matchedIndices)
+        for ti in 0..<chars.count {
+            guard let range = out.range(at: ti) else { continue }
+            if setMatched.contains(ti) {
+                out[range].foregroundColor = matchColor
+                out[range].font = .system(size: 13, weight: .semibold)
+            }
+        }
+        return out
+    }
+}
+
+private extension AttributedString {
+    /// Returns the AttributedString range covering character index `i` in
+    /// the source string. Linear scan; fine for short palette display names.
+    func range(at i: Int) -> Range<AttributedString.Index>? {
+        var idx = startIndex
+        var ci = 0
+        while idx < endIndex {
+            let next = characters.index(after: idx)
+            if ci == i { return idx..<next }
+            idx = next
+            ci += 1
+        }
+        return nil
     }
 }
