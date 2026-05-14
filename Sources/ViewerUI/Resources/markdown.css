@@ -94,7 +94,12 @@ li > p { margin: 0; }
 table {
     border-collapse: collapse;
     margin: 0 0 1em;
-    width: 100%;
+    /* U6: tables with many columns / wide cells should scroll within their
+       own container rather than blow past the body's max-width. */
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
+    width: max-content;
     font-size: 0.95em;
 }
 th, td {

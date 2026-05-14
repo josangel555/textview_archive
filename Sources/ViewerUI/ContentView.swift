@@ -83,7 +83,7 @@ public struct ContentView: View {
         case .loaded(let file):
             loadedView(for: file)
         case .error(let failure):
-            ErrorView(failure: failure)
+            ErrorView(failure: failure, model: model)
         }
     }
 
@@ -129,7 +129,7 @@ struct ModeBar: View {
 
 struct EmptyStateView: View {
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             Image(systemName: "doc.text")
                 .resizable()
                 .scaledToFit()
@@ -137,7 +137,18 @@ struct EmptyStateView: View {
                 .foregroundStyle(.secondary)
             Text("No file open")
                 .font(.title2)
-            Text("Press ⌘O or ⌘T, or pass a path on the command line.")
+            HStack(spacing: 12) {
+                Button("Open File…") {
+                    NSApp.sendAction(Selector(("openDocument:")), to: nil, from: nil)
+                }
+                .keyboardShortcut("o", modifiers: [.command])
+                Button("Open Folder…") {
+                    NSApp.sendAction(Selector(("openFolder:")), to: nil, from: nil)
+                }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+            }
+            Text("Or press ⌘K to search recents.")
+                .font(.caption)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -146,19 +157,30 @@ struct EmptyStateView: View {
 
 struct ErrorView: View {
     let failure: DocumentState.LoadFailure
+    @ObservedObject var model: DocumentModel
+
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
                 .resizable()
                 .scaledToFit()
                 .frame(width: 44, height: 44)
-                .foregroundStyle(.orange)
+                .foregroundStyle(Color(nsColor: .systemOrange))
             Text(failure.url.lastPathComponent)
                 .font(.title3)
             Text(failure.message)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
+            HStack(spacing: 12) {
+                Button("Reload") {
+                    model.reloadCurrentFile()
+                }
+                Button("Reveal in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([failure.url])
+                }
+            }
+            .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
