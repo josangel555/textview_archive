@@ -46,7 +46,9 @@ public struct TextDisplayView: NSViewRepresentable {
         guard let textView = scrollView.documentView as? NSTextView else { return }
         if textView.string != text {
             textView.string = text
-            scrollView.verticalRulerView?.needsDisplay = true
+            if let ruler = scrollView.verticalRulerView as? LineNumberRulerView {
+                ruler.invalidateLineCache()
+            }
         }
     }
 }
