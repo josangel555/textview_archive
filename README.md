@@ -7,7 +7,10 @@ See [`DESIGN.md`](./DESIGN.md) for the full plan.
 
 ## Status
 
-Phase 0 — skeleton. Opens and displays a text file.
+Phase 0 complete — skeleton, AppKit window, NSTextView display, CI workflow.
+Next: Phase 0.4 (`.app` bundle), Phase 1 (markdown rendering via WKWebView).
+
+See [`DESIGN.md` §10](./DESIGN.md) for the up-to-date roadmap.
 
 ## Requirements
 
@@ -42,10 +45,16 @@ Tests/
   ViewerCoreTests/
 ```
 
-## Working decisions (locked in for Phase 0)
+## Working decisions
 
 - macOS 14 deployment target
 - SPM-only, no Xcode project — text-editable everywhere
 - XCTest for now (swift-testing later)
 - Non-sandboxed dev builds
-- No external dependencies until Phase 1 (then `swift-markdown`)
+- Distribution: DMG direct, no Mac App Store (sandbox cost too high for early phases)
+
+### Dependency commitments (see DESIGN.md §2)
+
+Phase 1: `swift-markdown` (Apple). Phase 5b: `SwiftTreeSitter` + per-language grammars
+for unified syntax highlighting (§11). Git: shell out to `/usr/bin/git`, no libgit2.
+No JS in WKWebView (TreeSitter pre-renders to HTML spans).

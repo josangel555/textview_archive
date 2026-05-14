@@ -39,6 +39,11 @@ Total: **16 cases, ~35 ms**.
 | `DocumentModel` state transitions | Trivially correct now; revisit when it owns more (history, tabs) |
 | `AppDelegate` menu + window wiring | Needs Tier 4 VM E2E — Phase 3+ |
 | File argument handling at launch | Tier 4 |
+| Markdown AST → HTML rendering | Lands with Phase 1; Tier 1 (compare emitted HTML to fixture strings) |
+| `HighlightSpan` production (TreeSitter) | Phase 5b; Tier 1 (input source → expected `[span]`) |
+| `HTMLRenderer` span injection | Phase 5b; Tier 1 (input MD with fence → output HTML contains expected `<span class="hl-…">`) |
+| `FindEngine` regex / literal / glob | Phase 4.5; Tier 1 with golden inputs |
+| `FolderSearchEngine` async stream | Phase 4.6; Tier 1 using a temp directory tree |
 
 ## Conventions
 

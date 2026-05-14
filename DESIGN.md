@@ -52,19 +52,30 @@ Use `NSHostingView` to embed SwiftUI in AppKit, and `NSViewRepresentable` for Ap
 - **XCTest / XCUITest** — testing.
 
 ### Small Swift packages (Apple-maintained → counts as "native")
-- **`swift-markdown`** (apple/swift-markdown) — CommonMark + GFM AST parser. Use this rather than
-  shipping JS. We walk the AST and emit our own HTML for `WKWebView`. ~10k LoC, no transitive deps.
+- **`swift-markdown`** (apple/swift-markdown) — CommonMark + GFM AST parser. Phase 1. We walk
+  the AST and emit our own HTML for `WKWebView`. ~10k LoC, no transitive deps.
 - **`swift-cmark`** is a dep of swift-markdown (also Apple-vendored).
 
-### Optional third-party (defer; only if needed)
-- **swift-snapshot-testing** (pointfreeco) — for snapshot tests only, dev dependency.
-- **ViewInspector** — SwiftUI view introspection in tests, dev dependency.
-- **libgit2 via SwiftGit2** — only if shelling out to `git` proves too slow.
+### Third-party committed (Phase 5b)
+- **`SwiftTreeSitter`** (ChimeHQ) — Swift wrapper around TreeSitter C library.
+- **`tree-sitter-markdown`** + **`tree-sitter-markdown-inline`** — for source-mode highlighting
+  of `.md` files and for code-fence **language injection**.
+- **Per-language grammars** (added as we expand coverage): `tree-sitter-swift`,
+  `tree-sitter-python`, `tree-sitter-rust`, `tree-sitter-go`, `tree-sitter-typescript`,
+  `tree-sitter-json`, `tree-sitter-yaml`, `tree-sitter-bash`, `tree-sitter-html`,
+  `tree-sitter-c`. Each is a small Swift package wrapping a C grammar (~100 KB–2 MB).
 
-### Things to deliberately avoid
-- JS-based markdown libs (marked, markdown-it) — adds web baggage.
-- Syntax-highlighting via Highlight.js — pull in TreeSitter Swift bindings or hand-roll instead.
-  (Decision deferred to Phase 4.)
+### Third-party committed (testing only — dev deps)
+- **swift-snapshot-testing** (pointfreeco) — snapshot tests. Test target only.
+- **ViewInspector** — SwiftUI view introspection in tests. Test target only.
+
+### Rejected / deferred
+- **libgit2 / SwiftGit2** — **rejected**. Shell out to `/usr/bin/git`; revisit only if a perf
+  regression demands.
+- **JS markdown libs** (marked, markdown-it) — rejected; pull in `swift-markdown` instead.
+- **Highlight.js / Prism / Shiki in WKWebView** — rejected; TreeSitter pre-renders to HTML
+  spans at parse time (see §11).
+- **Sparkle** — deferred to Phase 9; consider DIY updater first.
 
 ---
 
@@ -276,15 +287,33 @@ Each phase = a shippable beta. Stop, dogfood, move on.
 - On change: re-render diff against last-rendered snapshot; flash new lines with a yellow→clear
   CSS animation; auto-scroll if user was at bottom (tail mode).
 
-### Phase 5 — Plaintext / code / HTML viewers (3 days)
+### Phase 4.5 — UnifiedFinder (3 days)
+- Replace native find with `FindEngine` + `FinderBar`; unified UI across NSTextView and WKWebView.
+- Regex, case/word toggles, match count, prev/next. See §12.
+
+### Phase 4.6 — Cross-file search (3 days)
+- `FolderSearchEngine` streams matches across the open folder; side panel groups by file.
+- Honors `.gitignore`. See §12.
+
+### Phase 5 — Plaintext / code / HTML viewers
+Split into two sub-phases so the engine swap doesn't gate basic functionality.
+
+**5a — Plaintext + minimal code highlighting (2–3 days)**
 - Plaintext: `NSTextView` non-editable, monospace, line numbers gutter.
-- Code: same view + a syntax highlighter. **Decision deferred**:
-  - Option A: ship pre-built grammars for ~12 languages via simple regex highlighter (good
-    enough, zero deps, ugly for tricky langs).
-  - Option B: TreeSitter Swift bindings — high quality, adds C deps.
-  - Option C: Highlight.js inside WKWebView — defeats purpose.
-  - Tentatively A → B if quality bites.
+- Code: same view, highlighted via Apple's **`SwiftSyntax`** for `.swift` and a tiny
+  regex highlighter for ~8 common languages (Python, JS/TS, JSON, YAML, Bash, Go, Rust,
+  Markdown source). Throwaway code; deleted in 5b.
 - HTML: `WKWebView` with `file://` base URL, JS disabled by default (opt-in per-tab).
+
+**5b — TreeSitter as the unified highlighter (~1 week)**
+- Adopt `SwiftTreeSitter` + grammars (see §2 commitment list).
+- Replace 5a's highlighter behind the same `Highlighter` protocol — no view-side changes.
+- Pulls three wins at once (see §11):
+  1. High-quality highlighting in code files.
+  2. Source-mode highlighting for markdown.
+  3. Code-fence highlighting **inside the rendered markdown HTML** via language injection
+     — `HTMLRenderer` emits `<span class="hl-X">` from spans at parse time.
+- Incremental reparse used by the file watcher (Phase 4) for cheap updates.
 
 ### Phase 6 — Hex viewer (1–2 days)
 - Custom `NSView` (Core Text). Memory-map files; show offset, hex, ASCII columns.
@@ -474,8 +503,157 @@ markdown_viewer/
 
 ## 10. Recommended Next Steps
 
-1. Confirm decisions in §8 (macOS version, sandbox stance, distribution).
-2. Spike Phase 0 — empty app + 3 packages + CI green.
-3. Spike Phase 1 — `swift-markdown` → HTML → WKWebView, side-by-side with source pane.
-4. Stand up tart base image in parallel (it takes a while to build a clean macOS image).
-5. After Phase 2 (tabs/history), pause: dogfood for a week before adding more.
+Done:
+1. ✅ Locked decisions from §8 (macOS 14, SPM-only, non-sandboxed dev, no telemetry, DMG distribution).
+2. ✅ Phase 0.1–0.3 — packages, NSTextView shows a text file, CI workflow in place.
+
+Up next (in order):
+3. **Phase 0.4** — `.app` bundle + `Info.plist` so `open -a MarkdownViewer file.md` works. Foundation for Phase 3 quick actions.
+4. **Phase 1** — `swift-markdown` → HTML → `WKWebView`, with Source/Rendered toggle.
+5. **Phase 2** — tabs, sidebar, history, `⌘O` palette. Pause + dogfood after this.
+6. **Phase 3** — UTI handlers, NSServices, `mdv` CLI, App Intents.
+7. **Phase 4** + **4.5** — file watcher with change-flash, then UnifiedFinder.
+8. **Phase 5a → 5b** — viewers with SwiftSyntax+regex, then TreeSitter wholesale (§11).
+9. **Phase 6** hex viewer, **Phase 7** git incrementally, **Phase 8** Claude activity timeline.
+10. **Phase 9** distribution.
+
+In parallel: stand up tart base image (it's slow to build, doesn't block any phase but is needed before Tier-4 CI gets useful).
+
+---
+
+## 11. Highlighting Architecture — One Producer, Two Render Surfaces
+
+Once TreeSitter lands (Phase 5b), the project has **two display surfaces** that both
+need syntax-highlighted output, and they consume the same span data in different ways.
+
+```
+                          ┌────────────────────────┐
+                          │  TreeSitter (producer) │
+                          │   text → spans         │
+                          │   [(range, capture)]   │
+                          └──────────┬─────────────┘
+                                     │ HighlightSpan[]   (pure data, Sendable)
+                ┌────────────────────┴────────────────────┐
+                ▼                                         ▼
+   ┌────────────────────────┐              ┌─────────────────────────────┐
+   │ HighlightedTextView    │              │ HTMLRenderer                │
+   │ (ViewerUI)             │              │ (ViewerCore)                │
+   │  NSTextStorage         │              │  emits <span class="hl-X">  │
+   │  .setAttributes(_,_)   │              │  inside <pre><code>         │
+   └──────────┬─────────────┘              └──────────────┬──────────────┘
+              ▼                                           ▼
+        NSTextView                                    WKWebView
+   (code files, source-mode markdown)          (rendered markdown)
+```
+
+### Why two paths
+
+Markdown's killer view is the rendered one — headings styled, tables drawn, prose
+flowing in a proportional font. That lives in `WKWebView` as HTML+CSS. **Code blocks
+inside that page are also HTML**, so their highlighting must be HTML `<span>`s with CSS
+classes; you can't drop in an `NSTextView` mid-page.
+
+Code files (`.swift`, `.py`, etc.) and the **Source** toggle on a markdown file are
+monospaced views in `NSTextView`. Same TreeSitter spans, applied as
+`NSAttributedString` attribute runs.
+
+### Component responsibilities
+
+| Component | Package | Role |
+|---|---|---|
+| `HighlightSpan` | ViewerKit | `{range: NSRange, capture: String}` — pure data |
+| `HighlightTheme` | ViewerKit | Codable mapping `capture → traits` (color, weight, italic). No `NSColor`; abstract trait names so it's testable. |
+| `Highlighter` protocol | ViewerCore | `func highlight(_ text: String, lang: Language) -> [HighlightSpan]` |
+| `TreeSitterHighlighter` | ViewerCore | Impl. Owns parser, runs queries, returns spans. Supports injections (markdown→rust etc.) |
+| `HTMLRenderer` | ViewerCore | Walks `swift-markdown` AST → HTML. On code fences, asks `Highlighter` for spans and wraps text in `<span class="hl-{capture}">`. |
+| `HighlightedTextView` | ViewerUI | NSViewRepresentable around NSTextView. Takes text + spans + theme; resolves theme to AppKit attributes; applies to `textStorage`. |
+| `markdown.css` | ViewerUI/Resources | Maps `.hl-keyword`, `.hl-string`, … to colors. Light + dark. |
+
+### Why the theme is split (capture → traits → AppKit colors)
+
+Keeps `HighlightTheme` testable without importing AppKit — Tier 1 can assert "this Rust
+snippet's `fn` keyword maps to capture `keyword.function`, which the theme says should
+be `bold + accentColor`." The conversion to `NSColor` / `NSFont` happens at the view
+boundary, where it always would.
+
+### Incremental updates (the real reason TreeSitter)
+
+When the file watcher (Phase 4) sees a change:
+1. `TreeSitterHighlighter` does an **incremental reparse** — μs even on huge files.
+2. New spans are diffed against the previous set.
+3. `HighlightedTextView` calls `textStorage.setAttributes(_:range:)` only on the
+   changed ranges; for `WKWebView` we re-render the affected block's HTML.
+
+Any non-incremental highlighter (regex, even SwiftSyntax full-reparse) loses this.
+
+### Migration path from today
+
+`TextDisplayView` (Phase 0.2, in place) is the seed. In 5b it becomes
+`HighlightedTextView` by:
+- accepting an optional `[HighlightSpan]` param (empty = plain monospaced, today's behavior),
+- accepting an optional `HighlightTheme`,
+- applying attributes in `updateNSView`.
+
+`ContentView` keeps picking the right viewer per file category; only the parameters change.
+
+---
+
+## 12. Find & Search
+
+### Today (Phase 0.2)
+We set `NSTextView.usesFindBar = true`. That gives the native macOS find bar (`⌘F`), with a
+gear menu for case-sensitive, whole-word, and **regex** matching. Free, polished, fine.
+
+### Why we'll replace it eventually
+Native `NSTextView` find only works inside a single text view. It does not help with:
+- **Cross-file search** ("find `TODO` across the open folder").
+- **Sidebar filter-as-you-type** ("show only files whose name matches `*.md`").
+- **Unified UX between NSTextView and WKWebView** — they have different built-in finders;
+  the rendered-markdown view uses `WKWebView.find(_:configuration:)` which doesn't do regex.
+- **Result list** — built-in find jumps one match at a time; many users want a side panel
+  with all matches.
+
+### Phased plan
+
+**Phase 0–4: stay native.** `usesFindBar` is enough.
+
+**Phase 4.5 (new) — UnifiedFinder (~3 days), lands after the file watcher**
+- New component `ViewerCore/FindEngine`:
+  - Pure logic. Input: text + query (`literal` / `regex` / `glob`) + flags (case, word).
+  - Output: `[FindMatch]` with byte ranges and line/column for display.
+  - Uses `NSRegularExpression`; literal/glob paths short-circuit for speed.
+  - Fully Tier 1 testable.
+- New component `ViewerUI/FinderBar`:
+  - SwiftUI overlay at top of the viewer pane.
+  - One UI that drives both NSTextView (via `textStorage` attribute runs to mark hits) and
+    WKWebView (via injected `<mark>` tags or scroll-to-line on the source).
+  - Match count, prev/next, "X of N", current-match highlight.
+- Same UI usable from sidebar to filter file list.
+
+**Phase 4.6 — Cross-file search (ripgrep-style, ~3 days)**
+- Walks the open folder using FSEvents-cached file list.
+- Streams matches into a side panel grouped by file.
+- Click → opens file with that match selected.
+- Excludes via `.gitignore` parsed by shelling out to `git check-ignore` (already on disk
+  for any git repo) or a simple gitignore parser if outside a repo.
+
+### Why split the phases
+4.5 is in-file polish — small, low-risk, deletable. 4.6 is a real feature with a UI panel.
+We get value from each independently.
+
+### What lives where
+
+| Component | Package | Role |
+|---|---|---|
+| `FindQuery` (literal/regex/glob + flags) | ViewerKit | Pure data |
+| `FindMatch` (range + line/col + matchedText) | ViewerKit | Pure data |
+| `FindEngine` | ViewerCore | Runs queries against `String` (single file) |
+| `FolderSearchEngine` | ViewerCore | Async stream of matches across a directory |
+| `FinderBar` | ViewerUI | The bar UI |
+| `SearchResultsPanel` | ViewerUI | Side panel for cross-file results |
+| Bridge to `WKWebView` | ViewerUI | Maps source-byte ranges → DOM via line numbers |
+
+### Out of scope
+- Find-and-replace (we don't edit).
+- Saved searches / search history (defer to v1.1).
+- Semantic / fuzzy file finder (`⌘P`-style) — easy to add later but not Phase 4.5.
