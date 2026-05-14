@@ -15,13 +15,24 @@ public final class FileWatcher: @unchecked Sendable {
     private let url: URL
     private let handler: Handler
     private let queue: DispatchQueue
+    private let reattachDelay: TimeInterval
     private var source: DispatchSourceFileSystemObject?
     private var stopped: Bool = false
 
-    public init(url: URL, queue: DispatchQueue = .main, handler: @escaping Handler) throws {
+    /// `reattachDelay` is the pause after a rename/delete event before the
+    /// watcher re-opens the path. Default 50 ms gives temp-and-rename atomic
+    /// writes (the common editor save pattern) time to settle on disk.
+    /// Tests pass 0 for determinism.
+    public init(
+        url: URL,
+        queue: DispatchQueue = .main,
+        reattachDelay: TimeInterval = 0.05,
+        handler: @escaping Handler
+    ) throws {
         self.url = url
         self.handler = handler
         self.queue = queue
+        self.reattachDelay = reattachDelay
         try attach()
     }
 
@@ -61,11 +72,16 @@ public final class FileWatcher: @unchecked Sendable {
     }
 
     private func reattachSoon() {
-        queue.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+        let work = { [weak self] in
             guard let self, !self.stopped else { return }
             self.source?.cancel()
             self.source = nil
             try? self.attach()
+        }
+        if reattachDelay <= 0 {
+            queue.async(execute: work)
+        } else {
+            queue.asyncAfter(deadline: .now() + reattachDelay, execute: work)
         }
     }
 }

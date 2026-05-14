@@ -74,20 +74,26 @@ final class FileWatcherTests: XCTestCase {
         let exp2 = expectation(description: "second event after re-attach")
         let counter = Counter()
 
-        let watcher = try FileWatcher(url: url, queue: .global()) {
+        // T3: reattachDelay=0 makes the test deterministic — we wait on
+        // expectations rather than guessing at the 50ms internal delay.
+        let watcher = try FileWatcher(url: url, queue: .global(), reattachDelay: 0) {
             let n = counter.tick()
             if n == 1 { exp.fulfill() }
             else if n >= 2 { exp2.fulfill() }
         }
         defer { watcher.stop() }
 
-        Thread.sleep(forTimeInterval: 0.1)
         // Atomic write — replaces inode via rename.
         try "v2".write(to: url, atomically: true, encoding: .utf8)
         wait(for: [exp], timeout: 2.0)
 
-        // Give the watcher time to re-attach (≈50 ms by design), then edit.
-        Thread.sleep(forTimeInterval: 0.2)
+        // After the watcher has reattached (no fixed wait — we just expect it
+        // to be ready by the time we issue the next write). Spin briefly to
+        // give the queue a chance to run reattach.
+        let reattachExpectation = expectation(description: "give queue a tick")
+        DispatchQueue.global().async { reattachExpectation.fulfill() }
+        wait(for: [reattachExpectation], timeout: 1.0)
+
         let fh = try FileHandle(forWritingTo: url)
         try fh.seekToEnd()
         try fh.write(contentsOf: Data(" more".utf8))
