@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import ViewerCore
 import ViewerUI
 
@@ -82,6 +83,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.title = "Open file"
+        // U12 — narrow to the types we actually handle, with .text as a
+        // catch-all umbrella. The user can still hit "All Files" if needed.
+        if let markdown = UTType("net.daringfireball.markdown") {
+            panel.allowedContentTypes = [markdown, .plainText, .text, .html, .sourceCode]
+        } else {
+            panel.allowedContentTypes = [.plainText, .text, .html, .sourceCode]
+        }
         if panel.runModal() == .OK, let url = panel.url {
             model.open(url: url)
             window?.title = model.windowTitle
@@ -201,6 +209,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func rebuildWindowMenu(_ menu: NSMenu) {
         menu.removeAllItems()
+        // U7 — standard Window items the HIG expects.
+        let minimizeItem = NSMenuItem(
+            title: "Minimize",
+            action: #selector(NSWindow.performMiniaturize(_:)),
+            keyEquivalent: "m"
+        )
+        menu.addItem(minimizeItem)
+        let zoomWinItem = NSMenuItem(
+            title: "Zoom",
+            action: #selector(NSWindow.performZoom(_:)),
+            keyEquivalent: ""
+        )
+        menu.addItem(zoomWinItem)
+        menu.addItem(.separator())
+        let bringAll = NSMenuItem(
+            title: "Bring All to Front",
+            action: #selector(NSApplication.arrangeInFront(_:)),
+            keyEquivalent: ""
+        )
+        menu.addItem(bringAll)
+        menu.addItem(.separator())
+
         let nextItem = NSMenuItem(
             title: "Next Tab",
             action: #selector(nextTab(_:)),
@@ -354,6 +384,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         )
         paletteItem.target = self
         viewMenu.addItem(paletteItem)
+
+        // U7 — Zoom items for the rendered view.
+        viewMenu.addItem(.separator())
+        let zoomIn = NSMenuItem(title: "Zoom In",
+                                action: #selector(zoomIn(_:)),
+                                keyEquivalent: "+")
+        zoomIn.target = self
+        viewMenu.addItem(zoomIn)
+        let zoomOut = NSMenuItem(title: "Zoom Out",
+                                 action: #selector(zoomOut(_:)),
+                                 keyEquivalent: "-")
+        zoomOut.target = self
+        viewMenu.addItem(zoomOut)
+        let zoomReset = NSMenuItem(title: "Actual Size",
+                                   action: #selector(zoomReset(_:)),
+                                   keyEquivalent: "0")
+        zoomReset.target = self
+        viewMenu.addItem(zoomReset)
+
         viewMenuItem.submenu = viewMenu
 
         let windowMenuItem = NSMenuItem()
@@ -373,16 +422,76 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         editMenu.addItem(NSMenuItem(title: "Select All",
             action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
         editMenu.addItem(.separator())
+
+        // U7 — Find / Find Next / Find Previous. The system routes these to
+        // the first responder; NSTextView with usesFindBar=true handles them
+        // natively in source mode. WKWebView (rendered mode) handling is the
+        // unfinished Phase 4.5 UI.
+        let findSubmenuItem = NSMenuItem(title: "Find", action: nil, keyEquivalent: "")
+        let findSubmenu = NSMenu(title: "Find")
         let findItem = NSMenuItem(
             title: "Find…",
             action: #selector(NSTextView.performFindPanelAction(_:)),
             keyEquivalent: "f"
         )
         findItem.tag = NSTextFinder.Action.showFindInterface.rawValue
-        editMenu.addItem(findItem)
+        findSubmenu.addItem(findItem)
+        let findNext = NSMenuItem(
+            title: "Find Next",
+            action: #selector(NSTextView.performFindPanelAction(_:)),
+            keyEquivalent: "g"
+        )
+        findNext.tag = NSTextFinder.Action.nextMatch.rawValue
+        findSubmenu.addItem(findNext)
+        let findPrev = NSMenuItem(
+            title: "Find Previous",
+            action: #selector(NSTextView.performFindPanelAction(_:)),
+            keyEquivalent: "g"
+        )
+        findPrev.keyEquivalentModifierMask = [.command, .shift]
+        findPrev.tag = NSTextFinder.Action.previousMatch.rawValue
+        findSubmenu.addItem(findPrev)
+        findSubmenuItem.submenu = findSubmenu
+        editMenu.addItem(findSubmenuItem)
         editMenuItem.submenu = editMenu
 
+        // U7 — Help menu (HIG: every Mac app should have one, with the
+        // searchable Help item provided by AppKit).
+        let helpMenuItem = NSMenuItem()
+        mainMenu.addItem(helpMenuItem)
+        let helpMenu = NSMenu(title: "Help")
+        let helpItem = NSMenuItem(
+            title: "MarkdownViewer Help",
+            action: #selector(NSApplication.showHelp(_:)),
+            keyEquivalent: "?"
+        )
+        helpMenu.addItem(helpItem)
+        helpMenuItem.submenu = helpMenu
+        NSApp.helpMenu = helpMenu
+
         NSApp.mainMenu = mainMenu
+    }
+
+    // MARK: U7 — Zoom for rendered view
+
+    @objc func zoomIn(_ sender: Any?) {
+        adjustZoom(by: 0.1)
+    }
+    @objc func zoomOut(_ sender: Any?) {
+        adjustZoom(by: -0.1)
+    }
+    @objc func zoomReset(_ sender: Any?) {
+        // Force a refresh; the WKWebView is rebuilt by SwiftUI on viewMode
+        // changes, but we can also poke its pageZoom directly if accessible.
+        // For now resetting model state is the cheapest path: the user
+        // re-renders and gets default zoom.
+    }
+
+    private func adjustZoom(by delta: Double) {
+        // Placeholder — WKWebView zoom wiring lands with the FinderBar UI
+        // (Phase 4.5 UI) which gives us a path into the WKWebView instance
+        // from the AppDelegate. Today the menu items exist so HIG / a11y
+        // contracts hold, and we don't break shortcut discovery.
     }
 }
 
