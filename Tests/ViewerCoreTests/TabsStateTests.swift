@@ -128,6 +128,43 @@ final class TabsStateTests: XCTestCase {
         XCTAssertEqual(s, before)
     }
 
+    func test_move_negativeOrOversizedTo_isNoOp() {
+        var s = TabsState(tabs: [makeTab("a"), makeTab("b"), makeTab("c")])
+        let before = s
+        s.move(from: 0, to: -1)
+        XCTAssertEqual(s, before)
+        s.move(from: 0, to: 99)
+        XCTAssertEqual(s, before)
+    }
+
+    func test_move_toEqualsFrom_isStableNoOp() {
+        var s = TabsState(tabs: [makeTab("a"), makeTab("b"), makeTab("c")])
+        let before = s
+        s.move(from: 1, to: 1)
+        XCTAssertEqual(s.tabs.map { $0.id }, before.tabs.map { $0.id })
+    }
+
+    // T5: round-trip — move a tab somewhere then move it back; original order returns.
+    func test_move_isReversible_acrossManyPairs() {
+        let names = ["a", "b", "c", "d"]
+        for from in 0..<names.count {
+            for to in 0...names.count {
+                if from == to || to == from + 1 { continue }
+                var s = TabsState(tabs: names.map(makeTab))
+                let originalIDs = s.tabs.map { $0.id }
+                s.move(from: from, to: to)
+                // Inverse move: where did the moved tab end up?
+                let movedID = originalIDs[from]
+                let newPos = s.tabs.firstIndex { $0.id == movedID }!
+                // Move it back to its original position.
+                let targetTo = from < newPos ? from : from + 1
+                s.move(from: newPos, to: targetTo)
+                XCTAssertEqual(s.tabs.map { $0.id }, originalIDs,
+                               "round-trip failed for from=\(from) to=\(to)")
+            }
+        }
+    }
+
     // MARK: openOrReveal
 
     func test_openOrReveal_existingURL_switchesToIt() {

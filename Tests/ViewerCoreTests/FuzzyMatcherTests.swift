@@ -71,4 +71,22 @@ final class FuzzyMatcherTests: XCTestCase {
         let result = FuzzyMatcher.filter(items, query: "zzz") { $0 }
         XCTAssertEqual(result, [])
     }
+
+    // T4 / B13 / A10: ties must preserve input order so palette doesn't
+    // shuffle on every keystroke.
+    func test_filter_tiesPreserveInputOrder() {
+        // Three items with names of identical length and matching pattern
+        // produce identical scores; the input order is the tie-break.
+        let items = ["zzz_one.md", "zzz_two.md", "zzz_six.md"]
+        let result = FuzzyMatcher.filter(items, query: "zzz") { $0 }
+        XCTAssertEqual(result, items)
+    }
+
+    func test_filter_tieStability_acrossRepeatedCalls() {
+        let items = (1...20).map { "f\($0).md" }
+        let q = "f"
+        let r1 = FuzzyMatcher.filter(items, query: q) { $0 }
+        let r2 = FuzzyMatcher.filter(items, query: q) { $0 }
+        XCTAssertEqual(r1, r2)
+    }
 }

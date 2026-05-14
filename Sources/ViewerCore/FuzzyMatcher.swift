@@ -59,17 +59,26 @@ public enum FuzzyMatcher {
     }
 
     /// Returns the items in `items` whose displayable string fuzzy-matches the
-    /// query, sorted by best score.
+    /// query, sorted by best score with **stable** tie-breaking on input order
+    /// (B13/A10 — Swift's `sorted(by:)` is not guaranteed stable, which made
+    /// the palette flicker when two recents had the same score).
     public static func filter<T>(
         _ items: [T],
         query: String,
         by key: (T) -> String
     ) -> [T] {
         if query.isEmpty { return items }
-        let scored: [(T, Int)] = items.compactMap { item in
-            guard let m = match(query, against: key(item)) else { return nil }
-            return (item, m.score)
+        // Pair each match with its original index; on score ties, the lower
+        // index wins so input order is preserved.
+        let scored: [(index: Int, item: T, score: Int)] =
+            items.enumerated().compactMap { (i, item) in
+                guard let m = match(query, against: key(item)) else { return nil }
+                return (i, item, m.score)
+            }
+        let sorted = scored.sorted { lhs, rhs in
+            if lhs.score != rhs.score { return lhs.score > rhs.score }
+            return lhs.index < rhs.index
         }
-        return scored.sorted(by: { $0.1 > $1.1 }).map { $0.0 }
+        return sorted.map { $0.item }
     }
 }
