@@ -1,27 +1,18 @@
 import AppKit
 
 /// `NSRulerView` subclass that paints line numbers down the left margin of a
-/// non-editable `NSTextView`.
-///
-/// Implementation uses `NSLayoutManager.enumerateLineFragments(forGlyphRange:)`
-/// (the textbook AppKit gutter-ruler idiom) — it gives us the line rect for
-/// each visible line directly, avoiding manual glyph index arithmetic that
-/// can desync from the layout manager during font / wrap changes.
-///
-/// A cache of newline offsets in the text storage is built lazily on first
-/// draw (and invalidated when the text changes via
-/// `TextDisplayView.updateNSView`). Line numbers are then `O(log N)` per
-/// line via binary search instead of `O(N)` walks from offset zero.
+/// non-editable `NSTextView`. Defensive about empty / partially-laid-out
+/// state — never throws or crashes, just draws nothing if the layout
+/// manager can't answer.
 final class LineNumberRulerView: NSRulerView {
     private let font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
     private let horizontalInset: CGFloat = 6
-
     private var newlineOffsets: [Int]?
 
     init(textView: NSTextView) {
         super.init(scrollView: textView.enclosingScrollView, orientation: .verticalRuler)
         clientView = textView
-        ruleThickness = 44
+        ruleThickness = 40
     }
 
     required init(coder: NSCoder) {
@@ -34,9 +25,11 @@ final class LineNumberRulerView: NSRulerView {
     }
 
     override func drawHashMarksAndLabels(in rect: NSRect) {
+        // Background fill clipped to the dirty rect.
         NSColor.controlBackgroundColor.setFill()
         rect.fill()
 
+        // Right-edge separator.
         NSColor.separatorColor.setStroke()
         let separator = NSBezierPath()
         separator.move(to: NSPoint(x: bounds.maxX - 0.5, y: bounds.minY))
@@ -46,16 +39,20 @@ final class LineNumberRulerView: NSRulerView {
 
         guard let textView = clientView as? NSTextView,
               let layoutManager = textView.layoutManager,
-              let textContainer = textView.textContainer else { return }
+              let textContainer = textView.textContainer
+        else { return }
 
         let nsText = textView.string as NSString
-        let textLength = nsText.length
-        if textLength == 0 { return }
+        if nsText.length == 0 { return }
+
+        let visibleRect = textView.visibleRect
+        if visibleRect.width <= 0 || visibleRect.height <= 0 { return }
 
         ensureCacheBuilt(text: textView.string)
 
-        let visibleRect = textView.visibleRect
-        let glyphRange = layoutManager.glyphRange(forBoundingRect: visibleRect, in: textContainer)
+        let glyphRange = layoutManager.glyphRange(
+            forBoundingRect: visibleRect, in: textContainer
+        )
         if glyphRange.length == 0 { return }
 
         let attrs: [NSAttributedString.Key: Any] = [
@@ -75,11 +72,11 @@ final class LineNumberRulerView: NSRulerView {
             let label = "\(number)" as NSString
             let size = label.size(withAttributes: attrs)
             let x = self.ruleThickness - size.width - self.horizontalInset
-            label.draw(at: NSPoint(x: x, y: yInRuler + 1), withAttributes: attrs)
+            label.draw(at: NSPoint(x: max(x, 2), y: yInRuler + 1), withAttributes: attrs)
         }
     }
 
-    // MARK: - Cache + binary search
+    // MARK: - Newline-offset cache + binary search
 
     private func ensureCacheBuilt(text: String) {
         guard newlineOffsets == nil else { return }
