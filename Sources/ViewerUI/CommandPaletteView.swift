@@ -5,6 +5,7 @@ struct CommandPaletteView: View {
     @ObservedObject var model: DocumentModel
     @State private var query: String = ""
     @State private var selectedIndex: Int = 0
+    @State private var filtered: [(item: HistoryEntry, match: FuzzyMatcher.Match)] = []
     @FocusState private var fieldFocused: Bool
 
     var body: some View {
@@ -17,7 +18,10 @@ struct CommandPaletteView: View {
                     .font(.system(size: 16))
                     .focused($fieldFocused)
                     .onSubmit { openSelected() }
-                    .onChange(of: query) { _, _ in selectedIndex = 0 }
+                    .onChange(of: query) { _, _ in
+                        recomputeFiltered()
+                        selectedIndex = 0
+                    }
                 Button(action: { model.dismissPalette() }) {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
@@ -79,7 +83,18 @@ struct CommandPaletteView: View {
         )
         .shadow(radius: 24)
         .background(keyboardShortcuts)
-        .onAppear { fieldFocused = true; selectedIndex = 0 }
+        .onAppear {
+            fieldFocused = true
+            selectedIndex = 0
+            recomputeFiltered()
+        }
+        .onChange(of: model.recents) { _, _ in recomputeFiltered() }
+    }
+
+    private func recomputeFiltered() {
+        filtered = FuzzyMatcher.filterWithMatches(model.recents, query: query) {
+            $0.displayName
+        }
     }
 
     // Invisible buttons that catch ↑ / ↓ globally inside the palette without
@@ -94,10 +109,6 @@ struct CommandPaletteView: View {
         .opacity(0)
         .frame(width: 0, height: 0)
         .accessibilityHidden(true)
-    }
-
-    private var filtered: [(item: HistoryEntry, match: FuzzyMatcher.Match)] {
-        FuzzyMatcher.filterWithMatches(model.recents, query: query) { $0.displayName }
     }
 
     private func moveSelection(_ delta: Int) {
@@ -157,40 +168,30 @@ private struct PaletteRow: View {
         .buttonStyle(.plain)
     }
 
-    /// Builds an AttributedString where matched characters are bolded (and
-    /// painted white-on-accent when the row is selected). Uses Unicode-safe
-    /// scalar iteration to align with the matcher's index domain.
+    /// Builds an AttributedString where matched characters are bolded and
+    /// accent-colored. Single forward pass over the characters — O(N), not
+    /// the previous O(N²) where each matched index re-walked from startIndex.
+    /// `matchedIndices` index into the original `displayName` (the matcher's
+    /// new contract — see FuzzyMatcher.match docs).
     private var attributedName: AttributedString {
         let name = entry.displayName
         var out = AttributedString(name)
-        let regularColor: Color = isSelected ? .white : .primary
-        let matchColor: Color = isSelected ? .white : .accentColor
-        out.foregroundColor = regularColor
-        let chars = Array(name.lowercased())
-        let setMatched = Set(matchedIndices)
-        for ti in 0..<chars.count {
-            guard let range = out.range(at: ti) else { continue }
-            if setMatched.contains(ti) {
-                out[range].foregroundColor = matchColor
-                out[range].font = .system(size: 13, weight: .semibold)
+        let regular: Color = isSelected ? .white : .primary
+        let highlight: Color = isSelected ? .white : .accentColor
+        out.foregroundColor = regular
+        let matchedSet = Set(matchedIndices)
+
+        var charIndex = 0
+        var cur = out.startIndex
+        while cur < out.endIndex {
+            let next = out.characters.index(after: cur)
+            if matchedSet.contains(charIndex) {
+                out[cur..<next].foregroundColor = highlight
+                out[cur..<next].font = .system(size: 13, weight: .semibold)
             }
+            cur = next
+            charIndex += 1
         }
         return out
-    }
-}
-
-private extension AttributedString {
-    /// Returns the AttributedString range covering character index `i` in
-    /// the source string. Linear scan; fine for short palette display names.
-    func range(at i: Int) -> Range<AttributedString.Index>? {
-        var idx = startIndex
-        var ci = 0
-        while idx < endIndex {
-            let next = characters.index(after: idx)
-            if ci == i { return idx..<next }
-            idx = next
-            ci += 1
-        }
-        return nil
     }
 }

@@ -20,8 +20,14 @@ public enum FuzzyMatcher {
         if query.isEmpty {
             return Match(score: 0, matchedIndices: [])
         }
-        let q = Array(query.lowercased())
-        let t = Array(target.lowercased())
+        // Index domain is the **original** target's Character array. Comparing
+        // each character's per-character lowercase keeps this Unicode-safe
+        // while letting the caller (e.g. CommandPaletteView) bold the right
+        // glyphs in the un-lowercased display string. Lowercasing the whole
+        // target into a separate array could change the character count
+        // (e.g. German "ß" → "ss") and silently shift indices.
+        let q = Array(query)
+        let t = Array(target)
         guard !t.isEmpty else { return nil }
 
         var qi = 0
@@ -30,7 +36,7 @@ public enum FuzzyMatcher {
         var lastMatchedAt = -2
 
         for (ti, ch) in t.enumerated() where qi < q.count {
-            if ch == q[qi] {
+            if ch.lowercased() == q[qi].lowercased() {
                 matched.append(ti)
                 var bonus = 1
                 if ti == 0 || isBoundary(t[ti - 1]) {

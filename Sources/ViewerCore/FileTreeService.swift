@@ -49,12 +49,17 @@ public struct FileTreeService: Sendable {
         }
 
         // P9: use the .isDirectoryKey we already requested above instead of
-        // doing an extra fileExists(_:isDirectory:) stat per child. For a
-        // 10k-entry folder that's 10k saved syscalls on the main thread.
+        // doing an extra fileExists(_:isDirectory:) stat per child.
+        //
+        // URLs are normalized here (standardized + resolved symlinks) so
+        // every node downstream can be compared/looked-up by URL without
+        // each caller re-normalizing — gets rid of the bug class where
+        // a `/var/...` URL from a callback misses a cache keyed on
+        // `/private/var/...`.
         let nodes: [FileNode] = contents.map { child in
             let isDir = (try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
             return FileNode(
-                url: child,
+                url: child.standardizedFileURL.resolvingSymlinksInPath(),
                 name: child.lastPathComponent,
                 isDirectory: isDir
             )

@@ -11,6 +11,7 @@ public final class SidebarModel: ObservableObject {
     @Published public var includeHidden: Bool = false {
         didSet {
             clearCache()
+            invalidateFlatCache()
             for url in expanded { ensureLoaded(url: url) }
         }
     }
@@ -39,14 +40,16 @@ public final class SidebarModel: ObservableObject {
         rootURL = url?.standardizedFileURL.resolvingSymlinksInPath()
         expanded.removeAll()
         clearCache()
+        invalidateFlatCache()
         gitStatuses = [:]
         gitRepoRoot = nil
-        selectedURL = nil
         if let url = rootURL {
-            expanded.insert(url)  // root always expanded
+            expanded.insert(url)
             ensureLoaded(url: url)
             refreshGitStatus()
             selectedURL = url
+        } else {
+            selectedURL = nil
         }
         isVisible = (rootURL != nil)
     }
@@ -54,18 +57,31 @@ public final class SidebarModel: ObservableObject {
     // MARK: Keyboard navigation (CRIT-6)
 
     public func setSelected(_ url: URL?) {
-        selectedURL = url.map(normalize)
+        let new = url.map(normalize)
+        guard new != selectedURL else { return }   // avoid no-op republishes
+        selectedURL = new
     }
 
     /// Flat list of nodes currently visible in the tree, in display order.
-    /// Used to compute next/previous for arrow-key navigation.
+    /// Cached and invalidated whenever expansion / root / hidden-toggle /
+    /// children-cache changes (`invalidateFlatCache()`).
     public func flatVisibleNodes() -> [FileNode] {
-        guard let root = rootURL else { return [] }
+        if let cached = cachedFlat { return cached }
+        guard let root = rootURL else {
+            cachedFlat = []
+            return []
+        }
         var out: [FileNode] = [
             FileNode(url: root, name: root.lastPathComponent, isDirectory: true)
         ]
         appendVisibleChildren(of: root, into: &out)
+        cachedFlat = out
         return out
+    }
+
+    /// Returns the FileNode for `url` if it's currently in the visible tree.
+    private func node(for url: URL) -> FileNode? {
+        flatVisibleNodes().first { $0.url == url }
     }
 
     private func appendVisibleChildren(of url: URL, into out: inout [FileNode]) {
@@ -83,9 +99,9 @@ public final class SidebarModel: ObservableObject {
         guard !visible.isEmpty else { return }
         if let cur = selectedURL,
            let i = visible.firstIndex(where: { $0.url == cur }) {
-            selectedURL = visible[min(i + 1, visible.count - 1)].url
+            setSelected(visible[min(i + 1, visible.count - 1)].url)
         } else {
-            selectedURL = visible.first?.url
+            setSelected(visible.first?.url)
         }
     }
 
@@ -94,50 +110,46 @@ public final class SidebarModel: ObservableObject {
         guard !visible.isEmpty else { return }
         if let cur = selectedURL,
            let i = visible.firstIndex(where: { $0.url == cur }) {
-            selectedURL = visible[max(i - 1, 0)].url
+            setSelected(visible[max(i - 1, 0)].url)
         } else {
-            selectedURL = visible.last?.url
+            setSelected(visible.last?.url)
         }
     }
 
     /// Left-arrow semantics: if a directory is expanded, collapse it.
-    /// Otherwise, move selection to its parent directory.
+    /// Otherwise, move selection to its parent directory (unless we're at
+    /// or above the root).
     public func collapseOrFocusParent() {
         guard let cur = selectedURL else { return }
         if isExpanded(cur) {
             expanded.remove(cur)
+            invalidateFlatCache()
             return
         }
-        // Find the parent in the visible flat list and select it.
-        let visible = flatVisibleNodes()
-        guard let i = visible.firstIndex(where: { $0.url == cur }), i > 0 else { return }
-        // The parent is the most recent earlier entry whose path is a prefix.
-        let curPath = cur.path
-        for j in stride(from: i - 1, through: 0, by: -1) {
-            let pPath = visible[j].url.path + "/"
-            if curPath.hasPrefix(pPath) {
-                selectedURL = visible[j].url
-                return
-            }
-        }
+        // The parent is simply deletingLastPathComponent. Only move if the
+        // parent is still inside the user's rooted view.
+        guard let root = rootURL, cur != root else { return }
+        let parent = normalize(cur.deletingLastPathComponent())
+        guard parent.path.hasPrefix(root.path) else { return }
+        setSelected(parent)
     }
 
     /// Right-arrow semantics: if a directory is collapsed, expand it.
-    /// Otherwise, move to the first child (if any). Behaves like Finder —
-    /// expanding an empty directory still toggles the chevron.
+    /// Otherwise, move to the first child (if any). The "is directory" check
+    /// reads the cached `FileNode.isDirectory` instead of hitting the
+    /// filesystem on every keystroke.
     public func expandOrFocusFirstChild() {
         guard let cur = selectedURL else { return }
-        // Only meaningful on directories.
-        var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: cur.path, isDirectory: &isDir),
-              isDir.boolValue else { return }
+        let isDir = (cur == rootURL) || (node(for: cur)?.isDirectory ?? false)
+        guard isDir else { return }
         if !isExpanded(cur) {
             expanded.insert(normalize(cur))
             ensureLoaded(url: cur)
+            invalidateFlatCache()
             return
         }
         if let first = children(of: cur).first {
-            selectedURL = first.url
+            setSelected(first.url)
         }
     }
 
@@ -191,6 +203,7 @@ public final class SidebarModel: ObservableObject {
             expanded.insert(key)
             ensureLoaded(url: key)
         }
+        invalidateFlatCache()
     }
 
     public func isExpanded(_ url: URL) -> Bool {
@@ -211,11 +224,24 @@ public final class SidebarModel: ObservableObject {
         if let cached = childrenCache[key] { return cached }
         let kids = (try? service.children(of: key, includeHidden: includeHidden)) ?? []
         childrenCache[key] = kids
+        invalidateFlatCache()
         return kids
     }
 
     private func normalize(_ url: URL) -> URL {
         url.standardizedFileURL.resolvingSymlinksInPath()
+    }
+
+    // MARK: Flat-visible cache
+
+    /// Memoized flat list of visible nodes — recomputed lazily after any
+    /// expand/collapse/setRoot/hidden-toggle/children-cache mutation.
+    /// Avoids walking the tree on every arrow-key keystroke (which used to
+    /// call flatVisibleNodes twice per press).
+    private var cachedFlat: [FileNode]?
+
+    private func invalidateFlatCache() {
+        cachedFlat = nil
     }
 
     public func clearCache() {
