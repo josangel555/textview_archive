@@ -201,6 +201,32 @@ public final class DocumentModel: ObservableObject {
         }
     }
 
+    public func closeOtherTabs(keeping index: Int) {
+        tabs.closeAll(except: index)
+        updateDerived()
+        startWatchingCurrentFile()
+    }
+
+    public func closeTabsToRight(of index: Int) {
+        tabs.closeAllToRight(of: index)
+        updateDerived()
+        startWatchingCurrentFile()
+    }
+
+    /// Always opens a new tab — does NOT reuse an existing tab that shows
+    /// the same URL or a blank tab. Used by "Open in New Tab" context menu.
+    public func openInNewTab(_ url: URL) {
+        let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
+        let state = controller.open(url: resolved)
+        tabs.append(Tab(url: resolved, state: state, viewMode: .rendered))
+        updateDerived()
+        if case .loaded = state {
+            history.record(url: resolved, kind: .file)
+            recents = history.recent()
+        }
+        startWatchingCurrentFile()
+    }
+
     public func selectTab(at index: Int) {
         tabs.select(at: index)
         updateDerived()

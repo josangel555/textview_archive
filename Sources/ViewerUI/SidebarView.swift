@@ -82,6 +82,43 @@ struct SidebarView: View {
     }
 }
 
+private struct FileRowContextMenu: View {
+    let node: FileNode
+    @ObservedObject var sidebar: SidebarModel
+    @ObservedObject var model: DocumentModel
+
+    var body: some View {
+        if !node.isDirectory {
+            Button("Open") { model.open(url: node.url) }
+            Button("Open in New Tab") { model.openInNewTab(node.url) }
+            Divider()
+        } else {
+            Button(sidebar.isExpanded(node.url) ? "Collapse" : "Expand") {
+                sidebar.toggleExpansion(node.url)
+            }
+            Divider()
+        }
+        Button("Copy Path") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(node.url.path, forType: .string)
+        }
+        Button("Copy Relative Path") {
+            let rel: String
+            if let root = sidebar.rootURL,
+               node.url.path.hasPrefix(root.path) {
+                rel = String(node.url.path.dropFirst(root.path.count + 1))
+            } else {
+                rel = node.url.lastPathComponent
+            }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(rel, forType: .string)
+        }
+        Button("Reveal in Finder") {
+            NSWorkspace.shared.activateFileViewerSelecting([node.url])
+        }
+    }
+}
+
 struct GitStatusBadge: View {
     let status: GitStatusEntry.Status
 
@@ -161,6 +198,9 @@ private struct FileRowView: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(accessibilityLabel)
             .accessibilityAddTraits(.isButton)
+            .contextMenu {
+                FileRowContextMenu(node: node, sidebar: sidebar, model: model)
+            }
 
             if node.isDirectory && sidebar.isExpanded(node.url) {
                 ForEach(sidebar.children(of: node.url)) { child in

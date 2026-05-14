@@ -212,4 +212,43 @@ final class TabsStateTests: XCTestCase {
         s.replace(at: 1, with: makeTab("c"))
         XCTAssertEqual(s.tabs[1].url?.lastPathComponent, "c")
     }
+
+    // MARK: closeAll / closeAllToRight (context menu helpers)
+
+    func test_closeAll_exceptIndex_keepsOnlyOne() {
+        var s = TabsState(tabs: [makeTab("a"), makeTab("b"), makeTab("c")])
+        s.closeAll(except: 1)
+        XCTAssertEqual(s.tabs.map { $0.url?.lastPathComponent }, ["b"])
+        XCTAssertEqual(s.selectedIndex, 0)
+    }
+
+    func test_closeAll_exceptOutOfBounds_isNoOp() {
+        var s = TabsState(tabs: [makeTab("a")])
+        let before = s
+        s.closeAll(except: 5)
+        XCTAssertEqual(s, before)
+    }
+
+    func test_closeAllToRight_trims() {
+        var s = TabsState(tabs: [makeTab("a"), makeTab("b"), makeTab("c"), makeTab("d")])
+        s.select(at: 1)
+        s.closeAllToRight(of: 1)
+        XCTAssertEqual(s.tabs.map { $0.url?.lastPathComponent }, ["a", "b"])
+        XCTAssertEqual(s.selectedIndex, 1)
+    }
+
+    func test_closeAllToRight_clampsSelection() {
+        var s = TabsState(tabs: [makeTab("a"), makeTab("b"), makeTab("c")])
+        s.select(at: 2)  // selected = c
+        s.closeAllToRight(of: 0)
+        XCTAssertEqual(s.tabs.count, 1)
+        XCTAssertEqual(s.selectedIndex, 0)
+    }
+
+    func test_closeAllToRight_atLastIndex_isNoOp() {
+        var s = TabsState(tabs: [makeTab("a"), makeTab("b")])
+        let before = s
+        s.closeAllToRight(of: 1)
+        XCTAssertEqual(s, before)
+    }
 }

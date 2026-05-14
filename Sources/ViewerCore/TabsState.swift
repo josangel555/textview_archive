@@ -82,6 +82,24 @@ public struct TabsState: Equatable, Sendable {
         tabs[index] = tab
     }
 
+    /// Keeps only the tab at `index`; everything else is removed.
+    public mutating func closeAll(except index: Int) {
+        guard tabs.indices.contains(index) else { return }
+        let keep = tabs[index]
+        tabs = [keep]
+        selectedIndex = 0
+    }
+
+    /// Removes every tab whose index is greater than `index`.
+    public mutating func closeAllToRight(of index: Int) {
+        guard tabs.indices.contains(index) else { return }
+        if tabs.count <= index + 1 { return }
+        tabs = Array(tabs.prefix(index + 1))
+        if let cur = selectedIndex, cur >= tabs.count {
+            selectedIndex = tabs.count - 1
+        }
+    }
+
     /// If a tab already displays `url`, switch to it and return its index.
     /// Otherwise: if the currently-selected tab is blank (no URL, .empty state)
     /// reuse it; else append a new tab. Returns the resulting index.

@@ -15,6 +15,9 @@ struct TabBar: View {
                             onSelect: { model.selectTab(at: index) },
                             onClose: { model.closeTab(at: index) }
                         )
+                        .contextMenu {
+                            TabContextMenu(model: model, tabIndex: index, tab: tab)
+                        }
                         if index < model.tabs.tabs.count - 1 {
                             Divider().frame(height: 16)
                         }
@@ -32,6 +35,30 @@ struct TabBar: View {
         }
         .frame(height: 30)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+private struct TabContextMenu: View {
+    @ObservedObject var model: DocumentModel
+    let tabIndex: Int
+    let tab: ViewerCore.Tab
+
+    var body: some View {
+        Button("Close Tab") { model.closeTab(at: tabIndex) }
+        Button("Close Other Tabs") { model.closeOtherTabs(keeping: tabIndex) }
+            .disabled(model.tabs.tabs.count <= 1)
+        Button("Close Tabs to the Right") { model.closeTabsToRight(of: tabIndex) }
+            .disabled(tabIndex >= model.tabs.tabs.count - 1)
+        Divider()
+        if let url = tab.url {
+            Button("Copy Path") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(url.path, forType: .string)
+            }
+            Button("Reveal in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            }
+        }
     }
 }
 

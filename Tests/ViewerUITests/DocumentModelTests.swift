@@ -249,6 +249,42 @@ final class DocumentModelTests: XCTestCase {
         XCTAssertEqual(model3.sidebarWidth, 300)
     }
 
+    // MARK: Context-menu commands (Close Others / Close to the Right / Open in New Tab)
+
+    func test_closeOtherTabs_keepsOne() throws {
+        let model = makeModel()
+        for n in ["a", "b", "c"] {
+            model.open(url: try writeFile("\(n).md"))
+        }
+        XCTAssertEqual(model.tabs.tabs.count, 3)
+        model.closeOtherTabs(keeping: 1)
+        XCTAssertEqual(model.tabs.tabs.count, 1)
+        XCTAssertEqual(model.currentURL?.lastPathComponent, "b.md")
+    }
+
+    func test_closeTabsToRight_removesTrailing() throws {
+        let model = makeModel()
+        for n in ["a", "b", "c", "d"] {
+            model.open(url: try writeFile("\(n).md"))
+        }
+        model.selectTab(at: 1)
+        model.closeTabsToRight(of: 1)
+        XCTAssertEqual(model.tabs.tabs.map { $0.url?.lastPathComponent },
+                       ["a.md", "b.md"])
+        XCTAssertEqual(model.currentURL?.lastPathComponent, "b.md")
+    }
+
+    func test_openInNewTab_doesNotReuseExistingTab() throws {
+        let model = makeModel()
+        let a = try writeFile("a.md")
+        model.open(url: a)
+        XCTAssertEqual(model.tabs.tabs.count, 1)
+        // Standard open() reuses the existing tab; openInNewTab forces append.
+        model.openInNewTab(a)
+        XCTAssertEqual(model.tabs.tabs.count, 2)
+        XCTAssertEqual(model.currentURL?.lastPathComponent, "a.md")
+    }
+
     // MARK: T7 — watcher rotates on tab select
 
     func test_selectTab_rotatesFileWatcher() throws {
