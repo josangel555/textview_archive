@@ -83,6 +83,34 @@ final class GitServiceTests: XCTestCase {
         XCTAssertEqual(entries[0], GitStatusEntry(path: "new.md", status: .renamed))
     }
 
+    // B6: a literal " -> " in a filename must NOT be parsed as a rename
+    // unless the status itself is R or C.
+    func test_parseStatus_modifiedFilenameWithArrowSubstring_keepsFullPath() {
+        let entries = GitService.parseStatus(" M foo -> bar.txt\n")
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(entries[0].status, .modified)
+        XCTAssertEqual(entries[0].path, "foo -> bar.txt",
+                       "non-rename status must preserve the literal path")
+    }
+
+    func test_parseStatus_untrackedFilenameWithArrowSubstring_keepsFullPath() {
+        let entries = GitService.parseStatus("?? foo -> bar.txt\n")
+        XCTAssertEqual(entries[0].status, .untracked)
+        XCTAssertEqual(entries[0].path, "foo -> bar.txt")
+    }
+
+    // B7: with core.quotePath=false (which we now pass), git emits raw UTF-8
+    // in paths. The parser just keeps the bytes as-is.
+    func test_parseStatus_pathWithSpaces() {
+        let entries = GitService.parseStatus(" M my docs/notes.md\n")
+        XCTAssertEqual(entries[0].path, "my docs/notes.md")
+    }
+
+    func test_parseStatus_pathWithUnicode() {
+        let entries = GitService.parseStatus("?? résumé.md\n")
+        XCTAssertEqual(entries[0].path, "résumé.md")
+    }
+
     func test_parseStatus_conflict() {
         let entries = GitService.parseStatus("UU conflicted.md\n")
         XCTAssertEqual(entries[0].status, .conflicted)

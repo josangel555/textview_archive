@@ -26,6 +26,14 @@ public enum GitError: Error, Equatable {
     case commandFailed(exitCode: Int32, stderr: String)
 }
 
+/// Mutable Data box used by `GitService.run` to collect stdout/stderr from
+/// background dispatch closures. `@unchecked Sendable` because access is
+/// scoped: one closure writes, one read happens after the DispatchGroup
+/// completes, no concurrent access.
+private final class _DataBox: @unchecked Sendable {
+    var data = Data()
+}
+
 /// Thin wrapper around `/usr/bin/git`. Pure I/O — no SwiftGit2 / libgit2.
 public struct GitService: Sendable {
     public let gitBinaryPath: String
@@ -58,43 +66,97 @@ public struct GitService: Sendable {
 
     // MARK: - Private
 
+    /// Protective `-c` flags prepended to every `git` invocation (CRIT-2).
+    /// These disable common config-driven RCE vectors that fire on plain
+    /// `git status` against an untrusted repo:
+    /// - hooks (`pre-commit`, `post-checkout`, etc.) — disabled via /dev/null
+    /// - the fsmonitor daemon — `core.fsmonitor` could spawn a binary
+    /// - `core.editor` — opened on certain failures
+    /// - `core.pager` — opened on certain output paths
+    /// - file:// remote protocols (RCE-history in clones)
+    /// We also disable C-style path quoting so paths with non-ASCII /
+    /// embedded special characters round-trip as plain UTF-8 (B7).
+    private static let protectiveFlags: [String] = [
+        "-c", "core.hooksPath=/dev/null",
+        "-c", "core.fsmonitor=false",
+        "-c", "core.editor=true",
+        "-c", "core.pager=cat",
+        "-c", "protocol.file.allow=user",
+        "-c", "core.quotePath=false",
+    ]
+
+    /// Minimal environment for `git`. We don't trust the parent process's
+    /// `GIT_*` vars (would let a user shell config or earlier code path
+    /// silently change `git`'s behavior).
+    private static let safeEnvironment: [String: String] = [
+        "PATH": "/usr/bin:/bin",
+        "HOME": NSHomeDirectory(),  // git needs HOME for global config lookups
+        "LANG": "C",                // stable, locale-independent error messages
+    ]
+
     @discardableResult
     public func run(_ args: [String], in dir: URL) throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: gitBinaryPath)
-        process.arguments = args
+        process.arguments = Self.protectiveFlags + args
         process.currentDirectoryURL = dir
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
+        process.environment = Self.safeEnvironment
+
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
         try process.run()
+
+        // CRIT-3: drain stdout & stderr **concurrently**. Reading them in
+        // sequence after `waitUntilExit()` deadlocks when git writes more
+        // than the ~64 KB pipe buffer to stderr (noisy repos with many
+        // warnings on a `git status`) — the child blocks on write(2),
+        // the parent blocks on wait(2).
+        let stdoutBox = _DataBox()
+        let stderrBox = _DataBox()
+        let group = DispatchGroup()
+        let queue = DispatchQueue.global(qos: .userInitiated)
+        group.enter()
+        queue.async {
+            stdoutBox.data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+            group.leave()
+        }
+        group.enter()
+        queue.async {
+            stderrBox.data = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            group.leave()
+        }
+        group.wait()
         process.waitUntilExit()
+
         if process.terminationStatus != 0 {
-            let errData = stderr.fileHandleForReading.readDataToEndOfFile()
-            let errStr = String(data: errData, encoding: .utf8) ?? ""
+            let errStr = String(data: stderrBox.data, encoding: .utf8) ?? ""
             throw GitError.commandFailed(
                 exitCode: process.terminationStatus,
                 stderr: errStr
             )
         }
-        let data = stdout.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8) ?? ""
+        return String(data: stdoutBox.data, encoding: .utf8) ?? ""
     }
 
     static func parseStatus(_ output: String) -> [GitStatusEntry] {
         var entries: [GitStatusEntry] = []
         for raw in output.split(separator: "\n", omittingEmptySubsequences: true) {
-            // porcelain v1: "XY path" (X = index, Y = worktree). "?? path" for
-            // untracked. Renamed: "R  old -> new" (we keep `new`).
+            // porcelain v1: "XY path" (X = index, Y = worktree). "?? path"
+            // for untracked. Renames/copies produce "XY old -> new" — but
+            // **only** when X or Y is R/C. Plain M/A/D files can legally
+            // contain the literal substring " -> " in their names, so we
+            // must gate the split on the status (B6).
             guard raw.count >= 3 else { continue }
             let chars = Array(raw)
             let x = chars[0]
             let y = chars[1]
-            // Path begins after the single space at index 2 (porcelain v1).
             let pathRaw = String(chars.dropFirst(3))
+            let isRenameOrCopy = (x == "R" || x == "C" || y == "R" || y == "C")
             let path: String
-            if let arrow = pathRaw.range(of: " -> ") {
+            if isRenameOrCopy, let arrow = pathRaw.range(of: " -> ") {
                 path = String(pathRaw[arrow.upperBound...])
             } else {
                 path = pathRaw
