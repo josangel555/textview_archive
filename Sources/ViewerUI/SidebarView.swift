@@ -95,40 +95,40 @@ private struct FileRowView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 4) {
-                if node.isDirectory {
-                    Image(systemName: sidebar.isExpanded(node.url) ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .frame(width: 12)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Spacer().frame(width: 12)
+            Button(action: activate) {
+                HStack(spacing: 4) {
+                    if node.isDirectory {
+                        Image(systemName: sidebar.isExpanded(node.url) ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .frame(width: 12)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Spacer().frame(width: 12)
+                    }
+                    Image(systemName: icon(for: node))
+                        .font(.system(size: 11))
+                        .frame(width: 14)
+                        .foregroundStyle(node.isDirectory ? Color.accentColor : Color.secondary)
+                    Text(node.name)
+                        .font(.system(size: 12))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 0)
+                    if let status = sidebar.gitStatus(for: node.url) {
+                        GitStatusBadge(status: status)
+                    }
                 }
-                Image(systemName: icon(for: node))
-                    .font(.system(size: 11))
-                    .frame(width: 14)
-                    .foregroundStyle(node.isDirectory ? Color.accentColor : Color.secondary)
-                Text(node.name)
-                    .font(.system(size: 12))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer(minLength: 0)
-                if let status = sidebar.gitStatus(for: node.url) {
-                    GitStatusBadge(status: status)
-                }
+                .padding(.leading, CGFloat(depth) * 14 + 8)
+                .padding(.vertical, 3)
+                .padding(.trailing, 8)
+                .contentShape(Rectangle())
+                .background(isCurrent ? Color.accentColor.opacity(0.18) : Color.clear)
             }
-            .padding(.leading, CGFloat(depth) * 14 + 8)
-            .padding(.vertical, 3)
-            .padding(.trailing, 8)
-            .contentShape(Rectangle())
-            .background(isCurrent ? Color.accentColor.opacity(0.18) : Color.clear)
-            .onTapGesture {
-                if node.isDirectory {
-                    sidebar.toggleExpansion(node.url)
-                } else {
-                    model.open(url: node.url)
-                }
-            }
+            .buttonStyle(.plain)
+            .help(node.url.path)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilityLabel)
+            .accessibilityAddTraits(.isButton)
 
             if node.isDirectory && sidebar.isExpanded(node.url) {
                 ForEach(sidebar.children(of: node.url)) { child in
@@ -137,6 +137,29 @@ private struct FileRowView: View {
                 }
             }
         }
+    }
+
+    private func activate() {
+        if node.isDirectory {
+            sidebar.toggleExpansion(node.url)
+        } else {
+            model.open(url: node.url)
+        }
+    }
+
+    private var accessibilityLabel: String {
+        var parts: [String] = []
+        if node.isDirectory {
+            parts.append(sidebar.isExpanded(node.url) ? "Folder expanded" : "Folder collapsed")
+        } else {
+            parts.append("File")
+        }
+        parts.append(node.name)
+        if let s = sidebar.gitStatus(for: node.url) {
+            parts.append("git: \(s.rawValue)")
+        }
+        if isCurrent { parts.append("currently open") }
+        return parts.joined(separator: ", ")
     }
 
     private var isCurrent: Bool {
