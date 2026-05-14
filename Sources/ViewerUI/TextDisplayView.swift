@@ -32,6 +32,12 @@ public struct TextDisplayView: NSViewRepresentable {
             textView.isAutomaticDashSubstitutionEnabled = false
             textView.isAutomaticSpellingCorrectionEnabled = false
             textView.string = text
+
+            // Line numbers gutter.
+            let ruler = LineNumberRulerView(textView: textView)
+            scrollView.verticalRulerView = ruler
+            scrollView.hasVerticalRuler = true
+            scrollView.rulersVisible = true
         }
         return scrollView
     }
@@ -40,6 +46,7 @@ public struct TextDisplayView: NSViewRepresentable {
         guard let textView = scrollView.documentView as? NSTextView else { return }
         if textView.string != text {
             textView.string = text
+            scrollView.verticalRulerView?.needsDisplay = true
         }
     }
 }
