@@ -45,6 +45,18 @@ public final class DocumentModel: ObservableObject {
         return FileTypeDetector.category(for: url) == .markdown
     }
 
+    /// Full file path of the current tab, with `$HOME` shortened to `~`.
+    /// Returns nil when no file is loaded.
+    public var currentFilePath: String? {
+        guard let url = currentURL else { return nil }
+        let home = NSHomeDirectory()
+        let path = url.path
+        if !home.isEmpty, path.hasPrefix(home) {
+            return "~" + path.dropFirst(home.count)
+        }
+        return path
+    }
+
     public var viewModeBinding: Binding<ViewMode> {
         Binding(
             get: { [unowned self] in self.currentViewMode },

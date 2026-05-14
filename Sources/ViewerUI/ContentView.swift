@@ -74,11 +74,12 @@ struct ModeBar: View {
                 .frame(width: 180)
             }
             Spacer()
-            Text(model.windowTitle)
+            Text(model.currentFilePath ?? model.windowTitle)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-                .truncationMode(.middle)
+                .truncationMode(.head)
+                .help(model.currentURL?.path ?? model.windowTitle)
         }
         .frame(height: 22)
     }

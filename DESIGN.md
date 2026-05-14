@@ -657,3 +657,57 @@ We get value from each independently.
 - Find-and-replace (we don't edit).
 - Saved searches / search history (defer to v1.1).
 - Semantic / fuzzy file finder (`⌘P`-style) — easy to add later but not Phase 4.5.
+
+---
+
+## 13. Usability Backlog
+
+Captured from a working-session brainstorm. Each item tagged with where it
+slots into the phased plan (or is already implicit). Sizes are coarse:
+S ≤ ½ day, M = 1–2 days, L = ≥ 3 days.
+
+### Already in place — document, don't re-implement
+| Item | Where it lives now |
+|---|---|
+| **Read-only file reads** | `TextFileLoader` opens with `Data(contentsOf:)` (read-only); `NSTextView` is `isEditable = false`. We never write to opened files. |
+| **Window size memory** | `NSWindow.setFrameAutosaveName("MainWindow")` — window position/size already persists per user. |
+
+### Folds into existing phases
+| Item | Phase | Size | Notes |
+|---|---|---|---|
+| **"Open in MarkdownViewer"** (Finder right-click) | 3 | M | Already specified in §5 — NSServices + UTI handlers + `mdv` CLI. |
+| **Default-anything Viewer** (be the default app for many text types) | 3 + 9 | M | Phase 3 declares `LSItemContentTypes` for the common text UTIs; Phase 9 considers whether to register with `LSHandlerRank = Default` for select types. **Policy call**: probably *not* default for code files — most users have IDEs. Default for `.md` and binary text logs makes sense. |
+| **Drag-and-drop onto window** | 3 | S | `NSWindow.registerForDraggedTypes([.fileURL])`; route to `DocumentModel.open(url:)` from `NSDraggingDestination`. Easy add-on alongside UTI work. |
+| **Full Disk Access prompt** | 3 / 9 | S | Add a Settings pane that links to `x-apple.systempreferences:com.apple.preference.security?Privacy_AllFilesAccess`. Only needed if user wants to view files outside sandbox-permitted paths; non-sandboxed dev builds bypass entirely. |
+| **Remember sidebar width** | 2.4 | S | Bind `@AppStorage("sidebarWidth")` to the split view's width — couple of lines. |
+| **Remember last-open folder / tabs** | 2.4 → Workspaces | M | Persist current `TabsState.tabs[].url` + sidebar root in user defaults; restore on launch. Stub for full Workspaces (below). |
+
+### New phases to schedule
+
+| Phase | Item | Size | Sketch |
+|---|---|---|---|
+| **2.5 — Split view** | Two viewer panes side-by-side (or stacked) | L | New `PaneSplit` model: either single pane or split (`PaneSplit.split(left, right)` recursive). Each pane has its own `TabsState`. Drag-tab-to-edge gesture opens a split. ⌘D duplicates current tab into a new pane. Window remembers split layout. |
+| **5.5 — Format viewer (pretty-print)** | JSON, XML, JS/CSS beautify | M | `Formatter` protocol; viewer toolbar gains a "Format" button when supported. JSON via `JSONSerialization`. XML via `XMLParser` re-emit. JS minified — `JSContext` runs `prettier` (vendored) headlessly **or** simpler `js-beautify` (~30 KB JS). HTML pretty-print via swift-html-formatter or a small re-emit. **Decision**: keep JS-format JS-free if possible; investigate native pure-Swift formatters first. |
+| **6.5 — Bookmarks** | Pin files/folders into a Bookmarks sidebar section | S–M | Extend `HistoryStore` → split `recents` from `pinned`. Sidebar gets a "Bookmarks" header above the tree. ⌘D bookmarks current file. Drag to reorder. Persist alongside history JSON. |
+| **8.5 — Workspaces** | Save & restore named sessions | L | A workspace = `{ sidebarRoot, tabs[(url, viewMode)], sidebarWidth, splitLayout, activeTab }`. Stored as JSON. UI: ⌘⇧S "Save Workspace As…", File ▸ Workspaces ▸ submenu. Builds on every prior phase — schedule after tabs/sidebar/split/git all settle. |
+
+### Smaller polish items (no dedicated phase; queue as side tasks)
+
+- **Show full path** in title strip — **done** today (this commit).
+- **Quick Look space-preview** of selected sidebar file.
+- **Reveal in Finder** menu item on a tab/sidebar entry (`NSWorkspace.activateFileViewerSelecting`).
+- **Copy path** / **Copy contents** context menu on tab and sidebar rows.
+- **Print** rendered markdown via `WKWebView.printOperation`.
+- **Export Rendered to PDF** via `WKWebView.createPDF`.
+- **Goto line / column** for source mode (`⌘L`).
+- **Reload** current file from disk (`⌘R`) — separate from view-mode toggle (which is `⇧⌘R`).
+
+### Priority ordering for what should slot in soon
+
+After Phase 2.4 (palette), the next "value per hour" wins are likely:
+1. **Drag-and-drop + UTI** (Phase 3) — biggest UX uplift; people will drag files onto the dock icon almost immediately.
+2. **Reveal in Finder + Copy path** — 30 minutes of work, removes daily friction.
+3. **Reload from disk** — 30 minutes, needed before/while watcher is built.
+4. **Remember sidebar width + last-open folder** — 1 hour.
+
+Workspaces, Split view, Format are all great but should wait until the core is dogfooded for a few sessions.
