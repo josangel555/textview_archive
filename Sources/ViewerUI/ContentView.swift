@@ -76,6 +76,8 @@ public struct ContentView: View {
             EmptyStateView()
         case .loaded(let file):
             loadedView(for: file)
+        case .binary(let binary):
+            HexView(file: binary, fontSize: 12 * model.zoom)
         case .error(let failure):
             ErrorView(failure: failure, model: model)
         }

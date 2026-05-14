@@ -162,9 +162,14 @@ public final class DocumentModel: ObservableObject {
             tabs.openOrReveal(url: resolved, state: state, viewMode: currentViewMode)
         }
         updateDerived()
-        if case .loaded = state {
+        // Both text and binary opens count as a successful "user saw this
+        // file"; record either as a recent. Errors don't.
+        switch state {
+        case .loaded, .binary:
             history.record(url: resolved, kind: .file)
             recents = history.recent()
+        case .empty, .error:
+            break
         }
         startWatchingCurrentFile()
     }

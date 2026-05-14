@@ -23,8 +23,9 @@ public struct Tab: Equatable, Sendable, Identifiable {
     public var title: String {
         switch state {
         case .loaded(let f): return f.url.lastPathComponent
-        case .error(let f): return f.url.lastPathComponent
-        case .empty:        return url?.lastPathComponent ?? "Untitled"
+        case .binary(let b): return b.url.lastPathComponent
+        case .error(let f):  return f.url.lastPathComponent
+        case .empty:         return url?.lastPathComponent ?? "Untitled"
         }
     }
 

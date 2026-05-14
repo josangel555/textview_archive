@@ -3,6 +3,7 @@ import Foundation
 public enum DocumentState: Equatable, Sendable {
     case empty
     case loaded(TextFile)
+    case binary(BinaryFile)
     case error(LoadFailure)
 
     public struct LoadFailure: Equatable, Sendable {
@@ -19,15 +20,30 @@ public enum DocumentState: Equatable, Sendable {
 /// Loads a file URL into a `DocumentState`. Pure logic; no UI imports.
 public struct DocumentController: Sendable {
     public let loader: TextFileLoader
+    public let binaryLoader: BinaryFileLoader
 
-    public init(loader: TextFileLoader = TextFileLoader()) {
+    public init(
+        loader: TextFileLoader = TextFileLoader(),
+        binaryLoader: BinaryFileLoader = BinaryFileLoader()
+    ) {
         self.loader = loader
+        self.binaryLoader = binaryLoader
     }
 
     public func open(url: URL) -> DocumentState {
         do {
             let file = try loader.load(url: url)
             return .loaded(file)
+        } catch FileLoadError.binaryFile {
+            // Seamless fall-through to the hex viewer.
+            do {
+                let binary = try binaryLoader.load(url: url)
+                return .binary(binary)
+            } catch let error as FileLoadError {
+                return .error(.init(url: url, message: Self.message(for: error)))
+            } catch {
+                return .error(.init(url: url, message: "\(error)"))
+            }
         } catch let error as FileLoadError {
             return .error(.init(url: url, message: Self.message(for: error)))
         } catch {
