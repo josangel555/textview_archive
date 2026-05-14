@@ -162,6 +162,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.selectTab(at: index)
     }
 
+    @objc func moveTabLeft(_ sender: Any?) {
+        model.moveCurrentTabLeft()
+    }
+
+    @objc func moveTabRight(_ sender: Any?) {
+        model.moveCurrentTabRight()
+    }
+
     @objc func openRecentItem(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
         model.openPath(url)  // recents may include folders
@@ -255,6 +263,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         prevItem.keyEquivalentModifierMask = [.command, .option]
         prevItem.target = self
         menu.addItem(prevItem)
+
+        menu.addItem(.separator())
+        let moveLeft = NSMenuItem(
+            title: "Move Tab Left",
+            action: #selector(moveTabLeft(_:)),
+            keyEquivalent: "["
+        )
+        moveLeft.keyEquivalentModifierMask = [.command, .option]
+        moveLeft.target = self
+        menu.addItem(moveLeft)
+        let moveRight = NSMenuItem(
+            title: "Move Tab Right",
+            action: #selector(moveTabRight(_:)),
+            keyEquivalent: "]"
+        )
+        moveRight.keyEquivalentModifierMask = [.command, .option]
+        moveRight.target = self
+        menu.addItem(moveRight)
 
         if model.tabs.tabs.isEmpty {
             menu.addItem(.separator())

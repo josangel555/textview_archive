@@ -213,6 +213,26 @@ public final class DocumentModel: ObservableObject {
         startWatchingCurrentFile()
     }
 
+    public func moveTab(from src: Int, to dst: Int) {
+        tabs.move(from: src, to: dst)
+        updateDerived()
+    }
+
+    public func moveCurrentTabLeft() {
+        guard let i = tabs.selectedIndex, i > 0 else { return }
+        tabs.move(from: i, to: i - 1)
+        updateDerived()
+    }
+
+    public func moveCurrentTabRight() {
+        guard let i = tabs.selectedIndex, i < tabs.tabs.count - 1 else { return }
+        // move(from:to:) interprets `to` as the destination index in the
+        // post-removal list; moving right by one means destination = i + 2
+        // (insert *after* the next neighbor's original position).
+        tabs.move(from: i, to: i + 2)
+        updateDerived()
+    }
+
     /// Always opens a new tab — does NOT reuse an existing tab that shows
     /// the same URL or a blank tab. Used by "Open in New Tab" context menu.
     public func openInNewTab(_ url: URL) {

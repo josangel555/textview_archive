@@ -285,6 +285,55 @@ final class DocumentModelTests: XCTestCase {
         XCTAssertEqual(model.currentURL?.lastPathComponent, "a.md")
     }
 
+    // MARK: Move-tab shortcuts
+
+    func test_moveCurrentTabLeft() throws {
+        let model = makeModel()
+        for n in ["a", "b", "c"] {
+            model.open(url: try writeFile("\(n).md"))
+        }
+        // Selected = c (last).
+        model.moveCurrentTabLeft()
+        XCTAssertEqual(model.tabs.tabs.map { $0.url?.lastPathComponent },
+                       ["a.md", "c.md", "b.md"])
+        // Selection follows the moved tab.
+        XCTAssertEqual(model.currentURL?.lastPathComponent, "c.md")
+    }
+
+    func test_moveCurrentTabRight() throws {
+        let model = makeModel()
+        for n in ["a", "b", "c"] {
+            model.open(url: try writeFile("\(n).md"))
+        }
+        model.selectTab(at: 0)  // select /a
+        model.moveCurrentTabRight()
+        XCTAssertEqual(model.tabs.tabs.map { $0.url?.lastPathComponent },
+                       ["b.md", "a.md", "c.md"])
+        XCTAssertEqual(model.currentURL?.lastPathComponent, "a.md")
+    }
+
+    func test_moveTabLeft_atFirst_isNoOp() throws {
+        let model = makeModel()
+        for n in ["a", "b"] {
+            model.open(url: try writeFile("\(n).md"))
+        }
+        model.selectTab(at: 0)
+        let before = model.tabs.tabs.map { $0.url?.lastPathComponent }
+        model.moveCurrentTabLeft()
+        XCTAssertEqual(model.tabs.tabs.map { $0.url?.lastPathComponent }, before)
+    }
+
+    func test_moveTabRight_atLast_isNoOp() throws {
+        let model = makeModel()
+        for n in ["a", "b"] {
+            model.open(url: try writeFile("\(n).md"))
+        }
+        // Selected = b (last).
+        let before = model.tabs.tabs.map { $0.url?.lastPathComponent }
+        model.moveCurrentTabRight()
+        XCTAssertEqual(model.tabs.tabs.map { $0.url?.lastPathComponent }, before)
+    }
+
     // MARK: T7 — watcher rotates on tab select
 
     func test_selectTab_rotatesFileWatcher() throws {
