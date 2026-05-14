@@ -10,16 +10,22 @@ struct SidebarView: View {
             header
             Divider()
             if let root = sidebar.rootURL {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        FileRowView(
-                            node: FileNode(url: root, name: root.lastPathComponent, isDirectory: true),
-                            depth: 0,
-                            sidebar: sidebar,
-                            model: model
-                        )
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            FileRowView(
+                                node: FileNode(url: root, name: root.lastPathComponent, isDirectory: true),
+                                depth: 0,
+                                sidebar: sidebar,
+                                model: model
+                            )
+                        }
+                        .padding(.vertical, 4)
                     }
-                    .padding(.vertical, 4)
+                    // CRIT-6: keep keyboard-selected row visible.
+                    .onChange(of: sidebar.selectedURL) { _, new in
+                        if let url = new { proxy.scrollTo(url, anchor: .center) }
+                    }
                 }
             } else {
                 Spacer()
@@ -31,6 +37,31 @@ struct SidebarView: View {
         }
         .frame(minWidth: 180, idealWidth: 240)
         .background(Color(nsColor: .underPageBackgroundColor))
+        .background(
+            SidebarKeyMonitor(
+                isActive: sidebar.isVisible && !model.isPalettePresented
+            ) { key in
+                switch key {
+                case .up:    sidebar.selectPrevious()
+                case .down:  sidebar.selectNext()
+                case .left:  sidebar.collapseOrFocusParent()
+                case .right: sidebar.expandOrFocusFirstChild()
+                case .ret:
+                    if let url = sidebar.selectedURL {
+                        var isDir: ObjCBool = false
+                        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir),
+                           isDir.boolValue {
+                            sidebar.toggleExpansion(url)
+                        } else {
+                            model.open(url: url)
+                        }
+                    }
+                case .escape:
+                    return false  // let other handlers (palette dismiss) see it
+                }
+                return true
+            }
+        )
     }
 
     private var header: some View {
@@ -122,9 +153,10 @@ private struct FileRowView: View {
                 .padding(.vertical, 3)
                 .padding(.trailing, 8)
                 .contentShape(Rectangle())
-                .background(isCurrent ? Color.accentColor.opacity(0.18) : Color.clear)
+                .background(rowBackground)
             }
             .buttonStyle(.plain)
+            .id(node.url)  // for ScrollViewReader.scrollTo
             .help(node.url.path)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(accessibilityLabel)
@@ -140,11 +172,21 @@ private struct FileRowView: View {
     }
 
     private func activate() {
+        sidebar.setSelected(node.url)
         if node.isDirectory {
             sidebar.toggleExpansion(node.url)
         } else {
             model.open(url: node.url)
         }
+    }
+
+    /// Selected (keyboard) and current (opened) get distinct shading so users
+    /// can tell at a glance which row is about to be activated by ↵.
+    private var rowBackground: Color {
+        let isSelected = sidebar.selectedURL == node.url
+        if isCurrent { return Color.accentColor.opacity(0.20) }
+        if isSelected { return Color(nsColor: .alternateSelectedControlColor).opacity(0.25) }
+        return Color.clear
     }
 
     private var accessibilityLabel: String {

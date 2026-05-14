@@ -173,4 +173,111 @@ final class SidebarModelTests: XCTestCase {
         XCTAssertTrue(model.gitStatuses.isEmpty)
         XCTAssertNil(model.gitRepoRoot)
     }
+
+    // MARK: CRIT-6 — keyboard navigation
+
+    func test_setRoot_initiallySelectsRoot() async throws {
+        let model = SidebarModel()
+        try touch("a.md")
+        model.setRoot(tmpDir)
+        XCTAssertEqual(model.selectedURL?.resolvingSymlinksInPath(),
+                       tmpDir.resolvingSymlinksInPath())
+    }
+
+    func test_flatVisibleNodes_respectsExpansion() async throws {
+        let model = SidebarModel()
+        try mkdir("docs")
+        try touch("docs/inside.md")
+        try touch("a.md")
+        model.setRoot(tmpDir)
+        // Root is auto-expanded → root + docs + a.md (docs not expanded so
+        // inside.md hidden).
+        let names = model.flatVisibleNodes().map { $0.name }
+        XCTAssertEqual(names, [tmpDir.lastPathComponent, "docs", "a.md"])
+
+        // Expand docs → its child appears.
+        model.toggleExpansion(tmpDir.appendingPathComponent("docs"))
+        XCTAssertEqual(model.flatVisibleNodes().map { $0.name },
+                       [tmpDir.lastPathComponent, "docs", "inside.md", "a.md"])
+    }
+
+    func test_selectNext_walksFlatVisible() async throws {
+        let model = SidebarModel()
+        try touch("a.md")
+        try touch("b.md")
+        model.setRoot(tmpDir)
+        // Start at root.
+        XCTAssertEqual(model.selectedURL, model.rootURL)
+        model.selectNext()
+        XCTAssertEqual(model.selectedURL?.lastPathComponent, "a.md")
+        model.selectNext()
+        XCTAssertEqual(model.selectedURL?.lastPathComponent, "b.md")
+        // At the end — selectNext is a no-op.
+        model.selectNext()
+        XCTAssertEqual(model.selectedURL?.lastPathComponent, "b.md")
+    }
+
+    func test_selectPrevious_walksUp() async throws {
+        let model = SidebarModel()
+        try touch("a.md")
+        try touch("b.md")
+        model.setRoot(tmpDir)
+        model.selectNext()
+        model.selectNext()
+        XCTAssertEqual(model.selectedURL?.lastPathComponent, "b.md")
+        model.selectPrevious()
+        XCTAssertEqual(model.selectedURL?.lastPathComponent, "a.md")
+        model.selectPrevious()
+        XCTAssertEqual(model.selectedURL, model.rootURL)
+    }
+
+    func test_collapseOrFocusParent_collapsesExpandedDir() async throws {
+        let model = SidebarModel()
+        try mkdir("docs")
+        model.setRoot(tmpDir)
+        let root = model.rootURL!
+        XCTAssertTrue(model.isExpanded(root))
+        model.collapseOrFocusParent()
+        XCTAssertFalse(model.isExpanded(root))
+    }
+
+    func test_collapseOrFocusParent_movesToParentForFile() async throws {
+        let model = SidebarModel()
+        try mkdir("docs")
+        try touch("docs/inside.md")
+        model.setRoot(tmpDir)
+        model.toggleExpansion(tmpDir.appendingPathComponent("docs"))
+        // Move selection down to inside.md
+        model.selectNext()  // → docs
+        model.selectNext()  // → inside.md
+        XCTAssertEqual(model.selectedURL?.lastPathComponent, "inside.md")
+        model.collapseOrFocusParent()
+        XCTAssertEqual(model.selectedURL?.lastPathComponent, "docs")
+    }
+
+    func test_expandOrFocusFirstChild_expandsCollapsed() async throws {
+        let model = SidebarModel()
+        try mkdir("docs")
+        try touch("docs/inside.md")
+        model.setRoot(tmpDir)
+        let docs = tmpDir.appendingPathComponent("docs")
+        // Select docs but don't expand it.
+        model.selectNext()
+        XCTAssertEqual(model.selectedURL?.lastPathComponent, "docs")
+        XCTAssertFalse(model.isExpanded(docs))
+        model.expandOrFocusFirstChild()
+        XCTAssertTrue(model.isExpanded(docs))
+    }
+
+    func test_expandOrFocusFirstChild_movesIntoFirstChild() async throws {
+        let model = SidebarModel()
+        try mkdir("docs")
+        try touch("docs/inside.md")
+        model.setRoot(tmpDir)
+        let docs = tmpDir.appendingPathComponent("docs")
+        model.toggleExpansion(docs)  // expand
+        model.setSelected(docs)
+        model.expandOrFocusFirstChild()  // already expanded → move into child
+        XCTAssertEqual(model.selectedURL?.lastPathComponent, "inside.md")
+    }
 }

@@ -18,6 +18,11 @@ public final class SidebarModel: ObservableObject {
     @Published public private(set) var gitStatuses: [URL: GitStatusEntry.Status] = [:]
     @Published public private(set) var gitRepoRoot: URL?
 
+    /// Keyboard-driven row selection (CRIT-6). Distinct from the currently-
+    /// open file (`DocumentModel.currentURL`): you can navigate the sidebar
+    /// with arrow keys without opening every file you scroll past.
+    @Published public private(set) var selectedURL: URL?
+
     private let service: FileTreeService
     private let git: GitService
     private var childrenCache: [URL: [FileNode]] = [:]
@@ -36,12 +41,104 @@ public final class SidebarModel: ObservableObject {
         clearCache()
         gitStatuses = [:]
         gitRepoRoot = nil
+        selectedURL = nil
         if let url = rootURL {
             expanded.insert(url)  // root always expanded
             ensureLoaded(url: url)
             refreshGitStatus()
+            selectedURL = url
         }
         isVisible = (rootURL != nil)
+    }
+
+    // MARK: Keyboard navigation (CRIT-6)
+
+    public func setSelected(_ url: URL?) {
+        selectedURL = url.map(normalize)
+    }
+
+    /// Flat list of nodes currently visible in the tree, in display order.
+    /// Used to compute next/previous for arrow-key navigation.
+    public func flatVisibleNodes() -> [FileNode] {
+        guard let root = rootURL else { return [] }
+        var out: [FileNode] = [
+            FileNode(url: root, name: root.lastPathComponent, isDirectory: true)
+        ]
+        appendVisibleChildren(of: root, into: &out)
+        return out
+    }
+
+    private func appendVisibleChildren(of url: URL, into out: inout [FileNode]) {
+        guard isExpanded(url) else { return }
+        for child in children(of: url) {
+            out.append(child)
+            if child.isDirectory {
+                appendVisibleChildren(of: child.url, into: &out)
+            }
+        }
+    }
+
+    public func selectNext() {
+        let visible = flatVisibleNodes()
+        guard !visible.isEmpty else { return }
+        if let cur = selectedURL,
+           let i = visible.firstIndex(where: { $0.url == cur }) {
+            selectedURL = visible[min(i + 1, visible.count - 1)].url
+        } else {
+            selectedURL = visible.first?.url
+        }
+    }
+
+    public func selectPrevious() {
+        let visible = flatVisibleNodes()
+        guard !visible.isEmpty else { return }
+        if let cur = selectedURL,
+           let i = visible.firstIndex(where: { $0.url == cur }) {
+            selectedURL = visible[max(i - 1, 0)].url
+        } else {
+            selectedURL = visible.last?.url
+        }
+    }
+
+    /// Left-arrow semantics: if a directory is expanded, collapse it.
+    /// Otherwise, move selection to its parent directory.
+    public func collapseOrFocusParent() {
+        guard let cur = selectedURL else { return }
+        if isExpanded(cur) {
+            expanded.remove(cur)
+            return
+        }
+        // Find the parent in the visible flat list and select it.
+        let visible = flatVisibleNodes()
+        guard let i = visible.firstIndex(where: { $0.url == cur }), i > 0 else { return }
+        // The parent is the most recent earlier entry whose path is a prefix.
+        let curPath = cur.path
+        for j in stride(from: i - 1, through: 0, by: -1) {
+            let pPath = visible[j].url.path + "/"
+            if curPath.hasPrefix(pPath) {
+                selectedURL = visible[j].url
+                return
+            }
+        }
+    }
+
+    /// Right-arrow semantics: if a directory is collapsed, expand it.
+    /// Otherwise, move to the first child (if any). Behaves like Finder —
+    /// expanding an empty directory still toggles the chevron.
+    public func expandOrFocusFirstChild() {
+        guard let cur = selectedURL else { return }
+        // Only meaningful on directories.
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: cur.path, isDirectory: &isDir),
+              isDir.boolValue else { return }
+        if !isExpanded(cur) {
+            expanded.insert(normalize(cur))
+            ensureLoaded(url: cur)
+            return
+        }
+        if let first = children(of: cur).first {
+            selectedURL = first.url
+        }
     }
 
     public func gitStatus(for url: URL) -> GitStatusEntry.Status? {
