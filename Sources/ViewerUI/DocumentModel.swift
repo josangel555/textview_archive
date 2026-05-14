@@ -11,17 +11,27 @@ public final class DocumentModel: ObservableObject {
     @Published public private(set) var tabs: TabsState = .init()
     @Published public private(set) var windowTitle: String = "MarkdownViewer"
     @Published public private(set) var recents: [HistoryEntry] = []
+    public let sidebar: SidebarModel
 
     private let controller: DocumentController
     public let history: HistoryStore
 
     public init(
         controller: DocumentController = DocumentController(),
-        history: HistoryStore = HistoryStore(storeURL: HistoryStore.defaultStoreURL())
+        history: HistoryStore = HistoryStore(storeURL: HistoryStore.defaultStoreURL()),
+        sidebar: SidebarModel = SidebarModel()
     ) {
         self.controller = controller
         self.history = history
+        self.sidebar = sidebar
         self.recents = history.recent()
+    }
+
+    public func openFolder(_ url: URL) {
+        let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
+        sidebar.setRoot(resolved)
+        history.record(url: resolved, kind: .folder)
+        recents = history.recent()
     }
 
     // MARK: Derived from current tab

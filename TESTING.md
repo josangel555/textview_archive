@@ -38,11 +38,15 @@ swift test --filter ViewerCoreTests.DocumentControllerTests/test_oversizedFile_r
   before / after / only-tab / out-of-bounds, move (rearranges + carries
   selection + invalid args no-op), `openOrReveal` (existing → switch, new →
   append, reuse blank tab), replace, select out-of-bounds.
+- **ViewerCoreTests/FileTreeServiceTests** — 9 cases. Directories sorted
+  before files, alphabetical within group, natural numeric ordering, hidden
+  files skipped by default + included on demand, empty directory, throws on
+  missing path, throws on file-as-directory, `FileNode.id` is the URL.
 - **scripts/verify-app.sh** — 17 structural assertions on the built bundle
   (executable bit, plist lint, required keys, document type UTIs, ViewerUI
   resource bundle + markdown.css presence).
 
-Total: **75 swift cases, ~80 ms** + bundle verify script.
+Total: **84 swift cases, ~100 ms** + bundle verify script.
 
 ## What is *not* yet tested
 

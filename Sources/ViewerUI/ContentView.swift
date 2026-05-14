@@ -20,8 +20,15 @@ public struct ContentView: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
             Divider()
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            HStack(spacing: 0) {
+                if model.sidebar.isVisible {
+                    SidebarView(sidebar: model.sidebar, model: model)
+                        .frame(width: 240)
+                    Divider()
+                }
+                content
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
         .frame(minWidth: 600, minHeight: 360)
     }

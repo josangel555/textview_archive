@@ -63,6 +63,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    @objc func openFolder(_ sender: Any?) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.title = "Open folder"
+        if panel.runModal() == .OK, let url = panel.url {
+            model.openFolder(url)
+        }
+    }
+
+    @objc func toggleSidebar(_ sender: Any?) {
+        model.sidebar.toggleVisibility()
+    }
+
     @objc func toggleViewMode(_ sender: Any?) {
         model.toggleViewMode()
     }
@@ -187,6 +202,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         openItem.target = self
         fileMenu.addItem(openItem)
 
+        let openFolderItem = NSMenuItem(
+            title: "Open Folder…",
+            action: #selector(openFolder(_:)),
+            keyEquivalent: "o"
+        )
+        openFolderItem.keyEquivalentModifierMask = [.command, .shift]
+        openFolderItem.target = self
+        fileMenu.addItem(openFolderItem)
+
         let recentItem = NSMenuItem(
             title: "Open Recent", action: nil, keyEquivalent: ""
         )
@@ -219,6 +243,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         toggleItem.keyEquivalentModifierMask = [.command, .shift]
         toggleItem.target = self
         viewMenu.addItem(toggleItem)
+
+        let sidebarItem = NSMenuItem(
+            title: "Toggle Sidebar",
+            action: #selector(toggleSidebar(_:)),
+            keyEquivalent: "s"
+        )
+        sidebarItem.keyEquivalentModifierMask = [.command, .control]
+        sidebarItem.target = self
+        viewMenu.addItem(sidebarItem)
         viewMenuItem.submenu = viewMenu
 
         let windowMenuItem = NSMenuItem()
