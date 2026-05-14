@@ -59,6 +59,14 @@ echo "$dt_xml" | grep -q "public.folder" \
   || fail "CFBundleDocumentTypes does not declare public.folder"
 pass "declares public.folder"
 
+# TCC usage descriptions for protected user folders — required so macOS
+# stops re-prompting on every launch.
+for key in NSDocumentsFolderUsageDescription NSDesktopFolderUsageDescription NSDownloadsFolderUsageDescription; do
+  v="$(plutil -extract "$key" raw -o - "$INFO" 2>/dev/null || true)"
+  [[ -n "$v" ]] || fail "Info.plist missing $key — privacy prompts will reappear every launch"
+  pass "$key present"
+done
+
 # Resource bundles (SPM-generated .bundle dirs for targets with resources).
 res_bundle="$APP_DIR/Contents/Resources/MarkdownViewer_ViewerUI.bundle"
 [[ -d "$res_bundle" ]] || fail "ViewerUI resource bundle missing at $res_bundle"

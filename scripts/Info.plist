@@ -30,6 +30,20 @@
     <string>NSApplication</string>
     <key>NSHumanReadableCopyright</key>
     <string>© 2026 MarkdownViewer</string>
+    <!-- TCC usage descriptions. macOS prompts the user the first time the
+         app reads from any of these protected locations; with a usage
+         description, the system remembers the answer (instead of asking
+         every time) and shows the description in the prompt. -->
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>MarkdownViewer reads files from your Documents folder to display them.</string>
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>MarkdownViewer reads files from your Desktop to display them.</string>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>MarkdownViewer reads files from your Downloads folder to display them.</string>
+    <key>NSRemovableVolumesUsageDescription</key>
+    <string>MarkdownViewer reads files on removable volumes to display them.</string>
+    <key>NSNetworkVolumesUsageDescription</key>
+    <string>MarkdownViewer reads files on network volumes to display them.</string>
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>

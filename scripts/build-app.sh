@@ -44,9 +44,24 @@ shopt -u nullglob
 
 plutil -lint "$CONTENTS/Info.plist"
 
-# Ad-hoc sign so Launch Services treats it as a real bundle (and survives
-# Gatekeeper for local use). Real signing is Phase 9.
-codesign --force --sign - "$APP_DIR" >/dev/null 2>&1 || true
+# Ad-hoc sign with an **explicit, stable identifier** so TCC (privacy
+# prompts for Documents / Desktop / Downloads / etc.) and Launch Services
+# treat consecutive builds as the same app. Without `--identifier`, the
+# default identifier is derived from the bundle and is technically stable
+# — but `--preserve-metadata=identifier` is the belt-and-suspenders flag
+# that prevents codesign from rewriting it across rebuilds.
+#
+# Note: the CDHash will still change every build (the binary changes), so
+# TCC may still re-prompt on a fresh rebuild. The fix for that is a real
+# Developer ID certificate (Phase 9, distribution). During dev, granting
+# Full Disk Access to /usr/bin/open (the launcher) or running the binary
+# directly out of dist/MarkdownViewer.app/Contents/MacOS/MarkdownViewer
+# is the workaround.
+codesign --force \
+  --sign - \
+  --identifier "com.markdownviewer.MarkdownViewer" \
+  --timestamp=none \
+  "$APP_DIR" >/dev/null 2>&1 || true
 
 # Register with Launch Services so `open -a MarkdownViewer` works by name.
 # Without this, only an absolute-path `open -a /path/to/App.app` works.

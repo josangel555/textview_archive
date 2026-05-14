@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var openRecentMenu: NSMenu?
     private var windowMenu: NSMenu?
     private var cancellables: Set<AnyCancellable> = []
+    private var diagnosticSignalSource: DispatchSourceSignal?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Opt out of macOS's automatic window tabbing — we ship our own in-app
@@ -107,8 +108,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // B19: resolve relative to the process's cwd (which is the user's
         // shell cwd when launched from terminal; "/" when launched via
         // Launch Services). `expandingTildeInPath` handles ~/foo paths.
-        let args = CommandLine.arguments.dropFirst()
-        if let path = args.first {
+        // Flags accepted (parsed positionally for simplicity):
+        //   --diagnose          Dump JSON view tree to stdout and exit.
+        //   --source            Force source view mode (with --diagnose).
+        let rawArgs = Array(CommandLine.arguments.dropFirst())
+        let diagnoseMode = rawArgs.contains("--diagnose")
+        let forceSource = rawArgs.contains("--source")
+        let pathArgs = rawArgs.filter { !$0.hasPrefix("--") }
+        if let path = pathArgs.first {
             let expanded = (path as NSString).expandingTildeInPath
             let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             let url = URL(fileURLWithPath: expanded, relativeTo: cwd)
@@ -119,6 +126,81 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         NSApp.activate()
+
+        installDiagnosticSignalHandler()
+
+        if diagnoseMode {
+            runDiagnoseAndExit(forceSource: forceSource)
+        }
+    }
+
+    /// Trap SIGUSR1 to dump the live NSView tree to
+    /// /tmp/mdv-diagnostic-<pid>.json. Lets us inspect state DURING an
+    /// interactive session that's exhibiting a visual bug, instead of
+    /// only on headless launch (which may differ from real use).
+    /// Usage: `kill -USR1 $(pgrep MarkdownViewer)`
+    private func installDiagnosticSignalHandler() {
+        let src = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
+        src.setEventHandler { [weak self] in
+            guard let self, let win = self.window else { return }
+            let dump = DiagnosticDump.dump(window: win)
+            let path = "/tmp/mdv-diagnostic-\(getpid()).json"
+            do {
+                let data = try JSONSerialization.data(
+                    withJSONObject: dump,
+                    options: [.prettyPrinted, .sortedKeys]
+                )
+                try data.write(to: URL(fileURLWithPath: path))
+                FileHandle.standardError.write(
+                    Data("diagnostic dump → \(path)\n".utf8))
+            } catch {
+                FileHandle.standardError.write(
+                    Data("diagnostic dump failed: \(error)\n".utf8))
+            }
+        }
+        signal(SIGUSR1, SIG_IGN)   // Required so DispatchSource gets it
+        src.resume()
+        // Retain.
+        self.diagnosticSignalSource = src
+    }
+
+    /// Runs after the window/AppDelegate have finished launching and the
+    /// file is loaded. Waits a couple of run-loop ticks so SwiftUI has a
+    /// chance to lay out and the WKWebView (if any) has had a beat to
+    /// start loading. Then dumps the realized NSView tree as JSON to
+    /// stdout and exits cleanly with code 0 (or 1 on failure).
+    private func runDiagnoseAndExit(forceSource: Bool) {
+        guard let win = window else {
+            FileHandle.standardError.write(Data("diagnose: no window\n".utf8))
+            exit(2)
+        }
+        if forceSource {
+            // Programmatically flip to source view before measuring.
+            // The model's toggleViewMode is the user-facing path.
+            if model.supportsViewModeToggle && model.currentViewMode != .source {
+                model.toggleViewMode()
+            }
+        }
+        // Two run-loop ticks: one for SwiftUI to flush layout, one for
+        // AppKit to perform display. We've already activated above.
+        DispatchQueue.main.async {
+            DispatchQueue.main.async {
+                let dump = DiagnosticDump.dump(window: win)
+                do {
+                    let data = try JSONSerialization.data(
+                        withJSONObject: dump,
+                        options: [.prettyPrinted, .sortedKeys]
+                    )
+                    FileHandle.standardOutput.write(data)
+                    FileHandle.standardOutput.write(Data("\n".utf8))
+                    exit(0)
+                } catch {
+                    FileHandle.standardError.write(
+                        Data("diagnose: JSON encode failed: \(error)\n".utf8))
+                    exit(1)
+                }
+            }
+        }
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
