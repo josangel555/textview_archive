@@ -1,0 +1,58 @@
+# Testing
+
+The full multi-tier strategy is in [`DESIGN.md` §7](./DESIGN.md). This file is the
+**running view**: what exists today, how to run it, what to add next.
+
+## Tiers (target shape)
+
+| Tier | Tool | Phase first lands | Runs in CI? |
+|---|---|---|---|
+| 1. Unit (`ViewerCore` / `ViewerKit`) | XCTest | 0.1 ✅ | yes |
+| 2. SwiftUI snapshot | swift-snapshot-testing | 2 (tabs/sidebar) | yes |
+| 3. Headless SwiftUI behavior | ViewInspector | 2 | yes |
+| 4. Real-macOS E2E in tart VM | XCUITest in VM | 3+ | nightly only |
+
+## How to run
+
+```sh
+swift test                   # whole suite
+swift test --filter ViewerKitTests
+swift test --filter ViewerCoreTests.DocumentControllerTests/test_oversizedFile_reportsSizeInMB
+```
+
+## Current coverage (Phase 0.2)
+
+- **ViewerKitTests/FileTypeDetectorTests** — 7 cases. Extension table, case
+  insensitivity, UTType fallback, extensionless files.
+- **ViewerCoreTests/TextFileLoaderTests** — 5 cases. UTF-8 / Latin-1 / size
+  cap / missing file / empty file.
+- **ViewerCoreTests/DocumentControllerTests** — 4 cases. State mapping,
+  human-readable error messages.
+
+Total: **16 cases, ~35 ms**.
+
+## What is *not* yet tested
+
+| Surface | Why deferred |
+|---|---|
+| `TextDisplayView` `NSTextView` configuration | Need ViewInspector or snapshot tier — Phase 2 |
+| `DocumentModel` state transitions | Trivially correct now; revisit when it owns more (history, tabs) |
+| `AppDelegate` menu + window wiring | Needs Tier 4 VM E2E — Phase 3+ |
+| File argument handling at launch | Tier 4 |
+
+## Conventions
+
+- **`ViewerCore` and `ViewerKit` must stay UI-free.** No `import AppKit` /
+  `SwiftUI` there. This is what keeps Tier 1 cheap.
+- **Tests own their temp dirs.** Each test creates a fresh
+  `MarkdownViewerTests-<UUID>` directory and removes it in tearDown. Never
+  write to a fixed path.
+- **No mocks in Tier 1.** Inject real `TextFileLoader` instances; they're
+  fast and the file system is the integration we want to exercise.
+- **One file per type.** Tests mirror source layout
+  (`Sources/Foo/Bar.swift` → `Tests/FooTests/BarTests.swift`).
+
+## CI
+
+`.github/workflows/pr.yml` runs `swift build` + `swift test --parallel` on
+`macos-14` on every push to `main` and every PR.
