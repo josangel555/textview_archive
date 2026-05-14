@@ -7,10 +7,31 @@ final class HTMLRendererTests: XCTestCase {
 
     // MARK: Block elements
 
-    func test_heading_levels() {
-        XCTAssertEqual(renderer.render("# Hello"), "<h1>Hello</h1>\n")
-        XCTAssertEqual(renderer.render("## Sub"), "<h2>Sub</h2>\n")
-        XCTAssertEqual(renderer.render("###### Tiny"), "<h6>Tiny</h6>\n")
+    func test_heading_levels_haveSlugIDs() {
+        XCTAssertEqual(renderer.render("# Hello"), "<h1 id=\"hello\">Hello</h1>\n")
+        XCTAssertEqual(renderer.render("## Sub"), "<h2 id=\"sub\">Sub</h2>\n")
+        XCTAssertEqual(renderer.render("###### Tiny"), "<h6 id=\"tiny\">Tiny</h6>\n")
+    }
+
+    // CRIT-8: heading anchors enable [link](#heading) navigation
+    func test_heading_slug_normalizesPunctuation() {
+        let out = renderer.render("# Hello, World!")
+        XCTAssertTrue(out.contains("id=\"hello-world\""), "got: \(out)")
+    }
+
+    func test_heading_slug_disambiguatesDuplicates() {
+        let out = renderer.render("# Setup\n## Setup\n### Setup")
+        XCTAssertTrue(out.contains("id=\"setup\""))
+        XCTAssertTrue(out.contains("id=\"setup-1\""))
+        XCTAssertTrue(out.contains("id=\"setup-2\""))
+    }
+
+    func test_heading_slug_handlesEmptyText() {
+        let out = renderer.render("# ")  // edge: heading with just whitespace
+        // Either renders no heading or one with the placeholder id.
+        if out.contains("<h1") {
+            XCTAssertTrue(out.contains("id=\"section\""), "got: \(out)")
+        }
     }
 
     func test_paragraph() {
@@ -130,7 +151,7 @@ final class HTMLRendererTests: XCTestCase {
         XCTAssertTrue(page.contains("<html>"))
         XCTAssertTrue(page.contains("</html>"))
         XCTAssertTrue(page.contains("<style>body { color: red; }</style>"))
-        XCTAssertTrue(page.contains("<h1>Hi</h1>"))
+        XCTAssertTrue(page.contains("<h1 id=\"hi\">Hi</h1>"))
     }
 
     func test_renderPage_handlesEmptyMarkdown() {
@@ -159,9 +180,65 @@ final class HTMLRendererTests: XCTestCase {
         [link](https://example.com)
         """
         let out = renderer.render(md)
-        for fragment in ["<h1>", "<strong>", "<em>", "<code>", "<ul>",
+        for fragment in ["<h1 id=\"title\">", "<strong>", "<em>", "<code>", "<ul>",
                          "<blockquote>", "<pre>", "<a "] {
             XCTAssertTrue(out.contains(fragment), "missing \(fragment) in:\n\(out)")
         }
+    }
+
+    // MARK: CRIT-1 — CSP meta header in renderPage
+
+    func test_renderPage_includesContentSecurityPolicy() {
+        let page = renderer.renderPage("hi", stylesheet: "")
+        XCTAssertTrue(page.contains("http-equiv=\"Content-Security-Policy\""))
+        XCTAssertTrue(page.contains("default-src 'none'"))
+        XCTAssertTrue(page.contains("frame-src 'none'"))
+        XCTAssertTrue(page.contains("object-src 'none'"))
+        XCTAssertTrue(page.contains("connect-src 'none'"))
+    }
+
+    // MARK: S5 / F-06 — URL scheme allowlist on link / image
+
+    func test_link_javascriptURL_isNeutralized() {
+        let out = renderer.render("[click](javascript:alert(1))")
+        XCTAssertFalse(out.contains("javascript:"), "got: \(out)")
+        XCTAssertTrue(out.contains("href=\"about:blank\""), "got: \(out)")
+    }
+
+    func test_link_dataURL_isNeutralized() {
+        let out = renderer.render("[x](data:text/html,<script>alert(1)</script>)")
+        XCTAssertFalse(out.contains("data:text/html"))
+        XCTAssertTrue(out.contains("href=\"about:blank\""))
+    }
+
+    func test_link_fileURL_isNeutralized() {
+        let out = renderer.render("[boring](file:///etc/passwd)")
+        XCTAssertFalse(out.contains("/etc/passwd"))
+        XCTAssertTrue(out.contains("href=\"about:blank\""))
+    }
+
+    func test_link_fragmentAndRelative_passThrough() {
+        XCTAssertTrue(renderer.render("[x](#heading)").contains("href=\"#heading\""))
+        XCTAssertTrue(renderer.render("[x](other.md)").contains("href=\"other.md\""))
+        XCTAssertTrue(renderer.render("[x](http://example.com)")
+                        .contains("href=\"http://example.com\""))
+        XCTAssertTrue(renderer.render("[x](mailto:a@b.com)")
+                        .contains("href=\"mailto:a@b.com\""))
+    }
+
+    func test_image_javascriptURL_isNeutralized() {
+        let out = renderer.render("![x](javascript:alert(1))")
+        XCTAssertTrue(out.contains("src=\"about:blank\""))
+    }
+
+    func test_image_dataImage_isPreserved() {
+        let dataURL = "data:image/png;base64,iVBORw"
+        let out = renderer.render("![x](\(dataURL))")
+        XCTAssertTrue(out.contains("src=\"\(dataURL)\""), "got: \(out)")
+    }
+
+    func test_image_dataNonImage_isNeutralized() {
+        let out = renderer.render("![x](data:text/html,bad)")
+        XCTAssertTrue(out.contains("src=\"about:blank\""))
     }
 }

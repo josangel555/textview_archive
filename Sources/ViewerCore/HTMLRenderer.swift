@@ -18,13 +18,19 @@ public struct HTMLRenderer: Sendable {
 
     /// Render a full HTML page wrapped in `<html>...</html>` with the bundled
     /// stylesheet inlined. The view loads this directly into WKWebView.
+    ///
+    /// Includes a strict Content-Security-Policy (CRIT-1) that denies network
+    /// requests, scripts, iframes, plugins, base/form retargeting. Local file
+    /// images are still allowed (markdown documents reference relative images).
     public func renderPage(_ markdown: String, stylesheet: String) -> String {
         let body = render(markdown)
+        let csp = "default-src 'none'; img-src file: data:; style-src 'unsafe-inline'; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none';"
         return """
         <!DOCTYPE html>
         <html>
         <head>
         <meta charset="utf-8">
+        <meta http-equiv="Content-Security-Policy" content="\(csp)">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>\(stylesheet)</style>
         </head>
@@ -39,6 +45,9 @@ public struct HTMLRenderer: Sendable {
 struct HTMLVisitor: MarkupVisitor {
     typealias Result = String
 
+    /// Used to de-dupe heading anchor IDs within a single document.
+    var usedSlugs: [String: Int] = [:]
+
     mutating func defaultVisit(_ markup: any Markup) -> String {
         markup.children.map { visit($0) }.joined()
     }
@@ -51,7 +60,36 @@ struct HTMLVisitor: MarkupVisitor {
 
     mutating func visitHeading(_ heading: Heading) -> String {
         let inner = heading.children.map { visit($0) }.joined()
-        return "<h\(heading.level)>\(inner)</h\(heading.level)>\n"
+        let slug = HTMLVisitor.uniqueSlug(for: heading.plainText, used: &usedSlugs)
+        return "<h\(heading.level) id=\"\(slug)\">\(inner)</h\(heading.level)>\n"
+    }
+
+    /// GitHub-flavored slug: lowercase, ASCII alphanumerics & dashes; spaces and
+    /// other characters collapse to single dashes; trim leading/trailing dashes.
+    /// `used` tracks already-issued slugs in this document to disambiguate.
+    static func uniqueSlug(for text: String, used: inout [String: Int]) -> String {
+        var slug = ""
+        slug.reserveCapacity(text.count)
+        var lastWasDash = true
+        for scalar in text.unicodeScalars {
+            let ch = Character(scalar)
+            if ch.isLetter || ch.isNumber {
+                slug.append(Character(ch.lowercased()))
+                lastWasDash = false
+            } else if !lastWasDash {
+                slug.append("-")
+                lastWasDash = true
+            }
+        }
+        while slug.hasSuffix("-") { slug.removeLast() }
+        if slug.isEmpty { slug = "section" }
+        if let n = used[slug] {
+            used[slug] = n + 1
+            return "\(slug)-\(n + 1)"
+        } else {
+            used[slug] = 0
+            return slug
+        }
     }
 
     mutating func visitParagraph(_ paragraph: Paragraph) -> String {
@@ -138,7 +176,7 @@ struct HTMLVisitor: MarkupVisitor {
     }
 
     mutating func visitLink(_ link: Link) -> String {
-        let href = link.destination ?? ""
+        let href = HTMLVisitor.safeURL(link.destination ?? "", for: .link)
         let inner = link.children.map { visit($0) }.joined()
         let titleAttr: String
         if let title = link.title, !title.isEmpty {
@@ -150,9 +188,53 @@ struct HTMLVisitor: MarkupVisitor {
     }
 
     mutating func visitImage(_ image: Image) -> String {
-        let src = image.source ?? ""
+        let src = HTMLVisitor.safeURL(image.source ?? "", for: .image)
         let alt = image.plainText
         return "<img src=\"\(htmlEscape(src))\" alt=\"\(htmlEscape(alt))\"/>"
+    }
+
+    // MARK: URL scheme safety (S5 / F-06)
+
+    enum URLContext { case link, image }
+
+    /// Returns the URL if its scheme is on the allowlist, otherwise `"about:blank"`.
+    /// - Allowed for links: `http`, `https`, `mailto`, fragment (`#…`), and
+    ///   anything without a scheme (relative path).
+    /// - Allowed for images: `http`, `https`, `file`, `data:` (capped),
+    ///   fragment, and anything without a scheme.
+    /// `javascript:`, `vbscript:`, custom-app schemes, and (for links) `file:`
+    /// and `data:` are rewritten so a malicious markdown can't smuggle them
+    /// even if WKWebView's policy delegate is bypassed for the initial load.
+    static func safeURL(_ raw: String, for ctx: URLContext) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "about:blank" }
+        // Fragment-only ("#foo") and relative paths (no scheme).
+        if trimmed.hasPrefix("#") { return trimmed }
+        if let colon = trimmed.firstIndex(of: ":") {
+            // Authority-relative ("//host/x") starts with "//" before any colon.
+            let prefix = trimmed[trimmed.startIndex..<colon].lowercased()
+            // If the prefix has chars outside [a-z0-9+.-] it isn't a scheme.
+            let isScheme = prefix.allSatisfy {
+                $0.isLetter || $0.isNumber || $0 == "+" || $0 == "-" || $0 == "."
+            } && !prefix.isEmpty
+            if !isScheme { return trimmed }
+            let allowed: Set<String>
+            switch ctx {
+            case .link:  allowed = ["http", "https", "mailto"]
+            case .image: allowed = ["http", "https", "file", "data"]
+            }
+            if allowed.contains(prefix) {
+                if prefix == "data", ctx == .image {
+                    // Only allow image/* data URLs.
+                    let rest = trimmed[trimmed.index(after: colon)...]
+                    if rest.hasPrefix("image/") { return trimmed }
+                    return "about:blank"
+                }
+                return trimmed
+            }
+            return "about:blank"
+        }
+        return trimmed
     }
 
     mutating func visitInlineHTML(_ inlineHTML: InlineHTML) -> String {
