@@ -67,6 +67,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.toggleViewMode()
     }
 
+    @objc func newTab(_ sender: Any?) {
+        model.newTab()
+        window?.title = model.windowTitle
+    }
+
+    @objc func closeCurrentTab(_ sender: Any?) {
+        guard model.tabs.selectedIndex != nil else {
+            window?.performClose(nil)
+            return
+        }
+        model.closeCurrentTab()
+        window?.title = model.windowTitle
+    }
+
+    @objc func nextTab(_ sender: Any?) {
+        model.selectNextTab()
+        window?.title = model.windowTitle
+    }
+
+    @objc func previousTab(_ sender: Any?) {
+        model.selectPreviousTab()
+        window?.title = model.windowTitle
+    }
+
+    @objc func selectTabByNumber(_ sender: NSMenuItem) {
+        let index = sender.tag - 1
+        guard model.tabs.tabs.indices.contains(index) else { return }
+        model.selectTab(at: index)
+        window?.title = model.windowTitle
+    }
+
     @objc func openRecentItem(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
         model.open(url: url)
@@ -140,6 +171,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let fileMenuItem = NSMenuItem()
         mainMenu.addItem(fileMenuItem)
         let fileMenu = NSMenu(title: "File")
+        let newTabItem = NSMenuItem(
+            title: "New Tab",
+            action: #selector(newTab(_:)),
+            keyEquivalent: "t"
+        )
+        newTabItem.target = self
+        fileMenu.addItem(newTabItem)
+
         let openItem = NSMenuItem(
             title: "Open…",
             action: #selector(openDocument(_:)),
@@ -159,11 +198,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         fileMenu.addItem(recentItem)
 
         fileMenu.addItem(.separator())
-        fileMenu.addItem(NSMenuItem(
-            title: "Close Window",
-            action: #selector(NSWindow.performClose(_:)),
+
+        let closeTabItem = NSMenuItem(
+            title: "Close Tab",
+            action: #selector(closeCurrentTab(_:)),
             keyEquivalent: "w"
-        ))
+        )
+        closeTabItem.target = self
+        fileMenu.addItem(closeTabItem)
         fileMenuItem.submenu = fileMenu
 
         let viewMenuItem = NSMenuItem()
@@ -178,6 +220,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         toggleItem.target = self
         viewMenu.addItem(toggleItem)
         viewMenuItem.submenu = viewMenu
+
+        let windowMenuItem = NSMenuItem()
+        mainMenu.addItem(windowMenuItem)
+        let windowMenu = NSMenu(title: "Window")
+        let nextItem = NSMenuItem(
+            title: "Next Tab",
+            action: #selector(nextTab(_:)),
+            keyEquivalent: "\u{2192}"  // →
+        )
+        nextItem.keyEquivalentModifierMask = [.command, .option]
+        nextItem.target = self
+        windowMenu.addItem(nextItem)
+        let prevItem = NSMenuItem(
+            title: "Previous Tab",
+            action: #selector(previousTab(_:)),
+            keyEquivalent: "\u{2190}"  // ←
+        )
+        prevItem.keyEquivalentModifierMask = [.command, .option]
+        prevItem.target = self
+        windowMenu.addItem(prevItem)
+        windowMenu.addItem(.separator())
+        for n in 1...9 {
+            let item = NSMenuItem(
+                title: "Show Tab \(n)",
+                action: #selector(selectTabByNumber(_:)),
+                keyEquivalent: "\(n)"
+            )
+            item.tag = n
+            item.target = self
+            windowMenu.addItem(item)
+        }
+        windowMenuItem.submenu = windowMenu
 
         let editMenuItem = NSMenuItem()
         mainMenu.addItem(editMenuItem)

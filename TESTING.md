@@ -33,11 +33,16 @@ swift test --filter ViewerCoreTests.DocumentControllerTests/test_oversizedFile_r
 - **ViewerCoreTests/HistoryStoreTests** — 13 cases. Record, dedupe + bump,
   URL normalization, cap limit, remove, clear, persistence round-trip,
   corrupt-file recovery, cap applied on load, folder kind, recent limit.
+- **ViewerCoreTests/TabsStateTests** — 19 cases. Empty state, init with
+  out-of-bounds selection clamps, append-selects, close-at-selected /
+  before / after / only-tab / out-of-bounds, move (rearranges + carries
+  selection + invalid args no-op), `openOrReveal` (existing → switch, new →
+  append, reuse blank tab), replace, select out-of-bounds.
 - **scripts/verify-app.sh** — 17 structural assertions on the built bundle
   (executable bit, plist lint, required keys, document type UTIs, ViewerUI
   resource bundle + markdown.css presence).
 
-Total: **56 swift cases, ~85 ms** + bundle verify script.
+Total: **75 swift cases, ~80 ms** + bundle verify script.
 
 ## What is *not* yet tested
 
