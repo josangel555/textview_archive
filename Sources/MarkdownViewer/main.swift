@@ -53,14 +53,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if UserDefaults.standard.string(forKey: savedFrameKey) == nil {
             window.center()
         }
-        // After restoring the autosaved frame, clamp it back up to the
-        // minimum content size in case a prior session left a tiny window.
+        // After restoring the autosaved frame, defend against two cases
+        // where the user can be left with a useless window:
+        //   1. The saved frame is below the minimum content size.
+        //   2. The saved frame is on a screen that no longer exists
+        //      (e.g. external display disconnected since last launch).
+        // Either way: clamp to a sane size and re-center on a real screen.
         var frame = window.frame
         let minWindowSize = window.frameRect(forContentRect:
             NSRect(origin: .zero, size: minContentSize)).size
+        var needsReposition = false
         if frame.size.width < minWindowSize.width || frame.size.height < minWindowSize.height {
             frame.size.width = max(frame.size.width, minWindowSize.width)
             frame.size.height = max(frame.size.height, minWindowSize.height)
+            needsReposition = true
+        }
+        // If the saved frame doesn't overlap any visible screen at all
+        // (a frame purely off-screen on a now-disconnected monitor),
+        // recover. NSScreen.screens contains only screens currently
+        // attached, so a missing one means we lost it.
+        let onAScreen = NSScreen.screens.contains { $0.visibleFrame.intersects(frame) }
+        if !onAScreen {
+            needsReposition = true
+        }
+        if needsReposition {
             window.setFrame(frame, display: false)
             window.center()
         }
