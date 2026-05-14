@@ -18,6 +18,13 @@ struct TabBar: View {
                         .contextMenu {
                             TabContextMenu(model: model, tabIndex: index, tab: tab)
                         }
+                        .onDrag {
+                            NSItemProvider(object: NSString(string: "mdv-tab:\(index)"))
+                        }
+                        .onDrop(
+                            of: [.plainText],
+                            delegate: TabDropDelegate(model: model, targetIndex: index)
+                        )
                         if index < model.tabs.tabs.count - 1 {
                             Divider().frame(height: 16)
                         }
@@ -35,6 +42,28 @@ struct TabBar: View {
         }
         .frame(height: 30)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+private struct TabDropDelegate: DropDelegate {
+    let model: DocumentModel
+    let targetIndex: Int
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let provider = info.itemProviders(for: [.plainText]).first else { return false }
+        _ = provider.loadObject(ofClass: NSString.self) { obj, _ in
+            guard let str = obj as? String,
+                  str.hasPrefix("mdv-tab:"),
+                  let src = Int(str.dropFirst("mdv-tab:".count)) else { return }
+            Task { @MainActor in
+                guard src != self.targetIndex else { return }
+                // Drop onto a row → place the dragged tab in that row's
+                // position; the target tab slides to the other side.
+                let dst = src < self.targetIndex ? self.targetIndex + 1 : self.targetIndex
+                self.model.moveTab(from: src, to: dst)
+            }
+        }
+        return true
     }
 }
 
