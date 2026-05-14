@@ -1,6 +1,9 @@
 # Investigation: source-view invisible content
 
-Status: **bug isolated, root cause unclear, fix in progress.**
+Status: **fixed (commit 73baa53)**. Replaced `NSScrollView.verticalRulerView`
+with a sibling `GutterScrollContainerView` that lays out a custom
+`LineNumberGutterView` next to the `NSScrollView`. User confirmed the
+text is now visible.
 
 ## Symptom
 
@@ -73,17 +76,55 @@ The user has reported this consistently. Confirmed via in-app self-snapshot
    report `layer.contents == nil`. Something is causing SwiftUI to stop
    committing its rasterized output.
 
-## Next steps to try
+## Resolution
 
-- Remove `verticalRulerView` / `rulersVisible=true` → does NSTextView alone draw?
-- Try NSTextView without NSScrollView wrapping
-- Try a non-text NSView with `wantsLayer=true` and `drawRect` content to see if
-  arbitrary subviews are affected, or only NSTextView/NSScrollView
-- Compare layer hierarchy of working (.empty) vs broken (.loaded source) state
-- Check NSHostingView for any `wantsLayer` or `drawsAsynchronously` config
+After removing `LineNumberRulerView` from the `scrollView.verticalRulerView`
+slot, the entire window rendered correctly — TabBar, ModeBar, NSTextView
+glyphs, all visible. The culprit was confirmed to be NSScrollView's
+ruler installation path, which inserts a `_NSScrollViewContentBackgroundView`
+(NSVisualEffectView) that breaks the parent SwiftUI compositor's
+layer-content commits.
+
+**Fix**: introduce `GutterScrollContainerView` (Sources/ViewerUI/GutterScrollView.swift):
+- An NSView container with two children laid out horizontally:
+  `LineNumberGutterView` on the left (40pt wide) and the `NSScrollView`
+  on the right
+- The gutter observes the scroll view's `NSClipView`
+  `boundsDidChangeNotification` to redraw aligned with the visible
+  glyph range
+- Same line-number behavior as before, but as a *sibling* NSView
+  rather than NSScrollView's installed ruler. No NSVisualEffectView
+  side-effect → SwiftUI compositor stays healthy.
 
 ## Files touched
 
 - `Sources/ViewerUI/DiagnosticDump.swift` — view-tree introspection
-- `Sources/MarkdownViewer/main.swift` — `--diagnose` flag + SIGUSR1 handler
-- `Sources/ViewerUI/TextDisplayView.swift` — TextKit 1 attempt (no change in symptom)
+- `Sources/MarkdownViewer/main.swift` — `--diagnose`, `--auto-snapshot`,
+  `--script` flags + SIGUSR1 handler
+- `Sources/ViewerUI/TextDisplayView.swift` — explicit TextKit 1 stack
+  + delegates ruler layout to GutterScrollContainerView
+- `Sources/ViewerUI/GutterScrollView.swift` — new container + gutter
+- `Sources/ViewerUI/DocumentModel.swift` — skip restoring TCC-protected
+  folders on launch (Documents/Desktop/Downloads/Pictures/iCloud)
+
+## Regression tests
+
+- `DiagnosticDumpTests.test_sourceView_nsScrollViewDoesNotHaveVerticalRulerView`
+  asserts no `NSScrollView` in the realized tree has both
+  `hasVerticalRuler` and a non-nil `verticalRulerView` (the bug pattern).
+- `DiagnosticDumpTests.test_sourceView_gutterPresent_and_distinctFromTextScrollView`
+  asserts the gutter and scroll view are siblings inside
+  `GutterScrollContainerView`.
+- `InteractionScriptTests.test_toggleView_swapsRenderedAndSourceViews`
+  exercises the live `.app` toggling rendered ↔ source.
+
+## Known test-harness limitation
+
+When the test runner spawns the app from a non-foreground bash session,
+the window's `occlusionState.visible` is False and AppKit suspends
+drawing — `CGWindowListCreateImage` then returns a blank backing store
+even though the view tree is correct. This is *not* a user bug
+(LaunchServices-launched apps from Finder or `open -a` get proper
+focus). For automated tests, we assert on the DiagnosticDump JSON
+which is layer-state-independent. PNG snapshots remain useful for
+manual / human visual inspection when run with the app foregrounded.
