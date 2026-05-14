@@ -18,18 +18,22 @@ public struct ContentView: View {
         ZStack {
             VStack(spacing: 0) {
                 TabBar(model: model)
+                    .accessibilityIdentifier("mdv.tabbar")
                 Divider()
                 ModeBar(model: model)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
+                    .accessibilityIdentifier("mdv.modebar")
                 Divider()
                 HStack(spacing: 0) {
                     if model.sidebar.isVisible {
                         DraggableSidebar(model: model)
+                            .accessibilityIdentifier("mdv.sidebar")
                         Divider()
                     }
                     content
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .accessibilityIdentifier("mdv.content")
                 }
             }
             .frame(minWidth: 600, minHeight: 360)
