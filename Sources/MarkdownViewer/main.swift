@@ -29,10 +29,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         )
         window.title = model.windowTitle
         window.contentView = hosting
-        window.center()
-        window.setFrameAutosaveName("MainWindow")
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
+        // B20: setFrameAutosaveName registers the autosave name AND restores
+        // any saved frame for that name. Previously we called center()
+        // *before* this, so the centered frame was immediately overwritten
+        // by the autosaved frame, making the window appear to "jump" on
+        // launch. Now we check UserDefaults (which is where AppKit persists
+        // the frame, keyed `NSWindow Frame <name>`) and only center when
+        // there's no saved frame yet.
+        let autosaveName = "MainWindow"
+        let savedFrameKey = "NSWindow Frame \(autosaveName)"
+        _ = window.setFrameAutosaveName(autosaveName)
+        if UserDefaults.standard.string(forKey: savedFrameKey) == nil {
+            window.center()
+        }
         window.makeKeyAndOrderFront(nil)
         self.window = window
 
@@ -40,12 +51,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.restorePreviousFolderIfAvailable()
 
         // Open file from argv if provided. Detects folder vs file.
+        // B19: resolve relative to the process's cwd (which is the user's
+        // shell cwd when launched from terminal; "/" when launched via
+        // Launch Services). `expandingTildeInPath` handles ~/foo paths.
         let args = CommandLine.arguments.dropFirst()
         if let path = args.first {
             let expanded = (path as NSString).expandingTildeInPath
-            let url = URL(fileURLWithPath: expanded)
+            let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            let url = URL(fileURLWithPath: expanded, relativeTo: cwd)
+                .standardizedFileURL
             var isDir: ObjCBool = false
-            if FileManager.default.fileExists(atPath: expanded, isDirectory: &isDir) {
+            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) {
                 if isDir.boolValue {
                     model.openFolder(url)
                 } else {

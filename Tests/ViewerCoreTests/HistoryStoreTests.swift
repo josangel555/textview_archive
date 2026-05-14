@@ -174,4 +174,38 @@ final class HistoryStoreTests: XCTestCase {
         }
         XCTAssertEqual(store.recent(limit: 3).count, 3)
     }
+
+    // S8 — tampered file beyond maxStoreFileBytes is treated as corrupt.
+    func test_oversizedStoreFile_isIgnoredOnLoad() throws {
+        // Write a structurally-valid (but huge) JSON array to the store URL.
+        // It would parse fine; we want the *size* gate to refuse it before
+        // decode even runs.
+        let bigPath = String(repeating: "x", count: 5000)
+        let entry = """
+        {"id":"\(bigPath)","url":"file:///x","kind":"file","lastOpenedAt":"2026-05-14T00:00:00Z","displayName":"x"}
+        """
+        let arrayJSON = "[" + Array(repeating: entry, count: 500).joined(separator: ",") + "]"
+        try arrayJSON.write(to: storeURL, atomically: true, encoding: .utf8)
+
+        let store = HistoryStore(
+            storeURL: storeURL,
+            maxEntries: 100,
+            maxStoreFileBytes: 10_000,  // way smaller than the file we just wrote
+            clock: { Date(timeIntervalSince1970: 1_700_000_000) }
+        )
+        XCTAssertEqual(store.count, 0, "oversized store file should be skipped, not decoded")
+    }
+
+    // S8 — well-formed JSON with the wrong schema (array of strings) is
+    // treated as corrupt and starts fresh, not crashed.
+    func test_storeFile_validJSONWrongSchema_isTreatedAsEmpty() throws {
+        try #"["just","strings","not","entries"]"#.write(
+            to: storeURL, atomically: true, encoding: .utf8
+        )
+        let store = makeStore()
+        XCTAssertEqual(store.count, 0)
+        // And the store is still usable after that.
+        store.record(url: makeFile("a.md"))
+        XCTAssertEqual(store.count, 1)
+    }
 }
