@@ -439,8 +439,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls where FileManager.default.fileExists(atPath: url.path) {
-            model.openPath(url)
+        for url in urls {
+            if url.scheme == "markdownviewer" {
+                handleCustomURLScheme(url)
+            } else if FileManager.default.fileExists(atPath: url.path) {
+                model.openPath(url)
+            }
+        }
+    }
+
+    /// Handle `markdownviewer://` URLs. Supported forms:
+    ///   - markdownviewer://open?path=/abs/path/to/file.md
+    ///   - markdownviewer://open?path=~/notes/foo.md     (~ expanded)
+    ///   - markdownviewer://search?root=/path&q=hello
+    /// More verbs can be added as we go; each is a URL host.
+    private func handleCustomURLScheme(_ url: URL) {
+        guard let host = url.host else { return }
+        let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let items = comps?.queryItems ?? []
+        let q: (String) -> String? = { key in
+            items.first(where: { $0.name == key })?.value
+        }
+        switch host {
+        case "open":
+            if let raw = q("path") {
+                let expanded = (raw as NSString).expandingTildeInPath
+                model.openPath(URL(fileURLWithPath: expanded))
+            }
+        case "search":
+            if let root = q("root") {
+                let expanded = (root as NSString).expandingTildeInPath
+                model.sidebar.setRoot(URL(fileURLWithPath: expanded))
+            }
+            if let queryStr = q("q") {
+                model.crossSearchQuery = queryStr
+                model.showCrossSearch()
+            }
+        default:
+            break
         }
     }
 

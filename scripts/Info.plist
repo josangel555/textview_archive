@@ -44,6 +44,17 @@
     <string>MarkdownViewer reads files on removable volumes to display them.</string>
     <key>NSNetworkVolumesUsageDescription</key>
     <string>MarkdownViewer reads files on network volumes to display them.</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>MarkdownViewer URL Scheme</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>markdownviewer</string>
+            </array>
+        </dict>
+    </array>
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>
