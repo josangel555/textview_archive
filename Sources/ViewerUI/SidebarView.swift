@@ -13,6 +13,10 @@ struct SidebarView: View {
                 BookmarksSection(model: model)
                 Divider()
             }
+            if sidebar.rootURL != nil {
+                SearchAnywhereSection(model: model)
+                Divider()
+            }
             if let root = sidebar.rootURL {
                 ScrollViewReader { proxy in
                     ScrollView {

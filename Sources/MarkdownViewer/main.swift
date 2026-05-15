@@ -682,10 +682,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // settings window, just wire the action.
         let settingsItem = NSMenuItem(
             title: "Settings…",
-            action: nil,
+            action: #selector(showSettings(_:)),
             keyEquivalent: ","
         )
-        settingsItem.isEnabled = false
+        settingsItem.target = self
         appMenu.addItem(settingsItem)
         appMenu.addItem(.separator())
         appMenu.addItem(NSMenuItem(
@@ -958,6 +958,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     @objc func toggleSourceWordWrap(_ sender: Any?) {
         model.toggleSourceWordWrap()
+    }
+
+    private let settingsWindowController = SettingsWindowController()
+    @objc func showSettings(_ sender: Any?) {
+        settingsWindowController.show(model: model)
     }
 
     /// Menu validation: gray-out items that don't apply to the current
