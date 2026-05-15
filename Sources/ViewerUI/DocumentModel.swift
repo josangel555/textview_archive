@@ -328,6 +328,71 @@ public final class DocumentModel: ObservableObject {
         return Formatter.prettyPrint(file.contents, as: format)
     }
 
+    // MARK: Syntax highlighting
+
+    /// Cache of (textHash, language) → [HighlightRun]. Published so
+    /// SwiftUI views observing the model re-render when a fresh
+    /// tokenization lands. `String.hashValue` collisions are theoretically
+    /// possible but vanishingly rare for source files; if it ever bites,
+    /// we add the byte length as a secondary key.
+    public struct HighlightCacheKey: Hashable, Sendable {
+        public let textHash: Int
+        public let language: HighlightLanguage
+    }
+    @Published public private(set) var highlightCache: [HighlightCacheKey: [HighlightRun]] = [:]
+    private var highlightInFlight: Set<HighlightCacheKey> = []
+
+    /// Currently-active syntax theme. Computed from system appearance;
+    /// re-publishes when the user flips Light/Dark. Override field is
+    /// for a future "Settings → Appearance" picker.
+    @Published public var themeOverride: SyntaxTheme.Name? = nil
+    public var activeTheme: SyntaxTheme {
+        if let o = themeOverride { return SyntaxTheme.named(o) }
+        return SyntaxTheme.resolved(forAppearance: NSApp?.effectiveAppearance)
+    }
+
+    /// View-facing accessor. Returns runs immediately if cached;
+    /// otherwise returns [] and kicks off an async tokenize task that
+    /// will populate `highlightCache`, triggering a re-render via
+    /// @Published. Calls with the same key while a task is in flight
+    /// are coalesced. Safe to call from `body`.
+    public func highlightRuns(
+        for text: String, language: HighlightLanguage
+    ) -> [HighlightRun] {
+        guard language != .plainText else { return [] }
+        let key = HighlightCacheKey(textHash: text.hashValue, language: language)
+        if let cached = highlightCache[key] { return cached }
+        guard !highlightInFlight.contains(key) else { return [] }
+        highlightInFlight.insert(key)
+        let snapshot = text
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let runs = TreeSitterEngine.shared.tokenize(
+                snapshot, language: language
+            )
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.highlightCache[key] = runs
+                self.highlightInFlight.remove(key)
+                self.pruneHighlightCacheIfNeeded()
+            }
+        }
+        return []
+    }
+
+    /// Cap the cache so we don't grow without bound when the user
+    /// scrubs through many files. The numbers are arbitrary — enough
+    /// to cover a session of normal usage.
+    private static let highlightCacheMax = 32
+    private func pruneHighlightCacheIfNeeded() {
+        guard highlightCache.count > Self.highlightCacheMax else { return }
+        // Drop a third of entries (oldest first by insertion order is
+        // hard with a plain Dictionary; we drop arbitrary entries).
+        let dropCount = highlightCache.count - Self.highlightCacheMax * 2 / 3
+        for key in highlightCache.keys.prefix(dropCount) {
+            highlightCache.removeValue(forKey: key)
+        }
+    }
+
     // MARK: Derived from current tab
 
     public var currentState: DocumentState { tabs.selected?.state ?? .empty }

@@ -88,7 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             window.setFrame(frame, display: false)
             window.center()
         }
-        window.makeKeyAndOrderFront(nil)
+        showWindow(window)
         self.window = window
 
         // A5: keep window.title in sync with model.$windowTitle. Eliminates
@@ -150,7 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
 
-        NSApp.activate()
+        activateIfForeground()
 
         installDiagnosticSignalHandler()
 
@@ -316,8 +316,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 FileHandle.standardError.write(Data("auto-snapshot: no window\n".utf8))
                 exit(2)
             }
-            NSApp.activate(ignoringOtherApps: true)
-            win.makeKeyAndOrderFront(nil)
+            activateIfForeground()
+            showWindow(win)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 // Per-user tmpdir at /var/folders/... is safe from the
                 // symlink-hijack scenario possible in /tmp.
@@ -351,8 +351,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // occlusion-suspends-drawing optimization doesn't yield a
             // stale snapshot. We capture the realized-on-screen state,
             // so the window must actually be on-screen + drawing.
-            NSApp.activate(ignoringOtherApps: true)
-            win.makeKeyAndOrderFront(nil)
+            activateIfForeground()
+            showWindow(win)
             // Give the compositor one runloop tick to flush after
             // activation before we capture.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -977,8 +977,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 }
 
+/// Bring `window` to the front. In normal mode, also takes key/focus.
+/// In MDV_BACKGROUND=1 mode, uses `orderFrontRegardless` so the window
+/// appears but does NOT steal keyboard focus from whatever the user
+/// has in front of them.
+func showWindow(_ window: NSWindow) {
+    if ProcessInfo.processInfo.environment["MDV_BACKGROUND"] == "1" {
+        window.orderFrontRegardless()
+    } else {
+        window.makeKeyAndOrderFront(nil)
+    }
+}
+
+/// Call `NSApp.activate(ignoringOtherApps: true)` only in normal mode.
+/// In MDV_BACKGROUND=1 we skip activation entirely so the app stays in
+/// the background and the user's foreground app retains focus.
+func activateIfForeground() {
+    guard ProcessInfo.processInfo.environment["MDV_BACKGROUND"] != "1" else { return }
+    NSApp.activate(ignoringOtherApps: true)
+}
+
 let app = NSApplication.shared
-app.setActivationPolicy(.regular)
+
+/// `MDV_BACKGROUND=1` flips the app into accessory mode: window can
+/// show but won't become key (no keyboard-focus theft) and the app
+/// doesn't get a Dock tile. Used by the test harness so a suite running
+/// in the background doesn't capture the user's keystrokes mid-typing.
+/// In normal interactive launches this env var is unset → `.regular`
+/// behavior unchanged.
+let backgroundMode = ProcessInfo.processInfo.environment["MDV_BACKGROUND"] == "1"
+app.setActivationPolicy(backgroundMode ? .accessory : .regular)
 let delegate = AppDelegate()
 app.delegate = delegate
 app.run()

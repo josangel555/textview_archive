@@ -71,19 +71,22 @@ enum AppLauncher {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: exePath)
         p.arguments = ["--script", scriptPath, fileArg.path]
+        // MDV_BACKGROUND=1 tells main.swift to run in accessory mode:
+        // window appears but doesn't take key focus, and we skip the
+        // osascript activate below. Without this, every test run
+        // grabs whatever the user is typing into.
+        var env = ProcessInfo.processInfo.environment
+        env["MDV_BACKGROUND"] = "1"
+        p.environment = env
         p.standardOutput = FileHandle(forWritingAtPath: "/dev/null")
         p.standardError  = FileHandle(forWritingAtPath: "/dev/null")
         try p.run()
-
-        // Give the window a beat to appear, then activate via AppleScript.
-        // osascript `tell application X to activate` IS a user-equivalent
-        // gesture as far as macOS is concerned, so it's allowed to
-        // foreground the app even from a background launcher.
+        // Give the window a beat to appear. We don't activate via
+        // osascript anymore — see env var above. Tradeoff: PNG
+        // snapshots will be blank because AppKit suspends drawing for
+        // occluded windows. JSON dumps (view-tree introspection) are
+        // unaffected and that's what every L3+ test consumes.
         Thread.sleep(forTimeInterval: 0.6)
-        _ = runShell([
-            "/usr/bin/osascript", "-e",
-            "tell application \"\(existingProcessName)\" to activate",
-        ], wait: 2)
 
         // Poll for exit.
         let deadline = Date().addingTimeInterval(timeout)

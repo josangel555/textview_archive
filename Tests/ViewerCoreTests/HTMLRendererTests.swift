@@ -75,7 +75,13 @@ final class HTMLRendererTests: XCTestCase {
         let out = renderer.render("```swift\nlet x = 1\n```")
         XCTAssertTrue(out.contains("<pre><code class=\"language-swift\">"),
                       "got: \(out)")
-        XCTAssertTrue(out.contains("let x = 1"))
+        // Phase 5b: code-fence body is wrapped in per-token <span class="tok-*">
+        // runs by TreeSitter, so we no longer assert the raw "let x = 1"
+        // substring. Confirm the tokens land in the right kinds instead.
+        XCTAssertTrue(out.contains("<span class=\"tok-keyword\">let</span>"),
+                      "expected 'let' as keyword span; got: \(out)")
+        XCTAssertTrue(out.contains("<span class=\"tok-number\">1</span>"),
+                      "expected '1' as number span; got: \(out)")
     }
 
     func test_codeBlock_escapesHTML() {
