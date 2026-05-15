@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        Hardened runtime entitlements for MarkdownViewer.
+
+        We are intentionally non-sandboxed (the app needs to read user-
+        selected files from anywhere). Hardened runtime is REQUIRED for
+        notarization but does not require the app to be sandboxed.
+
+        We don't enable any of the dangerous opt-outs (allow-jit,
+        disable-library-validation, allow-unsigned-executable-memory).
+        Everything we do — reading files, rendering markdown via
+        WKWebView with strict CSP, drawing via SwiftUI/AppKit — works
+        within the default hardened-runtime constraints.
+
+        WKWebView in a non-sandboxed app runs in a separate process and
+        does not need additional entitlements here for our use (offline
+        rendering with file: image and data: URI loading enabled via
+        CSP; no remote network).
+    -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <false/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <false/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <false/>
+    <key>com.apple.security.cs.disable-executable-page-protection</key>
+    <false/>
+</dict>
+</plist>

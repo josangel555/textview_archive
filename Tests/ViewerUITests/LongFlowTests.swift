@@ -12,11 +12,14 @@ import Foundation
 final class LongFlowTests: XCTestCase {
 
     private var tmpDir: URL!
-    private var process: Process?
 
     private func projectRoot() -> URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    }
+
+    private var appBundlePath: String {
+        projectRoot().appendingPathComponent("dist/MarkdownViewer.app").path
     }
 
     private var appExecutable: URL {
@@ -27,51 +30,22 @@ final class LongFlowTests: XCTestCase {
         tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("LongFlow-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
-        for n in 1...99 {
-            let s = String(format: "%02d", n)
-            try? FileManager.default.removeItem(atPath: "/tmp/mdv-step-\(s).json")
-            try? FileManager.default.removeItem(atPath: "/tmp/mdv-step-\(s).png")
-        }
     }
 
     override func tearDownWithError() throws {
-        if let p = process, p.isRunning {
-            p.terminate()
-            for _ in 0..<10 { if !p.isRunning { break }; Thread.sleep(forTimeInterval: 0.1) }
-            if p.isRunning { kill(p.processIdentifier, SIGKILL); p.waitUntilExit() }
-        }
+        _ = AppLauncher.currentPID(of: "MarkdownViewer").map { kill($0, SIGTERM) }
         try? FileManager.default.removeItem(at: tmpDir)
     }
 
     @discardableResult
     private func runScript(_ script: String, with fileArg: URL, timeout: TimeInterval = 90) throws -> [[String: Any]] {
-        // Clean any step artifacts from a previous runScript in the same test.
-        for n in 1...99 {
-            let s = String(format: "%02d", n)
-            try? FileManager.default.removeItem(atPath: "/tmp/mdv-step-\(s).json")
-            try? FileManager.default.removeItem(atPath: "/tmp/mdv-step-\(s).png")
-        }
-        let scriptURL = tmpDir.appendingPathComponent("script.txt")
-        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
-        let p = Process()
-        p.executableURL = appExecutable
-        p.arguments = ["--script", scriptURL.path, fileArg.path]
-        p.standardOutput = FileHandle(forWritingAtPath: "/dev/null")
-        p.standardError  = FileHandle(forWritingAtPath: "/dev/null")
-        try p.run()
-        self.process = p
-        let deadline = Date().addingTimeInterval(timeout)
-        while p.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.1) }
-        if p.isRunning { p.terminate(); p.waitUntilExit() }
-        var dumps: [[String: Any]] = []
-        for n in 1...99 {
-            let s = String(format: "%02d", n)
-            guard let data = FileManager.default.contents(atPath: "/tmp/mdv-step-\(s).json"),
-                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            else { break }
-            dumps.append(obj)
-        }
-        return dumps
+        try AppLauncher.runScript(
+            appBundlePath: appBundlePath,
+            scriptContents: script,
+            scriptPath: tmpDir.appendingPathComponent("script.txt").path,
+            fileArg: fileArg,
+            timeout: timeout
+        )
     }
 
     private func writeMD(_ name: String, _ body: String = "# x\n") throws -> URL {

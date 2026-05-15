@@ -18,7 +18,6 @@ import Foundation
 final class InteractionScriptTests: XCTestCase {
 
     private var tmpDir: URL!
-    private var process: Process?
 
     private func projectRoot() -> URL {
         URL(fileURLWithPath: #filePath)
@@ -27,75 +26,39 @@ final class InteractionScriptTests: XCTestCase {
             .deletingLastPathComponent()
     }
 
+    private var appBundlePath: String {
+        projectRoot().appendingPathComponent("dist/MarkdownViewer.app").path
+    }
+
     private var appExecutable: URL {
-        projectRoot()
-            .appendingPathComponent("dist/MarkdownViewer.app/Contents/MacOS/MarkdownViewer")
+        projectRoot().appendingPathComponent(
+            "dist/MarkdownViewer.app/Contents/MacOS/MarkdownViewer")
     }
 
     override func setUpWithError() throws {
         tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("InteractionScript-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
-        // Clean step artifacts so we read THIS run's output.
-        for n in 1...99 {
-            let s = String(format: "%02d", n)
-            try? FileManager.default.removeItem(
-                atPath: "/tmp/mdv-step-\(s).json")
-            try? FileManager.default.removeItem(
-                atPath: "/tmp/mdv-step-\(s).png")
-        }
     }
 
     override func tearDownWithError() throws {
-        if let p = process, p.isRunning {
-            p.terminate()
-            for _ in 0..<10 {
-                if !p.isRunning { break }
-                Thread.sleep(forTimeInterval: 0.1)
-            }
-            if p.isRunning { kill(p.processIdentifier, SIGKILL); p.waitUntilExit() }
-        }
+        _ = AppLauncher.currentPID(of: "MarkdownViewer").map { kill($0, SIGTERM) }
         try? FileManager.default.removeItem(at: tmpDir)
     }
 
-    /// Runs the app with a script file and a file argument. Waits for
-    /// the process to exit (the runner exits after the last step).
-    /// Returns the list of per-step JSON dumps as `[String: Any]`.
     @discardableResult
     private func runScript(
         _ script: String,
         with fileArg: URL,
         timeout: TimeInterval = 20
     ) throws -> [[String: Any]] {
-        let scriptURL = tmpDir.appendingPathComponent("script.txt")
-        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
-
-        let p = Process()
-        p.executableURL = appExecutable
-        p.arguments = ["--script", scriptURL.path, fileArg.path]
-        let nullOut = FileHandle(forWritingAtPath: "/dev/null")
-        p.standardOutput = nullOut
-        p.standardError = nullOut
-        try p.run()
-        self.process = p
-
-        let deadline = Date().addingTimeInterval(timeout)
-        while p.isRunning && Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.1)
-        }
-        if p.isRunning { p.terminate(); p.waitUntilExit() }
-
-        // Collect step JSON dumps.
-        var dumps: [[String: Any]] = []
-        for n in 1...99 {
-            let s = String(format: "%02d", n)
-            let path = "/tmp/mdv-step-\(s).json"
-            guard let data = FileManager.default.contents(atPath: path),
-                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            else { break }
-            dumps.append(obj)
-        }
-        return dumps
+        try AppLauncher.runScript(
+            appBundlePath: appBundlePath,
+            scriptContents: script,
+            scriptPath: tmpDir.appendingPathComponent("script.txt").path,
+            fileArg: fileArg,
+            timeout: timeout
+        )
     }
 
     private func writeMarkdown(_ name: String = "doc.md") throws -> URL {

@@ -128,3 +128,22 @@ even though the view tree is correct. This is *not* a user bug
 focus). For automated tests, we assert on the DiagnosticDump JSON
 which is layer-state-independent. PNG snapshots remain useful for
 manual / human visual inspection when run with the app foregrounded.
+
+### Mitigation attempted (and the reason it doesn't fully work)
+
+- We tried `osascript "tell application X to activate"` from the
+  launcher after spawning. macOS 14+ rate-limits / restricts
+  programmatic foregrounding when the caller isn't itself frontmost.
+  The window's `isKeyWindow` / `isMainWindow` / `occlusionState`
+  remain False, so PNG snapshots are still blank.
+- We tried `/usr/bin/open -n -a APP --args ...` (LaunchServices). On
+  this macOS, `open` silently drops args that start with `--`, so the
+  app launches but never sees `--script`.
+- Direct `Process` exec preserves argv exactly. We use that for
+  reliable script delivery and accept the occlusion as a documented
+  test-harness limitation. Tests assert on JSON dumps.
+
+For true visual review, run a UTM VM with auto-login, no terminal in
+front, and let the test suite spawn MarkdownViewer there — its window
+becomes frontmost by default, and PNG snapshots populate correctly.
+The `scripts/test-in-vm.sh` runner is designed for that case.
