@@ -715,6 +715,32 @@ public final class DocumentModel: ObservableObject {
     public func setCurrentViewMode(_ mode: ViewMode) {
         guard let i = tabs.selectedIndex, tabs.tabs.indices.contains(i) else { return }
         var t = tabs.tabs[i]
+        // Side effects per mode:
+        //   - .hex: ensure the tab is loaded as binary so HexView has
+        //     bytes to render. Re-loaded on demand via BinaryFileLoader.
+        //   - .formatted: ensure the tab's id is in formattedTabIDs so
+        //     displayText(for:) returns pretty-printed text.
+        //   - .source / .rendered: clear formatted flag.
+        switch mode {
+        case .hex:
+            if let url = t.url, case .loaded = t.state {
+                if let bin = try? BinaryFileLoader().load(url: url) {
+                    t.state = .binary(bin)
+                }
+            }
+        case .formatted:
+            if let url = t.url, Formatter.SupportedFormat.detect(url) != nil {
+                formattedTabIDs.insert(t.id)
+            }
+        case .source, .rendered:
+            formattedTabIDs.remove(t.id)
+            // Reverse out of HEX if we were there.
+            if let url = t.url, case .binary = t.state {
+                if let text = try? TextFileLoader().load(url: url) {
+                    t.state = .loaded(text)
+                }
+            }
+        }
         t.viewMode = mode
         tabs.replace(at: i, with: t)
     }

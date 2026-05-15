@@ -199,28 +199,19 @@ struct ModeBar: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            if model.supportsViewModeToggle {
+            // Unified mode picker. Every file gets Source + HEX at
+            // minimum; markdown also gets Rendered; formatter-
+            // supported files (JSON/XML/etc.) also get Formatted.
+            let modes = ViewModeOptions.availableModes(for: model.currentURL)
+            if modes.count > 1 {
                 Picker("", selection: model.viewModeBinding) {
-                    Text("Rendered").tag(ViewMode.rendered)
-                    Text("Source").tag(ViewMode.source)
+                    ForEach(modes, id: \.self) { mode in
+                        Text(label(for: mode)).tag(mode)
+                    }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 180)
-            }
-            if model.supportsFormatToggle {
-                Toggle(isOn: Binding(
-                    get: { model.isCurrentTabFormatted },
-                    set: { _ in model.toggleFormat() }
-                )) {
-                    Label("Format", systemImage: "text.alignleft")
-                        .labelStyle(.titleAndIcon)
-                        .font(.system(size: 11))
-                }
-                .toggleStyle(.button)
-                .controlSize(.small)
-                .help("Pretty-print this file (Cmd+Opt+F)")
-                .accessibilityIdentifier("mdv.formatToggle")
+                .frame(width: CGFloat(80 + 90 * (modes.count - 1)))
             }
             Spacer()
             if let badge = languageBadgeText {
@@ -241,6 +232,17 @@ struct ModeBar: View {
             // mode-switch controls).
         }
         .frame(height: 22)
+    }
+
+    /// Short label for each view mode. The picker is tight, so we
+    /// keep these to a single word.
+    private func label(for mode: ViewMode) -> String {
+        switch mode {
+        case .rendered:  return "Rendered"
+        case .source:    return "Source"
+        case .formatted: return "Format"
+        case .hex:       return "HEX"
+        }
     }
 
     /// Shown when source mode is active AND the file's language was
