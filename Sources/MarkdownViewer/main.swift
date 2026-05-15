@@ -220,6 +220,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if let n = Int(arg), n >= 1 { model.selectTab(at: n - 1) }
         case "show-palette":    model.showPalette()
         case "dismiss-palette": model.dismissPalette()
+        case "sidebar-set-root":
+            model.sidebar.setRoot(URL(fileURLWithPath: arg))
+        case "sidebar-select-next":
+            model.sidebar.selectNext()
+        case "sidebar-select-prev":
+            model.sidebar.selectPrevious()
+        case "sidebar-walk-up":
+            model.sidebar.collapseOrFocusParent()
+        case "resize":
+            // "WxH" e.g. "1200x800"
+            let dims = arg.split(separator: "x").compactMap { Int($0) }
+            if dims.count == 2, let win = self.window {
+                var frame = win.frame
+                frame.size = NSSize(width: dims[0], height: dims[1])
+                win.setFrame(frame, display: true, animate: false)
+            }
+        case "find":
+            // Invoke the system find action on first responder NSTextView.
+            NSApp.sendAction(
+                #selector(NSTextView.performFindPanelAction(_:)),
+                to: nil, from: nil
+            )
         case "delay":
             // Handled by caller's sleep; no-op here.
             _ = arg
