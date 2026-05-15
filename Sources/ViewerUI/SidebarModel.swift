@@ -37,7 +37,16 @@ public final class SidebarModel: ObservableObject {
     }
 
     public func setRoot(_ url: URL?) {
-        rootURL = url?.standardizedFileURL.resolvingSymlinksInPath()
+        let normalized = url?.standardizedFileURL.resolvingSymlinksInPath()
+        // If we're being asked to set the same root we already have,
+        // preserve the existing expansion state and selection. Otherwise
+        // opening the same folder via Open Recent collapses every
+        // expansion the user has made.
+        if normalized == rootURL {
+            isVisible = (rootURL != nil)
+            return
+        }
+        rootURL = normalized
         expanded.removeAll()
         clearCache()
         invalidateFlatCache()

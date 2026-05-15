@@ -48,7 +48,19 @@ public final class DocumentModel: ObservableObject {
         self.bookmarks = bookmarks.all()
         self.sidebarWidth = preferences.sidebarWidth
         self.zoom = preferences.zoom
+        // Seed sidebar visibility from prefs. We DON'T force visible if
+        // no folder is open — sidebar without a root is empty by design.
+        self.sidebar.isVisible = preferences.sidebarVisible
+        // Persist any subsequent toggle.
+        self.sidebar.$isVisible
+            .dropFirst()  // ignore the seed assignment above
+            .sink { [weak self] visible in
+                self?.preferences.sidebarVisible = visible
+            }
+            .store(in: &cancellables)
     }
+
+    private var cancellables: Set<AnyCancellable> = []
 
     public func zoomIn() {
         zoom = min(zoom + PreferencesStore.zoomStep, PreferencesStore.maxZoom)
@@ -179,6 +191,14 @@ public final class DocumentModel: ObservableObject {
     @Published public var crossSearchIsRunning: Bool = false
     @Published public var crossSearchCaseSensitive: Bool = false
 
+    /// Monotonically increasing counter that scopes each runCrossSearch()
+    /// call. Bumped on every invocation AND on dismiss. Background
+    /// completions check the captured value against this and drop their
+    /// result when stale — so a slow "foo" search can't overwrite a
+    /// faster "foobar" search that started later, and a dismissed
+    /// panel doesn't get repopulated by a late finish.
+    private var crossSearchGeneration: Int = 0
+
     public func showCrossSearch() {
         isCrossSearchPresented = true
     }
@@ -187,6 +207,8 @@ public final class DocumentModel: ObservableObject {
         isCrossSearchPresented = false
         crossSearchQuery = ""
         crossSearchResults = []
+        crossSearchIsRunning = false
+        crossSearchGeneration &+= 1  // invalidate any in-flight search
     }
 
     /// Runs a cross-file search using the sidebar's current root. If no
@@ -199,15 +221,19 @@ public final class DocumentModel: ObservableObject {
         let q = crossSearchQuery
         guard !q.isEmpty else {
             crossSearchResults = []
+            crossSearchIsRunning = false
+            crossSearchGeneration &+= 1  // cancel any in-flight search
             return
         }
         var opts = CrossFileSearch.Options()
         opts.caseSensitive = crossSearchCaseSensitive
         crossSearchIsRunning = true
-        // Run off-main; results published back to main.
-        DispatchQueue.global(qos: .userInitiated).async { [opts, q] in
+        crossSearchGeneration &+= 1
+        let gen = crossSearchGeneration
+        DispatchQueue.global(qos: .userInitiated).async { [weak self, opts, q] in
             let results = CrossFileSearch.search(root: root, query: q, options: opts)
             DispatchQueue.main.async {
+                guard let self, self.crossSearchGeneration == gen else { return }
                 self.crossSearchResults = results
                 self.crossSearchIsRunning = false
             }
@@ -234,19 +260,28 @@ public final class DocumentModel: ObservableObject {
     @Published public var renderedFindPrevRequest: Int = 0
     @Published public var renderedFindCaseSensitive: Bool = false
 
+    /// Whether the last WKWebView `find` call returned a match. Reset
+    /// to `nil` when the query is empty (no search has run) so the
+    /// find bar can distinguish "haven't searched" from "no matches."
+    @Published public var renderedFindMatched: Bool? = nil
+
     public func showRenderedFindBar() { isRenderedFindBarPresented = true }
     public func dismissRenderedFindBar() {
         isRenderedFindBarPresented = false
         renderedFindQuery = ""
+        renderedFindMatched = nil
     }
     public func renderedFindNext() { renderedFindNextRequest &+= 1 }
     public func renderedFindPrev() { renderedFindPrevRequest &+= 1 }
 
     // MARK: Pretty-print / Format
 
-    /// Set of tab URLs the user has toggled into "formatted" (pretty-
-    /// printed) view. Per-tab so toggling one file doesn't affect others.
-    @Published private var formattedTabs: Set<URL> = []
+    /// Tab.id's that the user has toggled into "formatted" (pretty-
+    /// printed) view. Keyed by Tab.id (not URL) so:
+    ///   - opening the same file in two tabs gives them independent
+    ///     format state (otherwise toggling one toggles both)
+    ///   - closing a tab automatically prunes its entry below
+    @Published private var formattedTabIDs: Set<UUID> = []
 
     /// True if the current tab's file is a format that can be pretty-
     /// printed (JSON / XML / HTML / SVG / .plist / .xib / .storyboard).
@@ -258,24 +293,25 @@ public final class DocumentModel: ObservableObject {
     /// True if the current tab is currently showing pretty-printed
     /// content (as opposed to the raw file).
     public var isCurrentTabFormatted: Bool {
-        guard let url = currentURL else { return false }
-        return formattedTabs.contains(url)
+        guard let id = tabs.selected?.id else { return false }
+        return formattedTabIDs.contains(id)
     }
 
     public func toggleFormat() {
-        guard let url = currentURL, supportsFormatToggle else { return }
-        if formattedTabs.contains(url) {
-            formattedTabs.remove(url)
+        guard let id = tabs.selected?.id, supportsFormatToggle else { return }
+        if formattedTabIDs.contains(id) {
+            formattedTabIDs.remove(id)
         } else {
-            formattedTabs.insert(url)
+            formattedTabIDs.insert(id)
         }
     }
 
     /// Returns the text that should be shown in the source view for
-    /// `file`: either pretty-printed (when toggled and supported) or the
-    /// raw contents.
+    /// the currently selected tab and `file`: either pretty-printed
+    /// (when toggled and supported) or the raw contents.
     public func displayText(for file: TextFile) -> String {
-        guard formattedTabs.contains(file.url),
+        guard let id = tabs.selected?.id,
+              formattedTabIDs.contains(id),
               let format = Formatter.SupportedFormat.detect(file.url) else {
             return file.contents
         }
@@ -400,7 +436,9 @@ public final class DocumentModel: ObservableObject {
     }
 
     public func closeTab(at index: Int) {
+        let closedID = tabs.tabs.indices.contains(index) ? tabs.tabs[index].id : nil
         tabs.close(at: index)
+        if let id = closedID { formattedTabIDs.remove(id) }
         updateDerived()
         startWatchingCurrentFile()
     }
@@ -412,13 +450,21 @@ public final class DocumentModel: ObservableObject {
     }
 
     public func closeOtherTabs(keeping index: Int) {
+        let keepID = tabs.tabs.indices.contains(index) ? tabs.tabs[index].id : nil
         tabs.closeAll(except: index)
+        // Prune any formattedTabIDs entries that no longer correspond
+        // to an open tab. Cheaper than tracking every closed id.
+        formattedTabIDs = keepID.map { Set([$0]) }.flatMap { kept in
+            formattedTabIDs.intersection(kept)
+        } ?? []
         updateDerived()
         startWatchingCurrentFile()
     }
 
     public func closeTabsToRight(of index: Int) {
         tabs.closeAllToRight(of: index)
+        let openIDs = Set(tabs.tabs.map { $0.id })
+        formattedTabIDs.formIntersection(openIDs)
         updateDerived()
         startWatchingCurrentFile()
     }

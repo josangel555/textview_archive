@@ -64,9 +64,9 @@ struct CrossSearchPanel: View {
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.2), radius: 20, y: 8)
+        .shadow(color: Color.primary.opacity(0.25), radius: 20, y: 8)
         .onAppear {
             fieldFocused = true
             if !model.crossSearchQuery.isEmpty { model.runCrossSearch() }

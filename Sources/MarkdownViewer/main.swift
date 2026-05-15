@@ -267,8 +267,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func captureStepArtifacts(step: Int, label: String) {
         guard let win = window else { return }
         let n = String(format: "%02d", step)
-        let json = "/tmp/mdv-step-\(n).json"
-        let png  = "/tmp/mdv-step-\(n).png"
+        // Per-user tmpdir at /var/folders/... is safe from the
+        // symlink-hijack scenario possible in /tmp.
+        let tmp = FileManager.default.temporaryDirectory
+        let json = tmp.appendingPathComponent("mdv-step-\(n).json").path
+        let png  = tmp.appendingPathComponent("mdv-step-\(n).png").path
         let dump = DiagnosticDump.dump(window: win)
         var enriched = dump
         enriched["step"] = step
@@ -300,8 +303,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSApp.activate(ignoringOtherApps: true)
             win.makeKeyAndOrderFront(nil)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                let json = "/tmp/mdv-auto.json"
-                let png  = "/tmp/mdv-auto.png"
+                // Per-user tmpdir at /var/folders/... is safe from the
+                // symlink-hijack scenario possible in /tmp.
+                let tmp = FileManager.default.temporaryDirectory
+                let json = tmp.appendingPathComponent("mdv-auto.json").path
+                let png  = tmp.appendingPathComponent("mdv-auto.png").path
                 let dump = DiagnosticDump.dump(window: win)
                 let data = (try? JSONSerialization.data(
                     withJSONObject: dump,
@@ -335,8 +341,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // activation before we capture.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 let pid = getpid()
-                let jsonPath = "/tmp/mdv-diagnostic-\(pid).json"
-                let pngPath  = "/tmp/mdv-snapshot-\(pid).png"
+                // Per-user tmpdir at /var/folders/... is safe from the
+                // symlink-hijack scenario possible in /tmp.
+                let tmp = FileManager.default.temporaryDirectory
+                let jsonPath = tmp.appendingPathComponent("mdv-diagnostic-\(pid).json").path
+                let pngPath  = tmp.appendingPathComponent("mdv-snapshot-\(pid).png").path
                 let dump = DiagnosticDump.dump(window: win)
                 do {
                     let data = try JSONSerialization.data(
@@ -636,11 +645,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             keyEquivalent: ""
         ))
         appMenu.addItem(.separator())
+        // Settings… stub. There's no preferences UI yet; the item is
+        // disabled but present so users with muscle-memory Cmd+, don't
+        // get a beep, and macOS HIG expects this slot. When we add a
+        // settings window, just wire the action.
+        let settingsItem = NSMenuItem(
+            title: "Settings…",
+            action: nil,
+            keyEquivalent: ","
+        )
+        settingsItem.isEnabled = false
+        appMenu.addItem(settingsItem)
+        appMenu.addItem(.separator())
         appMenu.addItem(NSMenuItem(
             title: "Hide MarkdownViewer",
             action: #selector(NSApplication.hide(_:)),
             keyEquivalent: "h"
         ))
+        let hideOthers = NSMenuItem(
+            title: "Hide Others",
+            action: #selector(NSApplication.hideOtherApplications(_:)),
+            keyEquivalent: "h"
+        )
+        hideOthers.keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(hideOthers)
+        appMenu.addItem(NSMenuItem(
+            title: "Show All",
+            action: #selector(NSApplication.unhideAllApplications(_:)),
+            keyEquivalent: ""
+        ))
+        appMenu.addItem(.separator())
         appMenu.addItem(NSMenuItem(
             title: "Quit MarkdownViewer",
             action: #selector(NSApplication.terminate(_:)),
@@ -649,7 +683,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         appMenuItem.submenu = appMenu
 
         let fileMenuItem = NSMenuItem()
-        mainMenu.addItem(fileMenuItem)
         let fileMenu = NSMenu(title: "File")
         let newTabItem = NSMenuItem(
             title: "New Tab",
@@ -698,7 +731,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         fileMenuItem.submenu = fileMenu
 
         let viewMenuItem = NSMenuItem()
-        mainMenu.addItem(viewMenuItem)
         let viewMenu = NSMenu(title: "View")
         let toggleItem = NSMenuItem(
             title: "Toggle Rendered / Source",
@@ -737,11 +769,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // U7 — Zoom items for the rendered view.
         viewMenu.addItem(.separator())
+        // HIG: Zoom In is Cmd+= (literal =, not shifted +). Using "+"
+        // here was equivalent to Cmd+Shift+= on US keyboards, which is
+        // the wrong default. Add a Cmd+Shift+= alias for compatibility
+        // with apps that DO use "+" — it's the same physical keystroke
+        // for the user but covered by both shortcut variants.
         let zoomIn = NSMenuItem(title: "Zoom In",
                                 action: #selector(zoomIn(_:)),
-                                keyEquivalent: "+")
+                                keyEquivalent: "=")
         zoomIn.target = self
         viewMenu.addItem(zoomIn)
+        // Hidden alternate so the visible "Zoom In" doesn't show two
+        // keyEquivalents; users with muscle memory for Cmd+Shift++
+        // still get the same action.
+        let zoomInAlt = NSMenuItem(title: "Zoom In",
+                                   action: #selector(zoomIn(_:)),
+                                   keyEquivalent: "+")
+        zoomInAlt.keyEquivalentModifierMask = [.command, .shift]
+        zoomInAlt.isAlternate = true
+        zoomInAlt.isHidden = true
+        zoomInAlt.target = self
+        viewMenu.addItem(zoomInAlt)
         let zoomOut = NSMenuItem(title: "Zoom Out",
                                  action: #selector(zoomOut(_:)),
                                  keyEquivalent: "-")
@@ -774,7 +822,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         viewMenuItem.submenu = viewMenu
 
         let windowMenuItem = NSMenuItem()
-        mainMenu.addItem(windowMenuItem)
         let windowMenu = NSMenu(title: "Window")
         windowMenu.delegate = self
         windowMenu.autoenablesItems = false
@@ -783,7 +830,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         windowMenuItem.submenu = windowMenu
 
         let editMenuItem = NSMenuItem()
-        mainMenu.addItem(editMenuItem)
         let editMenu = NSMenu(title: "Edit")
         editMenu.addItem(NSMenuItem(title: "Copy",
             action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
@@ -839,7 +885,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // U7 — Help menu (HIG: every Mac app should have one, with the
         // searchable Help item provided by AppKit).
         let helpMenuItem = NSMenuItem()
-        mainMenu.addItem(helpMenuItem)
         let helpMenu = NSMenu(title: "Help")
         let helpItem = NSMenuItem(
             title: "MarkdownViewer Help",
@@ -849,6 +894,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         helpMenu.addItem(helpItem)
         helpMenuItem.submenu = helpMenu
         NSApp.helpMenu = helpMenu
+
+        // HIG order: App, File, Edit, View, Window, Help. (App was
+        // added at the top; the rest add here in order.)
+        mainMenu.addItem(fileMenuItem)
+        mainMenu.addItem(editMenuItem)
+        mainMenu.addItem(viewMenuItem)
+        mainMenu.addItem(windowMenuItem)
+        mainMenu.addItem(helpMenuItem)
 
         NSApp.mainMenu = mainMenu
     }

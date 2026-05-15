@@ -53,8 +53,10 @@ enum AppLauncher {
     ) throws -> [[String: Any]] {
         for n in 1...99 {
             let s = String(format: "%02d", n)
-            try? FileManager.default.removeItem(atPath: "/tmp/mdv-step-\(s).json")
-            try? FileManager.default.removeItem(atPath: "/tmp/mdv-step-\(s).png")
+            try? FileManager.default.removeItem(
+                at: tmpDir.appendingPathComponent("mdv-step-\(s).json"))
+            try? FileManager.default.removeItem(
+                at: tmpDir.appendingPathComponent("mdv-step-\(s).png"))
         }
         try scriptContents.write(
             to: URL(fileURLWithPath: scriptPath),
@@ -108,15 +110,19 @@ enum AppLauncher {
         return pid
     }
 
-    /// Collect all `/tmp/mdv-step-NN.json` files into memory.
+    /// Per-user tmpdir (`/var/folders/.../T/`). The app writes its step
+    /// dumps and snapshots here. Matches `FileManager.default.temporaryDirectory`
+    /// inside the app and is safe from symlink hijack (unlike `/tmp/`).
+    static var tmpDir: URL { FileManager.default.temporaryDirectory }
+
+    /// Collect all `<tmp>/mdv-step-NN.json` files into memory.
     static func collectStepDumps() -> [[String: Any]] {
         var dumps: [[String: Any]] = []
         for n in 1...99 {
             let s = String(format: "%02d", n)
-            guard let data = FileManager.default.contents(
-                atPath: "/tmp/mdv-step-\(s).json"
-            ),
-            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let url = tmpDir.appendingPathComponent("mdv-step-\(s).json")
+            guard let data = try? Data(contentsOf: url),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             else { break }
             dumps.append(obj)
         }

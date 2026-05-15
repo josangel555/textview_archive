@@ -20,6 +20,19 @@ struct MarkdownFindBar: View {
                 .focused($fieldFocused)
                 .onSubmit { model.renderedFindNext() }
 
+            // Status label: "No results" in orange when the last find
+            // came back empty. WKFindConfiguration doesn't expose a
+            // match COUNT (Apple's API is "did the next match exist?"),
+            // so we can't render "3 of 12" — just a found/not-found
+            // boolean. Better than the previous silent failure.
+            if !model.renderedFindQuery.isEmpty,
+               model.renderedFindMatched == false {
+                Text("No results")
+                    .font(.caption)
+                    .foregroundStyle(Color(nsColor: .systemOrange))
+                    .accessibilityIdentifier("mdv.findBar.noResults")
+            }
+
             // Aa toggle for case sensitivity.
             Toggle(isOn: $model.renderedFindCaseSensitive) {
                 Text("Aa")
@@ -38,6 +51,7 @@ struct MarkdownFindBar: View {
             .buttonStyle(.plain)
             .help("Previous match (Shift+Return)")
             .keyboardShortcut(.return, modifiers: [.shift])
+            .accessibilityLabel("Previous match")
 
             Button {
                 model.renderedFindNext()
@@ -46,6 +60,7 @@ struct MarkdownFindBar: View {
             }
             .buttonStyle(.plain)
             .help("Next match (Return)")
+            .accessibilityLabel("Next match")
 
             Button {
                 model.dismissRenderedFindBar()
@@ -56,6 +71,7 @@ struct MarkdownFindBar: View {
             .buttonStyle(.plain)
             .keyboardShortcut(.escape, modifiers: [])
             .help("Close find bar (Esc)")
+            .accessibilityLabel("Close find bar")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)

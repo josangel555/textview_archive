@@ -111,7 +111,10 @@ public struct ContentView: View {
                     findQuery: model.renderedFindQuery,
                     findCaseSensitive: model.renderedFindCaseSensitive,
                     findNextNonce: model.renderedFindNextRequest,
-                    findPrevNonce: model.renderedFindPrevRequest
+                    findPrevNonce: model.renderedFindPrevRequest,
+                    onFindResult: { matched in
+                        Task { @MainActor in model.renderedFindMatched = matched }
+                    }
                 )
             }
         } else {

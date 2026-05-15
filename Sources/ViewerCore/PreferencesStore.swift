@@ -7,6 +7,7 @@ public final class PreferencesStore: @unchecked Sendable {
 
     private enum Key {
         static let sidebarWidth = "MarkdownViewer.sidebarWidth"
+        static let sidebarVisible = "MarkdownViewer.sidebarVisible"
         static let lastFolder = "MarkdownViewer.lastFolderPath"
         static let zoom = "MarkdownViewer.zoom"
     }
@@ -28,6 +29,13 @@ public final class PreferencesStore: @unchecked Sendable {
     public func setSidebarWidth(_ width: Double) {
         let clamped = min(max(width, Self.minSidebarWidth), Self.maxSidebarWidth)
         sidebarWidth = clamped
+    }
+
+    /// Whether the sidebar is currently visible. Default true — first
+    /// launch with a folder open should show it.
+    public var sidebarVisible: Bool {
+        get { defaults.object(forKey: Key.sidebarVisible) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: Key.sidebarVisible) }
     }
 
     // MARK: Zoom

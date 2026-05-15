@@ -13,6 +13,10 @@ public struct MarkdownRenderedView: NSViewRepresentable {
     public let findCaseSensitive: Bool
     public let findNextNonce: Int
     public let findPrevNonce: Int
+    /// Callback that fires after each find() call with the result.
+    /// Nil means "not currently searching" (empty query / find bar
+    /// dismissed). True/false reports the last find's matchFound.
+    public let onFindResult: ((Bool?) -> Void)?
 
     public init(
         html: String,
@@ -21,7 +25,8 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         findQuery: String = "",
         findCaseSensitive: Bool = false,
         findNextNonce: Int = 0,
-        findPrevNonce: Int = 0
+        findPrevNonce: Int = 0,
+        onFindResult: ((Bool?) -> Void)? = nil
     ) {
         self.html = html
         self.baseURL = baseURL
@@ -30,6 +35,7 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         self.findCaseSensitive = findCaseSensitive
         self.findNextNonce = findNextNonce
         self.findPrevNonce = findPrevNonce
+        self.onFindResult = onFindResult
     }
 
     public func makeNSView(context: Context) -> WKWebView {
@@ -61,18 +67,23 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         }
         // Find-bar wiring.
         let c = context.coordinator
+        c.onFindResult = onFindResult
         if c.lastQuery != findQuery || c.lastCaseSensitive != findCaseSensitive {
             c.lastQuery = findQuery
             c.lastCaseSensitive = findCaseSensitive
-            c.runFind(in: webView, backwards: false)
+            if findQuery.isEmpty {
+                onFindResult?(nil)
+            } else {
+                c.runFind(in: webView, backwards: false)
+            }
         }
         if c.lastNextNonce != findNextNonce {
             c.lastNextNonce = findNextNonce
-            c.runFind(in: webView, backwards: false, advanceFromCurrent: true)
+            c.runFind(in: webView, backwards: false)
         }
         if c.lastPrevNonce != findPrevNonce {
             c.lastPrevNonce = findPrevNonce
-            c.runFind(in: webView, backwards: true, advanceFromCurrent: true)
+            c.runFind(in: webView, backwards: true)
         }
     }
 
@@ -96,39 +107,65 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         /// same content don't re-load the page (CRIT-4 fix for the
         /// "vanishing tabs" reload storm).
         var lastHTML: String?
+        /// True once the current document has reported didFinish. Used
+        /// to gate find() — calling it before the DOM is ready silently
+        /// fails with matchFound=false, so we defer until ready.
+        var documentReady: Bool = false
+        /// Holds the webView weakly so `webView(_:didFinish:)` can
+        /// re-run any find that was queued before the page was ready.
+        weak var pendingFindWebView: WKWebView?
 
         // Find-bar state observed by updateNSView.
         var lastQuery: String = ""
         var lastCaseSensitive: Bool = false
         var lastNextNonce: Int = 0
         var lastPrevNonce: Int = 0
+        /// Reported back via SwiftUI: true/false = last find's matchFound.
+        var onFindResult: ((Bool?) -> Void)? = nil
 
-        /// Run `WKWebView.find` with the current query/options.
-        /// `advanceFromCurrent=true` means the user clicked next/prev —
-        /// search starts AFTER the current selection. `false` means the
-        /// query just changed — search from the document start.
-        func runFind(
-            in webView: WKWebView,
-            backwards: Bool,
-            advanceFromCurrent: Bool = false
-        ) {
+        /// Run `WKWebView.find` with the current query/options. The
+        /// `wraps=true` flag means WKWebView's find continues from the
+        /// last match position when the query is unchanged.
+        ///
+        /// If the document hasn't finished loading yet, the find is
+        /// queued — `webView(_:didFinish:)` re-runs it. This fixes the
+        /// race where typing into the find bar before the DOM is ready
+        /// silently fails.
+        func runFind(in webView: WKWebView, backwards: Bool) {
+            pendingFindWebView = webView
             let q = lastQuery
             guard !q.isEmpty else { return }
+            guard documentReady else {
+                // didFinish will retry.
+                return
+            }
             let config = WKFindConfiguration()
             config.backwards = backwards
             config.caseSensitive = lastCaseSensitive
             config.wraps = true
-            // WKFindConfiguration doesn't have an explicit "start from
-            // beginning" option; `wraps=true` + a fresh search effectively
-            // does this because the WKWebView remembers the last match
-            // position only when the query is unchanged.
-            _ = advanceFromCurrent
-            webView.find(q, configuration: config) { _ in
-                // Result is delivered async; nothing to do here for now —
-                // WKWebView visibly highlights the match itself. Future:
-                // surface `result.matchFound` back to the find bar UI as
-                // a "no matches" indicator.
+            webView.find(q, configuration: config) { [weak self] result in
+                self?.onFindResult?(result.matchFound)
             }
+        }
+
+        public func webView(
+            _ webView: WKWebView,
+            didFinish navigation: WKNavigation!
+        ) {
+            documentReady = true
+            // Re-run any pending find that was queued before load.
+            if !lastQuery.isEmpty {
+                runFind(in: webView, backwards: false)
+            }
+        }
+
+        // Reset documentReady when a new navigation starts (e.g. when
+        // loadHTMLString is called for a new file).
+        public func webView(
+            _ webView: WKWebView,
+            didStartProvisionalNavigation navigation: WKNavigation!
+        ) {
+            documentReady = false
         }
 
         public func webView(
