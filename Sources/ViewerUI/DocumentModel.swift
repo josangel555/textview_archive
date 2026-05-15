@@ -40,6 +40,9 @@ public final class DocumentModel: ObservableObject {
     @Published public var sourceScrollState: SourceScrollState = SourceScrollState(
         offsetY: 0, viewportHeight: 0, lineHeight: 16, lineCount: 0, topInset: 10
     )
+    /// Caret position published by TextDisplayView. Status bar reads
+    /// this to render "Ln 12, Col 4". Reset to .zero on tab switch.
+    @Published public var sourceSelection: SourceSelection = .zero
     @Published public var isPalettePresented: Bool = false
     public let sidebar: SidebarModel
 

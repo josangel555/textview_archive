@@ -41,6 +41,10 @@ public struct TextDisplayView: NSViewControllerRepresentable {
     public let wordWrap: Bool
     public let onFindSummary: ((String) -> Void)?
     public let onScrollChange: ((SourceScrollState) -> Void)?
+    /// Called whenever the textView's selectedRange changes. Caller
+    /// typically uses this to update a cursor-position indicator
+    /// (line:col) in the status bar.
+    public let onSelectionChange: ((SourceSelection) -> Void)?
 
     public init(
         text: String,
@@ -51,7 +55,8 @@ public struct TextDisplayView: NSViewControllerRepresentable {
         findState: FindState = .empty,
         wordWrap: Bool = false,
         onFindSummary: ((String) -> Void)? = nil,
-        onScrollChange: ((SourceScrollState) -> Void)? = nil
+        onScrollChange: ((SourceScrollState) -> Void)? = nil,
+        onSelectionChange: ((SourceSelection) -> Void)? = nil
     ) {
         self.text = text
         self.fontSize = fontSize
@@ -62,6 +67,7 @@ public struct TextDisplayView: NSViewControllerRepresentable {
         self.wordWrap = wordWrap
         self.onFindSummary = onFindSummary
         self.onScrollChange = onScrollChange
+        self.onSelectionChange = onSelectionChange
     }
 
     public struct FindState: Equatable, Sendable {
@@ -95,7 +101,8 @@ public struct TextDisplayView: NSViewControllerRepresentable {
             wordWrap: wordWrap,
             findState: findState,
             onFindSummary: onFindSummary,
-            onScrollChange: onScrollChange
+            onScrollChange: onScrollChange,
+            onSelectionChange: onSelectionChange
         )
     }
 }
@@ -106,6 +113,23 @@ public struct TextDisplayView: NSViewControllerRepresentable {
 /// the clipView's `boundsDidChangeNotification`, so the data is fresh
 /// and reading it doesn't re-trigger the layout reentrancy that
 /// blanked our siblings when `NSRulerView` was attached.
+/// Cursor / selection telemetry the source view emits after each
+/// selection change. line and column are 1-based, matching how every
+/// editor surfaces them.
+public struct SourceSelection: Equatable, Sendable {
+    public let line: Int
+    public let column: Int
+    /// Length of the selection in UTF-16 units. 0 == caret only.
+    public let length: Int
+
+    public init(line: Int, column: Int, length: Int) {
+        self.line = line
+        self.column = column
+        self.length = length
+    }
+    public static let zero = SourceSelection(line: 1, column: 1, length: 0)
+}
+
 public struct SourceScrollState: Equatable, Sendable {
     /// Topmost visible content offset, in points. Same coordinate
     /// space as the textView's documentView origin.
@@ -144,7 +168,9 @@ public final class SourceTextController: NSViewController {
     /// stop receiving notifications, so racing on dealloc is benign.
     nonisolated(unsafe) private var scrollObserver: NSObjectProtocol?
     nonisolated(unsafe) private var frameObserver: NSObjectProtocol?
+    nonisolated(unsafe) private var selectionObserver: NSObjectProtocol?
     private var onScrollChange: ((SourceScrollState) -> Void)?
+    private var onSelectionChange: ((SourceSelection) -> Void)?
     private var cachedFontSize: CGFloat = 13
     private var cachedLineCount: Int = 1
     private var lastPublishedScrollState: SourceScrollState?
@@ -244,11 +270,18 @@ public final class SourceTextController: NSViewController {
         ) { [weak self] _ in
             self?.publishScrollState()
         }
+        selectionObserver = NotificationCenter.default.addObserver(
+            forName: NSTextView.didChangeSelectionNotification,
+            object: textView, queue: .main
+        ) { [weak self] _ in
+            self?.publishSelection()
+        }
     }
 
     deinit {
-        if let o = scrollObserver { NotificationCenter.default.removeObserver(o) }
-        if let o = frameObserver  { NotificationCenter.default.removeObserver(o) }
+        if let o = scrollObserver    { NotificationCenter.default.removeObserver(o) }
+        if let o = frameObserver     { NotificationCenter.default.removeObserver(o) }
+        if let o = selectionObserver { NotificationCenter.default.removeObserver(o) }
     }
 
     /// Publish current scroll state to the SwiftUI gutter. Reads from
@@ -276,6 +309,30 @@ public final class SourceTextController: NSViewController {
         cb(state)
     }
 
+    /// Compute (line, column) from the textView's selectedRange and
+    /// publish via the caller's callback. Cheap: O(selection start)
+    /// linear scan; we don't memoize because typing keeps moving the
+    /// cursor by 1 char so amortized cost is small.
+    private func publishSelection() {
+        guard let cb = onSelectionChange else { return }
+        let sel = textView.selectedRange()
+        let str = textView.string as NSString
+        let loc = min(sel.location, str.length)
+        var line = 1
+        var lineStart = 0
+        for i in 0..<loc {
+            if str.character(at: i) == 0x0A {
+                line += 1
+                lineStart = i + 1
+            }
+        }
+        cb(SourceSelection(
+            line: line,
+            column: loc - lineStart + 1,
+            length: sel.length
+        ))
+    }
+
     /// Match NSTextView's effective line height for the default
     /// monospaced font. The factor 1.20 holds for SF Mono / Menlo /
     /// Monaco across the size range we use; if it ever drifts we'd
@@ -298,9 +355,11 @@ public final class SourceTextController: NSViewController {
         wordWrap: Bool,
         findState: TextDisplayView.FindState,
         onFindSummary: ((String) -> Void)?,
-        onScrollChange: ((SourceScrollState) -> Void)?
+        onScrollChange: ((SourceScrollState) -> Void)?,
+        onSelectionChange: ((SourceSelection) -> Void)?
     ) {
         self.onScrollChange = onScrollChange
+        self.onSelectionChange = onSelectionChange
         self.cachedFontSize = fontSize
         scrollView.backgroundColor = theme.background
         textView.backgroundColor = theme.background
@@ -326,9 +385,10 @@ public final class SourceTextController: NSViewController {
         textView.needsDisplay = true
         textView.enclosingScrollView?.contentView.needsDisplay = true
 
-        // Initial publish so the gutter has a baseline state even
-        // before the user scrolls.
+        // Initial publish so the gutter + status bar have baseline
+        // state even before the user scrolls or moves the caret.
         publishScrollState()
+        publishSelection()
     }
 
     /// Toggle horizontal scrolling vs viewport-width wrap. Two knobs

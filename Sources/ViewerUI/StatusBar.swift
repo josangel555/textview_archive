@@ -36,9 +36,19 @@ struct StatusBar: View {
 
             if let metrics = currentMetrics {
                 Group {
+                    if metrics.lineCount > 0 {
+                        // Ln/Col only meaningful for text files. Hide
+                        // for media previews where everything is 0.
+                        metric("Ln",
+                            "\(model.sourceSelection.line)" +
+                            ", Col \(model.sourceSelection.column)")
+                    }
                     metric("Lines", "\(metrics.lineCount)")
                     metric("Chars", formatNumber(metrics.charCount))
                     metric("Size",  formatBytes(metrics.byteCount))
+                    if !metrics.indent.isEmpty {
+                        metric("Indent", metrics.indent)
+                    }
                     metric("EOL",   metrics.lineEndings)
                     metric("Enc",   metrics.encodingShort)
                 }
@@ -72,6 +82,7 @@ struct StatusBar: View {
         let byteCount: Int
         let lineEndings: String  // "LF" / "CRLF" / "—"
         let encodingShort: String
+        let indent: String       // "Tabs" / "Spaces (2)" / "—"
     }
 
     private var currentMetrics: Metrics? {
@@ -83,7 +94,8 @@ struct StatusBar: View {
                 charCount: (f.contents as NSString).length,
                 byteCount: f.byteCount,
                 lineEndings: detectLineEndings(in: f.contents),
-                encodingShort: encodingShort(f.encoding)
+                encodingShort: encodingShort(f.encoding),
+                indent: IndentDetector.detect(in: f.contents)
             )
         case .binary(let b):
             return Metrics(
@@ -91,12 +103,10 @@ struct StatusBar: View {
                 charCount: 0,
                 byteCount: b.totalByteCount,
                 lineEndings: "—",
-                encodingShort: "binary"
+                encodingShort: "binary",
+                indent: ""
             )
         case .preview(let url, let cat):
-            // For media files, surface file size from disk + the
-            // category in the encoding slot. Line/char counts don't
-            // apply.
             let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
             let size = (attrs?[.size] as? Int) ?? 0
             return Metrics(
@@ -104,7 +114,8 @@ struct StatusBar: View {
                 charCount: 0,
                 byteCount: size,
                 lineEndings: "—",
-                encodingShort: cat.rawValue
+                encodingShort: cat.rawValue,
+                indent: ""
             )
         case .empty, .error:
             return nil

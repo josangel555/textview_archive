@@ -180,6 +180,9 @@ public struct ContentView: View {
                         },
                         onScrollChange: { state in
                             model.sourceScrollState = state
+                        },
+                        onSelectionChange: { sel in
+                            model.sourceSelection = sel
                         }
                     )
                 }
