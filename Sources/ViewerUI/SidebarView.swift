@@ -18,6 +18,8 @@ struct SidebarView: View {
                 Divider()
                 RecentChangesSection(model: model)
                 Divider()
+                ClaudeTimelineSection(model: model)
+                Divider()
             }
             if let root = sidebar.rootURL {
                 ScrollViewReader { proxy in
