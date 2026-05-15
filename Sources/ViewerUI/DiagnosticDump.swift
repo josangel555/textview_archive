@@ -221,17 +221,16 @@ public enum DiagnosticDump {
     /// (e.g. windowNumber=0 because the window isn't yet ordered front).
     @discardableResult
     public static func captureWindowToPNG(_ window: NSWindow, path: String) -> Bool {
-        guard window.windowNumber > 0 else { return false }
-        let opts: CGWindowImageOption = [.boundsIgnoreFraming, .bestResolution]
-        guard let cgImage = CGWindowListCreateImage(
-            .null,
-            .optionIncludingWindow,
-            CGWindowID(window.windowNumber),
-            opts
-        ) else {
+        // CGWindowListCreateImage was removed in macOS 15; ScreenCaptureKit
+        // is the official replacement but it's async + needs permission
+        // for cross-process captures. For our own window, NSView's
+        // cacheDisplay path is simpler and permission-free.
+        guard let content = window.contentView else { return false }
+        let bounds = content.bounds
+        guard let rep = content.bitmapImageRepForCachingDisplay(in: bounds) else {
             return false
         }
-        let rep = NSBitmapImageRep(cgImage: cgImage)
+        content.cacheDisplay(in: bounds, to: rep)
         guard let pngData = rep.representation(using: .png, properties: [:]) else {
             return false
         }

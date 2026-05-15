@@ -113,3 +113,41 @@ th { background: var(--mdv-code-bg); font-weight: 600; }
 img { max-width: 100%; height: auto; }
 
 del { text-decoration: line-through; color: var(--mdv-fg-secondary); }
+
+/* Phase 5b: TreeSitter-driven syntax highlighting inside code fences.
+   Each .tok-* class corresponds to a TokenKind raw value emitted by
+   HTMLVisitor.spanned. Colors track Xcode default (light) / Xcode dark
+   (dark) and switch on prefers-color-scheme. */
+.tok-keyword     { color: #AD3DA4; }
+.tok-string      { color: #C41A16; }
+.tok-escape      { color: #C41A16; }
+.tok-regex       { color: #C41A16; }
+.tok-comment     { color: #53716A; }
+.tok-number      { color: #1C00CF; }
+.tok-type        { color: #7030A0; }
+.tok-function    { color: #4B21B0; }
+.tok-attribute   { color: #7030A0; }
+.tok-builtin     { color: #27378E; }
+.tok-constant    { color: #27378E; }
+.tok-heading     { color: #1F6FEB; }
+.tok-link        { color: #1F6FEB; }
+.tok-tag         { color: #AD3DA4; }
+.tok-tagattribute { color: #836C28; }
+
+@media (prefers-color-scheme: dark) {
+    .tok-keyword     { color: #FC5FA3; }
+    .tok-string      { color: #FC6A5D; }
+    .tok-escape      { color: #FC6A5D; }
+    .tok-regex       { color: #FC6A5D; }
+    .tok-comment     { color: #6C7986; }
+    .tok-number      { color: #D0BF69; }
+    .tok-type        { color: #9EF1DD; }
+    .tok-function    { color: #67B7A4; }
+    .tok-attribute   { color: #D0BF69; }
+    .tok-builtin     { color: #9EF1DD; }
+    .tok-constant    { color: #9EF1DD; }
+    .tok-heading     { color: #41A1C0; }
+    .tok-link        { color: #41A1C0; }
+    .tok-tag         { color: #FC5FA3; }
+    .tok-tagattribute { color: #D9C97C; }
+}

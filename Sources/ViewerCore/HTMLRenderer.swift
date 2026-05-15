@@ -1,5 +1,6 @@
 import Foundation
 import Markdown
+import ViewerKit
 
 /// Walks a `swift-markdown` AST and emits HTML. Pure logic — no UI imports.
 /// The output is meant to be loaded into `WKWebView` with a bundled stylesheet.
@@ -98,9 +99,53 @@ struct HTMLVisitor: MarkupVisitor {
     }
 
     mutating func visitCodeBlock(_ codeBlock: CodeBlock) -> String {
-        let lang = codeBlock.language ?? ""
-        let langAttr = lang.isEmpty ? "" : " class=\"language-\(htmlEscape(lang))\""
-        return "<pre><code\(langAttr)>\(htmlEscape(codeBlock.code))</code></pre>\n"
+        let infoString = codeBlock.language ?? ""
+        let langAttr = infoString.isEmpty
+            ? ""
+            : " class=\"language-\(htmlEscape(infoString))\""
+        let lang = HighlightLanguage.detect(fromInfoString: infoString)
+        let body: String
+        if lang != .plainText {
+            // Tokenize the fence body and emit per-run spans the
+            // stylesheet themes via the tok-* class set. Engine is
+            // shared + thread-safe; calling synchronously here is fine.
+            let runs = TreeSitterEngine.shared.tokenize(codeBlock.code, language: lang)
+            body = spanned(codeBlock.code, runs: runs)
+        } else {
+            body = htmlEscape(codeBlock.code)
+        }
+        return "<pre><code\(langAttr)>\(body)</code></pre>\n"
+    }
+
+    /// Emit text with per-run `<span class="tok-X">` wrappers using
+    /// the engine's UTF-16 NSRange runs. Defensive against unsorted /
+    /// overlapping input (the engine resolves overlaps before
+    /// returning, but assume nothing).
+    func spanned(_ text: String, runs: [HighlightRun]) -> String {
+        let ns = text as NSString
+        let len = ns.length
+        if runs.isEmpty || len == 0 { return htmlEscape(text) }
+        var out = ""
+        out.reserveCapacity(text.count + runs.count * 32)
+        var cursor = 0
+        for run in runs.sorted(by: { $0.range.location < $1.range.location }) {
+            let lo = max(cursor, run.range.location)
+            let hi = min(len, run.range.location + run.range.length)
+            if lo > cursor {
+                out += htmlEscape(ns.substring(with: NSRange(location: cursor, length: lo - cursor)))
+            }
+            if hi > lo {
+                let chunk = ns.substring(with: NSRange(location: lo, length: hi - lo))
+                out += "<span class=\"tok-\(run.kind.rawValue.lowercased())\">"
+                out += htmlEscape(chunk)
+                out += "</span>"
+            }
+            cursor = max(cursor, hi)
+        }
+        if cursor < len {
+            out += htmlEscape(ns.substring(with: NSRange(location: cursor, length: len - cursor)))
+        }
+        return out
     }
 
     mutating func visitBlockQuote(_ blockQuote: BlockQuote) -> String {

@@ -142,7 +142,13 @@ public struct ContentView: View {
         } else {
             TextDisplayView(
                 text: model.displayText(for: file),
-                fontSize: 13 * model.zoom
+                fontSize: 13 * model.zoom,
+                language: HighlightLanguage.detect(from: file.url),
+                runs: model.highlightRuns(
+                    for: model.displayText(for: file),
+                    language: HighlightLanguage.detect(from: file.url)
+                ),
+                theme: model.activeTheme
             )
         }
     }
@@ -177,6 +183,19 @@ struct ModeBar: View {
                 .accessibilityIdentifier("mdv.formatToggle")
             }
             Spacer()
+            if let badge = languageBadgeText {
+                Text(badge)
+                    .font(.system(size: 10, weight: .semibold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background(
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color.secondary.opacity(0.15))
+                    )
+                    .foregroundStyle(.secondary)
+                    .help("Detected language for syntax highlighting")
+                    .accessibilityIdentifier("mdv.languageBadge")
+            }
             Text(model.currentFilePath ?? model.windowTitle)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -185,6 +204,19 @@ struct ModeBar: View {
                 .help(model.currentURL?.path ?? model.windowTitle)
         }
         .frame(height: 22)
+    }
+
+    /// Shown when source mode is active AND the file's language was
+    /// detected as something other than plain text. Hidden for markdown
+    /// rendered mode (where the picker already conveys context).
+    private var languageBadgeText: String? {
+        guard let url = model.currentURL else { return nil }
+        let lang = HighlightLanguage.detect(from: url)
+        guard lang != .plainText else { return nil }
+        if model.supportsViewModeToggle, model.currentViewMode == .rendered {
+            return nil
+        }
+        return lang.displayName
     }
 }
 
