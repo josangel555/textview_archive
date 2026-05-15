@@ -70,6 +70,7 @@ final class SourceViewVisualRegressionTests: XCTestCase {
         p.arguments = [sourceFile.path]
         var env = ProcessInfo.processInfo.environment
         env["MDV_ENABLE_BROKEN_RULER"] = "1"
+        env["MDV_SKIP_WORKSPACE_RESTORE"] = "1"
         p.environment = env
         p.standardOutput = FileHandle.standardError
         p.standardError = FileHandle.standardError
@@ -139,10 +140,14 @@ final class SourceViewVisualRegressionTests: XCTestCase {
         try? fm.removeItem(at: Self.windowIDFile)
         _ = try? shell(["/usr/bin/killall", "MarkdownViewer"])
 
-        // 3. Launch the app.
+        // 3. Launch the app. Skip workspace restore so we start with
+        // a known clean tab set.
         let p = Process()
         p.executableURL = URL(fileURLWithPath: appExe)
         p.arguments = [sourceFile.path]
+        var env3 = ProcessInfo.processInfo.environment
+        env3["MDV_SKIP_WORKSPACE_RESTORE"] = "1"
+        p.environment = env3
         p.standardOutput = FileHandle.standardError
         p.standardError = FileHandle.standardError
         try p.run()

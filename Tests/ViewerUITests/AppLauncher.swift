@@ -77,6 +77,7 @@ enum AppLauncher {
         // grabs whatever the user is typing into.
         var env = ProcessInfo.processInfo.environment
         env["MDV_BACKGROUND"] = "1"
+        env["MDV_SKIP_WORKSPACE_RESTORE"] = "1"
         p.environment = env
         p.standardOutput = FileHandle(forWritingAtPath: "/dev/null")
         p.standardError  = FileHandle(forWritingAtPath: "/dev/null")
