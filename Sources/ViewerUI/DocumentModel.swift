@@ -384,6 +384,17 @@ public final class DocumentModel: ObservableObject {
         case .loaded, .binary:
             history.record(url: resolved, kind: .file)
             recents = history.recent()
+            // Auto-root the sidebar to the file's containing folder if
+            // no folder is currently open. The user explicitly opened
+            // a file, so we already have read access to its parent.
+            // (Auto-restore at launch is more cautious — it skips TCC-
+            // protected roots — but this path runs in response to a
+            // user action, so it's safe to set.)
+            if sidebar.rootURL == nil {
+                sidebar.setRoot(resolved.deletingLastPathComponent())
+                sidebar.setSelected(resolved)
+                preferences.lastFolderURL = sidebar.rootURL
+            }
         case .empty, .error:
             break
         }
