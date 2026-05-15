@@ -7,10 +7,19 @@
 # Swift is bundled with the CLI tools, and the project pulls
 # swift-markdown via SwiftPM on first build.
 #
-# Permissions the VM needs (configure during VM setup, NOT at test time):
-#   - Accessibility:  not required (we don't use AppleScript / System Events)
-#   - Screen Recording:  not required (in-app self-snapshot uses CGWindowList)
-#   - Files and Folders: scoped to /tmp only (the suite uses /tmp for fixtures)
+# Permissions to grant ONCE inside the VM (System Settings →
+# Privacy & Security):
+#   - Files and Folders → MarkdownViewer:
+#       /tmp is enough. Tests write fixtures there. NOT Documents/
+#       Desktop/Downloads — DocumentModel skips those on restore so
+#       you won't see TCC prompts for them.
+#   - (Optional) Screen Recording → Terminal/xctest:
+#       only needed if you want the L4/L5 PNG snapshots to be
+#       non-blank for visual inspection. Tests pass without it
+#       (assertions read the JSON dumps, not the PNG).
+#   - (Optional) Accessibility → Terminal/xctest:
+#       not required by tests, but nice to have for debugging via
+#       osascript queries against the live app.
 #
 # Usage:
 #   bash scripts/test-in-vm.sh           # build + test (default)
@@ -21,8 +30,9 @@
 #
 # Output:
 #   JUnit XML at  /tmp/mdv-test-results.xml  (for CI consumption)
-#   PNG + JSON dumps from any L4/L5 step at  /tmp/mdv-step-*.{json,png}
-#   Auto-snapshot at  /tmp/mdv-auto.{json,png}
+#   PNG + JSON dumps from L4/L5 steps are written to the per-user
+#   tmpdir (`$TMPDIR`, normally /var/folders/.../T/) — files
+#   `mdv-step-NN.{json,png}`, `mdv-auto.{json,png}`.
 
 set -euo pipefail
 
