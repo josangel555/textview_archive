@@ -93,6 +93,19 @@ struct StatusBar: View {
                 lineEndings: "—",
                 encodingShort: "binary"
             )
+        case .preview(let url, let cat):
+            // For media files, surface file size from disk + the
+            // category in the encoding slot. Line/char counts don't
+            // apply.
+            let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+            let size = (attrs?[.size] as? Int) ?? 0
+            return Metrics(
+                lineCount: 0,
+                charCount: 0,
+                byteCount: size,
+                lineEndings: "—",
+                encodingShort: cat.rawValue
+            )
         case .empty, .error:
             return nil
         }

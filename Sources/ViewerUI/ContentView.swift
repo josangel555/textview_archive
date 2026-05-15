@@ -118,6 +118,8 @@ public struct ContentView: View {
             HexView(file: binary, fontSize: 12 * model.zoom)
         case .error(let failure):
             ErrorView(failure: failure, model: model)
+        case .preview(let url, let cat):
+            MediaPreviewView(url: url, category: cat)
         }
     }
 

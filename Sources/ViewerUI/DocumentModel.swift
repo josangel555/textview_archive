@@ -558,7 +558,7 @@ public final class DocumentModel: ObservableObject {
         // Both text and binary opens count as a successful "user saw this
         // file"; record either as a recent. Errors don't.
         switch state {
-        case .loaded, .binary:
+        case .loaded, .binary, .preview:
             history.record(url: resolved, kind: .file)
             recents = history.recent()
             // Auto-root the sidebar to the file's containing folder if

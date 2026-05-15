@@ -22,10 +22,11 @@ public struct Tab: Equatable, Sendable, Identifiable {
     /// What to display in the tab strip.
     public var title: String {
         switch state {
-        case .loaded(let f): return f.url.lastPathComponent
-        case .binary(let b): return b.url.lastPathComponent
-        case .error(let f):  return f.url.lastPathComponent
-        case .empty:         return url?.lastPathComponent ?? "Untitled"
+        case .loaded(let f):      return f.url.lastPathComponent
+        case .binary(let b):      return b.url.lastPathComponent
+        case .error(let f):       return f.url.lastPathComponent
+        case .preview(let u, _):  return u.lastPathComponent
+        case .empty:              return url?.lastPathComponent ?? "Untitled"
         }
     }
 

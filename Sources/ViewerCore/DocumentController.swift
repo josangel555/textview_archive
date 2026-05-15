@@ -1,10 +1,16 @@
 import Foundation
+import ViewerKit
 
 public enum DocumentState: Equatable, Sendable {
     case empty
     case loaded(TextFile)
     case binary(BinaryFile)
     case error(LoadFailure)
+    /// Native preview (image/audio/video/PDF). We don't need to read
+    /// the file contents into Swift memory — the renderer (NSImageView
+    /// / AVPlayer / PDFView) takes the URL directly and handles
+    /// streaming itself. We just need to know the kind.
+    case preview(URL, FileCategory)
 
     public struct LoadFailure: Equatable, Sendable {
         public let url: URL
@@ -31,6 +37,23 @@ public struct DocumentController: Sendable {
     }
 
     public func open(url: URL) -> DocumentState {
+        // Native-preview fast path: detect by extension/UTI before
+        // even attempting the text loader. Skips reading huge media
+        // files into Swift memory just to fail-back to a viewer that
+        // doesn't need the bytes anyway.
+        let category = FileTypeDetector.category(for: url)
+        switch category {
+        case .image, .audio, .video, .pdf, .sqlite:
+            // Only declare a preview if the file actually exists +
+            // is readable; otherwise route to the error path.
+            if FileManager.default.isReadableFile(atPath: url.path) {
+                return .preview(url, category)
+            } else {
+                return .error(.init(url: url, message: "File could not be read."))
+            }
+        default:
+            break
+        }
         do {
             let file = try loader.load(url: url)
             return .loaded(file)
