@@ -114,6 +114,21 @@ img { max-width: 100%; height: auto; }
 
 del { text-decoration: line-through; color: var(--mdv-fg-secondary); }
 
+/* Find matches injected by Coordinator.findScript. Match the source
+   view scheme: pink for non-current, purple for current. */
+mark.mdv-find {
+    background: rgba(255, 105, 180, 0.45);
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 1px;
+}
+mark.mdv-find-current {
+    background: rgba(160, 90, 220, 0.65);
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 1px;
+}
+
 /* Phase 5b: TreeSitter-driven syntax highlighting inside code fences.
    Each .tok-* class corresponds to a TokenKind raw value emitted by
    HTMLVisitor.spanned. Colors track Xcode default (light) / Xcode dark

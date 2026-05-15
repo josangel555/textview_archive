@@ -307,6 +307,10 @@ public final class DocumentModel: ObservableObject {
     /// to `nil` when the query is empty (no search has run) so the
     /// find bar can distinguish "haven't searched" from "no matches."
     @Published public var renderedFindMatched: Bool? = nil
+    /// Pre-formatted "n/N" surface for the find bar. Empty when no
+    /// active search. Set by MarkdownRenderedView.Coordinator after
+    /// each JS find call returns total + currentIndex.
+    @Published public var renderedFindMatchSummary: String = ""
 
     /// Nonce that increments each time the user requests the find bar
     /// (Cmd+F). The bar's TextField observes this and refocuses on

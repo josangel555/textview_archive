@@ -30,7 +30,7 @@ public struct MediaPreviewView: View {
         case .video: VideoPreview(url: url)
         case .pdf:   PDFPreview(url: url)
         case .sqlite:
-            SQLitePlaceholder(url: url)
+            SQLiteBrowserView(url: url)
         default:
             UnsupportedPreview(url: url, category: category)
         }
@@ -132,24 +132,6 @@ private struct PDFPreview: NSViewRepresentable {
     func updateNSView(_ nsView: PDFView, context: Context) {
         if nsView.document?.documentURL == url { return }
         nsView.document = PDFDocument(url: url)
-    }
-}
-
-private struct SQLitePlaceholder: View {
-    let url: URL
-    var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "cylinder.split.1x2.fill")
-                .resizable().scaledToFit()
-                .frame(width: 64, height: 64)
-                .foregroundStyle(.secondary)
-            Text("SQLite browser coming soon")
-                .font(.title3)
-            Text(url.lastPathComponent)
-                .font(.caption.monospaced())
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

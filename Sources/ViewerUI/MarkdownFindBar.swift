@@ -115,8 +115,10 @@ struct MarkdownFindBar: View {
             placeholder: "Find in rendered markdown…",
             query: $model.renderedFindQuery,
             caseSensitive: $model.renderedFindCaseSensitive,
-            matchSummary: .constant(""),
-            noResultsMode: .boolean(matched: model.renderedFindMatched),
+            // Rendered now supports proper count via JS injection
+            // (Coordinator.findScript). Show n/N just like source.
+            matchSummary: $model.renderedFindMatchSummary,
+            noResultsMode: .countOnly,
             focusRequest: model.renderedFindFocusRequest,
             onNext: { model.renderedFindNext() },
             onPrev: { model.renderedFindPrev() },

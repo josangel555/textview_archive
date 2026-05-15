@@ -146,6 +146,9 @@ public struct ContentView: View {
                     findPrevNonce: model.renderedFindPrevRequest,
                     onFindResult: { matched in
                         Task { @MainActor in model.renderedFindMatched = matched }
+                    },
+                    onFindSummary: { summary in
+                        Task { @MainActor in model.renderedFindMatchSummary = summary }
                     }
                 )
             }
