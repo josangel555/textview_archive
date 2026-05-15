@@ -16,6 +16,8 @@ struct SidebarView: View {
             if sidebar.rootURL != nil {
                 SearchAnywhereSection(model: model)
                 Divider()
+                RecentChangesSection(model: model)
+                Divider()
             }
             if let root = sidebar.rootURL {
                 ScrollViewReader { proxy in
