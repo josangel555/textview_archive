@@ -119,6 +119,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
         // Restore last-opened folder (silently no-ops if path no longer exists).
         model.restorePreviousFolderIfAvailable()
+        // Restore the auto-saved workspace (tabs + view modes + prefs)
+        // unless the user disabled it via env var (useful for tests
+        // that need a clean state).
+        if ProcessInfo.processInfo.environment["MDV_SKIP_WORKSPACE_RESTORE"] != "1" {
+            model.restoreWorkspaceAutoSlot()
+        }
 
         // Open file from argv if provided. Detects folder vs file.
         // B19: resolve relative to the process's cwd (which is the user's
@@ -482,6 +488,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Persist tabs + sidebar + prefs to the workspace auto-slot
+        // so the next launch can restore. Best-effort: failure here
+        // can't surface to the user (we're quitting).
+        model.saveWorkspaceAutoSlot()
     }
 
     @objc func openDocument(_ sender: Any?) {

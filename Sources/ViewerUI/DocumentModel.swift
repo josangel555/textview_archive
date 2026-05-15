@@ -493,6 +493,58 @@ public final class DocumentModel: ObservableObject {
     /// cached path is just a dict lookup so re-renders are fast.
     /// Cache key is (URL + content length) so a file-watcher reload
     /// with new content (different length) invalidates automatically.
+    // MARK: Workspace snapshot
+
+    /// Auto-save the current open tabs / view modes / sidebar root /
+    /// prefs into the workspace store's `_last.json` slot. Call on
+    /// applicationWillTerminate.
+    public func saveWorkspaceAutoSlot() {
+        let store = WorkspaceStore()
+        let snap = WorkspaceSnapshot(
+            sidebarRootPath: sidebar.rootURL?.path,
+            openTabs: tabs.tabs.compactMap { t in
+                guard let url = t.url else { return nil }
+                return TabSnapshot(path: url.path, viewMode: t.viewMode.rawValue)
+            },
+            selectedTabIndex: tabs.selectedIndex,
+            zoom: zoom,
+            wordWrap: sourceWordWrap,
+            themeOverride: themeOverride?.rawValue
+        )
+        store.saveAutoSlot(snap)
+    }
+
+    /// If `_last.json` exists, re-open the tabs + restore prefs.
+    /// Called once at app launch (after restorePreviousFolderIfAvailable).
+    /// Falls back silently if the snapshot is missing or unreadable.
+    public func restoreWorkspaceAutoSlot() {
+        let store = WorkspaceStore()
+        guard let snap = store.loadAutoSlot() else { return }
+        if let root = snap.sidebarRootPath {
+            let url = URL(fileURLWithPath: root)
+            if FileManager.default.fileExists(atPath: url.path) {
+                sidebar.setRoot(url)
+            }
+        }
+        for t in snap.openTabs {
+            let url = URL(fileURLWithPath: t.path)
+            if FileManager.default.fileExists(atPath: url.path) {
+                openPath(url)
+                if let mode = ViewMode(rawValue: t.viewMode), mode != currentViewMode {
+                    setCurrentViewMode(mode)
+                }
+            }
+        }
+        if let zoom = snap.zoom { self.zoom = zoom }
+        if let wrap = snap.wordWrap { self.sourceWordWrap = wrap }
+        if let theme = snap.themeOverride {
+            self.themeOverride = SyntaxTheme.Name(rawValue: theme)
+        }
+        if let i = snap.selectedTabIndex, tabs.tabs.indices.contains(i) {
+            selectTab(at: i)
+        }
+    }
+
     public func renderedHTML(
         forURL url: URL,
         contents: String,
