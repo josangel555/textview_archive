@@ -106,7 +106,10 @@ public struct ContentView: View {
                 )
             }
         } else {
-            TextDisplayView(text: file.contents, fontSize: 13 * model.zoom)
+            TextDisplayView(
+                text: model.displayText(for: file),
+                fontSize: 13 * model.zoom
+            )
         }
     }
 }
@@ -124,6 +127,20 @@ struct ModeBar: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .frame(width: 180)
+            }
+            if model.supportsFormatToggle {
+                Toggle(isOn: Binding(
+                    get: { model.isCurrentTabFormatted },
+                    set: { _ in model.toggleFormat() }
+                )) {
+                    Label("Format", systemImage: "text.alignleft")
+                        .labelStyle(.titleAndIcon)
+                        .font(.system(size: 11))
+                }
+                .toggleStyle(.button)
+                .controlSize(.small)
+                .help("Pretty-print this file (Cmd+Opt+F)")
+                .accessibilityIdentifier("mdv.formatToggle")
             }
             Spacer()
             Text(model.currentFilePath ?? model.windowTitle)

@@ -221,6 +221,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if let n = Int(arg), n >= 1 { model.selectTab(at: n - 1) }
         case "show-palette":    model.showPalette()
         case "dismiss-palette": model.dismissPalette()
+        case "toggle-format":   model.toggleFormat()
+        case "show-find":       model.showRenderedFindBar()
+        case "dismiss-find":    model.dismissRenderedFindBar()
+        case "find-next":       model.renderedFindNext()
+        case "find-prev":       model.renderedFindPrev()
         case "sidebar-set-root":
             model.sidebar.setRoot(URL(fileURLWithPath: arg))
         case "sidebar-select-next":
@@ -744,6 +749,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         zoomReset.target = self
         viewMenu.addItem(zoomReset)
 
+        viewMenu.addItem(.separator())
+        let formatItem = NSMenuItem(
+            title: "Pretty-Print",
+            action: #selector(toggleFormat(_:)),
+            keyEquivalent: "f"
+        )
+        formatItem.keyEquivalentModifierMask = [.command, .option]
+        formatItem.target = self
+        viewMenu.addItem(formatItem)
+
         viewMenuItem.submenu = viewMenu
 
         let windowMenuItem = NSMenuItem()
@@ -826,6 +841,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func zoomReset(_ sender: Any?) {
         model.zoomReset()
+    }
+
+    @objc func toggleFormat(_ sender: Any?) {
+        model.toggleFormat()
     }
 
     /// Cmd+F router. NSTextView's built-in find bar handles source view

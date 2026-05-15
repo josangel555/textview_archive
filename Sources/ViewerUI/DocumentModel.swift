@@ -166,6 +166,46 @@ public final class DocumentModel: ObservableObject {
     public func renderedFindNext() { renderedFindNextRequest &+= 1 }
     public func renderedFindPrev() { renderedFindPrevRequest &+= 1 }
 
+    // MARK: Pretty-print / Format
+
+    /// Set of tab URLs the user has toggled into "formatted" (pretty-
+    /// printed) view. Per-tab so toggling one file doesn't affect others.
+    @Published private var formattedTabs: Set<URL> = []
+
+    /// True if the current tab's file is a format that can be pretty-
+    /// printed (JSON / XML / HTML / SVG / .plist / .xib / .storyboard).
+    public var supportsFormatToggle: Bool {
+        guard let url = currentURL else { return false }
+        return Formatter.SupportedFormat.detect(url) != nil
+    }
+
+    /// True if the current tab is currently showing pretty-printed
+    /// content (as opposed to the raw file).
+    public var isCurrentTabFormatted: Bool {
+        guard let url = currentURL else { return false }
+        return formattedTabs.contains(url)
+    }
+
+    public func toggleFormat() {
+        guard let url = currentURL, supportsFormatToggle else { return }
+        if formattedTabs.contains(url) {
+            formattedTabs.remove(url)
+        } else {
+            formattedTabs.insert(url)
+        }
+    }
+
+    /// Returns the text that should be shown in the source view for
+    /// `file`: either pretty-printed (when toggled and supported) or the
+    /// raw contents.
+    public func displayText(for file: TextFile) -> String {
+        guard formattedTabs.contains(file.url),
+              let format = Formatter.SupportedFormat.detect(file.url) else {
+            return file.contents
+        }
+        return Formatter.prettyPrint(file.contents, as: format)
+    }
+
     // MARK: Derived from current tab
 
     public var currentState: DocumentState { tabs.selected?.state ?? .empty }
