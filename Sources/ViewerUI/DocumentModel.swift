@@ -31,6 +31,15 @@ public final class DocumentModel: ObservableObject {
         didSet { preferences.sourceWordWrap = sourceWordWrap }
     }
     public func toggleSourceWordWrap() { sourceWordWrap.toggle() }
+
+    /// Latest scroll state from the source view, published by
+    /// `TextDisplayView.onScrollChange`. Drives the SwiftUI gutter
+    /// rendering (`SourceGutterView`). Seeded with empty values so
+    /// the gutter has something to render at first paint before
+    /// `viewDidLoad` fires.
+    @Published public var sourceScrollState: SourceScrollState = SourceScrollState(
+        offsetY: 0, viewportHeight: 0, lineHeight: 16, lineCount: 0, topInset: 10
+    )
     @Published public var isPalettePresented: Bool = false
     public let sidebar: SidebarModel
 

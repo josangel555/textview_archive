@@ -40,6 +40,7 @@ public struct TextDisplayView: NSViewControllerRepresentable {
     public let findState: FindState
     public let wordWrap: Bool
     public let onFindSummary: ((String) -> Void)?
+    public let onScrollChange: ((SourceScrollState) -> Void)?
 
     public init(
         text: String,
@@ -49,7 +50,8 @@ public struct TextDisplayView: NSViewControllerRepresentable {
         theme: SyntaxTheme = .xcodeLight,
         findState: FindState = .empty,
         wordWrap: Bool = false,
-        onFindSummary: ((String) -> Void)? = nil
+        onFindSummary: ((String) -> Void)? = nil,
+        onScrollChange: ((SourceScrollState) -> Void)? = nil
     ) {
         self.text = text
         self.fontSize = fontSize
@@ -59,6 +61,7 @@ public struct TextDisplayView: NSViewControllerRepresentable {
         self.findState = findState
         self.wordWrap = wordWrap
         self.onFindSummary = onFindSummary
+        self.onScrollChange = onScrollChange
     }
 
     public struct FindState: Equatable, Sendable {
@@ -91,9 +94,32 @@ public struct TextDisplayView: NSViewControllerRepresentable {
             runs: runs,
             wordWrap: wordWrap,
             findState: findState,
-            onFindSummary: onFindSummary
+            onFindSummary: onFindSummary,
+            onScrollChange: onScrollChange
         )
     }
+}
+
+/// Scroll state we publish from `SourceTextController` to whatever
+/// SwiftUI view (e.g. `SourceGutterView`) wants to render along the
+/// text's vertical axis. Computed AFTER NSScrollView's `tile()` via
+/// the clipView's `boundsDidChangeNotification`, so the data is fresh
+/// and reading it doesn't re-trigger the layout reentrancy that
+/// blanked our siblings when `NSRulerView` was attached.
+public struct SourceScrollState: Equatable, Sendable {
+    /// Topmost visible content offset, in points. Same coordinate
+    /// space as the textView's documentView origin.
+    public let offsetY: CGFloat
+    /// Height the scroll view shows (the clipView's bounds.height).
+    public let viewportHeight: CGFloat
+    /// Per-line height assuming the current font; we hand this back so
+    /// callers don't have to compute font metrics independently.
+    public let lineHeight: CGFloat
+    /// Total number of \n-terminated lines in the document.
+    public let lineCount: Int
+    /// Top inset the textContainerInset adds above the first line of
+    /// text. Callers need this to align their first row to glyph row 1.
+    public let topInset: CGFloat
 }
 
 /// Controller-shape host for the source view. Owns the
@@ -110,6 +136,18 @@ public final class SourceTextController: NSViewController {
     private var currentMatchIndex: Int?
     private var lastNextNonce: Int = 0
     private var lastPrevNonce: Int = 0
+    /// Subscribes to the clipView's bounds change (i.e. scroll events).
+    /// Fired AFTER NSScrollView.tile() so reading from layoutManager
+    /// here is safe — different from the broken NSRulerView path.
+    /// `@unchecked Sendable` annotation is implicit via `nonisolated`
+    /// usage in deinit; the values themselves are unused after we
+    /// stop receiving notifications, so racing on dealloc is benign.
+    nonisolated(unsafe) private var scrollObserver: NSObjectProtocol?
+    nonisolated(unsafe) private var frameObserver: NSObjectProtocol?
+    private var onScrollChange: ((SourceScrollState) -> Void)?
+    private var cachedFontSize: CGFloat = 13
+    private var cachedLineCount: Int = 1
+    private var lastPublishedScrollState: SourceScrollState?
 
     private struct AttrKey: Equatable {
         let text: String
@@ -185,6 +223,70 @@ public final class SourceTextController: NSViewController {
         self.view = scrollView
     }
 
+    public override func viewDidLoad() {
+        super.viewDidLoad()
+        // Tell the clipView to post bounds-change notifications. Off by
+        // default; without this our `boundsDidChange` observer is
+        // silent. (Frame changes are separate; we observe both so
+        // resize also updates the gutter.)
+        let clip = scrollView.contentView
+        clip.postsBoundsChangedNotifications = true
+        clip.postsFrameChangedNotifications = true
+        scrollObserver = NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification,
+            object: clip, queue: .main
+        ) { [weak self] _ in
+            self?.publishScrollState()
+        }
+        frameObserver = NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification,
+            object: clip, queue: .main
+        ) { [weak self] _ in
+            self?.publishScrollState()
+        }
+    }
+
+    deinit {
+        if let o = scrollObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = frameObserver  { NotificationCenter.default.removeObserver(o) }
+    }
+
+    /// Publish current scroll state to the SwiftUI gutter. Reads from
+    /// layoutManager — safe to do here because we're in a notification
+    /// handler (async, on .main runloop), not inside NSScrollView.tile.
+    ///
+    /// Dedupe identical publishes: SwiftUI republishing → re-layout →
+    /// frame-changed → publish creates a feedback loop. Equatable
+    /// guard breaks it.
+    private func publishScrollState() {
+        guard let cb = onScrollChange else { return }
+        let clip = scrollView.contentView
+        let offset = clip.bounds.origin.y
+        let viewport = clip.bounds.size.height
+        let topInset = textView.textContainerInset.height
+        let state = SourceScrollState(
+            offsetY: offset,
+            viewportHeight: viewport,
+            lineHeight: Self.lineHeight(forFontSize: cachedFontSize),
+            lineCount: cachedLineCount,
+            topInset: topInset
+        )
+        if state == lastPublishedScrollState { return }
+        lastPublishedScrollState = state
+        cb(state)
+    }
+
+    /// Match NSTextView's effective line height for the default
+    /// monospaced font. The factor 1.20 holds for SF Mono / Menlo /
+    /// Monaco across the size range we use; if it ever drifts we'd
+    /// see misalignment in the gutter.
+    static func lineHeight(forFontSize size: CGFloat) -> CGFloat {
+        let font = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        // boundingRectForFont gives the maximal glyph box; NSTextView's
+        // layout manager uses a slightly tighter line height.
+        return ceil(font.ascender - font.descender + font.leading)
+    }
+
     /// Apply a (text, runs, theme, wrap, findState) update from SwiftUI.
     /// Each piece is gated on a coordinator-style cache key so we don't
     /// re-walk the textStorage when nothing actually changed.
@@ -195,8 +297,11 @@ public final class SourceTextController: NSViewController {
         runs: [HighlightRun],
         wordWrap: Bool,
         findState: TextDisplayView.FindState,
-        onFindSummary: ((String) -> Void)?
+        onFindSummary: ((String) -> Void)?,
+        onScrollChange: ((SourceScrollState) -> Void)?
     ) {
+        self.onScrollChange = onScrollChange
+        self.cachedFontSize = fontSize
         scrollView.backgroundColor = theme.background
         textView.backgroundColor = theme.background
 
@@ -220,6 +325,10 @@ public final class SourceTextController: NSViewController {
         // contentView, but cheaper to localize to the text view.
         textView.needsDisplay = true
         textView.enclosingScrollView?.contentView.needsDisplay = true
+
+        // Initial publish so the gutter has a baseline state even
+        // before the user scrolls.
+        publishScrollState()
     }
 
     /// Toggle horizontal scrolling vs viewport-width wrap. Two knobs
@@ -280,6 +389,16 @@ public final class SourceTextController: NSViewController {
             textView.textStorage?.setAttributedString(attr)
         }
         lastAttrKey = key
+        // Refresh line count for the gutter.
+        cachedLineCount = Self.countLines(in: text)
+    }
+
+    private static func countLines(in text: String) -> Int {
+        if text.isEmpty { return 0 }
+        var n = 1
+        for b in text.utf8 where b == 0x0A { n += 1 }
+        if text.utf8.last == 0x0A { n -= 1 }
+        return n
     }
 
     private func applyFindHighlights(

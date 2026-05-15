@@ -154,23 +154,33 @@ public struct ContentView: View {
                 if model.isSourceFindBarPresented {
                     SourceFindBar(model: model)
                 }
-                TextDisplayView(
-                    text: displayed,
-                    fontSize: 13 * model.zoom,
-                    language: lang,
-                    runs: model.highlightRuns(forURL: file.url, text: displayed, language: lang),
-                    theme: model.activeTheme,
-                    findState: TextDisplayView.FindState(
-                        query: model.isSourceFindBarPresented ? model.sourceFindQuery : "",
-                        caseSensitive: model.sourceFindCaseSensitive,
-                        nextNonce: model.sourceFindNextRequest,
-                        prevNonce: model.sourceFindPrevRequest
-                    ),
-                    wordWrap: model.sourceWordWrap,
-                    onFindSummary: { summary in
-                        model.sourceFindMatchSummary = summary
-                    }
-                )
+                HStack(spacing: 0) {
+                    SourceGutterView(
+                        state: model.sourceScrollState,
+                        fontSize: 13 * model.zoom,
+                        theme: model.activeTheme
+                    )
+                    TextDisplayView(
+                        text: displayed,
+                        fontSize: 13 * model.zoom,
+                        language: lang,
+                        runs: model.highlightRuns(forURL: file.url, text: displayed, language: lang),
+                        theme: model.activeTheme,
+                        findState: TextDisplayView.FindState(
+                            query: model.isSourceFindBarPresented ? model.sourceFindQuery : "",
+                            caseSensitive: model.sourceFindCaseSensitive,
+                            nextNonce: model.sourceFindNextRequest,
+                            prevNonce: model.sourceFindPrevRequest
+                        ),
+                        wordWrap: model.sourceWordWrap,
+                        onFindSummary: { summary in
+                            model.sourceFindMatchSummary = summary
+                        },
+                        onScrollChange: { state in
+                            model.sourceScrollState = state
+                        }
+                    )
+                }
             }
         }
     }
