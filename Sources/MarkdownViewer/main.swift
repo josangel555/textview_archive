@@ -276,6 +276,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var enriched = dump
         enriched["step"] = step
         enriched["label"] = label
+        // Expose model state so tests can verify zoom / mode / tab
+        // count without scraping NSTextView fonts (which don't exist
+        // in the pure-SwiftUI source view).
+        enriched["model"] = [
+            "zoom": model.zoom,
+            "currentViewMode": model.currentViewMode.rawValue,
+            "tabCount": model.tabs.tabs.count,
+            "selectedTabIndex": model.tabs.selectedIndex ?? -1,
+            "isCurrentTabFormatted": model.isCurrentTabFormatted,
+            "isCurrentTabBookmarked": model.isCurrentTabBookmarked,
+            "isPalettePresented": model.isPalettePresented,
+            "isRenderedFindBarPresented": model.isRenderedFindBarPresented,
+            "isCrossSearchPresented": model.isCrossSearchPresented,
+            "sidebarVisible": model.sidebar.isVisible,
+            "currentURL": model.currentURL?.path ?? "",
+        ]
         if let data = try? JSONSerialization.data(
             withJSONObject: enriched,
             options: [.prettyPrinted, .sortedKeys]

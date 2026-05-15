@@ -55,33 +55,29 @@ final class FindBarTests: XCTestCase {
         return out
     }
 
-    func test_sourceView_nsTextView_usesFindBar() throws {
-        let model = makeModel()
-        let url = tmpDir.appendingPathComponent("find.xml")
-        try "<root>\n<a/>\n<b/>\n</root>\n".write(to: url, atomically: true, encoding: .utf8)
-        model.open(url: url)
-        let host = renderHost(ContentView(model: model))
-        guard let tv = descendants(of: host).compactMap({ $0 as? NSTextView }).first else {
-            return XCTFail("No NSTextView found for source view")
-        }
-        XCTAssertTrue(tv.usesFindBar,
-            "NSTextView must have usesFindBar=true for ⌘F to show the find bar")
-        XCTAssertTrue(tv.isIncrementalSearchingEnabled,
-            "Incremental searching should be enabled so the field highlights matches as you type")
-    }
-
-    func test_sourceView_nsTextView_isResponderForFindAction() throws {
-        // NSTextView responds to performFindPanelAction(_:) which is what
-        // the Edit > Find menu sends. Without this, ⌘F would beep.
+    // The source view is now pure SwiftUI — there's no NSTextView to
+    // host AppKit's native find bar. Cmd+F now routes to our SwiftUI
+    // MarkdownFindBar (works in both rendered and source mode), which
+    // is covered by RenderedFindBarTests.
+    //
+    // These two tests previously asserted on NSTextView.usesFindBar
+    // and NSTextView.performFindPanelAction responder availability —
+    // both gone with the pure-SwiftUI source view. The contract they
+    // covered ("Cmd+F does something useful in source mode") is now
+    // covered indirectly: source mode uses the same SwiftUI find bar
+    // as rendered mode, gated by isRenderedFindBarPresented.
+    func test_findBar_modelStateUpdatesForSourceView() throws {
         let model = makeModel()
         let url = tmpDir.appendingPathComponent("find.xml")
         try "<root>\n<a>findme</a>\n</root>\n".write(to: url, atomically: true, encoding: .utf8)
         model.open(url: url)
-        let host = renderHost(ContentView(model: model))
-        guard let tv = descendants(of: host).compactMap({ $0 as? NSTextView }).first else {
-            return XCTFail("No NSTextView found")
-        }
-        XCTAssertTrue(tv.responds(to: #selector(NSTextView.performFindPanelAction(_:))),
-            "NSTextView must respond to performFindPanelAction:")
+        XCTAssertFalse(model.isRenderedFindBarPresented)
+        model.showRenderedFindBar()
+        XCTAssertTrue(model.isRenderedFindBarPresented)
+        model.renderedFindQuery = "findme"
+        XCTAssertEqual(model.renderedFindQuery, "findme")
+        model.dismissRenderedFindBar()
+        XCTAssertFalse(model.isRenderedFindBarPresented)
+        XCTAssertEqual(model.renderedFindQuery, "")
     }
 }

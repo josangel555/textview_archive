@@ -107,8 +107,13 @@ final class LongFlowTests: XCTestCase {
         // Invariants across all steps:
         // 1. No step ends with a window that has zero or negative size.
         // 2. Every step has a non-nil window title.
-        // 3. No step has a "white text on white background" NSTextView
-        //    (color contrast is True wherever NSTextView exists).
+        // 3. No step has a model in a fundamentally inconsistent state
+        //    (zoom NaN/zero, tabCount negative, etc.)
+        // The earlier NSTextView contrast check is dropped — the
+        // pure-SwiftUI source view doesn't expose an NSTextView. Color
+        // contrast there is enforced by using semantic colors
+        // (.labelColor over .textBackgroundColor) which automatically
+        // adapt to light/dark mode.
         for (i, d) in dumps.enumerated() {
             let w = (d["window"] as? [String: Any]) ?? [:]
             let frame = w["frame"] as? String ?? ""
@@ -116,12 +121,12 @@ final class LongFlowTests: XCTestCase {
             let title = w["title"] as? String ?? ""
             XCTAssertFalse(title.isEmpty,
                 "Step \(i+1): window title should never be empty mid-flow")
-            for tv in nodes("NSTextView", in: d) {
-                let info = (tv["nsTextView"] as? [String: Any]) ?? [:]
-                if let contrasts = info["contrastsWithBackground"] as? Bool {
-                    XCTAssertTrue(contrasts,
-                        "Step \(i+1): NSTextView text/bg contrast failed")
-                }
+            let model = (d["model"] as? [String: Any]) ?? [:]
+            if let zoom = model["zoom"] as? Double {
+                XCTAssertGreaterThan(zoom, 0,
+                    "Step \(i+1): model.zoom must be positive")
+                XCTAssertLessThan(zoom, 100,
+                    "Step \(i+1): model.zoom looks corrupted")
             }
         }
     }
@@ -171,35 +176,21 @@ final class LongFlowTests: XCTestCase {
             throw XCTSkip("Build .app first")
         }
         let md = try writeMD("p.md", "# pers\nbody\n")
-        // First run: zoom in, then exit.
+        // First run: zoom in twice from baseline.
         _ = try runScript("""
             zoom-reset
             zoom-in
             zoom-in
             """, with: md)
-        // Second run: open the same file. Zoom should still be 1.2 (two zoom-ins).
+        // Second run: model.zoom should still be ≈1.2 (PreferencesStore
+        // persists zoom across launches).
         let dumps = try runScript("""
             toggle-view
             """, with: md)
         XCTAssertEqual(dumps.count, 1)
-        func fontPt(_ d: [String: Any]) -> Double? {
-            guard let tv = nodes("NSTextView", in: d).first,
-                  let info = tv["nsTextView"] as? [String: Any],
-                  let desc = info["font_description"] as? String else { return nil }
-            let parts = desc.split(separator: " ")
-            for (i, p) in parts.enumerated() where p == "pt." && i > 0 {
-                return Double(parts[i-1])
-            }
-            return nil
-        }
-        let pt = fontPt(dumps[0])
-        XCTAssertNotNil(pt, "Source view should expose font size")
-        if let p = pt {
-            // Two zoom-ins at +0.1 each → zoom 1.2 → font 13 * 1.2 = 15.6.
-            // Tolerance because we don't know the exact zoom step.
-            XCTAssertGreaterThan(p, 13.0 + 1,
-                "After zoom-in × 2 + relaunch, font should be > baseline+1. Got \(p)")
-        }
+        let zoom = ((dumps[0]["model"] as? [String: Any])?["zoom"] as? Double) ?? -1
+        XCTAssertGreaterThan(zoom, 1.0,
+            "After zoom-in × 2 + relaunch, model.zoom should be > 1.0. Got \(zoom)")
         // Reset for clean state after this test.
         _ = try runScript("zoom-reset\n", with: md)
     }

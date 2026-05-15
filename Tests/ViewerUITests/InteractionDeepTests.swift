@@ -180,10 +180,8 @@ final class InteractionDeepTests: XCTestCase {
         }
         let a = try writeMD("a.md", "# A\nbody\n")
         let b = try writeMD("b.md", "# B\nbody\n")
-        // View mode is per-tab; new tabs inherit the current view mode. So
-        // toggle-view → source for a.md, zoom in twice, open b.md (inherits
-        // source mode), and the NSTextView in b.md should have the SAME
-        // font size as the one in a.md.
+        // model.zoom is a single value applied across tabs, so two
+        // zoom-ins should persist when we open b.md.
         let dumps = try runScript("""
             zoom-reset
             toggle-view
@@ -192,27 +190,16 @@ final class InteractionDeepTests: XCTestCase {
             open \(b.path)
             """, with: a)
         XCTAssertEqual(dumps.count, 5)
-        func fontPt(_ d: [String: Any]) -> Double? {
-            let tvs = nodes("NSTextView", in: d)
-            guard let tv = tvs.first,
-                  let info = tv["nsTextView"] as? [String: Any],
-                  let desc = info["font_description"] as? String else { return nil }
-            let parts = desc.split(separator: " ")
-            for (i, p) in parts.enumerated() where p == "pt." && i > 0 {
-                return Double(parts[i-1])
-            }
-            return nil
+        func zoom(_ d: [String: Any]) -> Double? {
+            (d["model"] as? [String: Any])?["zoom"] as? Double
         }
-        // dumps[3]: source view of a.md after two zoom-ins.
-        // dumps[4]: just opened b.md — inherits source mode + zoom.
-        let zoomedA = fontPt(dumps[3])
-        let zoomedB = fontPt(dumps[4])
-        XCTAssertNotNil(zoomedA, "Step 4 (zoom-in #2 on a.md source view) should have NSTextView with font info")
-        XCTAssertNotNil(zoomedB, "Step 5 (opened b.md, inheriting source mode) should have NSTextView")
-        if let za = zoomedA, let zb = zoomedB {
-            XCTAssertEqual(za, zb, accuracy: 0.5,
-                "Zoomed font size should be identical across tabs (model.zoom persists). a=\(za) b=\(zb)")
+        guard let zoomedA = zoom(dumps[3]),
+              let zoomedB = zoom(dumps[4]) else {
+            return XCTFail("model.zoom missing")
         }
+        XCTAssertEqual(zoomedA, zoomedB, accuracy: 0.001,
+            "Zoom should persist across tabs. a=\(zoomedA) b=\(zoomedB)")
+        XCTAssertGreaterThan(zoomedA, 1.0, "After 2 zoom-ins, zoom should be >1.0")
     }
 
     // MARK: - Sidebar navigation

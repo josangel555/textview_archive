@@ -170,16 +170,28 @@ final class ComponentVisualTests: XCTestCase {
 
     func test_hexView_renders_inViewTree() throws {
         let model = makeModel()
-        // Binary detection requires NUL bytes — interleave them.
-        var bytes: [UInt8] = []
-        for _ in 0..<128 { bytes.append(0x00); bytes.append(0xAA) }
+        // Binary detection requires NUL bytes, but a pure
+        // "[0x00, 0xAA] * 128" pattern now decodes cleanly as
+        // UTF-16BE (U+00AA = ª, valid character) — by design,
+        // since we now detect BOM-less UTF-16. Use a clearly-
+        // binary pattern instead: PNG-like header with mixed
+        // byte values that no UTF-16 decoder will accept as
+        // sensible text.
+        var bytes: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+        for i in 0..<32 {
+            bytes.append(0x00)
+            bytes.append(UInt8(i % 16))
+            bytes.append(0xFF)
+            bytes.append(0x80)
+        }
         let url = try writeBinary("img.bin", bytes)
         model.open(url: url)
         guard case .binary(let binary) = model.currentState else {
             return XCTFail("Expected .binary state, got \(model.currentState)")
         }
         // Model-level: BinaryFile has the byte content.
-        XCTAssertEqual(binary.byteCount, 256)
+        // 8-byte PNG-like header + 32 iterations × 4 bytes = 136 bytes.
+        XCTAssertEqual(binary.byteCount, 8 + 32 * 4)
         // View-level: HexView uses pure SwiftUI Text — text is baked into
         // layer contents (no NSTextView). Assert the view tree is non-empty
         // and the HexView's hosting wrapper is realized.
@@ -251,9 +263,14 @@ final class ComponentVisualTests: XCTestCase {
 
     // MARK: - Sidebar visible/hidden visual state
 
-    func test_sidebar_hiddenByDefault() throws {
+    func test_sidebar_defaultVisibility_followsPreferences() throws {
+        // sidebar.isVisible is seeded from PreferencesStore.sidebarVisible
+        // in DocumentModel.init. Default is true (so first-time users see
+        // the sidebar when they open a folder). The previous test asserted
+        // false unconditionally — that's no longer the contract; users
+        // who toggled off get their preference restored.
         let model = makeModel()
-        XCTAssertFalse(model.sidebar.isVisible)
+        XCTAssertEqual(model.sidebar.isVisible, PreferencesStore(defaults: defaults).sidebarVisible)
     }
 
     func test_sidebar_visibleAfterToggle_changesViewTree() throws {

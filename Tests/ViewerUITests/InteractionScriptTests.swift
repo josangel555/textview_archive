@@ -101,18 +101,19 @@ final class InteractionScriptTests: XCTestCase {
         XCTAssertEqual(dumps.count, 2, "Expected two step dumps")
 
         // After toggle 1: source mode → NSTextView with text, no WKWebView.
-        let afterToSource = dumps[0]
-        XCTAssertFalse(nodesOfClass("NSTextView", in: afterToSource).isEmpty,
-            "After toggle-view to source, an NSTextView should be present")
-        XCTAssertTrue(nodesOfClass("WKWebView", in: afterToSource).isEmpty,
+        // Verify by model state (currentViewMode), not NSTextView presence:
+        // the pure-SwiftUI source view doesn't introduce an NSTextView.
+        // WKWebView presence still distinguishes rendered mode reliably.
+        let mode1 = ((dumps[0]["model"] as? [String: Any])?["currentViewMode"] as? String) ?? ""
+        let mode2 = ((dumps[1]["model"] as? [String: Any])?["currentViewMode"] as? String) ?? ""
+        XCTAssertEqual(mode1, "source",
+            "After toggle-view, currentViewMode should be source")
+        XCTAssertTrue(nodesOfClass("WKWebView", in: dumps[0]).isEmpty,
             "Source mode should not contain a WKWebView")
-
-        // After toggle 2: back to rendered → WKWebView, no NSTextView for source.
-        let afterToRendered = dumps[1]
-        XCTAssertFalse(nodesOfClass("WKWebView", in: afterToRendered).isEmpty,
-            "After toggling back, WKWebView should be present")
-        XCTAssertTrue(nodesOfClass("NSTextView", in: afterToRendered).isEmpty,
-            "Rendered mode should not have an NSTextView source view")
+        XCTAssertEqual(mode2, "rendered",
+            "After second toggle, currentViewMode should be rendered")
+        XCTAssertFalse(nodesOfClass("WKWebView", in: dumps[1]).isEmpty,
+            "Rendered mode should embed a WKWebView")
     }
 
     func test_newTabAndClose_changesTabCount() throws {
@@ -146,50 +147,33 @@ final class InteractionScriptTests: XCTestCase {
     // script-runner's 300ms inter-step delay. SidebarModel state changes
     // are covered by SidebarModelTests (pure-logic unit tests).
 
-    func test_zoom_changesFontSize() throws {
+    func test_zoom_commands_changeModelZoom() throws {
         guard FileManager.default.isExecutableFile(atPath: appExecutable.path) else {
             throw XCTSkip("Build .app first")
         }
         let md = try writeMarkdown()
-        // Force source mode so we can read NSTextView's font from the dump,
-        // then zoom in and verify font size grew. Reset first because
-        // PreferencesStore persists zoom across runs and earlier tests
-        // may have left it non-1.0.
+        // The pure-SwiftUI source view doesn't expose an NSTextView
+        // font to scrape, so we verify zoom via model.zoom directly
+        // (now included in the script runner's per-step JSON dump).
         let dumps = try runScript("""
             zoom-reset
-            toggle-view
             zoom-in
             zoom-in
             zoom-reset
             """, with: md)
-        XCTAssertEqual(dumps.count, 5)
-        func fontSize(_ tree: [String: Any]) -> Double? {
-            guard let tv = nodesOfClass("NSTextView", in: tree).first,
-                  let info = tv["nsTextView"] as? [String: Any],
-                  let desc = info["font_description"] as? String else { return nil }
-            // Description is like "Menlo-Regular 13.00 pt. P [...]"
-            let parts = desc.split(separator: " ")
-            for (i, p) in parts.enumerated() where p == "pt." && i > 0 {
-                return Double(parts[i-1])
-            }
-            return nil
+        XCTAssertEqual(dumps.count, 4)
+        func zoom(_ d: [String: Any]) -> Double? {
+            (d["model"] as? [String: Any])?["zoom"] as? Double
         }
-        // Step 0: zoom-reset, source view not yet active → no NSTextView (skip).
-        // Step 1: toggle-view → source view appears at zoom=1 baseline.
-        // Step 2-3: zoom-in twice.
-        // Step 4: zoom-reset → back to baseline.
-        let baseline = fontSize(dumps[1])
-        let oneStep = fontSize(dumps[2])
-        let twoStep = fontSize(dumps[3])
-        let reset   = fontSize(dumps[4])
-        XCTAssertNotNil(baseline)
-        XCTAssertNotNil(oneStep)
-        XCTAssertNotNil(twoStep)
-        XCTAssertNotNil(reset)
-        if let b = baseline, let one = oneStep, let two = twoStep, let r = reset {
-            XCTAssertGreaterThan(one, b, "zoom-in should increase font size")
-            XCTAssertGreaterThan(two, one, "second zoom-in should increase further")
-            XCTAssertEqual(r, b, accuracy: 0.5, "zoom-reset should return to baseline")
+        guard let baseline = zoom(dumps[0]),
+              let oneStep = zoom(dumps[1]),
+              let twoStep = zoom(dumps[2]),
+              let reset = zoom(dumps[3]) else {
+            return XCTFail("model.zoom missing in one of the step dumps")
         }
+        XCTAssertEqual(baseline, 1.0, accuracy: 0.001)
+        XCTAssertGreaterThan(oneStep, 1.0, "zoom-in should bump model.zoom > 1.0")
+        XCTAssertGreaterThan(twoStep, oneStep, "second zoom-in should bump further")
+        XCTAssertEqual(reset, 1.0, accuracy: 0.001)
     }
 }

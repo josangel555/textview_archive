@@ -87,33 +87,39 @@ public struct TextFileLoader: Sendable {
     /// fallback after `looksBinary` triggers, to catch BOM-less UTF-16
     /// files that appear binary because of interleaved NUL bytes.
     ///
-    /// Heuristic: if the data length is even AND the proportion of
-    /// "looks like Latin-1 char + NUL" pairs is high, accept the decode.
-    /// Otherwise reject — most actual binaries don't satisfy this.
+    /// Heuristic: ASCII-heavy UTF-16 has NUL at EVERY odd byte (LE) or
+    /// EVERY even byte (BE). Anything weaker than ~80% of slots being
+    /// NUL in one parity is almost certainly real binary content.
+    /// Requires the sample to be at least 32 bytes, otherwise the
+    /// signal is too weak to trust.
     static func decodeUTF16WithoutBOM(_ data: Data) -> (string: String, encoding: String.Encoding)? {
-        guard data.count >= 4, data.count % 2 == 0 else { return nil }
+        guard data.count >= 32, data.count % 2 == 0 else { return nil }
         let sample = data.prefix(2048)
         let n = sample.count
-        guard n >= 4 else { return nil }
         // Count NUL positions in even/odd byte slots. UTF-16 LE ASCII
         // text has NUL at every odd index; UTF-16 BE ASCII at every
         // even index. Random binary distributes NULs evenly.
         var oddNULs = 0
         var evenNULs = 0
+        var oddNonZero = 0
+        var evenNonZero = 0
         for i in 0..<n {
-            if sample[sample.startIndex + i] == 0 {
-                if i % 2 == 0 { evenNULs += 1 } else { oddNULs += 1 }
+            let byte = sample[sample.startIndex + i]
+            if i % 2 == 0 {
+                if byte == 0 { evenNULs += 1 } else { evenNonZero += 1 }
+            } else {
+                if byte == 0 { oddNULs += 1 } else { oddNonZero += 1 }
             }
         }
-        let halfBytes = n / 2
-        // Require ≥ 25% of the appropriate slot to be NUL — enough to
-        // distinguish ASCII-heavy UTF-16 from random binary.
-        let threshold = max(halfBytes / 4, 1)
-        if oddNULs >= threshold, oddNULs > evenNULs * 2,
+        // Require ≥ 80% of one parity slot to be NUL AND the other
+        // parity to be non-NUL ≥ 80% — the ASCII-heavy UTF-16 fingerprint.
+        let halfSlots = n / 2
+        let strong = (halfSlots * 8) / 10  // 80%
+        if oddNULs >= strong, evenNonZero >= strong,
            let s = String(data: data, encoding: .utf16LittleEndian) {
             return (s, .utf16LittleEndian)
         }
-        if evenNULs >= threshold, evenNULs > oddNULs * 2,
+        if evenNULs >= strong, oddNonZero >= strong,
            let s = String(data: data, encoding: .utf16BigEndian) {
             return (s, .utf16BigEndian)
         }
