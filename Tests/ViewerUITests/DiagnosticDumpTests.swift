@@ -147,35 +147,30 @@ final class DiagnosticDumpTests: XCTestCase {
         1 + view.subviews.reduce(0) { $0 + descendantCount(of: $1) }
     }
 
-    func test_sourceView_hasNSTextViewAndDoesntOccludeSurroundingUI() throws {
-        // The pure-SwiftUI source viewer was reverted: NSTextView is
-        // back so users get drag-select / click-empty-space / built-in
-        // text actions. The original reason we removed NSTextView was a
-        // macOS-14 compositor pathology that hid sibling SwiftUI views.
-        // This test asserts both invariants now:
-        //   - source view DOES contain exactly one NSTextView
-        //   - the surrounding TabBar / ModeBar / Sidebar HostingViews
-        //     are still present (i.e. NSTextView didn't re-trigger the
-        //     compositor bug)
+    func test_sourceView_isPureSwiftUI_noNSTextView() throws {
+        // Regression for the macOS-14+ SwiftUI compositor pathology:
+        // when NSTextView is nested under SwiftUI hosting alongside
+        // sibling SwiftUI views (TabBar / ModeBar / Sidebar / status
+        // bar), the WindowServer stops committing layer contents for
+        // the siblings — the window appears blank or shows only the
+        // source area. Pure-SwiftUI rendering sidesteps it.
+        //
+        // This test is a structural check; the *real* visual check is
+        // `bash scripts/test-in-vm.sh` which runs a launch + snapshot
+        // pass against a live GUI session. xctest can't observe layer-
+        // commit behavior because there's no WindowServer in CI.
         let model = makeModel()
         let url = try writeFile("g.xml", "<root>\n<a/>\n<b/>\n</root>\n")
         model.open(url: url)
         let (host, _) = dump(ContentView(model: model))
         var nsTextViewCount = 0
-        var hostingViewCount = 0
         func walk(_ v: NSView) {
             if v is NSTextView { nsTextViewCount += 1 }
-            let cls = String(describing: type(of: v))
-            if cls.contains("HostingView") || cls.contains("HostingScrollView") {
-                hostingViewCount += 1
-            }
             for s in v.subviews { walk(s) }
         }
         walk(host)
-        XCTAssertGreaterThanOrEqual(nsTextViewCount, 1,
-            "Source view should contain at least one NSTextView; got \(nsTextViewCount)")
-        XCTAssertGreaterThanOrEqual(hostingViewCount, 3,
-            "Surrounding SwiftUI HostingViews (TabBar/ModeBar/Sidebar) must remain. Got \(hostingViewCount).")
+        XCTAssertEqual(nsTextViewCount, 0,
+            "Source view must remain pure SwiftUI. NSTextView re-introduction triggers the compositor pathology that blanks the rest of the window. Got \(nsTextViewCount).")
     }
 
     // MARK: - Empty state
