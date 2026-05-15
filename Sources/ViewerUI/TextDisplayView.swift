@@ -3,36 +3,35 @@ import SwiftUI
 import ViewerCore
 import ViewerKit
 
-/// Read-only monospaced source viewer. Pure SwiftUI — no NSScrollView /
-/// NSTextView.
+/// Read-only monospaced source viewer backed by `NSTextView`. Hosted
+/// via `NSViewControllerRepresentable` (NOT `NSViewRepresentable`)
+/// because the latter triggers a macOS SwiftUI compositor pathology
+/// where sibling SwiftUI views stop committing layer contents at the
+/// WindowServer level (visible as: surrounding TabBar / ModeBar /
+/// Sidebar / StatusBar go blank).
 ///
-/// History / important context: the previous NSScrollView+NSTextView
-/// implementation triggered a macOS-14+ SwiftUI compositor pathology
-/// where the surrounding TabBar / ModeBar / sidebar / status bar all
-/// stopped committing their layer contents at the WindowServer level
-/// (visible as: window goes blank or shows only the source text).
-/// The bug was first fixed by the pure-SwiftUI rewrite (commit
-/// `377044f`); the NSTextView re-introduction in `0e6cf1e` brought it
-/// back; this file reverts to the pure-SwiftUI path. A proper fix that
-/// also restores native drag-select + scroll-to-match needs different
-/// AppKit containment (NSHostingController, not NSViewRepresentable)
-/// — tracked as a follow-up.
+/// Community/production evidence converges on the controller-based
+/// representable as the fix for this class of bug. CodeEditApp's
+/// SourceEditor — the highest-fidelity SwiftUI code editor we could
+/// find — uses exactly this pattern. The mechanism appears to be that
+/// `NSViewControllerRepresentable` gives SwiftUI a child-controller
+/// lifecycle boundary, isolating the AppKit subtree's layer commits
+/// from SwiftUI's layout-pass scheduling (the underlying bug appears
+/// to be that `NSScrollView`'s `tile()` triggers a SwiftUI layout pass
+/// reentrantly; SwiftUI logs "being laid out reentrantly while
+/// rendering its SwiftUI content. This is not supported and the
+/// current layout pass will be skipped." — and the skip means
+/// siblings miss their commit window).
 ///
-/// Tradeoffs in the current pure-SwiftUI implementation:
-///   - Drag-select works per-line (each `Text` is its own selection
-///     scope). Can't drag-select across lines.
-///   - Find matches are highlighted in-place (background tint on the
-///     AttributedString), but we can't programmatically scroll a
-///     SwiftUI ScrollView to a match offset, so the "next match" path
-///     navigates via index but doesn't auto-jump the viewport. Wrap
-///     this in NSHostingController and we get both.
+/// References:
+///   - vicegax.substack.com/p/nsviewrepresentable-breaks
+///   - github.com/CodeEditApp/CodeEditSourceEditor SourceEditor.swift
+///   - FB22270146 / github.com/feedback-assistant/reports/issues/776
 ///
-/// Highlighting:
-///   Caller passes `runs` (NSRange-keyed UTF-16 spans) + a `SyntaxTheme`.
-///   We split runs per-line at construction time and build an
-///   AttributedString per visible line. Lines with no overlapping runs
-///   render as plain text in the theme's `defaultText` color.
-public struct TextDisplayView: View {
+/// Containment guard: `Tests/.../DiagnosticDumpTests` and
+/// `Tests/.../VisualRegressionTests` together assert (a) the view tree
+/// is shaped right and (b) sibling SwiftUI pixels actually compose.
+public struct TextDisplayView: NSViewControllerRepresentable {
     public let text: String
     public let fontSize: CGFloat
     public let language: HighlightLanguage
@@ -62,9 +61,6 @@ public struct TextDisplayView: View {
         self.onFindSummary = onFindSummary
     }
 
-    /// Find-bar state shared with ContentView/DocumentModel. Same shape
-    /// as the (failed) NSTextView variant so the find bar wiring
-    /// doesn't have to change when we re-introduce the AppKit path.
     public struct FindState: Equatable, Sendable {
         public let query: String
         public let caseSensitive: Bool
@@ -73,8 +69,7 @@ public struct TextDisplayView: View {
         public static let empty = FindState(
             query: "", caseSensitive: false, nextNonce: 0, prevNonce: 0
         )
-        public init(query: String, caseSensitive: Bool,
-                    nextNonce: Int, prevNonce: Int) {
+        public init(query: String, caseSensitive: Bool, nextNonce: Int, prevNonce: Int) {
             self.query = query
             self.caseSensitive = caseSensitive
             self.nextNonce = nextNonce
@@ -82,36 +77,296 @@ public struct TextDisplayView: View {
         }
     }
 
-    public var body: some View {
-        let lines = Self.splitLines(text)
-        let lineRuns = Self.distributeRuns(runs, across: lines)
-        let matches = Self.findRanges(
-            in: text,
-            query: findState.query,
-            caseSensitive: findState.caseSensitive
+    public func makeNSViewController(context: Context) -> SourceTextController {
+        SourceTextController(
+            text: text, fontSize: fontSize, theme: theme, wordWrap: wordWrap
         )
-        SourceTextScrollView(
-            lines: lines,
-            lineRuns: lineRuns,
+    }
+
+    public func updateNSViewController(_ controller: SourceTextController, context: Context) {
+        controller.apply(
+            text: text,
             fontSize: fontSize,
             theme: theme,
+            runs: runs,
             wordWrap: wordWrap,
-            findMatches: matches
+            findState: findState,
+            onFindSummary: onFindSummary
         )
-        .onAppear {
-            onFindSummary?(Self.summarize(matchCount: matches.count, current: matches.isEmpty ? nil : 0))
+    }
+}
+
+/// Controller-shape host for the source view. Owns the
+/// `NSScrollView + NSTextView + LineNumberRulerView` triple so SwiftUI
+/// only sees a controller boundary (not a raw `NSView` subtree).
+public final class SourceTextController: NSViewController {
+    public let scrollView: NSScrollView
+    public let textView: NSTextView
+
+    private var lastAttrKey: AttrKey?
+    private var lastWordWrap: Bool = false
+    private var lastFindKey: FindKey?
+    private var findMatches: [NSRange] = []
+    private var currentMatchIndex: Int?
+    private var lastNextNonce: Int = 0
+    private var lastPrevNonce: Int = 0
+
+    private struct AttrKey: Equatable {
+        let text: String
+        let fontSize: CGFloat
+        let theme: SyntaxTheme.Name
+        let runCount: Int
+    }
+    private struct FindKey: Equatable {
+        let query: String
+        let caseSensitive: Bool
+        let textHash: Int
+    }
+
+    public init(text: String, fontSize: CGFloat, theme: SyntaxTheme, wordWrap: Bool) {
+        let scroll = NSTextView.scrollableTextView()
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = !wordWrap
+        scroll.autohidesScrollers = true
+        scroll.borderType = .noBorder
+        scroll.drawsBackground = true
+        scroll.backgroundColor = theme.background
+        self.scrollView = scroll
+
+        let tv = (scroll.documentView as? NSTextView) ?? NSTextView()
+        tv.isEditable = false
+        tv.isRichText = true
+        tv.isSelectable = true
+        tv.allowsUndo = false
+        tv.drawsBackground = true
+        tv.backgroundColor = theme.background
+        tv.textContainerInset = NSSize(width: 10, height: 10)
+        tv.isAutomaticTextReplacementEnabled = false
+        tv.isAutomaticQuoteSubstitutionEnabled = false
+        tv.isAutomaticDashSubstitutionEnabled = false
+        tv.isAutomaticSpellingCorrectionEnabled = false
+        tv.isAutomaticLinkDetectionEnabled = false
+        tv.isAutomaticDataDetectionEnabled = false
+        self.textView = tv
+
+        // No NSRulerView. Empirically (see SourceViewVisualRegressionTests),
+        // attaching a `LineNumberRulerView` to the scroll view's
+        // vertical ruler causes NSScrollView's `tile()` to reentrantly
+        // invoke `NSLayoutManager.glyphRange(...)`, which in turn fires
+        // during SwiftUI's commit phase. SwiftUI logs "NSHostingView is
+        // being laid out reentrantly while rendering its SwiftUI
+        // content. This is not supported and the current layout pass
+        // will be skipped." That skip leaves both the NSTextView's
+        // documentView AND the sibling SwiftUI views (TabBar / ModeBar)
+        // un-composited. The status bar BELOW the source view survives
+        // because its commit happens later in the pass.
+        //
+        // Diagnostic toggle preserved so a developer can verify the
+        // regression test catches the bug class:
+        //   MDV_ENABLE_BROKEN_RULER=1 ./MarkdownViewer …
+        // (Don't ship a build with this set.)
+        if ProcessInfo.processInfo.environment["MDV_ENABLE_BROKEN_RULER"] == "1" {
+            let r = LineNumberRulerView(textView: tv)
+            scroll.verticalRulerView = r
+            scroll.hasVerticalRuler = true
+            scroll.rulersVisible = true
         }
-        .onChange(of: matches.count) { _, new in
-            onFindSummary?(Self.summarize(matchCount: new, current: new == 0 ? nil : 0))
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    public required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    public override func loadView() {
+        // Use the scrollView directly as the controller's view —
+        // matches CodeEditApp/CodeEditSourceEditor's pattern. An extra
+        // container NSView between the controller and the scrollview
+        // breaks the documentView's layout/clip-view sizing dance.
+        self.view = scrollView
+    }
+
+    /// Apply a (text, runs, theme, wrap, findState) update from SwiftUI.
+    /// Each piece is gated on a coordinator-style cache key so we don't
+    /// re-walk the textStorage when nothing actually changed.
+    public func apply(
+        text: String,
+        fontSize: CGFloat,
+        theme: SyntaxTheme,
+        runs: [HighlightRun],
+        wordWrap: Bool,
+        findState: TextDisplayView.FindState,
+        onFindSummary: ((String) -> Void)?
+    ) {
+        scrollView.backgroundColor = theme.background
+        textView.backgroundColor = theme.background
+
+        if wordWrap != lastWordWrap {
+            applyWrap(wordWrap)
+            lastWordWrap = wordWrap
+        }
+
+        applyAttributedString(
+            text: text, fontSize: fontSize, theme: theme, runs: runs
+        )
+        applyFindHighlights(
+            text: text, findState: findState, onFindSummary: onFindSummary
+        )
+
+        // Force a redraw of the text view + its enclosing tree. Without
+        // this, on first paint the text storage has content but the
+        // glyph cache hasn't been built — visible as a blank scrollview
+        // body with only the ruler showing line numbers. Equivalent
+        // outcome with explicit setNeedsDisplay on the window's
+        // contentView, but cheaper to localize to the text view.
+        textView.needsDisplay = true
+        textView.enclosingScrollView?.contentView.needsDisplay = true
+    }
+
+    /// Toggle horizontal scrolling vs viewport-width wrap. Two knobs
+    /// have to agree: the scrollView's horizontal scroller and the
+    /// textContainer's `widthTracksTextView` + size.
+    private func applyWrap(_ wrap: Bool) {
+        scrollView.hasHorizontalScroller = !wrap
+        if wrap {
+            textView.isHorizontallyResizable = false
+            textView.autoresizingMask = [.width]
+            if let c = textView.textContainer {
+                c.widthTracksTextView = true
+                c.containerSize = NSSize(
+                    width: scrollView.contentSize.width,
+                    height: CGFloat.greatestFiniteMagnitude
+                )
+            }
+        } else {
+            textView.isHorizontallyResizable = true
+            textView.autoresizingMask = [.width, .height]
+            if let c = textView.textContainer {
+                c.widthTracksTextView = false
+                c.containerSize = NSSize(
+                    width: CGFloat.greatestFiniteMagnitude,
+                    height: CGFloat.greatestFiniteMagnitude
+                )
+            }
         }
     }
 
-    static func summarize(matchCount: Int, current: Int?) -> String {
-        guard matchCount > 0, let i = current else { return "" }
-        return "\(i + 1)/\(matchCount)"
+    private func applyAttributedString(
+        text: String, fontSize: CGFloat, theme: SyntaxTheme, runs: [HighlightRun]
+    ) {
+        let key = AttrKey(
+            text: text, fontSize: fontSize, theme: theme.name, runCount: runs.count
+        )
+        if key == lastAttrKey { return }
+        let baseFont = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        if runs.isEmpty {
+            // Fast path for plain text / unsupported language /
+            // oversized files: no attributedString allocation.
+            if textView.string != text {
+                textView.string = text
+            }
+            if let storage = textView.textStorage {
+                let full = NSRange(location: 0, length: storage.length)
+                storage.beginEditing()
+                storage.setAttributes(
+                    [.font: baseFont, .foregroundColor: theme.defaultText],
+                    range: full
+                )
+                storage.endEditing()
+            }
+        } else {
+            let attr = Self.buildAttributed(
+                text: text, runs: runs, theme: theme, baseFont: baseFont
+            )
+            textView.textStorage?.setAttributedString(attr)
+        }
+        lastAttrKey = key
     }
 
-    static func findRanges(in haystack: String, query: String, caseSensitive: Bool) -> [NSRange] {
+    private func applyFindHighlights(
+        text: String,
+        findState: TextDisplayView.FindState,
+        onFindSummary: ((String) -> Void)?
+    ) {
+        guard let layoutManager = textView.layoutManager,
+              let textStorage = textView.textStorage else { return }
+        let full = NSRange(location: 0, length: textStorage.length)
+        layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: full)
+
+        let query = findState.query
+        guard !query.isEmpty, textStorage.length > 0 else {
+            findMatches = []
+            currentMatchIndex = nil
+            onFindSummary.map { cb in DispatchQueue.main.async { cb("") } }
+            return
+        }
+
+        let cacheKey = FindKey(
+            query: query,
+            caseSensitive: findState.caseSensitive,
+            textHash: text.hashValue
+        )
+        if cacheKey != lastFindKey {
+            findMatches = Self.findRanges(
+                in: text, query: query, caseSensitive: findState.caseSensitive
+            )
+            lastFindKey = cacheKey
+            currentMatchIndex = findMatches.isEmpty ? nil : 0
+            lastNextNonce = findState.nextNonce
+            lastPrevNonce = findState.prevNonce
+        }
+        if !findMatches.isEmpty {
+            if findState.nextNonce != lastNextNonce {
+                lastNextNonce = findState.nextNonce
+                currentMatchIndex =
+                    ((currentMatchIndex ?? -1) + 1) % findMatches.count
+            }
+            if findState.prevNonce != lastPrevNonce {
+                lastPrevNonce = findState.prevNonce
+                let n = findMatches.count
+                currentMatchIndex =
+                    ((currentMatchIndex ?? 0) - 1 + n) % n
+            }
+        }
+        for (i, r) in findMatches.enumerated() {
+            let color = (i == currentMatchIndex)
+                ? NSColor.systemPurple.withAlphaComponent(0.55)
+                : NSColor.systemPink.withAlphaComponent(0.30)
+            layoutManager.addTemporaryAttribute(
+                .backgroundColor, value: color, forCharacterRange: r
+            )
+        }
+        if let idx = currentMatchIndex, idx < findMatches.count {
+            textView.scrollRangeToVisible(findMatches[idx])
+        }
+        if let cb = onFindSummary {
+            let summary = TextDisplayView.summarize(
+                matchCount: findMatches.count, current: currentMatchIndex
+            )
+            DispatchQueue.main.async { cb(summary) }
+        }
+    }
+
+    private static func buildAttributed(
+        text: String, runs: [HighlightRun], theme: SyntaxTheme, baseFont: NSFont
+    ) -> NSAttributedString {
+        let attr = NSMutableAttributedString(string: text)
+        let full = NSRange(location: 0, length: (text as NSString).length)
+        attr.addAttribute(.font, value: baseFont, range: full)
+        attr.addAttribute(.foregroundColor, value: theme.defaultText, range: full)
+        for run in runs {
+            let lo = max(0, run.range.location)
+            let hi = min(full.length, run.range.location + run.range.length)
+            guard hi > lo else { continue }
+            attr.addAttribute(
+                .foregroundColor,
+                value: theme.color(for: run.kind),
+                range: NSRange(location: lo, length: hi - lo)
+            )
+        }
+        return attr
+    }
+
+    private static func findRanges(in haystack: String, query: String, caseSensitive: Bool) -> [NSRange] {
         guard !query.isEmpty else { return [] }
         let ns = haystack as NSString
         let opts: NSString.CompareOptions = caseSensitive
@@ -128,187 +383,11 @@ public struct TextDisplayView: View {
         }
         return out
     }
-
-    /// Split into lines preserving empty ones (so line numbers count
-    /// correctly through blank lines).
-    static func splitLines(_ text: String) -> [LineSlice] {
-        var out: [LineSlice] = []
-        out.reserveCapacity(text.count / 40 + 4)
-        let ns = text as NSString
-        var start = 0
-        let length = ns.length
-        var i = 0
-        while i < length {
-            let c = ns.character(at: i)
-            if c == 0x0A {  // \n
-                out.append(LineSlice(range: NSRange(location: start, length: i - start),
-                                     text: ns.substring(with: NSRange(location: start, length: i - start))))
-                i += 1
-                start = i
-            } else {
-                i += 1
-            }
-        }
-        if start <= length {
-            out.append(LineSlice(range: NSRange(location: start, length: length - start),
-                                 text: ns.substring(with: NSRange(location: start, length: length - start))))
-        }
-        return out
-    }
-
-    /// For each line, the runs (with ranges *clipped + rebased* to that
-    /// line's local 0-origin coordinates) that intersect it.
-    static func distributeRuns(
-        _ runs: [HighlightRun], across lines: [LineSlice]
-    ) -> [[HighlightRun]] {
-        guard !runs.isEmpty else {
-            return Array(repeating: [], count: lines.count)
-        }
-        var out = Array(repeating: [HighlightRun](), count: lines.count)
-        let sorted = runs.sorted { $0.range.location < $1.range.location }
-        var runIdx = 0
-        for (lineIdx, line) in lines.enumerated() {
-            let lineEnd = line.range.location + line.range.length
-            while runIdx < sorted.count,
-                  sorted[runIdx].range.location + sorted[runIdx].range.length <= line.range.location {
-                runIdx += 1
-            }
-            var j = runIdx
-            while j < sorted.count, sorted[j].range.location < lineEnd {
-                let r = sorted[j].range
-                let lo = max(r.location, line.range.location)
-                let hi = min(r.location + r.length, lineEnd)
-                if hi > lo {
-                    let local = NSRange(
-                        location: lo - line.range.location,
-                        length: hi - lo
-                    )
-                    out[lineIdx].append(HighlightRun(range: local, kind: sorted[j].kind))
-                }
-                j += 1
-            }
-        }
-        return out
-    }
 }
 
-struct LineSlice {
-    let range: NSRange   // location/length into the full text (UTF-16 units)
-    let text: String
-}
-
-private struct SourceTextScrollView: View {
-    let lines: [LineSlice]
-    let lineRuns: [[HighlightRun]]
-    let fontSize: CGFloat
-    let theme: SyntaxTheme
-    let wordWrap: Bool
-    let findMatches: [NSRange]
-    private let gutterWidth: CGFloat = 44
-
-    var body: some View {
-        GeometryReader { geom in
-            ScrollView(wordWrap ? [.vertical] : [.horizontal, .vertical]) {
-                HStack(alignment: .top, spacing: 0) {
-                    gutter
-                    contentColumn(viewportWidth: geom.size.width)
-                    if !wordWrap { Spacer(minLength: 0) }
-                }
-                .frame(
-                    minWidth: geom.size.width,
-                    minHeight: geom.size.height,
-                    alignment: .topLeading
-                )
-            }
-        }
-        .background(Color(nsColor: theme.background))
-    }
-
-    private var gutter: some View {
-        VStack(alignment: .trailing, spacing: 0) {
-            ForEach(lines.indices, id: \.self) { i in
-                Text("\(i + 1)")
-                    .font(.system(size: max(10, fontSize - 3), design: .monospaced))
-                    .foregroundStyle(Color(nsColor: theme.gutterText))
-                    .frame(width: gutterWidth - 6, alignment: .trailing)
-                    .padding(.trailing, 6)
-                    .frame(height: lineHeight)
-            }
-        }
-        .background(Color(nsColor: theme.gutterBackground))
-        .overlay(alignment: .trailing) {
-            Rectangle()
-                .fill(Color(nsColor: .separatorColor))
-                .frame(width: 0.5)
-        }
-    }
-
-    private func contentColumn(viewportWidth: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(lines.indices, id: \.self) { i in
-                Text(attributed(for: i))
-                    .font(.system(size: fontSize, design: .monospaced))
-                    .frame(
-                        maxWidth: wordWrap ? viewportWidth - gutterWidth - 16 : nil,
-                        alignment: .leading
-                    )
-                    .frame(minHeight: lineHeight, alignment: .leading)
-                    .padding(.leading, 8)
-                    .fixedSize(horizontal: !wordWrap, vertical: wordWrap)
-            }
-        }
-        .textSelection(.enabled)
-    }
-
-    /// Per-line attributed text. Layers: theme.defaultText foreground;
-    /// per-token foreground from runs; current-match purple background;
-    /// other-match pink background. Find painting comes LAST so it
-    /// reads over the syntax colors.
-    private func attributed(for lineIdx: Int) -> AttributedString {
-        let line = lines[lineIdx]
-        var attr = AttributedString(line.text)
-        attr.foregroundColor = Color(nsColor: theme.defaultText)
-        let lineLen = (line.text as NSString).length
-        let runs = lineRuns[lineIdx]
-        for run in runs {
-            let lo = max(0, run.range.location)
-            let hi = min(lineLen, run.range.location + run.range.length)
-            guard lo < hi else { continue }
-            guard let loIdx = attr.utf16Index(at: lo),
-                  let hiIdx = attr.utf16Index(at: hi) else { continue }
-            attr[loIdx..<hiIdx].foregroundColor = Color(nsColor: theme.color(for: run.kind))
-        }
-        // Find-match background tint.
-        let lineStart = line.range.location
-        let lineEnd   = lineStart + lineLen
-        for (i, m) in findMatches.enumerated() {
-            let lo = max(m.location, lineStart) - lineStart
-            let hi = min(m.location + m.length, lineEnd) - lineStart
-            guard hi > lo else { continue }
-            guard let loIdx = attr.utf16Index(at: lo),
-                  let hiIdx = attr.utf16Index(at: hi) else { continue }
-            let tint = (i == 0)
-                ? NSColor.systemPurple.withAlphaComponent(0.55)
-                : NSColor.systemPink.withAlphaComponent(0.30)
-            attr[loIdx..<hiIdx].backgroundColor = Color(nsColor: tint)
-        }
-        return attr
-    }
-
-    private var lineHeight: CGFloat { max(14, fontSize * 1.32) }
-}
-
-private extension AttributedString {
-    func utf16Index(at offset: Int) -> AttributedString.Index? {
-        let str = String(characters)
-        guard let u16 = str.utf16.index(
-            str.utf16.startIndex,
-            offsetBy: offset,
-            limitedBy: str.utf16.endIndex
-        ),
-              let sidx = u16.samePosition(in: str) else {
-            return nil
-        }
-        return AttributedString.Index(sidx, within: self)
+extension TextDisplayView {
+    public static func summarize(matchCount: Int, current: Int?) -> String {
+        guard matchCount > 0, let i = current else { return "" }
+        return "\(i + 1)/\(matchCount)"
     }
 }

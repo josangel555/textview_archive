@@ -91,6 +91,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         showWindow(window)
         self.window = window
 
+        // Write the WindowServer-assigned windowNumber so test runners
+        // (and `scripts/visual-smoke.sh`) can invoke
+        // `screencapture -l<id>` against our specific window instead of
+        // having to enumerate via private APIs. NSWindow.windowNumber
+        // is a public Int corresponding to the CGWindowID. The file
+        // path is per-user tmp + bundle identifier so multiple users
+        // / multiple Mac windows don't collide.
+        if let identifier = Bundle.main.bundleIdentifier {
+            let tmp = FileManager.default.temporaryDirectory
+            let url = tmp.appendingPathComponent("\(identifier).windowid")
+            try? "\(window.windowNumber)".write(
+                to: url, atomically: true, encoding: .utf8
+            )
+        }
+
         // A5: keep window.title in sync with model.$windowTitle. Eliminates
         // the eight manual `window?.title = model.windowTitle` syncs that
         // were sprinkled across action handlers (and easy to forget on new

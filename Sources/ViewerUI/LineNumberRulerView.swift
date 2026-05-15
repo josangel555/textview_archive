@@ -10,7 +10,7 @@ import AppKit
 /// to find the first visible line in O(log N) instead of walking the
 /// buffer from offset 0 every draw (O(N) per draw → catastrophic when
 /// scrolled to the end of a 100k-line log).
-final class LineNumberRulerView: NSRulerView {
+public final class LineNumberRulerView: NSRulerView {
     private let font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
     private let inset: CGFloat = 6
 
@@ -18,24 +18,24 @@ final class LineNumberRulerView: NSRulerView {
     /// `nil` until `ensureCacheBuilt` runs. Cleared by `invalidateLineCache`.
     private var newlineOffsets: [Int]?
 
-    init(textView: NSTextView) {
+    public init(textView: NSTextView) {
         super.init(scrollView: textView.enclosingScrollView, orientation: .verticalRuler)
         clientView = textView
         ruleThickness = 44
     }
 
-    required init(coder: NSCoder) {
+    public required init(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
     /// Called by `TextDisplayView` whenever the bound text changes so we
     /// rebuild the offset table on the next draw.
-    func invalidateLineCache() {
+    public func invalidateLineCache() {
         newlineOffsets = nil
         needsDisplay = true
     }
 
-    override func drawHashMarksAndLabels(in rect: NSRect) {
+    public override func drawHashMarksAndLabels(in rect: NSRect) {
         NSColor.controlBackgroundColor.setFill()
         rect.fill()
 
