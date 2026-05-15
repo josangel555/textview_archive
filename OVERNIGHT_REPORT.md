@@ -81,6 +81,30 @@ After `bash scripts/install-app.sh` (or `build-app.sh debug`):
   with sequential numbers instead of N-1 blanks. Documented in commit
   `649b159`.
 
+## Known test failure left for you
+
+After the mode-normalization (commit `169a4de`) one E2E test
+regressed:
+
+  `InteractionDeepTests.test_zoom_persistsAcrossNewTab`
+  → expects 5 step dumps, gets 1.
+
+Behavior: the script (`zoom-reset; toggle-view; zoom-in; zoom-in;
+open b.md`) is supposed to produce 5 dump files via the per-step
+capture. Only 1 lands. The first dump is fine; the rest never get
+written. Did not have time to fully diagnose. Hypothesis: the
+`toggle-view` step (which now flows through the unified
+`setCurrentViewMode`) crashes the script runner inside the .app,
+or there's an exception swallowed before subsequent steps run.
+
+I added a `guard dumps.count == 5` check so the test fails cleanly
+with a useful message instead of hard-crashing on `dumps[3]`. The
+rest of the suite passes around it. ~370 tests green; 1 known
+regression to track.
+
+To repro standalone:
+  `swift test --filter InteractionDeepTests/test_zoom_persistsAcrossNewTab`
+
 ## Known limitations / quirks for review
 
 - **Workspace restore behavior**: opens tabs by path. Files that have

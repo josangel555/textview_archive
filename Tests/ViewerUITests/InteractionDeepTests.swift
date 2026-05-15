@@ -189,7 +189,13 @@ final class InteractionDeepTests: XCTestCase {
             zoom-in
             open \(b.path)
             """, with: a)
-        XCTAssertEqual(dumps.count, 5)
+        // dumps.count regression observed after mode-normalization
+        // (commit 169a4de): sometimes only 1 dump comes back instead
+        // of 5. Investigate before relying on this test. Bail safely
+        // so a crash doesn't mask other test results.
+        guard dumps.count == 5 else {
+            return XCTFail("expected 5 step dumps, got \(dumps.count) — script-runner regression?")
+        }
         func zoom(_ d: [String: Any]) -> Double? {
             (d["model"] as? [String: Any])?["zoom"] as? Double
         }
