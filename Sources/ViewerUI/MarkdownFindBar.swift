@@ -1,51 +1,77 @@
 import SwiftUI
 
-/// SwiftUI find bar for the markdown rendered view. Mirrors the
-/// macOS-native NSTextView find bar (magnifying-glass icon, query
-/// field, prev/next chevrons, case-sensitive toggle, close ×) but
-/// driven by `DocumentModel.rendered*` state.
+/// Find bar used in both rendered and source view modes. Same UI in
+/// both; only the underlying state bindings differ. The rendered variant
+/// can't currently produce a match count (WKFindConfiguration doesn't
+/// expose one); the source variant does, via TextDisplayView's
+/// `onFindSummary` callback writing to the model.
 ///
-/// Activation: Cmd+F from rendered mode (handled by AppDelegate's
-/// `findInRenderedMode(_:)` action). Dismiss: Esc.
-struct MarkdownFindBar: View {
-    @ObservedObject var model: DocumentModel
+/// Activation: Cmd+F. Dismiss: Esc.
+struct FindBar: View {
+    let placeholder: String
+    @Binding var query: String
+    @Binding var caseSensitive: Bool
+    @Binding var matchSummary: String  // e.g. "3/12"; empty when unknown
+    let noResultsMode: NoResultsMode
+    let focusRequest: Int
+    let onNext: () -> Void
+    let onPrev: () -> Void
+    let onDismiss: () -> Void
+    let accessibilityID: String
+
     @FocusState private var fieldFocused: Bool
+
+    enum NoResultsMode {
+        /// Rendered view: WKWebView returns a bool — we know "no
+        /// results" but not how many. Show "No results" when last
+        /// search failed.
+        case boolean(matched: Bool?)
+        /// Source view: we have the full match list. Just show count
+        /// or nothing.
+        case countOnly
+    }
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
-            TextField("Find in rendered markdown…", text: $model.renderedFindQuery)
+            TextField(placeholder, text: $query)
                 .textFieldStyle(.plain)
                 .focused($fieldFocused)
-                .onSubmit { model.renderedFindNext() }
+                .onSubmit { onNext() }
 
-            // Status label: "No results" in orange when the last find
-            // came back empty. WKFindConfiguration doesn't expose a
-            // match COUNT (Apple's API is "did the next match exist?"),
-            // so we can't render "3 of 12" — just a found/not-found
-            // boolean. Better than the previous silent failure.
-            if !model.renderedFindQuery.isEmpty,
-               model.renderedFindMatched == false {
-                Text("No results")
-                    .font(.caption)
-                    .foregroundStyle(Color(nsColor: .systemOrange))
-                    .accessibilityIdentifier("mdv.findBar.noResults")
+            switch noResultsMode {
+            case .boolean(let matched):
+                if !query.isEmpty, matched == false {
+                    Text("No results")
+                        .font(.caption)
+                        .foregroundStyle(Color(nsColor: .systemOrange))
+                        .accessibilityIdentifier("\(accessibilityID).noResults")
+                }
+            case .countOnly:
+                if !matchSummary.isEmpty {
+                    Text(matchSummary)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("\(accessibilityID).count")
+                } else if !query.isEmpty {
+                    Text("No results")
+                        .font(.caption)
+                        .foregroundStyle(Color(nsColor: .systemOrange))
+                        .accessibilityIdentifier("\(accessibilityID).noResults")
+                }
             }
 
-            // Aa toggle for case sensitivity.
-            Toggle(isOn: $model.renderedFindCaseSensitive) {
+            Toggle(isOn: $caseSensitive) {
                 Text("Aa")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(model.renderedFindCaseSensitive ? .primary : .secondary)
+                    .foregroundStyle(caseSensitive ? .primary : .secondary)
             }
             .toggleStyle(.button)
             .controlSize(.small)
             .help("Match case")
 
-            Button {
-                model.renderedFindPrev()
-            } label: {
+            Button(action: onPrev) {
                 Image(systemName: "chevron.up")
             }
             .buttonStyle(.plain)
@@ -53,18 +79,14 @@ struct MarkdownFindBar: View {
             .keyboardShortcut(.return, modifiers: [.shift])
             .accessibilityLabel("Previous match")
 
-            Button {
-                model.renderedFindNext()
-            } label: {
+            Button(action: onNext) {
                 Image(systemName: "chevron.down")
             }
             .buttonStyle(.plain)
             .help("Next match (Return)")
             .accessibilityLabel("Next match")
 
-            Button {
-                model.dismissRenderedFindBar()
-            } label: {
+            Button(action: onDismiss) {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundStyle(.secondary)
             }
@@ -76,15 +98,51 @@ struct MarkdownFindBar: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(.thinMaterial)
-        .overlay(alignment: .bottom) {
-            Divider()
-        }
+        .overlay(alignment: .bottom) { Divider() }
         .onAppear { fieldFocused = true }
-        // Re-focus when Cmd+F is pressed while the bar is already open
-        // (showRenderedFindBar bumps this nonce on every invocation).
-        .onChange(of: model.renderedFindFocusRequest) { _, _ in
-            fieldFocused = true
-        }
-        .accessibilityIdentifier("mdv.renderedFindBar")
+        .onChange(of: focusRequest) { _, _ in fieldFocused = true }
+        .accessibilityIdentifier(accessibilityID)
+    }
+}
+
+/// Backwards-compat shim: rendered find bar from before the FindBar
+/// refactor. ContentView consumed `MarkdownFindBar(model:)` directly.
+struct MarkdownFindBar: View {
+    @ObservedObject var model: DocumentModel
+
+    var body: some View {
+        FindBar(
+            placeholder: "Find in rendered markdown…",
+            query: $model.renderedFindQuery,
+            caseSensitive: $model.renderedFindCaseSensitive,
+            matchSummary: .constant(""),
+            noResultsMode: .boolean(matched: model.renderedFindMatched),
+            focusRequest: model.renderedFindFocusRequest,
+            onNext: { model.renderedFindNext() },
+            onPrev: { model.renderedFindPrev() },
+            onDismiss: { model.dismissRenderedFindBar() },
+            accessibilityID: "mdv.renderedFindBar"
+        )
+    }
+}
+
+/// Source-mode find bar. Surfaces the match count [n/N] that
+/// TextDisplayView publishes via its `onFindSummary` callback.
+struct SourceFindBar: View {
+    @ObservedObject var model: DocumentModel
+
+    var body: some View {
+        FindBar(
+            placeholder: "Find in source…",
+            query: $model.sourceFindQuery,
+            caseSensitive: $model.sourceFindCaseSensitive,
+            matchSummary: $model.sourceFindMatchSummary,
+            noResultsMode: .countOnly,
+            focusRequest: model.sourceFindFocusRequest,
+            onNext: { model.sourceFindNext() },
+            onPrev: { model.sourceFindPrev() },
+            onDismiss: { model.dismissSourceFindBar() },
+            accessibilityID: "mdv.sourceFindBar"
+        )
     }
 }

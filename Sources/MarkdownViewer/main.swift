@@ -940,34 +940,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.showCrossSearch()
     }
 
-    /// Cmd+F router. NSTextView's built-in find bar handles source view
-    /// (it responds to performFindPanelAction). In rendered (WKWebView)
-    /// mode there's no native find bar, so we toggle our own SwiftUI
-    /// find bar via `DocumentModel.showRenderedFindBar()`.
+    /// Cmd+F router. Picks the right find bar based on the current
+    /// view mode. Both bars use our custom SwiftUI implementation —
+    /// the source mode uses NSTextView for selection / scrolling but
+    /// we still wrap our own bar around it so the UX matches.
     @objc func findInPage(_ sender: Any?) {
-        // First, try the standard NSTextView path. If the first responder
-        // is one (source mode), this works and we're done.
-        if let win = window,
-           let fr = win.firstResponder,
-           fr.responds(to: #selector(NSTextView.performFindPanelAction(_:))),
-           !(fr is WKWebView)
-        {
-            let menuItem = NSMenuItem(
-                title: "Find…",
-                action: #selector(NSTextView.performFindPanelAction(_:)),
-                keyEquivalent: ""
-            )
-            menuItem.tag = NSTextFinder.Action.showFindInterface.rawValue
-            NSApp.sendAction(
-                #selector(NSTextView.performFindPanelAction(_:)),
-                to: fr, from: menuItem
-            )
+        // Rendered markdown — only meaningful when the file is markdown
+        // and the user is viewing the rendered side.
+        if model.supportsViewModeToggle, model.currentViewMode == .rendered {
+            model.showRenderedFindBar()
             return
         }
-        // Rendered mode: toggle our SwiftUI find bar.
-        if model.currentViewMode == .rendered {
-            model.showRenderedFindBar()
-        }
+        // Otherwise the user is on the source/text side: open the
+        // source find bar (works for source view, plaintext, code, etc.).
+        model.showSourceFindBar()
     }
 }
 

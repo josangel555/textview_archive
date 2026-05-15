@@ -147,31 +147,35 @@ final class DiagnosticDumpTests: XCTestCase {
         1 + view.subviews.reduce(0) { $0 + descendantCount(of: $1) }
     }
 
-    func test_sourceView_isPureSwiftUI_noNSScrollView() throws {
-        // Regression for the SwiftUI compositor pathology. The source
-        // view is now pure SwiftUI (ScrollView + LazyVStack) — there
-        // must be NO NSScrollView in the rendered tree under the
-        // TextDisplayView host. An NSScrollView in this tree triggers
-        // the macOS-14+ bug where TabBar / ModeBar / Sidebar all stop
-        // committing their layer contents.
+    func test_sourceView_hasNSTextViewAndDoesntOccludeSurroundingUI() throws {
+        // The pure-SwiftUI source viewer was reverted: NSTextView is
+        // back so users get drag-select / click-empty-space / built-in
+        // text actions. The original reason we removed NSTextView was a
+        // macOS-14 compositor pathology that hid sibling SwiftUI views.
+        // This test asserts both invariants now:
+        //   - source view DOES contain exactly one NSTextView
+        //   - the surrounding TabBar / ModeBar / Sidebar HostingViews
+        //     are still present (i.e. NSTextView didn't re-trigger the
+        //     compositor bug)
         let model = makeModel()
         let url = try writeFile("g.xml", "<root>\n<a/>\n<b/>\n</root>\n")
         model.open(url: url)
         let (host, _) = dump(ContentView(model: model))
-        var nsScrollCount = 0
         var nsTextViewCount = 0
+        var hostingViewCount = 0
         func walk(_ v: NSView) {
-            if v is NSScrollView { nsScrollCount += 1 }
             if v is NSTextView { nsTextViewCount += 1 }
+            let cls = String(describing: type(of: v))
+            if cls.contains("HostingView") || cls.contains("HostingScrollView") {
+                hostingViewCount += 1
+            }
             for s in v.subviews { walk(s) }
         }
         walk(host)
-        // ZERO NSScrollView / NSTextView in source mode. (Tab bar uses
-        // a HostingScrollView wrapper which is SwiftUI's internal and
-        // doesn't subclass NSScrollView in the strict-`is` sense — but
-        // even if it did the count would be limited, hence the cap.)
-        XCTAssertTrue(nsTextViewCount == 0,
-            "Source view must not contain any NSTextView (pure-SwiftUI source viewer). Found \(nsTextViewCount).")
+        XCTAssertGreaterThanOrEqual(nsTextViewCount, 1,
+            "Source view should contain at least one NSTextView; got \(nsTextViewCount)")
+        XCTAssertGreaterThanOrEqual(hostingViewCount, 3,
+            "Surrounding SwiftUI HostingViews (TabBar/ModeBar/Sidebar) must remain. Got \(hostingViewCount).")
     }
 
     // MARK: - Empty state

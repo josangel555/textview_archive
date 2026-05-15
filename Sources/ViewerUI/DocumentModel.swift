@@ -300,6 +300,34 @@ public final class DocumentModel: ObservableObject {
         renderedFindQuery = ""
         renderedFindMatched = nil
     }
+
+    // MARK: Find bar (source mode)
+
+    /// Same find-bar pattern as renderedFind* above, applied to the
+    /// NSTextView source viewer. We keep separate state so view-mode
+    /// transitions don't clobber the user's query.
+    @Published public var isSourceFindBarPresented: Bool = false
+    @Published public var sourceFindQuery: String = ""
+    @Published public var sourceFindCaseSensitive: Bool = false
+    @Published public var sourceFindNextRequest: Int = 0
+    @Published public var sourceFindPrevRequest: Int = 0
+    @Published public var sourceFindFocusRequest: Int = 0
+    /// Human-readable "n/N" or "" — published by the TextDisplayView
+    /// coordinator after it recomputes match ranges. The find bar
+    /// renders this directly.
+    @Published public var sourceFindMatchSummary: String = ""
+
+    public func showSourceFindBar() {
+        isSourceFindBarPresented = true
+        sourceFindFocusRequest &+= 1
+    }
+    public func dismissSourceFindBar() {
+        isSourceFindBarPresented = false
+        sourceFindQuery = ""
+        sourceFindMatchSummary = ""
+    }
+    public func sourceFindNext() { sourceFindNextRequest &+= 1 }
+    public func sourceFindPrev() { sourceFindPrevRequest &+= 1 }
     public func renderedFindNext() { renderedFindNextRequest &+= 1 }
     public func renderedFindPrev() { renderedFindPrevRequest &+= 1 }
 

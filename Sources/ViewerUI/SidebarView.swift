@@ -202,7 +202,11 @@ private struct FileRowView: View {
                         .frame(width: 14)
                         .foregroundStyle(node.isDirectory ? Color.accentColor : Color.secondary)
                     Text(node.name)
-                        .font(.system(size: 12))
+                        // Bold the file's name if it's the currently-
+                        // visible tab — matches the bold treatment in
+                        // the tab bar so the "current document" is
+                        // obvious in both surfaces.
+                        .font(.system(size: 12, weight: isCurrent ? .semibold : .regular))
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer(minLength: 0)

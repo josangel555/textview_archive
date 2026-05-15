@@ -140,16 +140,29 @@ public struct ContentView: View {
                 )
             }
         } else {
-            TextDisplayView(
-                text: model.displayText(for: file),
-                fontSize: 13 * model.zoom,
-                language: HighlightLanguage.detect(from: file.url),
-                runs: model.highlightRuns(
-                    for: model.displayText(for: file),
-                    language: HighlightLanguage.detect(from: file.url)
-                ),
-                theme: model.activeTheme
-            )
+            let displayed = model.displayText(for: file)
+            let lang = HighlightLanguage.detect(from: file.url)
+            VStack(spacing: 0) {
+                if model.isSourceFindBarPresented {
+                    SourceFindBar(model: model)
+                }
+                TextDisplayView(
+                    text: displayed,
+                    fontSize: 13 * model.zoom,
+                    language: lang,
+                    runs: model.highlightRuns(for: displayed, language: lang),
+                    theme: model.activeTheme,
+                    findState: TextDisplayView.FindState(
+                        query: model.isSourceFindBarPresented ? model.sourceFindQuery : "",
+                        caseSensitive: model.sourceFindCaseSensitive,
+                        nextNonce: model.sourceFindNextRequest,
+                        prevNonce: model.sourceFindPrevRequest
+                    ),
+                    onFindSummary: { summary in
+                        model.sourceFindMatchSummary = summary
+                    }
+                )
+            }
         }
     }
 }
