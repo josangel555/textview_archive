@@ -171,6 +171,49 @@ public final class DocumentModel: ObservableObject {
         bookmarks = []
     }
 
+    // MARK: Cross-file search
+
+    @Published public var isCrossSearchPresented: Bool = false
+    @Published public var crossSearchQuery: String = ""
+    @Published public var crossSearchResults: [CrossFileSearch.FileMatches] = []
+    @Published public var crossSearchIsRunning: Bool = false
+    @Published public var crossSearchCaseSensitive: Bool = false
+
+    public func showCrossSearch() {
+        isCrossSearchPresented = true
+    }
+
+    public func dismissCrossSearch() {
+        isCrossSearchPresented = false
+        crossSearchQuery = ""
+        crossSearchResults = []
+    }
+
+    /// Runs a cross-file search using the sidebar's current root. If no
+    /// folder is open, this is a no-op (sets results to empty).
+    public func runCrossSearch() {
+        guard let root = sidebar.rootURL else {
+            crossSearchResults = []
+            return
+        }
+        let q = crossSearchQuery
+        guard !q.isEmpty else {
+            crossSearchResults = []
+            return
+        }
+        var opts = CrossFileSearch.Options()
+        opts.caseSensitive = crossSearchCaseSensitive
+        crossSearchIsRunning = true
+        // Run off-main; results published back to main.
+        DispatchQueue.global(qos: .userInitiated).async { [opts, q] in
+            let results = CrossFileSearch.search(root: root, query: q, options: opts)
+            DispatchQueue.main.async {
+                self.crossSearchResults = results
+                self.crossSearchIsRunning = false
+            }
+        }
+    }
+
     // MARK: Find bar (rendered mode)
 
     /// Whether the rendered-view find bar is showing. The source-view's

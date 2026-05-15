@@ -89,10 +89,26 @@ struct CommandPaletteView: View {
             recomputeFiltered()
         }
         .onChange(of: model.recents) { _, _ in recomputeFiltered() }
+        .onChange(of: model.bookmarks) { _, _ in recomputeFiltered() }
+    }
+
+    /// Show bookmarks at the top of the palette (sorted by displayName),
+    /// followed by recents that aren't already shown as bookmarks. The
+    /// fuzzy filter applies to both. Bookmark entries are mapped to
+    /// HistoryEntry shape so the rendering / FuzzyMatcher stays
+    /// uniform.
+    private func merged() -> [HistoryEntry] {
+        let bookmarkURLs = Set(model.bookmarks.map { $0.url })
+        let bookmarkAsEntries = model.bookmarks.map {
+            HistoryEntry(url: $0.url, kind: .file, lastOpenedAt: $0.addedAt,
+                         displayName: "★ " + $0.displayName)
+        }
+        let extraRecents = model.recents.filter { !bookmarkURLs.contains($0.url) }
+        return bookmarkAsEntries + extraRecents
     }
 
     private func recomputeFiltered() {
-        filtered = FuzzyMatcher.filterWithMatches(model.recents, query: query) {
+        filtered = FuzzyMatcher.filterWithMatches(merged(), query: query) {
             $0.displayName
         }
     }

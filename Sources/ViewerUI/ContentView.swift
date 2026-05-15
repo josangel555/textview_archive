@@ -57,6 +57,15 @@ public struct ContentView: View {
                     .padding(.top, 80)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
+
+            if model.isCrossSearchPresented {
+                Color.black.opacity(0.18)
+                    .ignoresSafeArea()
+                    .onTapGesture { model.dismissCrossSearch() }
+                CrossSearchPanel(model: model)
+                    .padding(.top, 80)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
         }
     }
 

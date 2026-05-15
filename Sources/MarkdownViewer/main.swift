@@ -223,6 +223,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case "dismiss-palette": model.dismissPalette()
         case "toggle-format":   model.toggleFormat()
         case "toggle-bookmark": model.toggleCurrentTabBookmark()
+        case "show-cross-search":    model.showCrossSearch()
+        case "dismiss-cross-search": model.dismissCrossSearch()
+        case "set-cross-query":      model.crossSearchQuery = arg; model.runCrossSearch()
         case "show-find":       model.showRenderedFindBar()
         case "dismiss-find":    model.dismissRenderedFindBar()
         case "find-next":       model.renderedFindNext()
@@ -804,6 +807,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         )
         findItem.target = self
         findSubmenu.addItem(findItem)
+
+        // Cmd+Shift+F: cross-file search across the open folder.
+        let findInFolderItem = NSMenuItem(
+            title: "Find in Folder…",
+            action: #selector(showCrossSearch(_:)),
+            keyEquivalent: "f"
+        )
+        findInFolderItem.keyEquivalentModifierMask = [.command, .shift]
+        findInFolderItem.target = self
+        findSubmenu.addItem(findInFolderItem)
         let findNext = NSMenuItem(
             title: "Find Next",
             action: #selector(NSTextView.performFindPanelAction(_:)),
@@ -858,6 +871,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func toggleBookmark(_ sender: Any?) {
         model.toggleCurrentTabBookmark()
+    }
+
+    @objc func showCrossSearch(_ sender: Any?) {
+        model.showCrossSearch()
     }
 
     /// Cmd+F router. NSTextView's built-in find bar handles source view
