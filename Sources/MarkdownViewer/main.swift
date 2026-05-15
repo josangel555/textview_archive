@@ -222,6 +222,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case "show-palette":    model.showPalette()
         case "dismiss-palette": model.dismissPalette()
         case "toggle-format":   model.toggleFormat()
+        case "toggle-bookmark": model.toggleCurrentTabBookmark()
         case "show-find":       model.showRenderedFindBar()
         case "dismiss-find":    model.dismissRenderedFindBar()
         case "find-next":       model.renderedFindNext()
@@ -759,6 +760,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         formatItem.target = self
         viewMenu.addItem(formatItem)
 
+        let bookmarkItem = NSMenuItem(
+            title: "Bookmark / Unbookmark Current",
+            action: #selector(toggleBookmark(_:)),
+            keyEquivalent: "d"
+        )
+        bookmarkItem.target = self
+        viewMenu.addItem(bookmarkItem)
+
         viewMenuItem.submenu = viewMenu
 
         let windowMenuItem = NSMenuItem()
@@ -845,6 +854,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func toggleFormat(_ sender: Any?) {
         model.toggleFormat()
+    }
+
+    @objc func toggleBookmark(_ sender: Any?) {
+        model.toggleCurrentTabBookmark()
     }
 
     /// Cmd+F router. NSTextView's built-in find bar handles source view

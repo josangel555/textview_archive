@@ -11,6 +11,7 @@ public final class DocumentModel: ObservableObject {
     @Published public private(set) var tabs: TabsState = .init()
     @Published public private(set) var windowTitle: String = "MarkdownViewer"
     @Published public private(set) var recents: [HistoryEntry] = []
+    @Published public private(set) var bookmarks: [BookmarkEntry] = []
     /// Width of the sidebar in points. Mutated frequently during a drag —
     /// see `setSidebarWidthLive` (no persistence) vs `setSidebarWidth`
     /// (persists immediately).
@@ -26,6 +27,7 @@ public final class DocumentModel: ObservableObject {
 
     private let controller: DocumentController
     public let history: HistoryStore
+    public let bookmarksStore: BookmarksStore
     private let preferences: PreferencesStore
     private var fileWatcher: FileWatcher?
     private var watchedURL: URL?
@@ -33,14 +35,17 @@ public final class DocumentModel: ObservableObject {
     public init(
         controller: DocumentController = DocumentController(),
         history: HistoryStore = HistoryStore(storeURL: HistoryStore.defaultStoreURL()),
+        bookmarks: BookmarksStore = BookmarksStore(storeURL: BookmarksStore.defaultStoreURL()),
         sidebar: SidebarModel = SidebarModel(),
         preferences: PreferencesStore = PreferencesStore()
     ) {
         self.controller = controller
         self.history = history
+        self.bookmarksStore = bookmarks
         self.sidebar = sidebar
         self.preferences = preferences
         self.recents = history.recent()
+        self.bookmarks = bookmarks.all()
         self.sidebarWidth = preferences.sidebarWidth
         self.zoom = preferences.zoom
     }
@@ -137,6 +142,34 @@ public final class DocumentModel: ObservableObject {
 
     public func showPalette() { isPalettePresented = true }
     public func dismissPalette() { isPalettePresented = false }
+
+    // MARK: Bookmarks
+
+    /// True if the current tab's URL is bookmarked.
+    public var isCurrentTabBookmarked: Bool {
+        guard let url = currentURL else { return false }
+        return bookmarksStore.contains(url)
+    }
+
+    /// Toggle the current tab's bookmark. No-op if no current tab.
+    public func toggleCurrentTabBookmark() {
+        guard let url = currentURL else { return }
+        let name = url.lastPathComponent
+        _ = bookmarksStore.toggle(url: url, displayName: name)
+        bookmarks = bookmarksStore.all()
+    }
+
+    /// Remove a bookmark by URL.
+    public func removeBookmark(_ url: URL) {
+        bookmarksStore.remove(url: url)
+        bookmarks = bookmarksStore.all()
+    }
+
+    /// Clear all bookmarks.
+    public func clearBookmarks() {
+        bookmarksStore.clear()
+        bookmarks = []
+    }
 
     // MARK: Find bar (rendered mode)
 
