@@ -121,17 +121,18 @@ final class ScenarioTests: XCTestCase {
             """, with: md)
         XCTAssertEqual(dumps.count, 3)
         // Step 1: source. Step 2: rendered. Step 3: source.
-        let s1 = nodesOfClass("NSTextView", in: dumps[0]).first
-        let s3 = nodesOfClass("NSTextView", in: dumps[2]).first
-        XCTAssertNotNil(s1, "Step 1 should be in source mode (NSTextView present)")
-        XCTAssertNotNil(s3, "Step 3 should be back in source mode")
-        let len1 = (s1?["nsTextView"] as? [String: Any])?["string_length"] as? Int ?? 0
-        let len3 = (s3?["nsTextView"] as? [String: Any])?["string_length"] as? Int ?? 0
-        XCTAssertEqual(len1, len3,
-            "Text content length must be the same before and after rendered/source/source roundtrip")
-        // Middle step is rendered — verify WKWebView present, no NSTextView.
-        XCTAssertTrue(nodesOfClass("NSTextView", in: dumps[1]).isEmpty,
-            "Step 2 should not have an NSTextView source view")
+        // Now via model.currentViewMode (no NSTextView in pure-SwiftUI
+        // source view).
+        func mode(_ d: [String: Any]) -> String {
+            ((d["model"] as? [String: Any])?["currentViewMode"] as? String) ?? ""
+        }
+        XCTAssertEqual(mode(dumps[0]), "source",
+            "Step 1: toggle from rendered should land in source")
+        XCTAssertEqual(mode(dumps[1]), "rendered",
+            "Step 2: second toggle should return to rendered")
+        XCTAssertEqual(mode(dumps[2]), "source",
+            "Step 3: third toggle should land back in source")
+        // Middle step is rendered — verify WKWebView present.
         XCTAssertFalse(nodesOfClass("WKWebView", in: dumps[1]).isEmpty,
             "Step 2 should have a WKWebView for rendered markdown")
     }
@@ -151,31 +152,24 @@ final class ScenarioTests: XCTestCase {
             toggle-view
             """, with: md)
         XCTAssertEqual(dumps.count, 5)
-        // Step 1: source mode, baseline font.
+        // Step 1: source mode, baseline zoom (1.0 after zoom-reset elsewhere
+        // — but this test doesn't reset, so PreferencesStore could carry
+        // state from earlier tests. Just assert the relative change.)
         // Step 2-3: zoomed in.
         // Step 4: rendered mode (zoom should still be the same model state).
-        // Step 5: source mode again — font should still be at zoomed-2x level.
-        func fontPt(_ d: [String: Any]) -> Double? {
-            guard let tv = nodesOfClass("NSTextView", in: d).first,
-                  let info = tv["nsTextView"] as? [String: Any],
-                  let desc = info["font_description"] as? String else { return nil }
-            let parts = desc.split(separator: " ")
-            for (i, p) in parts.enumerated() where p == "pt." && i > 0 {
-                return Double(parts[i-1])
-            }
-            return nil
+        // Step 5: source mode again — zoom should still be at zoomed-2x level.
+        func zoom(_ d: [String: Any]) -> Double? {
+            (d["model"] as? [String: Any])?["zoom"] as? Double
         }
-        let baseline = fontPt(dumps[0])
-        let zoomedTwoSteps = fontPt(dumps[2])
-        let returnedToSource = fontPt(dumps[4])
-        XCTAssertNotNil(baseline)
-        XCTAssertNotNil(zoomedTwoSteps)
-        XCTAssertNotNil(returnedToSource)
-        if let b = baseline, let z = zoomedTwoSteps, let r = returnedToSource {
-            XCTAssertGreaterThan(z, b, "two zoom-in steps must enlarge the font")
-            XCTAssertEqual(r, z, accuracy: 0.5,
-                "after rendered round-trip, source view's font should still be at the zoomed size")
+        guard let baseline = zoom(dumps[0]),
+              let zoomedTwoSteps = zoom(dumps[2]),
+              let returnedToSource = zoom(dumps[4]) else {
+            return XCTFail("model.zoom missing from one of the dumps")
         }
+        XCTAssertGreaterThan(zoomedTwoSteps, baseline,
+            "two zoom-in steps must enlarge model.zoom")
+        XCTAssertEqual(returnedToSource, zoomedTwoSteps, accuracy: 0.001,
+            "after rendered round-trip, model.zoom should be unchanged")
     }
 
     // MARK: - Scenario 4: open folder, sidebar shows, content area stays valid
