@@ -132,33 +132,27 @@ final class FormatToggleTests: XCTestCase {
 
     // MARK: - View tree
 
-    func test_formatToggleButton_present_forJSON() throws {
+    // Format toggle was unified into the segmented ViewMode picker
+    // (commit 169a4de). Mode-bar tests are now under
+    // ComponentVisualTests.test_modeBar_xmlFile_showsModesIncludingFormat
+    // and the model-level supportsFormatToggle assertions above still
+    // verify the underlying ViewMode availability.
+    func test_jsonFile_hasFormatModeAvailable() throws {
         let model = makeModel()
         let url = try writeFile("data.json", #"{"a":1}"#)
         model.open(url: url)
-        let host = renderHost(ContentView(model: model))
-        // The toggle has accessibilityIdentifier "mdv.formatToggle" — the
-        // SwiftUI-AX bridge sometimes propagates this to NSView. We
-        // fall back to checking for an extra button-like view.
-        let buttonish = descendants(of: host).filter {
-            String(describing: type(of: $0)).contains("Button")
-        }
-        XCTAssertGreaterThanOrEqual(buttonish.count, 1,
-            "Format toggle should add at least one button to the tree")
+        let modes = ViewModeOptions.availableModes(for: url)
+        XCTAssertTrue(modes.contains(.formatted))
+        XCTAssertTrue(modes.contains(.source))
+        XCTAssertTrue(modes.contains(.hex))
     }
 
-    func test_formatToggleButton_absent_forMarkdown() throws {
-        let model = makeModel()
+    func test_markdownFile_hasNoFormatMode() throws {
         let url = try writeFile("doc.md", "# x\n")
-        model.open(url: url)
-        let host = renderHost(ContentView(model: model))
-        // Just verify model.supportsFormatToggle is false — the view
-        // wiring follows from that.
-        XCTAssertFalse(model.supportsFormatToggle)
-        // The tree should NOT contain a format-toggle accessibility id.
-        let hits = descendants(of: host).filter {
-            $0.accessibilityIdentifier() == "mdv.formatToggle"
-        }
-        XCTAssertTrue(hits.isEmpty)
+        let modes = ViewModeOptions.availableModes(for: url)
+        XCTAssertFalse(modes.contains(.formatted))
+        XCTAssertTrue(modes.contains(.rendered))
+        XCTAssertTrue(modes.contains(.source))
+        XCTAssertTrue(modes.contains(.hex))
     }
 }

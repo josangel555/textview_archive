@@ -89,20 +89,21 @@ final class ComponentVisualTests: XCTestCase {
             "Markdown file should expose a segmented Rendered/Source control")
     }
 
-    func test_modeBar_xmlFile_doesNotShowSegmentedControl() throws {
-        // XML doesn't support view mode toggle — should NOT show segmented.
+    func test_modeBar_xmlFile_showsModesIncludingFormat() throws {
+        // Post mode-normalization: every file gets at least
+        // [Source, HEX]. XML additionally gets Format. So the
+        // segmented picker IS expected. (Prior to that change this
+        // test asserted the opposite — XML was the no-toggle case.
+        // Now it's a positive: XML shows 3 segments.)
         let model = makeModel()
         let url = try writeFile("a.xml", "<r/>\n")
         model.open(url: url)
-        XCTAssertFalse(model.supportsViewModeToggle,
-            "Non-markdown text files should not support view mode toggle")
-        // Segmented should be absent in the view.
-        let host = renderHost(ContentView(model: model))
-        let segmenteds = descendants(of: host).filter {
-            String(describing: type(of: $0)).contains("SegmentedControl")
-        }
-        XCTAssertTrue(segmenteds.isEmpty,
-            "Non-markdown file should not render a segmented mode picker")
+        let modes = ViewModeOptions.availableModes(for: url)
+        XCTAssertTrue(modes.contains(.source))
+        XCTAssertTrue(modes.contains(.hex))
+        XCTAssertTrue(modes.contains(.formatted))
+        XCTAssertFalse(modes.contains(.rendered),
+            "Rendered should only appear for markdown")
     }
 
     func test_modeBar_filenameLabel_reflectsCurrentFile() throws {
