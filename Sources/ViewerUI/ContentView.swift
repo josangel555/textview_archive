@@ -35,6 +35,9 @@ public struct ContentView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .accessibilityIdentifier("mdv.content")
                 }
+                if model.currentURL != nil {
+                    StatusBar(model: model)
+                }
             }
             .frame(minWidth: 600, minHeight: 360)
             .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
@@ -127,7 +130,12 @@ public struct ContentView: View {
                     MarkdownFindBar(model: model)
                 }
                 MarkdownRenderedView(
-                    html: renderer.renderPage(file.contents, stylesheet: stylesheet),
+                    html: model.renderedHTML(
+                        forURL: file.url,
+                        contents: file.contents,
+                        renderer: renderer,
+                        stylesheet: stylesheet
+                    ),
                     baseURL: file.url.deletingLastPathComponent(),
                     zoom: model.zoom,
                     findQuery: model.renderedFindQuery,
@@ -150,7 +158,7 @@ public struct ContentView: View {
                     text: displayed,
                     fontSize: 13 * model.zoom,
                     language: lang,
-                    runs: model.highlightRuns(for: displayed, language: lang),
+                    runs: model.highlightRuns(forURL: file.url, text: displayed, language: lang),
                     theme: model.activeTheme,
                     findState: TextDisplayView.FindState(
                         query: model.isSourceFindBarPresented ? model.sourceFindQuery : "",
@@ -158,6 +166,7 @@ public struct ContentView: View {
                         nextNonce: model.sourceFindNextRequest,
                         prevNonce: model.sourceFindPrevRequest
                     ),
+                    wordWrap: model.sourceWordWrap,
                     onFindSummary: { summary in
                         model.sourceFindMatchSummary = summary
                     }
@@ -209,12 +218,9 @@ struct ModeBar: View {
                     .help("Detected language for syntax highlighting")
                     .accessibilityIdentifier("mdv.languageBadge")
             }
-            Text(model.currentFilePath ?? model.windowTitle)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.head)
-                .help(model.currentURL?.path ?? model.windowTitle)
+            // File path moved to the bottom status bar (cleaner UI;
+            // matches how Xcode / VS Code split metadata from
+            // mode-switch controls).
         }
         .frame(height: 22)
     }

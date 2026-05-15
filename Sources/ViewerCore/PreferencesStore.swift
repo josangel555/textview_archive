@@ -10,6 +10,7 @@ public final class PreferencesStore: @unchecked Sendable {
         static let sidebarVisible = "MarkdownViewer.sidebarVisible"
         static let lastFolder = "MarkdownViewer.lastFolderPath"
         static let zoom = "MarkdownViewer.zoom"
+        static let sourceWordWrap = "MarkdownViewer.sourceWordWrap"
     }
 
     public init(defaults: UserDefaults = .standard) {
@@ -36,6 +37,15 @@ public final class PreferencesStore: @unchecked Sendable {
     public var sidebarVisible: Bool {
         get { defaults.object(forKey: Key.sidebarVisible) as? Bool ?? true }
         set { defaults.set(newValue, forKey: Key.sidebarVisible) }
+    }
+
+    /// Whether the source/text viewer soft-wraps long lines at the
+    /// viewport edge instead of scrolling horizontally. Default off
+    /// (matches Xcode, every code editor) — user toggles via View
+    /// menu → Wrap Long Lines.
+    public var sourceWordWrap: Bool {
+        get { defaults.object(forKey: Key.sourceWordWrap) as? Bool ?? false }
+        set { defaults.set(newValue, forKey: Key.sourceWordWrap) }
     }
 
     // MARK: Zoom

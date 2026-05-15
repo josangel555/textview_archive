@@ -9,6 +9,10 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             header
             Divider()
+            if !model.bookmarks.isEmpty {
+                BookmarksSection(model: model)
+                Divider()
+            }
             if let root = sidebar.rootURL {
                 ScrollViewReader { proxy in
                     ScrollView {

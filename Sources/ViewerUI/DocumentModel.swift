@@ -22,6 +22,15 @@ public final class DocumentModel: ObservableObject {
     @Published public var zoom: Double {
         didSet { preferences.zoom = zoom }
     }
+
+    /// Source-view word-wrap toggle. When true, lines wrap at the
+    /// viewport edge; when false (default), long lines scroll
+    /// horizontally — the conventional code-viewer behavior. Persisted
+    /// to UserDefaults via PreferencesStore.
+    @Published public var sourceWordWrap: Bool {
+        didSet { preferences.sourceWordWrap = sourceWordWrap }
+    }
+    public func toggleSourceWordWrap() { sourceWordWrap.toggle() }
     @Published public var isPalettePresented: Bool = false
     public let sidebar: SidebarModel
 
@@ -48,6 +57,7 @@ public final class DocumentModel: ObservableObject {
         self.bookmarks = bookmarks.all()
         self.sidebarWidth = preferences.sidebarWidth
         self.zoom = preferences.zoom
+        self.sourceWordWrap = preferences.sourceWordWrap
         // Seed sidebar visibility from prefs. We DON'T force visible if
         // no folder is open — sidebar without a root is empty by design.
         self.sidebar.isVisible = preferences.sidebarVisible
@@ -178,7 +188,7 @@ public final class DocumentModel: ObservableObject {
     /// What Cmd+D operates on: prefer the current tab's file; fall
     /// back to the sidebar's open folder root. Lets users bookmark
     /// folders (previously file-only).
-    private var bookmarkTargetURL: URL? {
+    public var bookmarkTargetURL: URL? {
         currentURL ?? sidebar.rootURL
     }
 
@@ -377,13 +387,15 @@ public final class DocumentModel: ObservableObject {
 
     // MARK: Syntax highlighting
 
-    /// Cache of (textHash, language) → [HighlightRun]. Published so
-    /// SwiftUI views observing the model re-render when a fresh
-    /// tokenization lands. `String.hashValue` collisions are theoretically
-    /// possible but vanishingly rare for source files; if it ever bites,
-    /// we add the byte length as a secondary key.
+    /// Cache of (file URL + content length + language) → [HighlightRun].
+    /// The byte-length acts as a coarse change detector so a file
+    /// watcher reload (which keeps the same URL) invalidates the
+    /// cached runs. Using URL+length is O(1) per lookup; hashing the
+    /// full text on every body re-eval (the prior key) was O(N) per
+    /// call and dominated large-file render cost.
     public struct HighlightCacheKey: Hashable, Sendable {
-        public let textHash: Int
+        public let url: URL
+        public let length: Int
         public let language: HighlightLanguage
     }
     @Published public private(set) var highlightCache: [HighlightCacheKey: [HighlightRun]] = [:]
@@ -403,11 +415,16 @@ public final class DocumentModel: ObservableObject {
     /// will populate `highlightCache`, triggering a re-render via
     /// @Published. Calls with the same key while a task is in flight
     /// are coalesced. Safe to call from `body`.
+    ///
+    /// `url` is the cache key — `text` is the content to tokenize.
+    /// Reloading the same file with new content invalidates because
+    /// `text.utf16.count` differs.
     public func highlightRuns(
-        for text: String, language: HighlightLanguage
+        forURL url: URL, text: String, language: HighlightLanguage
     ) -> [HighlightRun] {
         guard language != .plainText else { return [] }
-        let key = HighlightCacheKey(textHash: text.hashValue, language: language)
+        let length = (text as NSString).length
+        let key = HighlightCacheKey(url: url, length: length, language: language)
         if let cached = highlightCache[key] { return cached }
         guard !highlightInFlight.contains(key) else { return [] }
         highlightInFlight.insert(key)
@@ -438,6 +455,45 @@ public final class DocumentModel: ObservableObject {
         for key in highlightCache.keys.prefix(dropCount) {
             highlightCache.removeValue(forKey: key)
         }
+    }
+
+    // MARK: Rendered markdown cache
+
+    /// Memoizes `HTMLRenderer.renderPage` output keyed by content hash.
+    /// Without this, ContentView.body re-runs renderPage on every model
+    /// mutation — and renderPage now drives TreeSitter highlighting
+    /// for every fenced code block, which is expensive enough to be
+    /// visible as latency. Stylesheet doesn't enter the key because it
+    /// only changes between app launches.
+    public struct RenderedHTMLKey: Hashable, Sendable {
+        public let url: URL
+        public let length: Int
+    }
+    private var renderedHTMLCache: [RenderedHTMLKey: String] = [:]
+    private static let renderedHTMLCacheMax = 16
+
+    /// Returns the rendered HTML for `contents`, building+caching on
+    /// miss. Call from a SwiftUI body — it's main-thread, sync, and the
+    /// cached path is just a dict lookup so re-renders are fast.
+    /// Cache key is (URL + content length) so a file-watcher reload
+    /// with new content (different length) invalidates automatically.
+    public func renderedHTML(
+        forURL url: URL,
+        contents: String,
+        renderer: HTMLRenderer,
+        stylesheet: String
+    ) -> String {
+        let key = RenderedHTMLKey(url: url, length: (contents as NSString).length)
+        if let hit = renderedHTMLCache[key] { return hit }
+        let html = renderer.renderPage(contents, stylesheet: stylesheet)
+        renderedHTMLCache[key] = html
+        if renderedHTMLCache.count > Self.renderedHTMLCacheMax {
+            let drop = renderedHTMLCache.count - Self.renderedHTMLCacheMax * 2 / 3
+            for k in renderedHTMLCache.keys.prefix(drop) {
+                renderedHTMLCache.removeValue(forKey: k)
+            }
+        }
+        return html
     }
 
     // MARK: Derived from current tab

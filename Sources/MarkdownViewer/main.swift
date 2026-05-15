@@ -7,7 +7,7 @@ import ViewerUI
 import WebKit
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation {
     let model = DocumentModel()
     var window: NSWindow?
     private var openRecentMenu: NSMenu?
@@ -766,6 +766,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sidebarItem.target = self
         viewMenu.addItem(sidebarItem)
 
+        let wrapItem = NSMenuItem(
+            title: "Wrap Long Lines",
+            action: #selector(toggleSourceWordWrap(_:)),
+            keyEquivalent: "w"
+        )
+        wrapItem.keyEquivalentModifierMask = [.command, .option]
+        wrapItem.target = self
+        viewMenu.addItem(wrapItem)
+
         viewMenu.addItem(.separator())
         let reloadItem = NSMenuItem(
             title: "Reload",
@@ -930,6 +939,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func toggleFormat(_ sender: Any?) {
         model.toggleFormat()
+    }
+
+    @objc func toggleSourceWordWrap(_ sender: Any?) {
+        model.toggleSourceWordWrap()
+    }
+
+    /// Menu validation: gray-out items that don't apply to the current
+    /// state. macOS calls this every time a menu opens (and for items
+    /// with key equivalents, on the keystroke too).
+    ///
+    /// Convention: items whose action is on the AppDelegate go through
+    /// here. System actions (NSApplication.hide:, NSWindow.miniaturize:)
+    /// are handled by AppKit and don't route through us.
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        let hasFile = model.currentURL != nil
+        let hasTab  = model.tabs.selected != nil
+        switch item.action {
+        case #selector(toggleViewMode(_:)):
+            // Rendered/Source toggle only meaningful for markdown.
+            item.title = (model.currentViewMode == .source) ? "Show Rendered" : "Show Source"
+            return model.supportsViewModeToggle
+        case #selector(toggleFormat(_:)):
+            // Format only when the current file has a registered formatter.
+            item.state = model.isCurrentTabFormatted ? .on : .off
+            return model.supportsFormatToggle
+        case #selector(toggleSourceWordWrap(_:)):
+            item.state = model.sourceWordWrap ? .on : .off
+            return hasFile
+        case #selector(toggleBookmark(_:)):
+            item.title = model.isCurrentTabBookmarked
+                ? "Remove Bookmark"
+                : "Bookmark This"
+            return model.bookmarkTargetURL != nil
+        case #selector(reloadCurrentFile(_:)),
+             #selector(findInPage(_:)),
+             #selector(closeCurrentTab(_:)),
+             #selector(nextTab(_:)),
+             #selector(previousTab(_:)),
+             #selector(moveTabLeft(_:)),
+             #selector(moveTabRight(_:)),
+             #selector(zoomIn(_:)),
+             #selector(zoomOut(_:)),
+             #selector(zoomReset(_:)):
+            // All of these need an active tab / file.
+            return hasTab
+        case #selector(toggleSidebar(_:)):
+            item.state = model.sidebar.isVisible ? .on : .off
+            return true
+        default:
+            return true
+        }
     }
 
     @objc func toggleBookmark(_ sender: Any?) {

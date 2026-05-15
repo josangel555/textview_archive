@@ -32,6 +32,7 @@ public struct TextDisplayView: NSViewRepresentable {
     public let runs: [HighlightRun]
     public let theme: SyntaxTheme
     public let findState: FindState
+    public let wordWrap: Bool
     /// Optional callback fired whenever match list or current index
     /// changes. Caller updates its find-bar UI with the new summary
     /// (e.g. `model.sourceFindMatchSummary = summary`).
@@ -44,6 +45,7 @@ public struct TextDisplayView: NSViewRepresentable {
         runs: [HighlightRun] = [],
         theme: SyntaxTheme = .xcodeLight,
         findState: FindState = .empty,
+        wordWrap: Bool = false,
         onFindSummary: ((String) -> Void)? = nil
     ) {
         self.text = text
@@ -52,6 +54,7 @@ public struct TextDisplayView: NSViewRepresentable {
         self.runs = runs
         self.theme = theme
         self.findState = findState
+        self.wordWrap = wordWrap
         self.onFindSummary = onFindSummary
     }
 
@@ -128,6 +131,7 @@ public struct TextDisplayView: NSViewRepresentable {
         scrollView.backgroundColor = theme.background
         textView.backgroundColor = theme.background
 
+        applyWrapMode(scrollView: scrollView, textView: textView)
         applyAttributedString(
             on: textView,
             ruler: scrollView.verticalRulerView as? LineNumberRulerView,
@@ -136,9 +140,51 @@ public struct TextDisplayView: NSViewRepresentable {
         applyFindHighlights(on: textView, coordinator: context.coordinator)
     }
 
+    /// Toggle horizontal scrolling vs viewport-width wrapping. Two
+    /// knobs need to agree:
+    ///   - the scrollView's `hasHorizontalScroller` (hide the
+    ///     horizontal bar in wrap mode)
+    ///   - the textContainer's `widthTracksTextView` + container size
+    ///     (when true, the text container resizes with the view so
+    ///     glyphs wrap at the trailing edge instead of extending off-
+    ///     screen by 1e7 points, which is what scrollableTextView()'s
+    ///     defaults produce).
+    private func applyWrapMode(scrollView: NSScrollView, textView: NSTextView) {
+        if wordWrap {
+            scrollView.hasHorizontalScroller = false
+            textView.isHorizontallyResizable = false
+            textView.autoresizingMask = [.width]
+            if let container = textView.textContainer {
+                container.widthTracksTextView = true
+                container.containerSize = NSSize(
+                    width: scrollView.contentSize.width,
+                    height: CGFloat.greatestFiniteMagnitude
+                )
+            }
+        } else {
+            scrollView.hasHorizontalScroller = true
+            textView.isHorizontallyResizable = true
+            textView.autoresizingMask = [.width, .height]
+            if let container = textView.textContainer {
+                container.widthTracksTextView = false
+                container.containerSize = NSSize(
+                    width: CGFloat.greatestFiniteMagnitude,
+                    height: CGFloat.greatestFiniteMagnitude
+                )
+            }
+        }
+    }
+
     /// Build the attributed text from (text, runs, theme, fontSize)
     /// and write it to the text view. Skips rebuilding if none of
     /// those inputs changed since last call.
+    ///
+    /// Fast path: when `runs` is empty (plain text, oversized files
+    /// where highlighting is suppressed, languages we don't yet
+    /// support), we set `textView.string` directly + the base font/
+    /// color attributes. That bypasses building a multi-MB
+    /// NSMutableAttributedString and was the dominant cost when
+    /// opening large plain files.
     private func applyAttributedString(
         on textView: NSTextView,
         ruler: LineNumberRulerView?,
@@ -148,10 +194,28 @@ public struct TextDisplayView: NSViewRepresentable {
             text: text, fontSize: fontSize, theme: theme.name, runCount: runs.count
         )
         if coordinator.lastAttrKey == key { return }
-        let attr = Self.buildAttributed(
-            text: text, runs: runs, theme: theme, fontSize: fontSize
-        )
-        textView.textStorage?.setAttributedString(attr)
+        let baseFont = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        if runs.isEmpty {
+            // Fast path. textView.string = ... triggers a single
+            // textStorage replace; we then bulk-apply base attributes.
+            if textView.string != text {
+                textView.string = text
+            }
+            if let storage = textView.textStorage {
+                let full = NSRange(location: 0, length: storage.length)
+                storage.beginEditing()
+                storage.setAttributes(
+                    [.font: baseFont, .foregroundColor: theme.defaultText],
+                    range: full
+                )
+                storage.endEditing()
+            }
+        } else {
+            let attr = Self.buildAttributed(
+                text: text, runs: runs, theme: theme, fontSize: fontSize
+            )
+            textView.textStorage?.setAttributedString(attr)
+        }
         coordinator.lastAttrKey = key
         coordinator.lastText = text
         ruler?.invalidateLineCache()
