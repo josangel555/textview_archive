@@ -4,6 +4,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 import ViewerCore
 import ViewerUI
+import WebKit
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -769,12 +770,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // unfinished Phase 4.5 UI.
         let findSubmenuItem = NSMenuItem(title: "Find", action: nil, keyEquivalent: "")
         let findSubmenu = NSMenu(title: "Find")
+        // Cmd+F: routes to NSTextView's find bar when source view is
+        // first-responder; falls back to our SwiftUI find bar in
+        // rendered (WKWebView) mode.
         let findItem = NSMenuItem(
             title: "Find…",
-            action: #selector(NSTextView.performFindPanelAction(_:)),
+            action: #selector(findInPage(_:)),
             keyEquivalent: "f"
         )
-        findItem.tag = NSTextFinder.Action.showFindInterface.rawValue
+        findItem.target = self
         findSubmenu.addItem(findItem)
         let findNext = NSMenuItem(
             title: "Find Next",
@@ -822,6 +826,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func zoomReset(_ sender: Any?) {
         model.zoomReset()
+    }
+
+    /// Cmd+F router. NSTextView's built-in find bar handles source view
+    /// (it responds to performFindPanelAction). In rendered (WKWebView)
+    /// mode there's no native find bar, so we toggle our own SwiftUI
+    /// find bar via `DocumentModel.showRenderedFindBar()`.
+    @objc func findInPage(_ sender: Any?) {
+        // First, try the standard NSTextView path. If the first responder
+        // is one (source mode), this works and we're done.
+        if let win = window,
+           let fr = win.firstResponder,
+           fr.responds(to: #selector(NSTextView.performFindPanelAction(_:))),
+           !(fr is WKWebView)
+        {
+            let menuItem = NSMenuItem(
+                title: "Find…",
+                action: #selector(NSTextView.performFindPanelAction(_:)),
+                keyEquivalent: ""
+            )
+            menuItem.tag = NSTextFinder.Action.showFindInterface.rawValue
+            NSApp.sendAction(
+                #selector(NSTextView.performFindPanelAction(_:)),
+                to: fr, from: menuItem
+            )
+            return
+        }
+        // Rendered mode: toggle our SwiftUI find bar.
+        if model.currentViewMode == .rendered {
+            model.showRenderedFindBar()
+        }
     }
 }
 

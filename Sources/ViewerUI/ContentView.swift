@@ -91,11 +91,20 @@ public struct ContentView: View {
     private func loadedView(for file: TextFile) -> some View {
         let category = FileTypeDetector.category(for: file.url)
         if category == .markdown && model.currentViewMode == .rendered {
-            MarkdownRenderedView(
-                html: renderer.renderPage(file.contents, stylesheet: stylesheet),
-                baseURL: file.url.deletingLastPathComponent(),
-                zoom: model.zoom
-            )
+            VStack(spacing: 0) {
+                if model.isRenderedFindBarPresented {
+                    MarkdownFindBar(model: model)
+                }
+                MarkdownRenderedView(
+                    html: renderer.renderPage(file.contents, stylesheet: stylesheet),
+                    baseURL: file.url.deletingLastPathComponent(),
+                    zoom: model.zoom,
+                    findQuery: model.renderedFindQuery,
+                    findCaseSensitive: model.renderedFindCaseSensitive,
+                    findNextNonce: model.renderedFindNextRequest,
+                    findPrevNonce: model.renderedFindPrevRequest
+                )
+            }
         } else {
             TextDisplayView(text: file.contents, fontSize: 13 * model.zoom)
         }

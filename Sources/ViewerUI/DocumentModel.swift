@@ -138,6 +138,34 @@ public final class DocumentModel: ObservableObject {
     public func showPalette() { isPalettePresented = true }
     public func dismissPalette() { isPalettePresented = false }
 
+    // MARK: Find bar (rendered mode)
+
+    /// Whether the rendered-view find bar is showing. The source-view's
+    /// find bar is owned by NSTextView (via `performFindPanelAction:`)
+    /// and is not tracked here.
+    @Published public var isRenderedFindBarPresented: Bool = false
+
+    /// Current query string in the rendered-view find bar. The
+    /// MarkdownRenderedView Coordinator observes this and calls
+    /// `WKWebView.find(_:configuration:)` as it changes.
+    @Published public var renderedFindQuery: String = ""
+
+    /// Bumped when the user clicks "Next" or "Previous" in the find bar.
+    /// The Coordinator observes the counter, runs find with the
+    /// `backwards` flag set appropriately, then ignores the counter
+    /// until it changes again.
+    @Published public var renderedFindNextRequest: Int = 0
+    @Published public var renderedFindPrevRequest: Int = 0
+    @Published public var renderedFindCaseSensitive: Bool = false
+
+    public func showRenderedFindBar() { isRenderedFindBarPresented = true }
+    public func dismissRenderedFindBar() {
+        isRenderedFindBarPresented = false
+        renderedFindQuery = ""
+    }
+    public func renderedFindNext() { renderedFindNextRequest &+= 1 }
+    public func renderedFindPrev() { renderedFindPrevRequest &+= 1 }
+
     // MARK: Derived from current tab
 
     public var currentState: DocumentState { tabs.selected?.state ?? .empty }

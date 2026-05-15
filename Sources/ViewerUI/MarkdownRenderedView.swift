@@ -9,11 +9,27 @@ public struct MarkdownRenderedView: NSViewRepresentable {
     public let html: String
     public let baseURL: URL?
     public let zoom: Double
+    public let findQuery: String
+    public let findCaseSensitive: Bool
+    public let findNextNonce: Int
+    public let findPrevNonce: Int
 
-    public init(html: String, baseURL: URL? = nil, zoom: Double = 1.0) {
+    public init(
+        html: String,
+        baseURL: URL? = nil,
+        zoom: Double = 1.0,
+        findQuery: String = "",
+        findCaseSensitive: Bool = false,
+        findNextNonce: Int = 0,
+        findPrevNonce: Int = 0
+    ) {
         self.html = html
         self.baseURL = baseURL
         self.zoom = zoom
+        self.findQuery = findQuery
+        self.findCaseSensitive = findCaseSensitive
+        self.findNextNonce = findNextNonce
+        self.findPrevNonce = findPrevNonce
     }
 
     public func makeNSView(context: Context) -> WKWebView {
@@ -43,6 +59,21 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         if abs(webView.pageZoom - CGFloat(zoom)) > 0.001 {
             webView.pageZoom = CGFloat(zoom)
         }
+        // Find-bar wiring.
+        let c = context.coordinator
+        if c.lastQuery != findQuery || c.lastCaseSensitive != findCaseSensitive {
+            c.lastQuery = findQuery
+            c.lastCaseSensitive = findCaseSensitive
+            c.runFind(in: webView, backwards: false)
+        }
+        if c.lastNextNonce != findNextNonce {
+            c.lastNextNonce = findNextNonce
+            c.runFind(in: webView, backwards: false, advanceFromCurrent: true)
+        }
+        if c.lastPrevNonce != findPrevNonce {
+            c.lastPrevNonce = findPrevNonce
+            c.runFind(in: webView, backwards: true, advanceFromCurrent: true)
+        }
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -65,6 +96,40 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         /// same content don't re-load the page (CRIT-4 fix for the
         /// "vanishing tabs" reload storm).
         var lastHTML: String?
+
+        // Find-bar state observed by updateNSView.
+        var lastQuery: String = ""
+        var lastCaseSensitive: Bool = false
+        var lastNextNonce: Int = 0
+        var lastPrevNonce: Int = 0
+
+        /// Run `WKWebView.find` with the current query/options.
+        /// `advanceFromCurrent=true` means the user clicked next/prev —
+        /// search starts AFTER the current selection. `false` means the
+        /// query just changed — search from the document start.
+        func runFind(
+            in webView: WKWebView,
+            backwards: Bool,
+            advanceFromCurrent: Bool = false
+        ) {
+            let q = lastQuery
+            guard !q.isEmpty else { return }
+            let config = WKFindConfiguration()
+            config.backwards = backwards
+            config.caseSensitive = lastCaseSensitive
+            config.wraps = true
+            // WKFindConfiguration doesn't have an explicit "start from
+            // beginning" option; `wraps=true` + a fresh search effectively
+            // does this because the WKWebView remembers the last match
+            // position only when the query is unchanged.
+            _ = advanceFromCurrent
+            webView.find(q, configuration: config) { _ in
+                // Result is delivered async; nothing to do here for now —
+                // WKWebView visibly highlights the match itself. Future:
+                // surface `result.matchFound` back to the find bar UI as
+                // a "no matches" indicator.
+            }
+        }
 
         public func webView(
             _ webView: WKWebView,
