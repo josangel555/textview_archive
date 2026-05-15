@@ -80,6 +80,11 @@ struct MarkdownFindBar: View {
             Divider()
         }
         .onAppear { fieldFocused = true }
+        // Re-focus when Cmd+F is pressed while the bar is already open
+        // (showRenderedFindBar bumps this nonce on every invocation).
+        .onChange(of: model.renderedFindFocusRequest) { _, _ in
+            fieldFocused = true
+        }
         .accessibilityIdentifier("mdv.renderedFindBar")
     }
 }

@@ -58,6 +58,17 @@ public final class DocumentModel: ObservableObject {
                 self?.preferences.sidebarVisible = visible
             }
             .store(in: &cancellables)
+
+        // Forward sidebar's @Published changes up so views observing
+        // DocumentModel (e.g. ContentView) re-render when the user
+        // toggles visibility, expands a folder, etc. Without this,
+        // child-ObservableObject changes are invisible to the parent
+        // observer — classic SwiftUI footgun.
+        self.sidebar.objectWillChange
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
     }
 
     private var cancellables: Set<AnyCancellable> = []
@@ -275,7 +286,15 @@ public final class DocumentModel: ObservableObject {
     /// find bar can distinguish "haven't searched" from "no matches."
     @Published public var renderedFindMatched: Bool? = nil
 
-    public func showRenderedFindBar() { isRenderedFindBarPresented = true }
+    /// Nonce that increments each time the user requests the find bar
+    /// (Cmd+F). The bar's TextField observes this and refocuses on
+    /// every bump, so pressing Cmd+F while the bar is already open
+    /// brings focus back to the field instead of being a no-op.
+    @Published public var renderedFindFocusRequest: Int = 0
+    public func showRenderedFindBar() {
+        isRenderedFindBarPresented = true
+        renderedFindFocusRequest &+= 1
+    }
     public func dismissRenderedFindBar() {
         isRenderedFindBarPresented = false
         renderedFindQuery = ""

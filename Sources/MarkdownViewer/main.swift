@@ -790,22 +790,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // the wrong default. Add a Cmd+Shift+= alias for compatibility
         // with apps that DO use "+" — it's the same physical keystroke
         // for the user but covered by both shortcut variants.
+        // Cmd+= is the canonical zoom-in shortcut on macOS (matches
+        // Safari, Xcode, etc.). The hidden Cmd+Shift+= alternate that
+        // used to live here surfaced as a duplicate visible entry on
+        // current macOS; dropped it. Users get Cmd++ for free because
+        // = and + are the same physical key.
         let zoomIn = NSMenuItem(title: "Zoom In",
                                 action: #selector(zoomIn(_:)),
                                 keyEquivalent: "=")
         zoomIn.target = self
         viewMenu.addItem(zoomIn)
-        // Hidden alternate so the visible "Zoom In" doesn't show two
-        // keyEquivalents; users with muscle memory for Cmd+Shift++
-        // still get the same action.
-        let zoomInAlt = NSMenuItem(title: "Zoom In",
-                                   action: #selector(zoomIn(_:)),
-                                   keyEquivalent: "+")
-        zoomInAlt.keyEquivalentModifierMask = [.command, .shift]
-        zoomInAlt.isAlternate = true
-        zoomInAlt.isHidden = true
-        zoomInAlt.target = self
-        viewMenu.addItem(zoomInAlt)
         let zoomOut = NSMenuItem(title: "Zoom Out",
                                  action: #selector(zoomOut(_:)),
                                  keyEquivalent: "-")

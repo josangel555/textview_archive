@@ -103,8 +103,11 @@ struct TabBarItem: View {
                     Text(tab.title)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                        .font(.system(size: 12))
+                        // Bold current tab so the active document is
+                        // obvious at a glance.
+                        .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
                         .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     Button(action: onClose) {
                         Image(systemName: "xmark")
                             .font(.system(size: 9, weight: .bold))

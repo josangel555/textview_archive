@@ -244,13 +244,29 @@ private struct FileRowView: View {
         }
     }
 
-    /// Selected (keyboard) and current (opened) get distinct shading so users
-    /// can tell at a glance which row is about to be activated by ↵.
+    /// Selected (keyboard), current (active tab), and other-open
+    /// (has a non-active tab) get distinct shading so users can tell
+    /// at a glance: which row is about to be activated by ↵, which
+    /// file is in front, and which other files are already open.
     private var rowBackground: Color {
         let isSelected = sidebar.selectedURL == node.url
-        if isCurrent { return Color.accentColor.opacity(0.20) }
+        if isCurrent  { return Color.accentColor.opacity(0.22) }
         if isSelected { return Color(nsColor: .alternateSelectedControlColor).opacity(0.25) }
+        if isOpenInOtherTab {
+            return Color.accentColor.opacity(0.08)
+        }
         return Color.clear
+    }
+
+    /// True if this file is loaded in some tab other than the current
+    /// one. Lets us mark "you have this open elsewhere" without
+    /// stealing the stronger highlight from the actually-current tab.
+    private var isOpenInOtherTab: Bool {
+        guard !node.isDirectory else { return false }
+        let cur = model.currentURL
+        return model.tabs.tabs.contains { tab in
+            tab.url == node.url && tab.url != cur
+        }
     }
 
     private var accessibilityLabel: String {
