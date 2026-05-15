@@ -44,7 +44,11 @@ struct CommandPaletteView: View {
                                 PaletteRow(
                                     entry: hit.item,
                                     matchedIndices: hit.match.matchedIndices,
-                                    isSelected: index == selectedIndex
+                                    isSelected: index == selectedIndex,
+                                    isBookmark: model.bookmarks.contains { $0.url == hit.item.url },
+                                    onUnbookmark: {
+                                        model.removeBookmark(hit.item.url)
+                                    }
                                 ) {
                                     selectedIndex = index
                                     openSelected()
@@ -92,16 +96,16 @@ struct CommandPaletteView: View {
         .onChange(of: model.bookmarks) { _, _ in recomputeFiltered() }
     }
 
-    /// Show bookmarks at the top of the palette (sorted by displayName),
+    /// Show bookmarks at the top of the palette (in store order),
     /// followed by recents that aren't already shown as bookmarks. The
-    /// fuzzy filter applies to both. Bookmark entries are mapped to
-    /// HistoryEntry shape so the rendering / FuzzyMatcher stays
-    /// uniform.
+    /// fuzzy filter applies to both. PaletteRow renders the
+    /// star.fill icon when `isBookmark` is true — no need to prefix
+    /// the displayName here.
     private func merged() -> [HistoryEntry] {
         let bookmarkURLs = Set(model.bookmarks.map { $0.url })
         let bookmarkAsEntries = model.bookmarks.map {
             HistoryEntry(url: $0.url, kind: .file, lastOpenedAt: $0.addedAt,
-                         displayName: "★ " + $0.displayName)
+                         displayName: $0.displayName)
         }
         let extraRecents = model.recents.filter { !bookmarkURLs.contains($0.url) }
         return bookmarkAsEntries + extraRecents
@@ -157,17 +161,22 @@ private struct PaletteRow: View {
     let entry: HistoryEntry
     let matchedIndices: [Int]
     let isSelected: Bool
+    let isBookmark: Bool
+    let onUnbookmark: () -> Void
     let action: () -> Void
+    @State private var isHovering: Bool = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                Image(systemName: entry.kind == .folder ? "folder" : "doc.text")
-                    .foregroundStyle(isSelected ? .white : .secondary)
+                Image(systemName: iconName)
+                    .foregroundStyle(isSelected ? .white
+                                     : (isBookmark ? Color.yellow : .secondary))
                     .frame(width: 16)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(attributedName)
                         .font(.system(size: 13))
+                        .lineLimit(1)
                     Text(entry.url.path)
                         .font(.system(size: 11))
                         .foregroundStyle(isSelected ? Color.white.opacity(0.85) : .secondary)
@@ -175,6 +184,15 @@ private struct PaletteRow: View {
                         .truncationMode(.head)
                 }
                 Spacer()
+                if isBookmark && isHovering {
+                    Button(action: onUnbookmark) {
+                        Image(systemName: "minus.circle.fill")
+                            .foregroundStyle(isSelected ? .white : .secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Remove bookmark")
+                    .accessibilityLabel("Remove bookmark for \(entry.displayName)")
+                }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
@@ -182,6 +200,12 @@ private struct PaletteRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+    }
+
+    private var iconName: String {
+        if isBookmark { return "star.fill" }
+        return entry.kind == .folder ? "folder" : "doc.text"
     }
 
     /// Builds an AttributedString where matched characters are bolded and

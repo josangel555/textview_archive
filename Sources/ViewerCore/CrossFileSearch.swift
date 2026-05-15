@@ -30,6 +30,12 @@ public enum CrossFileSearch {
         public var maxResults: Int
         public var caseSensitive: Bool
         public var skipDirNames: Set<String>
+        /// Hard cap on total filesystem entries visited (incl. dirs).
+        /// Backstop against a maliciously deep symlink loop where each
+        /// loop iteration has no matches and so doesn't accumulate
+        /// toward `maxResults`. Default 50k — well past the size of any
+        /// reasonable project root.
+        public var maxEntriesScanned: Int
 
         public init(
             maxFileBytes: Int = 2 * 1024 * 1024,
@@ -39,12 +45,14 @@ public enum CrossFileSearch {
                 ".git", ".hg", ".svn", "node_modules", ".build", ".swiftpm",
                 "DerivedData", "Pods", ".venv", "venv", "__pycache__",
                 ".next", "dist", "build", ".tox", ".gradle", "target",
-            ]
+            ],
+            maxEntriesScanned: Int = 50_000
         ) {
             self.maxFileBytes = maxFileBytes
             self.maxResults = maxResults
             self.caseSensitive = caseSensitive
             self.skipDirNames = skipDirNames
+            self.maxEntriesScanned = maxEntriesScanned
         }
     }
 
@@ -60,6 +68,12 @@ public enum CrossFileSearch {
 
         var results: [FileMatches] = []
         var totalMatches = 0
+        var entriesScanned = 0
+        /// Canonicalized directory paths we've already entered. Guards
+        /// against symlink loops (e.g. `evil/loop -> ..`) where the
+        /// enumerator would otherwise re-descend the same subtree
+        /// forever, never accumulating a match.
+        var visitedDirs: Set<String> = []
 
         let fm = FileManager.default
         guard let enumerator = fm.enumerator(
@@ -69,8 +83,11 @@ public enum CrossFileSearch {
         ) else { return [] }
 
         for case let url as URL in enumerator {
-            // Bail early if we already have enough matches.
+            // Bail early if we already have enough matches OR we've
+            // exceeded the hard entry cap.
             if totalMatches >= options.maxResults { break }
+            entriesScanned += 1
+            if entriesScanned > options.maxEntriesScanned { break }
 
             let lastComponent = url.lastPathComponent
             // Skip well-known build / VCS dirs.
@@ -81,6 +98,21 @@ public enum CrossFileSearch {
                     enumerator.skipDescendants()
                 }
                 continue
+            }
+
+            // Symlink-loop guard. If the entry is a directory, check
+            // whether we've seen this canonical path before. If we
+            // have, skip the descent — otherwise an `evil/loop -> ..`
+            // makes us walk forever.
+            let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?
+                .isDirectory ?? false
+            if isDirectory {
+                let canonical = url.resolvingSymlinksInPath().standardizedFileURL.path
+                if visitedDirs.contains(canonical) {
+                    enumerator.skipDescendants()
+                    continue
+                }
+                visitedDirs.insert(canonical)
             }
 
             let rv = try? url.resourceValues(forKeys: [

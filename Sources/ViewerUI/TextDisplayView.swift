@@ -1,13 +1,22 @@
 import AppKit
 import SwiftUI
 
-/// Read-only monospaced text view backed by `NSTextView`. Lines do
-/// **not** wrap — long lines scroll horizontally, matching every other
-/// code/source viewer on the platform. Line numbers are drawn by a
-/// sibling `LineNumberGutterView` (see GutterScrollView.swift), NOT via
-/// NSRulerView, because the latter triggers a macOS-14+ SwiftUI
-/// compositing bug. See FINDINGS.md.
-public struct TextDisplayView: NSViewRepresentable {
+/// Read-only monospaced source viewer. Pure SwiftUI — no NSScrollView /
+/// NSTextView. The previous NSScrollView+NSTextView implementation
+/// triggered a macOS-14+ SwiftUI compositor pathology where the
+/// surrounding TabBar / ModeBar / sidebar all stopped committing their
+/// layer contents (visible as: window shows ONLY line numbers + text,
+/// nothing else). The pure-SwiftUI path avoids the entire AppKit-bridge
+/// problem.
+///
+/// Tradeoffs versus the NSTextView version:
+///   - Native Cmd+F find bar is replaced by our own (Phase 4.5 UI).
+///   - Per-character selection works via `.textSelection(.enabled)`.
+///   - No incremental rendering of huge files — lines are split eagerly.
+///     The Tab/file-load layer caps at maxBytes so the worst case is
+///     ~32 MB of text → ~500k lines, all loaded. SwiftUI LazyVStack
+///     virtualizes the rendering.
+public struct TextDisplayView: View {
     public let text: String
     public let fontSize: CGFloat
 
@@ -16,76 +25,85 @@ public struct TextDisplayView: NSViewRepresentable {
         self.fontSize = fontSize
     }
 
-    public func makeNSView(context: Context) -> GutterScrollContainerView {
-        // Build NSTextView with **explicit TextKit 1** stack instead of the
-        // `NSTextView.scrollableTextView()` factory (which uses TextKit 2 by
-        // default in macOS 14+). TextKit 2 + NSHostingView has a known
-        // rendering pathology where the text storage is populated and
-        // glyphs are laid out, but the layer never commits drawn contents
-        // to the window server, producing a window that shows the line
-        // number ruler (traditional NSRulerView drawing) and empty white
-        // where the text should be. Building TextKit 1 manually bypasses it.
-        let storage = NSTextStorage()
-        let layoutManager = NSLayoutManager()
-        storage.addLayoutManager(layoutManager)
-        let container = NSTextContainer(containerSize: NSSize(
-            width: CGFloat.greatestFiniteMagnitude,
-            height: CGFloat.greatestFiniteMagnitude
-        ))
-        container.widthTracksTextView = false   // long lines scroll, not wrap
-        container.heightTracksTextView = false
-        layoutManager.addTextContainer(container)
-
-        let textView = NSTextView(frame: .zero, textContainer: container)
-        textView.minSize = .zero
-        textView.maxSize = NSSize(
-            width: CGFloat.greatestFiniteMagnitude,
-            height: CGFloat.greatestFiniteMagnitude
-        )
-        textView.isHorizontallyResizable = true
-        textView.isVerticallyResizable = true
-        textView.autoresizingMask = [.width]
-        textView.isEditable = false
-        textView.isRichText = false
-        textView.isSelectable = true
-        textView.allowsUndo = false
-        textView.drawsBackground = true
-        textView.backgroundColor = .textBackgroundColor
-        textView.textColor = .textColor
-        textView.font = .monospacedSystemFont(ofSize: fontSize, weight: .regular)
-        textView.textContainerInset = NSSize(width: 10, height: 10)
-        textView.usesFindBar = true
-        textView.isIncrementalSearchingEnabled = true
-        textView.isAutomaticTextReplacementEnabled = false
-        textView.isAutomaticQuoteSubstitutionEnabled = false
-        textView.isAutomaticDashSubstitutionEnabled = false
-        textView.isAutomaticSpellingCorrectionEnabled = false
-        textView.string = text
-
-        let scrollView = NSScrollView()
-        scrollView.documentView = textView
-        scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = true
-        scrollView.autohidesScrollers = true
-        scrollView.borderType = .noBorder
-        // Explicitly suppress the macOS 14+ `_NSScrollViewContentBackgroundView`
-        // (an NSVisualEffectView). It's a second-order suspect for the
-        // compositing pathology — and we're handling the background on
-        // the text view anyway.
-        scrollView.drawsBackground = false
-
-        return GutterScrollContainerView(scrollView: scrollView, textView: textView)
-    }
-
-    public func updateNSView(_ container: GutterScrollContainerView, context: Context) {
-        guard let textView = container.scrollView.documentView as? NSTextView else { return }
-        let desiredFont = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
-        if textView.font != desiredFont {
-            textView.font = desiredFont
-        }
-        if textView.string != text {
-            textView.string = text
-            container.gutter.invalidateLineCache()
-        }
+    public var body: some View {
+        // Split eagerly. For files our loader will accept this is at
+        // most a few hundred thousand lines and a single pass.
+        let lines = text.split(
+            separator: "\n",
+            omittingEmptySubsequences: false
+        ).map(String.init)
+        SourceTextScrollView(lines: lines, fontSize: fontSize)
     }
 }
+
+private struct SourceTextScrollView: View {
+    let lines: [String]
+    let fontSize: CGFloat
+    private let gutterWidth: CGFloat = 44
+
+    var body: some View {
+        // Use a GeometryReader to make the inner HStack fill at least
+        // the viewport's width so the gutter pins to the leading edge.
+        // ScrollView([.horizontal, .vertical]) by itself sizes its
+        // content to its intrinsic width, which for a short snippet is
+        // narrow and ends up centered inside the parent's larger frame.
+        GeometryReader { geom in
+            ScrollView([.horizontal, .vertical]) {
+                HStack(alignment: .top, spacing: 0) {
+                    gutter
+                    contentColumn
+                    Spacer(minLength: 0)
+                }
+                .frame(
+                    minWidth: geom.size.width,
+                    minHeight: geom.size.height,
+                    alignment: .topLeading
+                )
+            }
+        }
+        .background(Color(nsColor: .textBackgroundColor))
+    }
+
+    private var gutter: some View {
+        VStack(alignment: .trailing, spacing: 0) {
+            ForEach(lines.indices, id: \.self) { i in
+                Text("\(i + 1)")
+                    .font(.system(size: max(10, fontSize - 3), design: .monospaced))
+                    .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                    .frame(width: gutterWidth - 6, alignment: .trailing)
+                    .padding(.trailing, 6)
+                    .frame(height: lineHeight)
+            }
+        }
+        .background(Color(nsColor: .controlBackgroundColor))
+        .overlay(alignment: .trailing) {
+            // Right-edge separator between gutter and text.
+            Rectangle()
+                .fill(Color(nsColor: .separatorColor))
+                .frame(width: 0.5)
+        }
+    }
+
+    private var contentColumn: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(lines.indices, id: \.self) { i in
+                Text(lines[i])
+                    .font(.system(size: fontSize, design: .monospaced))
+                    .foregroundStyle(Color(nsColor: .labelColor))
+                    .frame(height: lineHeight, alignment: .leading)
+                    .padding(.leading, 8)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+        }
+        .textSelection(.enabled)
+    }
+
+    /// Tight, predictable per-line height — keeps gutter rows aligned
+    /// with content rows without measuring text metrics.
+    private var lineHeight: CGFloat {
+        // ~1.32× font size matches Menlo / SF Mono natural leading and
+        // matches the NSTextView output users were used to.
+        max(14, fontSize * 1.32)
+    }
+}
+

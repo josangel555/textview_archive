@@ -157,16 +157,26 @@ public final class DocumentModel: ObservableObject {
 
     // MARK: Bookmarks
 
-    /// True if the current tab's URL is bookmarked.
+    /// True if the currently-focused URL (a tab's file URL OR the open
+    /// folder root when no file is in focus) is bookmarked.
     public var isCurrentTabBookmarked: Bool {
-        guard let url = currentURL else { return false }
+        guard let url = bookmarkTargetURL else { return false }
         return bookmarksStore.contains(url)
     }
 
-    /// Toggle the current tab's bookmark. No-op if no current tab.
+    /// What Cmd+D operates on: prefer the current tab's file; fall
+    /// back to the sidebar's open folder root. Lets users bookmark
+    /// folders (previously file-only).
+    private var bookmarkTargetURL: URL? {
+        currentURL ?? sidebar.rootURL
+    }
+
+    /// Toggle the current tab's (or current folder's) bookmark.
     public func toggleCurrentTabBookmark() {
-        guard let url = currentURL else { return }
-        let name = url.lastPathComponent
+        guard let url = bookmarkTargetURL else { return }
+        let name = url.lastPathComponent.isEmpty
+            ? url.path
+            : url.lastPathComponent
         _ = bookmarksStore.toggle(url: url, displayName: name)
         bookmarks = bookmarksStore.all()
     }
@@ -331,14 +341,11 @@ public final class DocumentModel: ObservableObject {
 
     /// Full file path of the current tab, with `$HOME` shortened to `~`.
     /// Returns nil when no file is loaded.
+    /// Uses `abbreviatingWithTildeInPath` — the AppKit standard that
+    /// matches Finder's path-bar abbreviation behavior.
     public var currentFilePath: String? {
         guard let url = currentURL else { return nil }
-        let home = NSHomeDirectory()
-        let path = url.path
-        if !home.isEmpty, path.hasPrefix(home) {
-            return "~" + path.dropFirst(home.count)
-        }
-        return path
+        return (url.path as NSString).abbreviatingWithTildeInPath
     }
 
     public var viewModeBinding: Binding<ViewMode> {

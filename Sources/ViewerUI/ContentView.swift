@@ -70,12 +70,34 @@ public struct ContentView: View {
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        for provider in providers {
+        // Collect every dropped URL into an ordered array, then open
+        // them on the main actor in drag order. The previous version
+        // fired model.openPath per loadObject completion, which:
+        //   - silently dropped missing files (didn't even show an
+        //     error tab — inconsistent with openPath's intent)
+        //   - opened multi-file drops in non-deterministic order
+        //     (loadObject is async, completions race)
+        let total = providers.count
+        var collected: [URL?] = Array(repeating: nil, count: total)
+        let lock = NSLock()
+        var completed = 0
+        for (i, provider) in providers.enumerated() {
             _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                guard let url else { return }
-                Task { @MainActor in
-                    guard FileManager.default.fileExists(atPath: url.path) else { return }
-                    model.openPath(url)
+                lock.lock()
+                collected[i] = url
+                completed += 1
+                let done = completed
+                lock.unlock()
+                if done == total {
+                    let urls = collected
+                    Task { @MainActor in
+                        for case let url? in urls {
+                            // Always route through openPath — it shows
+                            // an .error tab for missing files, which is
+                            // more useful than silent dismissal.
+                            model.openPath(url)
+                        }
+                    }
                 }
             }
         }

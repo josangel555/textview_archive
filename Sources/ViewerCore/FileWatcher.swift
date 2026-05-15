@@ -24,6 +24,10 @@ public final class FileWatcher: @unchecked Sendable {
     private var _source: DispatchSourceFileSystemObject?
     private var _stopped: Bool = false
     private var attempts: Int = 0
+    /// Pending DispatchWorkItem for a scheduled reattach. stop() cancels
+    /// this so a watcher that's been torn down doesn't keep firing
+    /// reattach probes after the caller has moved on.
+    private var _reattachWorkItem: DispatchWorkItem?
 
     /// - `reattachDelay`: pause after a rename/delete before the watcher
     ///   re-opens the path. Default 50 ms gives atomic writes (temp + rename)
@@ -59,8 +63,11 @@ public final class FileWatcher: @unchecked Sendable {
         _stopped = true
         let src = _source
         _source = nil
+        let pending = _reattachWorkItem
+        _reattachWorkItem = nil
         lock.unlock()
         src?.cancel()
+        pending?.cancel()
     }
 
     /// Whether the watcher has stopped (either by user request or by
@@ -83,6 +90,12 @@ public final class FileWatcher: @unchecked Sendable {
         )
         src.setEventHandler { [weak self] in
             guard let self else { return }
+            // After stop() the source is cancelled but any event
+            // already queued on this serial queue still runs. Without
+            // this guard, callers see a fired handler() after they
+            // explicitly tore the watcher down — which causes spurious
+            // reloads in DocumentModel during tab churn.
+            if self.isStopped { return }
             let events = src.data
             self.handler()
             if !events.intersection([.rename, .delete]).isEmpty {
@@ -104,10 +117,13 @@ public final class FileWatcher: @unchecked Sendable {
         lock.lock()
         attempts += 1
         let attempt = attempts
+        // Cancel any previously-queued reattach work so stop() can
+        // halt them in one place (M-rank concurrency finding).
+        _reattachWorkItem?.cancel()
         lock.unlock()
 
         let cappedDelay = min(reattachDelay * pow(2.0, Double(attempt - 1)), 1.0)
-        let work = { [weak self] in
+        let work = DispatchWorkItem { [weak self] in
             guard let self, !self.isStopped else { return }
             self.lock.lock()
             self._source?.cancel()
@@ -124,6 +140,9 @@ public final class FileWatcher: @unchecked Sendable {
                 }
             }
         }
+        lock.lock()
+        _reattachWorkItem = work
+        lock.unlock()
         if cappedDelay <= 0 {
             queue.async(execute: work)
         } else {

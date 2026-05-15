@@ -60,6 +60,16 @@ public struct TextFileLoader: Sendable {
         // Catches `/bin/ls`, archives, images, etc. that otherwise round-trip
         // through Latin-1 as gigabytes of nonsense.
         if Self.looksBinary(data) {
+            // BUT: UTF-16 files without a BOM also contain NUL bytes (one
+            // per ASCII char). They look "binary" to the NUL heuristic.
+            // Probe both endianness before falling back to .binaryFile,
+            // so common Windows / Notepad files don't go to the hex view.
+            if let s = Self.decodeUTF16WithoutBOM(data) {
+                return TextFile(
+                    url: url, contents: s.string,
+                    encoding: s.encoding, byteCount: data.count
+                )
+            }
             throw FileLoadError.binaryFile
         }
 
@@ -70,6 +80,44 @@ public struct TextFileLoader: Sendable {
             return TextFile(url: url, contents: s, encoding: .isoLatin1, byteCount: data.count)
         }
         throw FileLoadError.decodingFailed
+    }
+
+    /// Attempt to decode `data` as UTF-16 (either endianness) when the
+    /// caller has already ruled out BOM-prefixed UTF-16. Used as a
+    /// fallback after `looksBinary` triggers, to catch BOM-less UTF-16
+    /// files that appear binary because of interleaved NUL bytes.
+    ///
+    /// Heuristic: if the data length is even AND the proportion of
+    /// "looks like Latin-1 char + NUL" pairs is high, accept the decode.
+    /// Otherwise reject — most actual binaries don't satisfy this.
+    static func decodeUTF16WithoutBOM(_ data: Data) -> (string: String, encoding: String.Encoding)? {
+        guard data.count >= 4, data.count % 2 == 0 else { return nil }
+        let sample = data.prefix(2048)
+        let n = sample.count
+        guard n >= 4 else { return nil }
+        // Count NUL positions in even/odd byte slots. UTF-16 LE ASCII
+        // text has NUL at every odd index; UTF-16 BE ASCII at every
+        // even index. Random binary distributes NULs evenly.
+        var oddNULs = 0
+        var evenNULs = 0
+        for i in 0..<n {
+            if sample[sample.startIndex + i] == 0 {
+                if i % 2 == 0 { evenNULs += 1 } else { oddNULs += 1 }
+            }
+        }
+        let halfBytes = n / 2
+        // Require ≥ 25% of the appropriate slot to be NUL — enough to
+        // distinguish ASCII-heavy UTF-16 from random binary.
+        let threshold = max(halfBytes / 4, 1)
+        if oddNULs >= threshold, oddNULs > evenNULs * 2,
+           let s = String(data: data, encoding: .utf16LittleEndian) {
+            return (s, .utf16LittleEndian)
+        }
+        if evenNULs >= threshold, evenNULs > oddNULs * 2,
+           let s = String(data: data, encoding: .utf16BigEndian) {
+            return (s, .utf16BigEndian)
+        }
+        return nil
     }
 
     // MARK: - Encoding detection
