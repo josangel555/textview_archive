@@ -133,7 +133,9 @@ public struct ContentView: View {
     @ViewBuilder
     private func loadedView(for file: TextFile) -> some View {
         let category = FileTypeDetector.category(for: file.url)
-        if category == .markdown && model.currentViewMode == .rendered {
+        if model.currentViewMode == .table {
+            CSVTableView(text: file.contents)
+        } else if category == .markdown && model.currentViewMode == .rendered {
             VStack(spacing: 0) {
                 if model.isRenderedFindBarPresented {
                     MarkdownFindBar(model: model)
@@ -275,6 +277,7 @@ struct ModeBar: View {
         case .rendered:  return "Rendered"
         case .source:    return "Source"
         case .formatted: return "Format"
+        case .table:     return "Table"
         case .hex:       return "HEX"
         }
     }

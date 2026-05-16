@@ -753,10 +753,24 @@ public final class DocumentModel: ObservableObject {
     private func openResolved(_ url: URL, forceNewTab: Bool) {
         let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
         let state = controller.open(url: resolved)
+        // Pick the per-extension default mode: .table for CSV/TSV,
+        // .rendered for markdown, .source for everything else. The
+        // "carry current mode" branch below overrides for the common
+        // "user is in HEX, opens another file" workflow.
+        let initialMode = ViewModeOptions.defaultMode(for: resolved)
         if forceNewTab {
-            tabs.append(Tab(url: resolved, state: state, viewMode: .rendered))
+            tabs.append(Tab(url: resolved, state: state, viewMode: initialMode))
         } else {
-            tabs.openOrReveal(url: resolved, state: state, viewMode: currentViewMode)
+            // If the active tab has a non-default mode the user
+            // explicitly picked (e.g. HEX, Format), carry it. Otherwise
+            // use the new file's natural default.
+            let carryMode: ViewMode
+            if let cur = tabs.selected, cur.viewMode != .rendered, cur.viewMode != .source {
+                carryMode = cur.viewMode
+            } else {
+                carryMode = initialMode
+            }
+            tabs.openOrReveal(url: resolved, state: state, viewMode: carryMode)
         }
         // Carry HEX mode across file switch: if the active tab now
         // shows a different file in HEX, but the underlying state is
@@ -949,7 +963,7 @@ public final class DocumentModel: ObservableObject {
             if let url = t.url, Formatter.SupportedFormat.detect(url) != nil {
                 formattedTabIDs.insert(t.id)
             }
-        case .source, .rendered:
+        case .source, .rendered, .table:
             formattedTabIDs.remove(t.id)
             if let url = t.url, case .binary = t.state {
                 loadTextAsync(url: url, intoTabID: t.id)

@@ -5,6 +5,11 @@ struct SidebarView: View {
     @ObservedObject var sidebar: SidebarModel
     @ObservedObject var model: DocumentModel
 
+    /// File-tree accordion state. Persisted across the session via
+    /// `@AppStorage` so the user's last collapse choice survives a
+    /// tab switch (DocumentModel sub-views recreate this view).
+    @AppStorage("MarkdownViewer.sidebar.filesExpanded") private var filesExpanded: Bool = true
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -22,21 +27,42 @@ struct SidebarView: View {
                 Divider()
             }
             if let root = sidebar.rootURL {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 0) {
-                            FileRowView(
-                                node: FileNode(url: root, name: root.lastPathComponent, isDirectory: true),
-                                depth: 0,
-                                sidebar: sidebar,
-                                model: model
-                            )
-                        }
-                        .padding(.vertical, 4)
+                // FILES accordion header — gives the tree the same
+                // collapsible chevron + heading treatment as the
+                // other sections so the sidebar reads as a uniform
+                // accordion.
+                Button(action: { filesExpanded.toggle() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: filesExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .frame(width: 10)
+                        Text("FILES")
+                            .font(.system(size: model.uiSize(10), weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        Spacer()
                     }
-                    // CRIT-6: keep keyboard-selected row visible.
-                    .onChange(of: sidebar.selectedURL) { _, new in
-                        if let url = new { proxy.scrollTo(url, anchor: .center) }
+                    .contentShape(Rectangle())
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+                if filesExpanded {
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 0) {
+                                FileRowView(
+                                    node: FileNode(url: root, name: root.lastPathComponent, isDirectory: true),
+                                    depth: 0,
+                                    sidebar: sidebar,
+                                    model: model
+                                )
+                            }
+                            .padding(.vertical, 4)
+                        }
+                        // CRIT-6: keep keyboard-selected row visible.
+                        .onChange(of: sidebar.selectedURL) { _, new in
+                            if let url = new { proxy.scrollTo(url, anchor: .center) }
+                        }
                     }
                 }
             } else {
