@@ -503,6 +503,70 @@ public final class DocumentModel: ObservableObject {
         if splitURL != nil { closeSplit() }
         else if let url = currentURL { openInSplit(url) }
     }
+
+    // MARK: - Git log
+
+    public enum GitLogScope: Sendable { case file, folder, repo }
+
+    /// Fetch `git log` for the given path (file or folder) and open it
+    /// as a synthetic markdown tab. The rendered view picks up the
+    /// markdown and shows commit metadata as a clickable list. Cached
+    /// under `~/Library/Caches/MarkdownViewer/git-log/` so the
+    /// rendered tab is a real file Launch Services can revisit.
+    public func showGitLog(forPath url: URL, scope: GitLogScope) {
+        guard let repoRoot = GitClient.discoverRoot(from: url) else { return }
+        let relPath: String? = {
+            let rootPath = repoRoot.standardizedFileURL.resolvingSymlinksInPath().path
+            let filePath = url.standardizedFileURL.resolvingSymlinksInPath().path
+            if scope == .repo { return nil }
+            if filePath.hasPrefix(rootPath + "/") {
+                return String(filePath.dropFirst(rootPath.count + 1))
+            }
+            return nil
+        }()
+        let client = GitClient(repoRoot: repoRoot)
+        let entries = client.log(forPath: relPath, maxEntries: 200)
+        // Build markdown body. Keep it dense — one entry per row,
+        // commit SHA monospaced, subject as plain text, author + date
+        // in a smaller subhead.
+        var md = ""
+        let title: String
+        switch scope {
+        case .file:   title = "History: \(url.lastPathComponent)"
+        case .folder: title = "History: \(url.lastPathComponent)/"
+        case .repo:   title = "History: \(repoRoot.lastPathComponent)"
+        }
+        md += "# \(title)\n\n"
+        if entries.isEmpty {
+            md += "_No commits._\n"
+        } else {
+            md += "| SHA | Subject | Author | Date |\n"
+            md += "|---|---|---|---|\n"
+            for e in entries {
+                let safeSubject = e.subject
+                    .replacingOccurrences(of: "|", with: "\\|")
+                md += "| `\(e.sha)` | \(safeSubject) | \(e.author) | \(e.date) |\n"
+            }
+        }
+        // Write under caches so Launch Services treats it as a real
+        // file. Hashed filename to defeat collisions and keep dir
+        // browsable.
+        var hasher = Hasher()
+        hasher.combine(repoRoot.path)
+        hasher.combine(relPath ?? "")
+        let hash = String(UInt(bitPattern: hasher.finalize()), radix: 16)
+            .padding(toLength: 8, withPad: "0", startingAt: 0)
+            .prefix(8)
+        let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        let dir = cache.appendingPathComponent("MarkdownViewer/git-log", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let baseName = (relPath ?? repoRoot.lastPathComponent)
+            .split(separator: "/").last.map(String.init) ?? "history"
+        let out = dir.appendingPathComponent("\(baseName)-\(hash).md")
+        try? md.write(to: out, atomically: true, encoding: .utf8)
+        openInNewTab(out)
+    }
     /// Swap which file is in each pane. Convenience for the user
     /// who wants to flip primary/secondary.
     public func swapSplit() {
@@ -610,6 +674,14 @@ public final class DocumentModel: ObservableObject {
     public func highlightRuns(
         forURL url: URL, text: String, language: HighlightLanguage
     ) -> [HighlightRun] {
+        // .diff / .patch files use a hand-rolled per-line highlighter
+        // — there's no TreeSitter grammar for unified diff and the
+        // logic is line-prefix scanning. Run synchronously: the
+        // walk is O(n) and produces deterministic output.
+        let ext = url.pathExtension.lowercased()
+        if ext == "diff" || ext == "patch" {
+            return DiffHighlighter.highlight(text)
+        }
         guard language != .plainText else { return [] }
         let length = (text as NSString).length
         let key = HighlightCacheKey(url: url, length: length, language: language)

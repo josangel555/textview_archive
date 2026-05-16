@@ -190,6 +190,33 @@ private struct FileRowContextMenu: View {
         Button("Copy Path") { Pasteboard.copy(node.url.path) }
         Button("Copy Relative Path") { Pasteboard.copy(relativePath) }
         Button("Reveal in Finder") { Finder.reveal(node.url) }
+        if node.isDirectory {
+            Button("Open in Terminal") { openInTerminal(node.url) }
+        }
+        if model.sidebar.gitRepoRoot != nil {
+            Divider()
+            if !node.isDirectory {
+                Button("Show File History") {
+                    model.showGitLog(forPath: node.url, scope: .file)
+                }
+            } else {
+                Button("Show Folder History") {
+                    model.showGitLog(forPath: node.url, scope: .folder)
+                }
+            }
+        }
+    }
+
+    /// Launches a new Terminal.app window with cwd set to `url`.
+    /// `/usr/bin/open -a Terminal <path>` honors the user's default
+    /// terminal-application setting via Launch Services *only* when
+    /// they've explicitly remapped Terminal's UTI; most users get
+    /// system Terminal. Future polish: detect iTerm2 and prefer it.
+    private func openInTerminal(_ url: URL) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        p.arguments = ["-a", "Terminal", url.path]
+        try? p.run()
     }
 
     /// Path relative to the sidebar root. Falls back to the filename when

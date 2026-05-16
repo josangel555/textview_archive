@@ -931,6 +931,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         swapItem.target = self
         viewMenu.addItem(swapItem)
 
+        viewMenu.addItem(.separator())
+        let historyItem = NSMenuItem(
+            title: "Show File History",
+            action: #selector(showFileHistory(_:)),
+            keyEquivalent: ""
+        )
+        historyItem.target = self
+        viewMenu.addItem(historyItem)
+
+        let repoHistoryItem = NSMenuItem(
+            title: "Show Repository History",
+            action: #selector(showRepoHistory(_:)),
+            keyEquivalent: ""
+        )
+        repoHistoryItem.target = self
+        viewMenu.addItem(repoHistoryItem)
+
         viewMenuItem.submenu = viewMenu
 
         let windowMenuItem = NSMenuItem()
@@ -1100,6 +1117,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     @objc func swapSplit(_ sender: Any?) {
         model.swapSplit()
+    }
+
+    @objc func showFileHistory(_ sender: Any?) {
+        guard let url = model.currentURL else { return }
+        model.showGitLog(forPath: url, scope: .file)
+    }
+
+    @objc func showRepoHistory(_ sender: Any?) {
+        let probe = model.sidebar.rootURL ?? model.currentURL
+        guard let url = probe else { return }
+        model.showGitLog(forPath: url, scope: .repo)
     }
 
     @objc func toggleBookmark(_ sender: Any?) {
