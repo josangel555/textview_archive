@@ -154,6 +154,7 @@ private struct FileRowContextMenu: View {
         if !node.isDirectory {
             Button("Open") { model.open(url: node.url) }
             Button("Open in New Tab") { model.openInNewTab(node.url) }
+            Button("Open in Split") { model.openInSplit(node.url) }
             Divider()
         } else {
             Button(sidebar.isExpanded(node.url) ? "Collapse" : "Expand") {

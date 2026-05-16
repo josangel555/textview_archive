@@ -34,6 +34,16 @@ public struct ContentView: View {
                     content
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .accessibilityIdentifier("mdv.content")
+                    if let splitURL = model.splitURL {
+                        Divider()
+                        SplitPaneView(
+                            url: splitURL,
+                            zoom: model.zoom,
+                            onClose: { model.closeSplit() }
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .accessibilityIdentifier("mdv.split")
+                    }
                 }
                 if model.currentURL != nil {
                     StatusBar(model: model)

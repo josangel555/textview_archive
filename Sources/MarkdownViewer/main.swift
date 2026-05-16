@@ -912,6 +912,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         bookmarkLineItem.target = self
         viewMenu.addItem(bookmarkLineItem)
 
+        // Split view (Phase 2.5).
+        viewMenu.addItem(.separator())
+        let splitItem = NSMenuItem(
+            title: "Toggle Split",
+            action: #selector(toggleSplit(_:)),
+            keyEquivalent: "\\"
+        )
+        splitItem.target = self
+        viewMenu.addItem(splitItem)
+
+        let swapItem = NSMenuItem(
+            title: "Swap Split Panes",
+            action: #selector(swapSplit(_:)),
+            keyEquivalent: "\\"
+        )
+        swapItem.keyEquivalentModifierMask = [.command, .shift]
+        swapItem.target = self
+        viewMenu.addItem(swapItem)
+
         viewMenuItem.submenu = viewMenu
 
         let windowMenuItem = NSMenuItem()
@@ -1073,6 +1092,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     @objc func toggleLineBookmark(_ sender: Any?) {
         model.toggleCurrentLineBookmark()
+    }
+
+    @objc func toggleSplit(_ sender: Any?) {
+        model.toggleSplit()
+    }
+
+    @objc func swapSplit(_ sender: Any?) {
+        model.swapSplit()
     }
 
     @objc func toggleBookmark(_ sender: Any?) {

@@ -483,6 +483,33 @@ public final class DocumentModel: ObservableObject {
         sourceScrollLineTarget = line
         sourceScrollLineNonce &+= 1
     }
+
+    // MARK: - Split view
+
+    /// URL displayed in the right-hand secondary pane, or nil when
+    /// split is closed. v1 is read-only and stateless: the secondary
+    /// pane has no tab bar, no find bar, no per-tab view-mode — it
+    /// just shows whatever file the user pinned there. Tab bar /
+    /// find / etc stay on the primary (left) side.
+    @Published public var splitURL: URL? = nil
+    /// True when the split is open. Convenience for menu validation.
+    public var isSplitOpen: Bool { splitURL != nil }
+
+    public func openInSplit(_ url: URL) {
+        splitURL = url.standardizedFileURL.resolvingSymlinksInPath()
+    }
+    public func closeSplit() { splitURL = nil }
+    public func toggleSplit() {
+        if splitURL != nil { closeSplit() }
+        else if let url = currentURL { openInSplit(url) }
+    }
+    /// Swap which file is in each pane. Convenience for the user
+    /// who wants to flip primary/secondary.
+    public func swapSplit() {
+        guard let secondary = splitURL, let primary = currentURL else { return }
+        splitURL = primary
+        openPath(secondary)
+    }
     /// Human-readable "n/N" or "" — published by the TextDisplayView
     /// coordinator after it recomputes match ranges. The find bar
     /// renders this directly.
