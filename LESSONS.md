@@ -405,3 +405,56 @@ Rule when something fights the boundary: **extract a pure helper**
 into the right module rather than break the boundary. We've done
 this several times in the code-review pass (RecentChanges /
 Metadata / SQLite width math).
+
+## VM smoke testing on macOS without Xcode
+
+**Goal.** Run an isolated smoke (launch app, render window, screencap)
+in a UTM macOS VM that doesn't have Apple Xcode.app installed.
+
+**What works.**
+
+- `swift.org` toolchain `.pkg` (~1.4 GB) gives you Swift + SwiftPM
+  without Xcode. Installs to `/Library/Developer/Toolchains/<id>.xctoolchain`.
+  Invoke with `TOOLCHAINS=swift-latest swift build` (the env var is the
+  toolchain bundle id OR the `swift-latest` symlink shortcut).
+- Xcode CLT (`softwareupdate -i "Command Line Tools for Xcode-16.4"`)
+  is the *prerequisite* for the toolchain pkg — installs the system
+  `xcode-select` shim + the SDK CLT looks for.
+- `swift build` works on macOS without Xcode. So does building the
+  `.app` via `scripts/build-app.sh` (it falls back to ad-hoc signing
+  when the `MarkdownViewer Local Dev` keychain cert isn't present —
+  works for `open` in the VM's GUI session).
+- Launching into the VM's GUI session over SSH: `sudo launchctl
+  asuser <uid> /usr/bin/open -a /path/to/TextView.app`. UID is 501
+  for the default first user on a fresh macOS install.
+- `screencapture` over SSH: same trick — `sudo launchctl asuser
+  <uid> /usr/sbin/screencapture -x -o /tmp/foo.png`. Requires the
+  Terminal/SSH process to have Screen Recording TCC on the VM (often
+  prompts the first time, granted in System Settings → Privacy).
+
+**What doesn't work.**
+
+- **`xctest` runner is Xcode-only on macOS.** swift.org toolchain
+  ships the XCTest module on Linux but on macOS it expects Apple's
+  XCTest.framework, which is bundled exclusively with Xcode.app.
+  Translation: `swift test` on a Xcode-less Mac → `error: no such
+  module 'XCTest'`. CLT alone has `XCTestSupport.framework` (private)
+  but not `XCTest.framework`. Don't waste time trying TOOLCHAINS env
+  var combos — the framework just isn't there.
+- **Direct binary launch over SSH** (`./MarkdownViewer file.md` from
+  an SSH shell) spawns the process but the window doesn't show in the
+  GUI session. You **must** use `launchctl asuser` to attach to the
+  GUI WindowServer.
+- **`osascript activate`** can't always pull focus past a foregrounded
+  System Settings (or any modal app) over `launchctl asuser` — TCC
+  blocks programmatic AppleScript control in some configurations. For
+  verification, click through to the UTM display directly.
+
+**Net.** On a VM you get: real Swift 6.x compile signal (the VM has
+caught strict-concurrency bugs the host's older toolchain missed),
+.app assembly, codesigning, launch-into-WindowServer, screencapture.
+You don't get: XCTest. Tests stay on the host or a separate CI tier.
+
+The `swift.org` toolchain pkg URL pattern, for re-pinning later:
+`https://download.swift.org/swift-<ver>-release/xcode/swift-<ver>-RELEASE/swift-<ver>-RELEASE-osx.pkg`.
+Check `https://swift.org/download/` for the current `<ver>`.
