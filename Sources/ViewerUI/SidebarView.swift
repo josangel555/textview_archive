@@ -21,7 +21,7 @@ struct SidebarView: View {
             if sidebar.rootURL != nil {
                 SearchAnywhereSection(model: model)
                 Divider()
-                RecentChangesSection(model: model)
+                GitPanelSection(model: model)
                 Divider()
                 ClaudeTimelineSection(model: model)
                 Divider()
