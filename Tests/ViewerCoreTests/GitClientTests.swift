@@ -89,6 +89,58 @@ final class GitClientTests: XCTestCase {
         XCTAssertTrue(GitClient(repoRoot: outside).status().isEmpty)
     }
 
+    // MARK: - diff (Batch C, commit db57c6a)
+
+    func test_diff_returns_unified_diff_for_modified_file() throws {
+        // Stage a tracked file at HEAD, modify it, ask for diff.
+        let file = tmp.appendingPathComponent("notes.md")
+        try "v1\nline two\n".write(to: file, atomically: true, encoding: .utf8)
+        _ = try git(["add", "notes.md"])
+        _ = try git(["commit", "-q", "-m", "init"])
+        try "v1\nline two CHANGED\nline three\n".write(to: file, atomically: true, encoding: .utf8)
+
+        let diff = GitClient(repoRoot: tmp).diff(forPath: "notes.md")
+        XCTAssertTrue(diff.contains("--- a/notes.md"),
+                      "expected unified-diff header, got:\n\(diff)")
+        XCTAssertTrue(diff.contains("+++ b/notes.md"),
+                      "expected unified-diff header (b), got:\n\(diff)")
+        XCTAssertTrue(diff.contains("+line two CHANGED"),
+                      "expected the new line in the patch, got:\n\(diff)")
+        XCTAssertTrue(diff.contains("-line two"),
+                      "expected the deleted line in the patch, got:\n\(diff)")
+        XCTAssertFalse(diff.contains("\u{1B}["),
+                       "diff should be color-stripped (--no-color); ANSI escapes leaked")
+    }
+
+    func test_diff_is_empty_for_unmodified_file() throws {
+        let file = tmp.appendingPathComponent("clean.txt")
+        try "static\n".write(to: file, atomically: true, encoding: .utf8)
+        _ = try git(["add", "clean.txt"])
+        _ = try git(["commit", "-q", "-m", "init"])
+
+        let diff = GitClient(repoRoot: tmp).diff(forPath: "clean.txt")
+        XCTAssertTrue(diff.isEmpty || diff.allSatisfy(\.isWhitespace),
+                      "expected empty diff for unmodified file, got:\n\(diff)")
+    }
+
+    func test_diff_returns_empty_when_path_missing() {
+        // Path that doesn't exist in the tree → git returns nothing
+        // (no warning since the file isn't tracked); we surface "".
+        let diff = GitClient(repoRoot: tmp).diff(forPath: "no/such/file.md")
+        XCTAssertEqual(diff, "")
+    }
+
+    func test_diff_handles_path_with_spaces() throws {
+        let file = tmp.appendingPathComponent("a file.txt")
+        try "before\n".write(to: file, atomically: true, encoding: .utf8)
+        _ = try git(["add", "a file.txt"])
+        _ = try git(["commit", "-q", "-m", "init"])
+        try "before\nafter\n".write(to: file, atomically: true, encoding: .utf8)
+        let diff = GitClient(repoRoot: tmp).diff(forPath: "a file.txt")
+        XCTAssertTrue(diff.contains("+after"),
+                      "diff must work with spaces in path, got:\n\(diff)")
+    }
+
     private func git(_ args: [String]) throws -> String {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/git")

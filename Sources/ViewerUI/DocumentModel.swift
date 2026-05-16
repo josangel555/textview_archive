@@ -9,7 +9,7 @@ import ViewerCore
 @MainActor
 public final class DocumentModel: ObservableObject {
     @Published public private(set) var tabs: TabsState = .init()
-    @Published public private(set) var windowTitle: String = "MarkdownViewer"
+    @Published public private(set) var windowTitle: String = "TextView"
     @Published public private(set) var recents: [HistoryEntry] = []
     @Published public private(set) var bookmarks: [BookmarkEntry] = []
     /// Width of the sidebar in points. Mutated frequently during a drag —
@@ -875,6 +875,6 @@ public final class DocumentModel: ObservableObject {
     // MARK: Internal
 
     private func updateDerived() {
-        windowTitle = tabs.selected?.title ?? "MarkdownViewer"
+        windowTitle = tabs.selected?.title ?? "TextView"
     }
 }

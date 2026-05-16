@@ -40,8 +40,17 @@ struct MetadataPanel: View {
     // MARK: - Filesystem rows (always present)
 
     private var filesystemRows: [Row] {
-        var out: [Row] = []
         let attrs = (try? FileManager.default.attributesOfItem(atPath: url.path)) ?? [:]
+        return Self.filesystemRows(url: url, attrs: attrs)
+    }
+
+    /// Pure: build rows from a URL + the attribute dict you'd get from
+    /// `FileManager.attributesOfItem(atPath:)`. Split out so tests can
+    /// pass a synthetic dict without touching the real filesystem
+    /// (and without depending on locale-specific date formatting in
+    /// assertions).
+    internal static func filesystemRows(url: URL, attrs: [FileAttributeKey: Any]) -> [Row] {
+        var out: [Row] = []
         out.append(Row("Name", url.lastPathComponent))
         out.append(Row("Path", url.path))
         if let size = attrs[.size] as? Int {
@@ -49,10 +58,10 @@ struct MetadataPanel: View {
                                                               countStyle: .file)))
         }
         if let modified = attrs[.modificationDate] as? Date {
-            out.append(Row("Modified", Self.dateFmt.string(from: modified)))
+            out.append(Row("Modified", dateFmt.string(from: modified)))
         }
         if let created = attrs[.creationDate] as? Date {
-            out.append(Row("Created", Self.dateFmt.string(from: created)))
+            out.append(Row("Created", dateFmt.string(from: created)))
         }
         if let utType = UTType(filenameExtension: url.pathExtension) {
             out.append(Row("UTI", utType.identifier))
@@ -60,7 +69,7 @@ struct MetadataPanel: View {
         return out
     }
 
-    private static let dateFmt: DateFormatter = {
+    internal static let dateFmt: DateFormatter = {
         let f = DateFormatter()
         f.dateStyle = .medium
         f.timeStyle = .short

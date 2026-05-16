@@ -62,4 +62,72 @@ final class PreferencesStoreTests: XCTestCase {
         let other = PreferencesStore(defaults: defaults)
         XCTAssertNil(other.lastFolderURL)
     }
+
+    // MARK: Source word-wrap (Batch A)
+
+    func test_sourceWordWrap_defaultsToFalse() {
+        let store = PreferencesStore(defaults: defaults)
+        XCTAssertFalse(store.sourceWordWrap)
+    }
+
+    func test_sourceWordWrap_roundTrips() {
+        let store = PreferencesStore(defaults: defaults)
+        store.sourceWordWrap = true
+        let other = PreferencesStore(defaults: defaults)
+        XCTAssertTrue(other.sourceWordWrap)
+    }
+
+    // MARK: Show invisible chars (Batch A)
+
+    func test_showInvisibleChars_defaultsToFalse() {
+        let store = PreferencesStore(defaults: defaults)
+        XCTAssertFalse(store.showInvisibleChars)
+    }
+
+    func test_showInvisibleChars_roundTrips() {
+        let store = PreferencesStore(defaults: defaults)
+        store.showInvisibleChars = true
+        let other = PreferencesStore(defaults: defaults)
+        XCTAssertTrue(other.showInvisibleChars)
+    }
+
+    // MARK: UI scale (Batch B)
+
+    func test_uiScale_defaultsTo1() {
+        let store = PreferencesStore(defaults: defaults)
+        XCTAssertEqual(store.uiScale, 1.0, accuracy: 0.001)
+    }
+
+    func test_uiScale_roundTrips() {
+        let store = PreferencesStore(defaults: defaults)
+        store.uiScale = 1.25
+        let other = PreferencesStore(defaults: defaults)
+        XCTAssertEqual(other.uiScale, 1.25, accuracy: 0.001)
+    }
+
+    func test_uiScale_clampsLow_onSet() {
+        let store = PreferencesStore(defaults: defaults)
+        store.uiScale = 0.1
+        XCTAssertEqual(store.uiScale, PreferencesStore.minUIScale, accuracy: 0.001)
+    }
+
+    func test_uiScale_clampsHigh_onSet() {
+        let store = PreferencesStore(defaults: defaults)
+        store.uiScale = 10.0
+        XCTAssertEqual(store.uiScale, PreferencesStore.maxUIScale, accuracy: 0.001)
+    }
+
+    func test_uiScale_clampsOnRead_whenStoreHasOutOfRangeValue() {
+        // Simulate a corrupted / hand-edited defaults plist.
+        defaults.set(99.0, forKey: "MarkdownViewer.uiScale")
+        let store = PreferencesStore(defaults: defaults)
+        XCTAssertLessThanOrEqual(store.uiScale, PreferencesStore.maxUIScale)
+        XCTAssertGreaterThanOrEqual(store.uiScale, PreferencesStore.minUIScale)
+    }
+
+    func test_uiScale_bounds_are_sensible() {
+        XCTAssertLessThan(PreferencesStore.minUIScale, 1.0)
+        XCTAssertGreaterThan(PreferencesStore.maxUIScale, 1.0)
+        XCTAssertGreaterThan(PreferencesStore.uiScaleStep, 0)
+    }
 }

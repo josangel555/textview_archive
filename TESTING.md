@@ -86,7 +86,25 @@ bash scripts/verify-app.sh                      # bundle structural checks
 (executable bit, plist lint, required keys, doc type UTIs incl. folder,
 SPM resource bundle + `markdown.css`).
 
-**Total: 174 swift cases, ~2 s. Plus bundle verify script + manual checklist.**
+**Total: 509 swift cases, ~85 s. Plus bundle verify script + manual checklist.**
+
+**Test catch-up (Batches A / B / C) — added after the autonomous-batch
+series shipped without tests:**
+
+| Suite | Cases | Covers |
+|---|---|---|
+| TextSearchTests | 16 | literal + regex paths in `SourceTextController.findRanges`: empty, case-insens default, regex invalid pattern, anchors-match-lines, zero-width match, unicode `\w`, summarize n/N format |
+| PreferencesStoreTests (+10) | — | `uiScale` clamp on read + write, default, bounds; `showInvisibleChars` + `sourceWordWrap` round-trip |
+| DocumentModelTests (+11) | — | windowTitle default = "TextView", `uiScale` seed + persist, `uiSize(base)`, `showInvisibleChars` seed + toggle, `sourceFindIsRegex`, HEX state routing from `.loaded`, HEX→Source back-conversion, HEX persists across file switch (regression), `bookmarkTargetURL` precedence |
+| GitClientTests (+4) | — | `diff(forPath:)` unified format, color stripping, missing path, paths with spaces |
+| FileIconClassifierTests (+2) | — | folder-state precedence: gitRoot beats locked/hidden/expanded; symlink beats gitRoot |
+| RecentChangesDiscoveryTests | 5 | `discoverRepo(sidebarRoot:currentURL:)` — fallback to current file's parent when sidebar root nil; sidebar wins when both set |
+| MetadataPanelTests | 10 | `filesystemRows(url:attrs:)` pure builder — size formatting, dyn UTI for unknowns, date row presence, label ordering |
+| SQLiteWidthTests | 8 | `ResultTableView.computeWidths(...)` — 80pt floor, 320pt cap, ragged rows, sample-size bound, header-only width, nil cells |
+| FolderStateSymbolTests | 3 | every `FolderState.symbol` resolves to a valid SF Symbol; states are visually distinct |
+| BookmarksStoreTests (+1) | — | folder URLs round-trip through `contains` |
+| InfoPlistTests (+3) | — | `CFBundleName=TextView`, `CFBundleIdentifier` stays stable, `AppIcon` declared, TCC strings mention TextView, NSServices entry has `openInTextView` + accepts `public.file-url` |
+
 
 ## What each tier *won't* find — and the workaround
 

@@ -55,7 +55,9 @@ final class DocumentModelTests: XCTestCase {
         if case .empty = model.currentState {} else {
             XCTFail("expected .empty initial state")
         }
-        XCTAssertEqual(model.windowTitle, "MarkdownViewer")
+        // App was renamed to TextView (commit dab1759); ensure the
+        // default window title matches what users see in Finder.
+        XCTAssertEqual(model.windowTitle, "TextView")
     }
 
     // MARK: Opening files
@@ -364,5 +366,182 @@ final class DocumentModelTests: XCTestCase {
         } else {
             XCTFail("expected .loaded")
         }
+    }
+
+    // MARK: - UI scale (Batch B, commit 2457015)
+
+    func test_uiScale_seeds_from_preferences() {
+        let prefs = PreferencesStore(defaults: defaults)
+        prefs.uiScale = 1.30
+        let model = DocumentModel(
+            controller: DocumentController(),
+            history: HistoryStore(storeURL: historyStoreURL),
+            sidebar: SidebarModel(),
+            preferences: prefs
+        )
+        XCTAssertEqual(model.uiScale, 1.30, accuracy: 0.001)
+    }
+
+    func test_uiScale_setter_persists_via_preferences() {
+        let prefs = PreferencesStore(defaults: defaults)
+        let model = DocumentModel(
+            controller: DocumentController(),
+            history: HistoryStore(storeURL: historyStoreURL),
+            sidebar: SidebarModel(),
+            preferences: prefs
+        )
+        model.uiScale = 1.15
+        XCTAssertEqual(prefs.uiScale, 1.15, accuracy: 0.001)
+    }
+
+    func test_uiSize_multiplies_base_by_uiScale() {
+        let model = makeModel()
+        model.uiScale = 1.5
+        XCTAssertEqual(model.uiSize(10), 15, accuracy: 0.001)
+        XCTAssertEqual(model.uiSize(12), 18, accuracy: 0.001)
+    }
+
+    // MARK: - showInvisibleChars (Batch A)
+
+    func test_showInvisibleChars_seeds_and_persists() {
+        let prefs = PreferencesStore(defaults: defaults)
+        prefs.showInvisibleChars = true
+        let model = DocumentModel(
+            controller: DocumentController(),
+            history: HistoryStore(storeURL: historyStoreURL),
+            sidebar: SidebarModel(),
+            preferences: prefs
+        )
+        XCTAssertTrue(model.showInvisibleChars)
+        model.toggleShowInvisibleChars()
+        XCTAssertFalse(model.showInvisibleChars)
+        XCTAssertFalse(prefs.showInvisibleChars,
+                       "didSet should write through to preferences")
+    }
+
+    // MARK: - Find bar regex flag (Batch B)
+
+    func test_sourceFindIsRegex_defaultsOff() {
+        let model = makeModel()
+        XCTAssertFalse(model.sourceFindIsRegex)
+    }
+
+    func test_sourceFindIsRegex_isWritable() {
+        let model = makeModel()
+        model.sourceFindIsRegex = true
+        XCTAssertTrue(model.sourceFindIsRegex)
+    }
+
+    // MARK: - HEX state routing (Batch A, commit d175548)
+
+    /// Picking HEX on a text-loaded tab must request a binary load.
+    /// Pre-Batch-A this only fired from `.loaded` state; the new code
+    /// also handles `.preview` and `.error`. Verify the loaded path
+    /// still works (regression guard).
+    func test_setHex_on_loadedText_kicks_binaryLoad() throws {
+        let model = makeModel()
+        let url = try writeFile("file.txt", "hello world")
+        model.open(url: url)
+        XCTAssertTrue(isLoaded(model.currentState))
+        model.setCurrentViewMode(.hex)
+        // The picker reflects the user's pick immediately; the
+        // state-swap is async via Task.detached. Spin until the
+        // tab's state flips to .binary (cap to keep failures fast).
+        let switched = waitFor(timeout: 2.0) {
+            if case .binary = model.currentState { return true }
+            return false
+        }
+        XCTAssertTrue(switched, "expected state to flip to .binary after HEX")
+        XCTAssertEqual(model.currentViewMode, .hex)
+    }
+
+    /// Switching from .hex back to .source must request a text reload.
+    func test_setSource_on_binary_kicks_textLoad() throws {
+        let model = makeModel()
+        let url = try writeFile("file.txt", "hello")
+        model.open(url: url)
+        model.setCurrentViewMode(.hex)
+        _ = waitFor(timeout: 2.0) {
+            if case .binary = model.currentState { return true }
+            return false
+        }
+        model.setCurrentViewMode(.source)
+        let switched = waitFor(timeout: 2.0) {
+            if case .loaded = model.currentState { return true }
+            return false
+        }
+        XCTAssertTrue(switched, "expected state to flip back to .loaded after Source")
+        XCTAssertEqual(model.currentViewMode, .source)
+    }
+
+    /// Regression for the "HEX is selected but a different file shows
+    /// in preview mode after switching" bug. Opening a file with HEX
+    /// already current on the tab must kick a binary load for the new
+    /// file too.
+    func test_openFile_with_hex_active_triggers_binaryLoad_for_newFile() throws {
+        let model = makeModel()
+        let a = try writeFile("a.txt", "alpha")
+        let b = try writeFile("b.txt", "bravo")
+        model.open(url: a)
+        model.setCurrentViewMode(.hex)
+        _ = waitFor(timeout: 2.0) {
+            if case .binary = model.currentState { return true }
+            return false
+        }
+        XCTAssertEqual(model.currentViewMode, .hex)
+
+        model.open(url: b)
+        // We expect the new tab to also end up in .binary because
+        // currentViewMode was .hex when openOrReveal carried it across.
+        // Picker first reflects the user's mode; the binary load fires
+        // asynchronously.
+        XCTAssertEqual(model.currentViewMode, .hex)
+        let bIsBinary = waitFor(timeout: 2.0) {
+            guard model.currentURL?.lastPathComponent == "b.txt" else { return false }
+            if case .binary = model.currentState { return true }
+            return false
+        }
+        XCTAssertTrue(bIsBinary,
+                      "HEX must persist across file switch — bug fixed in d175548")
+    }
+
+    // MARK: - Bookmark folder support (Batch A item)
+
+    func test_bookmarkTargetURL_prefers_currentFile_over_folder() throws {
+        let model = makeModel()
+        let url = try writeFile("a.md", "x")
+        model.openFolder(tmpDir)
+        model.open(url: url)
+        XCTAssertEqual(model.bookmarkTargetURL?.lastPathComponent, "a.md")
+    }
+
+    func test_bookmarkTargetURL_falls_back_to_folder_when_no_file_open() {
+        let model = makeModel()
+        model.openFolder(tmpDir)
+        XCTAssertEqual(model.bookmarkTargetURL, tmpDir.standardizedFileURL.resolvingSymlinksInPath())
+    }
+
+    func test_bookmarkTargetURL_nil_when_neither_set() {
+        let model = makeModel()
+        XCTAssertNil(model.bookmarkTargetURL)
+    }
+
+    // MARK: - Helpers
+
+    /// Synchronously spin the main run loop until `predicate` becomes
+    /// true or the timeout elapses. Returns whether it became true.
+    /// Used for the async loadBinary path on the main actor.
+    private func waitFor(timeout: TimeInterval, predicate: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if predicate() { return true }
+            RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.02))
+        }
+        return predicate()
+    }
+
+    private func isLoaded(_ state: DocumentState) -> Bool {
+        if case .loaded = state { return true }
+        return false
     }
 }

@@ -62,6 +62,40 @@ final class FileIconClassifierTests: XCTestCase {
         assertFolder(icon("/.", isDirectory: true), .collapsed)
     }
 
+    /// Batch A wired sidebar's git-root URL into the file-tree icon
+    /// call site. The classifier's precedence rule says symlink wins
+    /// over root, root wins over locked/hidden/expanded. Lock that in.
+    func test_folder_state_precedence_gitRoot_beats_locked_hidden_expanded() {
+        // Expanded + isGitRoot=true → root (not open).
+        assertFolder(
+            icon("/x/repo", isDirectory: true, isExpanded: true, isGitRoot: true),
+            .root
+        )
+        // Hidden-looking name + isGitRoot=true → root (not hidden).
+        assertFolder(
+            icon("/x/.dotrepo", isDirectory: true, isGitRoot: true),
+            .root
+        )
+        // node_modules + isGitRoot=true (weird but possible) → root.
+        assertFolder(
+            icon("/x/node_modules", isDirectory: true, isGitRoot: true),
+            .root
+        )
+    }
+
+    func test_folder_state_precedence_symlink_wins_over_everything() {
+        // Symlink wins over isGitRoot — symlinked repos shouldn't
+        // get the "root" tint because the real repo is elsewhere.
+        assertFolder(
+            icon("/x/alias", isDirectory: true, isGitRoot: true, isSymlink: true),
+            .symlink
+        )
+        assertFolder(
+            icon("/x/.gitalias", isDirectory: true, isSymlink: true),
+            .symlink
+        )
+    }
+
     // MARK: - Code chips
 
     func test_code_typescript_variants() {

@@ -578,7 +578,10 @@ public final class SourceTextController: NSViewController {
         return attr
     }
 
-    private static func findRanges(in haystack: String, query: String, caseSensitive: Bool,
+    /// Pure substring/regex search over `haystack`. Exposed internal so
+    /// `@testable import ViewerUI` can exercise edge cases directly
+    /// without spinning up an NSTextView.
+    internal static func findRanges(in haystack: String, query: String, caseSensitive: Bool,
                                     isRegex: Bool = false) -> [NSRange] {
         guard !query.isEmpty else { return [] }
         if isRegex {

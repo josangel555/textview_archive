@@ -207,7 +207,7 @@ private final class SQLiteBrowserModel: ObservableObject {
     }
 }
 
-private struct ResultTableView: View {
+internal struct ResultTableView: View {
     let result: SQLiteReader.QueryResult
 
     /// Per-column widths (one entry per column index). Auto-sized at
@@ -327,26 +327,32 @@ private struct ResultTableView: View {
     }
 
     private func recomputeWidths() {
-        let widths = result.columns.enumerated().map { (i, name) -> CGFloat in
-            let headerW = approxTextWidth(name, weight: .semibold)
-            let cellW = result.rows.prefix(200).reduce(CGFloat(0)) { acc, row in
-                guard row.indices.contains(i), let cell = row[i] else { return acc }
-                // Cap individual cell widths so a single huge cell
-                // doesn't make the column hundreds of points wide.
-                return max(acc, min(approxTextWidth(cell, weight: .regular), 320))
-            }
-            return max(80, min(headerW + 24, 220), min(cellW + 24, 320))
-        }
-        columnWidths = widths
+        columnWidths = Self.computeWidths(columns: result.columns, rows: result.rows)
     }
 
     private func fingerprint(for r: SQLiteReader.QueryResult) -> String {
         r.columns.joined(separator: "|") + "#\(r.rows.count)"
     }
 
+    /// Width sampling math, extracted as pure for testing. Header
+    /// width + max of the first `sampleRows` cell widths per column,
+    /// each clamped to keep one giant cell from making the column
+    /// hundreds of points wide.
+    internal static func computeWidths(columns: [String], rows: [[String?]],
+                                        sampleRows: Int = 200) -> [CGFloat] {
+        columns.enumerated().map { (i, name) -> CGFloat in
+            let headerW = approxTextWidth(name)
+            let cellW = rows.prefix(sampleRows).reduce(CGFloat(0)) { acc, row in
+                guard row.indices.contains(i), let cell = row[i] else { return acc }
+                return max(acc, min(approxTextWidth(cell), 320))
+            }
+            return max(80, min(headerW + 24, 220), min(cellW + 24, 320))
+        }
+    }
+
     /// Cheap monospaced-width estimate. 7 pt per char @ 11 pt mono is
     /// close enough for column sizing; users can drag to refine.
-    private func approxTextWidth(_ s: String, weight: NSFont.Weight) -> CGFloat {
+    internal static func approxTextWidth(_ s: String) -> CGFloat {
         CGFloat(s.count) * 7
     }
 }

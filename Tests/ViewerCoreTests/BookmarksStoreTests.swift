@@ -44,6 +44,20 @@ final class BookmarksStoreTests: XCTestCase {
         XCTAssertFalse(s.contains(u))
     }
 
+    /// Documents the "bookmark folders too" guarantee from Batch A.
+    /// BookmarksStore is path-agnostic — it doesn't distinguish files
+    /// from directories — so folder URLs work as long as the caller
+    /// passes them in. Anti-regression for folder bookmarks dropping
+    /// out of the store.
+    func test_add_folderURL_appears() {
+        let s = makeStore()
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("a-folder-\(UUID().uuidString)", isDirectory: true)
+        s.add(url: folder)
+        XCTAssertTrue(s.contains(folder))
+        XCTAssertEqual(s.all().count, 1)
+    }
+
     func test_toggle_addsThenRemoves() {
         let s = makeStore()
         let u = URL(fileURLWithPath: "/tmp/a.md")

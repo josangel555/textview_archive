@@ -38,9 +38,15 @@ final class InfoPlistTests: XCTestCase {
 
     func test_requiredScalarKeys() throws {
         let p = try loadPlist()
-        XCTAssertEqual(p["CFBundleIdentifier"] as? String, "com.markdownviewer.MarkdownViewer")
-        XCTAssertEqual(p["CFBundleExecutable"] as? String, "MarkdownViewer")
-        XCTAssertEqual(p["CFBundleName"] as? String, "MarkdownViewer")
+        // Bundle identifier stays as-is across the TextView rename so
+        // TCC + LaunchServices grants survive. The executable name
+        // matches the SwiftPM target. Display name is "TextView".
+        XCTAssertEqual(p["CFBundleIdentifier"] as? String, "com.markdownviewer.MarkdownViewer",
+                       "bundle id must stay stable so TCC grants survive renames")
+        XCTAssertEqual(p["CFBundleExecutable"] as? String, "MarkdownViewer",
+                       "executable name follows the SwiftPM target, not the display name")
+        XCTAssertEqual(p["CFBundleName"] as? String, "TextView")
+        XCTAssertEqual(p["CFBundleDisplayName"] as? String, "TextView")
         XCTAssertEqual(p["CFBundlePackageType"] as? String, "APPL")
         XCTAssertEqual(p["LSMinimumSystemVersion"] as? String, "14.0")
         XCTAssertEqual(p["NSPrincipalClass"] as? String, "NSApplication")
@@ -48,6 +54,47 @@ final class InfoPlistTests: XCTestCase {
         XCTAssertNotNil(p["CFBundleVersion"] as? String)
         XCTAssertNotNil(p["CFBundleShortVersionString"] as? String)
         XCTAssertNotNil(p["LSApplicationCategoryType"] as? String)
+    }
+
+    func test_appIcon_declared() throws {
+        let p = try loadPlist()
+        XCTAssertEqual(p["CFBundleIconFile"] as? String, "AppIcon",
+                       "CFBundleIconFile must point at AppIcon.icns shipped in Resources")
+        XCTAssertEqual(p["CFBundleIconName"] as? String, "AppIcon")
+    }
+
+    func test_TCC_usage_descriptions_present() throws {
+        // Batch A: usage strings render in the system prompt and must
+        // mention TextView so the prompt is honest to the user.
+        let p = try loadPlist()
+        let keys = ["NSDocumentsFolderUsageDescription",
+                    "NSDesktopFolderUsageDescription",
+                    "NSDownloadsFolderUsageDescription"]
+        for k in keys {
+            let v = p[k] as? String
+            XCTAssertNotNil(v, "\(k) is required for clean TCC prompts")
+            XCTAssertTrue(v!.contains("TextView"),
+                          "\(k) should reference TextView, got '\(v ?? "")'")
+        }
+    }
+
+    func test_services_entry_for_finder_quick_action() throws {
+        // Batch C wired NSServices so Finder's right-click → Services
+        // menu shows "Open in TextView". Regression-guard the schema.
+        let p = try loadPlist()
+        guard let services = p["NSServices"] as? [[String: Any]] else {
+            return XCTFail("NSServices missing")
+        }
+        XCTAssertFalse(services.isEmpty)
+        let openSvc = services.first(where: {
+            ($0["NSMessage"] as? String) == "openInTextView"
+        })
+        XCTAssertNotNil(openSvc, "expected an NSMessage=openInTextView service entry")
+        let menu = openSvc?["NSMenuItem"] as? [String: String]
+        XCTAssertEqual(menu?["default"], "Open in TextView")
+        let sendTypes = openSvc?["NSSendTypes"] as? [String]
+        XCTAssertTrue(sendTypes?.contains("public.file-url") ?? false,
+                      "service must accept file URLs")
     }
 
     func test_declaresMarkdownDocumentType() throws {

@@ -121,6 +121,15 @@ struct RecentChangesSection: View {
         }
     }
 
+    /// Pure repo discovery: sidebar root takes precedence (matches the
+    /// "current folder" intent); fall back to the open file's directory
+    /// so a file-only open inside a repo still lights up. Extracted so
+    /// the rule is unit-testable without spinning up a SwiftUI view.
+    internal static func discoverRepo(sidebarRoot: URL?, currentURL: URL?) -> URL? {
+        let probe = sidebarRoot ?? currentURL?.deletingLastPathComponent()
+        return probe.flatMap(GitClient.discoverRoot(from:))
+    }
+
     /// Write the unified diff for `entry.path` to a tmp file and open
     /// it as a tab. Lives under ~/Library/Caches so the cleaner reaps
     /// it; safe to overwrite per session.
@@ -185,13 +194,10 @@ struct RecentChangesSection: View {
 
     private func refresh() {
         refreshTask?.cancel()
-        // Discover repo root from whichever signal we have. Sidebar
-        // root takes precedence (matches the user's "current folder"
-        // intent); fall back to the open file's directory so a
-        // file-only open inside a repo still lights up.
-        let probe = model.sidebar.rootURL
-            ?? model.currentURL?.deletingLastPathComponent()
-        repoRoot = probe.flatMap(GitClient.discoverRoot(from:))
+        repoRoot = Self.discoverRepo(
+            sidebarRoot: model.sidebar.rootURL,
+            currentURL: model.currentURL
+        )
         guard let root = repoRoot else {
             entries = []
             return
