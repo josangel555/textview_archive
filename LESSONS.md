@@ -5,6 +5,53 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## TCC re-prompt-on-every-rebuild: ad-hoc signing is keyed on cdhash
+
+**Symptom.** macOS keeps showing the "MarkdownViewer reads files from
+your Documents folder" prompt on every rebuild, even after the user
+clicks Allow. Same for Downloads, Desktop, removable volumes.
+
+**Cause.** Ad-hoc signing (`codesign --sign -`) gives the binary a
+fresh code-directory hash on every build. macOS TCC keys ad-hoc grants
+on `cdhash` — there's no signing identity to fall back to. So every
+rebuild is, from TCC's POV, a brand-new app, and grants don't migrate.
+
+**Non-fixes that look like fixes.** A stable `--identifier` doesn't
+help (TCC ignores it for ad-hoc grants). Granting Full Disk Access in
+System Settings *does* survive rebuilds, but only because FDA is the
+nuclear escape hatch — the per-folder prompts still fire if FDA isn't
+enabled. `--preserve-metadata=identifier` doesn't help either.
+
+**Fix.** Sign with a real signing identity. Even a self-signed cert
+generated locally and stored in the login keychain works — TCC keys
+the grant on `(identifier, cert-leaf-hash)` for properly-signed apps,
+and both stay stable across rebuilds. `scripts/setup-signing.sh`
+generates and imports the cert; `scripts/build-app.sh` picks it up
+automatically.
+
+**Gotcha 1: PKCS#12 export.** Use system `/usr/bin/openssl` (LibreSSL).
+Homebrew OpenSSL 3.x produces PKCS#12 bundles that macOS rejects with
+"MAC verification failed" even with `-legacy`. Use a non-empty
+passphrase — `security import` interprets empty `-P ""` as wrong
+password and refuses the import.
+
+**Gotcha 2: `find-identity -p codesigning` lies.** It runs strict trust
+evaluation against the cert chain; self-signed certs fail that and
+get filtered out, returning "0 valid identities." But `codesign`
+itself happily uses the cert. Verify by probing with codesign on a
+throwaway file, not by parsing find-identity output.
+
+**Gotcha 3: `xattr -cr` before `codesign --options runtime`.** Resource
+bundles from SwiftPM ship with extended attributes and read-only
+permissions. Runtime hardening refuses any xattr; you also need a
+`chmod -R u+w` first so xattr can clear them.
+
+**One-time cost.** Switching from ad-hoc to a real identity changes
+the (identifier, cert-leaf-hash) pair, so TCC re-prompts ONCE on the
+first launch after switching. Approve those prompts. After that, all
+future rebuilds preserve the grant indefinitely (cert is good for
+10 years; renew when you remember).
+
 ## The SwiftUI / NSTextView compositor bug
 
 ### Symptom

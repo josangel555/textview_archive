@@ -12,13 +12,11 @@
 # user home as transient. Installing also fixes the "can't find it in
 # Spotlight" UX.
 #
-# TCC re-prompt note: ad-hoc-signed apps get a new code-directory hash
-# on every rebuild, so macOS treats consecutive rebuilds as different
-# apps. The cleanest workaround is the FDA grant: once installed,
-# System Settings → Privacy & Security → Full Disk Access → add
-# /Applications/MarkdownViewer.app. That grant survives rebuilds as
-# long as the identifier (com.markdownviewer.MarkdownViewer) stays
-# the same. Real Developer ID signing is the proper fix (Phase 9).
+# TCC re-prompt note: once you've run scripts/setup-signing.sh, the
+# app is signed with a stable self-signed cert and TCC grants survive
+# rebuilds. If you skipped that script, every rebuild gets a new
+# code-directory hash and TCC re-prompts forever — run setup-signing.sh
+# to fix.
 
 set -euo pipefail
 
@@ -84,8 +82,8 @@ if [[ "${1:-}" == "--default" ]]; then
 fi
 
 echo
-echo "If you keep getting permission prompts:"
-echo "  1. System Settings → Privacy & Security → Full Disk Access"
-echo "  2. + → Applications → MarkdownViewer → enable"
-echo "  This survives most rebuilds. Real Developer ID signing (Phase 9)"
-echo "  eliminates the issue entirely."
+echo "If you keep getting permission prompts on every rebuild:"
+echo "  1. Run once: bash scripts/setup-signing.sh"
+echo "  2. Rebuild: bash scripts/build-app.sh && bash scripts/install-app.sh"
+echo "  3. Approve the TCC prompts ONE more time (signing identity changed)."
+echo "  After that, future rebuilds preserve the grant."

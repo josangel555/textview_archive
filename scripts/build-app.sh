@@ -44,24 +44,47 @@ shopt -u nullglob
 
 plutil -lint "$CONTENTS/Info.plist"
 
-# Ad-hoc sign with an **explicit, stable identifier** so TCC (privacy
-# prompts for Documents / Desktop / Downloads / etc.) and Launch Services
-# treat consecutive builds as the same app. Without `--identifier`, the
-# default identifier is derived from the bundle and is technically stable
-# — but `--preserve-metadata=identifier` is the belt-and-suspenders flag
-# that prevents codesign from rewriting it across rebuilds.
-#
-# Note: the CDHash will still change every build (the binary changes), so
-# TCC may still re-prompt on a fresh rebuild. The fix for that is a real
-# Developer ID certificate (Phase 9, distribution). During dev, granting
-# Full Disk Access to /usr/bin/open (the launcher) or running the binary
-# directly out of dist/MarkdownViewer.app/Contents/MacOS/MarkdownViewer
-# is the workaround.
-codesign --force \
-  --sign - \
-  --identifier "com.markdownviewer.MarkdownViewer" \
-  --timestamp=none \
-  "$APP_DIR" >/dev/null 2>&1 || true
+# Code sign. Prefer the local self-signed identity (created by
+# scripts/setup-signing.sh) over ad-hoc because TCC grants tied to a
+# real signing identity survive rebuilds — ad-hoc grants don't, since
+# they're keyed on the code-directory hash which changes every build.
+SIGN_IDENTITY="MarkdownViewer Local Dev"
+# Probe with codesign on a throwaway binary — find-identity's policy
+# filter is too strict for self-signed certs even when codesign accepts
+# them. The probe writes a Mach-O magic header so codesign attempts a
+# real sign rather than refusing on file format alone.
+SIGN_PROBE="$(mktemp -t mdv-sign-probe.XXXXXX)"
+printf '\xcf\xfa\xed\xfe' > "$SIGN_PROBE"
+if codesign --force --sign "$SIGN_IDENTITY" --identifier test "$SIGN_PROBE" 2>/dev/null; then
+  rm -f "$SIGN_PROBE"
+  HAS_LOCAL_IDENTITY=1
+else
+  rm -f "$SIGN_PROBE"
+  HAS_LOCAL_IDENTITY=0
+fi
+if [[ "$HAS_LOCAL_IDENTITY" == "1" ]]; then
+  echo "==> Signing with '$SIGN_IDENTITY'"
+  # Strip extended attributes / Finder metadata — codesign with
+  # `--options runtime` refuses bundles with stray xattrs. Copied
+  # SwiftPM resource bundles ship as read-only, so chmod first.
+  chmod -R u+w "$APP_DIR"
+  xattr -cr "$APP_DIR"
+  codesign --force --deep \
+    --sign "$SIGN_IDENTITY" \
+    --identifier "com.markdownviewer.MarkdownViewer" \
+    --options runtime \
+    --timestamp=none \
+    "$APP_DIR" >/dev/null
+else
+  echo "==> No local signing identity; falling back to ad-hoc"
+  echo "    (TCC will re-prompt on every rebuild — fix with"
+  echo "     'bash scripts/setup-signing.sh')"
+  codesign --force \
+    --sign - \
+    --identifier "com.markdownviewer.MarkdownViewer" \
+    --timestamp=none \
+    "$APP_DIR" >/dev/null 2>&1 || true
+fi
 
 # Register with Launch Services so `open -a MarkdownViewer` works by name.
 # Without this, only an absolute-path `open -a /path/to/App.app` works.
