@@ -903,6 +903,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         bookmarkItem.target = self
         viewMenu.addItem(bookmarkItem)
 
+        let bookmarkLineItem = NSMenuItem(
+            title: "Bookmark / Unbookmark Current Line",
+            action: #selector(toggleLineBookmark(_:)),
+            keyEquivalent: "d"
+        )
+        bookmarkLineItem.keyEquivalentModifierMask = [.command, .option]
+        bookmarkLineItem.target = self
+        viewMenu.addItem(bookmarkLineItem)
+
         viewMenuItem.submenu = viewMenu
 
         let windowMenuItem = NSMenuItem()
@@ -1060,6 +1069,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         default:
             return true
         }
+    }
+
+    @objc func toggleLineBookmark(_ sender: Any?) {
+        model.toggleCurrentLineBookmark()
     }
 
     @objc func toggleBookmark(_ sender: Any?) {

@@ -40,6 +40,10 @@ public struct TextDisplayView: NSViewControllerRepresentable {
     public let findState: FindState
     public let wordWrap: Bool
     public let showInvisibles: Bool
+    /// Scroll-to-line request. (`line: nil` = no-op; otherwise scroll
+    /// to that 1-based line and place the caret there.) The nonce
+    /// distinguishes repeat requests for the same line.
+    public let scrollLineRequest: ScrollLineRequest
     public let onFindSummary: ((String) -> Void)?
     public let onScrollChange: ((SourceScrollState) -> Void)?
     /// Called whenever the textView's selectedRange changes. Caller
@@ -56,6 +60,7 @@ public struct TextDisplayView: NSViewControllerRepresentable {
         findState: FindState = .empty,
         wordWrap: Bool = false,
         showInvisibles: Bool = false,
+        scrollLineRequest: ScrollLineRequest = .none,
         onFindSummary: ((String) -> Void)? = nil,
         onScrollChange: ((SourceScrollState) -> Void)? = nil,
         onSelectionChange: ((SourceSelection) -> Void)? = nil
@@ -68,9 +73,20 @@ public struct TextDisplayView: NSViewControllerRepresentable {
         self.findState = findState
         self.wordWrap = wordWrap
         self.showInvisibles = showInvisibles
+        self.scrollLineRequest = scrollLineRequest
         self.onFindSummary = onFindSummary
         self.onScrollChange = onScrollChange
         self.onSelectionChange = onSelectionChange
+    }
+
+    public struct ScrollLineRequest: Equatable, Sendable {
+        public let line: Int?
+        public let nonce: Int
+        public static let none = ScrollLineRequest(line: nil, nonce: 0)
+        public init(line: Int?, nonce: Int) {
+            self.line = line
+            self.nonce = nonce
+        }
     }
 
     public struct FindState: Equatable, Sendable {
@@ -106,6 +122,7 @@ public struct TextDisplayView: NSViewControllerRepresentable {
             runs: runs,
             wordWrap: wordWrap,
             showInvisibles: showInvisibles,
+            scrollLineRequest: scrollLineRequest,
             findState: findState,
             onFindSummary: onFindSummary,
             onScrollChange: onScrollChange,
@@ -365,6 +382,11 @@ public final class SourceTextController: NSViewController {
     /// Apply a (text, runs, theme, wrap, findState) update from SwiftUI.
     /// Each piece is gated on a coordinator-style cache key so we don't
     /// re-walk the textStorage when nothing actually changed.
+    /// Most recently honored scroll-to-line nonce. Pair with the
+    /// publisher's `sourceScrollLineNonce`: when they differ, we run
+    /// the scroll + select; otherwise we skip.
+    private var lastScrollLineNonce: Int = 0
+
     public func apply(
         text: String,
         fontSize: CGFloat,
@@ -372,6 +394,7 @@ public final class SourceTextController: NSViewController {
         runs: [HighlightRun],
         wordWrap: Bool,
         showInvisibles: Bool,
+        scrollLineRequest: TextDisplayView.ScrollLineRequest,
         findState: TextDisplayView.FindState,
         onFindSummary: ((String) -> Void)?,
         onScrollChange: ((SourceScrollState) -> Void)?,
@@ -413,6 +436,69 @@ public final class SourceTextController: NSViewController {
         // state even before the user scrolls or moves the caret.
         publishScrollState()
         publishSelection()
+
+        // Honor a scroll-to-line request if a new nonce arrived.
+        // We apply AFTER attributed-string + wrap so layout is up to
+        // date when we ask NSLayoutManager for the line's range.
+        if scrollLineRequest.nonce != lastScrollLineNonce,
+           let line = scrollLineRequest.line {
+            lastScrollLineNonce = scrollLineRequest.nonce
+            scroll(toLine: line)
+        }
+    }
+
+    /// Scroll the text view so 1-based `line` is centered and select
+    /// the entire line. Out-of-range targets are clamped silently.
+    private func scroll(toLine line: Int) {
+        let storage = textView.textStorage ?? NSTextStorage(string: textView.string)
+        let nsText = storage.string as NSString
+        let totalLength = nsText.length
+        guard totalLength > 0 else { return }
+        var lineNumber = 0
+        var loc = 0
+        var lineStart = 0
+        var lineEnd = totalLength
+        while loc <= totalLength {
+            lineNumber += 1
+            let r = nsText.lineRange(for: NSRange(location: loc, length: 0))
+            if lineNumber == line {
+                lineStart = r.location
+                lineEnd = r.location + r.length
+                break
+            }
+            if r.location + r.length >= totalLength {
+                // Off the end — clamp to last line.
+                lineStart = r.location
+                lineEnd = r.location + r.length
+                break
+            }
+            loc = r.location + r.length
+        }
+        // Exclude trailing newline from the selection so the visible
+        // highlight doesn't span into the next row.
+        var selEnd = lineEnd
+        if selEnd > lineStart,
+           nsText.character(at: selEnd - 1) == 0x0A {
+            selEnd -= 1
+        }
+        let target = NSRange(location: lineStart, length: max(0, selEnd - lineStart))
+        textView.setSelectedRange(target)
+        textView.scrollRangeToVisible(target)
+        // Re-center the target in the viewport when it would otherwise
+        // sit at the edge. NSTextView.scrollRangeToVisible only ensures
+        // visibility, not centering.
+        if let lm = textView.layoutManager,
+           let tc = textView.textContainer {
+            let glyphRange = lm.glyphRange(forCharacterRange: target, actualCharacterRange: nil)
+            let rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
+            let inset = textView.textContainerInset.height
+            let viewportH = scrollView.contentView.bounds.height
+            let targetY = max(0, rect.midY + inset - viewportH / 2)
+            scrollView.contentView.scroll(to: NSPoint(x: 0, y: targetY))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
+        publishSelection()
+        publishScrollState()
     }
 
     /// Toggle horizontal scrolling vs viewport-width wrap. Two knobs

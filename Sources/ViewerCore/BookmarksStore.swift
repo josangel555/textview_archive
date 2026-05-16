@@ -39,22 +39,34 @@ public final class BookmarksStore {
 
     public func all() -> [BookmarkEntry] { entries }
 
+    /// True if **any** bookmark entry (file-level or line-level) is set
+    /// for this URL. Kept for the existing "is current file/folder
+    /// bookmarked?" check that drives the star indicator.
     public func contains(_ url: URL) -> Bool {
         let n = url.standardizedFileURL.resolvingSymlinksInPath()
         return entries.contains { $0.url == n }
     }
 
-    /// Adds `url` if not present. Returns the new (or existing) entry.
-    @discardableResult
-    public func add(url: URL, displayName: String? = nil) -> BookmarkEntry {
+    /// Line-aware lookup. Pass `line: nil` to check the file-level
+    /// bookmark; pass a 1-based line number to check a line bookmark.
+    public func contains(url: URL, line: Int?) -> Bool {
         let n = url.standardizedFileURL.resolvingSymlinksInPath()
-        if let existing = entries.first(where: { $0.url == n }) {
+        return entries.contains { $0.url == n && $0.line == line }
+    }
+
+    /// Adds `url` (or `(url, line)` for a line bookmark) if not
+    /// present. Returns the new or existing entry.
+    @discardableResult
+    public func add(url: URL, displayName: String? = nil, line: Int? = nil) -> BookmarkEntry {
+        let n = url.standardizedFileURL.resolvingSymlinksInPath()
+        if let existing = entries.first(where: { $0.url == n && $0.line == line }) {
             return existing
         }
         let entry = BookmarkEntry(
             url: n,
             addedAt: clock(),
-            displayName: displayName ?? n.lastPathComponent
+            displayName: displayName ?? n.lastPathComponent,
+            line: line
         )
         entries.insert(entry, at: 0)
         if entries.count > maxEntries {
@@ -64,21 +76,25 @@ public final class BookmarksStore {
         return entry
     }
 
-    public func remove(url: URL) {
+    /// Removes the matching `(url, line)` entry, or — when `line` is
+    /// nil — only the file-level bookmark for that URL. Line bookmarks
+    /// for the same URL are kept independent so removing the file
+    /// bookmark doesn't sweep them away.
+    public func remove(url: URL, line: Int? = nil) {
         let n = url.standardizedFileURL.resolvingSymlinksInPath()
         let before = entries.count
-        entries.removeAll { $0.url == n }
+        entries.removeAll { $0.url == n && $0.line == line }
         if entries.count != before { save() }
     }
 
     @discardableResult
-    public func toggle(url: URL, displayName: String? = nil) -> Bool {
+    public func toggle(url: URL, displayName: String? = nil, line: Int? = nil) -> Bool {
         let n = url.standardizedFileURL.resolvingSymlinksInPath()
-        if entries.contains(where: { $0.url == n }) {
-            remove(url: n)
+        if entries.contains(where: { $0.url == n && $0.line == line }) {
+            remove(url: n, line: line)
             return false
         } else {
-            add(url: n, displayName: displayName)
+            add(url: n, displayName: displayName, line: line)
             return true
         }
     }
@@ -125,15 +141,25 @@ public final class BookmarksStore {
 }
 
 public struct BookmarkEntry: Codable, Equatable, Sendable, Identifiable {
-    public var id: String { url.path }
+    /// Identity composes URL with optional line, so the same file can
+    /// have both a file-level bookmark and one or more line bookmarks
+    /// without colliding.
+    public var id: String {
+        if let line = line { return "\(url.path)#L\(line)" }
+        return url.path
+    }
     public let url: URL
     public let addedAt: Date
     public let displayName: String
+    /// 1-based line number for line bookmarks; nil for whole-file
+    /// bookmarks. Older on-disk entries decode with nil here.
+    public let line: Int?
 
-    public init(url: URL, addedAt: Date, displayName: String? = nil) {
+    public init(url: URL, addedAt: Date, displayName: String? = nil, line: Int? = nil) {
         self.url = url
         self.addedAt = addedAt
         self.displayName = displayName ?? url.lastPathComponent
+        self.line = line
     }
 
     public init(from decoder: Decoder) throws {
@@ -152,9 +178,11 @@ public struct BookmarkEntry: Codable, Equatable, Sendable, Identifiable {
         }
         self.displayName = (try? c.decode(String.self, forKey: .displayName))
             ?? url.lastPathComponent
+        // Optional — old entries don't have it; new entries may set it.
+        self.line = try? c.decodeIfPresent(Int.self, forKey: .line)
     }
 
     public enum CodingKeys: String, CodingKey {
-        case url, addedAt, displayName
+        case url, addedAt, displayName, line
     }
 }

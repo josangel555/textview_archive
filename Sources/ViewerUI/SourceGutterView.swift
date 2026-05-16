@@ -21,6 +21,11 @@ struct SourceGutterView: View {
     let state: SourceScrollState
     let fontSize: CGFloat
     let theme: SyntaxTheme
+    /// Per-line diff status for the open file. Empty when not in a
+    /// repo or the file is clean.
+    var diffMarks: [Int: DiffMark] = [:]
+    /// 1-based line numbers bookmarked for the open file.
+    var bookmarkedLines: Set<Int> = []
 
     /// Width in points. 6px padding + N digits worth of monospace
     /// glyphs. Updated whenever `state.lineCount` changes.
@@ -75,6 +80,42 @@ struct SourceGutterView: View {
                 // Subtract the scroll offset to get viewport y.
                 let docY = inset + CGFloat(n - 1) * lh
                 let y = docY - state.offsetY
+
+                // Git diff stripe — 2pt wide bar on the left edge of
+                // the gutter. Green = added, blue = modified, red =
+                // deleted (drawn as a thin tick at the line's top
+                // since the removed line isn't in the working tree).
+                if let mark = diffMarks[n] {
+                    let color: Color
+                    switch mark {
+                    case .added:    color = .green
+                    case .modified: color = .blue
+                    case .deleted:  color = .red
+                    }
+                    let stripeRect: CGRect
+                    if mark == .deleted {
+                        // Thin tick at the top of the line where the
+                        // deletion happened above.
+                        stripeRect = CGRect(x: 0, y: y, width: 2, height: 2)
+                    } else {
+                        stripeRect = CGRect(x: 0, y: y + 1, width: 2, height: max(2, lh - 2))
+                    }
+                    context.fill(Path(stripeRect), with: .color(color.opacity(0.85)))
+                }
+
+                // Bookmark indicator — small filled circle to the left
+                // of the line number, between the diff stripe and the
+                // number. Yellow to match the bookmark star elsewhere.
+                if bookmarkedLines.contains(n) {
+                    let dotSize: CGFloat = max(4, lh * 0.35)
+                    let dotRect = CGRect(
+                        x: 5,
+                        y: y + (lh - dotSize) / 2,
+                        width: dotSize, height: dotSize
+                    )
+                    context.fill(Path(ellipseIn: dotRect), with: .color(.yellow))
+                }
+
                 let label = "\(n)" as NSString
                 let attrs: [NSAttributedString.Key: Any] = [
                     .font: font,

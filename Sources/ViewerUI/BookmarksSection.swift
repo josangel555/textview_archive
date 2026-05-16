@@ -67,7 +67,7 @@ private struct BookmarkRow: View {
     private var isCurrent: Bool { model.currentURL == entry.url }
 
     var body: some View {
-        Button(action: { model.openPath(entry.url) }) {
+        Button(action: { model.openBookmark(entry) }) {
             HStack(spacing: 6) {
                 FileIconView(
                     url: entry.url,
@@ -81,6 +81,13 @@ private struct BookmarkRow: View {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                if let line = entry.line {
+                    // Line bookmarks: show the line number as a chip so
+                    // the row reads "file.swift :42" at a glance.
+                    Text(":\(line)")
+                        .font(.system(size: model.uiSize(10), design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)
@@ -89,10 +96,10 @@ private struct BookmarkRow: View {
             .background(isCurrent ? Color.accentColor.opacity(0.18) : Color.clear)
         }
         .buttonStyle(.plain)
-        .help(entry.url.path)
+        .help(entry.line.map { "\(entry.url.path):\($0)" } ?? entry.url.path)
         .contextMenu {
             Button("Remove Bookmark") {
-                model.removeBookmark(entry.url)
+                model.removeBookmark(url: entry.url, line: entry.line)
             }
             Button("Reveal in Finder") {
                 NSWorkspace.shared.activateFileViewerSelecting([entry.url])

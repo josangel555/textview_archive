@@ -238,10 +238,83 @@ public final class DocumentModel: ObservableObject {
         bookmarks = bookmarksStore.all()
     }
 
+    /// Remove a specific bookmark — file-level or line-level.
+    public func removeBookmark(url: URL, line: Int?) {
+        bookmarksStore.remove(url: url, line: line)
+        bookmarks = bookmarksStore.all()
+    }
+
     /// Clear all bookmarks.
     public func clearBookmarks() {
         bookmarksStore.clear()
         bookmarks = []
+    }
+
+    // MARK: - Line bookmarks
+
+    /// Bookmark (or unbookmark) the line the caret is currently on
+    /// in the source view. No-op when there's no current file or
+    /// caret line is zero.
+    public func toggleCurrentLineBookmark() {
+        guard let url = currentURL else { return }
+        let line = sourceSelection.line
+        guard line > 0 else { return }
+        let display = "\(url.lastPathComponent):\(line)"
+        _ = bookmarksStore.toggle(url: url, displayName: display, line: line)
+        bookmarks = bookmarksStore.all()
+    }
+
+    /// Open `entry` and — if it's a line bookmark — scroll to the
+    /// stored line and select it.
+    public func openBookmark(_ entry: BookmarkEntry) {
+        openPath(entry.url)
+        if let line = entry.line {
+            scrollSource(toLine: line)
+        }
+    }
+
+    /// 1-based line numbers currently bookmarked for `url`. Used by
+    /// the source-view gutter to draw markers.
+    public func bookmarkedLines(for url: URL) -> Set<Int> {
+        let n = url.standardizedFileURL.resolvingSymlinksInPath()
+        return Set(bookmarks.compactMap { entry in
+            entry.url == n ? entry.line : nil
+        })
+    }
+
+    // MARK: - Git diff marks for source-view gutter
+
+    /// Per-line diff status for the *current* file. Recomputed on
+    /// file open / file save / reload via `refreshDiffMarks()`.
+    @Published public private(set) var sourceDiffMarks: [Int: DiffMark] = [:]
+
+    /// Recompute `sourceDiffMarks` by shelling out to `git diff` for
+    /// the current file. Off-main; main-actor publish at the end.
+    public func refreshDiffMarks() {
+        guard let url = currentURL,
+              let repoRoot = GitClient.discoverRoot(from: url)
+        else {
+            if !sourceDiffMarks.isEmpty { sourceDiffMarks = [:] }
+            return
+        }
+        let relPath: String = {
+            let rootPath = repoRoot.standardizedFileURL.resolvingSymlinksInPath().path
+            let filePath = url.standardizedFileURL.resolvingSymlinksInPath().path
+            if filePath.hasPrefix(rootPath + "/") {
+                return String(filePath.dropFirst(rootPath.count + 1))
+            }
+            return filePath
+        }()
+        let token = url
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let client = GitClient(repoRoot: repoRoot)
+            let diff = client.diff(forPath: relPath)
+            let marks = DiffHunkParser.parse(diff)
+            await MainActor.run { [weak self] in
+                guard let self, self.currentURL == token else { return }
+                self.sourceDiffMarks = marks
+            }
+        }
     }
 
     // MARK: Cross-file search
@@ -357,6 +430,17 @@ public final class DocumentModel: ObservableObject {
     @Published public var sourceFindNextRequest: Int = 0
     @Published public var sourceFindPrevRequest: Int = 0
     @Published public var sourceFindFocusRequest: Int = 0
+
+    /// Scroll the active source view to this 1-based line number on
+    /// the next render. The controller debounces by comparing to its
+    /// last-applied target. Pair with a bumped `sourceScrollLineNonce`
+    /// so re-requesting the same line still fires.
+    @Published public var sourceScrollLineTarget: Int? = nil
+    @Published public var sourceScrollLineNonce: Int = 0
+    public func scrollSource(toLine line: Int) {
+        sourceScrollLineTarget = line
+        sourceScrollLineNonce &+= 1
+    }
     /// Human-readable "n/N" or "" — published by the TextDisplayView
     /// coordinator after it recomputes match ranges. The find bar
     /// renders this directly.
@@ -876,5 +960,9 @@ public final class DocumentModel: ObservableObject {
 
     private func updateDerived() {
         windowTitle = tabs.selected?.title ?? "TextView"
+        // Recompute the source-view diff stripe when the focused
+        // file changes. Cheap-ish: shells `git diff` once per switch
+        // (off-main); skipped when not inside a repo.
+        refreshDiffMarks()
     }
 }

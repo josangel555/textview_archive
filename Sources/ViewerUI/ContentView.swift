@@ -170,7 +170,9 @@ public struct ContentView: View {
                     SourceGutterView(
                         state: model.sourceScrollState,
                         fontSize: 13 * model.zoom,
-                        theme: model.activeTheme
+                        theme: model.activeTheme,
+                        diffMarks: model.sourceDiffMarks,
+                        bookmarkedLines: model.bookmarkedLines(for: file.url)
                     )
                     TextDisplayView(
                         text: displayed,
@@ -187,6 +189,10 @@ public struct ContentView: View {
                         ),
                         wordWrap: model.sourceWordWrap,
                         showInvisibles: model.showInvisibleChars,
+                        scrollLineRequest: TextDisplayView.ScrollLineRequest(
+                            line: model.sourceScrollLineTarget,
+                            nonce: model.sourceScrollLineNonce
+                        ),
                         onFindSummary: { summary in
                             model.sourceFindMatchSummary = summary
                         },
