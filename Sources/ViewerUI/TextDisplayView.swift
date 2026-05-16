@@ -39,6 +39,7 @@ public struct TextDisplayView: NSViewControllerRepresentable {
     public let theme: SyntaxTheme
     public let findState: FindState
     public let wordWrap: Bool
+    public let showInvisibles: Bool
     public let onFindSummary: ((String) -> Void)?
     public let onScrollChange: ((SourceScrollState) -> Void)?
     /// Called whenever the textView's selectedRange changes. Caller
@@ -54,6 +55,7 @@ public struct TextDisplayView: NSViewControllerRepresentable {
         theme: SyntaxTheme = .xcodeLight,
         findState: FindState = .empty,
         wordWrap: Bool = false,
+        showInvisibles: Bool = false,
         onFindSummary: ((String) -> Void)? = nil,
         onScrollChange: ((SourceScrollState) -> Void)? = nil,
         onSelectionChange: ((SourceSelection) -> Void)? = nil
@@ -65,6 +67,7 @@ public struct TextDisplayView: NSViewControllerRepresentable {
         self.theme = theme
         self.findState = findState
         self.wordWrap = wordWrap
+        self.showInvisibles = showInvisibles
         self.onFindSummary = onFindSummary
         self.onScrollChange = onScrollChange
         self.onSelectionChange = onSelectionChange
@@ -99,6 +102,7 @@ public struct TextDisplayView: NSViewControllerRepresentable {
             theme: theme,
             runs: runs,
             wordWrap: wordWrap,
+            showInvisibles: showInvisibles,
             findState: findState,
             onFindSummary: onFindSummary,
             onScrollChange: onScrollChange,
@@ -363,6 +367,7 @@ public final class SourceTextController: NSViewController {
         theme: SyntaxTheme,
         runs: [HighlightRun],
         wordWrap: Bool,
+        showInvisibles: Bool,
         findState: TextDisplayView.FindState,
         onFindSummary: ((String) -> Void)?,
         onScrollChange: ((SourceScrollState) -> Void)?,
@@ -378,6 +383,11 @@ public final class SourceTextController: NSViewController {
             applyWrap(wordWrap)
             lastWordWrap = wordWrap
         }
+        // NSLayoutManager renders dots / arrows / pilcrows when this
+        // is on. We tone the marker color down via the layout
+        // manager's textStorage so the visualization doesn't fight
+        // the text — Word's pilcrow is too loud for code-reading.
+        textView.layoutManager?.showsInvisibleCharacters = showInvisibles
 
         applyAttributedString(
             text: text, fontSize: fontSize, theme: theme, runs: runs

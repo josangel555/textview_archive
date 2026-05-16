@@ -11,6 +11,7 @@ public final class PreferencesStore: @unchecked Sendable {
         static let lastFolder = "MarkdownViewer.lastFolderPath"
         static let zoom = "MarkdownViewer.zoom"
         static let sourceWordWrap = "MarkdownViewer.sourceWordWrap"
+        static let showInvisibleChars = "MarkdownViewer.showInvisibleChars"
     }
 
     public init(defaults: UserDefaults = .standard) {
@@ -46,6 +47,15 @@ public final class PreferencesStore: @unchecked Sendable {
     public var sourceWordWrap: Bool {
         get { defaults.object(forKey: Key.sourceWordWrap) as? Bool ?? false }
         set { defaults.set(newValue, forKey: Key.sourceWordWrap) }
+    }
+
+    /// Render invisible characters (spaces · tabs → · returns ¶) in the
+    /// source view. NSLayoutManager's built-in glyph substitution; off by
+    /// default to keep code reading clean. Inspired by Word's pilcrow
+    /// toggle but tuned subtler so it's not visually alarming.
+    public var showInvisibleChars: Bool {
+        get { defaults.object(forKey: Key.showInvisibleChars) as? Bool ?? false }
+        set { defaults.set(newValue, forKey: Key.showInvisibleChars) }
     }
 
     // MARK: Zoom

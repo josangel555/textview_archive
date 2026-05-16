@@ -27,6 +27,10 @@ struct RecentChangesSection: View {
         }
         .onAppear { refresh() }
         .onChange(of: model.sidebar.rootURL) { _, _ in refresh() }
+        // Also re-discover when the current file changes — opening a
+        // file inside a different repo (or a file with no folder root
+        // set) should still light up the section.
+        .onChange(of: model.currentURL) { _, _ in refresh() }
         .accessibilityIdentifier("mdv.recentChanges")
     }
 
@@ -146,7 +150,13 @@ struct RecentChangesSection: View {
 
     private func refresh() {
         refreshTask?.cancel()
-        repoRoot = model.sidebar.rootURL.flatMap(GitClient.discoverRoot(from:))
+        // Discover repo root from whichever signal we have. Sidebar
+        // root takes precedence (matches the user's "current folder"
+        // intent); fall back to the open file's directory so a
+        // file-only open inside a repo still lights up.
+        let probe = model.sidebar.rootURL
+            ?? model.currentURL?.deletingLastPathComponent()
+        repoRoot = probe.flatMap(GitClient.discoverRoot(from:))
         guard let root = repoRoot else {
             entries = []
             return

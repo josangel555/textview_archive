@@ -5,7 +5,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>MarkdownViewer</string>
+    <string>TextView</string>
     <key>CFBundleExecutable</key>
     <string>MarkdownViewer</string>
     <key>CFBundleIdentifier</key>
@@ -13,7 +13,7 @@
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>MarkdownViewer</string>
+    <string>TextView</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleIconName</key>
@@ -33,21 +33,21 @@
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>NSHumanReadableCopyright</key>
-    <string>© 2026 MarkdownViewer</string>
+    <string>© 2026 TextView</string>
     <!-- TCC usage descriptions. macOS prompts the user the first time the
          app reads from any of these protected locations; with a usage
          description, the system remembers the answer (instead of asking
          every time) and shows the description in the prompt. -->
     <key>NSDocumentsFolderUsageDescription</key>
-    <string>MarkdownViewer reads files from your Documents folder to display them.</string>
+    <string>TextView reads files from your Documents folder to display them.</string>
     <key>NSDesktopFolderUsageDescription</key>
-    <string>MarkdownViewer reads files from your Desktop to display them.</string>
+    <string>TextView reads files from your Desktop to display them.</string>
     <key>NSDownloadsFolderUsageDescription</key>
-    <string>MarkdownViewer reads files from your Downloads folder to display them.</string>
+    <string>TextView reads files from your Downloads folder to display them.</string>
     <key>NSRemovableVolumesUsageDescription</key>
-    <string>MarkdownViewer reads files on removable volumes to display them.</string>
+    <string>TextView reads files on removable volumes to display them.</string>
     <key>NSNetworkVolumesUsageDescription</key>
-    <string>MarkdownViewer reads files on network volumes to display them.</string>
+    <string>TextView reads files on network volumes to display them.</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>

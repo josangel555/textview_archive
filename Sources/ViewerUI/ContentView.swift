@@ -178,6 +178,7 @@ public struct ContentView: View {
                             prevNonce: model.sourceFindPrevRequest
                         ),
                         wordWrap: model.sourceWordWrap,
+                        showInvisibles: model.showInvisibleChars,
                         onFindSummary: { summary in
                             model.sourceFindMatchSummary = summary
                         },
@@ -214,6 +215,21 @@ struct ModeBar: View {
                 .frame(width: CGFloat(80 + 90 * (modes.count - 1)))
             }
             Spacer()
+            // Source-view-only toggles. Both control rendering of the
+            // open NSTextView so they make no sense in rendered / hex /
+            // formatted modes — hide them in those.
+            if showsSourceToggles {
+                Toggle("Wrap", isOn: $model.sourceWordWrap)
+                    .toggleStyle(.checkbox)
+                    .controlSize(.mini)
+                    .help("Soft-wrap long lines at the viewport edge")
+                    .accessibilityIdentifier("mdv.wrapToggle")
+                Toggle("¶", isOn: $model.showInvisibleChars)
+                    .toggleStyle(.checkbox)
+                    .controlSize(.mini)
+                    .help("Show invisible characters (spaces · tabs → returns ¶)")
+                    .accessibilityIdentifier("mdv.invisiblesToggle")
+            }
             if let badge = languageBadgeText {
                 Text(badge)
                     .font(.system(size: 10, weight: .semibold))
@@ -232,6 +248,10 @@ struct ModeBar: View {
             // mode-switch controls).
         }
         .frame(height: 22)
+    }
+
+    private var showsSourceToggles: Bool {
+        model.currentViewMode == .source || model.currentViewMode == .formatted
     }
 
     /// Short label for each view mode. The picker is tight, so we

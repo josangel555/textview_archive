@@ -720,7 +720,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         mainMenu.addItem(appMenuItem)
         let appMenu = NSMenu()
         appMenu.addItem(NSMenuItem(
-            title: "About MarkdownViewer",
+            title: "About TextView",
             action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
             keyEquivalent: ""
         ))
@@ -738,7 +738,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         appMenu.addItem(settingsItem)
         appMenu.addItem(.separator())
         appMenu.addItem(NSMenuItem(
-            title: "Hide MarkdownViewer",
+            title: "Hide TextView",
             action: #selector(NSApplication.hide(_:)),
             keyEquivalent: "h"
         ))
@@ -756,7 +756,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         ))
         appMenu.addItem(.separator())
         appMenu.addItem(NSMenuItem(
-            title: "Quit MarkdownViewer",
+            title: "Quit TextView",
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q"
         ))
@@ -970,7 +970,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let helpMenuItem = NSMenuItem()
         let helpMenu = NSMenu(title: "Help")
         let helpItem = NSMenuItem(
-            title: "MarkdownViewer Help",
+            title: "TextView Help",
             action: #selector(NSApplication.showHelp(_:)),
             keyEquivalent: "?"
         )

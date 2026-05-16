@@ -213,6 +213,7 @@ private struct FileRowView: View {
                         url: node.url,
                         isDirectory: node.isDirectory,
                         isExpanded: sidebar.isExpanded(node.url),
+                        isGitRoot: node.isDirectory && sidebar.gitRepoRoot == node.url,
                         size: .tree
                     )
                     .frame(width: 16, height: 16)
@@ -224,6 +225,12 @@ private struct FileRowView: View {
                         .font(.system(size: 12, weight: isCurrent ? .semibold : .regular))
                         .lineLimit(1)
                         .truncationMode(.middle)
+                    if model.bookmarksStore.contains(node.url) {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 8))
+                            .foregroundStyle(.yellow)
+                            .help("Bookmarked")
+                    }
                     Spacer(minLength: 0)
                     if let status = sidebar.gitStatus(for: node.url) {
                         GitStatusBadge(status: status)

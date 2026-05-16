@@ -12,6 +12,7 @@ struct TabBar: View {
                         TabBarItem(
                             tab: tab,
                             isSelected: model.tabs.selectedIndex == index,
+                            isBookmarked: tab.url.map { model.bookmarksStore.contains($0) } ?? false,
                             onSelect: { model.selectTab(at: index) },
                             onClose: { model.closeTab(at: index) }
                         )
@@ -89,6 +90,7 @@ private struct TabContextMenu: View {
 struct TabBarItem: View {
     let tab: ViewerCore.Tab
     let isSelected: Bool
+    let isBookmarked: Bool
     let onSelect: () -> Void
     let onClose: () -> Void
 
@@ -100,6 +102,10 @@ struct TabBarItem: View {
                 Rectangle()
                     .fill(background)
                 HStack(spacing: 6) {
+                    if let url = tab.url {
+                        FileIconView(url: url, isDirectory: false, size: .tree)
+                            .frame(width: 14, height: 14)
+                    }
                     Text(tab.title)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -108,6 +114,12 @@ struct TabBarItem: View {
                         .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
                         .foregroundStyle(isSelected ? Color.primary : Color.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    if isBookmarked {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 8))
+                            .foregroundStyle(.yellow)
+                            .help("Bookmarked")
+                    }
                     Button(action: onClose) {
                         Image(systemName: "xmark")
                             .font(.system(size: 9, weight: .bold))

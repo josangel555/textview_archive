@@ -32,6 +32,13 @@ public final class DocumentModel: ObservableObject {
     }
     public func toggleSourceWordWrap() { sourceWordWrap.toggle() }
 
+    /// When on, NSLayoutManager renders dots for spaces, arrows for
+    /// tabs, pilcrows for paragraph breaks. Persisted.
+    @Published public var showInvisibleChars: Bool {
+        didSet { preferences.showInvisibleChars = showInvisibleChars }
+    }
+    public func toggleShowInvisibleChars() { showInvisibleChars.toggle() }
+
     /// Latest scroll state from the source view, published by
     /// `TextDisplayView.onScrollChange`. Drives the SwiftUI gutter
     /// rendering (`SourceGutterView`). Seeded with empty values so
@@ -70,6 +77,7 @@ public final class DocumentModel: ObservableObject {
         self.sidebarWidth = preferences.sidebarWidth
         self.zoom = preferences.zoom
         self.sourceWordWrap = preferences.sourceWordWrap
+        self.showInvisibleChars = preferences.showInvisibleChars
         // Seed sidebar visibility from prefs. We DON'T force visible if
         // no folder is open — sidebar without a root is empty by design.
         self.sidebar.isVisible = preferences.sidebarVisible
@@ -613,6 +621,17 @@ public final class DocumentModel: ObservableObject {
         } else {
             tabs.openOrReveal(url: resolved, state: state, viewMode: currentViewMode)
         }
+        // Carry HEX mode across file switch: if the active tab now
+        // shows a different file in HEX, but the underlying state is
+        // text or preview, kick the binary load so the picker doesn't
+        // lie about what's on screen.
+        if let t = tabs.selected, t.viewMode == .hex {
+            switch t.state {
+            case .binary, .empty: break
+            case .loaded, .preview, .error:
+                loadBinaryAsync(url: resolved, intoTabID: t.id)
+            }
+        }
         updateDerived()
         // Both text and binary opens count as a successful "user saw this
         // file"; record either as a recent. Errors don't.
@@ -777,8 +796,17 @@ public final class DocumentModel: ObservableObject {
         //     HEX (also async).
         switch mode {
         case .hex:
-            if let url = t.url, case .loaded = t.state {
-                loadBinaryAsync(url: url, intoTabID: t.id)
+            // HEX is available for any file with bytes — text, image,
+            // PDF, midi, anything. Trigger the binary load whenever
+            // current state isn't already binary; loadBinaryAsync is
+            // a no-op for an already-binary tab and re-reads cheaply
+            // otherwise.
+            if let url = t.url {
+                switch t.state {
+                case .binary, .empty: break
+                case .loaded, .preview, .error:
+                    loadBinaryAsync(url: url, intoTabID: t.id)
+                }
             }
         case .formatted:
             if let url = t.url, Formatter.SupportedFormat.detect(url) != nil {
