@@ -174,6 +174,14 @@ public final class SourceTextController: NSViewController {
     private var cachedFontSize: CGFloat = 13
     private var cachedLineCount: Int = 1
     private var lastPublishedScrollState: SourceScrollState?
+    /// Dedupe for the find-summary + selection callbacks. Without
+    /// these, every apply() call re-fires the callback even when the
+    /// value is unchanged. The model side then republishes via
+    /// @Published (which is value-blind) → SwiftUI re-renders →
+    /// apply() called again → infinite publish loop. The symptom
+    /// before this guard: ~5 MB/sec RSS growth in source mode at idle.
+    private var lastFindSummary: String?
+    private var lastPublishedSelection: SourceSelection?
 
     private struct AttrKey: Equatable {
         let text: String
@@ -310,9 +318,8 @@ public final class SourceTextController: NSViewController {
     }
 
     /// Compute (line, column) from the textView's selectedRange and
-    /// publish via the caller's callback. Cheap: O(selection start)
-    /// linear scan; we don't memoize because typing keeps moving the
-    /// cursor by 1 char so amortized cost is small.
+    /// publish via the caller's callback IF it changed. The dedupe
+    /// is what stops the apply→publish→re-render→apply→… loop.
     private func publishSelection() {
         guard let cb = onSelectionChange else { return }
         let sel = textView.selectedRange()
@@ -326,11 +333,14 @@ public final class SourceTextController: NSViewController {
                 lineStart = i + 1
             }
         }
-        cb(SourceSelection(
+        let new = SourceSelection(
             line: line,
             column: loc - lineStart + 1,
             length: sel.length
-        ))
+        )
+        if new == lastPublishedSelection { return }
+        lastPublishedSelection = new
+        cb(new)
     }
 
     /// Match NSTextView's effective line height for the default
@@ -475,7 +485,11 @@ public final class SourceTextController: NSViewController {
         guard !query.isEmpty, textStorage.length > 0 else {
             findMatches = []
             currentMatchIndex = nil
-            onFindSummary.map { cb in DispatchQueue.main.async { cb("") } }
+            // Dedupe: only publish "" if we hadn't already.
+            if let cb = onFindSummary, lastFindSummary != "" {
+                lastFindSummary = ""
+                DispatchQueue.main.async { cb("") }
+            }
             return
         }
 
@@ -521,7 +535,10 @@ public final class SourceTextController: NSViewController {
             let summary = TextDisplayView.summarize(
                 matchCount: findMatches.count, current: currentMatchIndex
             )
-            DispatchQueue.main.async { cb(summary) }
+            if summary != lastFindSummary {
+                lastFindSummary = summary
+                DispatchQueue.main.async { cb(summary) }
+            }
         }
     }
 
