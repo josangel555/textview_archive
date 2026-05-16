@@ -13,10 +13,13 @@ is rough priority — most-asked-for first.
 - **Rendered-MD find: highlights persist after dismiss.** Closing the
   find bar doesn't clear the `<mark>` overlay in the WKWebView.
   → `Sources/ViewerUI/MarkdownRenderedView.swift` + injected JS.
-- **Invisible characters appear too grey.** Toggle works but the
-  rendering is so faint many users can't see it.
-  → `Sources/ViewerCore/Highlight/SyntaxTheme.swift` (no theme hook
-  for invisibles color) + NSLayoutManager default.
+- **Invisible characters appear too grey.** NSLayoutManager renders
+  invisibles in `tertiaryLabelColor` (very faint). No public API to
+  override. Fix needs an `NSLayoutManager` subclass that overrides
+  `drawGlyphs(forGlyphRange:at:)` to substitute our own color +
+  glyphs. Deferred because NSLayoutManager subclassing has
+  historically triggered the SwiftUI compositor bug (LESSONS.md).
+  → `Sources/ViewerUI/TextDisplayView.swift` SourceTextController.
 
 ## Sidebar / folder UX
 

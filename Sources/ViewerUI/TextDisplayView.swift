@@ -184,6 +184,11 @@ public final class SourceTextController: NSViewController {
     private var currentMatchIndex: Int?
     private var lastNextNonce: Int = 0
     private var lastPrevNonce: Int = 0
+    /// Tracks which `currentMatchIndex` we last scrolled to. Stops the
+    /// recurring `scrollRangeToVisible` from yanking the viewport back
+    /// to the current match on every redraw — that was breaking the
+    /// "scroll past the highlight to see context" workflow.
+    private var lastScrolledMatchIndex: Int?
     /// Subscribes to the clipView's bounds change (i.e. scroll events).
     /// Fired AFTER NSScrollView.tile() so reading from layoutManager
     /// here is safe — different from the broken NSRulerView path.
@@ -630,8 +635,18 @@ public final class SourceTextController: NSViewController {
                 .backgroundColor, value: color, forCharacterRange: r
             )
         }
-        if let idx = currentMatchIndex, idx < findMatches.count {
+        // Only auto-scroll when the active match actually changed
+        // (new query, next/prev hit). Without this guard, every
+        // `apply()` re-applied the highlight AND yanked the viewport
+        // back to the match — so the user couldn't scroll past the
+        // current hit to see surrounding context.
+        if let idx = currentMatchIndex, idx < findMatches.count,
+           idx != lastScrolledMatchIndex {
+            lastScrolledMatchIndex = idx
             textView.scrollRangeToVisible(findMatches[idx])
+        }
+        if findMatches.isEmpty || currentMatchIndex == nil {
+            lastScrolledMatchIndex = nil
         }
         if let cb = onFindSummary {
             let summary = TextDisplayView.summarize(

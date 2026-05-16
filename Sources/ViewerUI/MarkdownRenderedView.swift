@@ -88,6 +88,14 @@ public struct MarkdownRenderedView: NSViewRepresentable {
             c.lastQuery = findQuery
             c.lastCaseSensitive = findCaseSensitive
             if findQuery.isEmpty {
+                // Dismissing the find bar (query becomes empty) must
+                // also clear any lingering <mark> elements left over
+                // from the previous search; otherwise highlights
+                // persist after Esc.
+                webView.evaluateJavaScript(
+                    "window.__mdvFindClear && window.__mdvFindClear();",
+                    completionHandler: nil
+                )
                 onFindResult?(nil)
             } else {
                 c.runFind(in: webView, backwards: false)

@@ -251,6 +251,15 @@ public final class DocumentModel: ObservableObject {
         invalidateBookmarkedLinesCache()
     }
 
+    /// Reload the `bookmarks` array from the store. Call this after a
+    /// mutation that went directly through `bookmarksStore` (e.g. the
+    /// sidebar context-menu's `toggle(url:)`) — those bypass the
+    /// public DocumentModel API and won't otherwise propagate.
+    public func refreshBookmarks() {
+        bookmarks = bookmarksStore.all()
+        invalidateBookmarkedLinesCache()
+    }
+
     // MARK: - Line bookmarks
 
     /// Bookmark (or unbookmark) the line the caret is currently on

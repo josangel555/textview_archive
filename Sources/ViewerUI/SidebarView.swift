@@ -133,6 +133,31 @@ private struct FileRowContextMenu: View {
             Button(sidebar.isExpanded(node.url) ? "Collapse" : "Expand") {
                 sidebar.toggleExpansion(node.url)
             }
+            Button("Open Folder") { model.openFolder(node.url) }
+            Divider()
+            // Bookmark / unbookmark — works on folders too. Cmd+D in
+            // the global menu only bookmarks the current TAB; folder
+            // bookmarks need an explicit context-menu entry.
+            Button(model.bookmarksStore.contains(node.url)
+                   ? "Remove Bookmark" : "Bookmark Folder") {
+                _ = model.bookmarksStore.toggle(
+                    url: node.url,
+                    displayName: node.url.lastPathComponent
+                )
+                model.refreshBookmarks()
+            }
+            // Override the auto-discovered git root. Useful for nested
+            // worktrees or submodules where the user wants TextView
+            // to treat a subfolder as the repo root.
+            Button(sidebar.gitRootOverride == node.url
+                   ? "Clear Git Root Override" : "Set as Git Root") {
+                if sidebar.gitRootOverride == node.url {
+                    sidebar.gitRootOverride = nil
+                } else {
+                    sidebar.gitRootOverride = node.url
+                }
+                sidebar.refreshGitStatus()
+            }
             Divider()
         }
         Button("Copy Path") { Pasteboard.copy(node.url.path) }

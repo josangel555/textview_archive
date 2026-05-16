@@ -38,11 +38,11 @@ struct ClaudeTimelineSection: View {
                     .font(.system(size: 9, weight: .semibold))
                     .frame(width: 10)
                 Text("CLAUDE")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: model.uiSize(10), weight: .semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
                 Text("\(events.count)")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: model.uiSize(10), weight: .medium))
                     .foregroundStyle(.tertiary)
                 Button(action: { refresh() }) {
                     Image(systemName: "arrow.clockwise")
@@ -67,7 +67,7 @@ struct ClaudeTimelineSection: View {
                 }
                 if events.isEmpty {
                     Text("No events parsed")
-                        .font(.system(size: 11))
+                        .font(.system(size: model.uiSize(11)))
                         .foregroundStyle(.secondary)
                         .padding(10)
                 }
@@ -83,7 +83,7 @@ struct ClaudeTimelineSection: View {
                 .foregroundStyle(kindColor(event.kind))
                 .frame(width: 28, alignment: .center)
             Text(event.summary)
-                .font(.system(size: 11, design: .monospaced))
+                .font(.system(size: model.uiSize(11), design: .monospaced))
                 .lineLimit(2)
                 .truncationMode(.tail)
                 .foregroundStyle(.primary)

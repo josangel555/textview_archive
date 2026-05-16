@@ -246,7 +246,7 @@ struct ModeBar: View {
             }
             if let badge = languageBadgeText {
                 Text(badge)
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: model.uiSize(10), weight: .semibold))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
                     .background(

@@ -43,14 +43,14 @@ struct SearchAnywhereSection: View {
                     .font(.system(size: 9, weight: .semibold))
                     .frame(width: 10)
                 Text("SEARCH")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: model.uiSize(10), weight: .semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
                 if isRunning {
                     ProgressView().controlSize(.mini)
                 } else if !results.isEmpty {
                     Text("\(totalMatchCount)")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: model.uiSize(10), weight: .medium))
                         .foregroundStyle(.tertiary)
                 }
             }
@@ -64,17 +64,17 @@ struct SearchAnywhereSection: View {
     private var searchField: some View {
         HStack(spacing: 4) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 11))
+                .font(.system(size: model.uiSize(11)))
                 .foregroundStyle(.secondary)
             TextField("Search files…", text: $query)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12))
+                .font(.system(size: model.uiSize(12)))
                 .onChange(of: query) { _, new in runSearch(new) }
                 .onChange(of: caseSensitive) { _, _ in runSearch(query) }
             if !query.isEmpty {
                 Button(action: { query = "" }) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 11))
+                        .font(.system(size: model.uiSize(11)))
                         .foregroundStyle(.secondary)
                 }.buttonStyle(.plain)
             }
@@ -105,7 +105,7 @@ struct SearchAnywhereSection: View {
     @ViewBuilder
     private func fileGroup(_ file: CrossFileSearch.FileMatches) -> some View {
         Text(file.url.lastPathComponent)
-            .font(.system(size: 11, weight: .semibold))
+            .font(.system(size: model.uiSize(11), weight: .semibold))
             .foregroundStyle(.primary)
             .lineLimit(1)
             .truncationMode(.middle)
@@ -117,11 +117,11 @@ struct SearchAnywhereSection: View {
             Button(action: { open(file.url) }) {
                 HStack(alignment: .top, spacing: 6) {
                     Text("\(m.lineNumber)")
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(.system(size: model.uiSize(10), design: .monospaced))
                         .foregroundStyle(.tertiary)
                         .frame(width: 32, alignment: .trailing)
                     Text(m.line.trimmingCharacters(in: .whitespaces))
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.system(size: model.uiSize(11), design: .monospaced))
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .foregroundStyle(.secondary)

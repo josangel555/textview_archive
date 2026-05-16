@@ -19,6 +19,12 @@ public final class SidebarModel: ObservableObject {
     @Published public private(set) var gitStatuses: [URL: GitStatusEntry.Status] = [:]
     @Published public private(set) var gitRepoRoot: URL?
 
+    /// User-set git-root override. When set, `refreshGitStatus()`
+    /// uses this folder as the repo root instead of auto-discovering
+    /// via `.git/` walk. Useful for nested worktrees, monorepo
+    /// subdirs, or submodules.
+    @Published public var gitRootOverride: URL? = nil
+
     /// Keyboard-driven row selection (CRIT-6). Distinct from the currently-
     /// open file (`DocumentModel.currentURL`): you can navigate the sidebar
     /// with arrow keys without opening every file you scroll past.
@@ -172,7 +178,13 @@ public final class SidebarModel: ObservableObject {
             gitRepoRoot = nil
             return
         }
-        guard let repoRoot = git.repoRoot(for: root) else {
+        // User override wins over auto-discovery.
+        let repoRoot: URL
+        if let override = gitRootOverride {
+            repoRoot = override
+        } else if let discovered = git.repoRoot(for: root) {
+            repoRoot = discovered
+        } else {
             gitStatuses = [:]
             gitRepoRoot = nil
             return

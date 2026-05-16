@@ -130,6 +130,10 @@ if [[ -x "$LSREGISTER" ]]; then
   "$LSREGISTER" -f "$APP_DIR" >/dev/null 2>&1 || true
 fi
 
+# Final size guardrail. Fails the build when the bundle goes past
+# the budget — keeps us honest about TreeSitter / icon bloat.
+bash "$SCRIPT_DIR/check-bundle-size.sh" 25
+
 echo "==> Built $APP_DIR"
 echo
 echo "Open a file with it (any of these work):"
