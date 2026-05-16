@@ -169,10 +169,24 @@ private struct PaletteRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                Image(systemName: iconName)
-                    .foregroundStyle(isSelected ? .white
-                                     : (isBookmark ? Color.yellow : .secondary))
-                    .frame(width: 16)
+                Group {
+                    if isBookmark {
+                        Image(systemName: "star.fill")
+                            .foregroundStyle(isSelected ? .white : Color.yellow)
+                            .frame(width: 16)
+                    } else {
+                        // Bookmarks aside, use the two-system file icon
+                        // (chips + glyphs) for visual parity with the
+                        // sidebar and tabs.
+                        FileIconView(
+                            url: entry.url,
+                            isDirectory: entry.kind == .folder,
+                            isExpanded: entry.kind == .folder,
+                            size: .tree
+                        )
+                        .frame(width: 16, height: 16)
+                    }
+                }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(attributedName)
                         .font(.system(size: 13))
