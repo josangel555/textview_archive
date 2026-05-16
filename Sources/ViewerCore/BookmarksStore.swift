@@ -140,7 +140,7 @@ public final class BookmarksStore {
     }
 }
 
-public struct BookmarkEntry: Codable, Equatable, Sendable, Identifiable {
+public struct BookmarkEntry: Codable, Equatable, Hashable, Sendable, Identifiable {
     /// Identity composes URL with optional line, so the same file can
     /// have both a file-level bookmark and one or more line bookmarks
     /// without colliding.

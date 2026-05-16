@@ -229,25 +229,26 @@ public final class DocumentModel: ObservableObject {
             ? url.path
             : url.lastPathComponent
         _ = bookmarksStore.toggle(url: url, displayName: name)
-        bookmarks = bookmarksStore.all()
+        bookmarks = bookmarksStore.all(); invalidateBookmarkedLinesCache()
     }
 
     /// Remove a bookmark by URL.
     public func removeBookmark(_ url: URL) {
         bookmarksStore.remove(url: url)
-        bookmarks = bookmarksStore.all()
+        bookmarks = bookmarksStore.all(); invalidateBookmarkedLinesCache()
     }
 
     /// Remove a specific bookmark — file-level or line-level.
     public func removeBookmark(url: URL, line: Int?) {
         bookmarksStore.remove(url: url, line: line)
-        bookmarks = bookmarksStore.all()
+        bookmarks = bookmarksStore.all(); invalidateBookmarkedLinesCache()
     }
 
     /// Clear all bookmarks.
     public func clearBookmarks() {
         bookmarksStore.clear()
         bookmarks = []
+        invalidateBookmarkedLinesCache()
     }
 
     // MARK: - Line bookmarks
@@ -261,7 +262,7 @@ public final class DocumentModel: ObservableObject {
         guard line > 0 else { return }
         let display = "\(url.lastPathComponent):\(line)"
         _ = bookmarksStore.toggle(url: url, displayName: display, line: line)
-        bookmarks = bookmarksStore.all()
+        bookmarks = bookmarksStore.all(); invalidateBookmarkedLinesCache()
     }
 
     /// Open `entry` and — if it's a line bookmark — scroll to the
@@ -273,13 +274,30 @@ public final class DocumentModel: ObservableObject {
         }
     }
 
+    /// Memoization for `bookmarkedLines(for:)` — the gutter calls it
+    /// on every Canvas redraw, so a fresh O(N) scan over the bookmark
+    /// array per scroll publish piles up. We cache one URL → Set and
+    /// invalidate whenever the bookmarks array mutates.
+    private var bookmarkedLinesCache: (url: URL, lines: Set<Int>)?
+
     /// 1-based line numbers currently bookmarked for `url`. Used by
     /// the source-view gutter to draw markers.
     public func bookmarkedLines(for url: URL) -> Set<Int> {
         let n = url.standardizedFileURL.resolvingSymlinksInPath()
-        return Set(bookmarks.compactMap { entry in
+        if let cache = bookmarkedLinesCache, cache.url == n {
+            return cache.lines
+        }
+        let lines = Set(bookmarks.compactMap { entry in
             entry.url == n ? entry.line : nil
         })
+        bookmarkedLinesCache = (n, lines)
+        return lines
+    }
+
+    /// Invalidate `bookmarkedLinesCache`. Called from anywhere that
+    /// mutates `bookmarks`.
+    private func invalidateBookmarkedLinesCache() {
+        bookmarkedLinesCache = nil
     }
 
     // MARK: - Git diff marks for source-view gutter
@@ -288,13 +306,23 @@ public final class DocumentModel: ObservableObject {
     /// file open / file save / reload via `refreshDiffMarks()`.
     @Published public private(set) var sourceDiffMarks: [Int: DiffMark] = [:]
 
+    /// In-flight `git diff` task. Held so we can cancel before
+    /// launching a new one when the focused file changes — otherwise
+    /// rapid tab switches stack git processes.
+    private var diffMarksTask: Task<Void, Never>?
+
     /// Recompute `sourceDiffMarks` by shelling out to `git diff` for
     /// the current file. Off-main; main-actor publish at the end.
+    /// Cancels any prior in-flight task before launching the new one
+    /// so a flurry of `updateDerived()` calls (e.g. opening 50 files
+    /// via "Open Recent") doesn't pile up 50 git processes.
     public func refreshDiffMarks() {
+        diffMarksTask?.cancel()
         guard let url = currentURL,
               let repoRoot = GitClient.discoverRoot(from: url)
         else {
             if !sourceDiffMarks.isEmpty { sourceDiffMarks = [:] }
+            diffMarksTask = nil
             return
         }
         let relPath: String = {
@@ -306,9 +334,14 @@ public final class DocumentModel: ObservableObject {
             return filePath
         }()
         let token = url
-        Task.detached(priority: .userInitiated) { [weak self] in
+        diffMarksTask = Task.detached(priority: .userInitiated) { [weak self] in
+            // 150 ms debounce: if the user is rapidly switching tabs,
+            // we'll get cancelled before the git invocation even starts.
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            if Task.isCancelled { return }
             let client = GitClient(repoRoot: repoRoot)
             let diff = client.diff(forPath: relPath)
+            if Task.isCancelled { return }
             let marks = DiffHunkParser.parse(diff)
             await MainActor.run { [weak self] in
                 guard let self, self.currentURL == token else { return }

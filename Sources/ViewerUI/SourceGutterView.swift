@@ -135,6 +135,25 @@ struct SourceGutterView: View {
         }
         .frame(width: width)
         .accessibilityIdentifier("mdv.sourceGutter")
+        .accessibilityLabel(gutterAccessibilityLabel)
+    }
+
+    /// VoiceOver-readable summary of what the gutter is showing.
+    /// Canvas drawing doesn't surface per-element a11y, so we roll
+    /// it up. The line number column is decorative (caret/Ln from
+    /// the status bar is the canonical signal).
+    private var gutterAccessibilityLabel: String {
+        var parts: [String] = ["Line numbers"]
+        if !diffMarks.isEmpty {
+            let added    = diffMarks.values.filter { $0 == .added    }.count
+            let modified = diffMarks.values.filter { $0 == .modified }.count
+            let deleted  = diffMarks.values.filter { $0 == .deleted  }.count
+            parts.append("git changes: \(added) added, \(modified) modified, \(deleted) deleted")
+        }
+        if !bookmarkedLines.isEmpty {
+            parts.append("\(bookmarkedLines.count) bookmarked lines")
+        }
+        return parts.joined(separator: "; ")
     }
 }
 

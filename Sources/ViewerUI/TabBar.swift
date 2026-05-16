@@ -121,6 +121,7 @@ struct TabBarItem: View {
                             .font(.system(size: 8 * scale))
                             .foregroundStyle(.yellow)
                             .help("Bookmarked")
+                            .accessibilityLabel("Bookmarked")
                     }
                     Button(action: onClose) {
                         Image(systemName: "xmark")

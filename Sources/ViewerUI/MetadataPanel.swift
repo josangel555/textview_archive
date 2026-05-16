@@ -13,6 +13,7 @@ struct MetadataPanel: View {
     let category: FileCategory
 
     @State private var rows: [Row] = []
+    @State private var loadTask: Task<Void, Never>?
 
     var body: some View {
         ScrollView {
@@ -34,7 +35,16 @@ struct MetadataPanel: View {
         .overlay(alignment: .leading) {
             Rectangle().fill(Color(nsColor: .separatorColor)).frame(width: 0.5)
         }
-        .task(id: url) { await loadTypeMetadata() }
+        .task(id: url) {
+            // `.task(id:)` already cancels the previous task on URL
+            // change — but the *detached* tasks we kick off inside
+            // `loadTypeMetadata` are NOT bound to this cooperative
+            // scope. Track + cancel them explicitly so rapid tab
+            // flips don't pile up AVAsset / ImageIO work.
+            loadTask?.cancel()
+            loadTask = Task { await loadTypeMetadata() }
+            await loadTask?.value
+        }
     }
 
     // MARK: - Filesystem rows (always present)

@@ -664,6 +664,36 @@ public final class SourceTextController: NSViewController {
         return attr
     }
 
+    /// Single-slot LRU cache for the most recently compiled regex.
+    /// The find bar fires `findRanges` per keystroke; recompiling
+    /// `NSRegularExpression` on every key is wasteful and shows up
+    /// as latency on long patterns. One slot is enough — find
+    /// queries are sticky.
+    private static let regexCacheLock = NSLock()
+    private static var lastRegexKey: String?
+    private static var lastRegex: NSRegularExpression?
+
+    internal static func cachedRegex(pattern: String,
+                                    caseSensitive: Bool) -> NSRegularExpression? {
+        var opts: NSRegularExpression.Options = [.anchorsMatchLines]
+        if !caseSensitive { opts.insert(.caseInsensitive) }
+        let key = "\(caseSensitive ? "S" : "i"):\(pattern)"
+        regexCacheLock.lock()
+        defer { regexCacheLock.unlock() }
+        if lastRegexKey == key, let re = lastRegex { return re }
+        guard let re = try? NSRegularExpression(pattern: pattern, options: opts)
+        else {
+            // Stash the failing key so we don't recompile on every
+            // keystroke once we know it's invalid.
+            lastRegexKey = key
+            lastRegex = nil
+            return nil
+        }
+        lastRegexKey = key
+        lastRegex = re
+        return re
+    }
+
     /// Pure substring/regex search over `haystack`. Exposed internal so
     /// `@testable import ViewerUI` can exercise edge cases directly
     /// without spinning up an NSTextView.
@@ -674,9 +704,7 @@ public final class SourceTextController: NSViewController {
             // Bad regex (unbalanced parens etc.) silently yields zero
             // matches — let the find bar show the "no matches" state
             // instead of crashing.
-            var opts: NSRegularExpression.Options = [.anchorsMatchLines]
-            if !caseSensitive { opts.insert(.caseInsensitive) }
-            guard let re = try? NSRegularExpression(pattern: query, options: opts)
+            guard let re = cachedRegex(pattern: query, caseSensitive: caseSensitive)
             else { return [] }
             let full = NSRange(location: 0, length: (haystack as NSString).length)
             return re.matches(in: haystack, options: [], range: full).map(\.range)

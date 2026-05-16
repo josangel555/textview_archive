@@ -1121,7 +1121,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             error.pointee = "No files in selection." as NSString
             return
         }
-        for url in urls {
+        // Filter to file URLs only — `NSURL` accepts http(s) etc. and we
+        // don't want a service-router pivot to web content.
+        let fileURLs = urls.filter { $0.isFileURL }
+        for url in fileURLs {
             var isDir: ObjCBool = false
             if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) {
                 if isDir.boolValue {
@@ -1131,7 +1134,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 }
             }
         }
-        showWindow(window!)
+        // Window may not exist if the service fires before
+        // applicationDidFinishLaunching settles — defer in that case
+        // rather than crash. macOS will deliver the focus once the
+        // window appears via the normal foreground activation path.
+        if let w = window {
+            showWindow(w)
+        }
     }
 }
 

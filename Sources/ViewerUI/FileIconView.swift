@@ -34,13 +34,36 @@ public struct FileIconView: View {
     }
 
     public var body: some View {
+        Group {
+            switch kind {
+            case let .chip(text, category):
+                chipBody(text: text, category: category)
+            case let .glyph(symbol, category):
+                glyphBody(symbol: symbol, category: category)
+            case let .folder(state):
+                folderBody(state: state)
+            }
+        }
+        .accessibilityLabel(accessibilityLabelText)
+    }
+
+    /// VoiceOver pronounces the icon as the type it represents rather
+    /// than "image" / nothing. Tabs and sidebar rows wrap this view
+    /// with their own composite labels; this provides the fallback
+    /// when the icon stands alone.
+    private var accessibilityLabelText: String {
         switch kind {
-        case let .chip(text, category):
-            chipBody(text: text, category: category)
-        case let .glyph(symbol, category):
-            glyphBody(symbol: symbol, category: category)
-        case let .folder(state):
-            folderBody(state: state)
+        case .chip(let text, let cat):    return "\(text) \(cat.rawValue) file"
+        case .glyph(_, let cat):          return "\(cat.rawValue) file"
+        case .folder(let state):
+            switch state {
+            case .collapsed: return "Folder"
+            case .open:      return "Open folder"
+            case .root:      return "Repository root folder"
+            case .hidden:    return "Hidden folder"
+            case .locked:    return "Read-only folder"
+            case .symlink:   return "Symlinked folder"
+            }
         }
     }
 

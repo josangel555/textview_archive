@@ -133,21 +133,39 @@ struct RecentChangesSection: View {
     /// Write the unified diff for `entry.path` to a tmp file and open
     /// it as a tab. Lives under ~/Library/Caches so the cleaner reaps
     /// it; safe to overwrite per session.
+    ///
+    /// Filename: `<basename>-<hex-hash>.diff`. The hash defeats the
+    /// `a/b` ↔ `a_b` collision the old `replacingOccurrences("/", "_")`
+    /// approach allowed; the basename keeps the tab title legible.
     private func showDiff(_ entry: GitClient.StatusEntry) {
         guard let root = repoRoot else { return }
         let client = GitClient(repoRoot: root)
         let diff = client.diff(forPath: entry.path)
-        guard !diff.isEmpty else { return }
         let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
         let dir = cache.appendingPathComponent("MarkdownViewer/diffs", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        // Use a name that conveys the source path; macOS treats this
-        // file as user-visible content so .diff extension is enough
-        // for our plaintext fallback to take over.
-        let safeName = entry.path.replacingOccurrences(of: "/", with: "_")
-        let out = dir.appendingPathComponent("\(safeName).diff")
-        try? diff.write(to: out, atomically: true, encoding: .utf8)
+        // Hash the full repo-relative path so distinct paths can't
+        // collide on the cache filesystem. 8 hex chars is plenty for
+        // an in-cache uniqueness guarantee.
+        var hasher = Hasher()
+        hasher.combine(entry.path)
+        let hashHex = String(UInt(bitPattern: hasher.finalize()), radix: 16)
+            .padding(toLength: 8, withPad: "0", startingAt: 0)
+            .prefix(8)
+        let base = (entry.path as NSString).lastPathComponent
+        let out = dir.appendingPathComponent("\(base)-\(hashHex).diff")
+        // Empty diff → still write the file so the tab opens with a
+        // placeholder; otherwise the user clicks "Show Diff" and
+        // nothing visibly happens.
+        let body: String
+        if diff.isEmpty {
+            body = "(no diff output — file may be unchanged at HEAD or " +
+                   "untracked. Path: \(entry.path))\n"
+        } else {
+            body = diff
+        }
+        try? body.write(to: out, atomically: true, encoding: .utf8)
         model.openInNewTab(out)
     }
 

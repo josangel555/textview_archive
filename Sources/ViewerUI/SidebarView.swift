@@ -230,6 +230,7 @@ private struct FileRowView: View {
                             .font(.system(size: model.uiSize(8)))
                             .foregroundStyle(.yellow)
                             .help("Bookmarked")
+                            .accessibilityLabel("Bookmarked")
                     }
                     Spacer(minLength: 0)
                     if let status = sidebar.gitStatus(for: node.url) {

@@ -6,9 +6,10 @@ public enum DiffMark: Equatable, Sendable {
     case added
     /// Line existed at HEAD but its content was modified.
     case modified
-    /// At least one line was deleted at this position (we mark the
-    /// line *after* the deletion since the deleted line has no row
-    /// in the working tree).
+    /// Marks the working-tree line **after** a deletion. The deleted
+    /// line itself isn't in the working tree (it's gone), so the
+    /// gutter signal lands on its successor with a thin tick so the
+    /// user knows lines were removed just above.
     case deleted
 }
 
@@ -24,9 +25,6 @@ public enum DiffHunkParser {
         var marks: [Int: DiffMark] = [:]
         var lineInNew = 0
         var pendingDeletion = false
-        // Track per-hunk whether a `+` followed a `-` so we can call
-        // it `.modified` rather than separate add/delete pairs.
-        var lastRemovedLine: Int? = nil
 
         for raw in diff.split(separator: "\n", omittingEmptySubsequences: false) {
             let line = String(raw)
@@ -41,7 +39,6 @@ public enum DiffHunkParser {
                     }
                 }
                 pendingDeletion = false
-                lastRemovedLine = nil
                 continue
             }
             // Skip non-hunk metadata.
@@ -63,7 +60,6 @@ public enum DiffHunkParser {
                 // Context line — present in both.
                 lineInNew += 1
                 pendingDeletion = false
-                lastRemovedLine = nil
             case "+":
                 // Added or modified — if a removal immediately preceded
                 // this added line, the result is a modify on the new
@@ -74,16 +70,13 @@ public enum DiffHunkParser {
                 } else {
                     marks[lineInNew] = .added
                 }
-                // Reset for next pair.
                 pendingDeletion = false
-                lastRemovedLine = nil
             case "-":
                 // Removed at this point. Mark the *next* line in the
                 // new file as `.deleted` so the gutter has a place to
                 // surface the change. If the next event is `+` we'll
                 // upgrade to `.modified` above.
                 pendingDeletion = true
-                lastRemovedLine = lineInNew + 1
                 if marks[lineInNew + 1] == nil {
                     marks[lineInNew + 1] = .deleted
                 }
@@ -95,7 +88,6 @@ public enum DiffHunkParser {
                 // crashing.
                 continue
             }
-            _ = lastRemovedLine  // currently unused beyond bookkeeping
         }
         return marks
     }
