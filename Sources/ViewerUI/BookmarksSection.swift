@@ -69,10 +69,13 @@ private struct BookmarkRow: View {
     var body: some View {
         Button(action: { model.openPath(entry.url) }) {
             HStack(spacing: 6) {
-                Image(systemName: isFolder ? "folder.fill" : "doc.text")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 14)
+                FileIconView(
+                    url: entry.url,
+                    isDirectory: isFolder,
+                    isExpanded: isFolder,
+                    size: .tree
+                )
+                .frame(width: 16, height: 16)
                 Text(entry.displayName)
                     .font(.system(size: 12, weight: isCurrent ? .semibold : .regular))
                     .foregroundStyle(.primary)

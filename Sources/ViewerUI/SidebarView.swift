@@ -209,10 +209,13 @@ private struct FileRowView: View {
                     } else {
                         Spacer().frame(width: 12)
                     }
-                    Image(systemName: icon(for: node))
-                        .font(.system(size: 11))
-                        .frame(width: 14)
-                        .foregroundStyle(node.isDirectory ? Color.accentColor : Color.secondary)
+                    FileIconView(
+                        url: node.url,
+                        isDirectory: node.isDirectory,
+                        isExpanded: sidebar.isExpanded(node.url),
+                        size: .tree
+                    )
+                    .frame(width: 16, height: 16)
                     Text(node.name)
                         // Bold the file's name if it's the currently-
                         // visible tab — matches the bold treatment in
@@ -304,18 +307,4 @@ private struct FileRowView: View {
         model.currentURL == node.url
     }
 
-    private func icon(for node: FileNode) -> String {
-        if node.isDirectory {
-            return sidebar.isExpanded(node.url) ? "folder.fill" : "folder"
-        }
-        let ext = node.url.pathExtension.lowercased()
-        switch ext {
-        case "md", "markdown", "mdown", "mkd": return "doc.richtext"
-        case "swift", "py", "js", "ts", "go", "rs", "c", "cpp", "h", "hpp":
-            return "chevron.left.forwardslash.chevron.right"
-        case "html", "htm": return "globe"
-        case "json", "yaml", "yml", "toml", "xml": return "curlybraces"
-        default: return "doc.plaintext"
-        }
-    }
 }
