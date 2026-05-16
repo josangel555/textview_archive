@@ -1,5 +1,11 @@
 # Backlog
 
+> Last overnight session swept the **Bug fixes**, **Sidebar / folder UX**,
+> **Scaling polish**, **Build hygiene**, **CSV → tables**, **Accordion
+> sidebar**, and **Split view (Phase 2.5)** sections. Design docs
+> landed for Mermaid, Walkthroughs, and Automation/MCP (under `docs/`).
+> Remaining unticked items below — re-read pre-implementation.
+
 Roll-up of pending items as of 2026-05-16. Each line links to the
 relevant module / file when applicable. Ordering inside each section
 is rough priority — most-asked-for first.
