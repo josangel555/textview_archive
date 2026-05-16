@@ -39,6 +39,15 @@ public final class DocumentModel: ObservableObject {
     }
     public func toggleShowInvisibleChars() { showInvisibleChars.toggle() }
 
+    /// Chrome font scaling (sidebar / tabs / status bar / mode bar).
+    /// Distinct from `zoom` which only affects document content.
+    /// Defaults to 1.0; range 0.85 – 1.6.
+    @Published public var uiScale: Double {
+        didSet { preferences.uiScale = uiScale }
+    }
+    /// Helper for view code: scale a base font size by uiScale.
+    public func uiSize(_ base: CGFloat) -> CGFloat { base * CGFloat(uiScale) }
+
     /// Latest scroll state from the source view, published by
     /// `TextDisplayView.onScrollChange`. Drives the SwiftUI gutter
     /// rendering (`SourceGutterView`). Seeded with empty values so
@@ -78,6 +87,7 @@ public final class DocumentModel: ObservableObject {
         self.zoom = preferences.zoom
         self.sourceWordWrap = preferences.sourceWordWrap
         self.showInvisibleChars = preferences.showInvisibleChars
+        self.uiScale = preferences.uiScale
         // Seed sidebar visibility from prefs. We DON'T force visible if
         // no folder is open — sidebar without a root is empty by design.
         self.sidebar.isVisible = preferences.sidebarVisible
@@ -343,6 +353,7 @@ public final class DocumentModel: ObservableObject {
     @Published public var isSourceFindBarPresented: Bool = false
     @Published public var sourceFindQuery: String = ""
     @Published public var sourceFindCaseSensitive: Bool = false
+    @Published public var sourceFindIsRegex: Bool = false
     @Published public var sourceFindNextRequest: Int = 0
     @Published public var sourceFindPrevRequest: Int = 0
     @Published public var sourceFindFocusRequest: Int = 0

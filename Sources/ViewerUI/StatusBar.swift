@@ -25,7 +25,7 @@ struct StatusBar: View {
     var body: some View {
         HStack(spacing: 12) {
             Text(model.currentFilePath ?? "—")
-                .font(.caption)
+                .font(.system(size: model.uiSize(11)))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.head)
@@ -66,10 +66,10 @@ struct StatusBar: View {
     private func metric(_ label: String, _ value: String) -> some View {
         HStack(spacing: 3) {
             Text(label)
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: model.uiSize(10), weight: .medium))
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(.system(size: 10, design: .monospaced))
+                .font(.system(size: model.uiSize(10), design: .monospaced))
                 .foregroundStyle(.primary)
         }
         .help("\(label): \(value)")

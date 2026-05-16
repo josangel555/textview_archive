@@ -13,6 +13,7 @@ struct TabBar: View {
                             tab: tab,
                             isSelected: model.tabs.selectedIndex == index,
                             isBookmarked: tab.url.map { model.bookmarksStore.contains($0) } ?? false,
+                            scale: CGFloat(model.uiScale),
                             onSelect: { model.selectTab(at: index) },
                             onClose: { model.closeTab(at: index) }
                         )
@@ -91,6 +92,7 @@ struct TabBarItem: View {
     let tab: ViewerCore.Tab
     let isSelected: Bool
     let isBookmarked: Bool
+    let scale: CGFloat
     let onSelect: () -> Void
     let onClose: () -> Void
 
@@ -111,12 +113,12 @@ struct TabBarItem: View {
                         .truncationMode(.middle)
                         // Bold current tab so the active document is
                         // obvious at a glance.
-                        .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                        .font(.system(size: 12 * scale, weight: isSelected ? .semibold : .regular))
                         .foregroundStyle(isSelected ? Color.primary : Color.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if isBookmarked {
                         Image(systemName: "star.fill")
-                            .font(.system(size: 8))
+                            .font(.system(size: 8 * scale))
                             .foregroundStyle(.yellow)
                             .help("Bookmarked")
                     }

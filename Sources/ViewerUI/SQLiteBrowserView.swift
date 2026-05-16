@@ -210,10 +210,15 @@ private final class SQLiteBrowserModel: ObservableObject {
 private struct ResultTableView: View {
     let result: SQLiteReader.QueryResult
 
+    /// Per-column widths (one entry per column index). Auto-sized at
+    /// first render from header + sample of cell widths; user can drag
+    /// the separator next to a column header to override.
+    @State private var columnWidths: [CGFloat] = []
+    /// Track the result identity so the widths re-compute when a new
+    /// query lands (different column set).
+    @State private var fingerprint: String = ""
+
     var body: some View {
-        // SwiftUI's `Table` API isn't a great fit for dynamic-column
-        // arbitrary-SQL results; we hand-roll a grid. ScrollView in
-        // both axes so wide schemas don't get clipped.
         ScrollView([.horizontal, .vertical]) {
             VStack(alignment: .leading, spacing: 0) {
                 headerRow
@@ -227,22 +232,30 @@ private struct ResultTableView: View {
                         .padding(8)
                 }
             }
+            // Pin content to the top-left of the scroll area. Without
+            // this the table sat centered when its content was narrower
+            // than the viewport, which looked broken.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onAppear(perform: ensureWidths)
+        .onChange(of: result.columns) { _, _ in recomputeWidths() }
     }
+
+    /// Bump font height to a stable line height across header + cells
+    /// (NSAttributedString's intrinsic height fluctuates with content;
+    /// fixing it here keeps every row the same vertical size).
+    private let rowHeight: CGFloat = 22
 
     private var headerRow: some View {
         HStack(spacing: 0) {
-            ForEach(result.columns, id: \.self) { name in
+            ForEach(Array(result.columns.enumerated()), id: \.offset) { (i, name) in
                 Text(name)
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .frame(minWidth: 80, alignment: .leading)
+                    .frame(width: widthFor(i), height: rowHeight, alignment: .topLeading)
                     .background(Color(nsColor: .controlBackgroundColor))
-                    .overlay(alignment: .trailing) {
-                        Rectangle().fill(Color(nsColor: .separatorColor))
-                            .frame(width: 0.5)
-                    }
+                    .overlay(alignment: .trailing) { columnResizer(forIndex: i) }
             }
         }
         .overlay(alignment: .bottom) {
@@ -260,8 +273,7 @@ private struct ResultTableView: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .frame(minWidth: 80, alignment: .leading)
+                    .frame(width: widthFor(i), height: rowHeight, alignment: .topLeading)
                     .overlay(alignment: .trailing) {
                         Rectangle().fill(Color(nsColor: .separatorColor))
                             .frame(width: 0.5)
@@ -270,5 +282,71 @@ private struct ResultTableView: View {
         }
         .background(isAlt ? Color(nsColor: .controlBackgroundColor).opacity(0.3) : Color.clear)
         .textSelection(.enabled)
+    }
+
+    /// Draggable handle on the right edge of each header cell. The
+    /// hit zone is wider than the visible 0.5-pt rule so it's actually
+    /// catchable by the cursor.
+    private func columnResizer(forIndex i: Int) -> some View {
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(width: 0.5)
+            .overlay(
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(width: 6)
+                    .contentShape(Rectangle())
+                    .onHover { hovering in
+                        if hovering { NSCursor.resizeLeftRight.push() }
+                        else { NSCursor.pop() }
+                    }
+                    .gesture(
+                        DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                            .onChanged { value in
+                                let newWidth = max(40, widthFor(i) + value.translation.width)
+                                if columnWidths.indices.contains(i) {
+                                    columnWidths[i] = newWidth
+                                }
+                            }
+                    )
+            )
+    }
+
+    private func widthFor(_ i: Int) -> CGFloat {
+        if columnWidths.indices.contains(i) { return columnWidths[i] }
+        return 120
+    }
+
+    /// Compute widths from a sample of rows. Avoids touching every cell
+    /// of a result with thousands of rows — first 200 is plenty.
+    private func ensureWidths() {
+        let fp = fingerprint(for: result)
+        if fingerprint == fp, columnWidths.count == result.columns.count { return }
+        fingerprint = fp
+        recomputeWidths()
+    }
+
+    private func recomputeWidths() {
+        let widths = result.columns.enumerated().map { (i, name) -> CGFloat in
+            let headerW = approxTextWidth(name, weight: .semibold)
+            let cellW = result.rows.prefix(200).reduce(CGFloat(0)) { acc, row in
+                guard row.indices.contains(i), let cell = row[i] else { return acc }
+                // Cap individual cell widths so a single huge cell
+                // doesn't make the column hundreds of points wide.
+                return max(acc, min(approxTextWidth(cell, weight: .regular), 320))
+            }
+            return max(80, min(headerW + 24, 220), min(cellW + 24, 320))
+        }
+        columnWidths = widths
+    }
+
+    private func fingerprint(for r: SQLiteReader.QueryResult) -> String {
+        r.columns.joined(separator: "|") + "#\(r.rows.count)"
+    }
+
+    /// Cheap monospaced-width estimate. 7 pt per char @ 11 pt mono is
+    /// close enough for column sizing; users can drag to refine.
+    private func approxTextWidth(_ s: String, weight: NSFont.Weight) -> CGFloat {
+        CGFloat(s.count) * 7
     }
 }

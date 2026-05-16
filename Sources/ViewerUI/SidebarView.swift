@@ -81,7 +81,7 @@ struct SidebarView: View {
             if canGoUp {
                 Button(action: goUp) {
                     Image(systemName: "arrow.up")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: model.uiSize(10), weight: .semibold))
                         .frame(width: 18, height: 18)
                 }
                 .buttonStyle(.borderless)
@@ -222,12 +222,12 @@ private struct FileRowView: View {
                         // visible tab — matches the bold treatment in
                         // the tab bar so the "current document" is
                         // obvious in both surfaces.
-                        .font(.system(size: 12, weight: isCurrent ? .semibold : .regular))
+                        .font(.system(size: model.uiSize(12), weight: isCurrent ? .semibold : .regular))
                         .lineLimit(1)
                         .truncationMode(.middle)
                     if model.bookmarksStore.contains(node.url) {
                         Image(systemName: "star.fill")
-                            .font(.system(size: 8))
+                            .font(.system(size: model.uiSize(8)))
                             .foregroundStyle(.yellow)
                             .help("Bookmarked")
                     }

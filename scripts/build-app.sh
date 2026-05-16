@@ -73,10 +73,16 @@ fi
 if [[ "$HAS_LOCAL_IDENTITY" == "1" ]]; then
   echo "==> Signing with '$SIGN_IDENTITY'"
   # Strip extended attributes / Finder metadata — codesign with
-  # `--options runtime` refuses bundles with stray xattrs. Copied
-  # SwiftPM resource bundles ship as read-only, so chmod first.
+  # `--options runtime` refuses bundles with stray xattrs. `xattr -cr`
+  # alone won't drop `com.apple.FinderInfo`, which is protected; copy
+  # via `ditto --noextattr --noacl --norsrc` to produce a clean tree,
+  # then swap. chmod first because SwiftPM resource bundles ship
+  # read-only.
   chmod -R u+w "$APP_DIR"
-  xattr -cr "$APP_DIR"
+  TMP_CLEAN="${APP_DIR}.clean.$$"
+  ditto --norsrc --noextattr --noacl --noqtn "$APP_DIR" "$TMP_CLEAN"
+  rm -rf "$APP_DIR"
+  mv "$TMP_CLEAN" "$APP_DIR"
   codesign --force --deep \
     --sign "$SIGN_IDENTITY" \
     --identifier "com.markdownviewer.MarkdownViewer" \

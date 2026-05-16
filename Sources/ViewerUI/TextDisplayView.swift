@@ -76,14 +76,17 @@ public struct TextDisplayView: NSViewControllerRepresentable {
     public struct FindState: Equatable, Sendable {
         public let query: String
         public let caseSensitive: Bool
+        public let isRegex: Bool
         public let nextNonce: Int
         public let prevNonce: Int
         public static let empty = FindState(
-            query: "", caseSensitive: false, nextNonce: 0, prevNonce: 0
+            query: "", caseSensitive: false, isRegex: false, nextNonce: 0, prevNonce: 0
         )
-        public init(query: String, caseSensitive: Bool, nextNonce: Int, prevNonce: Int) {
+        public init(query: String, caseSensitive: Bool, isRegex: Bool = false,
+                    nextNonce: Int, prevNonce: Int) {
             self.query = query
             self.caseSensitive = caseSensitive
+            self.isRegex = isRegex
             self.nextNonce = nextNonce
             self.prevNonce = prevNonce
         }
@@ -196,6 +199,7 @@ public final class SourceTextController: NSViewController {
     private struct FindKey: Equatable {
         let query: String
         let caseSensitive: Bool
+        let isRegex: Bool
         let textHash: Int
     }
 
@@ -506,11 +510,13 @@ public final class SourceTextController: NSViewController {
         let cacheKey = FindKey(
             query: query,
             caseSensitive: findState.caseSensitive,
+            isRegex: findState.isRegex,
             textHash: text.hashValue
         )
         if cacheKey != lastFindKey {
             findMatches = Self.findRanges(
-                in: text, query: query, caseSensitive: findState.caseSensitive
+                in: text, query: query, caseSensitive: findState.caseSensitive,
+                isRegex: findState.isRegex
             )
             lastFindKey = cacheKey
             currentMatchIndex = findMatches.isEmpty ? nil : 0
@@ -572,8 +578,20 @@ public final class SourceTextController: NSViewController {
         return attr
     }
 
-    private static func findRanges(in haystack: String, query: String, caseSensitive: Bool) -> [NSRange] {
+    private static func findRanges(in haystack: String, query: String, caseSensitive: Bool,
+                                    isRegex: Bool = false) -> [NSRange] {
         guard !query.isEmpty else { return [] }
+        if isRegex {
+            // Bad regex (unbalanced parens etc.) silently yields zero
+            // matches — let the find bar show the "no matches" state
+            // instead of crashing.
+            var opts: NSRegularExpression.Options = [.anchorsMatchLines]
+            if !caseSensitive { opts.insert(.caseInsensitive) }
+            guard let re = try? NSRegularExpression(pattern: query, options: opts)
+            else { return [] }
+            let full = NSRange(location: 0, length: (haystack as NSString).length)
+            return re.matches(in: haystack, options: [], range: full).map(\.range)
+        }
         let ns = haystack as NSString
         let opts: NSString.CompareOptions = caseSensitive
             ? [.literal] : [.literal, .caseInsensitive]

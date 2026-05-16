@@ -115,11 +115,18 @@ public struct ContentView: View {
         case .loaded(let file):
             loadedView(for: file)
         case .binary(let binary):
+            // For binaries (HEX mode) we always show the byte grid;
+            // the metadata panel pairs naturally with .preview state
+            // below.
             HexView(file: binary, fontSize: 12 * model.zoom)
         case .error(let failure):
             ErrorView(failure: failure, model: model)
         case .preview(let url, let cat):
-            MediaPreviewView(url: url, category: cat)
+            HStack(spacing: 0) {
+                MediaPreviewView(url: url, category: cat)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                MetadataPanel(url: url, category: cat)
+            }
         }
     }
 
@@ -174,6 +181,7 @@ public struct ContentView: View {
                         findState: TextDisplayView.FindState(
                             query: model.isSourceFindBarPresented ? model.sourceFindQuery : "",
                             caseSensitive: model.sourceFindCaseSensitive,
+                            isRegex: model.sourceFindIsRegex,
                             nextNonce: model.sourceFindNextRequest,
                             prevNonce: model.sourceFindPrevRequest
                         ),

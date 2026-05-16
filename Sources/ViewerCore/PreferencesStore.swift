@@ -12,6 +12,7 @@ public final class PreferencesStore: @unchecked Sendable {
         static let zoom = "MarkdownViewer.zoom"
         static let sourceWordWrap = "MarkdownViewer.sourceWordWrap"
         static let showInvisibleChars = "MarkdownViewer.showInvisibleChars"
+        static let uiScale = "MarkdownViewer.uiScale"
     }
 
     public init(defaults: UserDefaults = .standard) {
@@ -56,6 +57,23 @@ public final class PreferencesStore: @unchecked Sendable {
     public var showInvisibleChars: Bool {
         get { defaults.object(forKey: Key.showInvisibleChars) as? Bool ?? false }
         set { defaults.set(newValue, forKey: Key.showInvisibleChars) }
+    }
+
+    /// Chrome scaling — multiplies the font size of sidebar, tabs,
+    /// status bar, mode bar, etc. Distinct from `zoom` which scales
+    /// document content. Range 0.85-1.6; default 1.0.
+    public static let minUIScale: Double = 0.85
+    public static let maxUIScale: Double = 1.6
+    public static let uiScaleStep: Double = 0.05
+    public var uiScale: Double {
+        get {
+            let raw = defaults.object(forKey: Key.uiScale) as? Double ?? 1.0
+            return min(max(raw, Self.minUIScale), Self.maxUIScale)
+        }
+        set {
+            let clamped = min(max(newValue, Self.minUIScale), Self.maxUIScale)
+            defaults.set(clamped, forKey: Key.uiScale)
+        }
     }
 
     // MARK: Zoom

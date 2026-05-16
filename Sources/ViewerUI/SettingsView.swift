@@ -58,6 +58,18 @@ public struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 44, alignment: .leading)
             }
+            row("UI scale") {
+                Slider(
+                    value: $model.uiScale,
+                    in: PreferencesStore.minUIScale...PreferencesStore.maxUIScale,
+                    step: PreferencesStore.uiScaleStep
+                )
+                .frame(width: 180)
+                Text("\(Int(model.uiScale * 100))%")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 44, alignment: .leading)
+            }
         }
     }
 

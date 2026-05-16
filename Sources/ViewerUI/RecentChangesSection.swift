@@ -42,12 +42,12 @@ struct RecentChangesSection: View {
                         .font(.system(size: 9, weight: .semibold))
                         .frame(width: 10)
                     Text("CHANGED")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: model.uiSize(10), weight: .semibold))
                         .foregroundStyle(.secondary)
                     Spacer()
                     if !entries.isEmpty {
                         Text("\(entries.count)")
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.system(size: model.uiSize(10), weight: .medium))
                             .foregroundStyle(.tertiary)
                     }
                     Button(action: { refresh() }) {
@@ -71,7 +71,7 @@ struct RecentChangesSection: View {
             LazyVStack(alignment: .leading, spacing: 0) {
                 if entries.isEmpty {
                     Text("Working tree clean")
-                        .font(.system(size: 11))
+                        .font(.system(size: model.uiSize(11)))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)

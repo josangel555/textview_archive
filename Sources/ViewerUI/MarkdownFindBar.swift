@@ -11,6 +11,7 @@ struct FindBar: View {
     let placeholder: String
     @Binding var query: String
     @Binding var caseSensitive: Bool
+    @Binding var isRegex: Bool
     @Binding var matchSummary: String  // e.g. "3/12"; empty when unknown
     let noResultsMode: NoResultsMode
     let focusRequest: Int
@@ -71,6 +72,15 @@ struct FindBar: View {
             .controlSize(.small)
             .help("Match case")
 
+            Toggle(isOn: $isRegex) {
+                Text(".*")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(isRegex ? .primary : .secondary)
+            }
+            .toggleStyle(.button)
+            .controlSize(.small)
+            .help("Regular expression")
+
             Button(action: onPrev) {
                 Image(systemName: "chevron.up")
             }
@@ -115,6 +125,7 @@ struct MarkdownFindBar: View {
             placeholder: "Find in rendered markdown…",
             query: $model.renderedFindQuery,
             caseSensitive: $model.renderedFindCaseSensitive,
+            isRegex: .constant(false),  // WKWebView find can't regex; toggle is hidden visually but state is unused
             // Rendered now supports proper count via JS injection
             // (Coordinator.findScript). Show n/N just like source.
             matchSummary: $model.renderedFindMatchSummary,
@@ -138,6 +149,7 @@ struct SourceFindBar: View {
             placeholder: "Find in source…",
             query: $model.sourceFindQuery,
             caseSensitive: $model.sourceFindCaseSensitive,
+            isRegex: $model.sourceFindIsRegex,
             matchSummary: $model.sourceFindMatchSummary,
             noResultsMode: .countOnly,
             focusRequest: model.sourceFindFocusRequest,
