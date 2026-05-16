@@ -125,63 +125,43 @@ public final class GitPanelModel: ObservableObject {
 
     // MARK: - Refresh
 
+    /// Sendable bag of everything a tab refresh can produce. Lets the
+    /// detached work hand back a single value, and the MainActor side
+    /// fan it out to the right @Published properties.
+    private struct Payload: Sendable {
+        var head: GitClient.HeadInfo?
+        var status: [GitClient.StatusEntry]?
+        var log: [GitClient.GraphCommit]?
+        var stash: [GitClient.StashEntry]?
+        var trees: [GitClient.WorktreeEntry]?
+        var remotes: [GitClient.RemoteEntry]?
+    }
+
     public func refreshCurrent() {
         guard let root = repoRoot else { return }
         let tab = selectedTab
+        let page = logPageSize
         refreshTask?.cancel()
         isRefreshing = true
-        refreshTask = Task.detached(priority: .utility) { [weak self] in
-            let client = GitClient(repoRoot: root)
-            let head = client.headInfo()
-            switch tab {
-            case .status:
-                let entries = client.status()
-                await MainActor.run {
-                    guard let self else { return }
-                    self.head = head
-                    self.statusEntries = entries
-                    self.lastRefreshed[tab] = Date()
-                    self.isRefreshing = false
+        // Outer Task is @MainActor so capturing self is fine. The
+        // blocking shell-out work lives on a detached task whose return
+        // value is a Sendable Payload — no @MainActor capture crosses
+        // the actor boundary.
+        refreshTask = Task { @MainActor [weak self] in
+            let payload = await Task.detached(priority: .utility) {
+                let client = GitClient(repoRoot: root)
+                var p = Payload(head: client.headInfo())
+                switch tab {
+                case .status:  p.status  = client.status()
+                case .log:     p.log     = client.graphLog(maxEntries: page, skip: 0)
+                case .stash:   p.stash   = client.stashList()
+                case .trees:   p.trees   = client.worktreeList()
+                case .remotes: p.remotes = client.remoteList()
                 }
-            case .log:
-                let page = self?.logPageSize ?? 100
-                let entries = client.graphLog(maxEntries: page, skip: 0)
-                await MainActor.run {
-                    guard let self else { return }
-                    self.head = head
-                    self.logEntries = entries
-                    self.logLoadedCount = entries.count
-                    self.lastRefreshed[tab] = Date()
-                    self.isRefreshing = false
-                }
-            case .stash:
-                let entries = client.stashList()
-                await MainActor.run {
-                    guard let self else { return }
-                    self.head = head
-                    self.stashEntries = entries
-                    self.lastRefreshed[tab] = Date()
-                    self.isRefreshing = false
-                }
-            case .trees:
-                let entries = client.worktreeList()
-                await MainActor.run {
-                    guard let self else { return }
-                    self.head = head
-                    self.worktreeEntries = entries
-                    self.lastRefreshed[tab] = Date()
-                    self.isRefreshing = false
-                }
-            case .remotes:
-                let entries = client.remoteList()
-                await MainActor.run {
-                    guard let self else { return }
-                    self.head = head
-                    self.remoteEntries = entries
-                    self.lastRefreshed[tab] = Date()
-                    self.isRefreshing = false
-                }
-            }
+                return p
+            }.value
+            guard let self, !Task.isCancelled else { return }
+            self.apply(payload, tab: tab, isInitialLogPage: true)
         }
     }
 
@@ -193,15 +173,28 @@ public final class GitPanelModel: ObservableObject {
               logLoadedCount < logHardCap else { return }
         let skip = logLoadedCount
         let take = min(logIncrementSize, logHardCap - logLoadedCount)
-        Task.detached(priority: .utility) { [weak self] in
-            let client = GitClient(repoRoot: root)
-            let more = client.graphLog(maxEntries: take, skip: skip)
-            await MainActor.run {
-                guard let self else { return }
-                self.logEntries.append(contentsOf: more)
-                self.logLoadedCount += more.count
-            }
+        Task { @MainActor [weak self] in
+            let more = await Task.detached(priority: .utility) {
+                GitClient(repoRoot: root).graphLog(maxEntries: take, skip: skip)
+            }.value
+            guard let self else { return }
+            self.logEntries.append(contentsOf: more)
+            self.logLoadedCount += more.count
         }
+    }
+
+    private func apply(_ p: Payload, tab: Tab, isInitialLogPage: Bool) {
+        head = p.head
+        if let s = p.status   { statusEntries   = s }
+        if let l = p.log      {
+            logEntries = l
+            if isInitialLogPage { logLoadedCount = l.count }
+        }
+        if let s = p.stash    { stashEntries    = s }
+        if let t = p.trees    { worktreeEntries = t }
+        if let r = p.remotes  { remoteEntries   = r }
+        lastRefreshed[tab] = Date()
+        isRefreshing = false
     }
 
     // MARK: - Counts for tab-strip badges

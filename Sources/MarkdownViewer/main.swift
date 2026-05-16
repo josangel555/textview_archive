@@ -1203,6 +1203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 /// In MDV_BACKGROUND=1 mode, uses `orderFrontRegardless` so the window
 /// appears but does NOT steal keyboard focus from whatever the user
 /// has in front of them.
+@MainActor
 func showWindow(_ window: NSWindow) {
     if ProcessInfo.processInfo.environment["MDV_BACKGROUND"] == "1" {
         window.orderFrontRegardless()
@@ -1214,6 +1215,7 @@ func showWindow(_ window: NSWindow) {
 /// Call `NSApp.activate(ignoringOtherApps: true)` only in normal mode.
 /// In MDV_BACKGROUND=1 we skip activation entirely so the app stays in
 /// the background and the user's foreground app retains focus.
+@MainActor
 func activateIfForeground() {
     guard ProcessInfo.processInfo.environment["MDV_BACKGROUND"] != "1" else { return }
     NSApp.activate(ignoringOtherApps: true)

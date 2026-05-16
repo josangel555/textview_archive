@@ -24,7 +24,9 @@ struct GitPanelView: View {
         }
         .background(
             // Window-key observer for the on-focus refresh contract.
-            WindowKeyObserver(onBecomeKey: { model.windowDidBecomeKey() })
+            WindowKeyObserver(onBecomeKey: { [model] in
+                Task { @MainActor in model.windowDidBecomeKey() }
+            })
         )
         .onAppear { model.start() }
         .onDisappear { model.stop() }

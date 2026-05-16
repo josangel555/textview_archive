@@ -27,18 +27,28 @@ struct SidebarKeyMonitor: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
+    @MainActor
     final class Coordinator {
         var monitor: Any?
         var handler: ((Key) -> Bool)?
 
         func setActive(_ active: Bool) {
             if active && monitor == nil {
+                // The local event monitor is called by AppKit on the main
+                // thread; assert that so we can call main-actor isolated
+                // helpers. Pull `keyCode` out of `event` before entering
+                // the inner scope so we don't have to cross NSEvent over
+                // an isolation boundary (NSEvent isn't Sendable in some
+                // Swift toolchains).
                 monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                    guard let self else { return event }
-                    if Self.shouldYieldToFirstResponder() { return event }
-                    guard let key = Self.key(for: event.keyCode) else { return event }
-                    if self.handler?(key) == true { return nil }
-                    return event
+                    let keyCode = event.keyCode
+                    let consume: Bool = MainActor.assumeIsolated {
+                        guard let self else { return false }
+                        if Self.shouldYieldToFirstResponder() { return false }
+                        guard let key = Self.key(for: keyCode) else { return false }
+                        return self.handler?(key) == true
+                    }
+                    return consume ? nil : event
                 }
             } else if !active, let m = monitor {
                 NSEvent.removeMonitor(m)
@@ -75,12 +85,24 @@ struct SidebarKeyMonitor: NSViewRepresentable {
         /// `NSText` is the AppKit base class for all text-editing responders
         /// (NSTextView for plain content; the window's field editor for
         /// NSTextField / NSSearchField).
+        ///
+        /// Marked `@MainActor` — touches `NSApp` / `keyWindow` / first
+        /// responder which are all main-actor isolated under Swift 6.3.
+        /// Callers (the event monitor closure) are on the main thread by
+        /// AppKit contract; declare it explicitly so the checker agrees.
+        @MainActor
         private static func shouldYieldToFirstResponder() -> Bool {
             NSApp.keyWindow?.firstResponder is NSText
         }
 
         deinit {
-            if let m = monitor { NSEvent.removeMonitor(m) }
+            // `monitor` is @MainActor state; the Coordinator is owned by
+            // a SwiftUI representable and deinit normally runs on main.
+            // Hop explicitly to satisfy the checker — both the read and
+            // the AppKit call have to be inside the isolation scope.
+            MainActor.assumeIsolated {
+                if let m = monitor { NSEvent.removeMonitor(m) }
+            }
         }
     }
 }

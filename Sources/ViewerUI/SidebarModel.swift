@@ -193,22 +193,25 @@ public final class SidebarModel: ObservableObject {
         let service = git
         // CRIT-5: capture the repo root as a token so the main-actor hop
         // can refuse to write stale results if `setRoot(_:)` switched us
-        // to a different folder while git was running. Weak-self so the
-        // detached Task doesn't keep this model alive across shutdown.
+        // to a different folder while git was running. The outer Task is
+        // @MainActor so `self` can be captured safely; the blocking git
+        // shell-out lives in a detached child whose return value is a
+        // Sendable `[URL: Status]` map.
         let token = repoRoot
-        Task.detached(priority: .userInitiated) { [weak self] in
-            let entries = (try? service.status(at: repoRoot)) ?? []
-            var map: [URL: GitStatusEntry.Status] = [:]
-            for entry in entries {
-                let url = repoRoot.appendingPathComponent(entry.path)
-                    .standardizedFileURL.resolvingSymlinksInPath()
-                map[url] = entry.status
-            }
-            await MainActor.run {
-                guard let self else { return }
-                guard self.gitRepoRoot == token else { return }
-                self.gitStatuses = map
-            }
+        Task { @MainActor [weak self] in
+            let map = await Task.detached(priority: .userInitiated) {
+                () -> [URL: GitStatusEntry.Status] in
+                let entries = (try? service.status(at: repoRoot)) ?? []
+                var result: [URL: GitStatusEntry.Status] = [:]
+                for entry in entries {
+                    let url = repoRoot.appendingPathComponent(entry.path)
+                        .standardizedFileURL.resolvingSymlinksInPath()
+                    result[url] = entry.status
+                }
+                return result
+            }.value
+            guard let self, self.gitRepoRoot == token else { return }
+            self.gitStatuses = map
         }
     }
 

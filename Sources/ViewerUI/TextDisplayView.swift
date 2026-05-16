@@ -296,23 +296,27 @@ public final class SourceTextController: NSViewController {
         let clip = scrollView.contentView
         clip.postsBoundsChangedNotifications = true
         clip.postsFrameChangedNotifications = true
+        // All three observers post on the `.main` OperationQueue, so the
+        // callback always runs on the main thread. `MainActor.assumeIsolated`
+        // asserts that contract so the @MainActor-isolated `publishX`
+        // methods are callable. Required by Swift 6.3 strict concurrency.
         scrollObserver = NotificationCenter.default.addObserver(
             forName: NSView.boundsDidChangeNotification,
             object: clip, queue: .main
         ) { [weak self] _ in
-            self?.publishScrollState()
+            MainActor.assumeIsolated { self?.publishScrollState() }
         }
         frameObserver = NotificationCenter.default.addObserver(
             forName: NSView.frameDidChangeNotification,
             object: clip, queue: .main
         ) { [weak self] _ in
-            self?.publishScrollState()
+            MainActor.assumeIsolated { self?.publishScrollState() }
         }
         selectionObserver = NotificationCenter.default.addObserver(
             forName: NSTextView.didChangeSelectionNotification,
             object: textView, queue: .main
         ) { [weak self] _ in
-            self?.publishSelection()
+            MainActor.assumeIsolated { self?.publishSelection() }
         }
     }
 
