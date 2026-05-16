@@ -23,8 +23,9 @@ set -euo pipefail
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 ROOT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 
-SRC_APP="$ROOT_DIR/dist/MarkdownViewer.app"
-DEST_APP="/Applications/MarkdownViewer.app"
+SRC_APP="$ROOT_DIR/dist/TextView.app"
+DEST_APP="/Applications/TextView.app"
+LEGACY_DEST="/Applications/MarkdownViewer.app"
 
 if [[ ! -d "$SRC_APP" ]]; then
   echo "Error: $SRC_APP not found. Run scripts/build-app.sh release first." >&2
@@ -33,10 +34,19 @@ fi
 
 echo "==> Installing $SRC_APP → $DEST_APP"
 # Kill any running instance so we can replace its on-disk bundle.
+# The executable inside the bundle is still named MarkdownViewer (the
+# SwiftPM target name) regardless of the .app filename — killall hits
+# it by process name.
 /usr/bin/killall MarkdownViewer 2>/dev/null || true
 sleep 0.3
 rm -rf "$DEST_APP"
 cp -R "$SRC_APP" "$DEST_APP"
+# Sweep up the pre-rename bundle so Spotlight + Open With don't show
+# two entries with the same identifier.
+if [[ -d "$LEGACY_DEST" ]]; then
+  echo "==> Removing legacy $LEGACY_DEST"
+  rm -rf "$LEGACY_DEST"
+fi
 
 # Re-register with LaunchServices at the new path so `open -a
 # MarkdownViewer` and Finder's Open With menu pick it up.
