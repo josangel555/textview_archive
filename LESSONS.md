@@ -148,6 +148,45 @@ user. If you add a new test that spawns the .app, do the same unless
 you specifically need a focused window (e.g. the visual regression
 test, which DOES need it for screencapture to see current pixels).
 
+## `@Published` setters are value-blind — dedupe at the publish site
+
+A `@Published` property's setter triggers `objectWillChange` on
+every assignment, regardless of whether the new value equals the
+old. If a SwiftUI view re-renders because of that signal AND its
+render path writes back to the same `@Published`, you have an
+infinite publish loop.
+
+Symptom we hit: source-view RSS grew ~5 MB/sec at idle. Looked
+like a heap leak; was actually an apply→publish→re-render→apply
+runaway. Each cycle allocated transient SwiftUI / Foundation
+state; ARC reclaimed eventually but the in-between allocations
+piled up faster.
+
+Pattern: dedupe at the callback site BEFORE invoking the
+@Published setter:
+
+```swift
+private var lastPublishedX: X?
+private func publishX() {
+    let new = compute()
+    if new == lastPublishedX { return }   // <-- the fix
+    lastPublishedX = new
+    onChange?(new)                          // → model.x = new
+}
+```
+
+Where the loop existed in our code:
+- `SourceTextController.publishSelection()` → `model.sourceSelection`
+- `SourceTextController.applyFindHighlights()` → `model.sourceFindMatchSummary`
+
+Both were re-publishing identical values on every `apply()`.
+
+Two related rules:
+- Equatable conformance is required on the published payload.
+- The dedupe state must live on a long-lived object (the
+  controller), not in a SwiftUI view's `@State` — those get
+  recreated.
+
 ## `ForEach(stride(...).map)` in SwiftUI bodies = memory leak
 
 SwiftUI `body` runs frequently. Anything you allocate inside body
