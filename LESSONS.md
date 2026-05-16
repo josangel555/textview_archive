@@ -148,6 +148,38 @@ user. If you add a new test that spawns the .app, do the same unless
 you specifically need a focused window (e.g. the visual regression
 test, which DOES need it for screencapture to see current pixels).
 
+## `ForEach(stride(...).map)` in SwiftUI bodies = memory leak
+
+SwiftUI `body` runs frequently. Anything you allocate inside body
+gets reallocated each time. For collection-shaped UI, this matters:
+
+```swift
+// BAD: materializes a [Int] every body re-eval.
+private func rowOffsets() -> [Int] {
+    stride(from: 0, to: file.byteCount, by: bytesPerRow).map { $0 }
+}
+ForEach(rowOffsets(), id: \.self) { ... }
+```
+
+For a 4 MB hex file at bytesPerRow=16, that's a 2 MB Int array
+*per body call*. Scroll fires many body calls. ARC eventually
+catches up but in the meantime the process RSS climbs steadily
+and the UI beachballs.
+
+Fix: use `Range<Int>` directly. It's a `RandomAccessCollection`,
+no materialization, LazyVStack realizes only visible rows.
+
+```swift
+// GOOD:
+private var rowCount: Int { … }
+ForEach(0..<rowCount, id: \.self) { row in
+    HexRow(offset: row * bytesPerRow, ...)
+}
+```
+
+`HexViewSizingTests.swift` pins the rowCount math so a regression
+trips before shipping.
+
 ## `swift build` lock contention piles up silently
 
 Running multiple `swift build` invocations back-to-back (especially

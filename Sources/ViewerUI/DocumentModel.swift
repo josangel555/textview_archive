@@ -768,17 +768,17 @@ public final class DocumentModel: ObservableObject {
         guard let i = tabs.selectedIndex, tabs.tabs.indices.contains(i) else { return }
         var t = tabs.tabs[i]
         // Side effects per mode:
-        //   - .hex: ensure the tab is loaded as binary so HexView has
-        //     bytes to render. Re-loaded on demand via BinaryFileLoader.
-        //   - .formatted: ensure the tab's id is in formattedTabIDs so
-        //     displayText(for:) returns pretty-printed text.
-        //   - .source / .rendered: clear formatted flag.
+        //   - .hex: state-swap is async (binary load can be slow on big
+        //     files; main-thread blocking → beachball). View mode is
+        //     set immediately so the picker reflects the user's pick.
+        //   - .formatted: pretty-print is computed lazily by
+        //     displayText(for:); just flip the flag.
+        //   - .source / .rendered: clear formatted flag. Reverse from
+        //     HEX (also async).
         switch mode {
         case .hex:
             if let url = t.url, case .loaded = t.state {
-                if let bin = try? BinaryFileLoader().load(url: url) {
-                    t.state = .binary(bin)
-                }
+                loadBinaryAsync(url: url, intoTabID: t.id)
             }
         case .formatted:
             if let url = t.url, Formatter.SupportedFormat.detect(url) != nil {
@@ -786,15 +786,44 @@ public final class DocumentModel: ObservableObject {
             }
         case .source, .rendered:
             formattedTabIDs.remove(t.id)
-            // Reverse out of HEX if we were there.
             if let url = t.url, case .binary = t.state {
-                if let text = try? TextFileLoader().load(url: url) {
-                    t.state = .loaded(text)
-                }
+                loadTextAsync(url: url, intoTabID: t.id)
             }
         }
         t.viewMode = mode
         tabs.replace(at: i, with: t)
+    }
+
+    /// Off-main file read, on-main state swap. Keeps the UI
+    /// responsive for multi-MB files. We re-locate the tab by id at
+    /// completion time so a meanwhile-closed tab is a no-op rather
+    /// than crashing.
+    private func loadBinaryAsync(url: URL, intoTabID id: UUID) {
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let loaded = try? BinaryFileLoader().load(url: url)
+            await MainActor.run { [weak self] in
+                guard let self, let bin = loaded,
+                      let idx = self.tabs.tabs.firstIndex(where: { $0.id == id })
+                else { return }
+                var tab = self.tabs.tabs[idx]
+                tab.state = .binary(bin)
+                self.tabs.replace(at: idx, with: tab)
+            }
+        }
+    }
+
+    private func loadTextAsync(url: URL, intoTabID id: UUID) {
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let loaded = try? TextFileLoader().load(url: url)
+            await MainActor.run { [weak self] in
+                guard let self, let text = loaded,
+                      let idx = self.tabs.tabs.firstIndex(where: { $0.id == id })
+                else { return }
+                var tab = self.tabs.tabs[idx]
+                tab.state = .loaded(text)
+                self.tabs.replace(at: idx, with: tab)
+            }
+        }
     }
 
     // MARK: Recents

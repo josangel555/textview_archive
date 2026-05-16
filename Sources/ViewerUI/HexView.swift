@@ -22,10 +22,19 @@ struct HexView: View {
                         HexHeader(file: file, fontSize: fontSize)
                         Divider()
                     }
-                    ForEach(rowOffsets(), id: \.self) { offset in
+                    // Iterate over a Range, NOT a materialized array.
+                    // Previous code did `stride(...).map` per body
+                    // re-eval, allocating a 2MB+ [Int] for a 4MB file
+                    // every time SwiftUI re-rendered. That GC pressure
+                    // surfaced as steadily-growing RAM and beachballs
+                    // when entering HEX mode. Range<Int> is a
+                    // RandomAccessCollection so LazyVStack + ForEach
+                    // only realize visible rows AND don't allocate
+                    // an Int-per-row backing.
+                    ForEach(0..<rowCount, id: \.self) { row in
                         HexRow(
-                            offset: offset,
-                            bytes: bytes(startingAt: offset),
+                            offset: row * bytesPerRow,
+                            bytes: bytes(startingAtRow: row),
                             bytesPerRow: bytesPerRow,
                             fontSize: fontSize
                         )
@@ -47,12 +56,17 @@ struct HexView: View {
         }
     }
 
-    private func rowOffsets() -> [Int] {
-        stride(from: 0, to: file.byteCount, by: bytesPerRow).map { $0 }
+    /// Number of rows the file occupies at the current bytesPerRow.
+    /// Computed property — cheap.
+    private var rowCount: Int {
+        guard bytesPerRow > 0, file.byteCount > 0 else { return 0 }
+        return (file.byteCount + bytesPerRow - 1) / bytesPerRow
     }
 
-    private func bytes(startingAt offset: Int) -> [UInt8] {
+    private func bytes(startingAtRow row: Int) -> [UInt8] {
+        let offset = row * bytesPerRow
         let end = min(offset + bytesPerRow, file.byteCount)
+        guard offset < end else { return [] }
         return Array(file.data[offset..<end])
     }
 
