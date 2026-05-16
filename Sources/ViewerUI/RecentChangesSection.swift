@@ -98,6 +98,16 @@ struct RecentChangesSection: View {
                     .truncationMode(.middle)
                     .foregroundStyle(.primary)
                 Spacer(minLength: 0)
+                // Right-side button: open the unified diff for this
+                // path in a new tab. Hidden until hover so the row
+                // stays clean.
+                Button(action: { showDiff(entry) }) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Show diff")
             }
             .padding(.horizontal, 10)
             .frame(height: 20)
@@ -105,6 +115,31 @@ struct RecentChangesSection: View {
         }
         .buttonStyle(.plain)
         .help(entry.path)
+        .contextMenu {
+            Button("Open File") { openEntry(entry) }
+            Button("Show Diff") { showDiff(entry) }
+        }
+    }
+
+    /// Write the unified diff for `entry.path` to a tmp file and open
+    /// it as a tab. Lives under ~/Library/Caches so the cleaner reaps
+    /// it; safe to overwrite per session.
+    private func showDiff(_ entry: GitClient.StatusEntry) {
+        guard let root = repoRoot else { return }
+        let client = GitClient(repoRoot: root)
+        let diff = client.diff(forPath: entry.path)
+        guard !diff.isEmpty else { return }
+        let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        let dir = cache.appendingPathComponent("MarkdownViewer/diffs", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // Use a name that conveys the source path; macOS treats this
+        // file as user-visible content so .diff extension is enough
+        // for our plaintext fallback to take over.
+        let safeName = entry.path.replacingOccurrences(of: "/", with: "_")
+        let out = dir.appendingPathComponent("\(safeName).diff")
+        try? diff.write(to: out, atomically: true, encoding: .utf8)
+        model.openInNewTab(out)
     }
 
     private func statusBadge(_ e: GitClient.StatusEntry) -> String {

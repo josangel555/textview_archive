@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         NSWindow.allowsAutomaticWindowTabbing = false
 
         buildMenu()
+        registerAsServicesProvider()
 
         // CRITICAL: use NSHostingController.view (not a bare NSHostingView
         // set as contentView). The controller's view installs auto-layout
@@ -1083,6 +1084,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // Otherwise the user is on the source/text side: open the
         // source find bar (works for source view, plaintext, code, etc.).
         model.showSourceFindBar()
+    }
+
+    // MARK: - NSServices (Finder Quick Action equivalent)
+
+    /// Hook the delegate up as the system services provider. With this
+    /// + the NSServices declaration in Info.plist, macOS surfaces our
+    /// "Open in TextView" entry in Finder's right-click → Services menu
+    /// (and in the Services menu on every app). No bundled .workflow,
+    /// no `pluginkit` dance.
+    func registerAsServicesProvider() {
+        NSApp.servicesProvider = self
+        NSUpdateDynamicServices()
+    }
+
+    /// Handler the system calls when the user picks "Open in TextView"
+    /// for a file/folder selection. The pasteboard carries one or more
+    /// file URLs; we open each as a tab/folder.
+    @objc func openInTextView(_ pboard: NSPasteboard, userData: String?,
+                              error: AutoreleasingUnsafeMutablePointer<NSString>) {
+        let urls = (pboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL]) ?? []
+        guard !urls.isEmpty else {
+            error.pointee = "No files in selection." as NSString
+            return
+        }
+        for url in urls {
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) {
+                if isDir.boolValue {
+                    model.openFolder(url)
+                } else {
+                    model.openPath(url)
+                }
+            }
+        }
+        showWindow(window!)
     }
 }
 
