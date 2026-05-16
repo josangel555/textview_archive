@@ -152,3 +152,172 @@ Read this before adding a Tier 2/3 dep "just in case":
 
 `.github/workflows/pr.yml` runs `swift build` + `swift test --parallel` on
 `macos-14` on every push to `main` and every PR.
+
+## Test file inventory (by coverage area)
+
+When picking up a test, use this map to find adjacent prior art
+rather than rediscovering test patterns.
+
+### ViewerKitTests
+| File | Covers |
+|---|---|
+| `InfoPlistTests.swift` | Bundle schema, required keys, doc types, **NSServices entry** (Open in TextView), TCC usage strings reference TextView, AppIcon declared. Stale-anchor protection: if you rename the display name, this test catches it. |
+| `FileCategoryMediaTests.swift` | Smoke: extension → FileCategory for image/audio/video/PDF/sqlite |
+| `FileTypeDetectorTests.swift` | Extension table + UTType fallback + extensionless handling |
+
+### ViewerCoreTests (pure, instant)
+| File | Covers |
+|---|---|
+| `BinaryFileLoaderTests.swift` | Byte read, size cap |
+| `BookmarksStoreTests.swift` | File + folder bookmarks (line bookmarks in separate file) |
+| `LineBookmarksTests.swift` | `(URL, line)` semantics, legacy on-disk JSON decode (no `line` field → nil) |
+| `ClaudeLogParserTests.swift` | All Claude transcript JSONL shapes |
+| `CrossFileSearchTests.swift` | Async stream, symlink loop guard, cancel race |
+| `CSVParserTests.swift` | Delimiter detection (tab/comma/semi/pipe), quoting, embedded commas/newlines, CRLF, ragged rows |
+| `DocumentControllerTests.swift` | URL → DocumentState routing |
+| `DocumentControllerMediaTests.swift` | Image/audio/video/PDF/sqlite → .preview state |
+| `FileIconClassifierTests.swift` | Two-system chips + glyphs; folder-state precedence (symlink > root > locked > hidden > expanded) |
+| `FileTreeServiceTests.swift` | Sort + hidden + errors |
+| `FileWatcherTests.swift` | Write fires; atomic-write re-attach; stop prevents further fires |
+| `FindEngineTests.swift` | Literal / regex / case / whole-word / next-match wrap |
+| `FormatterTests.swift` | Pretty-print per format |
+| `FuzzyMatcherTests.swift` | Scoring rules + filter() |
+| `GitClientTests.swift` | discoverRoot, status, **diff (unified format, color-stripped, paths with spaces)** |
+| `GitServiceTests.swift` | Porcelain v1 parsing, repoRoot walk |
+| `HexViewSizingTests.swift` | Address column digits + row-count math |
+| `HistoryStoreTests.swift` | Record / dedupe / normalize / cap / persistence / corrupt recovery |
+| `HTMLRendererTests.swift` | Every CommonMark + GFM construct + escaping + page wrapper |
+| `IndentDetectorTests.swift` | Tabs / spaces(N) / mixed |
+| `PreferencesStoreTests.swift` | All prefs: sidebar width / zoom / lastFolder / sourceWordWrap / showInvisibleChars / uiScale (clamp on read **and** on write) |
+| `SQLiteReaderTests.swift` | Read-only open, schema introspection, query bounds |
+| `TabsStateTests.swift` | Every TabsState mutation + selection edge |
+| `TextFileLoaderTests.swift` | UTF-8 / Latin-1 / UTF-16 (with and without BOM) / size cap / empty / missing |
+| `TreeSitterEngineGoldenTests.swift` | Per-language token golden output + ABI smoke |
+| `TreeSitterEngineSmokeTests.swift` | Engine boots, all v1 grammars tokenize |
+| `WorkspaceStoreTests.swift` | JSON snapshot round-trip |
+| `DiffHunkParserTests.swift` | `git diff` text → `[Int: DiffMark]`; multi-hunk; no-newline marker; malformed-header tolerance |
+| `DiffHighlighterTests.swift` | Diff text → `[HighlightRun]`; `+++`/`---` distinguished from `+`/`-`; CRLF |
+
+### ViewerUITests (main-actor, in-process)
+| File | Covers |
+|---|---|
+| `AppLauncher.swift` | Helper for Tier 4 launches |
+| `BookmarkIntegrationTests.swift` | Bookmark UX state transitions |
+| `BookmarkLineCacheTests.swift` | `bookmarkedLines(for:)` memoization + invalidation |
+| `ComponentVisualTests.swift` | Tier 1m+ pixel — sample RGB at specific coords |
+| `ContentViewHostingTests.swift` | Walks `NSHostingView` subtree to verify structure |
+| `CrossSearchIntegrationTests.swift` | End-to-end cross-search behavior |
+| `DiagnosticDumpTests.swift` | `--diagnose` JSON dump shape |
+| `DocumentModelTests.swift` | Open / reuse / duplicate, tab management, HEX state routing, UI scale, view-mode persistence, regex flag, bookmark target precedence |
+| `DragDropTests.swift` | Multi-file drag order, error tabs |
+| `FileWatcherIntegrationTests.swift` | Reload-on-change via the model |
+| `FindBarTests.swift` | Source find: count, no-results, focus, persist |
+| `FolderStateSymbolTests.swift` | Every `FolderState` → valid SF Symbol; symbols distinct enough |
+| `FormatToggleTests.swift` | View mode availability per file type |
+| `InteractionDeepTests.swift` | Multi-step scenario chains. **Contains the known-failing `test_zoom_persistsAcrossNewTab`** (guarded against crash; not investigated yet) |
+| `InteractionScriptTests.swift` | Step-driven scenario runner |
+| `LongFlowTests.swift` | Long user-flow regressions |
+| `MarkdownRenderedViewTests.swift` | WKWebView wrapper |
+| `MetadataPanelTests.swift` | Filesystem-row builder (pure helper) |
+| `RecentChangesDiscoveryTests.swift` | `discoverRepo(sidebarRoot:currentURL:)` fallback rule |
+| `RegexCacheTests.swift` | Compiled-regex LRU cache hit / invalidation / negative caching |
+| `RenderedFindBarTests.swift` | Rendered find: query → JS injection round-trip |
+| `ScenarioTests.swift` | Long-form interaction scenarios |
+| `SidebarModelTests.swift` | children-of, ensureLoaded, hidden toggle, root rotation |
+| `SourceViewVisualRegressionTests.swift` | Real-window screencap; **the compositor-bug regression guard** |
+| `SQLiteWidthTests.swift` | Column width auto-compute (used by both SQLite + CSV) |
+| `TextSearchTests.swift` | Find-ranges literal + regex; invalid pattern; zero-width matches |
+
+## Recently elevated for tests (don't make private again)
+
+Documented at each call site with a "Exposed internal so
+`@testable import` can exercise it" comment.
+
+- `SourceTextController.findRanges(in:query:caseSensitive:isRegex:)`
+- `SourceTextController.cachedRegex(pattern:caseSensitive:)`
+- `RecentChangesSection.discoverRepo(sidebarRoot:currentURL:)`
+- `MetadataPanel.filesystemRows(url:attrs:)`
+- `MetadataPanel.dateFmt`
+- `ResultTableView` (whole struct in `SQLiteBrowserView.swift`)
+- `ResultTableView.computeWidths(columns:rows:sampleRows:)`
+- `ResultTableView.approxTextWidth(_:)`
+- `DiffHighlighter.highlight(_:)`
+
+When refactoring, preserve these signatures unless updating tests
+in lockstep.
+
+## Test-relevant environment variables
+
+| Var | Effect | Usually set by |
+|---|---|---|
+| `MDV_BACKGROUND=1` | Accessory mode (no focus theft) | Tests + visual-smoke |
+| `MDV_SKIP_WORKSPACE_RESTORE=1` | Start clean, no last-session restore | Tests |
+| `MDV_ENABLE_BROKEN_RULER=1` | Reproduces the compositor bug | Meta-test for visual regression |
+| `MDV_NO_RULER=1` | Deprecated synonym (old diagnostic path) | n/a |
+| `MDV_SKIP_VISUAL=1` | Skip the visual regression test entirely | CI environments without WindowServer |
+| `BUDGET_MB=N` | Override 25 MB bundle-size guard for one run | `scripts/build-app.sh` invocation |
+
+## Patterns for new test files
+
+A new test file should look like:
+
+```swift
+import XCTest
+@testable import ViewerCore           // or ViewerKit / ViewerUI
+// import ViewerCore                 // if you only need public surface
+
+final class ThingTests: XCTestCase {
+    // For tests touching the filesystem:
+    private var tmp: URL!
+    override func setUpWithError() throws {
+        tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ThingTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+    }
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: tmp)
+    }
+
+    // For tests touching UserDefaults:
+    private var suiteName: String!
+    private var defaults: UserDefaults!
+    override func setUp() {
+        suiteName = "ThingTests-\(UUID().uuidString)"
+        defaults = UserDefaults(suiteName: suiteName)
+    }
+    override func tearDown() {
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    // Main-actor tests (anything that touches DocumentModel):
+    // mark the class @MainActor, use async setUp.
+
+    // Cite the bug in regression tests:
+    /// Regression: commit d175548 (HEX picker lied after file switch).
+    func test_regression_d175548_hex_persists_across_switch() { ... }
+}
+```
+
+## Test commands (everyday)
+
+```sh
+# Whole suite — ~85 s on a 4-core, 562 cases
+swift test
+
+# Single suite
+swift test --filter ViewerCoreTests
+swift test --filter CSVParserTests
+
+# Single case
+swift test --filter "ViewerCoreTests.CSVParserTests/test_quoted_field_with_embedded_comma"
+
+# Parallel — what CI uses
+swift test --parallel
+
+# Bundle integrity (post-build)
+bash scripts/verify-app.sh
+
+# Inside a VM — see VM-SETUP.md
+bash scripts/test-in-vm.sh smoke     # ~1 s, tier-1 only
+bash scripts/test-in-vm.sh all       # full
+```

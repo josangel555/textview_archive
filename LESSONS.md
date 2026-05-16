@@ -291,3 +291,117 @@ The chain that catches the most stuff: build → install → run from
 `/Applications/MarkdownViewer.app` → `bash scripts/visual-smoke.sh`.
 If something looks wrong, run with `MDV_ENABLE_BROKEN_RULER=1` to
 confirm the test would have caught it.
+
+## Things to NOT do (each one would regress something specific)
+
+These aren't style preferences — each is the postscript of a real
+bug we hit. Re-introducing any of them re-creates the same bug.
+
+- **Don't subclass `NSLayoutManager`.** Has historically triggered
+  the compositor bug. The "invisibles too grey" issue is open
+  precisely because the fix needs a subclass and we're trading
+  off contrast against compositor stability.
+- **Don't attach `NSRulerView`** to the source-view scrollView.
+  That's *the* compositor-bug trigger. Line numbers come from a
+  separate SwiftUI `Canvas` (`SourceGutterView`) synced via
+  `clipView.boundsDidChangeNotification`.
+- **Don't `cd && command`** in shell invocations. Use `git -C` or
+  absolute paths. Compound commands defeat per-command permission
+  allowlists.
+- **Don't bulk-strip the bundle** without `ditto --noextattr` +
+  recursive `xattr -dr com.apple.FinderInfo` afterwards. `strip(1)`
+  re-applies FinderInfo to the Mach-O; codesign with
+  `--options runtime` refuses bundles with any of it. `xargs +
+  xattr -d` silently fails on the bundle root (xargs quoting) —
+  use `xattr -dr` instead.
+- **Don't change `CFBundleIdentifier`.** TCC grants are keyed on
+  `(identifier, cert-leaf-hash)`. Changing it forces re-prompts for
+  Documents / Downloads / Desktop / etc. Display name renames are
+  fine; identifier renames are not.
+- **Don't iterate Swift's `String.Character`** for line scanning of
+  CRLF-bearing input. `\r\n` is a single grapheme cluster, so a
+  Character iterator sees it as one unit and the LF-test never
+  matches. Iterate `unicodeScalars` instead. CSV and diff parsers
+  both burned a test cycle to learn this.
+- **Don't use `iconutil -c icns`** if you want oxipng output
+  preserved. It re-encodes the PNGs with default ImageIO settings,
+  bypassing any compression you did upstream. Use
+  `scripts/pack-icns.swift` to hand-pack the container instead;
+  it preserves bytes verbatim.
+- **Don't import `SwiftUI` into `ViewerKit` or `ViewerCore`.** The
+  module boundary is what keeps Tier 1 unit tests UI-free and
+  fast. If you need a value type with a Color, the Color lives in
+  the SwiftUI extension in ViewerUI, not in the type definition.
+- **Don't write to `~/Documents`, `~/Desktop`, `~/Downloads`** from
+  any automated / restore path. TCC will prompt on first access,
+  and ad-hoc grants don't survive rebuilds. `DocumentModel.isUnderTCCProtectedRoot`
+  exists to skip these on workspace restore.
+- **Don't use `--no-verify`** on commits or `--no-gpg-sign` on
+  anything. If a hook fails, fix it, don't bypass it.
+
+## The request-nonce pattern (transport, not state)
+
+SwiftUI views can't imperatively command an `NSViewRepresentable`
+(call a method on it the way you'd call a method on an NSView).
+Two ways out: KVO-style observation, or a request-nonce.
+
+We use request-nonces everywhere — find next/prev, find focus,
+scroll-to-line. Shape:
+
+```swift
+@Published public var sourceFindNextRequest: Int = 0
+public func sourceFindNext() { sourceFindNextRequest &+= 1 }
+```
+
+The view representable holds a `lastNextNonce: Int` and only acts
+when the incoming nonce differs. The nonce is monotonic via `&+=`
+(wrapping add) so overflow after 2³¹ requests doesn't crash. The
+nonce value itself is semantically meaningless — only the change
+matters.
+
+**Don't break this pattern.** It's how the source view stays
+decoupled from SwiftUI body re-evaluations. If you replace a nonce
+with a "do you want me to scroll?" boolean, every body re-render
+will re-trigger the scroll because the bool is still `true`.
+
+## Internal-for-testing surfaces (don't make private again)
+
+We've elevated several helpers from `private` to `internal` so
+`@testable import` can reach them. The elevation is intentional
+and documented at each call site. When refactoring, check whether
+the symbol has a test or comment naming a test file — if so,
+keep its access level.
+
+Current list:
+- `SourceTextController.findRanges(...)` — `TextSearchTests`
+- `SourceTextController.cachedRegex(...)` — `RegexCacheTests`
+- `RecentChangesSection.discoverRepo(...)` — `RecentChangesDiscoveryTests`
+- `MetadataPanel.filesystemRows(...)`, `MetadataPanel.dateFmt` —
+  `MetadataPanelTests`
+- `ResultTableView` (whole struct), `.computeWidths`,
+  `.approxTextWidth` — `SQLiteWidthTests` (also reused by
+  `CSVTableView`)
+- `DiffHighlighter.highlight(...)` — `DiffHighlighterTests`
+
+## Module boundaries (strict — they pay rent)
+
+```
+MarkdownViewer  ──→  ViewerUI  ──→  ViewerCore  ──→  ViewerKit
+   (exe)            (SwiftUI +      (logic,           (value types,
+                     AppKit         parsers,           Foundation only)
+                     bridging)      git, sqlite)
+```
+
+- **`ViewerKit`** imports only `Foundation` /
+  `UniformTypeIdentifiers`. No AppKit. No SwiftUI. No ViewerCore.
+- **`ViewerCore`** imports `Foundation`, `AppKit` (for `NSColor`
+  in `SyntaxTheme`), `ViewerKit`. **No SwiftUI.** Single biggest
+  lever for keeping tier-1 unit tests instant.
+- **`ViewerUI`** imports everything below. SwiftUI lives here.
+- **`MarkdownViewer`** is the executable target — AppDelegate,
+  menu, window assembly.
+
+Rule when something fights the boundary: **extract a pure helper**
+into the right module rather than break the boundary. We've done
+this several times in the code-review pass (RecentChanges /
+Metadata / SQLite width math).

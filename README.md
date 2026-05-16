@@ -79,3 +79,42 @@ Tests/
 Phase 1: `swift-markdown` (Apple). Phase 5b: `SwiftTreeSitter` + per-language grammars
 for unified syntax highlighting (§11). Git: shell out to `/usr/bin/git`, no libgit2.
 No JS in WKWebView (TreeSitter pre-renders to HTML spans).
+
+## Scripts reference
+
+All in `scripts/`, all `bash` (no zsh-isms):
+
+| Script | What it does |
+|---|---|
+| `build-app.sh [debug\|release]` | Build SPM, assemble `dist/MarkdownViewer.app`, sign locally, run bundle-size check |
+| `install-app.sh` | Copy `dist/MarkdownViewer.app` to `/Applications` and re-register with LaunchServices |
+| `verify-app.sh` | 17 checks on the assembled bundle (signing, plist keys, executable arch, icon) |
+| `check-bundle-size.sh` | Fails if bundle > `BUDGET_MB` (default 25). Wired into `build-app.sh` |
+| `visual-smoke.sh` | Headless launch, capture screenshot, assert TabBar/ModeBar/Sidebar/StatusBar rendered |
+| `pack-icns.swift` | Hand-pack `.icns` preserving oxipng compression (iconutil re-encodes) |
+
+After any change to `scripts/Info.plist`, `scripts/build-app.sh`, or
+the app's main bundle assembly, run **`bash scripts/verify-app.sh`**
+before declaring done. Bundle issues fail late and look like other bugs.
+
+## Environment variables
+
+See `MANUAL_TESTING.md` for the full list. Quick reference:
+
+- `MDV_BACKGROUND=1` — force dark theme
+- `MDV_SKIP_WORKSPACE_RESTORE=1` — clean-room launch
+- `MDV_NO_RULER=1` — disable line-number gutter
+- `MDV_SKIP_VISUAL=1` — skip visual regression tests locally
+- `BUDGET_MB=<N>` — override 25 MB bundle cap
+
+## Distribution & signing
+
+The build uses a self-signed cert `MarkdownViewer Local Dev` from the
+login keychain. **Do not** change `CFBundleIdentifier` — TCC (Files &
+Folders, Accessibility) grants are keyed on
+`(com.markdownviewer.MarkdownViewer, cert-leaf-hash)`. Changing either
+invalidates every user's existing grant.
+
+For VM/CI testing, sync excluding `.build/`, `.swiftpm/`, `dist/` (host
+artifacts won't relocate cleanly). See `MANUAL_TESTING.md` →
+"VM smoke testing".

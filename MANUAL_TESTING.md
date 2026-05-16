@@ -113,3 +113,73 @@ Anything reliably covered by automated tests:
 - Pure model state transitions (`DocumentModel`, `SidebarModel`) — Tier 1m.
 
 If you find yourself adding items here that could live in Tier 1 or 1m, write the test instead.
+
+---
+
+## Appendix: keyboard shortcut reference
+
+The full set, as wired in `Sources/MarkdownViewer/main.swift`:
+
+| Shortcut | Action |
+|---|---|
+| `⌘O` | Open File… |
+| `⇧⌘O` | Open Folder… |
+| `⌘W` | Close Tab |
+| `⌘T` | New Tab |
+| `⌘1`–`⌘9` | Jump to tab N |
+| `⌥⌘→` / `⌥⌘←` | Next / Previous Tab |
+| `⌘R` | Reload current file |
+| `⇧⌘R` | Toggle Rendered / Source |
+| `⌘F` | Find in document |
+| `⌘G` / `⇧⌘G` | Find Next / Find Previous |
+| `⌘K` | Command Palette |
+| `⇧⌘F` | Cross-document search |
+| `⌃⌘S` | Toggle Sidebar |
+| `⌘\` | Toggle Split View |
+| `⌘⇧\` | Swap Split Panes |
+| `⌘+` / `⌘-` / `⌘0` | Zoom In / Out / Reset |
+| `⌘Q` | Quit |
+
+Git-related menu items (no default shortcuts; add via System Settings → Keyboard → App Shortcuts if needed):
+
+- File ▸ Show File History
+- File ▸ Show Repository History
+
+## Appendix: environment variables for testing
+
+Set on the shell before launching MarkdownViewer or `swift test`:
+
+| Variable | Purpose |
+|---|---|
+| `MDV_BACKGROUND=1` | Force dark/blackground theme regardless of system appearance |
+| `MDV_SKIP_WORKSPACE_RESTORE=1` | Skip auto-restore of last workspace on launch (clean-room test) |
+| `MDV_ENABLE_BROKEN_RULER=1` | Re-enable the disabled NSRulerView gutter path — useful only when investigating LESSONS.md compositor bug |
+| `MDV_NO_RULER=1` | Disable the line-number gutter entirely |
+| `MDV_SKIP_VISUAL=1` | Skip visual regression tests (faster local runs; CI always runs them) |
+| `BUDGET_MB=<N>` | Override the 25 MB bundle-size cap in `scripts/check-bundle-size.sh` |
+
+These are tested manually; they don't appear in user-facing UI. Don't
+ship features gated on them — they're escape hatches for development.
+
+## Appendix: VM smoke testing
+
+`vm-tester@<vm-ip>` is a UTM macOS guest used for headless smoke tests
+without contaminating the dev machine's TCC, login keychain, or
+Application Support. Sync strategy:
+
+```sh
+rsync -av --delete \
+  --exclude='.build/' --exclude='.swiftpm/' --exclude='dist/' \
+  ./ vm-tester@<vm-ip>:markdown_viewer/
+
+ssh vm-tester@<vm-ip> \
+  'cd markdown_viewer && swift test --filter ViewerCoreTests --filter ViewerKitTests'
+```
+
+Why exclude `.build/` and `.swiftpm/`: they contain arch-specific
+artifacts and absolute paths from the host. Always let the guest
+re-resolve and re-build.
+
+Full GUI smoke (build-app.sh + verify-app.sh) on the VM was historically
+blocked on WindowServer/keychain/TCC issues — see SSH session notes.
+Stick to `swift test` until that's unblocked.

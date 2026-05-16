@@ -182,3 +182,134 @@ We have ideas for a plugin system (`PLUGINS.md`). Until it lands,
 extending the app means forking + writing Swift. That's the pragmatic
 shape for now — see PLUGINS.md for what we'd want and what we're
 deliberately deferring.
+
+---
+
+## Where features live (the file map)
+
+When something visibly broken needs fixing, this is which file to open.
+Organized by *plane* of the app rather than alphabetically.
+
+| Plane | Owner files |
+|---|---|
+| Document lifecycle | `ViewerUI/DocumentModel.swift`, `ViewerCore/DocumentState.swift`, `ViewerCore/DocumentController.swift` |
+| Tabs / workspace | `ViewerCore/TabsState.swift`, `ViewerUI/TabBarView.swift` |
+| Sidebar | `ViewerUI/SidebarView.swift`, `ViewerUI/SidebarModel.swift`, `ViewerUI/DraggableSidebar.swift` |
+| Source view (text/code) | `ViewerUI/TextDisplayView.swift`, `ViewerCore/Highlight/*` |
+| Rendered Markdown | `ViewerUI/MarkdownRenderedView.swift`, `Resources/markdown.css`, `Resources/markdown.js` |
+| HEX view | `ViewerUI/HexView.swift`, `ViewerCore/HexFormatter.swift` |
+| CSV / TSV table | `ViewerUI/CSVTableView.swift`, `ViewerCore/CSVParser.swift` |
+| SQLite browser | `ViewerUI/SQLiteBrowserView.swift`, `ViewerUI/ResultTableView.swift`, `ViewerCore/SQLite/*` |
+| Media (image/audio/video/PDF) | `ViewerUI/MediaPreviewView.swift` |
+| Split view | `ViewerUI/SplitPaneView.swift` (right pane router) |
+| Search (find in document) | `TextDisplayView.findRanges`, `MarkdownRenderedView` (`window.__mdvFind*` JS bridge) |
+| Command palette / quick open | `ViewerUI/CommandPaletteView.swift`, `ViewerUI/UnifiedFinder.swift` |
+| Git integration | `ViewerCore/Git/*`, `DocumentModel.showGitLog(forPath:scope:)`, `SidebarModel.refreshGitStatus` |
+| Status / chrome | `ViewerUI/StatusBarView.swift`, `ViewerUI/ModeBarView.swift` |
+| Menu bar / keyboard shortcuts | `MarkdownViewer/main.swift` (`AppDelegate` + selectors) |
+| App icon | `Resources/Assets.xcassets/AppIcon.appiconset/`, `scripts/pack-icns.swift` |
+| Build & packaging | `scripts/build-app.sh`, `scripts/check-bundle-size.sh`, `scripts/install-app.sh`, `scripts/Info.plist` |
+| Tests (visual) | `scripts/visual-smoke.sh`, `Tests/ViewerUITests/SourceViewVisualRegressionTests.swift` |
+
+## DocumentModel `@Published` surface inventory
+
+`DocumentModel` carries 41 `@Published` properties across ~970 lines.
+That's why it's flagged as a SRP-split candidate in BACKLOG.md (`Architectural tech debt`).
+The clusters:
+
+- **Document content**: `currentURL`, `currentText`, `currentData`, `currentImage`, `loadState`, `loadError`
+- **View mode**: `currentViewMode`, `defaultModeOverrides` (per-extension), `supportsRendered`, `supportsHex`, `supportsTable`
+- **Highlight pipeline**: `highlightRuns`, `highlightLanguage`, `themeName`
+- **Find state**: `findQuery`, `findMatches`, `currentMatchIndex`, `lastScrolledMatchIndex`, `findIsActive`, `findOptions`
+- **Split**: `splitURL` (right pane), `splitIsOpen` (derived)
+- **Tabs**: `tabsState` (a value-type owned object, not @Published directly — observed via Combine on changes)
+- **Sidebar**: not on DocumentModel — owned by `SidebarModel`
+- **Workspace restore**: `restoredFromWorkspace`, `pendingRestoreURL`
+
+When you add a new piece of state, before reaching for `@Published`:
+
+1. Can it be **derived** from existing state? (e.g. `splitIsOpen` is `splitURL != nil`)
+2. Is it really **per-document**, or per-tab, or per-app? (Per-tab → `Tab`; per-app → `PreferencesStore`)
+3. Will it fire on every keystroke? (If yes, debounce or move to local `@State` in the view.)
+
+The 60Hz sidebar-resize jank fix is the warning here: `@Published` setters
+are value-blind (writing the same value re-fires), and downstream
+`.onChange` handlers can cascade. See LESSONS.md.
+
+## The request-nonce pattern
+
+SwiftUI ↔ NSViewRepresentable commands (scroll-to-match, focus-find,
+trigger-find-from-menu) flow through a `@Published` *nonce* + payload,
+not direct method calls — because `NSViewRepresentable` only sees
+`updateNSView`, not your custom selectors.
+
+Shape:
+
+```swift
+// On the model:
+@Published var scrollToMatchRequest: (nonce: Int, range: NSRange)? = nil
+
+func requestScrollTo(_ r: NSRange) {
+    scrollToMatchRequest = (nonce: (scrollToMatchRequest?.nonce ?? 0) + 1, range: r)
+}
+
+// In NSViewRepresentable.updateNSView:
+if let req = model.scrollToMatchRequest,
+   req.nonce != coordinator.lastHandledNonce {
+    coordinator.lastHandledNonce = req.nonce
+    nsView.scrollRangeToVisible(req.range)
+}
+```
+
+The nonce is the transport; it carries "this is a new request" past
+SwiftUI's diff-the-value optimization. Without it, identical payloads
+silently no-op.
+
+Use it for: commands (action signals), not state (the value itself).
+A typed enum payload + nonce is fine. Don't pattern-match the value to
+decide if it's "new" — that's what the nonce is for.
+
+## Module boundaries (hard rules)
+
+```
+┌──────────────────────────────────────────────────┐
+│ MarkdownViewer (exe)                             │
+│   AppDelegate, menu bar, window, NSApp lifecycle │
+└─────────────┬────────────────────────────────────┘
+              ↓ imports
+┌──────────────────────────────────────────────────┐
+│ ViewerUI                                         │
+│   SwiftUI views, NSViewRepresentable, DocumentModel
+└─────────────┬────────────────────────────────────┘
+              ↓ imports
+┌──────────────────────────────────────────────────┐
+│ ViewerCore                                       │
+│   Logic: highlight, format, load, search, git    │
+│   NO SwiftUI. NO AppKit (with rare exceptions).  │
+└─────────────┬────────────────────────────────────┘
+              ↓ imports
+┌──────────────────────────────────────────────────┐
+│ ViewerKit                                        │
+│   Types only: enums, structs, prefs schema.      │
+│   No logic. No I/O. No AppKit. No SwiftUI.       │
+└──────────────────────────────────────────────────┘
+```
+
+Why this is load-bearing:
+
+- `ViewerKit` can be imported anywhere — including from tests, scripts,
+  and headless tooling. Keeping it logic-free means importing it never
+  drags in NSApp init or main-actor isolation.
+- `ViewerCore` is testable without a running app. The TreeSitter actor,
+  diff highlighter, CSV parser, git wrappers all unit-test on CI without
+  a WindowServer.
+- `ViewerUI` is where SwiftUI lives. The instant you `import SwiftUI`
+  in `ViewerCore`, the test target needs main-actor wiring and stops
+  running in parallel. Don't.
+- `MarkdownViewer` is the glue. Everything app-level (AppDelegate,
+  selectors, `@main`) lives here. No business logic — it should be
+  almost entirely menu construction + selector forwarding.
+
+If you're tempted to add `import SwiftUI` to `ViewerCore`, the answer
+is almost always: move the type to `ViewerKit` instead, or expose it
+via a value-typed boundary that `ViewerUI` consumes.

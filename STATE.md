@@ -218,3 +218,63 @@ Integration in `DocumentModel`:
   on `DocumentModel` is sufficient.
 - Network sync as a first-class feature. iCloud Documents is the
   ceiling for any cross-device story.
+
+---
+
+## Appendix: known footguns in the current state graph
+
+### `@Published` setters are value-blind
+
+Writing the same value re-fires the publisher. Two real consequences:
+
+1. **Resize jank** — dragging the sidebar splitter at 60Hz pumps
+   `@Published var sidebarWidth: Double` even when the rounded
+   value didn't change. Every fire re-runs SwiftUI's body across the
+   whole sidebar subtree. Fix used in `DraggableSidebar.swift`: keep a
+   local `@State liveWidth: Double?` during drag, commit to the model
+   on `onEnded`.
+2. **`.onChange` cascades** — if you `.onChange(of: someField)` and
+   inside the handler you set another `@Published` to its current
+   value, you've created a no-op write that still notifies. Cheap to
+   miss; expensive on hot paths. Compare-and-set before writing.
+
+### Caches that aren't keyed on the right thing
+
+`DocumentModel.highlightCache` and `renderedHTMLCache` are keyed by
+content hash, not URL. That's deliberate: re-opening the same file
+post-edit must miss the cache. But it also means renaming the file in
+the sidebar should NOT invalidate. Be careful when adding cache keys —
+the wrong key shape silently doubles memory or thrashes work.
+
+### Request-nonce pattern (also documented in HACKABILITY.md)
+
+Commands flow as `(nonce: Int, payload: T)?` published pairs:
+`renderedFindNextRequest`, `renderedFindFocusRequest`,
+`sourceFindNextRequest`, the scroll-to-match request in
+`TextDisplayView`. The nonce is what makes "identical request fired
+again" actually re-trigger past SwiftUI's value-diff.
+
+Don't shortcut this with a raw payload. If you add a new command
+channel, follow the same shape.
+
+### Per-extension default-mode override
+
+`DocumentModel.defaultModeOverrides: [String: ViewMode]` lets the user
+set "always open `.csv` as table". It lives on the model but writes
+through to `PreferencesStore` on every change. Persisted, but not
+under the workspace JSON — it's a user preference (global), not
+per-workspace.
+
+### Caches directory paths
+
+Generated artifacts that aren't user-authored go to
+`~/Library/Caches/com.markdownviewer.MarkdownViewer/` — not
+Application Support. Examples:
+
+- Git log markdown (`showGitLog` output): `caches/git/<sha-prefix>.md`
+- Mermaid render cache (planned)
+- TreeSitter parse cache (if we ever persist it; today in-memory only)
+
+Application Support is for *user data we'd be sorry to lose*
+(bookmarks, history, workspaces). Caches is for *anything regenerable*.
+Don't mix them.
