@@ -84,6 +84,9 @@ private struct TabContextMenu: View {
         if let url = tab.url {
             Button("Copy Path") { Pasteboard.copy(url.path) }
             Button("Reveal in Finder") { Finder.reveal(url) }
+            Button("Reveal in Sidebar") {
+                model.revealInSidebar(url)
+            }
         }
     }
 }

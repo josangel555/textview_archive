@@ -138,6 +138,55 @@ public final class DocumentModel: ObservableObject {
     /// application(_:open:) and the argv handler. If the path doesn't exist
     /// we still call `open(url:)` so the user sees the "File not found"
     /// error tab rather than a silent no-op.
+    /// Reveal `url` in the sidebar: switch the root if needed, expand
+    /// every parent directory between the root and the URL, select the
+    /// URL. Used by tab right-click → "Reveal in Sidebar" and by the
+    /// implicit-reveal-on-click hook in the file tree.
+    public func revealInSidebar(_ url: URL) {
+        let target = url.standardizedFileURL.resolvingSymlinksInPath()
+        // If sidebar has no root, OR the URL isn't inside the current
+        // root, set the root to the URL's containing folder (unless
+        // the sidebar is locked — then bail with selection only).
+        let needsRoot: Bool = {
+            guard let root = sidebar.rootURL else { return true }
+            let rootPath = root.standardizedFileURL.resolvingSymlinksInPath().path
+            return !target.path.hasPrefix(rootPath + "/") && target.path != rootPath
+        }()
+        if needsRoot {
+            if isSidebarLocked {
+                // Locked — keep the existing root; we can only select
+                // inside it, not navigate elsewhere. Silently no-op.
+                return
+            }
+            let folder = target.hasDirectoryPath ? target : target.deletingLastPathComponent()
+            sidebar.setRoot(folder)
+        }
+        // Expand every ancestor from the root down to (but not
+        // including) the URL itself. This walks string components
+        // rather than file-system traversal so it doesn't do IO.
+        if let root = sidebar.rootURL {
+            let rootStd = root.standardizedFileURL.resolvingSymlinksInPath()
+            var cur = rootStd
+            let rel = target.path
+                .replacingOccurrences(of: rootStd.path + "/", with: "")
+                .split(separator: "/")
+                .map(String.init)
+            // Always expand the root itself so the tree is visible.
+            if !sidebar.isExpanded(cur) { sidebar.toggleExpansion(cur) }
+            for segment in rel.dropLast() {
+                cur = cur.appendingPathComponent(segment, isDirectory: true)
+                if !sidebar.isExpanded(cur) { sidebar.toggleExpansion(cur) }
+            }
+        }
+        sidebar.setSelected(target)
+    }
+
+    /// Whether the sidebar root is locked. When true, `revealInSidebar`
+    /// and other auto-navigation hooks won't change the root.
+    @Published public var isSidebarLocked: Bool = false
+
+    public func toggleSidebarLock() { isSidebarLocked.toggle() }
+
     public func openPath(_ url: URL) {
         var isDir: ObjCBool = false
         if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir),

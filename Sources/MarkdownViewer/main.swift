@@ -895,6 +895,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         formatItem.target = self
         viewMenu.addItem(formatItem)
 
+        let jqItem = NSMenuItem(
+            title: "Apply jq Filter…",
+            action: #selector(applyJQFilter(_:)),
+            keyEquivalent: "j"
+        )
+        jqItem.keyEquivalentModifierMask = [.command, .option]
+        jqItem.target = self
+        viewMenu.addItem(jqItem)
+
         let bookmarkItem = NSMenuItem(
             title: "Bookmark / Unbookmark Current",
             action: #selector(toggleBookmark(_:)),
@@ -1060,6 +1069,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     @objc func toggleFormat(_ sender: Any?) {
         model.toggleFormat()
+    }
+
+    /// Apply jq Filter… — prompts for a filter expression, runs jq
+    /// over the current document, and opens the output as a new
+    /// `.json` tab. Disabled when jq isn't on disk or the current
+    /// file isn't a text file we can pipe in.
+    @objc func applyJQFilter(_ sender: Any?) {
+        guard JQRunner.isAvailable else {
+            let alert = NSAlert()
+            alert.messageText = "jq is not installed"
+            alert.informativeText = "Install with `brew install jq` or upgrade macOS to 15.x (ships jq at /usr/bin/jq)."
+            alert.runModal()
+            return
+        }
+        guard case let .loaded(file) = model.currentState else { return }
+
+        let prompt = NSAlert()
+        prompt.messageText = "Apply jq filter"
+        prompt.informativeText = "Pipes the current document through `jq <filter>` and opens the result in a new tab. Example: `.users[] | select(.active)`"
+        let input = NSTextField(string: ".")
+        input.frame = NSRect(x: 0, y: 0, width: 320, height: 22)
+        input.placeholderString = "."
+        prompt.accessoryView = input
+        prompt.addButton(withTitle: "Apply")
+        prompt.addButton(withTitle: "Cancel")
+        let resp = prompt.runModal()
+        guard resp == .alertFirstButtonReturn else { return }
+        let filter = input.stringValue.isEmpty ? "." : input.stringValue
+
+        do {
+            let out = try JQRunner.run(filter: filter, json: file.contents)
+            // Write to caches dir and open as a new tab. Hashed name
+            // so distinct filter results don't collide on disk.
+            let cache = FileManager.default
+                .urls(for: .cachesDirectory, in: .userDomainMask).first
+                ?? URL(fileURLWithPath: NSTemporaryDirectory())
+            let dir = cache.appendingPathComponent("MarkdownViewer/jq", isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            var hasher = Hasher()
+            hasher.combine(file.url.path)
+            hasher.combine(filter)
+            let hashHex = String(UInt(bitPattern: hasher.finalize()), radix: 16)
+                .padding(toLength: 8, withPad: "0", startingAt: 0)
+                .prefix(8)
+            let base = file.url.deletingPathExtension().lastPathComponent
+            let outURL = dir.appendingPathComponent("\(base)-\(hashHex).json")
+            try out.write(to: outURL, atomically: true, encoding: .utf8)
+            model.openInNewTab(outURL)
+        } catch let err as JQRunner.Error {
+            let alert = NSAlert()
+            alert.messageText = "jq filter failed"
+            alert.informativeText = err.description
+            alert.alertStyle = .warning
+            alert.runModal()
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "jq filter failed"
+            alert.informativeText = "\(error)"
+            alert.runModal()
+        }
     }
 
     @objc func toggleSourceWordWrap(_ sender: Any?) {

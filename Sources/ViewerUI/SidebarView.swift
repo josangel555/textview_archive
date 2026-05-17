@@ -31,21 +31,38 @@ struct SidebarView: View {
                 // collapsible chevron + heading treatment as the
                 // other sections so the sidebar reads as a uniform
                 // accordion.
-                Button(action: { filesExpanded.toggle() }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: filesExpanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
-                            .frame(width: 10)
-                        Text("FILES")
-                            .font(.system(size: model.uiSize(10), weight: .semibold))
-                            .foregroundStyle(.secondary)
-                        Spacer()
+                HStack(spacing: 4) {
+                    Button(action: { filesExpanded.toggle() }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: filesExpanded ? "chevron.down" : "chevron.right")
+                                .font(.system(size: 9, weight: .semibold))
+                                .frame(width: 10)
+                            Text("FILES")
+                                .font(.system(size: model.uiSize(10), weight: .semibold))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                        }
+                        .contentShape(Rectangle())
                     }
-                    .contentShape(Rectangle())
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
+                    .buttonStyle(.plain)
+                    // Lock toggle. When locked, auto-reveal-on-click +
+                    // tab-reveal won't change the sidebar root; the
+                    // user's chosen folder stays put.
+                    Button(action: { model.toggleSidebarLock() }) {
+                        Image(systemName: model.isSidebarLocked
+                              ? "lock.fill" : "lock.open")
+                            .font(.system(size: 10))
+                            .foregroundStyle(model.isSidebarLocked
+                                             ? Color.accentColor
+                                             : .secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help(model.isSidebarLocked
+                          ? "Sidebar root locked — click to unlock"
+                          : "Lock sidebar root (prevent auto-navigation)")
                 }
-                .buttonStyle(.plain)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
                 if filesExpanded {
                     ScrollViewReader { proxy in
                         ScrollView {
