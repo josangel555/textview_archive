@@ -202,6 +202,7 @@ public enum FileIconClassifier {
         // Doc (purple)
         "md": ("MD", .doc), "mdx": ("MDX", .doc), "markdown": ("MD", .doc),
         "mdown": ("MD", .doc), "mkd": ("MD", .doc), "mkdn": ("MD", .doc),
+        "mmd": ("MMD", .doc), "mermaid": ("MMD", .doc),
         "rst": ("RST", .doc),
         "tex": ("TEX", .doc),
         "adoc": ("ADOC", .doc),

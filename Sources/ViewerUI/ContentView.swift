@@ -148,7 +148,18 @@ public struct ContentView: View {
             CSVTableView(text: file.contents)
         } else if model.currentViewMode == .diff {
             DiffView(text: file.contents, doc: model)
-        } else if category == .markdown && model.currentViewMode == .rendered {
+        } else if (category == .markdown && model.currentViewMode == .rendered)
+                    || (category == .mermaid && model.currentViewMode == .rendered) {
+            // A `.mmd`/`.mermaid` standalone file becomes a synthesized
+            // single-fence markdown document, then rides the same WebView
+            // path. The wrapper costs 14 bytes; we re-use the entire
+            // mermaid pipeline (intercept → host element → shim).
+            let renderedContents: String = {
+                if category == .mermaid {
+                    return "```mermaid\n\(file.contents)\n```\n"
+                }
+                return file.contents
+            }()
             VStack(spacing: 0) {
                 if model.isRenderedFindBarPresented {
                     MarkdownFindBar(model: model)
@@ -156,7 +167,7 @@ public struct ContentView: View {
                 MarkdownRenderedView(
                     html: model.renderedHTML(
                         forURL: file.url,
-                        contents: file.contents,
+                        contents: renderedContents,
                         renderer: renderer,
                         stylesheet: stylesheet
                     ),

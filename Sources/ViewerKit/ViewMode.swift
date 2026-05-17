@@ -21,7 +21,7 @@ public enum ViewModeOptions {
         guard let url else { return [.source, .hex] }
         var modes: [ViewMode] = [.source]
         let cat = FileTypeDetector.category(for: url)
-        if cat == .markdown { modes.insert(.rendered, at: 0) }
+        if cat == .markdown || cat == .mermaid { modes.insert(.rendered, at: 0) }
         if Self.supportsFormatting(url) { modes.append(.formatted) }
         // CSV / TSV files get a table mode. Default-on for these
         // extensions but `.source` stays available for raw-text view.
@@ -40,7 +40,8 @@ public enum ViewModeOptions {
         guard let url else { return .source }
         if Self.supportsDiff(url) { return .diff }
         if Self.supportsTable(url) { return .table }
-        if FileTypeDetector.category(for: url) == .markdown { return .rendered }
+        let cat = FileTypeDetector.category(for: url)
+        if cat == .markdown || cat == .mermaid { return .rendered }
         return .source
     }
 

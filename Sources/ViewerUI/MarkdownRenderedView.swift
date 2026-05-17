@@ -55,6 +55,28 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         prefs.allowsContentJavaScript = true
         config.defaultWebpagePreferences = prefs
 
+        // Mermaid runtime + shim. WKUserScript injections are not subject
+        // to the page CSP (Apple confirms; `script-src 'none'` only blocks
+        // <script> tags in the document). The runtime must be parsed
+        // before the page body so `window.mermaid` exists by the time the
+        // shim looks for it; the shim runs at .atDocumentEnd and itself
+        // gates on `DOMContentLoaded` for safety.
+        let userContent = config.userContentController
+        if !MermaidBundle.runtime.isEmpty {
+            userContent.addUserScript(WKUserScript(
+                source: MermaidBundle.runtime,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            ))
+        }
+        if !MermaidBundle.shimJS.isEmpty {
+            userContent.addUserScript(WKUserScript(
+                source: MermaidBundle.shimJS,
+                injectionTime: .atDocumentEnd,
+                forMainFrameOnly: true
+            ))
+        }
+
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = context.coordinator

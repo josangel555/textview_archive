@@ -907,7 +907,16 @@ public final class DocumentModel: ObservableObject {
     ) -> String {
         let key = RenderedHTMLKey(url: url, length: (contents as NSString).length)
         if let hit = renderedHTMLCache[key] { return hit }
-        let html = renderer.renderPage(contents, stylesheet: stylesheet)
+        // Mermaid CSS rides along on every rendered markdown page. It's
+        // tiny (~1 KB) and inlining it unconditionally avoids the flash
+        // of unstyled mermaid hosts during initial render. The JS runtime
+        // is injected separately by `MarkdownRenderedView.makeNSView` via
+        // `WKUserScript`.
+        let html = renderer.renderPage(
+            contents,
+            stylesheet: stylesheet,
+            extraStylesheet: MermaidBundle.shimCSS
+        )
         renderedHTMLCache[key] = html
         if renderedHTMLCache.count > Self.renderedHTMLCacheMax {
             let drop = renderedHTMLCache.count - Self.renderedHTMLCacheMax * 2 / 3
@@ -926,7 +935,8 @@ public final class DocumentModel: ObservableObject {
 
     public var supportsViewModeToggle: Bool {
         guard let url = currentURL else { return false }
-        return FileTypeDetector.category(for: url) == .markdown
+        let cat = FileTypeDetector.category(for: url)
+        return cat == .markdown || cat == .mermaid
     }
 
     /// Full file path of the current tab, with `$HOME` shortened to `~`.

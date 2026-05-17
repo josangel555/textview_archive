@@ -1,0 +1,95 @@
+/* Mermaid integration — host container + step animation + control bar.
+   Themed off the existing --mdv-* variables defined in markdown.css so
+   dark mode flips automatically (mermaid's *internal* theme is swapped
+   by the JS shim's matchMedia listener). */
+
+.mdv-mermaid {
+  display: block;
+  margin: 1.5em 0;
+  padding: 8px;
+  background: transparent;
+  border: 1px solid var(--mdv-rule, rgba(127, 127, 127, 0.25));
+  border-radius: 6px;
+  overflow-x: auto;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  font-size: 13px;
+  outline: none;
+}
+.mdv-mermaid:focus {
+  border-color: var(--mdv-link, #0066cc);
+  box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.18);
+}
+.mdv-mermaid svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* Step visibility — labelled elements are hidden until reached. */
+.mdv-mermaid [data-mdv-step] {
+  opacity: 0;
+  transition: opacity 250ms ease-in-out;
+  pointer-events: none;
+}
+.mdv-mermaid [data-mdv-step].mdv-step-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* Step 0 = always visible, even before the user advances. */
+.mdv-mermaid [data-mdv-step="0"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Control bar */
+.mdv-mermaid-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--mdv-rule, rgba(127, 127, 127, 0.25));
+}
+.mdv-mermaid-btn {
+  appearance: none;
+  background: var(--mdv-code-bg, rgba(127, 127, 127, 0.12));
+  color: var(--mdv-fg, inherit);
+  border: 1px solid var(--mdv-code-border, rgba(127, 127, 127, 0.25));
+  border-radius: 4px;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  min-width: 28px;
+}
+.mdv-mermaid-btn:hover  { background: rgba(127, 127, 127, 0.22); }
+.mdv-mermaid-btn:active { background: rgba(127, 127, 127, 0.32); }
+.mdv-mermaid-counter {
+  margin-left: 8px;
+  color: var(--mdv-fg-secondary, rgba(127, 127, 127, 0.85));
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Error fallback for unparseable mermaid source. */
+.mdv-mermaid-error {
+  color: #c41a16;
+  font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  background: rgba(196, 26, 22, 0.10);
+  border: 1px solid rgba(196, 26, 22, 0.30);
+  border-radius: 4px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  white-space: pre-wrap;
+}
+.mdv-mermaid-error + pre {
+  font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  background: var(--mdv-code-bg, rgba(127, 127, 127, 0.10));
+  border: 1px solid var(--mdv-code-border, rgba(127, 127, 127, 0.25));
+  border-radius: 4px;
+  padding: 8px 10px;
+  white-space: pre;
+  overflow-x: auto;
+}

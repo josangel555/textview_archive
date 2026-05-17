@@ -3,6 +3,10 @@ import UniformTypeIdentifiers
 
 public enum FileCategory: String, Equatable, Sendable, CaseIterable {
     case markdown
+    /// Standalone mermaid diagram (.mmd / .mermaid). Rendered through the
+    /// same WKWebView path as markdown by wrapping the raw source in a
+    /// single mermaid fenced block; see `HTMLRenderer.visitCodeBlock`.
+    case mermaid
     case plainText
     case code
     case html
@@ -19,6 +23,10 @@ public enum FileTypeDetector {
     private static let markdownExtensions: Set<String> = [
         "md", "markdown", "mdown", "mkd", "mkdn"
     ]
+    /// Standalone mermaid diagram files. Checked *before* markdown so
+    /// `.mermaid` extension doesn't false-positive as markdown (it isn't
+    /// in `markdownExtensions`, but list-order discipline is cheap).
+    private static let mermaidExtensions: Set<String> = ["mmd", "mermaid"]
     private static let plainTextExtensions: Set<String> = [
         "txt", "text", "log", "csv", "tsv"
     ]
@@ -51,6 +59,7 @@ public enum FileTypeDetector {
     public static func category(for url: URL) -> FileCategory {
         let ext = url.pathExtension.lowercased()
 
+        if mermaidExtensions.contains(ext) { return .mermaid }
         if markdownExtensions.contains(ext) { return .markdown }
         if plainTextExtensions.contains(ext) { return .plainText }
         if htmlExtensions.contains(ext) { return .html }

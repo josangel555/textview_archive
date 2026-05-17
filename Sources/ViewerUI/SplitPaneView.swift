@@ -82,9 +82,19 @@ struct SplitPaneView: View {
         // construction. The text only renders when we have it.
         if let file = try? TextFileLoader().load(url: url) {
             let ext = url.pathExtension.lowercased()
-            if FileTypeDetector.category(for: url) == .markdown {
+            let cat = FileTypeDetector.category(for: url)
+            if cat == .markdown || cat == .mermaid {
+                // `.mmd` standalone files get wrapped into a single mermaid
+                // fence so the same renderer path handles them.
+                let body: String = (cat == .mermaid)
+                    ? "```mermaid\n\(file.contents)\n```\n"
+                    : file.contents
                 MarkdownRenderedView(
-                    html: HTMLRenderer().render(file.contents),
+                    html: HTMLRenderer().renderPage(
+                        body,
+                        stylesheet: MarkdownStylesheet.cached,
+                        extraStylesheet: MermaidBundle.shimCSS
+                    ),
                     baseURL: url.deletingLastPathComponent(),
                     zoom: zoom
                 )

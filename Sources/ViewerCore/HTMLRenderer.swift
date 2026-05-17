@@ -23,7 +23,14 @@ public struct HTMLRenderer: Sendable {
     /// Includes a strict Content-Security-Policy (CRIT-1) that denies network
     /// requests, scripts, iframes, plugins, base/form retargeting. Local file
     /// images are still allowed (markdown documents reference relative images).
-    public func renderPage(_ markdown: String, stylesheet: String) -> String {
+    ///
+    /// `extraStylesheet` is appended verbatim inside the same `<style>` block.
+    /// Used to inline feature-specific CSS (e.g. the mermaid shim's palette)
+    /// without forcing every caller to rebuild a combined stylesheet string.
+    /// Defaults to empty so existing call sites compile unchanged.
+    public func renderPage(_ markdown: String,
+                           stylesheet: String,
+                           extraStylesheet: String = "") -> String {
         let body = render(markdown)
         let csp = "default-src 'none'; img-src file: data:; style-src 'unsafe-inline'; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none';"
         return """
@@ -33,7 +40,8 @@ public struct HTMLRenderer: Sendable {
         <meta charset="utf-8">
         <meta http-equiv="Content-Security-Policy" content="\(csp)">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>\(stylesheet)</style>
+        <style>\(stylesheet)
+        \(extraStylesheet)</style>
         </head>
         <body>
         \(body)
@@ -100,6 +108,17 @@ struct HTMLVisitor: MarkupVisitor {
 
     mutating func visitCodeBlock(_ codeBlock: CodeBlock) -> String {
         let infoString = codeBlock.language ?? ""
+
+        // Mermaid intercept (case-insensitive). Emit a host <div> that
+        // the JS shim picks up on DOMContentLoaded — `mermaid.run({ nodes })`
+        // reads the raw source from the element's text content. Step
+        // annotations + an optional `%% @id` are parsed Swift-side once
+        // and serialized into data-attributes so the shim doesn't have
+        // to re-walk the source.
+        if infoString.lowercased() == "mermaid" {
+            return renderMermaidHost(source: codeBlock.code)
+        }
+
         let langAttr = infoString.isEmpty
             ? ""
             : " class=\"language-\(htmlEscape(infoString))\""
@@ -115,6 +134,36 @@ struct HTMLVisitor: MarkupVisitor {
             body = htmlEscape(codeBlock.code)
         }
         return "<pre><code\(langAttr)>\(body)</code></pre>\n"
+    }
+
+    /// Builds the `<div class="mdv-mermaid">` host element consumed by
+    /// `mermaid-shim.js`. The raw source is preserved both as a child
+    /// text node (so mermaid's scanner picks it up unmodified) and as a
+    /// `data-mdv-src` attribute (so theme-flip re-renders can restore the
+    /// pristine source after mermaid has mutated the host children).
+    func renderMermaidHost(source: String) -> String {
+        let parsed = MermaidSourceParser.parse(source)
+        let hash = MermaidSourceParser.shortHash(source)
+        let id = parsed.id ?? "mdv-mermaid-\(hash)"
+
+        var attrs = "class=\"mdv-mermaid\""
+        attrs += " data-mdv-id=\"\(htmlEscape(id))\""
+        attrs += " data-mdv-src-hash=\"\(hash)\""
+        if !parsed.steps.isEmpty {
+            let json = MermaidSourceParser.encodeSteps(parsed.steps)
+            attrs += " data-mdv-steps=\"\(htmlEscape(json))\""
+        }
+        // Pristine source stashed for theme-flip re-render. Encoding via
+        // htmlEscape collapses quotes/angle-brackets into entity refs,
+        // which the shim's `setAttribute`/`getAttribute` pair round-trips
+        // through the DOM unmodified.
+        attrs += " data-mdv-src=\"\(htmlEscape(source))\""
+
+        // The visible text-node child is what `mermaid.run({ nodes })`
+        // parses. We deliberately do not wrap it in `<code>`/`<pre>` —
+        // mermaid's tokenizer is whitespace-sensitive and our stylesheet
+        // rules for `pre`/`code` would visually leak into the host.
+        return "<div \(attrs)>\(htmlEscape(source))</div>\n"
     }
 
     /// Emit text with per-run `<span class="tok-X">` wrappers using
