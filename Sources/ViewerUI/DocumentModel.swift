@@ -1062,7 +1062,7 @@ public final class DocumentModel: ObservableObject {
             if let url = t.url, Formatter.SupportedFormat.detect(url) != nil {
                 formattedTabIDs.insert(t.id)
             }
-        case .source, .rendered, .table:
+        case .source, .rendered, .table, .diff:
             formattedTabIDs.remove(t.id)
             if let url = t.url, case .binary = t.state {
                 loadTextAsync(url: url, intoTabID: t.id)

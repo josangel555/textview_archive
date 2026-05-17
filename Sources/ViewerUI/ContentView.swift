@@ -145,6 +145,8 @@ public struct ContentView: View {
         let category = FileTypeDetector.category(for: file.url)
         if model.currentViewMode == .table {
             CSVTableView(text: file.contents)
+        } else if model.currentViewMode == .diff {
+            DiffView(text: file.contents, doc: model)
         } else if category == .markdown && model.currentViewMode == .rendered {
             VStack(spacing: 0) {
                 if model.isRenderedFindBarPresented {
@@ -288,6 +290,7 @@ struct ModeBar: View {
         case .source:    return "Source"
         case .formatted: return "Format"
         case .table:     return "Table"
+        case .diff:      return "Diff"
         case .hex:       return "HEX"
         }
     }

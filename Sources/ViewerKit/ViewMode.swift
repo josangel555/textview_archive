@@ -9,6 +9,7 @@ public enum ViewMode: String, Equatable, Sendable, CaseIterable {
     case source      // every text file: NSTextView with syntax highlight
     case formatted   // JSON / XML / etc.: pretty-printed source
     case table       // csv / tsv: column-major grid
+    case diff        // .diff / .patch: per-hunk colored DiffView
     case hex         // every file: byte grid
 }
 
@@ -25,6 +26,9 @@ public enum ViewModeOptions {
         // CSV / TSV files get a table mode. Default-on for these
         // extensions but `.source` stays available for raw-text view.
         if Self.supportsTable(url) { modes.insert(.table, at: 0) }
+        // .diff / .patch files get the dedicated DiffView as default,
+        // with `.source` still available for raw-text inspection.
+        if Self.supportsDiff(url) { modes.insert(.diff, at: 0) }
         modes.append(.hex)
         return modes
     }
@@ -34,6 +38,7 @@ public enum ViewModeOptions {
     /// front of the picker.
     public static func defaultMode(for url: URL?) -> ViewMode {
         guard let url else { return .source }
+        if Self.supportsDiff(url) { return .diff }
         if Self.supportsTable(url) { return .table }
         if FileTypeDetector.category(for: url) == .markdown { return .rendered }
         return .source
@@ -48,11 +53,19 @@ public enum ViewModeOptions {
         "csv", "tsv"
     ]
 
+    private static let diffExtensions: Set<String> = [
+        "diff", "patch"
+    ]
+
     private static func supportsFormatting(_ url: URL) -> Bool {
         formatterExtensions.contains(url.pathExtension.lowercased())
     }
 
     private static func supportsTable(_ url: URL) -> Bool {
         tableExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    private static func supportsDiff(_ url: URL) -> Bool {
+        diffExtensions.contains(url.pathExtension.lowercased())
     }
 }
