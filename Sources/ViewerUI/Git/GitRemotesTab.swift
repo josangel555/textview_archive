@@ -21,7 +21,7 @@ struct GitRemotesTab: View {
                     ForEach(model.remoteEntries, id: \.name) { row($0) }
                 }
             }
-            .frame(maxHeight: 220)
+            .frame(height: SidebarConstants.sectionBodyHeight)
         }
     }
 

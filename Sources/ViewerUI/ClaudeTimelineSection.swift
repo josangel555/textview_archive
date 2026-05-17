@@ -73,7 +73,7 @@ struct ClaudeTimelineSection: View {
                 }
             }
         }
-        .frame(maxHeight: 280)
+        .frame(height: SidebarConstants.sectionBodyHeight)
     }
 
     private func row(_ event: ClaudeEvent) -> some View {

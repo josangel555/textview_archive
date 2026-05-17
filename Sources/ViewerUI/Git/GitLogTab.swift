@@ -50,7 +50,7 @@ struct GitLogTab: View {
                     }
                 }
             }
-            .frame(maxHeight: 320)
+            .frame(height: SidebarConstants.sectionBodyHeight)
         }
     }
 

@@ -21,7 +21,7 @@ struct GitWorktreesTab: View {
                     ForEach(model.worktreeEntries, id: \.path) { row($0) }
                 }
             }
-            .frame(maxHeight: 220)
+            .frame(height: SidebarConstants.sectionBodyHeight)
         }
     }
 

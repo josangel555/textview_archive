@@ -28,7 +28,7 @@ struct GitStatusTab: View {
                     }
                 }
             }
-            .frame(maxHeight: 240)
+            .frame(height: SidebarConstants.sectionBodyHeight)
         }
     }
 

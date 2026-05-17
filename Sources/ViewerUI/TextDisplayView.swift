@@ -410,12 +410,14 @@ public final class SourceTextController: NSViewController {
         if let prev = lastCurrentLineRange {
             lm.removeTemporaryAttribute(.backgroundColor, forCharacterRange: prev)
         }
-        // Blend the theme's selected-line tint over the background:
-        // ~7% on dark themes, ~5% on light. Visible but unobtrusive.
-        let backdrop = (currentTheme.background.brightnessComponent < 0.5
-                        ? NSColor.white
-                        : NSColor.black)
-            .withAlphaComponent(0.06)
+        // Blend the theme's selected-line tint over the background.
+        // Tuned for visibility — user feedback said the prior ~6%
+        // wasn't obvious enough. 12% on dark themes, 8% on light:
+        // dark backgrounds swallow contrast faster, so they need
+        // more lift to read as a "current line" cue.
+        let isDark = currentTheme.background.brightnessComponent < 0.5
+        let backdrop = (isDark ? NSColor.white : NSColor.black)
+            .withAlphaComponent(isDark ? 0.12 : 0.08)
         lm.addTemporaryAttribute(.backgroundColor, value: backdrop,
                                  forCharacterRange: lineRange)
         lastCurrentLineRange = lineRange

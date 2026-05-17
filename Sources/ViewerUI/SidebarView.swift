@@ -74,6 +74,11 @@ struct SidebarView: View {
             }
         }
         .frame(minWidth: 180, idealWidth: 240)
+        // Top-align: without this, a short content stack centers
+        // vertically in the available window height, leaving sections
+        // floating in the middle. maxHeight:.infinity claims all the
+        // height; alignment:.top pins content to the top.
+        .frame(maxHeight: .infinity, alignment: .top)
         .background(Color(nsColor: .textBackgroundColor))
         .background(
             SidebarKeyMonitor(

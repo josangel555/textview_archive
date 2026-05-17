@@ -21,7 +21,7 @@ struct GitStashTab: View {
                     ForEach(model.stashEntries, id: \.ref) { row($0) }
                 }
             }
-            .frame(maxHeight: 220)
+            .frame(height: SidebarConstants.sectionBodyHeight)
             .alert(item: $pendingDrop) { entry in
                 Alert(
                     title: Text("Drop \(entry.ref)?"),

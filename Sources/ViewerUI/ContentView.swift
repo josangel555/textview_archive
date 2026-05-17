@@ -176,7 +176,14 @@ public struct ContentView: View {
             }
         } else {
             let displayed = model.displayText(for: file)
-            let lang = HighlightLanguage.detect(from: file.url)
+            // Effective language honors the manual override picked
+            // from the language dropdown in the ModeBar (per-tab).
+            let lang: HighlightLanguage = {
+                if let id = model.tabs.selected?.id {
+                    return model.effectiveLanguage(forTabID: id, url: file.url)
+                }
+                return HighlightLanguage.detect(from: file.url)
+            }()
             VStack(spacing: 0) {
                 if model.isSourceFindBarPresented {
                     SourceFindBar(model: model)
@@ -260,17 +267,50 @@ struct ModeBar: View {
                     .accessibilityIdentifier("mdv.invisiblesToggle")
             }
             if let badge = languageBadgeText {
-                Text(badge)
+                Menu {
+                    // "Auto" reverts to extension-based detection by
+                    // setting the override back to the detected value.
+                    if let url = model.currentURL {
+                        let auto = HighlightLanguage.detect(from: url)
+                        Button(action: { model.setCurrentLanguage(auto) }) {
+                            HStack {
+                                Text("Auto (\(auto.displayName))")
+                                if !model.hasLanguageOverride { Image(systemName: "checkmark") }
+                            }
+                        }
+                        Divider()
+                    }
+                    ForEach(HighlightLanguage.allCases, id: \.self) { lang in
+                        Button(action: { model.setCurrentLanguage(lang) }) {
+                            Text(lang.displayName)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 2) {
+                        Text(badge)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 7, weight: .bold))
+                    }
                     .font(.system(size: model.uiSize(10), weight: .semibold))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
                     .background(
                         RoundedRectangle(cornerRadius: 3)
-                            .fill(Color.secondary.opacity(0.15))
+                            .fill(model.hasLanguageOverride
+                                  ? Color.accentColor.opacity(0.20)
+                                  : Color.secondary.opacity(0.15))
                     )
-                    .foregroundStyle(.secondary)
-                    .help("Detected language for syntax highlighting")
-                    .accessibilityIdentifier("mdv.languageBadge")
+                    .foregroundStyle(model.hasLanguageOverride
+                                     ? Color.accentColor
+                                     : .secondary)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help(model.hasLanguageOverride
+                      ? "Language overridden — click to change or pick Auto"
+                      : "Detected language — click to override")
+                .accessibilityIdentifier("mdv.languageBadge")
             }
             // File path moved to the bottom status bar (cleaner UI;
             // matches how Xcode / VS Code split metadata from
@@ -296,13 +336,18 @@ struct ModeBar: View {
         }
     }
 
-    /// Shown when source mode is active AND the file's language was
-    /// detected as something other than plain text. Hidden for markdown
-    /// rendered mode (where the picker already conveys context).
+    /// Shown when source mode is active. Honors per-tab override so
+    /// the chip reflects what's actually being highlighted, not the
+    /// extension-based detection. Hidden in rendered-markdown mode
+    /// (the mode picker already conveys context there).
     private var languageBadgeText: String? {
-        guard let url = model.currentURL else { return nil }
-        let lang = HighlightLanguage.detect(from: url)
-        guard lang != .plainText else { return nil }
+        guard let url = model.currentURL,
+              let id = model.tabs.selected?.id else { return nil }
+        let lang = model.effectiveLanguage(forTabID: id, url: url)
+        // Plain text + no override = hide the chip (saves visual noise
+        // on .txt files). When the user explicitly picked "Plain Text"
+        // we still show the chip so they can pick a different language.
+        if lang == .plainText && !model.hasLanguageOverride { return nil }
         if model.supportsViewModeToggle, model.currentViewMode == .rendered {
             return nil
         }

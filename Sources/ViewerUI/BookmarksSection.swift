@@ -39,19 +39,12 @@ struct BookmarksSection: View {
                         }
                     }
                 }
-                .frame(maxHeight: rowsHeightCap)
+                .frame(height: SidebarConstants.sectionBodyHeight)
             }
         }
         .accessibilityIdentifier("mdv.bookmarks")
     }
 
-    /// Cap the bookmarks panel so a huge list doesn't push the file
-    /// tree off-screen. ~6 rows visible by default; the panel scrolls
-    /// past that.
-    private var rowsHeightCap: CGFloat {
-        let count = max(1, min(model.bookmarks.count, 6))
-        return CGFloat(count) * 22
-    }
 }
 
 private struct BookmarkRow: View {

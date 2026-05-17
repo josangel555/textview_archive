@@ -624,6 +624,45 @@ public final class DocumentModel: ObservableObject {
     ///   - closing a tab automatically prunes its entry below
     @Published private var formattedTabIDs: Set<UUID> = []
 
+    /// Per-tab override of the auto-detected language. User can pick
+    /// from the language badge dropdown to force a `.txt` file into
+    /// JSON mode (or whatever). Keyed by Tab.id so two tabs of the
+    /// same file can have independent overrides.
+    @Published private var languageOverrides: [UUID: HighlightLanguage] = [:]
+
+    /// Effective language for a given tab — override wins over
+    /// auto-detection. Public so the ModeBar dropdown + the source
+    /// view both read the same source of truth.
+    public func effectiveLanguage(forTabID id: UUID, url: URL) -> HighlightLanguage {
+        languageOverrides[id] ?? HighlightLanguage.detect(from: url)
+    }
+
+    /// Set or clear the override for the current tab. Passing the
+    /// auto-detected language clears the override (so a follow-up
+    /// rename still does the right thing).
+    public func setCurrentLanguage(_ lang: HighlightLanguage) {
+        guard let id = tabs.selected?.id,
+              let i = tabs.tabs.firstIndex(where: { $0.id == id }),
+              let url = tabs.tabs[i].url else { return }
+        let auto = HighlightLanguage.detect(from: url)
+        if lang == auto {
+            languageOverrides.removeValue(forKey: id)
+        } else {
+            languageOverrides[id] = lang
+        }
+        // Kick a re-highlight by touching the tab's state without
+        // mutating it (no-op assignment). The publish triggers the
+        // source view's highlightRuns recompute downstream.
+        let t = tabs.tabs[i]
+        tabs.replace(at: i, with: t)
+    }
+
+    /// True if a manual override is set for the current tab.
+    public var hasLanguageOverride: Bool {
+        guard let id = tabs.selected?.id else { return false }
+        return languageOverrides[id] != nil
+    }
+
     /// True if the current tab's file is a format that can be pretty-
     /// printed (JSON / XML / HTML / SVG / .plist / .xib / .storyboard).
     public var supportsFormatToggle: Bool {

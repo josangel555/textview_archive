@@ -99,7 +99,7 @@ struct SearchAnywhereSection: View {
                 }
             }
         }
-        .frame(maxHeight: 320)
+        .frame(height: SidebarConstants.sectionBodyHeight)
     }
 
     @ViewBuilder
