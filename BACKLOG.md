@@ -1,10 +1,16 @@
 # Backlog
 
-> Last overnight session swept the **Bug fixes**, **Sidebar / folder UX**,
-> **Scaling polish**, **Build hygiene**, **CSV → tables**, **Accordion
-> sidebar**, and **Split view (Phase 2.5)** sections. Design docs
-> landed for Mermaid, Walkthroughs, and Automation/MCP (under `docs/`).
-> Remaining unticked items below — re-read pre-implementation.
+> **Update 2026-05-16 (afternoon session):** shipped the tabbed Git
+> panel (Status / Log / Stash / Trees / Remotes with topological
+> Canvas graph), proper DiffView for `.diff`/`.patch` tabs, Swift 6.3
+> strict-concurrency migration (caught by VM build canary), and the
+> JSONFileStore refactor (Batch 3 partial). Items below are what's
+> left unticked after the sweep.
+>
+> **Previous overnight session swept:** Bug fixes, Sidebar / folder UX,
+> Scaling polish, Build hygiene, CSV → tables, Accordion sidebar,
+> Split view (Phase 2.5). Design docs landed for Mermaid,
+> Walkthroughs, and Automation/MCP under `docs/`.
 
 Roll-up of pending items as of 2026-05-16. Each line links to the
 relevant module / file when applicable. Ordering inside each section
@@ -12,13 +18,10 @@ is rough priority — most-asked-for first.
 
 ## Bug fixes (small, urgent)
 
-- **Find mode: can't scroll past currently-selected match.** When the
-  find bar is active, scrolling stalls at the current match. Probably
-  `scrollRangeToVisible` recentering on every redraw.
-  → `Sources/ViewerUI/TextDisplayView.swift`, find application path.
-- **Rendered-MD find: highlights persist after dismiss.** Closing the
-  find bar doesn't clear the `<mark>` overlay in the WKWebView.
-  → `Sources/ViewerUI/MarkdownRenderedView.swift` + injected JS.
+- ~~**Find mode: can't scroll past currently-selected match.**~~ DONE
+  (commit `f12ee43` — `lastScrolledMatchIndex`).
+- ~~**Rendered-MD find: highlights persist after dismiss.**~~ DONE
+  (commit `f12ee43` — `window.__mdvFindClear` on empty query).
 - **Invisible characters appear too grey.** NSLayoutManager renders
   invisibles in `tertiaryLabelColor` (very faint). No public API to
   override. Fix needs an `NSLayoutManager` subclass that overrides
@@ -29,54 +32,43 @@ is rough priority — most-asked-for first.
 
 ## Sidebar / folder UX
 
-- **Right-click folder in sidebar → "Bookmark Folder".** `⌘D` only
-  bookmarks files. Folders need explicit context-menu entry.
-  → `Sources/ViewerUI/SidebarView.swift` `FileRowContextMenu`.
-- **Right-click folder → "Set as Git Root".** Currently the repo is
-  auto-discovered from the open folder via `.git` walk. User wants to
-  override for nested repos / submodules.
-  → `Sources/ViewerCore/Git/GitClient.swift` + `SidebarModel`.
+- ~~**Right-click folder → Bookmark Folder.**~~ DONE.
+- ~~**Right-click folder → Set as Git Root.**~~ DONE.
+- ~~**Right-click folder → Open in Terminal.**~~ DONE (commit `94e130d`).
 
 ## Scaling + chrome polish
 
-- **UI scaling audit.** `model.uiScale` reaches sidebar / tabs / mode
-  bar / status bar; needs sweep for missed surfaces: footer /
-  status-bar metrics, mode picker text, settings labels, bookmark
-  row line suffix, etc.
-- **Left sidebar resize feels janky.** Investigate
-  `DraggableSidebar.swift` — likely a layout pass thrash during
-  drag.
+- ~~**UI scaling audit.**~~ MOSTLY DONE. Remaining: ModeBar mode-picker
+  text doesn't scale with `uiScale`.
+- ~~**Left sidebar resize feels janky.**~~ DONE (commit `f12ee43` —
+  `@State liveWidth` during drag).
 
 ## Build hygiene
 
-- **Bundle size guard.** Add a `scripts/check-bundle-size.sh` that
-  fails if `dist/TextView.app` exceeds 25 MB. Wire into build-app.sh.
+- ~~**Bundle size guard.**~~ DONE (`scripts/check-bundle-size.sh`,
+  25 MB cap, wired into `build-app.sh`).
 
 ## Larger features (named)
 
-- **Bookmark current line: scroll-to-line plumbing** — DONE (commit
-  `f37af90`); ⌘⌥D wired. Manual-test only; tracked here so the test
-  gap is visible.
-- **Source-view git gutter marks** — DONE (commit `f37af90`).
-- **CSV rendering as tables.** Detect `.csv` / `.tsv`, render as a
-  proper grid view with the existing SQLite-style ResultTableView.
-  Per-cell text selection.
-- **Collapsible accordion sidebar sections.** Each panel
-  (BOOKMARKS / SEARCH / CHANGED / CLAUDE / files) gets a header
-  with chevron, click to collapse. Persist state.
-- **Split view.** Phase 2.5 — biggest unstarted feature. Side-by-side
-  two files in one window. Needs `WindowState` with primary +
-  secondary editor.
-- **Mermaid diagram support.** Render fenced ```mermaid blocks
-  inline. Pluggable so users can disable.
-- **Mermaid animations.** Step-through rendering — multiple frames,
-  controllable.
-- **Walkthrough system.** Predefined scripts Claude can send via
-  MCP; play/pause/skip/rewind; checkpoints to ask user questions.
-  See design doc `docs/WALKTHROUGH.md` (subagent-generated).
-- **Hackability / extensibility / automation.** Plugin surface,
-  IPC, scripting. See design doc `docs/HACKABILITY.md`
-  (subagent-generated).
+- ~~**Bookmark current line + gutter marks.**~~ DONE (commit `f37af90`).
+- ~~**CSV → tables.**~~ DONE.
+- ~~**Collapsible accordion sidebar sections.**~~ DONE.
+- ~~**Split view (Phase 2.5).**~~ DONE (commit `6fdad21`).
+- ~~**Tabbed Git panel.**~~ DONE (commits `b1cd878` + `bbd273b`):
+  Status / Log / Stash / Trees / Remotes; topological Canvas graph;
+  per-row branch chips + HEAD chip; ⌥⌘R refresh.
+- ~~**Proper file diff tab.**~~ DONE (commit `c8ea29c`): structured
+  DiffView with per-hunk colored rendering; default mode for
+  `.diff` / `.patch`.
+- **Mermaid diagram support.** Pending — design in `docs/MERMAID.md`.
+  3 user decisions waiting (vendor mermaid.min.js ~2.5 MB, %% @step N
+  convention, ← / → bindings).
+- **Mermaid animations.** Pending — depends on above.
+- **Walkthrough system.** Pending — design in `docs/WALKTHROUGH.md`.
+  5 decisions waiting (JSON vs YAML, transport, step taxonomy,
+  persistence, branching).
+- **MCP automation surface.** Pending — design in `docs/AUTOMATION.md`.
+  3 decisions waiting (swift-mcp dep, bundle ID, opt-in TCP).
 
 ## Deferred features
 
@@ -86,9 +78,8 @@ is rough priority — most-asked-for first.
 - **Expanded TreeSitter language support.** Java, Kotlin, Ruby,
   PHP, C#, Lua. Each is a new SwiftPM dep; conflicts with the
   minimal-deps rule. Pick 2-3 by user demand.
-- **Diff +/- line coloring in diff tabs.** Diff tab opens as plain
-  text right now. Color `+` lines green, `-` lines red via a custom
-  `HighlightRun` generator.
+- ~~**Diff +/- line coloring in diff tabs.**~~ DONE (commit `94e130d`
+  for runs; `c8ea29c` for proper DiffView with row backgrounds).
 - **Phase 9 distribution.** Real Developer ID + notarization. User
   said "local signing only for now"; revisit when shipping public.
 
@@ -110,8 +101,11 @@ is rough priority — most-asked-for first.
 - **Regex DoS on main thread.** `NSRegularExpression` has no
   timeout API. Right fix: run on a background actor with
   cancellation; show "regex slow" feedback after 200ms.
-- **Batch 3 refactor.** Extract `JSONFileStore`, delete
-  `LineNumberRulerView`, shared test helpers.
+- **Batch 3 refactor.** PARTIAL. `JSONFileStore` extracted (commit
+  `bf2f886`). `LineNumberRulerView` deletion deferred — it's still
+  gated behind `MDV_ENABLE_BROKEN_RULER=1` for the meta-regression
+  test that catches the compositor bug class. Shared test helpers
+  not addressed.
 - **`test_zoom_persistsAcrossNewTab`.** Known regression after
   view-mode normalization; guarded to not crash; not investigated.
 - **TESTS_AUDIT.md deletions.** E2E dedup proposed; awaiting
