@@ -1,5 +1,13 @@
 # Backlog
 
+> **Update 2026-05-17 (overnight session):** Shipped a sweep of small
+> UX fixes (sidebar top-align + static heights, current-line backdrop
+> visibility, language override dropdown, Reveal in Sidebar, Files
+> lock, jq CLI integration). Landed 6 large design docs under `docs/`
+> (Walkthrough v2, Code Review, Sessions, LSP, Plugins v2, Mermaid
+> impl). Mermaid + Code Review Phase 1 implementations spawned to
+> parallel agents — see commits.
+>
 > **Update 2026-05-16 (afternoon session):** shipped the tabbed Git
 > panel (Status / Log / Stash / Trees / Remotes with topological
 > Canvas graph), proper DiffView for `.diff`/`.patch` tabs, Swift 6.3
@@ -72,12 +80,19 @@ is rough priority — most-asked-for first.
 
 ## Deferred features
 
-- **jq / JSONPath query for JSON files.** Proposed: hand-rolled
-  `.users[0].name` subset, fallback to shell `/usr/bin/jq` if
-  present.
-- **Expanded TreeSitter language support.** Java, Kotlin, Ruby,
-  PHP, C#, Lua. Each is a new SwiftPM dep; conflicts with the
-  minimal-deps rule. Pick 2-3 by user demand.
+- ~~**jq query for JSON files.**~~ DONE (commit `89f45de`) — shells
+  out to `/usr/bin/jq` with Homebrew fallback. View menu → "Apply
+  jq Filter… (⌥⌘J)". 6 unit tests + 200 KB no-deadlock test.
+- **Expanded TreeSitter language support — IN PLAN.** User
+  approved: Java, C, C++, C#, JS, TS, Rust, Swift, Kotlin, Lua.
+  Currently wired: Swift, JS, TS. Currently declared but unwired:
+  Java, C, C++, Rust, Kotlin (no grammar deps). Missing entirely:
+  C#, Lua. Strategy: 7 new SwiftPM deps in one commit; bundle delta
+  ~2 MB (22 MB after, still under 25 MB cap); roll back any grammar
+  whose ABI doesn't match SwiftTreeSitter. Deferred from
+  2026-05-17 overnight because adding 7 deps autonomously is risky
+  when the user can't verify and the VM build canary won't run
+  until Xcode finishes installing.
 - ~~**Diff +/- line coloring in diff tabs.**~~ DONE (commit `94e130d`
   for runs; `c8ea29c` for proper DiffView with row backgrounds).
 - **Phase 9 distribution.** Real Developer ID + notarization. User
