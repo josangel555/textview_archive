@@ -22,6 +22,7 @@ import ViewerCore
 struct SplitPaneView: View {
     let url: URL
     let zoom: Double
+    let theme: SyntaxTheme
     let onClose: () -> Void
 
     var body: some View {
@@ -96,6 +97,7 @@ struct SplitPaneView: View {
                     fontSize: 13 * zoom,
                     language: lang,
                     runs: [],   // no syntax highlight in split v1 — saves a TreeSitter pass per render
+                    theme: theme,   // match main pane: dark theme in dark mode, etc.
                     wordWrap: false
                 )
             }

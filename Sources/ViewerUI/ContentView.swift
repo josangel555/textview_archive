@@ -39,6 +39,7 @@ public struct ContentView: View {
                         SplitPaneView(
                             url: splitURL,
                             zoom: model.zoom,
+                            theme: model.activeTheme,
                             onClose: { model.closeSplit() }
                         )
                         .frame(maxWidth: .infinity, maxHeight: .infinity)

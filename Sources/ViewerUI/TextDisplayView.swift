@@ -211,6 +211,10 @@ public final class SourceTextController: NSViewController {
     /// before this guard: ~5 MB/sec RSS growth in source mode at idle.
     private var lastFindSummary: String?
     private var lastPublishedSelection: SourceSelection?
+    /// Last theme passed to `apply()` — `applyCurrentLineHighlight`
+    /// reads it asynchronously from the selection observer so we
+    /// need it cached, not fetched out of the SwiftUI struct.
+    private var currentTheme: SyntaxTheme = .xcodeLight
 
     private struct AttrKey: Equatable {
         let text: String
@@ -355,6 +359,11 @@ public final class SourceTextController: NSViewController {
     /// publish via the caller's callback IF it changed. The dedupe
     /// is what stops the apply→publish→re-render→apply→… loop.
     private func publishSelection() {
+        // Re-apply the current-line backdrop on every selection move.
+        // Cheap (single line range), debounced internally by range
+        // equality below.
+        applyCurrentLineHighlight()
+
         guard let cb = onSelectionChange else { return }
         let sel = textView.selectedRange()
         let str = textView.string as NSString
@@ -375,6 +384,41 @@ public final class SourceTextController: NSViewController {
         if new == lastPublishedSelection { return }
         lastPublishedSelection = new
         cb(new)
+    }
+
+    /// Last line range we painted a current-line backdrop over —
+    /// remembered so the next selection move can clear it without
+    /// blowing away find / temp attributes elsewhere in the text.
+    private var lastCurrentLineRange: NSRange?
+
+    /// Paint a faint full-line backdrop behind the caret. Makes it
+    /// obvious which line `⌘⌥D` (bookmark current line) will operate
+    /// on. Uses `.backgroundColor` temporary attribute on the layout
+    /// manager — coexists with syntax highlighting (which uses real
+    /// text-storage attributes) but does collide with find highlights
+    /// (also temp attrs). Find takes priority — current-line backdrop
+    /// rebuilds whenever selection changes or find clears.
+    private func applyCurrentLineHighlight() {
+        guard let lm = textView.layoutManager,
+              let storage = textView.textStorage,
+              storage.length >= 0 else { return }
+        let sel = textView.selectedRange()
+        let location = min(sel.location, max(0, storage.length))
+        let lineRange = (textView.string as NSString)
+            .lineRange(for: NSRange(location: location, length: 0))
+        if lineRange == lastCurrentLineRange { return }
+        if let prev = lastCurrentLineRange {
+            lm.removeTemporaryAttribute(.backgroundColor, forCharacterRange: prev)
+        }
+        // Blend the theme's selected-line tint over the background:
+        // ~7% on dark themes, ~5% on light. Visible but unobtrusive.
+        let backdrop = (currentTheme.background.brightnessComponent < 0.5
+                        ? NSColor.white
+                        : NSColor.black)
+            .withAlphaComponent(0.06)
+        lm.addTemporaryAttribute(.backgroundColor, value: backdrop,
+                                 forCharacterRange: lineRange)
+        lastCurrentLineRange = lineRange
     }
 
     /// Match NSTextView's effective line height for the default
@@ -412,6 +456,7 @@ public final class SourceTextController: NSViewController {
         self.onScrollChange = onScrollChange
         self.onSelectionChange = onSelectionChange
         self.cachedFontSize = fontSize
+        self.currentTheme = theme
         scrollView.backgroundColor = theme.background
         textView.backgroundColor = theme.background
 
@@ -589,6 +634,10 @@ public final class SourceTextController: NSViewController {
               let textStorage = textView.textStorage else { return }
         let full = NSRange(location: 0, length: textStorage.length)
         layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: full)
+        // Find apply just wiped every backgroundColor attribute,
+        // including our current-line backdrop. Drop the cache so the
+        // next `publishSelection` reapplies it cleanly.
+        lastCurrentLineRange = nil
 
         let query = findState.query
         guard !query.isEmpty, textStorage.length > 0 else {

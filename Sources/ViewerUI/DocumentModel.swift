@@ -504,7 +504,29 @@ public final class DocumentModel: ObservableObject {
         else if let url = currentURL { openInSplit(url) }
     }
 
-    // MARK: - Git log
+    // MARK: - Git panel focus
+
+    /// Which Git-panel tab the user just asked the menu / a command
+    /// palette entry to focus. Paired with `gitPanelFocusRequest` so
+    /// SwiftUI's value-blind publish doesn't swallow repeat asks for
+    /// the same tab.
+    public enum GitPanelTab: String, Sendable, CaseIterable {
+        case status, log, stash, trees, remotes
+    }
+    @Published public var gitPanelFocusRequest: Int = 0
+    @Published public var gitPanelDesiredTab: GitPanelTab = .status
+
+    /// Focus the Git panel and select `tab`. If the panel section is
+    /// collapsed, the consumer expands it. Used by the View menu
+    /// items "Show Repository History" / "Show File History" / "Show
+    /// Git Panel" so those entries are discoverable without forcing
+    /// the user to click into the sidebar.
+    public func showGitPanel(tab: GitPanelTab = .status) {
+        gitPanelDesiredTab = tab
+        gitPanelFocusRequest &+= 1
+    }
+
+    // MARK: - Git log (legacy)
 
     public enum GitLogScope: Sendable { case file, folder, repo }
 

@@ -28,6 +28,17 @@ struct GitPanelSection: View {
         .onAppear { syncRepo() }
         .onChange(of: model.sidebar.rootURL) { _, _ in syncRepo() }
         .onChange(of: model.currentURL) { _, _ in syncRepo() }
+        // Menu-triggered focus: expand the section + switch tab.
+        .onChange(of: model.gitPanelFocusRequest) { _, _ in
+            isExpanded = true
+            switch model.gitPanelDesiredTab {
+            case .status:  panel.selectTab(.status)
+            case .log:     panel.selectTab(.log)
+            case .stash:   panel.selectTab(.stash)
+            case .trees:   panel.selectTab(.trees)
+            case .remotes: panel.selectTab(.remotes)
+            }
+        }
         .accessibilityIdentifier("mdv.gitPanel")
     }
 

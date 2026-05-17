@@ -932,6 +932,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         viewMenu.addItem(swapItem)
 
         viewMenu.addItem(.separator())
+        // Git surface — these all focus the sidebar Git panel and
+        // select the appropriate tab. Discoverable from the menu bar.
+        let showGitPanelItem = NSMenuItem(
+            title: "Show Git Panel",
+            action: #selector(showGitPanel(_:)),
+            keyEquivalent: "B"
+        )
+        showGitPanelItem.keyEquivalentModifierMask = [.command, .option]
+        showGitPanelItem.target = self
+        viewMenu.addItem(showGitPanelItem)
+
         let historyItem = NSMenuItem(
             title: "Show File History",
             action: #selector(showFileHistory(_:)),
@@ -1119,15 +1130,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.swapSplit()
     }
 
-    @objc func showFileHistory(_ sender: Any?) {
-        guard let url = model.currentURL else { return }
-        model.showGitLog(forPath: url, scope: .file)
+    /// Show Git Panel — focuses the sidebar's GIT section (expanding
+    /// it if collapsed) and selects the Status tab. The user can then
+    /// click through to Log / Stash / Trees / Remotes.
+    @objc func showGitPanel(_ sender: Any?) {
+        model.showGitPanel(tab: .status)
     }
 
+    /// Show File History — opens the Git panel on the Log tab.
+    /// Per-file path scoping is a follow-up (the panel doesn't yet
+    /// accept a path filter; today this shows full repo log).
+    @objc func showFileHistory(_ sender: Any?) {
+        model.showGitPanel(tab: .log)
+    }
+
+    /// Show Repository History — opens the Git panel on the Log tab.
     @objc func showRepoHistory(_ sender: Any?) {
-        let probe = model.sidebar.rootURL ?? model.currentURL
-        guard let url = probe else { return }
-        model.showGitLog(forPath: url, scope: .repo)
+        model.showGitPanel(tab: .log)
     }
 
     @objc func toggleBookmark(_ sender: Any?) {
