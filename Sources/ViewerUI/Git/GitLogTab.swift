@@ -8,6 +8,13 @@ struct GitLogTab: View {
     @ObservedObject var model: GitPanelModel
     @ObservedObject var doc: DocumentModel
 
+    /// Computed layout — recomputed when logEntries change. Returns nil
+    /// when the graph would need >4 lanes; the body falls back to a
+    /// dotless flat list in that case (matches spec).
+    private var layout: GraphLayout.Layout? {
+        GraphLayout.layout(model.logEntries, maxLanes: 4)
+    }
+
     var body: some View {
         if model.logEntries.isEmpty {
             Text("No commits in this repository yet.")
@@ -16,13 +23,19 @@ struct GitLogTab: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
         } else {
+            let lay = layout
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(model.logEntries.enumerated()), id: \.offset) { _, c in
-                        row(c)
+                    if lay == nil {
+                        Text("graph too wide — falling back to flat list")
+                            .font(.system(size: doc.uiSize(9)))
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 10)
+                            .padding(.top, 4)
+                    }
+                    ForEach(Array(model.logEntries.enumerated()), id: \.offset) { idx, c in
+                        row(c, layoutRow: lay?.rows[idx], maxLane: lay?.maxLane ?? -1)
                             .onAppear {
-                                // Lazy-load next page when the last few
-                                // rows render.
                                 if c.sha == model.logEntries.last?.sha {
                                     model.loadMoreLog()
                                 }
@@ -41,33 +54,43 @@ struct GitLogTab: View {
         }
     }
 
-    private func row(_ c: GitClient.GraphCommit) -> some View {
+    private func row(_ c: GitClient.GraphCommit,
+                     layoutRow: GraphLayout.Row?,
+                     maxLane: Int) -> some View {
         Button(action: { showCommit(c) }) {
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 6) {
-                    Text(c.sha)
-                        .font(.system(size: doc.uiSize(10), design: .monospaced))
-                        .foregroundStyle(Color.accentColor)
-                    if isHead(c) {
-                        chip("HEAD", color: .accentColor)
-                    }
-                    ForEach(branchRefs(c), id: \.self) { ref in
-                        Text("⎇ \(ref)")
-                            .font(.system(size: doc.uiSize(9)))
+            HStack(alignment: .top, spacing: 8) {
+                if let r = layoutRow {
+                    GitGraphColumn(row: r, maxLane: maxLane, isHead: isHead(c))
+                        .frame(minHeight: 38)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 6) {
+                        Text(c.sha)
+                            .font(.system(size: doc.uiSize(10), design: .monospaced))
                             .foregroundStyle(Color.accentColor)
+                        if isHead(c) {
+                            chip("HEAD", color: .accentColor)
+                        }
+                        ForEach(branchRefs(c), id: \.self) { ref in
+                            Text("⎇ \(ref)")
+                                .font(.system(size: doc.uiSize(9)))
+                                .foregroundStyle(Color.accentColor)
+                        }
+                        Spacer(minLength: 4)
+                        Text(relativeTime(c.timestamp))
+                            .font(.system(size: doc.uiSize(9)))
+                            .foregroundStyle(.tertiary)
                     }
-                    Spacer(minLength: 4)
-                    Text(relativeTime(c.timestamp))
-                        .font(.system(size: doc.uiSize(9)))
+                    Text(c.subject)
+                        .font(.system(size: doc.uiSize(12),
+                                      weight: c.isMerge ? .regular : .medium))
+                        .foregroundStyle(c.isMerge ? Color.secondary : Color.primary)
+                        .lineLimit(2)
+                    Text(authorLine(c))
+                        .font(.system(size: doc.uiSize(10)))
                         .foregroundStyle(.tertiary)
                 }
-                Text(c.subject)
-                    .font(.system(size: doc.uiSize(12), weight: c.isMerge ? .regular : .medium))
-                    .foregroundStyle(c.isMerge ? Color.secondary : Color.primary)
-                    .lineLimit(2)
-                Text(authorLine(c))
-                    .font(.system(size: doc.uiSize(10)))
-                    .foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
