@@ -114,27 +114,12 @@ public final class WorkspaceStore: Sendable {
     // MARK: - private
 
     private func save(_ snap: WorkspaceSnapshot, to url: URL) {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-        do {
-            let data = try encoder.encode(snap)
-            try data.write(to: url, options: .atomic)
-        } catch {
-            // Best-effort. App-quit-time persistence shouldn't fail
-            // loudly; user can't act on it.
-        }
+        // Best-effort. App-quit-time persistence shouldn't fail loudly.
+        JSONFileStore.write(snap, to: url)
     }
 
     private func load(from url: URL) -> WorkspaceSnapshot? {
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        guard let data = try? Data(contentsOf: url),
-              let snap = try? decoder.decode(WorkspaceSnapshot.self, from: data) else {
-            return nil
-        }
-        return snap
+        JSONFileStore.read(WorkspaceSnapshot.self, from: url)
     }
 
     /// Sanitize a user-supplied workspace name for use as a filename.

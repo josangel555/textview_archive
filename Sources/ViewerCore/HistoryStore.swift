@@ -98,19 +98,11 @@ public final class HistoryStore {
     // MARK: - Persistence
 
     private func load() {
-        // S8: check size on disk before decoding. A tampered file with
-        // millions of entries shouldn't be able to inflate into memory.
-        if let attrs = try? FileManager.default.attributesOfItem(atPath: storeURL.path),
-           let size = attrs[.size] as? Int,
-           size > maxStoreFileBytes {
-            // Treat oversize file the same as a corrupt one: start fresh.
-            return
-        }
-        guard let data = try? Data(contentsOf: storeURL) else { return }
-        guard let decoded = try? Self.decoder.decode([HistoryEntry].self, from: data) else {
-            // Corrupt file — start fresh; we don't fail the app over a broken history.
-            return
-        }
+        // S8: max-size guard inside JSONFileStore.read prevents a
+        // tampered file from inflating into memory.
+        guard let decoded = JSONFileStore.read(
+            [HistoryEntry].self, from: storeURL, maxSize: maxStoreFileBytes
+        ) else { return }
         entries = decoded
             .sorted(by: { $0.lastOpenedAt > $1.lastOpenedAt })
             .prefix(maxEntries)
@@ -118,24 +110,6 @@ public final class HistoryStore {
     }
 
     private func save() {
-        let dir = storeURL.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(
-            at: dir, withIntermediateDirectories: true
-        )
-        guard let data = try? Self.encoder.encode(entries) else { return }
-        try? data.write(to: storeURL, options: .atomic)
+        JSONFileStore.write(entries, to: storeURL)
     }
-
-    private static let encoder: JSONEncoder = {
-        let e = JSONEncoder()
-        e.dateEncodingStrategy = .iso8601
-        e.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return e
-    }()
-
-    private static let decoder: JSONDecoder = {
-        let d = JSONDecoder()
-        d.dateDecodingStrategy = .iso8601
-        return d
-    }()
 }

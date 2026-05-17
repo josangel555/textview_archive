@@ -119,24 +119,14 @@ public final class BookmarksStore {
     // MARK: - Persistence
 
     private func load() {
-        guard let data = try? Data(contentsOf: storeURL) else { return }
-        guard data.count <= maxStoreFileBytes else { return }
-        guard let decoded = try? JSONDecoder().decode([BookmarkEntry].self, from: data) else {
-            return
-        }
+        guard let decoded = JSONFileStore.read(
+            [BookmarkEntry].self, from: storeURL, maxSize: maxStoreFileBytes
+        ) else { return }
         entries = Array(decoded.prefix(maxEntries))
     }
 
     private func save() {
-        let dir = storeURL.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(
-            at: dir, withIntermediateDirectories: true
-        )
-        let enc = JSONEncoder()
-        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        enc.dateEncodingStrategy = .iso8601
-        guard let data = try? enc.encode(entries) else { return }
-        try? data.write(to: storeURL, options: .atomic)
+        JSONFileStore.write(entries, to: storeURL)
     }
 }
 
