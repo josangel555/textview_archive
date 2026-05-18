@@ -44,7 +44,7 @@ OUT_PNG="${TMPDIR:-/tmp}/mdv-visual-smoke.png"
 echo "==> Building..."
 bash "$SCRIPT_DIR/build-app.sh" debug >/dev/null
 
-APP_PATH="$ROOT_DIR/dist/MarkdownViewer.app"
+APP_PATH="$ROOT_DIR/dist/TextView.app"
 BIN_PATH="$APP_PATH/Contents/MacOS/MarkdownViewer"
 
 # Kill prior instance.
@@ -64,7 +64,7 @@ sleep 2
 # `screencapture -l` needs a numeric ID. `screencapture -o` (no list)
 # falls back to the frontmost window of the app being captured if we
 # can foreground it first — that's what we do.
-osascript -e 'tell application "MarkdownViewer" to activate' 2>/dev/null || true
+osascript -e 'tell application "TextView" to activate' 2>/dev/null || true
 sleep 0.4
 
 # -x: no shutter sound. -o: no window shadow/decoration in capture. -w
