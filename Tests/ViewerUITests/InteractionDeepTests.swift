@@ -146,9 +146,14 @@ final class InteractionDeepTests: XCTestCase {
             throw XCTSkip("Build .app first")
         }
         let md = try writeMD("a.md")
+        // Resize targets sized to fit even modest displays (e.g., the
+        // 1440x900 UTM VM). The earlier 1400x900 target plus the
+        // titlebar (~28px) overflowed and macOS clamped the height,
+        // failing absolute-pixel assertions. Targets here are well
+        // inside any modern viewport.
         let dumps = try runScript("""
-            resize 800x600
-            resize 1400x900
+            resize 800x500
+            resize 1100x650
             """, with: md)
         XCTAssertEqual(dumps.count, 2)
         func size(_ d: [String: Any]) -> (Int, Int) {
@@ -162,14 +167,14 @@ final class InteractionDeepTests: XCTestCase {
         }
         let (w1, h1) = size(dumps[0])
         let (w2, h2) = size(dumps[1])
-        // First resize: 800x600 + titlebar height. Window.frame includes the
-        // titlebar so height will be ~600+28 = 628.
+        // What we care about: the resize actually grew the window.
+        // Absolute heights drift with titlebar conventions across
+        // macOS versions; relative growth is the real signal.
         XCTAssertEqual(w1, 800, "First resize width should be 800")
-        XCTAssertGreaterThan(h1, 600 - 5)
-        XCTAssertLessThan(h1, 600 + 40)
-        XCTAssertEqual(w2, 1400, "Second resize width should be 1400")
-        XCTAssertGreaterThan(h2, 900 - 5)
-        XCTAssertLessThan(h2, 900 + 40)
+        XCTAssertGreaterThan(h1, 500 - 5)
+        XCTAssertEqual(w2, 1100, "Second resize width should be 1100")
+        XCTAssertGreaterThan(w2, w1, "Second resize widened the window")
+        XCTAssertGreaterThan(h2, h1, "Second resize heightened the window")
     }
 
     // MARK: - Zoom persistence

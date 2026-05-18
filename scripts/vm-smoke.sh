@@ -15,6 +15,25 @@
 #   bash scripts/vm-smoke.sh                # default test file (DESIGN.md)
 #   bash scripts/vm-smoke.sh path/to/file   # pick the file
 #
+# Known limitation (macOS 15+ Sequoia TCC):
+#   The screencap output captures the wallpaper + menu bar but does
+#   NOT include the TextView window's content. CGWindowList confirms
+#   the window exists and is on-screen, but the WindowServer redacts
+#   its pixels in the captured image. Cause: macOS 15's "Screen
+#   Capture Privacy" hides windows of processes launched via
+#   `sudo launchctl asuser` — TCC can't reconcile the bridged
+#   ownership. Two ways to lift this (out of scope for v1):
+#     1. Install TextView as a LaunchAgent or login item on the VM so
+#        the process is owned by the GUI session natively.
+#     2. Eyeball through the UTM display window directly — manual
+#        smoke covers what the automated capture can't.
+#   For now this script verifies the build / launch / screencap
+#   PIPELINE works end-to-end; the captured PNG is a sanity check
+#   that the VM session is alive, not a substitute for visual
+#   regression. The XCTest-driven visual smoke (run via
+#   `ssh macOS15 'cd markdown_viewer && swift test'`) is the
+#   authoritative path.
+#
 # Requirements:
 #   - SSH host `macOS15` configured (see ~/.ssh/config)
 #   - vm-tester@macOS15 has a GUI login session (UTM display window open)
@@ -67,26 +86,32 @@ rsync -az --delete \
 echo "==> Build dist/TextView.app on VM"
 ssh macOS15 'cd markdown_viewer && bash scripts/build-app.sh debug 2>&1 | tail -2'
 
-echo "==> Launch + screencap (via launchctl asuser, so it lands in the GUI session)"
+echo "==> Reset window position + workspace state on VM"
+ssh macOS15 "
+  pkill MarkdownViewer 2>/dev/null || true
+  # Workspace JSON (tab list, sidebar root, etc.)
+  rm -rf '/Users/vm-tester/Library/Application Support/MarkdownViewer/Workspaces' 2>/dev/null || true
+  # AppKit autosaved window frame — keyed in CFPrefs by autosave name.
+  # Without clearing, a prior off-screen frame would override center().
+  defaults delete com.markdownviewer.MarkdownViewer 'NSWindow Frame MainWindow' 2>/dev/null || true
+  sleep 1
+"
+
+echo "==> Launch + screencap (via launchctl asuser; sh -c is the env-propagation trick)"
 ssh macOS15 "
   set -e
-  pkill MarkdownViewer 2>/dev/null || true
-  sleep 1
-  # Blow away the saved workspace so the window restores at default
-  # geometry instead of an old off-screen frame.
-  rm -rf '/Users/vm-tester/Library/Application Support/MarkdownViewer/Workspaces' 2>/dev/null || true
-  # Launch the binary directly with MDV_SKIP_WORKSPACE_RESTORE so the
-  # app comes up with a single fresh tab pointed at the input file.
-  # launchctl asuser is mandatory — without it the process inherits
-  # the SSH session's null WindowServer and the window never paints.
-  echo '$PASSWORD' | sudo -S launchctl asuser $GUI_UID \
-    /usr/bin/env MDV_SKIP_WORKSPACE_RESTORE=1 \
+  # launchctl asuser drops env vars passed via /usr/bin/env, but
+  # propagates env set INSIDE the shell it spawns. So we ask asuser
+  # to run sh -c '...env=val cmd...'. The 'sh' is the user shell;
+  # the env stays in scope through the exec.
+  echo '$PASSWORD' | sudo -S launchctl asuser $GUI_UID /bin/sh -c '
+    MDV_SKIP_WORKSPACE_RESTORE=1 \
     /Users/vm-tester/markdown_viewer/dist/TextView.app/Contents/MacOS/MarkdownViewer \
-    /Users/vm-tester/$FILE_ARG_VM >/tmp/textview.log 2>&1 &
-  sleep 4
-  echo '$PASSWORD' | sudo -S launchctl asuser $GUI_UID \
-    /usr/bin/osascript -e 'tell application \"TextView\" to activate' 2>&1 || true
-  sleep 1
+    /Users/vm-tester/$FILE_ARG_VM &
+  '
+  # AppKit needs a few hundred ms to lay out + paint the window.
+  # Bumped from 3s → 6s; some VM swaps push it.
+  sleep 6
   echo '$PASSWORD' | sudo -S launchctl asuser $GUI_UID \
     /usr/sbin/screencapture -x /tmp/vm-smoke.png
   ls -lh /tmp/vm-smoke.png

@@ -96,7 +96,16 @@ final class SourceViewVisualRegressionTests: XCTestCase {
               let image = NSImage(contentsOf: pngURL),
               let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
               cg.width > 200 else {
-            throw XCTSkip("screencapture unavailable / Screen Recording denied")
+            // macOS 15+ Screen Capture Privacy can hide windows from
+            // `screencapture -l<id>` even when Screen Recording is
+            // granted to the runner. The right grant on macOS 15 is
+            // BOTH the running terminal AND the xctest binary at
+            // /Applications/Xcode.app/Contents/Developer/usr/bin/xctest.
+            throw XCTSkip(
+                "screencapture unavailable / Screen Recording denied. " +
+                "On macOS 15+, grant Screen Recording to both Terminal " +
+                "AND /Applications/Xcode.app/Contents/Developer/usr/bin/xctest."
+            )
         }
         defer { try? fm.removeItem(at: pngURL) }
         let scaleY = max(1, Int(Double(cg.height) / 900.0))
@@ -180,7 +189,12 @@ final class SourceViewVisualRegressionTests: XCTestCase {
             "/usr/sbin/screencapture", "-l\(windowID)", "-x", "-o", pngURL.path
         ])
         guard res.exit == 0, fm.fileExists(atPath: pngURL.path) else {
-            throw XCTSkip("screencapture failed (likely Screen Recording permission). exit=\(res.exit)")
+            throw XCTSkip(
+                "screencapture failed (likely Screen Recording permission). " +
+                "exit=\(res.exit). On macOS 15+, grant Screen Recording to " +
+                "both Terminal AND " +
+                "/Applications/Xcode.app/Contents/Developer/usr/bin/xctest."
+            )
         }
         defer { try? fm.removeItem(at: pngURL) }
 
