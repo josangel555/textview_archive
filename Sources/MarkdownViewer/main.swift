@@ -9,8 +9,17 @@ import WebKit
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation {
     let model = DocumentModel()
+    /// Phase-1 session machinery. Owns the value-level
+    /// `SessionsCoordinator` + the active `SessionState` façade over
+    /// the shared `model`. Bootstraps on launch, drains on terminate.
+    /// See `docs/SESSIONS_DESIGN.md` §11.
+    lazy var sessions: SessionsAppCoordinator = SessionsAppCoordinator(
+        model: self.model,
+        initialRoot: PreferencesStore().lastFolderURL
+    )
     var window: NSWindow?
     private var openRecentMenu: NSMenu?
+    private var sessionJumpMenu: NSMenu?
     private var windowMenu: NSMenu?
     private var cancellables: Set<AnyCancellable> = []
     private var diagnosticSignalSource: DispatchSourceSignal?
@@ -160,13 +169,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             }
         }
 
-        // Restore last-opened folder (silently no-ops if path no longer exists).
-        model.restorePreviousFolderIfAvailable()
-        // Restore the auto-saved workspace (tabs + view modes + prefs)
-        // unless the user disabled it via env var (useful for tests
-        // that need a clean state).
+        // Phase 1 sessions: subsumes the old
+        // `restorePreviousFolderIfAvailable()` +
+        // `restoreWorkspaceAutoSlot()` pair — the sessions coordinator
+        // reads `Sessions/index.json`, migrates from
+        // `Workspaces/_last.json` on first launch of the new build,
+        // and hydrates the shared `model` from the active session's
+        // snapshot. See SESSIONS_DESIGN.md §8 for the migration
+        // contract.
         if ProcessInfo.processInfo.environment["MDV_SKIP_WORKSPACE_RESTORE"] != "1" {
-            model.restoreWorkspaceAutoSlot()
+            sessions.bootstrap()
         }
 
         // Open file from argv if provided. Detects folder vs file.
@@ -568,10 +580,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // Persist tabs + sidebar + prefs to the workspace auto-slot
-        // so the next launch can restore. Best-effort: failure here
-        // can't surface to the user (we're quitting).
-        model.saveWorkspaceAutoSlot()
+        // Phase 1: drive a synchronous flush of the active session's
+        // snapshot + index + legacy `_last.json` compat bridge.
+        // `flushForTermination` drains the SessionStore's serial
+        // write queue (design-doc gap #1) so the user's last state
+        // is on disk before the process exits.
+        sessions.flushForTermination()
     }
 
     @objc func openDocument(_ sender: Any?) {
@@ -599,8 +613,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         panel.allowsMultipleSelection = false
         panel.title = "Open folder"
         if panel.runModal() == .OK, let url = panel.url {
-            model.openFolder(url)
+            // Phase 1 routes folder-open through the sessions
+            // coordinator: this either reveals an existing same-path
+            // session or replaces the single Phase-1 slot. Either
+            // way, the wrapped DocumentModel sees `openFolder(url)`
+            // via the lifecycle bridge.
+            sessions.openFolder(url)
         }
+    }
+
+    @objc func openFolderInNewSession(_ sender: Any?) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.title = "Open folder in new session"
+        if panel.runModal() == .OK, let url = panel.url {
+            sessions.openFolder(url, forceNew: true)
+        }
+    }
+
+    @objc func nextSession(_ sender: Any?)     { sessions.nextSession() }
+    @objc func previousSession(_ sender: Any?) { sessions.previousSession() }
+    @objc func closeSession(_ sender: Any?)    { sessions.closeActive() }
+
+    /// Jump-to-session menu handler. The Nth item carries `tag = N`
+    /// (1-indexed) so we can route ⌃1…⌃9 through one selector.
+    @objc func jumpToSession(_ sender: NSMenuItem) {
+        let index = sender.tag - 1
+        sessions.activate(index: index)
     }
 
     @objc func toggleSidebar(_ sender: Any?) {
@@ -669,6 +710,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             rebuildRecentsMenu(menu)
         } else if menu === windowMenu {
             rebuildWindowMenu(menu)
+        } else if menu === sessionJumpMenu {
+            rebuildSessionJumpMenu(menu)
+        }
+    }
+
+    /// Rebuild the "Jump to Session" submenu. Items 1…9 carry a
+    /// ⌃N shortcut so users can jump without opening the menu;
+    /// items 10+ have no shortcut but are still clickable. Empty
+    /// state is a disabled placeholder so the user gets feedback.
+    private func rebuildSessionJumpMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let entries = sessions.core.sessions
+        if entries.isEmpty {
+            let placeholder = NSMenuItem(
+                title: "(no sessions)", action: nil, keyEquivalent: ""
+            )
+            placeholder.isEnabled = false
+            menu.addItem(placeholder)
+            return
+        }
+        for (i, snap) in entries.enumerated() {
+            let key = (i < 9) ? "\(i + 1)" : ""
+            let title = snap.displayName.isEmpty ? "Untitled" : snap.displayName
+            let item = NSMenuItem(
+                title: "\(i + 1). \(title)",
+                action: #selector(jumpToSession(_:)),
+                keyEquivalent: key
+            )
+            if !key.isEmpty {
+                item.keyEquivalentModifierMask = [.control]
+            }
+            item.tag = i + 1
+            item.target = self
+            if sessions.core.activeID == snap.id {
+                item.state = .on
+            }
+            menu.addItem(item)
         }
     }
 
@@ -1120,15 +1198,105 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         helpMenuItem.submenu = helpMenu
         NSApp.helpMenu = helpMenu
 
-        // HIG order: App, File, Edit, View, Window, Help. (App was
-        // added at the top; the rest add here in order.)
+        // Session menu — Phase 1 ships a minimal version (New / Close
+        // / Next / Previous / Jump-to-N). Per SESSIONS_DESIGN.md §7.2.
+        let sessionMenuItem = buildSessionMenu()
+
+        // HIG order: App, File, Edit, View, Session, Window, Help.
+        // Session sits between View and Window so it's discoverable
+        // next to "Tabs" mental model. (App was added at the top.)
         mainMenu.addItem(fileMenuItem)
         mainMenu.addItem(editMenuItem)
         mainMenu.addItem(viewMenuItem)
+        mainMenu.addItem(sessionMenuItem)
         mainMenu.addItem(windowMenuItem)
         mainMenu.addItem(helpMenuItem)
 
         NSApp.mainMenu = mainMenu
+    }
+
+    /// Build the Session menu. The "Jump to Session" submenu is
+    /// populated on demand via `menuNeedsUpdate` (NSMenuDelegate) so
+    /// it reflects the current `sessions.core.sessions` ordering
+    /// without us having to subscribe to coordinator changes.
+    private func buildSessionMenu() -> NSMenuItem {
+        let sessionMenuItem = NSMenuItem()
+        let menu = NSMenu(title: "Session")
+
+        let newItem = NSMenuItem(
+            title: "New Session…",
+            action: #selector(openFolderInNewSession(_:)),
+            keyEquivalent: "n"
+        )
+        // ⇧⌘N — distinct from File→New Tab (⌘T) and from ⌘N which
+        // is unbound today (would conflict if we ever add it for
+        // "New Tab" the HIG-standard way).
+        newItem.keyEquivalentModifierMask = [.command, .shift]
+        newItem.target = self
+        menu.addItem(newItem)
+
+        menu.addItem(.separator())
+
+        let nextItem = NSMenuItem(
+            title: "Next Session",
+            action: #selector(nextSession(_:)),
+            // \u{0009} is TAB. Combined with .control this is ⌃⇥
+            // (one of the two macOS-conventional next-pane combos —
+            // VS Code uses it too).
+            keyEquivalent: "\t"
+        )
+        nextItem.keyEquivalentModifierMask = [.control]
+        nextItem.target = self
+        menu.addItem(nextItem)
+
+        let prevItem = NSMenuItem(
+            title: "Previous Session",
+            action: #selector(previousSession(_:)),
+            keyEquivalent: "\t"
+        )
+        prevItem.keyEquivalentModifierMask = [.control, .shift]
+        prevItem.target = self
+        menu.addItem(prevItem)
+
+        let jumpItem = NSMenuItem(
+            title: "Jump to Session", action: nil, keyEquivalent: ""
+        )
+        let jumpMenu = NSMenu(title: "Jump to Session")
+        jumpMenu.delegate = self
+        jumpMenu.autoenablesItems = false
+        jumpItem.submenu = jumpMenu
+        self.sessionJumpMenu = jumpMenu
+        // ⌃1…⌃9 hidden top-level shortcuts. Wire them on the parent
+        // menu so the system honors the key equivalent even when
+        // the Jump submenu isn't open. NSMenuItem.isAlternate=false
+        // + isHidden=true keeps them out of the visible UI.
+        for n in 1...9 {
+            let hidden = NSMenuItem(
+                title: "Jump to Session \(n)",
+                action: #selector(jumpToSession(_:)),
+                keyEquivalent: "\(n)"
+            )
+            hidden.keyEquivalentModifierMask = [.control]
+            hidden.target = self
+            hidden.tag = n
+            hidden.isHidden = true
+            menu.addItem(hidden)
+        }
+        menu.addItem(jumpItem)
+
+        menu.addItem(.separator())
+
+        let closeItem = NSMenuItem(
+            title: "Close Session",
+            action: #selector(closeSession(_:)),
+            keyEquivalent: "w"
+        )
+        closeItem.keyEquivalentModifierMask = [.command, .shift]
+        closeItem.target = self
+        menu.addItem(closeItem)
+
+        sessionMenuItem.submenu = menu
+        return sessionMenuItem
     }
 
     @objc func zoomIn(_ sender: Any?) {
@@ -1347,7 +1515,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             var isDir: ObjCBool = false
             if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) {
                 if isDir.boolValue {
-                    model.openFolder(url)
+                    // Route folder opens through the sessions
+                    // coordinator so the session identity updates.
+                    sessions.openFolder(url)
                 } else {
                     model.openPath(url)
                 }

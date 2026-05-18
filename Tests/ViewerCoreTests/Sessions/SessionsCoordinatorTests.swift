@@ -1,0 +1,321 @@
+import XCTest
+@testable import ViewerCore
+import ViewerKit
+
+/// Coordinator-level behavior tests. Drive the value-level
+/// `SessionsCoordinator` through its public API and assert:
+///
+///   - openFolder creates-or-reveals (collapses two symlinks to the
+///     same realpath into one session unless `forceNew`).
+///   - activate / nextSession / previousSession honor the in-memory
+///     ordering.
+///   - close moves the snapshot to trash, updates the active pointer
+///     to the LRU runner-up, and persists the new index.
+///   - restore() reconstructs state from `index.json` and the
+///     individual snapshot files.
+///   - **Detach-before-mount invariant is preserved for every active
+///     transition.** This is design-doc gap #2; we use a recording
+///     `Lifecycle` stub to verify the exact ordering of mount/detach
+///     calls.
+///
+/// Pure logic — no UI. Runs on host.
+@MainActor
+final class SessionsCoordinatorTests: XCTestCase {
+
+    // Use `lazy var` for fixtures because Swift 6.1 rejects calls to
+    // the non-isolated `super.setUp()` from a `@MainActor` test class
+    // (see LESSONS.md — XCTestCase isn't Sendable). The lazy property
+    // initializes on first access inside each test, where MainActor
+    // context is already established.
+    private var tmp: URL!
+    private var store: SessionStore!
+    private var recorder: LifecycleRecorder!
+    private var coord: SessionsCoordinator!
+
+    override func setUp() {
+        tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("mdv-coord-tests-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(
+            at: tmp, withIntermediateDirectories: true
+        )
+        store = SessionStore(directory: tmp)
+        recorder = LifecycleRecorder()
+        coord = SessionsCoordinator(store: store, lifecycle: recorder)
+    }
+
+    override func tearDown() {
+        store?.flushSync()
+        if let tmp { try? FileManager.default.removeItem(at: tmp) }
+    }
+
+    // MARK: openFolder ------------------------------------------------
+
+    func testOpenFolderCreatesNewSession() throws {
+        let folder = try makeTmpFolder()
+        let snap = coord.openFolder(folder)
+        XCTAssertEqual(coord.sessions.count, 1)
+        XCTAssertEqual(coord.activeID, snap.id)
+        XCTAssertEqual(coord.active?.displayName, folder.lastPathComponent)
+        // Lifecycle: nothing to detach (fresh), then mount the new one.
+        XCTAssertEqual(recorder.events, [.mount(snap.id)])
+    }
+
+    func testOpenFolderCollapsesSamePathIntoExisting() throws {
+        let folder = try makeTmpFolder()
+        let first = coord.openFolder(folder)
+        recorder.events.removeAll()
+        let second = coord.openFolder(folder)
+        // Same session reveals — no new entry, no extra mount.
+        XCTAssertEqual(coord.sessions.count, 1)
+        XCTAssertEqual(first.id, second.id)
+        // activate() is a no-op when activeID==id, so no events.
+        XCTAssertTrue(recorder.events.isEmpty)
+    }
+
+    func testForceNewBypassesPathMatch() throws {
+        let folder = try makeTmpFolder()
+        let first = coord.openFolder(folder)
+        recorder.events.removeAll()
+        let second = coord.openFolder(folder, forceNew: true)
+        XCTAssertNotEqual(first.id, second.id)
+        XCTAssertEqual(coord.sessions.count, 2)
+        // Detach-before-mount on the active swap.
+        XCTAssertEqual(recorder.events, [.detach(first.id), .mount(second.id)])
+    }
+
+    // MARK: activate --------------------------------------------------
+
+    func testActivateSwitchesAndPreservesDetachBeforeMountOrder() throws {
+        let a = try makeTmpFolder(name: "alpha")
+        let b = try makeTmpFolder(name: "beta")
+        let sA = coord.openFolder(a)
+        let sB = coord.openFolder(b)
+        XCTAssertEqual(coord.activeID, sB.id)
+        recorder.events.removeAll()
+
+        coord.activate(id: sA.id)
+        // Strict ordering: outgoing detach FIRST, then incoming mount.
+        // This is the design-doc-gap-#2 invariant: never mount-then-
+        // detach (would briefly have two file watchers running).
+        XCTAssertEqual(recorder.events, [.detach(sB.id), .mount(sA.id)])
+        XCTAssertEqual(coord.activeID, sA.id)
+    }
+
+    func testActivateNoopWhenAlreadyActive() throws {
+        let a = try makeTmpFolder()
+        let sA = coord.openFolder(a)
+        recorder.events.removeAll()
+        coord.activate(id: sA.id)
+        XCTAssertTrue(recorder.events.isEmpty)
+    }
+
+    func testActivateUnknownIDNoop() {
+        let bogus = UUID()
+        coord.activate(id: bogus)
+        XCTAssertNil(coord.activeID)
+        XCTAssertTrue(recorder.events.isEmpty)
+    }
+
+    func testActivateByIndex() throws {
+        let a = try makeTmpFolder(name: "alpha")
+        let b = try makeTmpFolder(name: "beta")
+        _ = coord.openFolder(a)
+        let sB = coord.openFolder(b)
+        XCTAssertEqual(coord.activeID, sB.id)
+        coord.activate(index: 0)
+        XCTAssertEqual(coord.active?.displayName, "alpha")
+        // Out-of-range silently ignored.
+        coord.activate(index: 99)
+        XCTAssertEqual(coord.active?.displayName, "alpha")
+    }
+
+    // MARK: navigation -----------------------------------------------
+
+    func testNextAndPreviousWrapAroundCircularly() throws {
+        let a = try makeTmpFolder(name: "alpha")
+        let b = try makeTmpFolder(name: "beta")
+        let c = try makeTmpFolder(name: "gamma")
+        let sA = coord.openFolder(a)
+        let sB = coord.openFolder(b)
+        let sC = coord.openFolder(c)
+        // Active is sC; next wraps to sA.
+        coord.nextSession()
+        XCTAssertEqual(coord.activeID, sA.id)
+        coord.nextSession()
+        XCTAssertEqual(coord.activeID, sB.id)
+        coord.previousSession()
+        XCTAssertEqual(coord.activeID, sA.id)
+        coord.previousSession()  // wraps from index 0 back to sC
+        XCTAssertEqual(coord.activeID, sC.id)
+    }
+
+    func testNextWithSingleSessionStaysPut() throws {
+        let a = try makeTmpFolder()
+        let sA = coord.openFolder(a)
+        coord.nextSession()
+        XCTAssertEqual(coord.activeID, sA.id)
+    }
+
+    // MARK: close ----------------------------------------------------
+
+    func testCloseActiveSessionFallsBackToLRU() throws {
+        let a = try makeTmpFolder(name: "alpha")
+        let b = try makeTmpFolder(name: "beta")
+        let sA = coord.openFolder(a)
+        let sB = coord.openFolder(b)
+        XCTAssertEqual(coord.activeID, sB.id)
+        recorder.events.removeAll()
+
+        coord.close(id: sB.id)
+        XCTAssertEqual(coord.sessions.count, 1)
+        XCTAssertEqual(coord.activeID, sA.id)
+        // detach the closing one before mounting the runner-up.
+        XCTAssertEqual(recorder.events, [.detach(sB.id), .mount(sA.id)])
+        // Trash file present.
+        let trashURL = tmp.appendingPathComponent("trash")
+            .appendingPathComponent("\(sB.id.uuidString).json")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: trashURL.path))
+    }
+
+    func testCloseInactiveSessionDoesNotChangeActive() throws {
+        let a = try makeTmpFolder(name: "alpha")
+        let b = try makeTmpFolder(name: "beta")
+        let sA = coord.openFolder(a)
+        let sB = coord.openFolder(b)
+        recorder.events.removeAll()
+        coord.close(id: sA.id)
+        XCTAssertEqual(coord.activeID, sB.id)
+        // No detach/mount — we closed a background session.
+        XCTAssertTrue(recorder.events.isEmpty)
+    }
+
+    func testCloseLastSessionClearsActive() throws {
+        let a = try makeTmpFolder()
+        let sA = coord.openFolder(a)
+        coord.close(id: sA.id)
+        XCTAssertNil(coord.activeID)
+        XCTAssertTrue(coord.sessions.isEmpty)
+    }
+
+    func testCloseUnknownIDNoop() {
+        coord.close(id: UUID())
+        XCTAssertTrue(coord.sessions.isEmpty)
+    }
+
+    // MARK: restore --------------------------------------------------
+
+    func testRestoreReconstructsFromDisk() throws {
+        let a = try makeTmpFolder(name: "alpha")
+        let b = try makeTmpFolder(name: "beta")
+        let sA = coord.openFolder(a)
+        let sB = coord.openFolder(b)
+        // Force a sync write so the next coordinator sees them.
+        coord.flushPersistenceSync()
+
+        // Build a fresh coordinator against the same store.
+        let recorder2 = LifecycleRecorder()
+        let coord2 = SessionsCoordinator(store: store, lifecycle: recorder2)
+        coord2.restore()
+
+        XCTAssertEqual(coord2.sessions.count, 2)
+        XCTAssertEqual(coord2.activeID, sB.id)
+        // The active session is mounted on restore. Detach-before-mount
+        // also fires for the (no-op) defensive detach at the top of
+        // restore() — but there's nothing to detach, so the recorder
+        // only sees the mount.
+        XCTAssertEqual(recorder2.events, [.mount(sB.id)])
+        XCTAssertTrue(coord2.sessions.contains(where: { $0.id == sA.id }))
+    }
+
+    func testRestoreNoIndexLeavesEmptyState() {
+        coord.restore()
+        XCTAssertTrue(coord.sessions.isEmpty)
+        XCTAssertNil(coord.activeID)
+    }
+
+    func testRestoreSkipsMissingSnapshotFiles() throws {
+        // Write an index that references a UUID with no snapshot file —
+        // simulate filesystem corruption / partial delete. The
+        // coordinator should skip it and surface a `lastError` rather
+        // than crashing.
+        let ghost = UUID()
+        let real = UUID()
+        let realSnap = SessionSnapshot(
+            id: real, displayName: "real",
+            createdAt: Date(), lastActiveAt: Date(),
+            sidebarRootPath: "/p", openTabs: [], selectedTabIndex: nil
+        )
+        store.saveSync(realSnap)
+        store.saveIndexSync(SessionIndex(
+            sessions: [
+                .init(id: ghost, rootPath: "/g", displayName: "ghost",
+                      lastActiveAt: Date()),
+                .init(id: real, rootPath: "/p", displayName: "real",
+                      lastActiveAt: Date()),
+            ],
+            lastActiveID: real
+        ))
+        let coord2 = SessionsCoordinator(store: store)
+        coord2.restore()
+        XCTAssertEqual(coord2.sessions.count, 1)
+        XCTAssertEqual(coord2.activeID, real)
+        XCTAssertNotNil(coord2.lastError)
+    }
+
+    // MARK: replaceSnapshot ------------------------------------------
+
+    func testReplaceSnapshotPreservesIdentityFields() throws {
+        let a = try makeTmpFolder(name: "alpha")
+        let sA = coord.openFolder(a)
+        let originalCreatedAt = sA.createdAt
+
+        // Caller passes a snapshot with a DIFFERENT id and createdAt —
+        // we defend against this by re-pinning to the existing session.
+        let alien = SessionSnapshot(
+            id: UUID(),
+            displayName: "renamed",
+            createdAt: Date.distantPast,
+            lastActiveAt: Date(),
+            sidebarRootPath: "/new",
+            openTabs: [TabSnapshot(path: "/new/x.md", viewMode: "rendered")],
+            selectedTabIndex: 0
+        )
+        coord.replaceSnapshot(id: sA.id, with: alien)
+        let updated = coord.sessions.first { $0.id == sA.id }
+        XCTAssertNotNil(updated)
+        XCTAssertEqual(updated?.id, sA.id, "id must not be replaced")
+        XCTAssertEqual(updated?.createdAt, originalCreatedAt,
+                       "createdAt is immutable")
+        XCTAssertEqual(updated?.displayName, "renamed")
+        XCTAssertEqual(updated?.openTabs.count, 1)
+    }
+
+    // MARK: helpers --------------------------------------------------
+
+    /// Create a real directory in tmp so `standardizedFileURL` /
+    /// `resolvingSymlinksInPath` produce stable paths. Without an
+    /// actual directory the resolver returns the input unchanged on
+    /// some macOS versions, which can mask test bugs.
+    private func makeTmpFolder(name: String = UUID().uuidString) throws -> URL {
+        let url = tmp.appendingPathComponent(name)
+        try FileManager.default.createDirectory(
+            at: url, withIntermediateDirectories: true
+        )
+        return url
+    }
+}
+
+/// Records every `mount` / `detach` callback in order so tests can
+/// assert exact lifecycle sequences (the detach-before-mount
+/// invariant). Weak-reference safe — coordinator holds it weakly.
+@MainActor
+private final class LifecycleRecorder: SessionsCoordinator.Lifecycle {
+    enum Event: Equatable {
+        case mount(UUID)
+        case detach(UUID)
+    }
+    var events: [Event] = []
+
+    func mount(_ session: SessionSnapshot)  { events.append(.mount(session.id)) }
+    func detach(_ session: SessionSnapshot) { events.append(.detach(session.id)) }
+}
