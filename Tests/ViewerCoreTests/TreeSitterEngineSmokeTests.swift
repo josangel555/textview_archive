@@ -17,6 +17,13 @@ final class TreeSitterEngineSmokeTests: XCTestCase {
             (.typescript, "const x: number = 42; function f(): void {}"),
             (.markdown,   "# Title\n\n**bold**"),
             (.shell,      "echo $HOME; if [ -f x ]; then ls; fi"),
+            // Phase 5 grammars.
+            (.java,       "class C { int x = 42; }"),
+            (.c,          "int main(void) { return 0; }"),
+            (.cpp,        "#include <vector>\nstd::vector<int> v;"),
+            (.csharp,     "class C { int X { get; set; } }"),
+            (.rust,       "fn main() { let x: i32 = 42; }"),
+            (.lua,        "local x = 42\nfunction f() return x end"),
         ]
         for (lang, src) in cases {
             let runs = TreeSitterEngine.shared.tokenize(src, language: lang)

@@ -40,6 +40,12 @@ LAZY_PRODUCTS=(
   TreeSitterJavaScriptLazy
   TreeSitterTypeScriptLazy
   TreeSitterBashLazy
+  TreeSitterJavaLazy
+  TreeSitterCLazy
+  TreeSitterCPPLazy
+  TreeSitterCSharpLazy
+  TreeSitterRustLazy
+  TreeSitterLuaLazy
 )
 for prod in "${LAZY_PRODUCTS[@]}"; do
   echo "==> swift build --product $prod -c $CONFIG"
@@ -197,7 +203,12 @@ fi
 
 # Final size guardrail. Fails the build when the bundle goes past
 # the budget — keeps us honest about TreeSitter / icon bloat.
-bash "$SCRIPT_DIR/check-bundle-size.sh" 25
+# 35 MB total accommodates the lazy-grammar Frameworks/ tree
+# (~15 MB of dylibs at release once all 11 lazy grammars land);
+# `EXEC_BUDGET_MB=15` separately fails the build if the main
+# executable creeps back up — that would mean we silently
+# regressed to static-linking a grammar.
+EXEC_BUDGET_MB=15 bash "$SCRIPT_DIR/check-bundle-size.sh" 35
 
 echo "==> Built $APP_DIR"
 echo

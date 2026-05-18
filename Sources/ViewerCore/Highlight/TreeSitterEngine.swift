@@ -240,14 +240,16 @@ public final class TreeSitterEngine: @unchecked Sendable {
         case .typescript: return GrammarLoader.load(.typescript)
         case .shell:      return GrammarLoader.load(.bash)
 
-        // Phase 5 grammars — wired through GrammarLoader once the
-        // wrapper targets land. Returning nil here means "highlighting
+        // Phase 5 grammars — all loaded via dlopen out of
+        // Contents/Frameworks/. Returning nil here means "highlighting
         // unavailable for this language"; the engine memoizes that
-        // failure so we don't retry.
+        // failure so we don't retry on every call.
         case .java:       return GrammarLoader.load(.java)
         case .c:          return GrammarLoader.load(.c)
         case .cpp:        return GrammarLoader.load(.cpp)
+        case .csharp:     return GrammarLoader.load(.cSharp)
         case .rust:       return GrammarLoader.load(.rust)
+        case .lua:        return GrammarLoader.load(.lua)
 
         default:          return nil
         }
@@ -267,6 +269,12 @@ public final class TreeSitterEngine: @unchecked Sendable {
         case .typescript: stem = "typescript-highlights"
         case .markdown:   stem = "markdown-highlights"
         case .shell:      stem = "bash-highlights"
+        case .java:       stem = "java-highlights"
+        case .c:          stem = "c-highlights"
+        case .cpp:        stem = "cpp-highlights"
+        case .csharp:     stem = "csharp-highlights"
+        case .rust:       stem = "rust-highlights"
+        case .lua:        stem = "lua-highlights"
         default:          return nil
         }
         return Bundle.module.url(

@@ -27,6 +27,13 @@ let package = Package(
         .library(name: "TreeSitterJavaScriptLazy", type: .dynamic, targets: ["TreeSitterJavaScriptLazy"]),
         .library(name: "TreeSitterTypeScriptLazy", type: .dynamic, targets: ["TreeSitterTypeScriptLazy"]),
         .library(name: "TreeSitterBashLazy",       type: .dynamic, targets: ["TreeSitterBashLazy"]),
+        // Phase 5 grammars.
+        .library(name: "TreeSitterJavaLazy",       type: .dynamic, targets: ["TreeSitterJavaLazy"]),
+        .library(name: "TreeSitterCLazy",          type: .dynamic, targets: ["TreeSitterCLazy"]),
+        .library(name: "TreeSitterCPPLazy",        type: .dynamic, targets: ["TreeSitterCPPLazy"]),
+        .library(name: "TreeSitterCSharpLazy",     type: .dynamic, targets: ["TreeSitterCSharpLazy"]),
+        .library(name: "TreeSitterRustLazy",       type: .dynamic, targets: ["TreeSitterRustLazy"]),
+        .library(name: "TreeSitterLuaLazy",        type: .dynamic, targets: ["TreeSitterLuaLazy"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-markdown.git", from: "0.3.0"),
@@ -47,6 +54,17 @@ let package = Package(
         .package(url: "https://github.com/tree-sitter/tree-sitter-typescript",    from: "0.23.0"),
         .package(url: "https://github.com/tree-sitter-grammars/tree-sitter-markdown", from: "0.4.0"),
         .package(url: "https://github.com/tree-sitter/tree-sitter-bash",          from: "0.23.0"),
+        // Phase 5 lazy grammars. Each lives in its own
+        // `.library(.dynamic)` product so ViewerCore never pays for
+        // them in the executable; the runtime loader dlopens by path.
+        // Canonical upstream URLs only — picked for "tree-sitter org
+        // or grammars org owns it" stability, not popularity.
+        .package(url: "https://github.com/tree-sitter/tree-sitter-java",          from: "0.23.0"),
+        .package(url: "https://github.com/tree-sitter/tree-sitter-c",             from: "0.23.0"),
+        .package(url: "https://github.com/tree-sitter/tree-sitter-cpp",           from: "0.23.0"),
+        .package(url: "https://github.com/tree-sitter/tree-sitter-c-sharp",       from: "0.23.0"),
+        .package(url: "https://github.com/tree-sitter/tree-sitter-rust",          from: "0.23.0"),
+        .package(url: "https://github.com/tree-sitter-grammars/tree-sitter-lua",  from: "0.2.0"),
     ],
     targets: [
         // Patch targets — the upstream tree-sitter-python and
@@ -67,6 +85,18 @@ let package = Package(
         .target(
             name: "CTSPatchJavaScript",
             path: "Sources/CTSPatchJavaScript",
+            publicHeadersPath: "include",
+            cSettings: [.headerSearchPath(".")]
+        ),
+        // Same upstream Package.swift bug — tree-sitter-grammars/tree-sitter-lua
+        // gates `src/scanner.c` on a `FileManager.fileExists` check
+        // evaluated against SwiftPM's working dir, not the package
+        // root, so the file is skipped and link fails with
+        // `tree_sitter_lua_external_scanner_*` undefined. Drop this
+        // target if upstream fixes the gating.
+        .target(
+            name: "CTSPatchLua",
+            path: "Sources/CTSPatchLua",
             publicHeadersPath: "include",
             cSettings: [.headerSearchPath(".")]
         ),
@@ -152,6 +182,49 @@ let package = Package(
                 .product(name: "TreeSitterBash", package: "tree-sitter-bash"),
             ],
             path: "Sources/TreeSitterLazyWrappers/TreeSitterBashLazy"
+        ),
+        .target(
+            name: "TreeSitterJavaLazy",
+            dependencies: [
+                .product(name: "TreeSitterJava", package: "tree-sitter-java"),
+            ],
+            path: "Sources/TreeSitterLazyWrappers/TreeSitterJavaLazy"
+        ),
+        .target(
+            name: "TreeSitterCLazy",
+            dependencies: [
+                .product(name: "TreeSitterC", package: "tree-sitter-c"),
+            ],
+            path: "Sources/TreeSitterLazyWrappers/TreeSitterCLazy"
+        ),
+        .target(
+            name: "TreeSitterCPPLazy",
+            dependencies: [
+                .product(name: "TreeSitterCPP", package: "tree-sitter-cpp"),
+            ],
+            path: "Sources/TreeSitterLazyWrappers/TreeSitterCPPLazy"
+        ),
+        .target(
+            name: "TreeSitterCSharpLazy",
+            dependencies: [
+                .product(name: "TreeSitterCSharp", package: "tree-sitter-c-sharp"),
+            ],
+            path: "Sources/TreeSitterLazyWrappers/TreeSitterCSharpLazy"
+        ),
+        .target(
+            name: "TreeSitterRustLazy",
+            dependencies: [
+                .product(name: "TreeSitterRust", package: "tree-sitter-rust"),
+            ],
+            path: "Sources/TreeSitterLazyWrappers/TreeSitterRustLazy"
+        ),
+        .target(
+            name: "TreeSitterLuaLazy",
+            dependencies: [
+                .product(name: "TreeSitterLua", package: "tree-sitter-lua"),
+                "CTSPatchLua",
+            ],
+            path: "Sources/TreeSitterLazyWrappers/TreeSitterLuaLazy"
         ),
 
         .testTarget(name: "ViewerKitTests", dependencies: ["ViewerKit"]),
