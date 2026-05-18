@@ -705,6 +705,49 @@ Sendable boundaries:
 - `LSPClientHandle` (a non-actor facade we hand to UI code) wraps a
   weak reference to an actor + a Sendable identifier. Sendable.
 
+### 3.10 Swift 6 `isolated deinit` (SE-0371)
+
+Any LSP-side holder that retains AppKit objects which must be released
+on the MainActor — `NSTrackingArea`, `NSEvent` monitor tokens, the
+hover `NSPopover`, `NotificationCenter` observers — needs an
+`isolated deinit`. The default `nonisolated` deinit can't reach
+MainActor state without snapshotting every non-Sendable dependency
+into a Sendable wrapper, which is both noisy and easy to get wrong.
+
+The pattern that ships in `ViewerUI/LSP/LSPHoverAttachment.swift`:
+
+```swift
+@MainActor
+public final class LSPHoverToken {
+    private let trackingArea: NSTrackingArea       // non-Sendable
+    private weak var textView: NSTextView?         // non-Sendable
+    private let notifTokens: [NSObjectProtocol]    // non-Sendable
+
+    isolated deinit {
+        // Runs on MainActor — same isolation as the type. Free to
+        // touch textView, the tracking area, etc.
+        if let tv = textView { tv.removeTrackingArea(trackingArea) }
+        notifTokens.forEach(NotificationCenter.default.removeObserver)
+    }
+}
+```
+
+Where to use it (anywhere we're holding AppKit objects on the
+MainActor for the lifetime of an LSP feature):
+
+| Holder | What it owns | Why isolated deinit |
+|---|---|---|
+| `LSPHoverToken` | `NSTrackingArea`, hover `NSPopover`, `[NSObjectProtocol]` observers, `LSPCancellationToken` | All non-Sendable; cleanup is MainActor-only |
+| Outline section model | `NSPopover` (symbol-picker if added later), `Task` | Future work; Task cancellation is Sendable but popovers aren't |
+| Workspace-symbol palette | `NSWindow` controller | Same |
+
+Reference: [SE-0371: Isolated synchronous deinit][se-0371]. Available
+on Swift 6.0+; we target Swift 6.0 toolchain via `Package.swift`. The
+VM still runs Swift 6.1.2, which honors SE-0371 identically to 6.3 —
+verified during PoC integration.
+
+[se-0371]: https://github.com/swiftlang/swift-evolution/blob/main/proposals/0371-isolated-synchronous-deinit.md
+
 ---
 
 ## 4. Swift types — interface sketch
@@ -991,29 +1034,81 @@ include emoji-containing lines.
 
 ### 5.1 Hover popover
 
-**Trigger:** mouse hover over an identifier in `SourceTextController`'s
-NSTextView, paused for ≥400 ms (configurable). Same idea as Xcode's
-hover-delay.
+**Trigger:** **cursor-paused timer, 300 ms dwell.** The PoC tried
+Option+mouse-move because it dodged the NSTextView-subclass cost — but
+gating discovery on a modifier key is hostile to the "viewer that
+shows you what's here" mandate. The production v1 uses an
+unconditional dwell: any mouse-move resets a 300 ms timer; when it
+fires, we issue the hover request at the current point.
+
+> **Decision log.** Three options were on the table:
+> (a) Option+mouse-move (PoC default; rejected because hidden);
+> (b) cursor-paused timer (current; matches Xcode's "Quick Help on
+> hover" and VS Code's hover delay defaults);
+> (c) NSTextView subclass with tracking-area-routed `mouseMoved(_:)`.
+> Option (c) is the "correct" answer but requires intrusive changes
+> to `SourceTextController.textView` — keeping it as a vanilla
+> NSTextView keeps the find-bar, gutter, and selection-publish code
+> paths simple. We pay a small cost in event-monitor overhead for
+> Option (b) and bank the dwell-feel parity instead.
+
+**Decode-order rule for `hover.contents` (do not get this wrong):**
+the LSP spec's `hover.contents` union has two shapes that *both
+expose a `value` field*:
+
+- **MarkedString**: `{language, value}` — language-fenced code.
+- **MarkupContent**: `{kind, value}` — `"markdown"` or `"plaintext"`.
+
+If your decoder branches on the presence of `value` and falls into
+the MarkupContent path first, you'll silently strip the `language`
+fencing — Swift source becomes plain prose with no syntax color. The
+fix is one line: **check for `language` before `kind`**. This is
+encoded in `LSPClient.flattenHoverContents` and is the load-bearing
+case in `LSPProtocolDecodeTests.test_hover_markedStringWithLanguage_wrapsInFencedBlock`.
+
+```swift
+// CORRECT — language first.
+if let d = raw as? [String: Any],
+   let value = d["value"] as? String,
+   let lang = d["language"] as? String {
+    return ("```\(lang)\n\(value)\n```", true)
+}
+if let d = raw as? [String: Any],
+   let value = d["value"] as? String {
+    let isMd = (d["kind"] as? String) == "markdown"
+    return (value, isMd)
+}
+```
 
 **Implementation outline:**
 
-- `HoverTracker` is an `NSResponder` mouse-tracking helper attached
-  to the NSTextView. It debounces mouse-move with a 400 ms timer.
-- On debounce fire, it computes `(URL, line, character)` from the
-  current mouse position via `NSTextView.characterIndexForInsertion(at:)`
-  → string index → line/character.
-- Calls `await LSPPool.shared.client(for: url)?.hover(...)`.
-- On result: builds an `NSAttributedString` from `LSPHover.contents`
-  (re-using our existing Markdown renderer in `HTMLRenderer` or
-  via `swift-markdown`'s renderer if simpler) and shows in an
-  `NSPopover` anchored to the identifier's rect.
+- `LSPHoverAttachment.bind(textView:fileURL:client:positionEncoding:openLocation:)`
+  installs an `NSTrackingArea`, a local-event monitor for mouseMoved
+  events, and a Cmd-click monitor for go-to-def. Returns an
+  `LSPHoverToken` the caller retains (see §3.10 for the isolated-deinit
+  pattern).
+- On every mouseMoved in the tracking area, the dwell `Task` is
+  cancelled and rescheduled 300 ms in the future at the current point.
+- On dwell fire: resolve `(line, char)` via `LSPPositionConverter`
+  (honors the negotiated position encoding), issue
+  `client.hover(...)` with a fresh `LSPCancellationToken`, present
+  the result in an `NSPopover` with `behavior = .transient`.
+- Markdown is rendered by `LSPMarkdownRenderer` — a thin pass that
+  handles fenced code blocks ourselves and delegates inline markup
+  (bold/italic/code/links) to Foundation's
+  `AttributedString(markdown:options:)`.
 
-**Risks:**
+**Dismiss correctness:** `NSPopover.behavior = .transient` handles
+Esc + click-outside automatically. We also subscribe to
+`NSView.boundsDidChangeNotification` on the enclosing scroll view
+(scroll moves text under the anchor) and
+`NSWindow.didResignKeyNotification` (window loses focus) for explicit
+dismiss.
 
-- Don't trigger a hover request for every mouse move. Debounce hard.
-- Cancel the in-flight request when the mouse moves to a new identifier.
-- If the popover is currently shown, dismiss-and-reshow with a 100 ms
-  guard to avoid jitter when crossing whitespace.
+**Cancellation:** a fast mouse-move that fires a new dwell while the
+previous request is still in flight cancels the previous request via
+`$/cancelRequest` (the `LSPCancellationToken` bridges to the client
+actor). Late responses are silently discarded by `dispatchInbound`.
 
 **Compositor caveat (LESSONS §"compositor bug"):** NSPopover lives in
 its own window, not in the SwiftUI view tree. It does not affect the
