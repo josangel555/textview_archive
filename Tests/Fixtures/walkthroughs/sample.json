@@ -1,0 +1,11 @@
+{
+  "schema": "textview.walkthrough/v1",
+  "id": "sample",
+  "title": "Sample walkthrough",
+  "rootHint": "/Users/me/Documents/workspaces/claude/markdown_viewer",
+  "steps": [
+    { "id": "s1", "narration": "Welcome — let's tour the source.", "actions": [{"kind":"narrateOnly"}] },
+    { "id": "s2", "narration": "Open the main app file.", "actions": [{"kind":"openFile","path":"Sources/MarkdownViewer/main.swift"}] },
+    { "id": "s3", "narration": "Highlight the lazy-tab restore.", "actions": [{"kind":"highlightRange","path":"Sources/ViewerUI/DocumentModel.swift","startLine":970,"endLine":985}] }
+  ]
+}

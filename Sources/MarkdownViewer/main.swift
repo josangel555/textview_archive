@@ -15,6 +15,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private var cancellables: Set<AnyCancellable> = []
     private var diagnosticSignalSource: DispatchSourceSignal?
     private var mcpServer: MCPServer?
+    /// Captured at hosting-controller construction so the
+    /// `--walkthrough PATH` flag can start playback against the
+    /// SwiftUI-owned controller without rebuilding the view body.
+    fileprivate var walkthroughController: WalkthroughPlayerController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // `--mcp-stdio`: skip all UI work and run the MCP server on
@@ -44,7 +48,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // never resized it — that's the bug where opening any non-markdown
         // file revealed a sliver of UI (line numbers only) inside a vast
         // empty white background.
-        let hostingController = NSHostingController(rootView: ContentView(model: model))
+        let rootView = ContentView(model: model)
+        // Stash the walkthrough controller so the --walkthrough flag
+        // handler below can call `start(_:)` on it without rebuilding
+        // ContentView's body state.
+        self.walkthroughController = rootView.walkthroughController
+        let hostingController = NSHostingController(rootView: rootView)
 
         let minContentSize = NSSize(width: 600, height: 360)
         let window = NSWindow(
@@ -153,6 +162,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let forceSource = rawArgs.contains("--source")
         var autoSnapshotDelay: Double = -1
         var scriptPath: String? = nil
+        var walkthroughPath: String? = nil
         var skipNext = false
         var pathArgs: [String] = []
         for (i, a) in rawArgs.enumerated() {
@@ -167,6 +177,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             if a == "--script" {
                 if i + 1 < rawArgs.count {
                     scriptPath = rawArgs[i + 1]
+                    skipNext = true
+                }
+                continue
+            }
+            if a == "--walkthrough" {
+                if i + 1 < rawArgs.count {
+                    walkthroughPath = rawArgs[i + 1]
                     skipNext = true
                 }
                 continue
@@ -196,6 +213,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
         if let scriptPath {
             runScript(at: scriptPath)
+        }
+        if let walkthroughPath {
+            startWalkthrough(at: walkthroughPath)
+        }
+    }
+
+    /// Load a walkthrough JSON from disk and start playback. Used by
+    /// `--walkthrough PATH` for local dev (bypasses the file-drop
+    /// transport). Failures write to stderr and leave the player
+    /// inactive — we don't exit the process because the rest of the
+    /// session is still usable.
+    private func startWalkthrough(at path: String) {
+        let expanded = (path as NSString).expandingTildeInPath
+        let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let url = URL(fileURLWithPath: expanded, relativeTo: cwd).standardizedFileURL
+        switch WalkthroughLoader.load(fileAt: url) {
+        case .success(let script):
+            // Defer one runloop tick so the SwiftUI hosting controller
+            // has wired the StateObject before we mutate it.
+            DispatchQueue.main.async { [weak self] in
+                self?.walkthroughController?.start(script)
+            }
+        case .failure(let err):
+            FileHandle.standardError.write(
+                Data("walkthrough: load failed: \(err)\n".utf8)
+            )
         }
     }
 
