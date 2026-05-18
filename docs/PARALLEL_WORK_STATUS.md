@@ -12,6 +12,7 @@ PoC-hardening agents now running in fresh worktrees (`feat/lsp-v1`,
 | `feat/treesitter-lazyload` | 6 lazy grammars (Java/C/C++/C#/Rust/Lua), exec −4 MB, total 31 MB ≤ 35 MB cap | +55 |
 | `feat/mcp-stdio` | MCP roll-our-own JSON-RPC server, 10 tools, `--mcp-stdio` flag | +51 |
 | `feat/walkthrough-ui` | Docked-bottom player, full anchor suite, --walkthrough CLI flag | +22 |
+| `feat/lsp-v1` | SourceKit-LSP integration: pool/cancel/restart/outline/hover popover/diagnostics | +33 (52 total LSP) |
 
 Plus 5 follow-up commits on main:
 - Build: GrammarLoader env-var override exclusive (test isolation)
@@ -28,6 +29,21 @@ Plus 5 follow-up commits on main:
 - ❌ `runDiff` per-SHA — needs DiffView scope-by-SHA refactor
 - ❌ Note button → Code Review threads — needs review-thread integration
 - ⏳ Other anchor types' precise positioning (sidebar/gitTab/window) — needs PreferenceKey from each target surface
+
+### LSP v1 follow-ups (deferred from `feat/lsp-v1`)
+
+- Outline section (`LSPOutlineSection`) not yet wired into
+  `SidebarView` — drop-in `View` + model are ready, host PR adds
+  the section row.
+- Diagnostics panel (`LSPDiagnosticsView`) not wired into
+  `SettingsView` — same deal.
+- `ensureOpened` doesn't bump LSP text-version on file-watcher
+  reload — ~30 LOC follow-up, viewer is read-only so we never see
+  user edits, only on-disk diffs.
+- `LSPPool.recordRequest` helper exists but no call site is
+  wrapped through it yet — diagnostics shows `requestCount=0` /
+  `lastResponseMillis=null` until a wrapping helper threads through.
+- UI tests for hover popover + outline section deferred to VM.
 
 
 Background agents working in isolated git worktrees off the main
