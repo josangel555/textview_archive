@@ -8,12 +8,12 @@ struct GitLogTab: View {
     @ObservedObject var model: GitPanelModel
     @ObservedObject var doc: DocumentModel
 
-    /// Computed layout — recomputed when logEntries change. Returns nil
-    /// when the graph would need >4 lanes; the body falls back to a
-    /// dotless flat list in that case (matches spec).
-    private var layout: GraphLayout.Layout? {
-        GraphLayout.layout(model.logEntries, maxLanes: 4)
-    }
+    /// Cached layout — `GraphLayout.layout` is O(commits × lanes) and
+    /// allocates fresh rows + lane assignments per call. As a computed
+    /// property it ran on every body re-eval (panel tab switch, zoom,
+    /// repo refresh that didn't actually change). Now @State + .onChange
+    /// keyed on the logEntries identity.
+    @State private var layout: GraphLayout.Layout? = nil
 
     var body: some View {
         if model.logEntries.isEmpty {
@@ -22,6 +22,7 @@ struct GitLogTab: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
+                .onAppear { layout = nil }
         } else {
             let lay = layout
             ScrollView {
@@ -51,7 +52,14 @@ struct GitLogTab: View {
                 }
             }
             .frame(height: SidebarConstants.sectionBodyHeight)
+            .onAppear { recomputeLayout() }
+            .onChange(of: model.logEntries.count) { _, _ in recomputeLayout() }
+            .onChange(of: model.logEntries.first?.sha) { _, _ in recomputeLayout() }
         }
+    }
+
+    private func recomputeLayout() {
+        layout = GraphLayout.layout(model.logEntries, maxLanes: 4)
     }
 
     private func row(_ c: GitClient.GraphCommit,

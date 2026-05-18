@@ -7,28 +7,39 @@ struct GitStatusTab: View {
     @ObservedObject var model: GitPanelModel
     @ObservedObject var doc: DocumentModel
 
+    /// `Self.group(...)` runs an O(entries) classification + bucket
+    /// allocation. As an inline `let` inside body it ran on every
+    /// re-eval (panel-tab switch, sidebar redraw, repo refresh that
+    /// produced identical entries because of the value-blind
+    /// @Published before we guarded GitPanelModel.apply). Cached in
+    /// @State, recomputed only when statusEntries actually change.
+    @State private var grouped: Groups = Groups()
+
     var body: some View {
         if model.statusEntries.isEmpty {
             empty
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                    let groups = Self.group(model.statusEntries)
-                    if !groups.staged.isEmpty {
-                        sectionHeader("Staged", count: groups.staged.count)
-                        ForEach(groups.staged, id: \.path) { row($0) }
+                    if !grouped.staged.isEmpty {
+                        sectionHeader("Staged", count: grouped.staged.count)
+                        ForEach(grouped.staged, id: \.path) { row($0) }
                     }
-                    if !groups.unstaged.isEmpty {
-                        sectionHeader("Unstaged", count: groups.unstaged.count)
-                        ForEach(groups.unstaged, id: \.path) { row($0) }
+                    if !grouped.unstaged.isEmpty {
+                        sectionHeader("Unstaged", count: grouped.unstaged.count)
+                        ForEach(grouped.unstaged, id: \.path) { row($0) }
                     }
-                    if !groups.untracked.isEmpty {
-                        sectionHeader("Untracked", count: groups.untracked.count)
-                        ForEach(groups.untracked, id: \.path) { row($0) }
+                    if !grouped.untracked.isEmpty {
+                        sectionHeader("Untracked", count: grouped.untracked.count)
+                        ForEach(grouped.untracked, id: \.path) { row($0) }
                     }
                 }
             }
             .frame(height: SidebarConstants.sectionBodyHeight)
+            .onAppear { grouped = Self.group(model.statusEntries) }
+            .onChange(of: model.statusEntries) { _, new in
+                grouped = Self.group(new)
+            }
         }
     }
 

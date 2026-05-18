@@ -10,21 +10,30 @@ struct DiffView: View {
     let text: String
     @ObservedObject var doc: DocumentModel
 
-    private var files: [UnifiedDiff.File] { DiffParser.parse(text) }
+    /// `DiffParser.parse` is O(diff size) and allocates a fresh
+    /// `[UnifiedDiff.File]` tree per call. As a computed property
+    /// it re-ran on every body re-eval (zoom change, hover, etc.) —
+    /// on a multi-thousand-line commit diff that's the dominant
+    /// cost. @State + .onChange recomputes only when `text` changes.
+    @State private var files: [UnifiedDiff.File] = []
 
     var body: some View {
-        if files.isEmpty {
-            empty
-        } else {
-            ScrollView([.horizontal, .vertical]) {
-                LazyVStack(alignment: .leading, spacing: 16, pinnedViews: []) {
-                    ForEach(Array(files.enumerated()), id: \.offset) { _, file in
-                        fileBlock(file)
+        Group {
+            if files.isEmpty {
+                empty
+            } else {
+                ScrollView([.horizontal, .vertical]) {
+                    LazyVStack(alignment: .leading, spacing: 16, pinnedViews: []) {
+                        ForEach(Array(files.enumerated()), id: \.offset) { _, file in
+                            fileBlock(file)
+                        }
                     }
+                    .padding(.vertical, 8)
                 }
-                .padding(.vertical, 8)
             }
         }
+        .onAppear { files = DiffParser.parse(text) }
+        .onChange(of: text) { _, newText in files = DiffParser.parse(newText) }
     }
 
     private var empty: some View {
