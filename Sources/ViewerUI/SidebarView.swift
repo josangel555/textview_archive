@@ -26,6 +26,10 @@ struct SidebarView: View {
                 ClaudeTimelineSection(model: model)
                 Divider()
             }
+            // Plugin-contributed sidebar sections. Self-managing
+            // collapse state; appears above FILES regardless of
+            // whether a folder is open (a plugin may not need one).
+            PluginSidebarSections(model: model)
             if let root = sidebar.rootURL {
                 // FILES accordion header — gives the tree the same
                 // collapsible chevron + heading treatment as the

@@ -1,0 +1,26 @@
+{
+  "id": "com.example.tv.hello",
+  "name": "Hello Plugin (Tier B example)",
+  "version": "0.1.0",
+  "author": { "name": "TextView Examples" },
+  "license": "MIT",
+  "hostVersion": ">=0.0.0",
+  "manifestVersion": 1,
+  "capabilities": ["ui.sidebar", "shell.exec"],
+  "contributes": [
+    {
+      "type": "sidebar_section",
+      "id": "hello",
+      "title": "HELLO",
+      "icon": "hand.wave",
+      "order": 200,
+      "collapsedByDefault": false,
+      "provider": {
+        "tier": "B",
+        "bin": "rows.sh",
+        "args": [],
+        "timeoutMs": 3000
+      }
+    }
+  ]
+}

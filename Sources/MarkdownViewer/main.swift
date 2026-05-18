@@ -139,6 +139,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             }
             .store(in: &cancellables)
 
+        // Plugins: bundled (Tier 0) register synchronously; on-disk
+        // (Tier A/B) load via the registry. Anything awaiting a grant
+        // bubbles up here and gets a one-shot first-install prompt.
+        // We defer to the next runloop tick so the main window is on
+        // screen before the modal appears.
+        let pending = PluginsBootstrap.loadAtLaunch()
+        if !pending.isEmpty {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                for p in pending {
+                    PluginGrantPrompt.present(
+                        manifest: p.manifest, folder: p.folder
+                    ) { _ in
+                        // Re-evaluate this plugin so its contributions
+                        // register (or stay dropped) per the decision.
+                        _ = PluginRegistry.shared.reloadOne(folder: p.folder)
+                    }
+                }
+            }
+        }
+
         // Restore last-opened folder (silently no-ops if path no longer exists).
         model.restorePreviousFolderIfAvailable()
         // Restore the auto-saved workspace (tabs + view modes + prefs)
