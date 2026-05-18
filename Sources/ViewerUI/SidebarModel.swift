@@ -34,6 +34,10 @@ public final class SidebarModel: ObservableObject {
     private let git: GitService
     private var childrenCache: [URL: [FileNode]] = [:]
 
+    /// FSEvents stream watching the current root recursively.
+    /// Replaced on every `setRoot(_:)`. nil when no root open.
+    private var folderWatcher: FolderWatcher?
+
     public init(
         service: FileTreeService = FileTreeService(),
         git: GitService = GitService()
@@ -58,15 +62,55 @@ public final class SidebarModel: ObservableObject {
         invalidateFlatCache()
         gitStatuses = [:]
         gitRepoRoot = nil
+        folderWatcher?.stop()
+        folderWatcher = nil
         if let url = rootURL {
             expanded.insert(url)
             ensureLoaded(url: url)
             refreshGitStatus()
             selectedURL = url
+            // Start the FSEvents stream. Any external change in the
+            // tree (new file via Terminal, branch switch, etc.)
+            // invalidates the affected directory's cache and refires
+            // the dependent SwiftUI views.
+            folderWatcher = try? FolderWatcher(url: url) { [weak self] dirs in
+                // Callback hops to .main by default — safe to mutate.
+                MainActor.assumeIsolated {
+                    self?.onFolderChange(dirs)
+                }
+            }
         } else {
             selectedURL = nil
         }
         isVisible = (rootURL != nil)
+    }
+
+    /// Called by the FSEvents stream when one or more directories in
+    /// the watched tree have changed. Only invalidates dirs we
+    /// actually have cached (so a `node_modules` burst doesn't fan
+    /// out into a full reload). Re-publishes by mutating
+    /// `childrenCache` indirectly via the flat-cache invalidation +
+    /// a no-op assignment to a published prop.
+    private func onFolderChange(_ dirs: [URL]) {
+        var touched = false
+        let norm = dirs.map(normalize)
+        for d in norm {
+            if childrenCache[d] != nil {
+                // Re-read on the spot. Cheap (single readdir).
+                let kids = (try? service.children(of: d, includeHidden: includeHidden)) ?? []
+                if kids != childrenCache[d] {
+                    childrenCache[d] = kids
+                    touched = true
+                }
+            }
+        }
+        guard touched else { return }
+        invalidateFlatCache()
+        // Force a publish so SwiftUI re-bodies. expanded is the
+        // cheapest @Published prop to nudge — assigning the same
+        // value is value-blind and refires (LESSONS).
+        let snapshot = expanded
+        expanded = snapshot
     }
 
     // MARK: Keyboard navigation (CRIT-6)
