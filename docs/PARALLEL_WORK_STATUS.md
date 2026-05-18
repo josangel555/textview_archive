@@ -10,7 +10,7 @@ to land.
 |---|---|---|---|
 | `poc/sessions` | `/Users/me/Documents/workspaces/claude/_poc_sessions` | PoC: tabs-within-tabs | **Done** — 26 tests pass |
 | `poc/plugins` | `/Users/me/Documents/workspaces/claude/_poc_plugins` | PoC: plugin v1 surface | **Done** — 18 tests pass |
-| `poc/lsp` | `/Users/me/Documents/workspaces/claude/_poc_lsp` | PoC: SourceKit-LSP integration | Running |
+| `poc/lsp` | `/Users/me/Documents/workspaces/claude/_poc_lsp` | PoC: SourceKit-LSP integration | **Done** — 19 tests pass (incl. real sourcekit-lsp smoke) |
 | `feat/treesitter-lazyload` | `/Users/me/Documents/workspaces/claude/_feat_treesitter` | TreeSitter lazy-grammar refactor + 6 new langs | Running |
 | `feat/mcp-stdio` | `/Users/me/Documents/workspaces/claude/_feat_mcp` | MCP roll-our-own stdio JSON-RPC server | Running |
 | `feat/walkthrough-ui` | `/Users/me/Documents/workspaces/claude/_feat_walkthrough_ui` | Walkthrough player UI (per user mock) | Running |
@@ -96,6 +96,59 @@ between first-party sections and the FILES tree).
   - Settings → Plugins pane: 1 day
   - Drag-drop install + validator UX: 0.5-1 day
   - Two more contribution points wired: 1-2 days
+
+## LSP PoC summary (already in `poc/lsp`)
+
+Single squashed commit on branch `poc/lsp`. **No push.**
+
+- `Sources/ViewerCore/LSP/{LSPProtocol,LSPFraming,LSPClient,LSPDiscovery}.swift`
+- `Sources/ViewerUI/LSP/LSPHoverAttachment.swift` — Cmd-click + Option-hover NSEvent monitors
+- Additive extension on `TextDisplayView.SourceTextController` exposing `lspTextView`
+- 19 tests: 9 framing, 9 polymorphic-decode, 1 real-process smoke against `sourcekit-lsp` on this workspace (~5s end-to-end)
+
+Smoke test skips gracefully if the binary is missing; set
+`MDV_RUN_LSP_SMOKE=1` to make it required.
+
+### Design-doc gaps surfaced
+
+1. **Swift 6 `isolated deinit` is unspoken**. Holders touching
+   non-Sendable AppKit state (NSTrackingArea, monitors) need it
+   under strict concurrency. Doc never references SE-0371. Caught
+   on first build.
+2. **`hover.contents` decode order is silently load-bearing**.
+   MarkedString `{language, value}` decode must come *before*
+   MarkupContent `{kind, value}` — both expose `value` and naive
+   Codable enum decoding swallows the language. Doc's sketch
+   implies a Codable enum which Swift's default order would
+   misdecode.
+3. **Hover trigger is unspecified**. Doc says "mouse-over an
+   identifier" but §3.5 only walks Cmd-click. Mouse-move on
+   NSTextView is non-trivial (tracking-area lifecycle, modifier
+   gate vs cursor-paused timer vs subclass). PoC compromised on
+   Option+mouse-move. The doc should pin the trigger.
+
+### Effort estimate
+
+- **PoC → production**: 3-5 engineer-days
+  - Workspace-root + language detection: 0.5d
+  - `LSPPool` actor (key-based lookup, idle reaper, shutdown): 1d
+  - Cancellation token + restart-on-crash + `$/cancelRequest`: 1d
+  - Position-encoding negotiation (utf-16 ↔ utf-8 ↔ grapheme): 0.5d
+  - Real hover popover (markdown rendering, dismissal): 1d
+  - Outline sidebar section (`textDocument/documentSymbol`): 1d
+  - Tests + diagnostics panel: 1d
+
+### Surprises
+
+- `Data.subdata(in:)` traps on `0..<n` when the `Data` value has
+  non-zero `startIndex` after `removeFirst` — signal-5 with no
+  stack. Re-base with `Data(rawBuffer)` at decoder entry.
+- `Process` write via `FileHandle.write(contentsOf:)` is blocking;
+  fine for ~50 KB `didOpen` but a real impl needs an async write
+  queue.
+- `sourcekit-lsp` cold-launch is fast on a warm toolchain (~5s
+  end-to-end for init/open/hover/def/shutdown). Cold-toolchain
+  numbers TBD.
 
 ## Cleanup when done reviewing
 
