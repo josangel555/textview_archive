@@ -14,6 +14,11 @@ public final class BookmarksStore {
 
     private var entries: [BookmarkEntry] = []
     private let clock: @Sendable () -> Date
+    /// O(1)-contains index over the URL set, maintained alongside
+    /// `entries`. `contains(_:)` was called per tab in TabBar and per
+    /// sidebar row — at O(N) per call, that's quadratic on the sidebar
+    /// hot path. Rebuilt on load / add / remove / clear.
+    private var urlIndex: Set<URL> = []
 
     public init(
         storeURL: URL,
@@ -44,7 +49,7 @@ public final class BookmarksStore {
     /// bookmarked?" check that drives the star indicator.
     public func contains(_ url: URL) -> Bool {
         let n = url.standardizedFileURL.resolvingSymlinksInPath()
-        return entries.contains { $0.url == n }
+        return urlIndex.contains(n)
     }
 
     /// Line-aware lookup. Pass `line: nil` to check the file-level
@@ -72,6 +77,7 @@ public final class BookmarksStore {
         if entries.count > maxEntries {
             entries = Array(entries.prefix(maxEntries))
         }
+        rebuildIndex()
         save()
         return entry
     }
@@ -84,7 +90,10 @@ public final class BookmarksStore {
         let n = url.standardizedFileURL.resolvingSymlinksInPath()
         let before = entries.count
         entries.removeAll { $0.url == n && $0.line == line }
-        if entries.count != before { save() }
+        if entries.count != before {
+            rebuildIndex()
+            save()
+        }
     }
 
     @discardableResult
@@ -101,6 +110,7 @@ public final class BookmarksStore {
 
     public func clear() {
         entries = []
+        urlIndex.removeAll(keepingCapacity: false)
         save()
     }
 
@@ -123,6 +133,13 @@ public final class BookmarksStore {
             [BookmarkEntry].self, from: storeURL, maxSize: maxStoreFileBytes
         ) else { return }
         entries = Array(decoded.prefix(maxEntries))
+        rebuildIndex()
+    }
+
+    /// Refresh the O(1)-contains URL set from `entries`. Move/clear
+    /// don't change membership, so they don't call this.
+    private func rebuildIndex() {
+        urlIndex = Set(entries.map { $0.url })
     }
 
     private func save() {
