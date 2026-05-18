@@ -74,6 +74,10 @@ public actor LSPPool {
         var lastUsed: ContinuousClock.Instant
         var restartAttempts: Int
         var serverStatus: LSPServerStatus
+        /// Per-file LSP version counter. Bumped on every
+        /// `didChange` so sourcekit-lsp can detect out-of-order
+        /// notifications. Starts at 1 on `didOpen`.
+        var fileVersions: [URL: Int] = [:]
     }
 
     /// Snapshot of pool / client health for the dev diagnostics panel.
@@ -201,8 +205,32 @@ public actor LSPPool {
         if var e = entries[key] {
             e.state = .live(client, openedFiles: opened)
             e.lastUsed = clock.now
+            e.fileVersions[fileURL] = 1
             entries[key] = e
         }
+    }
+
+    /// Notify the server that `fileURL`'s on-disk content changed.
+    /// Caller is the file watcher / reload path. No-op when the file
+    /// isn't currently open (`ensureOpened` hasn't been called yet)
+    /// or when the language has no LSP. Bumps the per-file version
+    /// counter so out-of-order notifications are detectable.
+    public func didChange(fileURL: URL, text: String) async throws {
+        guard let entry = registry.language(for: fileURL) else { return }
+        guard let root = entry.rootFinder(fileURL) else { return }
+        let key = Key(language: entry.language, workspaceRoot: root)
+        guard var e = entries[key],
+              case .live(let client, let opened) = e.state,
+              opened.contains(fileURL) else { return }
+        let nextVersion = (e.fileVersions[fileURL] ?? 1) + 1
+        try await client.didChange(
+            url: fileURL,
+            text: text,
+            version: nextVersion
+        )
+        e.fileVersions[fileURL] = nextVersion
+        e.lastUsed = clock.now
+        entries[key] = e
     }
 
     private func ensureLive(

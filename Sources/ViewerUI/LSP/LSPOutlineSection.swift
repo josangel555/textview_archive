@@ -54,7 +54,15 @@ public final class LSPOutlineModel: ObservableObject {
         let pool = self.pool
         inflightTask = Task { @MainActor [weak self] in
             do {
+                // ensureOpened is a no-op if the file was previously
+                // opened via this pool; in that case the server still
+                // holds the stale text. didChange(_:_:) sends a
+                // version-bumped full-text update so subsequent
+                // requests (documentSymbol, hover, etc.) read the
+                // latest contents. Safe to call before any didOpen —
+                // pool no-ops when the file isn't tracked.
                 try await pool.ensureOpened(fileURL: url, text: text)
+                try await pool.didChange(fileURL: url, text: text)
                 let client = try await pool.client(for: url)
                 let syms = try await client.documentSymbol(url: url)
                 guard let self = self, self.currentFile == url else { return }

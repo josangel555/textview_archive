@@ -378,6 +378,26 @@ public actor LSPClient {
         try notify(method: "textDocument/didOpen", params: params)
     }
 
+    /// Send `textDocument/didChange` with the full new file contents.
+    /// We always use Full sync (single change with the entire new
+    /// text) — the viewer is read-only so file mutations only come
+    /// from the file watcher catching on-disk diffs, which is fine
+    /// for full-text replace. The caller must monotonically bump
+    /// `version`; sourcekit-lsp drops out-of-order changes.
+    public func didChange(url: URL, text: String, version: Int) throws {
+        guard initialized else { throw LSPError.notInitialized }
+        let params: [String: Any] = [
+            "textDocument": [
+                "uri": url.absoluteString,
+                "version": version
+            ],
+            "contentChanges": [
+                ["text": text]
+            ]
+        ]
+        try notify(method: "textDocument/didChange", params: params)
+    }
+
     public func hover(
         url: URL, line: Int, character: Int,
         token: LSPCancellationToken? = nil
