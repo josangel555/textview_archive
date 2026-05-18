@@ -1265,7 +1265,18 @@ public final class DocumentModel: ObservableObject {
     /// doesn't read 15 files at launch — only the focused one.
     public func appendLazyTab(url: URL, viewMode: ViewMode) {
         let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
-        tabs.append(Tab(url: resolved, state: .empty, viewMode: viewMode))
+        // Clamp the requested viewMode to one the URL actually
+        // supports. Workspaces persisted before mode-set validation
+        // could end up with e.g. `.formatted` saved against a `.md`
+        // tab; restoring that as-is would bind a Picker to a value
+        // not in its tag list and the ModeBar would show no
+        // selection at all. Fall back to the file's defaultMode in
+        // that case.
+        let allowed = ViewModeOptions.availableModes(for: resolved)
+        let safeMode = allowed.contains(viewMode)
+            ? viewMode
+            : ViewModeOptions.defaultMode(for: resolved)
+        tabs.append(Tab(url: resolved, state: .empty, viewMode: safeMode))
     }
 
     /// Open many URLs at once. Only the LAST URL is read into memory;

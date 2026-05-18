@@ -222,13 +222,19 @@ public struct ContentView: View {
                             model.sourceSelection = sel
                         }
                     )
+                    // Force the NSViewControllerRepresentable to claim
+                    // the full HStack width. Without this, the inner
+                    // NSScrollView's intrinsicContentSize (driven by
+                    // the text-document width) wins over the outer
+                    // VStack frame and the source pane collapses to a
+                    // narrow centered strip. Putting the frame on the
+                    // outer VStack alone is not enough — SwiftUI sizes
+                    // the AppKit child to its intrinsic and pads the
+                    // remainder.
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            // Make the source pane always claim the full content area.
-            // Without this, NSScrollView's intrinsicContentSize (driven
-            // by the document text width) leaks through and SwiftUI
-            // collapses the view to a narrow centered strip when the
-            // file content is short or just-loaded.
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
