@@ -13,7 +13,7 @@ to land.
 | `poc/lsp` | `/Users/me/Documents/workspaces/claude/_poc_lsp` | PoC: SourceKit-LSP integration | **Done** — 19 tests pass (incl. real sourcekit-lsp smoke) |
 | `feat/treesitter-lazyload` | `/Users/me/Documents/workspaces/claude/_feat_treesitter` | TreeSitter lazy-grammar refactor + 6 new langs | Running |
 | `feat/mcp-stdio` | `/Users/me/Documents/workspaces/claude/_feat_mcp` | MCP roll-our-own stdio JSON-RPC server | Running |
-| `feat/walkthrough-ui` | `/Users/me/Documents/workspaces/claude/_feat_walkthrough_ui` | Walkthrough player UI (per user mock) | Running |
+| `feat/walkthrough-ui` | `/Users/me/Documents/workspaces/claude/_feat_walkthrough_ui` | Walkthrough player UI (per user mock) | **Done** — 22 tests pass, end-to-end sample verified |
 
 ## What landed on `main`
 
@@ -149,6 +149,56 @@ Smoke test skips gracefully if the binary is missing; set
 - `sourcekit-lsp` cold-launch is fast on a warm toolchain (~5s
   end-to-end for init/open/hover/def/shutdown). Cold-toolchain
   numbers TBD.
+
+## Walkthrough UI summary (already in `feat/walkthrough-ui`)
+
+Three atomic commits on branch `feat/walkthrough-ui`. **No push.**
+22 tests pass on host.
+
+- `Sources/ViewerUI/Walkthrough/DocumentModel+Walkthrough.swift` —
+  `WalkthroughBridge` + `selectTab(forURL:)` (folds the missing
+  `switchTab` verb into `openFile`'s handler per user decision).
+- `Sources/ViewerUI/Walkthrough/WalkthroughAutoAdvance.swift` —
+  timer + speed (1x / 1.5x / 2x).
+- `Sources/ViewerUI/Walkthrough/WalkthroughPlayerImpl.swift` —
+  engine delegate, maps Actions to existing DocumentModel methods.
+- `Sources/ViewerUI/Walkthrough/WalkthroughPlayerView.swift` —
+  controller strip (docked bottom of right pane per user decision).
+- `Sources/ViewerUI/Walkthrough/WalkthroughOverlay.swift` —
+  line / editor / sidebar / gitTab / window anchors (full design-v2
+  suite per user decision).
+- `Tests/Fixtures/walkthroughs/sample.json` + 4 test files.
+- `Sources/MarkdownViewer/main.swift` — `--walkthrough PATH` CLI
+  flag drives the engine on startup for local dev.
+
+Player layout:
+
+```
+┌──── content (right pane) ──────────────────────────┐
+│  source/rendered view  ◀── WalkthroughOverlay      │
+│                            (highlight + popover)   │
+├──── WalkthroughPlayerView (when isActive) ─────────┤
+│  [claude] Welcome — let's tour…       ●●●─         │
+│  [<][⏯][>]  1x▾  Steps▾  [+ Note]      [Exit]      │
+└────────────────────────────────────────────────────┘
+```
+
+### Open issues / cut
+
+- Popover anchor positioning is approximate (alignment-based, not
+  measured frames). Precise anchoring needs `PreferenceKey` from
+  each anchor target. Follow-up.
+- `splitFile.alongside` field is unused (split pane doesn't accept
+  a primary swap on command yet).
+- `runDiff` maps to `showGitLog(scope: .file)` — per-SHA diff view
+  not wired.
+- `addBookmark` with a line uses `toggleCurrentLineBookmark` after
+  scroll — non-idempotent so guarded with `bookmarkedLines(for:)`
+  check. Cleaner: add `setBookmark(url:line:)` API. Off-scope here.
+- Note button logs to stderr only; Code Review thread wire-up is a
+  separate task (per user decision — visual-only for v1).
+- UI smoke deferred to VM per CLAUDE.md test rules; host filter
+  covers pure logic.
 
 ## Cleanup when done reviewing
 
