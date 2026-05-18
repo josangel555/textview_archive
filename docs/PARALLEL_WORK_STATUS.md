@@ -12,7 +12,7 @@ to land.
 | `poc/plugins` | `/Users/me/Documents/workspaces/claude/_poc_plugins` | PoC: plugin v1 surface | **Done** — 18 tests pass |
 | `poc/lsp` | `/Users/me/Documents/workspaces/claude/_poc_lsp` | PoC: SourceKit-LSP integration | **Done** — 19 tests pass (incl. real sourcekit-lsp smoke) |
 | `feat/treesitter-lazyload` | `/Users/me/Documents/workspaces/claude/_feat_treesitter` | TreeSitter lazy-grammar refactor + 6 new langs | Running |
-| `feat/mcp-stdio` | `/Users/me/Documents/workspaces/claude/_feat_mcp` | MCP roll-our-own stdio JSON-RPC server | Running |
+| `feat/mcp-stdio` | `/Users/me/Documents/workspaces/claude/_feat_mcp` | MCP roll-our-own stdio JSON-RPC server | **Done** — 51 tests pass + manual e2e verified |
 | `feat/walkthrough-ui` | `/Users/me/Documents/workspaces/claude/_feat_walkthrough_ui` | Walkthrough player UI (per user mock) | **Done** — 22 tests pass, end-to-end sample verified |
 
 ## What landed on `main`
@@ -199,6 +199,82 @@ Player layout:
   separate task (per user decision — visual-only for v1).
 - UI smoke deferred to VM per CLAUDE.md test rules; host filter
   covers pure logic.
+
+## MCP stdio summary (already in `feat/mcp-stdio`)
+
+Two atomic commits on branch `feat/mcp-stdio`. **No push.** 51 tests
+pass + manual e2e against `.build/debug/MarkdownViewer --mcp-stdio`
+confirms initialize → tools/list → tools/call round-trips. **Zero
+new dependencies.** Bundle delta: +492 KB debug binary.
+
+- `Sources/ViewerCore/Automation/MCPFraming.swift` — Content-Length
+  codec, body cap 16 MiB. Subtle CRLF-as-single-grapheme bug caught
+  and fixed (split at UnicodeScalar level, not Character).
+- `Sources/ViewerCore/Automation/MCPProtocol.swift` — JSON-RPC +
+  MCP DTOs (initialize, tools/list, tools/call).
+- `Sources/ViewerCore/Automation/AutomationHost.swift` — protocol +
+  `AutomationState`. All methods `@MainActor`.
+- `Sources/ViewerCore/Automation/MCPServer.swift` — runtime; parks
+  on stdin, dispatches to handlers via `DispatchQueue.main.sync` +
+  `MainActor.assumeIsolated`.
+- `Sources/ViewerCore/Automation/MCPToolCatalog.swift` — 10 tools.
+- `Sources/ViewerUI/Automation/DocumentModel+AutomationHost.swift` —
+  conformance; every method delegates to existing model API. No new
+  model methods needed.
+- `Sources/MarkdownViewer/main.swift` — `--mcp-stdio` flag. Sets
+  activation policy to `.prohibited` (no Dock/menu/window), skips
+  workspace restore, runs server. Stderr-only logging so stdout
+  stays clean for framed protocol bytes.
+- `Tests/ViewerCoreTests/Automation/...` — 51 tests:
+  - 13 framing (encode/decode, multi-message, embedded newlines,
+    LF-only, EOF, oversized body, case-insensitive headers)
+  - 10 protocol envelope (Value Int-vs-Double fidelity, string ids,
+    notifications, typed arg accessors)
+  - 23 tool-catalog (FakeAutomationHost; per-tool args + result
+    shapes; `/etc/hosts` → permissionDenied; missing UUID →
+    invalidParams)
+  - 5 server-over-pipe (initialize, tools/list with 10 tools,
+    unknown method → -32601, tools/call success + path-denial as
+    `isError=true`)
+
+### Tools shipped (all 10 from design §6)
+
+| Tool | Returns |
+|---|---|
+| `open_path` | `{ tabId }`; path must exist + be under `$HOME` or tempdir |
+| `select_tab` | `{ changed }`; 1-based `byIndex` or UUID `byId` |
+| `set_view_mode` | enum-validated against six `ViewMode` raw values |
+| `find` | `{ matches, total, truncated }`; cap 1000 matches |
+| `goto_line` | 1-based line ≥1, optional column |
+| `visible_text` | UTF-8 byte-capped at 10 MB |
+| `current_state` | `AutomationState` (tabs, viewMode, zoom, sidebar) |
+| `toggle_bookmark` | file-level or line-level |
+| `list_bookmarks` | array of `{ path, displayName, addedAt, line? }` |
+| `snapshot_window` | `{ pngBase64, bytes }`; uses `cacheDisplay` so no Screen Recording permission |
+
+### Intentionally cut
+
+- `subscribe(events)` (design rank 10) — streaming + back-pressure,
+  out of "just initialize/tools/list/tools/call" scope. Server's
+  `writeLock` is in place so adding `publish(_:)` later is mechanical.
+- Unix socket / TCP transports — explicitly out of v1.
+- App Intents facade — separate from MCP v1.
+- Audit log + first-connect prompt — stdio is per-launch-by-trusted-
+  parent, so design §8 audit log doesn't apply.
+- `notifications/tools/list_changed` — `listChanged: false` advertised.
+
+### Manual verification (actually run)
+
+```
+→ {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+← {capabilities:{tools:{listChanged:false}}, protocolVersion:"2024-11-05", ...}
+
+→ {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+← 10 tools
+
+→ {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"current_state","arguments":{}}}
+← {content:[{text:"{...}",type:"text"}], isError:false}
+```
 
 ## Cleanup when done reviewing
 
