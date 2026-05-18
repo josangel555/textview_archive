@@ -122,11 +122,16 @@ public final class WalkthroughPlayerImpl: WalkthroughEngineDelegate {
 
         case .splitFile(let p):
             guard let url = resolve(p.path) else { return }
-            // `alongside` is informational only in v1 — the split pane
-            // doesn't yet support arbitrary primary/secondary swap on
-            // command. Future hookup: select the alongside tab as
-            // primary before opening secondary.
-            _ = p.alongside
+            // If `alongside` is provided, make sure that file is the
+            // primary pane's selected tab before opening the split.
+            // Lets a script say "show A on the left, B on the right"
+            // without first orchestrating a separate openFile step.
+            if let alongsidePath = p.alongside,
+               let alongsideURL = resolve(alongsidePath) {
+                if !model.selectTab(forURL: alongsideURL) {
+                    model.openPath(alongsideURL)
+                }
+            }
             model.openInSplit(url)
 
         case .runDiff(let p):
