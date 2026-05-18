@@ -166,7 +166,9 @@ public struct WalkthroughOverlay: View {
         // alignment-in-container layout so behavior stays identical
         // before the registration round-trip lands.
         let surfaceID = surfaceKey(for: p.anchor)
-        if let surfaceID, let rect = anchorFrames[surfaceID] {
+        if let surfaceID,
+           let rect = anchorFrames[surfaceID],
+           rect.width > 0, rect.height > 0 {
             popoverCard(for: p)
                 .position(
                     x: rect.maxX + 12 + 180,    // gap + half popover width
