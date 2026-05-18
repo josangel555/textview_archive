@@ -4,7 +4,7 @@ import Foundation
 /// modes varies by file type; the always-on baseline is `source`
 /// + `hex`, with `rendered` and `formatted` opt-in for files that
 /// support them.
-public enum ViewMode: String, Equatable, Sendable, CaseIterable {
+public enum ViewMode: String, Equatable, Sendable, CaseIterable, Codable {
     case rendered    // markdown only: WKWebView-rendered HTML
     case source      // every text file: NSTextView with syntax highlight
     case formatted   // JSON / XML / etc.: pretty-printed source

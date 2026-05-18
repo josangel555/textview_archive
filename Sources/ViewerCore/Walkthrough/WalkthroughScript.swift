@@ -1,4 +1,5 @@
 import Foundation
+import ViewerKit
 
 /// Walkthrough script — the JSON payload an external agent (typically
 /// Claude Code via MCP) sends to TextView to drive a guided tour.
@@ -220,13 +221,28 @@ public struct ShowPopoverPayload: Codable, Sendable, Equatable {
 public enum PopoverAnchor: Codable, Sendable, Equatable {
     case line(path: String?, line: Int)
     case editor
-    case sidebar(section: String)       // bookmarks / search / git / claude / files
-    case gitTab(tab: String)            // status / log / stash / trees / remotes
+    case sidebar(section: SidebarSection)
+    case gitTab(tab: GitTab)
     case window                          // free-floating
 }
 
+/// Sidebar section names the walkthrough engine can anchor against.
+/// Closed enum (not free-form string) so an unknown section name
+/// rejects the script at load time instead of silently no-op'ing.
+public enum SidebarSection: String, Codable, Sendable, Equatable {
+    case files, bookmarks, search, git, claude, recentChanges
+}
+
+/// Git panel tabs the walkthrough engine can anchor against.
+/// Matches the names declared in GitPanelView's tab enum.
+public enum GitTab: String, Codable, Sendable, Equatable {
+    case status, log, stash, trees, remotes
+}
+
 public struct SetViewPayload: Codable, Sendable, Equatable {
-    public let mode: String             // .source / .rendered / .formatted / .table / .diff / .hex
+    /// `ViewMode` (defined in ViewerKit). Typed enum so an unknown
+    /// mode rejects at load time rather than reaching the dispatcher.
+    public let mode: ViewMode
     public let path: String?
 }
 
@@ -257,5 +273,5 @@ public struct RevealInSidebarPayload: Codable, Sendable, Equatable {
 }
 
 public struct OpenGitPanelPayload: Codable, Sendable, Equatable {
-    public let tab: String              // status / log / stash / trees / remotes
+    public let tab: GitTab
 }

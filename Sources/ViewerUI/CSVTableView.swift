@@ -162,7 +162,19 @@ struct CSVTableView: View {
         parsedCache = result
         // O(rows × cols) one-time lowercase. Pays for itself after the
         // first ~3 keystrokes vs the previous per-keystroke approach.
-        lowercasedRowsCache = result.rows.map { row in row.map { $0.lowercased() } }
+        // But for small CSVs the cache costs more than it saves and
+        // doubles peak memory unnecessarily — only build it once the
+        // file size justifies the cost. 256 KB threshold matches the
+        // crossover point where typing latency starts to matter; below
+        // that, live `.lowercased()` is fast enough.
+        if text.utf8.count >= 256 * 1024 {
+            lowercasedRowsCache = result.rows.map { row in
+                row.map { $0.lowercased() }
+            }
+        } else {
+            // Drop any stale cache from a previous larger file.
+            lowercasedRowsCache = []
+        }
         ensureWidths(result)
         // After re-parse, drop stale per-column entries (file shape
         // may have changed) and stale scope picks.

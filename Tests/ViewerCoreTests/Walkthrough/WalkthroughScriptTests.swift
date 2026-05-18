@@ -111,7 +111,7 @@ final class WalkthroughScriptTests: XCTestCase {
     }
 
     func test_setView_roundTrips() throws {
-        let a = Action.setView(SetViewPayload(mode: "source", path: nil))
+        let a = Action.setView(SetViewPayload(mode: .source, path: nil))
         let r = try roundTrip(makeScript(actions: [a]))
         XCTAssertEqual(r.steps[0].actions, [a])
     }
@@ -156,7 +156,7 @@ final class WalkthroughScriptTests: XCTestCase {
     }
 
     func test_openGitPanel_roundTrips() throws {
-        let a = Action.openGitPanel(OpenGitPanelPayload(tab: "log"))
+        let a = Action.openGitPanel(OpenGitPanelPayload(tab: .log))
         let r = try roundTrip(makeScript(actions: [a]))
         XCTAssertEqual(r.steps[0].actions, [a])
     }
@@ -218,8 +218,8 @@ final class WalkthroughScriptTests: XCTestCase {
         let cases: [PopoverAnchor] = [
             .line(path: "a.swift", line: 1),
             .editor,
-            .sidebar(section: "files"),
-            .gitTab(tab: "status"),
+            .sidebar(section: .files),
+            .gitTab(tab: .status),
             .window,
         ]
         for anchor in cases {

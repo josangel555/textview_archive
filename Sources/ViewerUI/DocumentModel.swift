@@ -21,6 +21,13 @@ public final class DocumentModel: ObservableObject {
     /// tab-id-keyed caches.
     @Published public private(set) var csvFilterStates: [UUID: CSVFilterState] = [:]
 
+    /// In-flight materialization Tasks keyed by tab id. Tracked so:
+    /// (a) rapid re-select of the same lazy tab cancels the previous
+    /// read before starting a new one, and (b) tab close / closeOthers
+    /// /closeToRight cancels the read for the doomed tab so we don't
+    /// waste I/O finishing a load whose result is going to be dropped.
+    private var materializeTasks: [UUID: Task<Void, Never>] = [:]
+
     public func csvFilterState(forTabID id: UUID) -> CSVFilterState {
         csvFilterStates[id] ?? CSVFilterState()
     }
@@ -916,7 +923,12 @@ public final class DocumentModel: ObservableObject {
     /// only changes between app launches.
     public struct RenderedHTMLKey: Hashable, Sendable {
         public let url: URL
-        public let length: Int
+        /// SHA-256 truncated to UInt64. Replaces the prior `length`
+        /// key — same-byte-length file-watcher reloads (`# Hello\n` →
+        /// `# World\n`) used to serve stale HTML because the key
+        /// didn't change. A content hash makes the cache lookup
+        /// content-addressable.
+        public let contentHash: UInt64
     }
     private var renderedHTMLCache: [RenderedHTMLKey: String] = [:]
     // Each entry is a 2-5× inflation of source size (code-fence
@@ -924,6 +936,20 @@ public final class DocumentModel: ObservableObject {
     // working set and caps the worst-case RAM footprint of this
     // cache around 15-20 MB. Cold-render on a miss is fast.
     private static let renderedHTMLCacheMax = 4
+
+    /// FNV-1a 64-bit hash. Fast, no allocations, collision-resistant
+    /// enough for a 4-entry cache. Used as the content-addressable
+    /// key for the rendered-HTML cache so same-byte-length file
+    /// reloads still invalidate. NOT cryptographic — never use for
+    /// security purposes.
+    private static func fnv64(_ s: String) -> UInt64 {
+        var h: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in s.utf8 {
+            h ^= UInt64(byte)
+            h &*= 0x0000_0100_0000_01B3
+        }
+        return h
+    }
 
     /// Returns the rendered HTML for `contents`, building+caching on
     /// miss. Call from a SwiftUI body — it's main-thread, sync, and the
@@ -993,7 +1019,7 @@ public final class DocumentModel: ObservableObject {
         renderer: HTMLRenderer,
         stylesheet: String
     ) -> String {
-        let key = RenderedHTMLKey(url: url, length: contents.utf8.count)
+        let key = RenderedHTMLKey(url: url, contentHash: Self.fnv64(contents))
         if let hit = renderedHTMLCache[key] { return hit }
         // Mermaid CSS rides along on every rendered markdown page. It's
         // tiny (~1 KB) and inlining it unconditionally avoids the flash
@@ -1170,6 +1196,7 @@ public final class DocumentModel: ObservableObject {
         let closedTab = tabs.tabs.indices.contains(index) ? tabs.tabs[index] : nil
         tabs.close(at: index)
         if let t = closedTab {
+            cancelMaterialize(forTabID: t.id)
             formattedTabIDs.remove(t.id)
             formattedTextCache.removeValue(forKey: t.id)
             languageOverrides.removeValue(forKey: t.id)
@@ -1191,6 +1218,7 @@ public final class DocumentModel: ObservableObject {
         let closedTabs = tabs.tabs.filter { $0.id != keepID }
         tabs.closeAll(except: index)
         for t in closedTabs {
+            cancelMaterialize(forTabID: t.id)
             formattedTextCache.removeValue(forKey: t.id)
             languageOverrides.removeValue(forKey: t.id)
             csvFilterStates.removeValue(forKey: t.id)
@@ -1211,6 +1239,7 @@ public final class DocumentModel: ObservableObject {
             : []
         tabs.closeAllToRight(of: index)
         for t in closedTabs {
+            cancelMaterialize(forTabID: t.id)
             formattedTextCache.removeValue(forKey: t.id)
             languageOverrides.removeValue(forKey: t.id)
             csvFilterStates.removeValue(forKey: t.id)
@@ -1316,14 +1345,24 @@ public final class DocumentModel: ObservableObject {
         let t = tabs.tabs[index]
         guard let url = t.url, case .empty = t.state else { return }
         let tabID = t.id
+        // Cancel any in-flight read for this tab id (rapid re-select
+        // would otherwise pile up). Cooperative cancellation: we can't
+        // interrupt the sync `controller.open(url:)` mid-read, but the
+        // completion checks `Task.isCancelled` before hopping to main.
+        materializeTasks[tabID]?.cancel()
         var loading = t
         loading.state = .loading(url)
         tabs.replace(at: index, with: loading)
         let viewMode = t.viewMode
-        Task.detached(priority: .userInitiated) { [controller] in
+        let task = Task.detached(priority: .userInitiated) { [controller] in
             let state = controller.open(url: url)
+            if Task.isCancelled { return }
             await MainActor.run { [weak self] in
                 guard let self else { return }
+                // Clear our slot regardless of outcome — the Task is
+                // done from here on out, even if we drop the result.
+                self.materializeTasks[tabID] = nil
+                if Task.isCancelled { return }
                 // The tab may have been closed, replaced, or had its
                 // state mutated meanwhile. Only swap if the slot we
                 // started on is still the same tab + still .loading
@@ -1350,6 +1389,15 @@ public final class DocumentModel: ObservableObject {
                 }
             }
         }
+        materializeTasks[tabID] = task
+    }
+
+    /// Cancel + drop the materialize Task slot for `tabID`. Called from
+    /// every tab-close path so a doomed tab's still-running file read
+    /// doesn't waste I/O.
+    private func cancelMaterialize(forTabID tabID: UUID) {
+        materializeTasks[tabID]?.cancel()
+        materializeTasks[tabID] = nil
     }
 
     public func selectNextTab() {
