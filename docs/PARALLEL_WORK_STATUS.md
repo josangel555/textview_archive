@@ -18,9 +18,11 @@ PoC-hardening agents now running in fresh worktrees (`feat/lsp-v1`,
 
 ## VM canary
 
-After all merges: **977 tests, 4 skipped, 0 failures** in ~143 s on
-macOS15 VM (Swift 6.1.2). Up from 883 baseline by +52 (LSP) + +42
-(Plugins) = +94 tests.
+After all 6 feat-branch merges + Sessions v1 + LSP didChange:
+**1035 tests, 4 skipped, 0 failures** in ~128 s on macOS15 VM
+(Swift 6.1.2). Up from 883 baseline by +52 (LSP) + +42 (Plugins) +
++58 (Sessions) = +152 net new tests across the production
+features.
 
 ## All `feat/*` branches merged
 
