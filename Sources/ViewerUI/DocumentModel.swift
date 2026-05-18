@@ -9,6 +9,11 @@ import ViewerCore
 @MainActor
 public final class DocumentModel: ObservableObject {
     @Published public private(set) var tabs: TabsState = .init()
+    /// O(1)-contains set of URLs currently open in any tab. Maintained
+    /// by `updateDerived()` after every tabs mutation. Sidebar uses
+    /// this to render "open elsewhere" indicators without scanning
+    /// `tabs.tabs` per row.
+    @Published public private(set) var openTabURLs: Set<URL> = []
     @Published public private(set) var windowTitle: String = "TextView"
     @Published public private(set) var recents: [HistoryEntry] = []
     @Published public private(set) var bookmarks: [BookmarkEntry] = []
@@ -1369,6 +1374,13 @@ public final class DocumentModel: ObservableObject {
 
     private func updateDerived() {
         windowTitle = tabs.selected?.title ?? "TextView"
+        // Maintain a Set<URL> of open-tab URLs so views can answer
+        // "is this URL open?" in O(1) rather than scanning the tabs
+        // array per row per body re-eval. Called on every tabs
+        // mutation; `openTabURLs` is the @Published observable
+        // sidebar/palette read.
+        let newSet = Set(tabs.tabs.compactMap { $0.url })
+        if newSet != openTabURLs { openTabURLs = newSet }
         // Recompute the source-view diff stripe when the focused
         // file changes. Cheap-ish: shells `git diff` once per switch
         // (off-main); skipped when not inside a repo.

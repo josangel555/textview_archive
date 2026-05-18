@@ -389,12 +389,12 @@ private struct FileRowView: View {
     /// True if this file is loaded in some tab other than the current
     /// one. Lets us mark "you have this open elsewhere" without
     /// stealing the stronger highlight from the actually-current tab.
+    /// Reads from `model.openTabURLs` (O(1) Set lookup) instead of
+    /// scanning `model.tabs.tabs` per row per body re-eval.
     private var isOpenInOtherTab: Bool {
         guard !node.isDirectory else { return false }
-        let cur = model.currentURL
-        return model.tabs.tabs.contains { tab in
-            tab.url == node.url && tab.url != cur
-        }
+        return model.openTabURLs.contains(node.url)
+            && node.url != model.currentURL
     }
 
     private var accessibilityLabel: String {
