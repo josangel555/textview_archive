@@ -23,10 +23,19 @@ import ViewerCore
 @MainActor
 public final class LSPHoverToken {
 
-    fileprivate let chain: AnyObject
-    fileprivate let trackingArea: NSTrackingArea
-    fileprivate weak var textView: NSTextView?
-    fileprivate var notifTokens: [NSObjectProtocol]
+    // `nonisolated(unsafe)` so the nonisolated deinit below can
+    // read these. The class is `@MainActor`-isolated, but deinit
+    // runs nonisolated by default, and Swift 6.3 strict-concurrency
+    // refuses to read `@MainActor` properties from nonisolated
+    // contexts. SE-0371 `isolated deinit` would solve this cleanly
+    // but Swift 6.1 (VM canary) rejects the experimental flag in
+    // the production compiler. Marking the fields nonisolated(unsafe)
+    // and hopping to MainActor inside the deinit is the portable
+    // alternative.
+    nonisolated(unsafe) fileprivate let chain: AnyObject
+    nonisolated(unsafe) fileprivate let trackingArea: NSTrackingArea
+    nonisolated(unsafe) fileprivate weak var textView: NSTextView?
+    nonisolated(unsafe) fileprivate var notifTokens: [NSObjectProtocol]
 
     fileprivate init(
         chain: AnyObject,
@@ -40,20 +49,25 @@ public final class LSPHoverToken {
         self.notifTokens = notifTokens
     }
 
-    /// SE-0371 isolated deinit. The token retains AppKit objects
-    /// (NSTrackingArea, notification tokens) that must be released on
-    /// the MainActor. A default `nonisolated` deinit would force us to
-    /// snapshot all those into Sendable values up front — `isolated
-    /// deinit` lets the deinit stay where its dependencies live.
-    isolated deinit {
-        if let tv = textView {
-            tv.removeTrackingArea(trackingArea)
+    /// Cleanup hops to MainActor because the AppKit refs require it.
+    /// We capture-by-value into the Task so the deinit's own access
+    /// to the stored properties is the only nonisolated-unsafe bit;
+    /// the Task body runs cleanly on main.
+    deinit {
+        let tv = textView
+        let tracking = trackingArea
+        let tokens = notifTokens
+        let chainKeepalive = chain
+        Task { @MainActor in
+            if let tv = tv {
+                tv.removeTrackingArea(tracking)
+            }
+            let center = NotificationCenter.default
+            for tok in tokens {
+                center.removeObserver(tok)
+            }
+            _ = chainKeepalive // monitors removed in ChainedMonitor.deinit
         }
-        let center = NotificationCenter.default
-        for tok in notifTokens {
-            center.removeObserver(tok)
-        }
-        _ = chain // keepalive — monitors are removed in ChainedMonitor.deinit
     }
 }
 
