@@ -1,0 +1,179 @@
+import SwiftUI
+import ViewerCore
+
+/// Sidebar section that renders `textDocument/documentSymbol` for the
+/// currently-active file. Visibility is **language-gated**: if the file
+/// has no registered LSP server (e.g. `.md`, `.txt`), the section is
+/// not shown at all. This avoids "Outline" forever appearing empty for
+/// the markdown-viewer's primary use case.
+///
+/// Refresh policy: the section requests symbols once per `fileURL` and
+/// caches the result. The viewer is read-only so we don't track edits.
+/// Callers can manually invalidate via the model's `reload()` if they
+/// re-open a file from disk.
+@MainActor
+public final class LSPOutlineModel: ObservableObject {
+    @Published public private(set) var symbols: [LSPDocumentSymbol] = []
+    @Published public private(set) var isLoading: Bool = false
+    @Published public private(set) var errorMessage: String?
+    @Published public private(set) var isSupported: Bool = false
+
+    private let pool: LSPPool
+    private let registry: LSPLanguageRegistry
+    private var currentFile: URL?
+    private var inflightTask: Task<Void, Never>?
+
+    public init(
+        pool: LSPPool,
+        registry: LSPLanguageRegistry = .default
+    ) {
+        self.pool = pool
+        self.registry = registry
+    }
+
+    /// Set the active file. Triggers a documentSymbol request if the
+    /// file's language has a registered LSP entry. Pass nil to clear.
+    public func setFile(_ url: URL?, text: String?) {
+        inflightTask?.cancel()
+        currentFile = url
+        guard let url = url, let text = text else {
+            self.isSupported = false
+            self.symbols = []
+            self.errorMessage = nil
+            return
+        }
+        guard registry.language(for: url) != nil else {
+            self.isSupported = false
+            self.symbols = []
+            self.errorMessage = nil
+            return
+        }
+        self.isSupported = true
+        self.isLoading = true
+        self.errorMessage = nil
+        let pool = self.pool
+        inflightTask = Task { @MainActor [weak self] in
+            do {
+                try await pool.ensureOpened(fileURL: url, text: text)
+                let client = try await pool.client(for: url)
+                let syms = try await client.documentSymbol(url: url)
+                guard let self = self, self.currentFile == url else { return }
+                self.symbols = syms
+                self.isLoading = false
+            } catch {
+                guard let self = self, self.currentFile == url else { return }
+                self.symbols = []
+                self.isLoading = false
+                self.errorMessage = "LSP unavailable"
+            }
+        }
+    }
+
+    public func reload() {
+        // Best effort — caller must re-supply file + text.
+        guard let url = currentFile else { return }
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return }
+        setFile(url, text: text)
+    }
+}
+
+/// SwiftUI rendering of the outline tree. Renders the entire hierarchy
+/// in one `OutlineGroup`; the user clicks a row to invoke the jump
+/// callback (which the host wires to its tab/cursor open path).
+public struct LSPOutlineSection: View {
+
+    @ObservedObject var model: LSPOutlineModel
+    let onJump: (LSPDocumentSymbol) -> Void
+
+    public init(
+        model: LSPOutlineModel,
+        onJump: @escaping (LSPDocumentSymbol) -> Void
+    ) {
+        self.model = model
+        self.onJump = onJump
+    }
+
+    public var body: some View {
+        if model.isSupported {
+            DisclosureGroup("Outline") {
+                if model.isLoading {
+                    HStack {
+                        ProgressView().controlSize(.small)
+                        Text("Loading symbols…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.leading, 8)
+                } else if let msg = model.errorMessage {
+                    Text(msg)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 8)
+                } else if model.symbols.isEmpty {
+                    Text("No symbols")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 8)
+                } else {
+                    OutlineGroup(model.symbols, id: \.self, children: \.maybeChildren) { sym in
+                        SymbolRow(symbol: sym)
+                            .onTapGesture(count: 1) {
+                                onJump(sym)
+                            }
+                    }
+                }
+            }
+        } else {
+            EmptyView()
+        }
+    }
+}
+
+private struct SymbolRow: View {
+    let symbol: LSPDocumentSymbol
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: iconName(for: symbol.kind))
+                .foregroundStyle(.secondary)
+                .frame(width: 14)
+            Text(symbol.name)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            if let detail = symbol.detail, !detail.isEmpty {
+                Text(detail)
+                    .lineLimit(1)
+                    .foregroundStyle(.tertiary)
+                    .font(.caption)
+            }
+            Spacer()
+        }
+        .contentShape(Rectangle())
+    }
+
+    private func iconName(for kind: LSPSymbolKind) -> String {
+        switch kind {
+        case .file, .module, .package, .namespace: return "shippingbox"
+        case .class:        return "c.square"
+        case .struct:       return "s.square"
+        case .enum:         return "e.square"
+        case .interface:    return "i.square"
+        case .method, .function, .constructor: return "function"
+        case .property, .field: return "circle.grid.cross"
+        case .variable, .constant: return "v.square"
+        case .enumMember:   return "circle.dotted"
+        case .typeParameter: return "t.square"
+        case .event:        return "bolt"
+        case .operator:     return "plus.slash.minus"
+        default:            return "questionmark.square.dashed"
+        }
+    }
+}
+
+private extension LSPDocumentSymbol {
+    /// OutlineGroup wants `nil` for leaf rows (otherwise it always
+    /// shows a disclosure caret). Map empty-children → nil here.
+    var maybeChildren: [LSPDocumentSymbol]? {
+        children.isEmpty ? nil : children
+    }
+}

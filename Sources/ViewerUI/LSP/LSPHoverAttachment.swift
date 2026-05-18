@@ -2,202 +2,206 @@ import AppKit
 import SwiftUI
 import ViewerCore
 
-/// PoC LSP hover + go-to-definition glue for `SourceTextController`.
+/// Production LSP hover + go-to-definition glue for `NSTextView`.
 ///
-/// Why a separate attachment rather than threading params through
-/// `TextDisplayView`? `TextDisplayView` already has 11 constructor
-/// arguments and a thicket of nonces. Bolting LSP on as a free
-/// function that attaches handlers to the underlying `NSTextView`
-/// keeps the PoC isolated — easy to delete if we abandon, easy to
-/// inline if we ship.
+/// PoC compromised on Option+mouse-move as the hover trigger to avoid
+/// subclassing NSTextView; that bound the feature to a modifier key
+/// and surprised users who expected a dwell. The production version
+/// uses a **cursor-paused timer (300 ms dwell)**: any time the mouse
+/// stops over the text view for 300 ms, we issue a hover request at
+/// that point. The choice is documented in `docs/LSP_DESIGN.md` §5.1.
 ///
-/// Caller (e.g. `ContentView`) constructs the client once per file
-/// URL via `LSPHoverAttachment.bind(controller:fileURL:client:)` and
-/// retains the returned token to keep observers alive.
+/// Lifecycle: caller retains the returned `LSPHoverToken`. The token's
+/// `isolated deinit` (Swift 6 SE-0371) removes the tracking area, the
+/// event monitors, and any pending dwell task. The token also owns
+/// the cancellation token of the most-recent in-flight hover so a fast
+/// mouse-move cancels stale work via `$/cancelRequest`.
+///
+/// Dismiss: NSPopover.behavior = .transient handles Esc + click-outside.
+/// We also dismiss on scroll (which moves text under the popover anchor)
+/// and on window resign-key.
 @MainActor
 public final class LSPHoverToken {
-    // Holds the event-monitor tokens + tracking area so they live as
-    // long as the caller retains the token. Monitors are removed in
-    // the inner `ChainedMonitor.deinit`; the tracking area is removed
-    // here.
-    private let chain: AnyObject
-    private let trackingArea: NSTrackingArea
-    private weak var textView: NSTextView?
-    fileprivate init(chain: AnyObject, trackingArea: NSTrackingArea, textView: NSTextView) {
+
+    fileprivate let chain: AnyObject
+    fileprivate let trackingArea: NSTrackingArea
+    fileprivate weak var textView: NSTextView?
+    fileprivate var notifTokens: [NSObjectProtocol]
+
+    fileprivate init(
+        chain: AnyObject,
+        trackingArea: NSTrackingArea,
+        textView: NSTextView,
+        notifTokens: [NSObjectProtocol]
+    ) {
         self.chain = chain
         self.trackingArea = trackingArea
         self.textView = textView
+        self.notifTokens = notifTokens
     }
-    // `isolated deinit` keeps cleanup on the MainActor (Swift 6.1+).
-    // Required because `NSTrackingArea` is non-Sendable and a default
-    // `nonisolated` deinit can't access main-actor state.
+
+    /// SE-0371 isolated deinit. The token retains AppKit objects
+    /// (NSTrackingArea, notification tokens) that must be released on
+    /// the MainActor. A default `nonisolated` deinit would force us to
+    /// snapshot all those into Sendable values up front — `isolated
+    /// deinit` lets the deinit stay where its dependencies live.
     isolated deinit {
-        textView?.removeTrackingArea(trackingArea)
-        _ = chain // retain until deinit; ChainedMonitor cleans up monitors
+        if let tv = textView {
+            tv.removeTrackingArea(trackingArea)
+        }
+        let center = NotificationCenter.default
+        for tok in notifTokens {
+            center.removeObserver(tok)
+        }
+        _ = chain // keepalive — monitors are removed in ChainedMonitor.deinit
     }
 }
 
 @MainActor
 public enum LSPHoverAttachment {
 
-    /// Wire up:
-    ///   - mouse-move → debounce → `textDocument/hover` → NSPopover
-    ///   - Cmd+leftMouseDown → `textDocument/definition` → caller open
-    ///
-    /// `openLocation` is invoked on the main actor with the resolved
-    /// (file URL, 1-based line, 0-based character) tuple. Caller is
-    /// expected to surface it in their tab/window opener.
+    /// Bind hover (cursor-paused 300 ms dwell) and Cmd-click → definition
+    /// to `textView`. The caller is expected to have already called
+    /// `LSPPool.ensureOpened(fileURL:text:)` for the document.
     public static func bind(
         textView: NSTextView,
         fileURL: URL,
         client: LSPClient,
+        positionEncoding: LSPPositionEncoding,
         openLocation: @escaping @MainActor (URL, Int, Int) -> Void
     ) -> LSPHoverToken {
 
-        // Tracking area so we get continuous mouseMoved events even
-        // when our view isn't first responder. .activeInKeyWindow keeps
-        // it lightweight; PoC scope doesn't need .activeAlways.
         let area = NSTrackingArea(
             rect: textView.bounds,
-            options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect],
+            options: [.mouseMoved, .mouseEnteredAndExited,
+                      .activeInKeyWindow, .inVisibleRect],
             owner: textView,
             userInfo: nil)
         textView.addTrackingArea(area)
 
-        // Local event monitor for Cmd-click. Returning the event keeps
-        // normal selection behavior intact.
-        let monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { event in
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = false
+
+        let state = HoverState(popover: popover)
+
+        let cmdClickMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown]
+        ) { event in
             guard event.modifierFlags.contains(.command),
                   let window = textView.window,
                   event.window === window else { return event }
             let pointInTV = textView.convert(event.locationInWindow, from: nil)
             guard textView.bounds.contains(pointInTV) else { return event }
-            if let (line, col) = positionForPoint(pointInTV, in: textView) {
-                Task { @MainActor in
-                    do {
-                        let locs = try await client.definition(
-                            url: fileURL, line: line, character: col)
-                        guard let first = locs.first,
-                              let target = URL(string: first.uri) else { return }
-                        // LSP lines are 0-based; presenter uses 1-based.
-                        openLocation(target, first.range.start.line + 1, first.range.start.character)
-                    } catch {
-                        // PoC: silently swallow. Real impl would HUD.
+            guard let (line, col) = lspPosition(
+                for: pointInTV, in: textView, encoding: positionEncoding
+            ) else { return event }
+            Task { @MainActor in
+                let token = LSPCancellationToken()
+                do {
+                    let locs = try await client.definition(
+                        url: fileURL, line: line, character: col, token: token)
+                    guard let first = locs.first,
+                          let target = URL(string: first.uri) else { return }
+                    openLocation(target,
+                                 first.range.start.line + 1,
+                                 first.range.start.character)
+                } catch {
+                    // Silent — dev diagnostics panel surfaces these.
+                }
+            }
+            return event
+        }
+
+        let mouseMoveMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.mouseMoved]
+        ) { event in
+            guard let window = textView.window,
+                  event.window === window else { return event }
+            let pointInTV = textView.convert(event.locationInWindow, from: nil)
+            guard textView.bounds.contains(pointInTV) else {
+                Task { @MainActor in state.cancelDwell() }
+                return event
+            }
+            // Reset the dwell timer.
+            Task { @MainActor in
+                state.scheduleDwell(at: pointInTV) {
+                    Task { @MainActor in
+                        await requestHover(
+                            point: pointInTV,
+                            textView: textView,
+                            fileURL: fileURL,
+                            client: client,
+                            encoding: positionEncoding,
+                            state: state)
                     }
                 }
             }
             return event
         }
 
-        // Hover popover state — recreated per request to keep this
-        // demo trivially correct. Wraps a 320-pt-wide markdown view.
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.animates = false
-
-        // Mouse-move handler. We can't easily subclass NSTextView from
-        // here, so we observe via a notification posted by AppKit on
-        // `.mouseMoved` events delivered to the tracking area. The
-        // tracking area's owner is the textView itself; mouseMoved
-        // lands on its `mouseMoved(_:)` override (which by default does
-        // nothing). We approximate via a periodic poll on Cmd-key
-        // state in a global event monitor instead — cheaper than
-        // subclassing for a PoC. See FINDINGS for a follow-up note.
-        //
-        // PoC compromise: hover is triggered by holding Option (⌥) and
-        // moving the mouse. This dodges the NSTextView subclass
-        // requirement without intercepting normal text selection.
-        var lastRequest: (line: Int, col: Int)?
-        var debounceTask: Task<Void, Never>?
-
-        let moveMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved]) { event in
-            guard event.modifierFlags.contains(.option),
-                  let window = textView.window,
-                  event.window === window else { return event }
-            let pointInTV = textView.convert(event.locationInWindow, from: nil)
-            guard textView.bounds.contains(pointInTV),
-                  let (line, col) = positionForPoint(pointInTV, in: textView) else {
-                return event
+        var notifTokens: [NSObjectProtocol] = []
+        if let scrollView = textView.enclosingScrollView {
+            let tok = NotificationCenter.default.addObserver(
+                forName: NSView.boundsDidChangeNotification,
+                object: scrollView.contentView,
+                queue: .main
+            ) { _ in
+                Task { @MainActor in state.dismiss() }
             }
-            // Debounce same-position fire.
-            if let last = lastRequest, last.line == line, last.col == col { return event }
-            lastRequest = (line, col)
-
-            debounceTask?.cancel()
-            debounceTask = Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(150))
-                if Task.isCancelled { return }
-                do {
-                    guard let hover = try await client.hover(
-                        url: fileURL, line: line, character: col) else { return }
-                    presentHover(
-                        hover: hover, at: pointInTV, in: textView, popover: popover)
-                } catch {
-                    // PoC: ignore
-                }
+            notifTokens.append(tok)
+        }
+        if let window = textView.window {
+            let tok = NotificationCenter.default.addObserver(
+                forName: NSWindow.didResignKeyNotification,
+                object: window,
+                queue: .main
+            ) { _ in
+                Task { @MainActor in state.dismiss() }
             }
-            return event
+            notifTokens.append(tok)
         }
 
-        // Bundle both monitors under one token by chaining the deinit.
-        let chain = ChainedMonitor(monitors: [monitor as Any, moveMonitor as Any])
-        return LSPHoverToken(chain: chain, trackingArea: area, textView: textView)
+        let chain = ChainedMonitor(monitors: [cmdClickMonitor as Any, mouseMoveMonitor as Any])
+        return LSPHoverToken(
+            chain: chain,
+            trackingArea: area,
+            textView: textView,
+            notifTokens: notifTokens)
     }
 
-    // MARK: - Geometry
+    // MARK: - Internals
 
-    /// Translate an `NSTextView`-local point to a 0-based `(line, char)`
-    /// LSP position. Character is in UTF-16 code units **within the
-    /// line**, matching the spec default position-encoding.
-    static func positionForPoint(_ point: NSPoint, in textView: NSTextView) -> (Int, Int)? {
-        guard let lm = textView.layoutManager,
-              let tc = textView.textContainer else { return nil }
-        // Convert from textView coords to text-container coords.
-        let containerPoint = NSPoint(
-            x: point.x - textView.textContainerOrigin.x,
-            y: point.y - textView.textContainerOrigin.y)
-        let glyphIndex = lm.glyphIndex(for: containerPoint, in: tc)
-        let charIndex = lm.characterIndexForGlyph(at: glyphIndex)
-        let storage = textView.textStorage?.string ?? ""
-        let utf16 = storage.utf16
-        // Walk the string to find (line, utf16-col).
-        var line = 0
-        var lastLineStartUTF16 = 0
-        var utf16Pos = 0
-        for (i, ch) in storage.enumerated() {
-            if i == charIndex { break }
-            utf16Pos += ch.utf16.count
-            if ch == "\n" {
-                line += 1
-                lastLineStartUTF16 = utf16Pos
-            }
+    private static func requestHover(
+        point: NSPoint,
+        textView: NSTextView,
+        fileURL: URL,
+        client: LSPClient,
+        encoding: LSPPositionEncoding,
+        state: HoverState
+    ) async {
+        guard let (line, col) = lspPosition(
+            for: point, in: textView, encoding: encoding) else { return }
+        state.cancelInflight()
+        let token = LSPCancellationToken()
+        state.inflight = token
+        do {
+            guard let hover = try await client.hover(
+                url: fileURL, line: line, character: col, token: token
+            ) else { return }
+            guard state.inflight === token else { return }
+            present(hover: hover, at: point, in: textView, state: state)
+        } catch {
+            // Silent.
         }
-        // Convert charIndex (NSString/UTF-16 units) explicitly. The
-        // loop above is grapheme-based; we re-compute on UTF-16 to
-        // avoid drift on emoji / combining marks.
-        let asUTF16Index = utf16.index(utf16.startIndex, offsetBy: charIndex)
-        // Find newline before charIndex in UTF-16 space.
-        var line2 = 0
-        var lineStart16 = utf16.startIndex
-        var idx = utf16.startIndex
-        while idx < asUTF16Index {
-            if utf16[idx] == 0x000A /* \n */ {
-                line2 += 1
-                lineStart16 = utf16.index(after: idx)
-            }
-            idx = utf16.index(after: idx)
-        }
-        let col16 = utf16.distance(from: lineStart16, to: asUTF16Index)
-        _ = (line, lastLineStartUTF16) // silence unused-var warning
-        return (line2, col16)
     }
 
-    // MARK: - Hover presentation
-
-    static func presentHover(
+    private static func present(
         hover: LSPHover, at point: NSPoint, in textView: NSTextView,
-        popover: NSPopover
+        state: HoverState
     ) {
+        let attr = LSPMarkdownRenderer.attributedString(
+            from: hover.contents, isMarkdown: hover.isMarkdown)
         let vc = NSViewController()
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
@@ -209,34 +213,91 @@ public enum LSPHoverAttachment {
         tv.isSelectable = true
         tv.drawsBackground = false
         tv.textContainerInset = NSSize(width: 8, height: 8)
-
-        // Cheap markdown → attributed. Full fidelity is a polish item;
-        // PoC just shows the raw text so the loop is verifiable.
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
-            .foregroundColor: NSColor.labelColor,
-        ]
-        tv.textStorage?.setAttributedString(
-            NSAttributedString(string: hover.contents, attributes: attrs))
+        tv.textStorage?.setAttributedString(attr)
+        tv.isVerticallyResizable = true
+        tv.isHorizontallyResizable = false
+        tv.textContainer?.widthTracksTextView = true
+        tv.textContainer?.containerSize =
+            NSSize(width: 360, height: CGFloat.greatestFiniteMagnitude)
 
         scroll.documentView = tv
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 200))
+        tv.layoutManager?.ensureLayout(for: tv.textContainer!)
+        let used = tv.layoutManager?.usedRect(for: tv.textContainer!) ?? .zero
+        let h = min(max(used.height + 24, 60), 360)
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 380, height: h))
         scroll.frame = container.bounds
         scroll.autoresizingMask = [.width, .height]
         container.addSubview(scroll)
         vc.view = container
 
-        popover.contentViewController = vc
-        popover.contentSize = NSSize(width: 360, height: 200)
+        state.popover.contentViewController = vc
+        state.popover.contentSize = NSSize(width: 380, height: h)
+        let anchor = NSRect(origin: point, size: NSSize(width: 1, height: 1))
+        state.popover.show(relativeTo: anchor, of: textView, preferredEdge: .maxY)
+    }
 
-        let anchorRect = NSRect(origin: point, size: NSSize(width: 1, height: 1))
-        popover.show(relativeTo: anchorRect, of: textView, preferredEdge: .maxY)
+    /// NSTextView point → LSP (line, char) in the negotiated encoding.
+    /// Uses `LSPPositionConverter` for the character-count math so we
+    /// honor utf-8/16/32 correctly.
+    static func lspPosition(
+        for point: NSPoint, in textView: NSTextView,
+        encoding: LSPPositionEncoding
+    ) -> (Int, Int)? {
+        guard let lm = textView.layoutManager,
+              let tc = textView.textContainer else { return nil }
+        let containerPoint = NSPoint(
+            x: point.x - textView.textContainerOrigin.x,
+            y: point.y - textView.textContainerOrigin.y)
+        let glyphIndex = lm.glyphIndex(for: containerPoint, in: tc)
+        let charIndex = lm.characterIndexForGlyph(at: glyphIndex)
+        let text = textView.textStorage?.string ?? ""
+        guard charIndex <= text.utf16.count else { return nil }
+        // String.Index(utf16Offset:in:) is non-failable on macOS 15+;
+        // clamp-by-construction is fine here.
+        let stringIdx = String.Index(utf16Offset: charIndex, in: text)
+        let converter = LSPPositionConverter(text: text, encoding: encoding)
+        let pos = converter.lspPosition(for: stringIdx)
+        return (pos.line, pos.character)
     }
 }
 
-/// Tiny holder so the token's deinit removes both Cmd-click and
-/// mouse-move monitors. The token's `monitor` is held as `Any?`; we
-/// stash a class that releases both.
+@MainActor
+private final class HoverState {
+    let popover: NSPopover
+    var dwellTask: Task<Void, Never>?
+    var inflight: LSPCancellationToken?
+
+    init(popover: NSPopover) { self.popover = popover }
+
+    func scheduleDwell(at _: NSPoint, fire: @escaping @MainActor () -> Void) {
+        dwellTask?.cancel()
+        dwellTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(300))
+            if Task.isCancelled { return }
+            fire()
+        }
+    }
+
+    func cancelDwell() {
+        dwellTask?.cancel()
+        dwellTask = nil
+    }
+
+    func cancelInflight() {
+        inflight?.cancel()
+        inflight = nil
+    }
+
+    func dismiss() {
+        cancelDwell()
+        cancelInflight()
+        if popover.isShown {
+            popover.performClose(nil)
+        }
+    }
+}
+
+/// Holder that removes event monitors when the hover token deinits.
 private final class ChainedMonitor {
     let monitors: [Any]
     init(monitors: [Any]) { self.monitors = monitors }
