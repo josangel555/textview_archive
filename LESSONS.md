@@ -1030,3 +1030,48 @@ Above this, `ContentView.loadedView` shows `LargeMarkdownPlaceholderView`
 instead of routing through `MarkdownRenderedView`. Source mode
 (separately capped at 512 KB for highlighting) still renders plain
 text at any size.
+
+## `URL(fileURLWithPath:relativeTo:isDirectory:)` is Foundation-version-fragile
+
+Swift 6.1 (Xcode 16.x / macOS 15) and Swift 6.3 (macOS 26) disagree
+on how `URL(fileURLWithPath: "src/A.swift", relativeTo: URL(fileURLWithPath:
+"/tmp/repo", isDirectory: true))` standardizes.
+
+- **Swift 6.3:** `.standardizedFileURL.path` → `/tmp/repo/src/A.swift` ✅
+- **Swift 6.1:** `.standardizedFileURL.path` → `/tmp/src/A.swift` ❌
+  (treats the base as a file, drops `repo`)
+
+This bit `WalkthroughLoader.pathEscape` on the VM canary — host
+passed, VM rejected every legit relative-path script. The portable
+approach is `NSString.appendingPathComponent`:
+
+```swift
+let absolute = (rootPath as NSString).appendingPathComponent(path)
+let resolved = URL(fileURLWithPath: absolute)
+    .standardizedFileURL
+    .resolvingSymlinksInPath()
+```
+
+Also note: `.resolvingSymlinksInPath()` only resolves symlinks for
+components that exist on disk. On macOS 26 it leaves `/tmp` alone
+even though `/tmp → /private/tmp`. Don't rely on it to canonicalize
+hypothetical paths.
+
+Bottom line: when you need `root + relative`, concatenate the strings
+yourself. Pin behavior with a unit test against both Foundation
+versions (UTM VM is the canary).
+
+## SwiftUI `NSViewControllerRepresentable` intrinsic-size leak
+
+`TextDisplayView` is hosted via `NSViewControllerRepresentable` (the
+controller's `view` is the `NSScrollView` directly). Inside a SwiftUI
+`HStack`/`VStack` without an explicit `.frame(maxWidth: .infinity,
+maxHeight: .infinity)`, SwiftUI honors `NSScrollView.intrinsicContentSize`
+and collapses the surrounding pane to a narrow centered strip when
+the document text is short or just-loaded.
+
+Fix: every container wrapping `TextDisplayView` (source-view branch
+in `ContentView.loadedView`, `SplitPaneView.textContent`, etc.) must
+claim `.frame(maxWidth: .infinity, maxHeight: .infinity)`. WKWebView
+escapes this because it reports no useful intrinsic size; AppKit
+text/scroll views do.
