@@ -150,3 +150,116 @@ outweighs the value. Manual checks are in `MANUAL_TESTING.md`:
 - HEX mode on PDF / MIDI / PNG (visual)
 - UI-scale slider's effect on all chrome
 - Right-side metadata panel for preview tabs
+
+---
+
+## Audit follow-ups — 2026-05-18
+
+Multi-agent memory + perf audit landed 14 commits this push (see
+`git log --oneline d45a7e2..943243a`). Highlights in `LESSONS.md`
+under "Memory + perf audit (2026-05-18 multi-agent sweep)".
+
+### Shipped
+
+- **CSV/SQLite `LazyVStack` fix.** Was `VStack` inside `ScrollView`,
+  materializing every row up-front. 1 MB CSV (~50K rows × 10 cells)
+  → ~1 GB process memory → now ~10-20 MB. The bug-class fix.
+- **Markdown render size cap (4 MB).** `markdownRenderMaxBytes` in
+  `Sources/ViewerCore/Highlight/HighlightRun.swift`. Above the cap,
+  `LargeMarkdownPlaceholderView` offers a "View as Source" button.
+- **AppIcon trim.** 1024×1024@2x dropped → ~14 MB less ImageIO at
+  baseline. `Resources/AppIcon.icns` now 786 KB (was 1.08 MB).
+- **Shared `WKProcessPool`.** No per-WebView WebContent spawn on tab
+  switch.
+- **`Tab` / `DocumentState` / `TextFile` / `BinaryFile` Equatable
+  metadata-only.** Eliminates O(file-size) compare on SwiftUI diffs.
+- **`BookmarksStore.contains(_:)` O(N) → O(1).** Set index maintained
+  alongside entries.
+- **`openTabURLs: Set<URL>` published.** SidebarView's
+  `isOpenInOtherTab` becomes O(1).
+- **`publishSelection` binary search.** Newline-offset cache; O(loc)
+  → O(log lines) per arrow-key move.
+- **`SidebarModel.gitStatus(for:)` URL normalize cache.** No more
+  `resolvingSymlinksInPath()` syscall per visible row.
+- **`StatusBar.currentMetrics` memoized.** Per-keystroke cost on
+  multi-hundred-KB source dropped from ~5-15 ms to dict-lookup.
+- **CSV `parsedCache` on `@State`.** Was a computed property; was
+  re-parsing the entire CSV per body re-eval (per filter-bar
+  keystroke).
+- **DiffView / GitLogTab / GitStatusTab `@State` caches.**
+  `DiffParser.parse` / `GraphLayout.layout` / `Self.group` no longer
+  run per body re-eval.
+- **`@Published` equality guards.** GitPanelModel entry lists,
+  SidebarModel gitStatuses, source/rendered find summaries.
+- **Lazy workspace restore.** Tabs append with `state: .empty`; only
+  the focused tab materializes.
+- **`closeTab` URL-keyed cache purge.** Mirrors the existing
+  `formattedTabIDs` cleanup; also handles `languageOverrides`,
+  `formattedTextCache`, `highlightCache`, `renderedHTMLCache`.
+- **Static `Palette` enum.** System `Color(nsColor:)` wrappers
+  hoisted from per-cell allocations to `static let`.
+- **Static formatters everywhere.** `ISO8601DateFormatter`,
+  `NumberFormatter`, `JSONEncoder` previously per-call.
+- **Critical bugs fixed:** FolderWatcher UAF, FileWatcher reattach
+  race, WorkspaceStore silent schema downgrade, GitClient stdout
+  deadlock, TreeSitterEngine compile race, cachedRegex dead
+  negative-cache, CSVParser ragged-row padding.
+
+### Pending — deferred from audit, by impact
+
+- **`materializeIfNeeded` off-main.** Selecting a lazy tab pointing
+  at a large file (32 MB log) freezes the UI briefly. Needs a
+  `.loading(URL)` case added to `DocumentState` + ContentView
+  placeholder; controller.open then runs in a detached Task.
+  Medium-sized refactor. **Highest-leverage remaining UX win.**
+- **CSV cells → `Substring` slices.** Each cell is currently an
+  independent Swift `String` allocation. For a 1 MB CSV that's
+  ~500K String headers (~8 MB) plus per-cell heap entries when cell
+  > 15 chars. Substring sharing the source-text backing storage
+  drops both. Half-day refactor; needs full CSVParser + CSVFilter
+  + tests rewrite because Substring is `StringProtocol` not `String`.
+  ~5-15 MB savings on multi-MB CSVs.
+- **Gutter `NSString` per-paint.** `SourceGutterView` builds a
+  fresh `"\(n)" as NSString` per visible line per Canvas redraw to
+  compute label size. Canvas re-renders on every selection / scroll.
+  Cache labelSize per `(fontSize, digitCount)`. Monospaced fonts
+  → digit width is constant. Low-impact, easy fix.
+- **`LineNumberRulerView` per-paint.** Same shape, but gated behind
+  `MDV_ENABLE_BROKEN_RULER=1` env var — dev-only meta-regression
+  test. Don't bother.
+- **Lazy TreeSitter grammars.** Currently all 8 grammars imported
+  at compile time → ~22 MB resident at baseline. Real fix is a
+  `dlopen`-based plugin model where grammars are bundles loaded on
+  first request for their language. Multi-day refactor. **User
+  said skip indefinitely.**
+- **Tear down WKWebView on tab switch.** Currently SwiftUI may keep
+  the WebView alive across tab switches via view-tree identity.
+  Force-destroy would save ~30-80 MB across switches but cost
+  recreation time on switch-back. UX tradeoff; not pursued.
+- **CSV ↔ filter `lowercased()` per keystroke.** `CSVFilter.apply`
+  lowercases per row × per cell × per keystroke against `globalQuery`.
+  Pre-compute a `[[String]]` of lowercased cells on reparse() (one-
+  time cost) and filter against pre-lowercased data. ~3-10× faster
+  filter typing on big CSVs. Easy, ~30 LOC.
+
+### Memory expectations (post-audit)
+
+Reference numbers for "what's normal":
+
+```
+Empty TextView (no files)                    ~60 MB main process
++ first markdown file (rendered mode)        +50-100 MB (WebKit XPC startup)
++ subsequent markdown files                  +5-10 MB each
++ 1 MB CSV (table mode)                      +10-20 MB
++ 1 MB JSON (source mode)                    +3-5 MB
++ 50 MB markdown                             refused, shows placeholder
+```
+
+The unreclaimable floor for a WKWebView-using app is ~35 MB of
+WebKit XPC helpers (Networking + GPU) once any WKWebView has been
+created in the session. They persist for app lifetime.
+
+Activity Monitor's "Memory" column sums all WebKit XPC processes
+under the parent app — so "TextView 230 MB" with one MD tab open
+really means: ~110 MB main + ~35 MB persistent helpers + ~80 MB
+active WebContent. Only the 110 MB is in our code.

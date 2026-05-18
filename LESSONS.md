@@ -661,3 +661,372 @@ Plan migration before flipping the id. Options:
 - Keep `com.markdownviewer.MarkdownViewer` as a permanent legacy
   identifier; rename only display-name strings. This is the
   recommended path; the user noted TCC stability as load-bearing.
+
+---
+
+# Memory + perf audit (2026-05-18 multi-agent sweep)
+
+This batch came out of an audit triggered by a real bug: opening a
+1 MB CSV file ballooned process memory to ~1 GB. Root cause traced
+in one afternoon; the rest of the audit followed.
+
+## SwiftUI `VStack` inside `ScrollView` is NOT lazy
+
+The 1 GB / 1 MB bug. `VStack { ForEach(rows) { ... } }` inside a
+`ScrollView` instantiates **every** child view up-front. For a 50K-row
+CSV × ~10 cells per row × ~2 KB SwiftUI internal overhead per cell
+node = ~1 GB resident.
+
+**Use `LazyVStack`**, even inside a 2-axis `ScrollView([.horizontal,
+.vertical])`. The vertical-lazy property still virtualizes when
+horizontal scrolling is enabled. Only ~30 visible rows (one
+screenful) live at any time.
+
+Pin headers via `Section { } header: { }` + `LazyVStack(pinnedViews:
+[.sectionHeaders])` — that's the SwiftUI idiom for a sticky header in
+a virtualized list.
+
+This applies anywhere a collection grows beyond ~50 rows. Audit
+target: any `ScrollView { VStack { ForEach(...) } }` pattern. We
+fixed `CSVTableView` and `ResultTableView` (SQLite); the rest of
+the sidebar / git panel was already `LazyVStack`.
+
+Also: `Array(seq.enumerated())` inside `body` materializes a fresh
+tuple-array per re-eval. Use `ForEach(seq.indices, id: \.self) { i in
+seq[i] }` — `indices` is a lazy `Range`, no allocation.
+
+## Activity Monitor sums WebKit XPC helpers under the parent app
+
+A SwiftUI/WebKit app's "memory" in Activity Monitor is misleading.
+It includes:
+
+```
+MarkdownViewer (main)                 ~80-120 MB   our process
+com.apple.WebKit.Networking           ~10 MB       persists for app lifetime
+com.apple.WebKit.GPU                  ~25 MB       persists for app lifetime
+com.apple.WebKit.WebContent           30-80 MB     only when a WKWebView is rendering
+```
+
+Once **any** WKWebView is ever created in the app, Networking + GPU
+helpers stay running until the app quits. ~35 MB of "TextView memory"
+is unreclaimable as long as we use WKWebView at all.
+
+When a user reports "TextView uses 230 MB", the math is usually:
+~110 MB main + ~35 MB persistent helpers + ~80 MB WebContent (if MD
+rendered). Not all of that is in our heap.
+
+`/usr/bin/footprint -summary <pid>` shows the main process's *physical
+footprint* which is the more useful number for our code. `ps aux RSS`
+counts shared-cache pages too.
+
+## `Color(nsColor:)` doesn't cache — hoist to a `Palette` enum
+
+`Color(nsColor: .controlBackgroundColor)` wraps the dynamic NSColor
+each call, no caching. In a row-per-cell builder (CSV table, SQLite
+results, gutter Canvas, tab bar) that fires per cell × per row × per
+redraw. SwiftUI's appearance-change handling still works correctly
+when the wrapper is stored in a `static let` — the underlying
+NSColor resolves at draw time.
+
+We have `Sources/ViewerUI/Palette.swift` with `Palette.windowBackground`,
+`.controlBackground`, `.separator`, etc. Reach for those instead of
+constructing fresh `Color(nsColor: ...)` in view bodies.
+
+## `Equatable` on structs holding full text → O(N) compare per `==`
+
+Synthesized `Equatable` on `Tab` traversed `Tab.state` → `.loaded(TextFile)`
+→ `TextFile.contents: String` and ran a full-string compare every time
+SwiftUI diffed the tabs array (every `@Published` mutation, every
+`onChange`, every `ForEach` diff). For 30 open tabs each holding
+~1 MB of text, that's 30 MB of byte-compares per diff.
+
+Pattern: when a struct holds a large `String` / `Data` / array of
+strings, **implement `Equatable` manually on identity + cheap
+discriminators**. `TextFile` is now equal on `(url, byteCount,
+encoding)`; the rare callers that need bit-equal compare contents
+directly.
+
+This applies to `Tab`, `DocumentState`, `TextFile`, `BinaryFile`,
+`CSVParser.Result`, `ClaudeEvent`, `CrossFileSearch.Match`,
+`Review` / `ReviewComment` / `HunkContext`. We did the first four;
+the rest are smaller / rarely compared.
+
+## `Process()` + `waitUntilExit()` then `readDataToEndOfFile()`
+## deadlocks on any output > ~64 KB
+
+Pipe kernel buffer is ~64 KB. If git/jq/whatever produces more, it
+blocks writing into the full pipe, never exits, `waitUntilExit()`
+hangs forever. **Drain stdout + stderr concurrently** before/while
+waiting:
+
+```swift
+let group = DispatchGroup()
+var outData = Data(), errData = Data()
+group.enter(); DispatchQueue(label: "out").async {
+    outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+    group.leave()
+}
+group.enter(); DispatchQueue(label: "err").async {
+    errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+    group.leave()
+}
+try p.run()
+p.waitUntilExit()
+group.wait()
+```
+
+`GitService.run()` and `JQRunner.run()` have this shape. `GitClient.run()`
+didn't until we fixed it — `git log` / `git diff` on large repos was
+deadlocking silently.
+
+## `FSEventStreamContext` with `passUnretained` + nil retain/release = UAF
+
+The C stream holds your `info` pointer for its lifetime. With
+`passUnretained` and no retain/release callbacks, ARC doesn't know to
+keep `self` alive — a callback in flight on the dispatch queue when
+the Swift owner is released hits freed memory.
+
+```swift
+let retain: @convention(c) (UnsafeRawPointer?) -> UnsafeRawPointer? = { info in
+    guard let info else { return nil }
+    _ = Unmanaged<FolderWatcher>.fromOpaque(info).retain()
+    return info
+}
+let release: @convention(c) (UnsafeRawPointer?) -> Void = { info in
+    guard let info else { return }
+    Unmanaged<FolderWatcher>.fromOpaque(info).release()
+}
+var context = FSEventStreamContext(
+    version: 0,
+    info: Unmanaged.passUnretained(self).toOpaque(),
+    retain: retain,
+    release: release,
+    copyDescription: nil
+)
+```
+
+Same shape applies to any C FFI that stores a `void *` user-context
+beyond a single call (DispatchSource, CVDisplayLink, CFArray callbacks).
+
+## Negative-cache an invalid regex in its own slot
+
+`cachedRegex(_:)` in `TextDisplayView` stored `lastRegex = nil` when
+compile failed — but the positive-cache hit-check was `if lastRegexKey
+== key, let re = lastRegex`. The `let re = lastRegex` fell through on
+nil, recompiling the invalid pattern on every keystroke.
+
+Use a separate `lastFailedRegexKey: String?` slot for the negative
+cache. Same shape applied to `FindEngine.makeRegex`.
+
+## `URL.resolvingSymlinksInPath()` is a `realpath()` syscall
+
+Called per visible sidebar row per body re-eval (200-row tree × every
+redraw = hundreds of stats). Cache the input→resolved mapping with a
+bounded LRU. `SidebarModel.normalizedForGit(_:)` shows the shape.
+
+## `BookmarksStore.contains(_:)` was O(N) — maintain a Set index
+
+Linear scan over `entries` per `TabBar` tab per body, per sidebar row
+per body. With 100 bookmarks × 50 tabs × every redraw = quadratic.
+Maintain a `urlIndex: Set<URL>` alongside the array; rebuild on
+add/remove/load/clear. `contains(_:)` becomes O(1).
+
+## `NSLayoutManager.allowsNonContiguousLayout = true`
+
+Single biggest UI-thread win for large source files. Without it,
+every `setAttributedString` lays out glyphs for the entire textStorage
+upfront. With it, layout is deferred to visible glyph ranges. Safe to
+enable when the gutter is a SwiftUI sibling (clipView-bounds-driven),
+not an NSRulerView. Set it once in `SourceTextController.init`.
+
+## Batch `NSMutableAttributedString.addAttribute` in beginEditing/endEditing
+
+For N highlight runs, wrap the loop in `attr.beginEditing()` /
+`attr.endEditing()`. Coalesces the attribute fix-up into one pass at
+the end. Without it, the attribute storage indexer fires after every
+addAttribute — for 10K+ runs that's a measurable per-render cost.
+
+## TreeSitter `paintOver` overlap resolution: sweep-line beats canvas
+
+The original `paintOver` allocated `[TokenKind?](repeating: nil,
+count: textCount)` — 1 byte per text character of transient memory.
+For a 1 MB file that's a 1 MB allocation per highlight call.
+
+Sweep-line algorithm: build start/end events per run, sort by
+position, maintain an active-set ranked by input order (later wins),
+emit segments between events. O(K log K) in run count, no
+per-character allocation. See `TreeSitterEngine.paintOver(...)` and
+`TreeSitterPaintOverTests` (includes a differential check against
+the old canvas implementation on 25 random overlap-heavy inputs).
+
+## `(text as NSString).length` is O(N) — use `text.utf8.count` for cache keys
+
+The `as NSString` bridge materializes the full UTF-16 representation
+to read `.length`. For multi-hundred-KB strings that's tens of ms per
+call. SwiftUI body re-evals call it freely.
+
+`text.utf8.count` is O(1) for native UTF-8 string storage (Swift 5+).
+Use it whenever you need a change-detection hash on text — cache
+keys, fingerprints, dedup checks. Where you genuinely need the UTF-16
+length (NSRange computations), `text.utf16.count` is also O(1)
+post-first-access (Swift caches).
+
+## AppIcon 1024×1024@2x = ~16 MB ImageIO baseline
+
+The biggest single rep in a typical `.icns` decodes to a 4096-wide
+RGBA bitmap (~16 MB). macOS keeps it resident while a window is
+showing. Dock at @2x uses 256² = ~1 MB. Get Info uses 256² too.
+
+Dropping the 1024² rep saves ~14 MB baseline. Rebuild the `.icns`
+from an `.iconset` containing only sizes up to `512x512@1x` /
+`256x256@2x`. Visible to nobody except the Finder Get Info window at
+extreme zoom.
+
+We ship `Resources/AppIcon.icns` at 786 KB (down from 1.08 MB) since
+this audit.
+
+## TreeSitterEngine compile race + per-language lock pattern
+
+`bundle(for:)` released the outer lock between cache-miss and `Query`
+compile to avoid serializing different languages. But two threads
+first-touching the *same* language both compiled and raced the write,
+leaving distinct `Query` objects with non-deterministic ARC fate
+(SwiftTreeSitter's `Query` deinit is C-backed; double-free was a
+latent risk).
+
+Fix: per-language `NSLock` (lazily allocated under the outer lock),
+plus double-checked cache after acquiring it. Different languages
+still parallelize. See `TreeSitterEngine.bundle(for:)`.
+
+## WorkspaceSnapshot schema-version guard is mandatory
+
+`JSONFileStore.read` decodes Optional fields gracefully — a future v2
+file with additive optional fields decodes silently into a v1 reader.
+Without a `schemaVersion > currentSchema` refusal, the v1 reader then
+re-writes the snapshot at quit time, **destroying the v2 fields**.
+
+`ReviewStore` had the guard; `WorkspaceStore` didn't until we added
+it. Any Codable store with a `currentSchema` constant needs this
+refusal on read.
+
+## Lazy workspace restore — don't materialize every tab on launch
+
+`Tab.state = .empty` with `url` set is a "lazy placeholder" — the
+file hasn't been read but the tab knows what URL it points at. On
+workspace restore, every saved tab is appended in this state. Only
+the focused tab is materialized (file read + state replaced) via
+`selectTab(at:)` → `materializeIfNeeded(at:)`.
+
+`Tab.title` falls back to `url.lastPathComponent` for empty state, so
+the strip looks normal. Idempotent: re-materializing a non-empty tab
+is a no-op.
+
+Same path used for multi-file drop (`openMultiple(_:)`): only the
+last URL loads eagerly; the rest are appended lazy.
+
+Caveat: materialize currently runs on `MainActor` synchronously.
+Selecting a lazy tab for a 32 MB log file freezes the UI briefly.
+Real fix needs a `.loading(URL)` `DocumentState` case + ContentView
+placeholder; deferred.
+
+## `closeTab` must purge URL-keyed caches with a sibling guard
+
+Caches keyed on file URL (`highlightCache`, `renderedHTMLCache`,
+`formattedTextCache`) and tab-id-keyed maps (`languageOverrides`,
+`formattedTabIDs`) leak entries on tab close unless explicitly
+pruned. Gate URL-keyed eviction on "no other open tab still uses this
+URL" so "Open in New Tab → close one" doesn't strip the other's
+cache.
+
+See `DocumentModel.purgeCaches(forURL:)` + the three close-paths
+(`closeTab` / `closeOtherTabs` / `closeTabsToRight`). Mirror this any
+time a new tab-id-keyed cache is added.
+
+## `LazyVStack` virtualizes inside a 2-axis `ScrollView` — pin headers via Section
+
+The fact that `LazyVStack` still virtualizes when wrapped in a
+`ScrollView([.horizontal, .vertical])` isn't obvious from the docs.
+We confirmed via the CSV-table fix. For a sticky header use the
+Section idiom:
+
+```swift
+LazyVStack(alignment: .leading, spacing: 0,
+           pinnedViews: [.sectionHeaders]) {
+    Section {
+        ForEach(rows.indices, id: \.self) { i in row(rows[i]) }
+    } header: {
+        tableHeader
+    }
+}
+```
+
+## Mermaid runtime on demand — gate WKUserScript on document marker
+
+The 2.5 MB mermaid.min.js was being added as a `WKUserScript` on
+**every** WKWebView creation. Gate on `html.contains("mdv-mermaid")`
+at `updateNSView` time and a Coordinator-side `mermaidInjected: Bool`
+flag (idempotent): scripts only attach when the first mermaid-bearing
+document loads in this WebView. Subsequent non-mermaid pages on the
+same WebView still see the runtime — fine; non-mermaid pages don't
+reference `window.mermaid`.
+
+## Shared `WKProcessPool` across all `MarkdownRenderedView` instances
+
+Without an explicit `WKProcessPool`, every `WKWebViewConfiguration()`
+mints a fresh pool → every new WKWebView spawns a brand-new
+`com.apple.WebKit.WebContent` process (~30–80 MB each). Tab switches
+that recreate the view destroy + respawn that process.
+
+```swift
+struct MarkdownRenderedView: NSViewRepresentable {
+    private static let sharedProcessPool = WKProcessPool()
+    public func makeNSView(...) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        config.processPool = Self.sharedProcessPool
+        ...
+    }
+}
+```
+
+## Equality-guard `@Published` setters at the write site
+
+`@Published` setters fire `objectWillChange` on every assignment,
+regardless of value change. When the same identity gets re-published
+(idle git polls returning identical entry lists, find callbacks
+re-firing the same summary string), every observer re-renders for no
+reason.
+
+Pattern: at every wholesale assignment site, guard with
+`if newValue != current { current = newValue }`. Or expose a
+`setX(_:)` method that does the guard and use that consistently from
+SwiftUI callbacks. `DocumentModel.setSourceFindMatchSummary(_:)` and
+`GitPanelModel.apply(_:tab:isInitialLogPage:)` are the canonical
+shapes.
+
+## `static let` of non-Sendable type needs `nonisolated(unsafe)` in Swift 6
+
+`ISO8601DateFormatter`, `DateFormatter`, `JSONEncoder` etc. are
+thread-safe for read-only use but not formally `Sendable`. Swift 6's
+strict-concurrency checker rejects them as `static let`. Use:
+
+```swift
+nonisolated(unsafe) private static let iso8601 = ISO8601DateFormatter()
+```
+
+Document why (Apple confirms the type is safe-for-read; the type
+system can't see that). Don't hide the unsafety — `nonisolated(unsafe)`
+is the explicit opt-out.
+
+## Markdown render size cap (4 MB)
+
+`swift-markdown` parser → `HTMLRenderer` → `WKWebView.loadHTMLString`
+allocates several multiples of input size transiently (parser AST +
+N×inline strings + emitted HTML + DOM in the WebContent process). A
+58 MB markdown file rendered this way can spike memory by hundreds of
+MB.
+
+`markdownRenderMaxBytes = 4 MB` (`Sources/ViewerCore/Highlight/HighlightRun.swift`).
+Above this, `ContentView.loadedView` shows `LargeMarkdownPlaceholderView`
+instead of routing through `MarkdownRenderedView`. Source mode
+(separately capped at 512 KB for highlighting) still renders plain
+text at any size.
