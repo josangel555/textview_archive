@@ -131,6 +131,17 @@ public struct TextDisplayView: NSViewControllerRepresentable {
     }
 }
 
+/// PoC LSP entry point: callers can grab the underlying NSTextView
+/// from a `SourceTextController` (e.g. via an `@State` ref captured in
+/// `makeNSViewController`-adjacent code or a SwiftUI `Coordinator`)
+/// and pass it to `LSPHoverAttachment.bind`. Kept as an extension so
+/// the LSP wiring is fully opt-in and trivially deletable.
+public extension SourceTextController {
+    /// Exposed so the LSP attachment can install event monitors on
+    /// the real text view. Returns the same object every call.
+    var lspTextView: NSTextView { textView }
+}
+
 /// Scroll state we publish from `SourceTextController` to whatever
 /// SwiftUI view (e.g. `SourceGutterView`) wants to render along the
 /// text's vertical axis. Computed AFTER NSScrollView's `tile()` via
