@@ -34,6 +34,10 @@ public final class TreeSitterEngine: @unchecked Sendable {
 
     private let lock = NSLock()
     private var cache: [HighlightLanguage: LangBundle] = [:]
+    /// Per-language lock used to serialize the slow `Query` compile so
+    /// concurrent first-touchers don't both compile and race the write.
+    /// Guarded by `lock`.
+    private var compileLocks: [HighlightLanguage: NSLock] = [:]
     /// Languages we've tried and failed to load. Cache the failure so
     /// we don't re-try on every call (rare; usually a missing .scm).
     private var failed: Set<HighlightLanguage> = []
@@ -70,50 +74,112 @@ public final class TreeSitterEngine: @unchecked Sendable {
 
         // Sort + resolve overlaps. TreeSitter queries can emit nested
         // captures (e.g. a function-call inside a method body). For
-        // single-color highlighting we want the most-specific match per
-        // character — which, by query ordering convention, is the one
-        // that comes LAST in the cursor stream. We resolve by:
-        //   1. Sorting by start ascending, then length DESCENDING so
-        //      the broadest run is first per start position.
-        //   2. Walking left-to-right; each new run trims/skips ranges
-        //      already claimed by an earlier (broader-or-equal) run.
-        // Simpler model that matches editor intuition: later runs win.
-        // We implement that with a paint-over array.
-        return paintOver(runs: runs, textCount: (text as NSString).length)
+        // single-color highlighting we want the LAST run (in cursor
+        // order) covering each position — matches editor intuition
+        // that nested-specific captures override their parent.
+        return Self.paintOver(runs: runs, textCount: text.utf16.count)
     }
 
-    /// "Paint over" resolution: walk runs in cursor order, later writes
-    /// over earlier per character. Produces a flat, non-overlapping
-    /// list — exactly what the renderer expects.
-    private func paintOver(runs: [HighlightRun], textCount: Int) -> [HighlightRun] {
+    /// Sweep-line resolution of overlapping highlight runs. Later
+    /// runs (higher input index) win where they overlap. O(K log K)
+    /// in run count — independent of text length. Replaces an older
+    /// per-character canvas that allocated `O(textCount)` storage and
+    /// was the dominant cost on multi-hundred-KB files.
+    internal static func paintOver(
+        runs: [HighlightRun], textCount: Int
+    ) -> [HighlightRun] {
         guard !runs.isEmpty, textCount > 0 else { return [] }
-        var canvas = [TokenKind?](repeating: nil, count: textCount)
-        for run in runs {
-            let lo = max(0, run.range.location)
-            let hi = min(textCount, run.range.location + run.range.length)
-            guard lo < hi else { continue }
-            for i in lo..<hi { canvas[i] = run.kind }
+
+        struct Event {
+            let pos: Int
+            let isOpen: Bool
+            let idx: Int
+            let kind: TokenKind
         }
-        // Collapse adjacent same-kind cells into runs.
+        var events: [Event] = []
+        events.reserveCapacity(runs.count * 2)
+        for (i, r) in runs.enumerated() {
+            let lo = max(0, r.range.location)
+            let hi = min(textCount, r.range.location + r.range.length)
+            guard lo < hi else { continue }
+            events.append(Event(pos: lo, isOpen: true,  idx: i, kind: r.kind))
+            events.append(Event(pos: hi, isOpen: false, idx: i, kind: r.kind))
+        }
+        events.sort { a, b in
+            if a.pos != b.pos { return a.pos < b.pos }
+            // Close-before-open at same position prevents a one-tick
+            // window where two runs are simultaneously active just so
+            // one can hand off to the next.
+            return !a.isOpen && b.isOpen
+        }
+
+        // Active set kept sorted ascending by `idx`. Topmost (last)
+        // entry has the highest input-order priority — that's the
+        // kind the segment between events should paint with.
+        var active: [Int] = []
+        var kindByIdx: [Int: TokenKind] = [:]
         var out: [HighlightRun] = []
         out.reserveCapacity(runs.count)
-        var i = 0
-        while i < textCount {
-            guard let kind = canvas[i] else { i += 1; continue }
-            var j = i + 1
-            while j < textCount, canvas[j] == kind { j += 1 }
-            out.append(HighlightRun(range: NSRange(location: i, length: j - i), kind: kind))
-            i = j
+        var lastPos = 0
+
+        func emit(from lo: Int, to hi: Int) {
+            guard hi > lo, let topIdx = active.last,
+                  let kind = kindByIdx[topIdx] else { return }
+            // Coalesce with previous output if same kind and contiguous.
+            if let prev = out.last, prev.kind == kind,
+               prev.range.location + prev.range.length == lo {
+                out[out.count - 1] = HighlightRun(
+                    range: NSRange(location: prev.range.location,
+                                   length: hi - prev.range.location),
+                    kind: kind)
+            } else {
+                out.append(HighlightRun(
+                    range: NSRange(location: lo, length: hi - lo),
+                    kind: kind))
+            }
+        }
+
+        for e in events {
+            emit(from: lastPos, to: e.pos)
+            if e.isOpen {
+                // Sorted insert by idx.
+                let insertAt = active.firstIndex(where: { $0 > e.idx })
+                    ?? active.count
+                active.insert(e.idx, at: insertAt)
+                kindByIdx[e.idx] = e.kind
+            } else {
+                if let pos = active.firstIndex(of: e.idx) {
+                    active.remove(at: pos)
+                }
+                kindByIdx.removeValue(forKey: e.idx)
+            }
+            lastPos = e.pos
         }
         return out
     }
 
     /// Lazily load (language, query) for a `HighlightLanguage`. Returns
     /// nil if either the C symbol or the bundled .scm is missing.
-    /// Lock is held only across the dictionary reads/writes — the
-    /// (potentially slow) `Query` compile happens outside the lock so
-    /// concurrent calls for different languages don't serialize.
+    ///
+    /// Per-language one-shot compile: a small per-language NSLock
+    /// serializes the slow `Query(language:data:)` compile so two
+    /// concurrent first-touchers for the same language don't both
+    /// compile, then race to overwrite the cache with distinct `Query`
+    /// objects whose ARC fate is then non-deterministic. Different
+    /// languages still parallelise — the outer `lock` is only held
+    /// for the dict lookup and to fetch the per-language lock.
     private func bundle(for lang: HighlightLanguage) -> LangBundle? {
+        lock.lock()
+        if let hit = cache[lang]   { lock.unlock(); return hit }
+        if failed.contains(lang)   { lock.unlock(); return nil }
+        let perLangLock = compileLock(for: lang)
+        lock.unlock()
+
+        perLangLock.lock()
+        defer { perLangLock.unlock() }
+
+        // Re-check after acquiring the per-language lock: a peer
+        // thread that won the race has now stored the bundle.
         lock.lock()
         if let hit = cache[lang]   { lock.unlock(); return hit }
         if failed.contains(lang)   { lock.unlock(); return nil }
@@ -136,6 +202,15 @@ public final class TreeSitterEngine: @unchecked Sendable {
             lock.lock(); failed.insert(lang); lock.unlock()
             return nil
         }
+    }
+
+    /// Per-language compile lock. Lazily allocated so we don't pay for
+    /// languages the user never touches. Caller must hold `self.lock`.
+    private func compileLock(for lang: HighlightLanguage) -> NSLock {
+        if let l = compileLocks[lang] { return l }
+        let l = NSLock()
+        compileLocks[lang] = l
+        return l
     }
 
     /// Returns the C-level `TSLanguage *` pointer for a language. New

@@ -431,13 +431,33 @@ public final class GitClient: Sendable {
         env["GIT_PAGER"] = "cat"
         env["GIT_OPTIONAL_LOCKS"] = "0"
         p.environment = env
+        // Drain both pipes concurrently with `git`'s run. `git log`,
+        // `git diff`, and friends easily produce >64 KB; if we waited
+        // for exit before reading, `git` would block writing into a
+        // full pipe (kernel buffer is ~64 KB) and `waitUntilExit()`
+        // would hang forever. Same shape as GitService.run() and
+        // JQRunner.run().
+        let outQ = DispatchQueue(label: "gitclient.stdout")
+        let errQ = DispatchQueue(label: "gitclient.stderr")
+        let group = DispatchGroup()
+        var outData = Data()
+        var errData = Data()
+        group.enter()
+        outQ.async {
+            outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+            group.leave()
+        }
+        group.enter()
+        errQ.async {
+            errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+            group.leave()
+        }
         try p.run()
         p.waitUntilExit()
-        let data = outPipe.fileHandleForReading.readDataToEndOfFile()
-        let out = String(data: data, encoding: .utf8) ?? ""
+        group.wait()
+        let out = String(data: outData, encoding: .utf8) ?? ""
         if p.terminationStatus != 0 {
-            let edata = errPipe.fileHandleForReading.readDataToEndOfFile()
-            let estr = String(data: edata, encoding: .utf8) ?? ""
+            let estr = String(data: errData, encoding: .utf8) ?? ""
             if estr.lowercased().contains("not a git repository") {
                 throw Error.notARepo
             }

@@ -8,7 +8,7 @@ public enum FileLoadError: Error, Equatable {
     case binaryFile
 }
 
-public struct TextFile: Equatable, Sendable {
+public struct TextFile: Sendable {
     public let url: URL
     public let contents: String
     public let encoding: String.Encoding
@@ -19,6 +19,19 @@ public struct TextFile: Equatable, Sendable {
         self.contents = contents
         self.encoding = encoding
         self.byteCount = byteCount
+    }
+}
+
+/// Equatable by metadata only — full `contents` compare would be O(N).
+/// `byteCount` change detects file-watcher reloads (post-write the
+/// file size virtually always differs); for the pathological "edit
+/// in place same length" case, callers that need bit-equality compare
+/// `contents` explicitly.
+extension TextFile: Equatable {
+    public static func == (lhs: TextFile, rhs: TextFile) -> Bool {
+        lhs.url == rhs.url
+            && lhs.byteCount == rhs.byteCount
+            && lhs.encoding == rhs.encoding
     }
 }
 

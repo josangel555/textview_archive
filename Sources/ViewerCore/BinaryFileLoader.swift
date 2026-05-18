@@ -1,6 +1,6 @@
 import Foundation
 
-public struct BinaryFile: Equatable, Sendable {
+public struct BinaryFile: Sendable {
     public let url: URL
     public let data: Data
     public let totalByteCount: Int
@@ -14,6 +14,16 @@ public struct BinaryFile: Equatable, Sendable {
     }
 
     public var byteCount: Int { data.count }
+}
+
+/// Equatable by metadata only — Data compare would be O(N) up to 4 MB.
+extension BinaryFile: Equatable {
+    public static func == (lhs: BinaryFile, rhs: BinaryFile) -> Bool {
+        lhs.url == rhs.url
+            && lhs.totalByteCount == rhs.totalByteCount
+            && lhs.isTruncated == rhs.isTruncated
+            && lhs.data.count == rhs.data.count
+    }
 }
 
 /// Reads up to `maxBytes` of the file into memory for the hex viewer.

@@ -134,9 +134,17 @@ public enum CSVParser {
         guard !rows.isEmpty else {
             return Result(delimiter: delim, header: [], rows: [])
         }
-        // Treat first row as header. Normalize column count.
+        // Treat first row as header. Normalize column count both ways:
+        // truncate long rows AND pad short rows with empty cells so
+        // downstream consumers can index by header count without
+        // hitting "ragged row" off-by-ones.
         let header = rows[0]
-        let body = rows.dropFirst().map { Array($0.prefix(header.count)) }
+        let cols = header.count
+        let body = rows.dropFirst().map { row -> [String] in
+            if row.count == cols { return row }
+            if row.count > cols { return Array(row.prefix(cols)) }
+            return row + Array(repeating: "", count: cols - row.count)
+        }
         return Result(delimiter: delim, header: header, rows: Array(body))
     }
 }

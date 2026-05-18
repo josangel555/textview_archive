@@ -255,7 +255,9 @@ public final class SidebarModel: ObservableObject {
                 return result
             }.value
             guard let self, self.gitRepoRoot == token else { return }
-            self.gitStatuses = map
+            // Equality guard: idle polls + tab-switch refreshes
+            // commonly produce identical maps.
+            if self.gitStatuses != map { self.gitStatuses = map }
         }
     }
 
@@ -293,7 +295,26 @@ public final class SidebarModel: ObservableObject {
         let kids = (try? service.children(of: key, includeHidden: includeHidden)) ?? []
         childrenCache[key] = kids
         invalidateFlatCache()
+        pruneChildrenCacheIfNeeded()
         return kids
+    }
+
+    /// Cap on `childrenCache` size. Each entry is `[FileNode]` for one
+    /// directory; on a wide monorepo, expanded directories can pile
+    /// up to thousands of entries over a long session. Pruning is
+    /// arbitrary (Dictionary key order has no semantic meaning); the
+    /// dropped entries repopulate on next expand.
+    private static let childrenCacheMax = 256
+    private func pruneChildrenCacheIfNeeded() {
+        guard childrenCache.count > Self.childrenCacheMax else { return }
+        let dropCount = childrenCache.count - Self.childrenCacheMax * 2 / 3
+        for key in childrenCache.keys.prefix(dropCount) {
+            // Skip dirs we still actively need: the root and any
+            // currently-expanded directory. Without this guard, the
+            // sidebar tree would visibly collapse on prune.
+            if key == rootURL || expanded.contains(key) { continue }
+            childrenCache.removeValue(forKey: key)
+        }
     }
 
     private func normalize(_ url: URL) -> URL {

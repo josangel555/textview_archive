@@ -184,17 +184,20 @@ public final class GitPanelModel: ObservableObject {
     }
 
     private func apply(_ p: Payload, tab: Tab, isInitialLogPage: Bool) {
-        head = p.head
-        if let s = p.status   { statusEntries   = s }
-        if let l = p.log      {
-            logEntries = l
-            if isInitialLogPage { logLoadedCount = l.count }
+        // Equality-guarded so a refresh that produces identical results
+        // (very common: idle polls, focus-regain refreshes, no filesystem
+        // change) doesn't trigger a full sidebar+panel republish.
+        if head != p.head { head = p.head }
+        if let s = p.status, statusEntries != s { statusEntries = s }
+        if let l = p.log {
+            if logEntries != l { logEntries = l }
+            if isInitialLogPage, logLoadedCount != l.count { logLoadedCount = l.count }
         }
-        if let s = p.stash    { stashEntries    = s }
-        if let t = p.trees    { worktreeEntries = t }
-        if let r = p.remotes  { remoteEntries   = r }
+        if let s = p.stash, stashEntries != s { stashEntries = s }
+        if let t = p.trees, worktreeEntries != t { worktreeEntries = t }
+        if let r = p.remotes, remoteEntries != r { remoteEntries = r }
         lastRefreshed[tab] = Date()
-        isRefreshing = false
+        if isRefreshing { isRefreshing = false }
     }
 
     // MARK: - Counts for tab-strip badges

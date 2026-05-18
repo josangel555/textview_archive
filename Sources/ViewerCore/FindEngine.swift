@@ -104,6 +104,15 @@ public struct FindEngine: Sendable {
 
     // MARK: - Private
 
+    /// Single-slot cache. `findAll`/`findNext` against the same query
+    /// (which is the common case while iterating matches) previously
+    /// recompiled `NSRegularExpression` per call. Matches the shape
+    /// of `TextDisplayView.cachedRegex` — find queries are sticky,
+    /// one slot is enough.
+    private static let regexCacheLock = NSLock()
+    nonisolated(unsafe) private static var lastRegexKey: String?
+    nonisolated(unsafe) private static var lastRegex: NSRegularExpression?
+
     private func makeRegex(for query: FindQuery) throws -> NSRegularExpression {
         var pattern: String
         switch query.kind {
@@ -117,8 +126,20 @@ public struct FindEngine: Sendable {
         }
         var options: NSRegularExpression.Options = []
         if !query.caseSensitive { options.insert(.caseInsensitive) }
+        let key = "\(query.caseSensitive ? "S" : "i")\(query.wholeWord ? "W" : "")\(query.kind == .regex ? "R" : "L"):\(pattern)"
+        Self.regexCacheLock.lock()
+        if Self.lastRegexKey == key, let re = Self.lastRegex {
+            Self.regexCacheLock.unlock()
+            return re
+        }
+        Self.regexCacheLock.unlock()
         do {
-            return try NSRegularExpression(pattern: pattern, options: options)
+            let re = try NSRegularExpression(pattern: pattern, options: options)
+            Self.regexCacheLock.lock()
+            Self.lastRegexKey = key
+            Self.lastRegex = re
+            Self.regexCacheLock.unlock()
+            return re
         } catch {
             throw FindError.invalidRegex(query.pattern)
         }

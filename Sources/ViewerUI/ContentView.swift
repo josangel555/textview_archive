@@ -105,12 +105,12 @@ public struct ContentView: View {
                 if done == total {
                     let urls = collected
                     Task { @MainActor in
-                        for case let url? in urls {
-                            // Always route through openPath — it shows
-                            // an .error tab for missing files, which is
-                            // more useful than silent dismissal.
-                            model.openPath(url)
-                        }
+                        // Lazy multi-open: only the last file is read
+                        // into memory + becomes the focused tab. Tabs
+                        // for the rest are appended with state = .empty
+                        // and materialize when the user clicks them.
+                        let resolved = urls.compactMap { $0 }
+                        model.openMultiple(resolved)
                     }
                 }
             }
@@ -181,7 +181,7 @@ public struct ContentView: View {
                         Task { @MainActor in model.renderedFindMatched = matched }
                     },
                     onFindSummary: { summary in
-                        Task { @MainActor in model.renderedFindMatchSummary = summary }
+                        Task { @MainActor in model.setRenderedFindMatchSummary(summary) }
                     }
                 )
             }
@@ -227,7 +227,7 @@ public struct ContentView: View {
                             nonce: model.sourceScrollLineNonce
                         ),
                         onFindSummary: { summary in
-                            model.sourceFindMatchSummary = summary
+                            model.setSourceFindMatchSummary(summary)
                         },
                         onScrollChange: { state in
                             model.sourceScrollState = state

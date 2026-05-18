@@ -81,10 +81,17 @@ public enum MermaidSourceParser {
     /// `data-mdv-steps="…"` attribute (HTML-attribute-escaped by the
     /// caller). Stable key ordering courtesy of `sortedKeys`, so tests
     /// can assert exact attribute contents.
+    /// Shared encoder — previously allocated per call. Markdown
+    /// documents with many mermaid blocks call this once per block
+    /// per render of the rendered-HTML cache miss path.
+    private static let stepsEncoder: JSONEncoder = {
+        let e = JSONEncoder()
+        e.outputFormatting = [.sortedKeys]
+        return e
+    }()
+
     public static func encodeSteps(_ steps: [StepAnnotation]) -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        guard let data = try? encoder.encode(steps),
+        guard let data = try? stepsEncoder.encode(steps),
               let s = String(data: data, encoding: .utf8) else {
             return "[]"
         }

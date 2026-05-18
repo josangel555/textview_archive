@@ -113,16 +113,19 @@ public final class FileWatcher: @unchecked Sendable {
     /// B1/B2: retry attach with exponential backoff capped at 1 second.
     /// If we exhaust `maxReattachAttempts`, mark the watcher stopped and
     /// call `onLost` once so the caller can surface a UI hint.
+    ///
+    /// Concurrency: cancellation of the prior work item, attempt bump,
+    /// new work-item construction, and `_reattachWorkItem` assignment
+    /// all happen under a single lock window. Two concurrent
+    /// reattachSoon calls were previously able to interleave such that
+    /// the first scheduled work item became unreachable via
+    /// `_reattachWorkItem` and could not be cancelled by `stop()`.
     private func reattachSoon() {
         lock.lock()
         attempts += 1
         let attempt = attempts
-        // Cancel any previously-queued reattach work so stop() can
-        // halt them in one place (M-rank concurrency finding).
         _reattachWorkItem?.cancel()
-        lock.unlock()
 
-        let cappedDelay = min(reattachDelay * pow(2.0, Double(attempt - 1)), 1.0)
         let work = DispatchWorkItem { [weak self] in
             guard let self, !self.isStopped else { return }
             self.lock.lock()
@@ -140,9 +143,10 @@ public final class FileWatcher: @unchecked Sendable {
                 }
             }
         }
-        lock.lock()
         _reattachWorkItem = work
         lock.unlock()
+
+        let cappedDelay = min(reattachDelay * pow(2.0, Double(attempt - 1)), 1.0)
         if cappedDelay <= 0 {
             queue.async(execute: work)
         } else {

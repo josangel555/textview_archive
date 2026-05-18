@@ -82,11 +82,37 @@ public final class FolderWatcher: @unchecked Sendable {
     // MARK: - Private
 
     private func start(latency: CFTimeInterval) throws {
+        // The FSEvents C stream stashes our `info` pointer for its
+        // lifetime. With `passUnretained` + nil retain/release callbacks
+        // the C side held a raw pointer to `self` with no ARC strong
+        // count — if the Swift owner dropped the watcher before stop()
+        // ran, the dispatch queue could fire a callback into freed
+        // memory (UAF). Pass-retained + matching release callbacks make
+        // the stream a strong owner; the retain is balanced by either
+        // FSEventStreamRelease (in stop()) or the release callback the
+        // framework invokes itself if the stream is torn down outside
+        // our control.
+        let retain: @convention(c) (UnsafeRawPointer?) -> UnsafeRawPointer? = { info in
+            guard let info else { return nil }
+            _ = Unmanaged<FolderWatcher>.fromOpaque(info).retain()
+            return info
+        }
+        let release: @convention(c) (UnsafeRawPointer?) -> Void = { info in
+            guard let info else { return }
+            Unmanaged<FolderWatcher>.fromOpaque(info).release()
+        }
+        // Pass `passUnretained` and let the framework's `retain`
+        // callback bump the refcount when it stores the pointer. The
+        // matching `release` callback decrements when the framework
+        // drops its reference (via FSEventStreamRelease in stop, or
+        // intrinsic teardown). Net: ARC counts the framework's
+        // ownership accurately, so a callback fired after our owner
+        // dropped this watcher still finds a live object.
         var context = FSEventStreamContext(
             version: 0,
             info: Unmanaged.passUnretained(self).toOpaque(),
-            retain: nil,
-            release: nil,
+            retain: retain,
+            release: release,
             copyDescription: nil
         )
         // `kFSEventStreamCreateFlagFileEvents` makes per-file events

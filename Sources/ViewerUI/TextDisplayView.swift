@@ -216,8 +216,25 @@ public final class SourceTextController: NSViewController {
     /// need it cached, not fetched out of the SwiftUI struct.
     private var currentTheme: SyntaxTheme = .xcodeLight
 
+    /// Cheap content fingerprint: utf8 byte count + first + last byte.
+    /// Avoids storing or hashing the full string in the cache key
+    /// (Equatable on a 1 MB String was an O(N) compare per `apply()`).
+    /// Collisions are theoretically possible (same length + same first
+    /// & last byte but different middle) but produce only a no-op
+    /// skip, never wrong output — the next genuine change will
+    /// invalidate via length change.
+    private struct ContentFingerprint: Equatable {
+        let byteCount: Int
+        let firstByte: UInt8
+        let lastByte: UInt8
+        init(_ text: String) {
+            self.byteCount = text.utf8.count
+            self.firstByte = text.utf8.first ?? 0
+            self.lastByte  = text.utf8.last ?? 0
+        }
+    }
     private struct AttrKey: Equatable {
-        let text: String
+        let content: ContentFingerprint
         let fontSize: CGFloat
         let theme: SyntaxTheme.Name
         let runCount: Int
@@ -226,7 +243,7 @@ public final class SourceTextController: NSViewController {
         let query: String
         let caseSensitive: Bool
         let isRegex: Bool
-        let textHash: Int
+        let content: ContentFingerprint
     }
 
     public init(text: String, fontSize: CGFloat, theme: SyntaxTheme, wordWrap: Bool) {
@@ -253,6 +270,13 @@ public final class SourceTextController: NSViewController {
         tv.isAutomaticSpellingCorrectionEnabled = false
         tv.isAutomaticLinkDetectionEnabled = false
         tv.isAutomaticDataDetectionEnabled = false
+        // Defer off-screen layout. Without this NSLayoutManager builds
+        // glyph runs for the entire textStorage on every setAttributedString,
+        // which is the single biggest UI-thread cost for multi-hundred-KB
+        // files. Safe to enable since our gutter is a SwiftUI sibling
+        // (clipView-bounds-driven), not an NSRulerView that would force
+        // contiguous layout to fill its visible range.
+        tv.layoutManager?.allowsNonContiguousLayout = true
         self.textView = tv
 
         // No NSRulerView. Empirically (see SourceViewVisualRegressionTests),
@@ -589,7 +613,8 @@ public final class SourceTextController: NSViewController {
         text: String, fontSize: CGFloat, theme: SyntaxTheme, runs: [HighlightRun]
     ) {
         let key = AttrKey(
-            text: text, fontSize: fontSize, theme: theme.name, runCount: runs.count
+            content: ContentFingerprint(text),
+            fontSize: fontSize, theme: theme.name, runCount: runs.count
         )
         if key == lastAttrKey { return }
         let baseFont = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
@@ -657,7 +682,7 @@ public final class SourceTextController: NSViewController {
             query: query,
             caseSensitive: findState.caseSensitive,
             isRegex: findState.isRegex,
-            textHash: text.hashValue
+            content: ContentFingerprint(text)
         )
         if cacheKey != lastFindKey {
             findMatches = Self.findRanges(
@@ -718,7 +743,12 @@ public final class SourceTextController: NSViewController {
         text: String, runs: [HighlightRun], theme: SyntaxTheme, baseFont: NSFont
     ) -> NSAttributedString {
         let attr = NSMutableAttributedString(string: text)
-        let full = NSRange(location: 0, length: (text as NSString).length)
+        let full = NSRange(location: 0, length: attr.length)
+        // beginEditing batches the N+2 attribute mutations into one
+        // attribute-fixing pass at the end. Without it each addAttribute
+        // does its own fix-up — for 10K+ highlight runs (typical for
+        // 256 KB+ source) that's a measurable per-render cost.
+        attr.beginEditing()
         attr.addAttribute(.font, value: baseFont, range: full)
         attr.addAttribute(.foregroundColor, value: theme.defaultText, range: full)
         for run in runs {
@@ -731,6 +761,7 @@ public final class SourceTextController: NSViewController {
                 range: NSRange(location: lo, length: hi - lo)
             )
         }
+        attr.endEditing()
         return attr
     }
 
@@ -742,6 +773,12 @@ public final class SourceTextController: NSViewController {
     private static let regexCacheLock = NSLock()
     private static var lastRegexKey: String?
     private static var lastRegex: NSRegularExpression?
+    /// Separate slot for the last KNOWN-INVALID pattern. Previously
+    /// the negative cache stored `lastRegex = nil` in the same slot
+    /// the positive cache used — so the `if lastRegexKey == key,
+    /// let re = lastRegex` check fell through on the optional unwrap
+    /// and we recompiled the invalid pattern on every keystroke.
+    private static var lastFailedRegexKey: String?
 
     internal static func cachedRegex(pattern: String,
                                     caseSensitive: Bool) -> NSRegularExpression? {
@@ -751,16 +788,15 @@ public final class SourceTextController: NSViewController {
         regexCacheLock.lock()
         defer { regexCacheLock.unlock() }
         if lastRegexKey == key, let re = lastRegex { return re }
+        if lastFailedRegexKey == key { return nil }
         guard let re = try? NSRegularExpression(pattern: pattern, options: opts)
         else {
-            // Stash the failing key so we don't recompile on every
-            // keystroke once we know it's invalid.
-            lastRegexKey = key
-            lastRegex = nil
+            lastFailedRegexKey = key
             return nil
         }
         lastRegexKey = key
         lastRegex = re
+        lastFailedRegexKey = nil
         return re
     }
 

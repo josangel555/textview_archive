@@ -85,18 +85,17 @@ struct StatusBar: View {
         let indent: String       // "Tabs" / "Spaces (2)" / "—"
     }
 
+    /// `body` re-evals every `@Published` mutation (typing, scroll,
+    /// selection move). Without memoization, every keystroke re-runs
+    /// `lineCount`, `IndentDetector.detect`, `(contents as NSString).length`
+    /// across the full file. For a 1 MB source, that's ~5-15 ms of
+    /// pure waste per keystroke. Cache keyed by URL + utf8 length so a
+    /// file-watcher reload (different length) invalidates automatically.
     private var currentMetrics: Metrics? {
         guard let tab = model.tabs.selected else { return nil }
         switch tab.state {
         case .loaded(let f):
-            return Metrics(
-                lineCount: lineCount(in: f.contents),
-                charCount: (f.contents as NSString).length,
-                byteCount: f.byteCount,
-                lineEndings: detectLineEndings(in: f.contents),
-                encodingShort: encodingShort(f.encoding),
-                indent: IndentDetector.detect(in: f.contents)
-            )
+            return Self.metrics(for: f)
         case .binary(let b):
             return Metrics(
                 lineCount: 0,
@@ -107,12 +106,10 @@ struct StatusBar: View {
                 indent: ""
             )
         case .preview(let url, let cat):
-            let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
-            let size = (attrs?[.size] as? Int) ?? 0
             return Metrics(
                 lineCount: 0,
                 charCount: 0,
-                byteCount: size,
+                byteCount: Self.cachedFileSize(for: url),
                 lineEndings: "—",
                 encodingShort: cat.rawValue,
                 indent: ""
@@ -122,7 +119,63 @@ struct StatusBar: View {
         }
     }
 
-    private func lineCount(in s: String) -> Int {
+    /// Cache of (url, length) → Metrics for loaded text files.
+    nonisolated(unsafe) private static var metricsCache:
+        (key: AnyHashable, value: Metrics)? = nil
+    nonisolated(unsafe) private static let metricsLock = NSLock()
+
+    private static func metrics(for f: TextFile) -> Metrics {
+        struct Key: Hashable { let url: URL; let bytes: Int }
+        let key = Key(url: f.url, bytes: f.byteCount)
+        metricsLock.lock()
+        if let hit = metricsCache, hit.key == AnyHashable(key) {
+            metricsLock.unlock()
+            return hit.value
+        }
+        metricsLock.unlock()
+        // .utf16.count without NSString bridge — String.UTF16View.count
+        // is O(1) on UTF-8 storage post-first-access (Swift caches).
+        let m = Metrics(
+            lineCount: lineCount(in: f.contents),
+            charCount: f.contents.utf16.count,
+            byteCount: f.byteCount,
+            lineEndings: detectLineEndings(in: f.contents),
+            encodingShort: encodingShort(f.encoding),
+            indent: IndentDetector.detect(in: f.contents)
+        )
+        metricsLock.lock()
+        metricsCache = (AnyHashable(key), m)
+        metricsLock.unlock()
+        return m
+    }
+
+    /// Cache of (url, mtime) → byte size for the preview state. Reads
+    /// `attributesOfItem` once per (url, mtime); without this, every
+    /// body re-eval did a fresh stat syscall.
+    nonisolated(unsafe) private static var previewSizeCache:
+        (url: URL, size: Int, sampledAt: TimeInterval)? = nil
+    nonisolated(unsafe) private static let previewLock = NSLock()
+    private static let previewCacheTTL: TimeInterval = 1.0
+
+    private static func cachedFileSize(for url: URL) -> Int {
+        let now = Date().timeIntervalSinceReferenceDate
+        previewLock.lock()
+        if let hit = previewSizeCache,
+           hit.url == url,
+           now - hit.sampledAt < previewCacheTTL {
+            previewLock.unlock()
+            return hit.size
+        }
+        previewLock.unlock()
+        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        let size = (attrs?[.size] as? Int) ?? 0
+        previewLock.lock()
+        previewSizeCache = (url, size, now)
+        previewLock.unlock()
+        return size
+    }
+
+    private static func lineCount(in s: String) -> Int {
         // Each \n bumps the line count; trailing-newline / empty cases
         // handled so "abc" → 1, "abc\n" → 1, "abc\ndef" → 2.
         if s.isEmpty { return 0 }
@@ -132,7 +185,7 @@ struct StatusBar: View {
         return n
     }
 
-    private func detectLineEndings(in s: String) -> String {
+    private static func detectLineEndings(in s: String) -> String {
         // Sample the first ~4 KB rather than the whole file — saves
         // O(N) on the body hot path for multi-MB files.
         let bytes = s.utf8
@@ -151,7 +204,7 @@ struct StatusBar: View {
         return "—"
     }
 
-    private func encodingShort(_ enc: String.Encoding) -> String {
+    private static func encodingShort(_ enc: String.Encoding) -> String {
         switch enc {
         case .utf8:             return "UTF-8"
         case .utf16LittleEndian: return "UTF-16 LE"

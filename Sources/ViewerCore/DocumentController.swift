@@ -1,7 +1,7 @@
 import Foundation
 import ViewerKit
 
-public enum DocumentState: Equatable, Sendable {
+public enum DocumentState: Sendable {
     case empty
     case loaded(TextFile)
     case binary(BinaryFile)
@@ -19,6 +19,32 @@ public enum DocumentState: Equatable, Sendable {
         public init(url: URL, message: String) {
             self.url = url
             self.message = message
+        }
+    }
+}
+
+/// Equatable by (case, url, byteCount) — explicitly NOT by file
+/// contents. Synthesized Equatable would O(N) compare the full file
+/// bytes on every SwiftUI diff. Where deep content equality matters
+/// (rare — file watcher reload), callers compare TextFile fields
+/// directly.
+extension DocumentState: Equatable {
+    public static func == (lhs: DocumentState, rhs: DocumentState) -> Bool {
+        switch (lhs, rhs) {
+        case (.empty, .empty):
+            return true
+        case (.loaded(let a), .loaded(let b)):
+            return a.url == b.url
+                && a.byteCount == b.byteCount
+                && a.encoding == b.encoding
+        case (.binary(let a), .binary(let b)):
+            return a.url == b.url && a.byteCount == b.byteCount
+        case (.error(let a), .error(let b)):
+            return a == b
+        case (.preview(let lu, let lc), .preview(let ru, let rc)):
+            return lu == ru && lc == rc
+        default:
+            return false
         }
     }
 }
@@ -74,6 +100,17 @@ public struct DocumentController: Sendable {
         }
     }
 
+    /// T9: pinned to en-US-POSIX so "5.0 MB" doesn't become "5,0 MB" on
+    /// fr_FR. Hoisted to a static — previously allocated per error.
+    private static let mbFormatter: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.minimumFractionDigits = 1
+        f.maximumFractionDigits = 1
+        return f
+    }()
+
     public static func message(for error: FileLoadError) -> String {
         switch error {
         case .fileNotFound:
@@ -84,13 +121,7 @@ public struct DocumentController: Sendable {
             return "File is not valid UTF-8 or Latin-1 text."
         case .tooLarge(let bytes):
             let mb = Double(bytes) / 1_048_576.0
-            // T9: pin to en-US-POSIX so "5.0 MB" doesn't become "5,0 MB" on fr_FR.
-            let formatter = NumberFormatter()
-            formatter.numberStyle = .decimal
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.minimumFractionDigits = 1
-            formatter.maximumFractionDigits = 1
-            let formatted = formatter.string(from: NSNumber(value: mb)) ?? "\(mb)"
+            let formatted = mbFormatter.string(from: NSNumber(value: mb)) ?? "\(mb)"
             return "File is too large (\(formatted) MB)."
         case .binaryFile:
             return "File appears to be binary (contains NUL bytes)."

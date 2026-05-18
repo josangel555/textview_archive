@@ -493,6 +493,10 @@ public final class DocumentModel: ObservableObject {
     /// active search. Set by MarkdownRenderedView.Coordinator after
     /// each JS find call returns total + currentIndex.
     @Published public var renderedFindMatchSummary: String = ""
+    public func setRenderedFindMatchSummary(_ s: String) {
+        guard s != renderedFindMatchSummary else { return }
+        renderedFindMatchSummary = s
+    }
 
     /// Nonce that increments each time the user requests the find bar
     /// (Cmd+F). The bar's TextField observes this and refocuses on
@@ -649,6 +653,14 @@ public final class DocumentModel: ObservableObject {
     /// coordinator after it recomputes match ranges. The find bar
     /// renders this directly.
     @Published public var sourceFindMatchSummary: String = ""
+    /// Guarded setter — call this instead of direct assignment from
+    /// SwiftUI callbacks. The `@Published` storage stays writable
+    /// because `FindBar` takes the value as a Binding (display only;
+    /// it doesn't mutate but SwiftUI's Binding needs setter access).
+    public func setSourceFindMatchSummary(_ s: String) {
+        guard s != sourceFindMatchSummary else { return }
+        sourceFindMatchSummary = s
+    }
 
     public func showSourceFindBar() {
         isSourceFindBarPresented = true
@@ -657,7 +669,7 @@ public final class DocumentModel: ObservableObject {
     public func dismissSourceFindBar() {
         isSourceFindBarPresented = false
         sourceFindQuery = ""
-        sourceFindMatchSummary = ""
+        setSourceFindMatchSummary("")
     }
     public func sourceFindNext() { sourceFindNextRequest &+= 1 }
     public func sourceFindPrev() { sourceFindPrevRequest &+= 1 }
@@ -738,14 +750,39 @@ public final class DocumentModel: ObservableObject {
     /// Returns the text that should be shown in the source view for
     /// the currently selected tab and `file`: either pretty-printed
     /// (when toggled and supported) or the raw contents.
+    ///
+    /// Memoizes the formatter output per tab id. Without this, every
+    /// SwiftUI body re-eval (and there are many — find keystrokes,
+    /// selection changes, scroll) reruns `Formatter.prettyPrint` on
+    /// the full file, which is O(N) text-walk per call. Cache is
+    /// invalidated when the source length changes (file watcher
+    /// reload).
     public func displayText(for file: TextFile) -> String {
         guard let id = tabs.selected?.id,
               formattedTabIDs.contains(id),
               let format = Formatter.SupportedFormat.detect(file.url) else {
             return file.contents
         }
-        return Formatter.prettyPrint(file.contents, as: format)
+        let len = file.contents.utf8.count
+        if let hit = formattedTextCache[id], hit.sourceLength == len {
+            return hit.formatted
+        }
+        let result = Formatter.prettyPrint(file.contents, as: format)
+        formattedTextCache[id] = (sourceLength: len, formatted: result)
+        if formattedTextCache.count > Self.formattedTextCacheMax {
+            // Arbitrary drop — tab ids are UUIDs with no ordering
+            // signal we can use. Acceptable: caller will repopulate
+            // on next access for the dropped tab.
+            let drop = formattedTextCache.count - Self.formattedTextCacheMax * 2 / 3
+            for k in formattedTextCache.keys.prefix(drop) {
+                formattedTextCache.removeValue(forKey: k)
+            }
+        }
+        return result
     }
+
+    private var formattedTextCache: [UUID: (sourceLength: Int, formatted: String)] = [:]
+    private static let formattedTextCacheMax = 8
 
     // MARK: Syntax highlighting
 
@@ -793,7 +830,11 @@ public final class DocumentModel: ObservableObject {
             return DiffHighlighter.highlight(text)
         }
         guard language != .plainText else { return [] }
-        let length = (text as NSString).length
+        // utf8.count is O(1) for native UTF-8 string storage (Swift 5+);
+        // (text as NSString).length materializes a UTF-16 bridge which
+        // is O(N) per call and was a measurable hot-path cost from
+        // SwiftUI body re-evals on multi-hundred-KB files.
+        let length = text.utf8.count
         let key = HighlightCacheKey(url: url, length: length, language: language)
         if let cached = highlightCache[key] { return cached }
         guard !highlightInFlight.contains(key) else { return [] }
@@ -840,7 +881,11 @@ public final class DocumentModel: ObservableObject {
         public let length: Int
     }
     private var renderedHTMLCache: [RenderedHTMLKey: String] = [:]
-    private static let renderedHTMLCacheMax = 16
+    // Each entry is a 2-5× inflation of source size (code-fence
+    // highlighting). Four covers the typical "couple of open MDs"
+    // working set and caps the worst-case RAM footprint of this
+    // cache around 15-20 MB. Cold-render on a miss is fast.
+    private static let renderedHTMLCacheMax = 4
 
     /// Returns the rendered HTML for `contents`, building+caching on
     /// miss. Call from a SwiftUI body — it's main-thread, sync, and the
@@ -880,22 +925,27 @@ public final class DocumentModel: ObservableObject {
                 sidebar.setRoot(url)
             }
         }
+        // Lazy restore: every tab from the snapshot is appended with
+        // state = .empty (URL only), no file contents read. The focused
+        // tab (selectedTabIndex) is materialized by the explicit
+        // selectTab below; the rest stay unloaded until the user
+        // navigates to them. Keeps "15 open tabs from yesterday" from
+        // re-reading 15 files on launch.
         for t in snap.openTabs {
             let url = URL(fileURLWithPath: t.path)
-            if FileManager.default.fileExists(atPath: url.path) {
-                openPath(url)
-                if let mode = ViewMode(rawValue: t.viewMode), mode != currentViewMode {
-                    setCurrentViewMode(mode)
-                }
-            }
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            let mode = ViewMode(rawValue: t.viewMode)
+                ?? ViewModeOptions.defaultMode(for: url)
+            appendLazyTab(url: url, viewMode: mode)
         }
         if let zoom = snap.zoom { self.zoom = zoom }
         if let wrap = snap.wordWrap { self.sourceWordWrap = wrap }
         if let theme = snap.themeOverride {
             self.themeOverride = SyntaxTheme.Name(rawValue: theme)
         }
-        if let i = snap.selectedTabIndex, tabs.tabs.indices.contains(i) {
-            selectTab(at: i)
+        let target = snap.selectedTabIndex ?? 0
+        if tabs.tabs.indices.contains(target) {
+            selectTab(at: target)
         }
     }
 
@@ -905,7 +955,7 @@ public final class DocumentModel: ObservableObject {
         renderer: HTMLRenderer,
         stylesheet: String
     ) -> String {
-        let key = RenderedHTMLKey(url: url, length: (contents as NSString).length)
+        let key = RenderedHTMLKey(url: url, length: contents.utf8.count)
         if let hit = renderedHTMLCache[key] { return hit }
         // Mermaid CSS rides along on every rendered markdown page. It's
         // tiny (~1 KB) and inlining it unconditionally avoids the flash
@@ -1079,9 +1129,14 @@ public final class DocumentModel: ObservableObject {
     }
 
     public func closeTab(at index: Int) {
-        let closedID = tabs.tabs.indices.contains(index) ? tabs.tabs[index].id : nil
+        let closedTab = tabs.tabs.indices.contains(index) ? tabs.tabs[index] : nil
         tabs.close(at: index)
-        if let id = closedID { formattedTabIDs.remove(id) }
+        if let t = closedTab {
+            formattedTabIDs.remove(t.id)
+            formattedTextCache.removeValue(forKey: t.id)
+            languageOverrides.removeValue(forKey: t.id)
+            purgeCaches(forURL: t.url)
+        }
         updateDerived()
         startWatchingCurrentFile()
     }
@@ -1094,22 +1149,47 @@ public final class DocumentModel: ObservableObject {
 
     public func closeOtherTabs(keeping index: Int) {
         let keepID = tabs.tabs.indices.contains(index) ? tabs.tabs[index].id : nil
+        let closedTabs = tabs.tabs.filter { $0.id != keepID }
         tabs.closeAll(except: index)
-        // Prune any formattedTabIDs entries that no longer correspond
-        // to an open tab. Cheaper than tracking every closed id.
-        formattedTabIDs = keepID.map { Set([$0]) }.flatMap { kept in
-            formattedTabIDs.intersection(kept)
-        } ?? []
+        for t in closedTabs {
+            formattedTextCache.removeValue(forKey: t.id)
+            languageOverrides.removeValue(forKey: t.id)
+            purgeCaches(forURL: t.url)
+        }
+        // Intersect tab-id sets with the still-open ids. Cheaper than
+        // tracking every closed id and symmetric across the three
+        // tab-id-keyed maps.
+        let openIDs = Set(tabs.tabs.map { $0.id })
+        formattedTabIDs.formIntersection(openIDs)
         updateDerived()
         startWatchingCurrentFile()
     }
 
     public func closeTabsToRight(of index: Int) {
+        let closedTabs = tabs.tabs.indices.contains(index)
+            ? Array(tabs.tabs.suffix(from: index + 1))
+            : []
         tabs.closeAllToRight(of: index)
+        for t in closedTabs {
+            formattedTextCache.removeValue(forKey: t.id)
+            languageOverrides.removeValue(forKey: t.id)
+            purgeCaches(forURL: t.url)
+        }
         let openIDs = Set(tabs.tabs.map { $0.id })
         formattedTabIDs.formIntersection(openIDs)
         updateDerived()
         startWatchingCurrentFile()
+    }
+
+    /// Drop all URL-keyed cache entries for a closed tab. Skipped if
+    /// another tab still holds the same URL (Open-in-new-tab → close
+    /// one → other still benefits from cached runs/HTML). Sidebar
+    /// diff marks for the file get cleared too.
+    private func purgeCaches(forURL url: URL?) {
+        guard let url else { return }
+        if tabs.tabs.contains(where: { $0.url == url }) { return }
+        highlightCache = highlightCache.filter { $0.key.url != url }
+        renderedHTMLCache = renderedHTMLCache.filter { $0.key.url != url }
     }
 
     public func moveTab(from src: Int, to dst: Int) {
@@ -1132,8 +1212,62 @@ public final class DocumentModel: ObservableObject {
 
     public func selectTab(at index: Int) {
         tabs.select(at: index)
+        materializeIfNeeded(at: index)
         updateDerived()
         startWatchingCurrentFile()
+    }
+
+    /// Append a tab pointing at `url` without loading its contents.
+    /// State stays `.empty` until the tab is selected; only then does
+    /// `materializeIfNeeded(at:)` actually read the file. Workspace
+    /// restore and multi-file drops use this so a 15-file session
+    /// doesn't read 15 files at launch — only the focused one.
+    public func appendLazyTab(url: URL, viewMode: ViewMode) {
+        let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
+        tabs.append(Tab(url: resolved, state: .empty, viewMode: viewMode))
+    }
+
+    /// Open many URLs at once. Only the LAST URL is read into memory;
+    /// the others are appended as lazy tabs (state = .empty, url set).
+    /// The selection ends on the last opened tab so the user sees the
+    /// file they probably care about — matches Finder's "drop several
+    /// files, the last one wins focus" convention.
+    public func openMultiple(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        // All but the last: lazy.
+        for url in urls.dropLast() {
+            let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
+            let mode = ViewModeOptions.defaultMode(for: resolved)
+            appendLazyTab(url: resolved, viewMode: mode)
+        }
+        // Last one: eager open through the normal path so it gets
+        // history-recorded, watcher-bound, sidebar-rooted, etc.
+        if let last = urls.last {
+            openPath(last)
+        }
+    }
+
+    /// If the tab at `index` is a lazy placeholder (state == .empty
+    /// while url is set), read the file now and replace its state.
+    /// Idempotent: tabs already in .loaded / .binary / .preview / .error
+    /// are left alone.
+    private func materializeIfNeeded(at index: Int) {
+        guard tabs.tabs.indices.contains(index) else { return }
+        let t = tabs.tabs[index]
+        guard let url = t.url, case .empty = t.state else { return }
+        let state = controller.open(url: url)
+        var t2 = t
+        t2.state = state
+        tabs.replace(at: index, with: t2)
+        // Mirror openResolved's HEX-mode carry: if a binary file lands
+        // with the tab already set to .hex view, kick the binary load.
+        if t2.viewMode == .hex {
+            switch state {
+            case .binary, .empty: break
+            case .loaded, .preview, .error:
+                loadBinaryAsync(url: url, intoTabID: t2.id)
+            }
+        }
     }
 
     public func selectNextTab() {

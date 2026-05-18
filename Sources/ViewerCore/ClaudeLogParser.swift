@@ -189,13 +189,26 @@ public struct ClaudeLogParser: Sendable {
         return out
     }
 
+    /// Shared formatters — were allocated once per log line previously.
+    /// A 200K-line Claude session parsed = 200K formatter allocations,
+    /// each ~few KB of internal CFLocale / format strings.
+    /// `nonisolated(unsafe)`: ISO8601DateFormatter is documented
+    /// thread-safe for read-only use; Swift 6's checker can't tell.
+    nonisolated(unsafe) private static let isoFractional: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    nonisolated(unsafe) private static let iso: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
     private static func parseTimestamp(_ raw: Any?) -> Date? {
         if let s = raw as? String {
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let d = formatter.date(from: s) { return d }
-            formatter.formatOptions = [.withInternetDateTime]
-            return formatter.date(from: s)
+            if let d = isoFractional.date(from: s) { return d }
+            return iso.date(from: s)
         }
         if let n = raw as? Double {
             return Date(timeIntervalSince1970: n)

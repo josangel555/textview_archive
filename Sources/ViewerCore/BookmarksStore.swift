@@ -161,7 +161,7 @@ public struct BookmarkEntry: Codable, Equatable, Hashable, Sendable, Identifiabl
         if let d = try? c.decode(Date.self, forKey: .addedAt) {
             self.addedAt = d
         } else if let s = try? c.decode(String.self, forKey: .addedAt),
-                  let d = ISO8601DateFormatter().date(from: s) {
+                  let d = BookmarkEntry.iso8601.date(from: s) {
             self.addedAt = d
         } else {
             self.addedAt = Date()
@@ -175,4 +175,10 @@ public struct BookmarkEntry: Codable, Equatable, Hashable, Sendable, Identifiabl
     public enum CodingKeys: String, CodingKey {
         case url, addedAt, displayName, line
     }
+
+    /// Shared formatter — was allocated per-entry-decoded, which on a
+    /// 200-bookmark store meant 200 fresh formatters on every launch.
+    /// `nonisolated(unsafe)`: `ISO8601DateFormatter.date(from:)` is
+    /// documented thread-safe; Swift 6's checker can't see that.
+    nonisolated(unsafe) private static let iso8601 = ISO8601DateFormatter()
 }

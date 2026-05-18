@@ -40,6 +40,9 @@ public enum TokenKind: String, Sendable, CaseIterable, Codable {
 }
 
 /// Soft cap: skip highlighting any file larger than this. Above this
-/// size the query phase starts to dominate and the variance hurts more
-/// than the coloring helps. Plain text still renders.
-public let highlightMaxBytes: Int = 2 * 1024 * 1024
+/// size the query phase + attribute application start dominating
+/// frame budget — the coloring hurts more than it helps. Plain text
+/// still renders. Was 2 MB; lowered to 512 KB after 1-MB JSON files
+/// were observed to crawl in source mode (the full pipeline cost
+/// per render: paintOver canvas alloc + N×addAttribute + layout).
+public let highlightMaxBytes: Int = 512 * 1024

@@ -119,7 +119,18 @@ public final class WorkspaceStore: Sendable {
     }
 
     private func load(from url: URL) -> WorkspaceSnapshot? {
-        JSONFileStore.read(WorkspaceSnapshot.self, from: url)
+        // Refuse snapshots from a newer schema. Without this guard, a
+        // future v2 file with additive optional fields would decode
+        // silently (Optional<X> tolerates missing keys), then be
+        // RE-WRITTEN as v1 on the next quit — destroying the v2 fields.
+        // Mirrors ReviewStore's `schemaVersion > currentSchema` refusal.
+        guard let snap = JSONFileStore.read(WorkspaceSnapshot.self, from: url) else {
+            return nil
+        }
+        if snap.schemaVersion > WorkspaceSnapshot.currentSchema {
+            return nil
+        }
+        return snap
     }
 
     /// Sanitize a user-supplied workspace name for use as a filename.

@@ -44,8 +44,17 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         self.onFindSummary = onFindSummary
     }
 
+    /// Shared WebContent process pool across all `MarkdownRenderedView`
+    /// instances. Without this, every `WKWebViewConfiguration()` mints
+    /// a fresh process pool → each new WebView spawns a new
+    /// `com.apple.WebKit.WebContent` process (~30–80 MB each). Tab
+    /// switches that rebuild the view destroy and re-spawn that
+    /// process; reusing the pool keeps it warm.
+    private static let sharedProcessPool = WKProcessPool()
+
     public func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
+        config.processPool = Self.sharedProcessPool
         let prefs = WKWebpagePreferences()
         // We allow JS so our injected find runtime
         // (Coordinator.findScript) can run. The page's own scripts
@@ -55,27 +64,12 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         prefs.allowsContentJavaScript = true
         config.defaultWebpagePreferences = prefs
 
-        // Mermaid runtime + shim. WKUserScript injections are not subject
-        // to the page CSP (Apple confirms; `script-src 'none'` only blocks
-        // <script> tags in the document). The runtime must be parsed
-        // before the page body so `window.mermaid` exists by the time the
-        // shim looks for it; the shim runs at .atDocumentEnd and itself
-        // gates on `DOMContentLoaded` for safety.
-        let userContent = config.userContentController
-        if !MermaidBundle.runtime.isEmpty {
-            userContent.addUserScript(WKUserScript(
-                source: MermaidBundle.runtime,
-                injectionTime: .atDocumentStart,
-                forMainFrameOnly: true
-            ))
-        }
-        if !MermaidBundle.shimJS.isEmpty {
-            userContent.addUserScript(WKUserScript(
-                source: MermaidBundle.shimJS,
-                injectionTime: .atDocumentEnd,
-                forMainFrameOnly: true
-            ))
-        }
+        // Mermaid runtime (2.5 MB JS) is NOT added here unconditionally.
+        // It gets attached lazily in updateNSView the first time a
+        // document with a `<div class="mdv-mermaid">` host element
+        // arrives. For users who never render a mermaid file, the
+        // runtime never enters the WebContent process — saves ~2.5 MB
+        // in the WebKit process every session.
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
@@ -87,13 +81,37 @@ public struct MarkdownRenderedView: NSViewRepresentable {
     }
 
     public func updateNSView(_ webView: WKWebView, context: Context) {
+        let coord = context.coordinator
+        // Lazy mermaid runtime injection. Detect once per WebView
+        // instance: the host element pattern is stable from
+        // HTMLRenderer's mermaid interceptor. We add the user scripts
+        // BEFORE loadHTMLString so the about-to-load page picks them
+        // up. After install, the flag stays true so non-mermaid pages
+        // on the same WebView still get the runtime (cheap; idempotent
+        // for them).
+        if !coord.mermaidInjected && html.contains("mdv-mermaid") {
+            let userContent = webView.configuration.userContentController
+            if !MermaidBundle.runtime.isEmpty {
+                userContent.addUserScript(WKUserScript(
+                    source: MermaidBundle.runtime,
+                    injectionTime: .atDocumentStart,
+                    forMainFrameOnly: true))
+            }
+            if !MermaidBundle.shimJS.isEmpty {
+                userContent.addUserScript(WKUserScript(
+                    source: MermaidBundle.shimJS,
+                    injectionTime: .atDocumentEnd,
+                    forMainFrameOnly: true))
+            }
+            coord.mermaidInjected = true
+        }
         // Only reload when the HTML actually changed. body() re-runs on every
         // @Published mutation, and reloading the page on each tick causes
         // a render storm + a brief blank-content flash that was being
         // perceived as "tabs vanishing".
-        if context.coordinator.lastHTML != html {
+        if coord.lastHTML != html {
             webView.loadHTMLString(html, baseURL: baseURL)
-            context.coordinator.lastHTML = html
+            coord.lastHTML = html
         }
         if abs(webView.pageZoom - CGFloat(zoom)) > 0.001 {
             webView.pageZoom = CGFloat(zoom)
@@ -153,6 +171,11 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         /// same content don't re-load the page (CRIT-4 fix for the
         /// "vanishing tabs" reload storm).
         var lastHTML: String?
+        /// True once the mermaid runtime + shim user scripts have been
+        /// added to this WebView's userContentController. Set on first
+        /// document containing the mermaid host marker; never reset
+        /// (user scripts cannot be removed cheaply).
+        var mermaidInjected: Bool = false
         /// True once the current document has reported didFinish. Used
         /// to gate find() — calling it before the DOM is ready silently
         /// fails with matchFound=false, so we defer until ready.
