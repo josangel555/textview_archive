@@ -45,7 +45,7 @@ struct CommandPaletteView: View {
                                     entry: hit.item,
                                     matchedIndices: hit.match.matchedIndices,
                                     isSelected: index == selectedIndex,
-                                    isBookmark: model.bookmarks.contains { $0.url == hit.item.url },
+                                    isBookmark: bookmarkURLSet.contains(hit.item.url),
                                     onUnbookmark: {
                                         model.removeBookmark(hit.item.url)
                                     }
@@ -90,11 +90,23 @@ struct CommandPaletteView: View {
         .onAppear {
             fieldFocused = true
             selectedIndex = 0
+            bookmarkURLSet = Set(model.bookmarks.map { $0.url })
             recomputeFiltered()
         }
         .onChange(of: model.recents) { _, _ in recomputeFiltered() }
-        .onChange(of: model.bookmarks) { _, _ in recomputeFiltered() }
+        .onChange(of: model.bookmarks) { _, _ in
+            bookmarkURLSet = Set(model.bookmarks.map { $0.url })
+            recomputeFiltered()
+        }
     }
+
+    /// Pre-computed lookup table for `isBookmark` row state. Without
+    /// it, every palette row ran `model.bookmarks.contains { $0.url ==
+    /// hit.item.url }` per body re-eval — O(rows × bookmarks). With
+    /// 100+ bookmarks × 50 filtered rows per keystroke, that's 5K+
+    /// URL comparisons. Recomputed only when the bookmarks list
+    /// changes (rare).
+    @State private var bookmarkURLSet: Set<URL> = []
 
     /// Show bookmarks at the top of the palette (in store order),
     /// followed by recents that aren't already shown as bookmarks. The
