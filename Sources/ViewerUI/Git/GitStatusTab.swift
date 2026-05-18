@@ -92,11 +92,20 @@ struct GitStatusTab: View {
     }
 
     /// Split `dir/sub/name.ext` into a dim "dir/sub/" + bright "name.ext"
-    /// so paths scan visually at a glance.
+    /// so paths scan visually at a glance. Native Swift split avoids
+    /// the `(path as NSString).pathComponents` bridge that was firing
+    /// per row per body re-eval (one full UTF-16 materialization per
+    /// row × every panel redraw).
     private func pathView(_ path: String) -> some View {
-        let split = (path as NSString).pathComponents
-        let dir = split.dropLast().joined(separator: "/")
-        let name = split.last ?? path
+        let dir: String
+        let name: String
+        if let slash = path.lastIndex(of: "/") {
+            dir = String(path[..<slash])
+            name = String(path[path.index(after: slash)...])
+        } else {
+            dir = ""
+            name = path
+        }
         return HStack(spacing: 0) {
             if !dir.isEmpty {
                 Text(dir + "/")
