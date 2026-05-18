@@ -81,7 +81,18 @@ public enum WalkthroughLoader {
         //    `rootHint`. When `rootHint` is nil we skip — paths are
         //    assumed absolute and the caller has chosen to accept them.
         if let rootHint = script.rootHint {
-            let root = URL(fileURLWithPath: rootHint).standardizedFileURL
+            // `isDirectory: true` keeps a trailing slash on the URL so
+            // `URL(fileURLWithPath: relative, relativeTo: root)`
+            // resolves against `root` as a base **directory** rather
+            // than its parent. Without this, rootHint `/tmp/repo`
+            // would resolve `src/A.swift` to `/tmp/src/A.swift` (one
+            // level up) and legit scripts would falsely fail.
+            // `resolvingSymlinksInPath` handles macOS's `/tmp` →
+            // `/private/tmp` indirection so the comparison doesn't
+            // false-positive when the resolved file path is canonical.
+            let root = URL(fileURLWithPath: rootHint, isDirectory: true)
+                .standardizedFileURL
+                .resolvingSymlinksInPath()
             let rootPath = root.path
             for step in script.steps {
                 for action in step.actions {
@@ -129,8 +140,12 @@ public enum WalkthroughLoader {
         _ path: String, root: URL, rootPath: String
     ) -> String? {
         let resolved: URL = path.hasPrefix("/")
-            ? URL(fileURLWithPath: path).standardizedFileURL
-            : URL(fileURLWithPath: path, relativeTo: root).standardizedFileURL
+            ? URL(fileURLWithPath: path)
+                .standardizedFileURL
+                .resolvingSymlinksInPath()
+            : URL(fileURLWithPath: path, relativeTo: root)
+                .standardizedFileURL
+                .resolvingSymlinksInPath()
         let p = resolved.path
         // Match either the root itself or any descendant. Trailing
         // slash check guards against `/tmp/foo` matching `/tmp/foobar`.
