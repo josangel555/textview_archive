@@ -1185,6 +1185,31 @@ public final class DocumentModel: ObservableObject {
         }
     }
 
+    // MARK: Session lifecycle hooks (Phase 1)
+
+    /// Pause file watching for this DocumentModel. Called by the
+    /// `SessionState` when its session is detached (another session
+    /// becomes active). Idempotent — calling on an already-paused
+    /// model is a no-op.
+    ///
+    /// Phase 1 only pauses the file watcher; everything else
+    /// (caches, @Published state) stays warm so reactivation is
+    /// instant. Future phases will cancel diff/highlight Tasks too.
+    public func pauseFileWatcher() {
+        fileWatcher?.stop()
+        fileWatcher = nil
+        watchedURL = nil
+    }
+
+    /// Resume file watching against the current tab's URL. Called by
+    /// the `SessionState` when its session is re-mounted. Safe to
+    /// call when not currently paused (it's a re-attach if the URL
+    /// changed; no-op if it didn't, courtesy of the idempotency
+    /// check in `startWatchingCurrentFile()`).
+    public func resumeFileWatcher() {
+        startWatchingCurrentFile()
+    }
+
     // MARK: Tab management
 
     public func newTab() {
