@@ -91,16 +91,18 @@ is rough priority — most-asked-for first.
 - ~~**jq query for JSON files.**~~ DONE (commit `89f45de`) — shells
   out to `/usr/bin/jq` with Homebrew fallback. View menu → "Apply
   jq Filter… (⌥⌘J)". 6 unit tests + 200 KB no-deadlock test.
-- **Expanded TreeSitter language support — IN PLAN.** User
-  approved: Java, C, C++, C#, JS, TS, Rust, Swift, Kotlin, Lua.
-  Currently wired: Swift, JS, TS. Currently declared but unwired:
-  Java, C, C++, Rust, Kotlin (no grammar deps). Missing entirely:
-  C#, Lua. Strategy: 7 new SwiftPM deps in one commit; bundle delta
-  ~2 MB (22 MB after, still under 25 MB cap); roll back any grammar
-  whose ABI doesn't match SwiftTreeSitter. Deferred from
-  2026-05-17 overnight because adding 7 deps autonomously is risky
-  when the user can't verify and the VM build canary won't run
-  until Xcode finishes installing.
+- **Expanded TreeSitter language support — IN DESIGN (lazy-load).**
+  User approved 2026-05-18: add Java, C, C++, C#, Rust, Lua
+  (**Kotlin skipped** — fwcd fork has slow cadence). Realistic
+  bundle delta is **~9.8 MB if static-linked** (research agent
+  found C++ alone is ~3.5 MB; earlier BACKLOG estimate of ~2 MB
+  was off by ~5×). Static-link would blow the 25 MB cap.
+  Decision: implement the lazy-load architecture from
+  `docs/TREESITTER_LAZY_LOAD.md` — each new grammar ships as a
+  dylib in `Contents/Frameworks/`, loaded via dlopen on first
+  request. ~2.5 dev days; touches Package.swift, build-app.sh,
+  TreeSitterEngine, and signing pipeline. Replaces the original
+  "7 deps in one commit" plan, which was infeasible at the cap.
 - ~~**Diff +/- line coloring in diff tabs.**~~ DONE (commit `94e130d`
   for runs; `c8ea29c` for proper DiffView with row backgrounds).
 - **Phase 9 distribution.** Real Developer ID + notarization. User
