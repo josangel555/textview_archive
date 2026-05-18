@@ -336,9 +336,13 @@ struct ModeBar: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                // Width also scales with uiScale so the labels don't
-                // truncate at larger sizes.
-                .frame(width: CGFloat(80 + 90 * (modes.count - 1)) * CGFloat(model.uiScale))
+                // Let the picker size to its intrinsic content so it
+                // grows naturally with both label-string length and
+                // uiScale-driven font size. Previous hand-tuned width
+                // formula (80 + 90 * (modes.count - 1)) ignored the
+                // label length and at high uiScale would push trailing
+                // toggles past the right edge of the toolbar.
+                .fixedSize()
             }
             Spacer()
             // Source-view-only toggles. Both control rendering of the

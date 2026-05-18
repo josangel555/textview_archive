@@ -86,6 +86,11 @@ struct ClaudeTimelineSection: View {
                 .foregroundStyle(kindColor(event.kind))
                 .frame(width: 18, alignment: .center)
                 .help(kindLabel(event.kind))
+                // .help only sets tooltip; VoiceOver still reads the
+                // raw SF Symbol name ("person fill image") without an
+                // explicit label. accessibilityLabel overrides that
+                // with the human-readable role.
+                .accessibilityLabel(kindLabel(event.kind))
             Text(event.summary)
                 .font(.system(size: model.uiSize(11), design: .monospaced))
                 .lineLimit(2)
