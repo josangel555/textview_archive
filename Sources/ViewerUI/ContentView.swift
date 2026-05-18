@@ -136,9 +136,13 @@ public struct ContentView: View {
                 collected[i] = url
                 completed += 1
                 let done = completed
+                // Snapshot under the lock so the Task closure captures a
+                // value-typed copy instead of the outer `var collected`,
+                // which otherwise warns under strict-concurrency about
+                // concurrent var capture.
+                let snapshot: [URL?]? = (done == total) ? collected : nil
                 lock.unlock()
-                if done == total {
-                    let urls = collected
+                if let urls = snapshot {
                     Task { @MainActor in
                         // Lazy multi-open: only the last file is read
                         // into memory + becomes the focused tab. Tabs
@@ -528,11 +532,11 @@ struct EmptyStateView: View {
                 .font(.title2)
             HStack(spacing: 12) {
                 Button("Open File…") {
-                    NSApp.sendAction(Selector(("openDocument:")), to: nil, from: nil)
+                    NSApp.sendAction(NSSelectorFromString("openDocument:"), to: nil, from: nil)
                 }
                 .keyboardShortcut("o", modifiers: [.command])
                 Button("Open Folder…") {
-                    NSApp.sendAction(Selector(("openFolder:")), to: nil, from: nil)
+                    NSApp.sendAction(NSSelectorFromString("openFolder:"), to: nil, from: nil)
                 }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
             }

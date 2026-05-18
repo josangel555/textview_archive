@@ -156,7 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let pending = PluginsBootstrap.loadAtLaunch()
         if !pending.isEmpty {
             DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
+                guard self != nil else { return }
                 for p in pending {
                     PluginGrantPrompt.present(
                         manifest: p.manifest, folder: p.folder

@@ -122,7 +122,7 @@ struct StatusBar: View {
     /// Cache of (url, length) → Metrics for loaded text files.
     nonisolated(unsafe) private static var metricsCache:
         (key: AnyHashable, value: Metrics)? = nil
-    nonisolated(unsafe) private static let metricsLock = NSLock()
+    private static let metricsLock = NSLock()
 
     private static func metrics(for f: TextFile) -> Metrics {
         struct Key: Hashable { let url: URL; let bytes: Int }

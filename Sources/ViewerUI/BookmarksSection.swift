@@ -156,7 +156,7 @@ struct BookmarksSection: View {
     /// Bookmark URLs are stable for the row's life; the result rarely
     /// changes. Refreshed on app restart.
     nonisolated(unsafe) private static var dirCache: [URL: Bool] = [:]
-    nonisolated(unsafe) private static let dirCacheLock = NSLock()
+    private static let dirCacheLock = NSLock()
     private static func isDir(_ url: URL) -> Bool {
         dirCacheLock.lock()
         if let hit = dirCache[url] {
@@ -269,14 +269,14 @@ private struct BookmarkRow: View {
         fullDateFormatter.string(from: date)
     }
 
-    nonisolated(unsafe) private static let shortDateFormatter: DateFormatter = {
+    private static let shortDateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateStyle = .medium
         f.timeStyle = .none
         return f
     }()
 
-    nonisolated(unsafe) private static let fullDateFormatter: DateFormatter = {
+    private static let fullDateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateStyle = .medium
         f.timeStyle = .short
