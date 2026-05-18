@@ -15,6 +15,12 @@ PoC-hardening agents now running in fresh worktrees (`feat/lsp-v1`,
 | `feat/lsp-v1` | SourceKit-LSP integration: pool/cancel/restart/outline/hover popover/diagnostics | +33 (52 total LSP) |
 | `feat/plugins-v1` | Tier B subprocess host, env-scrub, audit log, permission-grant store + NSAlert prompt, Settings → Plugins pane, example Tier B plugin fixture | +30 (42 total Plugins) |
 
+## VM canary
+
+After all merges: **977 tests, 4 skipped, 0 failures** in ~143 s on
+macOS15 VM (Swift 6.1.2). Up from 883 baseline by +52 (LSP) + +42
+(Plugins) = +94 tests.
+
 ## Not merged
 
 - **`feat/sessions-v1`** — agent stalled mid-build (Swift 6 strict-
