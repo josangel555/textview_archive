@@ -45,6 +45,17 @@ public final class TreeSitterEngine: @unchecked Sendable {
     /// we don't re-try on every call (rare; usually a missing .scm).
     private var failed: Set<HighlightLanguage> = []
 
+    // MARK: Fold storage
+    //
+    // Lives alongside the highlight cache rather than as a separate
+    // actor: cheaper than a hop and the lock is only held across
+    // dictionary ops (never across parsing). All mutation happens
+    // through the `TreeSitterEngine+Folds.swift` extension.
+    internal let foldLock = NSLock()
+    internal var foldBundles: [HighlightLanguage: FoldBundle] = [:]
+    internal var foldFailed:  Set<HighlightLanguage> = []
+    internal var foldCache:   [HighlightLanguage: FoldCacheEntry] = [:]
+
     /// Tokenize `text` using `language`. Returns NSRange-keyed runs
     /// (UTF-16 offsets) suitable for direct application to AppKit /
     /// SwiftUI attributed strings. Empty array means "don't highlight":
@@ -224,7 +235,7 @@ public final class TreeSitterEngine: @unchecked Sendable {
     /// changes also need a static dep in Package.swift; lazy
     /// languages need a new `GrammarLoader.Grammar` case + dynamic
     /// library product.
-    private func languageHandle(for lang: HighlightLanguage) -> Language? {
+    internal func languageHandle(for lang: HighlightLanguage) -> Language? {
         switch lang {
         // Keeplist — static link.
         case .swift:      return Language(language: tree_sitter_swift())
