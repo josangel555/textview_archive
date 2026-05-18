@@ -139,13 +139,25 @@ public enum WalkthroughLoader {
     private static func pathEscape(
         _ path: String, root: URL, rootPath: String
     ) -> String? {
-        let resolved: URL = path.hasPrefix("/")
-            ? URL(fileURLWithPath: path)
-                .standardizedFileURL
-                .resolvingSymlinksInPath()
-            : URL(fileURLWithPath: path, relativeTo: root)
-                .standardizedFileURL
-                .resolvingSymlinksInPath()
+        // Build the resolved absolute path by hand rather than via
+        // `URL(fileURLWithPath:relativeTo:)`. Foundation's URL behavior
+        // for relativeTo + standardizedFileURL diverged between
+        // Swift 6.1 (treats the base as a file, drops its last
+        // component) and 6.3 (preserves it as a directory). The VM
+        // build canary runs 6.1.2 so the URL-based approach silently
+        // resolved `src/A.swift` against `/tmp/repo` to `/tmp/src/A.swift`
+        // and rejected legitimate paths.
+        let absolutePath: String
+        if path.hasPrefix("/") {
+            absolutePath = path
+        } else {
+            // appendingPathComponent on a String preserves rootPath's
+            // intent as a directory regardless of Foundation version.
+            absolutePath = (rootPath as NSString).appendingPathComponent(path)
+        }
+        let resolved = URL(fileURLWithPath: absolutePath)
+            .standardizedFileURL
+            .resolvingSymlinksInPath()
         let p = resolved.path
         // Match either the root itself or any descendant. Trailing
         // slash check guards against `/tmp/foo` matching `/tmp/foobar`.

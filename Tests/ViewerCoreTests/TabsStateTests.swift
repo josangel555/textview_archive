@@ -201,6 +201,47 @@ final class TabsStateTests: XCTestCase {
                        "lazy tab should pick up the new computed viewMode")
     }
 
+    func test_openOrReveal_errorTab_preservesViewMode() {
+        // Even an existing error-state tab counts as "materialized" —
+        // the user has seen the error and may have explicitly switched
+        // to source view to inspect the raw bytes. Reopen should keep
+        // their pick, not overwrite with the caller's default.
+        let failure = DocumentState.LoadFailure(
+            url: URL(fileURLWithPath: "/a.md"),
+            message: "x"
+        )
+        let errorTab = Tab(
+            url: URL(fileURLWithPath: "/a.md"),
+            state: .error(failure),
+            viewMode: .source
+        )
+        var s = TabsState(tabs: [errorTab])
+        _ = s.openOrReveal(
+            url: URL(fileURLWithPath: "/a.md"),
+            state: .error(failure),
+            viewMode: .rendered
+        )
+        XCTAssertEqual(s.tabs[0].viewMode, .source,
+                       "error tab is materialized — keep its viewMode")
+    }
+
+    func test_openOrReveal_previewTab_preservesViewMode() {
+        let url = URL(fileURLWithPath: "/a.png")
+        let previewTab = Tab(
+            url: url,
+            state: .preview(url, .image),
+            viewMode: .hex
+        )
+        var s = TabsState(tabs: [previewTab])
+        _ = s.openOrReveal(
+            url: url,
+            state: .preview(url, .image),
+            viewMode: .source
+        )
+        XCTAssertEqual(s.tabs[0].viewMode, .hex,
+                       "preview tab is materialized — keep its viewMode")
+    }
+
     func test_openOrReveal_loadedExistingTab_preservesViewMode() {
         // Already-materialized tab: user may have deliberately
         // switched to .source. Reopening should not overwrite that.

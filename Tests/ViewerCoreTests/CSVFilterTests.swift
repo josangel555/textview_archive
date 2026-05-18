@@ -169,4 +169,55 @@ final class CSVFilterTests: XCTestCase {
     func test_columnExpression_trimsOperandWhitespace() {
         XCTAssertEqual(ColumnExpression.parse(">  10"), .greaterThan("10"))
     }
+
+    // MARK: - Pre-lowercased cache (apply(to:lowercasedRows:))
+
+    /// Without a cache, the contains-match path falls through to live
+    /// `.lowercased()`. This is the no-cache call site (e.g. tests, or
+    /// pre-cache initialization).
+    func test_apply_nilLowercased_fallsBackToLiveLowercase() {
+        let f = CSVFilter(globalQuery: "alice")
+        let r = f.apply(to: sample, lowercasedRows: nil)
+        // Should still match "Alice" + "alice" rows.
+        XCTAssertEqual(r.rows.map { $0[0] }, ["Alice", "alice"])
+    }
+
+    /// Stale cache (count mismatch). Filter must fall back to live
+    /// lowercasing, not index out of bounds.
+    func test_apply_staleLowercased_countMismatch_fallsBackToLive() {
+        let stale: [[String]] = [["alice", "active", "42", "paris"]] // shorter
+        let f = CSVFilter(globalQuery: "bob")
+        let r = f.apply(to: sample, lowercasedRows: stale)
+        // Bob row matches; no crash from indexing past the stale buffer.
+        XCTAssertEqual(r.rows.map { $0[0] }, ["Bob"])
+    }
+
+    /// Stale per-row cache (the row count matches but column count
+    /// inside row i doesn't). Filter must also fall back gracefully.
+    func test_apply_staleLowercased_perRowColCountMismatch_fallsBackToLive() {
+        // Same row count as `sample` (5) but every row has one column.
+        let stale: [[String]] = Array(
+            repeating: ["only-one-cell"],
+            count: sample.rows.count
+        )
+        let f = CSVFilter(globalQuery: "paris", globalScope: .column(3))
+        let r = f.apply(to: sample, lowercasedRows: stale)
+        // Should still match the two Paris rows via live lowercasing.
+        XCTAssertEqual(Set(r.rows.map { $0[0] }), ["Alice", "Charlie"])
+    }
+
+    /// Happy path: with a well-formed cache, results match the no-cache
+    /// behavior exactly. Lock in the equivalence so a regression in the
+    /// cached path can't silently diverge.
+    func test_apply_withLowercasedCache_matchesNoCacheResult() {
+        let cache = sample.rows.map { row in row.map { $0.lowercased() } }
+        let queries = ["alice", "PARIS", "active", "nope"]
+        for q in queries {
+            let f = CSVFilter(globalQuery: q)
+            let cached = f.apply(to: sample, lowercasedRows: cache)
+            let live = f.apply(to: sample, lowercasedRows: nil)
+            XCTAssertEqual(cached.indices, live.indices,
+                           "Cache and no-cache must agree for q=\(q)")
+        }
+    }
 }

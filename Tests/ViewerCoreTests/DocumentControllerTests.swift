@@ -60,4 +60,30 @@ final class DocumentControllerTests: XCTestCase {
         XCTAssertTrue(DocumentController.message(for: .tooLarge(bytes: 5_242_880))
                       .contains("5.0 MB"))
     }
+
+    // MARK: - .loading(URL) state
+
+    /// `.loading(URL)` was added so `materializeIfNeeded` can flip a tab
+    /// to a placeholder state while the file read runs on a detached
+    /// Task. Equality must discriminate by URL — otherwise SwiftUI's
+    /// view diffing collapses two distinct in-flight loads into "no
+    /// change" and the placeholder gets stuck.
+    func test_loadingState_equatableByURL() {
+        let a = URL(fileURLWithPath: "/tmp/A.md")
+        let b = URL(fileURLWithPath: "/tmp/B.md")
+        XCTAssertEqual(DocumentState.loading(a), DocumentState.loading(a))
+        XCTAssertNotEqual(DocumentState.loading(a), DocumentState.loading(b))
+        XCTAssertNotEqual(DocumentState.loading(a), DocumentState.empty)
+    }
+
+    /// Cross-case inequality: `.loading(url)` must never equal any
+    /// non-loading variant of the state enum at the same URL.
+    func test_loadingState_neverEqualsOtherCases() {
+        let url = URL(fileURLWithPath: "/tmp/x.md")
+        let failure = DocumentState.LoadFailure(url: url, message: "x")
+        XCTAssertNotEqual(DocumentState.loading(url), DocumentState.empty)
+        XCTAssertNotEqual(DocumentState.loading(url), DocumentState.error(failure))
+        XCTAssertNotEqual(DocumentState.loading(url),
+                          DocumentState.preview(url, .image))
+    }
 }

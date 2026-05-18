@@ -241,4 +241,33 @@ final class WalkthroughLoaderTests: XCTestCase {
             return XCTFail("Expected ioFailed, got \(r)")
         }
     }
+
+    /// Sanity test for the relative-path resolution that's
+    /// platform-fragile (Swift 6.1 vs 6.3 Foundation behavior
+    /// diverges for URL(...relativeTo:)). Loader uses
+    /// NSString.appendingPathComponent under the hood; pin that here
+    /// so a future "simplification" can't silently regress to the
+    /// URL-based approach.
+    func test_relativePath_resolvesAgainstRootHintConsistently() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("walkthrough-loader-rel-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let json = """
+        {
+          "schema": "textview.walkthrough/v1",
+          "id": "r",
+          "title": "R",
+          "rootHint": "\(tmp.path)",
+          "steps": [
+            { "id": "s1", "actions": [
+                { "kind": "openFile", "path": "deep/nested/A.swift" }
+            ]}
+          ]
+        }
+        """
+        guard case .success = WalkthroughLoader.load(data: Data(json.utf8)) else {
+            return XCTFail("expected success — `deep/nested/A.swift` is under rootHint")
+        }
+    }
 }

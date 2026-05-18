@@ -85,10 +85,13 @@ public final class WalkthroughDropTransport: @unchecked Sendable {
 
         let fm = FileManager.default
         do {
+            // 0o700 = owner-only rwx. Drop scripts may contain
+            // developer-machine paths or credentials-adjacent context;
+            // restrict to the owner even on shared-user macOS hosts.
             try fm.createDirectory(
                 at: self.dropDirectory,
                 withIntermediateDirectories: true,
-                attributes: nil
+                attributes: [.posixPermissions: 0o700]
             )
         } catch {
             throw Error.dropDirCreateFailed(error.localizedDescription)
@@ -208,7 +211,17 @@ public final class WalkthroughDropTransport: @unchecked Sendable {
 
             lock.lock()
             let alreadyDelivered = delivered.contains(url.path)
-            if !alreadyDelivered { delivered.insert(url.path) }
+            if !alreadyDelivered {
+                // Bound the set so a long-running session that sees
+                // many distinct .json filenames doesn't grow it
+                // forever. 1024 is well above the typical drop-rate.
+                // FIFO eviction is fine — re-delivery of an old file
+                // costs at most one reparse and a delegate callback.
+                if delivered.count >= 1024 {
+                    delivered.removeAll(keepingCapacity: true)
+                }
+                delivered.insert(url.path)
+            }
             lock.unlock()
             if alreadyDelivered { continue }
 

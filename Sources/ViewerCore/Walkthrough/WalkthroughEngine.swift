@@ -123,9 +123,29 @@ public final class WalkthroughEngine {
 
     // MARK: - Private
 
+    /// Reentrancy guard. A delegate handler may legitimately want to
+    /// call `next()` / `jumpTo` / `restart` synchronously (e.g. a
+    /// keyboard binding firing while a step is applying). Without the
+    /// guard, `applyCurrent` would recurse: the inner call mutates
+    /// `stepIndex` mid-loop, then the outer loop keeps emitting actions
+    /// for the *previous* step and `didApplyStep` fires for the wrong
+    /// one. With the guard, transport calls during apply are dropped on
+    /// the floor — the host should either decouple via Task or sequence
+    /// the dispatch itself.
+    private var applying: Bool = false
+
     private func applyCurrent() {
         guard let script else { return }
         guard stepIndex >= 0, stepIndex < script.steps.count else { return }
+        guard !applying else {
+            assertionFailure(
+                "WalkthroughEngine: re-entrant transport call from within a delegate handler. " +
+                "Delegate must not call next/previous/jumpTo/restart synchronously."
+            )
+            return
+        }
+        applying = true
+        defer { applying = false }
         let step = script.steps[stepIndex]
         let delegate = self.delegate
         delegate?.walkthroughEngine(self, willApplyStep: step)

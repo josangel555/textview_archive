@@ -181,11 +181,17 @@ struct ImagePreview: View {
         Task.detached(priority: .userInitiated) {
             let list = ImagePreview.imageSiblings(of: current)
             await MainActor.run {
-                // Bail if the user navigated to a different folder
-                // while we were enumerating.
-                guard current.deletingLastPathComponent() == parent else { return }
+                // Bail if the user has navigated to a *different* folder
+                // since this task started. We compare the task's source
+                // folder (`parent`) against the view's currently displayed
+                // URL — not against `current`, which is the task's own
+                // input and would trivially match itself. Without this
+                // the previous check was tautological and a stale folder
+                // enumeration could overwrite siblings after a fast
+                // arrow-key navigation across folders.
+                guard url.deletingLastPathComponent() == parent else { return }
                 siblings = list
-                currentIndex = list.firstIndex(of: current) ?? 0
+                currentIndex = list.firstIndex(of: url) ?? 0
             }
         }
     }
