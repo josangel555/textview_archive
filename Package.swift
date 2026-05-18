@@ -9,6 +9,24 @@ let package = Package(
         .library(name: "ViewerCore", targets: ["ViewerCore"]),
         .library(name: "ViewerUI", targets: ["ViewerUI"]),
         .executable(name: "MarkdownViewer", targets: ["MarkdownViewer"]),
+
+        // Lazy-loaded TreeSitter grammar dylibs. Each wraps a single
+        // upstream grammar product into a `.dynamic` library that
+        // build-app.sh copies into `Contents/Frameworks/`, where
+        // `GrammarLoader` dlopens it on first use. ViewerCore does
+        // NOT depend on these — they're loaded at runtime by symbol.
+        //
+        // The wrapper-target indirection exists so SwiftPM can give us
+        // a single named dylib per grammar (instead of bundling
+        // multiple parser archives into one fat dylib). See
+        // `Sources/TreeSitterLazyWrappers/<name>/wrapper.c` for why
+        // each wrapper file does a keepalive reference to the upstream
+        // `tree_sitter_<x>` symbol.
+        .library(name: "TreeSitterXMLLazy",        type: .dynamic, targets: ["TreeSitterXMLLazy"]),
+        .library(name: "TreeSitterPythonLazy",     type: .dynamic, targets: ["TreeSitterPythonLazy"]),
+        .library(name: "TreeSitterJavaScriptLazy", type: .dynamic, targets: ["TreeSitterJavaScriptLazy"]),
+        .library(name: "TreeSitterTypeScriptLazy", type: .dynamic, targets: ["TreeSitterTypeScriptLazy"]),
+        .library(name: "TreeSitterBashLazy",       type: .dynamic, targets: ["TreeSitterBashLazy"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-markdown.git", from: "0.3.0"),
@@ -89,6 +107,52 @@ let package = Package(
             name: "MarkdownViewer",
             dependencies: ["ViewerKit", "ViewerCore", "ViewerUI"]
         ),
+        // --- Lazy grammar wrappers ----------------------------------
+        // Each wrapper target compiles a one-file C shim that holds a
+        // keepalive reference to the upstream `tree_sitter_<x>` symbol
+        // (defeats `-dead_strip` of the parser archive members) and
+        // depends on the upstream grammar product. When SwiftPM links
+        // these into their corresponding `.dynamic` library product,
+        // the upstream parser.c objects are pulled into the dylib and
+        // the `tree_sitter_<x>` symbol becomes a dlsym target.
+        .target(
+            name: "TreeSitterXMLLazy",
+            dependencies: [
+                .product(name: "TreeSitterXML", package: "tree-sitter-xml"),
+            ],
+            path: "Sources/TreeSitterLazyWrappers/TreeSitterXMLLazy"
+        ),
+        .target(
+            name: "TreeSitterPythonLazy",
+            dependencies: [
+                .product(name: "TreeSitterPython", package: "tree-sitter-python"),
+                "CTSPatchPython",
+            ],
+            path: "Sources/TreeSitterLazyWrappers/TreeSitterPythonLazy"
+        ),
+        .target(
+            name: "TreeSitterJavaScriptLazy",
+            dependencies: [
+                .product(name: "TreeSitterJavaScript", package: "tree-sitter-javascript"),
+                "CTSPatchJavaScript",
+            ],
+            path: "Sources/TreeSitterLazyWrappers/TreeSitterJavaScriptLazy"
+        ),
+        .target(
+            name: "TreeSitterTypeScriptLazy",
+            dependencies: [
+                .product(name: "TreeSitterTypeScript", package: "tree-sitter-typescript"),
+            ],
+            path: "Sources/TreeSitterLazyWrappers/TreeSitterTypeScriptLazy"
+        ),
+        .target(
+            name: "TreeSitterBashLazy",
+            dependencies: [
+                .product(name: "TreeSitterBash", package: "tree-sitter-bash"),
+            ],
+            path: "Sources/TreeSitterLazyWrappers/TreeSitterBashLazy"
+        ),
+
         .testTarget(name: "ViewerKitTests", dependencies: ["ViewerKit"]),
         .testTarget(
             name: "ViewerCoreTests",

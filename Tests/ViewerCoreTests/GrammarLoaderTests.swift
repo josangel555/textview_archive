@@ -68,6 +68,43 @@ final class GrammarLoaderTests: XCTestCase {
         XCTAssertNil(second)
     }
 
+    func testDlopenPathResolvesXMLDylib() throws {
+        // End-to-end exercise of the dlopen path against a lazy dylib
+        // SwiftPM built into `.build/<config>/`. If this passes, we
+        // know: (a) the wrapper target's `tree_sitter_xml` symbol is
+        // exported, (b) `GRAMMAR_DYLIB_DIR` override path hits,
+        // (c) the function-pointer cast returns a non-null grammar.
+        // This is the test that proves Phase 2 plumbing is real.
+        //
+        // The xctest binary lives in `.build/<arch>/<config>/Foo.xctest/
+        // Contents/MacOS/Foo`, and the dylibs live in
+        // `.build/<arch>/<config>/`. The exec-sibling search doesn't
+        // hit because the xctest bundle gets in the way; we point the
+        // loader at the right dir via the env override path that
+        // exists exactly for this case.
+        // `Bundle.main` under xctest is Xcode itself, so we anchor on
+        // the test bundle's path instead. testBundle.bundlePath ends
+        // at `<config>/Foo.xctest`; the dylibs sit one directory up.
+        let testBundle = Bundle(for: type(of: self))
+        let dylibDir = (testBundle.bundlePath as NSString)
+            .deletingLastPathComponent
+        let candidate = (dylibDir as NSString)
+            .appendingPathComponent("libTreeSitterXMLLazy.dylib")
+        guard FileManager.default.fileExists(atPath: candidate) else {
+            throw XCTSkip("XML lazy dylib not at \(candidate) — Phase 2 build skipped?")
+        }
+        setenv("GRAMMAR_DYLIB_DIR", dylibDir, 1)
+        defer { unsetenv("GRAMMAR_DYLIB_DIR") }
+        GrammarLoader._resetForTesting()
+
+        guard let language = GrammarLoader.load(.xml) else {
+            XCTFail("dlopen failed even though dylib exists at \(candidate)")
+            return
+        }
+        let parser = Parser()
+        XCTAssertNoThrow(try parser.setLanguage(language))
+    }
+
     func testInjectedLanguageHitsCache() throws {
         // Manufacture a placeholder Language via a known-good grammar
         // (TreeSitterJSON is statically linked into the test target as
