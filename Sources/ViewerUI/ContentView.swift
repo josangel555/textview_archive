@@ -150,40 +150,16 @@ public struct ContentView: View {
             DiffView(text: file.contents, doc: model)
         } else if (category == .markdown && model.currentViewMode == .rendered)
                     || (category == .mermaid && model.currentViewMode == .rendered) {
-            // A `.mmd`/`.mermaid` standalone file becomes a synthesized
-            // single-fence markdown document, then rides the same WebView
-            // path. The wrapper costs 14 bytes; we re-use the entire
-            // mermaid pipeline (intercept → host element → shim).
-            let renderedContents: String = {
-                if category == .mermaid {
-                    return "```mermaid\n\(file.contents)\n```\n"
-                }
-                return file.contents
-            }()
-            VStack(spacing: 0) {
-                if model.isRenderedFindBarPresented {
-                    MarkdownFindBar(model: model)
-                }
-                MarkdownRenderedView(
-                    html: model.renderedHTML(
-                        forURL: file.url,
-                        contents: renderedContents,
-                        renderer: renderer,
-                        stylesheet: stylesheet
-                    ),
-                    baseURL: file.url.deletingLastPathComponent(),
-                    zoom: model.zoom,
-                    findQuery: model.renderedFindQuery,
-                    findCaseSensitive: model.renderedFindCaseSensitive,
-                    findNextNonce: model.renderedFindNextRequest,
-                    findPrevNonce: model.renderedFindPrevRequest,
-                    onFindResult: { matched in
-                        Task { @MainActor in model.renderedFindMatched = matched }
-                    },
-                    onFindSummary: { summary in
-                        Task { @MainActor in model.setRenderedFindMatchSummary(summary) }
-                    }
-                )
+            // Soft cap on rendered-markdown size. The parser → HTML →
+            // WKWebView pipeline transiently allocates a few multiples
+            // of input size (AST + emitted HTML + DOM in the WebContent
+            // process). On a 50 MB markdown that's hundreds of MB. Above
+            // the cap, fall back to a placeholder that points the user
+            // at source mode (still navigable, no rendering attempted).
+            if file.byteCount > markdownRenderMaxBytes {
+                LargeMarkdownPlaceholderView(file: file, model: model)
+            } else {
+                renderedMarkdownView(for: file, category: category)
             }
         } else {
             let displayed = model.displayText(for: file)
@@ -239,6 +215,85 @@ public struct ContentView: View {
                 }
             }
         }
+    }
+
+    /// Rendered-markdown branch extracted so the size-cap fork stays
+    /// readable. Mermaid standalone files synthesize a single-fence
+    /// markdown document, then ride the same WebView path.
+    @ViewBuilder
+    private func renderedMarkdownView(
+        for file: TextFile, category: FileCategory
+    ) -> some View {
+        let renderedContents: String = {
+            if category == .mermaid {
+                return "```mermaid\n\(file.contents)\n```\n"
+            }
+            return file.contents
+        }()
+        VStack(spacing: 0) {
+            if model.isRenderedFindBarPresented {
+                MarkdownFindBar(model: model)
+            }
+            MarkdownRenderedView(
+                html: model.renderedHTML(
+                    forURL: file.url,
+                    contents: renderedContents,
+                    renderer: renderer,
+                    stylesheet: stylesheet
+                ),
+                baseURL: file.url.deletingLastPathComponent(),
+                zoom: model.zoom,
+                findQuery: model.renderedFindQuery,
+                findCaseSensitive: model.renderedFindCaseSensitive,
+                findNextNonce: model.renderedFindNextRequest,
+                findPrevNonce: model.renderedFindPrevRequest,
+                onFindResult: { matched in
+                    Task { @MainActor in model.renderedFindMatched = matched }
+                },
+                onFindSummary: { summary in
+                    Task { @MainActor in model.setRenderedFindMatchSummary(summary) }
+                }
+            )
+        }
+    }
+}
+
+/// Shown for markdown documents whose source exceeds
+/// `markdownRenderMaxBytes`. Rendering a multi-MB markdown through the
+/// swift-markdown parser → HTMLRenderer → WKWebView pipeline allocates
+/// a few multiples of input size transiently and can spike memory by
+/// hundreds of MB. Above the cap we surface source view instead.
+struct LargeMarkdownPlaceholderView: View {
+    let file: TextFile
+    @ObservedObject var model: DocumentModel
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "doc.text")
+                .font(.system(size: 48, weight: .light))
+                .foregroundStyle(.tertiary)
+            Text("Markdown too large to render")
+                .font(.title3)
+            Text("This file is \(byteString(file.byteCount)). " +
+                 "Rendered mode is capped at \(byteString(markdownRenderMaxBytes)) " +
+                 "to avoid multi-hundred-MB transient allocations through the " +
+                 "parser → HTML → WebView pipeline.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 460)
+            Button("View as Source") {
+                model.setCurrentViewMode(.source)
+            }
+            .controlSize(.large)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(40)
+    }
+
+    private func byteString(_ bytes: Int) -> String {
+        let mb = Double(bytes) / 1_048_576.0
+        return String(format: "%.1f MB", mb)
     }
 }
 

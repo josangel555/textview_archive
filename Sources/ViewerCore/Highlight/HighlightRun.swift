@@ -46,3 +46,15 @@ public enum TokenKind: String, Sendable, CaseIterable, Codable {
 /// were observed to crawl in source mode (the full pipeline cost
 /// per render: paintOver canvas alloc + N×addAttribute + layout).
 public let highlightMaxBytes: Int = 512 * 1024
+
+/// Soft cap on markdown source size for rendered-mode display. Above
+/// this size the swift-markdown parse + HTML serialization + WKWebView
+/// loadHTMLString pipeline transiently allocates several multiples of
+/// the input (parser AST + N×inline strings + emitted HTML + DOM in
+/// the WebContent process). A 58 MB markdown file rendered this way
+/// can spike memory by hundreds of MB.
+///
+/// Above this cap, rendered mode shows a placeholder pointing the user
+/// at source mode. They can still read the file; we just don't pretend
+/// to render arbitrary-size documents.
+public let markdownRenderMaxBytes: Int = 4 * 1024 * 1024
