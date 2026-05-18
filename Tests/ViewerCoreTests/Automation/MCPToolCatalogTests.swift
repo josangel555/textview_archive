@@ -55,12 +55,14 @@ final class FakeAutomationHost: AutomationHost {
 @MainActor
 final class MCPToolCatalogTests: XCTestCase {
 
-    private var host: FakeAutomationHost!
-
-    override func setUp() {
-        super.setUp()
-        host = FakeAutomationHost()
-    }
+    // Lazy initialization sidesteps the Swift-6.1-vs-6.3 setUp
+    // isolation divergence: 6.1 (VM canary) keeps `override func
+    // setUp()` nonisolated even when the class is `@MainActor`, so
+    // assignment to a MainActor-isolated stored property is
+    // rejected. The async `setUp() async throws` variant has its
+    // own non-Sendable `super` send. A lazy var owned by the
+    // MainActor-isolated class avoids both pitfalls.
+    private lazy var host: FakeAutomationHost = FakeAutomationHost()
 
     // MARK: - Catalog
 
