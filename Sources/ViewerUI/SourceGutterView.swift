@@ -74,6 +74,15 @@ struct SourceGutterView: View {
                 ofSize: max(10, fontSize - 3), weight: .regular
             )
             let textColor = NSColor(theme.gutterText)
+            // Monospace digit advance is constant per (font); the only
+            // varying input is digit-count per line number. Precompute
+            // glyph-size-per-digit-count once per Canvas draw so the
+            // per-line `NSString.size(withAttributes:)` syscall is
+            // replaced with array lookup (was firing 50× per scroll
+            // tick × per selection change on long files).
+            let labelSizes = Self.labelSizes(
+                upTo: lastLine, font: font, textColor: textColor
+            )
             for n in firstLine...lastLine {
                 // y for line N (relative to documentView origin):
                 //   inset + (N-1)*lh
@@ -116,12 +125,22 @@ struct SourceGutterView: View {
                     context.fill(Path(ellipseIn: dotRect), with: .color(.yellow))
                 }
 
-                let label = "\(n)" as NSString
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .font: font,
-                    .foregroundColor: textColor,
-                ]
-                let labelSize = label.size(withAttributes: attrs)
+                // O(1) lookup — `labelSizes` is indexed by digit count
+                // (1-based; size [0] is unused). Falls back to NSString
+                // measurement only on truly enormous line counts past
+                // the cache's precomputed range.
+                let digitCount = Self.digitCount(n)
+                let labelSize: CGSize
+                if digitCount < labelSizes.count {
+                    labelSize = labelSizes[digitCount]
+                } else {
+                    let label = "\(n)" as NSString
+                    let attrs: [NSAttributedString.Key: Any] = [
+                        .font: font,
+                        .foregroundColor: textColor,
+                    ]
+                    labelSize = label.size(withAttributes: attrs)
+                }
                 let x = size.width - labelSize.width - 6
                 context.draw(
                     Text(AttributedString("\(n)"))
@@ -136,6 +155,41 @@ struct SourceGutterView: View {
         .frame(width: width)
         .accessibilityIdentifier("mdv.sourceGutter")
         .accessibilityLabel(gutterAccessibilityLabel)
+    }
+
+    /// Build a digit-count → label size lookup. Index 0 is unused;
+    /// indexes 1..maxDigits cover line numbers 1, 10, 100, etc.
+    /// Re-measured per Canvas draw rather than cached statically
+    /// because font, fontSize, and color can change with theme/zoom.
+    private static func labelSizes(
+        upTo lastLine: Int,
+        font: NSFont,
+        textColor: NSColor
+    ) -> [CGSize] {
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: textColor,
+        ]
+        let maxDigits = digitCount(lastLine)
+        var sizes: [CGSize] = [.zero]
+        sizes.reserveCapacity(maxDigits + 1)
+        var sample = ""
+        for _ in 0..<maxDigits {
+            sample.append("8")  // worst-case glyph width for monospace
+            sizes.append((sample as NSString).size(withAttributes: attrs))
+        }
+        return sizes
+    }
+
+    @inline(__always)
+    private static func digitCount(_ n: Int) -> Int {
+        if n < 10        { return 1 }
+        if n < 100       { return 2 }
+        if n < 1_000     { return 3 }
+        if n < 10_000    { return 4 }
+        if n < 100_000   { return 5 }
+        if n < 1_000_000 { return 6 }
+        return String(n).count
     }
 
     /// VoiceOver-readable summary of what the gutter is showing.
