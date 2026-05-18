@@ -66,7 +66,23 @@ Background agents working in isolated git worktrees off the main
 repo. Each branch is reviewable independently before deciding whether
 to land.
 
-## Worktrees
+## Worktrees (current)
+
+| Worktree path | Branch | Purpose |
+|---|---|---|
+| `markdown_viewer/` | `main` | Production line — TreeSitter / MCP / Walkthrough / LSP v1 / Plugins v1 all merged |
+| `_feat_sessions_v1/` | `feat/sessions-v1` | Second-pass agent working on tests + migration + menu (stalled previously; in progress) |
+| `_feat_code_folding/` | `feat/code-folding` | New agent implementing syntax-aware code folding per design doc |
+| `_poc_sessions/` | `poc/sessions` | Original research PoC — kept for reference |
+| `_poc_plugins/` | `poc/plugins` | Original research PoC — kept for reference |
+| `_poc_lsp/` | `poc/lsp` | Original research PoC — kept for reference |
+
+Worktrees for the 5 merged branches (`feat/treesitter-lazyload`,
+`feat/mcp-stdio`, `feat/walkthrough-ui`, `feat/lsp-v1`,
+`feat/plugins-v1`) were pruned after merge. The branches themselves
+still exist in `git branch -a`.
+
+## Worktree timeline (history)
 
 | Branch | Worktree path | Scope | Status |
 |---|---|---|---|
