@@ -213,7 +213,25 @@ public final class SidebarModel: ObservableObject {
     }
 
     public func gitStatus(for url: URL) -> GitStatusEntry.Status? {
-        gitStatuses[url.standardizedFileURL.resolvingSymlinksInPath()]
+        gitStatuses[normalizedForGit(url)]
+    }
+
+    /// `resolvingSymlinksInPath()` is a `realpath` syscall. Called
+    /// per visible sidebar row per body re-eval, on a 200-row tree
+    /// this fired hundreds of stats per redraw. Cache the input→
+    /// resolved mapping; entries are cleared whenever the sidebar
+    /// root or git status map churns (callers set both at once).
+    private var normalizationCache: [URL: URL] = [:]
+    private func normalizedForGit(_ url: URL) -> URL {
+        if let hit = normalizationCache[url] { return hit }
+        let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
+        // Cap the dict size; sidebar churns row URLs as it scrolls,
+        // but the visible set + recently-scrolled-out is bounded.
+        if normalizationCache.count > 2048 {
+            normalizationCache.removeAll(keepingCapacity: true)
+        }
+        normalizationCache[url] = resolved
+        return resolved
     }
 
     public func refreshGitStatus() {
