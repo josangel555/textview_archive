@@ -11,7 +11,7 @@ to land.
 | `poc/sessions` | `/Users/me/Documents/workspaces/claude/_poc_sessions` | PoC: tabs-within-tabs | **Done** — 26 tests pass |
 | `poc/plugins` | `/Users/me/Documents/workspaces/claude/_poc_plugins` | PoC: plugin v1 surface | **Done** — 18 tests pass |
 | `poc/lsp` | `/Users/me/Documents/workspaces/claude/_poc_lsp` | PoC: SourceKit-LSP integration | **Done** — 19 tests pass (incl. real sourcekit-lsp smoke) |
-| `feat/treesitter-lazyload` | `/Users/me/Documents/workspaces/claude/_feat_treesitter` | TreeSitter lazy-grammar refactor + 6 new langs | Running |
+| `feat/treesitter-lazyload` | `/Users/me/Documents/workspaces/claude/_feat_treesitter` | TreeSitter lazy-grammar refactor + 6 new langs | **Done** — all 6 phases, 55 tests pass |
 | `feat/mcp-stdio` | `/Users/me/Documents/workspaces/claude/_feat_mcp` | MCP roll-our-own stdio JSON-RPC server | **Done** — 51 tests pass + manual e2e verified |
 | `feat/walkthrough-ui` | `/Users/me/Documents/workspaces/claude/_feat_walkthrough_ui` | Walkthrough player UI (per user mock) | **Done** — 22 tests pass, end-to-end sample verified |
 
@@ -275,6 +275,111 @@ new dependencies.** Bundle delta: +492 KB debug binary.
 → {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"current_state","arguments":{}}}
 ← {content:[{text:"{...}",type:"text"}], isError:false}
 ```
+
+## TreeSitter lazy-load summary (already in `feat/treesitter-lazyload`)
+
+**6 atomic commits**, one per design-doc phase. **No push.** All 55
+TreeSitter-touching tests pass on host. Build clean.
+
+### Per-phase status
+
+| Phase | Status |
+|---|---|
+| 1: `GrammarLoader.swift` scaffold | ✓ |
+| 2: Dynamic library products for XML/Python/JS/TS/Bash | ✓ |
+| 3: `build-app.sh` dylib copy + sign | ✓ (codesign gotcha — see below) |
+| 4: `TreeSitterEngine` migration | ✓ |
+| 5: +6 new grammars (Java/C/C++/C#/Rust/Lua) | ✓ |
+| 6: `EXEC_BUDGET_MB=15` flipped on by default | ✓ |
+
+### Bundle sizes (release)
+
+| | Before | After | Δ |
+|---|---:|---:|---:|
+| **Total** | 18 MB | 31 MB | +13 MB (6 new languages) |
+| **Main exec** | 15 MB | 11 MB | **−4 MB** (eager-static deps trimmed) |
+| **Frameworks/** | 0 | 16 MB | +16 MB (11 dylibs, none resident at launch) |
+
+The total is over the 25 MB cap from before, but the new caps are
+35 MB total / 15 MB exec — both pass.
+
+### Per-dylib sizes (release, arm64)
+
+| Grammar | Size | Grammar | Size |
+|---|---:|---|---:|
+| XML | 116K | Java | 451K |
+| Lua | 99K | Python | 484K |
+| JS | 452K | C | 659K |
+| Rust | 1.1M | Bash | 1.3M |
+| TS | 2.8M | C++ | 3.3M |
+| C# | **5.1M** | | |
+
+**C# is the surprise** — 5.1 MB at release vs 2.0 MB design-doc
+estimate. Cheap because lazy-loaded only on first `.cs` open.
+
+### Tests (host-side, filtered — no UI)
+
+- `ViewerKitTests`: 25/25
+- `ViewerCoreTests.GrammarLoaderTests`: 6/6 (incl. end-to-end
+  wrapper-symbol → dlopen → dlsym → `Language` pipeline)
+- `ViewerCoreTests.TreeSitterEngineSmokeTests`: 3/3 (covers all 14
+  grammars)
+- `ViewerCoreTests.TreeSitterEngineGoldenTests`: 9/9
+- `ViewerCoreTests.TreeSitterPaintOverTests`: 12/12
+
+### Answers to the design-doc open questions
+
+1. **`LD_RUNPATH_SEARCH_PATHS` with SwiftPM dylibs** — out of the
+   box, SwiftPM-built dylibs use bare `install_name`. Loader doesn't
+   need rpath (absolute dlopen). Added `install_name_tool -id @rpath/...`
+   + `-add_rpath @executable_path/../Frameworks` anyway because the
+   plugin loader will want bare-name dlopen.
+2. **`CTSPatchPython` / `CTSPatchJavaScript` survive dynamic linkage**
+   — yes. Now dependencies of `TreeSitterPythonLazy` /
+   `TreeSitterJavaScriptLazy`. Lua needed a new sibling `CTSPatchLua`
+   (same upstream `FileManager.fileExists`-against-CWD bug).
+3. **Actual bundle delta** — 11.3 MB for the 6 new grammars (estimate
+   was 9.8 MB). Almost entirely C# variance.
+
+### Unexpected gotcha — codesign + SwiftPM resource bundles
+
+Per-dylib `codesign --options runtime` (the nominally-preferred
+direction since `--deep` is deprecation-flagged) walked into SPM
+resource bundles next to each dylib and stamped
+`com.apple.FinderInfo`, which then tripped the bundle's own no-detritus
+check at outer-sign time. Several `xattr -dr` attempts didn't prevent
+re-introduction. **Reverted to single `codesign --deep` pass.** Works,
+but flagged for revisit before shipping with Developer ID + notarization
+(where `--deep` is explicitly discouraged).
+
+### Branch: 6 commits ahead of `main`. Not pushed.
+
+```
+feat/treesitter-lazyload
+  ↑ Phase 6: EXEC_BUDGET_MB=15 default in build-app.sh
+  ↑ Phase 5: +6 new grammars (Java/C/C++/C#/Rust/Lua) + CTSPatchLua
+  ↑ Phase 4: TreeSitterEngine migrates non-keeplist to GrammarLoader
+  ↑ Phase 3: build-app.sh dylib copy + codesign + install_name_tool
+  ↑ Phase 2: Package.swift restructure — dynamic library products
+  ↑ Phase 1: GrammarLoader scaffold + tests
+main (cd9c761)
+```
+
+## All 6 agents done
+
+The branches are reviewable independently. Recommended order to
+merge if landing all of them:
+
+1. `feat/treesitter-lazyload` — foundational, touches Package.swift.
+   Merge first.
+2. `feat/mcp-stdio` — additive, no Package.swift changes. Easy review.
+3. `feat/walkthrough-ui` — additive on top of the existing
+   Walkthrough engine. Easy review.
+4. `poc/sessions`, `poc/plugins`, `poc/lsp` — PoCs, NOT meant to
+   land as-is. Lift the data model + tests, redo the UI seams with
+   the design-doc gaps incorporated.
+
+Total new code across all branches: roughly **5,000 lines** + **141 new tests**.
 
 ## Cleanup when done reviewing
 
