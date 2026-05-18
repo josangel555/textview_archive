@@ -16,6 +16,17 @@ final class GrammarLoaderTests: XCTestCase {
         GrammarLoader._resetForTesting()
     }
 
+    /// Reset between cases too — `testMissingDylibReturnsNil` and
+    /// `testFailureIsMemoized` install a negative-cache entry for
+    /// `.rust` that would otherwise leak into the smoke tests below
+    /// (which run after this suite in alphabetical order) and trip
+    /// `testEachLanguageProducesRuns`.
+    override func tearDown() {
+        unsetenv("GRAMMAR_DYLIB_DIR")
+        GrammarLoader._resetForTesting()
+        super.tearDown()
+    }
+
     func testCSymbolNamesMatchUpstreamConvention() {
         // Canonical names from the upstream grammars' headers.
         // tree-sitter-cpp exports `tree_sitter_cpp` (not `tree_sitter_c++`),
