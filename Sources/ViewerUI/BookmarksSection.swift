@@ -51,11 +51,11 @@ private struct BookmarkRow: View {
     let entry: BookmarkEntry
     @ObservedObject var model: DocumentModel
 
-    private var isFolder: Bool {
-        var isDir: ObjCBool = false
-        FileManager.default.fileExists(atPath: entry.url.path, isDirectory: &isDir)
-        return isDir.boolValue
-    }
+    /// `FileManager.fileExists` is a syscall. As a computed property
+    /// this fired per row per body re-eval (every model mutation —
+    /// every keystroke in a focused find bar). Cache the result on
+    /// `.onAppear`; the bookmark target is stable for the row's life.
+    @State private var isFolder: Bool = false
 
     private var isCurrent: Bool { model.currentURL == entry.url }
 
@@ -98,5 +98,12 @@ private struct BookmarkRow: View {
                 NSWorkspace.shared.activateFileViewerSelecting([entry.url])
             }
         }
+        .onAppear { isFolder = Self.statIsFolder(entry.url) }
+    }
+
+    private static func statIsFolder(_ url: URL) -> Bool {
+        var isDir: ObjCBool = false
+        FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+        return isDir.boolValue
     }
 }
