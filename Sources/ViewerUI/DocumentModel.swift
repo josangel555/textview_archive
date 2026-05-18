@@ -29,6 +29,10 @@ public final class DocumentModel: ObservableObject {
         if csvFilterStates[id] != state { csvFilterStates[id] = state }
     }
 
+    public func clearCsvFilterState(forTabID id: UUID) {
+        csvFilterStates.removeValue(forKey: id)
+    }
+
     public struct CSVFilterState: Equatable, Sendable {
         public var globalQuery: String = ""
         public var globalScope: Int? = nil

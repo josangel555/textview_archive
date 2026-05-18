@@ -100,6 +100,7 @@ public final class SidebarModel: ObservableObject {
                 let kids = (try? service.children(of: d, includeHidden: includeHidden)) ?? []
                 if kids != childrenCache[d] {
                     childrenCache[d] = kids
+                    sortedCache = sortedCache.filter { $0.key.url != d }
                     touched = true
                 }
             }
@@ -299,15 +300,40 @@ public final class SidebarModel: ObservableObject {
     }
 
     /// Cache-only read. Safe to call from SwiftUI bodies; never does IO.
-    /// Applies the current sort mode each call — cheap (small N per
-    /// directory) and avoids re-cache-invalidation on sort changes.
+    /// Result is cached per `(url, sortMode, includeHidden, raw-count)`.
+    /// Without this, the FILES tree re-sorted every expanded directory
+    /// per body re-eval — at ~30 visible rows + 5–10 expanded dirs ×
+    /// 200 entries that's 10K compares per redraw on a wide repo.
     public func children(of url: URL) -> [FileNode] {
-        let raw = childrenCache[normalize(url)] ?? []
-        return sortChildren(raw)
+        let key = normalize(url)
+        let raw = childrenCache[key] ?? []
+        let cacheKey = SortedKey(
+            url: key, sortMode: sortMode,
+            includeHidden: includeHidden, rawCount: raw.count
+        )
+        if let hit = sortedCache[cacheKey] { return hit }
+        let result = sortChildren(raw)
+        // Bound the sorted cache. Real working set is the open tree.
+        if sortedCache.count > 512 {
+            sortedCache.removeAll(keepingCapacity: true)
+        }
+        sortedCache[cacheKey] = result
+        return result
     }
 
+    private struct SortedKey: Hashable {
+        let url: URL
+        let sortMode: FolderSortMode
+        let includeHidden: Bool
+        let rawCount: Int
+    }
+    private var sortedCache: [SortedKey: [FileNode]] = [:]
+
     @Published public var sortMode: FolderSortMode = .name {
-        didSet { invalidateFlatCache() }
+        didSet {
+            sortedCache.removeAll(keepingCapacity: true)
+            invalidateFlatCache()
+        }
     }
 
     public enum FolderSortMode: String, CaseIterable, Identifiable, Sendable {
@@ -401,5 +427,6 @@ public final class SidebarModel: ObservableObject {
 
     public func clearCache() {
         childrenCache.removeAll()
+        sortedCache.removeAll()
     }
 }

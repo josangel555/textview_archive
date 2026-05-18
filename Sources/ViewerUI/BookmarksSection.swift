@@ -137,8 +137,11 @@ struct BookmarksSection: View {
         }
         switch sortMode {
         case .recent:
-            // model.bookmarks order = insertion (most recent first).
-            return allowed
+            // Sort by addedAt descending. Was relying on the store's
+            // array order, but BookmarksStore.move(from:to:) lets the
+            // user reorder manually — so the store's order is "user-
+            // arranged", not "most recent."
+            return allowed.sorted { $0.addedAt > $1.addedAt }
         case .name:
             return allowed.sorted {
                 $0.displayName.localizedCaseInsensitiveCompare($1.displayName)

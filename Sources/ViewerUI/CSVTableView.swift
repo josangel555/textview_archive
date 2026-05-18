@@ -130,9 +130,12 @@ struct CSVTableView: View {
     private func scheduleFilterCommit(_ filter: CSVFilter) {
         debounceTask?.cancel()
         // If the filter cleared completely, commit immediately so the
-        // clear button feels instant.
+        // clear button feels instant. Drop the cancelled handle too,
+        // otherwise a previously-scheduled non-empty filter could fire
+        // after the clear and briefly re-apply it.
         if filter.isEmpty {
             debouncedFilter = filter
+            debounceTask = nil
             return
         }
         debounceTask = Task { @MainActor in

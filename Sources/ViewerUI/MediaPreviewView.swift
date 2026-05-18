@@ -57,6 +57,9 @@ struct ImagePreview: View {
     @State private var pixelSize: NSSize = .zero
     @State private var didFit: Bool = false
     @State private var siblings: [URL] = []
+    /// Memo for currentIndex — computed once per (siblings, url) pair
+    /// rather than O(N) per body re-eval.
+    @State private var currentIndex: Int = 0
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -79,11 +82,19 @@ struct ImagePreview: View {
         .focused($focused)
         .onAppear {
             focused = true
-            siblings = Self.imageSiblings(of: url)
+            loadSiblings(parent: url.deletingLastPathComponent(),
+                         current: url)
         }
         .onChange(of: url) { _, new in
             didFit = false
-            siblings = Self.imageSiblings(of: new)
+            let newParent = new.deletingLastPathComponent()
+            // Same parent dir? Just re-locate within the cached list.
+            if !siblings.isEmpty,
+               siblings.first?.deletingLastPathComponent() == newParent {
+                currentIndex = siblings.firstIndex(of: new) ?? 0
+            } else {
+                loadSiblings(parent: newParent, current: new)
+            }
         }
         .onKeyPress(.leftArrow)  { navigate(by: -1); return .handled }
         .onKeyPress(.rightArrow) { navigate(by: +1); return .handled }
@@ -148,16 +159,35 @@ struct ImagePreview: View {
         .overlay(Capsule().stroke(Palette.separator, lineWidth: 0.5))
     }
 
-    private var currentIndex: Int {
-        siblings.firstIndex(of: url) ?? 0
-    }
     private var prevURL: URL? {
-        let i = currentIndex
-        return i > 0 ? siblings[i - 1] : nil
+        currentIndex > 0 ? siblings[currentIndex - 1] : nil
     }
     private var nextURL: URL? {
-        let i = currentIndex
-        return i + 1 < siblings.count ? siblings[i + 1] : nil
+        currentIndex + 1 < siblings.count
+            ? siblings[currentIndex + 1] : nil
+    }
+
+    /// Run the sibling enumeration off-main and cache it. The previous
+    /// code did `contentsOfDirectory` + N FileTypeDetector calls on
+    /// `.onAppear` (main thread, synchronous) — for a Pictures folder
+    /// with thousands of images that froze the UI on every open.
+    private func loadSiblings(parent: URL, current: URL) {
+        // Seed with at least the current URL so prev/next disable
+        // correctly while enumeration is in flight.
+        if siblings.isEmpty {
+            siblings = [current]
+            currentIndex = 0
+        }
+        Task.detached(priority: .userInitiated) {
+            let list = ImagePreview.imageSiblings(of: current)
+            await MainActor.run {
+                // Bail if the user navigated to a different folder
+                // while we were enumerating.
+                guard current.deletingLastPathComponent() == parent else { return }
+                siblings = list
+                currentIndex = list.firstIndex(of: current) ?? 0
+            }
+        }
     }
 
     private func navigate(by delta: Int) {
@@ -177,9 +207,9 @@ struct ImagePreview: View {
         magnification = 0
     }
 
-    /// Enumerate image siblings in `url`'s parent directory. Cached
-    /// per-directory by `onAppear` / URL change. Hidden files skipped.
-    static func imageSiblings(of url: URL) -> [URL] {
+    /// Enumerate image siblings in `url`'s parent directory. Pure
+    /// function: safe to call off main. Hidden files skipped.
+    nonisolated static func imageSiblings(of url: URL) -> [URL] {
         let parent = url.deletingLastPathComponent()
         let fm = FileManager.default
         guard let entries = try? fm.contentsOfDirectory(
@@ -204,6 +234,16 @@ private struct ImageScrollHost: NSViewRepresentable {
     let magnification: CGFloat
     let onLoad: (NSSize) -> Void
 
+    /// Coordinator tracks the loaded URL so we know whether
+    /// `updateNSView` actually needs to swap the image. Was using
+    /// `NSImage.setName(url.path)` as a cache key — but that name
+    /// registers globally in `NSImage.imageNamed(_:)`, collides across
+    /// tabs viewing different images, and never frees.
+    final class Coordinator {
+        var lastURL: URL?
+    }
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
@@ -220,13 +260,13 @@ private struct ImageScrollHost: NSViewRepresentable {
         imageView.imageScaling = .scaleProportionallyUpOrDown
         imageView.imageAlignment = .alignCenter
         scroll.documentView = imageView
-        loadIfNeeded(into: imageView, url: url)
+        loadIfNeeded(into: imageView, url: url, coord: context.coordinator)
         return scroll
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         guard let iv = scroll.documentView as? CenteredImageView else { return }
-        loadIfNeeded(into: iv, url: url)
+        loadIfNeeded(into: iv, url: url, coord: context.coordinator)
         // SwiftUI side wants magnification = 0 to mean "fit to window".
         if magnification == 0 {
             applyFit(scroll: scroll, imageView: iv)
@@ -241,11 +281,12 @@ private struct ImageScrollHost: NSViewRepresentable {
         }
     }
 
-    private func loadIfNeeded(into iv: CenteredImageView, url: URL) {
-        if iv.image?.name() == url.path { return }
+    private func loadIfNeeded(into iv: CenteredImageView, url: URL,
+                              coord: Coordinator) {
+        if coord.lastURL == url, iv.image != nil { return }
         let fresh = NSImage(contentsOf: url)
         iv.image = fresh
-        fresh?.setName(url.path)
+        coord.lastURL = url
         if let img = fresh {
             iv.frame = NSRect(origin: .zero, size: img.size)
             onLoad(img.size)

@@ -26,11 +26,13 @@ struct SplitPaneView: View {
     let onClose: () -> Void
     @ObservedObject var model: DocumentModel
 
-    /// Stable pseudo-tab-id for CSV filter state in the split pane.
-    /// The split pane only shows one file at a time; reusing this
-    /// fixed id means the CSV filter state lives on the model under
-    /// this key for as long as the app runs.
-    private static let splitCSVTabID = UUID()
+    /// Per-instance pseudo-tab-id for CSV filter state. @State keeps
+    /// it stable across body re-renders for this SplitPaneView
+    /// lifetime; cleared on `.onDisappear` so the model's filter-state
+    /// map doesn't grow by 1 every time the user opens/closes splits.
+    /// Was a `static let UUID()` — that carried filter across files
+    /// and never freed.
+    @State private var splitCSVTabID: UUID = UUID()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -40,6 +42,10 @@ struct SplitPaneView: View {
         }
         .frame(minWidth: 200)
         .background(Palette.textBackground)
+        .onDisappear {
+            // Free the CSV filter slot keyed on this pane's pseudo-tab.
+            model.clearCsvFilterState(forTabID: splitCSVTabID)
+        }
     }
 
     private var header: some View {
@@ -108,7 +114,7 @@ struct SplitPaneView: View {
             } else if ext == "csv" || ext == "tsv" {
                 CSVTableView(text: file.contents,
                              model: model,
-                             tabID: Self.splitCSVTabID)
+                             tabID: splitCSVTabID)
             } else {
                 let lang = HighlightLanguage.detect(from: url)
                 TextDisplayView(
