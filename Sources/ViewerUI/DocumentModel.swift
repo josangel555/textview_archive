@@ -323,7 +323,19 @@ public final class DocumentModel: ObservableObject {
             ? url.path
             : url.lastPathComponent
         _ = bookmarksStore.toggle(url: url, displayName: name)
-        bookmarks = bookmarksStore.all(); invalidateBookmarkedLinesCache()
+        publishBookmarksChange()
+    }
+
+    /// Re-publish the `bookmarks` list from the store and invalidate
+    /// the per-URL cached set used by the source-view gutter. Call
+    /// this after any external mutation of `bookmarksStore` so the
+    /// SwiftUI bindings + gutter rebuild reflect the change. Public
+    /// so other dispatchers (walkthrough engine, MCP automation,
+    /// future plugin handlers) can mutate the store directly and
+    /// publish their writes without duplicating the boilerplate.
+    public func publishBookmarksChange() {
+        bookmarks = bookmarksStore.all()
+        invalidateBookmarkedLinesCache()
     }
 
     /// Remove a bookmark by URL.

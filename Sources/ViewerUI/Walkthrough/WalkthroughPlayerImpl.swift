@@ -151,22 +151,19 @@ public final class WalkthroughPlayerImpl: WalkthroughEngineDelegate {
 
         case .addBookmark(let p):
             guard let url = resolve(p.path) else { return }
+            // `BookmarksStore.add(url:line:)` is already idempotent
+            // (returns existing entry if present), so we can skip
+            // the open-tab-then-toggle dance the earlier version
+            // needed. Open the file anyway for visual continuity —
+            // the user expects to see the file they just bookmarked.
+            if !model.selectTab(forURL: url) { model.openPath(url) }
             if let line = p.line {
-                // The bookmark store API is "current tab + caret"; for
-                // walkthrough we open the file, scroll to the line,
-                // then toggle. Idempotent contract violation: if the
-                // line is already bookmarked we'd toggle it off. Use
-                // `toggle` only when we know it's not already there.
-                if !model.selectTab(forURL: url) { model.openPath(url) }
                 model.scrollSource(toLine: line)
-                if !model.bookmarkedLines(for: url).contains(line) {
-                    model.toggleCurrentLineBookmark()
-                }
+                model.bookmarksStore.add(url: url, line: line)
+                model.publishBookmarksChange()
             } else {
-                if !model.selectTab(forURL: url) { model.openPath(url) }
-                if !model.isCurrentTabBookmarked {
-                    model.toggleCurrentTabBookmark()
-                }
+                model.bookmarksStore.add(url: url)
+                model.publishBookmarksChange()
             }
 
         case .revealInSidebar(let p):
