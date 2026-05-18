@@ -24,6 +24,8 @@ public enum HighlightLanguage: String, Sendable, CaseIterable {
     case ruby
     case java
     case kotlin
+    case csharp
+    case lua
     case plainText = "plain"
 
     /// Best-effort detect from a file URL's extension. Falls back to
@@ -50,6 +52,8 @@ public enum HighlightLanguage: String, Sendable, CaseIterable {
         case "rb":                                     return .ruby
         case "java":                                   return .java
         case "kt", "kts":                              return .kotlin
+        case "cs":                                     return .csharp
+        case "lua":                                    return .lua
         default:                                       return .plainText
         }
     }
@@ -81,6 +85,8 @@ public enum HighlightLanguage: String, Sendable, CaseIterable {
         case "rb", "ruby":                         return .ruby
         case "java":                               return .java
         case "kt", "kotlin":                       return .kotlin
+        case "cs", "csharp", "c#":                 return .csharp
+        case "lua":                                return .lua
         default:                                   return .plainText
         }
     }
@@ -107,6 +113,8 @@ public enum HighlightLanguage: String, Sendable, CaseIterable {
         case .ruby:        return "Ruby"
         case .java:        return "Java"
         case .kotlin:      return "Kotlin"
+        case .csharp:      return "C#"
+        case .lua:         return "Lua"
         case .plainText:   return "Plain Text"
         }
     }
