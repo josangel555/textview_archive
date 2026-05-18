@@ -13,7 +13,8 @@ final class SidebarRevealTests: XCTestCase {
     private var leafFile: URL!
 
     override func setUp() async throws {
-        try await super.setUp()
+        // No super.setUp — Swift 6.1 strict concurrency rejects sending
+        // @MainActor self into non-isolated XCTestCase ancestor.
         let fm = FileManager.default
         tmpRoot = fm.temporaryDirectory
             .appendingPathComponent("SidebarRevealTests-\(UUID().uuidString)")
@@ -25,7 +26,6 @@ final class SidebarRevealTests: XCTestCase {
 
     override func tearDown() async throws {
         if let tmpRoot { try? FileManager.default.removeItem(at: tmpRoot) }
-        try await super.tearDown()
     }
 
     private func makeModel() -> DocumentModel {

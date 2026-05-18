@@ -5,6 +5,7 @@ import XCTest
 /// `NSRegularExpression` so the find bar's per-keystroke calls don't
 /// recompile. This test pins the cache behavior so an accidental
 /// removal would regress find-bar latency under sustained typing.
+@MainActor
 final class RegexCacheTests: XCTestCase {
 
     func test_repeated_compile_of_same_pattern_returns_same_object() {

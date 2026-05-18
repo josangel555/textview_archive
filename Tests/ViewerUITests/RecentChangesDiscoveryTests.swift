@@ -9,11 +9,15 @@ import XCTest
 ///
 /// `discoverRepo` is the pure helper that encodes the fallback rule.
 /// Test it directly with a temp git repo so the wiring stays honest.
+@MainActor
 final class RecentChangesDiscoveryTests: XCTestCase {
 
     private var tmp: URL!
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
+        // Don't call super — Swift 6.1 strict concurrency objects to
+        // sending @MainActor self into the non-isolated XCTestCase
+        // ancestor. XCTest's default setUp is a no-op anyway.
         guard FileManager.default.isExecutableFile(atPath: "/usr/bin/git") else {
             throw XCTSkip("/usr/bin/git not available")
         }
@@ -25,7 +29,7 @@ final class RecentChangesDiscoveryTests: XCTestCase {
         _ = try git(["config", "user.name", "t"])
     }
 
-    override func tearDownWithError() throws {
+    override func tearDown() async throws {
         try? FileManager.default.removeItem(at: tmp)
     }
 

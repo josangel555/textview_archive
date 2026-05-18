@@ -5,6 +5,7 @@ import XCTest
 /// (commit 2457015) shipped these untested; image/AV/PDF loaders rely
 /// on system frameworks we don't unit-test, but the filesystem and
 /// duration formatters are deterministic and easy to lock in.
+@MainActor
 final class MetadataPanelTests: XCTestCase {
 
     // MARK: - filesystemRows

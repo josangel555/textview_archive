@@ -9,6 +9,7 @@ import XCTest
 /// dedicated tests. Catching invalid-regex, multiline, and case-
 /// insensitive edge cases here is cheap; doing it through the UI is
 /// expensive.
+@MainActor
 final class TextSearchTests: XCTestCase {
 
     // MARK: - Empty inputs

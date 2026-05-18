@@ -33,6 +33,12 @@ public struct HTMLRenderer: Sendable {
                            extraStylesheet: String = "") -> String {
         let body = render(markdown)
         let csp = "default-src 'none'; img-src file: data:; style-src 'unsafe-inline'; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none';"
+        // Keep the single-stylesheet form byte-identical to the pre-mermaid
+        // output so existing tests (and CI snapshots, if any) don't churn.
+        // Only emit the extra stylesheet when a caller actually supplies one.
+        let styleBlock = extraStylesheet.isEmpty
+            ? "<style>\(stylesheet)</style>"
+            : "<style>\(stylesheet)\n\(extraStylesheet)</style>"
         return """
         <!DOCTYPE html>
         <html>
@@ -40,8 +46,7 @@ public struct HTMLRenderer: Sendable {
         <meta charset="utf-8">
         <meta http-equiv="Content-Security-Policy" content="\(csp)">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>\(stylesheet)
-        \(extraStylesheet)</style>
+        \(styleBlock)
         </head>
         <body>
         \(body)

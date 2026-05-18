@@ -4,6 +4,7 @@ import XCTest
 
 /// Pure unit tests for `GitStatusTab.group(_:)` — the staged / unstaged /
 /// untracked bucketing rules. Doesn't render any view.
+@MainActor
 final class GitStatusTabGroupingTests: XCTestCase {
 
     private func entry(_ x: Character, _ y: Character, _ path: String) -> GitClient.StatusEntry {
@@ -56,6 +57,7 @@ final class GitStatusTabGroupingTests: XCTestCase {
 }
 
 /// Coverage for the ssh → https URL transformation used by Remotes tab.
+@MainActor
 final class GitRemotesURLTests: XCTestCase {
 
     func test_https_passthrough() {
