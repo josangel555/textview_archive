@@ -29,7 +29,6 @@ struct BookmarksSection: View {
         VStack(spacing: 0) {
             headerRow
             if isExpanded {
-                filterRow
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(filtered) { entry in
@@ -52,6 +51,10 @@ struct BookmarksSection: View {
         .accessibilityIdentifier("mdv.bookmarks")
     }
 
+    /// Single-row header: chevron + label on the left, F/D/L filter
+    /// chips + count + sort menu all on the right. Compact enough to
+    /// reach without expanding the section first; matches the user's
+    /// preference for one-line section chrome.
     private var headerRow: some View {
         HStack(spacing: 4) {
             Button(action: { isExpanded.toggle() }) {
@@ -62,28 +65,18 @@ struct BookmarksSection: View {
                     Text("BOOKMARKS")
                         .font(.system(size: model.uiSize(10), weight: .semibold))
                         .foregroundStyle(.secondary)
-                    Spacer()
-                    Text("\(filtered.count) / \(model.bookmarks.count)")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.tertiary)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-    }
-
-    private var filterRow: some View {
-        HStack(spacing: 4) {
-            filterChip("F", isOn: $showFiles,
-                       help: "Show file bookmarks")
-            filterChip("D", isOn: $showFolders,
-                       help: "Show directory bookmarks")
-            filterChip("L", isOn: $showLines,
-                       help: "Show line bookmarks")
             Spacer(minLength: 6)
+            filterChip("F", isOn: $showFiles, help: "Show file bookmarks")
+            filterChip("D", isOn: $showFolders, help: "Show directory bookmarks")
+            filterChip("L", isOn: $showLines, help: "Show line bookmarks")
+            Text("\(filtered.count)/\(model.bookmarks.count)")
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(.tertiary)
+                .padding(.leading, 4)
             Menu {
                 ForEach(SortMode.allCases) { m in
                     Button {
@@ -98,20 +91,17 @@ struct BookmarksSection: View {
                     }
                 }
             } label: {
-                HStack(spacing: 3) {
-                    Text(sortMode.rawValue)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 8))
-                }
-                .font(.system(size: model.uiSize(10)))
-                .foregroundStyle(.secondary)
+                Image(systemName: "arrow.up.arrow.down")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
+            .help("Sort by \(sortMode.rawValue)")
             .accessibilityIdentifier("mdv.bookmarks.sort")
         }
         .padding(.horizontal, 10)
-        .padding(.bottom, 4)
+        .padding(.vertical, 4)
     }
 
     private func filterChip(_ label: String,
@@ -204,34 +194,33 @@ private struct BookmarkRow: View {
                     size: .tree
                 )
                 .frame(width: 16, height: 16)
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 4) {
-                        Text(entry.displayName)
-                            .font(.system(size: model.uiSize(12),
-                                          weight: isCurrent ? .semibold : .regular))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        if let line = entry.line {
-                            // Line bookmarks: show the line number as
-                            // a chip so the row reads "file.swift :42"
-                            // at a glance.
-                            Text(":\(line)")
-                                .font(.system(size: model.uiSize(10),
-                                              design: .monospaced))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    Text(Self.relativeDate(entry.addedAt))
-                        .font(.system(size: model.uiSize(9),
+                Text(entry.displayName)
+                    .font(.system(size: model.uiSize(12),
+                                  weight: isCurrent ? .semibold : .regular))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if let line = entry.line {
+                    // Line bookmarks: show the line number as a chip
+                    // so the row reads "file.swift :42" at a glance.
+                    Text(":\(line)")
+                        .font(.system(size: model.uiSize(10),
                                       design: .monospaced))
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
+                        .foregroundStyle(.secondary)
                 }
-                Spacer(minLength: 0)
+                Spacer(minLength: 6)
+                // Right-aligned relative date in the same row as the
+                // name. Tertiary color + small monospaced font so it
+                // reads as metadata, not content.
+                Text(Self.relativeDate(entry.addedAt))
+                    .font(.system(size: model.uiSize(10),
+                                  design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 2)
+            .frame(height: 22)
             .contentShape(Rectangle())
             .background(isCurrent ? Color.accentColor.opacity(0.18) : Color.clear)
         }
