@@ -84,7 +84,17 @@ is rough priority — most-asked-for first.
   5 decisions waiting (JSON vs YAML, transport, step taxonomy,
   persistence, branching).
 - **MCP automation surface.** Pending — design in `docs/AUTOMATION.md`.
-  3 decisions waiting (swift-mcp dep, bundle ID, opt-in TCP).
+  Research 2026-05-18 (background agent) on `modelcontextprotocol/
+  swift-sdk`: pre-1.0 (0.12.1, ~monthly breaking changes), 1.4k
+  stars, Apache-2.0, transitively pulls swift-nio (+~3-6 MB stripped
+  binary). Real-world adopters tend to ship it as a sidecar exe
+  rather than in-process (Chaintoutis Medium write-up). Alternative:
+  roll-our-own minimal stdio JSON-RPC server, ~500-800 LOC, zero
+  deps. Decision deferred: until we commit to one path, do NOT add
+  swift-mcp. Pre-work that's safe + useful: scaffold
+  `AutomationHost` protocol per AUTOMATION.md §7, make
+  `DocumentModel` conform; the protocol surface is dep-free and
+  unblocks either path.
 
 ## Deferred features
 
