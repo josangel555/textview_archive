@@ -349,6 +349,84 @@ public actor LSPPool {
         }
     }
 
+    // MARK: - Timed request wrappers
+
+    // Pool-routed request entry points. Callers that previously did
+    //   let client = try await pool.client(for: url)
+    //   let result = try await client.foo(...)
+    // should switch to `try await pool.foo(fileURL: url, ...)` so the
+    // diagnostics panel reflects live request counts and timings. The
+    // legacy `client(for:)` accessor is preserved for tests + code
+    // paths that need direct client access (e.g. shutdown).
+
+    public func documentSymbol(
+        fileURL: URL, token: LSPCancellationToken? = nil
+    ) async throws -> [LSPDocumentSymbol] {
+        let (client, key) = try await routedClient(for: fileURL)
+        let start = clock.now
+        do {
+            let result = try await client.documentSymbol(url: fileURL, token: token)
+            recordRequest(key: key, millis: millisElapsed(since: start))
+            return result
+        } catch {
+            recordCrash(key: key, error: "\(error)")
+            throw error
+        }
+    }
+
+    public func hover(
+        fileURL: URL, line: Int, character: Int,
+        token: LSPCancellationToken? = nil
+    ) async throws -> LSPHover? {
+        let (client, key) = try await routedClient(for: fileURL)
+        let start = clock.now
+        do {
+            let result = try await client.hover(
+                url: fileURL, line: line, character: character, token: token)
+            recordRequest(key: key, millis: millisElapsed(since: start))
+            return result
+        } catch {
+            recordCrash(key: key, error: "\(error)")
+            throw error
+        }
+    }
+
+    public func definition(
+        fileURL: URL, line: Int, character: Int,
+        token: LSPCancellationToken? = nil
+    ) async throws -> [LSPLocation] {
+        let (client, key) = try await routedClient(for: fileURL)
+        let start = clock.now
+        do {
+            let result = try await client.definition(
+                url: fileURL, line: line, character: character, token: token)
+            recordRequest(key: key, millis: millisElapsed(since: start))
+            return result
+        } catch {
+            recordCrash(key: key, error: "\(error)")
+            throw error
+        }
+    }
+
+    private func routedClient(for fileURL: URL) async throws -> (LSPClient, Key) {
+        guard let entry = registry.language(for: fileURL),
+              let root = entry.rootFinder(fileURL) else {
+            throw LSPError.serverBinaryNotFound(
+                "no LSP route for \(fileURL.path)")
+        }
+        let key = Key(language: entry.language, workspaceRoot: root)
+        let client = try await ensureLive(key: key, registry: entry)
+        return (client, key)
+    }
+
+    private func millisElapsed(since start: ContinuousClock.Instant) -> Double {
+        let delta = clock.now - start
+        // Duration → milliseconds. components.seconds + attoseconds/1e15.
+        let secs = Double(delta.components.seconds)
+        let attos = Double(delta.components.attoseconds)
+        return secs * 1000 + attos / 1e15
+    }
+
     /// Mark a key as crashed; bumps the counter and demotes to cold so
     /// the next acquire respawns with the backoff policy.
     func recordCrash(key: Key, error: String) {

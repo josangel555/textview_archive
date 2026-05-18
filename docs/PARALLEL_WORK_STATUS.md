@@ -15,6 +15,7 @@ PoC-hardening agents now running in fresh worktrees (`feat/lsp-v1`,
 | `feat/lsp-v1` | SourceKit-LSP integration: pool/cancel/restart/outline/hover popover/diagnostics | +33 (52 total LSP) |
 | `feat/plugins-v1` | Tier B subprocess host, env-scrub, audit log, permission-grant store + NSAlert prompt, Settings → Plugins pane, example Tier B plugin fixture | +30 (42 total Plugins) |
 | `feat/sessions-v1` | Phase 1: SessionSnapshot v2 + SessionStore (serial coalescer + flushSync) + SessionsCoordinator + SessionState. Legacy `_last.json` migration + compat-bridge write. File menu Session submenu + ⌃Tab + ⌃1-9 + ⇧⌘W. | +47 |
+| `feat/code-folding` | TreeSitter fold-region detection (6 priority langs), FoldLineMap (display ↔ original line mapping), FoldCommands (collapse/expand at-caret + all), FoldDisplay (ellipsis builder), gutter chevron column. **NSTextView storage swap + responder selectors deferred** (host-only constraint). | +36 |
 
 ## VM canary
 

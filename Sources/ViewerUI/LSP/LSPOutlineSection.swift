@@ -63,8 +63,9 @@ public final class LSPOutlineModel: ObservableObject {
                 // pool no-ops when the file isn't tracked.
                 try await pool.ensureOpened(fileURL: url, text: text)
                 try await pool.didChange(fileURL: url, text: text)
-                let client = try await pool.client(for: url)
-                let syms = try await client.documentSymbol(url: url)
+                // Pool-routed call records request count + latency for
+                // the diagnostics panel.
+                let syms = try await pool.documentSymbol(fileURL: url)
                 guard let self = self, self.currentFile == url else { return }
                 self.symbols = syms
                 self.isLoading = false

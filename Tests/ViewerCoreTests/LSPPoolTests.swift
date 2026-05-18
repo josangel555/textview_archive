@@ -71,6 +71,53 @@ final class LSPPoolTests: XCTestCase {
         await pool.closeAll() // no crash, no throw
     }
 
+    // MARK: - Pool-routed timed request methods
+
+    func test_documentSymbol_routedCall_throws_when_serverBinaryMissing() async {
+        let pool = LSPPool(registry: makeRegistryThatNeverSpawns())
+        do {
+            _ = try await pool.documentSymbol(
+                fileURL: URL(fileURLWithPath: "/tmp/x.swift"))
+            XCTFail("expected error")
+        } catch LSPError.serverBinaryNotFound {
+            // expected
+        } catch {
+            XCTFail("unexpected: \(error)")
+        }
+    }
+
+    func test_routedCall_failure_does_not_bump_requestCount() async {
+        // recordRequest must only fire on the success path; spawn-failure
+        // should leave the snapshot's request counter at zero.
+        let pool = LSPPool(registry: makeRegistryThatNeverSpawns())
+        _ = try? await pool.documentSymbol(
+            fileURL: URL(fileURLWithPath: "/tmp/x.swift"))
+        _ = try? await pool.hover(
+            fileURL: URL(fileURLWithPath: "/tmp/x.swift"),
+            line: 0, character: 0)
+        let snap = await pool.snapshot()
+        // We don't enforce snapshot.count here — the failure path may
+        // or may not keep an entry around. But any entry that exists
+        // must have requestCount == 0 (no successful request fired).
+        for s in snap {
+            XCTAssertEqual(s.status.requestCount, 0)
+        }
+    }
+
+    func test_routedCall_unknownExtension_throws() async {
+        let pool = LSPPool(registry: .default)
+        do {
+            _ = try await pool.hover(
+                fileURL: URL(fileURLWithPath: "/tmp/x.md"),
+                line: 0, character: 0)
+            XCTFail("expected error")
+        } catch LSPError.serverBinaryNotFound {
+            // expected — no LSP registered for .md
+        } catch {
+            XCTFail("unexpected: \(error)")
+        }
+    }
+
     func test_client_marks_dead_after_maxRestartAttempts() async {
         // With config maxRestartAttempts = 2, two failed spawns should
         // leave the key in dead-cooldown so the next call throws
