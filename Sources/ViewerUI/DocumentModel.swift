@@ -14,6 +14,35 @@ public final class DocumentModel: ObservableObject {
     /// this to render "open elsewhere" indicators without scanning
     /// `tabs.tabs` per row.
     @Published public private(set) var openTabURLs: Set<URL> = []
+
+    /// Per-tab CSV filter state. Persists across tab switches so the
+    /// user doesn't lose their filter when navigating away and back.
+    /// Keyed by tab id; pruned in the close paths next to the other
+    /// tab-id-keyed caches.
+    @Published public private(set) var csvFilterStates: [UUID: CSVFilterState] = [:]
+
+    public func csvFilterState(forTabID id: UUID) -> CSVFilterState {
+        csvFilterStates[id] ?? CSVFilterState()
+    }
+
+    public func setCsvFilterState(_ state: CSVFilterState, forTabID id: UUID) {
+        if csvFilterStates[id] != state { csvFilterStates[id] = state }
+    }
+
+    public struct CSVFilterState: Equatable, Sendable {
+        public var globalQuery: String = ""
+        public var globalScope: Int? = nil
+        public var perColumn: [Int: String] = [:]
+        public var advancedShown: Bool = false
+
+        public init(globalQuery: String = "", globalScope: Int? = nil,
+                    perColumn: [Int: String] = [:], advancedShown: Bool = false) {
+            self.globalQuery = globalQuery
+            self.globalScope = globalScope
+            self.perColumn = perColumn
+            self.advancedShown = advancedShown
+        }
+    }
     @Published public private(set) var windowTitle: String = "TextView"
     @Published public private(set) var recents: [HistoryEntry] = []
     @Published public private(set) var bookmarks: [BookmarkEntry] = []
@@ -1140,6 +1169,7 @@ public final class DocumentModel: ObservableObject {
             formattedTabIDs.remove(t.id)
             formattedTextCache.removeValue(forKey: t.id)
             languageOverrides.removeValue(forKey: t.id)
+            csvFilterStates.removeValue(forKey: t.id)
             purgeCaches(forURL: t.url)
         }
         updateDerived()
@@ -1159,6 +1189,7 @@ public final class DocumentModel: ObservableObject {
         for t in closedTabs {
             formattedTextCache.removeValue(forKey: t.id)
             languageOverrides.removeValue(forKey: t.id)
+            csvFilterStates.removeValue(forKey: t.id)
             purgeCaches(forURL: t.url)
         }
         // Intersect tab-id sets with the still-open ids. Cheaper than
@@ -1178,6 +1209,7 @@ public final class DocumentModel: ObservableObject {
         for t in closedTabs {
             formattedTextCache.removeValue(forKey: t.id)
             languageOverrides.removeValue(forKey: t.id)
+            csvFilterStates.removeValue(forKey: t.id)
             purgeCaches(forURL: t.url)
         }
         let openIDs = Set(tabs.tabs.map { $0.id })

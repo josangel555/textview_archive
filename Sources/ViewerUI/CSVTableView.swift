@@ -9,19 +9,56 @@ import ViewerCore
 /// widths across re-renders.
 struct CSVTableView: View {
     let text: String
+    @ObservedObject var model: DocumentModel
+    let tabID: UUID
 
     @State private var widths: [CGFloat] = []
     @State private var lastFingerprint: String = ""
 
-    // Filter state. All three CSVFilter scopes are exposed:
-    //   1. Global substring across all columns.
-    //   2. Global substring constrained to one column (scope picker).
-    //   3. Per-column expressions with operator prefixes (`>`, `<=`,
-    //      `!=`, `=`, …) revealed via the "Per-column" toggle.
-    @State private var globalQuery: String = ""
-    @State private var globalScope: Int? = nil    // nil = all columns
-    @State private var perColumn: [Int: String] = [:]
-    @State private var advancedShown: Bool = false
+    // Filter state lives on DocumentModel keyed by tab id so it
+    // survives tab switches. These computed properties bridge the
+    // SwiftUI Binding API to the model's `csvFilterState(forTabID:)`
+    // / `setCsvFilterState(_:forTabID:)` accessors.
+    private var globalQuery: Binding<String> {
+        Binding(
+            get: { model.csvFilterState(forTabID: tabID).globalQuery },
+            set: { newValue in
+                var s = model.csvFilterState(forTabID: tabID)
+                s.globalQuery = newValue
+                model.setCsvFilterState(s, forTabID: tabID)
+            }
+        )
+    }
+    private var globalScope: Int? {
+        get { model.csvFilterState(forTabID: tabID).globalScope }
+    }
+    private func setGlobalScope(_ v: Int?) {
+        var s = model.csvFilterState(forTabID: tabID)
+        s.globalScope = v
+        model.setCsvFilterState(s, forTabID: tabID)
+    }
+    private var perColumn: [Int: String] {
+        get { model.csvFilterState(forTabID: tabID).perColumn }
+    }
+    private func setPerColumn(_ map: [Int: String]) {
+        var s = model.csvFilterState(forTabID: tabID)
+        s.perColumn = map
+        model.setCsvFilterState(s, forTabID: tabID)
+    }
+    private var advancedShown: Bool {
+        get { model.csvFilterState(forTabID: tabID).advancedShown }
+    }
+    private func setAdvancedShown(_ v: Bool) {
+        var s = model.csvFilterState(forTabID: tabID)
+        s.advancedShown = v
+        model.setCsvFilterState(s, forTabID: tabID)
+    }
+
+    /// Debounced filter — separate from the typing buffer so each
+    /// keystroke doesn't immediately reapply the filter over the full
+    /// row set. ~200 ms debounce balances responsiveness vs work.
+    @State private var debouncedFilter: CSVFilter = CSVFilter()
+    @State private var debounceTask: Task<Void, Never>?
 
     /// Cached parse. CSV parsing is O(n) per call and (more importantly)
     /// allocates one `String` per cell — for a 1 MB CSV with ~50K rows
@@ -35,36 +72,29 @@ struct CSVTableView: View {
         CSVParser.Result(delimiter: ",", header: [], rows: [])
 
     private var currentFilter: CSVFilter {
-        CSVFilter(
-            globalQuery: globalQuery,
-            globalScope: globalScope.map { .column($0) } ?? .all,
-            perColumn: perColumn
+        let state = model.csvFilterState(forTabID: tabID)
+        return CSVFilter(
+            globalQuery: state.globalQuery,
+            globalScope: state.globalScope.map { .column($0) } ?? .all,
+            perColumn: state.perColumn
         )
     }
 
     var body: some View {
         let result = parsedCache
-        let filtered = currentFilter.apply(to: result)
+        let filtered = debouncedFilter.apply(to: result)
         VStack(spacing: 0) {
             filterBar(result: result, filteredCount: filtered.rows.count)
             Divider()
             // Single shared horizontal+vertical ScrollView so the
             // per-column filter row, header, and data rows all share
-            // the same x-origin and scroll together horizontally. This
-            // is what keeps the filter inputs visually aligned to the
-            // columns they filter.
+            // the same x-origin and scroll together horizontally.
+            // LazyVStack virtualizes the vertical axis even inside a
+            // 2-axis ScrollView — only ~30 visible rows live at any
+            // time. ForEach uses Int range directly rather than
+            // Array(rows.enumerated()), which allocated a fresh
+            // tuple-array on every body re-eval.
             ScrollView([.horizontal, .vertical]) {
-                // LazyVStack virtualizes the vertical axis even inside a
-                // 2-axis ScrollView: only rows in the visible viewport
-                // are instantiated. Was a plain VStack — every row of
-                // a 50K-row CSV materialized at once × ~10 Text views
-                // per row = ~500K SwiftUI nodes resident → ~1 GB RSS
-                // for a 1 MB CSV file. With LazyVStack only ~30 rows
-                // (one screenful) live at any time.
-                //
-                // ForEach uses an Int range directly rather than
-                // `Array(filtered.rows.enumerated())`, which materialized
-                // a fresh 50K-tuple array on every body re-eval.
                 LazyVStack(alignment: .leading, spacing: 0,
                            pinnedViews: [.sectionHeaders]) {
                     if advancedShown {
@@ -82,49 +112,79 @@ struct CSVTableView: View {
         }
         .onAppear {
             reparse()
+            debouncedFilter = currentFilter
         }
         .onChange(of: text) { _, _ in
             reparse()
         }
+        .onChange(of: currentFilter) { _, newFilter in
+            scheduleFilterCommit(newFilter)
+        }
         .accessibilityIdentifier("mdv.csvTable")
+    }
+
+    /// 200 ms debounce on filter commits — typing into the global
+    /// query or a per-column field stays responsive while heavy
+    /// filter work (lowercased compares, regex-shaped expressions)
+    /// happens only after the user pauses.
+    private func scheduleFilterCommit(_ filter: CSVFilter) {
+        debounceTask?.cancel()
+        // If the filter cleared completely, commit immediately so the
+        // clear button feels instant.
+        if filter.isEmpty {
+            debouncedFilter = filter
+            return
+        }
+        debounceTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            if Task.isCancelled { return }
+            debouncedFilter = filter
+        }
     }
 
     private func reparse() {
         let result = CSVParser.parse(text)
         parsedCache = result
         ensureWidths(result)
+        // After re-parse, drop stale per-column entries (file shape
+        // may have changed) and stale scope picks.
         let cols = result.header.count
-        perColumn = perColumn.filter { $0.key < cols }
-        if let s = globalScope, s >= cols { globalScope = nil }
+        let pruned = perColumn.filter { $0.key < cols }
+        if pruned != perColumn { setPerColumn(pruned) }
+        if let s = globalScope, s >= cols { setGlobalScope(nil) }
     }
 
-    private let rowHeight: CGFloat = 22
+    /// Row height scales with the user's font-zoom + ui-scale prefs.
+    /// Was a fixed 22 pt; that's the baseline (zoom 1.0 × uiScale 1.0).
+    private var rowHeight: CGFloat { 22 * model.zoom * model.uiScale }
+    private var cellFontSize: CGFloat { 11 * model.zoom * model.uiScale }
+    private var headerFontSize: CGFloat { 11 * model.zoom * model.uiScale }
 
     @ViewBuilder
     private func filterBar(result: CSVParser.Result, filteredCount: Int) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
-                .font(.system(size: 11))
-            TextField("Filter rows…", text: $globalQuery)
+                .font(.system(size: cellFontSize))
+            TextField("Filter rows…", text: globalQuery)
                 .textFieldStyle(.roundedBorder)
                 .controlSize(.small)
                 .frame(maxWidth: 280)
                 .accessibilityIdentifier("mdv.csvFilter.global")
 
             Menu {
-                Button("All columns") { globalScope = nil }
+                Button("All columns") { setGlobalScope(nil) }
                 ForEach(Array(result.header.enumerated()), id: \.offset) { (i, name) in
                     Button(name.isEmpty ? "Column \(i + 1)" : name) {
-                        globalScope = i
+                        setGlobalScope(i)
                     }
                 }
             } label: {
                 HStack(spacing: 4) {
                     Text(scopeLabel(result: result))
-                        .font(.system(size: 11))
+                        .font(.system(size: cellFontSize))
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 9))
+                        .font(.system(size: cellFontSize * 0.82))
                 }
             }
             .menuStyle(.borderlessButton)
@@ -132,14 +192,14 @@ struct CSVTableView: View {
             .accessibilityIdentifier("mdv.csvFilter.scope")
 
             Button {
-                advancedShown.toggle()
+                setAdvancedShown(!advancedShown)
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: advancedShown
                           ? "chevron.down.square" : "chevron.right.square")
                     Text("Per-column")
                 }
-                .font(.system(size: 11))
+                .font(.system(size: cellFontSize))
             }
             .buttonStyle(.borderless)
             .help("Show per-column filter row (supports >, <, >=, <=, =, !=)")
@@ -148,9 +208,8 @@ struct CSVTableView: View {
 
             if !currentFilter.isEmpty {
                 Button {
-                    globalQuery = ""
-                    globalScope = nil
-                    perColumn.removeAll()
+                    model.setCsvFilterState(DocumentModel.CSVFilterState(),
+                                            forTabID: tabID)
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                 }
@@ -160,7 +219,7 @@ struct CSVTableView: View {
             }
 
             Text(rowCountLabel(total: result.rows.count, shown: filteredCount))
-                .font(.system(size: 11, design: .monospaced))
+                .font(.system(size: cellFontSize, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("mdv.csvFilter.count")
         }
@@ -179,16 +238,18 @@ struct CSVTableView: View {
                 TextField("filter…", text: Binding(
                     get: { perColumn[i] ?? "" },
                     set: { newValue in
+                        var map = perColumn
                         if newValue.isEmpty {
-                            perColumn.removeValue(forKey: i)
+                            map.removeValue(forKey: i)
                         } else {
-                            perColumn[i] = newValue
+                            map[i] = newValue
                         }
+                        setPerColumn(map)
                     }
                 ))
                 .textFieldStyle(.plain)
                 .controlSize(.small)
-                .font(.system(size: 11, design: .monospaced))
+                .font(.system(size: cellFontSize, design: .monospaced))
                 .padding(.horizontal, 6)
                 .frame(width: widthFor(i), height: rowHeight, alignment: .leading)
                 .background(Palette.windowBackground)
@@ -221,7 +282,7 @@ struct CSVTableView: View {
         HStack(spacing: 0) {
             ForEach(Array(r.header.enumerated()), id: \.offset) { (i, name) in
                 Text(name)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(.system(size: headerFontSize, weight: .semibold, design: .monospaced))
                     .padding(.horizontal, 8)
                     .frame(width: widthFor(i), height: rowHeight, alignment: .topLeading)
                     .background(Palette.controlBackground)
@@ -239,13 +300,16 @@ struct CSVTableView: View {
             ForEach(row.indices, id: \.self) { i in
                 let cell = row[i]
                 Text(cell)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: cellFontSize, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .padding(.horizontal, 8)
                     .frame(width: widthFor(i), height: rowHeight, alignment: .topLeading)
                     .overlay(alignment: .trailing) {
                         Rectangle().fill(Palette.separator).frame(width: 0.5)
+                    }
+                    .contextMenu {
+                        Button("Copy Cell") { Pasteboard.copy(cell) }
                     }
             }
         }

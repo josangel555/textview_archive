@@ -40,7 +40,8 @@ public struct ContentView: View {
                             url: splitURL,
                             zoom: model.zoom,
                             theme: model.activeTheme,
-                            onClose: { model.closeSplit() }
+                            onClose: { model.closeSplit() },
+                            model: model
                         )
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .accessibilityIdentifier("mdv.split")
@@ -145,7 +146,11 @@ public struct ContentView: View {
     private func loadedView(for file: TextFile) -> some View {
         let category = FileTypeDetector.category(for: file.url)
         if model.currentViewMode == .table {
-            CSVTableView(text: file.contents)
+            // Per-tab CSV filter state lives on DocumentModel keyed by
+            // tab id; pass the active tab id so state persists across
+            // tab switches.
+            let tid = model.tabs.selected?.id ?? UUID()
+            CSVTableView(text: file.contents, model: model, tabID: tid)
         } else if model.currentViewMode == .diff {
             DiffView(text: file.contents, doc: model)
         } else if (category == .markdown && model.currentViewMode == .rendered)

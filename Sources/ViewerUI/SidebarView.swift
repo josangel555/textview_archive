@@ -178,6 +178,15 @@ private struct FileRowContextMenu: View {
             Button("Open in New Tab") { model.openInNewTab(node.url) }
             Button("Open in Split") { model.openInSplit(node.url) }
             Divider()
+            Button(model.bookmarksStore.contains(node.url)
+                   ? "Remove Bookmark" : "Bookmark File") {
+                _ = model.bookmarksStore.toggle(
+                    url: node.url,
+                    displayName: node.url.lastPathComponent
+                )
+                model.refreshBookmarks()
+            }
+            Divider()
         } else {
             Button(sidebar.isExpanded(node.url) ? "Collapse" : "Expand") {
                 sidebar.toggleExpansion(node.url)
