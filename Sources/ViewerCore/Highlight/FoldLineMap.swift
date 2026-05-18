@@ -51,9 +51,11 @@ public struct FoldLineMap: Sendable, Equatable {
         let count = max(0, lineCount)
         var d2o = [Int](repeating: 0, count: count + 1)
         var o2d = [Int](repeating: 0, count: count + 1)
-        for i in 1...max(1, count) {
-            d2o[i] = i
-            o2d[i] = i
+        if count >= 1 {
+            for i in 1...count {
+                d2o[i] = i
+                o2d[i] = i
+            }
         }
         return FoldLineMap(
             displayedToOriginal: d2o,

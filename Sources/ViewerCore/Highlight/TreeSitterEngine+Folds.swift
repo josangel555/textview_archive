@@ -56,10 +56,16 @@ extension TreeSitterEngine {
         guard let tree = parser.parse(text) else { return [] }
         guard let root = tree.rootNode else { return [] }
 
-        // Build a UTF-16 line-index table once: byte offset of the
-        // *start* of each line. Cheap (one O(N) pass) and used to
-        // convert tree-sitter byte ranges into 1-based line numbers.
-        let lineStarts = Self.lineStarts(in: text)
+        // Total line count for trailing fold ends (markdown heading
+        // folds need it). Counted via newlines; a file that doesn't
+        // end with `\n` still has its trailing chunk as a line.
+        let totalLines: Int = {
+            var n = 1
+            for b in text.utf8 where b == 0x0A { n += 1 }
+            // If text ends in newline, last "line" is empty but
+            // NSTextView counts it; preserve that.
+            return n
+        }()
 
         var out: [FoldRegion] = []
         out.reserveCapacity(64)
@@ -73,33 +79,47 @@ extension TreeSitterEngine {
             for cap in match.captures {
                 guard let name = cap.name else { continue }
                 let node = cap.node
-                let startByte = Int(node.byteRange.lowerBound)
-                let endByte   = Int(node.byteRange.upperBound)
-                let startLine = Self.lineNumber(forByte: startByte, in: lineStarts)
-                // Tree-sitter end byte is exclusive — back off by 1 so
-                // a region that ends at a newline doesn't claim the
-                // following line.
-                let endLine = Self.lineNumber(forByte: max(endByte - 1, startByte),
-                                              in: lineStarts)
-                guard endLine > startLine else { continue }   // skip single-line
+                // Use tree-sitter's pointRange — row is 0-based line
+                // number, exactly what we want. Avoids us rolling a
+                // byte→line mapper (which had subtle off-by-ones with
+                // documents that did / didn't end in `\n`).
+                let pr = node.pointRange
+                let startLine = Int(pr.lowerBound.row) + 1
+                // End point's row points at the line where the node's
+                // closing token sits. When the node ends exactly at a
+                // line boundary (column 0), the row is one past the
+                // last visual line of the node — back off in that case
+                // so a `}` at the start of line N doesn't claim line
+                // N+1.
+                var endLine = Int(pr.upperBound.row) + 1
+                if pr.upperBound.column == 0 && endLine > startLine {
+                    endLine -= 1
+                }
 
+                // Heading captures are SINGLE-line nodes — process them
+                // before the multi-line guard so we can stash them for
+                // the heading-fold post-pass. We compute the heading
+                // level from the source line directly (the # count at
+                // the start, after any leading whitespace) — tree-sitter
+                // emits `atx_h<N>_marker` children but those would
+                // require a parametric query per level.
                 if name == "fold.heading" {
-                    // Defer — needs sibling-comparison to compute end.
-                    let level = Self.atxHeadingLevel(text: text, at: startByte)
+                    let level = Self.atxHeadingLevel(forLine: startLine, in: text)
                     headings.append((line: startLine, level: level))
                     continue
                 }
 
+                guard endLine > startLine else { continue }   // skip single-line
+
                 guard let kind = Self.kind(forCapture: name) else { continue }
                 out.append(FoldRegion(startLine: startLine,
-                                      endLine: endLine,
+                                      endLine: min(endLine, totalLines),
                                       kind: kind))
             }
         }
 
         // Materialise heading folds (markdown only).
         if !headings.isEmpty {
-            let totalLines = lineStarts.count
             headings.sort { $0.line < $1.line }
             for (i, h) in headings.enumerated() {
                 // End = (line - 1) of the next heading at level ≤ h.level.
@@ -164,7 +184,10 @@ extension TreeSitterEngine {
     // MARK: Line index
 
     /// Build `[byteOffsetOfStartOfLine_i]`, one entry per 1-based line.
-    /// Index 0 is unused; index 1 is byte 0 (start of line 1).
+    /// Index 0 is unused; index 1 is byte 0 (start of line 1). The
+    /// last index points at the start of the last real line — there
+    /// is NO synthetic "after-EOF" entry, so `lineStarts.count - 1`
+    /// equals the true line count.
     ///
     /// Tree-sitter reports byte offsets in the source string's UTF-8
     /// encoding. We walk the UTF-8 view once to find newline positions.
@@ -178,19 +201,26 @@ extension TreeSitterEngine {
             byte += 1
             if b == 0x0A { starts.append(byte) }   // '\n'
         }
-        // Final synthetic "line after EOF" so range checks on the last
-        // byte don't fall off the end.
-        starts.append(byte)
+        // If `text` ends in '\n' we already appended the next line's
+        // start; otherwise the trailing content is line N already
+        // covered by the previous newline append (or the initial
+        // line-1 entry for a single-line file).
+        //
+        // Note: an empty trailing line *exists* in NSTextView's count
+        // for a file that ends in '\n'. The last `starts` entry sits
+        // exactly at EOF in that case, representing that empty line.
         return starts
     }
 
     /// 1-based line number containing the given UTF-8 byte offset.
-    /// Binary-search on `lineStarts`. O(log N).
+    /// Binary-search on `lineStarts`. O(log N). Clamps the result to
+    /// the valid 1..(lineStarts.count - 1) range.
     internal static func lineNumber(forByte byte: Int, in lineStarts: [Int]) -> Int {
+        let maxLine = max(1, lineStarts.count - 1)
         // lineStarts[i] = byte offset of line i (i ≥ 1).
         // We want max i s.t. lineStarts[i] ≤ byte.
         var lo = 1
-        var hi = lineStarts.count - 1
+        var hi = maxLine
         while lo < hi {
             let mid = (lo + hi + 1) / 2
             if lineStarts[mid] <= byte {
@@ -202,14 +232,25 @@ extension TreeSitterEngine {
         return lo
     }
 
-    /// Compute the heading level (# count) for an ATX heading whose
-    /// node begins at `byte`. Counts contiguous `#` bytes; capped at 6
-    /// per the markdown spec. Defaults to 1 on malformed inputs.
-    internal static func atxHeadingLevel(text: String, at byte: Int) -> Int {
+    /// Compute the ATX heading level (# count) for the heading on the
+    /// given 1-based line. Walks the line until it sees a non-`#` (after
+    /// optional leading whitespace). Capped at 6. Defaults to 1 on
+    /// malformed inputs.
+    internal static func atxHeadingLevel(forLine line: Int, in text: String) -> Int {
+        // Find the start of `line` by counting `\n`s.
         let utf8 = Array(text.utf8)
-        var i = byte
+        var seenLines = 1
+        var i = 0
+        while seenLines < line && i < utf8.count {
+            if utf8[i] == 0x0A { seenLines += 1 }
+            i += 1
+        }
+        guard seenLines == line else { return 1 }
+        // Skip leading whitespace (markdown allows up to 3 spaces).
+        while i < utf8.count, utf8[i] == 0x20 || utf8[i] == 0x09 { i += 1 }
+        // Count `#`s.
         var level = 0
-        while i < utf8.count && utf8[i] == 0x23 && level < 6 {  // '#'
+        while i < utf8.count, utf8[i] == 0x23, level < 6 {
             level += 1
             i += 1
         }
