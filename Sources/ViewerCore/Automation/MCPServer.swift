@@ -1,0 +1,286 @@
+import Foundation
+import ViewerKit
+
+/// MCP server over stdio. Reads framed JSON-RPC requests on stdin,
+/// dispatches them to `AutomationHost` on the main actor, and writes
+/// framed responses to stdout.
+///
+/// Lifecycle:
+///   - `start()` spawns a background thread parked in
+///     `MCPFraming.decode(...)`. The thread hops onto MainActor per
+///     request to drive the host, then writes the response back from
+///     the same background thread.
+///   - The loop terminates on stdin EOF or after `stop()` is called.
+///
+/// We deliberately do NOT use Foundation's URLSession / DispatchIO —
+/// stdio is a single bidirectional channel that's already serial; the
+/// extra machinery adds nothing and pulls in async surfaces that don't
+/// play with Swift 6 strict concurrency cleanly.
+public final class MCPServer: @unchecked Sendable {
+
+    private let host: AutomationHost
+    private let input: FileHandle
+    private let output: FileHandle
+    private let logger: ((String) -> Void)?
+
+    /// Atomically-flipped flag the read loop checks between requests
+    /// so an external `stop()` (or fatal error elsewhere) can wind it
+    /// down without waiting on the next stdin byte. `nonisolated(unsafe)`
+    /// because Swift 6 can't see the OSAtomic guarantees.
+    nonisolated(unsafe) private var stopFlag: Bool = false
+    private let stopLock = NSLock()
+
+    private var thread: Thread?
+
+    /// One writer lock — `write(2)` is atomic up to PIPE_BUF (4096
+    /// bytes on macOS), but framed responses can exceed that. Without
+    /// this lock a concurrent notification publish would interleave
+    /// bytes with a response and corrupt the stream.
+    private let writeLock = NSLock()
+
+    public init(
+        host: AutomationHost,
+        input: FileHandle = .standardInput,
+        output: FileHandle = .standardOutput,
+        logger: ((String) -> Void)? = nil
+    ) {
+        self.host = host
+        self.input = input
+        self.output = output
+        self.logger = logger
+    }
+
+    // MARK: - Public lifecycle
+
+    public func start() {
+        let t = Thread { [weak self] in
+            self?.runLoop()
+        }
+        t.name = "MCPServer.stdio"
+        t.qualityOfService = .userInitiated
+        thread = t
+        t.start()
+    }
+
+    public func stop() {
+        stopLock.lock(); stopFlag = true; stopLock.unlock()
+        // Closing stdin causes any blocking read on the loop thread
+        // to return EOF, releasing the loop.
+        try? input.close()
+    }
+
+    private var shouldStop: Bool {
+        stopLock.lock(); defer { stopLock.unlock() }
+        return stopFlag
+    }
+
+    // MARK: - Loop
+
+    private func runLoop() {
+        var reader = MCPFraming.FileHandleReader(input)
+        while !shouldStop {
+            let body: Data?
+            do {
+                body = try MCPFraming.decode(from: &reader)
+            } catch {
+                log("framing error: \(error). Closing.")
+                return
+            }
+            guard let body else {
+                // Clean EOF.
+                log("stdin EOF; server exiting")
+                return
+            }
+            handle(requestBody: body)
+        }
+    }
+
+    private func handle(requestBody: Data) {
+        // Parse the envelope. A malformed envelope is a JSON-RPC
+        // parseError; we still respond if we recovered an id, otherwise
+        // we send a null-id error (per JSON-RPC 2.0).
+        let decoder = JSONDecoder()
+        let request: MCP.Request
+        do {
+            request = try decoder.decode(MCP.Request.self, from: requestBody)
+        } catch {
+            sendError(id: .null, code: MCP.ErrorCode.parseError, message: "parse error: \(error)")
+            return
+        }
+        guard request.jsonrpc == "2.0" else {
+            sendError(id: request.id ?? .null,
+                      code: MCP.ErrorCode.invalidRequest,
+                      message: "jsonrpc must be \"2.0\"")
+            return
+        }
+
+        // Notifications (no id) are accepted but we don't have any
+        // notification verbs to honour in v1 — just drop them.
+        guard let id = request.id else {
+            log("dropping notification \(request.method)")
+            return
+        }
+
+        // Dispatch on the main thread — every handler touches
+        // DocumentModel. `DispatchQueue.main.sync` is synchronous
+        // (no Task boundary) so we can hand the Response back to the
+        // background loop thread without tripping the Swift 6
+        // strict-concurrency `sending` checker. We use
+        // `MainActor.assumeIsolated` inside the block because the
+        // sync dispatch lands us on the main thread but the compiler
+        // doesn't know that statically.
+        //
+        // Sequencing: stdio is a single channel, clients send requests
+        // serially and expect ordered responses. Running dispatch
+        // serially on main is fine — the latency floor on each tool
+        // is dominated by main-thread work anyway.
+        let captured: (MCP.ID, String, MCP.Value?) = (id, request.method, request.params)
+        let response = DispatchQueue.main.sync {
+            MainActor.assumeIsolated {
+                self.dispatch(id: captured.0, method: captured.1, params: captured.2)
+            }
+        }
+        send(response: response)
+    }
+
+    @MainActor
+    private func dispatch(id: MCP.ID, method: String, params: MCP.Value?) -> MCP.Response {
+        do {
+            switch method {
+            case "initialize":
+                return MCP.Response(id: id, result: try initializeResult())
+            case "initialized", "notifications/initialized":
+                // Spec-compliant clients send `initialized` as a
+                // notification after `initialize` returns — we already
+                // filtered notifications above, but some buggy clients
+                // send it with an id. Reply empty success.
+                return MCP.Response(id: id, result: .object([:]))
+            case "tools/list":
+                return MCP.Response(id: id, result: try toolsListResult())
+            case "tools/call":
+                return try toolsCall(id: id, params: params)
+            case "ping":
+                return MCP.Response(id: id, result: .object([:]))
+            case "shutdown":
+                // Returning success then stopping the loop matches LSP
+                // semantics. The client typically sends `exit` after.
+                defer { self.stop() }
+                return MCP.Response(id: id, result: .null)
+            default:
+                return MCP.Response(id: id, error: .init(
+                    code: MCP.ErrorCode.methodNotFound,
+                    message: "unknown method: \(method)"))
+            }
+        } catch let e as MCPError {
+            return MCP.Response(id: id, error: .init(code: e.code, message: e.message))
+        } catch {
+            return MCP.Response(id: id, error: .init(
+                code: MCP.ErrorCode.internalError,
+                message: "\(error)"))
+        }
+    }
+
+    // MARK: - Method handlers
+
+    @MainActor
+    private func initializeResult() throws -> MCP.Value {
+        let result = MCP.InitializeResult(
+            // Pin a recent stable MCP protocol version. Clients
+            // negotiate via this string — bumping it is intentional.
+            protocolVersion: "2024-11-05",
+            capabilities: .init(tools: .init(listChanged: false)),
+            serverInfo: .init(name: "TextView", version: "1.0.0")
+        )
+        return try Self.encodeValue(result)
+    }
+
+    @MainActor
+    private func toolsListResult() throws -> MCP.Value {
+        let tools = MCPToolCatalog.all
+        let payload: MCP.Value = .object([
+            "tools": .array(try tools.map { try Self.encodeValue($0) })
+        ])
+        return payload
+    }
+
+    @MainActor
+    private func toolsCall(id: MCP.ID, params: MCP.Value?) throws -> MCP.Response {
+        guard let params else {
+            throw MCPError.invalidParams("missing params")
+        }
+        let name = try params.string("name")
+        // Tool args default to {} if omitted — many tools take none.
+        let args: MCP.Value = {
+            if case .object(let o) = params, let a = o["arguments"] { return a }
+            return .object([:])
+        }()
+
+        do {
+            let resultValue = try MCPToolCatalog.dispatch(
+                name: name, args: args, host: host
+            )
+            // Per MCP spec, tools/call returns a `ToolCallResult` —
+            // content array, not the raw return value. We serialise
+            // the structured value to a single text block so clients
+            // can re-parse it (most do).
+            let json = try Self.jsonString(resultValue)
+            let toolResult = MCP.ToolCallResult(text: json, isError: false)
+            return MCP.Response(id: id, result: try Self.encodeValue(toolResult))
+        } catch let e as MCPError {
+            // Surface tool-level failures as `tools/call` result with
+            // `isError: true` rather than a JSON-RPC error, per MCP
+            // convention: the call succeeded, the tool reported an
+            // application-level error.
+            let toolResult = MCP.ToolCallResult(text: e.message, isError: true)
+            return MCP.Response(id: id, result: try Self.encodeValue(toolResult))
+        }
+    }
+
+    // MARK: - IO
+
+    private func send(response: MCP.Response) {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        do {
+            let body = try encoder.encode(response)
+            let framed = MCPFraming.encode(body: body)
+            writeLock.lock()
+            defer { writeLock.unlock() }
+            try output.write(contentsOf: framed)
+        } catch {
+            log("send error: \(error)")
+        }
+    }
+
+    private func sendError(id: MCP.ID, code: Int, message: String) {
+        send(response: MCP.Response(
+            id: id,
+            error: .init(code: code, message: message)))
+    }
+
+    private func log(_ s: String) {
+        // Logger optional — production callers route to stderr or
+        // ~/Library/Logs; tests pass nil. Stdout must stay clean for
+        // protocol bytes only.
+        logger?(s)
+    }
+
+    // MARK: - JSON helpers
+
+    /// Encode a Codable value into `MCP.Value`. Round-tripping through
+    /// JSON data isn't free, but tool results are small and this keeps
+    /// the encoder centralised — handlers don't manually build
+    /// `.object([...])` trees.
+    static func encodeValue<T: Encodable>(_ value: T) throws -> MCP.Value {
+        let data = try JSONEncoder().encode(value)
+        return try JSONDecoder().decode(MCP.Value.self, from: data)
+    }
+
+    /// JSON-encode a `MCP.Value` to a compact string.
+    static func jsonString(_ value: MCP.Value) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(value)
+        return String(data: data, encoding: .utf8) ?? "null"
+    }
+}

@@ -14,8 +14,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private var windowMenu: NSMenu?
     private var cancellables: Set<AnyCancellable> = []
     private var diagnosticSignalSource: DispatchSourceSignal?
+    private var mcpServer: MCPServer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // `--mcp-stdio`: skip all UI work and run the MCP server on
+        // stdin/stdout. We still need an NSApplication to host
+        // `@MainActor` model state, but no window, no menu, no
+        // Services registration. The activation policy is flipped to
+        // `.prohibited` at module scope before `app.run()` so the
+        // process never shows in the Dock.
+        if mcpStdioMode {
+            startMCPServer()
+            return
+        }
+
         // Opt out of macOS's automatic window tabbing — we ship our own in-app
         // tab bar; the system "Show Tab Bar" menu item is confusing here.
         NSWindow.allowsAutomaticWindowTabbing = false
@@ -1287,6 +1299,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 }
 
+extension AppDelegate {
+    /// Spin up the MCP stdio server. Routes log lines to stderr (NEVER
+    /// stdout — stdout is reserved for framed protocol bytes; any
+    /// stray byte would desync the client's framing parser).
+    @MainActor
+    fileprivate func startMCPServer() {
+        let server = MCPServer(
+            host: model,
+            input: .standardInput,
+            output: .standardOutput,
+            logger: { line in
+                FileHandle.standardError.write(Data("mcp: \(line)\n".utf8))
+            }
+        )
+        server.start()
+        self.mcpServer = server
+        // Tell stderr we're up so clients with a verbose mode can
+        // confirm the server actually launched. Stdout stays silent
+        // until a framed response.
+        FileHandle.standardError.write(Data("mcp: server ready on stdio\n".utf8))
+    }
+}
+
 /// Bring `window` to the front. In normal mode, also takes key/focus.
 /// In MDV_BACKGROUND=1 mode, uses `orderFrontRegardless` so the window
 /// appears but does NOT steal keyboard focus from whatever the user
@@ -1311,6 +1346,12 @@ func activateIfForeground() {
 
 let app = NSApplication.shared
 
+/// `--mcp-stdio` puts the process in headless RPC mode: no Dock icon,
+/// no menu bar, no windows. We still need to call `app.run()` because
+/// `@MainActor`-isolated DocumentModel state can only be mutated from
+/// the main thread's run loop, which `NSApp.run` services.
+let mcpStdioMode = CommandLine.arguments.contains("--mcp-stdio")
+
 /// `MDV_BACKGROUND=1` flips the app into accessory mode: window can
 /// show but won't become key (no keyboard-focus theft) and the app
 /// doesn't get a Dock tile. Used by the test harness so a suite running
@@ -1318,7 +1359,12 @@ let app = NSApplication.shared
 /// In normal interactive launches this env var is unset → `.regular`
 /// behavior unchanged.
 let backgroundMode = ProcessInfo.processInfo.environment["MDV_BACKGROUND"] == "1"
-app.setActivationPolicy(backgroundMode ? .accessory : .regular)
+let policy: NSApplication.ActivationPolicy = {
+    if mcpStdioMode { return .prohibited }   // no Dock, no menu bar
+    if backgroundMode { return .accessory }
+    return .regular
+}()
+app.setActivationPolicy(policy)
 let delegate = AppDelegate()
 app.delegate = delegate
 app.run()
