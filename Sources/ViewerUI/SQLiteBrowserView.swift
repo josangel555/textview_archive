@@ -62,7 +62,7 @@ public struct SQLiteBrowserView: View {
             }
             .padding(.vertical, 4)
         }
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(Palette.textBackground)
     }
 
     @ViewBuilder
@@ -125,7 +125,7 @@ public struct SQLiteBrowserView: View {
                 .frame(height: 110)
                 .padding(.horizontal, 4)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Palette.windowBackground)
     }
 
     @ViewBuilder
@@ -254,12 +254,12 @@ internal struct ResultTableView: View {
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .padding(.horizontal, 8)
                     .frame(width: widthFor(i), height: rowHeight, alignment: .topLeading)
-                    .background(Color(nsColor: .controlBackgroundColor))
+                    .background(Palette.controlBackground)
                     .overlay(alignment: .trailing) { columnResizer(forIndex: i) }
             }
         }
         .overlay(alignment: .bottom) {
-            Rectangle().fill(Color(nsColor: .separatorColor)).frame(height: 0.5)
+            Rectangle().fill(Palette.separator).frame(height: 0.5)
         }
     }
 
@@ -275,12 +275,12 @@ internal struct ResultTableView: View {
                     .padding(.horizontal, 8)
                     .frame(width: widthFor(i), height: rowHeight, alignment: .topLeading)
                     .overlay(alignment: .trailing) {
-                        Rectangle().fill(Color(nsColor: .separatorColor))
+                        Rectangle().fill(Palette.separator)
                             .frame(width: 0.5)
                     }
             }
         }
-        .background(isAlt ? Color(nsColor: .controlBackgroundColor).opacity(0.3) : Color.clear)
+        .background(isAlt ? Palette.controlBackground.opacity(0.3) : Color.clear)
         .textSelection(.enabled)
     }
 
@@ -289,7 +289,7 @@ internal struct ResultTableView: View {
     /// catchable by the cursor.
     private func columnResizer(forIndex i: Int) -> some View {
         Rectangle()
-            .fill(Color(nsColor: .separatorColor))
+            .fill(Palette.separator)
             .frame(width: 0.5)
             .overlay(
                 Rectangle()

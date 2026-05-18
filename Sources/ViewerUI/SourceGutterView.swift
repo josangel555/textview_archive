@@ -51,7 +51,7 @@ struct SourceGutterView: View {
                     p.move(to: CGPoint(x: size.width - 0.5, y: 0))
                     p.addLine(to: CGPoint(x: size.width - 0.5, y: size.height))
                 },
-                with: .color(Color(nsColor: .separatorColor)),
+                with: .color(Palette.separator),
                 lineWidth: 0.5
             )
             // Line numbers. Only render rows that overlap the visible

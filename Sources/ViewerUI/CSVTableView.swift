@@ -151,7 +151,7 @@ struct CSVTableView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(Palette.controlBackground)
     }
 
     @ViewBuilder
@@ -176,15 +176,15 @@ struct CSVTableView: View {
                 .font(.system(size: 11, design: .monospaced))
                 .padding(.horizontal, 6)
                 .frame(width: widthFor(i), height: rowHeight, alignment: .leading)
-                .background(Color(nsColor: .windowBackgroundColor))
+                .background(Palette.windowBackground)
                 .overlay(alignment: .trailing) {
-                    Rectangle().fill(Color(nsColor: .separatorColor)).frame(width: 0.5)
+                    Rectangle().fill(Palette.separator).frame(width: 0.5)
                 }
                 .accessibilityIdentifier("mdv.csvFilter.col\(i)")
             }
         }
         .overlay(alignment: .bottom) {
-            Rectangle().fill(Color(nsColor: .separatorColor)).frame(height: 0.5)
+            Rectangle().fill(Palette.separator).frame(height: 0.5)
         }
     }
 
@@ -209,12 +209,12 @@ struct CSVTableView: View {
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .padding(.horizontal, 8)
                     .frame(width: widthFor(i), height: rowHeight, alignment: .topLeading)
-                    .background(Color(nsColor: .controlBackgroundColor))
+                    .background(Palette.controlBackground)
                     .overlay(alignment: .trailing) { columnResizer(forIndex: i) }
             }
         }
         .overlay(alignment: .bottom) {
-            Rectangle().fill(Color(nsColor: .separatorColor)).frame(height: 0.5)
+            Rectangle().fill(Palette.separator).frame(height: 0.5)
         }
     }
 
@@ -230,17 +230,17 @@ struct CSVTableView: View {
                     .padding(.horizontal, 8)
                     .frame(width: widthFor(i), height: rowHeight, alignment: .topLeading)
                     .overlay(alignment: .trailing) {
-                        Rectangle().fill(Color(nsColor: .separatorColor)).frame(width: 0.5)
+                        Rectangle().fill(Palette.separator).frame(width: 0.5)
                     }
             }
         }
-        .background(isAlt ? Color(nsColor: .controlBackgroundColor).opacity(0.3) : Color.clear)
+        .background(isAlt ? Palette.controlBackground.opacity(0.3) : Color.clear)
         .textSelection(.enabled)
     }
 
     private func columnResizer(forIndex i: Int) -> some View {
         Rectangle()
-            .fill(Color(nsColor: .separatorColor))
+            .fill(Palette.separator)
             .frame(width: 0.5)
             .overlay(
                 Rectangle()
