@@ -149,10 +149,12 @@ public final class SessionState: ObservableObject {
 
     /// Best-effort display name from a folder URL. The last path
     /// component is the natural pick; falls back to "Untitled" when
-    /// the URL is the root (`/`) or empty.
+    /// the URL is the root (`/`) or empty. URL.lastPathComponent
+    /// returns "/" for the root, not the empty string — handle both.
     public static func defaultDisplayName(for url: URL) -> String {
         let last = url.lastPathComponent
-        return last.isEmpty ? "Untitled" : last
+        if last.isEmpty || last == "/" { return "Untitled" }
+        return last
     }
 }
 

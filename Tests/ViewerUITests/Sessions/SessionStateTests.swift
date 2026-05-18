@@ -24,29 +24,24 @@ import ViewerKit
 @MainActor
 final class SessionStateTests: XCTestCase {
 
-    private var tmpDir: URL!
-    private var model: DocumentModel!
-    private var state: SessionState!
-
-    override func setUp() {
-        // Per LESSONS.md: don't call super.setUp from a @MainActor
-        // test class on Swift 6.1 — XCTestCase isn't Sendable.
-        tmpDir = FileManager.default.temporaryDirectory
+    // Lazy initializers — Swift 6.1 (VM canary) keeps setUp/tearDown
+    // nonisolated even when the class is `@MainActor`. Lazy vars get
+    // evaluated on first access from a `@MainActor`-isolated test
+    // method, which is what we want.
+    private lazy var tmpDir: URL = {
+        let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("SessionStateTests-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(
-            at: tmpDir, withIntermediateDirectories: true
+            at: url, withIntermediateDirectories: true
         )
-        model = DocumentModel()
-        state = SessionState(
-            rootURL: tmpDir,
-            displayName: "TestSession",
-            model: model
-        )
-    }
-
-    override func tearDown() {
-        if let tmpDir { try? FileManager.default.removeItem(at: tmpDir) }
-    }
+        return url
+    }()
+    private lazy var model: DocumentModel = DocumentModel()
+    private lazy var state: SessionState = SessionState(
+        rootURL: tmpDir,
+        displayName: "TestSession",
+        model: model
+    )
 
     // MARK: mount / detach idempotence -------------------------------
 

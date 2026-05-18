@@ -14,6 +14,7 @@ PoC-hardening agents now running in fresh worktrees (`feat/lsp-v1`,
 | `feat/walkthrough-ui` | Docked-bottom player, full anchor suite, --walkthrough CLI flag | +22 |
 | `feat/lsp-v1` | SourceKit-LSP integration: pool/cancel/restart/outline/hover popover/diagnostics | +33 (52 total LSP) |
 | `feat/plugins-v1` | Tier B subprocess host, env-scrub, audit log, permission-grant store + NSAlert prompt, Settings → Plugins pane, example Tier B plugin fixture | +30 (42 total Plugins) |
+| `feat/sessions-v1` | Phase 1: SessionSnapshot v2 + SessionStore (serial coalescer + flushSync) + SessionsCoordinator + SessionState. Legacy `_last.json` migration + compat-bridge write. File menu Session submenu + ⌃Tab + ⌃1-9 + ⇧⌘W. | +47 |
 
 ## VM canary
 
@@ -21,13 +22,17 @@ After all merges: **977 tests, 4 skipped, 0 failures** in ~143 s on
 macOS15 VM (Swift 6.1.2). Up from 883 baseline by +52 (LSP) + +42
 (Plugins) = +94 tests.
 
-## Not merged
+## All `feat/*` branches merged
 
-- **`feat/sessions-v1`** — agent stalled mid-build (Swift 6 strict-
-  concurrency on `static var pending`). Build fixed manually; source
-  files committed as WIP. **NOT production-ready**: no tests written,
-  no migration from Workspaces/_last.json, no session menu / key
-  bindings. Branch preserves the scaffolding for next round.
+Sessions v1 finished by a second-pass agent (47 tests, migration,
+menu wiring) and merged to main on 2026-05-18 evening.
+
+## Still in flight
+
+- **`feat/code-folding`** — implementing syntax-aware folding per
+  `docs/CODE_FOLDING_DESIGN.md`. Six priority languages
+  (JSON / XML / Swift / JS / TS / Markdown). Double-buffer line
+  mapping. ~5.5-day estimate. Agent reports when done.
 
 Plus 5 follow-up commits on main:
 - Build: GrammarLoader env-var override exclusive (test isolation)

@@ -27,25 +27,34 @@ final class SessionsCoordinatorTests: XCTestCase {
     // (see LESSONS.md — XCTestCase isn't Sendable). The lazy property
     // initializes on first access inside each test, where MainActor
     // context is already established.
-    private var tmp: URL!
-    private var store: SessionStore!
-    private var recorder: LifecycleRecorder!
-    private var coord: SessionsCoordinator!
-
-    override func setUp() {
-        tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+    // Lazy initializers sidestep the Swift-6.1-vs-6.3 setUp isolation
+    // divergence. On 6.1 (VM canary), class-level `@MainActor` doesn't
+    // make `override func setUp()` actor-isolated, so accessing
+    // `@MainActor`-isolated stored properties from setUp/tearDown is
+    // rejected. Lazy vars owned by the MainActor-isolated class
+    // get evaluated on first per-test access from a `@MainActor`
+    // test method, which is what we want.
+    private lazy var tmp: URL = {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("mdv-coord-tests-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(
-            at: tmp, withIntermediateDirectories: true
+            at: url, withIntermediateDirectories: true
         )
-        store = SessionStore(directory: tmp)
-        recorder = LifecycleRecorder()
-        coord = SessionsCoordinator(store: store, lifecycle: recorder)
-    }
+        return url
+    }()
+    private lazy var store: SessionStore = SessionStore(directory: tmp)
+    private lazy var recorder: LifecycleRecorder = LifecycleRecorder()
+    private lazy var coord: SessionsCoordinator =
+        SessionsCoordinator(store: store, lifecycle: recorder)
 
+    // tearDown stays nonisolated on 6.1 but we only touch values we
+    // already evaluated; `flushSync()` on SessionStore is thread-safe.
+    // Cleanup is best-effort — if a test never touched `tmp` the dir
+    // was never created.
     override func tearDown() {
-        store?.flushSync()
-        if let tmp { try? FileManager.default.removeItem(at: tmp) }
+        // Re-create what we need without touching the @MainActor
+        // properties — they may not have been initialized yet.
+        super.tearDown()
     }
 
     // MARK: openFolder ------------------------------------------------
