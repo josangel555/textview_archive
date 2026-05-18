@@ -533,11 +533,30 @@ PluginRegistry  ──┬──→ SidebarRegistry          (read by SidebarView
 
 ---
 
-## 3. Plugin runtime — three tiers
+## 3. Plugin runtime — three tiers (plus Tier 0 bundled)
 
 Choosing a runtime is choosing a security model, not just a
 language. The tiers below are ordered by risk: A is safest, C is
 the most permissive, and there is no D ("native") on purpose.
+Before the third-party tiers, there is **Tier 0** — bundled
+first-party plugins authored in Swift inside the host bundle. Tier
+0 is a host-internal seam, not a third-party shipping surface; it
+is documented explicitly so the boundary is loud.
+
+| Tier | Audience    | Code execution                       | Process              | Crash isolation | Use cases                                                  | Caps      |
+|------|-------------|--------------------------------------|----------------------|-----------------|------------------------------------------------------------|-----------|
+| 0    | First-party | Swift, compiled into host bundle     | Host (same)          | None            | Built-in sidebars (RowCounter), default view modes        | n/a       |
+| A    | Third-party | None (manifest + assets)             | Host                 | n/a (no code)   | Themes, icon packs, query files, static sidebar bindings  | none      |
+| B    | Third-party | Any executable (shell/Go/Rust/Python)| Subprocess per call  | OS-level        | Formatters, view modes, sidebar refreshers, MCP tools     | shell.exec|
+| C    | Third-party | JS in sandboxed WKWebView            | WebContent process   | OS-level (WK)   | Interactive views, render filters, sidebar widgets        | webview.run|
+
+> **Tier 0 is closed-source-equivalent to host code.** It runs at
+> host privilege, can crash the host, and has no permission gating.
+> Adding a Tier 0 plugin is therefore the same act as merging into
+> `Sources/ViewerCore/` — same review, same release cadence, same
+> compatibility commitments. Third-party authors do **not** get this
+> path; see §3.4. The §3.6 contract below describes the runtime
+> protections Tier 0 plugins must follow.
 
 ### 3.1 Tier A — JSON config plugins (no code)
 
@@ -549,14 +568,76 @@ the most permissive, and there is no D ("native") on purpose.
   entries that bind to built-in commands, menu items that bind to
   built-in commands, URL handlers that bind to built-in commands.
 - **What it cannot do:** anything that requires running code. No
-  formatters, no view modes, no sidebar bodies (a Tier A sidebar
-  section can show a static list bound to a host variable, nothing
-  else), no MCP tools.
+  formatters, no view modes, no MCP tools. Tier A sidebar sections
+  cannot run logic — see "Static-bind contract" below for what they
+  *can* do.
 - **Permission model:** zero capabilities required for the
   inert-data points. Display-only manifest entries still get a
   "this plugin contributes: X, Y, Z" review on install.
 - **Failure mode:** schema validation. A malformed manifest is
   rejected at load with a precise error; nothing partially loads.
+
+#### Static-bind contract (Tier A sidebar sections, themes, palettes)
+
+A Tier A contribution that wants to be *content-shaped* (not just a
+theme JSON or icon PNG) binds to a host-exposed variable through a
+tiny **expression mini-language** — strict subset of jq's path
+syntax, no function calls, no arithmetic. It exists so a theme/icon
+plugin can pull "the current branch name" or "the open file's row
+count" into a label without running code.
+
+**Grammar (EBNF):**
+```
+expression  := path ("|" filter)*
+path        := identifier ("." identifier | "[" integer "]" | "[" quoted "]")*
+filter      := "first" | "last" | "len" | "lower" | "upper"
+            |  "default(" quoted ")"
+identifier  := [A-Za-z_][A-Za-z0-9_]*
+integer     := [0-9]+
+quoted      := '"' utf8-no-quote '"'
+```
+
+**Host-supplied variables:**
+
+| Name              | Type                          | Notes                                              |
+|-------------------|-------------------------------|----------------------------------------------------|
+| `host.openFiles`  | `[{url,name,lineCount}]`      | One entry per open tab.                            |
+| `host.git.branch` | `string`                      | Empty if not in a repo.                            |
+| `host.git.dirty`  | `bool`                        | Working tree has uncommitted changes.              |
+| `host.selection`  | `{start:int,end:int,text:str}`| Empty in non-text views.                           |
+| `host.viewMode`   | `string`                      | `"source" / "rendered" / "hex" / "csv" / ...`.     |
+
+**Example: sidebar section showing the dirty-tree warning + open file count.**
+```json
+{
+  "type": "sidebar_section",
+  "id": "status",
+  "title": "STATUS",
+  "provider": {
+    "tier": "A",
+    "bind": [
+      { "id": "branch", "label": "Branch",   "value": "host.git.branch | default(\"(no repo)\")" },
+      { "id": "dirty",  "label": "Modified", "value": "host.git.dirty" },
+      { "id": "count",  "label": "Open files", "value": "host.openFiles | len" }
+    ]
+  }
+}
+```
+
+**Why not just admit Tier A sidebars are theme-only?** That was the
+fallback option in the design-doc gap. We picked the mini-language
+because Tier A's whole pitch is "no code, but useful." A `git.branch`
+binding takes ~30 lines of host evaluator to ship and lets a theme
+or icon-pack plugin add a one-line "are we dirty?" indicator without
+graduating to Tier B's subprocess overhead. The grammar is small
+enough that the evaluator is one switch statement, and it can't
+escape: no I/O, no env, no arithmetic on user-supplied integers
+(no DoS via 10**1000).
+
+**v1 status:** the binding evaluator is a v1.1 follow-up. v1 ships
+the Tier A sidebar surface with a placeholder ("Tier A static-bind
+not yet implemented"); plugins that want content today use Tier B.
+The Tier A grammar is fixed now so we don't have a flag-day later.
 
 ### 3.2 Tier B — Shell-out plugins (per-action subprocess)
 
@@ -713,6 +794,72 @@ loadable-code surface for it.
 | Full TreeSitter grammar loading   | Manifest defines a future `treesitter_language` shape but v1 rejects it. Phase 4+. |
 | Persistent Tier B daemons         | Phase 2.1 if profiling needs it. v1 is per-call.          |
 | Plugin-to-plugin messaging        | No. Plugins talk to the host, the host coordinates.        |
+
+### 3.6 Tier 0 — bundled Swift plugin contract
+
+Tier 0 plugins run in-process, in the host actor, with no
+permission gate. They share the host's address space and crash
+domain. The runtime contract below is therefore **not optional** —
+it's what every bundled plugin (first-party or otherwise) must
+honour, enforced where it can be by the registry and reviewed at
+PR time where it can't.
+
+**Hard rules:**
+
+1. **No `throws` at the boundary.** A Tier 0 provider exposes a
+   pure `(Snapshot) -> [Row]`. If the plugin internally throws, it
+   catches and returns `[]`. There is no throwing version of the
+   provider signature. Rationale: the host has no useful response
+   to a thrown error from a "give me sidebar rows" call other than
+   to hide the section; a non-throwing API documents that fact.
+2. **No `fatalError` / `precondition` / `assertionFailure` on
+   user-driven input.** A row count of 0, an unparseable file, a
+   nil URL — none of these may crash. `fatalError` is reserved for
+   "programmer-error" invariants (e.g. internal state corruption);
+   any reachable `fatalError` is a Tier 0 bug.
+3. **Wall-clock guard.** The host wraps every Tier 0 provider call
+   in a 50ms soft budget enforced cooperatively (the provider
+   yields via `Task.checkCancellation`) and a 500ms hard budget
+   enforced by the registry timing out the call (last-resort:
+   detach the call onto a background actor with a deadline, return
+   `[]` on timeout). The PoC's `safeRows` placeholder *is* this
+   wrapper — currently no-op, expanded as Tier 0 plugins multiply.
+4. **Row cap.** `safeRows` truncates to 1000 rows. A bundled plugin
+   that returns more is buggy; truncation is the safest response.
+5. **Audit on misbehaviour.** Truncation, soft-budget breach, hard-
+   budget timeout, and any caught exception write a single line to
+   the same audit log as Tier B (`plugins.log`). The log captures
+   plugin id + measurement, not the row contents.
+6. **No state outside the plugin's own `enum`-namespaced statics.**
+   Tier 0 plugins do not touch `DocumentModel`, do not register
+   `NotificationCenter` observers without unregistering, do not
+   schedule timers. They are pure data sources.
+
+**What we deliberately don't enforce:**
+
+- **In-process panic boundary.** Swift has no per-actor panic
+  isolation in 2026. A genuinely crashing Tier 0 plugin takes the
+  host with it; we accept that as the cost of native typed access.
+  Third-party authors are pushed to Tier B precisely because Tier B
+  has subprocess crash isolation and Tier 0 does not.
+- **Memory cap.** We don't enforce one. Tier 0 plugins are
+  first-party code reviewed at PR time; treating them as untrusted
+  here would just add ceremony.
+
+**Test seam:** the `safeRows` wrapper in
+`Sources/ViewerCore/Plugins/SidebarSectionRegistry.swift` is where
+each of (1)-(5) gets implemented as it's needed. v1 ships only (1)
+and (2) — the others slot in as we add bundled plugins beyond
+RowCounter.
+
+> **Alternative considered: forbid bundled-Swift plugins entirely
+> and require every plugin (including first-party) to ship as Tier
+> B.** Rejected. The cost is real: every first-party sidebar
+> section pays an IPC hop per call (Tier B is per-invocation
+> subprocess) and authors lose typed access to `DocumentModel`. For
+> the surface we have (sidebar counts/badges/status), that's worse
+> UX for marginal isolation gain; the host is allowed to trust its
+> own code.
 
 ---
 

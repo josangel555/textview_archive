@@ -27,11 +27,49 @@ public struct SettingsView: View {
                 Divider()
                 viewerSection
                 Divider()
+                pluginsSection
+                Divider()
                 advancedSection
             }
             .padding(20)
         }
         .frame(width: 460, height: 540)
+    }
+
+    @State private var pluginsWindow: NSWindow?
+
+    private var pluginsSection: some View {
+        section("Plugins") {
+            row("Manage installed plugins") {
+                Button("Manage…") { openPluginsWindow() }
+            }
+            row("Audit log") {
+                Button("Open Log") {
+                    NSWorkspace.shared.open(PluginSubprocessHost.auditLogURL())
+                }
+                .disabled(!FileManager.default.fileExists(
+                    atPath: PluginSubprocessHost.auditLogURL().path))
+            }
+            Text("Plugins live under ~/Library/Application Support/com.markdownviewer.MarkdownViewer/Plugins/. Drop a folder there and relaunch.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 4)
+        }
+    }
+
+    private func openPluginsWindow() {
+        if let w = pluginsWindow {
+            w.makeKeyAndOrderFront(nil)
+            return
+        }
+        let hosting = NSHostingController(rootView: PluginsSettingsView())
+        let w = NSWindow(contentViewController: hosting)
+        w.title = "Plugins"
+        w.styleMask = [.titled, .closable, .miniaturizable]
+        w.isReleasedWhenClosed = false
+        w.center()
+        w.makeKeyAndOrderFront(nil)
+        pluginsWindow = w
     }
 
     private var appearanceSection: some View {
