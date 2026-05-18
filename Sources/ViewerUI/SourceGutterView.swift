@@ -26,19 +26,83 @@ struct SourceGutterView: View {
     var diffMarks: [Int: DiffMark] = [:]
     /// 1-based line numbers bookmarked for the open file.
     var bookmarkedLines: Set<Int> = []
+    /// Fold-state for the open file. When non-nil, the gutter draws a
+    /// chevron in a leading 12pt column for any line that starts a
+    /// fold region (▾ when expanded, ▸ when collapsed). Clicks on the
+    /// chevron route through `onFoldChevronClick`.
+    var foldState: FoldState? = nil
+    /// Called when the user clicks a chevron. The argument is the
+    /// 1-based original-buffer line number that starts the fold.
+    var onFoldChevronClick: ((Int) -> Void)? = nil
+
+    /// Width of the fold-chevron column when `foldState` is present.
+    /// 0 when fold support isn't wired (keeps existing layouts intact).
+    private var chevronColumnWidth: CGFloat {
+        foldState == nil ? 0 : 14
+    }
 
     /// Width in points. 6px padding + N digits worth of monospace
-    /// glyphs. Updated whenever `state.lineCount` changes.
+    /// glyphs, plus an optional chevron column. Updated whenever
+    /// `state.lineCount` or `foldState` presence changes.
     var width: CGFloat {
         let digits = max(2, String(state.lineCount).count)
         let glyphAdvance = NSFont.monospacedSystemFont(
             ofSize: max(10, fontSize - 3), weight: .regular
         ).advancement(forGlyph: NSGlyph(0))   // approximation
         let estChar = max(7, glyphAdvance.width)
-        return CGFloat(digits) * estChar + 14
+        return CGFloat(digits) * estChar + 14 + chevronColumnWidth
     }
 
     var body: some View {
+        ZStack(alignment: .topLeading) {
+            canvasBody
+            chevronOverlay
+        }
+        .frame(width: width)
+        .accessibilityIdentifier("mdv.sourceGutter")
+        .accessibilityLabel(gutterAccessibilityLabel)
+    }
+
+    /// Click-target overlay for fold chevrons. Sits above the Canvas so
+    /// the hit-test is per-line. Empty (transparent) when no folds.
+    @ViewBuilder
+    private var chevronOverlay: some View {
+        if let fs = foldState, state.lineHeight > 0,
+           let click = onFoldChevronClick {
+            let lh = state.lineHeight
+            let inset = state.topInset
+            let firstLine = max(1, Int((state.offsetY - inset) / lh) + 1)
+            let lastLine = min(
+                state.lineCount,
+                Int((state.offsetY + state.viewportHeight - inset) / lh) + 2
+            )
+            if firstLine <= lastLine {
+                ZStack(alignment: .topLeading) {
+                    ForEach(firstLine...lastLine, id: \.self) { n in
+                        let starts = fs.regionsStarting(at: n)
+                        if !starts.isEmpty {
+                            let y = inset + CGFloat(n - 1) * lh - state.offsetY
+                            Button(action: { click(n) }) {
+                                Rectangle().fill(Color.clear)
+                                    .frame(width: chevronColumnWidth,
+                                           height: lh)
+                            }
+                            .buttonStyle(.plain)
+                            .position(x: chevronColumnWidth / 2,
+                                      y: y + lh / 2)
+                            .accessibilityLabel(
+                                fs.collapsed.contains(starts.first!)
+                                    ? "Expand fold"
+                                    : "Collapse fold"
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var canvasBody: some View {
         Canvas { context, size in
             // Background.
             context.fill(
@@ -90,10 +154,16 @@ struct SourceGutterView: View {
                 let docY = inset + CGFloat(n - 1) * lh
                 let y = docY - state.offsetY
 
-                // Git diff stripe — 2pt wide bar on the left edge of
-                // the gutter. Green = added, blue = modified, red =
-                // deleted (drawn as a thin tick at the line's top
-                // since the removed line isn't in the working tree).
+                // Reserve the leading `chevronColumnWidth` points for
+                // the fold chevron when folds are wired; diff stripe
+                // and bookmark dot shift right so nothing overlaps.
+                let leftInset = chevronColumnWidth
+
+                // Git diff stripe — 2pt wide bar at the start of the
+                // (post-chevron) left edge. Green = added, blue =
+                // modified, red = deleted (drawn as a thin tick at
+                // the line's top since the removed line isn't in the
+                // working tree).
                 if let mark = diffMarks[n] {
                     let color: Color
                     switch mark {
@@ -105,9 +175,9 @@ struct SourceGutterView: View {
                     if mark == .deleted {
                         // Thin tick at the top of the line where the
                         // deletion happened above.
-                        stripeRect = CGRect(x: 0, y: y, width: 2, height: 2)
+                        stripeRect = CGRect(x: leftInset, y: y, width: 2, height: 2)
                     } else {
-                        stripeRect = CGRect(x: 0, y: y + 1, width: 2, height: max(2, lh - 2))
+                        stripeRect = CGRect(x: leftInset, y: y + 1, width: 2, height: max(2, lh - 2))
                     }
                     context.fill(Path(stripeRect), with: .color(color.opacity(0.85)))
                 }
@@ -118,7 +188,7 @@ struct SourceGutterView: View {
                 if bookmarkedLines.contains(n) {
                     let dotSize: CGFloat = max(4, lh * 0.35)
                     let dotRect = CGRect(
-                        x: 5,
+                        x: leftInset + 5,
                         y: y + (lh - dotSize) / 2,
                         width: dotSize, height: dotSize
                     )
@@ -150,11 +220,37 @@ struct SourceGutterView: View {
                     at: CGPoint(x: x + labelSize.width / 2,
                                 y: y + lh / 2)
                 )
+
+                // Fold chevron column (leftmost slot, before line
+                // numbers but after the diff stripe). Drawn here in
+                // the same Canvas pass so it scrolls in lock-step;
+                // the click target is handled by `chevronOverlay`.
+                if let fs = foldState, !fs.regions.isEmpty {
+                    let starts = fs.regionsStarting(at: n)
+                    if let first = starts.first {
+                        let collapsed = fs.collapsed.contains(first)
+                        let glyph = collapsed ? "\u{25B8}" : "\u{25BE}"
+                        let chevronColor = NSColor.secondaryLabelColor
+                        let attrs: [NSAttributedString.Key: Any] = [
+                            .font: font,
+                            .foregroundColor: chevronColor,
+                        ]
+                        let gSize = (glyph as NSString).size(withAttributes: attrs)
+                        let gx = (chevronColumnWidth - gSize.width) / 2
+                        context.draw(
+                            Text(glyph)
+                                .font(.system(size: max(10, fontSize - 3),
+                                              design: .monospaced))
+                                .foregroundStyle(
+                                    Color(nsColor: chevronColor)
+                                ),
+                            at: CGPoint(x: gx + gSize.width / 2,
+                                        y: y + lh / 2)
+                        )
+                    }
+                }
             }
         }
-        .frame(width: width)
-        .accessibilityIdentifier("mdv.sourceGutter")
-        .accessibilityLabel(gutterAccessibilityLabel)
     }
 
     /// Build a digit-count → label size lookup. Index 0 is unused;
