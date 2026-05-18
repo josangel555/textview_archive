@@ -105,15 +105,70 @@ public struct WalkthroughOverlay: View {
 
     @ViewBuilder
     private func popover(for p: WalkthroughBridge.PopoverRequest) -> some View {
+        // Line anchors are now precisely positioned next to the
+        // target line — re-use the gutter's offset math
+        // (state.lineHeight × line - offsetY). Other anchor variants
+        // still use container-Alignment until the target surfaces
+        // expose their frames via PreferenceKey (follow-up).
+        if case .line(_, let line) = p.anchor {
+            lineAnchoredPopover(for: p, line: line)
+        } else {
+            containerAlignedPopover(for: p)
+        }
+    }
+
+    @ViewBuilder
+    private func lineAnchoredPopover(
+        for p: WalkthroughBridge.PopoverRequest,
+        line: Int
+    ) -> some View {
+        let state = model.sourceScrollState
+        let lh = state.lineHeight
+        if lh > 0 {
+            let inset = state.topInset
+            let docY = inset + CGFloat(line - 1) * lh
+            let viewportY = docY - state.offsetY
+            // Position the popover top edge just below the line so it
+            // doesn't cover the line itself. Clip to viewport: if the
+            // line is off-screen, hide the popover (the highlight
+            // overlay handles the off-screen indicator separately).
+            let clamped = max(8, min(viewportY + lh + 4,
+                                     state.viewportHeight - 80))
+            if viewportY + lh >= 0 && viewportY <= state.viewportHeight {
+                popoverCard(for: p)
+                    .position(
+                        x: 200,   // left-of-center; .position recenters
+                        y: clamped + 40   // approx half popover height
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity,
+                           alignment: .topLeading)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func containerAlignedPopover(
+        for p: WalkthroughBridge.PopoverRequest
+    ) -> some View {
         let alignment: Alignment = {
             switch p.anchor {
-            case .editor:                       return .top
-            case .sidebar:                      return .leading
-            case .gitTab:                       return .leading
-            case .line:                         return .top
-            case .window:                       return .center
+            case .editor:  return .top
+            case .sidebar: return .leading
+            case .gitTab:  return .leading
+            case .line:    return .top    // unreachable here
+            case .window:  return .center
             }
         }()
+        popoverCard(for: p)
+            .padding(20)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+    }
+
+    /// The popover card itself — body text + Dismiss. Layout-agnostic;
+    /// positioning is the caller's job (see `lineAnchoredPopover` vs
+    /// `containerAlignedPopover`).
+    @ViewBuilder
+    private func popoverCard(for p: WalkthroughBridge.PopoverRequest) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(p.body)
                 .font(.system(size: 12))
@@ -139,8 +194,6 @@ public struct WalkthroughOverlay: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color.accentColor.opacity(0.4), lineWidth: 1)
         )
-        .padding(20)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
         .accessibilityIdentifier("mdv.walkthrough.popover")
     }
 }
