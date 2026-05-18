@@ -38,8 +38,25 @@ public actor LSPClient {
 
     private var nextID: Int64 = 1
     private var pending: [Int64: CheckedContinuation<Data, Error>] = [:]
+    /// Method names of currently pending requests, so we can produce a
+    /// useful error when the server crashes / closes the transport.
+    private var pendingMethods: [Int64: String] = [:]
     private var initialized = false
     private var readerTask: Task<Void, Never>?
+
+    /// Position encoding negotiated with the server in `initialize`.
+    /// The spec default is `.utf16`. If the server replies with
+    /// `positionEncoding: "utf-8"` or `"utf-32"`, we honor it here and
+    /// the `LSPPositionConverter` translates accordingly.
+    public private(set) var positionEncoding: LSPPositionEncoding = .utf16
+
+    /// Crash callback invoked when stdout EOFs / framing fails after
+    /// `initialize`. Used by `LSPPool` to demote the entry. Optional;
+    /// stand-alone callers don't need it.
+    private var onCrash: (@Sendable (Error) -> Void)?
+    public func setOnCrash(_ handler: @escaping @Sendable (Error) -> Void) {
+        self.onCrash = handler
+    }
 
     // MARK: Init / spawn
 
@@ -131,6 +148,13 @@ public actor LSPClient {
             cont.resume(throwing: error)
         }
         pending.removeAll()
+        pendingMethods.removeAll()
+        // Notify the pool (if any) that the transport died after we'd
+        // initialized — that's a crash, not a clean shutdown.
+        if initialized, let cb = onCrash {
+            cb(error)
+        }
+        initialized = false
     }
 
     // MARK: Inbound dispatch
@@ -148,6 +172,7 @@ public actor LSPClient {
         if obj["method"] == nil, let rawID = obj["id"] {
             guard let id = idAsInt64(rawID) else { return }
             guard let cont = pending.removeValue(forKey: id) else { return }
+            pendingMethods.removeValue(forKey: id)
             if let err = obj["error"] as? [String: Any] {
                 let code = (err["code"] as? Int) ?? -1
                 let msg = (err["message"] as? String) ?? "(no message)"
@@ -186,11 +211,19 @@ public actor LSPClient {
 
     /// Send a JSON-RPC request and await the raw `result` JSON bytes.
     /// Per-method timeout per the design doc; default 8s.
+    ///
+    /// If `token` is non-nil, the token is bound to the request's id so
+    /// `cancel(token:)` from another task can send `$/cancelRequest` to
+    /// the server and resume the continuation with `CancellationError`.
     private func request(
-        method: String, params: Any, timeout: Duration
+        method: String, params: Any, timeout: Duration,
+        token: LSPCancellationToken? = nil
     ) async throws -> Data {
         let id = nextID
         nextID &+= 1
+        if let token = token {
+            token.bind(id: id, owner: self)
+        }
         let envelope: [String: Any] = [
             "jsonrpc": "2.0", "id": id, "method": method, "params": params
         ]
@@ -210,10 +243,12 @@ public actor LSPClient {
 
         return try await withCheckedThrowingContinuation { cont in
             self.pending[id] = cont
+            self.pendingMethods[id] = method
             do {
                 try self.stdinPipe.fileHandleForWriting.write(contentsOf: framed)
             } catch {
                 self.pending.removeValue(forKey: id)
+                self.pendingMethods.removeValue(forKey: id)
                 cont.resume(throwing: LSPError.transportClosed)
             }
         }
@@ -224,7 +259,39 @@ public actor LSPClient {
     /// error and forget the entry.
     private func timeoutFire(id: Int64, method: String) {
         guard let cont = pending.removeValue(forKey: id) else { return }
+        pendingMethods.removeValue(forKey: id)
         cont.resume(throwing: LSPError.timeout(method: method))
+    }
+
+    /// Cancel a pending request by its JSON-RPC id. Sends `$/cancelRequest`
+    /// to the server (best-effort notification — fire-and-forget) and
+    /// resumes the local continuation with `CancellationError` if it's
+    /// still pending. Late responses from the server are silently
+    /// discarded by `dispatchInbound`.
+    /// Cancel by id from another file (token bridge). Public so the
+    /// LSPCancellationToken — which lives in LSPProtocol.swift — can
+    /// reach into the actor without exposing pending state.
+    public func cancelRequestPublic(id: Int64) {
+        cancelRequest(id: id)
+    }
+
+    private func cancelRequest(id: Int64) {
+        // Notify server first so it can stop work. Errors swallowed —
+        // if the transport is dead the local resume below still happens.
+        let env: [String: Any] = [
+            "jsonrpc": "2.0",
+            "method": "$/cancelRequest",
+            "params": ["id": id]
+        ]
+        if let body = try? JSONSerialization.data(withJSONObject: env, options: []) {
+            let framed = LSPFraming.frame(body)
+            try? stdinPipe.fileHandleForWriting.write(contentsOf: framed)
+        }
+        // Resume the local awaiter.
+        if let cont = pending.removeValue(forKey: id) {
+            pendingMethods.removeValue(forKey: id)
+            cont.resume(throwing: CancellationError())
+        }
     }
 
     /// Fire-and-forget notification (no `id`, no response expected).
@@ -276,12 +343,21 @@ public actor LSPClient {
                     "workspaceFolders": true
                 ],
                 "general": [
-                    "positionEncodings": ["utf-16"]
+                    // Accept all three; server picks. We translate at the
+                    // boundary via `LSPPositionConverter`.
+                    "positionEncodings": ["utf-16", "utf-8", "utf-32"]
                 ]
             ],
             "trace": "off"
         ]
-        _ = try await request(method: "initialize", params: params, timeout: .seconds(30))
+        let raw = try await request(method: "initialize", params: params, timeout: .seconds(30))
+        // Parse server's `capabilities.positionEncoding`. Optional;
+        // absent → utf-16 default (spec).
+        if let obj = try? JSONSerialization.jsonObject(with: raw) as? [String: Any],
+           let caps = obj["capabilities"] as? [String: Any],
+           let pe = caps["positionEncoding"] as? String {
+            positionEncoding = LSPPositionEncoding(rawValue: pe) ?? .utf16
+        }
         try notify(method: "initialized", params: [String: Any]())
         initialized = true
     }
@@ -302,26 +378,51 @@ public actor LSPClient {
         try notify(method: "textDocument/didOpen", params: params)
     }
 
-    public func hover(url: URL, line: Int, character: Int) async throws -> LSPHover? {
+    public func hover(
+        url: URL, line: Int, character: Int,
+        token: LSPCancellationToken? = nil
+    ) async throws -> LSPHover? {
         guard initialized else { throw LSPError.notInitialized }
         let params: [String: Any] = [
             "textDocument": ["uri": url.absoluteString],
             "position": ["line": line, "character": character]
         ]
         let raw = try await request(
-            method: "textDocument/hover", params: params, timeout: .seconds(3))
+            method: "textDocument/hover", params: params,
+            timeout: .seconds(3), token: token)
         return Self.decodeHover(raw)
     }
 
-    public func definition(url: URL, line: Int, character: Int) async throws -> [LSPLocation] {
+    public func definition(
+        url: URL, line: Int, character: Int,
+        token: LSPCancellationToken? = nil
+    ) async throws -> [LSPLocation] {
         guard initialized else { throw LSPError.notInitialized }
         let params: [String: Any] = [
             "textDocument": ["uri": url.absoluteString],
             "position": ["line": line, "character": character]
         ]
         let raw = try await request(
-            method: "textDocument/definition", params: params, timeout: .seconds(5))
+            method: "textDocument/definition", params: params,
+            timeout: .seconds(5), token: token)
         return Self.decodeDefinition(raw)
+    }
+
+    /// `textDocument/documentSymbol` — returns a flat list of document
+    /// symbols (hierarchy preserved via `children`). Used by the outline
+    /// sidebar. Server may return either `SymbolInformation[]` (legacy)
+    /// or `DocumentSymbol[]`; we normalize to the latter.
+    public func documentSymbol(
+        url: URL, token: LSPCancellationToken? = nil
+    ) async throws -> [LSPDocumentSymbol] {
+        guard initialized else { throw LSPError.notInitialized }
+        let params: [String: Any] = [
+            "textDocument": ["uri": url.absoluteString]
+        ]
+        let raw = try await request(
+            method: "textDocument/documentSymbol", params: params,
+            timeout: .seconds(5), token: token)
+        return Self.decodeDocumentSymbol(raw)
     }
 
     /// Best-effort graceful shutdown. Caller is responsible for not
@@ -425,5 +526,54 @@ public actor LSPClient {
         return LSPRange(
             start: LSPPosition(line: sl, character: sc),
             end:   LSPPosition(line: el, character: ec))
+    }
+
+    /// `textDocument/documentSymbol` polymorphic decode:
+    ///   - `DocumentSymbol[]` (preferred): has `name`, `kind`, `range`,
+    ///     `selectionRange`, optional `children`, optional `detail`.
+    ///   - `SymbolInformation[]` (legacy fallback): has `name`, `kind`,
+    ///     `location: {uri, range}`, optional `containerName`. We flatten
+    ///     these into a single-level list (no `containerName` hierarchy
+    ///     rebuild — too lossy and rarely useful for outline display).
+    ///   - `null` / `[]`: empty.
+    static func decodeDocumentSymbol(_ data: Data) -> [LSPDocumentSymbol] {
+        guard let any = try? JSONSerialization.jsonObject(
+                with: data, options: [.fragmentsAllowed]) else { return [] }
+        if any is NSNull { return [] }
+        guard let arr = any as? [[String: Any]] else { return [] }
+        // Discriminate by presence of `location` (SymbolInformation) vs
+        // `range` (DocumentSymbol).
+        return arr.compactMap { parseDocumentSymbol($0) }
+    }
+
+    private static func parseDocumentSymbol(_ d: [String: Any]) -> LSPDocumentSymbol? {
+        guard let name = d["name"] as? String else { return nil }
+        let kind = (d["kind"] as? Int).flatMap(LSPSymbolKind.init(rawValue:)) ?? .other
+        let detail = d["detail"] as? String
+        // DocumentSymbol shape.
+        if let rangeDict = d["range"] as? [String: Any],
+           let range = parseRange(rangeDict) {
+            let selectionRange = (d["selectionRange"] as? [String: Any])
+                .flatMap(parseRange) ?? range
+            let children: [LSPDocumentSymbol] = {
+                guard let kids = d["children"] as? [[String: Any]] else { return [] }
+                return kids.compactMap(parseDocumentSymbol)
+            }()
+            return LSPDocumentSymbol(
+                name: name, detail: detail, kind: kind,
+                range: range, selectionRange: selectionRange,
+                children: children, uri: nil)
+        }
+        // SymbolInformation legacy shape.
+        if let loc = d["location"] as? [String: Any],
+           let uri = loc["uri"] as? String,
+           let rangeDict = loc["range"] as? [String: Any],
+           let range = parseRange(rangeDict) {
+            return LSPDocumentSymbol(
+                name: name, detail: detail, kind: kind,
+                range: range, selectionRange: range,
+                children: [], uri: uri)
+        }
+        return nil
     }
 }
