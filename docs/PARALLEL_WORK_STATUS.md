@@ -1,5 +1,35 @@
 # Parallel work status — 2026-05-18 evening
 
+**Update later this evening:** all 3 `feat/*` branches merged to
+`main`. VM canary: **883 tests, 3 skipped, 0 failures**. Three
+PoC-hardening agents now running in fresh worktrees (`feat/lsp-v1`,
+`feat/sessions-v1`, `feat/plugins-v1`).
+
+## Merged to main
+
+| Branch | Resulted in | New tests on main |
+|---|---|---:|
+| `feat/treesitter-lazyload` | 6 lazy grammars (Java/C/C++/C#/Rust/Lua), exec −4 MB, total 31 MB ≤ 35 MB cap | +55 |
+| `feat/mcp-stdio` | MCP roll-our-own JSON-RPC server, 10 tools, `--mcp-stdio` flag | +51 |
+| `feat/walkthrough-ui` | Docked-bottom player, full anchor suite, --walkthrough CLI flag | +22 |
+
+Plus 5 follow-up commits on main:
+- Build: GrammarLoader env-var override exclusive (test isolation)
+- Build: debug builds skip bundle-size check
+- Build: GrammarLoader tearDown clears negative-cache leak
+- Fix: MCPToolCatalogTests Swift 6.1 vs 6.3 setUp isolation
+- Merge resolutions
+
+### Walkthrough UI leftovers — partially landed
+
+- ✅ Line-anchored popovers now precisely positioned (vs alignment-based)
+- ✅ `splitFile.alongside` now selects primary tab before opening split
+- ✅ `addBookmark` uses idempotent BookmarksStore.add (+ DocumentModel.publishBookmarksChange helper)
+- ❌ `runDiff` per-SHA — needs DiffView scope-by-SHA refactor
+- ❌ Note button → Code Review threads — needs review-thread integration
+- ⏳ Other anchor types' precise positioning (sidebar/gitTab/window) — needs PreferenceKey from each target surface
+
+
 Background agents working in isolated git worktrees off the main
 repo. Each branch is reviewable independently before deciding whether
 to land.
