@@ -379,6 +379,38 @@ public final class SourceTextController: NSViewController {
         cb(state)
     }
 
+    /// Cached array of UTF-16 offsets where each newline starts in the
+    /// current textStorage. Built lazily on first use after each
+    /// content change; cleared in `applyAttributedString`. Lets
+    /// `publishSelection` resolve (line, column) by binary search in
+    /// O(log lines) instead of walking `0..<loc` calling
+    /// `NSString.character(at:)` per character (which on a 1 MB file
+    /// at a deep cursor was ~800K calls per arrow press).
+    private var newlineOffsets: [Int]?
+    private var newlineOffsetsFor: NSRange = NSRange(location: 0, length: -1)
+
+    private func newlineOffsetsRefreshed() -> [Int] {
+        guard let storage = textView.textStorage else { return [] }
+        let length = storage.length
+        if let cached = newlineOffsets,
+           newlineOffsetsFor.length == length {
+            return cached
+        }
+        let ns = storage.string as NSString
+        var offsets: [Int] = []
+        offsets.reserveCapacity(max(16, length / 80))
+        var i = 0
+        while i < length {
+            if ns.character(at: i) == 0x0A {
+                offsets.append(i)
+            }
+            i += 1
+        }
+        newlineOffsets = offsets
+        newlineOffsetsFor = NSRange(location: 0, length: length)
+        return offsets
+    }
+
     /// Compute (line, column) from the textView's selectedRange and
     /// publish via the caller's callback IF it changed. The dedupe
     /// is what stops the apply→publish→re-render→apply→… loop.
@@ -390,16 +422,20 @@ public final class SourceTextController: NSViewController {
 
         guard let cb = onSelectionChange else { return }
         let sel = textView.selectedRange()
-        let str = textView.string as NSString
-        let loc = min(sel.location, str.length)
-        var line = 1
-        var lineStart = 0
-        for i in 0..<loc {
-            if str.character(at: i) == 0x0A {
-                line += 1
-                lineStart = i + 1
-            }
+        let total = textView.textStorage?.length ?? 0
+        let loc = min(sel.location, total)
+        let offsets = newlineOffsetsRefreshed()
+        // Number of newlines BEFORE `loc` = the count of offsets < loc.
+        // Binary search for the first offset >= loc; that index is also
+        // the count of newlines preceding the cursor.
+        var lo = 0
+        var hi = offsets.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if offsets[mid] < loc { lo = mid + 1 } else { hi = mid }
         }
+        let line = lo + 1
+        let lineStart = lo == 0 ? 0 : offsets[lo - 1] + 1
         let new = SourceSelection(
             line: line,
             column: loc - lineStart + 1,
@@ -642,6 +678,11 @@ public final class SourceTextController: NSViewController {
         lastAttrKey = key
         // Refresh line count for the gutter.
         cachedLineCount = Self.countLines(in: text)
+        // Invalidate the newline-offset binary-search cache used by
+        // publishSelection. Cheap to rebuild on first selection move
+        // after a content change.
+        newlineOffsets = nil
+        newlineOffsetsFor = NSRange(location: 0, length: -1)
     }
 
     private static func countLines(in text: String) -> Int {
