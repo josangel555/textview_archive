@@ -180,6 +180,46 @@ final class TabsStateTests: XCTestCase {
         XCTAssertEqual(s.tabs.count, 2, "should not create a new tab")
     }
 
+    func test_openOrReveal_lazyExistingTab_adoptsNewViewMode() {
+        // Workspace restore scenario: lazy tab carries .source from
+        // the previous session. Opening the file (e.g. from sidebar)
+        // should adopt the new file's default viewMode rather than
+        // keep the stale source mode.
+        let lazyTab = Tab(
+            url: URL(fileURLWithPath: "/a.md"),
+            state: .empty,
+            viewMode: .source
+        )
+        var s = TabsState(tabs: [lazyTab])
+        let i = s.openOrReveal(
+            url: URL(fileURLWithPath: "/a.md"),
+            state: .empty,
+            viewMode: .rendered
+        )
+        XCTAssertEqual(i, 0)
+        XCTAssertEqual(s.tabs[0].viewMode, .rendered,
+                       "lazy tab should pick up the new computed viewMode")
+    }
+
+    func test_openOrReveal_loadedExistingTab_preservesViewMode() {
+        // Already-materialized tab: user may have deliberately
+        // switched to .source. Reopening should not overwrite that.
+        let loadedTab = Tab(
+            url: URL(fileURLWithPath: "/a.md"),
+            state: .preview(URL(fileURLWithPath: "/a.md"), .markdown),
+            viewMode: .source
+        )
+        var s = TabsState(tabs: [loadedTab])
+        let i = s.openOrReveal(
+            url: URL(fileURLWithPath: "/a.md"),
+            state: .preview(URL(fileURLWithPath: "/a.md"), .markdown),
+            viewMode: .rendered
+        )
+        XCTAssertEqual(i, 0)
+        XCTAssertEqual(s.tabs[0].viewMode, .source,
+                       "materialized tab should keep its current viewMode")
+    }
+
     func test_openOrReveal_newURL_appendsTab() {
         var s = TabsState(tabs: [makeTab("a")])
         let i = s.openOrReveal(

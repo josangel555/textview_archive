@@ -222,6 +222,12 @@ public struct ContentView: View {
                     )
                 }
             }
+            // Make the source pane always claim the full content area.
+            // Without this, NSScrollView's intrinsicContentSize (driven
+            // by the document text width) leaks through and SwiftUI
+            // collapses the view to a narrow centered strip when the
+            // file content is short or just-loaded.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 

@@ -125,11 +125,22 @@ public struct TabsState: Equatable, Sendable {
         viewMode: ViewMode
     ) -> Int {
         if let existing = tabs.firstIndex(where: { $0.url == url }) {
+            // For an already-materialized tab (state != .empty) we
+            // preserve the user's current viewMode — they may have
+            // switched it deliberately (e.g. Source for an .md file).
+            // For a lazy/unmaterialized tab (state == .empty, typically
+            // workspace-restored), the carried viewMode is stale: it
+            // was the mode at last close, not a current preference.
+            // Use the new computed mode so e.g. a restored markdown
+            // tab opens in .rendered, not stale .source.
+            let isLazy: Bool
+            if case .empty = tabs[existing].state { isLazy = true } else { isLazy = false }
+            let modeToUse = isLazy ? viewMode : tabs[existing].viewMode
             tabs[existing] = Tab(
                 id: tabs[existing].id,
                 url: url,
                 state: state,
-                viewMode: tabs[existing].viewMode
+                viewMode: modeToUse
             )
             selectedIndex = existing
             return existing
