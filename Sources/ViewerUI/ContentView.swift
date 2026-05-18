@@ -5,6 +5,7 @@ import ViewerCore
 
 public struct ContentView: View {
     @ObservedObject var model: DocumentModel
+    @StateObject var walkthrough: WalkthroughPlayerController
     @State private var isDropTargeted = false
     private let renderer = HTMLRenderer()
     private let stylesheet: String
@@ -12,6 +13,19 @@ public struct ContentView: View {
     public init(model: DocumentModel) {
         self.model = model
         self.stylesheet = MarkdownStylesheet.load()
+        // Persist the controller across body re-evals. The controller
+        // owns the engine, delegate, and auto-advance scheduler — all
+        // of which hold weak refs that would dangle if the controller
+        // were rebuilt per body call.
+        _walkthrough = StateObject(
+            wrappedValue: WalkthroughPlayerController(model: model)
+        )
+    }
+
+    /// Public accessor for `main.swift` to drive the player from CLI
+    /// args / future external transports.
+    public var walkthroughController: WalkthroughPlayerController {
+        walkthrough
     }
 
     public var body: some View {
@@ -31,9 +45,29 @@ public struct ContentView: View {
                             .accessibilityIdentifier("mdv.sidebar")
                         Divider()
                     }
-                    content
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .accessibilityIdentifier("mdv.content")
+                    VStack(spacing: 0) {
+                        content
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .accessibilityIdentifier("mdv.content")
+                            .overlay(
+                                // Window-root overlay scoped to the
+                                // content pane. Lives above the source
+                                // view so highlight stripes and
+                                // floating popovers align with the
+                                // editor, not the whole window.
+                                WalkthroughOverlay(model: model)
+                                    .allowsHitTesting(
+                                        model.walkthroughBridge.popover != nil
+                                    )
+                            )
+                        if walkthrough.isActive {
+                            // Docked at the bottom of the right pane.
+                            // Only present when a walkthrough is
+                            // running (per user decision §1).
+                            WalkthroughPlayerView(controller: walkthrough)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     if let splitURL = model.splitURL {
                         Divider()
                         SplitPaneView(
