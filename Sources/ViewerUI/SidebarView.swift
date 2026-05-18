@@ -45,6 +45,35 @@ struct SidebarView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    // Sort mode picker. Folders always sort before
+                    // files (Finder-like); the chosen mode applies
+                    // within each group.
+                    Menu {
+                        ForEach(SidebarModel.FolderSortMode.allCases) { mode in
+                            Button {
+                                sidebar.sortMode = mode
+                            } label: {
+                                HStack {
+                                    Text(mode.rawValue)
+                                    if sidebar.sortMode == mode {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 2) {
+                            Image(systemName: "arrow.up.arrow.down")
+                                .font(.system(size: 9))
+                            Text(sidebar.sortMode.rawValue)
+                                .font(.system(size: model.uiSize(10)))
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .help("Sort folder contents")
+                    .accessibilityIdentifier("mdv.sidebar.sort")
                     // Lock toggle. When locked, auto-reveal-on-click +
                     // tab-reveal won't change the sidebar root; the
                     // user's chosen folder stays put.

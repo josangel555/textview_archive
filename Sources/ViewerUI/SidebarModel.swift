@@ -299,8 +299,56 @@ public final class SidebarModel: ObservableObject {
     }
 
     /// Cache-only read. Safe to call from SwiftUI bodies; never does IO.
+    /// Applies the current sort mode each call — cheap (small N per
+    /// directory) and avoids re-cache-invalidation on sort changes.
     public func children(of url: URL) -> [FileNode] {
-        childrenCache[normalize(url)] ?? []
+        let raw = childrenCache[normalize(url)] ?? []
+        return sortChildren(raw)
+    }
+
+    @Published public var sortMode: FolderSortMode = .name {
+        didSet { invalidateFlatCache() }
+    }
+
+    public enum FolderSortMode: String, CaseIterable, Identifiable, Sendable {
+        case name = "Name"
+        case sizeDescending = "Size"
+        case modifiedDescending = "Recent"
+        case modifiedAscending = "Added"
+        public var id: String { rawValue }
+    }
+
+    /// Apply the current sort mode. Directories always sort before
+    /// files (Finder-like), then within each group the chosen mode
+    /// applies. Falls back to name for fields a node doesn't have
+    /// (e.g. size is nil for directories).
+    private func sortChildren(_ nodes: [FileNode]) -> [FileNode] {
+        switch sortMode {
+        case .name:
+            return nodes  // service already returns in name order
+        case .sizeDescending:
+            return nodes.sorted { lhs, rhs in
+                if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory }
+                if lhs.isDirectory { return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending }
+                return (lhs.byteCount ?? 0) > (rhs.byteCount ?? 0)
+            }
+        case .modifiedDescending:
+            return nodes.sorted { lhs, rhs in
+                if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory }
+                let lm = lhs.modifiedAt ?? .distantPast
+                let rm = rhs.modifiedAt ?? .distantPast
+                if lm != rm { return lm > rm }
+                return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+            }
+        case .modifiedAscending:
+            return nodes.sorted { lhs, rhs in
+                if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory }
+                let lm = lhs.modifiedAt ?? .distantFuture
+                let rm = rhs.modifiedAt ?? .distantFuture
+                if lm != rm { return lm < rm }
+                return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+            }
+        }
     }
 
     /// Loads (synchronously) and caches the directory's children if not yet

@@ -5,11 +5,19 @@ public struct FileNode: Equatable, Sendable, Identifiable {
     public let url: URL
     public let name: String
     public let isDirectory: Bool
+    /// File size in bytes. Nil for directories (computing recursive
+    /// directory size is expensive; we don't do it here).
+    public let byteCount: Int?
+    /// Last filesystem modification time. Used for the "Recent" sort.
+    public let modifiedAt: Date?
 
-    public init(url: URL, name: String, isDirectory: Bool) {
+    public init(url: URL, name: String, isDirectory: Bool,
+                byteCount: Int? = nil, modifiedAt: Date? = nil) {
         self.url = url
         self.name = name
         self.isDirectory = isDirectory
+        self.byteCount = byteCount
+        self.modifiedAt = modifiedAt
     }
 }
 
@@ -41,7 +49,9 @@ public struct FileTreeService: Sendable {
         do {
             contents = try FileManager.default.contentsOfDirectory(
                 at: url,
-                includingPropertiesForKeys: [.isDirectoryKey],
+                includingPropertiesForKeys: [.isDirectoryKey,
+                                             .fileSizeKey,
+                                             .contentModificationDateKey],
                 options: options
             )
         } catch {
@@ -56,12 +66,22 @@ public struct FileTreeService: Sendable {
         // each caller re-normalizing — gets rid of the bug class where
         // a `/var/...` URL from a callback misses a cache keyed on
         // `/private/var/...`.
+        //
+        // We additionally fetch size + modification time so the sidebar
+        // can sort by them without a second pass. Both are batched into
+        // the same `contentsOfDirectory` resource-keys call → no extra
+        // syscalls beyond the existing isDirectory probe.
         let nodes: [FileNode] = contents.map { child in
-            let isDir = (try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+            let vals = try? child.resourceValues(
+                forKeys: [.isDirectoryKey, .fileSizeKey,
+                          .contentModificationDateKey])
+            let isDir = vals?.isDirectory ?? false
             return FileNode(
                 url: child.standardizedFileURL.resolvingSymlinksInPath(),
                 name: child.lastPathComponent,
-                isDirectory: isDir
+                isDirectory: isDir,
+                byteCount: isDir ? nil : vals?.fileSize,
+                modifiedAt: vals?.contentModificationDate
             )
         }
 
