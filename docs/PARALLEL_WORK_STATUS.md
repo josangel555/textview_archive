@@ -13,6 +13,15 @@ PoC-hardening agents now running in fresh worktrees (`feat/lsp-v1`,
 | `feat/mcp-stdio` | MCP roll-our-own JSON-RPC server, 10 tools, `--mcp-stdio` flag | +51 |
 | `feat/walkthrough-ui` | Docked-bottom player, full anchor suite, --walkthrough CLI flag | +22 |
 | `feat/lsp-v1` | SourceKit-LSP integration: pool/cancel/restart/outline/hover popover/diagnostics | +33 (52 total LSP) |
+| `feat/plugins-v1` | Tier B subprocess host, env-scrub, audit log, permission-grant store + NSAlert prompt, Settings → Plugins pane, example Tier B plugin fixture | +30 (42 total Plugins) |
+
+## Not merged
+
+- **`feat/sessions-v1`** — agent stalled mid-build (Swift 6 strict-
+  concurrency on `static var pending`). Build fixed manually; source
+  files committed as WIP. **NOT production-ready**: no tests written,
+  no migration from Workspaces/_last.json, no session menu / key
+  bindings. Branch preserves the scaffolding for next round.
 
 Plus 5 follow-up commits on main:
 - Build: GrammarLoader env-var override exclusive (test isolation)
