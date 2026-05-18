@@ -15,11 +15,11 @@ final class InteractionDeepTests: XCTestCase {
     }
 
     private var appBundlePath: String {
-        projectRoot().appendingPathComponent("dist/MarkdownViewer.app").path
+        projectRoot().appendingPathComponent("dist/TextView.app").path
     }
 
     private var appExecutable: URL {
-        projectRoot().appendingPathComponent("dist/MarkdownViewer.app/Contents/MacOS/MarkdownViewer")
+        projectRoot().appendingPathComponent("dist/TextView.app/Contents/MacOS/MarkdownViewer")
     }
 
     override func setUpWithError() throws {

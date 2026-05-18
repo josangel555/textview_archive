@@ -31,7 +31,7 @@ final class SourceViewVisualRegressionTests: XCTestCase {
         let here = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent()
-        return here.appendingPathComponent("dist/MarkdownViewer.app").path
+        return here.appendingPathComponent("dist/TextView.app").path
     }()
 
     /// Per-user tmp dir where the app writes its windowNumber file. We
