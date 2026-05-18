@@ -700,6 +700,18 @@ public final class SourceTextController: NSViewController {
     ) {
         guard let layoutManager = textView.layoutManager,
               let textStorage = textView.textStorage else { return }
+        let query = findState.query
+
+        // Early return when the find bar isn't active AND wasn't active
+        // last apply() either. Without this guard, every scroll tick /
+        // selection change / theme tick fired a full-range
+        // removeTemporaryAttribute over the entire textStorage — for
+        // multi-hundred-KB files that's a measurable per-tick cost
+        // with zero observable effect.
+        if query.isEmpty, lastFindKey == nil, findMatches.isEmpty {
+            return
+        }
+
         let full = NSRange(location: 0, length: textStorage.length)
         layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: full)
         // Find apply just wiped every backgroundColor attribute,
@@ -707,10 +719,10 @@ public final class SourceTextController: NSViewController {
         // next `publishSelection` reapplies it cleanly.
         lastCurrentLineRange = nil
 
-        let query = findState.query
         guard !query.isEmpty, textStorage.length > 0 else {
             findMatches = []
             currentMatchIndex = nil
+            lastFindKey = nil
             // Dedupe: only publish "" if we hadn't already.
             if let cb = onFindSummary, lastFindSummary != "" {
                 lastFindSummary = ""
