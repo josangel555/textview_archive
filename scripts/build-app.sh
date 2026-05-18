@@ -206,7 +206,14 @@ fi
 # Defaults (in check-bundle-size.sh): 35 MB total bundle, 15 MB main
 # executable. Both caps active post-lazy-grammar migration: the exec
 # cap separately catches silent static-linkage regressions.
-bash "$SCRIPT_DIR/check-bundle-size.sh"
+#
+# Skip on debug builds — debug binaries carry Swift reflection +
+# unstripped symbols and run ~3× the release size; the cap targets
+# the shippable artifact. Use `bash scripts/build-app.sh release`
+# to enforce.
+if [[ "$CONFIG" == "release" ]]; then
+  bash "$SCRIPT_DIR/check-bundle-size.sh"
+fi
 
 echo "==> Built $APP_DIR"
 echo
