@@ -80,33 +80,45 @@ is rough priority — most-asked-for first.
   3 user decisions waiting (vendor mermaid.min.js ~2.5 MB, %% @step N
   convention, ← / → bindings).
 - **Mermaid animations.** Pending — depends on above.
-- **Walkthrough system.** Pending — design in `docs/WALKTHROUGH.md`.
-  5 decisions waiting (JSON vs YAML, transport, step taxonomy,
-  persistence, branching).
-- **MCP automation surface.** Pending — design in `docs/AUTOMATION.md`.
-  Research 2026-05-18 (background agent) on `modelcontextprotocol/
-  swift-sdk`: pre-1.0 (0.12.1, ~monthly breaking changes), 1.4k
-  stars, Apache-2.0, transitively pulls swift-nio (+~3-6 MB stripped
-  binary). Real-world adopters tend to ship it as a sidecar exe
-  rather than in-process (Chaintoutis Medium write-up). Alternative:
-  roll-our-own minimal stdio JSON-RPC server, ~500-800 LOC, zero
-  deps. Decision deferred: until we commit to one path, do NOT add
-  swift-mcp. Pre-work that's safe + useful: scaffold
-  `AutomationHost` protocol per AUTOMATION.md §7, make
-  `DocumentModel` conform; the protocol surface is dep-free and
-  unblocks either path.
+- ~~**Walkthrough system.**~~ DONE 2026-05-18. Engine + drop
+  transport + loader (`Sources/ViewerCore/Walkthrough/`, 30 tests).
+  UI player merged via `feat/walkthrough-ui` (docked-bottom strip,
+  full anchor suite, 1x/1.5x/2x speed, Note button, --walkthrough
+  CLI flag, 22 tests). All 5 originally-waiting decisions resolved:
+  JSON schema (locked), file-drop transport (built), step taxonomy
+  (12 verbs), persistence (in-progress/completed log via store),
+  branching (engine reads `Step.guardOn`, UI not yet wired for
+  awaitUser-based branches).
+  Open follow-ups: precise sidebar/gitTab/window popover anchoring
+  via PreferenceKey; per-SHA runDiff verb; Note button →
+  CodeReview thread integration.
+- ~~**MCP automation surface.**~~ DONE 2026-05-18 via roll-our-own
+  stdio JSON-RPC (rejected swift-sdk's pre-1.0 churn + swift-nio
+  3-6 MB cost). 10 tools shipped (open_path, select_tab,
+  set_view_mode, find, goto_line, visible_text, current_state,
+  toggle_bookmark, list_bookmarks, snapshot_window). 51 tests +
+  manual e2e against `MarkdownViewer --mcp-stdio` confirmed init/
+  tools/list/tools/call. Zero new dependencies. +492 KB binary
+  delta. Cut: `subscribe(events)` streaming, Unix socket / TCP
+  transports, App Intents facade, audit log + first-connect prompt.
 
 ## Deferred features
 
 - ~~**jq query for JSON files.**~~ DONE (commit `89f45de`) — shells
   out to `/usr/bin/jq` with Homebrew fallback. View menu → "Apply
   jq Filter… (⌥⌘J)". 6 unit tests + 200 KB no-deadlock test.
-- **Expanded TreeSitter language support — IN DESIGN (lazy-load).**
-  User approved 2026-05-18: add Java, C, C++, C#, Rust, Lua
-  (**Kotlin skipped** — fwcd fork has slow cadence). Realistic
-  bundle delta is **~9.8 MB if static-linked** (research agent
-  found C++ alone is ~3.5 MB; earlier BACKLOG estimate of ~2 MB
-  was off by ~5×). Static-link would blow the 25 MB cap.
+- ~~**Expanded TreeSitter language support.**~~ DONE 2026-05-18 via
+  lazy-load through dlopen. 6 new grammars (Java, C, C++, C#, Rust,
+  Lua — Kotlin skipped). Main exec shrunk 15 MB → 11 MB; total
+  bundle 18 MB → 31 MB (under new 35 MB cap, 15 MB exec sub-cap
+  enforced post-migration). C# was the surprise at 5.1 MB (vs
+  2.0 MB design estimate). Codesign workaround: reverted to
+  `--deep` because per-dylib `--options runtime` walked into SPM
+  resource bundles and stamped FinderInfo. Flag for revisit before
+  Developer ID + notarization.
+
+- **Expanded TreeSitter language support — IN DESIGN (lazy-load).** [SUPERSEDED]
+  Original notes:
   Decision: implement the lazy-load architecture from
   `docs/TREESITTER_LAZY_LOAD.md` — each new grammar ships as a
   dylib in `Contents/Frameworks/`, loaded via dlopen on first
