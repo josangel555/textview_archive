@@ -45,13 +45,14 @@ Plus 5 follow-up commits on main:
 - ❌ Note button → Code Review threads — needs review-thread integration
 - ⏳ Other anchor types' precise positioning (sidebar/gitTab/window) — needs PreferenceKey from each target surface
 
-### LSP v1 follow-ups (deferred from `feat/lsp-v1`)
+### LSP v1 follow-ups
 
-- Outline section (`LSPOutlineSection`) not yet wired into
-  `SidebarView` — drop-in `View` + model are ready, host PR adds
-  the section row.
-- Diagnostics panel (`LSPDiagnosticsView`) not wired into
-  `SettingsView` — same deal.
+- ✅ Outline section wired into `SidebarView` via
+  `LSPOutlineWrapper` between Claude Timeline and FILES. Self-gates
+  on language registry. Symbol click → scroll. Done on main.
+- ✅ Diagnostics panel wired into `SettingsView` → "Open
+  Diagnostics…" opens a 560×420 window with live `LSPPool.snapshot()`
+  data. Done on main.
 - `ensureOpened` doesn't bump LSP text-version on file-watcher
   reload — ~30 LOC follow-up, viewer is read-only so we never see
   user edits, only on-disk diffs.
