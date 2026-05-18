@@ -11,6 +11,11 @@ struct SidebarView: View {
     @AppStorage("MarkdownViewer.sidebar.filesExpanded") private var filesExpanded: Bool = true
 
     var body: some View {
+        sidebarBody
+            .walkthroughAnchor(.sidebar)
+    }
+
+    private var sidebarBody: some View {
         VStack(spacing: 0) {
             header
             Divider()

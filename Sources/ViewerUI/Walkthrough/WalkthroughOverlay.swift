@@ -24,6 +24,12 @@ public struct WalkthroughOverlay: View {
     @ObservedObject var model: DocumentModel
     @ObservedObject var bridge: WalkthroughBridge
 
+    /// Frames published by anchor surfaces (sidebar, gitTab) via the
+    /// `.walkthroughAnchor(_:)` modifier. Empty until those surfaces
+    /// register on first layout. Read by `containerAlignedPopover` to
+    /// position against the real rect.
+    @State private var anchorFrames: [String: CGRect] = [:]
+
     public init(model: DocumentModel) {
         self.model = model
         self.bridge = model.walkthroughBridge
@@ -37,15 +43,17 @@ public struct WalkthroughOverlay: View {
                h.url == model.currentURL {
                 highlightStripe(for: h)
             }
-            // Popover — anchored according to its anchor enum. Free-
-            // floating popovers center near the top of the content
-            // area; anchored ones offset toward their target. The
-            // anchor math is intentionally approximate in v1; precise
-            // positioning needs each target to expose a frame via
-            // `PreferenceKey` (follow-up).
+            // Popover — anchored according to its anchor enum. Line
+            // anchors use the gutter math; sidebar/gitTab use frames
+            // published via `WalkthroughAnchorKey`; window anchors
+            // center within the overlay bounds.
             if let p = bridge.popover {
                 popover(for: p)
             }
+        }
+        .coordinateSpace(name: "walkthroughOverlay")
+        .onPreferenceChange(WalkthroughAnchorKey.self) { frames in
+            anchorFrames = frames
         }
         .allowsHitTesting(bridge.popover != nil)
     }
@@ -150,18 +158,48 @@ public struct WalkthroughOverlay: View {
     private func containerAlignedPopover(
         for p: WalkthroughBridge.PopoverRequest
     ) -> some View {
-        let alignment: Alignment = {
-            switch p.anchor {
-            case .editor:  return .top
-            case .sidebar: return .leading
-            case .gitTab:  return .leading
-            case .line:    return .top    // unreachable here
-            case .window:  return .center
-            }
-        }()
-        popoverCard(for: p)
-            .padding(20)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+        // Look up the surface frame published via WalkthroughAnchorKey.
+        // If present, anchor the popover next to the rect (trailing edge
+        // of the surface, vertically centered). If absent (surface
+        // hasn't registered yet, or anchor is .window/.editor which
+        // don't register a frame), fall back to the v1
+        // alignment-in-container layout so behavior stays identical
+        // before the registration round-trip lands.
+        let surfaceID = surfaceKey(for: p.anchor)
+        if let surfaceID, let rect = anchorFrames[surfaceID] {
+            popoverCard(for: p)
+                .position(
+                    x: rect.maxX + 12 + 180,    // gap + half popover width
+                    y: rect.midY
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity,
+                       alignment: .topLeading)
+        } else {
+            let alignment: Alignment = {
+                switch p.anchor {
+                case .editor:  return .top
+                case .sidebar: return .leading
+                case .gitTab:  return .leading
+                case .line:    return .top    // unreachable here
+                case .window:  return .center
+                }
+            }()
+            popoverCard(for: p)
+                .padding(20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+        }
+    }
+
+    /// Map a popover anchor enum to the published surface id, if any.
+    /// `.window` / `.editor` / `.line` return nil — they're positioned
+    /// by other paths.
+    private func surfaceKey(for anchor: PopoverAnchor) -> String? {
+        switch anchor {
+        case .sidebar: return WalkthroughAnchorSurface.sidebar.id
+        case .gitTab:  return WalkthroughAnchorSurface.gitTab.id
+        case .editor:  return WalkthroughAnchorSurface.editor.id
+        case .line, .window: return nil
+        }
     }
 
     /// The popover card itself — body text + Dismiss. Layout-agnostic;

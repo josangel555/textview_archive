@@ -64,9 +64,10 @@ Plus 5 follow-up commits on main:
 - `ensureOpened` doesn't bump LSP text-version on file-watcher
   reload — ~30 LOC follow-up, viewer is read-only so we never see
   user edits, only on-disk diffs.
-- `LSPPool.recordRequest` helper exists but no call site is
-  wrapped through it yet — diagnostics shows `requestCount=0` /
-  `lastResponseMillis=null` until a wrapping helper threads through.
+- ✅ `LSPPool.recordRequest` wired via new `documentSymbol`/`hover`/
+  `definition` pool-routed wrappers. `LSPOutlineSection` migrated to
+  the routed API. Diagnostics panel now shows live `requestCount` +
+  `lastResponseMillis`. Commit `4d43df2`.
 - UI tests for hover popover + outline section deferred to VM.
 
 

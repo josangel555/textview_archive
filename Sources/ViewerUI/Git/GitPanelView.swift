@@ -30,6 +30,7 @@ struct GitPanelView: View {
         )
         .onAppear { model.start() }
         .onDisappear { model.stop() }
+        .walkthroughAnchor(.gitTab)
     }
 
     // MARK: - Tab strip
