@@ -131,8 +131,17 @@ public enum MCPFraming {
         // Tolerant header parser: case-insensitive name, trim surrounding
         // whitespace on the value. We only care about Content-Length;
         // other headers (Content-Type, etc.) are ignored.
-        for line in headers.split(whereSeparator: { $0 == "\r" || $0 == "\n" }) {
-            let s = String(line)
+        //
+        // IMPORTANT: split on Unicode scalars, not Characters. Swift
+        // treats CRLF as a single extended-grapheme-cluster Character,
+        // so a `Character`-level split-by-`\r`-or-`\n` against
+        // `"Content-Length: 24\r\n\r\n"` matches zero positions and
+        // returns the entire header block as one "line". UnicodeScalar
+        // is the unambiguous code-point level we want.
+        let scalarLines = headers.unicodeScalars
+            .split(whereSeparator: { $0 == "\r" || $0 == "\n" })
+        for scalars in scalarLines {
+            let s = String(String.UnicodeScalarView(scalars))
             guard let colon = s.firstIndex(of: ":") else { continue }
             let name = s[..<colon].trimmingCharacters(in: .whitespaces).lowercased()
             guard name == "content-length" else { continue }
