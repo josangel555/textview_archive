@@ -59,8 +59,14 @@ final class MarkdownRenderedViewTests: XCTestCase {
     // MARK: Fragment navigation (CRIT-8 — anchor clicks work)
 
     func test_decide_sameDocFragment_isAllowed() {
-        let current = URL(string: "about:blank")!
-        let target = URL(string: "about:blank#heading")!
+        // Use a realistic `file://` URL — newer Foundation (macOS 15.6.1+)
+        // no longer parses `about:blank#heading` as having a fragment,
+        // so an `about:` test gives a misleading nil-fragment path. In
+        // production WKWebView always passes the loaded page's real URL
+        // (typically file:// for our bundled markdown render), not
+        // about:blank.
+        let current = URL(string: "file:///docs/page.html")!
+        let target = URL(string: "file:///docs/page.html#heading")!
         let result = MarkdownRenderedView.Coordinator.decide(
             url: target, navigationType: .linkActivated, currentDocumentURL: current
         )

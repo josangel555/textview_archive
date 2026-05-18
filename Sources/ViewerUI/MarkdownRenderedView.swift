@@ -406,13 +406,16 @@ public struct MarkdownRenderedView: NSViewRepresentable {
                 // (rare; happens before first load completes).
                 return url.scheme == nil
             }
-            return strippedFragment(url) == strippedFragment(cur)
-        }
-
-        private static func strippedFragment(_ url: URL) -> URL? {
-            var c = URLComponents(url: url, resolvingAgainstBaseURL: false)
-            c?.fragment = nil
-            return c?.url
+            // Compare scheme + host + path + query directly. Previously
+            // round-tripped through URLComponents to strip the fragment,
+            // but newer Foundation (Xcode 16.4 / macOS 15.6.1+)
+            // reserializes scheme-only URLs like `about:blank` to a
+            // different form, breaking the equality check. Field-by-field
+            // is robust across Foundation versions.
+            return url.scheme == cur.scheme
+                && url.host == cur.host
+                && url.path == cur.path
+                && url.query == cur.query
         }
     }
 }
