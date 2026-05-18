@@ -32,7 +32,7 @@ struct SplitPaneView: View {
             content
         }
         .frame(minWidth: 200)
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(Palette.textBackground)
     }
 
     private var header: some View {
@@ -56,7 +56,7 @@ struct SplitPaneView: View {
         }
         .padding(.horizontal, 8)
         .frame(height: 28)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Palette.windowBackground)
     }
 
     @ViewBuilder

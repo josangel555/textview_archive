@@ -57,7 +57,7 @@ struct StatusBar: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
         .frame(height: 22)
-        .background(Color(nsColor: .windowBackgroundColor).opacity(0.65))
+        .background(Palette.windowBackground.opacity(0.65))
         .overlay(alignment: .top) { Divider() }
         .accessibilityIdentifier("mdv.statusBar")
     }

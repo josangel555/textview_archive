@@ -64,7 +64,7 @@ struct CrossSearchPanel: View {
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                .stroke(Palette.separator, lineWidth: 1)
         )
         .shadow(color: Color.primary.opacity(0.25), radius: 20, y: 8)
         .onAppear {

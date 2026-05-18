@@ -71,7 +71,7 @@ struct DiffView: View {
                 }
             }
         }
-        .background(Color(nsColor: .textBackgroundColor),
+        .background(Palette.textBackground,
                     in: RoundedRectangle(cornerRadius: 4))
         .overlay(
             RoundedRectangle(cornerRadius: 4)

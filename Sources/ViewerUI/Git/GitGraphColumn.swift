@@ -89,7 +89,7 @@ struct GitGraphColumn: View {
             )
             let fill: Color = row.commit.isMerge
                 ? Color.purple
-                : (isHead ? Color.accentColor : Color(nsColor: .windowBackgroundColor))
+                : (isHead ? Color.accentColor : Palette.windowBackground)
             let stroke: Color = isHead
                 ? Color.accentColor
                 : color(forLane: row.lane, isMy: true)

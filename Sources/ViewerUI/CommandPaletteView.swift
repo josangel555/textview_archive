@@ -79,7 +79,7 @@ struct CommandPaletteView: View {
             }
         }
         .frame(width: 540)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Palette.windowBackground)
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(
             RoundedRectangle(cornerRadius: 10)

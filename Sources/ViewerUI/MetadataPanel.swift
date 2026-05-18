@@ -31,9 +31,9 @@ struct MetadataPanel: View {
         }
         .frame(width: 260)
         .frame(maxHeight: .infinity)
-        .background(Color(nsColor: .windowBackgroundColor).opacity(0.6))
+        .background(Palette.windowBackground.opacity(0.6))
         .overlay(alignment: .leading) {
-            Rectangle().fill(Color(nsColor: .separatorColor)).frame(width: 0.5)
+            Rectangle().fill(Palette.separator).frame(width: 0.5)
         }
         .task(id: url) {
             // `.task(id:)` already cancels the previous task on URL

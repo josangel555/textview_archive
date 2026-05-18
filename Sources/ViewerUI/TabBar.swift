@@ -43,7 +43,7 @@ struct TabBar: View {
             .padding(.horizontal, 4)
         }
         .frame(height: 30)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Palette.windowBackground)
     }
 }
 
@@ -156,7 +156,7 @@ struct TabBarItem: View {
             return Color(nsColor: .controlAccentColor).opacity(0.18)
         }
         if isHovering {
-            return Color(nsColor: .controlBackgroundColor).opacity(0.4)
+            return Palette.controlBackground.opacity(0.4)
         }
         return Color.clear
     }

@@ -96,7 +96,7 @@ struct SidebarView: View {
         // floating in the middle. maxHeight:.infinity claims all the
         // height; alignment:.top pins content to the top.
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(Palette.textBackground)
         .background(
             SidebarKeyMonitor(
                 isActive: sidebar.isVisible && !model.isPalettePresented
