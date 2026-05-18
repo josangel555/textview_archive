@@ -78,10 +78,14 @@ struct ClaudeTimelineSection: View {
 
     private func row(_ event: ClaudeEvent) -> some View {
         HStack(alignment: .top, spacing: 6) {
-            Text(kindBadge(event.kind))
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
+            // SF Symbol glyph instead of text badge — visually denser
+            // and matches the iconography used in the rest of the
+            // sidebar (FileIconView, etc.).
+            Image(systemName: kindGlyph(event.kind))
+                .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(kindColor(event.kind))
-                .frame(width: 28, alignment: .center)
+                .frame(width: 18, alignment: .center)
+                .help(kindLabel(event.kind))
             Text(event.summary)
                 .font(.system(size: model.uiSize(11), design: .monospaced))
                 .lineLimit(2)
@@ -94,13 +98,23 @@ struct ClaudeTimelineSection: View {
         .help(event.summary)
     }
 
-    private func kindBadge(_ k: ClaudeEvent.Kind) -> String {
+    private func kindGlyph(_ k: ClaudeEvent.Kind) -> String {
         switch k {
-        case .userMessage:      return "user"
-        case .assistantMessage: return "asst"
-        case .thinking:         return "think"
-        case .toolUse:          return "tool"
-        case .toolResult:       return "out"
+        case .userMessage:      return "person.fill"
+        case .assistantMessage: return "sparkles"
+        case .thinking:         return "brain"
+        case .toolUse:          return "hammer.fill"
+        case .toolResult:       return "arrow.uturn.left"
+        }
+    }
+
+    private func kindLabel(_ k: ClaudeEvent.Kind) -> String {
+        switch k {
+        case .userMessage:      return "User"
+        case .assistantMessage: return "Assistant"
+        case .thinking:         return "Thinking"
+        case .toolUse:          return "Tool call"
+        case .toolResult:       return "Tool result"
         }
     }
 

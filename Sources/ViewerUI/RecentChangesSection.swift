@@ -92,6 +92,14 @@ struct RecentChangesSection: View {
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                     .foregroundStyle(statusColor(entry))
                     .frame(width: 18, alignment: .center)
+                // File-type icon for visual parity with the sidebar.
+                // Cheap — FileIconView caches by extension internally.
+                FileIconView(
+                    url: resolvedURL(for: entry),
+                    isDirectory: false,
+                    size: .tree
+                )
+                .frame(width: 14, height: 14)
                 Text(entry.path)
                     .font(.system(size: 11, design: .monospaced))
                     .lineLimit(1)
@@ -208,6 +216,17 @@ struct RecentChangesSection: View {
         if FileManager.default.fileExists(atPath: url.path) {
             model.openPath(url)
         }
+    }
+
+    /// URL to derive the file-type icon from. Synthesizes one from the
+    /// path even when the repo root isn't resolved yet — FileIconView
+    /// only uses the lastPathComponent extension, so a non-existent
+    /// URL is fine for the icon lookup.
+    private func resolvedURL(for e: GitClient.StatusEntry) -> URL {
+        if let root = repoRoot {
+            return root.appendingPathComponent(e.path)
+        }
+        return URL(fileURLWithPath: e.path)
     }
 
     private func refresh() {

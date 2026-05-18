@@ -131,8 +131,11 @@ is rough priority — most-asked-for first.
   gated behind `MDV_ENABLE_BROKEN_RULER=1` for the meta-regression
   test that catches the compositor bug class. Shared test helpers
   not addressed.
-- **`test_zoom_persistsAcrossNewTab`.** Known regression after
-  view-mode normalization; guarded to not crash; not investigated.
+- ~~**`test_zoom_persistsAcrossNewTab`.**~~ NO LONGER FLAKY as of
+  2026-05-18 VM run (passed in 4.681s clean). Guard remains as
+  defensive (`return XCTFail` on dumps.count mismatch) but no
+  longer fires. Likely fixed incidentally by recent
+  Tab-Equatable-trim / lazy-materialization changes.
 - **TESTS_AUDIT.md deletions.** E2E dedup proposed; awaiting
   user review.
 

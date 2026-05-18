@@ -325,12 +325,20 @@ struct ModeBar: View {
             if modes.count > 1 {
                 Picker("", selection: model.viewModeBinding) {
                     ForEach(modes, id: \.self) { mode in
-                        Text(label(for: mode)).tag(mode)
+                        Text(label(for: mode))
+                            // Honor model.uiScale so the picker labels
+                            // grow with the rest of the UI. Default
+                            // font for segmented controls is ~12pt;
+                            // scale from that baseline.
+                            .font(.system(size: model.uiSize(12)))
+                            .tag(mode)
                     }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: CGFloat(80 + 90 * (modes.count - 1)))
+                // Width also scales with uiScale so the labels don't
+                // truncate at larger sizes.
+                .frame(width: CGFloat(80 + 90 * (modes.count - 1)) * CGFloat(model.uiScale))
             }
             Spacer()
             // Source-view-only toggles. Both control rendering of the
