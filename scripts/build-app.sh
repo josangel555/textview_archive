@@ -203,12 +203,10 @@ fi
 
 # Final size guardrail. Fails the build when the bundle goes past
 # the budget — keeps us honest about TreeSitter / icon bloat.
-# 35 MB total accommodates the lazy-grammar Frameworks/ tree
-# (~15 MB of dylibs at release once all 11 lazy grammars land);
-# `EXEC_BUDGET_MB=15` separately fails the build if the main
-# executable creeps back up — that would mean we silently
-# regressed to static-linking a grammar.
-EXEC_BUDGET_MB=15 bash "$SCRIPT_DIR/check-bundle-size.sh" 35
+# Defaults (in check-bundle-size.sh): 35 MB total bundle, 15 MB main
+# executable. Both caps active post-lazy-grammar migration: the exec
+# cap separately catches silent static-linkage regressions.
+bash "$SCRIPT_DIR/check-bundle-size.sh"
 
 echo "==> Built $APP_DIR"
 echo
