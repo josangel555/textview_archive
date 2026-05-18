@@ -43,7 +43,18 @@ public struct CSVFilter: Sendable, Equatable {
     /// Apply filter to `result.rows`. Header is untouched. Returns the
     /// surviving row indices alongside the filtered rows so callers
     /// can preserve original line numbers if needed.
-    public func apply(to result: CSVParser.Result) -> (indices: [Int], rows: [[String]]) {
+    ///
+    /// If `lowercasedRows` is supplied, it must be parallel to
+    /// `result.rows` (same shape) with each cell lowercased. This
+    /// short-circuits the per-keystroke `String.lowercased()` cost
+    /// for the global-query contains match — the dominant per-row
+    /// allocation on big CSVs. Pre-compute once on parse, pass in on
+    /// every filter eval. When nil, falls back to on-the-fly
+    /// `lowercased()` (call sites without a parser-side cache).
+    public func apply(
+        to result: CSVParser.Result,
+        lowercasedRows: [[String]]? = nil
+    ) -> (indices: [Int], rows: [[String]]) {
         if isEmpty {
             return (Array(result.rows.indices), result.rows)
         }
@@ -53,6 +64,10 @@ public struct CSVFilter: Sendable, Equatable {
             return (col, ColumnExpression.parse(trimmed))
         }
         let needle = globalQuery.lowercased()
+        // Only use the cache when its shape matches the parsed rows.
+        // A stale cache (file reparsed but cache not refreshed) would
+        // index out of bounds; we fall back to live lowercasing.
+        let useCache = lowercasedRows.map { $0.count == result.rows.count } ?? false
         var indices: [Int] = []
         var rows: [[String]] = []
         for (i, row) in result.rows.enumerated() {
@@ -60,10 +75,19 @@ public struct CSVFilter: Sendable, Equatable {
                 let matched: Bool
                 switch globalScope {
                 case .all:
-                    matched = row.contains { $0.lowercased().contains(needle) }
+                    if useCache, let lcRow = lowercasedRows?[i], lcRow.count == row.count {
+                        matched = lcRow.contains { $0.contains(needle) }
+                    } else {
+                        matched = row.contains { $0.lowercased().contains(needle) }
+                    }
                 case .column(let c):
-                    matched = c >= 0 && c < row.count
-                        && row[c].lowercased().contains(needle)
+                    if useCache, let lcRow = lowercasedRows?[i],
+                       c >= 0, c < lcRow.count {
+                        matched = lcRow[c].contains(needle)
+                    } else {
+                        matched = c >= 0 && c < row.count
+                            && row[c].lowercased().contains(needle)
+                    }
                 }
                 if !matched { continue }
             }
