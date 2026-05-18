@@ -1,13 +1,16 @@
 import Foundation
 import SwiftTreeSitter
-import TreeSitterBash
+// Eager keeplist — these grammars stay statically linked into ViewerCore
+// (and therefore the executable). Rationale per docs/TREESITTER_LAZY_LOAD.md:
+//   - JSON: jq integration, settings, workspaces — hot on launch.
+//   - Swift: the app's own source — opened often during development.
+//   - Markdown: every .md open does code-fence highlighting; first-tap
+//     dylib latency would be visible.
+// Everything else (XML, Python, JS, TS, Bash, plus Phase 5 grammars)
+// loads through GrammarLoader at first-use.
 import TreeSitterJSON
-import TreeSitterJavaScript
 import TreeSitterMarkdown
-import TreeSitterPython
 import TreeSitterSwift
-import TreeSitterTypeScript
-import TreeSitterXML
 import ViewerKit
 
 /// TreeSitter-backed syntax highlighter.
@@ -185,13 +188,12 @@ public final class TreeSitterEngine: @unchecked Sendable {
         if failed.contains(lang)   { lock.unlock(); return nil }
         lock.unlock()
 
-        guard let langPtr = tsLanguagePointer(for: lang),
+        guard let language = languageHandle(for: lang),
               let queryURL = queryURL(for: lang) else {
             lock.lock(); failed.insert(lang); lock.unlock()
             return nil
         }
 
-        let language = Language(language: langPtr)
         do {
             let data = try Data(contentsOf: queryURL)
             let query = try Query(language: language, data: data)
@@ -213,18 +215,40 @@ public final class TreeSitterEngine: @unchecked Sendable {
         return l
     }
 
-    /// Returns the C-level `TSLanguage *` pointer for a language. New
-    /// grammars added later only need a line here + a Queries/<x>.scm.
-    private func tsLanguagePointer(for lang: HighlightLanguage) -> OpaquePointer? {
+    /// Returns a SwiftTreeSitter `Language` for a HighlightLanguage,
+    /// dispatching to either the statically-linked keeplist symbol or
+    /// to the runtime `GrammarLoader` dlopen path.
+    ///
+    /// Adding a new language: add a case to the appropriate branch
+    /// here and add a `Queries/<x>-highlights.scm` file. Keeplist
+    /// changes also need a static dep in Package.swift; lazy
+    /// languages need a new `GrammarLoader.Grammar` case + dynamic
+    /// library product.
+    private func languageHandle(for lang: HighlightLanguage) -> Language? {
         switch lang {
-        case .swift:      return tree_sitter_swift()
-        case .json:       return tree_sitter_json()
-        case .xml:        return tree_sitter_xml()
-        case .python:     return tree_sitter_python()
-        case .javascript: return tree_sitter_javascript()
-        case .typescript: return tree_sitter_typescript()
-        case .markdown:   return tree_sitter_markdown()
-        case .shell:      return tree_sitter_bash()
+        // Keeplist — static link.
+        case .swift:      return Language(language: tree_sitter_swift())
+        case .json:       return Language(language: tree_sitter_json())
+        case .markdown:   return Language(language: tree_sitter_markdown())
+
+        // Lazy — dlopen via GrammarLoader. The `.shell` case maps to
+        // the bash grammar (the upstream `.sh`/`.zsh`/`.bash` files
+        // all parse as bash for our purposes).
+        case .xml:        return GrammarLoader.load(.xml)
+        case .python:     return GrammarLoader.load(.python)
+        case .javascript: return GrammarLoader.load(.javascript)
+        case .typescript: return GrammarLoader.load(.typescript)
+        case .shell:      return GrammarLoader.load(.bash)
+
+        // Phase 5 grammars — wired through GrammarLoader once the
+        // wrapper targets land. Returning nil here means "highlighting
+        // unavailable for this language"; the engine memoizes that
+        // failure so we don't retry.
+        case .java:       return GrammarLoader.load(.java)
+        case .c:          return GrammarLoader.load(.c)
+        case .cpp:        return GrammarLoader.load(.cpp)
+        case .rust:       return GrammarLoader.load(.rust)
+
         default:          return nil
         }
     }

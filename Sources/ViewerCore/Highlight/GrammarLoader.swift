@@ -214,11 +214,41 @@ public enum GrammarLoader {
             }
         }
 
-        // 3. Same dir as the executable (raw `swift run` / `swift test`
-        // where SwiftPM drops product dylibs into `.build/<config>/`).
+        // 3. Same dir as the executable (raw `swift run` where
+        // SwiftPM drops product dylibs into `.build/<config>/`).
         if let exe = Bundle.main.executablePath {
             let exeDir = (exe as NSString).deletingLastPathComponent
             let candidate = (exeDir as NSString).appendingPathComponent(basename)
+            if FileManager.default.fileExists(atPath: candidate) {
+                return candidate
+            }
+        }
+
+        // 3b. xctest bundle layout: `.build/<arch>/<config>/Foo.xctest/
+        // Contents/MacOS/Foo`. Walk three levels up from the executable
+        // to land in `.build/<arch>/<config>/`, where SwiftPM emits
+        // dynamic-library products. This is how `swift test` finds the
+        // grammars without needing `GRAMMAR_DYLIB_DIR` set. We anchor
+        // on the executable rather than Bundle.main so the search is
+        // robust when xctest is loaded as a plugin and Bundle.main
+        // reports Xcode (host process) instead of the test bundle.
+        if let exe = Bundle.main.executablePath {
+            var dir = (exe as NSString).deletingLastPathComponent
+            for _ in 0..<3 { dir = (dir as NSString).deletingLastPathComponent }
+            let candidate = (dir as NSString).appendingPathComponent(basename)
+            if FileManager.default.fileExists(atPath: candidate) {
+                return candidate
+            }
+        }
+
+        // 3c. xctest with non-app-style Bundle.main: anchor on the
+        // class bundle path instead. This matches both
+        // `Bundle(for: ...)` and `Bundle.allBundles` patterns and is
+        // the path actually used in unit-test runs where Bundle.main
+        // resolves to /Applications/Xcode.app/.../xctest.
+        for bundle in Bundle.allBundles where bundle.bundleURL.pathExtension == "xctest" {
+            let dir = (bundle.bundlePath as NSString).deletingLastPathComponent
+            let candidate = (dir as NSString).appendingPathComponent(basename)
             if FileManager.default.fileExists(atPath: candidate) {
                 return candidate
             }

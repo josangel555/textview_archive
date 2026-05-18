@@ -77,20 +77,21 @@ let package = Package(
                 "ViewerKit",
                 .product(name: "Markdown",                package: "swift-markdown"),
                 .product(name: "SwiftTreeSitter",         package: "SwiftTreeSitter"),
+                // Eager keeplist — statically linked into the executable
+                // because these grammars are hot enough that first-tap
+                // dylib latency would be visible (JSON: jq/settings,
+                // Swift: source files, Markdown: every .md open).
                 .product(name: "TreeSitterJSON",          package: "tree-sitter-json"),
                 .product(name: "TreeSitterSwift",         package: "tree-sitter-swift"),
-                .product(name: "TreeSitterXML",           package: "tree-sitter-xml"),
-                .product(name: "TreeSitterPython",        package: "tree-sitter-python"),
-                .product(name: "TreeSitterJavaScript",    package: "tree-sitter-javascript"),
-                .product(name: "TreeSitterTypeScript",    package: "tree-sitter-typescript"),
                 // Single product includes both TreeSitterMarkdown (block)
                 // and TreeSitterMarkdownInline (inline) target modules. We
                 // import the block one for now; inline injection is a v1.5
                 // polish item once SwiftTreeSitterLayer is wired.
                 .product(name: "TreeSitterMarkdown",      package: "tree-sitter-markdown"),
-                .product(name: "TreeSitterBash",          package: "tree-sitter-bash"),
-                "CTSPatchPython",
-                "CTSPatchJavaScript",
+                // Note: XML, Python, JS, TS, Bash deliberately absent
+                // here — they're dlopened at runtime via GrammarLoader
+                // out of Contents/Frameworks/lib<Grammar>Lazy.dylib.
+                // See the `.library(.dynamic)` products below.
             ],
             // Vendored highlight queries (one per supported language).
             // We copy these into the repo (per design doc decision C)
@@ -161,6 +162,13 @@ let package = Package(
                 .product(name: "SwiftTreeSitter", package: "SwiftTreeSitter"),
                 .product(name: "TreeSitterJSON",  package: "tree-sitter-json"),
             ]
+            // Note: lazy-grammar wrapper targets deliberately NOT
+            // listed here. Linking them in would (a) defeat the dlopen
+            // path we want to exercise, and (b) statically pull every
+            // grammar back into the test bundle. Tests that need the
+            // dylibs run `swift build --product <Lazy>` first (or rely
+            // on the `swift test` run-once side-effect of the prior
+            // `swift build`).
         ),
         .testTarget(
             name: "ViewerUITests",
