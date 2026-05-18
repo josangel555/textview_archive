@@ -26,6 +26,7 @@ public struct Tab: Sendable, Identifiable {
         case .binary(let b):      return b.url.lastPathComponent
         case .error(let f):       return f.url.lastPathComponent
         case .preview(let u, _):  return u.lastPathComponent
+        case .loading(let u):     return u.lastPathComponent
         case .empty:              return url?.lastPathComponent ?? "Untitled"
         }
     }

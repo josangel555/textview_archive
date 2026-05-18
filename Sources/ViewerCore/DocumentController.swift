@@ -11,6 +11,12 @@ public enum DocumentState: Sendable {
     /// / AVPlayer / PDFView) takes the URL directly and handles
     /// streaming itself. We just need to know the kind.
     case preview(URL, FileCategory)
+    /// File materialization is in flight. Used when a lazy tab is
+    /// selected and we kick the read on a background queue rather than
+    /// blocking the main thread; the UI shows a placeholder while we
+    /// transition to `.loaded` / `.binary` / `.error`. The URL is the
+    /// file we're loading so the placeholder can name it.
+    case loading(URL)
 
     public struct LoadFailure: Equatable, Sendable {
         public let url: URL
@@ -43,6 +49,8 @@ extension DocumentState: Equatable {
             return a == b
         case (.preview(let lu, let lc), .preview(let ru, let rc)):
             return lu == ru && lc == rc
+        case (.loading(let lu), .loading(let ru)):
+            return lu == ru
         default:
             return false
         }

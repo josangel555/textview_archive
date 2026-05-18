@@ -124,6 +124,8 @@ public struct ContentView: View {
         switch model.currentState {
         case .empty:
             EmptyStateView()
+        case .loading(let url):
+            LoadingStateView(url: url)
         case .loaded(let file):
             loadedView(for: file)
         case .binary(let binary):
@@ -432,6 +434,33 @@ struct ModeBar: View {
             return nil
         }
         return lang.displayName
+    }
+}
+
+/// Shown while a lazy tab is being materialized off-main. Short delay
+/// before the spinner appears so a tiny file that loads in <100 ms
+/// doesn't flash a spinner — the dominant case for everyday tabs.
+struct LoadingStateView: View {
+    let url: URL
+    @State private var showSpinner = false
+
+    var body: some View {
+        VStack(spacing: 12) {
+            if showSpinner {
+                ProgressView()
+                    .controlSize(.large)
+                Text(url.lastPathComponent)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            showSpinner = true
+        }
     }
 }
 

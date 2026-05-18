@@ -1085,7 +1085,7 @@ public final class DocumentModel: ObservableObject {
         // lie about what's on screen.
         if let t = tabs.selected, t.viewMode == .hex {
             switch t.state {
-            case .binary, .empty: break
+            case .binary, .empty, .loading: break
             case .loaded, .preview, .error:
                 loadBinaryAsync(url: resolved, intoTabID: t.id)
             }
@@ -1108,7 +1108,7 @@ public final class DocumentModel: ObservableObject {
                 sidebar.setSelected(resolved)
                 preferences.lastFolderURL = sidebar.rootURL
             }
-        case .empty, .error:
+        case .empty, .error, .loading:
             break
         }
         startWatchingCurrentFile()
@@ -1289,24 +1289,54 @@ public final class DocumentModel: ObservableObject {
     }
 
     /// If the tab at `index` is a lazy placeholder (state == .empty
-    /// while url is set), read the file now and replace its state.
-    /// Idempotent: tabs already in .loaded / .binary / .preview / .error
-    /// are left alone.
+    /// while url is set), kick a background read and flip state to
+    /// `.loading(url)`. The file read happens on a detached Task; on
+    /// completion we re-locate the tab by id and swap to the final
+    /// state. Idempotent: tabs in any non-.empty state are left alone.
+    ///
+    /// Why off-main: `controller.open(_:)` reads the entire file
+    /// synchronously. For a 32 MB log the read alone is ~50-100 ms on
+    /// SSD, plus encoding detection — long enough to drop a frame
+    /// when the user clicks a tab. State going to `.loading` makes
+    /// the UI show a placeholder (after a small grace period) rather
+    /// than appear frozen.
     private func materializeIfNeeded(at index: Int) {
         guard tabs.tabs.indices.contains(index) else { return }
         let t = tabs.tabs[index]
         guard let url = t.url, case .empty = t.state else { return }
-        let state = controller.open(url: url)
-        var t2 = t
-        t2.state = state
-        tabs.replace(at: index, with: t2)
-        // Mirror openResolved's HEX-mode carry: if a binary file lands
-        // with the tab already set to .hex view, kick the binary load.
-        if t2.viewMode == .hex {
-            switch state {
-            case .binary, .empty: break
-            case .loaded, .preview, .error:
-                loadBinaryAsync(url: url, intoTabID: t2.id)
+        let tabID = t.id
+        var loading = t
+        loading.state = .loading(url)
+        tabs.replace(at: index, with: loading)
+        let viewMode = t.viewMode
+        Task.detached(priority: .userInitiated) { [controller] in
+            let state = controller.open(url: url)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                // The tab may have been closed, replaced, or had its
+                // state mutated meanwhile. Only swap if the slot we
+                // started on is still the same tab + still .loading
+                // for the same URL. Otherwise drop the result.
+                guard let idx = self.tabs.tabs.firstIndex(where: { $0.id == tabID }) else {
+                    return
+                }
+                let current = self.tabs.tabs[idx]
+                guard case .loading(let pendingURL) = current.state, pendingURL == url else {
+                    return
+                }
+                var t2 = current
+                t2.state = state
+                self.tabs.replace(at: idx, with: t2)
+                // Mirror openResolved's HEX-mode carry: if a binary file
+                // lands with the tab already set to .hex view, kick the
+                // binary load.
+                if viewMode == .hex {
+                    switch state {
+                    case .binary, .empty, .loading: break
+                    case .loaded, .preview, .error:
+                        self.loadBinaryAsync(url: url, intoTabID: tabID)
+                    }
+                }
             }
         }
     }
@@ -1348,7 +1378,7 @@ public final class DocumentModel: ObservableObject {
             // otherwise.
             if let url = t.url {
                 switch t.state {
-                case .binary, .empty: break
+                case .binary, .empty, .loading: break
                 case .loaded, .preview, .error:
                     loadBinaryAsync(url: url, intoTabID: t.id)
                 }
