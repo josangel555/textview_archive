@@ -29,6 +29,8 @@ public struct SettingsView: View {
                 Divider()
                 pluginsSection
                 Divider()
+                lspSection
+                Divider()
                 advancedSection
             }
             .padding(20)
@@ -37,6 +39,41 @@ public struct SettingsView: View {
     }
 
     @State private var pluginsWindow: NSWindow?
+
+    @State private var lspDiagnosticsWindow: NSWindow?
+
+    private var lspSection: some View {
+        section("Language servers (LSP)") {
+            row("Diagnostics") {
+                Button("Open Diagnostics…") { openLSPDiagnosticsWindow() }
+            }
+            Text("Per-language LSP servers spawn on first hover / outline request and reap after 5 minutes idle. The diagnostics window shows live state.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 4)
+        }
+    }
+
+    private func openLSPDiagnosticsWindow() {
+        if let w = lspDiagnosticsWindow {
+            w.makeKeyAndOrderFront(nil)
+            return
+        }
+        let host = NSHostingController(
+            rootView: LSPDiagnosticsView(pool: model.lspPool)
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 420),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "LSP Diagnostics"
+        window.contentViewController = host
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        lspDiagnosticsWindow = window
+    }
 
     private var pluginsSection: some View {
         section("Plugins") {

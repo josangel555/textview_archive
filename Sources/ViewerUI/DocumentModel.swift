@@ -114,6 +114,12 @@ public final class DocumentModel: ObservableObject {
     private var fileWatcher: FileWatcher?
     private var watchedURL: URL?
 
+    /// Shared LSP pool — one server per `(language, workspaceRoot)`.
+    /// Lazy: the actor is cheap to allocate; servers spawn on first
+    /// request and reap when idle. Public so the sidebar's outline
+    /// section + the diagnostics panel can talk to the same pool.
+    public let lspPool: LSPPool = LSPPool()
+
     public init(
         controller: DocumentController = DocumentController(),
         history: HistoryStore = HistoryStore(storeURL: HistoryStore.defaultStoreURL()),

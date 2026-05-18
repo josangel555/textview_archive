@@ -25,6 +25,12 @@ struct SidebarView: View {
                 Divider()
                 ClaudeTimelineSection(model: model)
                 Divider()
+                // LSP outline of the currently-open file. The section
+                // self-gates: returns EmptyView when the file's
+                // language has no registered LSP server (e.g. `.md`,
+                // `.txt`), so the divider sits flush against the
+                // previous section in that case.
+                LSPOutlineWrapper(model: model)
             }
             // Plugin-contributed sidebar sections. Self-managing
             // collapse state; appears above FILES regardless of
@@ -458,4 +464,53 @@ private struct FileRowView: View {
         model.currentURL == node.url
     }
 
+}
+
+/// Sidebar wrapper for the LSP outline section. Owns the
+/// `LSPOutlineModel` so it persists across body re-evals + reacts to
+/// the active tab changing. Self-gates: returns empty content when
+/// the current file's language has no LSP server.
+@MainActor
+struct LSPOutlineWrapper: View {
+    @ObservedObject var model: DocumentModel
+    @StateObject private var outline: LSPOutlineModel
+
+    init(model: DocumentModel) {
+        self.model = model
+        _outline = StateObject(
+            wrappedValue: LSPOutlineModel(pool: model.lspPool)
+        )
+    }
+
+    var body: some View {
+        Group {
+            if outline.isSupported {
+                LSPOutlineSection(model: outline) { symbol in
+                    // Jump callback: scroll the source view to the
+                    // symbol's start line + select that tab if it
+                    // isn't already the active one.
+                    if let url = currentFileURL,
+                       !model.selectTab(forURL: url) {
+                        model.openPath(url)
+                    }
+                    let line = symbol.selectionRange.start.line + 1
+                    model.scrollSource(toLine: line)
+                }
+                Divider()
+            }
+        }
+        .onAppear { refresh() }
+        .onChange(of: model.currentURL) { _, _ in refresh() }
+    }
+
+    private var currentFileURL: URL? { model.currentURL }
+
+    private func refresh() {
+        guard let url = model.currentURL,
+              case .loaded(let file) = model.currentState else {
+            outline.setFile(nil, text: nil)
+            return
+        }
+        outline.setFile(url, text: file.contents)
+    }
 }
