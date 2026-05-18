@@ -54,13 +54,28 @@ struct CSVTableView: View {
             // is what keeps the filter inputs visually aligned to the
             // columns they filter.
             ScrollView([.horizontal, .vertical]) {
-                VStack(alignment: .leading, spacing: 0) {
+                // LazyVStack virtualizes the vertical axis even inside a
+                // 2-axis ScrollView: only rows in the visible viewport
+                // are instantiated. Was a plain VStack — every row of
+                // a 50K-row CSV materialized at once × ~10 Text views
+                // per row = ~500K SwiftUI nodes resident → ~1 GB RSS
+                // for a 1 MB CSV file. With LazyVStack only ~30 rows
+                // (one screenful) live at any time.
+                //
+                // ForEach uses an Int range directly rather than
+                // `Array(filtered.rows.enumerated())`, which materialized
+                // a fresh 50K-tuple array on every body re-eval.
+                LazyVStack(alignment: .leading, spacing: 0,
+                           pinnedViews: [.sectionHeaders]) {
                     if advancedShown {
                         perColumnRow(result: result)
                     }
-                    headerRow(result)
-                    ForEach(Array(filtered.rows.enumerated()), id: \.offset) { (i, row) in
-                        cellRow(row, isAlt: i % 2 == 1)
+                    Section {
+                        ForEach(filtered.rows.indices, id: \.self) { i in
+                            cellRow(filtered.rows[i], isAlt: i % 2 == 1)
+                        }
+                    } header: {
+                        headerRow(result)
                     }
                 }
             }

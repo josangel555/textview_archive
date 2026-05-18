@@ -220,16 +220,25 @@ internal struct ResultTableView: View {
 
     var body: some View {
         ScrollView([.horizontal, .vertical]) {
-            VStack(alignment: .leading, spacing: 0) {
-                headerRow
-                ForEach(Array(result.rows.enumerated()), id: \.offset) { (i, row) in
-                    cellRow(row, isAlt: i % 2 == 1)
-                }
-                if result.truncated {
-                    Text("Output truncated at \(result.rows.count) rows.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .padding(8)
+            // LazyVStack virtualizes vertical row materialization even
+            // inside a 2-axis ScrollView. SQLite query results capped
+            // at 1K rows × N cols × ~5 Text views per cell = up to
+            // 50K SwiftUI nodes if eager-VStack'd. Header pinned via
+            // `Section`/`pinnedViews` stays visible while scrolling.
+            LazyVStack(alignment: .leading, spacing: 0,
+                       pinnedViews: [.sectionHeaders]) {
+                Section {
+                    ForEach(result.rows.indices, id: \.self) { i in
+                        cellRow(result.rows[i], isAlt: i % 2 == 1)
+                    }
+                    if result.truncated {
+                        Text("Output truncated at \(result.rows.count) rows.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .padding(8)
+                    }
+                } header: {
+                    headerRow
                 }
             }
             // Pin content to the top-left of the scroll area. Without
