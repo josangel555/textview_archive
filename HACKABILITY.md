@@ -204,12 +204,22 @@ Organized by *plane* of the app rather than alphabetically.
 | Split view | `ViewerUI/SplitPaneView.swift` (right pane router) |
 | Search (find in document) | `TextDisplayView.findRanges`, `MarkdownRenderedView` (`window.__mdvFind*` JS bridge) |
 | Command palette / quick open | `ViewerUI/CommandPaletteView.swift`, `ViewerUI/UnifiedFinder.swift` |
-| Git integration | `ViewerCore/Git/*`, `DocumentModel.showGitLog(forPath:scope:)`, `SidebarModel.refreshGitStatus` |
-| Status / chrome | `ViewerUI/StatusBarView.swift`, `ViewerUI/ModeBarView.swift` |
+| Tabbed Git panel | `ViewerUI/Git/GitPanelSection.swift`, `GitPanelView.swift`, `GitPanelModel.swift`, `GitStatusTab.swift`, `GitLogTab.swift`, `GitGraphColumn.swift`, `GitStashTab.swift`, `GitWorktreesTab.swift`, `GitRemotesTab.swift`, `ViewerCore/Git/GitClient.swift`, `GraphLayout.swift` |
+| DiffView (structured diff tab) | `ViewerUI/Git/DiffView.swift`, `ViewerCore/Git/DiffParser.swift` |
+| Code Review (model only, UI pending) | `ViewerCore/Review/*` (Review, ReviewComment, ReviewStore, ReviewExporter), design `docs/CODE_REVIEW_DESIGN.md` |
+| Mermaid diagrams | `ViewerCore/Mermaid/MermaidSourceParser.swift`, `ViewerUI/MermaidBundle.swift`, `ViewerUI/Resources/mermaid/{mermaid.min.js, mermaid-shim.js, mermaid-shim.css, LICENSE, VENDOR.md}`, `ViewerCore/HTMLRenderer.swift` (intercept) |
+| Walkthrough (types only, engine pending) | `ViewerCore/Walkthrough/WalkthroughScript.swift`, design `docs/WALKTHROUGH_DESIGN_v2.md` |
+| Legacy git log (markdown) | `DocumentModel.showGitLog(forPath:scope:)` — still used by sidebar "Show Folder History" |
+| Sidebar reveal + lock | `DocumentModel.revealInSidebar(_:)`, `DocumentModel.isSidebarLocked`, `SidebarView` FILES header lock toggle |
+| Language override dropdown | `DocumentModel.languageOverrides`, `effectiveLanguage(forTabID:url:)`, `setCurrentLanguage(_:)`; UI in `ContentView` ModeBar |
+| jq filter | `ViewerCore/JQRunner.swift`, `MarkdownViewer/main.swift` `applyJQFilter` action |
+| JSON file store (shared) | `ViewerCore/JSONFileStore.swift` (used by HistoryStore, BookmarksStore, WorkspaceStore) |
+| Status / chrome | `ViewerUI/StatusBarView.swift`, `ViewerUI/ModeBarView.swift`, `ViewerUI/SidebarConstants.swift` (fixed section heights) |
 | Menu bar / keyboard shortcuts | `MarkdownViewer/main.swift` (`AppDelegate` + selectors) |
 | App icon | `Resources/Assets.xcassets/AppIcon.appiconset/`, `scripts/pack-icns.swift` |
 | Build & packaging | `scripts/build-app.sh`, `scripts/check-bundle-size.sh`, `scripts/install-app.sh`, `scripts/Info.plist` |
-| Tests (visual) | `scripts/visual-smoke.sh`, `Tests/ViewerUITests/SourceViewVisualRegressionTests.swift` |
+| Tests (visual) | `scripts/visual-smoke.sh`, `scripts/vm-smoke.sh` (runs on VM), `Tests/ViewerUITests/SourceViewVisualRegressionTests.swift` |
+| VM CI mirror | `scripts/test-in-vm.sh` (VM-local), `scripts/vm-smoke.sh` (host-side wrapper) |
 
 ## DocumentModel `@Published` surface inventory
 

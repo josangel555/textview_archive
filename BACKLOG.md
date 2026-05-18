@@ -1,5 +1,13 @@
 # Backlog
 
+> **Update 2026-05-18:** UTM CI mirror is fully wired. Xcode 16.4
+> installed on macOS15 VM. VM baseline: **726 tests, 3 XCTSkip, 0 fail**
+> in ~95s. `ssh macOS15 'cd markdown_viewer && swift test'` is the
+> one-command verifier. `scripts/vm-smoke.sh` runs end-to-end (rsync +
+> build + launchctl-asuser launch + screencap + scp back) but window
+> content is censored by macOS 15 Screen Capture Privacy — see
+> `LESSONS.md` "macOS 15 Sequoia Screen Capture Privacy" section.
+>
 > **Update 2026-05-17 (overnight session):** Shipped a sweep of small
 > UX fixes (sidebar top-align + static heights, current-line backdrop
 > visibility, language override dropdown, Reveal in Sidebar, Files

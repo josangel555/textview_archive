@@ -458,3 +458,206 @@ You don't get: XCTest. Tests stay on the host or a separate CI tier.
 The `swift.org` toolchain pkg URL pattern, for re-pinning later:
 `https://download.swift.org/swift-<ver>-release/xcode/swift-<ver>-RELEASE/swift-<ver>-RELEASE-osx.pkg`.
 Check `https://swift.org/download/` for the current `<ver>`.
+
+## VM smoke testing on macOS — addendum (Xcode installed)
+
+The previous section was written when the VM had only Xcode CLT +
+swift.org toolchain. As of 2026-05-17 the macOS 15.6.1 UTM VM now has
+**Xcode 16.4** installed (free Apple ID, direct download from
+`xcodereleases.com` — App Store on macOS 15 only offers Xcode 26
+which requires macOS 26). Xcode 26 from the App Store on a macOS 15
+host will refuse to install — go to xcodereleases.com instead.
+
+**What you get with Xcode on the VM.**
+
+- `xcrun --find xctest` resolves; `swift test` runs the full suite.
+- Tier-1 + tier-1m + tier-1m+ + most of Tier 4 (live-app via
+  `Process()` + osascript) all run. Current VM baseline: **726 tests,
+  3 XCTSkip, 0 fail** in ~95 s.
+
+**The 3 stable XCTSkips and why they don't auto-clear.**
+
+1. `SourceViewVisualRegressionTests.test_allUIStripsCompositeAfterOpeningSourceFile`
+2. `SourceViewVisualRegressionTests.test_meta_brokenRulerIsDetectedAsRegression`
+3. `InteractionScriptTests.test_newTabAndClose_changesTabCount`
+
+The first two are macOS 15 Screen Capture Privacy — see next section.
+The third XCTSkips when SwiftUI's `.accessibilityIdentifier("mdv.tabbar")`
+doesn't propagate to the underlying NSView (varies across SwiftUI
+versions). Model-level tab semantics are covered by DocumentModelTests.
+
+**Stale paths after the rename.** When the bundle was renamed from
+`MarkdownViewer.app` → `TextView.app` (commit 8cb79da), several
+test files still hard-coded `dist/MarkdownViewer.app`. Result: every
+Tier-4 test XCTSkip'd with "Build .app first" even when the .app
+was built. Hunt with `grep -rn dist/MarkdownViewer.app Tests/` after
+any future rename. The bundle dir is `TextView.app`; the executable
+inside stays `MarkdownViewer` (SwiftPM target name).
+
+## macOS 15 Sequoia Screen Capture Privacy
+
+**Symptom.** `/usr/sbin/screencapture -l <windowID>` returns
+"could not create image from window" even when:
+- The window exists per `CGWindowListCopyWindowInfo` (kCGWindowIsOnscreen=1)
+- The screencap binary has Screen Recording TCC
+- The Terminal that ran ssh has Screen Recording TCC
+- Full-screen `screencapture -x` works and produces a 2.8MB PNG
+  showing the wallpaper
+
+**Cause.** macOS 15 Sequoia added "Screen Capture Privacy" which
+hides individual window contents from screencap when the target
+process's TCC ownership can't be reconciled. Specifically: a process
+launched via `sudo launchctl asuser <uid> /path/to/binary` has
+ambiguous TCC ownership (the launching uid is root via sudo, the
+session belongs to <uid>), and macOS resolves this by redacting that
+process's windows from screen capture.
+
+**Effect on the project.**
+
+1. `scripts/vm-smoke.sh` produces a PNG of the VM desktop + menu bar
+   showing "TextView" as foreground app, but the TextView window
+   itself is invisible in the capture. Pipeline mechanically correct.
+2. `SourceViewVisualRegressionTests` skip when run over SSH with
+   `swift test` even on a VM with all TCC grants in place.
+
+**Workarounds (none free).**
+
+- Install TextView as a **LaunchAgent** in
+  `~/Library/LaunchAgents/com.markdownviewer.MarkdownViewer.plist`
+  on the VM so the GUI session owns the process natively. Then
+  launchctl asuser isn't needed; ownership is unambiguous.
+- Manually grant Screen Recording to
+  `/Applications/Xcode.app/Contents/Developer/usr/bin/xctest`
+  AND `/usr/sbin/screencapture` on the VM. Some configurations
+  still censor specific apps even with this.
+- **Easiest in practice:** eyeball the VM's UTM display window
+  directly. Manual smoke covers what automated capture can't.
+
+**Tests handle this correctly.** Visual regression tests XCTSkip
+gracefully when screencap returns a tiny / zero image. Don't try to
+"fix" them with launchctl asuser tricks — they hit the same TCC wall.
+
+## `launchctl asuser` env propagation — strip + workaround
+
+**Symptom.** `sudo launchctl asuser 501 /usr/bin/env VAR=x bin args`
+runs `bin` with empty env (no `VAR`). `printenv` proved it — only
+`HOME` / `USER` / `SUDO_*` survive.
+
+**Cause.** `launchctl asuser` resets the env to the launching uid's
+clean session env. `env VAR=x bin` runs `env` as the spawned binary,
+which sets VAR for the next exec — but the exec target inherits the
+shell's env, not env's args. The `/usr/bin/env VAR=x cmd` pattern
+relies on `env` recognizing trailing args as `cmd args`, which it
+does — but in the launchctl context, the env-passing chain is severed.
+
+**Fix.** Use `sh -c '...'` so env vars are set **inside** the shell
+launchctl spawns, then propagate via normal shell var → exec rules:
+
+```bash
+sudo launchctl asuser 501 /bin/sh -c '
+  MDV_SKIP_WORKSPACE_RESTORE=1 \
+  /path/to/binary args >/dev/null 2>&1 </dev/null &
+'
+```
+
+The `>/dev/null 2>&1 </dev/null &` is also load-bearing — without
+full fd detach, SSH won't return because the child inherits SSH's
+stdin/stdout/stderr and SSH waits for them to close.
+
+## Swift 6.1+ test-class concurrency tightening
+
+When a test class is marked `@MainActor` (often needed because it
+calls main-actor-isolated static helpers we lifted internal for
+testing), Swift 6.1 rejects calls to `super.setUp()` /
+`super.tearDown()` even via the `async throws` overrides:
+
+> error: sending 'self' risks causing data races
+
+The reason: `XCTestCase` isn't `Sendable`, so passing a `@MainActor`
+self into the non-isolated ancestor's setUp/tearDown crosses an
+actor boundary. The fix is simply to **drop the super calls** —
+XCTest's default implementations are no-ops. Pattern:
+
+```swift
+@MainActor
+final class FooTests: XCTestCase {
+    override func setUp() async throws {
+        // No super.setUp — see LESSONS.md.
+        // ... test setup
+    }
+    override func tearDown() async throws {
+        // ... test teardown
+        // No super.tearDown.
+    }
+}
+```
+
+## `NSEvent` isn't `Sendable` on Swift 6.0 hosts
+
+Swift 6.3 made `NSEvent` Sendable; Swift 6.0 (host's Xcode) didn't.
+When a `MainActor.assumeIsolated { ... }` closure inside an
+`NSEvent.addLocalMonitorForEvents` handler returns an `NSEvent?`,
+host build fails:
+
+> conformance of 'NSEvent' to 'Sendable' is unavailable
+
+The fix is to **extract any primitive you need (e.g., `event.keyCode:
+UInt16`) before entering the isolated scope**, return a `Bool` from
+the scope, and decide outside whether to consume or pass the event:
+
+```swift
+NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+    let keyCode = event.keyCode    // primitive, Sendable
+    let consume: Bool = MainActor.assumeIsolated {
+        guard let self else { return false }
+        // ... use keyCode, don't touch event
+        return self.handler?(key) == true
+    }
+    return consume ? nil : event
+}
+```
+
+## Foundation URL parser drift on macOS 15.6.1+
+
+`URL(string: "about:blank#heading")?.fragment` returns **`nil`** on
+macOS 15.6.1 (Foundation in Xcode 16.4). On older Foundation it
+returned `"heading"`. The new parser treats `about:` URLs specially.
+
+**Effect on tests.** Any test using `about:blank` as a stand-in for
+"the current document URL" breaks. Real WKWebView always passes the
+loaded page's actual URL (typically `file://`) — never `about:blank`.
+Use `file:///docs/page.html` etc. in tests.
+
+**Also:** prefer field-by-field URL comparison
+(`url.scheme == other.scheme && url.path == other.path && …`) over
+`URLComponents(url:).url` round-trips, which reserialize differently
+across Foundation versions on scheme-only URLs.
+
+## Mermaid 11.4.1 vendor — pinned SHA-256
+
+`Sources/ViewerUI/Resources/mermaid/mermaid.min.js` is mermaid 11.4.1
+from `https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js`,
+2,571,900 bytes, **SHA-256: `a43bc1afd446f9c4cc66ac5dd45d02e8d65e26fc5344ec0ef787f88d6ddb6f9e`**.
+The vendor-integrity test (`Tests/ViewerCoreTests/MermaidVendorTests.swift`)
+asserts this hash; a future version bump must update both file +
+test. For paranoia: cross-check with `npm pack mermaid@11.4.1 &&
+shasum -a 256 dist/*.tgz`'s content vs the recorded hash before
+shipping a build.
+
+## Bundle id rename = TCC reset
+
+If MCP automation lands and renames the bundle id from
+`com.markdownviewer.MarkdownViewer` to `com.textview.TextView` (or
+similar), **every TCC grant resets**. macOS keys grants on
+`(identifier, cert-leaf-hash)`. The user has to re-approve:
+
+- Files & Folders (Documents / Downloads / Desktop / Network volumes)
+- Accessibility (if any feature needed it)
+- Screen Recording (if used)
+- Automation (if scripted via osascript)
+
+Plan migration before flipping the id. Options:
+- Ship one release that prompts the user with re-approval text.
+- Keep `com.markdownviewer.MarkdownViewer` as a permanent legacy
+  identifier; rename only display-name strings. This is the
+  recommended path; the user noted TCC stability as load-bearing.
