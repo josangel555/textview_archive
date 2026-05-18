@@ -135,7 +135,10 @@ public struct ContentView: View {
             ErrorView(failure: failure, model: model)
         case .preview(let url, let cat):
             HStack(spacing: 0) {
-                MediaPreviewView(url: url, category: cat)
+                MediaPreviewView(
+                    url: url, category: cat,
+                    onOpenSibling: { sibling in model.open(url: sibling) }
+                )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 MetadataPanel(url: url, category: cat)
             }
