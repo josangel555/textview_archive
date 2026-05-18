@@ -46,24 +46,29 @@ final class GrammarLoaderTests: XCTestCase {
     }
 
     func testMissingDylibReturnsNil() {
-        // No dylibs are wired into the xctest bundle yet (Phase 2),
-        // so a real load attempt must fail gracefully rather than
-        // crash. This locks in the "never throw, always return nil"
-        // contract callers rely on.
+        // Point the loader at an empty directory so no dylib can
+        // possibly resolve. (Once Phase 5 lands, SwiftPM builds the
+        // rust dylib into `.build/<config>/` so the unconfigured
+        // loader can find it — this test needs an isolated dir to
+        // exercise the missing-dylib branch.)
+        let isolated = NSTemporaryDirectory() + "grammar-loader-missing-\(UUID())"
+        setenv("GRAMMAR_DYLIB_DIR", isolated, 1)
+        defer { unsetenv("GRAMMAR_DYLIB_DIR") }
+        GrammarLoader._resetForTesting()
         let result = GrammarLoader.load(.rust)
-        XCTAssertNil(result, "rust dylib should not be present in test bundle yet")
+        XCTAssertNil(result, "rust dylib should not be present in empty isolated dir")
     }
 
     func testFailureIsMemoized() {
-        // First call misses (no dylib). Second call must not re-attempt
-        // the expensive dlopen path — that's the "failed once, stay
-        // failed" optimization that keeps highlighting cheap for
-        // unsupported languages.
+        // Same isolation trick as above so the dlopen genuinely fails.
+        // After that, the second call must not re-attempt — the
+        // negative-cache short-circuit is the optimization that keeps
+        // highlighting cheap for unsupported languages.
+        let isolated = NSTemporaryDirectory() + "grammar-loader-memoize-\(UUID())"
+        setenv("GRAMMAR_DYLIB_DIR", isolated, 1)
+        defer { unsetenv("GRAMMAR_DYLIB_DIR") }
+        GrammarLoader._resetForTesting()
         _ = GrammarLoader.load(.rust)
-        // We can't directly observe whether dlopen was called twice,
-        // but we can verify the second call returns nil consistently
-        // (no transient success) — and the implementation is wired so
-        // the cache hit short-circuits before resolve().
         let second = GrammarLoader.load(.rust)
         XCTAssertNil(second)
     }

@@ -193,6 +193,21 @@ public enum GrammarLoader {
     private static func dylibPath(for grammar: Grammar) -> String? {
         let basename = grammar.dylibBasename + ".dylib"
 
+        // 0. Env-var override — when set, this is the ONLY path we
+        // check. Lets tests force-resolve against a specific dir
+        // (or force-not-resolve by pointing at an empty one) without
+        // the auto-search fallbacks below kicking in. Was previously
+        // a last-resort fallback, which made the "missing dylib"
+        // contract untestable on host (SwiftPM auto-builds dylibs
+        // into `.build/<config>/` next to the xctest bundle).
+        if let dir = ProcessInfo.processInfo.environment["GRAMMAR_DYLIB_DIR"] {
+            let candidate = (dir as NSString).appendingPathComponent(basename)
+            if FileManager.default.fileExists(atPath: candidate) {
+                return candidate
+            }
+            return nil
+        }
+
         // 1. App-bundle Frameworks dir.
         if let frameworks = Bundle.main.privateFrameworksPath {
             let candidate = (frameworks as NSString).appendingPathComponent(basename)
@@ -254,13 +269,7 @@ public enum GrammarLoader {
             }
         }
 
-        // 4. Env-var override (CI / debugging).
-        if let dir = ProcessInfo.processInfo.environment["GRAMMAR_DYLIB_DIR"] {
-            let candidate = (dir as NSString).appendingPathComponent(basename)
-            if FileManager.default.fileExists(atPath: candidate) {
-                return candidate
-            }
-        }
+        // (Env-var override is checked first — see step 0 at the top.)
 
         return nil
     }
