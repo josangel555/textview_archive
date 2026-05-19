@@ -165,15 +165,11 @@ public struct WalkthroughOverlay: View {
         // don't register a frame), fall back to the v1
         // alignment-in-container layout so behavior stays identical
         // before the registration round-trip lands.
-        let surfaceID = surfaceKey(for: p.anchor)
-        if let surfaceID,
-           let rect = anchorFrames[surfaceID],
-           rect.width > 0, rect.height > 0 {
+        let surfaceID = Self.surfaceKey(for: p.anchor)
+        if let surfaceID, let rect = anchorFrames[surfaceID],
+           let pos = Self.popoverPosition(forSurfaceRect: rect) {
             popoverCard(for: p)
-                .position(
-                    x: rect.maxX + 12 + 180,    // gap + half popover width
-                    y: rect.midY
-                )
+                .position(x: pos.x, y: pos.y)
                 .frame(maxWidth: .infinity, maxHeight: .infinity,
                        alignment: .topLeading)
         } else {
@@ -192,10 +188,32 @@ public struct WalkthroughOverlay: View {
         }
     }
 
+    /// Pure positioning helper — extracted so the math is unit-testable
+    /// without standing up a SwiftUI view tree. Returns nil for
+    /// degenerate (zero-size) rects, which the caller treats as "not
+    /// laid out yet, use fallback alignment".
+    ///
+    /// Geometry: anchor surfaces (sidebar/gitTab) live to the left of
+    /// the content area, so popovers anchor to the right of the rect.
+    /// Horizontal offset is `rect.maxX + gap + popoverHalfWidth` so
+    /// SwiftUI's `.position()` (which centers) lands the card cleanly.
+    /// Vertical offset tracks `rect.midY`.
+    nonisolated static func popoverPosition(
+        forSurfaceRect rect: CGRect,
+        gap: CGFloat = 12,
+        popoverHalfWidth: CGFloat = 180
+    ) -> CGPoint? {
+        guard rect.width > 0, rect.height > 0 else { return nil }
+        return CGPoint(
+            x: rect.maxX + gap + popoverHalfWidth,
+            y: rect.midY
+        )
+    }
+
     /// Map a popover anchor enum to the published surface id, if any.
     /// `.window` / `.editor` / `.line` return nil — they're positioned
     /// by other paths.
-    private func surfaceKey(for anchor: PopoverAnchor) -> String? {
+    nonisolated static func surfaceKey(for anchor: PopoverAnchor) -> String? {
         switch anchor {
         case .sidebar: return WalkthroughAnchorSurface.sidebar.id
         case .gitTab:  return WalkthroughAnchorSurface.gitTab.id

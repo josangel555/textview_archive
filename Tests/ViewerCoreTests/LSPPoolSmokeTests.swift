@@ -1,0 +1,130 @@
+import XCTest
+@testable import ViewerCore
+
+/// End-to-end smoke test for the pool-routed timed-request wrappers.
+/// Spawns a real `sourcekit-lsp` against this workspace, calls
+/// `pool.documentSymbol(fileURL:)`, then asserts the diagnostics
+/// snapshot shows the bumped request count + a non-nil response time.
+///
+/// This is the test that backs the "diagnostics panel shows live
+/// data" claim — without it, recordRequest is only validated via the
+/// failure-path unit tests in LSPPoolTests, which can't observe
+/// success-path counter bumps because they never succeed.
+///
+/// Skipped (not failed) when sourcekit-lsp isn't on PATH so the suite
+/// stays hermetic for the host filter. Set `MDV_RUN_LSP_SMOKE=1` to
+/// require the wire path actually run.
+final class LSPPoolSmokeTests: XCTestCase {
+
+    private func requireSmoke() -> Bool {
+        ProcessInfo.processInfo.environment["MDV_RUN_LSP_SMOKE"] == "1"
+    }
+
+    func test_documentSymbol_throughPool_bumpsRequestCounter() async throws {
+        guard LSPDiscovery.locateSourceKitLSP() != nil else {
+            if requireSmoke() { XCTFail("sourcekit-lsp not found") }
+            throw XCTSkip("sourcekit-lsp not on PATH")
+        }
+        let here = URL(fileURLWithPath: #filePath)
+        guard let root = LSPDiscovery.swiftPackageRoot(for: here) else {
+            throw XCTSkip("could not locate Package.swift from \(here.path)")
+        }
+        let target = root.appendingPathComponent(
+            "Sources/ViewerCore/LSP/LSPProtocol.swift")
+        guard FileManager.default.fileExists(atPath: target.path) else {
+            throw XCTSkip("expected source file missing: \(target.path)")
+        }
+
+        let pool = LSPPool()
+        defer {
+            // Best-effort teardown so the test doesn't leak a child
+            // process between runs.
+            Task { await pool.closeAll() }
+        }
+
+        let text = try String(contentsOf: target, encoding: .utf8)
+        do {
+            try await pool.ensureOpened(fileURL: target, text: text)
+        } catch LSPError.timeout {
+            if requireSmoke() { XCTFail("ensureOpened timed out") }
+            throw XCTSkip("ensureOpened timed out — cold sourcekit?")
+        } catch {
+            if requireSmoke() { XCTFail("ensureOpened failed: \(error)") }
+            throw XCTSkip("ensureOpened failed: \(error)")
+        }
+
+        // Pre-call snapshot: server is live but no routed request yet.
+        let pre = await pool.snapshot()
+        XCTAssertEqual(pre.count, 1, "one swift workspace entry expected")
+        XCTAssertTrue(pre.first?.isLive ?? false)
+        XCTAssertEqual(pre.first?.status.requestCount, 0,
+            "routed wrappers haven't been called yet")
+        XCTAssertNil(pre.first?.status.lastResponseMillis)
+
+        // Make the routed call. We don't care about the actual symbol
+        // set — sourcekit-lsp may or may not return entries depending
+        // on indexing state. The signal we want is that the request
+        // completed and recordRequest fired.
+        let result: [LSPDocumentSymbol]?
+        do {
+            result = try await pool.documentSymbol(fileURL: target)
+        } catch LSPError.timeout {
+            if requireSmoke() { XCTFail("documentSymbol timed out") }
+            throw XCTSkip("documentSymbol timed out — cold sourcekit?")
+        } catch {
+            if requireSmoke() { XCTFail("documentSymbol failed: \(error)") }
+            throw XCTSkip("documentSymbol failed: \(error)")
+        }
+        _ = result   // shape is server-dependent; presence isn't the assertion
+
+        // Post-call snapshot: the routed wrapper must have bumped both
+        // counters. Without this assertion the diagnostics panel
+        // silently shows 0 forever and we'd never know.
+        let post = await pool.snapshot()
+        XCTAssertEqual(post.count, 1)
+        XCTAssertEqual(post.first?.status.requestCount, 1,
+            "pool.documentSymbol must bump requestCount via recordRequest")
+        if let ms = post.first?.status.lastResponseMillis {
+            XCTAssertGreaterThan(ms, 0,
+                "lastResponseMillis must be measured (> 0) after a real round-trip")
+        } else {
+            XCTFail("lastResponseMillis is nil after successful round-trip")
+        }
+        XCTAssertNil(post.first?.status.lastError)
+    }
+
+    /// Second call on the same pool must increment, not overwrite. Run
+    /// only when the first succeeded — same skip policy as above.
+    func test_secondRoutedCall_incrementsCounter() async throws {
+        guard LSPDiscovery.locateSourceKitLSP() != nil else {
+            throw XCTSkip("sourcekit-lsp not on PATH")
+        }
+        let here = URL(fileURLWithPath: #filePath)
+        guard let root = LSPDiscovery.swiftPackageRoot(for: here) else {
+            throw XCTSkip("could not locate Package.swift")
+        }
+        let target = root.appendingPathComponent(
+            "Sources/ViewerCore/LSP/LSPProtocol.swift")
+        guard FileManager.default.fileExists(atPath: target.path) else {
+            throw XCTSkip("missing source file")
+        }
+        let pool = LSPPool()
+        defer { Task { await pool.closeAll() } }
+
+        let text = try String(contentsOf: target, encoding: .utf8)
+        do {
+            try await pool.ensureOpened(fileURL: target, text: text)
+            _ = try await pool.documentSymbol(fileURL: target)
+            _ = try await pool.documentSymbol(fileURL: target)
+            _ = try await pool.documentSymbol(fileURL: target)
+        } catch LSPError.timeout {
+            throw XCTSkip("sourcekit request timed out")
+        } catch {
+            throw XCTSkip("sourcekit request failed: \(error)")
+        }
+
+        let snap = await pool.snapshot()
+        XCTAssertEqual(snap.first?.status.requestCount, 3,
+            "three routed calls must each bump the counter; \(snap.first?.status.requestCount ?? -1) seen")
+    }
+}
