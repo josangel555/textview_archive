@@ -180,6 +180,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if ProcessInfo.processInfo.environment["MDV_SKIP_WORKSPACE_RESTORE"] != "1" {
             sessions.bootstrap()
         }
+        // One-way callback: folder context menus invoke this to spawn a
+        // new session via the coordinator without DocumentModel needing
+        // to import SessionsAppCoordinator.
+        model.openFolderInNewSession = { [weak self] url in
+            self?.sessions.openFolder(url, forceNew: true)
+        }
 
         // Open file from argv if provided. Detects folder vs file.
         // B19: resolve relative to the process's cwd (which is the user's

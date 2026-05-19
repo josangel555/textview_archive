@@ -236,6 +236,11 @@ private struct FileRowContextMenu: View {
                 sidebar.toggleExpansion(node.url)
             }
             Button("Open Folder") { model.openFolder(node.url) }
+            if let openInNewSession = model.openFolderInNewSession {
+                Button("Open in New Session") {
+                    openInNewSession(node.url)
+                }
+            }
             Divider()
             // Bookmark / unbookmark — works on folders too. Cmd+D in
             // the global menu only bookmarks the current TAB; folder

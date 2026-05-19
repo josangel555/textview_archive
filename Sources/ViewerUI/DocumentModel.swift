@@ -120,6 +120,13 @@ public final class DocumentModel: ObservableObject {
     /// section + the diagnostics panel can talk to the same pool.
     public let lspPool: LSPPool = LSPPool()
 
+    /// Set by the app delegate at startup to route folder context-menu
+    /// "Open in New Session" requests through the sessions coordinator.
+    /// `DocumentModel` doesn't import `SessionsAppCoordinator` directly
+    /// — the closure keeps the dependency one-way. nil during tests
+    /// (and the UI hides the menu item when nil).
+    public var openFolderInNewSession: ((URL) -> Void)?
+
     public init(
         controller: DocumentController = DocumentController(),
         history: HistoryStore = HistoryStore(storeURL: HistoryStore.defaultStoreURL()),

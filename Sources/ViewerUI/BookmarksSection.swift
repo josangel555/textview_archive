@@ -233,6 +233,15 @@ private struct BookmarkRow: View {
             Button("Remove Bookmark") {
                 model.removeBookmark(url: entry.url, line: entry.line)
             }
+            // Folder-only: open this bookmark as a fresh session via
+            // the coordinator. Gated on isFolder + the closure being
+            // wired so non-folder bookmarks and test contexts don't
+            // see a misleading menu item.
+            if isFolder, let openInNewSession = model.openFolderInNewSession {
+                Button("Open in New Session") {
+                    openInNewSession(entry.url)
+                }
+            }
             Button("Reveal in Finder") {
                 NSWorkspace.shared.activateFileViewerSelecting([entry.url])
             }
