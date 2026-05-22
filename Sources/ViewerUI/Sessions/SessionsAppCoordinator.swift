@@ -129,6 +129,43 @@ public final class SessionsAppCoordinator: ObservableObject {
     public func nextSession()     { core.nextSession() }
     public func previousSession() { core.previousSession() }
 
+    /// Close a session by id (no-op if unknown). Routes through the
+    /// core coordinator so the trash + persist + LRU re-activation
+    /// pipeline runs as for any other close.
+    public func close(id: UUID) { core.close(id: id) }
+
+    /// Close every session except `id`. Surface for the session-tab
+    /// context menu's "Close Other Sessions" item.
+    public func closeOthers(except id: UUID) { core.closeOthers(except: id) }
+
+    /// Rename a session. Trims whitespace and ignores no-op or empty
+    /// updates so a stray Enter on the inline editor doesn't clobber
+    /// the existing name. Persists through the coalescing write queue.
+    public func rename(id: UUID, to newName: String) {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        core.updateSession(id: id) { snap in
+            guard snap.displayName != trimmed else { return }
+            snap = SessionSnapshot(
+                schemaVersion: snap.schemaVersion,
+                savedAt: snap.savedAt,
+                id: snap.id,
+                displayName: trimmed,
+                createdAt: snap.createdAt,
+                lastActiveAt: snap.lastActiveAt,
+                sidebarRootPath: snap.sidebarRootPath,
+                openTabs: snap.openTabs,
+                selectedTabIndex: snap.selectedTabIndex,
+                sidebarExpandedPaths: snap.sidebarExpandedPaths,
+                sidebarIncludeHidden: snap.sidebarIncludeHidden,
+                splitURL: snap.splitURL,
+                zoom: snap.zoom,
+                wordWrap: snap.wordWrap,
+                themeOverride: snap.themeOverride
+            )
+        }
+    }
+
     /// Close the currently-active session. Phase 1: if it was the
     /// only session, the strip drops to its empty state (no
     /// SessionState; `model` is left as-is but stale-looking).
