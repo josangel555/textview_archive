@@ -109,6 +109,15 @@ public final class DocumentModel: ObservableObject {
     /// Owned here (not at ContentView level) so the menu item + script
     /// runner can toggle it without prop-drilling. See `GoToPathPrompt`.
     @Published public var isGoToPathPresented: Bool = false
+    /// Last error produced by the most recent `commitGoToPath` call.
+    /// Empty string when the last commit succeeded or no commit has
+    /// happened yet. Surfaced to the diagnostic dump so VM UI tests can
+    /// assert on validation outcomes without typing into the prompt's
+    /// local `@State` editor (which the script runner can't reach). The
+    /// SwiftUI prompt continues to drive its own inline error label off
+    /// its own @State; this property is the model-side mirror that the
+    /// script-verb path populates.
+    @Published public var lastGoToError: String = ""
     public let sidebar: SidebarModel
 
     private let controller: DocumentController
@@ -325,8 +334,16 @@ public final class DocumentModel: ObservableObject {
     public func showPalette() { isPalettePresented = true }
     public func dismissPalette() { isPalettePresented = false }
 
-    public func showGoToPath() { isGoToPathPresented = true }
-    public func dismissGoToPath() { isGoToPathPresented = false }
+    public func showGoToPath() {
+        isGoToPathPresented = true
+        // Clear stale error state from a previous attempt so the dump
+        // reflects only the current invocation.
+        lastGoToError = ""
+    }
+    public func dismissGoToPath() {
+        isGoToPathPresented = false
+        lastGoToError = ""
+    }
 
     /// Record a successfully-opened path in the Go-to-path history.
     /// Called by `GoToPathPrompt` after `openPath`. Stored as the raw
@@ -334,6 +351,44 @@ public final class DocumentModel: ObservableObject {
     /// verbatim — including tilde-form if we ever start preserving it.
     public func recordGoToPath(_ absolutePath: String) {
         goToPathHistory.record(absolutePath)
+    }
+
+    /// Headless equivalent of `GoToPathPrompt.submit(newSession:)`. The
+    /// script runner can't drive the prompt's local TextField, so this
+    /// method exposes the same expand → validate → open path so VM UI
+    /// tests can exercise both happy-path and error-path behaviour.
+    ///
+    /// On success: records history, calls `openPath` (or
+    /// `openFolderInNewSession` when `newSession` is true and the path
+    /// is a directory), dismisses the prompt, clears `lastGoToError`.
+    ///
+    /// On failure: populates `lastGoToError` with the user-facing
+    /// message and leaves the prompt visible so the next interaction
+    /// can correct it.
+    public func commitGoToPath(_ rawPath: String, newSession: Bool = false) {
+        switch GoToPathExpansion.resolveExisting(rawPath) {
+        case .failure(let err):
+            lastGoToError = Self.userMessage(for: err)
+        case .success(let url):
+            recordGoToPath(url.path)
+            if newSession,
+               GoToPathExpansion.isDirectory(url.path),
+               let openInNew = openFolderInNewSession {
+                openInNew(url)
+            } else {
+                openPath(url)
+            }
+            lastGoToError = ""
+            dismissGoToPath()
+        }
+    }
+
+    private static func userMessage(for err: GoToPathExpansion.Error) -> String {
+        switch err {
+        case .empty:    return "Enter an absolute path."
+        case .relative: return "Path must be absolute (start with / or ~)."
+        case .notFound: return "No file or folder at that path."
+        }
     }
 
     // MARK: Bookmarks
