@@ -57,7 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // never resized it — that's the bug where opening any non-markdown
         // file revealed a sliver of UI (line numbers only) inside a vast
         // empty white background.
-        let rootView = ContentView(model: model)
+        let rootView = ContentView(model: model, sessionsApp: sessions)
         // Stash the walkthrough controller so the --walkthrough flag
         // handler below can call `start(_:)` on it without rebuilding
         // ContentView's body state.
