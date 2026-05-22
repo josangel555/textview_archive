@@ -339,6 +339,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case "dismiss-palette": model.dismissPalette()
         case "show-goto":       model.showGoToPath()
         case "dismiss-goto":    model.dismissGoToPath()
+        case "goto-commit":     model.commitGoToPath(arg, newSession: false)
+        case "goto-commit-new-session": model.commitGoToPath(arg, newSession: true)
         case "toggle-format":   model.toggleFormat()
         case "toggle-bookmark": model.toggleCurrentTabBookmark()
         case "show-cross-search":    model.showCrossSearch()
@@ -356,6 +358,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             model.sidebar.selectPrevious()
         case "sidebar-walk-up":
             model.sidebar.collapseOrFocusParent()
+        // ---- Sessions (Phase 1; see SessionTabBar a11y ids) ----
+        // The script runner can't reach the SessionTabBar's SwiftUI
+        // buttons; these verbs drive the same SessionsAppCoordinator
+        // calls the buttons would. VM UI tests assert on the resulting
+        // `model.sessions` snapshot in the dump.
+        case "session-open-folder":
+            sessions.openFolder(URL(fileURLWithPath: arg))
+        case "session-open-new":
+            // forceNew variant — invoked by the tree/bookmarks
+            // "Open in New Session" context-menu items. Same wiring
+            // as the AppDelegate's `openFolderInNewSession(_:)` action.
+            sessions.openFolder(URL(fileURLWithPath: arg), forceNew: true)
+        case "session-activate":
+            // 1-based index, matching `select-tab` convention.
+            if let n = Int(arg), n >= 1 {
+                sessions.activate(index: n - 1)
+            }
+        case "session-close-active":
+            sessions.closeActive()
+        case "session-next":     sessions.nextSession()
+        case "session-prev":     sessions.previousSession()
+        case "session-rename":
+            // Renames the currently-active session. Inline rename in
+            // the UI goes through the same SessionsAppCoordinator.rename
+            // call; the empty-name guard lives there.
+            if let id = sessions.core.activeID {
+                sessions.rename(id: id, to: arg)
+            }
         case "resize":
             // "WxH" e.g. "1200x800"
             let dims = arg.split(separator: "x").compactMap { Int($0) }
@@ -397,6 +427,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // Expose model state so tests can verify zoom / mode / tab
         // count without scraping NSTextView fonts (which don't exist
         // in the pure-SwiftUI source view).
+        // Sessions snapshot for VM UI tests. We project the coordinator's
+        // canonical list to plain JSON-able dictionaries; the dump
+        // serializer rejects strongly-typed structs.
+        let sessionSummaries: [[String: Any]] = sessions.core.sessions.map { snap in
+            [
+                "id": snap.id.uuidString,
+                "displayName": snap.displayName,
+                "sidebarRootPath": snap.sidebarRootPath ?? "",
+            ]
+        }
         enriched["model"] = [
             "zoom": model.zoom,
             "currentViewMode": model.currentViewMode.rawValue,
@@ -410,6 +450,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             "isCrossSearchPresented": model.isCrossSearchPresented,
             "sidebarVisible": model.sidebar.isVisible,
             "currentURL": model.currentURL?.path ?? "",
+            "lastGoToError": model.lastGoToError,
+            "sessions": sessionSummaries,
+            "activeSessionID": sessions.core.activeID?.uuidString ?? "",
         ]
         if let data = try? JSONSerialization.data(
             withJSONObject: enriched,
