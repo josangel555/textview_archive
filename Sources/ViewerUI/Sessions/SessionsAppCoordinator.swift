@@ -250,19 +250,9 @@ public final class SessionsAppCoordinator: ObservableObject {
     /// the singleton DocumentModel with a per-session one.
     private func switchSessionFaçade(to snap: SessionSnapshot) {
         active?.detach()
-        // Open the new folder on the shared DocumentModel so the
-        // sidebar/tabs reflect the new session. This is the
-        // "façade trick" — the model never changes identity.
-        if let p = snap.sidebarRootPath, !p.isEmpty {
-            let url = URL(fileURLWithPath: p)
-            if FileManager.default.fileExists(atPath: url.path),
-               !DocumentModel.isUnderTCCProtectedRoot(url) {
-                model.openFolder(url)
-            }
-        }
-        // Drop old tabs so the user doesn't see leftover state from
-        // the previous session. (Phase 2 will isolate tabs per
-        // session.)
+        // Drop old tabs so the incoming hydrate starts from a clean
+        // slate; otherwise the outgoing session's tabs would survive
+        // when the incoming snapshot has fewer (or none).
         while !model.tabs.tabs.isEmpty {
             model.closeTab(at: 0)
         }
@@ -280,6 +270,11 @@ public final class SessionsAppCoordinator: ObservableObject {
             lastActiveAt: snap.lastActiveAt,
             model: model
         )
+        // Hydrate BEFORE mount so the file watcher resumes against the
+        // restored selected tab. Hydrate handles sidebar root, tab list,
+        // selected index, zoom, word-wrap, theme — all the per-session
+        // surface the user can change.
+        state.hydrate(from: snap)
         state.mount()
         active = state
     }
@@ -320,6 +315,14 @@ public final class SessionsAppCoordinator: ObservableObject {
         func detach(_ session: SessionSnapshot) {
             guard let owner, let active = owner.active,
                   active.id == session.id else { return }
+            // Persist the outgoing session's *live* state (tab list,
+            // sidebar root, zoom, etc.) before pausing the watcher.
+            // Without this, the persisted snapshot stays frozen at
+            // bootstrap, so coming back to this session via activate(id:)
+            // hydrates from a stale empty-tabs snapshot — the user
+            // experiences this as "my tabs disappeared on switch".
+            let snap = active.makeSnapshot()
+            owner.core.replaceSnapshot(id: active.id, with: snap)
             active.detach()
         }
     }
