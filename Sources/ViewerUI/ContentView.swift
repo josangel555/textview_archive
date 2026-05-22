@@ -6,12 +6,18 @@ import ViewerCore
 public struct ContentView: View {
     @ObservedObject var model: DocumentModel
     @StateObject var walkthrough: WalkthroughPlayerController
+    /// App-level sessions coordinator. Optional so SwiftUI previews
+    /// and host-side unit tests that construct a bare `ContentView`
+    /// don't need to spin up the full SessionStore stack — the
+    /// session tab row is simply hidden when nil.
+    var sessionsApp: SessionsAppCoordinator?
     @State private var isDropTargeted = false
     private let renderer = HTMLRenderer()
     private let stylesheet: String
 
-    public init(model: DocumentModel) {
+    public init(model: DocumentModel, sessionsApp: SessionsAppCoordinator? = nil) {
         self.model = model
+        self.sessionsApp = sessionsApp
         self.stylesheet = MarkdownStylesheet.load()
         // Persist the controller across body re-evals. The controller
         // owns the engine, delegate, and auto-advance scheduler — all
@@ -31,6 +37,10 @@ public struct ContentView: View {
     public var body: some View {
         ZStack {
             VStack(spacing: 0) {
+                if let sessionsApp {
+                    SessionTabBar(sessionsApp: sessionsApp)
+                    Divider()
+                }
                 TabBar(model: model)
                     .accessibilityIdentifier("mdv.tabbar")
                 Divider()

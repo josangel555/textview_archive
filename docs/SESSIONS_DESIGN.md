@@ -1040,6 +1040,12 @@ A few things might legitimately run for detached sessions:
 
 ## 7. Menus & keyboard shortcuts
 
+> **Update (post-Phase-1):** the session list is now visible at all
+> times via the `SessionTabBar` row above the existing per-file
+> `TabBar` (nested-tabs UI). That row is the primary discovery
+> surface for sessions; the menu items below remain for keyboard-
+> driven workflows and Window-menu-style discoverability.
+
 ### 7.1 Existing shortcut audit
 
 | Combo             | Today's binding                       | Future binding                                            |

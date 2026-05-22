@@ -192,6 +192,22 @@ public final class SessionsCoordinator: ObservableObject {
         persist()
     }
 
+    /// Close every session except `id`. Used by the session-tab
+    /// context menu's "Close Other Sessions" action. Each closure
+    /// routes through `close(id:)` so the per-session lifecycle
+    /// (trash + persist + LRU re-activation) runs exactly once per
+    /// removed session; the caller doesn't need to coordinate.
+    ///
+    /// No-op if `id` is not a known session, so callers can safely
+    /// pass the right-clicked session id without re-checking.
+    public func closeOthers(except id: UUID) {
+        guard sessions.contains(where: { $0.id == id }) else { return }
+        // Snapshot the ids up front: `close(id:)` mutates `sessions`,
+        // so iterating the live array would skip neighbours.
+        let victims = sessions.map(\.id).filter { $0 != id }
+        for victim in victims { close(id: victim) }
+    }
+
     // MARK: Navigation -----------------------------------------------
 
     public func nextSession() {
