@@ -115,6 +115,20 @@ public struct ContentView: View {
                     .padding(.top, 80)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
+
+            // MARK: - GoToPath overlay
+            // Lives under its own MARK so a parallel branch touching
+            // ContentView (e.g. nested-tabs) doesn't clobber it on
+            // merge. The overlay mirrors the palette / cross-search
+            // pattern: scrim + centered floating panel.
+            if model.isGoToPathPresented {
+                Color.black.opacity(0.18)
+                    .ignoresSafeArea()
+                    .onTapGesture { model.dismissGoToPath() }
+                GoToPathPrompt(model: model)
+                    .padding(.top, 80)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
         }
     }
 
