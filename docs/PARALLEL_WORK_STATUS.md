@@ -478,3 +478,7 @@ git -C /Users/me/Documents/workspaces/claude/markdown_viewer worktree remove _po
 
 Each worktree has only the diff for that one feature — no contamination
 between branches.
+
+---
+
+- **SessionTabBar** (`Sources/ViewerUI/Sessions/SessionTabBar.swift`): nested-tabs UI row above the per-file `TabBar`. Reads `SessionsAppCoordinator.core.sessions`; supports activate / close / close-others / inline-rename / +-to-open-folder-in-new-session. a11y ids under `mdv.sessionTab.*`.
