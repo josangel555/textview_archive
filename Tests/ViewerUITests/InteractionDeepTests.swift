@@ -5,234 +5,187 @@ import Foundation
 /// palette show/dismiss, find invocation, window resize, zoom across
 /// many small interactions. Driven by the `--script` runner so we don't
 /// depend on AppleScript focus stealing.
-final class InteractionDeepTests: XCTestCase {
+///
+/// Refactored onto `MultiScenarioTestCase`: related checks now share a
+/// test method and a fixture set instead of each one rebuilding tmpdir
+/// fixtures from scratch.
+final class InteractionDeepTests: MultiScenarioTestCase {
 
-    private var tmpDir: URL!
+    override class var harnessLabel: String { "InteractionDeep" }
+    override class var defaultScenarioTimeout: TimeInterval { 30 }
 
-    private func projectRoot() -> URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-    }
+    // MARK: - Tab cycling (two scenarios share a/b/c.md)
 
-    private var appBundlePath: String {
-        projectRoot().appendingPathComponent("dist/TextView.app").path
-    }
+    func test_tabCyclingAndClose() throws {
+        let a = try harness.writeFile("a.md", "# A\n")
+        let b = try harness.writeFile("b.md", "# B\n")
+        let c = try harness.writeFile("c.md", "# C\n")
+        let aa = try harness.writeFile("aa.md")
+        let bb = try harness.writeFile("bb.md")
+        let cc = try harness.writeFile("cc.md")
 
-    private var appExecutable: URL {
-        projectRoot().appendingPathComponent("dist/TextView.app/Contents/MacOS/MarkdownViewer")
-    }
+        try runScenarios([
+            // Open three tabs, then cycle through them.
+            Scenario(name: "tab-cycling-nextprev-and-select-by-index",
+                     argFile: a,
+                     script: """
+                        open \(b.path)
+                        open \(c.path)
+                        select-tab 1
+                        next-tab
+                        next-tab
+                        prev-tab
+                        """) { dumps, file, line in
+                XCTAssertEqual(dumps.count, 6, file: file, line: line)
+                let titles = dumps.map { Pages(dump: $0).generic.windowTitle ?? "" }
+                XCTAssertGreaterThanOrEqual(Set(titles).count, 2,
+                    "Tab cycling should produce ≥2 distinct window titles. Got: \(titles)",
+                    file: file, line: line)
+            },
 
-    override func setUpWithError() throws {
-        tmpDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("InteractionDeep-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
-    }
-
-    override func tearDownWithError() throws {
-        _ = AppLauncher.currentPID(of: "MarkdownViewer").map { kill($0, SIGTERM) }
-        try? FileManager.default.removeItem(at: tmpDir)
-    }
-
-    @discardableResult
-    private func runScript(_ script: String, with fileArg: URL, timeout: TimeInterval = 30) throws -> [[String: Any]] {
-        try AppLauncher.runScript(
-            appBundlePath: appBundlePath,
-            scriptContents: script,
-            scriptPath: tmpDir.appendingPathComponent("script.txt").path,
-            fileArg: fileArg,
-            timeout: timeout
-        )
-    }
-
-    private func writeMD(_ name: String, _ body: String = "# x\n") throws -> URL {
-        let url = tmpDir.appendingPathComponent(name)
-        try body.write(to: url, atomically: true, encoding: .utf8)
-        return url
-    }
-
-    private func nodes(_ cls: String, in tree: [String: Any]) -> [[String: Any]] {
-        var out: [[String: Any]] = []
-        func walk(_ n: [String: Any]) {
-            if (n["class"] as? String) == cls { out.append(n) }
-            if let s = n["subviews"] as? [[String: Any]] { s.forEach(walk) }
-        }
-        if let cv = tree["contentView"] as? [String: Any] { walk(cv) }
-        return out
-    }
-
-    // MARK: - Tab cycling
-
-    func test_tabCycling_nextPrev_andSelectByIndex() throws {
-        guard FileManager.default.isExecutableFile(atPath: appExecutable.path) else {
-            throw XCTSkip("Build .app first")
-        }
-        let a = try writeMD("a.md", "# A\n")
-        let b = try writeMD("b.md", "# B\n")
-        let c = try writeMD("c.md", "# C\n")
-        // Open three tabs, then cycle through them.
-        let dumps = try runScript("""
-            open \(b.path)
-            open \(c.path)
-            select-tab 1
-            next-tab
-            next-tab
-            prev-tab
-            """, with: a)
-        XCTAssertEqual(dumps.count, 6)
-        // After each navigation the window title should reflect the
-        // selected tab's filename. Confirm we see at least 2 distinct titles
-        // in the sequence (we navigate between 3 files).
-        let titles = dumps.map { ($0["window"] as? [String: Any])?["title"] as? String ?? "" }
-        XCTAssertGreaterThanOrEqual(Set(titles).count, 2,
-            "Tab cycling should produce ≥2 distinct window titles. Got: \(titles)")
-    }
-
-    func test_closeMiddleTab_keepsOthers() throws {
-        guard FileManager.default.isExecutableFile(atPath: appExecutable.path) else {
-            throw XCTSkip("Build .app first")
-        }
-        let a = try writeMD("aa.md")
-        let b = try writeMD("bb.md")
-        let c = try writeMD("cc.md")
-        let dumps = try runScript("""
-            open \(b.path)
-            open \(c.path)
-            select-tab 2
-            close-tab
-            """, with: a)
-        XCTAssertEqual(dumps.count, 4)
-        // Final title should be a.md or c.md (not b.md — that was closed).
-        let finalTitle = ((dumps.last?["window"] as? [String: Any])?["title"] as? String) ?? ""
-        XCTAssertFalse(finalTitle.contains("bb.md"),
-            "After closing the middle tab, the title should not reference bb.md. Got: \(finalTitle)")
+            // Close the middle tab; final title shouldn't reference bb.md.
+            Scenario(name: "close-middle-tab-keeps-others",
+                     argFile: aa,
+                     script: """
+                        open \(bb.path)
+                        open \(cc.path)
+                        select-tab 2
+                        close-tab
+                        """) { dumps, file, line in
+                XCTAssertEqual(dumps.count, 4, file: file, line: line)
+                guard let last = dumps.last else {
+                    return XCTFail("no final dump", file: file, line: line)
+                }
+                TabBarPage(dump: last).assertActiveTabNotNamed(
+                    "bb.md", file: file, line: line)
+            }
+        ])
     }
 
     // MARK: - Palette show / dismiss
 
     func test_palette_showAndDismiss_modelStateUpdates() throws {
-        guard FileManager.default.isExecutableFile(atPath: appExecutable.path) else {
-            throw XCTSkip("Build .app first")
-        }
-        let md = try writeMD("a.md")
-        let dumps = try runScript("""
-            show-palette
-            dismiss-palette
-            show-palette
-            """, with: md)
-        XCTAssertEqual(dumps.count, 3)
-        // The palette overlay produces a NSHostingView for the panel —
-        // detecting its presence from JSON is fragile, so we check that
-        // the SwiftUI hosting tree grew/shrunk between steps.
-        let counts = dumps.map { d -> Int in
-            var count = 0
-            func walk(_ n: [String: Any]) {
-                count += 1
-                if let s = n["subviews"] as? [[String: Any]] { s.forEach(walk) }
+        let md = try harness.writeFile("a.md")
+        try runScenarios([
+            Scenario(name: "palette-show-dismiss-show",
+                     argFile: md,
+                     script: """
+                        show-palette
+                        dismiss-palette
+                        show-palette
+                        """) { dumps, file, line in
+                XCTAssertEqual(dumps.count, 3, file: file, line: line)
+                // Palette overlay produces a NSHostingView — detect via
+                // total-node-count delta.
+                let counts = dumps.map { Pages(dump: $0).generic.totalNodeCount }
+                XCTAssertGreaterThan(counts[0], counts[1],
+                    "After dismiss-palette the view tree should shrink. Counts: \(counts)",
+                    file: file, line: line)
+                XCTAssertGreaterThan(counts[2], counts[1],
+                    "After re-show-palette the view tree should grow again. Counts: \(counts)",
+                    file: file, line: line)
             }
-            if let cv = d["contentView"] as? [String: Any] { walk(cv) }
-            return count
-        }
-        // After show (1) and again show (3): higher. After dismiss (2): lower.
-        XCTAssertGreaterThan(counts[0], counts[1],
-            "After dismiss-palette the view tree should shrink. Counts: \(counts)")
-        XCTAssertGreaterThan(counts[2], counts[1],
-            "After re-show-palette the view tree should grow again. Counts: \(counts)")
+        ])
     }
 
     // MARK: - Window resize
 
     func test_resize_changesWindowGeometry() throws {
-        guard FileManager.default.isExecutableFile(atPath: appExecutable.path) else {
-            throw XCTSkip("Build .app first")
-        }
-        let md = try writeMD("a.md")
-        // Resize targets sized to fit even modest displays (e.g., the
-        // 1440x900 UTM VM). The earlier 1400x900 target plus the
-        // titlebar (~28px) overflowed and macOS clamped the height,
-        // failing absolute-pixel assertions. Targets here are well
-        // inside any modern viewport.
-        let dumps = try runScript("""
-            resize 800x500
-            resize 1100x650
-            """, with: md)
-        XCTAssertEqual(dumps.count, 2)
-        func size(_ d: [String: Any]) -> (Int, Int) {
-            guard let w = d["window"] as? [String: Any],
-                  let f = w["frame"] as? String else { return (0, 0) }
-            let parts = f.replacingOccurrences(of: "(", with: "")
-                .replacingOccurrences(of: ")", with: "")
-                .split(whereSeparator: { ",x ".contains($0) })
-                .compactMap { Double($0) }
-            return parts.count == 4 ? (Int(parts[2]), Int(parts[3])) : (0, 0)
-        }
-        let (w1, h1) = size(dumps[0])
-        let (w2, h2) = size(dumps[1])
-        // What we care about: the resize actually grew the window.
-        // Absolute heights drift with titlebar conventions across
-        // macOS versions; relative growth is the real signal.
-        XCTAssertEqual(w1, 800, "First resize width should be 800")
-        XCTAssertGreaterThan(h1, 500 - 5)
-        XCTAssertEqual(w2, 1100, "Second resize width should be 1100")
-        XCTAssertGreaterThan(w2, w1, "Second resize widened the window")
-        XCTAssertGreaterThan(h2, h1, "Second resize heightened the window")
+        let md = try harness.writeFile("a.md")
+        try runScenarios([
+            // Resize targets sized to fit even modest displays (the
+            // 1440x900 UTM VM). 1400x900 + titlebar overflowed and
+            // macOS clamped — these targets are well inside any modern
+            // viewport.
+            Scenario(name: "resize-grows-window",
+                     argFile: md,
+                     script: """
+                        resize 800x500
+                        resize 1100x650
+                        """) { dumps, file, line in
+                XCTAssertEqual(dumps.count, 2, file: file, line: line)
+                let p1 = Pages(dump: dumps[0]).generic
+                let p2 = Pages(dump: dumps[1]).generic
+                guard let (w1, h1) = p1.windowSize,
+                      let (w2, h2) = p2.windowSize else {
+                    return XCTFail("could not parse window size",
+                                   file: file, line: line)
+                }
+                XCTAssertEqual(w1, 800, "First resize width should be 800",
+                               file: file, line: line)
+                XCTAssertGreaterThan(h1, 500 - 5, file: file, line: line)
+                XCTAssertEqual(w2, 1100, "Second resize width should be 1100",
+                               file: file, line: line)
+                XCTAssertGreaterThan(w2, w1, "Second resize widened the window",
+                                     file: file, line: line)
+                XCTAssertGreaterThan(h2, h1, "Second resize heightened the window",
+                                     file: file, line: line)
+            }
+        ])
     }
 
     // MARK: - Zoom persistence
 
     func test_zoom_persistsAcrossNewTab() throws {
-        guard FileManager.default.isExecutableFile(atPath: appExecutable.path) else {
-            throw XCTSkip("Build .app first")
-        }
-        let a = try writeMD("a.md", "# A\nbody\n")
-        let b = try writeMD("b.md", "# B\nbody\n")
-        // model.zoom is a single value applied across tabs, so two
-        // zoom-ins should persist when we open b.md.
-        let dumps = try runScript("""
-            zoom-reset
-            toggle-view
-            zoom-in
-            zoom-in
-            open \(b.path)
-            """, with: a)
-        // dumps.count regression observed after mode-normalization
-        // (commit 169a4de): sometimes only 1 dump comes back instead
-        // of 5. Investigate before relying on this test. Bail safely
-        // so a crash doesn't mask other test results.
-        guard dumps.count == 5 else {
-            return XCTFail("expected 5 step dumps, got \(dumps.count) — script-runner regression?")
-        }
-        func zoom(_ d: [String: Any]) -> Double? {
-            (d["model"] as? [String: Any])?["zoom"] as? Double
-        }
-        guard let zoomedA = zoom(dumps[3]),
-              let zoomedB = zoom(dumps[4]) else {
-            return XCTFail("model.zoom missing")
-        }
-        XCTAssertEqual(zoomedA, zoomedB, accuracy: 0.001,
-            "Zoom should persist across tabs. a=\(zoomedA) b=\(zoomedB)")
-        XCTAssertGreaterThan(zoomedA, 1.0, "After 2 zoom-ins, zoom should be >1.0")
+        let a = try harness.writeFile("a.md", "# A\nbody\n")
+        let b = try harness.writeFile("b.md", "# B\nbody\n")
+        try runScenarios([
+            // model.zoom is a single value applied across tabs; two
+            // zoom-ins should persist when we open b.md.
+            Scenario(name: "zoom-persists-across-new-tab",
+                     argFile: a,
+                     script: """
+                        zoom-reset
+                        toggle-view
+                        zoom-in
+                        zoom-in
+                        open \(b.path)
+                        """) { dumps, file, line in
+                // Regression observed post mode-normalization (commit
+                // 169a4de): sometimes only 1 dump comes back instead of
+                // 5. Bail safely so a crash doesn't mask other results.
+                guard dumps.count == 5 else {
+                    return XCTFail(
+                        "expected 5 step dumps, got \(dumps.count) — script-runner regression?",
+                        file: file, line: line)
+                }
+                let p = dumps.map { Pages(dump: $0).generic }
+                guard let zoomedA = p[3].zoom,
+                      let zoomedB = p[4].zoom else {
+                    return XCTFail("model.zoom missing", file: file, line: line)
+                }
+                XCTAssertEqual(zoomedA, zoomedB, accuracy: 0.001,
+                    "Zoom should persist across tabs. a=\(zoomedA) b=\(zoomedB)",
+                    file: file, line: line)
+                XCTAssertGreaterThan(zoomedA, 1.0,
+                    "After 2 zoom-ins, zoom should be >1.0",
+                    file: file, line: line)
+            }
+        ])
     }
 
     // MARK: - Sidebar navigation
 
     func test_sidebar_setRoot_andWalkUp() throws {
-        guard FileManager.default.isExecutableFile(atPath: appExecutable.path) else {
-            throw XCTSkip("Build .app first")
-        }
-        let sub = tmpDir.appendingPathComponent("sub")
-        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
-        _ = try writeMD("sub/inner.md", "# inner\n")
-        let outer = try writeMD("a.md")
-        // Set root to subfolder, then walk up. Walk-up only moves *selection*
-        // if there's a selection inside the root — here there's none, so
-        // sidebar root stays put. This still exercises the code path.
-        let dumps = try runScript("""
-            sidebar-set-root \(sub.path)
-            sidebar-walk-up
-            sidebar-select-next
-            sidebar-select-prev
-            """, with: outer)
-        XCTAssertEqual(dumps.count, 4)
-        // Just verify no crash and all 4 dumps were produced.
+        let sub = try harness.makeDir("sub")
+        _ = try harness.writeFile("sub/inner.md", "# inner\n")
+        let outer = try harness.writeFile("a.md")
+        try runScenarios([
+            // Set root to subfolder, then walk up. Walk-up only moves
+            // *selection* if there's a selection inside the root — here
+            // there's none, so sidebar root stays put. This still
+            // exercises the code path.
+            Scenario(name: "sidebar-set-root-then-walk-up",
+                     argFile: outer,
+                     script: """
+                        sidebar-set-root \(sub.path)
+                        sidebar-walk-up
+                        sidebar-select-next
+                        sidebar-select-prev
+                        """) { dumps, file, line in
+                XCTAssertEqual(dumps.count, 4, file: file, line: line)
+                // Just verify no crash and all 4 dumps were produced.
+            }
+        ])
     }
 }
