@@ -10,102 +10,22 @@ import Foundation
 /// Each scenario is one `--script` run with N steps. We assert on
 /// invariants that span steps, not just the final state — that's what
 /// a chain test is for.
-final class ScenarioTests: XCTestCase {
+///
+/// Refactored to run multiple scenarios per test method via
+/// `MultiScenarioTestCase`, sharing the fixture tmpdir across
+/// scenarios so we don't re-create `tmpDir` per check.
+final class ScenarioTests: MultiScenarioTestCase {
 
-    private var tmpDir: URL!
+    override class var harnessLabel: String { "Scenario" }
+    override class var defaultScenarioTimeout: TimeInterval { 30 }
 
-    private func projectRoot() -> URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-    }
+    // MARK: - Tab + view-mode scenarios share a fixture
 
-    private var appBundlePath: String {
-        projectRoot().appendingPathComponent("dist/TextView.app").path
-    }
-
-    private var appExecutable: URL {
-        projectRoot().appendingPathComponent(
-            "dist/TextView.app/Contents/MacOS/MarkdownViewer")
-    }
-
-    override func setUpWithError() throws {
-        tmpDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Scenario-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
-    }
-
-    override func tearDownWithError() throws {
-        _ = AppLauncher.currentPID(of: "MarkdownViewer").map { kill($0, SIGTERM) }
-        try? FileManager.default.removeItem(at: tmpDir)
-    }
-
-    @discardableResult
-    private func runScript(
-        _ script: String,
-        with fileArg: URL,
-        timeout: TimeInterval = 30
-    ) throws -> [[String: Any]] {
-        try AppLauncher.runScript(
-            appBundlePath: appBundlePath,
-            scriptContents: script,
-            scriptPath: tmpDir.appendingPathComponent("script.txt").path,
-            fileArg: fileArg,
-            timeout: timeout
-        )
-    }
-
-    private func writeMarkdown(_ name: String, _ body: String) throws -> URL {
-        let url = tmpDir.appendingPathComponent(name)
-        try body.write(to: url, atomically: true, encoding: .utf8)
-        return url
-    }
-
-    private func nodesOfClass(_ cls: String, in tree: [String: Any]) -> [[String: Any]] {
-        var out: [[String: Any]] = []
-        func walk(_ n: [String: Any]) {
-            if (n["class"] as? String) == cls { out.append(n) }
-            if let subs = n["subviews"] as? [[String: Any]] { subs.forEach(walk) }
-        }
-        if let cv = tree["contentView"] as? [String: Any] { walk(cv) }
-        return out
-    }
-
-    // MARK: - Scenario 1: open multiple files via script, verify tabs accumulate
-
-    func test_scenario_openMultipleFiles_buildsTabList() throws {
-        guard FileManager.default.isExecutableFile(atPath: appExecutable.path) else {
-            throw XCTSkip("Build .app first")
-        }
-        let a = try writeMarkdown("a.md", "# A\n")
-        let b = try writeMarkdown("b.md", "# B\n")
-        let c = try writeMarkdown("c.md", "# C\n")
-        // Open `a` via argv, then open b and c via script.
-        let dumps = try runScript("""
-            open \(b.path)
-            open \(c.path)
-            prev-tab
-            close-tab
-            """, with: a)
-        XCTAssertEqual(dumps.count, 4)
-        // After step 2 (open b, open c): 3 tabs total.
-        // After step 3 (prev-tab): still 3 tabs, just different selected.
-        // After step 4 (close-tab): 2 tabs.
-        let titles = dumps.map { ($0["window"] as? [String: Any])?["title"] as? String ?? "" }
-        // Title should have changed at least once across the 4 steps.
-        let uniqueTitles = Set(titles)
-        XCTAssertGreaterThanOrEqual(uniqueTitles.count, 2,
-            "Window title should change as we open/close files. Titles: \(titles)")
-    }
-
-    // MARK: - Scenario 2: source mode round-trip preserves content
-
-    func test_scenario_renderedSourceRoundtrip_keepsContent() throws {
-        guard FileManager.default.isExecutableFile(atPath: appExecutable.path) else {
-            throw XCTSkip("Build .app first")
-        }
-        let md = try writeMarkdown("rt.md", """
+    func test_tabAndModeScenarios() throws {
+        let a = try harness.writeFile("a.md", "# A\n")
+        let b = try harness.writeFile("b.md", "# B\n")
+        let c = try harness.writeFile("c.md", "# C\n")
+        let rt = try harness.writeFile("rt.md", """
             # Heading
 
             This is a paragraph with **bold** and *italic*.
@@ -114,85 +34,99 @@ final class ScenarioTests: XCTestCase {
             - second
             - third
             """)
-        let dumps = try runScript("""
-            toggle-view
-            toggle-view
-            toggle-view
-            """, with: md)
-        XCTAssertEqual(dumps.count, 3)
-        // Step 1: source. Step 2: rendered. Step 3: source.
-        // Now via model.currentViewMode (no NSTextView in pure-SwiftUI
-        // source view).
-        func mode(_ d: [String: Any]) -> String {
-            ((d["model"] as? [String: Any])?["currentViewMode"] as? String) ?? ""
-        }
-        XCTAssertEqual(mode(dumps[0]), "source",
-            "Step 1: toggle from rendered should land in source")
-        XCTAssertEqual(mode(dumps[1]), "rendered",
-            "Step 2: second toggle should return to rendered")
-        XCTAssertEqual(mode(dumps[2]), "source",
-            "Step 3: third toggle should land back in source")
-        // Middle step is rendered — verify WKWebView present.
-        XCTAssertFalse(nodesOfClass("WKWebView", in: dumps[1]).isEmpty,
-            "Step 2 should have a WKWebView for rendered markdown")
+
+        try runScenarios([
+            // Scenario 1: open multiple files via script, tabs accumulate.
+            Scenario(name: "open-multiple-files-builds-tabs",
+                     argFile: a,
+                     script: """
+                        open \(b.path)
+                        open \(c.path)
+                        prev-tab
+                        close-tab
+                        """) { dumps, file, line in
+                XCTAssertEqual(dumps.count, 4, file: file, line: line)
+                let titles = dumps.map { Pages(dump: $0).generic.windowTitle ?? "" }
+                let uniqueTitles = Set(titles)
+                XCTAssertGreaterThanOrEqual(uniqueTitles.count, 2,
+                    "Window title should change as we open/close files. Titles: \(titles)",
+                    file: file, line: line)
+            },
+
+            // Scenario 2: source/rendered roundtrip preserves content + mode.
+            Scenario(name: "rendered-source-roundtrip-keeps-content",
+                     argFile: rt,
+                     script: """
+                        toggle-view
+                        toggle-view
+                        toggle-view
+                        """) { dumps, file, line in
+                XCTAssertEqual(dumps.count, 3, file: file, line: line)
+                let p = dumps.map { Pages(dump: $0) }
+                p[0].modeBar.assertMode("source", file: file, line: line)
+                p[1].modeBar.assertMode("rendered", file: file, line: line)
+                p[2].modeBar.assertMode("source", file: file, line: line)
+                // Middle step is rendered — verify WKWebView present.
+                p[1].modeBar.assertHasWebView(file: file, line: line)
+            }
+        ])
     }
 
-    // MARK: - Scenario 3: zoom then toggle view persists zoom
+    // MARK: - Zoom scenario stays in its own method (it asserts
+    //         cross-toggle invariants on a single file).
 
-    func test_scenario_zoomPersistsAcrossViewToggle() throws {
-        guard FileManager.default.isExecutableFile(atPath: appExecutable.path) else {
-            throw XCTSkip("Build .app first")
-        }
-        let md = try writeMarkdown("z.md", "# Hello\n\nsome text\n")
-        let dumps = try runScript("""
-            toggle-view
-            zoom-in
-            zoom-in
-            toggle-view
-            toggle-view
-            """, with: md)
-        XCTAssertEqual(dumps.count, 5)
-        // Step 1: source mode, baseline zoom (1.0 after zoom-reset elsewhere
-        // — but this test doesn't reset, so PreferencesStore could carry
-        // state from earlier tests. Just assert the relative change.)
-        // Step 2-3: zoomed in.
-        // Step 4: rendered mode (zoom should still be the same model state).
-        // Step 5: source mode again — zoom should still be at zoomed-2x level.
-        func zoom(_ d: [String: Any]) -> Double? {
-            (d["model"] as? [String: Any])?["zoom"] as? Double
-        }
-        guard let baseline = zoom(dumps[0]),
-              let zoomedTwoSteps = zoom(dumps[2]),
-              let returnedToSource = zoom(dumps[4]) else {
-            return XCTFail("model.zoom missing from one of the dumps")
-        }
-        XCTAssertGreaterThan(zoomedTwoSteps, baseline,
-            "two zoom-in steps must enlarge model.zoom")
-        XCTAssertEqual(returnedToSource, zoomedTwoSteps, accuracy: 0.001,
-            "after rendered round-trip, model.zoom should be unchanged")
+    func test_zoomPersistsAcrossViewToggle() throws {
+        let md = try harness.writeFile("z.md", "# Hello\n\nsome text\n")
+        try runScenarios([
+            Scenario(name: "zoom-persists-across-toggle",
+                     argFile: md,
+                     script: """
+                        toggle-view
+                        zoom-in
+                        zoom-in
+                        toggle-view
+                        toggle-view
+                        """) { dumps, file, line in
+                XCTAssertEqual(dumps.count, 5, file: file, line: line)
+                let p = dumps.map { Pages(dump: $0) }
+                guard let baseline = p[0].generic.zoom,
+                      let zoomedTwoSteps = p[2].generic.zoom,
+                      let returnedToSource = p[4].generic.zoom else {
+                    return XCTFail("model.zoom missing from one of the dumps",
+                                   file: file, line: line)
+                }
+                XCTAssertGreaterThan(zoomedTwoSteps, baseline,
+                    "two zoom-in steps must enlarge model.zoom",
+                    file: file, line: line)
+                XCTAssertEqual(returnedToSource, zoomedTwoSteps, accuracy: 0.001,
+                    "after rendered round-trip, model.zoom should be unchanged",
+                    file: file, line: line)
+            }
+        ])
     }
 
-    // MARK: - Scenario 4: open folder, sidebar shows, content area stays valid
+    // MARK: - Folder open scenario
 
-    func test_scenario_openFolder_doesNotBreakContent() throws {
-        guard FileManager.default.isExecutableFile(atPath: appExecutable.path) else {
-            throw XCTSkip("Build .app first")
-        }
-        let md = try writeMarkdown("a.md", "# inline\n")
-        // Open a sibling file then open the folder. Content should remain
-        // valid throughout.
-        let dumps = try runScript("""
-            open \(tmpDir.path)
-            zoom-in
-            zoom-reset
-            """, with: md)
-        XCTAssertEqual(dumps.count, 3)
-        // WKWebView should be present in all three steps (we're in markdown
-        // rendered mode for a.md throughout).
-        for (i, d) in dumps.enumerated() {
-            let webs = nodesOfClass("WKWebView", in: d)
-            XCTAssertFalse(webs.isEmpty,
-                "WKWebView should be present at step \(i + 1) — folder-open should not collapse content")
-        }
+    func test_openFolder_doesNotBreakContent() throws {
+        let md = try harness.writeFile("a.md", "# inline\n")
+        try runScenarios([
+            Scenario(name: "open-folder-keeps-content",
+                     argFile: md,
+                     script: """
+                        open \(harness.tmpDir.path)
+                        zoom-in
+                        zoom-reset
+                        """) { dumps, file, line in
+                XCTAssertEqual(dumps.count, 3, file: file, line: line)
+                // WKWebView should be present in all three steps (we're
+                // in markdown rendered mode for a.md throughout).
+                for (i, d) in dumps.enumerated() {
+                    let p = Pages(dump: d)
+                    XCTAssertTrue(p.content.hasWebView,
+                        "WKWebView should be present at step \(i + 1) — folder-open should not collapse content",
+                        file: file, line: line)
+                }
+            }
+        ])
     }
 }
