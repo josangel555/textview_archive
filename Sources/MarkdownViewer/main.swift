@@ -337,6 +337,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             if let n = Int(arg), n >= 1 { model.selectTab(at: n - 1) }
         case "show-palette":    model.showPalette()
         case "dismiss-palette": model.dismissPalette()
+        case "show-goto":       model.showGoToPath()
+        case "dismiss-goto":    model.dismissGoToPath()
         case "toggle-format":   model.toggleFormat()
         case "toggle-bookmark": model.toggleCurrentTabBookmark()
         case "show-cross-search":    model.showCrossSearch()
@@ -403,6 +405,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             "isCurrentTabFormatted": model.isCurrentTabFormatted,
             "isCurrentTabBookmarked": model.isCurrentTabBookmarked,
             "isPalettePresented": model.isPalettePresented,
+            "isGoToPathPresented": model.isGoToPathPresented,
             "isRenderedFindBarPresented": model.isRenderedFindBarPresented,
             "isCrossSearchPresented": model.isCrossSearchPresented,
             "sidebarVisible": model.sidebar.isVisible,
@@ -656,6 +659,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     @objc func showPalette(_ sender: Any?) {
         model.showPalette()
+    }
+
+    @objc func showGoToPath(_ sender: Any?) {
+        model.showGoToPath()
     }
 
     @objc func reloadCurrentFile(_ sender: Any?) {
@@ -950,6 +957,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         openFolderItem.target = self
         fileMenu.addItem(openFolderItem)
 
+        // ⇧⌘G — Finder-style "Go to the folder…". Opens the
+        // GoToPathPrompt overlay. Note that this collides with the
+        // legacy macOS shortcut for "Find Previous"; we move that to
+        // ⌥⌘G in the Edit → Find submenu below.
+        let goToPathItem = NSMenuItem(
+            title: "Go to File or Folder…",
+            action: #selector(showGoToPath(_:)),
+            keyEquivalent: "g"
+        )
+        goToPathItem.keyEquivalentModifierMask = [.command, .shift]
+        goToPathItem.target = self
+        fileMenu.addItem(goToPathItem)
+
         let recentItem = NSMenuItem(
             title: "Open Recent", action: nil, keyEquivalent: ""
         )
@@ -1179,12 +1199,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         )
         findNext.tag = NSTextFinder.Action.nextMatch.rawValue
         findSubmenu.addItem(findNext)
+        // Note: ⇧⌘G is reserved for "Go to file or folder" (Finder
+        // convention) — see File → Go to… below. Find Previous moves
+        // to ⌥⌘G to avoid the collision. Power users tend to hit "g"
+        // repeatedly with Cmd to step forward and Cmd+Shift to step
+        // back; the Option alternative keeps that muscle memory close.
         let findPrev = NSMenuItem(
             title: "Find Previous",
             action: #selector(NSTextView.performFindPanelAction(_:)),
             keyEquivalent: "g"
         )
-        findPrev.keyEquivalentModifierMask = [.command, .shift]
+        findPrev.keyEquivalentModifierMask = [.command, .option]
         findPrev.tag = NSTextFinder.Action.previousMatch.rawValue
         findSubmenu.addItem(findPrev)
         findSubmenuItem.submenu = findSubmenu

@@ -105,10 +105,18 @@ public final class DocumentModel: ObservableObject {
     /// this to render "Ln 12, Col 4". Reset to .zero on tab switch.
     @Published public var sourceSelection: SourceSelection = .zero
     @Published public var isPalettePresented: Bool = false
+    /// "Go to file / folder" (Finder-style ⇧⌘G) prompt visibility.
+    /// Owned here (not at ContentView level) so the menu item + script
+    /// runner can toggle it without prop-drilling. See `GoToPathPrompt`.
+    @Published public var isGoToPathPresented: Bool = false
     public let sidebar: SidebarModel
 
     private let controller: DocumentController
     public let history: HistoryStore
+    /// Persisted history for the Go-to-path prompt. Small (cap 10),
+    /// separate from `history` so typing into the prompt doesn't churn
+    /// the global recents list.
+    public let goToPathHistory: GoToPathHistoryStore
     public let bookmarksStore: BookmarksStore
     private let preferences: PreferencesStore
     private var fileWatcher: FileWatcher?
@@ -130,12 +138,16 @@ public final class DocumentModel: ObservableObject {
     public init(
         controller: DocumentController = DocumentController(),
         history: HistoryStore = HistoryStore(storeURL: HistoryStore.defaultStoreURL()),
+        goToPathHistory: GoToPathHistoryStore = GoToPathHistoryStore(
+            storeURL: GoToPathHistoryStore.defaultStoreURL()
+        ),
         bookmarks: BookmarksStore = BookmarksStore(storeURL: BookmarksStore.defaultStoreURL()),
         sidebar: SidebarModel = SidebarModel(),
         preferences: PreferencesStore = PreferencesStore()
     ) {
         self.controller = controller
         self.history = history
+        self.goToPathHistory = goToPathHistory
         self.bookmarksStore = bookmarks
         self.sidebar = sidebar
         self.preferences = preferences
@@ -312,6 +324,17 @@ public final class DocumentModel: ObservableObject {
 
     public func showPalette() { isPalettePresented = true }
     public func dismissPalette() { isPalettePresented = false }
+
+    public func showGoToPath() { isGoToPathPresented = true }
+    public func dismissGoToPath() { isGoToPathPresented = false }
+
+    /// Record a successfully-opened path in the Go-to-path history.
+    /// Called by `GoToPathPrompt` after `openPath`. Stored as the raw
+    /// expanded path string (not URL) so the UI can re-display it
+    /// verbatim — including tilde-form if we ever start preserving it.
+    public func recordGoToPath(_ absolutePath: String) {
+        goToPathHistory.record(absolutePath)
+    }
 
     // MARK: Bookmarks
 
