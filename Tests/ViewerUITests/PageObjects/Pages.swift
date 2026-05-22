@@ -12,11 +12,13 @@ struct Pages {
 
     init(dump: [String: Any]) { self.dump = dump }
 
-    var tabBar:    TabBarPage          { TabBarPage(dump: dump) }
-    var sidebar:   SidebarPage         { SidebarPage(dump: dump) }
-    var modeBar:   ModeBarPage         { ModeBarPage(dump: dump) }
-    var statusBar: StatusBarPage       { StatusBarPage(dump: dump) }
-    var content:   RenderedContentPage { RenderedContentPage(dump: dump) }
+    var tabBar:        TabBarPage          { TabBarPage(dump: dump) }
+    var sidebar:       SidebarPage         { SidebarPage(dump: dump) }
+    var modeBar:       ModeBarPage         { ModeBarPage(dump: dump) }
+    var statusBar:     StatusBarPage       { StatusBarPage(dump: dump) }
+    var content:       RenderedContentPage { RenderedContentPage(dump: dump) }
+    var sessionTabBar: SessionTabBarPage   { SessionTabBarPage(dump: dump) }
+    var goToPath:      GoToPathPage        { GoToPathPage(dump: dump) }
 
     /// Convenience: get the same generic dump page (window title,
     /// zoom, node walks) without picking a specific surface.
