@@ -299,6 +299,53 @@ final class SessionsCoordinatorTests: XCTestCase {
         XCTAssertEqual(updated?.openTabs.count, 1)
     }
 
+    // MARK: closeOthers ----------------------------------------------
+
+    func testCloseOthersDropsEveryOtherSession() throws {
+        let a = try makeTmpFolder(name: "alpha")
+        let b = try makeTmpFolder(name: "beta")
+        let c = try makeTmpFolder(name: "gamma")
+        let sA = coord.openFolder(a)
+        let sB = coord.openFolder(b)
+        let sC = coord.openFolder(c)
+        XCTAssertEqual(coord.sessions.count, 3)
+        XCTAssertEqual(coord.activeID, sC.id)
+
+        // Close everything except the *non*-active session sA. We
+        // expect: sC (active) gets detached when removed, sA gets
+        // mounted as the new active, then sB closes silently (it
+        // wasn't active).
+        coord.closeOthers(except: sA.id)
+        XCTAssertEqual(coord.sessions.count, 1)
+        XCTAssertEqual(coord.sessions.first?.id, sA.id)
+        XCTAssertEqual(coord.activeID, sA.id)
+        // Order-insensitive: sB may close before or after sC depending
+        // on enumeration order. Just assert the keeper survived.
+        XCTAssertNotNil(coord.active)
+        // Sanity: closed snapshots are not in the live list.
+        XCTAssertFalse(coord.sessions.contains(where: { $0.id == sB.id }))
+        XCTAssertFalse(coord.sessions.contains(where: { $0.id == sC.id }))
+    }
+
+    func testCloseOthersWithSingleSessionIsNoop() throws {
+        let a = try makeTmpFolder(name: "alpha")
+        let sA = coord.openFolder(a)
+        coord.closeOthers(except: sA.id)
+        XCTAssertEqual(coord.sessions.count, 1)
+        XCTAssertEqual(coord.activeID, sA.id)
+    }
+
+    func testCloseOthersIgnoresUnknownKeeper() throws {
+        let a = try makeTmpFolder(name: "alpha")
+        let b = try makeTmpFolder(name: "beta")
+        _ = coord.openFolder(a)
+        _ = coord.openFolder(b)
+        let preCount = coord.sessions.count
+        // Unknown keeper id: don't accidentally close everything.
+        coord.closeOthers(except: UUID())
+        XCTAssertEqual(coord.sessions.count, preCount)
+    }
+
     // MARK: helpers --------------------------------------------------
 
     /// Create a real directory in tmp so `standardizedFileURL` /
