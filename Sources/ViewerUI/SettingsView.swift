@@ -121,6 +121,11 @@ public struct SettingsView: View {
                 .pickerStyle(.menu)
                 .frame(maxWidth: 180)
             }
+            // Single unified zoom slider — drives both document
+            // content (rendered HTML / source font / hex / find-bar)
+            // and chrome (sidebar / tabs / status bar / mode bar) via
+            // `DocumentModel.uiSize(_:)`. Previously a second "UI
+            // scale" slider sat below this one; collapsed in 2026-05.
             row("Zoom") {
                 Slider(
                     value: $model.zoom,
@@ -129,18 +134,6 @@ public struct SettingsView: View {
                 )
                 .frame(width: 180)
                 Text("\(Int(model.zoom * 100))%")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 44, alignment: .leading)
-            }
-            row("UI scale") {
-                Slider(
-                    value: $model.uiScale,
-                    in: PreferencesStore.minUIScale...PreferencesStore.maxUIScale,
-                    step: PreferencesStore.uiScaleStep
-                )
-                .frame(width: 180)
-                Text("\(Int(model.uiScale * 100))%")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .frame(width: 44, alignment: .leading)

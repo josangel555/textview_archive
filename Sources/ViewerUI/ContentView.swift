@@ -394,7 +394,7 @@ struct ModeBar: View {
                 Picker("", selection: model.viewModeBinding) {
                     ForEach(modes, id: \.self) { mode in
                         Text(label(for: mode))
-                            // Honor model.uiScale so the picker labels
+                            // Honor model.zoom so the picker labels
                             // grow with the rest of the UI. Default
                             // font for segmented controls is ~12pt;
                             // scale from that baseline.
@@ -406,9 +406,9 @@ struct ModeBar: View {
                 .labelsHidden()
                 // Let the picker size to its intrinsic content so it
                 // grows naturally with both label-string length and
-                // uiScale-driven font size. Previous hand-tuned width
+                // zoom-driven font size. Previous hand-tuned width
                 // formula (80 + 90 * (modes.count - 1)) ignored the
-                // label length and at high uiScale would push trailing
+                // label length and at high zoom would push trailing
                 // toggles past the right edge of the toolbar.
                 .fixedSize()
             }

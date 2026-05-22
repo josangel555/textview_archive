@@ -91,43 +91,34 @@ final class PreferencesStoreTests: XCTestCase {
         XCTAssertTrue(other.showInvisibleChars)
     }
 
-    // MARK: UI scale (Batch B)
+    // MARK: Legacy uiScale → zoom migration
 
-    func test_uiScale_defaultsTo1() {
+    /// Legacy users with only `MarkdownViewer.uiScale` set on disk
+    /// (no `MarkdownViewer.zoom`) should see that value adopted as
+    /// the unified `zoom` on first read after upgrade.
+    func test_zoom_migratesFromLegacyUIScale_whenZoomMissing() {
+        defaults.set(1.30, forKey: "MarkdownViewer.uiScale")
         let store = PreferencesStore(defaults: defaults)
-        XCTAssertEqual(store.uiScale, 1.0, accuracy: 0.001)
+        XCTAssertEqual(store.zoom, 1.30, accuracy: 0.001)
     }
 
-    func test_uiScale_roundTrips() {
+    /// When both keys exist (user had tuned both before upgrade),
+    /// pick the larger — preserves whichever surface they'd actually
+    /// blown up rather than silently shrinking the UI.
+    func test_zoom_migration_picksMaxOfZoomAndLegacyUIScale() {
+        defaults.set(1.10, forKey: "MarkdownViewer.zoom")
+        defaults.set(1.40, forKey: "MarkdownViewer.uiScale")
         let store = PreferencesStore(defaults: defaults)
-        store.uiScale = 1.25
-        let other = PreferencesStore(defaults: defaults)
-        XCTAssertEqual(other.uiScale, 1.25, accuracy: 0.001)
+        XCTAssertEqual(store.zoom, 1.40, accuracy: 0.001)
     }
 
-    func test_uiScale_clampsLow_onSet() {
+    /// First explicit set of `zoom` after migration drops the legacy
+    /// key, so subsequent reads don't keep resurrecting it.
+    func test_zoom_setter_clearsLegacyUIScaleKey() {
+        defaults.set(1.30, forKey: "MarkdownViewer.uiScale")
         let store = PreferencesStore(defaults: defaults)
-        store.uiScale = 0.1
-        XCTAssertEqual(store.uiScale, PreferencesStore.minUIScale, accuracy: 0.001)
-    }
-
-    func test_uiScale_clampsHigh_onSet() {
-        let store = PreferencesStore(defaults: defaults)
-        store.uiScale = 10.0
-        XCTAssertEqual(store.uiScale, PreferencesStore.maxUIScale, accuracy: 0.001)
-    }
-
-    func test_uiScale_clampsOnRead_whenStoreHasOutOfRangeValue() {
-        // Simulate a corrupted / hand-edited defaults plist.
-        defaults.set(99.0, forKey: "MarkdownViewer.uiScale")
-        let store = PreferencesStore(defaults: defaults)
-        XCTAssertLessThanOrEqual(store.uiScale, PreferencesStore.maxUIScale)
-        XCTAssertGreaterThanOrEqual(store.uiScale, PreferencesStore.minUIScale)
-    }
-
-    func test_uiScale_bounds_are_sensible() {
-        XCTAssertLessThan(PreferencesStore.minUIScale, 1.0)
-        XCTAssertGreaterThan(PreferencesStore.maxUIScale, 1.0)
-        XCTAssertGreaterThan(PreferencesStore.uiScaleStep, 0)
+        store.zoom = 1.10
+        XCTAssertNil(defaults.object(forKey: "MarkdownViewer.uiScale"))
+        XCTAssertEqual(store.zoom, 1.10, accuracy: 0.001)
     }
 }
