@@ -10,6 +10,19 @@ struct SidebarView: View {
     /// tab switch (DocumentModel sub-views recreate this view).
     @AppStorage("MarkdownViewer.sidebar.filesExpanded") private var filesExpanded: Bool = true
 
+    // MARK: - Recency mode dropdown (file-tree-recency agent)
+    //
+    // Drives the left-edge color stripe on each `FileRowView`.
+    // Persisted as the raw String of `FileTreeRecency.RecencyMode`;
+    // unknown values (manual user edits, future renames) fall back
+    // to the type's `.default` (`.modified`) via the rawValue init.
+    @AppStorage("MarkdownViewer.sidebar.recencyMode")
+    private var recencyModeRaw: String = FileTreeRecency.RecencyMode.default.rawValue
+    private var recencyMode: FileTreeRecency.RecencyMode {
+        FileTreeRecency.RecencyMode(rawValue: recencyModeRaw)
+            ?? FileTreeRecency.RecencyMode.default
+    }
+
     // MARK: - Resizable section divider
     //
     // One `@AppStorage`-backed height per resizable section. The
@@ -221,7 +234,8 @@ struct SidebarView: View {
                                                    isDirectory: true),
                                     depth: 0,
                                     sidebar: sidebar,
-                                    model: model
+                                    model: model,
+                                    recencyMode: recencyMode
                                 )
                             }
                             .padding(.vertical, 4)
@@ -259,12 +273,11 @@ struct SidebarView: View {
         HStack(spacing: 4) {
             Button(action: { filesExpanded.toggle() }) {
                 HStack(spacing: 4) {
-                    Image(systemName: filesExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .frame(width: 10)
-                    Text("FILES")
-                        .font(.system(size: model.uiSize(10), weight: .semibold))
-                        .foregroundStyle(.secondary)
+                    SidebarSectionHeaderLabel(
+                        title: "Files",
+                        isExpanded: filesExpanded,
+                        uiSize: model.uiSize
+                    )
                     Spacer()
                 }
                 .contentShape(Rectangle())
@@ -299,6 +312,38 @@ struct SidebarView: View {
             .fixedSize()
             .help("Sort folder contents")
             .accessibilityIdentifier("mdv.sidebar.sort")
+            // MARK: - Recency mode dropdown (file-tree-recency agent)
+            //
+            // Picks which timestamp drives the left-edge color stripe
+            // on each file row. Persisted in `@AppStorage` via
+            // `recencyModeRaw`; the active mode is read by
+            // `FileRowView` through the constructor.
+            Menu {
+                ForEach(FileTreeRecency.RecencyMode.allCases) { mode in
+                    Button {
+                        recencyModeRaw = mode.rawValue
+                    } label: {
+                        HStack {
+                            Text(mode.rawValue)
+                            if recencyMode == mode {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 2) {
+                    Image(systemName: "paintpalette")
+                        .font(.system(size: 9))
+                    Text(recencyMode.rawValue)
+                        .font(.system(size: model.uiSize(10)))
+                }
+                .foregroundStyle(.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Color-code file rows by recency (Modified / Added / Created)")
+            .accessibilityIdentifier("mdv.sidebar.recencyMode")
             // Lock toggle. When locked, auto-reveal-on-click +
             // tab-reveal won't change the sidebar root; the user's
             // chosen folder stays put.
@@ -315,8 +360,7 @@ struct SidebarView: View {
                   ? "Sidebar root locked — click to unlock"
                   : "Lock sidebar root (prevent auto-navigation)")
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
+        .sidebarHeaderRow()
     }
 
     private var header: some View {
@@ -538,11 +582,32 @@ private struct FileRowView: View {
     let depth: Int
     @ObservedObject var sidebar: SidebarModel
     @ObservedObject var model: DocumentModel
+    /// Active recency mode — chosen via the FILES header dropdown,
+    /// stored in `@AppStorage` on the parent. Threaded through here
+    /// so every child row paints stripes in the same mode without
+    /// each row touching `@AppStorage` independently.
+    let recencyMode: FileTreeRecency.RecencyMode
+
+    /// Cached file attributes (mtime + ctime) for this row's URL.
+    /// Loaded once on `.onAppear` via the bounded LRU in
+    /// `FileTreeRecencyCache`; the lookup is a syscall on cache miss
+    /// only. Re-loaded when FolderWatcher invalidates the URL.
+    @State private var recencyAttrs: FileTreeRecencyAttributes?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button(action: activate) {
-                HStack(spacing: 4) {
+                HStack(spacing: 0) {
+                    // MARK: - Recency stripe (file-tree-recency agent)
+                    //
+                    // 3 px vertical bar at the leading edge of the row.
+                    // The `padding(.leading, depth*14 + 8)` previously
+                    // hugged the chevron; we move the indent + the
+                    // existing HStack into an inner HStack and prepend
+                    // the stripe so it always touches the row's left
+                    // edge regardless of depth.
+                    recencyStripe
+                    HStack(spacing: 4) {
                     if node.isDirectory {
                         Image(systemName: sidebar.isExpanded(node.url) ? "chevron.down" : "chevron.right")
                             .font(.system(size: 9, weight: .semibold))
@@ -578,10 +643,11 @@ private struct FileRowView: View {
                     if let status = sidebar.gitStatus(for: node.url) {
                         GitStatusBadge(status: status)
                     }
-                }
-                .padding(.leading, CGFloat(depth) * 14 + 8)
-                .padding(.vertical, 3)
-                .padding(.trailing, 8)
+                    }  // inner HStack(spacing: 4)
+                    .padding(.leading, CGFloat(depth) * 14 + 8)
+                    .padding(.vertical, 3)
+                    .padding(.trailing, 8)
+                }  // outer HStack(spacing: 0) — stripe + content
                 .contentShape(Rectangle())
                 .background(rowBackground)
             }
@@ -594,14 +660,66 @@ private struct FileRowView: View {
             .contextMenu {
                 FileRowContextMenu(node: node, sidebar: sidebar, model: model)
             }
+            .onAppear {
+                if recencyAttrs == nil {
+                    recencyAttrs = FileTreeRecencyCache.attributes(for: node.url)
+                }
+            }
+            // FolderWatcher publishes via `expanded`; observing it here
+            // would re-fire on every collapse/expand too, which is
+            // wasteful. We accept that the stripe is "as of first
+            // render" — `FileTreeRecencyCache.invalidate(_:)` is the
+            // public escape hatch for callers that touch a file from
+            // within the app (Save, Git apply, etc.) and want the
+            // stripe refreshed on the next body pass.
 
             if node.isDirectory && sidebar.isExpanded(node.url) {
                 ForEach(sidebar.children(of: node.url)) { child in
                     FileRowView(node: child, depth: depth + 1,
-                                sidebar: sidebar, model: model)
+                                sidebar: sidebar, model: model,
+                                recencyMode: recencyMode)
                 }
             }
         }
+    }
+
+    // MARK: - Recency stripe rendering
+    //
+    // 3 px-wide vertical bar at the leading edge. Width fixed regardless
+    // of depth so it always touches the sidebar's edge (the row's
+    // indentation lives inside the inner HStack via `.padding(.leading)`).
+    //
+    // Folder policy: folders render a stripe based on the folder's own
+    // mtime — not muted-out — so the user can scan "this directory
+    // changed recently" at a glance (matches Finder's Date Modified
+    // column for directories). Trade-off accepted: directory mtime
+    // updates whenever any direct child is added/removed, so folder
+    // stripes are noisier than file stripes. If that proves visually
+    // distracting we can flip this to a muted-grey constant for folders
+    // here without touching FileTreeRecency.
+    @ViewBuilder
+    private var recencyStripe: some View {
+        let tier = currentRecencyTier
+        Rectangle()
+            .fill(Color(nsColor: FileTreeRecency.color(for: tier)))
+            .frame(width: 3)
+            // Fill the row's vertical extent — the parent HStack stretches
+            // this to match the tallest sibling.
+            .frame(maxHeight: .infinity)
+            .accessibilityHidden(true)
+            .accessibilityIdentifier("mdv.sidebar.fileRow.recencyStripe.\(tier.rawValue)")
+    }
+
+    /// The tier to paint for this row, given the active mode and the
+    /// cached file attributes. Falls through to `.older` (barely-visible
+    /// stripe) until `.onAppear` populates the cache; that one-frame
+    /// flash is invisible at scroll speeds and avoids a synchronous
+    /// stat during the SwiftUI body re-eval.
+    private var currentRecencyTier: FileTreeRecency.RecencyTier {
+        guard let date = recencyAttrs?.date(for: recencyMode) else {
+            return .older
+        }
+        return FileTreeRecency.tier(for: date)
     }
 
     private func activate() {
