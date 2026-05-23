@@ -726,6 +726,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         _ = model.saveActiveEditor()
     }
 
+    /// Edit → Undo (⌘Z). Routes to the active CodeMirror webview's
+    /// JS undo. Only enabled when an editor tab is mounted; otherwise
+    /// validateMenuItem returns false and AppKit forwards ⌘Z down the
+    /// responder chain (NSTextField etc.).
+    @objc func editorUndo(_ sender: Any?) {
+        guard let webView = CodeMirrorEditorRegistry.shared.current() else { return }
+        webView.evaluateJavaScript("undo()", completionHandler: nil)
+    }
+
+    /// Edit → Redo (⇧⌘Z). Mirror of `editorUndo`.
+    @objc func editorRedo(_ sender: Any?) {
+        guard let webView = CodeMirrorEditorRegistry.shared.current() else { return }
+        webView.evaluateJavaScript("redo()", completionHandler: nil)
+    }
+
     @objc func toggleViewMode(_ sender: Any?) {
         model.toggleViewMode()
     }
@@ -1230,6 +1245,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
         let editMenuItem = NSMenuItem()
         let editMenu = NSMenu(title: "Edit")
+        // Undo / Redo. CodeMirror 6 owns its own history stack and is
+        // NOT wired through NSUndoManager, so the system's auto-routing
+        // of ⌘Z to first-responder doesn't work for the editor. We
+        // install explicit items that target this AppDelegate:
+        //   - validateMenuItem (below) enables them whenever a CM6
+        //     editor is mounted and the active tab is in `.editor` mode.
+        //   - When neither holds, they're disabled and AppKit's
+        //     responder chain delivers ⌘Z to whatever NSTextField is
+        //     first responder (Go-to prompt, search field, etc.).
+        let undoItem = NSMenuItem(
+            title: "Undo",
+            action: #selector(editorUndo(_:)),
+            keyEquivalent: "z"
+        )
+        undoItem.target = self
+        editMenu.addItem(undoItem)
+        let redoItem = NSMenuItem(
+            title: "Redo",
+            action: #selector(editorRedo(_:)),
+            keyEquivalent: "z"
+        )
+        redoItem.keyEquivalentModifierMask = [.command, .shift]
+        redoItem.target = self
+        editMenu.addItem(redoItem)
+        editMenu.addItem(.separator())
         // Cut / Copy / Paste must all exist in the Edit menu for AppKit
         // to route the standard ⌘X / ⌘C / ⌘V keystrokes via the
         // responder chain. Without Paste here, NSTextField doesn't
@@ -1542,6 +1582,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             // accelerator) otherwise — matches Xcode / VS Code.
             guard hasTab, model.currentViewMode == .editor else { return false }
             return model.tabs.selected?.isDirty == true
+        case #selector(editorUndo(_:)), #selector(editorRedo(_:)):
+            // Only intercept ⌘Z / ⇧⌘Z when an editor is on screen.
+            // Returning false here releases the keystroke back to the
+            // responder chain so NSTextField / NSTextView undo keeps
+            // working in non-editor contexts (Go-to prompt, search
+            // fields). CM6 has no per-tab "can undo" affordance
+            // exposed here, so we enable optimistically when an editor
+            // tab is selected — JS undo()/redo() are no-ops on empty
+            // history.
+            return hasTab && model.currentViewMode == .editor
+                && CodeMirrorEditorRegistry.shared.current() != nil
         default:
             return true
         }
