@@ -14,6 +14,16 @@ import ViewerKit
 ///   - Result list: file path + each match line; click a match to
 ///     open the file at that line
 ///   - Empty state: prompt to type
+///
+/// Divider audit (2026-05): the body intentionally contains
+/// **zero** `Divider()` calls. The only visible horizontal line
+/// below this section is the `ResizableSectionDivider` injected by
+/// `SidebarView` between this section and the next — that lives
+/// outside the section. An old inner `Divider()` between the
+/// search field and the result list was the spurious "extra line
+/// under SEARCH ANYWHERE" the user reported; it's gone. If a new
+/// `Divider()` is reintroduced here, `SearchAnywhereSectionLayoutTests`
+/// will fail and steer the change toward an explicit decision.
 struct SearchAnywhereSection: View {
     @ObservedObject var model: DocumentModel
     @State private var isExpanded = true
@@ -29,7 +39,6 @@ struct SearchAnywhereSection: View {
             header
             if isExpanded {
                 searchField
-                Divider()
                 resultList
             }
         }
@@ -40,12 +49,11 @@ struct SearchAnywhereSection: View {
     private var header: some View {
         Button(action: { isExpanded.toggle() }) {
             HStack(spacing: 4) {
-                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
-                    .frame(width: 10)
-                Text("SEARCH")
-                    .font(.system(size: model.uiSize(10), weight: .semibold))
-                    .foregroundStyle(.secondary)
+                SidebarSectionHeaderLabel(
+                    title: "Search",
+                    isExpanded: isExpanded,
+                    uiSize: model.uiSize
+                )
                 Spacer()
                 if isRunning {
                     ProgressView().controlSize(.mini)
@@ -58,8 +66,7 @@ struct SearchAnywhereSection: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
+        .sidebarHeaderRow()
     }
 
     private var searchField: some View {
