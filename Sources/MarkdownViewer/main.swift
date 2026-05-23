@@ -4,6 +4,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 import ViewerCore
 import ViewerUI
+import ViewerKit
 import WebKit
 
 @MainActor
@@ -348,6 +349,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case "goto-commit":     model.commitGoToPath(arg, newSession: false)
         case "goto-commit-new-session": model.commitGoToPath(arg, newSession: true)
         case "toggle-format":   model.toggleFormat()
+        // ---- Editor (CM6) — VM-only flow verbs (Phase 6.x) ----
+        // These drive the Swift-side editor state machine that backs
+        // the CodeMirror WebView. Used by EditorMultiScenarioTests to
+        // simulate keystrokes without needing to drive JS directly.
+        case "editor-set-mode":
+            // Force the active tab into a specific view mode.
+            // Accepts the raw `ViewMode.rawValue` ("source","editor","rendered","hex","table").
+            if let mode = ViewMode(rawValue: arg) {
+                model.setCurrentViewMode(mode)
+            }
+        case "editor-set-text":
+            // Push text into the active tab's editor buffer — same
+            // entry point the CM6 JS bridge would fire on every
+            // debounced change event.
+            if let id = model.tabs.selected?.id {
+                // Materialize the buffer first so a freshly-loaded
+                // tab can be edited from script.
+                _ = model.editorBuffer(forTabID: id)
+                model.updateEditorText(arg, forTabID: id)
+            }
+        case "editor-save":
+            // ⌘S equivalent: write the active tab's buffer to disk.
+            _ = model.saveActiveEditor()
         case "toggle-bookmark": model.toggleCurrentTabBookmark()
         case "show-cross-search":    model.showCrossSearch()
         case "dismiss-cross-search": model.dismissCrossSearch()
