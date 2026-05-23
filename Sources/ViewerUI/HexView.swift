@@ -17,46 +17,178 @@ import ViewerCore
 /// `NSAttributedString`, hand it to a single `NSTextView` inside an
 /// `NSScrollView`. TextKit lazily lays out only visible glyphs, the
 /// string is one allocation total, scroll/redraw cost is O(visible).
-/// Memory stays flat.
 ///
-/// The NSTextView is wrapped via `NSViewControllerRepresentable`
-/// (not NSViewRepresentable) — same pattern + reason as
-/// `TextDisplayView` (LESSONS.md compositor pathology).
+/// Above the text view a small SwiftUI toolbar carries the search
+/// bar (Feature 1) — mode picker (Hex / ASCII), query input, match
+/// count + step buttons (⌘G / ⌘⇧G, ⏎ to jump next). Matches are
+/// painted via `addAttribute(.backgroundColor:)` on the existing
+/// storage so we re-use the lazy TextKit layout instead of rebuilding
+/// the string per search.
 struct HexView: View {
     let file: BinaryFile
     let fontSize: CGFloat
 
+    @State private var searchQuery: String = ""
+    @State private var searchMode: HexSearchMode = .hex
+    @State private var searchPattern: [UInt8] = []
+    @State private var matches: [Int] = []
+    @State private var currentMatch: Int = 0
+    @State private var queryIsInvalid: Bool = false
+
     var body: some View {
-        HexTextRepresentable(file: file, fontSize: fontSize)
-            .accessibilityIdentifier("mdv.hexView")
+        VStack(spacing: 0) {
+            toolbar
+            Divider()
+            HexTextRepresentable(
+                file: file,
+                fontSize: fontSize,
+                matches: matches,
+                matchPatternLength: searchPattern.count,
+                currentMatch: matches.isEmpty ? nil : currentMatch
+            )
+        }
+        .accessibilityIdentifier("mdv.hexView")
+        .onChange(of: searchQuery) { _, _ in recomputeMatches() }
+        .onChange(of: searchMode)  { _, _ in recomputeMatches() }
+        .onChange(of: file)        { _, _ in
+            searchQuery = ""
+            searchPattern = []
+            matches = []
+            currentMatch = 0
+            queryIsInvalid = false
+        }
+    }
+
+    @ViewBuilder
+    private var toolbar: some View {
+        HStack(spacing: 8) {
+            Picker("", selection: $searchMode) {
+                Text("Hex").tag(HexSearchMode.hex)
+                Text("ASCII").tag(HexSearchMode.ascii)
+            }
+            .pickerStyle(.segmented)
+            .fixedSize()
+            .accessibilityIdentifier("mdv.hex.search.mode")
+
+            TextField(searchMode == .hex
+                      ? "de ad be ef"
+                      : "search bytes…",
+                      text: $searchQuery)
+                .textFieldStyle(.roundedBorder)
+                .frame(minWidth: 180, maxWidth: 320)
+                .onSubmit { stepMatch(by: 1) }
+                .accessibilityIdentifier("mdv.hex.search.field")
+                .background(
+                    queryIsInvalid ? Color.red.opacity(0.15) : Color.clear
+                )
+
+            Text(matchCountLabel)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 80, alignment: .leading)
+                .accessibilityIdentifier("mdv.hex.search.count")
+
+            Button(action: { stepMatch(by: -1) }) {
+                Image(systemName: "chevron.up")
+            }
+            .buttonStyle(.borderless)
+            .disabled(matches.isEmpty)
+            .accessibilityIdentifier("mdv.hex.search.prev")
+            .keyboardShortcut("g", modifiers: [.command, .shift])
+
+            Button(action: { stepMatch(by: 1) }) {
+                Image(systemName: "chevron.down")
+            }
+            .buttonStyle(.borderless)
+            .disabled(matches.isEmpty)
+            .accessibilityIdentifier("mdv.hex.search.next")
+            .keyboardShortcut("g", modifiers: [.command])
+
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+    }
+
+    private var matchCountLabel: String {
+        if queryIsInvalid { return "invalid" }
+        if matches.isEmpty { return searchQuery.isEmpty ? "" : "0 matches" }
+        return "\(currentMatch + 1) / \(matches.count)"
+    }
+
+    private func recomputeMatches() {
+        guard !searchQuery.isEmpty else {
+            searchPattern = []
+            matches = []
+            currentMatch = 0
+            queryIsInvalid = false
+            return
+        }
+        guard let pattern = HexSearchEngine.parse(searchQuery, mode: searchMode) else {
+            queryIsInvalid = true
+            searchPattern = []
+            matches = []
+            return
+        }
+        queryIsInvalid = false
+        searchPattern = pattern
+        matches = pattern.isEmpty
+            ? []
+            : HexSearchEngine.find(pattern: pattern, in: file.data)
+        currentMatch = 0
+    }
+
+    private func stepMatch(by delta: Int) {
+        guard !matches.isEmpty else { return }
+        let count = matches.count
+        currentMatch = (currentMatch + delta + count) % count
     }
 }
 
 private struct HexTextRepresentable: NSViewControllerRepresentable {
     let file: BinaryFile
     let fontSize: CGFloat
+    let matches: [Int]
+    let matchPatternLength: Int
+    let currentMatch: Int?
 
     func makeNSViewController(context: Context) -> HexTextController {
-        HexTextController(file: file, fontSize: fontSize)
+        HexTextController()
     }
 
     func updateNSViewController(_ controller: HexTextController, context: Context) {
-        controller.apply(file: file, fontSize: fontSize)
+        controller.apply(file: file,
+                         fontSize: fontSize,
+                         matches: matches,
+                         matchPatternLength: matchPatternLength,
+                         currentMatch: currentMatch)
     }
 }
 
 private final class HexTextController: NSViewController {
     let scrollView: NSScrollView
     let textView: NSTextView
-    private var lastKey: CacheKey?
+    private var lastDumpKey: DumpKey?
+    private var lastHighlightKey: HighlightKey?
+    private var headerCharCount: Int = 0
+    private var rowLength: Int = 0
+    private var currentWidth: Int = 16
+    private var byteCount: Int = 0
 
-    private struct CacheKey: Equatable {
+    private struct DumpKey: Equatable {
         let url: URL
         let byteCount: Int
         let fontSize: CGFloat
+        let width: Int
+    }
+    private struct HighlightKey: Equatable {
+        let matches: [Int]
+        let matchPatternLength: Int
+        let currentMatch: Int?
+        let width: Int
     }
 
-    init(file: BinaryFile, fontSize: CGFloat) {
+    init() {
         let scroll = NSTextView.scrollableTextView()
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = false
@@ -88,44 +220,126 @@ private final class HexTextController: NSViewController {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    override func loadView() {
-        // Scrollview directly as the controller's view. Same pattern
-        // as TextDisplayView (no intermediate container).
-        self.view = scrollView
+    override func loadView() { self.view = scrollView }
+
+    func apply(file: BinaryFile,
+               fontSize: CGFloat,
+               matches: [Int],
+               matchPatternLength: Int,
+               currentMatch: Int?) {
+        let width = currentWidth
+        let dumpKey = DumpKey(url: file.url,
+                              byteCount: file.byteCount,
+                              fontSize: fontSize,
+                              width: width)
+        if dumpKey != lastDumpKey {
+            lastDumpKey = dumpKey
+            byteCount = file.byteCount
+            let result = Self.buildDump(file: file,
+                                        fontSize: fontSize,
+                                        width: width)
+            textView.textStorage?.setAttributedString(result.attr)
+            headerCharCount = result.headerCharCount
+            rowLength = Self.renderedRowLength(width: width)
+            textView.scrollToBeginningOfDocument(nil)
+            lastHighlightKey = nil
+        }
+        applyHighlights(matches: matches,
+                        matchPatternLength: matchPatternLength,
+                        currentMatch: currentMatch)
     }
 
-    func apply(file: BinaryFile, fontSize: CGFloat) {
-        let key = CacheKey(url: file.url, byteCount: file.byteCount, fontSize: fontSize)
-        if key == lastKey { return }
-        lastKey = key
+    private func applyHighlights(matches: [Int],
+                                 matchPatternLength: Int,
+                                 currentMatch: Int?) {
+        let key = HighlightKey(matches: matches,
+                               matchPatternLength: matchPatternLength,
+                               currentMatch: currentMatch,
+                               width: currentWidth)
+        if key == lastHighlightKey { return }
+        lastHighlightKey = key
 
-        let attr = Self.buildDump(file: file, fontSize: fontSize)
-        // setAttributedString replaces the whole storage in one shot.
-        // TextKit then lazy-lays out only visible glyphs.
-        textView.textStorage?.setAttributedString(attr)
-        // Make sure we always start at the top when entering hex mode.
-        textView.scrollToBeginningOfDocument(nil)
+        guard let storage = textView.textStorage else { return }
+        storage.beginEditing()
+        let full = NSRange(location: 0, length: storage.length)
+        storage.removeAttribute(.backgroundColor, range: full)
+
+        if !matches.isEmpty, matchPatternLength > 0 {
+            let base = NSColor.systemYellow.withAlphaComponent(0.45)
+            let active = NSColor.systemOrange.withAlphaComponent(0.60)
+            for (i, off) in matches.enumerated() {
+                let c = (i == currentMatch) ? active : base
+                paint(offset: off, length: matchPatternLength,
+                      color: c, in: storage)
+            }
+        }
+        storage.endEditing()
+
+        if let idx = currentMatch, matches.indices.contains(idx) {
+            scrollByteIntoView(offset: matches[idx])
+        }
     }
 
-    /// Render the hex dump as a single `NSAttributedString`. Format
-    /// (matches the prior SwiftUI layout):
-    ///   00000000  68 65 6c 6c 6f 20 77 6f 72 6c 64                  hello world
-    ///   00000010  ...
-    /// Header line up front when the binary was truncated to the cap.
-    static func buildDump(file: BinaryFile, fontSize: CGFloat) -> NSAttributedString {
-        let bytesPerRow = 16
+    private func paint(offset: Int, length: Int,
+                       color: NSColor, in storage: NSTextStorage) {
+        guard length > 0 else { return }
+        let last = min(offset + length - 1, byteCount - 1)
+        guard offset <= last else { return }
+        for b in offset...last {
+            let row = b / currentWidth
+            let col = b % currentWidth
+            let rowStart = headerCharCount + row * rowLength
+            let hex = NSRange(location: rowStart + Self.hexCharOffset(inRowColumn: col),
+                              length: 2)
+            let ascii = NSRange(
+                location: rowStart + Self.asciiCharOffset(inRowColumn: col,
+                                                          width: currentWidth),
+                length: 1)
+            if NSMaxRange(hex) <= storage.length {
+                storage.addAttribute(.backgroundColor, value: color, range: hex)
+            }
+            if NSMaxRange(ascii) <= storage.length {
+                storage.addAttribute(.backgroundColor, value: color, range: ascii)
+            }
+        }
+    }
+
+    private func scrollByteIntoView(offset: Int) {
+        let row = offset / currentWidth
+        let col = offset % currentWidth
+        let rowStart = headerCharCount + row * rowLength
+        let charIdx = rowStart + Self.hexCharOffset(inRowColumn: col)
+        textView.scrollRangeToVisible(NSRange(location: charIdx, length: 2))
+    }
+
+    // Local row geometry — duplicated from HexLayout to keep this
+    // commit self-contained (the width selector commit will swap in
+    // HexLayout helpers and the constants drop out).
+    private static func renderedRowLength(width: Int) -> Int {
+        8 + 2 + (width * 3 - 1) + 2 + width + 1
+    }
+    private static func hexCharOffset(inRowColumn col: Int) -> Int { 10 + col * 3 }
+    private static func asciiCharOffset(inRowColumn col: Int, width: Int) -> Int {
+        10 + (width * 3 - 1) + 2 + col
+    }
+
+    struct DumpResult { let attr: NSAttributedString; let headerCharCount: Int }
+
+    static func buildDump(file: BinaryFile,
+                          fontSize: CGFloat,
+                          width: Int) -> DumpResult {
+        let bytesPerRow = width
         let bytes = file.data
         let byteCount = file.byteCount
         let rowCount = byteCount == 0 ? 0 : (byteCount + bytesPerRow - 1) / bytesPerRow
 
-        // Capacity estimate per row:
-        //   8 (offset) + 2 (gap) + 16*3 (hex) + 2 (gap) + 16 (ascii) + 1 (nl)
-        //   ≈ 77 chars/row
         var s = String()
-        s.reserveCapacity(rowCount * 77 + 80)
-
+        s.reserveCapacity(rowCount * renderedRowLength(width: width) + 80)
+        var headerCharCount = 0
         if file.isTruncated {
-            s += "Showing first \(byteCount) of \(file.totalByteCount) bytes\n\n"
+            let header = "Showing first \(byteCount) of \(file.totalByteCount) bytes\n\n"
+            s += header
+            headerCharCount = header.count
         }
 
         let hexChars: [Character] = ["0","1","2","3","4","5","6","7",
@@ -133,7 +347,6 @@ private final class HexTextController: NSViewController {
 
         var rowStart = 0
         while rowStart < byteCount {
-            // Offset (8 hex digits).
             var off = rowStart
             var offBuf = [Character](repeating: "0", count: 8)
             for i in stride(from: 7, through: 0, by: -1) {
@@ -144,7 +357,6 @@ private final class HexTextController: NSViewController {
             s += "  "
 
             let rowEnd = min(rowStart + bytesPerRow, byteCount)
-            // Hex column.
             for i in 0..<bytesPerRow {
                 let pos = rowStart + i
                 if pos < rowEnd {
@@ -157,13 +369,20 @@ private final class HexTextController: NSViewController {
                 if i != bytesPerRow - 1 { s.append(" ") }
             }
             s += "  "
-            // ASCII column.
-            for pos in rowStart..<rowEnd {
-                let b = bytes[pos]
-                if (32...126).contains(b) {
-                    s.append(Character(UnicodeScalar(b)))
+            // Pad short final row so every row has the same character
+            // length — keeps `(row * rowLength + col)` arithmetic
+            // valid for highlight-paint addressing.
+            for i in 0..<bytesPerRow {
+                let pos = rowStart + i
+                if pos < rowEnd {
+                    let b = bytes[pos]
+                    if (32...126).contains(b) {
+                        s.append(Character(UnicodeScalar(b)))
+                    } else {
+                        s.append(".")
+                    }
                 } else {
-                    s.append(".")
+                    s.append(" ")
                 }
             }
             s.append("\n")
@@ -175,6 +394,7 @@ private final class HexTextController: NSViewController {
             .font: font,
             .foregroundColor: NSColor.labelColor,
         ]
-        return NSAttributedString(string: s, attributes: attrs)
+        return DumpResult(attr: NSAttributedString(string: s, attributes: attrs),
+                          headerCharCount: headerCharCount)
     }
 }
