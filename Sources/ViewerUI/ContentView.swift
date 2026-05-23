@@ -316,6 +316,11 @@ public struct ContentView: View {
                         },
                         onSelectionChange: { sel in
                             model.sourceSelection = sel
+                        },
+                        onFindMatchesChange: { set in
+                            model.setSourceFindMatches(
+                                lines: set.lines, currentIndex: set.currentIndex
+                            )
                         }
                     )
                     // Force the NSViewControllerRepresentable to claim
@@ -328,6 +333,23 @@ public struct ContentView: View {
                     // the AppKit child to its intrinsic and pads the
                     // remainder.
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // Find-match minimap: thin vertical strip showing
+                    // a tick per find-bar match. Only visible while the
+                    // source find bar is presented AND there's at least
+                    // one match — otherwise it'd just be a blank
+                    // 10pt-wide rail. Click a tick to jump to that line.
+                    if model.isSourceFindBarPresented,
+                       !model.sourceFindMatchLines.isEmpty {
+                        FindMatchMinimapView(
+                            matchLines: model.sourceFindMatchLines,
+                            totalLines: max(1, model.sourceScrollState.lineCount),
+                            currentMatchIndex: model.sourceFindCurrentMatchIndex,
+                            theme: model.activeTheme,
+                            onClickLine: { line in
+                                model.scrollSource(toLine: line)
+                            }
+                        )
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
