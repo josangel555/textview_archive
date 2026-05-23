@@ -1037,8 +1037,9 @@ public final class DocumentModel: ObservableObject {
         editorBuffers[tabID] = EditorBuffer(from: file)
     }
 
-    /// Push a new text value into the active tab's buffer. Called by
-    /// `EditorTextDisplayView.textDidChange:` on every keystroke.
+    /// Push a new text value into the active tab's buffer. Called from
+    /// the editor view's change handler (debounced inside CodeMirror's
+    /// JS bootstrap, ~200 ms after the last keystroke).
     /// Updates `Tab.isDirty` so the TabBar dot mirrors the state.
     /// O(1) — no text comparison here; the buffer's `isDirty` getter
     /// is the one place that runs the (cheap, length-short-circuited)

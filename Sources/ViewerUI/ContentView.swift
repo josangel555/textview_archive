@@ -244,14 +244,25 @@ public struct ContentView: View {
             // owned by `DocumentModel.editorBuffers` keyed by tab id;
             // we seed it lazily here (idempotent) so re-entering the
             // mode for a freshly-loaded tab gets a real backing buffer.
+            //
+            // View is CodeMirror 6 inside a WKWebView — see
+            // `CodeMirrorEditorView` header for why. The Swift-side
+            // data flow (EditorBuffer / isDirty / saveActiveEditor)
+            // is unchanged from the prior NSTextView PoC.
             let tid = model.tabs.selected?.id ?? UUID()
             let _ = { model.ensureEditorBuffer(for: file, tabID: tid) }()
             let buf = model.editorBuffer(forTabID: tid)
-            EditorTextDisplayView(
+            let lang = model.effectiveLanguage(forTabID: tid, url: file.url)
+            CodeMirrorEditorView(
                 text: buf?.text ?? file.contents,
                 fontSize: 13 * model.zoom,
+                language: lang,
+                isDarkTheme: model.activeTheme.name == .xcodeDark,
                 onTextChange: { newText in
                     model.updateEditorText(newText, forTabID: tid)
+                },
+                onSaveRequested: {
+                    _ = model.saveActiveEditor()
                 }
             )
             .accessibilityIdentifier("mdv.editor")
