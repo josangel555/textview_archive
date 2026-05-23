@@ -86,11 +86,23 @@ final class SidebarPanelHeightsTests: XCTestCase {
                        "MarkdownViewer.sidebar.pluginSections.height")
     }
 
-    func test_minExpandedHeight_isAround80() {
+    func test_minExpandedHeight_isAround120() {
         // Sanity: should comfortably fit a section header + a couple
-        // of rows. Test pins the rough magnitude so a stray bump is
-        // caught.
-        XCTAssertGreaterThanOrEqual(SidebarPanelHeights.minExpandedHeight, 60)
-        XCTAssertLessThanOrEqual(SidebarPanelHeights.minExpandedHeight, 120)
+        // of rows + the "(empty)" placeholder so empty panels still
+        // feel substantial. Bumped from 80 → 120 in 2026-05 alongside
+        // the fixed-envelope change. Pinned with a window rather than
+        // an exact match so future tuning has wiggle room without a
+        // separate test edit.
+        XCTAssertGreaterThanOrEqual(SidebarPanelHeights.minExpandedHeight, 100)
+        XCTAssertLessThanOrEqual(SidebarPanelHeights.minExpandedHeight, 160)
+    }
+
+    /// Verify a sub-floor persisted value clamps to the new 120 floor
+    /// (not the legacy 80). Catches accidental floor reverts.
+    func test_readClamped_usesNewFloor_notLegacyFloor() {
+        defaults.set(80.0, forKey: SidebarPanel.bookmarks.appStorageKey)
+        let value = SidebarPanelHeights.readClamped(.bookmarks, from: defaults)
+        XCTAssertEqual(value, SidebarPanelHeights.minExpandedHeight)
+        XCTAssertGreaterThanOrEqual(value, 120)
     }
 }
