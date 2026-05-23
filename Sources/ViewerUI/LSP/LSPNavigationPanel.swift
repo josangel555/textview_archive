@@ -71,6 +71,10 @@ public struct LSPNavigationPanel: View {
                 }
             }
         }
+        // Match the trailing breathing room of BOOKMARKS / SEARCH /
+        // GIT — otherwise the panel ended flush with the next
+        // divider and read as unfinished compared to its siblings.
+        .sidebarSectionContainer()
         .accessibilityIdentifier("mdv.lspNav")
     }
 

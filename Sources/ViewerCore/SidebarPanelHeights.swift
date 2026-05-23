@@ -25,29 +25,9 @@ import CoreGraphics
 /// is exercised by the AppKit-driven UI test bundles; this struct is
 /// what the host-side `ViewerCoreTests.SidebarPanelHeightsTests`
 /// suite covers.
-public enum SidebarPanel: String, CaseIterable, Sendable {
-    case bookmarks
-    case searchAnywhere
-    case gitPanel
-    case claudeTimeline
-    case lspOutline
-    /// References / workspace-symbol panel (LSP Phase B).
-    case lspNavigation
-    /// "Problems" panel — server-pushed LSP diagnostics (LSP Phase E).
-    case lspProblems
-    case pluginSections
-
-    /// `@AppStorage` key. Keep stable; renaming invalidates persisted
-    /// per-user layout on the next launch.
-    public var appStorageKey: String {
-        "MarkdownViewer.sidebar.\(rawValue).height"
-    }
-
-    /// Default uncollapsed height. Matches the previous fixed
-    /// `SidebarConstants.sectionBodyHeight` (220) for parity with the
-    /// pre-resize layout.
-    public var defaultHeight: CGFloat { 220 }
-}
+// Canonical panel identity now lives in `SidebarPanelKind.swift`.
+// `SidebarPanel` is a type-alias to `SidebarPanelKind` so existing
+// call sites compile unchanged.
 
 public enum SidebarPanelHeights {
     /// Floor for an *expanded* section's body. Collapsed sections

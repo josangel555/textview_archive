@@ -284,3 +284,11 @@ re-resolve and re-build.
 Full GUI smoke (build-app.sh + verify-app.sh) on the VM was historically
 blocked on WindowServer/keychain/TCC issues — see SSH session notes.
 Stick to `swift test` until that's unblocked.
+
+## Sidebar padding alignment
+
+After moving FILES to the top of the sidebar and adding
+`.sidebarSectionContainer()` to `LSPProblemsPanel`,
+`LSPNavigationPanel`, and PROBLEMS, verify every accordion section
+terminates with the same bottom breathing room (no section ends
+flush with the next divider). Visual check on VM only.

@@ -63,6 +63,12 @@ public struct LSPProblemsPanel: View {
                 .frame(height: bodyHeight)
             }
         }
+        // Apply the standard section chrome (subtle bg tint + outer
+        // vertical padding) so PROBLEMS terminates with the same
+        // breathing room as BOOKMARKS / SEARCH / GIT. Without this
+        // the section ended flush against the next divider — looked
+        // unfinished compared to its neighbours.
+        .sidebarSectionContainer()
         .accessibilityIdentifier("mdv.problems")
     }
 
