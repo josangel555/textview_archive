@@ -41,22 +41,20 @@ struct PluginSidebarSections: View {
                 expanded[entry.sectionID] = !isExpanded
             }) {
                 HStack(spacing: 4) {
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .frame(width: 10)
+                    SidebarSectionHeaderLabel(
+                        title: entry.title,
+                        isExpanded: isExpanded,
+                        uiSize: model.uiSize
+                    )
                     if let icon = entry.icon {
                         Image(systemName: icon)
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                     }
-                    Text(entry.title)
-                        .font(.system(size: model.uiSize(10), weight: .semibold))
-                        .foregroundStyle(.secondary)
                     Spacer()
                 }
                 .contentShape(Rectangle())
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
+                .sidebarHeaderRow()
             }
             .buttonStyle(.plain)
             if isExpanded {

@@ -66,14 +66,11 @@ struct BookmarksSection: View {
     private var headerRow: some View {
         HStack(spacing: 4) {
             Button(action: { isExpanded.toggle() }) {
-                HStack(spacing: 4) {
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .frame(width: 10)
-                    Text("BOOKMARKS")
-                        .font(.system(size: model.uiSize(10), weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
+                SidebarSectionHeaderLabel(
+                    title: "Bookmarks",
+                    isExpanded: isExpanded,
+                    uiSize: model.uiSize
+                )
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -108,8 +105,7 @@ struct BookmarksSection: View {
             .help("Sort by \(sortMode.rawValue)")
             .accessibilityIdentifier("mdv.bookmarks.sort")
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
+        .sidebarHeaderRow()
     }
 
     private func filterChip(_ label: String,

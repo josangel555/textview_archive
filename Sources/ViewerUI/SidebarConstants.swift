@@ -47,11 +47,11 @@ public extension EnvironmentValues {
 struct SidebarSectionContainer: ViewModifier {
     func body(content: Content) -> some View {
         content
-            // Subtle tint distinct from the sidebar's `Palette.textBackground`,
-            // light enough to remain unobtrusive in both dark and light
-            // appearances. `controlBackgroundColor` is dynamic so it
-            // re-resolves on appearance changes.
-            .background(Palette.controlBackground.opacity(0.4))
+            // Single sidebar-panel background swatch. See
+            // `Palette.sidebarPanelBackground` for the dark/light
+            // values. Centralising the token here means a future
+            // theme tweak is one edit, not N section files.
+            .background(Palette.sidebarPanelBackground)
             // Outer breathing room between adjacent sections. The
             // `ResizableSectionDivider` lives in this gap.
             .padding(.vertical, 2)
@@ -64,6 +64,85 @@ extension View {
     /// resize handle between them has visible breathing room.
     func sidebarSectionContainer() -> some View {
         modifier(SidebarSectionContainer())
+    }
+}
+
+// MARK: - Section header recipe
+//
+// Every accordion-section header (FILES, BOOKMARKS, SEARCH, GIT,
+// CLAUDE, OUTLINE, REFERENCES/WORKSPACE SYMBOLS, PROBLEMS, plugins)
+// renders the same chrome: chevron + uppercase label, optional
+// trailing controls, fixed font / weight / padding envelope.
+//
+// Concentrate the recipe in one place — `SidebarSectionHeaderLabel`
+// for the chevron + label sub-unit, `.sidebarHeaderRow()` for the
+// outer HStack envelope. Future sections opt in with a one-liner;
+// no more per-section font-size drift.
+public enum SidebarSectionHeaderMetrics {
+    /// Base font size for the section label (passed through
+    /// `model.uiSize(_:)` so user-controlled UI zoom still applies).
+    public static let labelFontSize: CGFloat = 10
+    /// Chevron glyph point size — matches the label's design weight.
+    public static let chevronFontSize: CGFloat = 9
+    /// Leading frame width reserved for the chevron so labels line up
+    /// across sections regardless of expand/collapse state.
+    public static let chevronFrameWidth: CGFloat = 10
+    /// Horizontal inset for the header row content.
+    public static let horizontalPadding: CGFloat = 10
+    /// Vertical inset for the header row content.
+    public static let verticalPadding: CGFloat = 4
+}
+
+/// Standard chevron + uppercase label sub-unit for a sidebar section
+/// header. Sections wrap this inside a Button (for collapse toggle)
+/// and an HStack with any trailing controls (counts, menus, refresh
+/// buttons). The `uiSize` closure threads `DocumentModel.uiSize(_:)`
+/// through so user zoom still scales the label; defaults to identity
+/// for call sites without a model.
+struct SidebarSectionHeaderLabel: View {
+    let title: String
+    let isExpanded: Bool
+    var uiSize: (CGFloat) -> CGFloat = { $0 }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                .font(.system(
+                    size: SidebarSectionHeaderMetrics.chevronFontSize,
+                    weight: .semibold
+                ))
+                .frame(width: SidebarSectionHeaderMetrics.chevronFrameWidth)
+            Text(title.uppercased())
+                .font(.system(
+                    size: uiSize(SidebarSectionHeaderMetrics.labelFontSize),
+                    weight: .semibold
+                ))
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct SidebarHeaderRowModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(
+                .horizontal,
+                SidebarSectionHeaderMetrics.horizontalPadding
+            )
+            .padding(
+                .vertical,
+                SidebarSectionHeaderMetrics.verticalPadding
+            )
+    }
+}
+
+extension View {
+    /// Apply the standard sidebar-section header row envelope:
+    /// matching horizontal + vertical padding. Sections wrap their
+    /// header HStack with this so every section's header has the
+    /// same outer geometry.
+    func sidebarHeaderRow() -> some View {
+        modifier(SidebarHeaderRowModifier())
     }
 }
 

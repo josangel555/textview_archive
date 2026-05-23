@@ -46,12 +46,11 @@ struct GitPanelSection: View {
     private var header: some View {
         Button(action: { isExpanded.toggle() }) {
             HStack(spacing: 4) {
-                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
-                    .frame(width: 10)
-                Text("GIT")
-                    .font(.system(size: model.uiSize(10), weight: .semibold))
-                    .foregroundStyle(.secondary)
+                SidebarSectionHeaderLabel(
+                    title: "Git",
+                    isExpanded: isExpanded,
+                    uiSize: model.uiSize
+                )
                 if let branch = panel.head?.branch {
                     Text(branch)
                         .font(.system(size: model.uiSize(10), design: .monospaced))
@@ -72,8 +71,7 @@ struct GitPanelSection: View {
                 }
             }
             .contentShape(Rectangle())
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
+            .sidebarHeaderRow()
         }
         .buttonStyle(.plain)
     }

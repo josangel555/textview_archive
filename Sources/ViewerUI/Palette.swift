@@ -22,4 +22,21 @@ enum Palette {
     static let labelColor         = Color(nsColor: .labelColor)
     static let secondaryLabel     = Color(nsColor: .secondaryLabelColor)
     static let tertiaryLabel      = Color(nsColor: .tertiaryLabelColor)
+
+    /// Background swatch for sidebar accordion panels (BOOKMARKS,
+    /// SEARCH, GIT, CLAUDE, OUTLINE, etc.). One step away from
+    /// `Palette.textBackground` so each panel reads as a distinct
+    /// card against the sidebar's outer container background, but
+    /// not so dark it feels like a heavy card.
+    ///
+    /// Built as a dynamic `NSColor` so it re-resolves on light /
+    /// dark mode switches. The chosen swatch is intentionally very
+    /// light grey in light mode (a hair off the sidebar bg) and a
+    /// slightly elevated dark grey in dark mode.
+    static let sidebarPanelBackground = Color(nsColor: NSColor(name: nil) { appearance in
+        let isDark = appearance.bestMatch(from: [.darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua, .accessibilityHighContrastVibrantDark]) != nil
+        return isDark
+            ? NSColor(white: 0.13, alpha: 1.0)
+            : NSColor(white: 0.96, alpha: 1.0)
+    })
 }
