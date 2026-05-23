@@ -718,6 +718,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.reloadCurrentFile()
     }
 
+    /// File → Save (⌘S). Active only when the focused tab is in
+    /// `.editor` view mode (gated by `validateMenuItem`). The model
+    /// surfaces any I/O failure via its own NSAlert; we just relay
+    /// the call.
+    @objc func saveActiveEditor(_ sender: Any?) {
+        _ = model.saveActiveEditor()
+    }
+
     @objc func toggleViewMode(_ sender: Any?) {
         model.toggleViewMode()
     }
@@ -1038,6 +1046,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         )
         closeTabItem.target = self
         fileMenu.addItem(closeTabItem)
+
+        // Save (⌘S). Only active when the focused tab is in `.editor`
+        // mode — `validateMenuItem` enforces that. Routes to the
+        // model's saveActiveEditor() which handles encoding, atomic
+        // write, fingerprint update, and dirty-dot clear.
+        fileMenu.addItem(.separator())
+        let saveItem = NSMenuItem(
+            title: "Save",
+            action: #selector(saveActiveEditor(_:)),
+            keyEquivalent: "s"
+        )
+        saveItem.target = self
+        fileMenu.addItem(saveItem)
         fileMenuItem.submenu = fileMenu
 
         let viewMenuItem = NSMenuItem()
@@ -1515,6 +1536,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(toggleSidebar(_:)):
             item.state = model.sidebar.isVisible ? .on : .off
             return true
+        case #selector(saveActiveEditor(_:)):
+            // Save only enables when the focused tab is editing AND
+            // has unsaved edits. Greys the menu (and disables the ⌘S
+            // accelerator) otherwise — matches Xcode / VS Code.
+            guard hasTab, model.currentViewMode == .editor else { return false }
+            return model.tabs.selected?.isDirty == true
         default:
             return true
         }

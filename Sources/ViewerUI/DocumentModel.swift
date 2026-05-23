@@ -943,6 +943,181 @@ public final class DocumentModel: ObservableObject {
         }
     }
 
+    // MARK: Editor mode (Phase 6.x — editable plain-text buffer)
+    //
+    // PoC: one EditorBuffer per tab id, keyed off the same `tabs.tabs`
+    // identity used by every other per-tab cache. The buffer is lazy
+    // — created on first read for the tab in `.editor` view mode and
+    // dropped on tab close (see closeTab / closeOthers / closeToRight).
+
+    @Published public private(set) var editorBuffers: [UUID: EditorBuffer] = [:]
+
+    /// Result of `confirmCloseIfDirty(...)`. Plain enum so view code
+    /// (NSAlert response handler) can switch without leaking AppKit
+    /// types into the model.
+    public enum DirtyClosePrompt {
+        /// User chose Save; the caller should call `saveActiveEditor`
+        /// (or `saveEditor(forTabID:)`) and then close on success.
+        case save
+        /// User chose Don't Save; discard the buffer + close.
+        case discard
+        /// User chose Cancel; abort the close.
+        case cancel
+    }
+
+    /// True when any open tab has unsaved editor edits. Used by the
+    /// app delegate's terminate path + window-close confirmation.
+    public var hasAnyUnsavedEdits: Bool {
+        tabs.tabs.contains(where: { $0.isDirty })
+    }
+
+    /// Returns the active tab's buffer (creating it on demand if the
+    /// tab's state is `.loaded`). Returns nil for binary / empty /
+    /// error tabs — `.editor` mode is only meaningful when there's
+    /// loaded text to seed the buffer with.
+    public func editorBuffer(forTabID id: UUID) -> EditorBuffer? {
+        if let cached = editorBuffers[id] { return cached }
+        guard let tab = tabs.tabs.first(where: { $0.id == id }),
+              case .loaded(let file) = tab.state else { return nil }
+        let buf = EditorBuffer(from: file)
+        editorBuffers[id] = buf
+        return buf
+    }
+
+    /// Seed a fresh buffer for `tabID` from `file`. Called when the
+    /// view-mode switch lands on `.editor` (and on loadAsync
+    /// completion when an editor-mode tab finishes materializing).
+    /// Idempotent — preserves an existing buffer with unsaved edits.
+    public func ensureEditorBuffer(for file: TextFile, tabID: UUID) {
+        if editorBuffers[tabID] != nil { return }
+        editorBuffers[tabID] = EditorBuffer(from: file)
+    }
+
+    /// Push a new text value into the active tab's buffer. Called by
+    /// `EditorTextDisplayView.textDidChange:` on every keystroke.
+    /// Updates `Tab.isDirty` so the TabBar dot mirrors the state.
+    /// O(1) — no text comparison here; the buffer's `isDirty` getter
+    /// is the one place that runs the (cheap, length-short-circuited)
+    /// String equality.
+    public func updateEditorText(_ newText: String, forTabID id: UUID) {
+        guard var buf = editorBuffer(forTabID: id) else { return }
+        // Fast path: identical-string assignment is a no-op. Avoids
+        // republishing `editorBuffers` for callers that fire the
+        // setter on every paint (some NSTextView subclasses do).
+        if buf.text == newText { return }
+        buf.setText(newText)
+        editorBuffers[id] = buf
+        // Sync the Tab snapshot so SwiftUI re-renders the dirty dot.
+        if let idx = tabs.tabs.firstIndex(where: { $0.id == id }) {
+            let nowDirty = buf.isDirty
+            if tabs.tabs[idx].isDirty != nowDirty {
+                var t = tabs.tabs[idx]
+                t.isDirty = nowDirty
+                tabs.replace(at: idx, with: t)
+            }
+        }
+    }
+
+    /// Write the active editor buffer to disk. ⌘S handler routes here.
+    /// Returns true on success, false (with an NSAlert surfaced by the
+    /// caller) on encoding / write failure.
+    @discardableResult
+    public func saveActiveEditor() -> Bool {
+        guard let id = tabs.selected?.id else { return false }
+        return saveEditor(forTabID: id)
+    }
+
+    /// Save a specific tab's buffer. Used by `saveActiveEditor` and
+    /// by the close-confirm path that targets a non-active tab.
+    @discardableResult
+    public func saveEditor(forTabID id: UUID) -> Bool {
+        guard var buf = editorBuffers[id] else { return false }
+        // File-watcher reload during save would race the write — pause
+        // it for the moment the write is in flight + the immediate
+        // post-write watcher event we'd otherwise re-enter on.
+        // Caller resumes watching when control returns.
+        let wasWatchingURL = watchedURL
+        pauseFileWatcher()
+        defer {
+            if wasWatchingURL == currentURL { startWatchingCurrentFile() }
+        }
+        do {
+            let stamp = try EditorWriter.save(buf.text, to: buf.url, encoding: buf.encoding)
+            buf.markSaved(diskMTime: stamp.mtime, diskSize: stamp.size)
+            editorBuffers[id] = buf
+            // Clear the dirty dot.
+            if let idx = tabs.tabs.firstIndex(where: { $0.id == id }) {
+                var t = tabs.tabs[idx]
+                t.isDirty = false
+                tabs.replace(at: idx, with: t)
+            }
+            // Refresh the loaded TextFile so the rest of the app sees
+            // the new bytes (sidebar diff marks, formatted cache, etc.
+            // all key off URL + length and would otherwise serve stale
+            // content if the user flips back to `.source`).
+            if let idx = tabs.tabs.firstIndex(where: { $0.id == id }) {
+                var t = tabs.tabs[idx]
+                if case .loaded(let oldFile) = t.state {
+                    let bytes = buf.text.data(using: buf.encoding)?.count ?? oldFile.byteCount
+                    let newFile = TextFile(
+                        url: oldFile.url,
+                        contents: buf.text,
+                        encoding: oldFile.encoding,
+                        byteCount: bytes
+                    )
+                    t.state = .loaded(newFile)
+                    tabs.replace(at: idx, with: t)
+                }
+            }
+            return true
+        } catch {
+            // Surface failure to the user. Stay dirty so the next
+            // ⌘S retries instead of silently dropping the edit.
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Couldn't save \(buf.url.lastPathComponent)"
+            alert.informativeText = "\(error)"
+            alert.runModal()
+            return false
+        }
+    }
+
+    /// Drop the buffer for a tab. Called by the close paths after the
+    /// user has confirmed discard, and as part of normal close cleanup
+    /// (no-op when the buffer isn't present).
+    public func discardEditorBuffer(forTabID id: UUID) {
+        editorBuffers.removeValue(forKey: id)
+        if let idx = tabs.tabs.firstIndex(where: { $0.id == id }), tabs.tabs[idx].isDirty {
+            var t = tabs.tabs[idx]
+            t.isDirty = false
+            tabs.replace(at: idx, with: t)
+        }
+    }
+
+    /// If the tab at `index` has unsaved edits, run the
+    /// Save / Don't Save / Cancel NSAlert and return the user's
+    /// choice. Returns `nil` when the tab is clean (caller proceeds
+    /// directly to close). Modal on the main thread by design —
+    /// matches every other AppKit close-confirm flow.
+    public func confirmCloseIfDirty(at index: Int) -> DirtyClosePrompt? {
+        guard tabs.tabs.indices.contains(index) else { return nil }
+        let tab = tabs.tabs[index]
+        guard tab.isDirty else { return nil }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        let name = tab.url?.lastPathComponent ?? tab.title
+        alert.messageText = "Save changes to \(name)?"
+        alert.informativeText = "Your changes will be lost if you don't save them."
+        alert.addButton(withTitle: "Save")          // .alertFirstButtonReturn
+        alert.addButton(withTitle: "Don't Save")    // .alertSecondButtonReturn
+        alert.addButton(withTitle: "Cancel")        // .alertThirdButtonReturn
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:  return .save
+        case .alertSecondButtonReturn: return .discard
+        default:                       return .cancel
+        }
+    }
+
     /// Returns the text that should be shown in the source view for
     /// the currently selected tab and `file`: either pretty-printed
     /// (when toggled and supported) or the raw contents.
@@ -1303,11 +1478,69 @@ public final class DocumentModel: ObservableObject {
     /// matches the URL the file watcher was bound to. Without this, an
     /// in-flight watcher event for a file the user just navigated away
     /// from would silently rewrite a different tab's state.
+    ///
+    /// Editor-mode external-edit guard: if the tab holds unsaved
+    /// editor edits and the on-disk file has changed, surface an
+    /// NSAlert (Keep mine / Reload disk) rather than blindly
+    /// clobbering the user's typing. Clean tabs reload unconditionally
+    /// — the existing behavior for the read-only Source view.
     private func reloadCurrentFile(matching watchedURL: URL) {
         guard let i = tabs.selectedIndex,
               tabs.tabs.indices.contains(i),
               tabs.tabs[i].url == watchedURL else { return }
+        let tab = tabs.tabs[i]
+        if tab.isDirty, let buf = editorBuffers[tab.id] {
+            let attrs = try? FileManager.default.attributesOfItem(atPath: watchedURL.path)
+            let mtime = attrs?[.modificationDate] as? Date
+            let size = attrs?[.size] as? Int
+            if buf.hasExternalEdit(currentMTime: mtime, currentSize: size) {
+                presentExternalEditConflict(forTabID: tab.id, at: i, url: watchedURL)
+                return
+            }
+        }
         reload(url: watchedURL, at: i)
+    }
+
+    /// Modal alert presented when the file underneath an editor tab
+    /// has changed on disk while the buffer is dirty. Two outcomes:
+    ///   - "Keep My Edits": leave the buffer alone; just update the
+    ///     saved-fingerprint so we don't re-prompt for the same change.
+    ///   - "Discard & Reload": drop the buffer and load disk contents.
+    private func presentExternalEditConflict(forTabID id: UUID, at index: Int, url: URL) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "\(url.lastPathComponent) changed on disk"
+        alert.informativeText = "You have unsaved changes. Reloading will discard them."
+        alert.addButton(withTitle: "Keep My Edits")
+        alert.addButton(withTitle: "Discard & Reload")
+        let response = alert.runModal()
+        if response == .alertSecondButtonReturn {
+            discardEditorBuffer(forTabID: id)
+            reload(url: url, at: index)
+        } else {
+            // Refresh the fingerprint so the next watcher tick (often
+            // a duplicate event from the same write) doesn't re-prompt.
+            if var buf = editorBuffers[id] {
+                let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+                buf.markSaved(
+                    diskMTime: attrs?[.modificationDate] as? Date,
+                    diskSize: attrs?[.size] as? Int
+                )
+                // markSaved snapshots `text` as `originalText`, which
+                // would wrongly clear dirt. Undo by reseeding originals
+                // to a sentinel that keeps `isDirty` true. We do this
+                // by creating a fresh buffer with the user's text +
+                // a different `originalText`.
+                editorBuffers[id] = EditorBuffer(
+                    url: buf.url,
+                    original: buf.originalText,  // pre-existing baseline
+                    encoding: buf.encoding,
+                    lastSavedMTime: attrs?[.modificationDate] as? Date,
+                    lastSavedSize: attrs?[.size] as? Int
+                )
+                editorBuffers[id]?.setText(buf.text)
+            }
+        }
     }
 
     private func reload(url: URL, at index: Int) {
@@ -1369,6 +1602,19 @@ public final class DocumentModel: ObservableObject {
     }
 
     public func closeTab(at index: Int) {
+        // Editor-dirty guard: prompt before we destroy the tab. The
+        // user can Save (we proceed), Don't Save (we proceed), or
+        // Cancel (we abort). Routed through every close-path entry —
+        // `closeTab`, `closeOtherTabs`, `closeTabsToRight`, and the
+        // app delegate's "close window" handler.
+        switch confirmCloseIfDirty(at: index) {
+        case .none, .discard:
+            break
+        case .save:
+            if !saveEditor(forTabID: tabs.tabs[index].id) { return }
+        case .cancel:
+            return
+        }
         let closedTab = tabs.tabs.indices.contains(index) ? tabs.tabs[index] : nil
         tabs.close(at: index)
         if let t = closedTab {
@@ -1377,6 +1623,7 @@ public final class DocumentModel: ObservableObject {
             formattedTextCache.removeValue(forKey: t.id)
             languageOverrides.removeValue(forKey: t.id)
             csvFilterStates.removeValue(forKey: t.id)
+            editorBuffers.removeValue(forKey: t.id)
             purgeCaches(forURL: t.url)
         }
         updateDerived()
@@ -1391,6 +1638,22 @@ public final class DocumentModel: ObservableObject {
 
     public func closeOtherTabs(keeping index: Int) {
         let keepID = tabs.tabs.indices.contains(index) ? tabs.tabs[index].id : nil
+        // Prompt-then-act for every dirty tab that's about to vanish.
+        // We process indices in descending order so the user can cancel
+        // mid-batch and what's left of the close still makes sense.
+        let doomed = tabs.tabs.enumerated()
+            .filter { $0.element.id != keepID && $0.element.isDirty }
+            .map { $0.offset }
+            .sorted(by: >)
+        for i in doomed {
+            switch confirmCloseIfDirty(at: i) {
+            case .none, .discard: break
+            case .save:
+                if !saveEditor(forTabID: tabs.tabs[i].id) { return }
+            case .cancel:
+                return
+            }
+        }
         let closedTabs = tabs.tabs.filter { $0.id != keepID }
         tabs.closeAll(except: index)
         for t in closedTabs {
@@ -1398,6 +1661,7 @@ public final class DocumentModel: ObservableObject {
             formattedTextCache.removeValue(forKey: t.id)
             languageOverrides.removeValue(forKey: t.id)
             csvFilterStates.removeValue(forKey: t.id)
+            editorBuffers.removeValue(forKey: t.id)
             purgeCaches(forURL: t.url)
         }
         // Intersect tab-id sets with the still-open ids. Cheaper than
@@ -1410,6 +1674,20 @@ public final class DocumentModel: ObservableObject {
     }
 
     public func closeTabsToRight(of index: Int) {
+        // Same dirty-prompt loop as closeOtherTabs. Process the
+        // doomed tabs from right-to-left so a Cancel partway through
+        // leaves a contiguous tail intact (rather than holes).
+        let toClose = (index + 1)..<tabs.tabs.count
+        let doomedDirty = toClose.reversed().filter { tabs.tabs[$0].isDirty }
+        for i in doomedDirty {
+            switch confirmCloseIfDirty(at: i) {
+            case .none, .discard: break
+            case .save:
+                if !saveEditor(forTabID: tabs.tabs[i].id) { return }
+            case .cancel:
+                return
+            }
+        }
         let closedTabs = tabs.tabs.indices.contains(index)
             ? Array(tabs.tabs.suffix(from: index + 1))
             : []
@@ -1419,6 +1697,7 @@ public final class DocumentModel: ObservableObject {
             formattedTextCache.removeValue(forKey: t.id)
             languageOverrides.removeValue(forKey: t.id)
             csvFilterStates.removeValue(forKey: t.id)
+            editorBuffers.removeValue(forKey: t.id)
             purgeCaches(forURL: t.url)
         }
         let openIDs = Set(tabs.tabs.map { $0.id })
@@ -1626,6 +1905,22 @@ public final class DocumentModel: ObservableObject {
             formattedTabIDs.remove(t.id)
             if let url = t.url, case .binary = t.state {
                 loadTextAsync(url: url, intoTabID: t.id)
+            }
+        case .editor:
+            // Editor needs the text contents in memory. If the tab
+            // currently holds a binary view, kick a text re-load so
+            // the buffer has something to bind to; the buffer itself
+            // is created lazily by `editorBuffer(forTabID:)` once
+            // the file lands as `.loaded`.
+            formattedTabIDs.remove(t.id)
+            if let url = t.url, case .binary = t.state {
+                loadTextAsync(url: url, intoTabID: t.id)
+            }
+            // Seed an EditorBuffer eagerly when the file is already
+            // loaded so the view's first frame has real text rather
+            // than an empty placeholder.
+            if case .loaded(let file) = t.state {
+                ensureEditorBuffer(for: file, tabID: t.id)
             }
         }
         t.viewMode = mode

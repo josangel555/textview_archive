@@ -236,6 +236,22 @@ public struct ContentView: View {
             // tab switches.
             let tid = model.tabs.selected?.id ?? UUID()
             CSVTableView(text: file.contents, model: model, tabID: tid)
+        } else if model.currentViewMode == .editor {
+            // Editor mode: editable in-memory buffer. The buffer is
+            // owned by `DocumentModel.editorBuffers` keyed by tab id;
+            // we seed it lazily here (idempotent) so re-entering the
+            // mode for a freshly-loaded tab gets a real backing buffer.
+            let tid = model.tabs.selected?.id ?? UUID()
+            let _ = { model.ensureEditorBuffer(for: file, tabID: tid) }()
+            let buf = model.editorBuffer(forTabID: tid)
+            EditorTextDisplayView(
+                text: buf?.text ?? file.contents,
+                fontSize: 13 * model.zoom,
+                onTextChange: { newText in
+                    model.updateEditorText(newText, forTabID: tid)
+                }
+            )
+            .accessibilityIdentifier("mdv.editor")
         } else if model.currentViewMode == .diff {
             DiffView(text: file.contents, doc: model)
         } else if (category == .markdown && model.currentViewMode == .rendered)
@@ -509,6 +525,7 @@ struct ModeBar: View {
         switch mode {
         case .rendered:  return "Rendered"
         case .source:    return "Source"
+        case .editor:    return "Editor"
         case .formatted: return "Format"
         case .table:     return "Table"
         case .diff:      return "Diff"

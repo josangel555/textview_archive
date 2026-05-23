@@ -119,6 +119,18 @@ struct TabBarItem: View {
                         .font(.system(size: 12 * scale, weight: isSelected ? .semibold : .regular))
                         .foregroundStyle(isSelected ? Color.primary : Color.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    if tab.isDirty {
+                        // Unsaved-edit dot. Sized to match the close
+                        // button so the two glyphs occupy the same
+                        // visual column when the close button is
+                        // hidden (the unhovered, non-selected state).
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 7 * scale, height: 7 * scale)
+                            .help("Unsaved changes")
+                            .accessibilityLabel("Unsaved changes")
+                            .accessibilityIdentifier("mdv.tab.dirtyDot")
+                    }
                     if isBookmarked {
                         Image(systemName: "star.fill")
                             .font(.system(size: 8 * scale))
