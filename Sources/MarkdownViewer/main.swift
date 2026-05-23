@@ -1209,8 +1209,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
         let editMenuItem = NSMenuItem()
         let editMenu = NSMenu(title: "Edit")
+        // Cut / Copy / Paste must all exist in the Edit menu for AppKit
+        // to route the standard ⌘X / ⌘C / ⌘V keystrokes via the
+        // responder chain. Without Paste here, NSTextField doesn't
+        // receive ⌘V (the keystroke is swallowed by NSApp) — visible
+        // as "can't paste into the Go-to-file/folder prompt".
+        editMenu.addItem(NSMenuItem(title: "Cut",
+            action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
         editMenu.addItem(NSMenuItem(title: "Copy",
             action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
+        editMenu.addItem(NSMenuItem(title: "Paste",
+            action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
         editMenu.addItem(NSMenuItem(title: "Select All",
             action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
         editMenu.addItem(.separator())

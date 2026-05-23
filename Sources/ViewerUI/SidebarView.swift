@@ -35,6 +35,8 @@ struct SidebarView: View {
     private var lspHeight: Double = Double(SidebarPanel.lspOutline.defaultHeight)
     @AppStorage(SidebarPanel.lspNavigation.appStorageKey)
     private var lspNavHeight: Double = Double(SidebarPanel.lspNavigation.defaultHeight)
+    @AppStorage(SidebarPanel.lspProblems.appStorageKey)
+    private var lspProblemsHeight: Double = Double(SidebarPanel.lspProblems.defaultHeight)
     @AppStorage(SidebarPanel.pluginSections.appStorageKey)
     private var pluginHeight: Double = Double(SidebarPanel.pluginSections.defaultHeight)
 
@@ -119,6 +121,23 @@ struct SidebarView: View {
                 )
                 .environment(\.sidebarSectionBodyHeight,
                              SidebarPanelHeights.clamp(CGFloat(lspNavHeight)))
+                ResizableSectionDivider(heightAbove: heightBinding($lspNavHeight))
+                // MARK: - Problems (LSP diagnostics) section
+                //
+                // Server-pushed `textDocument/publishDiagnostics`
+                // collected per-URL by `LSPDiagnosticsStore`. Click a
+                // row to open the file at the offending line.
+                LSPProblemsPanel(
+                    store: model.lspDiagnostics,
+                    onJump: { url, line in
+                        if !model.selectTab(forURL: url) {
+                            model.openPath(url)
+                        }
+                        model.scrollSource(toLine: line)
+                    }
+                )
+                .environment(\.sidebarSectionBodyHeight,
+                             SidebarPanelHeights.clamp(CGFloat(lspProblemsHeight)))
             }
             // Plugin-contributed sidebar sections. Self-managing
             // collapse state; appears above FILES regardless of
