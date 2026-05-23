@@ -212,7 +212,10 @@ public struct ContentView: View {
             // For binaries (HEX mode) we always show the byte grid;
             // the metadata panel pairs naturally with .preview state
             // below.
-            HexView(file: binary, fontSize: 12 * model.zoom)
+            HexView(file: binary,
+                    fontSize: 12 * model.zoom,
+                    tabID: model.tabs.selected?.id ?? UUID(),
+                    model: model)
         case .error(let failure):
             ErrorView(failure: failure, model: model)
         case .preview(let url, let cat):

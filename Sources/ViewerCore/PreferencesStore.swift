@@ -16,6 +16,11 @@ public final class PreferencesStore: @unchecked Sendable {
         /// `zoom` were unified onto `zoom`. Still read once for
         /// one-shot migration; never written.
         static let legacyUIScale = "MarkdownViewer.uiScale"
+        /// HEX viewer: default bytes-per-row for NEW tabs. Per-tab
+        /// overrides live in DocumentModel (in-memory only — they
+        /// don't survive an app relaunch on purpose; this default
+        /// does).
+        static let hexBytesPerRow = "MarkdownViewer.hexBytesPerRow"
     }
 
     public init(defaults: UserDefaults = .standard) {
@@ -97,6 +102,20 @@ public final class PreferencesStore: @unchecked Sendable {
             // value, so subsequent reads don't keep resurrecting it.
             defaults.removeObject(forKey: Key.legacyUIScale)
         }
+    }
+
+    // MARK: HEX viewer width
+
+    /// Default bytes-per-row for newly-opened binaries in the HEX
+    /// viewer. Clamped to `HexLayout.allowedWidths` (16/32/64) on
+    /// read so a stale preference can't break the picker.
+    public var hexBytesPerRow: Int {
+        get {
+            let raw = defaults.object(forKey: Key.hexBytesPerRow) as? Int
+                ?? HexLayout.defaultWidth
+            return HexLayout.clampWidth(raw)
+        }
+        set { defaults.set(HexLayout.clampWidth(newValue), forKey: Key.hexBytesPerRow) }
     }
 
     // MARK: Last open folder

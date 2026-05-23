@@ -121,4 +121,36 @@ final class PreferencesStoreTests: XCTestCase {
         XCTAssertNil(defaults.object(forKey: "MarkdownViewer.uiScale"))
         XCTAssertEqual(store.zoom, 1.10, accuracy: 0.001)
     }
+
+    // MARK: HEX bytes-per-row
+
+    func test_hexBytesPerRow_defaultsTo16() {
+        let store = PreferencesStore(defaults: defaults)
+        XCTAssertEqual(store.hexBytesPerRow, 16)
+    }
+
+    func test_hexBytesPerRow_roundTripsAllowedValues() {
+        let store = PreferencesStore(defaults: defaults)
+        store.hexBytesPerRow = 32
+        XCTAssertEqual(PreferencesStore(defaults: defaults).hexBytesPerRow, 32)
+        store.hexBytesPerRow = 64
+        XCTAssertEqual(PreferencesStore(defaults: defaults).hexBytesPerRow, 64)
+    }
+
+    func test_hexBytesPerRow_clampsArbitraryValuesOnWrite() {
+        let store = PreferencesStore(defaults: defaults)
+        store.hexBytesPerRow = 100        // -> 64
+        XCTAssertEqual(store.hexBytesPerRow, 64)
+        store.hexBytesPerRow = 24         // -> 32
+        XCTAssertEqual(store.hexBytesPerRow, 32)
+        store.hexBytesPerRow = 1          // -> 16
+        XCTAssertEqual(store.hexBytesPerRow, 16)
+    }
+
+    func test_hexBytesPerRow_clampsStaleStoredValueOnRead() {
+        // Simulate a future build that wrote an unsupported value.
+        defaults.set(48, forKey: "MarkdownViewer.hexBytesPerRow")
+        let store = PreferencesStore(defaults: defaults)
+        XCTAssertEqual(store.hexBytesPerRow, 64) // clamped up via HexLayout
+    }
 }

@@ -40,6 +40,30 @@ public final class DocumentModel: ObservableObject {
         csvFilterStates.removeValue(forKey: id)
     }
 
+    /// Per-tab HEX viewer bytes-per-row. Falls back to the global
+    /// default in PreferencesStore (`hexBytesPerRow`). Pruned in the
+    /// tab-close paths alongside other tab-id-keyed maps. Not
+    /// persisted across app relaunches — intentional: globally
+    /// changing the default is the durable knob; per-tab is a
+    /// session-scoped override.
+    @Published public private(set) var hexBytesPerRow: [UUID: Int] = [:]
+
+    public func hexWidth(forTabID id: UUID) -> Int {
+        if let w = hexBytesPerRow[id] { return HexLayout.clampWidth(w) }
+        return HexLayout.clampWidth(preferences.hexBytesPerRow)
+    }
+
+    public func setHexWidth(_ width: Int, forTabID id: UUID) {
+        let clamped = HexLayout.clampWidth(width)
+        if hexBytesPerRow[id] != clamped { hexBytesPerRow[id] = clamped }
+        // Also bump the global default so the next opened binary
+        // remembers what the user picked. Cheap; matches Sublime
+        // "remember last setting" feel.
+        if preferences.hexBytesPerRow != clamped {
+            preferences.hexBytesPerRow = clamped
+        }
+    }
+
     public struct CSVFilterState: Equatable, Sendable {
         public var globalQuery: String = ""
         public var globalScope: Int? = nil
@@ -1644,6 +1668,7 @@ public final class DocumentModel: ObservableObject {
             languageOverrides.removeValue(forKey: t.id)
             csvFilterStates.removeValue(forKey: t.id)
             editorBuffers.removeValue(forKey: t.id)
+            hexBytesPerRow.removeValue(forKey: t.id)
             purgeCaches(forURL: t.url)
         }
         updateDerived()
@@ -1682,6 +1707,7 @@ public final class DocumentModel: ObservableObject {
             languageOverrides.removeValue(forKey: t.id)
             csvFilterStates.removeValue(forKey: t.id)
             editorBuffers.removeValue(forKey: t.id)
+            hexBytesPerRow.removeValue(forKey: t.id)
             purgeCaches(forURL: t.url)
         }
         // Intersect tab-id sets with the still-open ids. Cheaper than
@@ -1718,6 +1744,7 @@ public final class DocumentModel: ObservableObject {
             languageOverrides.removeValue(forKey: t.id)
             csvFilterStates.removeValue(forKey: t.id)
             editorBuffers.removeValue(forKey: t.id)
+            hexBytesPerRow.removeValue(forKey: t.id)
             purgeCaches(forURL: t.url)
         }
         let openIDs = Set(tabs.tabs.map { $0.id })
