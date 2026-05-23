@@ -1,5 +1,6 @@
 import SwiftUI
 import ViewerCore
+import ViewerKit
 
 /// Sidebar widget that searches across every file under the current
 /// sidebar root. Lives next to BookmarksSection — collapsible, no
@@ -105,9 +106,11 @@ struct SearchAnywhereSection: View {
 
     @ViewBuilder
     private func fileGroup(_ file: CrossFileSearch.FileMatches) -> some View {
-        Text(file.url.lastPathComponent)
+        Text(highlighted(
+            file.url.lastPathComponent,
+            baseColor: .primary
+        ))
             .font(.system(size: model.uiSize(11), weight: .semibold))
-            .foregroundStyle(.primary)
             .lineLimit(1)
             .truncationMode(.middle)
             .padding(.horizontal, 10)
@@ -121,11 +124,13 @@ struct SearchAnywhereSection: View {
                         .font(.system(size: model.uiSize(10), design: .monospaced))
                         .foregroundStyle(.tertiary)
                         .frame(width: 32, alignment: .trailing)
-                    Text(m.line.trimmingCharacters(in: .whitespaces))
+                    Text(highlighted(
+                        m.line.trimmingCharacters(in: .whitespaces),
+                        baseColor: .secondary
+                    ))
                         .font(.system(size: model.uiSize(11), design: .monospaced))
                         .lineLimit(1)
                         .truncationMode(.tail)
-                        .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 1)
@@ -142,6 +147,39 @@ struct SearchAnywhereSection: View {
 
     private func open(_ url: URL) {
         model.openPath(url)
+    }
+
+    /// Wraps `HighlightedText.ranges` and applies the same accent
+    /// emphasis used by the command palette's match treatment: matched
+    /// substrings switch to `Color.accentColor` + semibold weight, on
+    /// top of `baseColor` for unmatched text. Honors the section's
+    /// case-sensitivity toggle.
+    private func highlighted(_ text: String, baseColor: Color) -> AttributedString {
+        var attr = AttributedString(text)
+        attr.foregroundColor = baseColor
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty, !text.isEmpty else { return attr }
+        let ranges = HighlightedText.ranges(
+            in: text,
+            query: query,
+            mode: .literal(caseSensitive: caseSensitive)
+        )
+        guard !ranges.isEmpty else { return attr }
+        for r in ranges {
+            // Map String.Index → AttributedString.Index via UTF-8
+            // offsets. AttributedString indexes by character but
+            // exposes `index(_:offsetByCharacters:)` on character
+            // counts — and our ranges come from a Swift String, where
+            // `distance(from:to:)` returns Character counts. That's
+            // the same unit, so the offset hops are 1:1.
+            let lowerDist = text.distance(from: text.startIndex, to: r.lowerBound)
+            let upperDist = text.distance(from: text.startIndex, to: r.upperBound)
+            let lo = attr.index(attr.startIndex, offsetByCharacters: lowerDist)
+            let hi = attr.index(attr.startIndex, offsetByCharacters: upperDist)
+            attr[lo..<hi].foregroundColor = .accentColor
+            attr[lo..<hi].font = .system(size: model.uiSize(11), weight: .semibold)
+        }
+        return attr
     }
 
     /// Debounced async scan via CrossFileSearch. The throttle prevents
