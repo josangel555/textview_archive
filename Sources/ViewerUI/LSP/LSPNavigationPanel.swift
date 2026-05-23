@@ -49,7 +49,11 @@ public struct LSPNavigationPanel: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
                     }
-                    Divider()
+                    // No inner `Divider()` between the search field and
+                    // the result list — the section already has a
+                    // bottom edge supplied by `ResizableSectionDivider`
+                    // (the sole "one delimiter per panel"). An inner
+                    // divider here read as a duplicate hairline.
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
                             if let msg = store.errorMessage {
@@ -81,12 +85,10 @@ public struct LSPNavigationPanel: View {
     private var header: some View {
         Button(action: { isExpanded.toggle() }) {
             HStack(spacing: 4) {
-                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
-                    .frame(width: 10)
-                Text(headerTitle)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                SidebarSectionHeaderLabel(
+                    title: headerTitle,
+                    isExpanded: isExpanded
+                )
                 if let ctx = store.contextDescription, store.mode == .references {
                     Text("· \(ctx)")
                         .font(.system(size: 10))
@@ -105,8 +107,7 @@ public struct LSPNavigationPanel: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
+        .sidebarHeaderRow()
     }
 
     private var modePicker: some View {
