@@ -138,6 +138,68 @@ with eyes.
 - [ ] `codesign -dv dist/MarkdownViewer.app` reports an ad-hoc signature (no errors).
 - [ ] `lsappinfo info MarkdownViewer` confirms Launch Services has it registered after a fresh `build-app.sh`.
 
+### 11. LSP — multi-language (5–10 min)
+
+Per-language smoke. Each server is **PATH-discovered** (no bundling) —
+when missing, the diagnostics panel shows the install command rather
+than crashing.
+
+#### TypeScript / JavaScript (`typescript-language-server`)
+
+```text
+npm i -g typescript-language-server typescript
+# Verify: typescript-language-server --version
+```
+
+- [ ] Open a `.ts` / `.tsx` / `.js` / `.jsx` file inside a folder with
+  a `tsconfig.json` / `package.json`. Outline section populates within
+  ~3 s. Hover, Cmd-click jump, right-click "Go to Definition" all work.
+- [ ] Right-click an identifier → "Find References". Sidebar
+  **References** section populates with file:line entries; click a row
+  jumps to that file + line.
+
+#### Python (`pyright`)
+
+```text
+npm i -g pyright
+# Verify: pyright-langserver --help
+```
+
+- [ ] Open a `.py` file inside a folder with `pyproject.toml` /
+  `setup.py` / `requirements.txt`. Outline + hover + Cmd-click jump
+  work within ~2 s.
+
+#### Java (`jdtls`)
+
+```text
+brew install jdtls
+# Or download from https://download.eclipse.org/jdtls/snapshots/
+# Verify: jdtls --help
+```
+
+- [ ] **Cold-start is 30–90 s** on a typical Maven / Gradle project.
+  The diagnostics panel shows the server in `starting` state during
+  this window. Don't kill the app — just wait.
+- [ ] Per-workspace data lives under
+  `~/Library/Application Support/com.markdownviewer.MarkdownViewer/jdtls-data/<hash>/`.
+  Safe to delete to force a re-index; the directory grows large
+  (hundreds of MB on big multi-module projects).
+
+#### Problems sidebar (all languages)
+
+- [ ] Introduce a deliberate compile error in any LSP-supported file.
+  The **Problems** sidebar section populates within a second or two of
+  the server publishing diagnostics. The header shows red/orange pill
+  counts. Click a row → file opens, scrolls to the offending line.
+- [ ] Fix the error. The Problems row clears within a second (server
+  re-publishes an empty diagnostic set for that URL).
+
+#### Workspace symbol search
+
+- [ ] Open the **References / Workspace Symbols** sidebar section.
+  The header menu lets you switch to "Workspace Symbols". Type a
+  query. Results appear (server-side fuzzy match); click → jump.
+
 ## When something fails
 
 1. **Reproduce twice** — flaky once vs twice tells you whether it's a real bug.
