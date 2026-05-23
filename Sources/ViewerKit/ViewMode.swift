@@ -7,6 +7,7 @@ import Foundation
 public enum ViewMode: String, Equatable, Sendable, CaseIterable, Codable {
     case rendered    // markdown only: WKWebView-rendered HTML
     case source      // every text file: NSTextView with syntax highlight
+    case editor      // text files: editable NSTextView (in-memory buffer until ⌘S)
     case formatted   // JSON / XML / etc.: pretty-printed source
     case table       // csv / tsv: column-major grid
     case diff        // .diff / .patch: per-hunk colored DiffView
@@ -29,6 +30,20 @@ public enum ViewModeOptions {
         // .diff / .patch files get the dedicated DiffView as default,
         // with `.source` still available for raw-text inspection.
         if Self.supportsDiff(url) { modes.insert(.diff, at: 0) }
+        // Editor mode — editable plain-text buffer. Available for any
+        // file we'd otherwise show as text; excluded for image / audio
+        // / video / pdf / sqlite (which never have a text view to edit)
+        // and for `.diff` files (editing a unified-diff representation
+        // would silently desync from the actual repo state).
+        if Self.supportsEditor(url) {
+            // Slot right after `.source` so the picker reads
+            // Source | Editor | Formatted | … from left to right.
+            if let sourceIdx = modes.firstIndex(of: .source) {
+                modes.insert(.editor, at: sourceIdx + 1)
+            } else {
+                modes.append(.editor)
+            }
+        }
         modes.append(.hex)
         return modes
     }
@@ -68,5 +83,20 @@ public enum ViewModeOptions {
 
     private static func supportsDiff(_ url: URL) -> Bool {
         diffExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    /// Editor (in-memory writable buffer) is offered for any file we
+    /// classify as text-shaped. Binary categories (image / audio /
+    /// video / pdf / sqlite) plus the diff-renderer category are
+    /// excluded — the user would be editing a derived representation
+    /// or a non-text payload.
+    public static func supportsEditor(_ url: URL) -> Bool {
+        if supportsDiff(url) { return false }
+        switch FileTypeDetector.category(for: url) {
+        case .markdown, .mermaid, .plainText, .code, .html:
+            return true
+        case .image, .audio, .video, .pdf, .sqlite, .binary, .unknown:
+            return false
+        }
     }
 }
