@@ -23,22 +23,22 @@ struct SidebarView: View {
     // Keys are sourced from `SidebarSection` (ViewerCore) so the
     // string constants live in one place — easier to audit, easier
     // to migrate on rename.
-    @AppStorage(SidebarPanel.bookmarks.appStorageKey)
-    private var bookmarksHeight: Double = Double(SidebarPanel.bookmarks.defaultHeight)
-    @AppStorage(SidebarPanel.searchAnywhere.appStorageKey)
-    private var searchHeight: Double = Double(SidebarPanel.searchAnywhere.defaultHeight)
-    @AppStorage(SidebarPanel.gitPanel.appStorageKey)
-    private var gitHeight: Double = Double(SidebarPanel.gitPanel.defaultHeight)
-    @AppStorage(SidebarPanel.claudeTimeline.appStorageKey)
-    private var claudeHeight: Double = Double(SidebarPanel.claudeTimeline.defaultHeight)
-    @AppStorage(SidebarPanel.lspOutline.appStorageKey)
-    private var lspHeight: Double = Double(SidebarPanel.lspOutline.defaultHeight)
-    @AppStorage(SidebarPanel.lspNavigation.appStorageKey)
-    private var lspNavHeight: Double = Double(SidebarPanel.lspNavigation.defaultHeight)
-    @AppStorage(SidebarPanel.lspProblems.appStorageKey)
-    private var lspProblemsHeight: Double = Double(SidebarPanel.lspProblems.defaultHeight)
-    @AppStorage(SidebarPanel.pluginSections.appStorageKey)
-    private var pluginHeight: Double = Double(SidebarPanel.pluginSections.defaultHeight)
+    @AppStorage(SidebarPanelKind.bookmarks.appStorageKey)
+    private var bookmarksHeight: Double = Double(SidebarPanelKind.bookmarks.defaultHeight)
+    @AppStorage(SidebarPanelKind.searchAnywhere.appStorageKey)
+    private var searchHeight: Double = Double(SidebarPanelKind.searchAnywhere.defaultHeight)
+    @AppStorage(SidebarPanelKind.git.appStorageKey)
+    private var gitHeight: Double = Double(SidebarPanelKind.git.defaultHeight)
+    @AppStorage(SidebarPanelKind.claudeTimeline.appStorageKey)
+    private var claudeHeight: Double = Double(SidebarPanelKind.claudeTimeline.defaultHeight)
+    @AppStorage(SidebarPanelKind.lspOutline.appStorageKey)
+    private var lspHeight: Double = Double(SidebarPanelKind.lspOutline.defaultHeight)
+    @AppStorage(SidebarPanelKind.lspNavigation.appStorageKey)
+    private var lspNavHeight: Double = Double(SidebarPanelKind.lspNavigation.defaultHeight)
+    @AppStorage(SidebarPanelKind.lspProblems.appStorageKey)
+    private var lspProblemsHeight: Double = Double(SidebarPanelKind.lspProblems.defaultHeight)
+    @AppStorage(SidebarPanelKind.pluginSections.appStorageKey)
+    private var pluginHeight: Double = Double(SidebarPanelKind.pluginSections.defaultHeight)
 
     /// `CGFloat` binding adapter — `@AppStorage` only natively stores
     /// `Double`; the divider expects `Binding<CGFloat>` so we project
@@ -59,15 +59,26 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            // MARK: - Resizable section divider
+            // MARK: - Panel order
             //
-            // Each panel ABOVE the FILES tree gets:
+            // FILES leads (matches VSCode / Xcode / IntelliJ
+            // expectations — file tree on top, ancillary panels
+            // below). The accordion below FILES is the legacy order
+            // (Bookmarks → Search → Git → Claude → LSP → plugins).
+            // Canonical order lives in
+            // `SidebarPanelRegistry.defaultOrder` (ViewerCore); the
+            // ordering pin-test there enforces FILES-first.
+            //
+            // Each panel ABOVE FILES previously got:
             //   - an environment-injected body height (read by the
             //     section's inner ScrollView via
             //     `\.sidebarSectionBodyHeight`)
             //   - a `ResizableSectionDivider` after it, whose drag
             //     binds to the same @AppStorage-backed height.
-            // FILES keeps `Spacer()`/`maxHeight: .infinity` flex.
+            // FILES sits at the top now and keeps its flex-fill
+            // (`maxHeight: .infinity`) behaviour, so it absorbs
+            // any leftover vertical space.
+            filesPanel
             // BookmarksSection is always rendered (even with zero
             // bookmarks) — the section's fixed envelope + "(empty)"
             // placeholder is the whole point of the resizable
@@ -145,98 +156,6 @@ struct SidebarView: View {
             PluginSidebarSections(model: model)
                 .environment(\.sidebarSectionBodyHeight,
                              SidebarPanelHeights.clamp(CGFloat(pluginHeight)))
-            if let root = sidebar.rootURL {
-                // FILES accordion header — gives the tree the same
-                // collapsible chevron + heading treatment as the
-                // other sections so the sidebar reads as a uniform
-                // accordion.
-                HStack(spacing: 4) {
-                    Button(action: { filesExpanded.toggle() }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: filesExpanded ? "chevron.down" : "chevron.right")
-                                .font(.system(size: 9, weight: .semibold))
-                                .frame(width: 10)
-                            Text("FILES")
-                                .font(.system(size: model.uiSize(10), weight: .semibold))
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    // Sort mode picker. Folders always sort before
-                    // files (Finder-like); the chosen mode applies
-                    // within each group.
-                    Menu {
-                        ForEach(SidebarModel.FolderSortMode.allCases) { mode in
-                            Button {
-                                sidebar.sortMode = mode
-                            } label: {
-                                HStack {
-                                    Text(mode.rawValue)
-                                    if sidebar.sortMode == mode {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 2) {
-                            Image(systemName: "arrow.up.arrow.down")
-                                .font(.system(size: 9))
-                            Text(sidebar.sortMode.rawValue)
-                                .font(.system(size: model.uiSize(10)))
-                        }
-                        .foregroundStyle(.secondary)
-                    }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
-                    .help("Sort folder contents")
-                    .accessibilityIdentifier("mdv.sidebar.sort")
-                    // Lock toggle. When locked, auto-reveal-on-click +
-                    // tab-reveal won't change the sidebar root; the
-                    // user's chosen folder stays put.
-                    Button(action: { model.toggleSidebarLock() }) {
-                        Image(systemName: model.isSidebarLocked
-                              ? "lock.fill" : "lock.open")
-                            .font(.system(size: 10))
-                            .foregroundStyle(model.isSidebarLocked
-                                             ? Color.accentColor
-                                             : .secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help(model.isSidebarLocked
-                          ? "Sidebar root locked — click to unlock"
-                          : "Lock sidebar root (prevent auto-navigation)")
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                if filesExpanded {
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 0) {
-                                FileRowView(
-                                    node: FileNode(url: root, name: root.lastPathComponent, isDirectory: true),
-                                    depth: 0,
-                                    sidebar: sidebar,
-                                    model: model
-                                )
-                            }
-                            .padding(.vertical, 4)
-                        }
-                        // CRIT-6: keep keyboard-selected row visible.
-                        .onChange(of: sidebar.selectedURL) { _, new in
-                            if let url = new { proxy.scrollTo(url, anchor: .center) }
-                        }
-                    }
-                }
-            } else {
-                Spacer()
-                Text("No folder open")
-                    .foregroundStyle(.secondary)
-                    .font(.callout)
-                Spacer()
-            }
         }
         .frame(minWidth: 180, idealWidth: 240)
         // Top-align: without this, a short content stack centers
@@ -270,6 +189,134 @@ struct SidebarView: View {
                 return true
             }
         )
+    }
+
+    // MARK: - FILES panel
+    //
+    // The FILES tree sits at the top of the accordion (was at the
+    // bottom prior to the activity-bar groundwork refactor). Keeps
+    // its own collapsible chevron header + sort/lock controls.
+    //
+    // When the section is expanded it gets a `frame(maxHeight:
+    // .infinity)` so it absorbs all leftover vertical space — the
+    // other panels are fixed-height (via `@AppStorage` per-panel
+    // heights), FILES is the flex-fill in the layout.
+    //
+    // When there's no folder open the FILES panel collapses to a
+    // single "No folder open" placeholder line; the sections below
+    // (Bookmarks, etc.) still render normally so the user can pick
+    // a bookmarked folder without first opening one.
+    @ViewBuilder
+    private var filesPanel: some View {
+        if let root = sidebar.rootURL {
+            VStack(spacing: 0) {
+                filesHeader
+                if filesExpanded {
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 0) {
+                                FileRowView(
+                                    node: FileNode(url: root,
+                                                   name: root.lastPathComponent,
+                                                   isDirectory: true),
+                                    depth: 0,
+                                    sidebar: sidebar,
+                                    model: model
+                                )
+                            }
+                            .padding(.vertical, 4)
+                        }
+                        // CRIT-6: keep keyboard-selected row visible.
+                        .onChange(of: sidebar.selectedURL) { _, new in
+                            if let url = new {
+                                proxy.scrollTo(url, anchor: .center)
+                            }
+                        }
+                    }
+                    // Flex-fill so FILES (now the top panel) eats
+                    // the leftover vertical space below the other
+                    // fixed-height accordion sections. Without this
+                    // the tree would collapse to its intrinsic
+                    // height and leave a gap at the sidebar bottom.
+                    .frame(maxHeight: .infinity)
+                }
+            }
+        } else {
+            HStack {
+                Text("No folder open")
+                    .foregroundStyle(.secondary)
+                    .font(.callout)
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+        }
+    }
+
+    /// FILES section header — chevron + label + sort menu + lock.
+    /// Visually consistent with every other section's header row.
+    private var filesHeader: some View {
+        HStack(spacing: 4) {
+            Button(action: { filesExpanded.toggle() }) {
+                HStack(spacing: 4) {
+                    Image(systemName: filesExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .frame(width: 10)
+                    Text("FILES")
+                        .font(.system(size: model.uiSize(10), weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            // Sort mode picker. Folders always sort before files
+            // (Finder-like); the chosen mode applies within each
+            // group.
+            Menu {
+                ForEach(SidebarModel.FolderSortMode.allCases) { mode in
+                    Button {
+                        sidebar.sortMode = mode
+                    } label: {
+                        HStack {
+                            Text(mode.rawValue)
+                            if sidebar.sortMode == mode {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 2) {
+                    Image(systemName: "arrow.up.arrow.down")
+                        .font(.system(size: 9))
+                    Text(sidebar.sortMode.rawValue)
+                        .font(.system(size: model.uiSize(10)))
+                }
+                .foregroundStyle(.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Sort folder contents")
+            .accessibilityIdentifier("mdv.sidebar.sort")
+            // Lock toggle. When locked, auto-reveal-on-click +
+            // tab-reveal won't change the sidebar root; the user's
+            // chosen folder stays put.
+            Button(action: { model.toggleSidebarLock() }) {
+                Image(systemName: model.isSidebarLocked
+                      ? "lock.fill" : "lock.open")
+                    .font(.system(size: 10))
+                    .foregroundStyle(model.isSidebarLocked
+                                     ? Color.accentColor
+                                     : .secondary)
+            }
+            .buttonStyle(.plain)
+            .help(model.isSidebarLocked
+                  ? "Sidebar root locked — click to unlock"
+                  : "Lock sidebar root (prevent auto-navigation)")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
     }
 
     private var header: some View {
