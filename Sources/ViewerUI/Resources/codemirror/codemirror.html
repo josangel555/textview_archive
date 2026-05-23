@@ -19,31 +19,44 @@
   // --global-name=CM). Pull just the symbols we use to keep this
   // bootstrap readable.
   const {
-    EditorState, EditorView, Compartment,
+    EditorState, EditorView, EditorSelection, Compartment, Transaction,
     keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter,
     drawSelection, dropCursor,
     defaultKeymap, history, historyKeymap, undo, redo, indentWithTab,
-    searchKeymap, highlightSelectionMatches, openSearchPanel,
+    searchKeymap, highlightSelectionMatches, openSearchPanel, closeSearchPanel,
+    findNext, findPrevious, replaceNext, replaceAll,
     syntaxHighlighting, defaultHighlightStyle, bracketMatching,
-    foldKeymap, foldGutter, indentOnInput,
+    foldKeymap, foldGutter, indentOnInput, foldAll, unfoldAll,
+    indentUnit, EditorStateTabSize,
     markdown, javascript, python, json, oneDark,
   } = window.CM;
 
+  // Protocol version — must match Swift side `CMProtocol.currentVersion`.
+  const PROTOCOL_VERSION = 1;
+
   // ---- bridge helpers --------------------------------------------------
   // postMessage to Swift via the registered WKScriptMessageHandler named
-  // "mdvEditor". Swift side: CodeMirrorEditorView.Coordinator handles
-  // {type: 'change' | 'saveRequested' | 'ready'} payloads.
-  function post(payload) {
+  // "mdvEditor". Every outbound payload is stamped with the protocol
+  // version + a message type. Swift drops messages with mismatched `v`.
+  function post(type, payload) {
+    const body = Object.assign({ v: PROTOCOL_VERSION, type: type }, payload || {});
     try {
-      window.webkit.messageHandlers.mdvEditor.postMessage(payload);
+      window.webkit.messageHandlers.mdvEditor.postMessage(body);
     } catch (e) {
       // No bridge registered (e.g. opened in plain browser for dev) —
       // swallow silently. This file is fine to open directly for JS
       // iteration.
       // eslint-disable-next-line no-console
-      console.log("mdvEditor bridge unavailable:", payload);
+      console.log("mdvEditor bridge unavailable:", body);
     }
   }
+
+  // Monotonic doc version — incremented on every applied transaction with
+  // docChanged. Mirrored by Swift to detect / drop stale replies.
+  let docVersion = 0;
+  // Flag set while we're applying a Swift-driven setText so the
+  // updateListener doesn't echo it back as a `change`.
+  let suppressEmit = false;
 
   // Debounced change emitter. CM6 transactions can fire many times per
   // keystroke (composing edits, selection changes). 200 ms keeps Swift
@@ -59,11 +72,53 @@
     const text = view.state.doc.toString();
     if (text === lastEmittedText) return;
     lastEmittedText = text;
-    post({ type: "change", text });
+    post("change", { text: text, version: docVersion, contentLength: text.length });
   }
   function emitChangeImmediate() {
     if (changeTimer) { clearTimeout(changeTimer); changeTimer = null; }
     emitChange();
+  }
+
+  // Cursor / selection / scroll: debounced separately so a held arrow
+  // key doesn't flood the bridge. Numbers per design doc §15.1.
+  let cursorTimer = null;
+  function scheduleCursorEmit() {
+    if (cursorTimer) clearTimeout(cursorTimer);
+    cursorTimer = setTimeout(emitCursorAndSelection, 50);
+  }
+  function emitCursorAndSelection() {
+    cursorTimer = null;
+    const sel = view.state.selection;
+    const head = sel.main.head;
+    const line = view.state.doc.lineAt(head);
+    post("cursorPositionChanged", {
+      line: line.number,
+      column: head - line.from,
+      head: head,
+      ranges: sel.ranges.length,
+    });
+    post("selectionChanged", {
+      selection: sel.toJSON(),
+      hasSelection: !sel.main.empty || sel.ranges.length > 1,
+    });
+  }
+
+  let scrollTimer = null;
+  function scheduleScrollEmit() {
+    if (scrollTimer) clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(emitScroll, 100);
+  }
+  function emitScroll() {
+    scrollTimer = null;
+    const vp = view.viewport;
+    const fromLine = view.state.doc.lineAt(vp.from).number;
+    const toLine = view.state.doc.lineAt(Math.min(vp.to, view.state.doc.length)).number;
+    post("scrollChanged", {
+      top: Math.round(view.scrollDOM.scrollTop),
+      left: Math.round(view.scrollDOM.scrollLeft),
+      viewportFromLine: fromLine,
+      viewportToLine: toLine,
+    });
   }
 
   // ---- language picker -------------------------------------------------
@@ -83,10 +138,27 @@
   }
 
   // Compartments let us hot-swap configuration without rebuilding the
-  // whole state. We use them for theme, language, and font-size CSS.
-  const themeCompartment   = new Compartment();
-  const langCompartment    = new Compartment();
-  const editableCompartment = new Compartment();
+  // whole state. Per design doc §2.3 / §13: anything user-toggleable
+  // must be wrapped in a compartment at create time, otherwise
+  // reconfigure no-ops silently.
+  const themeCompartment       = new Compartment();
+  const langCompartment        = new Compartment();
+  const editableCompartment    = new Compartment();
+  const wrapCompartment        = new Compartment();
+  const gutterCompartment      = new Compartment();
+  const fontCompartment        = new Compartment();
+  const indentCompartment      = new Compartment();
+  const tabSizeCompartment     = new Compartment();
+
+  // Build an EditorView.theme(...) that just controls font-size.
+  // Compartmented so a setFontSize swap doesn't fight with theme swap.
+  function fontTheme(px) {
+    return EditorView.theme({
+      "&": { fontSize: px + "px" },
+      ".cm-scroller": { fontSize: px + "px", lineHeight: "1.45" },
+      ".cm-gutters":  { fontSize: px + "px" },
+    });
+  }
 
   // Custom Save keymap — intercepts ⌘S before the browser swallows it,
   // forwards to Swift, returns true to mark the binding handled (so the
@@ -94,23 +166,37 @@
   const saveBinding = {
     key: "Mod-s",
     preventDefault: true,
-    run: () => { emitChangeImmediate(); post({ type: "saveRequested" }); return true; },
+    run: () => { emitChangeImmediate(); post("save", {}); return true; },
   };
 
-  // updateListener fires on every transaction with `update.docChanged`
-  // set when the document mutated. Cheaper than diffing each transaction
-  // ourselves.
-  const docChangeListener = EditorView.updateListener.of((update) => {
-    if (update.docChanged) scheduleChangeEmit();
+  // updateListener — every transaction. Emit change / cursor / scroll
+  // signals; bump docVersion on docChanged.
+  const updateListener = EditorView.updateListener.of((update) => {
+    if (update.docChanged) {
+      docVersion += 1;
+      if (!suppressEmit) scheduleChangeEmit();
+    }
+    if (update.selectionSet || update.docChanged) {
+      scheduleCursorEmit();
+    }
+    if (update.viewportChanged || update.geometryChanged) {
+      scheduleScrollEmit();
+    }
   });
+
+  // DOM scroll listener — CM's updateListener fires viewportChanged on
+  // big scrolls but the user can scroll within a viewport without
+  // triggering it. Attach a raw listener once the editor is mounted.
+  function attachScrollListener() {
+    view.scrollDOM.addEventListener("scroll", scheduleScrollEmit, { passive: true });
+    view.contentDOM.addEventListener("blur", () => post("editorBlurred", {}));
+  }
 
   // Base extensions reused across instances. The order matters for
   // keymap priority (search/save before defaults so ⌘S / ⌘F win).
-  function baseExtensions(initialLang, initialThemeDark) {
+  function baseExtensions(initialLang, initialThemeDark, initialFontPx) {
     return [
-      lineNumbers(),
-      highlightActiveLineGutter(),
-      foldGutter(),
+      gutterCompartment.of([lineNumbers(), highlightActiveLineGutter(), foldGutter()]),
       drawSelection(),
       dropCursor(),
       history(),
@@ -127,91 +213,259 @@
         indentWithTab,
         ...defaultKeymap,
       ]),
-      docChangeListener,
-      EditorView.lineWrapping,
+      updateListener,
+      wrapCompartment.of(EditorView.lineWrapping),
       themeCompartment.of(initialThemeDark ? [oneDark] : []),
       langCompartment.of(languageFor(initialLang)),
       editableCompartment.of(EditorView.editable.of(true)),
+      fontCompartment.of(fontTheme(initialFontPx || 13)),
+      // indentUnit + tabSize are Facet-of-string / Facet-of-int. Default
+      // to 2-space indent; Swift will override via setIndentation.
+      indentCompartment.of(indentUnit.of("  ")),
+      tabSizeCompartment.of(EditorStateTabSize.of(2)),
     ];
   }
 
   // ---- editor instance -------------------------------------------------
   const initialState = EditorState.create({
     doc: "",
-    extensions: baseExtensions("markdown", false),
+    extensions: baseExtensions("markdown", false, 13),
   });
   const view = new EditorView({
     state: initialState,
     parent: document.getElementById("editor"),
   });
+  attachScrollListener();
 
-  // ---- Swift → JS API (called via webView.evaluateJavaScript) --------
-  // Each helper is kept small and idempotent. Returning a value lets
-  // Swift await the result (e.g. getText for sanity checks in tests).
+  // ---- Dispatch entry point (Swift → JS) -------------------------------
+  // Single switch keeps the surface narrow + auditable. Swift side
+  // serializes one CMOutboundMessage per evaluateJavaScript call into
+  //     window.cmDispatch({...JSON...})
+  // Returning a value (truthy) lets evaluateJavaScript's reply callback
+  // confirm receipt.
+  window.cmDispatch = function (msg) {
+    if (!msg || typeof msg !== "object") return false;
+    if (msg.v !== PROTOCOL_VERSION) {
+      post("errorOccurred", {
+        phase: "dispatch",
+        message: "protocol version mismatch: got v=" + msg.v + " want v=" + PROTOCOL_VERSION,
+      });
+      return false;
+    }
+    try {
+      switch (msg.type) {
+        case "setText":            applySetText(msg); break;
+        case "appendText":         applyAppendText(msg); break;
+        case "replaceRange":       applyReplaceRange(msg); break;
+        case "setLanguage":        applySetLanguage(msg); break;
+        case "setTheme":           applySetTheme(msg); break;
+        case "setFontSize":        applySetFontSize(msg); break;
+        case "setWordWrap":        applySetWordWrap(msg); break;
+        case "setReadOnly":        applySetReadOnly(msg); break;
+        case "setLineNumbers":     applySetLineNumbers(msg); break;
+        case "setIndentation":     applySetIndentation(msg); break;
+        case "gotoLine":           applyGotoLine(msg); break;
+        case "setSelection":       applySetSelection(msg); break;
+        case "openSearch":         openSearchPanel(view); break;
+        case "closeSearch":        closeSearchPanel(view); break;
+        case "findNext":           findNext(view); break;
+        case "findPrev":           findPrevious(view); break;
+        case "replaceNext":        replaceNext(view); break;
+        case "replaceAll":         replaceAll(view); break;
+        case "foldAll":            foldAll(view); break;
+        case "unfoldAll":          unfoldAll(view); break;
+        case "undo":               undo(view); break;
+        case "redo":               redo(view); break;
+        case "focus":              view.focus(); break;
+        case "flushChanges":       emitChangeImmediate(); break;
+        case "getDocument":
+          post("requestReply", { replyId: msg.replyId, value: {
+            text: view.state.doc.toString(), version: docVersion,
+          }});
+          break;
+        case "getSelection":
+          post("requestReply", { replyId: msg.replyId, value: view.state.selection.toJSON() });
+          break;
+        case "getScrollPosition":
+          post("requestReply", { replyId: msg.replyId, value: {
+            top: view.scrollDOM.scrollTop, left: view.scrollDOM.scrollLeft,
+          }});
+          break;
+        default:
+          post("errorOccurred", {
+            phase: "dispatch",
+            message: "unknown message type: " + msg.type,
+          });
+          return false;
+      }
+      return true;
+    } catch (err) {
+      post("errorOccurred", {
+        phase: "dispatch:" + msg.type,
+        message: String((err && err.message) || err),
+        stack: err && err.stack ? String(err.stack) : undefined,
+      });
+      return false;
+    }
+  };
 
-  // Replace the whole document. Skips when text already matches so a
-  // round-trip from JS → Swift → JS doesn't move the caret.
-  window.setText = function (text) {
+  // ---- message handlers ------------------------------------------------
+
+  // Replace the whole document. resetHistory=true uses view.setState so
+  // ⌘Z can't reach back into the prior buffer (right semantics when
+  // opening a different file in the same view). resetHistory=false uses
+  // dispatch + Transaction.addToHistory.of(false), which is what
+  // file-watcher external rewrites want — visible to the user but not
+  // a user-undoable step.
+  function applySetText(msg) {
+    const text = msg.text || "";
     const current = view.state.doc.toString();
     if (current === text) return;
-    lastEmittedText = text; // prevent immediate echo back
-    view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: text || "" },
-      // Keep caret position when possible; clamp to new length.
-      selection: { anchor: Math.min(view.state.selection.main.anchor, (text || "").length) },
-    });
-  };
-
-  window.getText = function () { return view.state.doc.toString(); };
-
-  window.undo = function () { return undo(view); };
-  window.redo = function () { return redo(view); };
-
-  // Open the built-in search panel (⌘F). Exposed so Swift can route
-  // the menu Find item here when CM6 is first responder.
-  window.openSearch = function () { openSearchPanel(view); return true; };
-
-  // Set font size in pixels. Implemented as a tiny stylesheet swap
-  // inside the host page rather than a CM Compartment because CM's
-  // theme system requires a full theme object for per-key overrides —
-  // overkill for "make text bigger".
-  let fontStyleEl = null;
-  window.setFontSize = function (px) {
-    const n = Math.max(6, Math.min(72, Number(px) || 13));
-    if (!fontStyleEl) {
-      fontStyleEl = document.createElement("style");
-      document.head.appendChild(fontStyleEl);
+    lastEmittedText = text; // prevent echo back
+    suppressEmit = true;
+    try {
+      if (msg.resetHistory) {
+        view.setState(EditorState.create({
+          doc: text,
+          selection: msg.preserveSelection
+            ? { anchor: Math.min(view.state.selection.main.anchor, text.length) }
+            : { anchor: 0 },
+          extensions: baseExtensions(
+            currentLanguage, currentThemeDark, currentFontPx
+          ),
+        }));
+        attachScrollListener();
+      } else {
+        const spec = {
+          changes: { from: 0, to: view.state.doc.length, insert: text },
+          annotations: Transaction.addToHistory.of(false),
+        };
+        if (msg.preserveSelection) {
+          spec.selection = { anchor: Math.min(view.state.selection.main.anchor, text.length) };
+        }
+        view.dispatch(spec);
+      }
+    } finally {
+      suppressEmit = false;
     }
-    fontStyleEl.textContent =
-      ".cm-editor, .cm-scroller { font-size: " + n + "px; line-height: 1.45; }" +
-      ".cm-gutters { font-size: " + n + "px; }";
-  };
+  }
 
-  window.setTheme = function (name) {
-    const dark = (name === "dark");
-    document.body.className = dark ? "dark" : "light";
-    view.dispatch({ effects: themeCompartment.reconfigure(dark ? [oneDark] : []) });
-  };
+  function applyAppendText(msg) {
+    const text = msg.text || "";
+    if (!text) return;
+    view.dispatch({
+      changes: { from: view.state.doc.length, insert: text },
+      annotations: Transaction.addToHistory.of(false),
+    });
+  }
 
-  window.setLanguage = function (lang) {
-    view.dispatch({ effects: langCompartment.reconfigure(languageFor(lang)) });
-  };
+  function applyReplaceRange(msg) {
+    // Drop stale targeted edits — Swift's version must match what we
+    // have. If we've advanced past their reference doc, the (from,to)
+    // is no longer meaningful.
+    if (typeof msg.version === "number" && msg.version < docVersion) return;
+    view.dispatch({
+      changes: { from: msg.from, to: msg.to, insert: msg.insert || "" },
+    });
+  }
 
-  window.setEditable = function (yes) {
-    view.dispatch({ effects: editableCompartment.reconfigure(
-      EditorView.editable.of(!!yes)
-    )});
-  };
+  // Mirror compartment state Swift-side so setText(resetHistory) can
+  // re-seed the new state with the same compartment values.
+  let currentLanguage   = "markdown";
+  let currentThemeDark  = false;
+  let currentFontPx     = 13;
 
-  // Force the next change to flush synchronously. Used before save so
-  // the model has the final text even if the user mashed ⌘S inside the
-  // 200 ms debounce window.
-  window.flushChanges = function () { emitChangeImmediate(); };
+  function applySetLanguage(msg) {
+    currentLanguage = msg.lang || "markdown";
+    view.dispatch({ effects: langCompartment.reconfigure(languageFor(currentLanguage)) });
+  }
 
-  // Tell Swift we're alive and ready for setText / setTheme / setFontSize.
-  // Swift caches the "ready" state because evaluateJavaScript before
-  // load completion would no-op silently.
-  post({ type: "ready" });
+  function applySetTheme(msg) {
+    currentThemeDark = (msg.name === "dark");
+    document.body.className = currentThemeDark ? "dark" : "light";
+    view.dispatch({ effects: themeCompartment.reconfigure(currentThemeDark ? [oneDark] : []) });
+  }
+
+  function applySetFontSize(msg) {
+    const n = Math.max(6, Math.min(72, Number(msg.px) || 13));
+    currentFontPx = n;
+    view.dispatch({ effects: fontCompartment.reconfigure(fontTheme(n)) });
+  }
+
+  function applySetWordWrap(msg) {
+    view.dispatch({
+      effects: wrapCompartment.reconfigure(msg.enabled ? EditorView.lineWrapping : []),
+    });
+  }
+
+  function applySetReadOnly(msg) {
+    view.dispatch({
+      effects: editableCompartment.reconfigure(EditorView.editable.of(!msg.enabled)),
+    });
+  }
+
+  function applySetLineNumbers(msg) {
+    view.dispatch({
+      effects: gutterCompartment.reconfigure(
+        msg.enabled ? [lineNumbers(), highlightActiveLineGutter(), foldGutter()] : [foldGutter()]
+      ),
+    });
+  }
+
+  function applySetIndentation(msg) {
+    const size = Math.max(1, Math.min(16, Number(msg.size) || 2));
+    const unit = msg.useTabs ? "\t" : " ".repeat(size);
+    view.dispatch({
+      effects: [
+        indentCompartment.reconfigure(indentUnit.of(unit)),
+        tabSizeCompartment.reconfigure(EditorStateTabSize.of(size)),
+      ],
+    });
+  }
+
+  function applyGotoLine(msg) {
+    const lineNum = Math.max(1, Math.min(view.state.doc.lines, Number(msg.line) || 1));
+    const line = view.state.doc.line(lineNum);
+    const col = Math.max(0, Math.min(line.length, Number(msg.column) || 0));
+    const pos = line.from + col;
+    const sel = msg.select
+      ? EditorSelection.range(line.from, line.to)
+      : EditorSelection.cursor(pos);
+    view.dispatch({
+      selection: sel,
+      effects: EditorView.scrollIntoView(pos, { y: "center" }),
+    });
+    view.focus();
+  }
+
+  function applySetSelection(msg) {
+    const len = view.state.doc.length;
+    const anchor = Math.max(0, Math.min(len, Number(msg.anchor) || 0));
+    const head = Math.max(0, Math.min(len, Number(msg.head) || 0));
+    const spec = { selection: EditorSelection.range(anchor, head) };
+    if (msg.scroll) spec.effects = EditorView.scrollIntoView(head, { y: "center" });
+    view.dispatch(spec);
+  }
+
+  // ---- legacy untyped helpers (kept for one cycle) ---------------------
+  // Existing Swift call sites use window.setText / setTheme / etc. These
+  // shims preserve that surface so callers can migrate to cmDispatch at
+  // their own pace. Remove once every Swift caller routes via
+  // CodeMirrorEditorView's new bridge.
+  window.setText      = function (t) { applySetText({ text: t, resetHistory: false, preserveSelection: true }); };
+  window.getText      = function () { return view.state.doc.toString(); };
+  window.undo         = function () { return undo(view); };
+  window.redo         = function () { return redo(view); };
+  window.openSearch   = function () { openSearchPanel(view); return true; };
+  window.setFontSize  = function (px) { applySetFontSize({ px: px }); };
+  window.setTheme     = function (n)  { applySetTheme({ name: n }); };
+  window.setLanguage  = function (l)  { applySetLanguage({ lang: l }); };
+  window.setEditable  = function (y)  { applySetReadOnly({ enabled: !y }); };
+  window.flushChanges = function ()   { emitChangeImmediate(); };
+
+  // Tell Swift we're alive and ready. Swift caches the "ready" state
+  // because evaluateJavaScript before load completion silently no-ops.
+  post("ready", { version: PROTOCOL_VERSION });
 })();
 </script>
 </body>
