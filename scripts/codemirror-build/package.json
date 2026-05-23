@@ -1,0 +1,23 @@
+{
+  "name": "mdv-cm6-bundle",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Build-only workspace that bundles CodeMirror 6 into Sources/ViewerUI/Resources/codemirror/codemirror.{js,css}. Not part of the runtime app — esbuild + the @codemirror/* packages are install-once tools, not Swift dependencies.",
+  "scripts": {
+    "build": "esbuild entry.js --bundle --format=iife --global-name=CM --minify --target=safari17 --outfile=../../Sources/ViewerUI/Resources/codemirror/codemirror.js --loader:.css=text",
+    "build-dev": "esbuild entry.js --bundle --format=iife --global-name=CM --target=safari17 --outfile=../../Sources/ViewerUI/Resources/codemirror/codemirror.js --loader:.css=text"
+  },
+  "dependencies": {
+    "@codemirror/commands": "6.6.0",
+    "@codemirror/lang-javascript": "6.2.2",
+    "@codemirror/lang-json": "6.0.1",
+    "@codemirror/lang-markdown": "6.2.5",
+    "@codemirror/lang-python": "6.1.6",
+    "@codemirror/language": "6.10.2",
+    "@codemirror/search": "6.5.6",
+    "@codemirror/state": "6.4.1",
+    "@codemirror/theme-one-dark": "6.1.2",
+    "@codemirror/view": "6.28.1",
+    "esbuild": "0.21.5"
+  }
+}

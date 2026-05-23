@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Editor</title>
+<!-- Strict CSP: no external loads, no eval beyond what CM6 itself
+     uses (it doesn't). All script + style is inline / bundled. -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src data:;">
+<link rel="stylesheet" href="codemirror.css">
+<script src="codemirror.js"></script>
+</head>
+<body class="light">
+<div id="editor"></div>
+<script>
+(function () {
+  // CodeMirror surface — populated by codemirror.js (esbuild
+  // --global-name=CM). Pull just the symbols we use to keep this
+  // bootstrap readable.
+  const {
+    EditorState, EditorView, Compartment,
+    keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter,
+    drawSelection, dropCursor,
+    defaultKeymap, history, historyKeymap, undo, redo, indentWithTab,
+    searchKeymap, highlightSelectionMatches, openSearchPanel,
+    syntaxHighlighting, defaultHighlightStyle, bracketMatching,
+    foldKeymap, foldGutter, indentOnInput,
+    markdown, javascript, python, json, oneDark,
+  } = window.CM;
+
+  // ---- bridge helpers --------------------------------------------------
+  // postMessage to Swift via the registered WKScriptMessageHandler named
+  // "mdvEditor". Swift side: CodeMirrorEditorView.Coordinator handles
+  // {type: 'change' | 'saveRequested' | 'ready'} payloads.
+  function post(payload) {
+    try {
+      window.webkit.messageHandlers.mdvEditor.postMessage(payload);
+    } catch (e) {
+      // No bridge registered (e.g. opened in plain browser for dev) —
+      // swallow silently. This file is fine to open directly for JS
+      // iteration.
+      // eslint-disable-next-line no-console
+      console.log("mdvEditor bridge unavailable:", payload);
+    }
+  }
+
+  // Debounced change emitter. CM6 transactions can fire many times per
+  // keystroke (composing edits, selection changes). 200 ms keeps Swift
+  // off the hot path while staying responsive enough for dirty-dot UX.
+  let changeTimer = null;
+  let lastEmittedText = null;
+  function scheduleChangeEmit() {
+    if (changeTimer) clearTimeout(changeTimer);
+    changeTimer = setTimeout(emitChange, 200);
+  }
+  function emitChange() {
+    changeTimer = null;
+    const text = view.state.doc.toString();
+    if (text === lastEmittedText) return;
+    lastEmittedText = text;
+    post({ type: "change", text });
+  }
+  function emitChangeImmediate() {
+    if (changeTimer) { clearTimeout(changeTimer); changeTimer = null; }
+    emitChange();
+  }
+
+  // ---- language picker -------------------------------------------------
+  // Map a short string from Swift to a CM language extension. Anything
+  // unknown falls through to "no language" (plain text + basic editing).
+  function languageFor(lang) {
+    switch ((lang || "").toLowerCase()) {
+      case "markdown": case "md":     return markdown();
+      case "javascript": case "js":   return javascript();
+      case "typescript": case "ts":   return javascript({ typescript: true });
+      case "jsx":                     return javascript({ jsx: true });
+      case "tsx":                     return javascript({ jsx: true, typescript: true });
+      case "python": case "py":       return python();
+      case "json":                    return json();
+      default:                        return [];
+    }
+  }
+
+  // Compartments let us hot-swap configuration without rebuilding the
+  // whole state. We use them for theme, language, and font-size CSS.
+  const themeCompartment   = new Compartment();
+  const langCompartment    = new Compartment();
+  const editableCompartment = new Compartment();
+
+  // Custom Save keymap — intercepts ⌘S before the browser swallows it,
+  // forwards to Swift, returns true to mark the binding handled (so the
+  // browser's "save page" dialog never appears).
+  const saveBinding = {
+    key: "Mod-s",
+    preventDefault: true,
+    run: () => { emitChangeImmediate(); post({ type: "saveRequested" }); return true; },
+  };
+
+  // updateListener fires on every transaction with `update.docChanged`
+  // set when the document mutated. Cheaper than diffing each transaction
+  // ourselves.
+  const docChangeListener = EditorView.updateListener.of((update) => {
+    if (update.docChanged) scheduleChangeEmit();
+  });
+
+  // Base extensions reused across instances. The order matters for
+  // keymap priority (search/save before defaults so ⌘S / ⌘F win).
+  function baseExtensions(initialLang, initialThemeDark) {
+    return [
+      lineNumbers(),
+      highlightActiveLineGutter(),
+      foldGutter(),
+      drawSelection(),
+      dropCursor(),
+      history(),
+      indentOnInput(),
+      bracketMatching(),
+      highlightActiveLine(),
+      highlightSelectionMatches(),
+      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+      keymap.of([
+        saveBinding,
+        ...searchKeymap,   // ⌘F open search, ⌘G next, ⇧⌘G prev
+        ...historyKeymap,  // ⌘Z / ⇧⌘Z
+        ...foldKeymap,
+        indentWithTab,
+        ...defaultKeymap,
+      ]),
+      docChangeListener,
+      EditorView.lineWrapping,
+      themeCompartment.of(initialThemeDark ? [oneDark] : []),
+      langCompartment.of(languageFor(initialLang)),
+      editableCompartment.of(EditorView.editable.of(true)),
+    ];
+  }
+
+  // ---- editor instance -------------------------------------------------
+  const initialState = EditorState.create({
+    doc: "",
+    extensions: baseExtensions("markdown", false),
+  });
+  const view = new EditorView({
+    state: initialState,
+    parent: document.getElementById("editor"),
+  });
+
+  // ---- Swift → JS API (called via webView.evaluateJavaScript) --------
+  // Each helper is kept small and idempotent. Returning a value lets
+  // Swift await the result (e.g. getText for sanity checks in tests).
+
+  // Replace the whole document. Skips when text already matches so a
+  // round-trip from JS → Swift → JS doesn't move the caret.
+  window.setText = function (text) {
+    const current = view.state.doc.toString();
+    if (current === text) return;
+    lastEmittedText = text; // prevent immediate echo back
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: text || "" },
+      // Keep caret position when possible; clamp to new length.
+      selection: { anchor: Math.min(view.state.selection.main.anchor, (text || "").length) },
+    });
+  };
+
+  window.getText = function () { return view.state.doc.toString(); };
+
+  window.undo = function () { return undo(view); };
+  window.redo = function () { return redo(view); };
+
+  // Open the built-in search panel (⌘F). Exposed so Swift can route
+  // the menu Find item here when CM6 is first responder.
+  window.openSearch = function () { openSearchPanel(view); return true; };
+
+  // Set font size in pixels. Implemented as a tiny stylesheet swap
+  // inside the host page rather than a CM Compartment because CM's
+  // theme system requires a full theme object for per-key overrides —
+  // overkill for "make text bigger".
+  let fontStyleEl = null;
+  window.setFontSize = function (px) {
+    const n = Math.max(6, Math.min(72, Number(px) || 13));
+    if (!fontStyleEl) {
+      fontStyleEl = document.createElement("style");
+      document.head.appendChild(fontStyleEl);
+    }
+    fontStyleEl.textContent =
+      ".cm-editor, .cm-scroller { font-size: " + n + "px; line-height: 1.45; }" +
+      ".cm-gutters { font-size: " + n + "px; }";
+  };
+
+  window.setTheme = function (name) {
+    const dark = (name === "dark");
+    document.body.className = dark ? "dark" : "light";
+    view.dispatch({ effects: themeCompartment.reconfigure(dark ? [oneDark] : []) });
+  };
+
+  window.setLanguage = function (lang) {
+    view.dispatch({ effects: langCompartment.reconfigure(languageFor(lang)) });
+  };
+
+  window.setEditable = function (yes) {
+    view.dispatch({ effects: editableCompartment.reconfigure(
+      EditorView.editable.of(!!yes)
+    )});
+  };
+
+  // Force the next change to flush synchronously. Used before save so
+  // the model has the final text even if the user mashed ⌘S inside the
+  // 200 ms debounce window.
+  window.flushChanges = function () { emitChangeImmediate(); };
+
+  // Tell Swift we're alive and ready for setText / setTheme / setFontSize.
+  // Swift caches the "ready" state because evaluateJavaScript before
+  // load completion would no-op silently.
+  post({ type: "ready" });
+})();
+</script>
+</body>
+</html>

@@ -24,16 +24,18 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 ROOT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 APP_DIR="$ROOT_DIR/dist/TextView.app"
 
-BUDGET_MB="${BUDGET_MB:-${1:-35}}"
-# Per-exec check defaults to 15 MB now that the TreeSitter lazy-
-# grammar migration has landed. The eager keeplist (JSON, Swift,
+BUDGET_MB="${BUDGET_MB:-${1:-37}}"
+# Per-exec check defaults to 16 MB. The eager keeplist (JSON, Swift,
 # Markdown) + everything-else-Swift-and-resources fits in ~11 MB
-# release; 15 MB gives 4 MB headroom for incidental growth. If the
-# executable creeps above 15 MB it almost certainly means a grammar
-# regressed to static linkage (look for an unintended `import
-# TreeSitter<X>` in ViewerCore). Override via env to opt out:
+# release. The CodeMirror 6 editor (Swift wrapper + JS bridge code)
+# bumped the executable by ~200 KB; CM6 itself is a JS resource
+# (~570 KB) under Resources/codemirror/, not in the executable. The
+# 1 MB headroom over the post-CM6 baseline catches a TreeSitter
+# grammar silently regressing to static linkage (look for an
+# unintended `import TreeSitter<X>` in ViewerCore). Override via env
+# to opt out:
 #   EXEC_BUDGET_MB=0 bash scripts/check-bundle-size.sh
-EXEC_BUDGET_MB="${EXEC_BUDGET_MB:-15}"
+EXEC_BUDGET_MB="${EXEC_BUDGET_MB:-16}"
 BUDGET_BYTES=$(( BUDGET_MB * 1024 * 1024 ))
 EXEC_BUDGET_BYTES=$(( EXEC_BUDGET_MB * 1024 * 1024 ))
 

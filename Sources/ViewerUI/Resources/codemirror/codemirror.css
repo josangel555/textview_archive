@@ -1,0 +1,31 @@
+/* CodeMirror host stylesheet. CM6 supplies its own base styles via
+ * EditorView.baseTheme; this file only covers the page chrome (the
+ * outer <html>/<body> that hosts the editor div) so the WKWebView
+ * background matches the app theme during first paint and the editor
+ * fills the viewport.
+ *
+ * Theme switching for the editor itself happens inside CodeMirror via
+ * a Compartment that swaps oneDark / no-theme — see codemirror.html.
+ */
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: transparent;
+  color: inherit;
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+}
+#editor {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+/* Fill viewport vertically. Without explicit height the .cm-editor
+ * collapses to its intrinsic line-count height; ResizeObserver-driven
+ * layout below the fold then jitters on every keystroke.
+ */
+.cm-editor { height: 100%; }
+.cm-scroller { overflow: auto; }
+/* Dark host background (paired with oneDark theme inside CM). */
+body.dark { background: #282c34; color: #abb2bf; }
+body.light { background: #ffffff; color: #1f2328; }
