@@ -14,6 +14,7 @@ struct GitStatusTab: View {
     /// @Published before we guarded GitPanelModel.apply). Cached in
     /// @State, recomputed only when statusEntries actually change.
     @State private var grouped: Groups = Groups()
+    @Environment(\.sidebarSectionBodyHeight) private var bodyHeight
 
     var body: some View {
         if model.statusEntries.isEmpty {
@@ -35,7 +36,7 @@ struct GitStatusTab: View {
                     }
                 }
             }
-            .frame(height: SidebarConstants.sectionBodyHeight)
+            .frame(height: bodyHeight)
             .onAppear { grouped = Self.group(model.statusEntries) }
             .onChange(of: model.statusEntries) { _, new in
                 grouped = Self.group(new)

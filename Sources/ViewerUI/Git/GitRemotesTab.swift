@@ -7,6 +7,7 @@ import ViewerCore
 /// to https for the URL open).
 struct GitRemotesTab: View {
     @ObservedObject var model: GitPanelModel
+    @Environment(\.sidebarSectionBodyHeight) private var bodyHeight
 
     var body: some View {
         if model.remoteEntries.isEmpty {
@@ -21,7 +22,7 @@ struct GitRemotesTab: View {
                     ForEach(model.remoteEntries, id: \.name) { row($0) }
                 }
             }
-            .frame(height: SidebarConstants.sectionBodyHeight)
+            .frame(height: bodyHeight)
         }
     }
 

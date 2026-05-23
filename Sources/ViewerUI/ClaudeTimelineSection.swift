@@ -14,6 +14,7 @@ struct ClaudeTimelineSection: View {
     @State private var events: [ClaudeEvent] = []
     @State private var refreshTask: Task<Void, Never>?
     @State private var transcriptCount: Int = 0
+    @Environment(\.sidebarSectionBodyHeight) private var bodyHeight
 
     var body: some View {
         Group {
@@ -73,7 +74,7 @@ struct ClaudeTimelineSection: View {
                 }
             }
         }
-        .frame(height: SidebarConstants.sectionBodyHeight)
+        .frame(height: bodyHeight)
     }
 
     private func row(_ event: ClaudeEvent) -> some View {

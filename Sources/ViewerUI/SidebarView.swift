@@ -10,6 +10,42 @@ struct SidebarView: View {
     /// tab switch (DocumentModel sub-views recreate this view).
     @AppStorage("MarkdownViewer.sidebar.filesExpanded") private var filesExpanded: Bool = true
 
+    // MARK: - Resizable section divider
+    //
+    // One `@AppStorage`-backed height per resizable section. The
+    // `ResizableSectionDivider` between two sections mutates the
+    // binding for the section above it; the section reads its
+    // override via `\.sidebarSectionBodyHeight` (Environment) and
+    // sizes its body accordingly. FILES at the bottom keeps the
+    // flex-fill behaviour (`maxHeight: .infinity`) and intentionally
+    // does NOT get an entry here.
+    //
+    // Keys are sourced from `SidebarSection` (ViewerCore) so the
+    // string constants live in one place — easier to audit, easier
+    // to migrate on rename.
+    @AppStorage(SidebarPanel.bookmarks.appStorageKey)
+    private var bookmarksHeight: Double = Double(SidebarPanel.bookmarks.defaultHeight)
+    @AppStorage(SidebarPanel.searchAnywhere.appStorageKey)
+    private var searchHeight: Double = Double(SidebarPanel.searchAnywhere.defaultHeight)
+    @AppStorage(SidebarPanel.gitPanel.appStorageKey)
+    private var gitHeight: Double = Double(SidebarPanel.gitPanel.defaultHeight)
+    @AppStorage(SidebarPanel.claudeTimeline.appStorageKey)
+    private var claudeHeight: Double = Double(SidebarPanel.claudeTimeline.defaultHeight)
+    @AppStorage(SidebarPanel.lspOutline.appStorageKey)
+    private var lspHeight: Double = Double(SidebarPanel.lspOutline.defaultHeight)
+    @AppStorage(SidebarPanel.pluginSections.appStorageKey)
+    private var pluginHeight: Double = Double(SidebarPanel.pluginSections.defaultHeight)
+
+    /// `CGFloat` binding adapter — `@AppStorage` only natively stores
+    /// `Double`; the divider expects `Binding<CGFloat>` so we project
+    /// + clamp on the way through.
+    private func heightBinding(_ source: Binding<Double>) -> Binding<CGFloat> {
+        Binding(
+            get: { SidebarPanelHeights.clamp(CGFloat(source.wrappedValue)) },
+            set: { source.wrappedValue = Double(SidebarPanelHeights.clamp($0)) }
+        )
+    }
+
     var body: some View {
         sidebarBody
             .walkthroughAnchor(.sidebar)
@@ -19,28 +55,49 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             header
             Divider()
+            // MARK: - Resizable section divider
+            //
+            // Each panel ABOVE the FILES tree gets:
+            //   - an environment-injected body height (read by the
+            //     section's inner ScrollView via
+            //     `\.sidebarSectionBodyHeight`)
+            //   - a `ResizableSectionDivider` after it, whose drag
+            //     binds to the same @AppStorage-backed height.
+            // FILES keeps `Spacer()`/`maxHeight: .infinity` flex.
             if !model.bookmarks.isEmpty {
                 BookmarksSection(model: model)
-                Divider()
+                    .environment(\.sidebarSectionBodyHeight,
+                                 SidebarPanelHeights.clamp(CGFloat(bookmarksHeight)))
+                ResizableSectionDivider(heightAbove: heightBinding($bookmarksHeight))
             }
             if sidebar.rootURL != nil {
                 SearchAnywhereSection(model: model)
-                Divider()
+                    .environment(\.sidebarSectionBodyHeight,
+                                 SidebarPanelHeights.clamp(CGFloat(searchHeight)))
+                ResizableSectionDivider(heightAbove: heightBinding($searchHeight))
                 GitPanelSection(model: model)
-                Divider()
+                    .environment(\.sidebarSectionBodyHeight,
+                                 SidebarPanelHeights.clamp(CGFloat(gitHeight)))
+                ResizableSectionDivider(heightAbove: heightBinding($gitHeight))
                 ClaudeTimelineSection(model: model)
-                Divider()
+                    .environment(\.sidebarSectionBodyHeight,
+                                 SidebarPanelHeights.clamp(CGFloat(claudeHeight)))
+                ResizableSectionDivider(heightAbove: heightBinding($claudeHeight))
                 // LSP outline of the currently-open file. The section
                 // self-gates: returns EmptyView when the file's
                 // language has no registered LSP server (e.g. `.md`,
                 // `.txt`), so the divider sits flush against the
                 // previous section in that case.
                 LSPOutlineWrapper(model: model)
+                    .environment(\.sidebarSectionBodyHeight,
+                                 SidebarPanelHeights.clamp(CGFloat(lspHeight)))
             }
             // Plugin-contributed sidebar sections. Self-managing
             // collapse state; appears above FILES regardless of
             // whether a folder is open (a plugin may not need one).
             PluginSidebarSections(model: model)
+                .environment(\.sidebarSectionBodyHeight,
+                             SidebarPanelHeights.clamp(CGFloat(pluginHeight)))
             if let root = sidebar.rootURL {
                 // FILES accordion header — gives the tree the same
                 // collapsible chevron + heading treatment as the
