@@ -198,7 +198,7 @@ public actor LSPPool {
         if opened.contains(fileURL) { return }
         try await client.didOpen(
             url: fileURL,
-            languageId: entry.language.languageID,
+            languageId: entry.language.languageID(for: fileURL),
             text: text)
         opened.insert(fileURL)
         // Mutate entry in place.

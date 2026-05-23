@@ -11,6 +11,11 @@ import ViewerCore
 ///     of bookmarks appear. All on by default.
 ///   - The "Recent / Name / Created" menu picks the sort order.
 struct BookmarksSection: View {
+    /// Stable placeholder strings — pinned via `BookmarksSectionEmptyTests`
+    /// so a casual edit doesn't blank the empty-state envelope.
+    static let emptyPlaceholder = "No bookmarks yet."
+    static let emptyFilterPlaceholder = "No bookmarks match this filter."
+
     @ObservedObject var model: DocumentModel
     @State private var isExpanded = true
     /// Height the body should occupy when expanded. Driven by
@@ -40,8 +45,8 @@ struct BookmarksSection: View {
                         }
                         if filtered.isEmpty {
                             Text(model.bookmarks.isEmpty
-                                 ? "No bookmarks yet."
-                                 : "No bookmarks match this filter.")
+                                 ? Self.emptyPlaceholder
+                                 : Self.emptyFilterPlaceholder)
                                 .font(.system(size: model.uiSize(11)))
                                 .foregroundStyle(.tertiary)
                                 .padding(.horizontal, 10)
