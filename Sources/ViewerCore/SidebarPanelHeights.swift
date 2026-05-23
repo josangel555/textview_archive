@@ -31,6 +31,8 @@ public enum SidebarPanel: String, CaseIterable, Sendable {
     case gitPanel
     case claudeTimeline
     case lspOutline
+    /// References / workspace-symbol panel (LSP Phase B).
+    case lspNavigation
     case pluginSections
 
     /// `@AppStorage` key. Keep stable; renaming invalidates persisted

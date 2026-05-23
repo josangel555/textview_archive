@@ -77,12 +77,19 @@ public enum LSPHoverAttachment {
     /// Bind hover (cursor-paused 300 ms dwell) and Cmd-click → definition
     /// to `textView`. The caller is expected to have already called
     /// `LSPPool.ensureOpened(fileURL:text:)` for the document.
+    ///
+    /// `pool` is optional but required for the right-click "Go to …"
+    /// submenu — references, declaration, typeDefinition, implementation
+    /// route through the pool so per-server telemetry is recorded.
+    /// Skip if you only need hover + Cmd-click.
     public static func bind(
         textView: NSTextView,
         fileURL: URL,
         client: LSPClient,
         positionEncoding: LSPPositionEncoding,
-        openLocation: @escaping @MainActor (URL, Int, Int) -> Void
+        openLocation: @escaping @MainActor (URL, Int, Int) -> Void,
+        pool: LSPPool? = nil,
+        navigationStore: LSPNavigationStore? = nil
     ) -> LSPHoverToken {
 
         let area = NSTrackingArea(
@@ -126,6 +133,32 @@ public enum LSPHoverAttachment {
             }
             return event
         }
+
+        // Right-click monitor — pops a "Go to …" / "Find References"
+        // submenu at the cursor position. Falls back gracefully when
+        // `pool` isn't supplied (legacy callers).
+        let rightClickMonitor: Any? = (pool != nil) ? NSEvent.addLocalMonitorForEvents(
+            matching: [.rightMouseDown]
+        ) { event in
+            guard let window = textView.window,
+                  event.window === window else { return event }
+            let pointInTV = textView.convert(event.locationInWindow, from: nil)
+            guard textView.bounds.contains(pointInTV) else { return event }
+            guard let (line, col) = lspPosition(
+                for: pointInTV, in: textView, encoding: positionEncoding
+            ) else { return event }
+            // Build + post a menu synchronously. The selectors hop to
+            // an async Task internally for the LSP request.
+            let menu = makeNavigationMenu(
+                fileURL: fileURL, line: line, character: col,
+                pool: pool!, store: navigationStore,
+                openLocation: openLocation)
+            NSMenu.popUpContextMenu(menu, with: event, for: textView)
+            // Returning nil suppresses the default text-view context
+            // menu — we've shown our own, which is the better UX for
+            // an LSP-aware view.
+            return nil
+        } : nil
 
         let mouseMoveMonitor = NSEvent.addLocalMonitorForEvents(
             matching: [.mouseMoved]
@@ -176,12 +209,86 @@ public enum LSPHoverAttachment {
             notifTokens.append(tok)
         }
 
-        let chain = ChainedMonitor(monitors: [cmdClickMonitor as Any, mouseMoveMonitor as Any])
+        var monitors: [Any] = [cmdClickMonitor as Any, mouseMoveMonitor as Any]
+        if let rc = rightClickMonitor { monitors.append(rc) }
+        let chain = ChainedMonitor(monitors: monitors)
         return LSPHoverToken(
             chain: chain,
             trackingArea: area,
             textView: textView,
             notifTokens: notifTokens)
+    }
+
+    // MARK: - Navigation context menu
+
+    /// Build the right-click "Go to …" submenu. Each item issues an
+    /// LSP request through the pool, then either jumps to the single
+    /// result or hands the multi-result list to the navigation panel.
+    private static func makeNavigationMenu(
+        fileURL: URL, line: Int, character: Int,
+        pool: LSPPool, store: LSPNavigationStore?,
+        openLocation: @escaping @MainActor (URL, Int, Int) -> Void
+    ) -> NSMenu {
+        let menu = NSMenu(title: "LSP")
+        menu.addItem(
+            navItem(title: "Go to Definition",
+                    action: { token in
+                try await pool.definition(
+                    fileURL: fileURL, line: line, character: character,
+                    token: token)
+            }, store: store, originLabel: "Definition", openLocation: openLocation))
+        menu.addItem(
+            navItem(title: "Go to Declaration",
+                    action: { token in
+                try await pool.declaration(
+                    fileURL: fileURL, line: line, character: character,
+                    token: token)
+            }, store: store, originLabel: "Declaration", openLocation: openLocation))
+        menu.addItem(
+            navItem(title: "Go to Type Definition",
+                    action: { token in
+                try await pool.typeDefinition(
+                    fileURL: fileURL, line: line, character: character,
+                    token: token)
+            }, store: store, originLabel: "Type Definition", openLocation: openLocation))
+        menu.addItem(
+            navItem(title: "Go to Implementation",
+                    action: { token in
+                try await pool.implementation(
+                    fileURL: fileURL, line: line, character: character,
+                    token: token)
+            }, store: store, originLabel: "Implementation", openLocation: openLocation))
+        menu.addItem(.separator())
+        menu.addItem(
+            navItem(title: "Find References",
+                    action: { token in
+                try await pool.references(
+                    fileURL: fileURL, line: line, character: character,
+                    includeDeclaration: true, token: token)
+            }, store: store, originLabel: "References at \(fileURL.lastPathComponent):\(line + 1)",
+                    openLocation: openLocation,
+                    forceListView: true))
+        return menu
+    }
+
+    /// One menu item that runs `action` and either jumps (single
+    /// result) or populates the navigation panel (multi-result).
+    private static func navItem(
+        title: String,
+        action: @escaping @Sendable (LSPCancellationToken) async throws -> [LSPLocation],
+        store: LSPNavigationStore?,
+        originLabel: String,
+        openLocation: @escaping @MainActor (URL, Int, Int) -> Void,
+        forceListView: Bool = false
+    ) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        let handler = NavMenuHandler(
+            run: action, store: store, originLabel: originLabel,
+            openLocation: openLocation, forceListView: forceListView)
+        item.target = handler
+        item.action = #selector(NavMenuHandler.invoke(_:))
+        item.representedObject = handler  // retain
+        return item
     }
 
     // MARK: - Internals
@@ -318,6 +425,59 @@ private final class ChainedMonitor {
     deinit {
         for m in monitors {
             NSEvent.removeMonitor(m)
+        }
+    }
+}
+
+/// Bridge object for the right-click navigation menu items. NSMenuItem
+/// needs an `@objc` target/action; we can't use a closure directly, so
+/// we wrap one. The item retains the handler via `representedObject`.
+@MainActor
+private final class NavMenuHandler: NSObject {
+    typealias Action = @Sendable (LSPCancellationToken) async throws -> [LSPLocation]
+    let run: Action
+    weak var store: LSPNavigationStore?
+    let originLabel: String
+    let openLocation: @MainActor (URL, Int, Int) -> Void
+    let forceListView: Bool
+
+    init(
+        run: @escaping Action,
+        store: LSPNavigationStore?,
+        originLabel: String,
+        openLocation: @escaping @MainActor (URL, Int, Int) -> Void,
+        forceListView: Bool
+    ) {
+        self.run = run
+        self.store = store
+        self.originLabel = originLabel
+        self.openLocation = openLocation
+        self.forceListView = forceListView
+    }
+
+    @MainActor @objc func invoke(_ sender: Any?) {
+        let run = self.run
+        let originLabel = self.originLabel
+        let openLocation = self.openLocation
+        let forceListView = self.forceListView
+        let store = self.store
+        Task { @MainActor in
+            let token = LSPCancellationToken()
+            do {
+                let locs = try await run(token)
+                if locs.isEmpty { return }
+                if forceListView || locs.count > 1 {
+                    store?.setReferences(originLabel: originLabel, locations: locs)
+                } else if let first = locs.first,
+                          let url = URL(string: first.uri) {
+                    openLocation(
+                        url,
+                        first.range.start.line + 1,
+                        first.range.start.character)
+                }
+            } catch {
+                // Silent — surfaces via the diagnostics panel.
+            }
         }
     }
 }

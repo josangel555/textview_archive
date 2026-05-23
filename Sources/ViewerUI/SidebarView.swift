@@ -33,6 +33,8 @@ struct SidebarView: View {
     private var claudeHeight: Double = Double(SidebarPanel.claudeTimeline.defaultHeight)
     @AppStorage(SidebarPanel.lspOutline.appStorageKey)
     private var lspHeight: Double = Double(SidebarPanel.lspOutline.defaultHeight)
+    @AppStorage(SidebarPanel.lspNavigation.appStorageKey)
+    private var lspNavHeight: Double = Double(SidebarPanel.lspNavigation.defaultHeight)
     @AppStorage(SidebarPanel.pluginSections.appStorageKey)
     private var pluginHeight: Double = Double(SidebarPanel.pluginSections.defaultHeight)
 
@@ -95,6 +97,28 @@ struct SidebarView: View {
                 LSPOutlineWrapper(model: model)
                     .environment(\.sidebarSectionBodyHeight,
                                  SidebarPanelHeights.clamp(CGFloat(lspHeight)))
+                ResizableSectionDivider(heightAbove: heightBinding($lspHeight))
+                // MARK: - Symbol mode (LSP workspace symbols)
+                //
+                // Hosts both `textDocument/references` results (from a
+                // right-click on the source view) and `workspace/symbol`
+                // search (from the inline query field). One panel, two
+                // routes — `LSPNavigationStore` switches modes.
+                LSPNavigationPanel(
+                    store: model.lspNavigation,
+                    onJump: { loc in
+                        guard let url = URL(string: loc.uri) else { return }
+                        if !model.selectTab(forURL: url) {
+                            model.openPath(url)
+                        }
+                        model.scrollSource(toLine: loc.range.start.line + 1)
+                    },
+                    onSearchWorkspaceSymbols: { query in
+                        runWorkspaceSymbolQuery(query)
+                    }
+                )
+                .environment(\.sidebarSectionBodyHeight,
+                             SidebarPanelHeights.clamp(CGFloat(lspNavHeight)))
             }
             // Plugin-contributed sidebar sections. Self-managing
             // collapse state; appears above FILES regardless of
@@ -268,6 +292,30 @@ struct SidebarView: View {
         let parent = root.deletingLastPathComponent()
         if parent.path != root.path {
             model.openFolder(parent)
+        }
+    }
+
+    /// Fire a `workspace/symbol` query against the live LSP clients.
+    /// Sequenced via a small in-flight token so a fast typer doesn't
+    /// pile up requests (each new query cancels the previous).
+    private func runWorkspaceSymbolQuery(_ query: String) {
+        // Cancel prior query.
+        WorkspaceSymbolDispatch.shared.cancel()
+        let token = LSPCancellationToken()
+        WorkspaceSymbolDispatch.shared.current = token
+        let store = model.lspNavigation
+        store.startLoading(mode: .workspaceSymbols, query: query)
+        let pool = model.lspPool
+        Task { @MainActor in
+            do {
+                let syms = try await pool.workspaceSymbol(query: query, token: token)
+                guard !Task.isCancelled else { return }
+                store.setWorkspaceSymbols(query: query, symbols: syms)
+            } catch is CancellationError {
+                // Newer query — leave the store alone.
+            } catch {
+                store.setError("\(error)")
+            }
         }
     }
 }
@@ -591,4 +639,17 @@ struct LSPOutlineWrapper: View {
         }
         outline.setFile(url, text: file.contents)
     }
+}
+
+/// Singleton holder for the most-recent workspace-symbol query's
+/// cancellation token. SidebarView is a value type so it can't own
+/// mutable state across body re-evals; this @MainActor singleton sits
+/// alongside it and lets each call to `runWorkspaceSymbolQuery` cancel
+/// its predecessor.
+@MainActor
+final class WorkspaceSymbolDispatch {
+    static let shared = WorkspaceSymbolDispatch()
+    var current: LSPCancellationToken?
+    func cancel() { current?.cancel(); current = nil }
+    private init() {}
 }
