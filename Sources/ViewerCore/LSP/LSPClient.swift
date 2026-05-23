@@ -58,6 +58,16 @@ public actor LSPClient {
         self.onCrash = handler
     }
 
+    /// Callback for server-pushed `textDocument/publishDiagnostics`.
+    /// Wired by `LSPPool` to forward into the @MainActor
+    /// `LSPDiagnosticsStore`. Optional; standalone clients drop pushes.
+    private var onDiagnostics: (@Sendable (URL, [LSPDiagnostic]) -> Void)?
+    public func setOnDiagnostics(
+        _ handler: @escaping @Sendable (URL, [LSPDiagnostic]) -> Void
+    ) {
+        self.onDiagnostics = handler
+    }
+
     // MARK: Init / spawn
 
     /// Spawns the subprocess. Throws if the binary is missing or the
@@ -194,9 +204,27 @@ public actor LSPClient {
             cont.resume(returning: resultData)
             return
         }
-        // Server-originated request or notification. PoC: log-and-drop.
-        // sourcekit-lsp does send `window/logMessage` and similar; we
-        // discard them. A real impl would route to a diagnostics sink.
+        // Server-originated request or notification path.
+        // We handle the notifications we care about (publishDiagnostics)
+        // and drop the rest (window/logMessage, telemetry/event, etc.).
+        // Server-originated *requests* (with `id` AND `method`) are
+        // still dropped — `workspace.applyEdit` is deliberately not
+        // advertised. A future polish could reply `methodNotFound` per
+        // LSP_DESIGN.md §8.3, but the current behavior is safe.
+        if let method = obj["method"] as? String, obj["id"] == nil {
+            if method == "textDocument/publishDiagnostics" {
+                if let params = obj["params"] as? [String: Any],
+                   let uriString = params["uri"] as? String,
+                   let url = URL(string: uriString),
+                   let diagsArr = params["diagnostics"] as? [[String: Any]] {
+                    let diagnostics = diagsArr.compactMap(Self.parseDiagnostic)
+                    if let cb = onDiagnostics {
+                        cb(url, diagnostics)
+                    }
+                }
+            }
+            // Other notifications: drop silently.
+        }
     }
 
     private func idAsInt64(_ raw: Any) -> Int64? {
@@ -428,6 +456,98 @@ public actor LSPClient {
         return Self.decodeDefinition(raw)
     }
 
+    /// `textDocument/references` — returns all locations where the
+    /// symbol under the cursor is used. The `includeDeclaration` flag
+    /// controls whether the declaration site itself appears in the
+    /// results (typically true — users want to see the home base too).
+    /// Same polymorphic response shape as `definition`.
+    public func references(
+        url: URL, line: Int, character: Int,
+        includeDeclaration: Bool = true,
+        token: LSPCancellationToken? = nil
+    ) async throws -> [LSPLocation] {
+        guard initialized else { throw LSPError.notInitialized }
+        let params: [String: Any] = [
+            "textDocument": ["uri": url.absoluteString],
+            "position": ["line": line, "character": character],
+            "context": ["includeDeclaration": includeDeclaration],
+        ]
+        let raw = try await request(
+            method: "textDocument/references", params: params,
+            timeout: .seconds(10), token: token)
+        return Self.decodeDefinition(raw)
+    }
+
+    /// `textDocument/declaration` — same shape as definition. Useful in
+    /// languages that distinguish forward declaration from definition
+    /// (C/C++ headers, Swift protocol requirements).
+    public func declaration(
+        url: URL, line: Int, character: Int,
+        token: LSPCancellationToken? = nil
+    ) async throws -> [LSPLocation] {
+        guard initialized else { throw LSPError.notInitialized }
+        let params: [String: Any] = [
+            "textDocument": ["uri": url.absoluteString],
+            "position": ["line": line, "character": character],
+        ]
+        let raw = try await request(
+            method: "textDocument/declaration", params: params,
+            timeout: .seconds(5), token: token)
+        return Self.decodeDefinition(raw)
+    }
+
+    /// `textDocument/typeDefinition` — jumps to the type of the symbol
+    /// under the cursor (vs `definition` which jumps to the symbol
+    /// itself). On a variable `let x: Foo`, definition lands on `x`,
+    /// typeDefinition lands on `Foo`.
+    public func typeDefinition(
+        url: URL, line: Int, character: Int,
+        token: LSPCancellationToken? = nil
+    ) async throws -> [LSPLocation] {
+        guard initialized else { throw LSPError.notInitialized }
+        let params: [String: Any] = [
+            "textDocument": ["uri": url.absoluteString],
+            "position": ["line": line, "character": character],
+        ]
+        let raw = try await request(
+            method: "textDocument/typeDefinition", params: params,
+            timeout: .seconds(5), token: token)
+        return Self.decodeDefinition(raw)
+    }
+
+    /// `textDocument/implementation` — for a protocol / interface
+    /// method, returns conforming implementations. Multi-result is
+    /// the norm (one per conformer).
+    public func implementation(
+        url: URL, line: Int, character: Int,
+        token: LSPCancellationToken? = nil
+    ) async throws -> [LSPLocation] {
+        guard initialized else { throw LSPError.notInitialized }
+        let params: [String: Any] = [
+            "textDocument": ["uri": url.absoluteString],
+            "position": ["line": line, "character": character],
+        ]
+        let raw = try await request(
+            method: "textDocument/implementation", params: params,
+            timeout: .seconds(8), token: token)
+        return Self.decodeDefinition(raw)
+    }
+
+    /// `workspace/symbol` — server-side fuzzy symbol search across the
+    /// entire workspace. Empty query returns the server's notion of
+    /// "all symbols" (most servers cap at a few hundred). UI callers
+    /// debounce on the input.
+    public func workspaceSymbol(
+        query: String, token: LSPCancellationToken? = nil
+    ) async throws -> [LSPWorkspaceSymbol] {
+        guard initialized else { throw LSPError.notInitialized }
+        let params: [String: Any] = ["query": query]
+        let raw = try await request(
+            method: "workspace/symbol", params: params,
+            timeout: .seconds(8), token: token)
+        return Self.decodeWorkspaceSymbol(raw)
+    }
+
     /// `textDocument/documentSymbol` — returns a flat list of document
     /// symbols (hierarchy preserved via `children`). Used by the outline
     /// sidebar. Server may return either `SymbolInformation[]` (legacy)
@@ -564,6 +684,63 @@ public actor LSPClient {
         // Discriminate by presence of `location` (SymbolInformation) vs
         // `range` (DocumentSymbol).
         return arr.compactMap { parseDocumentSymbol($0) }
+    }
+
+    /// `workspace/symbol` decode. Accepts either
+    /// `SymbolInformation[]` (legacy) or `WorkspaceSymbol[]` (modern,
+    /// with full Location — URI-only stub form is skipped per v1
+    /// design note). Returns empty on null / non-array.
+    static func decodeWorkspaceSymbol(_ data: Data) -> [LSPWorkspaceSymbol] {
+        guard let any = try? JSONSerialization.jsonObject(
+                with: data, options: [.fragmentsAllowed]) else { return [] }
+        if any is NSNull { return [] }
+        guard let arr = any as? [[String: Any]] else { return [] }
+        return arr.compactMap { parseWorkspaceSymbol($0) }
+    }
+
+    private static func parseWorkspaceSymbol(_ d: [String: Any]) -> LSPWorkspaceSymbol? {
+        guard let name = d["name"] as? String else { return nil }
+        let kind = (d["kind"] as? Int).flatMap(LSPSymbolKind.init(rawValue:)) ?? .other
+        let containerName = d["containerName"] as? String
+        // Full Location shape (both SymbolInformation and modern
+        // WorkspaceSymbol when the server inlines the location).
+        if let loc = d["location"] as? [String: Any],
+           let location = parseLocation(loc) {
+            return LSPWorkspaceSymbol(
+                name: name, kind: kind,
+                containerName: containerName, location: location)
+        }
+        // WorkspaceSymbol with URI-only `location: {uri: ...}` (no
+        // range). v1 skips these — they require workspaceSymbol/resolve
+        // to fetch the range, which we don't implement yet.
+        return nil
+    }
+
+    /// `textDocument/publishDiagnostics` diagnostic-list decode.
+    /// Caller passes the per-diagnostic dict; we return nil on parse
+    /// failure (drop unparseable entries individually rather than
+    /// failing the whole notification).
+    static func parseDiagnostic(_ d: [String: Any]) -> LSPDiagnostic? {
+        guard let rangeDict = d["range"] as? [String: Any],
+              let range = parseRange(rangeDict),
+              let message = d["message"] as? String else { return nil }
+        // Severity defaults to .error per LSP spec when absent.
+        let severity: LSPDiagnostic.Severity = {
+            if let s = d["severity"] as? Int,
+               let parsed = LSPDiagnostic.Severity(rawValue: s) {
+                return parsed
+            }
+            return .error
+        }()
+        let code: String? = {
+            if let s = d["code"] as? String { return s }
+            if let n = d["code"] as? Int    { return String(n) }
+            return nil
+        }()
+        let source = d["source"] as? String
+        return LSPDiagnostic(
+            range: range, severity: severity,
+            code: code, source: source, message: message)
     }
 
     private static func parseDocumentSymbol(_ d: [String: Any]) -> LSPDocumentSymbol? {

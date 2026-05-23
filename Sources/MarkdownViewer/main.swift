@@ -48,6 +48,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         buildMenu()
         registerAsServicesProvider()
 
+        // Wire LSP server-push notifications (publishDiagnostics →
+        // sidebar Problems panel). Idempotent; safe to call multiple
+        // times. Must run before any LSP client spawns so the callback
+        // is in place when the first server reports diagnostics.
+        model.bootstrapLSP()
+
         // CRITICAL: use NSHostingController.view (not a bare NSHostingView
         // set as contentView). The controller's view installs auto-layout
         // constraints that pin it to fill the window's contentView, so when

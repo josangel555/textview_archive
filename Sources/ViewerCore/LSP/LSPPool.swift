@@ -111,6 +111,23 @@ public actor LSPPool {
     private var reaperTask: Task<Void, Never>?
     private var isClosed = false
 
+    /// Per-pool callback for server-pushed publishDiagnostics events.
+    /// Wired by the app once at startup; LSPClient instances spawned
+    /// hereafter inherit it via `setOnDiagnostics`. Optional — running
+    /// the pool without a diagnostics sink is fine (notifications
+    /// drop on the floor).
+    private var onDiagnostics: (@Sendable (URL, [LSPDiagnostic]) -> Void)?
+
+    /// Install the diagnostics callback. Applies to all future-spawned
+    /// clients; doesn't retroactively rewire already-live ones. (In
+    /// practice the app wires this once at startup before any clients
+    /// spawn — sequence isn't a problem.)
+    public func setOnDiagnostics(
+        _ handler: @escaping @Sendable (URL, [LSPDiagnostic]) -> Void
+    ) {
+        self.onDiagnostics = handler
+    }
+
     public init(
         registry: LSPLanguageRegistry = .default,
         config: Config = .default
@@ -273,6 +290,9 @@ public actor LSPPool {
 
         do {
             let client = try LSPClient(config: cfg)
+            if let onDiag = onDiagnostics {
+                await client.setOnDiagnostics(onDiag)
+            }
             try await client.initialize()
             var e = entries[key] ?? Entry(
                 state: .cold, lastUsed: clock.now,
@@ -406,6 +426,120 @@ public actor LSPPool {
             recordCrash(key: key, error: "\(error)")
             throw error
         }
+    }
+
+    public func references(
+        fileURL: URL, line: Int, character: Int,
+        includeDeclaration: Bool = true,
+        token: LSPCancellationToken? = nil
+    ) async throws -> [LSPLocation] {
+        let (client, key) = try await routedClient(for: fileURL)
+        let start = clock.now
+        do {
+            let result = try await client.references(
+                url: fileURL, line: line, character: character,
+                includeDeclaration: includeDeclaration, token: token)
+            recordRequest(key: key, millis: millisElapsed(since: start))
+            return result
+        } catch {
+            recordCrash(key: key, error: "\(error)")
+            throw error
+        }
+    }
+
+    public func declaration(
+        fileURL: URL, line: Int, character: Int,
+        token: LSPCancellationToken? = nil
+    ) async throws -> [LSPLocation] {
+        let (client, key) = try await routedClient(for: fileURL)
+        let start = clock.now
+        do {
+            let result = try await client.declaration(
+                url: fileURL, line: line, character: character, token: token)
+            recordRequest(key: key, millis: millisElapsed(since: start))
+            return result
+        } catch {
+            recordCrash(key: key, error: "\(error)")
+            throw error
+        }
+    }
+
+    public func typeDefinition(
+        fileURL: URL, line: Int, character: Int,
+        token: LSPCancellationToken? = nil
+    ) async throws -> [LSPLocation] {
+        let (client, key) = try await routedClient(for: fileURL)
+        let start = clock.now
+        do {
+            let result = try await client.typeDefinition(
+                url: fileURL, line: line, character: character, token: token)
+            recordRequest(key: key, millis: millisElapsed(since: start))
+            return result
+        } catch {
+            recordCrash(key: key, error: "\(error)")
+            throw error
+        }
+    }
+
+    public func implementation(
+        fileURL: URL, line: Int, character: Int,
+        token: LSPCancellationToken? = nil
+    ) async throws -> [LSPLocation] {
+        let (client, key) = try await routedClient(for: fileURL)
+        let start = clock.now
+        do {
+            let result = try await client.implementation(
+                url: fileURL, line: line, character: character, token: token)
+            recordRequest(key: key, millis: millisElapsed(since: start))
+            return result
+        } catch {
+            recordCrash(key: key, error: "\(error)")
+            throw error
+        }
+    }
+
+    /// `workspace/symbol` across all live clients. Each call fans out
+    /// to every currently-live client, merges + dedupes by
+    /// `(uri, range.start)`, and sorts by name. Empty when no live
+    /// clients (caller should provoke one by opening a file first).
+    public func workspaceSymbol(
+        query: String, token: LSPCancellationToken? = nil
+    ) async throws -> [LSPWorkspaceSymbol] {
+        // Snapshot the live clients so the fan-out doesn't see entries
+        // mutate mid-iteration.
+        var liveKeys: [(Key, LSPClient)] = []
+        for (key, entry) in entries {
+            if case .live(let client, _) = entry.state {
+                liveKeys.append((key, client))
+            }
+        }
+        guard !liveKeys.isEmpty else { return [] }
+        // Sequential — most workspaces have ≤2 servers live; the
+        // complexity of a TaskGroup + Sendable token sharing is not
+        // worth the latency win at this scale.
+        var merged: [LSPWorkspaceSymbol] = []
+        var seen = Set<String>()
+        for (key, client) in liveKeys {
+            let start = clock.now
+            do {
+                let result = try await client.workspaceSymbol(
+                    query: query, token: token)
+                recordRequest(key: key, millis: millisElapsed(since: start))
+                for sym in result {
+                    let dedupeKey = "\(sym.location.uri)#\(sym.location.range.start.line):\(sym.location.range.start.character)"
+                    if seen.insert(dedupeKey).inserted {
+                        merged.append(sym)
+                    }
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                // Per-client failures don't fail the whole fan-out —
+                // partial results are still useful. Record + continue.
+                recordCrash(key: key, error: "\(error)")
+            }
+        }
+        return merged.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     private func routedClient(for fileURL: URL) async throws -> (LSPClient, Key) {

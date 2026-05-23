@@ -139,6 +139,62 @@ public struct LSPDocumentSymbol: Sendable, Hashable {
     }
 }
 
+/// `workspace/symbol` response item. Two on-the-wire shapes per LSP
+/// 3.17:
+///   - Legacy `SymbolInformation`: full `location: {uri, range}`,
+///     optional `containerName`.
+///   - Modern `WorkspaceSymbol`: `location` may be either a full
+///     Location or a URI-only stub (the server promises a follow-up
+///     `workspaceSymbol/resolve`). v1 ignores resolve — we only accept
+///     full-Location shapes; pyright + sourcekit-lsp both deliver these.
+///
+/// Decode normalizes to a single value type with optional fields.
+public struct LSPWorkspaceSymbol: Sendable, Hashable {
+    public let name: String
+    public let kind: LSPSymbolKind
+    public let containerName: String?
+    public let location: LSPLocation
+
+    public init(
+        name: String, kind: LSPSymbolKind,
+        containerName: String?, location: LSPLocation
+    ) {
+        self.name = name
+        self.kind = kind
+        self.containerName = containerName
+        self.location = location
+    }
+}
+
+/// `textDocument/publishDiagnostics` payload. Decoded eagerly in the
+/// LSPClient reader and forwarded to the @MainActor LSPDiagnosticsStore
+/// via the per-(client) callback registered by LSPPool.
+public struct LSPDiagnostic: Sendable, Hashable {
+    public enum Severity: Int, Sendable, Codable {
+        case error = 1
+        case warning = 2
+        case information = 3
+        case hint = 4
+    }
+
+    public let range: LSPRange
+    public let severity: Severity
+    public let code: String?
+    public let source: String?
+    public let message: String
+
+    public init(
+        range: LSPRange, severity: Severity,
+        code: String?, source: String?, message: String
+    ) {
+        self.range = range
+        self.severity = severity
+        self.code = code
+        self.source = source
+        self.message = message
+    }
+}
+
 /// Per-request cancellation handle. Caller constructs one before
 /// issuing a request; `client.hover(..., token: token)` binds the
 /// token to the JSON-RPC id internally. Calling `cancel()` from

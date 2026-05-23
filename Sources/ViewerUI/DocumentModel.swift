@@ -137,6 +137,31 @@ public final class DocumentModel: ObservableObject {
     /// section + the diagnostics panel can talk to the same pool.
     public let lspPool: LSPPool = LSPPool()
 
+    /// Per-(file URL) LSP diagnostics, populated by server-pushed
+    /// `textDocument/publishDiagnostics` notifications. Wired up to
+    /// the pool's onDiagnostics callback in `bootstrapLSP()`.
+    public let lspDiagnostics: LSPDiagnosticsStore = LSPDiagnosticsStore()
+
+    /// Single shared store for the unified References / workspace-symbol
+    /// panel. Read by the sidebar's `LSPNavigationPanel`, written by
+    /// the right-click context menu (refs) and the panel's search field
+    /// (workspace symbols).
+    public let lspNavigation: LSPNavigationStore = LSPNavigationStore()
+
+    /// Hook the pool's diagnostics + (future) other server-push
+    /// callbacks. Called once at startup. Idempotent — setOnDiagnostics
+    /// just replaces the handler.
+    public func bootstrapLSP() {
+        let store = self.lspDiagnostics
+        Task {
+            await self.lspPool.setOnDiagnostics { url, diags in
+                Task { @MainActor in
+                    store.replace(url: url, with: diags)
+                }
+            }
+        }
+    }
+
     /// Set by the app delegate at startup to route folder context-menu
     /// "Open in New Session" requests through the sessions coordinator.
     /// `DocumentModel` doesn't import `SessionsAppCoordinator` directly

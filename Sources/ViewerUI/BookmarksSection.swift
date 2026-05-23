@@ -34,13 +34,6 @@ struct BookmarksSection: View {
         var id: String { rawValue }
     }
 
-    /// Stable placeholder string for the empty state — read by the
-    /// pure-logic test `BookmarksSectionEmptyTests`. Keep as a static
-    /// so callers (and tests) can reach it without instantiating a
-    /// View on the host.
-    static let emptyPlaceholder: String = "No bookmarks yet."
-    static let emptyFilterPlaceholder: String = "No bookmarks match this filter."
-
     var body: some View {
         VStack(spacing: 0) {
             headerRow
