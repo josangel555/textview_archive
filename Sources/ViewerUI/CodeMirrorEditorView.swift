@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import WebKit
 import ViewerKit
+import ViewerCore
 import os
 
 /// Production text editor: CodeMirror 6 hosted in a `WKWebView`.
@@ -13,37 +14,72 @@ import os
 /// - Initial text injected on first load via `setText(...)`.
 /// - Edits debounced inside JS (200 ms) then posted back to Swift via
 ///   `WKScriptMessageHandler`, which calls `onTextChange`.
-/// - ⌘S inside the webview posts `saveRequested`, which calls
-///   `onSaveRequested` (DocumentModel routes that to `saveActiveEditor`).
+/// - ⌘S inside the webview posts `save` (was `saveRequested`), which
+///   calls `onSaveRequested` (DocumentModel routes that to `saveActiveEditor`).
 /// - Menu Undo/Redo route to `webView.evaluateJavaScript("undo()/redo()")`
 ///   when the active tab is in `.editor` mode — see `MarkdownViewer/main.swift`.
 ///
-/// **Why WKWebView, not NSTextView/TextKit 2:** see
-/// `docs/TEXT_EDITOR_OPTIONS_2026-05-23.md`. MIT-licensed, small
-/// (<1 MB minified), handles 10 MB markdown comfortably, free find +
-/// undo + history + theming.
+/// Bridge protocol v1 (`docs/CM6_INTEGRATION_DESIGN_2026-05-23.md` §13):
+/// every wire payload carries `{v: 1, type: ..., ...}`. All outbound
+/// calls go through `window.cmDispatch({...})`. Inbound goes through
+/// `CMBridgeCodec.decodeInbound`.
 public struct CodeMirrorEditorView: NSViewRepresentable {
     public let text: String
     public let fontSize: CGFloat
     public let language: HighlightLanguage
     public let isDarkTheme: Bool
+    public let wordWrap: Bool
+    public let readOnly: Bool
+    public let lineNumbers: Bool
+    public let indentation: CMIndentation
+    /// Bumping this value any time you want the editor to imperatively
+    /// jump to a particular (1-based) line. Pass `nil` (default) to do
+    /// nothing. Compare-by-equality means stable tab redraws don't
+    /// re-trigger the jump.
+    public let gotoLineRequest: CMGotoLineRequest?
+    /// "External rewrite" mode for the next `text` push — true means
+    /// "don't make this undoable" (file-watcher rewrites). Defaults
+    /// to false (user-typed setText keeps history). Per-bump semantics:
+    /// the flag only takes effect when `text` itself changes.
+    public let externalRewrite: Bool
     public let onTextChange: (String) -> Void
     public let onSaveRequested: () -> Void
+    public let onCursorChange: ((CMCursorPosition) -> Void)?
+    public let onScrollChange: ((CMScrollPosition) -> Void)?
+    public let onFindResultChange: ((CMFindResult) -> Void)?
 
     public init(
         text: String,
         fontSize: CGFloat = 13,
         language: HighlightLanguage = .markdown,
         isDarkTheme: Bool = false,
+        wordWrap: Bool = true,
+        readOnly: Bool = false,
+        lineNumbers: Bool = true,
+        indentation: CMIndentation = .spaces(2),
+        gotoLineRequest: CMGotoLineRequest? = nil,
+        externalRewrite: Bool = false,
         onTextChange: @escaping (String) -> Void,
-        onSaveRequested: @escaping () -> Void = {}
+        onSaveRequested: @escaping () -> Void = {},
+        onCursorChange: ((CMCursorPosition) -> Void)? = nil,
+        onScrollChange: ((CMScrollPosition) -> Void)? = nil,
+        onFindResultChange: ((CMFindResult) -> Void)? = nil
     ) {
         self.text = text
         self.fontSize = fontSize
         self.language = language
         self.isDarkTheme = isDarkTheme
+        self.wordWrap = wordWrap
+        self.readOnly = readOnly
+        self.lineNumbers = lineNumbers
+        self.indentation = indentation
+        self.gotoLineRequest = gotoLineRequest
+        self.externalRewrite = externalRewrite
         self.onTextChange = onTextChange
         self.onSaveRequested = onSaveRequested
+        self.onCursorChange = onCursorChange
+        self.onScrollChange = onScrollChange
+        self.onFindResultChange = onFindResultChange
     }
 
     public func makeCoordinator() -> Coordinator { Coordinator() }
@@ -98,17 +134,16 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
     // MARK: - Coordinator
 
     /// Bridges `WKScriptMessageHandler` callbacks back to the SwiftUI
-    /// `onTextChange` / `onSaveRequested` closures, and forwards
-    /// Swift-side state (text, theme, font, language) into the JS
-    /// editor via `evaluateJavaScript`.
+    /// closures, and forwards Swift-side state into the JS editor via
+    /// `window.cmDispatch({...})` (protocol v1).
     @MainActor
     public final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         weak var webView: WKWebView?
-        /// Captured from `updateNSView`. Held as closures so SwiftUI
-        /// can swap them on each body re-eval without losing the latest
-        /// reference. Same pattern as `EditorTextController`.
         var onTextChange: ((String) -> Void)?
         var onSaveRequested: (() -> Void)?
+        var onCursorChange: ((CMCursorPosition) -> Void)?
+        var onScrollChange: ((CMScrollPosition) -> Void)?
+        var onFindResultChange: ((CMFindResult) -> Void)?
 
         /// Pending state we attempt to flush every `updateNSView`.
         /// Before the bundled HTML finishes loading, all
@@ -119,6 +154,12 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         private var pendingFontSize: CGFloat?
         private var pendingLanguage: HighlightLanguage?
         private var pendingDark: Bool?
+        private var pendingWrap: Bool?
+        private var pendingReadOnly: Bool?
+        private var pendingLineNumbers: Bool?
+        private var pendingIndentation: CMIndentation?
+        private var pendingGotoLine: CMGotoLineRequest?
+        private var pendingExternalRewrite: Bool = false
         private var isReady = false
         /// Mirrors what we last successfully pushed to JS. Lets us
         /// skip redundant `setText` round-trips when the model just
@@ -127,6 +168,11 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         private var lastSentFontSize: CGFloat?
         private var lastSentLanguage: HighlightLanguage?
         private var lastSentDark: Bool?
+        private var lastSentWrap: Bool?
+        private var lastSentReadOnly: Bool?
+        private var lastSentLineNumbers: Bool?
+        private var lastSentIndentation: CMIndentation?
+        private var lastAppliedGotoLine: CMGotoLineRequest?
 
         private static let log = Logger(
             subsystem: "com.markdownviewer.MarkdownViewer",
@@ -139,10 +185,19 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         func bind(view: CodeMirrorEditorView) {
             self.onTextChange = view.onTextChange
             self.onSaveRequested = view.onSaveRequested
+            self.onCursorChange = view.onCursorChange
+            self.onScrollChange = view.onScrollChange
+            self.onFindResultChange = view.onFindResultChange
             self.pendingText = view.text
             self.pendingFontSize = view.fontSize
             self.pendingLanguage = view.language
             self.pendingDark = view.isDarkTheme
+            self.pendingWrap = view.wordWrap
+            self.pendingReadOnly = view.readOnly
+            self.pendingLineNumbers = view.lineNumbers
+            self.pendingIndentation = view.indentation
+            self.pendingGotoLine = view.gotoLineRequest
+            self.pendingExternalRewrite = view.externalRewrite
         }
 
         func loadHostHTML() {
@@ -163,52 +218,81 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         }
 
         /// Push every dirty piece of state into JS. Called on every
-        /// `updateNSView` and once after `ready`. Each setter is a
-        /// no-op on the JS side when the value hasn't actually changed,
-        /// so over-calling is cheap.
+        /// `updateNSView` and once after `ready`. Each setter checks
+        /// against `lastSent*` so over-calling is cheap.
         func applyPendingState() {
             guard isReady, let webView = webView else { return }
             if let dark = pendingDark, dark != lastSentDark {
                 lastSentDark = dark
-                evalJS("setTheme(\(jsString(dark ? "dark" : "light")))", webView: webView)
+                dispatch(.setTheme(name: dark ? "dark" : "light"), webView: webView)
             }
             if let lang = pendingLanguage, lang != lastSentLanguage {
                 lastSentLanguage = lang
-                evalJS("setLanguage(\(jsString(jsLanguageName(for: lang))))", webView: webView)
+                dispatch(.setLanguage(jsLanguageName(for: lang)), webView: webView)
             }
             if let size = pendingFontSize, size != lastSentFontSize {
                 lastSentFontSize = size
-                evalJS("setFontSize(\(Int(size.rounded())))", webView: webView)
+                dispatch(.setFontSize(Int(size.rounded())), webView: webView)
+            }
+            if let wrap = pendingWrap, wrap != lastSentWrap {
+                lastSentWrap = wrap
+                dispatch(.setWordWrap(wrap), webView: webView)
+            }
+            if let ro = pendingReadOnly, ro != lastSentReadOnly {
+                lastSentReadOnly = ro
+                dispatch(.setReadOnly(ro), webView: webView)
+            }
+            if let ln = pendingLineNumbers, ln != lastSentLineNumbers {
+                lastSentLineNumbers = ln
+                dispatch(.setLineNumbers(ln), webView: webView)
+            }
+            if let indent = pendingIndentation, indent != lastSentIndentation {
+                lastSentIndentation = indent
+                dispatch(
+                    .setIndentation(useTabs: indent.useTabs, size: indent.size),
+                    webView: webView
+                )
             }
             if let text = pendingText, text != lastSentText {
                 lastSentText = text
-                evalJS("setText(\(jsString(text)))", webView: webView)
+                // External rewrites = file-watcher reload: don't pollute
+                // the user's undo stack. User-typed setText (rare) gets
+                // dispatch with history skipped too but Swift never
+                // pushes back what it just received (echo-suppressed
+                // above when text == lastEmitted).
+                dispatch(
+                    .setText(text: text,
+                             resetHistory: false,
+                             preserveSelection: !pendingExternalRewrite),
+                    webView: webView
+                )
             }
+            if let req = pendingGotoLine, req != lastAppliedGotoLine {
+                lastAppliedGotoLine = req
+                dispatch(
+                    .gotoLine(line: req.line, column: req.column, select: req.select),
+                    webView: webView
+                )
+            }
+        }
+
+        /// Public entry for one-shot Swift→JS calls (e.g. menu actions).
+        /// Routes through the v1 envelope.
+        public func send(_ message: CMOutboundMessage) {
+            guard let webView = webView else { return }
+            dispatch(message, webView: webView)
         }
 
         // MARK: - JS bridge
 
-        /// JSON-encode a string for safe inline-injection into JS source.
-        /// We can't use bare string-interp because text may contain
-        /// quotes, newlines, backslashes, or `</script>`. JSONSerialization
-        /// emits a JS-legal string literal (with leading/trailing quotes).
-        private func jsString(_ s: String) -> String {
-            // JSONSerialization needs a top-level array/object, so wrap
-            // and unwrap. Cheap enough for the sizes we deal with
-            // (single-doc text, max ~10 MB).
-            guard let data = try? JSONSerialization.data(
-                withJSONObject: [s], options: [.fragmentsAllowed]
-            ),
-            let raw = String(data: data, encoding: .utf8),
-            raw.count >= 2 else {
-                return "\"\""
-            }
-            // Strip the wrapping `[` and `]`.
-            return String(raw.dropFirst().dropLast())
-        }
-
-        private func evalJS(_ source: String, webView: WKWebView) {
-            webView.evaluateJavaScript(source) { _, err in
+        /// Encode one CMOutboundMessage as `window.cmDispatch({...JSON})`
+        /// and ship via `evaluateJavaScript`. One IPC per message — the
+        /// design doc allows batching here (§15.1) but the PoC stays
+        /// per-message for clarity.
+        private func dispatch(_ message: CMOutboundMessage, webView: WKWebView) {
+            let json = CMBridgeCodec.encodeOutboundJSON(message)
+            let script = "window.cmDispatch(\(json));"
+            webView.evaluateJavaScript(script) { _, err in
                 if let err = err {
                     Self.log.error("CM JS eval failed: \(err.localizedDescription)")
                 }
@@ -221,18 +305,39 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             _ userContentController: WKUserContentController,
             didReceive message: WKScriptMessage
         ) {
-            let action = CodeMirrorBridge.decode(message.body)
-            switch action {
+            guard let inbound = CMBridgeCodec.decodeInbound(message.body) else {
+                Self.log.debug("CM bridge ignored unparseable body")
+                return
+            }
+            switch inbound {
             case .ready:
                 isReady = true
                 applyPendingState()
-            case .change(let text):
+            case .change(let text, _, _):
                 lastSentText = text  // echo-suppress: JS already has this
                 onTextChange?(text)
-            case .saveRequested:
+            case .save:
                 onSaveRequested?()
-            case .none:
+            case .cursorPositionChanged(let line, let column, let head, let ranges):
+                onCursorChange?(CMCursorPosition(
+                    line: line, column: column, head: head, rangeCount: ranges
+                ))
+            case .scrollChanged(let top, let left, let from, let to):
+                onScrollChange?(CMScrollPosition(
+                    top: top, left: left,
+                    viewportFromLine: from, viewportToLine: to
+                ))
+            case .findResultChanged(let matches, let current):
+                onFindResultChange?(CMFindResult(matches: matches, current: current))
+            case .selectionChanged, .findOpened, .findClosed,
+                 .linkClicked, .editorBlurred, .requestReply:
+                // Phase 1: accepted by the protocol but no Swift-side
+                // consumer wired yet. Phase 2/3 hookup.
                 break
+            case .errorOccurred(let phase, let message, _):
+                Self.log.error("CM JS error in \(phase, privacy: .public): \(message, privacy: .public)")
+            case .unknown(let type):
+                Self.log.debug("CM bridge: unknown message type \(type, privacy: .public)")
             }
         }
 
@@ -256,12 +361,87 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
     }
 }
 
-// MARK: - Pure-logic bridge
+// MARK: - Public value types for the v1 bridge surface
 
-/// Decodes the JSON payloads CM6's bootstrap posts to the
-/// `mdvEditor` `WKScriptMessageHandler`. Extracted as a value-typed
-/// helper so the routing logic is testable without spinning up a
-/// `WKWebView`.
+/// Per-tab cursor position emitted by `cursorPositionChanged`. Lines
+/// are 1-based (matches CM6's `doc.line(n)`), columns are 0-based
+/// (matches CM6's `head - line.from`). `rangeCount` is the number of
+/// concurrent cursors / selections (always ≥ 1).
+public struct CMCursorPosition: Equatable, Sendable {
+    public let line: Int
+    public let column: Int
+    public let head: Int
+    public let rangeCount: Int
+    public init(line: Int, column: Int, head: Int, rangeCount: Int) {
+        self.line = line; self.column = column
+        self.head = head; self.rangeCount = rangeCount
+    }
+}
+
+/// Per-tab scroll position emitted by `scrollChanged`. Pixel values
+/// are dependent on font + zoom; the viewport line range is what we
+/// actually persist (resilient to wrap toggle).
+public struct CMScrollPosition: Equatable, Sendable {
+    public let top: Int
+    public let left: Int
+    public let viewportFromLine: Int
+    public let viewportToLine: Int
+    public init(top: Int, left: Int, viewportFromLine: Int, viewportToLine: Int) {
+        self.top = top; self.left = left
+        self.viewportFromLine = viewportFromLine
+        self.viewportToLine = viewportToLine
+    }
+}
+
+/// Find-bar readout. `matches` total, `current` is 1-based index of
+/// the highlighted match (0 when nothing matched).
+public struct CMFindResult: Equatable, Sendable {
+    public let matches: Int
+    public let current: Int
+    public init(matches: Int, current: Int) {
+        self.matches = matches; self.current = current
+    }
+}
+
+/// Indent style — tabs or N spaces. Both halves live in one value
+/// because CM6's `indentUnit` + `tabSize` always need to agree.
+public enum CMIndentation: Equatable, Sendable {
+    case tabs(width: Int)
+    case spaces(Int)
+    public var useTabs: Bool {
+        if case .tabs = self { return true } else { return false }
+    }
+    public var size: Int {
+        switch self {
+        case .tabs(let w): return max(1, min(16, w))
+        case .spaces(let n): return max(1, min(16, n))
+        }
+    }
+}
+
+/// Imperative "jump to line" request — bumped (typically by replacing
+/// the value with a fresh `id`) when the host wants the editor to scroll
+/// + place the caret. `id` is just an opaque tag the host uses to make
+/// each request distinct from the previous one; equality comparison on
+/// the whole struct decides whether to fire.
+public struct CMGotoLineRequest: Equatable, Sendable {
+    public let id: UUID
+    public let line: Int
+    public let column: Int?
+    public let select: Bool
+    public init(id: UUID = UUID(), line: Int, column: Int? = nil, select: Bool = false) {
+        self.id = id; self.line = line; self.column = column; self.select = select
+    }
+}
+
+// MARK: - Legacy bridge (kept for backwards-compatibility)
+
+/// **Deprecated** — the original untyped bridge enum, retained so the
+/// existing `CodeMirrorBundleTests` pass during Phase 1 rollout. New
+/// code should use `CMBridgeCodec.decodeInbound` from ViewerCore.
+///
+/// The decode here adapts the v1 envelope back into the three legacy
+/// action cases the rest of the app understands today.
 public enum CodeMirrorBridge {
     public enum Action: Equatable {
         case ready
@@ -269,26 +449,24 @@ public enum CodeMirrorBridge {
         case saveRequested
     }
 
-    /// Decode the `message.body` that arrives from JS. Accepts a
-    /// `[String: Any]` dictionary (the shape WKWebKit hands us when
-    /// JS calls `postMessage({...})`). Returns nil for anything not
-    /// recognized — bridge stays forward-compatible if we add message
-    /// types later.
     public static func decode(_ body: Any) -> Action? {
-        guard let dict = body as? [String: Any],
-              let type = dict["type"] as? String else { return nil }
-        switch type {
-        case "ready":
-            return .ready
-        case "change":
-            // Missing text is treated as empty document — JS always
-            // emits a string but we don't trust the wire format.
-            let text = dict["text"] as? String ?? ""
-            return .change(text: text)
-        case "saveRequested":
-            return .saveRequested
-        default:
-            return nil
+        // Legacy callers — accept both the old flat `{type: "..."}`
+        // envelope (no `v` field) and the v1 envelope.
+        if let dict = body as? [String: Any],
+           dict["v"] == nil,
+           let type = dict["type"] as? String {
+            switch type {
+            case "ready": return .ready
+            case "change": return .change(text: dict["text"] as? String ?? "")
+            case "saveRequested": return .saveRequested
+            default: return nil
+            }
+        }
+        switch CMBridgeCodec.decodeInbound(body) {
+        case .ready: return .ready
+        case .change(let text, _, _): return .change(text: text)
+        case .save: return .saveRequested
+        default: return nil
         }
     }
 }

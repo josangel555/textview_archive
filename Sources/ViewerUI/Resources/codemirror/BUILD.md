@@ -11,6 +11,13 @@ markdown, javascript (+ typescript / jsx / tsx), python, json. Theme:
 one-dark (toggled via Compartment at runtime). See
 `scripts/codemirror-build/entry.js` for the exact re-exports.
 
+Phase 1 additions (`docs/CM6_INTEGRATION_DESIGN_2026-05-23.md` §13):
+the bundle now also re-exports `EditorSelection`, `Transaction`,
+`closeSearchPanel`, `findNext`, `findPrevious`, `replaceNext`,
+`replaceAll`, `foldAll`, `unfoldAll`, `indentUnit`,
+`EditorStateTabSize`. These back the v1 dispatch handlers in
+`codemirror.html`.
+
 ## How to re-build
 
 ```
@@ -22,12 +29,20 @@ npm run build
 That writes:
 
 ```
-Sources/ViewerUI/Resources/codemirror/codemirror.js   (~570 KB minified)
+Sources/ViewerUI/Resources/codemirror/codemirror.js   (~571 KB minified)
 ```
 
 CSS is hand-maintained at `codemirror.css` in this directory; CM6
 itself injects its base theme via `EditorView.baseTheme` so nothing
 upstream needs to be bundled into CSS.
+
+After re-bundling, verify:
+
+```
+swift test --filter ViewerUITests.CodeMirrorBundleTests
+swift test --filter ViewerCoreTests.CMBridgeV1Tests
+swift test --filter ViewerCoreTests.CMOutboundEncodingTests
+```
 
 ## Pinning
 
@@ -40,24 +55,34 @@ the esbuild version used. To bump:
 4. Commit `package.json` AND the regenerated `codemirror.js`.
 5. Verify with `swift test --filter CodeMirrorBundleTests`.
 
-## Contract with the host
+## Contract with the host (protocol v1)
 
-`codemirror.html` wires the bundle into a single `EditorView` and
-exposes these helpers on `window` (called from Swift via
-`evaluateJavaScript`):
+`codemirror.html` wires the bundle into a single `EditorView`. Two
+channels:
 
-- `setText(text)` — replace document
-- `getText()` — read document
-- `undo()` / `redo()`
-- `setFontSize(px)`
-- `setTheme("light" | "dark")`
-- `setLanguage("markdown" | "js" | "ts" | "jsx" | "tsx" | "python" | "json" | …)`
-- `setEditable(bool)`
-- `openSearch()` — bring up CM's built-in search panel (⌘F)
-- `flushChanges()` — force-emit any debounced change before a save
+### Inbound to JS — single entry point
 
-And it posts these messages to the `mdvEditor` WKScriptMessageHandler:
+Swift calls `window.cmDispatch({v: 1, type: "...", ...payload})`
+exactly once per message. The host switches on `type`. Unknown types
+post `errorOccurred`. Mismatched `v` posts `errorOccurred`.
 
-- `{type: "ready"}` — page loaded, helpers are live
-- `{type: "change", text: "…"}` — debounced 200 ms after the last edit
-- `{type: "saveRequested"}` — user hit ⌘S inside the editor
+Supported `type` values: `setText`, `appendText`, `replaceRange`,
+`setLanguage`, `setTheme`, `setFontSize`, `setWordWrap`, `setReadOnly`,
+`setLineNumbers`, `setIndentation`, `gotoLine`, `setSelection`,
+`openSearch`, `closeSearch`, `findNext`, `findPrev`, `replaceNext`,
+`replaceAll`, `foldAll`, `unfoldAll`, `undo`, `redo`, `focus`,
+`flushChanges`, `getDocument`, `getSelection`, `getScrollPosition`.
+
+### Outbound to Swift — `WKScriptMessageHandler` named `mdvEditor`
+
+Every payload carries `{v: 1, type: "...", ...}`. Messages:
+`ready`, `change`, `save`, `cursorPositionChanged`, `selectionChanged`,
+`scrollChanged`, `findOpened`, `findClosed`, `findResultChanged`,
+`linkClicked`, `editorBlurred`, `errorOccurred`, `requestReply`.
+
+### Legacy `window.*` helpers
+
+Kept for one cycle so existing call sites (e.g. AppDelegate Undo/Redo)
+don't break: `setText`, `getText`, `undo`, `redo`, `setFontSize`,
+`setTheme`, `setLanguage`, `setEditable`, `openSearch`, `flushChanges`.
+All shims route through the same dispatch path internally.
