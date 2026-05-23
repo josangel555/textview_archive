@@ -79,19 +79,14 @@ struct SessionTabBar: View {
         .accessibilityIdentifier("mdv.sessionTabBar")
     }
 
-    /// Mirrors `AppDelegate.openFolderInNewSession(_:)`. We can't call
-    /// the AppKit selector from here because SwiftUI views don't have
-    /// a stable target chain to the AppDelegate; routing through the
-    /// coordinator directly is the documented integration seam.
+    /// `+` button entry point. Rather than upfront-prompting via
+    /// NSOpenPanel, arm the coordinator's first-paint GoTo gate — the
+    /// content view sees the bump, opens `GoToPathPrompt`, and the
+    /// user either types a path or clicks "Open System Dialog…" to
+    /// reach the native picker. This gives the freshly-spawned
+    /// session an explicit entry point instead of a blank window.
     private func openNewSession() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.title = "Open folder in new session"
-        if panel.runModal() == .OK, let url = panel.url {
-            sessionsApp.openFolder(url, forceNew: true)
-        }
+        sessionsApp.requestNewSessionViaGoTo()
     }
 }
 

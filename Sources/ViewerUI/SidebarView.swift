@@ -329,6 +329,14 @@ private struct FileRowContextMenu: View {
         Button("Reveal in Finder") { Finder.reveal(node.url) }
         if node.isDirectory {
             Button("Open in Terminal") { openInTerminal(node.url) }
+            // MARK: - Search in Folder (folder-context agent)
+            // Presents the unified search panel with the scope picker
+            // pre-set to this folder (pickedFolder), bypassing the
+            // sidebar root. Keeps the existing showCrossSearch() path
+            // intact for callers that want sidebar-root behavior.
+            Button("Search in Folder") {
+                model.showCrossSearch(scope: .pickedFolder(node.url))
+            }
         }
         if model.sidebar.gitRepoRoot != nil {
             Divider()

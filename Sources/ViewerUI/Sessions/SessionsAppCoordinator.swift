@@ -41,6 +41,18 @@ public final class SessionsAppCoordinator: ObservableObject {
     private let initialRoot: URL?
     private var lifecycleBridge: LifecycleBridge?
 
+    /// One-shot gate: armed when a brand-new session is spawned via
+    /// `openFolder(forceNew: true)`; consumed by the view layer on
+    /// next paint to auto-present the Go-to-path prompt. See
+    /// `FirstPaintGoToGate` for the pure-logic semantics + tests.
+    ///
+    /// Published as a token (`UUID`) bumped on each arm so SwiftUI
+    /// views observing `@Published` get a re-render signal — a plain
+    /// `isArmed` bool wouldn't trigger a re-fire if armed twice in
+    /// succession after a take.
+    @Published public private(set) var firstPaintGoToToken: UUID? = nil
+    private var firstPaintGate = FirstPaintGoToGate()
+
     public init(model: DocumentModel,
                 store: SessionStore = SessionStore(),
                 workspace: WorkspaceStore = WorkspaceStore(),
@@ -119,15 +131,40 @@ public final class SessionsAppCoordinator: ObservableObject {
     }
 
     /// Open a folder as a session — reveal existing if path matches,
-    /// else create a new session.
+    /// else create a new session. When `forceNew` is true, also arms
+    /// the first-paint Go-to-path gate so the view layer can present
+    /// the prompt as the empty-session entry point.
     public func openFolder(_ url: URL, forceNew: Bool = false) {
+        firstPaintGate.recordOpenFolder(forceNew: forceNew)
+        if forceNew, firstPaintGate.isArmed {
+            firstPaintGoToToken = UUID()
+        }
         core.openFolder(url, forceNew: forceNew)
     }
 
-    public func activate(id: UUID) { core.activate(id: id) }
+    public func activate(id: UUID) {
+        firstPaintGate.recordActivate(id: id)
+        core.activate(id: id)
+    }
     public func activate(index n: Int) { core.activate(index: n) }
     public func nextSession()     { core.nextSession() }
     public func previousSession() { core.previousSession() }
+
+    /// Arm the first-paint Go-to-path gate without yet creating a
+    /// session. Called by the SessionTabBar `+` button so the empty-
+    /// session entry point is the prompt itself (in which the user
+    /// types a path or clicks "Open System Dialog…"). The new session
+    /// is created downstream when the user picks a folder.
+    public func requestNewSessionViaGoTo() {
+        firstPaintGate = FirstPaintGoToGate(isArmed: true)
+        firstPaintGoToToken = UUID()
+    }
+
+    /// Consume the gate (read+clear). Returns `true` exactly once
+    /// after each arm. Exposed for the view layer's `onChange` hook.
+    public func consumeFirstPaintGoTo() -> Bool {
+        firstPaintGate.take()
+    }
 
     /// Close a session by id (no-op if unknown). Routes through the
     /// core coordinator so the trash + persist + LRU re-activation

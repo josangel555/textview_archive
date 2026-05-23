@@ -563,6 +563,13 @@ public final class DocumentModel: ObservableObject {
     @Published public var crossSearchIsRunning: Bool = false
     @Published public var crossSearchCaseSensitive: Bool = false
 
+    /// One-shot hand-off used by callers that want the unified search
+    /// panel to open with a pre-set scope (e.g. the sidebar folder-row
+    /// "Search in Folder" context-menu item). Consumed by the panel's
+    /// `onAppear` and cleared back to `nil` immediately so subsequent
+    /// opens don't re-apply a stale scope.
+    @Published public var crossSearchPresetScope: SearchScope? = nil
+
     /// Monotonically increasing counter that scopes each runCrossSearch()
     /// call. Bumped on every invocation AND on dismiss. Background
     /// completions check the captured value against this and drop their
@@ -575,18 +582,35 @@ public final class DocumentModel: ObservableObject {
         isCrossSearchPresented = true
     }
 
+    /// Open the unified search panel with `scope` pre-applied. Used by
+    /// the sidebar folder-row "Search in Folder" item — the panel's
+    /// onAppear hook syncs the picker state to this preset and clears
+    /// it. See `FileRowContextMenu` for the call site.
+    public func showCrossSearch(scope: SearchScope) {
+        crossSearchPresetScope = scope
+        isCrossSearchPresented = true
+    }
+
     public func dismissCrossSearch() {
         isCrossSearchPresented = false
         crossSearchQuery = ""
         crossSearchResults = []
         crossSearchIsRunning = false
+        crossSearchPresetScope = nil
         crossSearchGeneration &+= 1  // invalidate any in-flight search
     }
 
-    /// Runs a cross-file search using the sidebar's current root. If no
-    /// folder is open, this is a no-op (sets results to empty).
-    public func runCrossSearch() {
-        guard let root = sidebar.rootURL else {
+    /// Runs a cross-file search. `scope` overrides the search root —
+    /// pass a folder URL to limit the grep to that folder. When `nil`,
+    /// falls back to the sidebar's current root; if neither is set,
+    /// this is a no-op (sets results to empty).
+    ///
+    /// The two-argument variant lets the unified search panel's scope
+    /// picker target a different folder than the sidebar root (e.g.
+    /// "Search in Folder" from a tree right-click). Callers that
+    /// want sidebar-root behavior can keep using `runCrossSearch()`.
+    public func runCrossSearch(scope: URL? = nil) {
+        guard let root = scope ?? sidebar.rootURL else {
             crossSearchResults = []
             return
         }

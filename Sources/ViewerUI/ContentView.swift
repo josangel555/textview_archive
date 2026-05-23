@@ -135,10 +135,28 @@ public struct ContentView: View {
                 Color.black.opacity(0.18)
                     .ignoresSafeArea()
                     .onTapGesture { model.dismissGoToPath() }
-                GoToPathPrompt(model: model)
+                GoToPathPrompt(model: model, sessionsApp: sessionsApp)
                     .padding(.top, 80)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
+        }
+        // First-paint GoTo: when a brand-new session is requested
+        // (SessionTabBar `+`, or openFolder(forceNew:)), the
+        // SessionsAppCoordinator bumps `firstPaintGoToToken`. We
+        // observe the bump, consume the gate, and present the prompt.
+        .background(firstPaintGoToBridge)
+    }
+
+    /// Hidden bridge view that observes the coordinator's published
+    /// token when present. Exists as a separate view so SwiftUI's
+    /// dynamic-property mechanism doesn't blow up when `sessionsApp`
+    /// is nil (previews + headless tests).
+    @ViewBuilder
+    private var firstPaintGoToBridge: some View {
+        if let sessionsApp {
+            FirstPaintGoToBridge(model: model, sessionsApp: sessionsApp)
+        } else {
+            EmptyView()
         }
     }
 
@@ -600,5 +618,28 @@ struct ErrorView: View {
             .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// Hidden observer view that consumes
+/// `SessionsAppCoordinator.firstPaintGoToToken`. Lives as a child of
+/// `ContentView.background(...)` so SwiftUI re-renders this view (and
+/// fires its `.onChange`) whenever the coordinator publishes a new
+/// token. The take-once semantics live in the coordinator's
+/// `consumeFirstPaintGoTo()`.
+private struct FirstPaintGoToBridge: View {
+    @ObservedObject var model: DocumentModel
+    @ObservedObject var sessionsApp: SessionsAppCoordinator
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+            .onChange(of: sessionsApp.firstPaintGoToToken) { _, token in
+                guard token != nil else { return }
+                if sessionsApp.consumeFirstPaintGoTo() {
+                    model.showGoToPath()
+                }
+            }
     }
 }

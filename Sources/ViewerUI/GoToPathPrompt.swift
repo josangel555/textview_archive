@@ -1,9 +1,11 @@
+import AppKit
 import SwiftUI
 import ViewerCore
 
 /// Finder-style "Go to the folder…" prompt (⇧⌘G). Paste an absolute
-/// path, hit Return, the app opens it. No NSOpenPanel — keyboard-only
-/// flow.
+/// path, hit Return, the app opens it. Also surfaces an "Open System
+/// Dialog…" escape hatch for users who'd rather navigate via the
+/// native NSOpenPanel — useful as the empty-session entry point.
 ///
 /// # Accessibility identifiers (for UI tests on the VM)
 ///
@@ -20,6 +22,9 @@ import ViewerCore
 ///                                 — Shift-Return / "Open in New
 ///                                   Session" button (only enabled
 ///                                   when the path is a folder)
+///   - `mdv.goto.systemDialogButton` — opens NSOpenPanel (files +
+///                                   folders) and routes the pick
+///                                   through `DocumentModel.openPath`.
 ///   - `mdv.goto.cancelButton`     — dismisses without opening
 ///   - `mdv.goto.historyHint`      — visible footer text describing
 ///                                   the Up/Down history affordance
@@ -28,6 +33,11 @@ import ViewerCore
 /// `GoToPathHistoryStore` — capped at 10 entries.
 struct GoToPathPrompt: View {
     @ObservedObject var model: DocumentModel
+    /// Optional sessions coordinator. Used by "Open System Dialog…"
+    /// when invoked as the empty-session entry point so a picked
+    /// folder spawns a *new* session (forceNew). Nil falls back to
+    /// `model.openPath` which mutates the active session.
+    var sessionsApp: SessionsAppCoordinator?
     @State private var path: String = ""
     @State private var errorMessage: String? = nil
     @State private var historyIndex: Int? = nil
@@ -121,6 +131,11 @@ struct GoToPathPrompt: View {
             .disabled(!canOpenInNewSession)
             .accessibilityIdentifier("mdv.goto.openNewSessionButton")
 
+            Button(action: { openSystemDialog() }) {
+                Text("Open System Dialog…")
+            }
+            .accessibilityIdentifier("mdv.goto.systemDialogButton")
+
             Spacer()
 
             Text("↑↓ history  ·  ⎋ cancel")
@@ -189,6 +204,34 @@ struct GoToPathPrompt: View {
             errorMessage = nil
             historyIndex = nil
         }
+    }
+
+    /// Native NSOpenPanel escape hatch — picks either a file or a
+    /// folder. When `sessionsApp` is set and the user picks a folder
+    /// while the prompt was invoked as the empty-session entry point,
+    /// the pick spawns a new session via `openFolder(forceNew: true)`.
+    /// Otherwise routes through `openPath` (active session).
+    private func openSystemDialog() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.title = "Open file or folder"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        model.recordGoToPath(url.path)
+        var isDir: ObjCBool = false
+        let isDirectory = FileManager.default.fileExists(
+            atPath: url.path, isDirectory: &isDir
+        ) && isDir.boolValue
+        if isDirectory, let sessionsApp {
+            sessionsApp.openFolder(url, forceNew: true)
+        } else {
+            model.openPath(url)
+        }
+        model.dismissGoToPath()
+        path = ""
+        errorMessage = nil
+        historyIndex = nil
     }
 
     private func userMessage(for err: GoToPathExpansion.Error) -> String {
