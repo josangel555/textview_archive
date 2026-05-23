@@ -45,11 +45,13 @@ struct GitStatusTab: View {
     }
 
     private var empty: some View {
-        Text("Working tree clean")
-            .font(.system(size: doc.uiSize(11)))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+        // Fixed envelope to match the populated case — without the
+        // frame the section's overall height collapses when the tree
+        // is clean and the resizable accordion looks like it shrunk.
+        ScrollView {
+            SidebarEmptyPlaceholder(message: "Working tree clean.")
+        }
+        .frame(height: bodyHeight)
     }
 
     private func sectionHeader(_ title: String, count: Int) -> some View {

@@ -64,6 +64,45 @@ This is the part that snapshot tests can't see.
 - [ ] If the folder is inside a git repo, files show colored M/A/?/D badges.
 - [ ] `⌃⌘S` toggles the sidebar's visibility.
 
+### 5a. Sidebar accordion panels (45 s)
+
+Visual / layout-only checks for the resizable accordion sections above
+the FILES tree. Snapshot tests can't see colour or padding; verify
+with eyes.
+
+- [ ] Each section above FILES (Bookmarks, Search, Git, Claude, Outline,
+  any plugin section) renders on a **subtle background swatch** that's
+  visibly distinct from the sidebar's main background — the panels read
+  as their own cards.
+- [ ] There is a **small vertical gap** between adjacent sections; the
+  resize handle (1-px hairline) sits inside that gap.
+- [ ] Hover the gap between two sections — cursor changes to
+  `resizeUpDown`. Drag vertically — the section above grows/shrinks; the
+  height **persists across app relaunch**.
+- [ ] You **cannot drag a section below ~120 px**. Past that the drag
+  stops; the section never collapses into the divider.
+- [ ] Open Bookmarks with **zero bookmarks** — the panel still occupies
+  its full body height and shows "No bookmarks yet." inside the
+  scrollable area. The panel's height does **not** shrink to fit content.
+- [ ] Bookmark something — the placeholder disappears; the panel's
+  outer height stays the same.
+- [ ] Apply a chip filter that excludes everything — placeholder reads
+  "No bookmarks match this filter." (still inside the fixed envelope).
+- [ ] Open a folder with a clean git working tree — the Git panel's
+  Status tab reads "Working tree clean." inside the same fixed envelope
+  (panel doesn't shrink).
+- [ ] Open the Stash tab on a repo with no stashes — "No stashes."
+  inside the fixed envelope.
+- [ ] Open a Swift / Python file with an LSP server attached — the
+  OUTLINE section header shows the symbol count and the body is the
+  same height as other sections (no DisclosureGroup chevron — it uses
+  the same chevron + uppercase header as Bookmarks / Search / Git).
+- [ ] Open a `.md` file — OUTLINE section is **not shown** (language
+  has no registered LSP server); the divider above Plugin sections sits
+  flush against the previous section.
+- [ ] Every section header's chevron + label has the **same horizontal
+  inset** as the FILES header (10 px left of the chevron). No drifters.
+
 ### 6. Command palette `⌘K` (45 s)
 
 - [ ] `⌘K` opens the palette over the main window.

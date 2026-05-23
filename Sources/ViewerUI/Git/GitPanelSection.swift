@@ -21,6 +21,7 @@ struct GitPanelSection: View {
                         GitPanelView(model: panel, doc: model)
                     }
                 }
+                .sidebarSectionContainer()
             } else {
                 EmptyView()
             }

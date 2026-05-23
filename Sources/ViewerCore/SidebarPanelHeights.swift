@@ -49,7 +49,14 @@ public enum SidebarPanelHeights {
     /// Floor for an *expanded* section's body. Collapsed sections
     /// render only the header row and bypass the floor entirely (a
     /// header alone is well below this height by design).
-    public static let minExpandedHeight: CGFloat = 80
+    ///
+    /// Bumped from 80 → 120 in 2026-05 alongside the fixed-envelope
+    /// change: every section now reserves its full body height
+    /// regardless of content (an empty Bookmarks panel reads as the
+    /// same card as a populated one). 120 leaves room for a section
+    /// header + a couple of rows + the "(empty)" placeholder without
+    /// looking cramped.
+    public static let minExpandedHeight: CGFloat = 120
 
     /// Clamp a height to the legal range for an expanded section.
     /// Used both on read-back from `@AppStorage` (a hand-edited

@@ -86,13 +86,16 @@ public final class LSPOutlineModel: ObservableObject {
     }
 }
 
-/// SwiftUI rendering of the outline tree. Renders the entire hierarchy
-/// in one `OutlineGroup`; the user clicks a row to invoke the jump
-/// callback (which the host wires to its tab/cursor open path).
+/// SwiftUI rendering of the outline tree. Renders a header row in the
+/// standard sidebar-section style (chevron + uppercase label) followed
+/// by a fixed-height scrollable body. Matches Bookmarks / Search / Git
+/// for visual consistency in the accordion.
 public struct LSPOutlineSection: View {
 
     @ObservedObject var model: LSPOutlineModel
     let onJump: (LSPDocumentSymbol) -> Void
+    @State private var isExpanded: Bool = true
+    @Environment(\.sidebarSectionBodyHeight) private var bodyHeight
 
     public init(
         model: LSPOutlineModel,
@@ -104,36 +107,64 @@ public struct LSPOutlineSection: View {
 
     public var body: some View {
         if model.isSupported {
-            DisclosureGroup("Outline") {
-                if model.isLoading {
-                    HStack {
-                        ProgressView().controlSize(.small)
-                        Text("Loading symbols…")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+            VStack(spacing: 0) {
+                header
+                if isExpanded {
+                    ScrollView {
+                        outlineBody
                     }
-                    .padding(.leading, 8)
-                } else if let msg = model.errorMessage {
-                    Text(msg)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.leading, 8)
-                } else if model.symbols.isEmpty {
-                    Text("No symbols")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.leading, 8)
-                } else {
-                    OutlineGroup(model.symbols, id: \.self, children: \.maybeChildren) { sym in
-                        SymbolRow(symbol: sym)
-                            .onTapGesture(count: 1) {
-                                onJump(sym)
-                            }
-                    }
+                    .frame(height: bodyHeight)
                 }
             }
+            .sidebarSectionContainer()
+            .accessibilityIdentifier("mdv.lspOutline")
         } else {
             EmptyView()
+        }
+    }
+
+    private var header: some View {
+        Button(action: { isExpanded.toggle() }) {
+            HStack(spacing: 4) {
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .frame(width: 10)
+                Text("OUTLINE")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if model.isLoading {
+                    ProgressView().controlSize(.mini)
+                } else if !model.symbols.isEmpty {
+                    Text("\(model.symbols.count)")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private var outlineBody: some View {
+        if model.isLoading {
+            SidebarEmptyPlaceholder(message: "Loading symbols…")
+        } else if let msg = model.errorMessage {
+            SidebarEmptyPlaceholder(message: msg)
+        } else if model.symbols.isEmpty {
+            SidebarEmptyPlaceholder(message: "No symbols.")
+        } else {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                OutlineGroup(model.symbols, id: \.self, children: \.maybeChildren) { sym in
+                    SymbolRow(symbol: sym)
+                        .onTapGesture(count: 1) {
+                            onJump(sym)
+                        }
+                }
+            }
         }
     }
 }

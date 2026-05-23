@@ -11,11 +11,10 @@ struct GitStashTab: View {
 
     var body: some View {
         if model.stashEntries.isEmpty {
-            Text("No stashes.")
-                .font(.system(size: doc.uiSize(11)))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
+            ScrollView {
+                SidebarEmptyPlaceholder(message: "No stashes.")
+            }
+            .frame(height: bodyHeight)
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {

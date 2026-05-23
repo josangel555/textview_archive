@@ -29,12 +29,11 @@ struct SearchAnywhereSection: View {
             header
             if isExpanded {
                 searchField
-                if !results.isEmpty || isRunning {
-                    Divider()
-                    resultList
-                }
+                Divider()
+                resultList
             }
         }
+        .sidebarSectionContainer()
         .accessibilityIdentifier("mdv.searchAnywhere")
     }
 
@@ -96,11 +95,20 @@ struct SearchAnywhereSection: View {
     private var resultList: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
+                if results.isEmpty && !isRunning {
+                    SidebarEmptyPlaceholder(
+                        message: query.trimmingCharacters(in: .whitespaces).count >= 2
+                            ? "No matches."
+                            : "Type to search files…"
+                    )
+                }
                 ForEach(results) { file in
                     fileGroup(file)
                 }
             }
         }
+        // Fixed envelope — short matches and "type to search" empty
+        // state both occupy the same height as a populated list.
         .frame(height: bodyHeight)
     }
 

@@ -11,11 +11,10 @@ struct GitWorktreesTab: View {
 
     var body: some View {
         if model.worktreeEntries.isEmpty {
-            Text("No additional worktrees.")
-                .font(.system(size: doc.uiSize(11)))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
+            ScrollView {
+                SidebarEmptyPlaceholder(message: "No additional worktrees.")
+            }
+            .frame(height: bodyHeight)
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {

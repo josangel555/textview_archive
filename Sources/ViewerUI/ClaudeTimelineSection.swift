@@ -23,7 +23,11 @@ struct ClaudeTimelineSection: View {
                     header
                     if isExpanded { eventList }
                 }
+                .sidebarSectionContainer()
             } else {
+                // No transcripts for this project — keep the section
+                // entirely hidden (no card, no placeholder). Users
+                // without Claude Code workflows don't need the chrome.
                 EmptyView()
             }
         }
@@ -67,10 +71,7 @@ struct ClaudeTimelineSection: View {
                     row(event)
                 }
                 if events.isEmpty {
-                    Text("No events parsed")
-                        .font(.system(size: model.uiSize(11)))
-                        .foregroundStyle(.secondary)
-                        .padding(10)
+                    SidebarEmptyPlaceholder(message: "No events parsed.")
                 }
             }
         }

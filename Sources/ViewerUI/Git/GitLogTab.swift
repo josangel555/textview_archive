@@ -18,12 +18,11 @@ struct GitLogTab: View {
 
     var body: some View {
         if model.logEntries.isEmpty {
-            Text("No commits in this repository yet.")
-                .font(.system(size: doc.uiSize(11)))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .onAppear { layout = nil }
+            ScrollView {
+                SidebarEmptyPlaceholder(message: "No commits in this repository yet.")
+            }
+            .frame(height: bodyHeight)
+            .onAppear { layout = nil }
         } else {
             let lay = layout
             ScrollView {
