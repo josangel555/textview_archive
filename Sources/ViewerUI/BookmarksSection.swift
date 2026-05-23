@@ -13,6 +13,10 @@ import ViewerCore
 struct BookmarksSection: View {
     @ObservedObject var model: DocumentModel
     @State private var isExpanded = true
+    /// Height the body should occupy when expanded. Driven by
+    /// `SidebarView`'s resizable-section divider; falls back to
+    /// `SidebarConstants.sectionBodyHeight` outside that container.
+    @Environment(\.sidebarSectionBodyHeight) private var bodyHeight
     @State private var showFiles = true
     @State private var showFolders = true
     @State private var showLines = true
@@ -45,7 +49,7 @@ struct BookmarksSection: View {
                         }
                     }
                 }
-                .frame(height: SidebarConstants.sectionBodyHeight)
+                .frame(height: bodyHeight)
             }
         }
         .accessibilityIdentifier("mdv.bookmarks")

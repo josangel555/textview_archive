@@ -12,7 +12,10 @@ public final class PreferencesStore: @unchecked Sendable {
         static let zoom = "MarkdownViewer.zoom"
         static let sourceWordWrap = "MarkdownViewer.sourceWordWrap"
         static let showInvisibleChars = "MarkdownViewer.showInvisibleChars"
-        static let uiScale = "MarkdownViewer.uiScale"
+        /// Legacy chrome-scale preference, retired when `uiScale` and
+        /// `zoom` were unified onto `zoom`. Still read once for
+        /// one-shot migration; never written.
+        static let legacyUIScale = "MarkdownViewer.uiScale"
     }
 
     public init(defaults: UserDefaults = .standard) {
@@ -59,24 +62,16 @@ public final class PreferencesStore: @unchecked Sendable {
         set { defaults.set(newValue, forKey: Key.showInvisibleChars) }
     }
 
-    /// Chrome scaling — multiplies the font size of sidebar, tabs,
-    /// status bar, mode bar, etc. Distinct from `zoom` which scales
-    /// document content. Range 0.85-1.6; default 1.0.
-    public static let minUIScale: Double = 0.85
-    public static let maxUIScale: Double = 1.6
-    public static let uiScaleStep: Double = 0.05
-    public var uiScale: Double {
-        get {
-            let raw = defaults.object(forKey: Key.uiScale) as? Double ?? 1.0
-            return min(max(raw, Self.minUIScale), Self.maxUIScale)
-        }
-        set {
-            let clamped = min(max(newValue, Self.minUIScale), Self.maxUIScale)
-            defaults.set(clamped, forKey: Key.uiScale)
-        }
-    }
-
     // MARK: Zoom
+    //
+    // One slider drives both document content AND chrome (sidebar /
+    // tabs / status bar / mode bar) via `DocumentModel.uiSize(_:)`.
+    // Pre-unification there was a separate `uiScale` preference; on
+    // first read after upgrade, if `zoom` is absent but the legacy
+    // key is present, we adopt the larger of the two as the unified
+    // value. Rationale: a user who'd bumped chrome but never touched
+    // text-zoom (or vice versa) almost certainly wants the bigger UI
+    // they'd been using, not a silent shrink back to 1.0.
 
     public static let minZoom: Double = 0.5
     public static let maxZoom: Double = 3.0
@@ -84,12 +79,23 @@ public final class PreferencesStore: @unchecked Sendable {
 
     public var zoom: Double {
         get {
-            let raw = defaults.object(forKey: Key.zoom) as? Double ?? 1.0
+            let zoomRaw = defaults.object(forKey: Key.zoom) as? Double
+            let legacyRaw = defaults.object(forKey: Key.legacyUIScale) as? Double
+            let raw: Double
+            switch (zoomRaw, legacyRaw) {
+            case let (z?, l?): raw = max(z, l)
+            case let (z?, nil): raw = z
+            case let (nil, l?): raw = l
+            case (nil, nil): raw = 1.0
+            }
             return min(max(raw, Self.minZoom), Self.maxZoom)
         }
         set {
             let clamped = min(max(newValue, Self.minZoom), Self.maxZoom)
             defaults.set(clamped, forKey: Key.zoom)
+            // Drop the legacy key the first time we write the unified
+            // value, so subsequent reads don't keep resurrecting it.
+            defaults.removeObject(forKey: Key.legacyUIScale)
         }
     }
 

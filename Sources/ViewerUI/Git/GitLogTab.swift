@@ -14,6 +14,7 @@ struct GitLogTab: View {
     /// repo refresh that didn't actually change). Now @State + .onChange
     /// keyed on the logEntries identity.
     @State private var layout: GraphLayout.Layout? = nil
+    @Environment(\.sidebarSectionBodyHeight) private var bodyHeight
 
     var body: some View {
         if model.logEntries.isEmpty {
@@ -51,7 +52,7 @@ struct GitLogTab: View {
                     }
                 }
             }
-            .frame(height: SidebarConstants.sectionBodyHeight)
+            .frame(height: bodyHeight)
             .onAppear { recomputeLayout() }
             .onChange(of: model.logEntries.count) { _, _ in recomputeLayout() }
             .onChange(of: model.logEntries.first?.sha) { _, _ in recomputeLayout() }

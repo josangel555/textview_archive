@@ -7,6 +7,7 @@ struct GitStashTab: View {
     @ObservedObject var model: GitPanelModel
     @ObservedObject var doc: DocumentModel
     @State private var pendingDrop: GitClient.StashEntry?
+    @Environment(\.sidebarSectionBodyHeight) private var bodyHeight
 
     var body: some View {
         if model.stashEntries.isEmpty {
@@ -21,7 +22,7 @@ struct GitStashTab: View {
                     ForEach(model.stashEntries, id: \.ref) { row($0) }
                 }
             }
-            .frame(height: SidebarConstants.sectionBodyHeight)
+            .frame(height: bodyHeight)
             .alert(item: $pendingDrop) { entry in
                 Alert(
                     title: Text("Drop \(entry.ref)?"),

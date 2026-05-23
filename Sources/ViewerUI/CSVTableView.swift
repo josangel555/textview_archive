@@ -184,11 +184,13 @@ struct CSVTableView: View {
         if let s = globalScope, s >= cols { setGlobalScope(nil) }
     }
 
-    /// Row height scales with the user's font-zoom + ui-scale prefs.
-    /// Was a fixed 22 pt; that's the baseline (zoom 1.0 × uiScale 1.0).
-    private var rowHeight: CGFloat { 22 * model.zoom * model.uiScale }
-    private var cellFontSize: CGFloat { 11 * model.zoom * model.uiScale }
-    private var headerFontSize: CGFloat { 11 * model.zoom * model.uiScale }
+    /// Row height scales with the user's unified zoom pref. Was a
+    /// fixed 22 pt; that's the baseline (zoom 1.0). Previously also
+    /// multiplied by a separate `uiScale`; that knob was collapsed
+    /// onto `zoom` so a single slider drives both content + chrome.
+    private var rowHeight: CGFloat { 22 * model.zoom }
+    private var cellFontSize: CGFloat { 11 * model.zoom }
+    private var headerFontSize: CGFloat { 11 * model.zoom }
 
     @ViewBuilder
     private func filterBar(result: CSVParser.Result, filteredCount: Int) -> some View {

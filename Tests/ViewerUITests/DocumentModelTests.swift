@@ -368,37 +368,31 @@ final class DocumentModelTests: XCTestCase {
         }
     }
 
-    // MARK: - UI scale (Batch B, commit 2457015)
+    // MARK: - Unified zoom (drives both content + chrome via uiSize)
 
-    func test_uiScale_seeds_from_preferences() {
-        let prefs = PreferencesStore(defaults: defaults)
-        prefs.uiScale = 1.30
-        let model = DocumentModel(
-            controller: DocumentController(),
-            history: HistoryStore(storeURL: historyStoreURL),
-            sidebar: SidebarModel(),
-            preferences: prefs
-        )
-        XCTAssertEqual(model.uiScale, 1.30, accuracy: 0.001)
-    }
-
-    func test_uiScale_setter_persists_via_preferences() {
-        let prefs = PreferencesStore(defaults: defaults)
-        let model = DocumentModel(
-            controller: DocumentController(),
-            history: HistoryStore(storeURL: historyStoreURL),
-            sidebar: SidebarModel(),
-            preferences: prefs
-        )
-        model.uiScale = 1.15
-        XCTAssertEqual(prefs.uiScale, 1.15, accuracy: 0.001)
-    }
-
-    func test_uiSize_multiplies_base_by_uiScale() {
+    func test_uiSize_multiplies_base_by_zoom() {
         let model = makeModel()
-        model.uiScale = 1.5
+        model.zoom = 1.5
         XCTAssertEqual(model.uiSize(10), 15, accuracy: 0.001)
         XCTAssertEqual(model.uiSize(12), 18, accuracy: 0.001)
+    }
+
+    func test_uiSize_is_identity_when_zoom_is_one() {
+        let model = makeModel()
+        model.zoom = 1.0
+        XCTAssertEqual(model.uiSize(10), 10, accuracy: 0.001)
+        XCTAssertEqual(model.uiSize(7.5), 7.5, accuracy: 0.001)
+    }
+
+    /// Cmd++ should scale chrome too — same lever as document content.
+    func test_zoomIn_grows_uiSize_proportionally() {
+        let model = makeModel()
+        model.zoom = 1.0
+        let before = model.uiSize(10)
+        model.zoomIn()
+        let after = model.uiSize(10)
+        XCTAssertGreaterThan(after, before)
+        XCTAssertEqual(after / before, model.zoom, accuracy: 0.001)
     }
 
     // MARK: - showInvisibleChars (Batch A)

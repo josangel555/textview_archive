@@ -7,6 +7,7 @@ import ViewerCore
 struct GitWorktreesTab: View {
     @ObservedObject var model: GitPanelModel
     @ObservedObject var doc: DocumentModel
+    @Environment(\.sidebarSectionBodyHeight) private var bodyHeight
 
     var body: some View {
         if model.worktreeEntries.isEmpty {
@@ -21,7 +22,7 @@ struct GitWorktreesTab: View {
                     ForEach(model.worktreeEntries, id: \.path) { row($0) }
                 }
             }
-            .frame(height: SidebarConstants.sectionBodyHeight)
+            .frame(height: bodyHeight)
         }
     }
 

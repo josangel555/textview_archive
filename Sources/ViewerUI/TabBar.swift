@@ -13,7 +13,7 @@ struct TabBar: View {
                             tab: tab,
                             isSelected: model.tabs.selectedIndex == index,
                             isBookmarked: tab.url.map { model.bookmarksStore.contains($0) } ?? false,
-                            scale: CGFloat(model.uiScale),
+                            scale: CGFloat(model.zoom),
                             onSelect: { model.selectTab(at: index) },
                             onClose: { model.closeTab(at: index) }
                         )

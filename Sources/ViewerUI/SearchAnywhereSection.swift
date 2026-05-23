@@ -21,6 +21,7 @@ struct SearchAnywhereSection: View {
     @State private var results: [CrossFileSearch.FileMatches] = []
     @State private var isRunning: Bool = false
     @State private var searchTask: Task<Void, Never>?
+    @Environment(\.sidebarSectionBodyHeight) private var bodyHeight
 
     var body: some View {
         VStack(spacing: 0) {
@@ -99,7 +100,7 @@ struct SearchAnywhereSection: View {
                 }
             }
         }
-        .frame(height: SidebarConstants.sectionBodyHeight)
+        .frame(height: bodyHeight)
     }
 
     @ViewBuilder

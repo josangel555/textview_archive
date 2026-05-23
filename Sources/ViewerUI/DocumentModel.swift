@@ -84,14 +84,14 @@ public final class DocumentModel: ObservableObject {
     }
     public func toggleShowInvisibleChars() { showInvisibleChars.toggle() }
 
-    /// Chrome font scaling (sidebar / tabs / status bar / mode bar).
-    /// Distinct from `zoom` which only affects document content.
-    /// Defaults to 1.0; range 0.85 – 1.6.
-    @Published public var uiScale: Double {
-        didSet { preferences.uiScale = uiScale }
-    }
-    /// Helper for view code: scale a base font size by uiScale.
-    public func uiSize(_ base: CGFloat) -> CGFloat { base * CGFloat(uiScale) }
+    /// Helper for view code: scale a base font size by the unified
+    /// zoom factor. Used by sidebar / tabs / status bar / mode bar so
+    /// chrome grows with the same Cmd++/Cmd+− / Settings slider that
+    /// drives document content. Historically backed by a separate
+    /// `uiScale` preference; collapsed onto `zoom` so users no longer
+    /// have to keep two sliders in sync. Migration of legacy
+    /// `uiScale` defaults is handled in `PreferencesStore.zoom`.
+    public func uiSize(_ base: CGFloat) -> CGFloat { base * CGFloat(zoom) }
 
     /// Latest scroll state from the source view, published by
     /// `TextDisplayView.onScrollChange`. Drives the SwiftUI gutter
@@ -166,7 +166,6 @@ public final class DocumentModel: ObservableObject {
         self.zoom = preferences.zoom
         self.sourceWordWrap = preferences.sourceWordWrap
         self.showInvisibleChars = preferences.showInvisibleChars
-        self.uiScale = preferences.uiScale
         // Seed sidebar visibility from prefs. We DON'T force visible if
         // no folder is open — sidebar without a root is empty by design.
         self.sidebar.isVisible = preferences.sidebarVisible

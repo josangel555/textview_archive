@@ -1,0 +1,70 @@
+import Foundation
+import CoreGraphics
+
+/// Pure-logic side of the resizable left-sidebar sections.
+///
+/// SwiftUI side: each section between the sidebar header and the
+/// FILES tree is followed by a custom drag-handle divider. Dragging
+/// adjusts the height of the section above it; the FILES tree (last)
+/// keeps its flex-fill behaviour and never owns a height key.
+///
+/// This type owns three pieces of state-shaping logic that benefit
+/// from being decoupled from `@AppStorage` so they can be unit-tested
+/// on the host without spinning up SwiftUI:
+///
+///   * the canonical list of resizable sections + their persistence
+///     keys (single source of truth — the view layer reads keys from
+///     here, not from string literals scattered across files).
+///   * the minimum-height floor (collapsed sections bypass it; only
+///     expanded ones get clamped).
+///   * the clamp itself, used both on read-back from defaults and
+///     during a live drag so the user can't drag a panel below the
+///     floor.
+///
+/// VM-only behaviour (interactive drag, cursor hover, mouse capture)
+/// is exercised by the AppKit-driven UI test bundles; this struct is
+/// what the host-side `ViewerCoreTests.SidebarPanelHeightsTests`
+/// suite covers.
+public enum SidebarPanel: String, CaseIterable, Sendable {
+    case bookmarks
+    case searchAnywhere
+    case gitPanel
+    case claudeTimeline
+    case lspOutline
+    case pluginSections
+
+    /// `@AppStorage` key. Keep stable; renaming invalidates persisted
+    /// per-user layout on the next launch.
+    public var appStorageKey: String {
+        "MarkdownViewer.sidebar.\(rawValue).height"
+    }
+
+    /// Default uncollapsed height. Matches the previous fixed
+    /// `SidebarConstants.sectionBodyHeight` (220) for parity with the
+    /// pre-resize layout.
+    public var defaultHeight: CGFloat { 220 }
+}
+
+public enum SidebarPanelHeights {
+    /// Floor for an *expanded* section's body. Collapsed sections
+    /// render only the header row and bypass the floor entirely (a
+    /// header alone is well below this height by design).
+    public static let minExpandedHeight: CGFloat = 80
+
+    /// Clamp a height to the legal range for an expanded section.
+    /// Used both on read-back from `@AppStorage` (a hand-edited
+    /// defaults plist may contain garbage) and live during a drag.
+    public static func clamp(_ height: CGFloat) -> CGFloat {
+        max(minExpandedHeight, height)
+    }
+
+    /// Read a persisted height from any defaults-like store. Falls
+    /// back to the section's default when the key is missing.
+    /// Always returns a clamped value.
+    public static func readClamped(_ section: SidebarPanel,
+                                   from defaults: UserDefaults) -> CGFloat {
+        let raw = defaults.object(forKey: section.appStorageKey) as? Double
+        let value = raw.map { CGFloat($0) } ?? section.defaultHeight
+        return clamp(value)
+    }
+}
