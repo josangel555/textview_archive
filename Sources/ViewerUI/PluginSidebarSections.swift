@@ -15,6 +15,7 @@ import ViewerCore
 /// plugin update we add the publisher.
 struct PluginSidebarSections: View {
     @ObservedObject var model: DocumentModel
+    @Environment(\.sidebarSectionBodyHeight) private var bodyHeight
 
     /// Local expand/collapse state per section, keyed by section id.
     @State private var expanded: [String: Bool] = [:]
@@ -23,7 +24,7 @@ struct PluginSidebarSections: View {
         VStack(spacing: 0) {
             ForEach(entries, id: \.sectionID) { entry in
                 section(entry)
-                Divider()
+                    .sidebarSectionContainer()
             }
         }
     }
@@ -65,23 +66,31 @@ struct PluginSidebarSections: View {
                 let rows = PluginRegistry.shared.sidebarSections.safeRows(
                     for: entry, snapshot: snapshot
                 )
-                ForEach(rows) { row in
-                    HStack(spacing: 6) {
-                        Text(row.label)
-                            .font(.system(size: model.uiSize(11)))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Spacer(minLength: 4)
-                        if let detail = row.detail {
-                            Text(detail)
-                                .font(.system(size: model.uiSize(10),
-                                              design: .monospaced))
-                                .foregroundStyle(.secondary)
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        if rows.isEmpty {
+                            SidebarEmptyPlaceholder(message: "(empty)")
+                        }
+                        ForEach(rows) { row in
+                            HStack(spacing: 6) {
+                                Text(row.label)
+                                    .font(.system(size: model.uiSize(11)))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Spacer(minLength: 4)
+                                if let detail = row.detail {
+                                    Text(detail)
+                                        .font(.system(size: model.uiSize(10),
+                                                      design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 2)
                         }
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 2)
                 }
+                .frame(height: bodyHeight)
             }
         }
     }

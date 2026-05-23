@@ -29,6 +29,13 @@ struct BookmarksSection: View {
         var id: String { rawValue }
     }
 
+    /// Stable placeholder string for the empty state — read by the
+    /// pure-logic test `BookmarksSectionEmptyTests`. Keep as a static
+    /// so callers (and tests) can reach it without instantiating a
+    /// View on the host.
+    static let emptyPlaceholder: String = "No bookmarks yet."
+    static let emptyFilterPlaceholder: String = "No bookmarks match this filter."
+
     var body: some View {
         VStack(spacing: 0) {
             headerRow
@@ -39,19 +46,18 @@ struct BookmarksSection: View {
                             BookmarkRow(entry: entry, model: model)
                         }
                         if filtered.isEmpty {
-                            Text(model.bookmarks.isEmpty
-                                 ? "No bookmarks yet."
-                                 : "No bookmarks match this filter.")
-                                .font(.system(size: model.uiSize(11)))
-                                .foregroundStyle(.tertiary)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 8)
+                            SidebarEmptyPlaceholder(
+                                message: model.bookmarks.isEmpty
+                                    ? Self.emptyPlaceholder
+                                    : Self.emptyFilterPlaceholder
+                            )
                         }
                     }
                 }
                 .frame(height: bodyHeight)
             }
         }
+        .sidebarSectionContainer()
         .accessibilityIdentifier("mdv.bookmarks")
     }
 

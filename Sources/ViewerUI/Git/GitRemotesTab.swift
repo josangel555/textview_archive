@@ -11,11 +11,10 @@ struct GitRemotesTab: View {
 
     var body: some View {
         if model.remoteEntries.isEmpty {
-            Text("No remotes.")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
+            ScrollView {
+                SidebarEmptyPlaceholder(message: "No remotes.")
+            }
+            .frame(height: bodyHeight)
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {

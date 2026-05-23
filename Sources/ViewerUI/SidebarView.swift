@@ -64,12 +64,16 @@ struct SidebarView: View {
             //   - a `ResizableSectionDivider` after it, whose drag
             //     binds to the same @AppStorage-backed height.
             // FILES keeps `Spacer()`/`maxHeight: .infinity` flex.
-            if !model.bookmarks.isEmpty {
-                BookmarksSection(model: model)
-                    .environment(\.sidebarSectionBodyHeight,
-                                 SidebarPanelHeights.clamp(CGFloat(bookmarksHeight)))
-                ResizableSectionDivider(heightAbove: heightBinding($bookmarksHeight))
-            }
+            // BookmarksSection is always rendered (even with zero
+            // bookmarks) — the section's fixed envelope + "(empty)"
+            // placeholder is the whole point of the resizable
+            // accordion. Hiding it on empty was the old behaviour and
+            // caused the layout to jump every time the user toggled a
+            // bookmark.
+            BookmarksSection(model: model)
+                .environment(\.sidebarSectionBodyHeight,
+                             SidebarPanelHeights.clamp(CGFloat(bookmarksHeight)))
+            ResizableSectionDivider(heightAbove: heightBinding($bookmarksHeight))
             if sidebar.rootURL != nil {
                 SearchAnywhereSection(model: model)
                     .environment(\.sidebarSectionBodyHeight,
@@ -563,7 +567,6 @@ struct LSPOutlineWrapper: View {
                     let line = symbol.selectionRange.start.line + 1
                     model.scrollSource(toLine: line)
                 }
-                Divider()
             }
         }
         .onAppear { refresh() }
