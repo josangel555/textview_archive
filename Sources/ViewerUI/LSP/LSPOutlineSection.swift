@@ -126,12 +126,10 @@ public struct LSPOutlineSection: View {
     private var header: some View {
         Button(action: { isExpanded.toggle() }) {
             HStack(spacing: 4) {
-                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
-                    .frame(width: 10)
-                Text("OUTLINE")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                SidebarSectionHeaderLabel(
+                    title: "Outline",
+                    isExpanded: isExpanded
+                )
                 Spacer()
                 if model.isLoading {
                     ProgressView().controlSize(.mini)
@@ -144,8 +142,7 @@ public struct LSPOutlineSection: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
+        .sidebarHeaderRow()
     }
 
     @ViewBuilder

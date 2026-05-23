@@ -259,12 +259,11 @@ struct SidebarView: View {
         HStack(spacing: 4) {
             Button(action: { filesExpanded.toggle() }) {
                 HStack(spacing: 4) {
-                    Image(systemName: filesExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .frame(width: 10)
-                    Text("FILES")
-                        .font(.system(size: model.uiSize(10), weight: .semibold))
-                        .foregroundStyle(.secondary)
+                    SidebarSectionHeaderLabel(
+                        title: "Files",
+                        isExpanded: filesExpanded,
+                        uiSize: model.uiSize
+                    )
                     Spacer()
                 }
                 .contentShape(Rectangle())
@@ -315,8 +314,7 @@ struct SidebarView: View {
                   ? "Sidebar root locked — click to unlock"
                   : "Lock sidebar root (prevent auto-navigation)")
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
+        .sidebarHeaderRow()
     }
 
     private var header: some View {

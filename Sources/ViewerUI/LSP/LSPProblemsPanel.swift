@@ -75,14 +75,10 @@ public struct LSPProblemsPanel: View {
     private var header: some View {
         HStack(spacing: 4) {
             Button(action: { isExpanded.toggle() }) {
-                HStack(spacing: 4) {
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .frame(width: 10)
-                    Text("PROBLEMS")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
+                SidebarSectionHeaderLabel(
+                    title: "Problems",
+                    isExpanded: isExpanded
+                )
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -117,8 +113,7 @@ public struct LSPProblemsPanel: View {
             .help("Filter by severity")
             .accessibilityIdentifier("mdv.problems.filter")
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
+        .sidebarHeaderRow()
     }
 
     private func pill(_ text: String, color: Color) -> some View {

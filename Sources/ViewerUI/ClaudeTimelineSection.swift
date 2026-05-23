@@ -39,12 +39,11 @@ struct ClaudeTimelineSection: View {
     private var header: some View {
         Button(action: { isExpanded.toggle() }) {
             HStack(spacing: 4) {
-                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
-                    .frame(width: 10)
-                Text("CLAUDE")
-                    .font(.system(size: model.uiSize(10), weight: .semibold))
-                    .foregroundStyle(.secondary)
+                SidebarSectionHeaderLabel(
+                    title: "Claude",
+                    isExpanded: isExpanded,
+                    uiSize: model.uiSize
+                )
                 Spacer()
                 Text("\(events.count)")
                     .font(.system(size: model.uiSize(10), weight: .medium))
@@ -60,8 +59,7 @@ struct ClaudeTimelineSection: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
+        .sidebarHeaderRow()
     }
 
     private var eventList: some View {
