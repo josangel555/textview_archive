@@ -6,17 +6,26 @@ public struct Tab: Sendable, Identifiable {
     public var url: URL?
     public var state: DocumentState
     public var viewMode: ViewMode
+    /// True when the editor buffer for this tab has unsaved changes.
+    /// Mirrored from `DocumentModel.editorBuffer(forTabID:).isDirty`
+    /// so the TabBar can read it via the cheap, Equatable `Tab`
+    /// snapshot rather than reaching into the model on every diff.
+    /// Updated by `DocumentModel.updateEditorText` and cleared by
+    /// `saveActiveEditor`.
+    public var isDirty: Bool
 
     public init(
         id: UUID = UUID(),
         url: URL? = nil,
         state: DocumentState = .empty,
-        viewMode: ViewMode = .rendered
+        viewMode: ViewMode = .rendered,
+        isDirty: Bool = false
     ) {
         self.id = id
         self.url = url
         self.state = state
         self.viewMode = viewMode
+        self.isDirty = isDirty
     }
 
     /// What to display in the tab strip.
@@ -50,6 +59,7 @@ extension Tab: Equatable {
         guard lhs.id == rhs.id else { return false }
         guard lhs.url == rhs.url else { return false }
         guard lhs.viewMode == rhs.viewMode else { return false }
+        guard lhs.isDirty == rhs.isDirty else { return false }
         // Compare state by case-only, not by payload. Payload changes
         // are reflected by other model state (e.g. loadState, watcher
         // reload nonce); state-payload-equality isn't a property
