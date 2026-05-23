@@ -211,6 +211,28 @@ public final class SourceTextController: NSViewController {
     nonisolated(unsafe) private var selectionObserver: NSObjectProtocol?
     private var onScrollChange: ((SourceScrollState) -> Void)?
     private var onSelectionChange: ((SourceSelection) -> Void)?
+
+    // MARK: - Selection-highlight ("highlight all instances of selection")
+
+    /// Engine that decides whether the current selection qualifies for
+    /// the "highlight all instances" treatment and, if so, finds all
+    /// other occurrences. Pure value type — see SelectionHighlightEngine.swift.
+    private let selectionHighlightEngine = SelectionHighlightEngine()
+    /// Ranges currently painted by the selection-highlight pass.
+    /// Tracked so the next pass can clear them without disturbing
+    /// find / current-line backdrops elsewhere in the text.
+    private var selectionHighlightRanges: [NSRange] = []
+    /// Throttle: at most one selection-highlight recompute per
+    /// `selectionHighlightThrottleSeconds`. Selection changes can fire
+    /// at keypress cadence (arrow-key drag) — a full findRanges walk
+    /// per change is wasteful on a multi-hundred-KB file.
+    private static let selectionHighlightThrottleSeconds: TimeInterval = 0.15
+    private var lastSelectionHighlightFireDate: Date?
+    nonisolated(unsafe) private var pendingSelectionHighlightWork: DispatchWorkItem?
+    /// UTF-8 byte count of the current text — cached on each apply()
+    /// so the per-selection size-cap check is O(1) rather than
+    /// O(text.utf8.count). Cleared (set to 0) when there's no text.
+    private var cachedTextByteCount: Int = 0
     private var cachedFontSize: CGFloat = 13
     private var cachedLineCount: Int = 1
     private var lastPublishedScrollState: SourceScrollState?
@@ -363,6 +385,7 @@ public final class SourceTextController: NSViewController {
         if let o = scrollObserver    { NotificationCenter.default.removeObserver(o) }
         if let o = frameObserver     { NotificationCenter.default.removeObserver(o) }
         if let o = selectionObserver { NotificationCenter.default.removeObserver(o) }
+        pendingSelectionHighlightWork?.cancel()
     }
 
     /// Publish current scroll state to the SwiftUI gutter. Reads from
@@ -430,6 +453,11 @@ public final class SourceTextController: NSViewController {
         // Cheap (single line range), debounced internally by range
         // equality below.
         applyCurrentLineHighlight()
+        // Selection-driven "highlight all instances of selection" —
+        // throttled to ~150ms so per-keystroke caret drags don't fire
+        // an O(text) find on every change. Bails for short / long /
+        // multi-line selections and for huge files (see engine policy).
+        scheduleSelectionHighlightRefresh()
 
         guard let cb = onSelectionChange else { return }
         let sel = textView.selectedRange()
@@ -494,6 +522,87 @@ public final class SourceTextController: NSViewController {
         lastCurrentLineRange = lineRange
     }
 
+    /// Schedule a selection-highlight refresh, throttled to fire at
+    /// most once per `selectionHighlightThrottleSeconds`. Multiple
+    /// rapid selection changes coalesce — only the last selection's
+    /// occurrences get painted, which is what the user expects.
+    private func scheduleSelectionHighlightRefresh() {
+        pendingSelectionHighlightWork?.cancel()
+        let now = Date()
+        let throttle = Self.selectionHighlightThrottleSeconds
+        let elapsed = lastSelectionHighlightFireDate.map { now.timeIntervalSince($0) } ?? .infinity
+        let delay = max(0, throttle - elapsed)
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                self?.refreshSelectionHighlight()
+            }
+        }
+        pendingSelectionHighlightWork = work
+        if delay <= 0 {
+            DispatchQueue.main.async(execute: work)
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        }
+    }
+
+    /// Compute + paint the selection-highlight ranges via the layout
+    /// manager's temporary attributes. Coexists with current-line
+    /// backdrop and find highlights (all three are temp attrs); the
+    /// per-pass clear is scoped to the previously-painted ranges so
+    /// the other layers are preserved.
+    ///
+    /// Color choice: translucent yellow on light themes, translucent
+    /// amber on dark themes. Low-contrast on purpose — the active
+    /// selection itself (OS-drawn) should remain the visually loudest
+    /// signal; the secondary occurrences are an ambient cue.
+    private func refreshSelectionHighlight() {
+        lastSelectionHighlightFireDate = Date()
+        guard let lm = textView.layoutManager,
+              let storage = textView.textStorage else { return }
+        let text = textView.string
+        let selection = textView.selectedRange()
+
+        // Clear last pass's highlights first — bounded by the count of
+        // matches we painted, not the full textStorage length.
+        for r in selectionHighlightRanges {
+            let clamped = NSRange(
+                location: min(r.location, storage.length),
+                length: min(r.length, max(0, storage.length - r.location))
+            )
+            if clamped.length > 0 {
+                lm.removeTemporaryAttribute(.backgroundColor, forCharacterRange: clamped)
+            }
+        }
+        selectionHighlightRanges.removeAll(keepingCapacity: true)
+
+        let matches = selectionHighlightEngine.otherOccurrences(
+            in: text,
+            selection: selection,
+            haystackByteCount: cachedTextByteCount
+        )
+        if matches.isEmpty { return }
+
+        let isDark = currentTheme.background.brightnessComponent < 0.5
+        let tint = (isDark
+            ? NSColor(calibratedRed: 1.0, green: 0.84, blue: 0.30, alpha: 1)
+            : NSColor(calibratedRed: 1.0, green: 0.92, blue: 0.40, alpha: 1))
+            .withAlphaComponent(isDark ? 0.35 : 0.45)
+
+        for r in matches {
+            let clamped = NSRange(
+                location: min(r.location, storage.length),
+                length: min(r.length, max(0, storage.length - r.location))
+            )
+            if clamped.length > 0 {
+                lm.addTemporaryAttribute(
+                    .backgroundColor, value: tint,
+                    forCharacterRange: clamped
+                )
+                selectionHighlightRanges.append(clamped)
+            }
+        }
+    }
+
     /// Match NSTextView's effective line height for the default
     /// monospaced font. The factor 1.20 holds for SF Mono / Menlo /
     /// Monaco across the size range we use; if it ever drifts we'd
@@ -530,6 +639,10 @@ public final class SourceTextController: NSViewController {
         self.onSelectionChange = onSelectionChange
         self.cachedFontSize = fontSize
         self.currentTheme = theme
+        // Refresh cached byte count for the selection-highlight
+        // engine's O(1) size check. utf8.count is O(N) but only walked
+        // once per apply() (i.e. per text change), not per selection.
+        self.cachedTextByteCount = text.utf8.count
         scrollView.backgroundColor = theme.background
         textView.backgroundColor = theme.background
 
@@ -689,6 +802,11 @@ public final class SourceTextController: NSViewController {
         lastAttrKey = key
         // Refresh line count for the gutter.
         cachedLineCount = Self.countLines(in: text)
+        // Replacing the full attributed string drops every temporary
+        // attribute the layout manager carried — including any
+        // selection-highlight ranges we'd painted. Forget them so the
+        // next refresh starts from a clean slate.
+        selectionHighlightRanges.removeAll(keepingCapacity: true)
         // Invalidate the newline-offset binary-search cache used by
         // publishSelection. Cheap to rebuild on first selection move
         // after a content change.
@@ -726,9 +844,11 @@ public final class SourceTextController: NSViewController {
         let full = NSRange(location: 0, length: textStorage.length)
         layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: full)
         // Find apply just wiped every backgroundColor attribute,
-        // including our current-line backdrop. Drop the cache so the
-        // next `publishSelection` reapplies it cleanly.
+        // including our current-line backdrop and selection-highlight
+        // overlay. Drop both caches so the next selection move reapplies
+        // them cleanly.
         lastCurrentLineRange = nil
+        selectionHighlightRanges.removeAll(keepingCapacity: true)
 
         guard !query.isEmpty, textStorage.length > 0 else {
             findMatches = []
