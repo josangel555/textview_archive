@@ -50,6 +50,13 @@ public struct TextDisplayView: NSViewControllerRepresentable {
     /// typically uses this to update a cursor-position indicator
     /// (line:col) in the status bar.
     public let onSelectionChange: ((SourceSelection) -> Void)?
+    /// Called whenever the find-match set changes. The argument is
+    /// the list of 1-based document line numbers where matches exist,
+    /// in document order, along with the active match's index into
+    /// that list (nil when no current match). Consumed by the find
+    /// minimap (see `FindMatchMinimapView`). Empty when the find bar
+    /// is dismissed or no matches.
+    public let onFindMatchesChange: ((FindMatchSet) -> Void)?
 
     public init(
         text: String,
@@ -63,7 +70,8 @@ public struct TextDisplayView: NSViewControllerRepresentable {
         scrollLineRequest: ScrollLineRequest = .none,
         onFindSummary: ((String) -> Void)? = nil,
         onScrollChange: ((SourceScrollState) -> Void)? = nil,
-        onSelectionChange: ((SourceSelection) -> Void)? = nil
+        onSelectionChange: ((SourceSelection) -> Void)? = nil,
+        onFindMatchesChange: ((FindMatchSet) -> Void)? = nil
     ) {
         self.text = text
         self.fontSize = fontSize
@@ -77,6 +85,21 @@ public struct TextDisplayView: NSViewControllerRepresentable {
         self.onFindSummary = onFindSummary
         self.onScrollChange = onScrollChange
         self.onSelectionChange = onSelectionChange
+        self.onFindMatchesChange = onFindMatchesChange
+    }
+
+    /// Snapshot of the find-bar's match set published to the SwiftUI
+    /// minimap. Lines are 1-based and in document order; duplicates
+    /// per line are preserved (multiple matches on one line each get a
+    /// tick).
+    public struct FindMatchSet: Equatable, Sendable {
+        public let lines: [Int]
+        public let currentIndex: Int?
+        public static let empty = FindMatchSet(lines: [], currentIndex: nil)
+        public init(lines: [Int], currentIndex: Int?) {
+            self.lines = lines
+            self.currentIndex = currentIndex
+        }
     }
 
     public struct ScrollLineRequest: Equatable, Sendable {
@@ -126,7 +149,8 @@ public struct TextDisplayView: NSViewControllerRepresentable {
             findState: findState,
             onFindSummary: onFindSummary,
             onScrollChange: onScrollChange,
-            onSelectionChange: onSelectionChange
+            onSelectionChange: onSelectionChange,
+            onFindMatchesChange: onFindMatchesChange
         )
     }
 }
@@ -211,6 +235,8 @@ public final class SourceTextController: NSViewController {
     nonisolated(unsafe) private var selectionObserver: NSObjectProtocol?
     private var onScrollChange: ((SourceScrollState) -> Void)?
     private var onSelectionChange: ((SourceSelection) -> Void)?
+    private var onFindMatchesChange: ((TextDisplayView.FindMatchSet) -> Void)?
+    private var lastPublishedFindMatchSet: TextDisplayView.FindMatchSet?
 
     // MARK: - Selection-highlight ("highlight all instances of selection")
 
@@ -580,7 +606,11 @@ public final class SourceTextController: NSViewController {
             selection: selection,
             haystackByteCount: cachedTextByteCount
         )
-        if matches.isEmpty { return }
+        if matches.isEmpty {
+            // Restore the current-line backdrop in case we just wiped
+            // it (we shouldn't have — clears are scoped — but cheap).
+            return
+        }
 
         let isDark = currentTheme.background.brightnessComponent < 0.5
         let tint = (isDark
@@ -601,6 +631,20 @@ public final class SourceTextController: NSViewController {
                 selectionHighlightRanges.append(clamped)
             }
         }
+    }
+
+    /// Clear any painted selection-highlight ranges. Used by text /
+    /// theme / find changes that re-wipe temporary background attrs.
+    private func clearSelectionHighlight() {
+        guard let lm = textView.layoutManager,
+              !selectionHighlightRanges.isEmpty else {
+            selectionHighlightRanges.removeAll(keepingCapacity: true)
+            return
+        }
+        for r in selectionHighlightRanges {
+            lm.removeTemporaryAttribute(.backgroundColor, forCharacterRange: r)
+        }
+        selectionHighlightRanges.removeAll(keepingCapacity: true)
     }
 
     /// Match NSTextView's effective line height for the default
@@ -633,10 +677,12 @@ public final class SourceTextController: NSViewController {
         findState: TextDisplayView.FindState,
         onFindSummary: ((String) -> Void)?,
         onScrollChange: ((SourceScrollState) -> Void)?,
-        onSelectionChange: ((SourceSelection) -> Void)?
+        onSelectionChange: ((SourceSelection) -> Void)?,
+        onFindMatchesChange: ((TextDisplayView.FindMatchSet) -> Void)? = nil
     ) {
         self.onScrollChange = onScrollChange
         self.onSelectionChange = onSelectionChange
+        self.onFindMatchesChange = onFindMatchesChange
         self.cachedFontSize = fontSize
         self.currentTheme = theme
         // Refresh cached byte count for the selection-highlight
@@ -859,6 +905,7 @@ public final class SourceTextController: NSViewController {
                 lastFindSummary = ""
                 DispatchQueue.main.async { cb("") }
             }
+            publishFindMatchSet(text: text)
             return
         }
 
@@ -921,6 +968,43 @@ public final class SourceTextController: NSViewController {
                 DispatchQueue.main.async { cb(summary) }
             }
         }
+        publishFindMatchSet(text: text)
+    }
+
+    /// Publish the current `findMatches` as a `FindMatchSet` of 1-based
+    /// line numbers + the active match index. Consumed by the find
+    /// minimap. Deduped by previous value so the SwiftUI subscriber
+    /// only republishes when the set actually changes.
+    ///
+    /// Line resolution uses the shared `newlineOffsetsRefreshed`
+    /// binary-search index (built lazily on first selection move
+    /// after a content change), so the per-match line lookup is
+    /// O(log lines) rather than O(loc).
+    private func publishFindMatchSet(text: String) {
+        guard let cb = onFindMatchesChange else { return }
+        let lines: [Int]
+        if findMatches.isEmpty {
+            lines = []
+        } else {
+            let offsets = newlineOffsetsRefreshed()
+            lines = findMatches.map { range in
+                var lo = 0
+                var hi = offsets.count
+                let target = range.location
+                while lo < hi {
+                    let mid = (lo + hi) / 2
+                    if offsets[mid] < target { lo = mid + 1 } else { hi = mid }
+                }
+                return lo + 1
+            }
+        }
+        let set = TextDisplayView.FindMatchSet(
+            lines: lines,
+            currentIndex: currentMatchIndex
+        )
+        if set == lastPublishedFindMatchSet { return }
+        lastPublishedFindMatchSet = set
+        DispatchQueue.main.async { cb(set) }
     }
 
     private static func buildAttributed(

@@ -849,6 +849,14 @@ public final class DocumentModel: ObservableObject {
     /// coordinator after it recomputes match ranges. The find bar
     /// renders this directly.
     @Published public var sourceFindMatchSummary: String = ""
+    /// 1-based document line numbers for every active find-bar match,
+    /// in document order. Published by `SourceTextController` whenever
+    /// the find set changes. Consumed by `FindMatchMinimapView` to
+    /// draw tick marks alongside the source-view scrollbar.
+    @Published public var sourceFindMatchLines: [Int] = []
+    /// Index into `sourceFindMatchLines` of the active match — the
+    /// one find-bar "next" would land on. Nil when no current match.
+    @Published public var sourceFindCurrentMatchIndex: Int? = nil
     /// Guarded setter — call this instead of direct assignment from
     /// SwiftUI callbacks. The `@Published` storage stays writable
     /// because `FindBar` takes the value as a Binding (display only;
@@ -856,6 +864,17 @@ public final class DocumentModel: ObservableObject {
     public func setSourceFindMatchSummary(_ s: String) {
         guard s != sourceFindMatchSummary else { return }
         sourceFindMatchSummary = s
+    }
+    /// Apply a `FindMatchSet` update from the source view. Dedupes on
+    /// equality so the publish chain doesn't churn SwiftUI on every
+    /// apply() tick when the match set is unchanged.
+    public func setSourceFindMatches(lines: [Int], currentIndex: Int?) {
+        if sourceFindMatchLines != lines {
+            sourceFindMatchLines = lines
+        }
+        if sourceFindCurrentMatchIndex != currentIndex {
+            sourceFindCurrentMatchIndex = currentIndex
+        }
     }
 
     public func showSourceFindBar() {
@@ -866,6 +885,7 @@ public final class DocumentModel: ObservableObject {
         isSourceFindBarPresented = false
         sourceFindQuery = ""
         setSourceFindMatchSummary("")
+        setSourceFindMatches(lines: [], currentIndex: nil)
     }
     public func sourceFindNext() { sourceFindNextRequest &+= 1 }
     public func sourceFindPrev() { sourceFindPrevRequest &+= 1 }
