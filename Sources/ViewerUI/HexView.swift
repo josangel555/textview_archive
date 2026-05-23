@@ -4,29 +4,30 @@ import ViewerCore
 
 /// Hex + ASCII viewer for binary files.
 ///
-/// Implementation note: this view USED to be a LazyVStack of HexRow
-/// SwiftUI views, one per row of bytes. For a 4 MB file at
-/// bytesPerRow=16 that's 256k rows. Even with LazyVStack realizing
-/// only visible rows, SwiftUI's diff machinery, the per-body
-/// `Array(file.data[offset..<end])` slice→array conversion, and the
-/// per-row `String(format:)` builds caused steady RAM growth as the
-/// user scrolled or as `body` re-evaluated (which SwiftUI does
-/// frequently). LESSONS.md has the longer version.
+/// Architecture: a SwiftUI toolbar (search + width picker) sits above
+/// a single `NSTextView` inside an `NSScrollView`. The text view
+/// renders the entire dump as one pre-built `NSAttributedString` so
+/// TextKit can lazy-lay out only visible glyphs — preserving the
+/// scroll perf the original view earned (see LESSONS.md).
 ///
-/// Replaced with: pre-render the entire dump once into a single
-/// `NSAttributedString`, hand it to a single `NSTextView` inside an
-/// `NSScrollView`. TextKit lazily lays out only visible glyphs, the
-/// string is one allocation total, scroll/redraw cost is O(visible).
+/// * **Search** (HEX bytes / ASCII string). Local to this view's
+///   state. The match list comes from `HexSearchEngine`; we overlay
+///   yellow backgrounds on both the hex and ASCII columns and
+///   ⌘-G / ⌘-⇧-G / ⏎ step through them.
 ///
-/// Above the text view a small SwiftUI toolbar carries the search
-/// bar (Feature 1) — mode picker (Hex / ASCII), query input, match
-/// count + step buttons (⌘G / ⌘⇧G, ⏎ to jump next). Matches are
-/// painted via `addAttribute(.backgroundColor:)` on the existing
-/// storage so we re-use the lazy TextKit layout instead of rebuilding
-/// the string per search.
+/// * **Width selector** (16 / 32 / 64). Per-tab in `DocumentModel`,
+///   default in `PreferencesStore.hexBytesPerRow`. Wide widths
+///   side-scroll horizontally — the dump is rendered as-is and the
+///   scroll view is configured `hasHorizontalScroller = true`.
+///
+/// Performance notes: the dump is rebuilt only when (file, font, width)
+/// changes. Highlights are applied via `addAttribute(.backgroundColor:)`
+/// on the existing storage — O(matches), no full re-render.
 struct HexView: View {
     let file: BinaryFile
     let fontSize: CGFloat
+    let tabID: UUID
+    @ObservedObject var model: DocumentModel
 
     @State private var searchQuery: String = ""
     @State private var searchMode: HexSearchMode = .hex
@@ -35,6 +36,8 @@ struct HexView: View {
     @State private var currentMatch: Int = 0
     @State private var queryIsInvalid: Bool = false
 
+    private var width: Int { model.hexWidth(forTabID: tabID) }
+
     var body: some View {
         VStack(spacing: 0) {
             toolbar
@@ -42,6 +45,7 @@ struct HexView: View {
             HexTextRepresentable(
                 file: file,
                 fontSize: fontSize,
+                width: width,
                 matches: matches,
                 matchPatternLength: searchPattern.count,
                 currentMatch: matches.isEmpty ? nil : currentMatch
@@ -105,6 +109,18 @@ struct HexView: View {
             .keyboardShortcut("g", modifiers: [.command])
 
             Spacer()
+
+            Picker("Width", selection: Binding<Int>(
+                get: { width },
+                set: { model.setHexWidth($0, forTabID: tabID) }
+            )) {
+                ForEach(HexLayout.allowedWidths, id: \.self) { w in
+                    Text("\(w)").tag(w)
+                }
+            }
+            .pickerStyle(.segmented)
+            .fixedSize()
+            .accessibilityIdentifier("mdv.hex.widthPicker")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -148,6 +164,7 @@ struct HexView: View {
 private struct HexTextRepresentable: NSViewControllerRepresentable {
     let file: BinaryFile
     let fontSize: CGFloat
+    let width: Int
     let matches: [Int]
     let matchPatternLength: Int
     let currentMatch: Int?
@@ -159,6 +176,7 @@ private struct HexTextRepresentable: NSViewControllerRepresentable {
     func updateNSViewController(_ controller: HexTextController, context: Context) {
         controller.apply(file: file,
                          fontSize: fontSize,
+                         width: width,
                          matches: matches,
                          matchPatternLength: matchPatternLength,
                          currentMatch: currentMatch)
@@ -172,7 +190,7 @@ private final class HexTextController: NSViewController {
     private var lastHighlightKey: HighlightKey?
     private var headerCharCount: Int = 0
     private var rowLength: Int = 0
-    private var currentWidth: Int = 16
+    private var currentWidth: Int = HexLayout.defaultWidth
     private var byteCount: Int = 0
 
     private struct DumpKey: Equatable {
@@ -191,7 +209,10 @@ private final class HexTextController: NSViewController {
     init() {
         let scroll = NSTextView.scrollableTextView()
         scroll.hasVerticalScroller = true
-        scroll.hasHorizontalScroller = false
+        // Wide widths (64) overflow at modest window sizes; horizontal
+        // scroller keeps rows un-clipped instead of wrapping or
+        // squishing.
+        scroll.hasHorizontalScroller = true
         scroll.autohidesScrollers = true
         scroll.borderType = .noBorder
         scroll.drawsBackground = true
@@ -199,6 +220,15 @@ private final class HexTextController: NSViewController {
         self.scrollView = scroll
 
         let tv = (scroll.documentView as? NSTextView) ?? NSTextView()
+        tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
+                            height: CGFloat.greatestFiniteMagnitude)
+        tv.isHorizontallyResizable = true
+        tv.isVerticallyResizable = true
+        tv.textContainer?.widthTracksTextView = false
+        tv.textContainer?.containerSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
         tv.isEditable = false
         tv.isRichText = false
         tv.isSelectable = true
@@ -224,23 +254,24 @@ private final class HexTextController: NSViewController {
 
     func apply(file: BinaryFile,
                fontSize: CGFloat,
+               width: Int,
                matches: [Int],
                matchPatternLength: Int,
                currentMatch: Int?) {
-        let width = currentWidth
         let dumpKey = DumpKey(url: file.url,
                               byteCount: file.byteCount,
                               fontSize: fontSize,
                               width: width)
         if dumpKey != lastDumpKey {
             lastDumpKey = dumpKey
+            currentWidth = width
             byteCount = file.byteCount
             let result = Self.buildDump(file: file,
                                         fontSize: fontSize,
                                         width: width)
             textView.textStorage?.setAttributedString(result.attr)
             headerCharCount = result.headerCharCount
-            rowLength = Self.renderedRowLength(width: width)
+            rowLength = HexLayout.renderedRowLength(width: width)
             textView.scrollToBeginningOfDocument(nil)
             lastHighlightKey = nil
         }
@@ -286,14 +317,14 @@ private final class HexTextController: NSViewController {
         let last = min(offset + length - 1, byteCount - 1)
         guard offset <= last else { return }
         for b in offset...last {
-            let row = b / currentWidth
-            let col = b % currentWidth
+            let row = HexLayout.row(forOffset: b, width: currentWidth)
+            let col = HexLayout.column(forOffset: b, width: currentWidth)
             let rowStart = headerCharCount + row * rowLength
-            let hex = NSRange(location: rowStart + Self.hexCharOffset(inRowColumn: col),
+            let hex = NSRange(location: rowStart + HexLayout.hexCharOffset(inRowColumn: col),
                               length: 2)
             let ascii = NSRange(
-                location: rowStart + Self.asciiCharOffset(inRowColumn: col,
-                                                          width: currentWidth),
+                location: rowStart + HexLayout.asciiCharOffset(inRowColumn: col,
+                                                               width: currentWidth),
                 length: 1)
             if NSMaxRange(hex) <= storage.length {
                 storage.addAttribute(.backgroundColor, value: color, range: hex)
@@ -305,22 +336,11 @@ private final class HexTextController: NSViewController {
     }
 
     private func scrollByteIntoView(offset: Int) {
-        let row = offset / currentWidth
-        let col = offset % currentWidth
+        let row = HexLayout.row(forOffset: offset, width: currentWidth)
+        let col = HexLayout.column(forOffset: offset, width: currentWidth)
         let rowStart = headerCharCount + row * rowLength
-        let charIdx = rowStart + Self.hexCharOffset(inRowColumn: col)
+        let charIdx = rowStart + HexLayout.hexCharOffset(inRowColumn: col)
         textView.scrollRangeToVisible(NSRange(location: charIdx, length: 2))
-    }
-
-    // Local row geometry — duplicated from HexLayout to keep this
-    // commit self-contained (the width selector commit will swap in
-    // HexLayout helpers and the constants drop out).
-    private static func renderedRowLength(width: Int) -> Int {
-        8 + 2 + (width * 3 - 1) + 2 + width + 1
-    }
-    private static func hexCharOffset(inRowColumn col: Int) -> Int { 10 + col * 3 }
-    private static func asciiCharOffset(inRowColumn col: Int, width: Int) -> Int {
-        10 + (width * 3 - 1) + 2 + col
     }
 
     struct DumpResult { let attr: NSAttributedString; let headerCharCount: Int }
@@ -331,10 +351,11 @@ private final class HexTextController: NSViewController {
         let bytesPerRow = width
         let bytes = file.data
         let byteCount = file.byteCount
-        let rowCount = byteCount == 0 ? 0 : (byteCount + bytesPerRow - 1) / bytesPerRow
+        let rowCount = HexLayout.rowCount(byteCount: byteCount, width: bytesPerRow)
+        let perRowChars = HexLayout.renderedRowLength(width: bytesPerRow)
 
         var s = String()
-        s.reserveCapacity(rowCount * renderedRowLength(width: width) + 80)
+        s.reserveCapacity(rowCount * perRowChars + 80)
         var headerCharCount = 0
         if file.isTruncated {
             let header = "Showing first \(byteCount) of \(file.totalByteCount) bytes\n\n"
