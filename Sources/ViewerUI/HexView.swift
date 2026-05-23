@@ -10,15 +10,22 @@ import ViewerCore
 /// TextKit can lazy-lay out only visible glyphs — preserving the
 /// scroll perf the original view earned (see LESSONS.md).
 ///
-/// * **Search** (HEX bytes / ASCII string). Local to this view's
-///   state. The match list comes from `HexSearchEngine`; we overlay
-///   yellow backgrounds on both the hex and ASCII columns and
-///   ⌘-G / ⌘-⇧-G / ⏎ step through them.
+/// Features layered on top of the original renderer:
 ///
 /// * **Width selector** (16 / 32 / 64). Per-tab in `DocumentModel`,
 ///   default in `PreferencesStore.hexBytesPerRow`. Wide widths
 ///   side-scroll horizontally — the dump is rendered as-is and the
 ///   scroll view is configured `hasHorizontalScroller = true`.
+///
+/// * **Search** (HEX bytes / ASCII string). Local to this view's
+///   state. The match list comes from `HexSearchEngine`; we overlay
+///   yellow backgrounds on both the hex and ASCII columns and
+///   ⌘-G / arrow-step through them.
+///
+/// * **Click-to-highlight**. Clicking on a byte highlights every
+///   other byte with the same value. Click-and-drag picks a
+///   multi-byte pattern and highlights every occurrence. Press ⎋
+///   or click empty space to clear.
 ///
 /// Performance notes: the dump is rebuilt only when (file, font, width)
 /// changes. Highlights are applied via `addAttribute(.backgroundColor:)`
@@ -35,6 +42,8 @@ struct HexView: View {
     @State private var matches: [Int] = []
     @State private var currentMatch: Int = 0
     @State private var queryIsInvalid: Bool = false
+    @State private var clickPattern: [UInt8] = []
+    @State private var clickOffsets: [Int] = []
 
     private var width: Int { model.hexWidth(forTabID: tabID) }
 
@@ -48,7 +57,11 @@ struct HexView: View {
                 width: width,
                 matches: matches,
                 matchPatternLength: searchPattern.count,
-                currentMatch: matches.isEmpty ? nil : currentMatch
+                currentMatch: matches.isEmpty ? nil : currentMatch,
+                clickOffsets: clickOffsets,
+                clickPatternLength: clickPattern.count,
+                onClickPattern: handleClickPattern(_:),
+                onClearClickPattern: clearClickHighlight
             )
         }
         .accessibilityIdentifier("mdv.hexView")
@@ -60,8 +73,12 @@ struct HexView: View {
             matches = []
             currentMatch = 0
             queryIsInvalid = false
+            clickPattern = []
+            clickOffsets = []
         }
     }
+
+    // MARK: Toolbar
 
     @ViewBuilder
     private var toolbar: some View {
@@ -83,7 +100,9 @@ struct HexView: View {
                 .onSubmit { stepMatch(by: 1) }
                 .accessibilityIdentifier("mdv.hex.search.field")
                 .background(
-                    queryIsInvalid ? Color.red.opacity(0.15) : Color.clear
+                    queryIsInvalid
+                        ? Color.red.opacity(0.15)
+                        : Color.clear
                 )
 
             Text(matchCountLabel)
@@ -132,6 +151,8 @@ struct HexView: View {
         return "\(currentMatch + 1) / \(matches.count)"
     }
 
+    // MARK: Match plumbing
+
     private func recomputeMatches() {
         guard !searchQuery.isEmpty else {
             searchPattern = []
@@ -159,7 +180,23 @@ struct HexView: View {
         let count = matches.count
         currentMatch = (currentMatch + delta + count) % count
     }
+
+    // MARK: Click-pattern wiring
+
+    private func handleClickPattern(_ pattern: [UInt8]) {
+        clickPattern = pattern
+        clickOffsets = pattern.isEmpty
+            ? []
+            : HexSearchEngine.find(pattern: pattern, in: file.data)
+    }
+
+    private func clearClickHighlight() {
+        clickPattern = []
+        clickOffsets = []
+    }
 }
+
+// MARK: - NSViewControllerRepresentable bridge
 
 private struct HexTextRepresentable: NSViewControllerRepresentable {
     let file: BinaryFile
@@ -168,30 +205,52 @@ private struct HexTextRepresentable: NSViewControllerRepresentable {
     let matches: [Int]
     let matchPatternLength: Int
     let currentMatch: Int?
+    let clickOffsets: [Int]
+    let clickPatternLength: Int
+    let onClickPattern: ([UInt8]) -> Void
+    let onClearClickPattern: () -> Void
 
     func makeNSViewController(context: Context) -> HexTextController {
-        HexTextController()
+        let c = HexTextController()
+        c.onClickPattern = onClickPattern
+        c.onClearClickPattern = onClearClickPattern
+        return c
     }
 
     func updateNSViewController(_ controller: HexTextController, context: Context) {
-        controller.apply(file: file,
-                         fontSize: fontSize,
-                         width: width,
-                         matches: matches,
-                         matchPatternLength: matchPatternLength,
-                         currentMatch: currentMatch)
+        controller.onClickPattern = onClickPattern
+        controller.onClearClickPattern = onClearClickPattern
+        controller.apply(
+            file: file,
+            fontSize: fontSize,
+            width: width,
+            matches: matches,
+            matchPatternLength: matchPatternLength,
+            currentMatch: currentMatch,
+            clickOffsets: clickOffsets,
+            clickPatternLength: clickPatternLength
+        )
     }
 }
 
+// MARK: - NSViewController
+
 private final class HexTextController: NSViewController {
     let scrollView: NSScrollView
-    let textView: NSTextView
+    let textView: HexNSTextView
+    /// Latest file bytes so the mouse handler can derive the
+    /// click-pattern without re-parsing the rendered text.
+    fileprivate var fileData: Data = Data()
+
     private var lastDumpKey: DumpKey?
     private var lastHighlightKey: HighlightKey?
-    private var headerCharCount: Int = 0
     private var rowLength: Int = 0
+    private var headerCharCount: Int = 0
     private var currentWidth: Int = HexLayout.defaultWidth
     private var byteCount: Int = 0
+
+    var onClickPattern: (([UInt8]) -> Void)?
+    var onClearClickPattern: (() -> Void)?
 
     private struct DumpKey: Equatable {
         let url: URL
@@ -203,15 +262,14 @@ private final class HexTextController: NSViewController {
         let matches: [Int]
         let matchPatternLength: Int
         let currentMatch: Int?
+        let clickOffsets: [Int]
+        let clickPatternLength: Int
         let width: Int
     }
 
     init() {
         let scroll = NSTextView.scrollableTextView()
         scroll.hasVerticalScroller = true
-        // Wide widths (64) overflow at modest window sizes; horizontal
-        // scroller keeps rows un-clipped instead of wrapping or
-        // squishing.
         scroll.hasHorizontalScroller = true
         scroll.autohidesScrollers = true
         scroll.borderType = .noBorder
@@ -219,7 +277,11 @@ private final class HexTextController: NSViewController {
         scroll.backgroundColor = .textBackgroundColor
         self.scrollView = scroll
 
-        let tv = (scroll.documentView as? NSTextView) ?? NSTextView()
+        let oldTV = scroll.documentView as? NSTextView
+        let tv = HexNSTextView(frame: oldTV?.frame ?? .zero,
+                               textContainer: oldTV?.textContainer)
+        tv.autoresizingMask = oldTV?.autoresizingMask ?? []
+        tv.minSize = oldTV?.minSize ?? .zero
         tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
                             height: CGFloat.greatestFiniteMagnitude)
         tv.isHorizontallyResizable = true
@@ -242,9 +304,11 @@ private final class HexTextController: NSViewController {
         tv.isAutomaticSpellingCorrectionEnabled = false
         tv.isAutomaticLinkDetectionEnabled = false
         tv.isAutomaticDataDetectionEnabled = false
+        scroll.documentView = tv
         self.textView = tv
 
         super.init(nibName: nil, bundle: nil)
+        tv.controller = self
     }
 
     @available(*, unavailable)
@@ -257,7 +321,9 @@ private final class HexTextController: NSViewController {
                width: Int,
                matches: [Int],
                matchPatternLength: Int,
-               currentMatch: Int?) {
+               currentMatch: Int?,
+               clickOffsets: [Int],
+               clickPatternLength: Int) {
         let dumpKey = DumpKey(url: file.url,
                               byteCount: file.byteCount,
                               fontSize: fontSize,
@@ -266,6 +332,8 @@ private final class HexTextController: NSViewController {
             lastDumpKey = dumpKey
             currentWidth = width
             byteCount = file.byteCount
+            fileData = file.data
+
             let result = Self.buildDump(file: file,
                                         fontSize: fontSize,
                                         width: width)
@@ -273,19 +341,26 @@ private final class HexTextController: NSViewController {
             headerCharCount = result.headerCharCount
             rowLength = HexLayout.renderedRowLength(width: width)
             textView.scrollToBeginningOfDocument(nil)
-            lastHighlightKey = nil
+            lastHighlightKey = nil // force re-apply
         }
+
         applyHighlights(matches: matches,
                         matchPatternLength: matchPatternLength,
-                        currentMatch: currentMatch)
+                        currentMatch: currentMatch,
+                        clickOffsets: clickOffsets,
+                        clickPatternLength: clickPatternLength)
     }
 
     private func applyHighlights(matches: [Int],
                                  matchPatternLength: Int,
-                                 currentMatch: Int?) {
+                                 currentMatch: Int?,
+                                 clickOffsets: [Int],
+                                 clickPatternLength: Int) {
         let key = HighlightKey(matches: matches,
                                matchPatternLength: matchPatternLength,
                                currentMatch: currentMatch,
+                               clickOffsets: clickOffsets,
+                               clickPatternLength: clickPatternLength,
                                width: currentWidth)
         if key == lastHighlightKey { return }
         lastHighlightKey = key
@@ -294,6 +369,15 @@ private final class HexTextController: NSViewController {
         storage.beginEditing()
         let full = NSRange(location: 0, length: storage.length)
         storage.removeAttribute(.backgroundColor, range: full)
+
+        // Click-highlight first; search-match wins ties by painting last.
+        if !clickOffsets.isEmpty, clickPatternLength > 0 {
+            let color = NSColor.systemTeal.withAlphaComponent(0.30)
+            for off in clickOffsets {
+                paint(offset: off, length: clickPatternLength,
+                      color: color, in: storage)
+            }
+        }
 
         if !matches.isEmpty, matchPatternLength > 0 {
             let base = NSColor.systemYellow.withAlphaComponent(0.45)
@@ -304,6 +388,7 @@ private final class HexTextController: NSViewController {
                       color: c, in: storage)
             }
         }
+
         storage.endEditing()
 
         if let idx = currentMatch, matches.indices.contains(idx) {
@@ -320,11 +405,12 @@ private final class HexTextController: NSViewController {
             let row = HexLayout.row(forOffset: b, width: currentWidth)
             let col = HexLayout.column(forOffset: b, width: currentWidth)
             let rowStart = headerCharCount + row * rowLength
-            let hex = NSRange(location: rowStart + HexLayout.hexCharOffset(inRowColumn: col),
-                              length: 2)
+            let hex = NSRange(
+                location: rowStart + HexLayout.hexCharOffset(inRowColumn: col),
+                length: 2)
             let ascii = NSRange(
-                location: rowStart + HexLayout.asciiCharOffset(inRowColumn: col,
-                                                               width: currentWidth),
+                location: rowStart + HexLayout.asciiCharOffset(
+                    inRowColumn: col, width: currentWidth),
                 length: 1)
             if NSMaxRange(hex) <= storage.length {
                 storage.addAttribute(.backgroundColor, value: color, range: hex)
@@ -343,7 +429,50 @@ private final class HexTextController: NSViewController {
         textView.scrollRangeToVisible(NSRange(location: charIdx, length: 2))
     }
 
-    struct DumpResult { let attr: NSAttributedString; let headerCharCount: Int }
+    // MARK: Click-pattern derivation
+
+    func charIndexToByteOffset(_ idx: Int) -> Int? {
+        guard rowLength > 0 else { return nil }
+        if idx < headerCharCount { return nil }
+        let rel = idx - headerCharCount
+        let row = rel / rowLength
+        let inRow = rel % rowLength
+        let hexStart = HexLayout.hexCharOffset(inRowColumn: 0)
+        let hexEnd = hexStart + currentWidth * 3 - 1
+        let asciiStart = HexLayout.asciiCharOffset(inRowColumn: 0,
+                                                   width: currentWidth)
+        let asciiEnd = asciiStart + currentWidth
+        var col: Int? = nil
+        if inRow >= hexStart, inRow < hexEnd {
+            col = (inRow - hexStart) / 3
+        } else if inRow >= asciiStart, inRow < asciiEnd {
+            col = inRow - asciiStart
+        }
+        guard let c = col else { return nil }
+        let off = row * currentWidth + c
+        return off < byteCount ? off : nil
+    }
+
+    func reportClickPattern(range: Range<Int>) {
+        let clamped = max(0, range.lowerBound)..<min(fileData.count, range.upperBound)
+        guard clamped.lowerBound < clamped.upperBound else {
+            onClearClickPattern?()
+            return
+        }
+        let bytes = Array(fileData[clamped])
+        onClickPattern?(bytes)
+    }
+
+    func reportClickClear() {
+        onClearClickPattern?()
+    }
+
+    // MARK: Rendering
+
+    struct DumpResult {
+        let attr: NSAttributedString
+        let headerCharCount: Int
+    }
 
     static func buildDump(file: BinaryFile,
                           fontSize: CGFloat,
@@ -391,8 +520,9 @@ private final class HexTextController: NSViewController {
             }
             s += "  "
             // Pad short final row so every row has the same character
-            // length — keeps `(row * rowLength + col)` arithmetic
-            // valid for highlight-paint addressing.
+            // length — lets us address bytes by
+            // `(row * rowLength + col)` without tracking per-row
+            // variable lengths.
             for i in 0..<bytesPerRow {
                 let pos = rowStart + i
                 if pos < rowEnd {
@@ -415,7 +545,61 @@ private final class HexTextController: NSViewController {
             .font: font,
             .foregroundColor: NSColor.labelColor,
         ]
-        return DumpResult(attr: NSAttributedString(string: s, attributes: attrs),
-                          headerCharCount: headerCharCount)
+        return DumpResult(
+            attr: NSAttributedString(string: s, attributes: attrs),
+            headerCharCount: headerCharCount
+        )
+    }
+}
+
+// MARK: - NSTextView subclass for click-to-highlight
+
+private final class HexNSTextView: NSTextView {
+    weak var controller: HexTextController?
+    private var dragStartOffset: Int?
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        let pt = convert(event.locationInWindow, from: nil)
+        let idx = characterIndex(forPoint: pt)
+        if let idx, let off = controller?.charIndexToByteOffset(idx) {
+            dragStartOffset = off
+        } else {
+            dragStartOffset = nil
+            controller?.reportClickClear()
+        }
+        super.mouseDown(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        defer { super.mouseUp(with: event) }
+        guard let start = dragStartOffset else { return }
+        let pt = convert(event.locationInWindow, from: nil)
+        let idx = characterIndex(forPoint: pt)
+        let endOff = idx.flatMap { controller?.charIndexToByteOffset($0) } ?? start
+        let lo = min(start, endOff)
+        let hi = max(start, endOff) + 1
+        controller?.reportClickPattern(range: lo..<hi)
+        dragStartOffset = nil
+    }
+
+    private func characterIndex(forPoint pt: NSPoint) -> Int? {
+        guard let lm = layoutManager, let tc = textContainer else { return nil }
+        let local = NSPoint(x: pt.x - textContainerOrigin.x,
+                            y: pt.y - textContainerOrigin.y)
+        var frac: CGFloat = 0
+        let glyphIdx = lm.glyphIndex(for: local, in: tc,
+                                     fractionOfDistanceThroughGlyph: &frac)
+        if glyphIdx >= lm.numberOfGlyphs { return nil }
+        return lm.characterIndexForGlyph(at: glyphIdx)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 { // escape
+            controller?.reportClickClear()
+            return
+        }
+        super.keyDown(with: event)
     }
 }
