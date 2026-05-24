@@ -538,4 +538,106 @@ final class DocumentModelTests: XCTestCase {
         if case .loaded = state { return true }
         return false
     }
+
+    // MARK: openPath(_:atLine:) — search-result jump dispatch
+
+    /// Plain-text file opens in `.source` mode by default; the
+    /// line-jump should bump `sourceScrollLineNonce` and stash the
+    /// target line. Editor goto is left unset (we're not in `.editor`).
+    func test_openPathAtLine_sourceMode_setsSourceScrollRequest() throws {
+        let model = makeModel()
+        let url = try writeFile("notes.txt", "a\nb\nc\nd\n")
+        let baselineNonce = model.sourceScrollLineNonce
+        model.openPath(url, atLine: 3)
+        XCTAssertEqual(model.currentViewMode, .source,
+                       "plain-text default mode is .source")
+        XCTAssertEqual(model.sourceScrollLineTarget, 3)
+        XCTAssertNotEqual(model.sourceScrollLineNonce, baselineNonce,
+                          "scrollSource must bump the nonce so the view re-fires")
+        XCTAssertNil(model.editorGotoLine,
+                     "non-editor modes should not poke the CM6 channel")
+    }
+
+    /// Markdown defaults to `.rendered`. Jumping to a line should
+    /// coerce the mode to `.source` (rendered HTML has no line N) and
+    /// fire the scroll request.
+    func test_openPathAtLine_markdown_coercesRenderedToSource() throws {
+        let model = makeModel()
+        let url = try writeFile("readme.md", "# h1\n\npara\n\n## h2\n")
+        model.open(url: url)
+        XCTAssertEqual(model.currentViewMode, .rendered,
+                       "markdown default is .rendered")
+        let baselineNonce = model.sourceScrollLineNonce
+        model.openPath(url, atLine: 5)
+        XCTAssertEqual(model.currentViewMode, .source,
+                       "rendered must be coerced to .source for line jump")
+        XCTAssertEqual(model.sourceScrollLineTarget, 5)
+        XCTAssertGreaterThan(model.sourceScrollLineNonce, baselineNonce)
+    }
+
+    /// When the active tab is already in `.editor` mode, the jump
+    /// must populate `editorGotoLine` (the CM6 surface listens there)
+    /// in addition to the source channel.
+    func test_openPathAtLine_editorMode_setsEditorGotoLine() throws {
+        let model = makeModel()
+        let url = try writeFile("code.swift", "let a = 1\nlet b = 2\nlet c = 3\n")
+        model.open(url: url)
+        model.setCurrentViewMode(.editor)
+        XCTAssertEqual(model.currentViewMode, .editor)
+        let baselineNonce = model.sourceScrollLineNonce
+        model.openPath(url, atLine: 2)
+        XCTAssertEqual(model.currentViewMode, .editor,
+                       "editor mode must be preserved (not coerced)")
+        XCTAssertEqual(model.editorGotoLine?.line, 2)
+        XCTAssertEqual(model.editorGotoLine?.select, true,
+                       "search result should select the matched line")
+        // Source channel still bumped so a mode switch back to source
+        // picks up the same caret.
+        XCTAssertEqual(model.sourceScrollLineTarget, 2)
+        XCTAssertGreaterThan(model.sourceScrollLineNonce, baselineNonce)
+    }
+
+    /// Two clicks on the same line must each produce a fresh nonce
+    /// so the view re-fires the scroll (otherwise a second click on
+    /// the same row after the user scrolled away would be a silent
+    /// no-op).
+    func test_openPathAtLine_repeatedSameLine_bumpsNonceEachCall() throws {
+        let model = makeModel()
+        let url = try writeFile("a.txt", "one\ntwo\nthree\n")
+        model.openPath(url, atLine: 2)
+        let firstNonce = model.sourceScrollLineNonce
+        model.openPath(url, atLine: 2)
+        XCTAssertGreaterThan(model.sourceScrollLineNonce, firstNonce,
+                             "every search-result click must produce a new nonce")
+    }
+
+    /// Repeated `editorGotoLine` requests for the same line must
+    /// have distinct `id`s so CM6 actually re-applies (the Equatable
+    /// check compares the whole struct).
+    func test_openPathAtLine_editorMode_repeatedSameLine_bumpsGotoID() throws {
+        let model = makeModel()
+        let url = try writeFile("code.swift", "let a = 1\nlet b = 2\nlet c = 3\n")
+        model.open(url: url)
+        model.setCurrentViewMode(.editor)
+        model.openPath(url, atLine: 2)
+        let firstID = model.editorGotoLine?.id
+        model.openPath(url, atLine: 2)
+        let secondID = model.editorGotoLine?.id
+        XCTAssertNotNil(firstID)
+        XCTAssertNotNil(secondID)
+        XCTAssertNotEqual(firstID, secondID,
+                          "each click must mint a fresh CMGotoLineRequest id")
+    }
+
+    /// Zero / negative lines are no-ops on the scroll channel — we
+    /// still open the file but don't pretend to know where to land.
+    func test_openPathAtLine_zeroLine_isNoopForScroll() throws {
+        let model = makeModel()
+        let url = try writeFile("a.txt")
+        let baselineNonce = model.sourceScrollLineNonce
+        model.openPath(url, atLine: 0)
+        XCTAssertEqual(model.currentURL?.lastPathComponent, "a.txt")
+        XCTAssertEqual(model.sourceScrollLineNonce, baselineNonce,
+                       "line<=0 must not touch the scroll channel")
+    }
 }

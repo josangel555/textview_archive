@@ -324,6 +324,45 @@ public final class DocumentModel: ObservableObject {
         }
     }
 
+    /// Open a file at a specific 1-based source line and place the
+    /// caret / selection there. Used by search-result rows
+    /// (`SearchAnywhereSection`, `CrossSearchPanel`) so the user lands
+    /// on the matched line instead of just at the top of the file.
+    ///
+    /// Mode handling:
+    ///   - If the file would otherwise open in `.rendered` mode
+    ///     (markdown default), we coerce it to `.source` — there's no
+    ///     concept of "line N" in the rendered HTML view.
+    ///   - `.editor` (CM6) honors the jump via `editorGotoLine`.
+    ///   - `.source` and any other line-numbered text mode honors it
+    ///     via `scrollSource(toLine:)`. We set BOTH so that a later
+    ///     mode switch surfaces the right caret without re-firing the
+    ///     search-result click.
+    ///
+    /// Directories have no "line"; delegates to `openPath`.
+    public func openPath(_ url: URL, atLine line: Int) {
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir),
+           isDir.boolValue {
+            openFolder(url)
+            return
+        }
+        open(url: url)
+        guard line > 0 else { return }
+        // If the opener landed us in rendered markdown, switch to
+        // source so the line is actually visible. Other modes
+        // (.table / .diff / .hex / .formatted) keep their default —
+        // the source-text channel still gets the request, so a later
+        // "switch to source" picks the caret up.
+        if currentViewMode == .rendered {
+            setCurrentViewMode(.source)
+        }
+        if currentViewMode == .editor {
+            editorGotoLine = CMGotoLineRequest(line: line, select: true)
+        }
+        scrollSource(toLine: line)
+    }
+
     /// Restores the most recently opened folder (if any). Call from app launch.
     ///
     /// Skips restoration if the folder is under a TCC-protected location

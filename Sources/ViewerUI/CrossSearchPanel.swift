@@ -367,19 +367,31 @@ private struct CrossSearchFileGroupView: View {
             .buttonStyle(.plain)
 
             ForEach(group.matches.prefix(8), id: \.lineNumber) { m in
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("\(m.lineNumber)")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 36, alignment: .trailing)
-                    Text(m.line)
-                        .font(.system(.body, design: .monospaced))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                // Search result jump (jump-wiring agent): each match
+                // row opens the file at its 1-based line. Previously
+                // only the file header was clickable, which dropped
+                // the user at line 1 with no further hint.
+                Button {
+                    model.openPath(group.url, atLine: m.lineNumber)
+                    model.dismissCrossSearch()
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("\(m.lineNumber)")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 36, alignment: .trailing)
+                        Text(m.line)
+                            .font(.system(.body, design: .monospaced))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(.leading, 30)
+                    .padding(.trailing, 14)
+                    .padding(.vertical, 1)
+                    .contentShape(Rectangle())
                 }
-                .padding(.leading, 30)
-                .padding(.trailing, 14)
-                .padding(.vertical, 1)
+                .buttonStyle(.plain)
             }
             if group.matches.count > 8 {
                 Text("+ \(group.matches.count - 8) more")

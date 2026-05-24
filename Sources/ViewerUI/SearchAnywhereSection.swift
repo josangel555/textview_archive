@@ -133,7 +133,12 @@ struct SearchAnywhereSection: View {
             .help(file.url.path)
         ForEach(file.matches.indices, id: \.self) { idx in
             let m = file.matches[idx]
-            Button(action: { open(file.url) }) {
+            // MARK: - Search result jump (jump-wiring agent)
+            // Click a match row: open the file AND scroll/select the
+            // matched 1-based line. Routes through `openPath(_:atLine:)`
+            // which handles the rendered→source mode coercion plus the
+            // editor-vs-source dispatch.
+            Button(action: { open(file.url, line: m.lineNumber) }) {
                 HStack(alignment: .top, spacing: 6) {
                     Text("\(m.lineNumber)")
                         .font(.system(size: model.uiSize(10), design: .monospaced))
@@ -162,6 +167,12 @@ struct SearchAnywhereSection: View {
 
     private func open(_ url: URL) {
         model.openPath(url)
+    }
+
+    /// Open the file and jump to a specific 1-based line. Used by the
+    /// per-match rows so the editor lands directly on the matched line.
+    private func open(_ url: URL, line: Int) {
+        model.openPath(url, atLine: line)
     }
 
     /// Wraps `HighlightedText.ranges` and applies the same accent
