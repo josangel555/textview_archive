@@ -25,9 +25,11 @@
     defaultKeymap, history, historyKeymap, undo, redo, indentWithTab,
     searchKeymap, highlightSelectionMatches, openSearchPanel, closeSearchPanel,
     findNext, findPrevious, replaceNext, replaceAll,
+    setSearchQuery, SearchQuery, getSearchQuery,
     syntaxHighlighting, defaultHighlightStyle, bracketMatching,
     foldKeymap, foldGutter, indentOnInput, foldAll, unfoldAll,
     indentUnit, EditorStateTabSize,
+    linter, lintGutter, setDiagnostics, forEachDiagnostic,
     markdown, javascript, python, json, oneDark,
   } = window.CM;
 
@@ -149,6 +151,64 @@
   const fontCompartment        = new Compartment();
   const indentCompartment      = new Compartment();
   const tabSizeCompartment     = new Compartment();
+  const lintGutterCompartment  = new Compartment();
+  const invisiblesCompartment  = new Compartment();
+
+  // ---- show-invisibles decoration plugin ------------------------------
+  // Toggled via `setShowInvisibles`. Renders middle-dot for spaces,
+  // arrow for tabs, pilcrow at line breaks. Lightweight ViewPlugin —
+  // re-decorates only the visible viewport, so cost stays bounded on
+  // big docs. Compartment-wrapped so we can swap in/out at runtime.
+  function buildInvisiblesPlugin() {
+    const { Decoration, ViewPlugin, WidgetType } = window.CM;
+    class InvWidget extends WidgetType {
+      constructor(ch) { super(); this.ch = ch; }
+      eq(o) { return o.ch === this.ch; }
+      toDOM() {
+        const e = document.createElement("span");
+        e.className = "cm-invisible";
+        e.textContent = this.ch;
+        return e;
+      }
+      ignoreEvent() { return true; }
+    }
+    const SPACE = new InvWidget("·");   // middle dot
+    const TAB   = new InvWidget("→");   // rightwards arrow
+    const NL    = new InvWidget("¶");   // pilcrow
+    function buildDecos(view) {
+      const builder = [];
+      for (const { from, to } of view.visibleRanges) {
+        const text = view.state.doc.sliceString(from, to);
+        for (let i = 0; i < text.length; i++) {
+          const ch = text[i];
+          const pos = from + i;
+          if (ch === " ") {
+            builder.push(Decoration.replace({ widget: SPACE }).range(pos, pos + 1));
+          } else if (ch === "\t") {
+            builder.push(Decoration.replace({ widget: TAB }).range(pos, pos + 1));
+          } else if (ch === "\n") {
+            builder.push(Decoration.widget({ widget: NL, side: -1 }).range(pos));
+          }
+        }
+      }
+      return Decoration.set(builder, true);
+    }
+    return ViewPlugin.fromClass(class {
+      constructor(view) { this.decorations = buildDecos(view); }
+      update(u) {
+        if (u.docChanged || u.viewportChanged) {
+          this.decorations = buildDecos(u.view);
+        }
+      }
+    }, { decorations: v => v.decorations });
+  }
+  // Cached because building the plugin allocates Decoration objects.
+  let invisiblesPluginCached = null;
+  function invisiblesExtension(enabled) {
+    if (!enabled) return [];
+    if (!invisiblesPluginCached) invisiblesPluginCached = buildInvisiblesPlugin();
+    return invisiblesPluginCached;
+  }
 
   // Build an EditorView.theme(...) that just controls font-size.
   // Compartmented so a setFontSize swap doesn't fight with theme swap.
@@ -223,6 +283,14 @@
       // to 2-space indent; Swift will override via setIndentation.
       indentCompartment.of(indentUnit.of("  ")),
       tabSizeCompartment.of(EditorStateTabSize.of(2)),
+      // Lint gutter — markers in the gutter at lines with diagnostics.
+      // The underlying field that `setDiagnostics` writes is installed
+      // by `lintGutter()` itself; squiggles ride along automatically
+      // once any diagnostic is present.
+      lintGutterCompartment.of(lintGutter()),
+      // Invisible-character display. Off by default; toggled via
+      // setShowInvisibles. Wrapped in a Compartment so we can hot-swap.
+      invisiblesCompartment.of([]),
     ];
   }
 
@@ -268,10 +336,13 @@
         case "setSelection":       applySetSelection(msg); break;
         case "openSearch":         openSearchPanel(view); break;
         case "closeSearch":        closeSearchPanel(view); break;
-        case "findNext":           findNext(view); break;
-        case "findPrev":           findPrevious(view); break;
-        case "replaceNext":        replaceNext(view); break;
-        case "replaceAll":         replaceAll(view); break;
+        case "setSearchQuery":     applySetSearchQuery(msg); break;
+        case "findNext":           applyFindStep(findNext); break;
+        case "findPrev":           applyFindStep(findPrevious); break;
+        case "replaceNext":        applyFindStep(replaceNext); break;
+        case "replaceAll":         replaceAll(view); emitFindResult(); break;
+        case "setDiagnostics":     applySetDiagnostics(msg); break;
+        case "setShowInvisibles":  applySetShowInvisibles(msg); break;
         case "foldAll":            foldAll(view); break;
         case "unfoldAll":          unfoldAll(view); break;
         case "undo":               undo(view); break;
@@ -446,6 +517,140 @@
     if (msg.scroll) spec.effects = EditorView.scrollIntoView(head, { y: "center" });
     view.dispatch(spec);
   }
+
+  // ---- find / search ---------------------------------------------------
+  // applySetSearchQuery: SwiftUI's find bar drives CM's search state
+  // without opening the built-in panel. We mirror what
+  // `openSearchPanel`'s field would do: dispatch `setSearchQuery` with
+  // a fresh `SearchQuery`. Selection-match highlighting picks it up
+  // through `highlightSelectionMatches` automatically.
+  function applySetSearchQuery(msg) {
+    const query = String(msg.query || "");
+    const q = new SearchQuery({
+      search: query,
+      caseSensitive: !!msg.caseSensitive,
+      regexp: !!msg.regex,
+      literal: !msg.regex,
+    });
+    view.dispatch({ effects: setSearchQuery.of(q) });
+    emitFindResult();
+  }
+
+  // Apply a find-step command (findNext / findPrevious / replaceNext)
+  // and post the match-count readout afterwards. Wrapper exists so
+  // every step keeps the SwiftUI find bar's n/N in sync without polling.
+  function applyFindStep(fn) {
+    fn(view);
+    emitFindResult();
+  }
+
+  // Count matches for the current query and post a `findResultChanged`
+  // event so the SwiftUI find bar can render n/N. Done in JS because
+  // CM6's matcher already knows how to honor case/regex/word options;
+  // re-implementing in Swift would drift.
+  function emitFindResult() {
+    try {
+      const q = getSearchQuery(view.state);
+      if (!q || !q.search) {
+        post("findResultChanged", { matches: 0, current: 0 });
+        return;
+      }
+      const cursor = q.getCursor(view.state.doc);
+      const matches = [];
+      // SearchCursor is iterator-shaped (`next()` returns `{value:{from,to}, done}`).
+      // For huge docs this could be expensive; cap at a reasonable count
+      // so the bar UX stays responsive and we don't lock up the WebView
+      // process. 10k matches is the conventional editor ceiling.
+      const MAX = 10000;
+      let safety = 0;
+      while (safety++ < MAX) {
+        const step = cursor.next();
+        if (step.done) break;
+        matches.push(step.value);
+      }
+      const head = view.state.selection.main.head;
+      let current = 0;
+      for (let i = 0; i < matches.length; i++) {
+        if (matches[i].from <= head && head <= matches[i].to) {
+          current = i + 1;
+          break;
+        }
+      }
+      // If caret is past all matches but matches exist, mark the last
+      // visited one (CM's default; users expect "current" to track the
+      // most-recent jump).
+      if (current === 0 && matches.length > 0) {
+        for (let i = 0; i < matches.length; i++) {
+          if (matches[i].from >= head) { current = Math.max(1, i); break; }
+        }
+        if (current === 0) current = matches.length;
+      }
+      post("findResultChanged", { matches: matches.length, current: current });
+    } catch (e) {
+      post("errorOccurred", {
+        phase: "findResult",
+        message: String((e && e.message) || e),
+      });
+    }
+  }
+
+  // ---- diagnostics -----------------------------------------------------
+  // Translate the bridge `setDiagnostics` payload into CM6 `Diagnostic`
+  // records and dispatch them through @codemirror/lint's setDiagnostics
+  // effect. Clears (empty array) work the same way.
+  function applySetDiagnostics(msg) {
+    const arr = Array.isArray(msg.diagnostics) ? msg.diagnostics : [];
+    const docLen = view.state.doc.length;
+    const diags = [];
+    for (const d of arr) {
+      const from = Math.max(0, Math.min(docLen, Number(d.from) || 0));
+      const to = Math.max(from, Math.min(docLen, Number(d.to) || from));
+      if (to === from) continue; // skip zero-length (CM6 ignores them)
+      diags.push({
+        from: from,
+        to: to,
+        severity: mapSeverity(d.severity),
+        message: String(d.message || ""),
+        source: d.source ? String(d.source) : undefined,
+      });
+    }
+    view.dispatch(setDiagnostics(view.state, diags));
+  }
+
+  function mapSeverity(s) {
+    // CM6 lint accepts "error" | "warning" | "info" | "hint".
+    switch ((s || "").toLowerCase()) {
+      case "error":   return "error";
+      case "warning": return "warning";
+      case "info":    return "info";
+      case "hint":    return "hint";
+      default:        return "error";
+    }
+  }
+
+  // ---- invisibles toggle ----------------------------------------------
+  function applySetShowInvisibles(msg) {
+    view.dispatch({
+      effects: invisiblesCompartment.reconfigure(invisiblesExtension(!!msg.enabled)),
+    });
+  }
+
+  // ---- find panel emit on open/close ----------------------------------
+  // Listen for CM's panel mount/unmount via the panel container DOM —
+  // simpler than wiring into the SearchQuery facet. The SwiftUI find
+  // bar doesn't use this for now (it drives via setSearchQuery), but
+  // user-triggered ⌘F still opens the built-in panel and we want to
+  // be honest about it.
+  let _findPanelMounted = false;
+  function _checkFindPanel() {
+    const mounted = !!document.querySelector(".cm-panel.cm-search");
+    if (mounted !== _findPanelMounted) {
+      _findPanelMounted = mounted;
+      post(mounted ? "findOpened" : "findClosed", mounted ? { query: "" } : {});
+    }
+  }
+  const _findObserver = new MutationObserver(_checkFindPanel);
+  _findObserver.observe(document.body, { childList: true, subtree: true });
 
   // ---- legacy untyped helpers (kept for one cycle) ---------------------
   // Existing Swift call sites use window.setText / setTheme / etc. These

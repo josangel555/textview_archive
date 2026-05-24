@@ -38,6 +38,53 @@ final class CodeMirrorBundleTests: XCTestCase {
         XCTAssertNotNil(url, "codemirror.css missing from ViewerUI resources")
     }
 
+    // MARK: - Phase 2: bundle contract for new dispatch surface
+    //
+    // We can't execute the JS here, but we can grep the HTML host's
+    // dispatch switch and the JS bundle's exports to confirm Phase 2
+    // wiring made it through the build.
+
+    func testHostHTMLExposesNewDispatchTypes() throws {
+        let url = try XCTUnwrap(CodeMirrorResources.hostHTMLURL)
+        let html = try String(contentsOf: url, encoding: .utf8)
+        for needle in [
+            "case \"setDiagnostics\"",
+            "case \"setShowInvisibles\"",
+            "case \"setSearchQuery\"",
+            "findResultChanged",
+            "applySetDiagnostics",
+            "applySetShowInvisibles",
+            "applySetSearchQuery",
+        ] {
+            XCTAssertTrue(html.contains(needle),
+                          "codemirror.html missing Phase 2 wiring: \(needle)")
+        }
+    }
+
+    func testJSBundleExportsLintAndSearchAPIs() throws {
+        let url = try XCTUnwrap(CodeMirrorResources.jsBundleURL)
+        let data = try Data(contentsOf: url)
+        let js = String(data: data, encoding: .utf8) ?? ""
+        // The IIFE bundle attaches every re-exported symbol off `window.CM`.
+        // Just confirm string presence — the bundle is minified so name-
+        // mangling on locals is fine but the export names survive.
+        for needle in ["lintGutter", "setDiagnostics", "setSearchQuery", "SearchQuery"] {
+            XCTAssertTrue(js.contains(needle),
+                          "codemirror.js missing expected export: \(needle)")
+        }
+    }
+
+    func testJSBundleSizeWithinPhase2Budget() throws {
+        let url = try XCTUnwrap(CodeMirrorResources.jsBundleURL)
+        let size = try Data(contentsOf: url).count
+        // Phase 2 plan: bundle stays below ~1.5 MB through Phase 4 even
+        // with vim + extra languages. Today (Phase 2 with lint added)
+        // we're at ~650 KB. Lock the upper bound at 1.5 MB so a slip
+        // (e.g. accidentally bundling a non-minified build) trips here.
+        XCTAssertLessThan(size, 1_500_000,
+                          "codemirror.js bundle exceeded 1.5 MB Phase-2 budget: \(size) bytes")
+    }
+
     // MARK: - Bridge action decoding
 
     func testBridgeDecodesReady() {
