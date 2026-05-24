@@ -179,4 +179,69 @@ final class CMBridgeV1Tests: XCTestCase {
             "v": 1, "type": "requestReply", "value": "x",
         ]))
     }
+
+    // MARK: - Phase 3 additions: hover / definition / context menu
+
+    func testDecodeRequestHover() {
+        XCTAssertEqual(
+            CMBridgeCodec.decodeInbound([
+                "v": 1, "type": "requestHover",
+                "pos": 42, "line": 3, "character": 5,
+                "replyId": "h-9",
+            ]),
+            .requestHover(pos: 42, line: 3, character: 5, replyId: "h-9")
+        )
+    }
+
+    func testDecodeRequestHoverRejectsMissingReplyId() {
+        XCTAssertNil(CMBridgeCodec.decodeInbound([
+            "v": 1, "type": "requestHover", "pos": 0, "line": 1, "character": 0,
+        ]))
+    }
+
+    func testDecodeRequestDefinition() {
+        XCTAssertEqual(
+            CMBridgeCodec.decodeInbound([
+                "v": 1, "type": "requestDefinition",
+                "pos": 100, "line": 12, "character": 7,
+            ]),
+            .requestDefinition(pos: 100, line: 12, character: 7)
+        )
+    }
+
+    func testDecodeContextMenuRequested() {
+        let got = CMBridgeCodec.decodeInbound([
+            "v": 1, "type": "contextMenuRequested",
+            "pos": 50, "line": 4, "character": 8,
+            "screenX": 200.0, "screenY": 300.0,
+            "selection": "foo", "hasSelection": true,
+        ])
+        guard case .contextMenuRequested(let pos, let line, let ch,
+                                         let sx, let sy, let sel, let has) = got
+        else {
+            return XCTFail("expected .contextMenuRequested, got \(String(describing: got))")
+        }
+        XCTAssertEqual(pos, 50)
+        XCTAssertEqual(line, 4)
+        XCTAssertEqual(ch, 8)
+        XCTAssertEqual(sx, 200.0, accuracy: 0.001)
+        XCTAssertEqual(sy, 300.0, accuracy: 0.001)
+        XCTAssertEqual(sel, "foo")
+        XCTAssertTrue(has)
+    }
+
+    func testDecodeContextMenuRequestedAcceptsIntCoords() {
+        // JS sometimes serializes screenX/Y as integers (when whole
+        // pixels). Decoder must tolerate both.
+        let got = CMBridgeCodec.decodeInbound([
+            "v": 1, "type": "contextMenuRequested",
+            "pos": 0, "line": 1, "character": 0,
+            "screenX": 200, "screenY": 300,
+        ])
+        guard case .contextMenuRequested(_, _, _, let sx, let sy, _, _) = got else {
+            return XCTFail("expected .contextMenuRequested")
+        }
+        XCTAssertEqual(sx, 200.0, accuracy: 0.001)
+        XCTAssertEqual(sy, 300.0, accuracy: 0.001)
+    }
 }

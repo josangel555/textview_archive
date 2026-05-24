@@ -251,6 +251,46 @@ final class CMOutboundEncodingTests: XCTestCase {
 
     // MARK: - JSON safety
 
+    // MARK: - Phase 2 large-file cap
+
+    func testCodeMirrorEditorCapMatchesDesignDoc() {
+        // Design doc §17.5 + BACKLOG: "50 MB hard cap" for CM6 editor
+        // mode. Lock the constant so a casual bump (which would push
+        // JS-heap pressure into pathology territory on the user's box)
+        // requires editing this test too.
+        XCTAssertEqual(codeMirrorEditorMaxBytes, 50 * 1024 * 1024)
+        XCTAssertGreaterThan(codeMirrorEditorMaxBytes, markdownRenderMaxBytes,
+                             "editor cap must be ≥ rendered cap")
+    }
+
+    // MARK: - Phase 3 additions
+
+    func testEncodeHoverResponse() {
+        let d = encodeAndParse(.hoverResponse(
+            replyId: "h-7", contents: "**Foo** docs", from: 10, to: 25))
+        XCTAssertEqual(d["type"] as? String, "hoverResponse")
+        XCTAssertEqual(d["replyId"] as? String, "h-7")
+        XCTAssertEqual(d["contents"] as? String, "**Foo** docs")
+        XCTAssertEqual(d["from"] as? Int, 10)
+        XCTAssertEqual(d["to"] as? Int, 25)
+    }
+
+    func testEncodeHoverResponseEmptyContentsDismisses() {
+        // Empty contents = JS dismisses the popover. Encoder should
+        // still ship the string field (not omit it), otherwise the
+        // JS-side `String(msg.contents || "")` works but a future
+        // strict-decode would break.
+        let d = encodeAndParse(.hoverResponse(
+            replyId: "h-8", contents: "", from: 0, to: 0))
+        XCTAssertEqual(d["contents"] as? String, "")
+    }
+
+    func testEncodeSetSaveOnBlur() {
+        let d = encodeAndParse(.setSaveOnBlur(enabled: true))
+        XCTAssertEqual(d["type"] as? String, "setSaveOnBlur")
+        XCTAssertEqual(d["enabled"] as? Bool, true)
+    }
+
     func testEncodedJSONIsAlwaysValid() {
         // Sample one of each kind through the JSON parser. Catches a
         // future regression where an encoder branch forgets to wrap a
@@ -261,6 +301,8 @@ final class CMOutboundEncodingTests: XCTestCase {
             .gotoLine(line: 1, column: nil, select: false),
             .setIndentation(useTabs: true, size: 4),
             .openSearch(query: nil, replace: false),
+            .hoverResponse(replyId: "h-1", contents: "doc", from: 0, to: 3),
+            .setSaveOnBlur(enabled: false),
         ]
         for m in samples {
             let raw = CMBridgeCodec.encodeOutboundJSON(m)

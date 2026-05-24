@@ -64,6 +64,22 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
     public let onCursorChange: ((CMCursorPosition) -> Void)?
     public let onScrollChange: ((CMScrollPosition) -> Void)?
     public let onFindResultChange: ((CMFindResult) -> Void)?
+    /// JS posted a hover request. Handler receives `(line, character,
+    /// replyId)`; resolve via `Coordinator.send(.hoverResponse(...))`
+    /// when the LSP round-trip finishes. Pass `contents: ""` to
+    /// dismiss without showing a popover.
+    public let onHoverRequest: ((CMHoverRequest) -> Void)?
+    /// JS posted a Cmd-click. Swift opens the target tab via
+    /// `LSPPool.definition` → `DocumentController.openTab(...)`.
+    /// Handler is fire-and-forget; no JS reply expected.
+    public let onDefinitionRequest: ((CMPositionRequest) -> Void)?
+    /// JS posted a contextmenu. Swift pops a native NSMenu at the
+    /// screen point. Handler must dispatch the menu synchronously
+    /// (NSMenu.popUp blocks until dismissal).
+    public let onContextMenuRequest: ((CMContextMenuRequest) -> Void)?
+    /// JS posted `editorBlurred`. Wired to nil to ignore; the editor
+    /// always posts blur, but Swift opts into save-on-blur via setting.
+    public let onBlur: (() -> Void)?
 
     public init(
         text: String,
@@ -88,7 +104,11 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         onSaveRequested: @escaping () -> Void = {},
         onCursorChange: ((CMCursorPosition) -> Void)? = nil,
         onScrollChange: ((CMScrollPosition) -> Void)? = nil,
-        onFindResultChange: ((CMFindResult) -> Void)? = nil
+        onFindResultChange: ((CMFindResult) -> Void)? = nil,
+        onHoverRequest: ((CMHoverRequest) -> Void)? = nil,
+        onDefinitionRequest: ((CMPositionRequest) -> Void)? = nil,
+        onContextMenuRequest: ((CMContextMenuRequest) -> Void)? = nil,
+        onBlur: (() -> Void)? = nil
     ) {
         self.text = text
         self.fontSize = fontSize
@@ -113,6 +133,10 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         self.onCursorChange = onCursorChange
         self.onScrollChange = onScrollChange
         self.onFindResultChange = onFindResultChange
+        self.onHoverRequest = onHoverRequest
+        self.onDefinitionRequest = onDefinitionRequest
+        self.onContextMenuRequest = onContextMenuRequest
+        self.onBlur = onBlur
     }
 
     public func makeCoordinator() -> Coordinator { Coordinator() }
@@ -177,6 +201,10 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         var onCursorChange: ((CMCursorPosition) -> Void)?
         var onScrollChange: ((CMScrollPosition) -> Void)?
         var onFindResultChange: ((CMFindResult) -> Void)?
+        var onHoverRequest: ((CMHoverRequest) -> Void)?
+        var onDefinitionRequest: ((CMPositionRequest) -> Void)?
+        var onContextMenuRequest: ((CMContextMenuRequest) -> Void)?
+        var onBlur: (() -> Void)?
 
         /// Pending state we attempt to flush every `updateNSView`.
         /// Before the bundled HTML finishes loading, all
@@ -238,6 +266,10 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             self.onCursorChange = view.onCursorChange
             self.onScrollChange = view.onScrollChange
             self.onFindResultChange = view.onFindResultChange
+            self.onHoverRequest = view.onHoverRequest
+            self.onDefinitionRequest = view.onDefinitionRequest
+            self.onContextMenuRequest = view.onContextMenuRequest
+            self.onBlur = view.onBlur
             self.pendingText = view.text
             self.pendingFontSize = view.fontSize
             self.pendingLanguage = view.language
@@ -438,10 +470,30 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             case .findResultChanged(let matches, let current):
                 onFindResultChange?(CMFindResult(matches: matches, current: current))
             case .selectionChanged, .findOpened, .findClosed,
-                 .linkClicked, .editorBlurred, .requestReply:
+                 .linkClicked, .requestReply:
                 // Phase 1: accepted by the protocol but no Swift-side
                 // consumer wired yet. Phase 2/3 hookup.
                 break
+            case .editorBlurred:
+                onBlur?()
+            case .requestHover(_, let line, let character, let replyId):
+                if let handler = onHoverRequest {
+                    handler(CMHoverRequest(line: line, character: character, replyId: replyId))
+                } else if let webView = webView {
+                    // No handler wired — reply with empty so the JS-side
+                    // hover promise resolves instead of timing out.
+                    dispatch(.hoverResponse(replyId: replyId, contents: "", from: 0, to: 0),
+                             webView: webView)
+                }
+            case .requestDefinition(_, let line, let character):
+                onDefinitionRequest?(CMPositionRequest(line: line, character: character))
+            case .contextMenuRequested(_, let line, let character,
+                                       let sx, let sy, let sel, let hasSel):
+                onContextMenuRequest?(CMContextMenuRequest(
+                    line: line, character: character,
+                    screenPoint: NSPoint(x: sx, y: sy),
+                    selection: sel, hasSelection: hasSel
+                ))
             case .errorOccurred(let phase, let message, _):
                 Self.log.error("CM JS error in \(phase, privacy: .public): \(message, privacy: .public)")
             case .unknown(let type):
@@ -537,6 +589,47 @@ public struct CMSelectionSeed: Equatable, Sendable {
     public let scroll: Bool
     public init(anchor: Int, head: Int, scroll: Bool = true) {
         self.anchor = anchor; self.head = head; self.scroll = scroll
+    }
+}
+
+/// JS posted a hover request. `line` is 1-based, `character` is 0-based
+/// (matches LSP wire format). `replyId` opaque — pass it straight back
+/// in `CMOutboundMessage.hoverResponse`.
+public struct CMHoverRequest: Equatable, Sendable {
+    public let line: Int
+    public let character: Int
+    public let replyId: String
+    public init(line: Int, character: Int, replyId: String) {
+        self.line = line; self.character = character; self.replyId = replyId
+    }
+}
+
+/// JS posted a doc-position-only request (currently Cmd-click →
+/// definition). Line + character match LSP coords.
+public struct CMPositionRequest: Equatable, Sendable {
+    public let line: Int
+    public let character: Int
+    public init(line: Int, character: Int) {
+        self.line = line; self.character = character
+    }
+}
+
+/// JS posted a contextmenu event. `screenPoint` is in WebKit screen
+/// coordinates (origin top-left); convert to AppKit (origin bottom-
+/// left) before passing to `NSMenu.popUp(positioning:at:in:)`.
+public struct CMContextMenuRequest: Equatable, Sendable {
+    public let line: Int
+    public let character: Int
+    public let screenPoint: NSPoint
+    public let selection: String
+    public let hasSelection: Bool
+    public init(
+        line: Int, character: Int, screenPoint: NSPoint,
+        selection: String, hasSelection: Bool
+    ) {
+        self.line = line; self.character = character
+        self.screenPoint = screenPoint
+        self.selection = selection; self.hasSelection = hasSelection
     }
 }
 

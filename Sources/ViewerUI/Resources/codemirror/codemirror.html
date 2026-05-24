@@ -33,6 +33,10 @@
     markdown, javascript, python, json, oneDark,
   } = window.CM;
 
+  // Optional hoverTooltip from @codemirror/view — may not be present on
+  // older bundles; fall back to inert when undefined.
+  const hoverTooltip = window.CM.hoverTooltip;
+
   // Protocol version — must match Swift side `CMProtocol.currentVersion`.
   const PROTOCOL_VERSION = 1;
 
@@ -250,7 +254,147 @@
   function attachScrollListener() {
     view.scrollDOM.addEventListener("scroll", scheduleScrollEmit, { passive: true });
     view.contentDOM.addEventListener("blur", () => post("editorBlurred", {}));
+    // Right-click → native NSMenu. JS preventDefault so WKWebView's
+    // default browser menu never appears; Swift pops a real NSMenu at
+    // the screen-coord we forward. See `CodeMirrorEditorView` ctxMenu
+    // wiring (Phase 2 #40).
+    view.contentDOM.addEventListener("contextmenu", function (e) {
+      try {
+        const pos = view.posAtCoords({ x: e.clientX, y: e.clientY }) ?? 0;
+        const line = view.state.doc.lineAt(pos);
+        const sel = view.state.selection.main;
+        const selText = sel.empty ? "" : view.state.sliceDoc(sel.from, sel.to);
+        post("contextMenuRequested", {
+          pos: pos,
+          line: line.number,
+          character: pos - line.from,
+          screenX: e.screenX,
+          screenY: e.screenY,
+          selection: selText,
+          hasSelection: !sel.empty,
+        });
+      } catch (err) {
+        post("errorOccurred", {
+          phase: "contextmenu",
+          message: String((err && err.message) || err),
+        });
+      }
+      e.preventDefault();
+      return false;
+    });
+    // Cmd-click → Go-to-Definition. Swift opens the target tab; no
+    // reply needed back to JS. We only fire on a plain Cmd-click
+    // (no shift, no alt) over the content surface.
+    view.contentDOM.addEventListener("mousedown", function (e) {
+      if (!e.metaKey || e.shiftKey || e.altKey || e.button !== 0) return;
+      try {
+        const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+        if (pos == null) return;
+        const line = view.state.doc.lineAt(pos);
+        post("requestDefinition", {
+          pos: pos,
+          line: line.number,
+          character: pos - line.from,
+        });
+        e.preventDefault();
+      } catch (err) {
+        post("errorOccurred", {
+          phase: "cmdclick",
+          message: String((err && err.message) || err),
+        });
+      }
+    });
   }
+
+  // ---- hover (LSP) -----------------------------------------------------
+  // CM6's hoverTooltip handles dwell timing (default ~300 ms), positioning,
+  // and dismissal. We resolve the body asynchronously via a Swift round-
+  // trip: post `requestHover` with a replyId, hold a promise, resolve on
+  // matching `hoverResponse`. Result body is rendered as plain text +
+  // inline-styled fenced-code blocks (no HTML injection — defense against
+  // hostile LSP servers).
+  const _pendingHovers = new Map(); // replyId → {resolve, reject}
+  let _hoverSeq = 0;
+  function _newHoverReplyId() {
+    _hoverSeq += 1;
+    return "h" + Date.now().toString(36) + "-" + _hoverSeq;
+  }
+  function requestHoverFromSwift(pos, line, character) {
+    const id = _newHoverReplyId();
+    const promise = new Promise(function (resolve) {
+      _pendingHovers.set(id, resolve);
+      // Safety timeout — if Swift never replies (LSP not running, server
+      // hung), drop after 2 s so the promise doesn't leak.
+      setTimeout(function () {
+        if (_pendingHovers.has(id)) {
+          _pendingHovers.delete(id);
+          resolve(null);
+        }
+      }, 2000);
+    });
+    post("requestHover", {
+      pos: pos, line: line, character: character, replyId: id,
+    });
+    return promise;
+  }
+  function resolveHoverResponse(msg) {
+    const fn = _pendingHovers.get(msg.replyId);
+    if (!fn) return;
+    _pendingHovers.delete(msg.replyId);
+    fn({
+      contents: String(msg.contents || ""),
+      from: Number(msg.from) || 0,
+      to: Number(msg.to) || 0,
+    });
+  }
+  function buildHoverExtension() {
+    if (typeof hoverTooltip !== "function") return [];
+    return hoverTooltip(async function (view, pos, side) {
+      const line = view.state.doc.lineAt(pos);
+      const result = await requestHoverFromSwift(
+        pos, line.number, pos - line.from
+      );
+      if (!result || !result.contents) return null;
+      return {
+        pos: result.from || pos,
+        end: result.to || pos,
+        above: true,
+        create: function () {
+          const dom = document.createElement("div");
+          dom.className = "cm-tooltip-hover-lsp";
+          // textContent — no HTML, defense in depth even though LSP is
+          // local-trust. We render fenced code blocks visually by
+          // splitting on ``` markers and applying monospace via inline
+          // <pre>/<code>; this matches our LSPMarkdownRenderer's
+          // posture for the source-viewer.
+          const parts = result.contents.split(/```/);
+          for (let i = 0; i < parts.length; i++) {
+            const chunk = parts[i];
+            if (!chunk) continue;
+            const node = (i % 2 === 1)
+              ? document.createElement("pre")
+              : document.createElement("span");
+            if (i % 2 === 1) {
+              // Strip optional language tag on the opening fence's first line.
+              const idx = chunk.indexOf("\n");
+              const body = idx >= 0 ? chunk.slice(idx + 1) : chunk;
+              node.textContent = body;
+              node.style.margin = "0";
+              node.style.fontFamily = "ui-monospace, SFMono-Regular, Menlo, monospace";
+              node.style.fontSize = "0.95em";
+              node.style.whiteSpace = "pre-wrap";
+            } else {
+              node.textContent = chunk;
+              node.style.whiteSpace = "pre-wrap";
+            }
+            dom.appendChild(node);
+          }
+          return { dom: dom };
+        },
+      };
+    }, { hideOnChange: true });
+  }
+  const hoverCompartment = new Compartment();
 
   // Base extensions reused across instances. The order matters for
   // keymap priority (search/save before defaults so ⌘S / ⌘F win).
@@ -291,6 +435,10 @@
       // Invisible-character display. Off by default; toggled via
       // setShowInvisibles. Wrapped in a Compartment so we can hot-swap.
       invisiblesCompartment.of([]),
+      // LSP hover. Dwell-driven; resolves bodies via Swift round-trip.
+      // Built once; the bridge response gating handles "no LSP for this
+      // file" by returning null contents (popover never appears).
+      hoverCompartment.of(buildHoverExtension()),
     ];
   }
 
@@ -362,6 +510,8 @@
             top: view.scrollDOM.scrollTop, left: view.scrollDOM.scrollLeft,
           }});
           break;
+        case "hoverResponse":      resolveHoverResponse(msg); break;
+        case "setSaveOnBlur":      /* Swift owns the policy; JS keeps posting editorBlurred */ break;
         default:
           post("errorOccurred", {
             phase: "dispatch",

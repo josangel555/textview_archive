@@ -58,3 +58,13 @@ public let highlightMaxBytes: Int = 512 * 1024
 /// at source mode. They can still read the file; we just don't pretend
 /// to render arbitrary-size documents.
 public let markdownRenderMaxBytes: Int = 4 * 1024 * 1024
+
+/// Hard cap on file size opened in CodeMirror 6 editor mode. Above this
+/// the WKWebView path becomes a liability: CM6's piece-tree is fine to
+/// ~10 MB and tolerable to ~50 MB, but the JS-heap pressure mounts and
+/// the LSP diagnostics push (`setDiagnostics` ships full decorations as
+/// JSON) compounds the cost. NSTextView source mode (TK1) handles 1 GB
+/// log files at constant RAM; above 50 MB the user gets that instead.
+/// Design lock: `docs/CM6_INTEGRATION_DESIGN_2026-05-23.md` §17.5,
+/// reinforced by `docs/CM6_CAPABILITIES_QNA_2026-05-23.md` Q4.
+public let codeMirrorEditorMaxBytes: Int = 50 * 1024 * 1024

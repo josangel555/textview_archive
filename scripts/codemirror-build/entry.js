@@ -20,6 +20,7 @@ import {
   highlightActiveLineGutter, drawSelection, rectangularSelection,
   crosshairCursor, dropCursor,
   Decoration, ViewPlugin, WidgetType,
+  hoverTooltip,
 } from "@codemirror/view";
 import {
   defaultKeymap, history, historyKeymap, undo, redo,
@@ -57,6 +58,7 @@ export {
   keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter,
   drawSelection, rectangularSelection, crosshairCursor, dropCursor,
   Decoration, ViewPlugin, WidgetType,
+  hoverTooltip,
   defaultKeymap, history, historyKeymap, undo, redo, indentWithTab,
   search, searchKeymap, highlightSelectionMatches,
   openSearchPanel, closeSearchPanel,

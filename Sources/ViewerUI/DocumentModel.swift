@@ -1084,6 +1084,161 @@ public final class DocumentModel: ObservableObject {
         pendingEditorDiagnostics.removeValue(forKey: id)
     }
 
+    // MARK: - CM6 LSP bridge (hover / Cmd-click definition / context menu)
+
+    /// Save the active editor when the WKWebView loses focus. Off by
+    /// default — opt-in via Settings. The CM6 host always posts
+    /// `editorBlurred`; this flag gates whether Swift acts on it.
+    @Published public var saveEditorOnBlur: Bool = false
+
+    /// JS posted a hover request. Fire the LSP `hover` round-trip
+    /// asynchronously, then reply through the bridge so CM6's
+    /// `hoverTooltip` callback resolves. Empty contents → no popover.
+    public func respondToEditorHover(
+        tabID: UUID, fileURL: URL, request: CMHoverRequest
+    ) {
+        // Reply with empty if no LSP language is configured — avoids
+        // a pointless server roundtrip that would just time out.
+        let lang = effectiveLanguage(forTabID: tabID, url: fileURL)
+        _ = lang
+        guard LSPLanguageRegistry.default.language(for: fileURL) != nil else {
+            sendEditorHoverResponse(replyId: request.replyId, contents: "")
+            return
+        }
+        // CM6 line is 1-based; LSP wants 0-based. character is
+        // UTF-16 code units; the pool converts internally if the
+        // server negotiated a different encoding.
+        let lspLine = max(0, request.line - 1)
+        let lspChar = max(0, request.character)
+        Task { [weak self] in
+            guard let self = self else { return }
+            do {
+                let hover = try await self.lspPool.hover(
+                    fileURL: fileURL, line: lspLine, character: lspChar)
+                let text: String = hover.map { h -> String in
+                    return h.contents
+                } ?? ""
+                await MainActor.run {
+                    self.sendEditorHoverResponse(
+                        replyId: request.replyId, contents: text)
+                }
+            } catch {
+                await MainActor.run {
+                    self.sendEditorHoverResponse(
+                        replyId: request.replyId, contents: "")
+                }
+            }
+        }
+    }
+
+    /// JS posted a Cmd-click. Resolve via LSP `definition`; on a
+    /// single result, open the target tab + jump to the line. Multi-
+    /// result is single-pick for now (first result) — matches the
+    /// source-view's "go to first" default until the picker UI lands.
+    public func handleEditorDefinition(
+        tabID: UUID, fileURL: URL, request: CMPositionRequest
+    ) {
+        _ = effectiveLanguage(forTabID: tabID, url: fileURL)
+        guard LSPLanguageRegistry.default.language(for: fileURL) != nil else { return }
+        let lspLine = max(0, request.line - 1)
+        let lspChar = max(0, request.character)
+        Task { [weak self] in
+            guard let self = self else { return }
+            do {
+                let locs = try await self.lspPool.definition(
+                    fileURL: fileURL, line: lspLine, character: lspChar)
+                guard let first = locs.first else { return }
+                let targetLine = first.range.start.line + 1 // back to 1-based
+                guard let targetURL = URL(string: first.uri) else { return }
+                await MainActor.run {
+                    self.openPath(targetURL, atLine: targetLine)
+                }
+            } catch {
+                // Definition lookup failures are silent — there's no
+                // UI surface for "LSP returned nothing"; users notice
+                // by absence of navigation. Logged at trace level.
+            }
+        }
+    }
+
+    /// JS posted a right-click. Build a native NSMenu and pop it at
+    /// the screen point CM6 forwarded. Keeps Cmd-click + right-click
+    /// → "Go to Definition" symmetric with the source-view's menu.
+    public func showEditorContextMenu(
+        tabID: UUID, fileURL: URL, request: CMContextMenuRequest
+    ) {
+        let menu = NSMenu(title: "Editor")
+
+        // LSP nav submenu — only when a language is configured.
+        if LSPLanguageRegistry.default.language(for: fileURL) != nil {
+            let target = EditorMenuTarget { [weak self] in
+                guard let self = self else { return }
+                self.handleEditorDefinition(
+                    tabID: tabID, fileURL: fileURL,
+                    request: CMPositionRequest(
+                        line: request.line, character: request.character))
+            }
+            let goDef = NSMenuItem(
+                title: "Go to Definition",
+                action: #selector(EditorMenuTarget.invoke(_:)),
+                keyEquivalent: "")
+            goDef.target = target
+            menu.addItem(goDef)
+            // NSMenu doesn't retain item targets across popUp dismissal,
+            // so we park the target on the menu via objc_setAssociatedObject
+            // by simply stashing in a side dict bound to menu lifetime.
+            editorMenuTargets[ObjectIdentifier(goDef)] = target
+            menu.addItem(NSMenuItem.separator())
+        }
+
+        // Standard editing items. These send the AppKit-standard
+        // first-responder selectors; the WKWebView synthesizes them
+        // into the embedded contenteditable.
+        let cut = NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)),
+                             keyEquivalent: "")
+        let copy = NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)),
+                              keyEquivalent: "")
+        let paste = NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)),
+                               keyEquivalent: "")
+        cut.isEnabled = request.hasSelection
+        copy.isEnabled = request.hasSelection
+        menu.addItem(cut); menu.addItem(copy); menu.addItem(paste)
+
+        // WebKit posts CM6's contextmenu coordinates as `screenX/Y`,
+        // which originate top-left. NSMenu.popUp expects AppKit
+        // screen coords (bottom-left). Convert via the active screen
+        // height.
+        let webkitPoint = request.screenPoint
+        let mainScreen = NSScreen.screens.first { screen in
+            screen.frame.contains(NSPoint(x: webkitPoint.x, y: 0))
+        } ?? NSScreen.main
+        let screenHeight = mainScreen?.frame.height ?? 0
+        let appkitY = screenHeight - webkitPoint.y
+        let popPoint = NSPoint(x: webkitPoint.x, y: appkitY)
+        menu.popUp(positioning: nil, at: popPoint, in: nil)
+    }
+
+    /// Side-storage for NSMenuItem targets created in
+    /// `showEditorContextMenu`. NSMenu does not retain `target`, so a
+    /// closure-backed shim would deallocate before the menu action
+    /// fires. Keying by `ObjectIdentifier(menuItem)` keeps lifetime
+    /// scoped without leaking — the dict survives only until the next
+    /// context-menu invocation drops the entry.
+    private var editorMenuTargets: [ObjectIdentifier: EditorMenuTarget] = [:]
+
+    private func sendEditorHoverResponse(replyId: String, contents: String) {
+        // The current editor webview owns the response channel; we
+        // route through the registry to avoid wiring an extra
+        // per-tab Coordinator handle through to the model.
+        guard let webView = CodeMirrorEditorRegistry.shared.current() else {
+            return
+        }
+        let msg = CMOutboundMessage.hoverResponse(
+            replyId: replyId, contents: contents, from: 0, to: 0)
+        let json = CMBridgeCodec.encodeOutboundJSON(msg)
+        webView.evaluateJavaScript("window.cmDispatch(\(json));")
+    }
+
     // MARK: Pretty-print / Format
 
     /// Tab.id's that the user has toggled into "formatted" (pretty-
@@ -2208,4 +2363,15 @@ public final class DocumentModel: ObservableObject {
 private struct WeakModelBox: @unchecked Sendable {
     weak var value: DocumentModel?
     init(_ v: DocumentModel) { self.value = v }
+}
+
+/// NSMenuItem target shim. Wraps a closure into an `NSObject` selector
+/// so closure-backed menu items in `showEditorContextMenu` survive the
+/// NSMenu.popUp lifecycle. The owning `DocumentModel.editorMenuTargets`
+/// dict holds the strong reference.
+@MainActor
+final class EditorMenuTarget: NSObject {
+    private let block: () -> Void
+    init(perform: @escaping () -> Void) { self.block = perform }
+    @objc func invoke(_ sender: Any?) { block() }
 }

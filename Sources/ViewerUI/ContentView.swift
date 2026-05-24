@@ -240,6 +240,15 @@ public struct ContentView: View {
             let tid = model.tabs.selected?.id ?? UUID()
             CSVTableView(text: file.contents, model: model, tabID: tid)
         } else if model.currentViewMode == .editor {
+            // Hard cap. Above ~50 MB the WKWebView path becomes a
+            // liability (JS-heap pressure + LSP diagnostics push cost);
+            // route the user to source view instead. See
+            // `codeMirrorEditorMaxBytes` for rationale.
+            if file.byteCount > codeMirrorEditorMaxBytes {
+                LargeEditorPlaceholderView(file: file, model: model)
+                    .accessibilityIdentifier("mdv.editor.largePlaceholder")
+                    .id("largeEditorCap-\(file.url.path)")
+            } else {
             // Editor mode: editable in-memory buffer. The buffer is
             // owned by `DocumentModel.editorBuffers` keyed by tab id;
             // we seed it lazily here (idempotent) so re-entering the
@@ -296,6 +305,26 @@ public struct ContentView: View {
                         } else {
                             model.setEditorFindMatchSummary("\(result.current)/\(result.matches)")
                         }
+                    },
+                    onHoverRequest: { req in
+                        model.respondToEditorHover(
+                            tabID: tid, fileURL: file.url, request: req
+                        )
+                    },
+                    onDefinitionRequest: { req in
+                        model.handleEditorDefinition(
+                            tabID: tid, fileURL: file.url, request: req
+                        )
+                    },
+                    onContextMenuRequest: { req in
+                        model.showEditorContextMenu(
+                            tabID: tid, fileURL: file.url, request: req
+                        )
+                    },
+                    onBlur: {
+                        if model.saveEditorOnBlur {
+                            _ = model.saveActiveEditor()
+                        }
                     }
                 )
                 .accessibilityIdentifier("mdv.editor")
@@ -312,6 +341,7 @@ public struct ContentView: View {
                     }
                 }
             }
+            } // end size-cap else
         } else if model.currentViewMode == .diff {
             DiffView(text: file.contents, doc: model)
         } else if (category == .markdown && model.currentViewMode == .rendered)
@@ -482,6 +512,46 @@ struct LargeMarkdownPlaceholderView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 460)
+            Button("View as Source") {
+                model.setCurrentViewMode(.source)
+            }
+            .controlSize(.large)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(40)
+    }
+
+    private func byteString(_ bytes: Int) -> String {
+        let mb = Double(bytes) / 1_048_576.0
+        return String(format: "%.1f MB", mb)
+    }
+}
+
+/// Shown for files that exceed `codeMirrorEditorMaxBytes` in editor
+/// mode. The WKWebView path can technically render them but the JS
+/// heap pressure (CM6 doc model + decoration set + LSP diagnostic
+/// JSON push) compounds quickly. NSTextView TK1 in source mode handles
+/// gigabyte-class log files at constant RAM, so we route the user
+/// there explicitly. Design lock: `docs/CM6_INTEGRATION_DESIGN_2026-05-23.md` §17.5.
+struct LargeEditorPlaceholderView: View {
+    let file: TextFile
+    @ObservedObject var model: DocumentModel
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "doc.text.magnifyingglass")
+                .font(.system(size: 48, weight: .light))
+                .foregroundStyle(.tertiary)
+            Text("File too large for editor mode")
+                .font(.title3)
+            Text("This file is \(byteString(file.byteCount)). " +
+                 "CodeMirror is capped at \(byteString(codeMirrorEditorMaxBytes)) " +
+                 "to avoid JS-heap pressure in the WebView. Source view " +
+                 "(NSTextView) handles much larger files at constant memory.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 480)
             Button("View as Source") {
                 model.setCurrentViewMode(.source)
             }

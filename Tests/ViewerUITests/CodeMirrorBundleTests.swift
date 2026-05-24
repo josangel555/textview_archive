@@ -146,4 +146,34 @@ final class CodeMirrorBundleTests: XCTestCase {
         XCTAssertEqual(jsLanguageName(for: .go),       "plain")
         XCTAssertEqual(jsLanguageName(for: .plainText),"plain")
     }
+
+    // MARK: - Phase 3: hover / Cmd-click / context-menu wiring
+
+    func testHostHTMLExposesPhase3DispatchSurface() throws {
+        let url = try XCTUnwrap(CodeMirrorResources.hostHTMLURL)
+        let html = try String(contentsOf: url, encoding: .utf8)
+        for needle in [
+            // JS → Swift outbound shapes
+            "requestHover",
+            "requestDefinition",
+            "contextMenuRequested",
+            // Swift → JS inbound dispatch handlers
+            "case \"hoverResponse\"",
+            "case \"setSaveOnBlur\"",
+            // CM6 hoverTooltip + custom CSS class for our popover
+            "cm-tooltip-hover-lsp",
+            "buildHoverExtension",
+        ] {
+            XCTAssertTrue(html.contains(needle),
+                          "codemirror.html missing Phase 3 wiring: \(needle)")
+        }
+    }
+
+    func testJSBundleExportsHoverTooltip() throws {
+        let url = try XCTUnwrap(CodeMirrorResources.jsBundleURL)
+        let data = try Data(contentsOf: url)
+        let js = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertTrue(js.contains("hoverTooltip"),
+                      "codemirror.js missing hoverTooltip export — re-run scripts/codemirror-build/npm run build")
+    }
 }

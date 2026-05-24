@@ -48,6 +48,24 @@ public enum CMInboundMessage: Equatable, Sendable {
     case editorBlurred
     case errorOccurred(phase: String, message: String, stack: String?)
     case requestReply(replyId: String, valueJSON: String)
+    /// JS → Swift hover request. Carries the doc-offset pos (UTF-16) and
+    /// a replyId so Swift can route the asynchronously-resolved hover
+    /// markup back via `.hoverResponse(...)`. Triggered by CM6's
+    /// `hoverTooltip` callback in `codemirror.html`.
+    case requestHover(pos: Int, line: Int, character: Int, replyId: String)
+    /// JS → Swift Cmd-click definition request. Same coords as hover,
+    /// no reply needed (Swift opens the target tab natively).
+    case requestDefinition(pos: Int, line: Int, character: Int)
+    /// JS → Swift right-click. JS has already preventDefault'd the
+    /// browser menu; Swift pops a native NSMenu at the screen point.
+    /// `selection` is the current selection text (empty when none) so
+    /// Swift can branch items on token shape.
+    case contextMenuRequested(
+        pos: Int, line: Int, character: Int,
+        screenX: Double, screenY: Double,
+        selection: String,
+        hasSelection: Bool
+    )
     /// Recognized envelope, unknown `type`. Surfaced so the host can
     /// log once + drop, rather than treat as a hard parse error.
     case unknown(type: String)
@@ -93,6 +111,15 @@ public enum CMOutboundMessage: Equatable, Sendable {
     case getDocument(replyId: String)
     case getSelection(replyId: String)
     case getScrollPosition(replyId: String)
+    /// Resolve a pending JS-side `hoverTooltip` callback. `markdown` is
+    /// the formatted hover body (CM6 renders it via its own minimal
+    /// renderer — currently we ship it as plain text after stripping
+    /// our LSP markdown wrapper). Empty contents → tooltip dismissed.
+    case hoverResponse(replyId: String, contents: String, from: Int, to: Int)
+    /// Enable / disable save-on-blur. JS side already always posts
+    /// `editorBlurred`; this gates whether Swift acts on it. Wired here
+    /// for symmetry with other compartment toggles.
+    case setSaveOnBlur(enabled: Bool)
 }
 
 /// One inline-diagnostic decoration in CM6 doc coordinates (UTF-16
@@ -225,6 +252,35 @@ public enum CMBridgeCodec {
                 valueJSON = "null"
             }
             return .requestReply(replyId: replyId, valueJSON: valueJSON)
+        case "requestHover":
+            guard let replyId = dict["replyId"] as? String else { return nil }
+            return .requestHover(
+                pos: dict["pos"] as? Int ?? 0,
+                line: dict["line"] as? Int ?? 1,
+                character: dict["character"] as? Int ?? 0,
+                replyId: replyId
+            )
+        case "requestDefinition":
+            return .requestDefinition(
+                pos: dict["pos"] as? Int ?? 0,
+                line: dict["line"] as? Int ?? 1,
+                character: dict["character"] as? Int ?? 0
+            )
+        case "contextMenuRequested":
+            let pos = dict["pos"] as? Int ?? 0
+            let line = dict["line"] as? Int ?? 1
+            let character = dict["character"] as? Int ?? 0
+            let sx: Double = (dict["screenX"] as? Double)
+                ?? Double(dict["screenX"] as? Int ?? 0)
+            let sy: Double = (dict["screenY"] as? Double)
+                ?? Double(dict["screenY"] as? Int ?? 0)
+            let sel = dict["selection"] as? String ?? ""
+            let hasSel = dict["hasSelection"] as? Bool ?? false
+            return .contextMenuRequested(
+                pos: pos, line: line, character: character,
+                screenX: sx, screenY: sy,
+                selection: sel, hasSelection: hasSel
+            )
         default:
             return .unknown(type: type)
         }
@@ -328,6 +384,15 @@ public enum CMBridgeCodec {
         case .getScrollPosition(let replyId):
             dict["type"] = "getScrollPosition"
             dict["replyId"] = replyId
+        case .hoverResponse(let replyId, let contents, let from, let to):
+            dict["type"] = "hoverResponse"
+            dict["replyId"] = replyId
+            dict["contents"] = contents
+            dict["from"] = from
+            dict["to"] = to
+        case .setSaveOnBlur(let enabled):
+            dict["type"] = "setSaveOnBlur"
+            dict["enabled"] = enabled
         }
         return dict
     }

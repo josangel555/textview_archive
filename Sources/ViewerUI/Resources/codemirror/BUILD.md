@@ -18,6 +18,18 @@ the bundle now also re-exports `EditorSelection`, `Transaction`,
 `EditorStateTabSize`. These back the v1 dispatch handlers in
 `codemirror.html`.
 
+Phase 3 additions (`docs/CM6_INTEGRATION_DESIGN_2026-05-23.md` §18.3):
+- `hoverTooltip` from `@codemirror/view` — drives the LSP hover
+  popover. Handler resolves the body via a Swift round-trip
+  (`requestHover` → Swift `LSPPool.hover` → `hoverResponse`).
+- No new packages; bundle delta after re-build is essentially zero
+  (`hoverTooltip` was already in `@codemirror/view`'s dead-code; the
+  re-export just keeps it). Re-bundle command:
+  `cd scripts/codemirror-build && npm run build`.
+- New outbound types: `hoverResponse`, `setSaveOnBlur`.
+- New inbound types: `requestHover`, `requestDefinition`,
+  `contextMenuRequested`.
+
 Phase 2 additions (`docs/CM6_INTEGRATION_DESIGN_2026-05-23.md` §18.2):
 - `@codemirror/lint` (~80 KB after dedup of view/state to 6.43/6.5) —
   drives inline squiggles + lint gutter. Exposed as
@@ -96,14 +108,16 @@ Supported `type` values: `setText`, `appendText`, `replaceRange`,
 `setSelection`, `openSearch`, `closeSearch`, `setSearchQuery`,
 `findNext`, `findPrev`, `replaceNext`, `replaceAll`,
 `setDiagnostics`, `foldAll`, `unfoldAll`, `undo`, `redo`, `focus`,
-`flushChanges`, `getDocument`, `getSelection`, `getScrollPosition`.
+`flushChanges`, `getDocument`, `getSelection`, `getScrollPosition`,
+`hoverResponse`, `setSaveOnBlur`.
 
 ### Outbound to Swift — `WKScriptMessageHandler` named `mdvEditor`
 
 Every payload carries `{v: 1, type: "...", ...}`. Messages:
 `ready`, `change`, `save`, `cursorPositionChanged`, `selectionChanged`,
 `scrollChanged`, `findOpened`, `findClosed`, `findResultChanged`,
-`linkClicked`, `editorBlurred`, `errorOccurred`, `requestReply`.
+`linkClicked`, `editorBlurred`, `errorOccurred`, `requestReply`,
+`requestHover`, `requestDefinition`, `contextMenuRequested`.
 
 ### Legacy `window.*` helpers
 

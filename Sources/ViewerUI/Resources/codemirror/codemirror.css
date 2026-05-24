@@ -35,3 +35,21 @@ body.light { background: #ffffff; color: #1f2328; }
   color: rgba(127, 127, 127, 0.5);
   pointer-events: none;
 }
+/* LSP hover popover. Anchored by CM6's hoverTooltip; we just style the
+ * inner content node we ourselves create. Padding + scroll cap so big
+ * hover bodies don't blow past the viewport. */
+.cm-tooltip-hover-lsp {
+  padding: 6px 10px;
+  max-width: 520px;
+  max-height: 320px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.cm-tooltip-hover-lsp pre {
+  margin: 4px 0;
+  padding: 4px 6px;
+  background: rgba(127, 127, 127, 0.08);
+  border-radius: 3px;
+  overflow-x: auto;
+}
