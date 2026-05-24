@@ -42,6 +42,23 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
     /// to false (user-typed setText keeps history). Per-bump semantics:
     /// the flag only takes effect when `text` itself changes.
     public let externalRewrite: Bool
+    public let showInvisibles: Bool
+    /// Pending diagnostics to push to CM6. Empty array clears any
+    /// previously-pushed set. Compared by value (Array equality), so a
+    /// stable redraw with the same diagnostics is a no-op.
+    public let diagnostics: [CMDiagnostic]
+    /// Find-bar driver values. Whenever any of these change, the
+    /// editor coordinator dispatches the right CM6 search command
+    /// through the v1 bridge.
+    public let findQuery: String
+    public let findCaseSensitive: Bool
+    public let findRegex: Bool
+    public let findNextRequest: Int
+    public let findPrevRequest: Int
+    /// Initial caret position to seed on first mount (restore-on-tab-
+    /// switch). nil = leave at start. Bumped via `setSelection` so
+    /// gotoLine and selection-restore use the same path.
+    public let initialSelection: CMSelectionSeed?
     public let onTextChange: (String) -> Void
     public let onSaveRequested: () -> Void
     public let onCursorChange: ((CMCursorPosition) -> Void)?
@@ -59,6 +76,14 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         indentation: CMIndentation = .spaces(2),
         gotoLineRequest: CMGotoLineRequest? = nil,
         externalRewrite: Bool = false,
+        showInvisibles: Bool = false,
+        diagnostics: [CMDiagnostic] = [],
+        findQuery: String = "",
+        findCaseSensitive: Bool = false,
+        findRegex: Bool = false,
+        findNextRequest: Int = 0,
+        findPrevRequest: Int = 0,
+        initialSelection: CMSelectionSeed? = nil,
         onTextChange: @escaping (String) -> Void,
         onSaveRequested: @escaping () -> Void = {},
         onCursorChange: ((CMCursorPosition) -> Void)? = nil,
@@ -75,6 +100,14 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         self.indentation = indentation
         self.gotoLineRequest = gotoLineRequest
         self.externalRewrite = externalRewrite
+        self.showInvisibles = showInvisibles
+        self.diagnostics = diagnostics
+        self.findQuery = findQuery
+        self.findCaseSensitive = findCaseSensitive
+        self.findRegex = findRegex
+        self.findNextRequest = findNextRequest
+        self.findPrevRequest = findPrevRequest
+        self.initialSelection = initialSelection
         self.onTextChange = onTextChange
         self.onSaveRequested = onSaveRequested
         self.onCursorChange = onCursorChange
@@ -160,6 +193,15 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         private var pendingIndentation: CMIndentation?
         private var pendingGotoLine: CMGotoLineRequest?
         private var pendingExternalRewrite: Bool = false
+        private var pendingShowInvisibles: Bool?
+        private var pendingDiagnostics: [CMDiagnostic]?
+        private var pendingFindQuery: String?
+        private var pendingFindCaseSensitive: Bool = false
+        private var pendingFindRegex: Bool = false
+        private var pendingFindNextRequest: Int = 0
+        private var pendingFindPrevRequest: Int = 0
+        private var pendingInitialSelection: CMSelectionSeed?
+        private var didApplyInitialSelection: Bool = false
         private var isReady = false
         /// Mirrors what we last successfully pushed to JS. Lets us
         /// skip redundant `setText` round-trips when the model just
@@ -173,6 +215,14 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         private var lastSentLineNumbers: Bool?
         private var lastSentIndentation: CMIndentation?
         private var lastAppliedGotoLine: CMGotoLineRequest?
+        private var lastSentShowInvisibles: Bool?
+        private var lastSentDiagnostics: [CMDiagnostic]?
+        /// (query, case, regex) tuple last shipped — comparing skips
+        /// the bridge call when the user clears + re-shows the same
+        /// query.
+        private var lastSentFindQuery: (String, Bool, Bool)?
+        private var lastSentFindNextRequest: Int = 0
+        private var lastSentFindPrevRequest: Int = 0
 
         private static let log = Logger(
             subsystem: "com.markdownviewer.MarkdownViewer",
@@ -198,6 +248,14 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             self.pendingIndentation = view.indentation
             self.pendingGotoLine = view.gotoLineRequest
             self.pendingExternalRewrite = view.externalRewrite
+            self.pendingShowInvisibles = view.showInvisibles
+            self.pendingDiagnostics = view.diagnostics
+            self.pendingFindQuery = view.findQuery
+            self.pendingFindCaseSensitive = view.findCaseSensitive
+            self.pendingFindRegex = view.findRegex
+            self.pendingFindNextRequest = view.findNextRequest
+            self.pendingFindPrevRequest = view.findPrevRequest
+            self.pendingInitialSelection = view.initialSelection
         }
 
         func loadHostHTML() {
@@ -273,6 +331,56 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
                     .gotoLine(line: req.line, column: req.column, select: req.select),
                     webView: webView
                 )
+            }
+            // Initial selection: applied exactly once after the text
+            // is in the editor — using `setSelection` (anchor/head)
+            // because gotoLine clobbers any prior column.
+            if let seed = pendingInitialSelection,
+               !didApplyInitialSelection,
+               lastSentText != nil {
+                didApplyInitialSelection = true
+                dispatch(
+                    .setSelection(anchor: seed.anchor, head: seed.head, scroll: seed.scroll),
+                    webView: webView
+                )
+            }
+            if let inv = pendingShowInvisibles, inv != lastSentShowInvisibles {
+                lastSentShowInvisibles = inv
+                dispatch(.setShowInvisibles(inv), webView: webView)
+            }
+            if let diags = pendingDiagnostics, diags != lastSentDiagnostics {
+                lastSentDiagnostics = diags
+                dispatch(.setDiagnostics(diags), webView: webView)
+            }
+            // Find query: dispatch on any change to query/case/regex,
+            // or any of the next/prev request nonces. We send the
+            // setSearchQuery first so the subsequent findNext picks
+            // up the new query.
+            let curQuery = (pendingFindQuery ?? "", pendingFindCaseSensitive, pendingFindRegex)
+            if curQuery.0 != (lastSentFindQuery?.0 ?? "")
+                || curQuery.1 != (lastSentFindQuery?.1 ?? false)
+                || curQuery.2 != (lastSentFindQuery?.2 ?? false) {
+                lastSentFindQuery = curQuery
+                dispatch(
+                    .setSearchQuery(
+                        query: curQuery.0,
+                        caseSensitive: curQuery.1,
+                        regex: curQuery.2
+                    ),
+                    webView: webView
+                )
+            }
+            if pendingFindNextRequest != lastSentFindNextRequest {
+                lastSentFindNextRequest = pendingFindNextRequest
+                if !(pendingFindQuery ?? "").isEmpty {
+                    dispatch(.findNext, webView: webView)
+                }
+            }
+            if pendingFindPrevRequest != lastSentFindPrevRequest {
+                lastSentFindPrevRequest = pendingFindPrevRequest
+                if !(pendingFindQuery ?? "").isEmpty {
+                    dispatch(.findPrev, webView: webView)
+                }
             }
         }
 
@@ -405,7 +513,7 @@ public struct CMFindResult: Equatable, Sendable {
 
 /// Indent style — tabs or N spaces. Both halves live in one value
 /// because CM6's `indentUnit` + `tabSize` always need to agree.
-public enum CMIndentation: Equatable, Sendable {
+public enum CMIndentation: Equatable, Hashable, Sendable {
     case tabs(width: Int)
     case spaces(Int)
     public var useTabs: Bool {
@@ -416,6 +524,19 @@ public enum CMIndentation: Equatable, Sendable {
         case .tabs(let w): return max(1, min(16, w))
         case .spaces(let n): return max(1, min(16, n))
         }
+    }
+}
+
+/// Seed value used by `CodeMirrorEditorView` to restore a caret /
+/// selection once the editor first reports `ready` and has the text in.
+/// Anchor + head are CM6 doc offsets (UTF-16 code units). `scroll`
+/// controls whether the editor centers the head on apply.
+public struct CMSelectionSeed: Equatable, Sendable {
+    public let anchor: Int
+    public let head: Int
+    public let scroll: Bool
+    public init(anchor: Int, head: Int, scroll: Bool = true) {
+        self.anchor = anchor; self.head = head; self.scroll = scroll
     }
 }
 

@@ -139,6 +139,30 @@ struct MarkdownFindBar: View {
     }
 }
 
+/// CM6 editor-mode find bar. Drives CodeMirror's built-in search
+/// through the v1 bridge (`setSearchQuery` / `findNext` / `findPrev`)
+/// rather than opening CM's panel. Same visual surface as the source
+/// find bar — single mental model for the user across modes.
+struct EditorFindBar: View {
+    @ObservedObject var model: DocumentModel
+
+    var body: some View {
+        FindBar(
+            placeholder: "Find in editor…",
+            query: $model.editorFindQuery,
+            caseSensitive: $model.editorFindCaseSensitive,
+            isRegex: $model.editorFindIsRegex,
+            matchSummary: $model.editorFindMatchSummary,
+            noResultsMode: .countOnly,
+            focusRequest: model.editorFindFocusRequest,
+            onNext: { model.editorFindNext() },
+            onPrev: { model.editorFindPrev() },
+            onDismiss: { model.dismissEditorFindBar() },
+            accessibilityID: "mdv.editorFindBar"
+        )
+    }
+}
+
 /// Source-mode find bar. Surfaces the match count [n/N] that
 /// TextDisplayView publishes via its `onFindSummary` callback.
 struct SourceFindBar: View {
