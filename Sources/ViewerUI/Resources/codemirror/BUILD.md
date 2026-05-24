@@ -29,9 +29,18 @@ Phase 2 additions (`docs/CM6_INTEGRATION_DESIGN_2026-05-23.md` §18.2):
   for the show-invisibles decoration plugin (hand-rolled, no extra
   package needed).
 - `@codemirror/view` bumped from 6.28.1 → 6.43.0 + state 6.4.1 →
-  6.5.2 so `@codemirror/lint` peer-dep resolves to the same version
+  6.6.0 so `@codemirror/lint` peer-dep resolves to the same version
   and npm dedupes instead of bundling two copies of view (~167 KB
   saving — the difference between 798 KB and 652 KB minified).
+  IMPORTANT: `@codemirror/state` must satisfy the floor that the
+  current `@codemirror/view` declares (see view's `package.json`
+  peerDependencies). view@6.43.0 declares `^6.6.0`. Pinning state to
+  6.5.2 causes npm to nest a second copy of state under view, and
+  esbuild bundles both — at runtime `instanceof Facet` checks fail
+  and `EditorState.create` throws "Unrecognized extension value in
+  extension set... multiple instances of @codemirror/state are
+  loaded". After every view bump, re-check view's state peer floor
+  and bump `state` to match.
 
 ## How to re-build
 
