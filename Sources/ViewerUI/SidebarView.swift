@@ -92,77 +92,13 @@ struct SidebarView: View {
             // (`maxHeight: .infinity`) behaviour, so it absorbs
             // any leftover vertical space.
             filesPanel
-            // BookmarksSection is always rendered (even with zero
-            // bookmarks) — the section's fixed envelope + "(empty)"
-            // placeholder is the whole point of the resizable
-            // accordion. Hiding it on empty was the old behaviour and
-            // caused the layout to jump every time the user toggled a
-            // bookmark.
-            BookmarksSection(model: model)
-                .environment(\.sidebarSectionBodyHeight,
-                             SidebarPanelHeights.clamp(CGFloat(bookmarksHeight)))
-            ResizableSectionDivider(heightAbove: heightBinding($bookmarksHeight))
-            if sidebar.rootURL != nil {
-                SearchAnywhereSection(model: model)
-                    .environment(\.sidebarSectionBodyHeight,
-                                 SidebarPanelHeights.clamp(CGFloat(searchHeight)))
-                ResizableSectionDivider(heightAbove: heightBinding($searchHeight))
-                GitPanelSection(model: model)
-                    .environment(\.sidebarSectionBodyHeight,
-                                 SidebarPanelHeights.clamp(CGFloat(gitHeight)))
-                ResizableSectionDivider(heightAbove: heightBinding($gitHeight))
-                ClaudeTimelineSection(model: model)
-                    .environment(\.sidebarSectionBodyHeight,
-                                 SidebarPanelHeights.clamp(CGFloat(claudeHeight)))
-                ResizableSectionDivider(heightAbove: heightBinding($claudeHeight))
-                // LSP outline of the currently-open file. The section
-                // self-gates: returns EmptyView when the file's
-                // language has no registered LSP server (e.g. `.md`,
-                // `.txt`), so the divider sits flush against the
-                // previous section in that case.
-                LSPOutlineWrapper(model: model)
-                    .environment(\.sidebarSectionBodyHeight,
-                                 SidebarPanelHeights.clamp(CGFloat(lspHeight)))
-                ResizableSectionDivider(heightAbove: heightBinding($lspHeight))
-                // MARK: - Symbol mode (LSP workspace symbols)
-                //
-                // Hosts both `textDocument/references` results (from a
-                // right-click on the source view) and `workspace/symbol`
-                // search (from the inline query field). One panel, two
-                // routes — `LSPNavigationStore` switches modes.
-                LSPNavigationPanel(
-                    store: model.lspNavigation,
-                    onJump: { loc in
-                        guard let url = URL(string: loc.uri) else { return }
-                        if !model.selectTab(forURL: url) {
-                            model.openPath(url)
-                        }
-                        model.scrollSource(toLine: loc.range.start.line + 1)
-                    },
-                    onSearchWorkspaceSymbols: { query in
-                        runWorkspaceSymbolQuery(query)
-                    }
-                )
-                .environment(\.sidebarSectionBodyHeight,
-                             SidebarPanelHeights.clamp(CGFloat(lspNavHeight)))
-                ResizableSectionDivider(heightAbove: heightBinding($lspNavHeight))
-                // MARK: - Problems (LSP diagnostics) section
-                //
-                // Server-pushed `textDocument/publishDiagnostics`
-                // collected per-URL by `LSPDiagnosticsStore`. Click a
-                // row to open the file at the offending line.
-                LSPProblemsPanel(
-                    store: model.lspDiagnostics,
-                    onJump: { url, line in
-                        if !model.selectTab(forURL: url) {
-                            model.openPath(url)
-                        }
-                        model.scrollSource(toLine: line)
-                    }
-                )
-                .environment(\.sidebarSectionBodyHeight,
-                             SidebarPanelHeights.clamp(CGFloat(lspProblemsHeight)))
-            }
+            // Divider placement is now driven by `SidebarSectionPlanner`
+            // (ViewerCore) — a hidden panel (no git repo, no Claude
+            // transcripts, non-LSP file) drops both itself AND the
+            // divider that would have sat below it. Previously the
+            // dividers were rendered unconditionally and stacked up
+            // (the "3-4 lines bunched below GIT" bug).
+            accordionStack
             // Plugin-contributed sidebar sections. Self-managing
             // collapse state; appears above FILES regardless of
             // whether a folder is open (a plugin may not need one).
@@ -201,6 +137,157 @@ struct SidebarView: View {
                 }
                 return true
             }
+        )
+    }
+
+    // MARK: - Accordion stack (visibility-aware divider placement)
+    //
+    // Below FILES sits an ordered run of panels; each one is either
+    // unconditionally visible (BOOKMARKS, plugin sections) or self-
+    // gates on some condition (GIT only when in a repo, CLAUDE only
+    // when transcripts exist, OUTLINE only when the file has an LSP
+    // server). Previously the parent rendered a
+    // `ResizableSectionDivider` between every pair regardless — so
+    // any run of hidden panels produced multiple stacked hairlines.
+    //
+    // Fix: compute visibility per panel up front, hand the list to
+    // `SidebarSectionPlanner` (pure logic in ViewerCore, unit-tested),
+    // and render exactly the panels + dividers it returns.
+
+    /// Cached "does this project have Claude transcripts?" flag.
+    /// Refreshed when the sidebar root changes (cheap FS check; not
+    /// worth running per body re-eval).
+    @State private var claudeHasTranscripts: Bool = false
+
+    /// Visibility predicates for each accordion panel. Mirrors what
+    /// the panel views themselves use to self-gate — keeping the
+    /// predicate up here lets us drop the divider too. The bookmarks
+    /// panel is always visible (its fixed envelope + "(empty)"
+    /// placeholder is intentional). LSP navigation + problems are
+    /// always visible because they hold cross-file state (workspace
+    /// symbol queries / publish-diagnostics) that's useful even when
+    /// the active tab isn't an LSP language.
+    private var panelVisibility: [(panel: SidebarPanelKind, isVisible: Bool)] {
+        let hasRoot = sidebar.rootURL != nil
+        let hasRepo = sidebar.gitRepoRoot != nil
+        let hasLSPLanguage: Bool = {
+            guard let url = model.currentURL else { return false }
+            return LSPLanguageRegistry.default.language(for: url) != nil
+        }()
+        return [
+            (.bookmarks,      true),
+            (.searchAnywhere, hasRoot),
+            (.git,            hasRoot && hasRepo),
+            (.claudeTimeline, hasRoot && claudeHasTranscripts),
+            (.lspOutline,     hasRoot && hasLSPLanguage),
+            (.lspNavigation,  hasRoot),
+            (.lspProblems,    hasRoot),
+        ]
+    }
+
+    @ViewBuilder
+    private var accordionStack: some View {
+        let plan = SidebarSectionPlanner.plan(panelVisibility)
+        ForEach(plan, id: \.panel) { entry in
+            panelView(for: entry.panel)
+            if entry.drawTrailingDivider {
+                divider(below: entry.panel)
+            }
+        }
+        // Refresh the Claude transcript flag when the sidebar root
+        // changes — the FS check is cheap but not free, and we only
+        // need it once per project switch.
+        Color.clear
+            .frame(height: 0)
+            .onAppear { refreshClaudeTranscripts() }
+            .onChange(of: sidebar.rootURL) { _, _ in
+                refreshClaudeTranscripts()
+            }
+    }
+
+    @ViewBuilder
+    private func panelView(for kind: SidebarPanelKind) -> some View {
+        switch kind {
+        case .bookmarks:
+            BookmarksSection(model: model)
+                .environment(\.sidebarSectionBodyHeight,
+                             SidebarPanelHeights.clamp(CGFloat(bookmarksHeight)))
+        case .searchAnywhere:
+            SearchAnywhereSection(model: model)
+                .environment(\.sidebarSectionBodyHeight,
+                             SidebarPanelHeights.clamp(CGFloat(searchHeight)))
+        case .git:
+            GitPanelSection(model: model)
+                .environment(\.sidebarSectionBodyHeight,
+                             SidebarPanelHeights.clamp(CGFloat(gitHeight)))
+        case .claudeTimeline:
+            ClaudeTimelineSection(model: model)
+                .environment(\.sidebarSectionBodyHeight,
+                             SidebarPanelHeights.clamp(CGFloat(claudeHeight)))
+        case .lspOutline:
+            LSPOutlineWrapper(model: model)
+                .environment(\.sidebarSectionBodyHeight,
+                             SidebarPanelHeights.clamp(CGFloat(lspHeight)))
+        case .lspNavigation:
+            LSPNavigationPanel(
+                store: model.lspNavigation,
+                onJump: { loc in
+                    guard let url = URL(string: loc.uri) else { return }
+                    if !model.selectTab(forURL: url) {
+                        model.openPath(url)
+                    }
+                    model.scrollSource(toLine: loc.range.start.line + 1)
+                },
+                onSearchWorkspaceSymbols: { query in
+                    runWorkspaceSymbolQuery(query)
+                },
+                uiSize: model.uiSize
+            )
+            .environment(\.sidebarSectionBodyHeight,
+                         SidebarPanelHeights.clamp(CGFloat(lspNavHeight)))
+        case .lspProblems:
+            LSPProblemsPanel(
+                store: model.lspDiagnostics,
+                onJump: { url, line in
+                    if !model.selectTab(forURL: url) {
+                        model.openPath(url)
+                    }
+                    model.scrollSource(toLine: line)
+                },
+                uiSize: model.uiSize
+            )
+            .environment(\.sidebarSectionBodyHeight,
+                         SidebarPanelHeights.clamp(CGFloat(lspProblemsHeight)))
+        case .files, .pluginSections:
+            // FILES is rendered inline at the top of the sidebar
+            // (above this accordion stack). pluginSections is below.
+            EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private func divider(below kind: SidebarPanelKind) -> some View {
+        switch kind {
+        case .bookmarks:
+            ResizableSectionDivider(heightAbove: heightBinding($bookmarksHeight))
+        case .searchAnywhere:
+            ResizableSectionDivider(heightAbove: heightBinding($searchHeight))
+        case .git:
+            ResizableSectionDivider(heightAbove: heightBinding($gitHeight))
+        case .claudeTimeline:
+            ResizableSectionDivider(heightAbove: heightBinding($claudeHeight))
+        case .lspOutline:
+            ResizableSectionDivider(heightAbove: heightBinding($lspHeight))
+        case .lspNavigation:
+            ResizableSectionDivider(heightAbove: heightBinding($lspNavHeight))
+        case .lspProblems, .files, .pluginSections:
+            EmptyView()
+        }
+    }
+
+    private func refreshClaudeTranscripts() {
+        claudeHasTranscripts = ClaudeLogParser.hasTranscripts(
+            for: sidebar.rootURL
         )
     }
 

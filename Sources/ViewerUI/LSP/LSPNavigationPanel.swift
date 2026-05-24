@@ -28,15 +28,23 @@ public struct LSPNavigationPanel: View {
 
     let onJump: (LSPLocation) -> Void
     let onSearchWorkspaceSymbols: (String) -> Void
+    /// Closure that scales a base font size by the active UI-zoom
+    /// factor. Threaded from the host (`DocumentModel.uiSize(_:)`) so
+    /// the section's header tracks user-controlled UI zoom. Defaults
+    /// to identity for call sites without a document model. Not
+    /// `@Sendable` — the host's `uiSize` is `@MainActor`-isolated.
+    let uiSize: (CGFloat) -> CGFloat
 
     public init(
         store: LSPNavigationStore,
         onJump: @escaping (LSPLocation) -> Void,
-        onSearchWorkspaceSymbols: @escaping (String) -> Void
+        onSearchWorkspaceSymbols: @escaping (String) -> Void,
+        uiSize: @escaping (CGFloat) -> CGFloat = { $0 }
     ) {
         self.store = store
         self.onJump = onJump
         self.onSearchWorkspaceSymbols = onSearchWorkspaceSymbols
+        self.uiSize = uiSize
     }
 
     public var body: some View {
@@ -87,11 +95,12 @@ public struct LSPNavigationPanel: View {
             HStack(spacing: 4) {
                 SidebarSectionHeaderLabel(
                     title: headerTitle,
-                    isExpanded: isExpanded
+                    isExpanded: isExpanded,
+                    uiSize: uiSize
                 )
                 if let ctx = store.contextDescription, store.mode == .references {
                     Text("· \(ctx)")
-                        .font(.system(size: 10))
+                        .font(.system(size: uiSize(10)))
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -100,7 +109,7 @@ public struct LSPNavigationPanel: View {
                 modePicker
                 if !store.rows.isEmpty {
                     Text("\(store.rows.count)")
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .font(.system(size: uiSize(10), weight: .medium, design: .monospaced))
                         .foregroundStyle(.tertiary)
                 }
             }

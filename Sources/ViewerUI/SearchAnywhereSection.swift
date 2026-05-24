@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import ViewerCore
 import ViewerKit
@@ -11,6 +12,11 @@ import ViewerKit
 /// UX:
 ///   - Header with title + result-count chip; collapsible
 ///   - Search field that runs the search live on each keystroke
+///   - Scope row: shows the folder being searched (basename;
+///     tooltip = full path) with a menu picker to switch to
+///     "Sidebar Folder" or a one-off "Pick Folder…" via
+///     NSOpenPanel. Mirrors the modal `CrossSearchPanel`'s scope
+///     picker — same `SearchScope` value type + resolver.
 ///   - Result list: file path + each match line; click a match to
 ///     open the file at that line
 ///   - Empty state: prompt to type
@@ -34,11 +40,21 @@ struct SearchAnywhereSection: View {
     @State private var searchTask: Task<Void, Never>?
     @Environment(\.sidebarSectionBodyHeight) private var bodyHeight
 
+    // MARK: - Scope picker
+    //
+    // Mirrors the modal `CrossSearchPanel`'s scope picker so the
+    // side-pane widget shows which folder it's searching and lets
+    // the user point it elsewhere without opening the modal. Default
+    // is `.activeFolder` (the sidebar root); the user can Pick
+    // Folder… via NSOpenPanel for a one-off search elsewhere.
+    @State private var scope: SearchScope = .activeFolder
+
     var body: some View {
         VStack(spacing: 0) {
             header
             if isExpanded {
                 searchField
+                scopeRow
                 resultList
             }
         }
@@ -97,6 +113,107 @@ struct SearchAnywhereSection: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
+    }
+
+    // MARK: - Scope picker UI
+    //
+    // One-line "scope: <path> [▼]" row sitting between the search
+    // field and the result list. The label is the resolved URL
+    // (basename for compactness; the full path is the tooltip);
+    // the menu picker mirrors the modal panel's options minus
+    // file-shaped scopes (this section only runs folder grep).
+
+    /// Resolved URL the engine runs against. Same resolution rules
+    /// as the modal `CrossSearchPanel` — folder-shaped scopes only
+    /// (a single-file scope falls back to the sidebar root, since
+    /// this section's engine is folder grep).
+    private var resolvedScopeURL: URL? {
+        if SearchScopeResolver.needsFolderFallback(
+            scope: scope,
+            modeRequiresFolder: true
+        ) {
+            return model.sidebar.rootURL
+        }
+        return SearchScopeResolver.resolve(
+            scope,
+            activeFile: model.currentURL,
+            activeFolder: model.sidebar.rootURL
+        )
+    }
+
+    private var scopeDisplayName: String {
+        if let url = resolvedScopeURL {
+            return url.lastPathComponent
+        }
+        return "No folder"
+    }
+
+    private var scopeRow: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "folder")
+                .font(.system(size: model.uiSize(10)))
+                .foregroundStyle(.secondary)
+            Text(scopeDisplayName)
+                .font(.system(size: model.uiSize(11), design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(resolvedScopeURL?.path ?? "No folder selected")
+                .accessibilityIdentifier("mdv.searchAnywhere.scopeLabel")
+            Spacer(minLength: 4)
+            Menu {
+                Button {
+                    scope = .activeFolder
+                } label: {
+                    Label("Sidebar Folder", systemImage: "folder")
+                }
+                .disabled(model.sidebar.rootURL == nil)
+                .accessibilityIdentifier("mdv.searchAnywhere.scope.activeFolder")
+
+                Button {
+                    pickFolder()
+                } label: {
+                    Label("Pick Folder…", systemImage: "folder.badge.plus")
+                }
+                .accessibilityIdentifier("mdv.searchAnywhere.scope.pickFolder")
+
+                // "Clear Picked Folder" appears only when a custom
+                // folder is selected; collapses back to the sidebar
+                // folder. No `Divider()` inside this menu — the
+                // section's pin-test enforces zero `Divider()` calls
+                // in the file (see header comment + the layout test).
+                if case .pickedFolder = scope {
+                    Button {
+                        scope = .activeFolder
+                    } label: {
+                        Label("Clear Picked Folder", systemImage: "arrow.uturn.backward")
+                    }
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: model.uiSize(11)))
+                    .foregroundStyle(.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Change search scope")
+            .accessibilityIdentifier("mdv.searchAnywhere.scopePicker")
+        }
+        .padding(.horizontal, 10)
+        .padding(.bottom, 4)
+        .onChange(of: scope) { _, _ in runSearch(query) }
+    }
+
+    private func pickFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.title = "Pick folder to search"
+        if panel.runModal() == .OK, let url = panel.url {
+            scope = .pickedFolder(url)
+        }
     }
 
     private var resultList: some View {
@@ -217,7 +334,7 @@ struct SearchAnywhereSection: View {
             isRunning = false
             return
         }
-        guard let root = model.sidebar.rootURL else { return }
+        guard let root = resolvedScopeURL else { return }
         let caseSensitive = self.caseSensitive
         isRunning = true
         searchTask = Task.detached(priority: .userInitiated) {
