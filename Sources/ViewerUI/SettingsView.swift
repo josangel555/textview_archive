@@ -146,6 +146,25 @@ public struct SettingsView: View {
             row("Wrap long lines") {
                 Toggle("", isOn: $model.sourceWordWrap).labelsHidden()
             }
+            row("Show invisible characters") {
+                Toggle("", isOn: $model.showInvisibleChars).labelsHidden()
+            }
+            row("Indentation") {
+                Picker("", selection: $model.editorIndentation) {
+                    Text("2 spaces").tag(CMIndentation.spaces(2))
+                    Text("4 spaces").tag(CMIndentation.spaces(4))
+                    Text("Tabs (width 2)").tag(CMIndentation.tabs(width: 2))
+                    Text("Tabs (width 4)").tag(CMIndentation.tabs(width: 4))
+                    Text("Tabs (width 8)").tag(CMIndentation.tabs(width: 8))
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(maxWidth: 180)
+            }
+            Text("Wrap and Show Invisibles apply to source and editor modes. Indentation drives only the CM6 editor (Tab key inserts).")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 4)
         }
     }
 
