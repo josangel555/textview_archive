@@ -290,3 +290,82 @@ Activity Monitor's "Memory" column sums all WebKit XPC processes
 under the parent app — so "TextView 230 MB" with one MD tab open
 really means: ~110 MB main + ~35 MB persistent helpers + ~80 MB
 active WebContent. Only the 110 MB is in our code.
+
+---
+
+## CM6 integration — 2026-05-23 Q&A follow-ups
+
+These items were surfaced by the 16-question capabilities Q&A
+(`docs/CM6_CAPABILITIES_QNA_2026-05-23.md`) and folded back into
+the integration design (`docs/CM6_INTEGRATION_DESIGN_2026-05-23.md`
+§12, §17, §18, §21). Listed here because they're project-level
+risks / decisions that outlive the design doc — they touch bundle
+budget, viewer-policy, signing, and cross-cutting UX.
+
+### Risks (active, not yet mitigated)
+
+- **CM6 JS-heap ceiling at large files.** `[Q4]` Hard wall around
+  ~4 GB Safari WebContent process; pressure starts at 100 MB.
+  NSTextView is 6× lighter per tab and handles 1 GB log files
+  fine. Mitigation: **50 MB hard cap for CM6 mode**, NSTextView
+  fallback for >50 MB. Design lock in design doc §17.5. **Open**:
+  implement the cap in the CM6 wrapper before Phase 2 ships
+  diagnostics (otherwise a 200 MB Swift file with LSP enabled =
+  pathology).
+- **CM6 bus factor.** `[Q14]` Marijn Haverbeke is the keystone
+  for ~10 years. **Mitigated** by OpenAI sponsorship (2025) +
+  fork-feasibility (~40K LOC TS for the non-language core). Lower
+  risk than NSTextView TK2's documented bugginess but not zero.
+  Action: pin exact CM6 versions in `scripts/codemirror-build/package.json`;
+  add a quarterly check on Marijn's funding page + project commit
+  cadence. Add the check to a CALENDAR item or `BACKLOG.md`
+  quarterly review.
+- **WebKit responder-chain order for Cmd-* keystrokes.** `[Q15]`
+  Our plan (design §17.12, feature #44) depends on the AppKit
+  menu seeing ⌘Z before WKWebView's `keydown` handler swallows it.
+  This is not contractual. **Open**: write a VM smoke test that
+  binds ⌘Z to a menu item, focuses the CM6 webview, presses ⌘Z,
+  asserts the menu handler fires — *before* Phase 1 lands.
+- **Tree-sitter-via-bridge regression surface.** `[Q5, Q6]`
+  Choosing the bridge over `@codemirror/lang-*` means we own
+  byte-range → UTF-16 conversion correctness on every push (existing
+  `LSPPositionConverter` handles this). Bug class to watch: emoji /
+  surrogate pairs in code comments breaking highlight offsets on
+  CM6 side. **Open**: extend `LSPPositionConverter` round-trip
+  tests to cover the tree-sitter→CM6 path before feature #39 lands.
+
+### Open questions (decisions deferred)
+
+- **Source viewer unification timeline.** `[Q2, Q3]` Design §17.9
+  defers to Phase 5 conditional. Re-evaluate after feature #24
+  (shared WebView) lands and we have empirical RAM numbers per
+  tab. **Trigger**: when shared-WebView ships, run an A/B prototype
+  on 10+ open tabs and compare against NSTextView baseline.
+- **Async paste UX threshold.** `[Q16]` Where does "large paste"
+  begin? Lines (50+? 100+?), bytes (100 KB+?), or both? Design
+  §17.13 / feature #43 needs a product call. **Trigger**: Phase 3.
+- **History snapshot persistence location.** `[Q13]` Per-tab
+  sidecar file vs workspace state vs disk-cache? 100 KB doc ×
+  100 undo entries ≈ 5 MB JSON per tab. Design §17.11 / feature
+  #46 defers. **Trigger**: Phase 5 planning.
+- **Lezer fallback for languages without tree-sitter coverage.**
+  `[Q5]` We have no Lezer-only language today, but if a user
+  asks for (e.g.) Vue / PHP / Kotlin support, do we ship the
+  `@codemirror/lang-*` package or build a tree-sitter grammar?
+  Bundle cost vs Swift code complexity tradeoff. **Trigger**:
+  first user request for a CM6-only language.
+- **`@codemirror/lsp-client` re-evaluation.** `[Q7]` Design
+  §17.2 says don't use it. The package matures; revisit in 12
+  months if the JS-side LSP transport story changes (e.g. SourceKit-LSP
+  ships a WebSocket binding).
+- **Per-language indent auto-detection.** Design §17.7 — defer to
+  Phase 4. Not Q&A-derived but stays on this list because it's
+  one of the few CM6-area decisions still open.
+
+### Cross-doc pointers
+
+- Full feature breakdown: `docs/CM6_INTEGRATION_DESIGN_2026-05-23.md`
+  §12 rows 39–46 + §21.1 (post-Q&A change log).
+- Full risk dump: same doc §17.8–17.13 + §21.2.
+- Citations / source: `docs/CM6_CAPABILITIES_QNA_2026-05-23.md`
+  (all `[Q#]` tags above reference its question numbering).

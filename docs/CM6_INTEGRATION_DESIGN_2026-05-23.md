@@ -2,6 +2,17 @@
 
 Research + design dated **2026-05-23**. Read-only. No code changes.
 
+> **Updated 2026-05-23 (post-Q&A pass).** A separate
+> "capabilities Q&A" research dump (`docs/CM6_CAPABILITIES_QNA_2026-05-23.md`)
+> answered 16 specific "can we do X" questions that this design doc
+> didn't cover directly. The findings are folded back into §12
+> (new rows 39–46), §17 (new open questions 17.8–17.13), §18 (phase
+> descriptions tightened), and consolidated in the new **§21
+> Updates — 2026-05-23 post-Q&A** section just before the appendices.
+> Each Q&A-derived item is tagged `[Q#]` so you can pull the full
+> citation from the Q&A doc. **No content was deleted**; corrections
+> appear as inline call-outs.
+
 Companion to:
 
 - `docs/TEXT_EDITOR_OPTIONS_2026-05-23.md` — option survey
@@ -52,6 +63,7 @@ MarkEdit source, persistent.info latency measurements, official guide.
 18. Phased roadmap
 19. Bundle-growth plan
 20. MarkEdit reference patterns
+21. **Updates — 2026-05-23 post-Q&A** (folds in `docs/CM6_CAPABILITIES_QNA_2026-05-23.md`)
 
 ### Appendices
 
@@ -989,10 +1001,24 @@ Each row: what it is · CM6 piece · Swift hookup · complexity (1l/S/M/L)
 |36 | Snippets                               | `@codemirror/autocomplete` snippet API                | Out of scope (viewer mandate)                                    | —       | —                 |   X   |
 |37 | Settings UI for editor (font/theme/etc.)| n/a — pure Swift                                     | New SettingsView section; bridges every dial via Compartment    | M       | features 1, 6, 26, 33, 34 | 2 |
 |38 | Symbol-outline-drives-editor-jump      | `gotoLine` + scroll + select range                    | Wire outline → `setSelection` bridge                             | S       | feature 32        |   2   |
+|39 | **Tree-sitter-via-bridge highlight pipeline** `[Q5, Q6]` | `StateField<DecorationSet>` + `setHighlightRanges` effect; `Decoration.mark` per range | Existing `TreeSitterEngine` → byte→UTF-16 → JSON ranges → bridge push (~150 ms debounce). Replaces shipping `@codemirror/lang-*` for langs we already cover (Swift/Go/Zig/…) | M | bridge v1; theme bridge (#25) | 2 |
+|40 | **Right-click context menu — native NSMenu replacement** `[Q8]` | JS `domEventHandlers.contextmenu` → `preventDefault` + bridge | Subclass `WKWebView`, override `willOpenMenu(_:with:)`; Swift builds menu based on token shape (path/URL/identifier) and pops via `NSMenu.popUp` | M | bridge v1 | 2 |
+|41 | **`highlightSelectionMatches` parity / port `SelectionHighlightEngine` policy** `[Q9]` | Built-in `highlightSelectionMatches` from `@codemirror/search`, OR custom `ViewPlugin` mirroring our throttle + size-cap policy | Decide built-in vs port; if port, ~80 LOC JS plugin. Keeps cross-mode behavior identical | S | bridge v1 | 2 |
+|42 | **Read-only mode (true viewer parity)** `[Q1]` | `EditorState.readOnly.of(true)` + `EditorView.editable.of(false)` + `drawSelection()` | Extends feature #35; document which knob does what (caret/IME/clipboardInputFilter semantics differ). Required if we ever do feature #45 below | 1l | feature 35 | 1 |
+|43 | **Large-paste confirm prompt** `[Q16]` | `domEventHandlers.paste` → `preventDefault` → bridge `confirmLargePaste` → Swift sheet → bridge replaceRange | Threshold (e.g. >50 lines or >100 KB) configurable in Settings | S | bridge v1 | 3 |
+|44 | **Cmd-* keystroke routing to AppKit menus** `[Q15]` | `EditorView.domEventHandlers.keydown` returns `true` on `metaKey && !altKey`; do NOT `preventDefault` | Removes risk of CM6 shadowing future menu shortcuts; explicit override of `defaultKeymap`'s `Mod-z`/`Mod-a`/`Mod-Enter` via `Prec.highest` returning `false` | S | bridge v1 | 1 |
+|45 | **Source viewer A/B opt-in: CM6 in read-only mode** `[Q2, Q3]` | Same wrapper as editor mode, with #42 applied | Setting flag `useCodeMirrorForSourceViewer`; measure first paint / RAM / scroll fps against NSTextView on real files. **Only landed after #24 shared-WebView; never default** | L | features 24, 42, 39 | 5 |
+|46 | **History snapshot / time-travel pane** `[Q13]` | `EditorState.toJSON({history: historyField})` per save point; `fromJSON` to restore | New per-tab snapshot store on disk; Swift UI timeline; debounced to avoid per-keystroke serialize. No per-step CM6 event — watch `done.length` in `updateListener` | L | bridge v1; format-on-save TBD | 5 |
 
 Total **new** complexity to ship Phase 1 = roughly 12 small + a few
 medium items. Phase 2 layers on Find-bar bridge + diagnostics +
-settings. Phase 3 is the LSP-in-editor work + theme.
+settings + the tree-sitter-via-bridge pipeline `[Q6]` + context-menu
+replacement `[Q8]`. Phase 3 is the LSP-in-editor work + theme.
+Phase 5 (conditional) is where #45 (CM6 source viewer A/B) and #46
+(time-travel) live.
+
+> **§12 follow-ups from Q&A:** rows 39–46 above; full justification
+> in §21. Existing rows untouched.
 
 ---
 
@@ -1509,6 +1535,94 @@ Today we set `tabSize` once. Real workflows have mixed tab/space
 docs. **Open**: auto-detect on `setText` (sniff first N
 indented lines)? Defer to Phase 4.
 
+### 17.8 Tree-sitter-via-bridge vs Lezer language packages `[Q5, Q6]`
+
+The Q&A doc surfaces a real architectural decision: we can either
+ship `@codemirror/lang-*` per language (~700 KB JS for our 14-grammar
+set; Swift has no language coverage gap because Lezer ships
+Markdown / JS / TS / Python / JSON / HTML / CSS / Rust / C++ / SQL
+etc., but **no official Swift or Go**) — OR push tree-sitter ranges
+from Swift as `Decoration.mark` via a `StateField` (~30 LOC JS,
+~0 added bundle, ~15–85 ms per debounced push). **Recommendation
+(now in §12 feature #39): bridge path.** Saves ~700 KB bundle,
+keeps the Swift / Go / Zig / etc. grammars we already ship,
+unifies the highlight pipeline across NSTextView and CM6.
+
+**Open**: do we drop CM6's incremental Lezer parsing entirely, or
+keep a Lezer fallback for languages tree-sitter doesn't cover (we
+have no Lezer-only language today, so: no)? Decision: bridge-only
+for highlight. Lezer still loads as the parser backing `syntaxTree()`
+for fold-service / indent / bracket-matching of the Markdown editor
+mode — those features depend on it.
+
+### 17.9 Source viewer unification `[Q2, Q3]`
+
+CM6 in read-only mode (`EditorState.readOnly.of(true) +
+EditorView.editable.of(false)`) is feature-complete enough to
+replace `TextDisplayView`, but the trade is asymmetric: CM6 loses
+~3× RAM advantage NSTextView has per tab, and TextDisplayView's
+~1100 LOC of tuned AppKit (compositor stability, large-file path,
+NSTextFinder, Services menu) would need ~60% rewrite in JS+bridge.
+**Decision (now in §12 feature #45, Phase 5): keep both viewers
+indefinitely.** Add an A/B opt-in for early adopters only after
+feature #24 (shared WebView) lands. Hard rule: **CM6 never the
+default source viewer for files > 50 MB** — see §17.5.
+
+### 17.10 Right-click context menu replacement `[Q8]`
+
+Today the editor uses WKWebView's default context menu (Lookup,
+Translate, Reload, etc. — browser-y). For editor mode we want a
+native NSMenu with our items (Copy as Markdown Link, Reveal in
+Finder, Run LSP Definition, etc.). Two layers needed:
+
+1. Subclass `WKWebView`, override `willOpenMenu(_:with:)`, filter
+   `WKMenuItemIdentifier*` items.
+2. JS side intercept `contextmenu` via `domEventHandlers`,
+   `preventDefault`, bridge to Swift with token shape; Swift pops
+   `NSMenu.popUp(positioning:at:in:)`.
+
+**Open**: do we use approach (1), (2), or both? Recommend (2) —
+gives full native menu control with no fight against WebKit defaults.
+Now §12 feature #40, Phase 2.
+
+### 17.11 History event observation gap `[Q13]`
+
+CM6 has no per-history-step event. Workaround is to watch
+`historyField`'s `done.length` from an `updateListener`. This means
+"time-travel pane" feature (now §12 #46) depends on guessing CM6
+internal types — pin the CM6 version and add a snapshot-shape test.
+`historyField.spec.toJSON` / `fromJSON` are implemented so snapshot
+persistence works. **Open**: how big can the persisted history get
+(`100 KB doc × 100 undo entries ≈ 5 MB JSON per tab`) and where
+does it live (per-tab sidecar, or workspace state)? Defer to Phase 5.
+
+### 17.12 Cmd-* keystroke routing `[Q15]`
+
+Subtle. CM6's `defaultKeymap` binds a small set of `Mod-*` keys
+(`Mod-z`, `Mod-a`, `Mod-Enter`, etc.) that on Mac map to ⌘. By
+default these run *inside* CM6 — but our AppKit menu (Undo /
+Select All) wants to be the source of truth for parity with the
+NSTextView source viewer. **Decision (now §12 feature #44, Phase 1):**
+register a `Prec.highest` keymap that returns `false` for those
+specific Cmd-keys, *and* a `domEventHandlers.keydown` filter that
+returns `true` (suppress CM6 dispatch) without `preventDefault`
+(so the responder chain reaches NSApp menu). Risk: WebKit's
+responder chain order is not contractual; verify in a VM smoke
+test that ⌘Z bound on a menu item beats CM6's `historyKeymap`.
+
+### 17.13 Paste interception via `clipboardInputFilter` `[Q16]`
+
+CM6 exposes `EditorView.clipboardInputFilter` for synchronous paste
+transforms (CRLF normalization, tab→space conversion when document
+is space-indented, scrub leading-zero-width chars). For async
+flows (large-paste confirm, image-paste-to-upload), `clipboardInputFilter`
+is the wrong abstraction — must `preventDefault` in
+`domEventHandlers.paste` and round-trip through Swift. **Open**:
+default policy for `clipboardInputFilter`? Recommend: CRLF→LF
+normalization always; tab/space conversion respects per-file
+`indentUnit` (per feature #34). Now §12 feature #43 (Phase 3) for
+the async path; sync filter rides Phase 1 alongside #34.
+
 ---
 
 ## 18. Phased roadmap
@@ -1537,6 +1651,15 @@ Deliverables:
 - Find / Replace: use built-in CM panel, add Replace menu item.
 - File-watcher conflict: verify with v1 protocol; add
   `Transaction.addToHistory.of(false)` on external rewrites.
+- **Cmd-* keystroke routing** (§12 #44, §17.12 `[Q15]`): override
+  CM6's built-in `Mod-z` / `Mod-a` / `Mod-Enter` so the AppKit
+  menu items receive them. VM smoke test ⌘Z parity.
+- **Read-only mode parity** (§12 #42 `[Q1]`): wire both
+  `EditorState.readOnly` and `EditorView.editable` knobs; document
+  which one we use (recommend both for true viewer mode).
+- **Synchronous paste filter** (`clipboardInputFilter`, §17.13
+  `[Q16]`): CRLF→LF normalize; tab/space conversion driven by
+  `indentUnit` from feature #34.
 
 Tests: extended `CodeMirrorBridgeTests`, new
 `CMOutboundEncodingTests`, VM `CodeMirrorReadyTests` +
@@ -1562,9 +1685,20 @@ Deliverables:
 - Symbol outline → caret-follow (uses `cursorPositionChanged`).
 - Settings UI section: editor font / theme / word wrap / tab
   size / indent type / line numbers / show invisibles.
+- **Tree-sitter-via-bridge highlight pipeline** (§12 #39, §17.8
+  `[Q5, Q6]`): `setHighlightRanges` effect + `StateField<DecorationSet>`
+  + Swift-side push from existing `TreeSitterEngine`. Saves
+  ~700 KB bundle vs shipping `@codemirror/lang-*` per language;
+  required for Swift / Go / Zig / etc. coverage.
+- **Native NSMenu context-menu replacement** (§12 #40, §17.10
+  `[Q8]`): `domEventHandlers.contextmenu` + bridge + Swift
+  `NSMenu.popUp`. Subclass `WKWebView` for residual cases.
+- **Selection-highlight policy port** (§12 #41 `[Q9]`): decide
+  built-in `highlightSelectionMatches` vs port our
+  `SelectionHighlightEngine` throttle + size-cap policy.
 
-Bundle delta: `@codemirror/lint` (~18 KB minified). New total
-~590 KB. Inside cap.
+Bundle delta: `@codemirror/lint` (~18 KB minified). Tree-sitter
+bridge code is ~30 LOC JS — ~0 KB. New total ~590 KB. Inside cap.
 
 **Gate**: diagnostics show on a known-bad Swift file; find bar
 behaves identically in source-mode and editor-mode.
@@ -1587,6 +1721,10 @@ Deliverables:
   from our `SyntaxTheme`. Compartmented; can swap at runtime.
 - Save-on-blur (opt-in).
 - Show invisibles (decoration plugin).
+- **Large-paste confirm prompt** (§12 #43, §17.13 `[Q16]`):
+  `domEventHandlers.paste` + `preventDefault` + bridge round-trip
+  to Swift confirm sheet → `replaceRange` on confirm. Threshold
+  configurable.
 
 Open question: how do we want `Cmd-click → definition` to
 interact with `Cmd-click` on a markdown link? Today the source
@@ -1629,6 +1767,13 @@ Conditional on Phase 4 outcomes and product direction:
 - Semantic tokens.
 - Custom CM6 extensions for our markdown specifics (math
   rendering inline, mermaid block previews).
+- **A/B opt-in: CM6 in read-only mode as source viewer** (§12 #45,
+  §17.9 `[Q2, Q3]`). Behind a Settings flag; only after #24 lands
+  and only for files < 50 MB. NSTextView remains the >50 MB
+  fallback indefinitely.
+- **History snapshot / time-travel pane** (§12 #46, §17.11
+  `[Q13]`). Per-tab snapshot store on disk; debounced JSON
+  serialize of `historyField`. UI timeline → `view.setState(fromJSON(...))`.
 
 ---
 
@@ -1761,6 +1906,198 @@ bridge call on tab-switch + visibility-change.
 
 ---
 
+## 21. Updates — 2026-05-23 post-Q&A
+
+This section consolidates findings from
+`docs/CM6_CAPABILITIES_QNA_2026-05-23.md` (the "16 capabilities
+questions" research). The Q&A doc is the citation source; this
+section says **what each finding changed in this design doc**.
+
+### 21.1 Net new feature rows in §12
+
+Added rows 39–46. Each crosslinks to the Q&A doc by question
+number `[Q#]`.
+
+| Row | Title                                                | Q&A § | Phase | Why it was missing originally |
+|----:|------------------------------------------------------|------:|------:|-------------------------------|
+|  39 | Tree-sitter-via-bridge highlight pipeline             | Q5, Q6 | 2 | §12 listed `@codemirror/lang-*` per language; the bridge alternative wasn't surfaced as a first-class option. |
+|  40 | Native NSMenu context-menu replacement                | Q8    | 2 | §17.3-area implicit; needed an explicit feature row + roadmap line. |
+|  41 | `highlightSelectionMatches` parity / engine port      | Q9    | 2 | We have a tuned `SelectionHighlightEngine`; needed a decision row on built-in vs port. |
+|  42 | Read-only mode parity (both knobs)                    | Q1    | 1 | §12 feature #35 collapsed `readOnly` + `editable` into one row; semantics differ materially. |
+|  43 | Large-paste confirm prompt                            | Q16   | 3 | New product idea — Q&A surfaced `clipboardInputFilter` is sync-only; async needs `preventDefault` round-trip. |
+|  44 | Cmd-* routing to AppKit menus                         | Q15   | 1 | Subtle WebKit responder-chain dependency; needed explicit Phase 1 sign-off. |
+|  45 | A/B opt-in: CM6 as source viewer                      | Q2,Q3 | 5 | Cross-cutting decision deferred — added as Phase 5 conditional. |
+|  46 | History snapshot / time-travel pane                   | Q13   | 5 | Discovered CM6 has no per-history-step event but `historyField.toJSON` works; new product idea. |
+
+### 21.2 Net new risks / open questions in §17
+
+Added §17.8 through §17.13. Quick index:
+
+- **§17.8** — Tree-sitter-via-bridge vs Lezer (Q5/Q6 decision).
+- **§17.9** — Source viewer unification timeline (Q2/Q3 decision).
+- **§17.10** — Right-click menu replacement strategy (Q8 decision).
+- **§17.11** — History event observation gap (Q13 risk).
+- **§17.12** — Cmd-* routing fragility (Q15 risk).
+- **§17.13** — Paste sync vs async (Q16 decision).
+
+### 21.3 Corrections / clarifications to existing content
+
+None of the original content was wrong, but the Q&A sharpened
+several claims:
+
+1. **§17.5 "huge file" cap.** Originally "Suggest 50 MB hard cap".
+   Q4 doubles down with empirical comparison: NSTextView is *6×
+   lighter per tab*, handles 1 GB log files; CM6 hits a JS-heap
+   ceiling around 4 GB and feels pressure above 100 MB. The
+   50 MB cap is correct; the *reason* is now the JS-heap budget,
+   not generic "slowness". `[Q4]`
+2. **§17.2 LSP-through-bridge vs `@codemirror/lsp-client`.**
+   Original recommendation (stick with Swift-side LSP) is correct
+   and reinforced by Q7. The Q&A adds: `@codemirror/lint`'s
+   `setDiagnostics(state, diagnostics)` is the canonical
+   "push-from-outside" entry point — the package was *designed*
+   for this. Bundle cost: ~18 KB. `hoverTooltip` from
+   `@codemirror/view` handles dwell timing / placement / dismissal
+   automatically; we just provide the async callback. `[Q7]`
+3. **§9 / §17.3 vim mode bus factor.** Q14 adds 2025 update: OpenAI
+   now sponsors Marijn Haverbeke (creator of CM + ProseMirror +
+   Lezer). Funding signal is stable. Fork cost: ~40K LOC TS for
+   the non-language core, ~3–6 month-equivalents to feel
+   competent. **Lower-risk than NSTextView TK2 today.** `[Q14]`
+4. **§4.9 gutters.** Q11 confirms multiple `gutter()` extensions
+   stack independently; order by extension precedence;
+   `lineMarkerChange` is the perf hook (return `false` to skip
+   re-run for static gutters like bookmarks). `initialSpacer` is
+   the fix for width-thrash on doc-length change. `[Q11]`
+5. **§4.8 decorations.** Q9 / Q12 confirm decoration flavors and
+   add the visible-range pattern for whitespace-dots (custom
+   `ViewPlugin` over `view.visibleRanges`). `highlightSpecialChars()`
+   covers tab/CR/NBSP/zero-width by default. `[Q9, Q12]`
+6. **§5.6 / §13 selection persistence.** Q1 clarifies read-only
+   does *not* save perf — same viewport / decoration cost as
+   read-write. Only saves event dispatch on edit-keystrokes
+   (negligible). `[Q1]`
+
+### 21.4 Contradictions surfaced (none load-bearing)
+
+- **§9 "10 MB markdown is fine" vs Q&A §2 table.** The design doc
+  cites MarkEdit's empirical 10 MB claim; the Q&A table calls
+  out "eye-blinking per MarkEdit" at 10 MB. Both true: 10 MB is
+  *the upper edge of comfortable*, not pleasant. Resolved by the
+  50 MB hard cap (§17.5) — we never serve 10 MB to CM6 silently;
+  it's an explicit policy line.
+- **§17.2 vs Q7 on `@codemirror/lsp-client`.** Both reach the
+  same conclusion (don't use it). The Q&A adds a sharper "why":
+  the package expects a JS-side LSP transport, which means our
+  Swift-side `LSPPool` would have to proxy stdio through the
+  bridge twice. Q7 explicitly recommends `@codemirror/lint` +
+  `hoverTooltip` + `domEventHandlers` instead.
+
+### 21.5 Concrete API tips worth keeping inline (from Q&A)
+
+For Phase 2 implementation agents — these are the snippet shapes
+the Q&A doc spelled out:
+
+```ts
+// Q6 — tree-sitter ranges → CM6 decorations:
+const setHighlightRanges = StateEffect.define<{from: number, to: number, cls: string}[]>({
+  map: (ranges, change) => ranges.map(r => ({
+    from: change.mapPos(r.from),
+    to: change.mapPos(r.to),
+    cls: r.cls,
+  })),
+})
+
+const highlightField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(decos, tr) {
+    decos = decos.map(tr.changes)
+    for (const e of tr.effects) if (e.is(setHighlightRanges)) {
+      decos = Decoration.set(
+        e.value.map(r => Decoration.mark({class: r.cls}).range(r.from, r.to)),
+        /*sort=*/true,
+      )
+    }
+    return decos
+  },
+  provide: f => EditorView.decorations.from(f),
+})
+```
+
+```ts
+// Q7 — diagnostics push, no lint source needed:
+import { setDiagnostics } from "@codemirror/lint"
+window.cmDispatch.setDiagnostics = (msg) => {
+  view.dispatch(setDiagnostics(view.state, msg.diagnostics))
+}
+```
+
+```ts
+// Q10 — suppress CM panel, drive search from Swift FindBar:
+search({ createPanel: () => null, top: false })
+// then setSearchQuery(SearchQuery{...}) / findNext / findPrev / replaceAll
+```
+
+```swift
+// Q8 — native menu replacement (Swift side):
+final class MarkdownEditorWebView: WKWebView {
+    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        // Filter WKMenuItemIdentifier* items; append our own.
+        super.willOpenMenu(menu, with: event)
+    }
+}
+```
+
+```ts
+// Q15 — let Cmd-* fall through to AppKit menus:
+EditorView.domEventHandlers({
+  keydown(event, view) {
+    if (event.metaKey && !event.altKey) return true   // suppress CM6 dispatch
+    return false                                       // do NOT preventDefault
+  },
+})
+```
+
+```ts
+// Q13 — observe history-step additions via updateListener:
+let lastDone = 0
+EditorView.updateListener.of(update => {
+  if (!update.docChanged) return
+  const h = update.state.field(historyField, false) as any
+  if (h.done.length > lastDone) {
+    bridge.send({type: "historyEntriesAdded", count: h.done.length - lastDone})
+    lastDone = h.done.length
+  }
+})
+```
+
+### 21.6 Bundle-growth plan deltas
+
+§19's bundle table is unchanged by the Q&A — the tree-sitter
+bridge path replaces (rather than adds) per-language packages, so
+Phase 4's `+~120 KB`/`+~250 KB` lines for `@codemirror/lang-html` /
+`lang-cpp` / `lang-rust` are **avoidable** if we commit to the
+bridge for those languages too. **Open**: do we want CM6's
+incremental Lezer parsing for any language we already have a
+tree-sitter grammar for? Probably no — saves bundle, accepts the
+~50–100 ms debounce visibility.
+
+### 21.7 What did NOT change
+
+- §13 bridge envelope spec (`v`, `type`, `replyId`, payload) is
+  unaffected — the new features add new `type` values but reuse
+  the envelope.
+- §14 Swift state management is unaffected — the snapshot model
+  for #46 fits the existing per-tab dict.
+- §15 perf plan — no new hot paths. Tree-sitter bridge push is
+  debounced at the same cadence as the existing `change` debounce.
+- §16 testing strategy — same shape; new VM tests per feature.
+- §20 MarkEdit reference patterns — confirmed by Q&A (Q10 cites
+  MarkEdit's `EditorViewController+TextFinder.swift` as the
+  pattern for #13).
+
+---
+
 # Appendices
 
 ## Appendix A — Executive summary
@@ -1793,6 +2130,18 @@ design for TextView. Headline answers:
   shipping in v2 protocol), bundle parse time at 1.5 MB
   threshold (Phase 4+), shared-WebView refactor (Phase 4,
   conditional on prototype).
+
+> **Post-Q&A addendum (2026-05-23):** Eight new feature rows
+> (§12 #39–46) and six new open questions (§17.8–17.13) were folded
+> in from `docs/CM6_CAPABILITIES_QNA_2026-05-23.md`. See **§21** for
+> the consolidated diff. Headline additions:
+>
+> - Tree-sitter-via-bridge highlight pipeline (Phase 2; saves ~700 KB).
+> - Native NSMenu context-menu replacement (Phase 2).
+> - Cmd-* routing to AppKit menus (Phase 1; subtle responder-chain
+>   work).
+> - CM6-as-source-viewer A/B opt-in (Phase 5, conditional).
+> - History snapshot / time-travel pane (Phase 5).
 
 ---
 
