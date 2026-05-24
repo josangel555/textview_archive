@@ -1129,6 +1129,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         wrapItem.target = self
         viewMenu.addItem(wrapItem)
 
+        // Show Invisibles — applies to source view AND CM6 editor.
+        let invisItem = NSMenuItem(
+            title: "Show Invisibles",
+            action: #selector(toggleShowInvisibleChars(_:)),
+            keyEquivalent: "i"
+        )
+        invisItem.keyEquivalentModifierMask = [.command, .option]
+        invisItem.target = self
+        viewMenu.addItem(invisItem)
+
+        // Editor (CM6) — code folding + go to line. Validated to
+        // only enable when an editor tab is on screen.
+        let foldAllItem = NSMenuItem(
+            title: "Fold All",
+            action: #selector(cmFoldAll(_:)),
+            keyEquivalent: "["
+        )
+        foldAllItem.keyEquivalentModifierMask = [.command, .option]
+        foldAllItem.target = self
+        viewMenu.addItem(foldAllItem)
+
+        let unfoldAllItem = NSMenuItem(
+            title: "Unfold All",
+            action: #selector(cmUnfoldAll(_:)),
+            keyEquivalent: "]"
+        )
+        unfoldAllItem.keyEquivalentModifierMask = [.command, .option]
+        unfoldAllItem.target = self
+        viewMenu.addItem(unfoldAllItem)
+
+        let gotoLineItem = NSMenuItem(
+            title: "Go to Line…",
+            action: #selector(cmGotoLine(_:)),
+            keyEquivalent: "l"
+        )
+        gotoLineItem.keyEquivalentModifierMask = [.command]
+        gotoLineItem.target = self
+        viewMenu.addItem(gotoLineItem)
+
         viewMenu.addItem(.separator())
         let reloadItem = NSMenuItem(
             title: "Reload",
@@ -1580,6 +1619,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(toggleSourceWordWrap(_:)):
             item.state = model.sourceWordWrap ? .on : .off
             return hasFile
+        case #selector(toggleShowInvisibleChars(_:)):
+            item.state = model.showInvisibleChars ? .on : .off
+            return hasFile
+        case #selector(cmFoldAll(_:)), #selector(cmUnfoldAll(_:)),
+             #selector(cmGotoLine(_:)):
+            return hasTab && model.currentViewMode == .editor
+                && CodeMirrorEditorRegistry.shared.current() != nil
         case #selector(toggleBookmark(_:)):
             item.title = model.isCurrentTabBookmarked
                 ? "Remove Bookmark"
@@ -1672,9 +1718,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             model.showRenderedFindBar()
             return
         }
+        // Editor mode (CM6) — route to the new editor find bar that
+        // drives CodeMirror via the v1 bridge.
+        if model.currentViewMode == .editor {
+            model.showEditorFindBar()
+            return
+        }
         // Otherwise the user is on the source/text side: open the
         // source find bar (works for source view, plaintext, code, etc.).
         model.showSourceFindBar()
+    }
+
+    // MARK: - Editor-mode menu items (CM6 Phase 2)
+
+    @objc func toggleShowInvisibleChars(_ sender: Any?) {
+        model.toggleShowInvisibleChars()
+    }
+
+    @objc func cmFoldAll(_ sender: Any?) {
+        guard let wv = CodeMirrorEditorRegistry.shared.current() else { return }
+        let json = CMBridgeCodec.encodeOutboundJSON(.foldAll)
+        wv.evaluateJavaScript("window.cmDispatch(\(json));", completionHandler: nil)
+    }
+
+    @objc func cmUnfoldAll(_ sender: Any?) {
+        guard let wv = CodeMirrorEditorRegistry.shared.current() else { return }
+        let json = CMBridgeCodec.encodeOutboundJSON(.unfoldAll)
+        wv.evaluateJavaScript("window.cmDispatch(\(json));", completionHandler: nil)
+    }
+
+    /// Go to Line… prompt — uses a tiny inline NSAlert. Lighter than a
+    /// dedicated SwiftUI sheet for the PoC; can promote later.
+    @objc func cmGotoLine(_ sender: Any?) {
+        let alert = NSAlert()
+        alert.messageText = "Go to Line"
+        alert.informativeText = "Enter a 1-based line number."
+        alert.addButton(withTitle: "Go")
+        alert.addButton(withTitle: "Cancel")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 22))
+        alert.accessoryView = field
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+        let trimmed = field.stringValue.trimmingCharacters(in: .whitespaces)
+        guard let n = Int(trimmed), n > 0 else { return }
+        model.editorGotoLine = CMGotoLineRequest(line: n)
     }
 
     // MARK: - NSServices (Finder Quick Action equivalent)

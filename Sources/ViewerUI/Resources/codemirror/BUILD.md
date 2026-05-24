@@ -18,6 +18,21 @@ the bundle now also re-exports `EditorSelection`, `Transaction`,
 `EditorStateTabSize`. These back the v1 dispatch handlers in
 `codemirror.html`.
 
+Phase 2 additions (`docs/CM6_INTEGRATION_DESIGN_2026-05-23.md` §18.2):
+- `@codemirror/lint` (~80 KB after dedup of view/state to 6.43/6.5) —
+  drives inline squiggles + lint gutter. Exposed as
+  `lintGutter`, `setDiagnostics`, `forEachDiagnostic`.
+- `@codemirror/search` extras `setSearchQuery`, `SearchQuery`,
+  `getSearchQuery` so the SwiftUI find bar can drive CM's search
+  state without opening CM's built-in panel.
+- `Decoration`, `ViewPlugin`, `WidgetType` from `@codemirror/view`
+  for the show-invisibles decoration plugin (hand-rolled, no extra
+  package needed).
+- `@codemirror/view` bumped from 6.28.1 → 6.43.0 + state 6.4.1 →
+  6.5.2 so `@codemirror/lint` peer-dep resolves to the same version
+  and npm dedupes instead of bundling two copies of view (~167 KB
+  saving — the difference between 798 KB and 652 KB minified).
+
 ## How to re-build
 
 ```
@@ -29,7 +44,7 @@ npm run build
 That writes:
 
 ```
-Sources/ViewerUI/Resources/codemirror/codemirror.js   (~571 KB minified)
+Sources/ViewerUI/Resources/codemirror/codemirror.js   (~652 KB minified, Phase 2)
 ```
 
 CSS is hand-maintained at `codemirror.css` in this directory; CM6
@@ -68,9 +83,10 @@ post `errorOccurred`. Mismatched `v` posts `errorOccurred`.
 
 Supported `type` values: `setText`, `appendText`, `replaceRange`,
 `setLanguage`, `setTheme`, `setFontSize`, `setWordWrap`, `setReadOnly`,
-`setLineNumbers`, `setIndentation`, `gotoLine`, `setSelection`,
-`openSearch`, `closeSearch`, `findNext`, `findPrev`, `replaceNext`,
-`replaceAll`, `foldAll`, `unfoldAll`, `undo`, `redo`, `focus`,
+`setLineNumbers`, `setShowInvisibles`, `setIndentation`, `gotoLine`,
+`setSelection`, `openSearch`, `closeSearch`, `setSearchQuery`,
+`findNext`, `findPrev`, `replaceNext`, `replaceAll`,
+`setDiagnostics`, `foldAll`, `unfoldAll`, `undo`, `redo`, `focus`,
 `flushChanges`, `getDocument`, `getSelection`, `getScrollPosition`.
 
 ### Outbound to Swift — `WKScriptMessageHandler` named `mdvEditor`

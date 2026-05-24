@@ -71,6 +71,11 @@ public enum CMOutboundMessage: Equatable, Sendable {
     case setSelection(anchor: Int, head: Int, scroll: Bool)
     case openSearch(query: String?, replace: Bool)
     case closeSearch
+    /// Set the active find-bar query. Re-issued after every keystroke
+    /// in the SwiftUI find bar (debounced upstream) so CM's
+    /// `SearchQuery` matches what the user typed. `caseSensitive` /
+    /// `isRegex` are passed through to CM's matcher.
+    case setSearchQuery(query: String, caseSensitive: Bool, regex: Bool)
     case findNext
     case findPrev
     case replaceNext
@@ -81,9 +86,37 @@ public enum CMOutboundMessage: Equatable, Sendable {
     case redo
     case focus
     case flushChanges
+    /// Replace the inline-diagnostic decoration set. Empty array clears.
+    /// CM6's `@codemirror/lint` linter source pulls from a StateField
+    /// fed by this effect; squiggles + lint gutter both react.
+    case setDiagnostics([CMDiagnostic])
     case getDocument(replyId: String)
     case getSelection(replyId: String)
     case getScrollPosition(replyId: String)
+}
+
+/// One inline-diagnostic decoration in CM6 doc coordinates (UTF-16
+/// offsets — what `EditorState.doc.lineAt` / `line.from + col` produce).
+/// Translated from `LSPDiagnostic`'s `(line, character)` ranges via
+/// the doc text (see `CMDiagnosticMapping`).
+public struct CMDiagnostic: Equatable, Sendable, Hashable {
+    public enum Severity: String, Sendable, Hashable {
+        case error, warning, info, hint
+    }
+    public let from: Int
+    public let to: Int
+    public let severity: Severity
+    public let message: String
+    public let source: String?
+    public let code: String?
+    public init(
+        from: Int, to: Int, severity: Severity,
+        message: String, source: String? = nil, code: String? = nil
+    ) {
+        self.from = from; self.to = to
+        self.severity = severity; self.message = message
+        self.source = source; self.code = code
+    }
 }
 
 // MARK: - Codec
@@ -259,6 +292,11 @@ public enum CMBridgeCodec {
             if let query = query { dict["query"] = query }
             dict["replace"] = replace
         case .closeSearch:    dict["type"] = "closeSearch"
+        case .setSearchQuery(let query, let caseSensitive, let regex):
+            dict["type"] = "setSearchQuery"
+            dict["query"] = query
+            dict["caseSensitive"] = caseSensitive
+            dict["regex"] = regex
         case .findNext:       dict["type"] = "findNext"
         case .findPrev:       dict["type"] = "findPrev"
         case .replaceNext:    dict["type"] = "replaceNext"
@@ -269,6 +307,18 @@ public enum CMBridgeCodec {
         case .redo:           dict["type"] = "redo"
         case .focus:          dict["type"] = "focus"
         case .flushChanges:   dict["type"] = "flushChanges"
+        case .setDiagnostics(let diags):
+            dict["type"] = "setDiagnostics"
+            dict["diagnostics"] = diags.map { d -> [String: Any] in
+                var o: [String: Any] = [
+                    "from": d.from, "to": d.to,
+                    "severity": d.severity.rawValue,
+                    "message": d.message,
+                ]
+                if let s = d.source { o["source"] = s }
+                if let c = d.code { o["code"] = c }
+                return o
+            }
         case .getDocument(let replyId):
             dict["type"] = "getDocument"
             dict["replyId"] = replyId

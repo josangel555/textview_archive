@@ -177,10 +177,18 @@ public final class DocumentModel: ObservableObject {
     /// just replaces the handler.
     public func bootstrapLSP() {
         let store = self.lspDiagnostics
+        // Capture self weakly through a sendable box: the outer Task
+        // hands a weak ref to the inner setOnDiagnostics callback,
+        // which re-enters MainActor to safely call back into self.
+        let weakSelfBox = WeakModelBox(self)
         Task {
             await self.lspPool.setOnDiagnostics { url, diags in
                 Task { @MainActor in
                     store.replace(url: url, with: diags)
+                    // Also push translated diagnostics into the CM6
+                    // editor view (squiggles + lint gutter). No-op for
+                    // URLs that don't currently have an editor tab.
+                    weakSelfBox.value?.setEditorDiagnostics(diags, forURL: url)
                 }
             }
         }
@@ -954,6 +962,127 @@ public final class DocumentModel: ObservableObject {
     public func sourceFindPrev() { sourceFindPrevRequest &+= 1 }
     public func renderedFindNext() { renderedFindNextRequest &+= 1 }
     public func renderedFindPrev() { renderedFindPrevRequest &+= 1 }
+
+    // MARK: Find bar (CM6 editor mode) — Phase 2 of CM6 integration
+    //
+    // Mirrors the source-mode find state so the SwiftUI `FindBar`
+    // component can drive both back-ends with one shape. Editor-mode
+    // find dispatches CM6 search commands via the v1 bridge
+    // (`setSearchQuery` / `findNext` / `findPrev`); the readout comes
+    // back as `findResultChanged`. The CM built-in panel is suppressed
+    // — we own the visual surface.
+
+    @Published public var isEditorFindBarPresented: Bool = false
+    @Published public var editorFindQuery: String = ""
+    @Published public var editorFindCaseSensitive: Bool = false
+    @Published public var editorFindIsRegex: Bool = false
+    /// Bumped on every `editorFindNext()` / `editorFindPrev()` so
+    /// `CodeMirrorEditorView` (which compares `Equatable` props) can
+    /// notice the request and ship the bridge call. Same pattern as
+    /// the source bar.
+    @Published public var editorFindNextRequest: Int = 0
+    @Published public var editorFindPrevRequest: Int = 0
+    @Published public var editorFindFocusRequest: Int = 0
+    /// "3/12"-style readout — set from JS via `findResultChanged`.
+    @Published public var editorFindMatchSummary: String = ""
+
+    public func showEditorFindBar() {
+        isEditorFindBarPresented = true
+        editorFindFocusRequest &+= 1
+    }
+    public func dismissEditorFindBar() {
+        isEditorFindBarPresented = false
+        editorFindQuery = ""
+        editorFindMatchSummary = ""
+    }
+    public func editorFindNext() { editorFindNextRequest &+= 1 }
+    public func editorFindPrev() { editorFindPrevRequest &+= 1 }
+    public func setEditorFindMatchSummary(_ s: String) {
+        guard s != editorFindMatchSummary else { return }
+        editorFindMatchSummary = s
+    }
+
+    // MARK: Editor mode — show-invisibles + cursor + diagnostics push
+    //
+    // `showInvisibleChars` already exists for the source view (above);
+    // we reuse the same flag for the editor — single user-facing
+    // setting, no daylight between the two modes. CM6 picks it up via
+    // the `setShowInvisibles` bridge call wired in
+    // `CodeMirrorEditorView.applyPendingState`.
+    //
+    // Editor-mode cursor + scroll position flow through the existing
+    // `sourceSelection` / `sourceScrollState` channels so the status
+    // bar's L:C readout works uniformly across source + editor modes
+    // (it reads `sourceSelection`).
+
+    /// Bumped each time the host wants the CM6 editor to scroll +
+    /// place the caret on a 1-based line. The active
+    /// `CodeMirrorEditorView` builds the `CMGotoLineRequest` from this.
+    @Published public var editorGotoLine: CMGotoLineRequest? = nil
+
+    /// Indent setting for CM6 editor. Drives CM6's `indentUnit` + tab
+    /// size facets via the v1 bridge. Defaults to 2 spaces (matches
+    /// the bundle's `applySetIndentation` default).
+    @Published public var editorIndentation: CMIndentation = .spaces(2)
+
+    /// Last-known editor cursor position per tab. Used to restore the
+    /// caret when the user switches tabs (CM6 view dismantles + remounts
+    /// today; without persistence, every tab switch jumps to line 1).
+    /// Phase 4 shared-WebView refactor (design doc §14.3) will obsolete
+    /// this; for now it's the minimum-cost UX win.
+    @Published public private(set) var editorCursorByTab: [UUID: CMCursorPosition] = [:]
+
+    /// Last-known editor scroll position per tab. Persistence story:
+    /// in-memory only for now (lives across tab switches inside a single
+    /// session). Cross-session persistence is a Phase 3+ deliverable.
+    @Published public private(set) var editorScrollByTab: [UUID: CMScrollPosition] = [:]
+
+    public func recordEditorCursor(_ pos: CMCursorPosition, forTabID id: UUID) {
+        editorCursorByTab[id] = pos
+        // Mirror onto the shared status-bar selection so the bottom
+        // "Ln X, Col Y" readout works in editor mode. Source-mode
+        // writes the same field; only one is active at a time.
+        sourceSelection = SourceSelection(line: pos.line, column: pos.column, length: 0)
+    }
+
+    public func recordEditorScroll(_ pos: CMScrollPosition, forTabID id: UUID) {
+        editorScrollByTab[id] = pos
+    }
+
+    /// Push LSP diagnostics for `url` into the CM6 editor as squiggles.
+    /// Looks up the active editor buffer to do the position translation;
+    /// no-op if the URL doesn't have an open editor tab. The translated
+    /// payload is parked on `pendingEditorDiagnostics[tabID]` so the
+    /// active `CodeMirrorEditorView` can pick it up on its next
+    /// `updateNSView`. Empty array clears.
+    public func setEditorDiagnostics(_ diags: [LSPDiagnostic], forURL url: URL) {
+        // Find the open editor tab for this URL, if any. Multiple tabs
+        // for the same URL → push to all of them.
+        let standardized = url.standardizedFileURL.resolvingSymlinksInPath()
+        for tab in tabs.tabs {
+            guard let tabURL = tab.url else { continue }
+            let stdTab = tabURL.standardizedFileURL.resolvingSymlinksInPath()
+            guard stdTab == standardized else { continue }
+            guard let buf = editorBuffers[tab.id] else { continue }
+            let cmDiags = CMDiagnosticMapping.cmDiagnostics(
+                from: diags,
+                documentText: buf.text,
+                encoding: .utf16
+            )
+            pendingEditorDiagnostics[tab.id] = cmDiags
+        }
+    }
+
+    /// Per-tab pending diagnostics payload. `CodeMirrorEditorView`
+    /// reads + clears this on each `updateNSView` cycle so re-renders
+    /// don't re-ship the same set.
+    @Published public internal(set) var pendingEditorDiagnostics: [UUID: [CMDiagnostic]] = [:]
+
+    /// Called by `CodeMirrorEditorView.Coordinator` once it's pushed
+    /// the diagnostics so the next `updateNSView` doesn't re-ship them.
+    public func consumePendingEditorDiagnostics(forTabID id: UUID) {
+        pendingEditorDiagnostics.removeValue(forKey: id)
+    }
 
     // MARK: Pretty-print / Format
 
@@ -2069,4 +2198,14 @@ public final class DocumentModel: ObservableObject {
         // (off-main); skipped when not inside a repo.
         refreshDiffMarks()
     }
+}
+
+/// Sendable weak box around a MainActor-isolated DocumentModel reference.
+/// Strict-concurrency forbids capturing `self` (a mutable var in escaping
+/// async closures) directly; this box gives a value-typed handoff that
+/// the inner closure can capture cleanly. The wrapped reference is
+/// MainActor-isolated; readers must hop to MainActor before deref.
+private struct WeakModelBox: @unchecked Sendable {
+    weak var value: DocumentModel?
+    init(_ v: DocumentModel) { self.value = v }
 }

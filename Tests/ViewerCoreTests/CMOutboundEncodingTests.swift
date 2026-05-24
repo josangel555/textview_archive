@@ -176,6 +176,62 @@ final class CMOutboundEncodingTests: XCTestCase {
         }
     }
 
+    // MARK: - Phase 2: search query + diagnostics + invisibles
+
+    func testEncodeSetSearchQuery() {
+        let d = encodeAndParse(.setSearchQuery(
+            query: "foo", caseSensitive: true, regex: false
+        ))
+        XCTAssertEqual(d["type"] as? String, "setSearchQuery")
+        XCTAssertEqual(d["query"] as? String, "foo")
+        XCTAssertEqual(d["caseSensitive"] as? Bool, true)
+        XCTAssertEqual(d["regex"] as? Bool, false)
+    }
+
+    func testEncodeSetSearchQueryEmpty() {
+        let d = encodeAndParse(.setSearchQuery(query: "", caseSensitive: false, regex: true))
+        XCTAssertEqual(d["query"] as? String, "")
+        XCTAssertEqual(d["regex"] as? Bool, true)
+    }
+
+    func testEncodeSetShowInvisibles() {
+        let d = encodeAndParse(.setShowInvisibles(true))
+        XCTAssertEqual(d["type"] as? String, "setShowInvisibles")
+        XCTAssertEqual(d["enabled"] as? Bool, true)
+    }
+
+    func testEncodeSetDiagnosticsEmpty() {
+        let d = encodeAndParse(.setDiagnostics([]))
+        XCTAssertEqual(d["type"] as? String, "setDiagnostics")
+        let arr = d["diagnostics"] as? [[String: Any]]
+        XCTAssertEqual(arr?.count, 0)
+    }
+
+    func testEncodeSetDiagnosticsRoundtrip() {
+        let diags = [
+            CMDiagnostic(
+                from: 10, to: 14, severity: .error,
+                message: "missing semicolon", source: "swift", code: "1"
+            ),
+            CMDiagnostic(
+                from: 100, to: 105, severity: .warning,
+                message: "unused", source: nil, code: nil
+            ),
+        ]
+        let d = encodeAndParse(.setDiagnostics(diags))
+        let arr = d["diagnostics"] as? [[String: Any]]
+        XCTAssertEqual(arr?.count, 2)
+        XCTAssertEqual(arr?[0]["from"] as? Int, 10)
+        XCTAssertEqual(arr?[0]["to"] as? Int, 14)
+        XCTAssertEqual(arr?[0]["severity"] as? String, "error")
+        XCTAssertEqual(arr?[0]["message"] as? String, "missing semicolon")
+        XCTAssertEqual(arr?[0]["source"] as? String, "swift")
+        XCTAssertEqual(arr?[0]["code"] as? String, "1")
+        XCTAssertEqual(arr?[1]["severity"] as? String, "warning")
+        XCTAssertNil(arr?[1]["source"], "source omitted when nil")
+        XCTAssertNil(arr?[1]["code"], "code omitted when nil")
+    }
+
     // MARK: - Request/reply
 
     func testEncodeGetDocument() {

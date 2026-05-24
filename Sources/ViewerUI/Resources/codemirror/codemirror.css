@@ -29,3 +29,9 @@ html, body {
 /* Dark host background (paired with oneDark theme inside CM). */
 body.dark { background: #282c34; color: #abb2bf; }
 body.light { background: #ffffff; color: #1f2328; }
+/* Invisible-character glyphs rendered by the show-invisibles ViewPlugin.
+ * Quiet color so they don't overpower the content. */
+.cm-invisible {
+  color: rgba(127, 127, 127, 0.5);
+  pointer-events: none;
+}

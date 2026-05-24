@@ -19,6 +19,7 @@ import {
   EditorView, keymap, lineNumbers, highlightActiveLine,
   highlightActiveLineGutter, drawSelection, rectangularSelection,
   crosshairCursor, dropCursor,
+  Decoration, ViewPlugin, WidgetType,
 } from "@codemirror/view";
 import {
   defaultKeymap, history, historyKeymap, undo, redo,
@@ -28,12 +29,16 @@ import {
   search, searchKeymap, highlightSelectionMatches,
   openSearchPanel, closeSearchPanel,
   findNext, findPrevious, replaceNext, replaceAll,
+  setSearchQuery, SearchQuery, getSearchQuery,
 } from "@codemirror/search";
 import {
   syntaxHighlighting, defaultHighlightStyle, bracketMatching,
   foldKeymap, foldGutter, indentOnInput,
   indentUnit, foldAll, unfoldAll,
 } from "@codemirror/language";
+import {
+  linter, lintGutter, setDiagnostics, forEachDiagnostic, Diagnostic,
+} from "@codemirror/lint";
 import { markdown } from "@codemirror/lang-markdown";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
@@ -51,12 +56,15 @@ export {
   EditorState, EditorView, EditorSelection, Compartment, Transaction,
   keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter,
   drawSelection, rectangularSelection, crosshairCursor, dropCursor,
+  Decoration, ViewPlugin, WidgetType,
   defaultKeymap, history, historyKeymap, undo, redo, indentWithTab,
   search, searchKeymap, highlightSelectionMatches,
   openSearchPanel, closeSearchPanel,
   findNext, findPrevious, replaceNext, replaceAll,
+  setSearchQuery, SearchQuery, getSearchQuery,
   syntaxHighlighting, defaultHighlightStyle, bracketMatching,
   foldKeymap, foldGutter, indentOnInput,
   indentUnit, foldAll, unfoldAll, EditorStateTabSize,
+  linter, lintGutter, setDiagnostics, forEachDiagnostic,
   markdown, javascript, python, json, oneDark,
 };

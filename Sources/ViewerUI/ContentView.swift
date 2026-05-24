@@ -253,19 +253,65 @@ public struct ContentView: View {
             let _ = { model.ensureEditorBuffer(for: file, tabID: tid) }()
             let buf = model.editorBuffer(forTabID: tid)
             let lang = model.effectiveLanguage(forTabID: tid, url: file.url)
-            CodeMirrorEditorView(
-                text: buf?.text ?? file.contents,
-                fontSize: 13 * model.zoom,
-                language: lang,
-                isDarkTheme: model.activeTheme.name == .xcodeDark,
-                onTextChange: { newText in
-                    model.updateEditorText(newText, forTabID: tid)
-                },
-                onSaveRequested: {
-                    _ = model.saveActiveEditor()
+            let diags = model.pendingEditorDiagnostics[tid] ?? []
+            let seed = model.editorCursorByTab[tid].map {
+                CMSelectionSeed(anchor: $0.head, head: $0.head, scroll: true)
+            }
+            VStack(spacing: 0) {
+                if model.isEditorFindBarPresented {
+                    EditorFindBar(model: model)
                 }
-            )
-            .accessibilityIdentifier("mdv.editor")
+                CodeMirrorEditorView(
+                    text: buf?.text ?? file.contents,
+                    fontSize: 13 * model.zoom,
+                    language: lang,
+                    isDarkTheme: model.activeTheme.name == .xcodeDark,
+                    wordWrap: model.sourceWordWrap,
+                    lineNumbers: true,
+                    indentation: model.editorIndentation,
+                    gotoLineRequest: model.editorGotoLine,
+                    showInvisibles: model.showInvisibleChars,
+                    diagnostics: diags,
+                    findQuery: model.isEditorFindBarPresented ? model.editorFindQuery : "",
+                    findCaseSensitive: model.editorFindCaseSensitive,
+                    findRegex: model.editorFindIsRegex,
+                    findNextRequest: model.editorFindNextRequest,
+                    findPrevRequest: model.editorFindPrevRequest,
+                    initialSelection: seed,
+                    onTextChange: { newText in
+                        model.updateEditorText(newText, forTabID: tid)
+                    },
+                    onSaveRequested: {
+                        _ = model.saveActiveEditor()
+                    },
+                    onCursorChange: { pos in
+                        model.recordEditorCursor(pos, forTabID: tid)
+                    },
+                    onScrollChange: { pos in
+                        model.recordEditorScroll(pos, forTabID: tid)
+                    },
+                    onFindResultChange: { result in
+                        if result.matches == 0 {
+                            model.setEditorFindMatchSummary("")
+                        } else {
+                            model.setEditorFindMatchSummary("\(result.current)/\(result.matches)")
+                        }
+                    }
+                )
+                .accessibilityIdentifier("mdv.editor")
+                .onAppear {
+                    // Clear pending diagnostics once they're shipped to
+                    // the editor so updateNSView doesn't re-push every
+                    // SwiftUI redraw. Coordinator-side `lastSent*`
+                    // dedup is the primary defense; this is belt-and-
+                    // suspenders for the model's `@Published` churn.
+                    DispatchQueue.main.async {
+                        if !diags.isEmpty {
+                            model.consumePendingEditorDiagnostics(forTabID: tid)
+                        }
+                    }
+                }
+            }
         } else if model.currentViewMode == .diff {
             DiffView(text: file.contents, doc: model)
         } else if (category == .markdown && model.currentViewMode == .rendered)
