@@ -20,13 +20,21 @@ public struct LSPProblemsPanel: View {
     @State private var severityFilter: SeverityFilter = .all
 
     let onJump: (URL, Int) -> Void
+    /// Closure that scales a base font size by the active UI-zoom
+    /// factor. Threaded from the host (`DocumentModel.uiSize(_:)`) so
+    /// the section's header tracks user-controlled UI zoom. Defaults
+    /// to identity for call sites without a document model. Not
+    /// `@Sendable` — the host's `uiSize` is `@MainActor`-isolated.
+    let uiSize: (CGFloat) -> CGFloat
 
     public init(
         store: LSPDiagnosticsStore,
-        onJump: @escaping (URL, Int) -> Void
+        onJump: @escaping (URL, Int) -> Void,
+        uiSize: @escaping (CGFloat) -> CGFloat = { $0 }
     ) {
         self.store = store
         self.onJump = onJump
+        self.uiSize = uiSize
     }
 
     enum SeverityFilter: String, CaseIterable, Identifiable {
@@ -77,7 +85,8 @@ public struct LSPProblemsPanel: View {
             Button(action: { isExpanded.toggle() }) {
                 SidebarSectionHeaderLabel(
                     title: "Problems",
-                    isExpanded: isExpanded
+                    isExpanded: isExpanded,
+                    uiSize: uiSize
                 )
                 .contentShape(Rectangle())
             }

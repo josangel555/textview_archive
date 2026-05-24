@@ -267,4 +267,21 @@ public extension ClaudeLogParser {
             .appendingPathComponent("projects", isDirectory: true)
             .appendingPathComponent(encoded, isDirectory: true)
     }
+
+    /// Cheap "does this project have at least one Claude transcript?"
+    /// check used by the sidebar to decide whether to render the
+    /// timeline section's chrome at all. Returns `false` for `nil` /
+    /// missing dir / dir with no `.jsonl` children.
+    ///
+    /// Pure FileManager — no parse. Safe to call from a SwiftUI body
+    /// occasionally; cache the result behind an `onChange(of: rootURL)`
+    /// if it gets called on every redraw.
+    static func hasTranscripts(for projectPath: URL?) -> Bool {
+        guard let projectPath else { return false }
+        let dir = transcriptDirectory(for: projectPath)
+        let urls = (try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: nil
+        )) ?? []
+        return urls.contains { $0.pathExtension == "jsonl" }
+    }
 }

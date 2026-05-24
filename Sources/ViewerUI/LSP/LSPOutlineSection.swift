@@ -94,15 +94,23 @@ public struct LSPOutlineSection: View {
 
     @ObservedObject var model: LSPOutlineModel
     let onJump: (LSPDocumentSymbol) -> Void
+    /// Closure that scales a base font size by the active UI-zoom
+    /// factor. Threaded from the host (`DocumentModel.uiSize(_:)`) so
+    /// the section's header tracks user-controlled UI zoom. Defaults
+    /// to identity for call sites without a document model. Not
+    /// `@Sendable` — the host's `uiSize` is `@MainActor`-isolated.
+    let uiSize: (CGFloat) -> CGFloat
     @State private var isExpanded: Bool = true
     @Environment(\.sidebarSectionBodyHeight) private var bodyHeight
 
     public init(
         model: LSPOutlineModel,
-        onJump: @escaping (LSPDocumentSymbol) -> Void
+        onJump: @escaping (LSPDocumentSymbol) -> Void,
+        uiSize: @escaping (CGFloat) -> CGFloat = { $0 }
     ) {
         self.model = model
         self.onJump = onJump
+        self.uiSize = uiSize
     }
 
     public var body: some View {
@@ -128,14 +136,15 @@ public struct LSPOutlineSection: View {
             HStack(spacing: 4) {
                 SidebarSectionHeaderLabel(
                     title: "Outline",
-                    isExpanded: isExpanded
+                    isExpanded: isExpanded,
+                    uiSize: uiSize
                 )
                 Spacer()
                 if model.isLoading {
                     ProgressView().controlSize(.mini)
                 } else if !model.symbols.isEmpty {
                     Text("\(model.symbols.count)")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: uiSize(10), weight: .medium))
                         .foregroundStyle(.tertiary)
                 }
             }
