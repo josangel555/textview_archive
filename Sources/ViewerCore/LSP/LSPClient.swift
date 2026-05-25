@@ -258,16 +258,20 @@ public actor LSPClient {
         let body = try JSONSerialization.data(withJSONObject: envelope, options: [])
         let framed = LSPFraming.frame(body)
 
-        // Arm the timeout, then await the continuation. The timeout
-        // task pokes back into the actor via `timeoutFire(id:method:)`,
-        // which resumes the pending continuation with an error if it's
-        // still alive. Late responses are silently discarded because the
-        // pending entry is gone by then.
-        let timeoutTask = Task { [weak self] in
-            try? await Task.sleep(for: timeout)
-            await self?.timeoutFire(id: id, method: method)
+        // Register the continuation FIRST, then arm the timeout. The
+        // earlier ordering (timeout before continuation) opened a tiny
+        // race: a sub-millisecond `Task.sleep` could fire before the
+        // continuation hop, find `pending[id]` empty, and silently
+        // drop the wakeup — leaving the continuation forever
+        // unresumed (debug warning + indefinite hang in release).
+        // We assign the task to the holder inside the continuation
+        // block so the `defer { holder.task?.cancel() }` below still
+        // cancels on success.
+        final class TaskHolder: @unchecked Sendable {
+            var task: Task<Void, Never>?
         }
-        defer { timeoutTask.cancel() }
+        let holder = TaskHolder()
+        defer { holder.task?.cancel() }
 
         return try await withCheckedThrowingContinuation { cont in
             self.pending[id] = cont
@@ -278,6 +282,14 @@ public actor LSPClient {
                 self.pending.removeValue(forKey: id)
                 self.pendingMethods.removeValue(forKey: id)
                 cont.resume(throwing: LSPError.transportClosed)
+                return
+            }
+            // Now that the pending entry exists, arm the timeout. If
+            // the deadline fires before a response, `timeoutFire`
+            // finds the entry and resumes with `.timeout`.
+            holder.task = Task { [weak self] in
+                try? await Task.sleep(for: timeout)
+                await self?.timeoutFire(id: id, method: method)
             }
         }
     }
