@@ -1711,8 +1711,11 @@ public final class DocumentModel: ObservableObject {
         if let theme = snap.themeOverride {
             self.themeOverride = SyntaxTheme.Name(rawValue: theme)
         }
-        let target = snap.selectedTabIndex ?? 0
-        if tabs.tabs.indices.contains(target) {
+        // S3-J: distinguish nil (deliberate "no selection persisted")
+        // from 0 (first tab). Previously nil collapsed to 0 and
+        // restoring a workspace with an explicit empty selection
+        // refocused tab 0 anyway.
+        if let target = snap.selectedTabIndex, tabs.tabs.indices.contains(target) {
             selectTab(at: target)
         }
     }

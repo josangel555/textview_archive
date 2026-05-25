@@ -70,6 +70,12 @@ extension Tab: Equatable {
              (.binary, .binary),
              (.error, .error):
             return true
+        case (.loading(let lu), .loading(let ru)):
+            // S3-D: explicit case so two adjacent .loading tabs with
+            // the same URL compare equal. Without this they fell into
+            // `default → false` and SwiftUI did redundant diff work
+            // on every tick.
+            return lu == ru
         case (.preview(let lu, let lc), .preview(let ru, let rc)):
             return lu == ru && lc == rc
         default:
