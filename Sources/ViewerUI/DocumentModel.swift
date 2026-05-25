@@ -1511,20 +1511,25 @@ public final class DocumentModel: ObservableObject {
             return hit.formatted
         }
         let result = Formatter.prettyPrint(file.contents, as: format)
+        if formattedTextCache[id] == nil {
+            formattedTextCacheOrder.append(id)
+        }
         formattedTextCache[id] = (sourceLength: len, formatted: result)
         if formattedTextCache.count > Self.formattedTextCacheMax {
-            // Arbitrary drop — tab ids are UUIDs with no ordering
-            // signal we can use. Acceptable: caller will repopulate
-            // on next access for the dropped tab.
-            let drop = formattedTextCache.count - Self.formattedTextCacheMax * 2 / 3
-            for k in formattedTextCache.keys.prefix(drop) {
+            // S4-G: evict oldest by insertion order; same fix as the
+            // renderedHTMLCache (S2-G).
+            let dropCount = formattedTextCache.count - Self.formattedTextCacheMax * 2 / 3
+            let toDrop = formattedTextCacheOrder.prefix(dropCount)
+            for k in toDrop {
                 formattedTextCache.removeValue(forKey: k)
             }
+            formattedTextCacheOrder.removeFirst(toDrop.count)
         }
         return result
     }
 
     private var formattedTextCache: [UUID: (sourceLength: Int, formatted: String)] = [:]
+    private var formattedTextCacheOrder: [UUID] = []
     private static let formattedTextCacheMax = 8
 
     // MARK: Syntax highlighting
@@ -1535,12 +1540,25 @@ public final class DocumentModel: ObservableObject {
     /// cached runs. Using URL+length is O(1) per lookup; hashing the
     /// full text on every body re-eval (the prior key) was O(N) per
     /// call and dominated large-file render cost.
+    ///
+    /// Documented limitation: same-byte-length reloads
+    /// (`# Hello\n` → `# World\n`) won't invalidate. The flagged
+    /// inconsistency with renderedHTMLCache (which uses a content
+    /// hash) is real but the perf cost of hashing on every body
+    /// re-eval was the original motivation — leaving as-is. Run
+    /// SwiftUI-level invalidation through a dedicated nonce instead
+    /// when this becomes user-visible.
     public struct HighlightCacheKey: Hashable, Sendable {
         public let url: URL
         public let length: Int
         public let language: HighlightLanguage
     }
     @Published public private(set) var highlightCache: [HighlightCacheKey: [HighlightRun]] = [:]
+    /// Insertion-order list mirroring `highlightCache`. Used to evict
+    /// the OLDEST entries on overflow (S2-G class). Updated by
+    /// `highlightRuns(forURL:text:language:)` and pruned by
+    /// `purgeCaches(forURL:)`.
+    private var highlightCacheOrder: [HighlightCacheKey] = []
     private var highlightInFlight: Set<HighlightCacheKey> = []
 
     /// Currently-active syntax theme. Computed from system appearance;
@@ -1589,6 +1607,9 @@ public final class DocumentModel: ObservableObject {
             )
             await MainActor.run { [weak self] in
                 guard let self else { return }
+                if self.highlightCache[key] == nil {
+                    self.highlightCacheOrder.append(key)
+                }
                 self.highlightCache[key] = runs
                 self.highlightInFlight.remove(key)
                 self.pruneHighlightCacheIfNeeded()
@@ -1603,12 +1624,15 @@ public final class DocumentModel: ObservableObject {
     private static let highlightCacheMax = 32
     private func pruneHighlightCacheIfNeeded() {
         guard highlightCache.count > Self.highlightCacheMax else { return }
-        // Drop a third of entries (oldest first by insertion order is
-        // hard with a plain Dictionary; we drop arbitrary entries).
+        // S2-G class: evict by insertion order (oldest first). The
+        // prior "drop arbitrary Dictionary.keys.prefix(N)" sometimes
+        // dropped the freshly-inserted entry.
         let dropCount = highlightCache.count - Self.highlightCacheMax * 2 / 3
-        for key in highlightCache.keys.prefix(dropCount) {
+        let toDrop = highlightCacheOrder.prefix(dropCount)
+        for key in toDrop {
             highlightCache.removeValue(forKey: key)
         }
+        highlightCacheOrder.removeFirst(toDrop.count)
     }
 
     // MARK: Rendered markdown cache
@@ -2102,7 +2126,11 @@ public final class DocumentModel: ObservableObject {
     private func purgeCaches(forURL url: URL?) {
         guard let url else { return }
         if tabs.tabs.contains(where: { $0.url == url }) { return }
+        let priorHighlightOrder = highlightCacheOrder
         highlightCache = highlightCache.filter { $0.key.url != url }
+        let survivorHL = Set(highlightCache.keys)
+        highlightCacheOrder = priorHighlightOrder.filter { survivorHL.contains($0) }
+
         let priorOrder = renderedHTMLCacheOrder
         renderedHTMLCache = renderedHTMLCache.filter { $0.key.url != url }
         // Keep the order list in sync — drop the URL's entries while
