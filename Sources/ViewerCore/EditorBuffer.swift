@@ -74,6 +74,18 @@ public struct EditorBuffer: Sendable, Equatable {
         lastSavedSize = diskSize
     }
 
+    /// Refresh ONLY the on-disk fingerprint without touching
+    /// `originalText`. Used by the "Keep My Edits" branch of the
+    /// external-edit conflict prompt: we want to silence the next
+    /// (duplicate) watcher event for this write but keep the dirty
+    /// baseline intact so `isDirty` still reflects the user's diff
+    /// against the pre-conflict text — and a future Revert can still
+    /// reach the pre-conflict baseline.
+    public mutating func refreshSavedFingerprint(diskMTime: Date?, diskSize: Int?) {
+        lastSavedMTime = diskMTime
+        lastSavedSize = diskSize
+    }
+
     /// True when the file on disk has been modified by another process
     /// since our last read/save. The watcher provides the current
     /// fingerprint; we compare against our cached one. Either mtime or

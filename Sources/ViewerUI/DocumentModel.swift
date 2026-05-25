@@ -1888,25 +1888,16 @@ public final class DocumentModel: ObservableObject {
         } else {
             // Refresh the fingerprint so the next watcher tick (often
             // a duplicate event from the same write) doesn't re-prompt.
+            // Crucially we MUST NOT touch `originalText` — keeping the
+            // pre-conflict baseline preserves `isDirty == true` and
+            // leaves Revert / future "compare original" features usable.
             if var buf = editorBuffers[id] {
                 let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
-                buf.markSaved(
+                buf.refreshSavedFingerprint(
                     diskMTime: attrs?[.modificationDate] as? Date,
                     diskSize: attrs?[.size] as? Int
                 )
-                // markSaved snapshots `text` as `originalText`, which
-                // would wrongly clear dirt. Undo by reseeding originals
-                // to a sentinel that keeps `isDirty` true. We do this
-                // by creating a fresh buffer with the user's text +
-                // a different `originalText`.
-                editorBuffers[id] = EditorBuffer(
-                    url: buf.url,
-                    original: buf.originalText,  // pre-existing baseline
-                    encoding: buf.encoding,
-                    lastSavedMTime: attrs?[.modificationDate] as? Date,
-                    lastSavedSize: attrs?[.size] as? Int
-                )
-                editorBuffers[id]?.setText(buf.text)
+                editorBuffers[id] = buf
             }
         }
     }
@@ -2047,6 +2038,13 @@ public final class DocumentModel: ObservableObject {
         // Same dirty-prompt loop as closeOtherTabs. Process the
         // doomed tabs from right-to-left so a Cancel partway through
         // leaves a contiguous tail intact (rather than holes).
+        // Bounds-check up front: a stale gesture (menu/script verb
+        // firing after the tab vanished from another path) can hand
+        // us an out-of-range index, and the `(index+1)..<count`
+        // range construction below would trap before the
+        // `tabs.tabs.indices.contains(index)` check on line ~2061
+        // ever runs.
+        guard index >= 0, index < tabs.tabs.count else { return }
         let toClose = (index + 1)..<tabs.tabs.count
         let doomedDirty = toClose.reversed().filter { tabs.tabs[$0].isDirty }
         for i in doomedDirty {
