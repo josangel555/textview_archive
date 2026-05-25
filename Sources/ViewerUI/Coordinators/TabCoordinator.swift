@@ -94,6 +94,27 @@ public final class TabCoordinator: ObservableObject {
     /// doesn't waste I/O.
     private var materializeTasks: [UUID: Task<Void, Never>] = [:]
 
+    /// External cleanup hooks invoked from `cleanupAfterClose(id:)` for
+    /// every close path. Lets non-tab coordinators (EditorCoordinator —
+    /// cursor / scroll / pending-diagnostics dicts) drain their per-tab
+    /// state without piling more fields into this coordinator's
+    /// alphabetical removeValue list. Invocation order is registration
+    /// order; called inside the same main-actor turn as the built-in
+    /// drains so observers see a consistent post-close state.
+    ///
+    /// Hooks must be cheap, synchronous, and only touch their own
+    /// state — fanning out further work risks the same divergence the
+    /// folded `cleanupAfterClose` was meant to prevent.
+    private var closeHooks: [(UUID) -> Void] = []
+
+    /// Register a cleanup hook that fires on every tab close (single
+    /// close, close-others, close-to-right). Idempotent storage — the
+    /// caller is responsible for not registering the same closure
+    /// twice. EditorCoordinator registers exactly once on init.
+    public func addCloseHook(_ hook: @escaping (UUID) -> Void) {
+        closeHooks.append(hook)
+    }
+
     // MARK: - Split pane
 
     /// URL displayed in the right-hand secondary pane, or nil when
@@ -252,6 +273,10 @@ public final class TabCoordinator: ObservableObject {
         }
         hexBytesPerRow.removeValue(forKey: id)
         languageOverrides.removeValue(forKey: id)
+        // External hooks last — built-in drains finish first so the
+        // closure observes a fully-pruned coordinator if it ever pokes
+        // back at our state.
+        for hook in closeHooks { hook(id) }
     }
 
     /// Recompute the open-tab URL set from `tabs`. Dedupe assignment
