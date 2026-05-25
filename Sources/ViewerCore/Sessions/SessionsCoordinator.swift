@@ -157,11 +157,23 @@ public final class SessionsCoordinator: ObservableObject {
         guard activeID != id else { return }
         guard sessions.contains(where: { $0.id == id }) else { return }
         if let prev = active { lifecycle?.detach(prev) }
-        // Bump lastActiveAt on the outgoing session so the strip's
-        // LRU ordering reflects most-recently-used.
+        // Bump lastActiveAt on BOTH the outgoing and incoming sessions
+        // so LRU reflects most-recently-used. Previously only the
+        // outgoing was bumped, so after A → B → A, closing A would
+        // re-activate B even though the user just re-engaged with A.
+        // Use distinct timestamps (incoming strictly after outgoing)
+        // so the incoming wins ties in the LRU sort even when Date()
+        // returns the same value twice in quick succession.
         if let prevID = activeID,
            let idx = sessions.firstIndex(where: { $0.id == prevID }) {
             sessions[idx] = touched(sessions[idx])
+        }
+        if let idx = sessions.firstIndex(where: { $0.id == id }) {
+            // +1µs ensures strict ordering against the outgoing bump.
+            sessions[idx] = touched(
+                sessions[idx],
+                at: Date().addingTimeInterval(0.000_001)
+            )
         }
         activeID = id
         if let nowActive = active { lifecycle?.mount(nowActive) }
@@ -320,14 +332,14 @@ public final class SessionsCoordinator: ObservableObject {
         }
     }
 
-    private func touched(_ s: SessionSnapshot) -> SessionSnapshot {
+    private func touched(_ s: SessionSnapshot, at when: Date = Date()) -> SessionSnapshot {
         SessionSnapshot(
             schemaVersion: s.schemaVersion,
             savedAt: s.savedAt,
             id: s.id,
             displayName: s.displayName,
             createdAt: s.createdAt,
-            lastActiveAt: Date(),
+            lastActiveAt: when,
             sidebarRootPath: s.sidebarRootPath,
             openTabs: s.openTabs,
             selectedTabIndex: s.selectedTabIndex,
