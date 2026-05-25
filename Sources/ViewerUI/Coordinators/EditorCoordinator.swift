@@ -1,0 +1,463 @@
+import Foundation
+import Combine
+import AppKit
+import ViewerKit
+import ViewerCore
+
+/// Owns the CM6 editor mode lifecycle: ⌘S / save path, dirty tracking,
+/// close-prompt routing, external-edit conflict prompt,
+/// `editorGotoLine`, per-tab cursor + scroll persistence, pending
+/// diagnostics fan-out, and the two editor-only preferences
+/// (`editorIndentation`, `saveEditorOnBlur`).
+///
+/// Extracted from `DocumentModel` (Quality #2, 2026-05-25) so that
+/// views observing `DocumentModel` (TabBar, Sidebar, StatusBar) stop
+/// re-rendering on every editor keystroke / cursor tick, and inversely
+/// so editor-side mutations stop riding the DocumentModel publish chain.
+///
+/// Precedent: `FindCoordinator` (find state), `TabCoordinator` (tabs +
+/// per-tab caches). Same shape — child `ObservableObject` hung off
+/// DocumentModel, forwarders on the parent so existing call sites
+/// compile unchanged.
+///
+/// ## editorBuffers ownership
+///
+/// `editorBuffers` stays on `TabCoordinator` (referenced from here,
+/// not migrated). Two reasons:
+///   1. `cleanupAfterClose` already drops `editorBuffers` as part of
+///      its single-fan-out invariant. Moving the dict here would force
+///      a second cleanup channel and the regression `TabCoordinator`
+///      was built to prevent.
+///   2. The per-tab cleanup invariants for `TabCoordinator`'s six
+///      dicts have heavy test coverage; expanding ownership would
+///      duplicate that infrastructure here for little gain.
+///
+/// We DO own `editorCursorByTab`, `editorScrollByTab`, and
+/// `pendingEditorDiagnostics` outright — those weren't touched by
+/// `TabCoordinator`. Their cleanup wires through
+/// `TabCoordinator.addCloseHook(_:)` so every close path drains them
+/// in lock-step with the coordinator's built-in drains.
+///
+/// ## Side-effect injection
+///
+/// Save + reload paths need to pause/resume the file watcher and the
+/// external-edit prompt needs to drive a `reload(url:at:)` on
+/// DocumentModel. Those are surfaced as plain closures (`onPauseWatcher`,
+/// `onResumeWatcher`, `onReloadFromDisk`) registered by DocumentModel
+/// at init time. Coordinator stays UI-toolkit-free except for the two
+/// NSAlert call sites, which are themselves overridable via
+/// `dirtyClosePromptOverride` / `externalEditPromptOverride` so unit
+/// tests can drive both paths without bringing up an NSApplication.
+@MainActor
+public final class EditorCoordinator: ObservableObject {
+
+    // MARK: - Outcome enums
+
+    /// Result of `confirmCloseIfDirty(...)`. Plain enum so view / app-
+    /// delegate code can switch without leaking AppKit types.
+    public enum DirtyClosePrompt: Sendable, Equatable {
+        /// Save the buffer, then proceed with close.
+        case save
+        /// Drop the buffer, then proceed with close.
+        case discard
+        /// Abort the close entirely.
+        case cancel
+    }
+
+    /// Result of the external-edit conflict prompt. Plain enum for the
+    /// same reason as `DirtyClosePrompt`.
+    public enum ExternalEditPrompt: Sendable, Equatable {
+        /// Leave the buffer alone (refresh its disk fingerprint so the
+        /// next dup watcher event doesn't re-prompt).
+        case keepEdits
+        /// Drop the buffer and reload from disk.
+        case discardAndReload
+    }
+
+    // MARK: - Published editor surface
+
+    /// Bumped each time the host wants the CM6 editor to scroll +
+    /// place the caret on a 1-based line. The active
+    /// `CodeMirrorEditorView` builds the `CMGotoLineRequest` from this.
+    @Published public var editorGotoLine: CMGotoLineRequest? = nil
+
+    /// Indent setting for CM6 editor. Drives CM6's `indentUnit` + tab
+    /// size facets via the v1 bridge. Defaults to 2 spaces (matches
+    /// the bundle's `applySetIndentation` default).
+    @Published public var editorIndentation: CMIndentation = .spaces(2)
+
+    /// Save the active editor when the WKWebView loses focus. Off by
+    /// default — opt-in via Settings. The CM6 host always posts
+    /// `editorBlurred`; this flag gates whether Swift acts on it.
+    @Published public var saveEditorOnBlur: Bool = false
+
+    /// Last-known editor cursor position per tab. Used to restore the
+    /// caret when the user switches tabs (CM6 view dismantles + remounts
+    /// today; without persistence, every tab switch jumps to line 1).
+    /// Phase 4 shared-WebView refactor (design doc §14.3) will obsolete
+    /// this; for now it's the minimum-cost UX win.
+    @Published public private(set) var editorCursorByTab: [UUID: CMCursorPosition] = [:]
+
+    /// Last-known editor scroll position per tab. Persistence story:
+    /// in-memory only for now (lives across tab switches inside a single
+    /// session). Cross-session persistence is a Phase 3+ deliverable.
+    @Published public private(set) var editorScrollByTab: [UUID: CMScrollPosition] = [:]
+
+    /// Per-tab pending diagnostics payload. `CodeMirrorEditorView`
+    /// reads + clears this on each `updateNSView` cycle so re-renders
+    /// don't re-ship the same set.
+    @Published public internal(set) var pendingEditorDiagnostics: [UUID: [CMDiagnostic]] = [:]
+
+    // MARK: - Test seams
+
+    /// Override the dirty-close NSAlert with a test-driven response.
+    /// When non-nil, `confirmCloseIfDirty` returns the override's
+    /// result instead of running the modal. UI / app code never sets
+    /// this — only unit tests.
+    public var dirtyClosePromptOverride: ((_ tab: ViewerCore.Tab) -> DirtyClosePrompt?)?
+
+    /// Override the external-edit NSAlert with a test-driven response.
+    /// Same shape as `dirtyClosePromptOverride`.
+    public var externalEditPromptOverride: ((_ url: URL) -> ExternalEditPrompt)?
+
+    // MARK: - Dependencies / injected effects
+
+    /// TabCoordinator holds `editorBuffers` (the dict we don't own)
+    /// and the tab list. Held weakly to avoid a strong DocumentModel →
+    /// EditorCoordinator → TabCoordinator cycle (TabCoordinator lives
+    /// on DocumentModel, so DocumentModel transitively owns both).
+    private unowned let tabCoordinator: TabCoordinator
+
+    /// Closure injected by DocumentModel to mirror the editor cursor
+    /// position onto the shared `sourceSelection` field — the status
+    /// bar's "Ln X, Col Y" readout reads `sourceSelection` for both
+    /// source and editor modes. Nil during tests.
+    public var onCursorMirrorToStatusBar: ((CMCursorPosition) -> Void)?
+
+    /// Closures injected by DocumentModel so the save path can pause +
+    /// resume the file watcher around the write. Nil during tests
+    /// where the watcher isn't running anyway.
+    public var onPauseFileWatcher: (() -> Void)?
+    public var onResumeFileWatcherIfApplicable: ((URL?) -> Void)?
+    /// Snapshot of the URL the watcher is currently bound to (read
+    /// before pause). DocumentModel hands this through so the resume
+    /// callback can decide whether to rebind.
+    public var watchedURLSnapshot: (() -> URL?)?
+
+    /// Reload the file at `url` into the tab at `index`. Called by the
+    /// external-edit "Discard & Reload" branch. DocumentModel owns the
+    /// reload because it touches the controller + tab state.
+    public var onReloadFromDisk: ((URL, Int) -> Void)?
+
+    /// Closure that returns the current `tabs.tabs` snapshot. We avoid
+    /// holding a strong DocumentModel reference; this is the cheapest
+    /// indirection (closure capture is value-cheap, no retain cycle).
+    public var tabsSnapshot: () -> [ViewerCore.Tab] = { [] }
+
+    /// Closure to replace the tab at `index` with `tab`. Routes through
+    /// TabCoordinator.replace which fires `tabCoordinator.objectWillChange`
+    /// (the dirty-dot republish path) without touching DocumentModel.
+    public var onReplaceTab: ((Int, ViewerCore.Tab) -> Void)?
+
+    public init(tabCoordinator: TabCoordinator) {
+        self.tabCoordinator = tabCoordinator
+        // Register our cleanup hook before any tabs can close. Drains
+        // the three editor-owned dicts in lock-step with TabCoordinator's
+        // six built-in dicts. Idempotent removeValue — no preflight
+        // contains-check (dicts return nil for missing keys, the close
+        // path doesn't care).
+        tabCoordinator.addCloseHook { [weak self] id in
+            guard let self else { return }
+            self.editorCursorByTab.removeValue(forKey: id)
+            self.editorScrollByTab.removeValue(forKey: id)
+            self.pendingEditorDiagnostics.removeValue(forKey: id)
+        }
+    }
+
+    // MARK: - editorBuffers (forwarders to TabCoordinator)
+    //
+    // The dict itself lives on TabCoordinator so the close-path
+    // cleanup invariant (six-dict fan-out via `cleanupAfterClose`)
+    // stays in one place. Forwarders here let editor-aware call sites
+    // talk to a single coordinator and don't have to know the dict's
+    // physical home.
+
+    /// Map of tab id → buffer. Forwarder onto TabCoordinator.
+    public var editorBuffers: [UUID: EditorBuffer] {
+        tabCoordinator.editorBuffers
+    }
+
+    /// True when any tab in the workspace has unsaved edits. Used by
+    /// the app delegate's terminate path + window-close confirmation.
+    public var hasAnyUnsavedEdits: Bool {
+        tabsSnapshot().contains(where: { $0.isDirty })
+    }
+
+    /// Returns the cached buffer for `id`, or seeds one from the tab's
+    /// `.loaded` state if not yet present. Forwarder.
+    public func editorBuffer(forTabID id: UUID) -> EditorBuffer? {
+        tabCoordinator.editorBuffer(forTabID: id)
+    }
+
+    /// Idempotent seed — preserves an existing buffer with unsaved
+    /// edits. Forwarder.
+    public func ensureEditorBuffer(for file: TextFile, tabID: UUID) {
+        tabCoordinator.ensureEditorBuffer(for: file, tabID: tabID)
+    }
+
+    /// Drop the buffer for a tab. Also clears the Tab.isDirty mirror
+    /// (the dirty dot in the TabBar) because the buffer is the source
+    /// of truth and dropping it without resyncing leaves a stale dot.
+    public func discardEditorBuffer(forTabID id: UUID) {
+        tabCoordinator.discardEditorBuffer(forTabID: id)
+        let tabs = tabsSnapshot()
+        if let idx = tabs.firstIndex(where: { $0.id == id }), tabs[idx].isDirty {
+            var t = tabs[idx]
+            t.isDirty = false
+            onReplaceTab?(idx, t)
+        }
+    }
+
+    /// Push a new text value into the active tab's buffer. Called from
+    /// the editor view's change handler (debounced inside CodeMirror's
+    /// JS bootstrap, ~200 ms after the last keystroke). Updates
+    /// `Tab.isDirty` so the TabBar dot mirrors the state.
+    ///
+    /// O(1) — no text comparison here; the buffer's `isDirty` getter
+    /// is the one place that runs the (cheap, length-short-circuited)
+    /// String equality.
+    public func updateEditorText(_ newText: String, forTabID id: UUID) {
+        guard var buf = tabCoordinator.editorBuffer(forTabID: id) else { return }
+        // Fast path: identical-string assignment is a no-op. Avoids
+        // republishing `editorBuffers` for callers that fire the
+        // setter on every paint (some NSTextView subclasses do).
+        if buf.text == newText { return }
+        buf.setText(newText)
+        tabCoordinator.setEditorBuffer(buf, forTabID: id)
+        // Sync the Tab snapshot so SwiftUI re-renders the dirty dot.
+        let tabs = tabsSnapshot()
+        if let idx = tabs.firstIndex(where: { $0.id == id }) {
+            let nowDirty = buf.isDirty
+            if tabs[idx].isDirty != nowDirty {
+                var t = tabs[idx]
+                t.isDirty = nowDirty
+                onReplaceTab?(idx, t)
+            }
+        }
+    }
+
+    // MARK: - Cursor / scroll persistence
+
+    /// Record the editor's current cursor position for `id`. Also
+    /// mirrors onto the status-bar selection via the injected hook so
+    /// the "Ln X, Col Y" readout works in editor mode.
+    public func recordEditorCursor(_ pos: CMCursorPosition, forTabID id: UUID) {
+        editorCursorByTab[id] = pos
+        onCursorMirrorToStatusBar?(pos)
+    }
+
+    /// Record the editor's current scroll position for `id`.
+    public func recordEditorScroll(_ pos: CMScrollPosition, forTabID id: UUID) {
+        editorScrollByTab[id] = pos
+    }
+
+    // MARK: - Diagnostics fan-out
+
+    /// Called by `CodeMirrorEditorView.Coordinator` once it's pushed
+    /// the diagnostics so the next `updateNSView` doesn't re-ship them.
+    public func consumePendingEditorDiagnostics(forTabID id: UUID) {
+        pendingEditorDiagnostics.removeValue(forKey: id)
+    }
+
+    /// Push LSP diagnostics for `url` into the CM6 editor as squiggles.
+    /// Looks up the active editor buffer to do the position translation;
+    /// no-op if the URL doesn't have an open editor tab. The translated
+    /// payload is parked on `pendingEditorDiagnostics[tabID]` so the
+    /// active `CodeMirrorEditorView` can pick it up on its next
+    /// `updateNSView`. Empty array clears.
+    public func setEditorDiagnostics(_ diags: [LSPDiagnostic], forURL url: URL) {
+        let standardized = url.standardizedFileURL.resolvingSymlinksInPath()
+        for tab in tabsSnapshot() {
+            guard let tabURL = tab.url else { continue }
+            let stdTab = tabURL.standardizedFileURL.resolvingSymlinksInPath()
+            guard stdTab == standardized else { continue }
+            guard let buf = tabCoordinator.editorBuffers[tab.id] else { continue }
+            let cmDiags = CMDiagnosticMapping.cmDiagnostics(
+                from: diags,
+                documentText: buf.text,
+                encoding: .utf16
+            )
+            pendingEditorDiagnostics[tab.id] = cmDiags
+        }
+    }
+
+    // MARK: - Save path
+
+    /// Write the active tab's buffer to disk. ⌘S / menu Save / CM6
+    /// `saveRequested` bridge all route here. Returns false when there
+    /// is no selected tab (matches the old DocumentModel contract).
+    @discardableResult
+    public func saveActiveEditor() -> Bool {
+        guard let id = activeTabIDSnapshot?() else { return false }
+        return saveEditor(forTabID: id)
+    }
+
+    /// Snapshot of the currently-selected tab's id. Injected by
+    /// DocumentModel so we can locate the active tab without holding
+    /// a TabCoordinator strong reference (we already hold a weak one).
+    public var activeTabIDSnapshot: (() -> UUID?)?
+
+    /// Save a specific tab's buffer. Used by `saveActiveEditor` and by
+    /// the close-confirm path that targets a non-active tab.
+    @discardableResult
+    public func saveEditor(forTabID id: UUID) -> Bool {
+        guard var buf = tabCoordinator.editorBuffers[id] else { return false }
+        // File-watcher reload during save would race the write — pause
+        // it for the moment the write is in flight + the immediate
+        // post-write watcher event we'd otherwise re-enter on. Caller
+        // (DocumentModel) re-binds via the resume hook.
+        let wasWatchingURL = watchedURLSnapshot?()
+        onPauseFileWatcher?()
+        defer {
+            onResumeFileWatcherIfApplicable?(wasWatchingURL)
+        }
+        do {
+            let stamp = try EditorWriter.save(buf.text, to: buf.url, encoding: buf.encoding)
+            buf.markSaved(diskMTime: stamp.mtime, diskSize: stamp.size)
+            tabCoordinator.setEditorBuffer(buf, forTabID: id)
+            // Clear the dirty dot.
+            let tabs = tabsSnapshot()
+            if let idx = tabs.firstIndex(where: { $0.id == id }) {
+                var t = tabs[idx]
+                t.isDirty = false
+                onReplaceTab?(idx, t)
+            }
+            // Refresh the loaded TextFile so the rest of the app sees
+            // the new bytes (sidebar diff marks, formatted cache, etc.
+            // all key off URL + length and would otherwise serve stale
+            // content if the user flips back to `.source`).
+            let tabsAfterClear = tabsSnapshot()
+            if let idx = tabsAfterClear.firstIndex(where: { $0.id == id }) {
+                var t = tabsAfterClear[idx]
+                if case .loaded(let oldFile) = t.state {
+                    let bytes = buf.text.data(using: buf.encoding)?.count ?? oldFile.byteCount
+                    // We just wrote the file — re-stat its mtime so the
+                    // rendered-HTML / highlight caches pick up the new
+                    // identity even when the rewrite happens to be the
+                    // same byte length. Falling back to `Date()` keeps
+                    // the cache invariant ("mtime differs after a write")
+                    // intact if the filesystem can't report attrs.
+                    let mtime: Date? = {
+                        if let attrs = try? FileManager.default
+                            .attributesOfItem(atPath: oldFile.url.path),
+                           let d = attrs[.modificationDate] as? Date {
+                            return d
+                        }
+                        return Date()
+                    }()
+                    let newFile = TextFile(
+                        url: oldFile.url,
+                        contents: buf.text,
+                        encoding: oldFile.encoding,
+                        byteCount: bytes,
+                        modifiedTime: mtime
+                    )
+                    t.state = .loaded(newFile)
+                    onReplaceTab?(idx, t)
+                }
+            }
+            return true
+        } catch {
+            // Surface failure to the user. Stay dirty so the next ⌘S
+            // retries instead of silently dropping the edit.
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Couldn't save \(buf.url.lastPathComponent)"
+            alert.informativeText = "\(error)"
+            alert.runModal()
+            return false
+        }
+    }
+
+    // MARK: - Close prompt
+
+    /// If the tab at `index` has unsaved edits, run the
+    /// Save / Don't Save / Cancel NSAlert and return the user's choice.
+    /// Returns `nil` when the tab is clean (caller proceeds directly
+    /// to close). Modal on the main thread by design — matches every
+    /// other AppKit close-confirm flow.
+    ///
+    /// In tests, set `dirtyClosePromptOverride` to drive the response
+    /// without bringing up NSApplication.
+    public func confirmCloseIfDirty(at index: Int) -> DirtyClosePrompt? {
+        let tabs = tabsSnapshot()
+        guard tabs.indices.contains(index) else { return nil }
+        let tab = tabs[index]
+        guard tab.isDirty else { return nil }
+        if let override = dirtyClosePromptOverride {
+            return override(tab)
+        }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        let name = tab.url?.lastPathComponent ?? tab.title
+        alert.messageText = "Save changes to \(name)?"
+        alert.informativeText = "Your changes will be lost if you don't save them."
+        alert.addButton(withTitle: "Save")          // .alertFirstButtonReturn
+        alert.addButton(withTitle: "Don't Save")    // .alertSecondButtonReturn
+        alert.addButton(withTitle: "Cancel")        // .alertThirdButtonReturn
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:  return .save
+        case .alertSecondButtonReturn: return .discard
+        default:                       return .cancel
+        }
+    }
+
+    // MARK: - External-edit conflict prompt
+
+    /// Modal alert presented when the file underneath an editor tab
+    /// has changed on disk while the buffer is dirty. Drives the
+    /// appropriate side-effects (discard + reload, or refresh
+    /// fingerprint) and returns the chosen outcome.
+    ///
+    /// In tests, set `externalEditPromptOverride` to drive the response
+    /// and stub `onReloadFromDisk` to observe the reload call.
+    @discardableResult
+    public func presentExternalEditConflict(
+        forTabID id: UUID, at index: Int, url: URL
+    ) -> ExternalEditPrompt {
+        let outcome: ExternalEditPrompt
+        if let override = externalEditPromptOverride {
+            outcome = override(url)
+        } else {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "\(url.lastPathComponent) changed on disk"
+            alert.informativeText = "You have unsaved changes. Reloading will discard them."
+            alert.addButton(withTitle: "Keep My Edits")
+            alert.addButton(withTitle: "Discard & Reload")
+            let response = alert.runModal()
+            outcome = (response == .alertSecondButtonReturn) ? .discardAndReload : .keepEdits
+        }
+
+        switch outcome {
+        case .discardAndReload:
+            discardEditorBuffer(forTabID: id)
+            onReloadFromDisk?(url, index)
+        case .keepEdits:
+            // Refresh the fingerprint so the next watcher tick (often
+            // a duplicate event from the same write) doesn't re-prompt.
+            // Crucially we MUST NOT touch `originalText` — keeping the
+            // pre-conflict baseline preserves `isDirty == true` and
+            // leaves Revert / future "compare original" features usable.
+            if var buf = tabCoordinator.editorBuffers[id] {
+                let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+                buf.refreshSavedFingerprint(
+                    diskMTime: attrs?[.modificationDate] as? Date,
+                    diskSize: attrs?[.size] as? Int
+                )
+                tabCoordinator.setEditorBuffer(buf, forTabID: id)
+            }
+        }
+        return outcome
+    }
+}

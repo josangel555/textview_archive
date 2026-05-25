@@ -1,0 +1,430 @@
+import XCTest
+import Combine
+import ViewerKit
+import ViewerCore
+@testable import ViewerUI
+
+/// Pure-logic state-machine coverage for `EditorCoordinator`, mirroring
+/// the `TabCoordinatorTests` and `FindCoordinatorTests` pattern (Quality
+/// #2, 2026-05-25).
+///
+/// Exercises the coordinator surface in isolation (no DocumentModel)
+/// using a fresh TabCoordinator + injected effect closures. The
+/// dirty-close / external-edit NSAlert sites are driven via the
+/// `dirtyClosePromptOverride` / `externalEditPromptOverride` test
+/// seams so this suite runs cleanly headless.
+///
+/// Heavy cross-coordinator scenarios live in
+/// `EditorCoordinatorInteractionTests` so failures point at the
+/// specific seam rather than at arithmetic in this file.
+@MainActor
+final class EditorCoordinatorTests: XCTestCase {
+
+    private var tmpDir: URL!
+
+    override func setUp() async throws {
+        tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("EditorCoordinatorTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+    }
+
+    override func tearDown() async throws {
+        try? FileManager.default.removeItem(at: tmpDir)
+    }
+
+    @discardableResult
+    private func writeFile(_ name: String, _ contents: String = "x") throws -> URL {
+        let url = tmpDir.appendingPathComponent(name)
+        try contents.write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+
+    /// Class-wrapped capture box used by the wiring closures below so
+    /// test assertions can read the mutations without needing inout
+    /// semantics in closure capture.
+    private final class CaptureBox {
+        var replaceLog: [(Int, ViewerCore.Tab)] = []
+        var cursorMirrorLog: [CMCursorPosition] = []
+        var pauseCount = 0
+        var resumeCount = 0
+        var reloadLog: [(URL, Int)] = []
+    }
+
+    private func wire(_ ec: EditorCoordinator, _ tc: TabCoordinator) -> CaptureBox {
+        let box = CaptureBox()
+        ec.tabsSnapshot = { [tc] in tc.tabs.tabs }
+        ec.activeTabIDSnapshot = { [tc] in tc.tabs.selected?.id }
+        ec.onReplaceTab = { [tc, box] idx, tab in
+            box.replaceLog.append((idx, tab))
+            tc.replace(at: idx, with: tab)
+        }
+        ec.onCursorMirrorToStatusBar = { [box] pos in
+            box.cursorMirrorLog.append(pos)
+        }
+        ec.onPauseFileWatcher = { [box] in box.pauseCount += 1 }
+        ec.onResumeFileWatcherIfApplicable = { [box] _ in box.resumeCount += 1 }
+        ec.watchedURLSnapshot = { nil }
+        ec.onReloadFromDisk = { [box] url, idx in box.reloadLog.append((url, idx)) }
+        return box
+    }
+
+    // MARK: - Initial state
+
+    func test_initial_state_isEmpty() {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        XCTAssertNil(ec.editorGotoLine)
+        XCTAssertEqual(ec.editorIndentation, .spaces(2))
+        XCTAssertFalse(ec.saveEditorOnBlur)
+        XCTAssertTrue(ec.editorCursorByTab.isEmpty)
+        XCTAssertTrue(ec.editorScrollByTab.isEmpty)
+        XCTAssertTrue(ec.pendingEditorDiagnostics.isEmpty)
+        XCTAssertFalse(ec.hasAnyUnsavedEdits)
+    }
+
+    // MARK: - Cursor + scroll persistence
+
+    func test_recordEditorCursor_storesAndMirrors() {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        let box = wire(ec, tc)
+        let id = UUID()
+        let pos = CMCursorPosition(line: 12, column: 4, head: 100, rangeCount: 1)
+        ec.recordEditorCursor(pos, forTabID: id)
+        XCTAssertEqual(ec.editorCursorByTab[id]?.line, 12)
+        XCTAssertEqual(ec.editorCursorByTab[id]?.column, 4)
+        XCTAssertEqual(box.cursorMirrorLog.count, 1,
+            "cursor mirror callback must fire so status bar L:C updates")
+        XCTAssertEqual(box.cursorMirrorLog.first?.line, 12)
+    }
+
+    func test_recordEditorScroll_storesPerTab() {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        _ = wire(ec, tc)
+        let a = UUID(), b = UUID()
+        ec.recordEditorScroll(
+            CMScrollPosition(top: 100, left: 0, viewportFromLine: 5, viewportToLine: 30),
+            forTabID: a
+        )
+        ec.recordEditorScroll(
+            CMScrollPosition(top: 250, left: 0, viewportFromLine: 10, viewportToLine: 35),
+            forTabID: b
+        )
+        XCTAssertEqual(ec.editorScrollByTab[a]?.top, 100)
+        XCTAssertEqual(ec.editorScrollByTab[b]?.top, 250)
+    }
+
+    // MARK: - Pending diagnostics fan-out
+
+    func test_pendingDiagnostics_consumeClears() {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        _ = wire(ec, tc)
+        let id = UUID()
+        let diag = CMDiagnostic(
+            from: 0, to: 1, severity: .error, message: "boom", source: nil
+        )
+        ec.pendingEditorDiagnostics[id] = [diag]
+        XCTAssertEqual(ec.pendingEditorDiagnostics[id]?.count, 1)
+        ec.consumePendingEditorDiagnostics(forTabID: id)
+        XCTAssertNil(ec.pendingEditorDiagnostics[id])
+    }
+
+    func test_setEditorDiagnostics_pushesToMatchingOpenEditorTab() throws {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        _ = wire(ec, tc)
+        let url = try writeFile("a.swift", "let x = 1\n")
+        let file = TextFile(url: url, contents: "let x = 1\n", encoding: .utf8,
+                            byteCount: 10, modifiedTime: nil)
+        tc.append(Tab(url: url, state: .loaded(file)))
+        let id = tc.selected!.id
+        // Seed the buffer (setEditorDiagnostics requires a buffer to
+        // do position translation).
+        _ = tc.editorBuffer(forTabID: id)
+        let lspDiag = LSPDiagnostic(
+            range: LSPRange(
+                start: LSPPosition(line: 0, character: 0),
+                end: LSPPosition(line: 0, character: 1)
+            ),
+            severity: .error, code: nil, source: nil, message: "boom"
+        )
+        ec.setEditorDiagnostics([lspDiag], forURL: url)
+        XCTAssertNotNil(ec.pendingEditorDiagnostics[id])
+        XCTAssertFalse((ec.pendingEditorDiagnostics[id] ?? []).isEmpty)
+    }
+
+    func test_setEditorDiagnostics_unknownURL_isNoOp() throws {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        _ = wire(ec, tc)
+        let url = try writeFile("a.swift", "x")
+        let other = try writeFile("other.swift", "x")
+        let file = TextFile(url: url, contents: "x", encoding: .utf8,
+                            byteCount: 1, modifiedTime: nil)
+        tc.append(Tab(url: url, state: .loaded(file)))
+        let id = tc.selected!.id
+        _ = tc.editorBuffer(forTabID: id)
+        let lspDiag = LSPDiagnostic(
+            range: LSPRange(
+                start: LSPPosition(line: 0, character: 0),
+                end: LSPPosition(line: 0, character: 1)
+            ),
+            severity: .error, code: nil, source: nil, message: "boom"
+        )
+        ec.setEditorDiagnostics([lspDiag], forURL: other)
+        XCTAssertNil(ec.pendingEditorDiagnostics[id],
+            "diagnostics for an unrelated URL must not leak into other open tabs")
+    }
+
+    // MARK: - editorBuffers forwarding
+
+    func test_editorBuffer_forwardsToTabCoordinator() throws {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        _ = wire(ec, tc)
+        let url = try writeFile("a.swift", "let x = 1\n")
+        let file = TextFile(url: url, contents: "let x = 1\n", encoding: .utf8,
+                            byteCount: 10, modifiedTime: nil)
+        tc.append(Tab(url: url, state: .loaded(file)))
+        let id = tc.selected!.id
+        let buf = ec.editorBuffer(forTabID: id)
+        XCTAssertNotNil(buf)
+        XCTAssertEqual(buf?.text, "let x = 1\n")
+        XCTAssertEqual(ec.editorBuffers[id]?.text, "let x = 1\n",
+            "editorBuffers forwarder must read through TabCoordinator")
+    }
+
+    func test_updateEditorText_flipsDirtyDot() throws {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        let box = wire(ec, tc)
+        let url = try writeFile("a.swift", "v1")
+        let file = TextFile(url: url, contents: "v1", encoding: .utf8,
+                            byteCount: 2, modifiedTime: nil)
+        tc.append(Tab(url: url, state: .loaded(file)))
+        let id = tc.selected!.id
+        _ = ec.editorBuffer(forTabID: id)
+        ec.updateEditorText("v2", forTabID: id)
+        XCTAssertTrue(ec.editorBuffers[id]?.isDirty == true)
+        XCTAssertFalse(box.replaceLog.isEmpty,
+            "onReplaceTab must fire so the dirty-dot Tab snapshot mirrors")
+        XCTAssertTrue(tc.tabs.tabs[0].isDirty)
+    }
+
+    func test_updateEditorText_sameText_isNoOp() throws {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        let box = wire(ec, tc)
+        let url = try writeFile("a.swift", "stable")
+        let file = TextFile(url: url, contents: "stable", encoding: .utf8,
+                            byteCount: 6, modifiedTime: nil)
+        tc.append(Tab(url: url, state: .loaded(file)))
+        let id = tc.selected!.id
+        _ = ec.editorBuffer(forTabID: id)
+        let replacesBefore = box.replaceLog.count
+        ec.updateEditorText("stable", forTabID: id)
+        XCTAssertEqual(box.replaceLog.count, replacesBefore,
+            "identical-text update must not fire a tab replace")
+        XCTAssertFalse(tc.tabs.tabs[0].isDirty)
+    }
+
+    func test_discardEditorBuffer_clearsDirtyMirror() throws {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        let box = wire(ec, tc)
+        let url = try writeFile("a.swift", "v1")
+        let file = TextFile(url: url, contents: "v1", encoding: .utf8,
+                            byteCount: 2, modifiedTime: nil)
+        tc.append(Tab(url: url, state: .loaded(file)))
+        let id = tc.selected!.id
+        _ = ec.editorBuffer(forTabID: id)
+        ec.updateEditorText("dirty", forTabID: id)
+        XCTAssertTrue(tc.tabs.tabs[0].isDirty)
+        box.replaceLog.removeAll()
+        ec.discardEditorBuffer(forTabID: id)
+        XCTAssertNil(ec.editorBuffers[id])
+        XCTAssertFalse(tc.tabs.tabs[0].isDirty)
+        XCTAssertEqual(box.replaceLog.count, 1,
+            "discard must fire one tab replace to clear the dirty dot")
+    }
+
+    // MARK: - hasAnyUnsavedEdits
+
+    func test_hasAnyUnsavedEdits_followsTabIsDirty() throws {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        _ = wire(ec, tc)
+        let url = try writeFile("a.swift", "v1")
+        let file = TextFile(url: url, contents: "v1", encoding: .utf8,
+                            byteCount: 2, modifiedTime: nil)
+        tc.append(Tab(url: url, state: .loaded(file)))
+        let id = tc.selected!.id
+        XCTAssertFalse(ec.hasAnyUnsavedEdits)
+        _ = ec.editorBuffer(forTabID: id)
+        ec.updateEditorText("v2", forTabID: id)
+        XCTAssertTrue(ec.hasAnyUnsavedEdits)
+    }
+
+    // MARK: - confirmCloseIfDirty (with test seam override)
+
+    func test_confirmCloseIfDirty_cleanTab_returnsNil() throws {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        _ = wire(ec, tc)
+        let url = try writeFile("a.swift", "v1")
+        let file = TextFile(url: url, contents: "v1", encoding: .utf8,
+                            byteCount: 2, modifiedTime: nil)
+        tc.append(Tab(url: url, state: .loaded(file)))
+        XCTAssertNil(ec.confirmCloseIfDirty(at: 0),
+            "clean tab must short-circuit without invoking the prompt")
+    }
+
+    func test_confirmCloseIfDirty_dirtyTab_runsOverride() throws {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        _ = wire(ec, tc)
+        let url = try writeFile("a.swift", "v1")
+        let file = TextFile(url: url, contents: "v1", encoding: .utf8,
+                            byteCount: 2, modifiedTime: nil)
+        tc.append(Tab(url: url, state: .loaded(file)))
+        let id = tc.selected!.id
+        _ = ec.editorBuffer(forTabID: id)
+        ec.updateEditorText("dirty", forTabID: id)
+        var overrideCalled = false
+        ec.dirtyClosePromptOverride = { tab in
+            overrideCalled = true
+            XCTAssertEqual(tab.id, id)
+            return .discard
+        }
+        let outcome = ec.confirmCloseIfDirty(at: 0)
+        XCTAssertTrue(overrideCalled)
+        XCTAssertEqual(outcome, .discard)
+    }
+
+    func test_confirmCloseIfDirty_outOfBoundsIndex_returnsNil() {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        _ = wire(ec, tc)
+        XCTAssertNil(ec.confirmCloseIfDirty(at: 42))
+    }
+
+    // MARK: - Goto line nonce
+
+    func test_editorGotoLine_setter_publishes() async {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        _ = wire(ec, tc)
+        var count = 0
+        let sub = ec.objectWillChange.sink { _ in count += 1 }
+        defer { sub.cancel() }
+        ec.editorGotoLine = CMGotoLineRequest(line: 42, select: false)
+        await Task.yield()
+        XCTAssertGreaterThan(count, 0,
+            "editorGotoLine assignment must publish so CodeMirror view picks it up")
+        XCTAssertEqual(ec.editorGotoLine?.line, 42)
+    }
+
+    // MARK: - Save path with injected effects
+
+    func test_saveEditor_pausesAndResumesWatcher() throws {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        let box = wire(ec, tc)
+        let url = try writeFile("a.swift", "v1")
+        let file = TextFile(url: url, contents: "v1", encoding: .utf8,
+                            byteCount: 2, modifiedTime: nil)
+        tc.append(Tab(url: url, state: .loaded(file)))
+        let id = tc.selected!.id
+        _ = ec.editorBuffer(forTabID: id)
+        ec.updateEditorText("v2", forTabID: id)
+        XCTAssertTrue(ec.saveEditor(forTabID: id))
+        XCTAssertEqual(box.pauseCount, 1,
+            "save must pause file watcher to avoid race with self-write")
+        XCTAssertEqual(box.resumeCount, 1,
+            "save must resume watcher in defer")
+        XCTAssertFalse(tc.tabs.tabs[0].isDirty,
+            "successful save must clear the dirty dot")
+    }
+
+    func test_saveActiveEditor_noSelection_returnsFalse() {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        _ = wire(ec, tc)
+        XCTAssertFalse(ec.saveActiveEditor())
+    }
+
+    func test_saveEditor_noBuffer_returnsFalse() {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        _ = wire(ec, tc)
+        XCTAssertFalse(ec.saveEditor(forTabID: UUID()))
+    }
+
+    // MARK: - External-edit conflict prompt (with test seam override)
+
+    func test_externalEditPrompt_keepEdits_refreshesFingerprint() throws {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        let box = wire(ec, tc)
+        let url = try writeFile("conflict.txt", "original")
+        let file = TextFile(url: url, contents: "original", encoding: .utf8,
+                            byteCount: 8, modifiedTime: nil)
+        tc.append(Tab(url: url, state: .loaded(file)))
+        let id = tc.selected!.id
+        _ = ec.editorBuffer(forTabID: id)
+        ec.updateEditorText("local edits", forTabID: id)
+        // Simulate an external write so the on-disk fingerprint differs.
+        Thread.sleep(forTimeInterval: 0.05)
+        try "external".write(to: url, atomically: true, encoding: .utf8)
+        ec.externalEditPromptOverride = { _ in .keepEdits }
+        let outcome = ec.presentExternalEditConflict(forTabID: id, at: 0, url: url)
+        XCTAssertEqual(outcome, .keepEdits)
+        XCTAssertTrue(box.reloadLog.isEmpty,
+            "Keep My Edits must NOT trigger a reload")
+        XCTAssertTrue(ec.editorBuffers[id]?.isDirty == true,
+            "Keep My Edits must leave the dirty flag intact (preserve user work)")
+    }
+
+    func test_externalEditPrompt_discardAndReload_dropsBufferAndReloads() throws {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        let box = wire(ec, tc)
+        let url = try writeFile("conflict.txt", "original")
+        let file = TextFile(url: url, contents: "original", encoding: .utf8,
+                            byteCount: 8, modifiedTime: nil)
+        tc.append(Tab(url: url, state: .loaded(file)))
+        let id = tc.selected!.id
+        _ = ec.editorBuffer(forTabID: id)
+        ec.updateEditorText("local edits", forTabID: id)
+        ec.externalEditPromptOverride = { _ in .discardAndReload }
+        let outcome = ec.presentExternalEditConflict(forTabID: id, at: 0, url: url)
+        XCTAssertEqual(outcome, .discardAndReload)
+        XCTAssertNil(ec.editorBuffers[id],
+            "discard branch must drop the buffer")
+        XCTAssertFalse(tc.tabs.tabs[0].isDirty,
+            "discard branch must clear the dirty dot")
+        XCTAssertEqual(box.reloadLog.count, 1)
+        XCTAssertEqual(box.reloadLog.first?.0, url)
+        XCTAssertEqual(box.reloadLog.first?.1, 0)
+    }
+
+    // MARK: - Independence — editor mutations don't touch find/CSV state
+
+    func test_pendingDiagnostics_doesNotMutateOtherEditorState() {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        _ = wire(ec, tc)
+        let id = UUID()
+        ec.recordEditorCursor(
+            CMCursorPosition(line: 5, column: 0, head: 0, rangeCount: 1), forTabID: id
+        )
+        let diag = CMDiagnostic(
+            from: 0, to: 1, severity: .error, message: "boom", source: nil
+        )
+        ec.pendingEditorDiagnostics[id] = [diag]
+        XCTAssertEqual(ec.editorCursorByTab[id]?.line, 5,
+            "diagnostics mutation must not clobber cursor record")
+    }
+}
