@@ -21,10 +21,21 @@ public actor LSPClient {
         public let executable: URL
         public let arguments: [String]
         public let workspaceRoot: URL
-        public init(executable: URL, arguments: [String] = [], workspaceRoot: URL) {
+        /// Optional environment overlay for the child process. When nil
+        /// (the production default) the child inherits the parent env;
+        /// when non-nil, the *full* env is set from this dictionary
+        /// (Foundation's `Process.environment` is set-or-inherit, not
+        /// overlay). Tests use this to dial in fake-server scenarios
+        /// without polluting the test process's own env.
+        public let environment: [String: String]?
+        public init(
+            executable: URL, arguments: [String] = [],
+            workspaceRoot: URL, environment: [String: String]? = nil
+        ) {
             self.executable = executable
             self.arguments = arguments
             self.workspaceRoot = workspaceRoot
+            self.environment = environment
         }
     }
 
@@ -42,7 +53,48 @@ public actor LSPClient {
     /// useful error when the server crashes / closes the transport.
     private var pendingMethods: [Int64: String] = [:]
     private var initialized = false
-    private var readerTask: Task<Void, Never>?
+    /// Dedicated OS thread that drives the stdout read loop. We use
+    /// a separate `Thread` (not `Task.detached`) so blocking POSIX
+    /// reads don't starve the cooperative pool. See `startReader()`
+    /// doc-comment for the full rationale.
+    private var readerThread: Thread?
+
+    /// Write a fully-framed JSON-RPC payload to the child's stdin.
+    /// Uses POSIX `write(2)` on the raw fd instead of
+    /// `FileHandle.write(contentsOf:)`. On macOS 26, the FileHandle
+    /// write end of a `Pipe` and the read end held by a separate
+    /// thread can race: the second write returns success but the
+    /// bytes never reach the child. POSIX write hits the kernel pipe
+    /// buffer directly and behaves correctly.
+    ///
+    /// Returns true on full write, false on partial / failed write.
+    /// Callers translate failure into `LSPError.transportClosed`.
+    @discardableResult
+    private func writeFramedToChild(_ framed: Data) -> Bool {
+        let fd = stdinPipe.fileHandleForWriting.fileDescriptor
+        var written = 0
+        let total = framed.count
+        while written < total {
+            // Slice into a fresh contiguous buffer each iteration so
+            // `withUnsafeBytes` is always pointing at the right
+            // memory. (Data subscripting on a slice carries an
+            // internal base offset that the `count`/pointer pair
+            // does not surface; constructing a new `Data` re-bases.)
+            let chunk = Data(framed[written..<total])
+            let chunkCount = chunk.count
+            let n = chunk.withUnsafeBytes { ptr -> Int in
+                return write(fd, ptr.baseAddress, chunkCount)
+            }
+            if n <= 0 {
+                // EINTR is rare for pipes; we don't retry it here.
+                // EPIPE is suppressed via F_SETNOSIGPIPE so write
+                // returns -1 with errno=EPIPE instead of SIGPIPE.
+                return false
+            }
+            written += n
+        }
+        return true
+    }
 
     /// Position encoding negotiated with the server in `initialize`.
     /// The spec default is `.utf16`. If the server replies with
@@ -83,6 +135,9 @@ public actor LSPClient {
         p.executableURL = config.executable
         p.arguments = config.arguments
         p.currentDirectoryURL = config.workspaceRoot
+        if let env = config.environment {
+            p.environment = env
+        }
 
         let sIn = Pipe(), sOut = Pipe(), sErr = Pipe()
         p.standardInput = sIn
@@ -99,6 +154,16 @@ public actor LSPClient {
             throw LSPError.spawnFailed("\(error)")
         }
 
+        // Suppress SIGPIPE on the stdin write fd: if the LSP server
+        // exits between requests (`shutdown` → `exit` → child gone),
+        // the next `notify` would otherwise raise SIGPIPE and kill
+        // the parent process. `F_SETNOSIGPIPE` makes write(2) return
+        // EPIPE as an errno instead, which Foundation surfaces as a
+        // throwing call we already handle. macOS-specific; Linux
+        // would use `MSG_NOSIGNAL` / `SO_NOSIGPIPE`.
+        _ = fcntl(sIn.fileHandleForWriting.fileDescriptor,
+                  F_SETNOSIGPIPE, 1)
+
         // stderr drain — without this the child blocks at ~64 KB
         // (kernel pipe buffer). We intentionally discard; a real
         // implementation would surface in a diagnostics panel.
@@ -109,34 +174,55 @@ public actor LSPClient {
 
     /// Kick off the background stdout reader. Must run on the actor;
     /// caller invokes from `initialize()`.
+    ///
+    /// Uses POSIX `read(2)` on the raw fd on a dedicated `Thread` for
+    /// two reasons:
+    ///
+    /// 1. **FileHandle hazard.** On macOS 26, concurrent
+    ///    `FileHandle.read(upToCount:)` on the read end of a pipe AND
+    ///    `FileHandle.write(contentsOf:)` on the write end of the
+    ///    same `Pipe` can wedge the write — the writer's bytes never
+    ///    reach the child even though `write` returns successfully.
+    ///    The raw POSIX dance bypasses Foundation's per-FileHandle
+    ///    serial queue and works reliably.
+    /// 2. **Cooperative pool starvation.** A blocking `read(2)` on
+    ///    `Task.detached` parks one of the cooperative pool threads
+    ///    indefinitely. With a small pool (typical on a 4-core test
+    ///    host), other actor requests starve and the test framework
+    ///    surfaces this as `CancellationError`. A dedicated `Thread`
+    ///    keeps the cooperative pool free for actor hops.
+    ///
+    /// Inbound frames are hopped back onto the actor via a one-shot
+    /// `Task { await self.dispatchInbound(...) }`. The reader exits
+    /// when `read` returns 0 (EOF after `process.terminate()`).
     private func startReader() {
-        let handle = stdoutPipe.fileHandleForReading
-        // Capture only what's needed by the detached reader. We cannot
-        // reach back into actor state from the read closure directly;
-        // we hop back via `Task { await self.dispatch(...) }`.
-        readerTask = Task.detached { [weak self] in
+        let fd = stdoutPipe.fileHandleForReading.fileDescriptor
+        let weakBox = WeakLSPClientBox(client: self)
+        let thread = Thread {
             var buffer = Data()
-            while !Task.isCancelled {
-                let chunk: Data
-                do {
-                    chunk = try handle.read(upToCount: 8 * 1024) ?? Data()
-                } catch {
-                    await self?.failAllPending(LSPError.transportClosed)
+            let bufSize = 8 * 1024
+            var scratch = [UInt8](repeating: 0, count: bufSize)
+            while true {
+                let n = scratch.withUnsafeMutableBufferPointer { ptr -> Int in
+                    return read(fd, ptr.baseAddress, bufSize)
+                }
+                if n <= 0 {
+                    // 0 = EOF, <0 = error. Either way the transport
+                    // is gone.
+                    if let client = weakBox.client {
+                        Task { await client.failAllPending(LSPError.transportClosed) }
+                    }
                     return
                 }
-                if chunk.isEmpty {
-                    // EOF — server exited
-                    await self?.failAllPending(LSPError.transportClosed)
-                    return
-                }
-                buffer.append(chunk)
-                // Drain as many complete frames as we can.
+                buffer.append(scratch, count: n)
                 while true {
                     let step: LSPFraming.DecodeStep
                     do {
                         step = try LSPFraming.decode(buffer)
                     } catch {
-                        await self?.failAllPending(error)
+                        if let client = weakBox.client {
+                            Task { await client.failAllPending(error) }
+                        }
                         return
                     }
                     switch step {
@@ -144,13 +230,19 @@ public actor LSPClient {
                         break
                     case .message(let body, let consumed):
                         buffer.removeFirst(consumed)
-                        await self?.dispatchInbound(body)
+                        if let client = weakBox.client {
+                            Task { await client.dispatchInbound(body) }
+                        }
                         continue
                     }
                     break
                 }
             }
         }
+        thread.name = "LSPClient.readerThread"
+        thread.qualityOfService = .utility
+        readerThread = thread
+        thread.start()
     }
 
     private func failAllPending(_ error: Error) {
@@ -252,7 +344,7 @@ public actor LSPClient {
             return
         }
         let framed = LSPFraming.frame(body)
-        try? stdinPipe.fileHandleForWriting.write(contentsOf: framed)
+        _ = writeFramedToChild(framed)
     }
 
     private func idAsInt64(_ raw: Any) -> Int64? {
@@ -304,9 +396,7 @@ public actor LSPClient {
         return try await withCheckedThrowingContinuation { cont in
             self.pending[id] = cont
             self.pendingMethods[id] = method
-            do {
-                try self.stdinPipe.fileHandleForWriting.write(contentsOf: framed)
-            } catch {
+            if !self.writeFramedToChild(framed) {
                 self.pending.removeValue(forKey: id)
                 self.pendingMethods.removeValue(forKey: id)
                 cont.resume(throwing: LSPError.transportClosed)
@@ -353,7 +443,7 @@ public actor LSPClient {
         ]
         if let body = try? JSONSerialization.data(withJSONObject: env, options: []) {
             let framed = LSPFraming.frame(body)
-            try? stdinPipe.fileHandleForWriting.write(contentsOf: framed)
+            _ = writeFramedToChild(framed)
         }
         // Resume the local awaiter.
         if let cont = pending.removeValue(forKey: id) {
@@ -369,7 +459,9 @@ public actor LSPClient {
         ]
         let body = try JSONSerialization.data(withJSONObject: envelope, options: [])
         let framed = LSPFraming.frame(body)
-        try stdinPipe.fileHandleForWriting.write(contentsOf: framed)
+        if !writeFramedToChild(framed) {
+            throw LSPError.transportClosed
+        }
     }
 
     // MARK: Public capability methods
@@ -631,7 +723,10 @@ public actor LSPClient {
             _ = try? await request(method: "shutdown", params: NSNull(), timeout: .seconds(2))
             try? notify(method: "exit", params: NSNull())
         }
-        readerTask?.cancel()
+        // Reader thread exits when the child's stdout closes (EOF
+        // after `process.terminate()` below). We don't need to cancel
+        // it explicitly — POSIX `read` doesn't honor Task
+        // cancellation and the thread cleans itself up on EOF.
         // Give the child a moment to exit voluntarily.
         try? await Task.sleep(for: .milliseconds(200))
         if process.isRunning {
@@ -639,6 +734,19 @@ public actor LSPClient {
         }
         try? stdinPipe.fileHandleForWriting.close()
     }
+}
+
+/// Sendable holder for a weak reference to the actor. The reader
+/// `Thread` needs to call back into the actor; capturing the actor
+/// directly would extend its lifetime. Holding a weak property on a
+/// final class is the canonical way to get a Sendable weak-ref box
+/// in Swift 6 strict-concurrency.
+final class WeakLSPClientBox: @unchecked Sendable {
+    weak var client: LSPClient?
+    init(client: LSPClient) { self.client = client }
+}
+
+extension LSPClient {
 
     // MARK: - Decoders (defensive; LSP unions are messy)
 

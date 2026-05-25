@@ -26,8 +26,11 @@ import Foundation
 // decoders themselves are exhaustively tested by LSPProtocolDecodeTests
 // etc. with literal JSON inputs.
 
-@MainActor
-final class FakeServer {
+// Single-threaded by construction: `run()` is called once from
+// top-level main and never spawns work. We mark @unchecked Sendable
+// only so it satisfies actor-isolation requirements when accessed via
+// the global runner closure below.
+final class FakeServer: @unchecked Sendable {
 
     let scenario: String
     let hoverDelayMs: Int
@@ -268,24 +271,28 @@ final class FakeServer {
     // MARK: - Reader
 
     func tryDecodeOne() -> Data? {
-        let needle: [UInt8] = [0x0D, 0x0A, 0x0D, 0x0A]
-        guard buffer.count >= 4 else { return nil }
-        var hdrEnd: Int?
-        buffer.withUnsafeBytes { raw in
-            let p = raw.bindMemory(to: UInt8.self)
-            let limit = p.count - 4
-            var i = 0
-            while i <= limit {
-                if p[i] == needle[0] && p[i+1] == needle[1]
-                    && p[i+2] == needle[2] && p[i+3] == needle[3] {
-                    hdrEnd = i
-                    return
-                }
-                i += 1
+        // Re-base the buffer to a fresh `Data` value so all index
+        // arithmetic below works from 0 regardless of internal
+        // slice offsets (the previous `removeFirst` may leave the
+        // buffer's startIndex >0 internally).
+        let buf = Data(buffer)
+        guard buf.count >= 4 else { return nil }
+        let bytes = [UInt8](buf)
+        var hdrEnd: Int = -1
+        let limit = bytes.count - 4
+        var i = 0
+        while i <= limit {
+            if bytes[i] == 0x0D, bytes[i+1] == 0x0A,
+               bytes[i+2] == 0x0D, bytes[i+3] == 0x0A {
+                hdrEnd = i
+                break
             }
+            i += 1
         }
-        guard let headerEnd = hdrEnd else { return nil }
-        guard let hdrStr = String(data: buffer.prefix(headerEnd), encoding: .ascii)
+        if hdrEnd < 0 { return nil }
+        let headerEnd = hdrEnd
+        let headerBytes = Array(bytes.prefix(headerEnd))
+        guard let hdrStr = String(bytes: headerBytes, encoding: .ascii)
         else { return nil }
         var contentLength: Int?
         for line in hdrStr.components(separatedBy: "\r\n") {
@@ -299,21 +306,32 @@ final class FakeServer {
         guard let n = contentLength else { return nil }
         let bodyStart = headerEnd + 4
         let needed = bodyStart + n
-        if buffer.count < needed { return nil }
-        let body = buffer.subdata(in: bodyStart..<needed)
-        buffer.removeFirst(needed)
+        if bytes.count < needed { return nil }
+        let body = Data(bytes[bodyStart..<needed])
+        // Remove the consumed bytes by rebuilding from `bytes`.
+        buffer = Data(bytes.suffix(from: needed))
         return body
     }
 
     func run() {
-        let stdin = FileHandle.standardInput
+        // Use blocking POSIX read on fd 0. `FileHandle.availableData`
+        // can return empty data on signals or non-blocking pipes;
+        // POSIX `read()` blocks until either data arrives or true EOF
+        // (return value 0). This is what we want — a tight, deterministic
+        // server loop driven entirely by the parent over stdin.
+        let fd: Int32 = 0
+        let bufSize = 8 * 1024
+        var scratch = [UInt8](repeating: 0, count: bufSize)
+        FileHandle.standardError.write(Data("FakeServer ready scenario=\(scenario)\n".utf8))
         while !shouldExit {
-            let chunk = stdin.availableData
-            if chunk.isEmpty {
-                // EOF on stdin — client closed transport.
+            let n = scratch.withUnsafeMutableBufferPointer { ptr -> Int in
+                return read(fd, ptr.baseAddress, bufSize)
+            }
+            if n <= 0 {
+                // 0 = EOF; <0 = error. Either way we exit.
                 break
             }
-            buffer.append(chunk)
+            buffer.append(scratch, count: n)
             while let body = tryDecodeOne() {
                 guard let obj = try? JSONSerialization.jsonObject(
                         with: body, options: [.fragmentsAllowed]) as? [String: Any]
@@ -325,6 +343,4 @@ final class FakeServer {
     }
 }
 
-MainActor.assumeIsolated {
-    FakeServer().run()
-}
+FakeServer().run()
