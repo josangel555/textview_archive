@@ -66,16 +66,24 @@ final class InteractionScriptTests: MultiScenarioTestCase {
                 close-tab
                 """) { dumps, file, line in
                 XCTAssertEqual(dumps.count, 2, file: file, line: line)
-                let afterNew = TabBarPage(dump: dumps[0])
-                let afterClose = TabBarPage(dump: dumps[1])
-                let nNew = afterNew.tabCount ?? 0
-                let nClose = afterClose.tabCount ?? 0
-                // SwiftUI accessibility identifier sometimes doesn't
-                // propagate to the realised NSView — covered by
-                // DocumentModelTests at the model layer.
-                if nNew == 0 && nClose == 0 { return }
-                XCTAssertGreaterThanOrEqual(nNew, nClose,
-                    "Tab count after new-tab should be ≥ after close-tab",
+                // Prefer model state over the realised NSView tab
+                // count — SwiftUI accessibility identifiers don't
+                // always propagate to the realised NSView, so the
+                // TabBarPage's NSView-count can silently come back
+                // zero. The dump's `model.tabs.count` is authoritative
+                // (see AutomationHost) and never zero-spoofs.
+                let countsFromModel = dumps.map { d -> Int? in
+                    let m = Pages(dump: d).generic.model
+                    return m["tabCount"] as? Int
+                }
+                guard let nNewModel = countsFromModel[0],
+                      let nCloseModel = countsFromModel[1] else {
+                    return XCTFail(
+                        "model.tabCount missing in step dumps — automation host regressed?",
+                        file: file, line: line)
+                }
+                XCTAssertGreaterThan(nNewModel, nCloseModel,
+                    "After new-tab+close-tab, the after-new count must exceed the after-close count. Got \(nNewModel) then \(nCloseModel)",
                     file: file, line: line)
             }
         ])

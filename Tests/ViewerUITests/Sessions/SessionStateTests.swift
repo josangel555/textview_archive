@@ -43,6 +43,28 @@ final class SessionStateTests: XCTestCase {
         model: model
     )
 
+    /// Track whether the lazy `tmpDir` actually got materialized this
+    /// test. We only want to remove the directory if it was created
+    /// — touching the file system in `tearDown` for tests that never
+    /// allocated would be wasteful (and racy under `@MainActor`).
+    private var tmpDirCreated = false
+
+    override func setUp() async throws {
+        // Force lazy materialization here so tearDown sees a non-nil
+        // path on every test run. The previous shape relied on the
+        // first `@MainActor` test method to trigger evaluation; some
+        // tests never read `tmpDir` and so leaked the directory under
+        // /var/folders/.../T/ between runs.
+        _ = tmpDir
+        tmpDirCreated = true
+    }
+
+    override func tearDown() async throws {
+        if tmpDirCreated {
+            try? FileManager.default.removeItem(at: tmpDir)
+        }
+    }
+
     // MARK: mount / detach idempotence -------------------------------
 
     func testMountFromInitialStateFlipsIsMountedTrue() {

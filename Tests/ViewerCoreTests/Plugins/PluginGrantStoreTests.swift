@@ -3,10 +3,26 @@ import XCTest
 
 final class PluginGrantStoreTests: XCTestCase {
 
+    private var spawned: [URL] = []
+
+    /// Per-test temp file. Tracks every allocation so `tearDown` can
+    /// unconditionally clean up — the previous shape leaked
+    /// `MDVGrants-<uuid>.json` under `/var/folders/.../T/` whenever
+    /// a test crashed before its `defer` ran.
     private func tempFile() -> URL {
         // Per CLAUDE.md: never touch ~/Documents from automated paths.
-        FileManager.default.temporaryDirectory
+        let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("MDVGrants-\(UUID().uuidString).json")
+        spawned.append(url)
+        return url
+    }
+
+    override func tearDown() {
+        for url in spawned {
+            try? FileManager.default.removeItem(at: url)
+        }
+        spawned.removeAll()
+        super.tearDown()
     }
 
     func test_status_required_for_unseen_plugin() {
@@ -18,8 +34,8 @@ final class PluginGrantStoreTests: XCTestCase {
     }
 
     func test_record_then_status_reflects_decision() {
+        // Cleanup handled by tearDown via `spawned`.
         let file = tempFile()
-        defer { try? FileManager.default.removeItem(at: file) }
         let store = PluginGrantStore(url: file)
         store.record(
             pluginID: "com.x", version: "1.0.0",
@@ -38,8 +54,8 @@ final class PluginGrantStoreTests: XCTestCase {
     }
 
     func test_capability_growth_re_prompts() {
+        // Cleanup handled by tearDown via `spawned`.
         let file = tempFile()
-        defer { try? FileManager.default.removeItem(at: file) }
         let store = PluginGrantStore(url: file)
         store.record(
             pluginID: "com.x", version: "1.0.0",
@@ -54,8 +70,8 @@ final class PluginGrantStoreTests: XCTestCase {
     }
 
     func test_denied_decision_is_persisted_distinctly() {
+        // Cleanup handled by tearDown via `spawned`.
         let file = tempFile()
-        defer { try? FileManager.default.removeItem(at: file) }
         let store = PluginGrantStore(url: file)
         store.record(
             pluginID: "com.x", version: "1.0.0",
@@ -74,8 +90,8 @@ final class PluginGrantStoreTests: XCTestCase {
     }
 
     func test_revoke_returns_status_to_required() {
+        // Cleanup handled by tearDown via `spawned`.
         let file = tempFile()
-        defer { try? FileManager.default.removeItem(at: file) }
         let store = PluginGrantStore(url: file)
         store.record(
             pluginID: "com.x", version: "1.0.0",
@@ -89,8 +105,8 @@ final class PluginGrantStoreTests: XCTestCase {
     }
 
     func test_allGrants_returns_snapshot() {
+        // Cleanup handled by tearDown via `spawned`.
         let file = tempFile()
-        defer { try? FileManager.default.removeItem(at: file) }
         let store = PluginGrantStore(url: file)
         store.record(pluginID: "a", version: "1", capabilities: ["ui.sidebar"], decision: .granted)
         store.record(pluginID: "b", version: "1", capabilities: ["shell.exec"], decision: .denied)

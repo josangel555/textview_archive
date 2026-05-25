@@ -9,6 +9,10 @@ let package = Package(
         .library(name: "ViewerCore", targets: ["ViewerCore"]),
         .library(name: "ViewerUI", targets: ["ViewerUI"]),
         .executable(name: "MarkdownViewer", targets: ["MarkdownViewer"]),
+        // Test-only helper: built on demand by `swift build --product
+        // MDVFakeLSPServer` (or implicitly via `swift test`'s build
+        // phase). Not in the app bundle.
+        .executable(name: "MDVFakeLSPServer", targets: ["MDVFakeLSPServer"]),
 
         // Lazy-loaded TreeSitter grammar dylibs. Each wraps a single
         // upstream grammar product into a `.dynamic` library that
@@ -137,6 +141,16 @@ let package = Package(
         .executableTarget(
             name: "MarkdownViewer",
             dependencies: ["ViewerKit", "ViewerCore", "ViewerUI"]
+        ),
+        // Host-runnable fake LSP server used only by tests. Speaks
+        // LSP framing on stdio with deterministic canned responses so
+        // `LSPClient` / `LSPPool` can be exercised end-to-end without
+        // sourcekit-lsp. Behavior is dialed in via env vars (see
+        // `Sources/MDVFakeLSPServer/main.swift`). NOT shipped in the
+        // app bundle — tests resolve the binary out of the build dir.
+        .executableTarget(
+            name: "MDVFakeLSPServer",
+            path: "Sources/MDVFakeLSPServer"
         ),
         // --- Lazy grammar wrappers ----------------------------------
         // Each wrapper target compiles a one-file C shim that holds a

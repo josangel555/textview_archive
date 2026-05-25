@@ -136,11 +136,18 @@ final class FileTreeRecencyTests: XCTestCase {
     // directly so the test stays headless (no SwiftUI view tree).
 
     func testAppStorageKeyRoundTripPersistsMode() {
-        let key = "MarkdownViewer.sidebar.recencyMode.test"
-        let defaults = UserDefaults.standard
-        defer { defaults.removeObject(forKey: key) }
+        // Use a per-test suite name so we never touch the host's
+        // shared `UserDefaults.standard`. The old version of this
+        // test set a key on standard defaults with a `defer`
+        // cleanup; on a crashing test the key persisted to the
+        // developer's machine.
+        let suite = "FileTreeRecencyTests-AppStorage-\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            return XCTFail("failed to construct test UserDefaults suite")
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let key = "MarkdownViewer.sidebar.recencyMode"
 
-        // Write each mode, read it back via the rawValue init.
         for mode in FileTreeRecency.RecencyMode.allCases {
             defaults.set(mode.rawValue, forKey: key)
             let raw = defaults.string(forKey: key) ?? ""

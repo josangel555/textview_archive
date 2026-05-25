@@ -165,13 +165,55 @@ final class SidebarModelTests: XCTestCase {
     }
 
     func test_refreshGitStatus_outsideRepo_clearsMap() async throws {
+        // Build state: populate `gitStatuses` and `gitRepoRoot` via a
+        // repo tmpdir first, then re-`setRoot` to a non-repo dir and
+        // assert both fields actually got cleared. The old version
+        // started with an empty model and asserted the (already-empty)
+        // map was empty after 100 ms — meaningless.
+        let repoDir = tmpDir.appendingPathComponent("repo")
+        try FileManager.default.createDirectory(
+            at: repoDir, withIntermediateDirectories: true)
+        // Initialise a tiny git repo so refreshGitStatus has something
+        // to populate. `git init -q` is fast and offline.
+        let init1 = Process()
+        init1.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        init1.arguments = ["git", "init", "-q", repoDir.path]
+        try init1.run(); init1.waitUntilExit()
+        let aURL = repoDir.appendingPathComponent("a.md")
+        try "x".write(to: aURL, atomically: true, encoding: .utf8)
+
         let model = SidebarModel()
-        try touch("a.md")
-        model.setRoot(tmpDir)
-        // tmpDir is not a git repo → gitRepoRoot stays nil and statuses are empty.
-        try await Task.sleep(nanoseconds: 100_000_000)
-        XCTAssertTrue(model.gitStatuses.isEmpty)
-        XCTAssertNil(model.gitRepoRoot)
+        model.setRoot(repoDir)
+        // Wait until git status has populated AND gitRepoRoot is set.
+        let populated = await {
+            let deadline = Date().addingTimeInterval(2.0)
+            while Date() < deadline {
+                if model.gitRepoRoot != nil && !model.gitStatuses.isEmpty {
+                    return true
+                }
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+            return false
+        }()
+        XCTAssertTrue(populated, "git status should have populated in the repo dir")
+
+        // Now switch to a non-repo dir. Both the map and the repo root
+        // must clear.
+        let nonRepoDir = tmpDir.appendingPathComponent("not-a-repo")
+        try FileManager.default.createDirectory(
+            at: nonRepoDir, withIntermediateDirectories: true)
+        model.setRoot(nonRepoDir)
+        let cleared = await {
+            let deadline = Date().addingTimeInterval(2.0)
+            while Date() < deadline {
+                if model.gitRepoRoot == nil && model.gitStatuses.isEmpty {
+                    return true
+                }
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+            return false
+        }()
+        XCTAssertTrue(cleared, "switching to a non-repo dir should clear git state")
     }
 
     // MARK: CRIT-6 — keyboard navigation

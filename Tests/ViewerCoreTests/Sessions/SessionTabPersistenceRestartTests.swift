@@ -92,58 +92,19 @@ final class SessionTabPersistenceRestartTests: XCTestCase {
     }
 
     // MARK: - moveToTrash semantics
-
-    func test_moveToTrash_removesActiveFile() throws {
-        let store = makeStore()
-        let snap = SessionSnapshot(id: UUID(), displayName: "Doomed",
-                                   createdAt: Date(), lastActiveAt: Date(),
-                                   sidebarRootPath: "/x")
-        _ = store.saveSync(snap)
-        XCTAssertNotNil(store.load(id: snap.id))
-
-        store.moveToTrash(id: snap.id)
-        XCTAssertNil(store.load(id: snap.id), "live snapshot should be removed")
-    }
-
-    func test_moveToTrash_unknownID_isNoOp() {
-        let store = makeStore()
-        store.moveToTrash(id: UUID())  // not a real session
-        XCTAssertNil(store.loadIndex())  // no side effects
-    }
+    //
+    // Trash-cycle coverage lives in `SessionStoreTests` (testMoveToTrash*)
+    // — that file owns the deep tests including over-write semantics
+    // and missing-file silence. The earlier duplicates here ran the
+    // same store-level CRUD twice; removed during the 2026-05 audit.
 
     // MARK: - Legacy migration
-
-    func test_legacyMigration_buildsSessionFromWorkspaceSnapshot() throws {
-        let legacy = WorkspaceSnapshot(
-            sidebarRootPath: "/legacy/proj",
-            openTabs: [
-                TabSnapshot(path: "/legacy/proj/a.md", viewMode: "source"),
-            ],
-            selectedTabIndex: 0,
-            zoom: 1.2,
-            wordWrap: true,
-            themeOverride: nil
-        )
-        let migrated = SessionSnapshot.fromLegacy(legacy)
-        XCTAssertEqual(migrated.sidebarRootPath, "/legacy/proj")
-        XCTAssertEqual(migrated.openTabs.count, 1)
-        XCTAssertEqual(migrated.openTabs[0].path, "/legacy/proj/a.md")
-        XCTAssertEqual(migrated.selectedTabIndex, 0)
-        XCTAssertEqual(migrated.zoom, 1.2)
-        XCTAssertEqual(migrated.wordWrap, true)
-        // Display name derived from path's last component.
-        XCTAssertEqual(migrated.displayName, "proj")
-    }
-
-    func test_legacyMigration_emptyRoot_namedDefault() {
-        let legacy = WorkspaceSnapshot(
-            sidebarRootPath: nil,
-            openTabs: [],
-            selectedTabIndex: nil,
-            zoom: nil, wordWrap: nil, themeOverride: nil)
-        let migrated = SessionSnapshot.fromLegacy(legacy)
-        XCTAssertEqual(migrated.displayName, "Default")
-    }
+    //
+    // Legacy-snapshot bridging is owned by `SessionStoreTests`
+    // (testMigrateLegacyReturnsValidSession) and the dedicated
+    // `SessionsMigrationTests`. The two test_legacyMigration_* methods
+    // here duplicated that coverage and were removed during the
+    // 2026-05 audit.
 
     // MARK: - saveIndex / loadIndex idempotency
 

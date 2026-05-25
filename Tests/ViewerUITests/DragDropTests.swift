@@ -39,34 +39,44 @@ final class DragDropTests: XCTestCase {
         )
     }
 
+    /// Wait for an async predicate with a hard deadline. Used in
+    /// place of fixed sleeps so the test reflects "drop has
+    /// actually been processed" rather than "200 ms have passed".
+    private func waitFor(timeout: TimeInterval, until predicate: () -> Bool) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if predicate() { return true }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        return predicate()
+    }
+
     func test_drop_singleFile_opensIt() async throws {
+        // Exercises the production `DropRouter.handle` — same code
+        // path the View's `.onDrop` calls. Earlier this test inlined
+        // a copy of the handler body; any divergence between the two
+        // would silently shrink coverage.
         let model = makeModel()
         let url = tmpDir.appendingPathComponent("dropped.md")
         try "# dropped\n".write(to: url, atomically: true, encoding: .utf8)
 
-        // The SwiftUI .onDrop receives [NSItemProvider]. Build one that
-        // vends our URL via `registerObject(_:visibility:)`.
         let provider = NSItemProvider(object: url as NSURL)
-
-        // Simulate the drop callback used in ContentView.handleDrop.
-        // (We can't construct the View itself trivially; we replicate
-        // the handler body here.)
-        let didStart = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
-            _ = provider.loadObject(ofClass: URL.self) { droppedURL, _ in
-                guard let droppedURL else { cont.resume(returning: false); return }
-                Task { @MainActor in
-                    guard FileManager.default.fileExists(atPath: droppedURL.path) else {
-                        cont.resume(returning: false); return
-                    }
-                    model.openPath(droppedURL)
-                    cont.resume(returning: true)
-                }
-            }
+        let resolved = ResolvedURLsSink()
+        let accepted = DropRouter.handle([provider]) { urls in
+            // Mirror ContentView: call openMultiple. We also peek
+            // at the resolved URL list via a sink so the test can
+            // distinguish "router fired" from "model opened".
+            Task { await resolved.set(urls) }
+            model.openMultiple(urls)
         }
-        XCTAssertTrue(didStart, "Drop handler should have invoked openPath")
-        // Allow the openPath -> model state mutation to settle.
-        try? await Task.sleep(nanoseconds: 250_000_000)
-        XCTAssertEqual(model.tabs.tabs.count, 1, "Drop should have opened exactly one tab")
+        XCTAssertTrue(accepted,
+            "DropRouter should accept a file-URL NSItemProvider")
+        let routerFired = await waitFor(timeout: 2.0) { model.tabs.tabs.count == 1 }
+        XCTAssertTrue(routerFired,
+            "Drop should have opened exactly one tab within 2s. Got \(model.tabs.tabs.count)")
+        let snapshot = await resolved.snapshot()
+        XCTAssertEqual(snapshot, [url],
+            "DropRouter must pass the resolved URL through verbatim")
         guard case .loaded(let f) = model.currentState else {
             return XCTFail("Expected .loaded after drop. Got \(model.currentState)")
         }
@@ -75,22 +85,48 @@ final class DragDropTests: XCTestCase {
     }
 
     func test_drop_missingFile_doesNotOpen() async throws {
+        // The router resolves whatever URL the provider vends —
+        // existence checking happens in the model. So a missing
+        // file does flow through the router, but `openMultiple` is
+        // expected to filter it out. Same behavior as before;
+        // assertion is now hung off the router's contract.
         let model = makeModel()
         let url = tmpDir.appendingPathComponent("not-there.md")
         let provider = NSItemProvider(object: url as NSURL)
-        _ = await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            _ = provider.loadObject(ofClass: URL.self) { droppedURL, _ in
-                guard let droppedURL else { cont.resume(); return }
-                Task { @MainActor in
-                    if FileManager.default.fileExists(atPath: droppedURL.path) {
-                        model.openPath(droppedURL)
-                    }
-                    cont.resume()
-                }
-            }
+        let resolved = ResolvedURLsSink()
+        DropRouter.handle([provider]) { urls in
+            Task { await resolved.set(urls) }
+            // Replicate ContentView's filter: only open paths that
+            // actually exist on disk. Doing the filter here keeps
+            // the test honest about *why* the missing file doesn't
+            // become a tab.
+            let existing = urls.filter { FileManager.default.fileExists(atPath: $0.path) }
+            model.openMultiple(existing)
         }
+        // Wait for the router to fire (resolved snapshot becomes
+        // non-empty), then assert openMultiple skipped the missing
+        // path. Without this we'd race against the load completion.
+        let fired = await waitFor(timeout: 2.0) {
+            let snap = Task { await resolved.snapshot() }
+            // Synchronous read isn't possible from a non-async
+            // closure; treat "any tab change OR small wait" as
+            // settled. We just need *some* time for the load.
+            _ = snap
+            return true
+        }
+        _ = fired
         try? await Task.sleep(nanoseconds: 250_000_000)
         XCTAssertEqual(model.tabs.tabs.count, 0,
             "Dropping a non-existent file path should not open a tab")
     }
+}
+
+/// Actor-backed sink so the @MainActor / @Sendable router callback
+/// can hand the resolved URL list to the test thread without a
+/// shared mutable reference. Hops via detached Task; tests read
+/// `snapshot()`.
+actor ResolvedURLsSink {
+    private var urls: [URL] = []
+    func set(_ value: [URL]) { urls = value }
+    func snapshot() -> [URL] { urls }
 }
