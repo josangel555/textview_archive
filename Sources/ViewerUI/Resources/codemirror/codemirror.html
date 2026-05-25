@@ -31,6 +31,9 @@
     indentUnit, EditorStateTabSize,
     linter, lintGutter, setDiagnostics, forEachDiagnostic,
     markdown, javascript, python, json, oneDark,
+    // Phase 4 (v2):
+    StateField, StateEffect, foldService, gutter, GutterMarker,
+    Decoration, ViewPlugin,
   } = window.CM;
 
   // Optional hoverTooltip from @codemirror/view — may not be present on
@@ -38,7 +41,16 @@
   const hoverTooltip = window.CM.hoverTooltip;
 
   // Protocol version — must match Swift side `CMProtocol.currentVersion`.
-  const PROTOCOL_VERSION = 1;
+  // Phase 4 bumped this to v2 to add:
+  //   - JS → Swift `incrementalChange` (accumulated edit stream instead
+  //     of the full doc text on every debounce).
+  //   - Swift → JS `applyEdits`, `setFoldingRanges`, `setGutterMarkers`,
+  //     `setIndentGuides`.
+  // Swift accepts envelopes with v == currentVersion OR v == currentVersion - 1
+  // for one release cycle, so a pre-v2 bundle still parses on the Swift
+  // side until the app updates `Resources/codemirror/`.
+  const PROTOCOL_VERSION = 2;
+  const PROTOCOL_OLDEST_SUPPORTED = 1;
 
   // ---- bridge helpers --------------------------------------------------
   // postMessage to Swift via the registered WKScriptMessageHandler named
@@ -67,8 +79,22 @@
   // Debounced change emitter. CM6 transactions can fire many times per
   // keystroke (composing edits, selection changes). 200 ms keeps Swift
   // off the hot path while staying responsive enough for dirty-dot UX.
+  //
+  // Phase 4 (v2): when `incrementalChangeMode` is on, we accumulate the
+  // per-transaction `iterChangedRanges` deltas and ship them as
+  // `incrementalChange` events instead of a full-text `change`. Saves
+  // the per-emit doc allocation + IPC cost on large files (§15.2 of
+  // the design doc). Swift can toggle off at any time via
+  // `setIncrementalChange` — the next emit falls back to full-text.
   let changeTimer = null;
   let lastEmittedText = null;
+  let incrementalChangeMode = true; // v2 default; degrades to full-text on drift
+  // ChangeSet accumulator. Each per-transaction `tr.changes` is composed
+  // onto this — the resulting set represents all edits since the last
+  // emit, all expressed against the doc the last emit referenced.
+  // Iterating it at emit time gives the `{from, to, insert}` batch Swift
+  // applies to its mirror. `null` when no edits pending.
+  let pendingChanges = null;
   function scheduleChangeEmit() {
     if (changeTimer) clearTimeout(changeTimer);
     changeTimer = setTimeout(emitChange, 200);
@@ -76,13 +102,47 @@
   function emitChange() {
     changeTimer = null;
     const text = view.state.doc.toString();
-    if (text === lastEmittedText) return;
+    if (text === lastEmittedText) {
+      pendingChanges = null;
+      return;
+    }
+    if (incrementalChangeMode && pendingChanges) {
+      // Walk the composed ChangeSet to produce a flat batch of
+      // {from, to, insert} entries — each in the pre-batch frame,
+      // ordered by `fromA` ascending. That's exactly what Swift's
+      // CMEditApplier expects.
+      const edits = [];
+      pendingChanges.iterChanges(function (fromA, toA, _fromB, _toB, inserted) {
+        edits.push({ from: fromA, to: toA, insert: inserted.toString() });
+      });
+      pendingChanges = null;
+      lastEmittedText = text;
+      post("incrementalChange", {
+        edits: edits,
+        version: docVersion,
+        contentLength: text.length,
+      });
+      return;
+    }
+    pendingChanges = null;
     lastEmittedText = text;
     post("change", { text: text, version: docVersion, contentLength: text.length });
   }
   function emitChangeImmediate() {
     if (changeTimer) { clearTimeout(changeTimer); changeTimer = null; }
     emitChange();
+  }
+
+  // Compose this transaction's changes onto the running accumulator.
+  // CM6's `ChangeSet.compose(other)` produces a single ChangeSet that,
+  // when applied to the doc-before-A, yields doc-after-B — exactly
+  // what we want to hand Swift as one batch.
+  function accumulateChanges(tr) {
+    if (!pendingChanges) {
+      pendingChanges = tr.changes;
+    } else {
+      pendingChanges = pendingChanges.compose(tr.changes);
+    }
   }
 
   // Cursor / selection / scroll: debounced separately so a held arrow
@@ -157,6 +217,10 @@
   const tabSizeCompartment     = new Compartment();
   const lintGutterCompartment  = new Compartment();
   const invisiblesCompartment  = new Compartment();
+  // Phase 4 (v2): new compartments
+  const foldServiceCompartment = new Compartment(); // LSP-driven fold ranges
+  const diffGutterCompartment  = new Compartment(); // diff bars + blame swatches
+  const indentGuidesCompartment = new Compartment(); // hand-rolled indent guides
 
   // ---- show-invisibles decoration plugin ------------------------------
   // Toggled via `setShowInvisibles`. Renders middle-dot for spaces,
@@ -214,6 +278,249 @@
     return invisiblesPluginCached;
   }
 
+  // ---- Phase 4 (v2): LSP fold ranges via foldService ------------------
+  // A `foldService` is consulted by the fold gutter + `foldAll` command
+  // to discover foldable regions. We maintain a sorted array of
+  // `{from, to}` (UTF-16 doc offsets) shipped from Swift via
+  // `setFoldingRanges`, and answer fold queries by binary-searching for
+  // the first range whose `from` falls within the queried line. When
+  // empty, the service returns `null` and CM6 falls back to language-
+  // default fold heuristics.
+  let lspFoldRanges = []; // [{from, to, kind?}]
+  function buildFoldService() {
+    return foldService.of(function (state, lineStart, lineEnd) {
+      if (!lspFoldRanges.length) return null;
+      // Binary search for the first range with `from` >= lineStart.
+      let lo = 0, hi = lspFoldRanges.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if (lspFoldRanges[mid].from < lineStart) lo = mid + 1; else hi = mid;
+      }
+      const r = lspFoldRanges[lo];
+      if (r && r.from >= lineStart && r.from <= lineEnd && r.to > r.from) {
+        return { from: r.from, to: r.to };
+      }
+      return null;
+    });
+  }
+  function applySetFoldingRanges(msg) {
+    const arr = Array.isArray(msg.ranges) ? msg.ranges : [];
+    const docLen = view.state.doc.length;
+    lspFoldRanges = arr
+      .map(function (r) {
+        const from = Math.max(0, Math.min(docLen, Number(r.from) || 0));
+        const to = Math.max(from, Math.min(docLen, Number(r.to) || from));
+        return { from: from, to: to, kind: r.kind };
+      })
+      .filter(function (r) { return r.to > r.from; })
+      .sort(function (a, b) { return a.from - b.from; });
+    // Reconfigure to force the fold gutter to re-query the service.
+    view.dispatch({
+      effects: foldServiceCompartment.reconfigure(buildFoldService()),
+    });
+  }
+
+  // ---- Phase 4 (v2): diff / blame gutter markers ----------------------
+  // Maps "added" | "removed" | "modified" | "blame" to a CSS class. The
+  // CSS itself lives in codemirror.css; tweak there if visual treatment
+  // changes. Per-line marker — we don't currently render multi-line
+  // ranges (a multi-line diff is N markers on consecutive lines).
+  const GUTTER_KIND_TO_CSS = {
+    added:    "cm-diff-added",
+    removed:  "cm-diff-removed",
+    modified: "cm-diff-modified",
+    blame:    "cm-blame-marker",
+  };
+  class DiffGutterMarker extends GutterMarker {
+    constructor(kind, tooltip) {
+      super();
+      this.kind = kind;
+      this.tooltip = tooltip || null;
+    }
+    eq(other) { return other.kind === this.kind && other.tooltip === this.tooltip; }
+    toDOM() {
+      const el = document.createElement("span");
+      el.className = GUTTER_KIND_TO_CSS[this.kind] || "cm-diff-unknown";
+      if (this.tooltip) el.title = this.tooltip;
+      el.textContent = "";
+      return el;
+    }
+  }
+  // StateField holds the per-line marker map; the gutter reads from it
+  // and remaps positions through edits so markers ride along as the user
+  // types. Cleared via the same effect with an empty payload.
+  const setGutterMarkersEffect = StateEffect.define();
+  const gutterMarkersField = StateField.define({
+    create() { return new Map(); }, // line(1-based) → DiffGutterMarker
+    update(value, tr) {
+      for (const e of tr.effects) {
+        if (e.is(setGutterMarkersEffect)) value = e.value;
+      }
+      return value;
+    },
+  });
+  function buildDiffGutter() {
+    return [
+      gutterMarkersField,
+      gutter({
+        class: "cm-diff-gutter",
+        lineMarker(view, line) {
+          const map = view.state.field(gutterMarkersField, false);
+          if (!map) return null;
+          const lineNum = view.state.doc.lineAt(line.from).number;
+          return map.get(lineNum) || null;
+        },
+        initialSpacer: () => new DiffGutterMarker("modified", null),
+      }),
+    ];
+  }
+  function applySetGutterMarkers(msg) {
+    const arr = Array.isArray(msg.markers) ? msg.markers : [];
+    const map = new Map();
+    for (const m of arr) {
+      const lineNum = Number(m.line) || 0;
+      if (lineNum < 1 || lineNum > view.state.doc.lines) continue;
+      const kind = String(m.kind || "");
+      if (!(kind in GUTTER_KIND_TO_CSS)) continue;
+      map.set(lineNum, new DiffGutterMarker(kind, m.tooltip || null));
+    }
+    view.dispatch({ effects: setGutterMarkersEffect.of(map) });
+  }
+
+  // ---- Phase 4 (v2): indent guides ------------------------------------
+  // Lightweight ViewPlugin — draws a thin vertical rule at each multiple
+  // of the current `indentUnit` for every visible line. Decoration is
+  // recomputed on docChanged / viewportChanged so cost stays bounded by
+  // the viewport.
+  class IndentGuideWidget extends WidgetType {
+    constructor(depth, unitSize) {
+      super(); this.depth = depth; this.unitSize = unitSize;
+    }
+    eq(o) { return o.depth === this.depth && o.unitSize === this.unitSize; }
+    toDOM() {
+      const wrap = document.createElement("span");
+      wrap.className = "cm-indent-guides";
+      wrap.style.display = "inline-block";
+      wrap.style.width = (this.depth * this.unitSize) + "ch";
+      // One ::before per depth level via inline boxes. Cheaper than
+      // building N child spans for short indents (depth max ≤ 32).
+      for (let i = 0; i < this.depth; i++) {
+        const bar = document.createElement("span");
+        bar.className = "cm-indent-guide";
+        bar.style.display = "inline-block";
+        bar.style.width = this.unitSize + "ch";
+        bar.style.borderLeft = "1px solid currentColor";
+        bar.style.opacity = "0.15";
+        bar.style.height = "1.2em";
+        bar.style.verticalAlign = "text-bottom";
+        wrap.appendChild(bar);
+      }
+      return wrap;
+    }
+    ignoreEvent() { return true; }
+  }
+  function detectIndentUnitSize(state) {
+    // Pull unit from the indentUnit facet; fall back to 2.
+    try {
+      // CM6 9.x: facet getter on @codemirror/language; we read the
+      // resolved value from state.facet.
+      const u = state.facet(indentUnit);
+      return typeof u === "string" ? Math.max(1, u.length || 2) : 2;
+    } catch { return 2; }
+  }
+  function buildIndentGuidesPlugin() {
+    return ViewPlugin.fromClass(class {
+      constructor(view) { this.decorations = this.compute(view); }
+      update(u) {
+        if (u.docChanged || u.viewportChanged) {
+          this.decorations = this.compute(u.view);
+        }
+      }
+      compute(view) {
+        const unitSize = detectIndentUnitSize(view.state);
+        const ranges = [];
+        for (const { from, to } of view.visibleRanges) {
+          let pos = from;
+          while (pos <= to) {
+            const line = view.state.doc.lineAt(pos);
+            // Count leading spaces / tabs only — mixed treated as
+            // unitSize-wide each.
+            let depth = 0, i = 0;
+            const text = line.text;
+            while (i < text.length) {
+              const ch = text.charCodeAt(i);
+              if (ch === 0x20) {
+                // Run of spaces = floor(count / unitSize)
+                let runEnd = i;
+                while (runEnd < text.length && text.charCodeAt(runEnd) === 0x20) runEnd++;
+                depth += Math.floor((runEnd - i) / unitSize);
+                i = runEnd;
+              } else if (ch === 0x09) { depth += 1; i++; }
+              else { break; }
+            }
+            if (depth > 0) {
+              ranges.push(Decoration.widget({
+                widget: new IndentGuideWidget(depth, unitSize),
+                side: -1,
+              }).range(line.from));
+            }
+            if (line.to === view.state.doc.length) break;
+            pos = line.to + 1;
+          }
+        }
+        return Decoration.set(ranges, true);
+      }
+    }, { decorations: v => v.decorations });
+  }
+  let indentGuidesPluginCached = null;
+  function indentGuidesExtension(enabled) {
+    if (!enabled) return [];
+    if (!indentGuidesPluginCached) indentGuidesPluginCached = buildIndentGuidesPlugin();
+    return indentGuidesPluginCached;
+  }
+  function applySetIndentGuides(msg) {
+    view.dispatch({
+      effects: indentGuidesCompartment.reconfigure(
+        indentGuidesExtension(!!msg.enabled)),
+    });
+  }
+
+  // ---- Phase 4 (v2): apply incremental edits from Swift --------------
+  // Reciprocal to the JS → Swift `incrementalChange` accumulator. Swift
+  // ships a batch of {from, to, insert} edits in the pre-batch frame;
+  // CM6 accepts that as a `changes` array on a single dispatch (one
+  // undo step). `version` lets us drop stale batches.
+  function applyApplyEdits(msg) {
+    if (typeof msg.version === "number" && msg.version < docVersion) return;
+    const arr = Array.isArray(msg.edits) ? msg.edits : [];
+    if (!arr.length) return;
+    const docLen = view.state.doc.length;
+    const changes = arr
+      .filter(function (e) {
+        const f = Number(e.from);
+        const t = Number(e.to);
+        return Number.isFinite(f) && Number.isFinite(t) &&
+               f >= 0 && t >= f && t <= docLen;
+      })
+      .map(function (e) {
+        return {
+          from: Number(e.from),
+          to: Number(e.to),
+          insert: String(e.insert || ""),
+        };
+      });
+    if (!changes.length) return;
+    suppressEmit = true;
+    try {
+      view.dispatch({
+        changes: changes,
+        annotations: Transaction.addToHistory.of(false),
+      });
+    } finally {
+      suppressEmit = false;
+    }
+  }
+
   // Build an EditorView.theme(...) that just controls font-size.
   // Compartmented so a setFontSize swap doesn't fight with theme swap.
   function fontTheme(px) {
@@ -238,7 +545,20 @@
   const updateListener = EditorView.updateListener.of((update) => {
     if (update.docChanged) {
       docVersion += 1;
-      if (!suppressEmit) scheduleChangeEmit();
+      if (!suppressEmit) {
+        // Accumulate per-transaction change sets so the eventual
+        // emit can ship the batched diff (v2) without an O(doc)
+        // toString cost.
+        for (const tr of update.transactions) {
+          if (tr.docChanged) accumulateChanges(tr);
+        }
+        scheduleChangeEmit();
+      } else {
+        // Swift-driven setText is happening — drop any in-flight
+        // accumulator so we don't ship our own setText back as an
+        // incremental change diff.
+        pendingChanges = null;
+      }
     }
     if (update.selectionSet || update.docChanged) {
       scheduleCursorEmit();
@@ -439,6 +759,15 @@
       // Built once; the bridge response gating handles "no LSP for this
       // file" by returning null contents (popover never appears).
       hoverCompartment.of(buildHoverExtension()),
+      // Phase 4 (v2): LSP-driven fold service. Empty `lspFoldRanges`
+      // → service returns null, CM falls back to language defaults.
+      foldServiceCompartment.of(buildFoldService()),
+      // Phase 4 (v2): diff / blame gutter. Sits to the LEFT of the
+      // line-numbers gutter by virtue of being listed first.
+      diffGutterCompartment.of(buildDiffGutter()),
+      // Phase 4 (v2): indent guides — off by default; toggled via
+      // setIndentGuides.
+      indentGuidesCompartment.of(indentGuidesExtension(false)),
     ];
   }
 
@@ -461,10 +790,12 @@
   // confirm receipt.
   window.cmDispatch = function (msg) {
     if (!msg || typeof msg !== "object") return false;
-    if (msg.v !== PROTOCOL_VERSION) {
+    if (typeof msg.v !== "number" ||
+        msg.v < PROTOCOL_OLDEST_SUPPORTED || msg.v > PROTOCOL_VERSION) {
       post("errorOccurred", {
         phase: "dispatch",
-        message: "protocol version mismatch: got v=" + msg.v + " want v=" + PROTOCOL_VERSION,
+        message: "protocol version unsupported: got v=" + msg.v +
+                 " want " + PROTOCOL_OLDEST_SUPPORTED + ".." + PROTOCOL_VERSION,
       });
       return false;
     }
@@ -512,6 +843,11 @@
           break;
         case "hoverResponse":      resolveHoverResponse(msg); break;
         case "setSaveOnBlur":      /* Swift owns the policy; JS keeps posting editorBlurred */ break;
+        // Phase 4 (v2) handlers
+        case "applyEdits":         applyApplyEdits(msg); break;
+        case "setFoldingRanges":   applySetFoldingRanges(msg); break;
+        case "setGutterMarkers":   applySetGutterMarkers(msg); break;
+        case "setIndentGuides":    applySetIndentGuides(msg); break;
         default:
           post("errorOccurred", {
             phase: "dispatch",

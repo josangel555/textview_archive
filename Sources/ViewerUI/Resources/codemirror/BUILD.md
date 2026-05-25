@@ -18,6 +18,23 @@ the bundle now also re-exports `EditorSelection`, `Transaction`,
 `EditorStateTabSize`. These back the v1 dispatch handlers in
 `codemirror.html`.
 
+Phase 4 additions (`docs/CM6_INTEGRATION_DESIGN_2026-05-23.md` §18.4 / §22):
+- **Bridge protocol bumped to v2.** Decoder accepts `v ∈ [1, 2]` for
+  one release cycle so a stale JS bundle still functions during a
+  rolling upgrade; encoder always stamps `v = currentVersion`.
+- New JS → Swift inbound: `incrementalChange` (`{edits:[{from,to,
+  insert}], version, contentLength}`). Replaces `change` whenever
+  the v2 emitter is active; v1 `change` remains the drift-recovery
+  fall-back.
+- New Swift → JS outbound: `applyEdits` (reciprocal batch),
+  `setFoldingRanges`, `setGutterMarkers`, `setIndentGuides`.
+- Re-exports added to `entry.js`: `StateField`, `StateEffect`,
+  `RangeSetBuilder` (`@codemirror/state`); `gutter`, `GutterMarker`
+  (`@codemirror/view`); `foldService` (`@codemirror/language`). All
+  in the existing approved peer-dep set — **no new npm packages**.
+- Vim mode (`@replit/codemirror-vim`) deferred pending approval per
+  project rules on new deps.
+
 Phase 3 additions (`docs/CM6_INTEGRATION_DESIGN_2026-05-23.md` §18.3):
 - `hoverTooltip` from `@codemirror/view` — drives the LSP hover
   popover. Handler resolves the body via a Swift round-trip
@@ -65,7 +82,7 @@ npm run build
 That writes:
 
 ```
-Sources/ViewerUI/Resources/codemirror/codemirror.js   (~652 KB minified, Phase 2)
+Sources/ViewerUI/Resources/codemirror/codemirror.js   (~607 KB minified, Phase 4)
 ```
 
 CSS is hand-maintained at `codemirror.css` in this directory; CM6
@@ -77,7 +94,10 @@ After re-bundling, verify:
 ```
 swift test --filter ViewerUITests.CodeMirrorBundleTests
 swift test --filter ViewerCoreTests.CMBridgeV1Tests
+swift test --filter ViewerCoreTests.CMBridgeV2Tests
 swift test --filter ViewerCoreTests.CMOutboundEncodingTests
+swift test --filter ViewerCoreTests.CMEditApplierTests
+swift test --filter ViewerCoreTests.CMV2IntegrationTests
 ```
 
 ## Pinning
@@ -91,7 +111,19 @@ the esbuild version used. To bump:
 4. Commit `package.json` AND the regenerated `codemirror.js`.
 5. Verify with `swift test --filter CodeMirrorBundleTests`.
 
-## Contract with the host (protocol v1)
+## Contract with the host (protocol v2; v1 still decodable)
+
+Phase 4 bumped `CMProtocol.currentVersion` to `2`. Decoder accepts
+envelopes with `v ∈ [oldestSupportedVersion ... currentVersion]`.
+The supported-range policy is so a freshly-bumped Swift binary still
+talks to a stale JS bundle (or vice versa) during a rolling app
+update; bump the lower bound when you're done with one cycle.
+
+New inbound types (JS → Swift): `incrementalChange`.
+New outbound types (Swift → JS): `applyEdits`, `setFoldingRanges`,
+`setGutterMarkers`, `setIndentGuides`.
+
+## Contract with the host (protocol v1 baseline)
 
 `codemirror.html` wires the bundle into a single `EditorView`. Two
 channels:

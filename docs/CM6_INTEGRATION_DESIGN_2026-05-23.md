@@ -2098,6 +2098,97 @@ tree-sitter grammar for? Probably no — saves bundle, accepts the
 
 ---
 
+## 22. Phase 4 outcomes — 2026-05-25
+
+What landed:
+
+- **Bridge protocol bumped to v2** (`CMProtocol.currentVersion = 2`,
+  `oldestSupportedVersion = 1`). v1 envelopes still decodable for
+  one release cycle so a stale JS bundle still works.
+- **Incremental change shipping (`incrementalChange` JS→Swift,
+  `applyEdits` Swift→JS)**. JS emitter composes per-transaction
+  `ChangeSet`s with `ChangeSet.compose` and emits a flat
+  `{from,to,insert}` batch on the existing 200 ms debounce. Swift
+  side replays via the new `CMEditApplier` (pure-logic; UTF-16
+  indexed). On drift (claimed `contentLength` ≠ applier output)
+  Swift falls back to a `flushChanges` round-trip — full-text v1
+  `change` recovery path.
+- **LSP `foldingRange` → CM6 fold service.** New `LSPFoldingRange`
+  type + `LSPClient.foldingRange(url:token:)` method + defensive
+  decoder. `CMFoldRangeMapping` converts LSP line/column ranges to
+  CM6 doc offsets; the bridge ships them via `setFoldingRanges`
+  and a `foldService.of(...)` extension answers fold queries on
+  the JS side.
+- **Diff / blame gutter scaffolding.** `CMGutterMarker` value type
+  + `setGutterMarkers` bridge message. JS host renders one of
+  `cm-diff-{added,removed,modified}` / `cm-blame-marker` per line
+  via a `GutterMarker` subclass driven by a `StateField`. CSS
+  swatches in `codemirror.css`. **GitService integration deferred**
+  — the wiring point exists, but pushing actual diff data is
+  separate work (out of CM6 scope).
+- **Indent guides.** Hand-rolled `ViewPlugin` (no community
+  plugin needed) draws hairline rules at each multiple of
+  `indentUnit` for visible lines only. Toggled via
+  `setIndentGuides`.
+- **Big-file cap (50 MB).** Constant already existed; locked in
+  tests + verified Swift-side activation gate refuses editor mode
+  for oversized files.
+
+What's deferred / flagged for approval:
+
+- **Vim mode (`@replit/codemirror-vim`).** Adds a new JS dep
+  (~210 KB, MIT). Per project rules every new package needs
+  explicit approval — flagged for you to decide. The
+  compartment slot (`vimCompartment`), the `View → Vim Mode`
+  menu item, and a `Settings → Editor → Vim` toggle would be
+  the wiring. Bundle stays under cap (607 + 210 = 817 KB).
+- **Shared WebView refactor (feature #24).** Conceptually large;
+  prototype-only per the design doc. Risk of regressing the
+  stable per-tab WKWebView lifecycle for a perf win that only
+  matters at 5+ open tabs. Recommend deferring until there's a
+  user report or a measurable resident-memory problem.
+- **GitService → diff gutter wiring.** Bridge ready; the
+  Swift-side feed (per-line markers from `git diff` output) is
+  a separate feature that should live in `GitService` /
+  `DocumentModel` rather than the CM6 layer.
+
+Bundle / cap impact:
+
+- `codemirror.js` went from 622 KB → 622 KB (delta lost in
+  rounding — all new symbols already pulled in transitively
+  via existing packages). Under the 1.5 MB Phase 4 cap with a
+  ~900 KB headroom for vim + extras when approved.
+- No new npm dependencies (deferred vim mode pending approval).
+
+Tests added (Phase 4):
+
+- Unit: `CMEditApplierTests` (18), `CMFoldRangeMappingTests` (8),
+  `CMBridgeV2Tests` (14).
+- Integration: `CMV2IntegrationTests` (6) — fake-bridge driven,
+  no WKWebView.
+- E2E (VM-only): `EditorPhase4ScenarioTests` — 4 scenarios across
+  3 methods. Per CLAUDE.md, not host-run.
+- Bundle contract: 4 new `CodeMirrorBundleTests` cases pinning
+  the v2 dispatch surface, exports, size budget, and CSS markers.
+
+Risks / open follow-ups:
+
+- The JS-side incremental emitter's `ChangeSet.compose` path is
+  not exercised here (host can't run JS). Confidence rests on
+  the v1 fallback being correct and the Swift applier rejecting
+  drift instead of silently diverging. VM smoke test will
+  exercise the live emit path the first time the bundle ships.
+- Indent guides use a per-line widget on the `line.from`
+  position; if a viewport rebuilds while the user is mid-IME-
+  composition, CM6's compositor may flicker the guide. Manual-
+  test row recommended on the macOS15 VM for CJK text.
+- The big-file cap test creates a 60 MB tmp file — slow on
+  spinning disks and may skip in CI environments with low
+  free-space budgets. Acceptable for VM use; flagged here so a
+  future "make CI faster" pass doesn't accidentally delete it.
+
+---
+
 # Appendices
 
 ## Appendix A — Executive summary

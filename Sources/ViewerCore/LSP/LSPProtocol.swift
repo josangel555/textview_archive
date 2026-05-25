@@ -33,6 +33,28 @@ public struct LSPLocation: Codable, Hashable, Sendable {
     }
 }
 
+/// `textDocument/foldingRange` result entry. Per LSP 3.17 §16.18,
+/// positions are line-based — `startCharacter` / `endCharacter` are
+/// optional (servers may omit them when the whole line is included).
+/// `kind` is one of "comment" | "imports" | "region"; servers may
+/// invent additional kinds — we keep it as a raw string.
+public struct LSPFoldingRange: Codable, Hashable, Sendable {
+    public let startLine: Int       // 0-indexed
+    public let endLine: Int         // 0-indexed, inclusive
+    public let startCharacter: Int?
+    public let endCharacter: Int?
+    public let kind: String?
+    public init(
+        startLine: Int, endLine: Int,
+        startCharacter: Int? = nil, endCharacter: Int? = nil,
+        kind: String? = nil
+    ) {
+        self.startLine = startLine; self.endLine = endLine
+        self.startCharacter = startCharacter; self.endCharacter = endCharacter
+        self.kind = kind
+    }
+}
+
 /// `textDocument/definition` may return a single Location, an array of
 /// Locations, or an array of LocationLinks. We accept all shapes and
 /// normalize to `[LSPLocation]` at the decode boundary.
