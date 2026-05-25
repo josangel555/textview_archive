@@ -40,6 +40,11 @@ public struct FindMatch: Equatable, Sendable {
 
 public enum FindError: Error, Equatable {
     case invalidRegex(String)
+    /// Pattern rejected at compile time by `RegexComplexityGuard` —
+    /// nested quantifiers, exponential alternation, or other
+    /// `NSRegularExpression` ReDoS-class shapes. The string is the
+    /// human-facing reason; UI surfaces it as a find-bar status.
+    case unsafeRegex(String)
 }
 
 /// Pure search engine. No UI imports.
@@ -139,6 +144,12 @@ public struct FindEngine: Sendable {
         case .literal:
             pattern = NSRegularExpression.escapedPattern(for: query.pattern)
         case .regex:
+            // S6.1 — ReDoS guard. Only applied to user-typed regex
+            // patterns; the literal branch escapes everything so it's
+            // ReDoS-immune by construction.
+            if let reason = RegexComplexityGuard.reject(query.pattern) {
+                throw FindError.unsafeRegex(reason)
+            }
             pattern = query.pattern
         }
         if query.wholeWord {
