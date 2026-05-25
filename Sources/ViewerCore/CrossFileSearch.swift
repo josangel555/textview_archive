@@ -64,7 +64,11 @@ public enum CrossFileSearch {
         options: Options = Options()
     ) -> [FileMatches] {
         guard !query.isEmpty else { return [] }
-        let needle = options.caseSensitive ? query : query.lowercased()
+        // Needle is passed as-is; case-insensitive matching is done
+        // via `.caseInsensitive` compare options at the search call
+        // sites (preserves original indices for multi-scalar-change
+        // lowercasers like ß / Σ / İ — S2-D).
+        let needle = query
 
         var results: [FileMatches] = []
         var totalMatches = 0
@@ -127,8 +131,19 @@ public enum CrossFileSearch {
             guard let content = String(data: data, encoding: .utf8) else { continue }
 
             // Search.
-            let hay = options.caseSensitive ? content : content.lowercased()
-            guard hay.contains(needle) else { continue }
+            // For case-insensitive, use `range(of:options:)` directly
+            // on the original string — `String.lowercased()` can
+            // change character count (German ß → "ss", Greek Σ →
+            // σ/ς, Turkish İ → "i\u{0307}"), which previously broke
+            // ordinal-distance back-mapping and dropped the visual
+            // highlight for exactly the locales most likely to need
+            // it (S2-D). `.caseInsensitive` honours the original
+            // indices natively.
+            let containsOpts: String.CompareOptions = options.caseSensitive
+                ? [] : [.caseInsensitive]
+            guard content.range(of: needle, options: containsOpts) != nil else {
+                continue
+            }
 
             // Compute per-line matches.
             var fileMatches: [Match] = []
@@ -137,13 +152,11 @@ public enum CrossFileSearch {
             )
             for (i, lineSub) in lines.enumerated() {
                 let line = String(lineSub)
-                let haystack = options.caseSensitive ? line : line.lowercased()
-                if let range = haystack.range(of: needle) {
-                    let mappedRange = mapRange(range, in: line, comparedTo: haystack)
+                if let range = line.range(of: needle, options: containsOpts) {
                     fileMatches.append(Match(
                         lineNumber: i + 1,
                         line: line,
-                        matchRange: mappedRange
+                        matchRange: range
                     ))
                     totalMatches += 1
                     if totalMatches >= options.maxResults { break }
@@ -168,25 +181,4 @@ public enum CrossFileSearch {
         return false
     }
 
-    /// `range(of:)` on a lowercased string operates on the lowercased
-    /// indices, which work as ordinal positions but aren't directly
-    /// usable on the original string when characters are multi-scalar
-    /// (lowercasing can change byte width). Map by ordinal position
-    /// using `distance(from:to:)`.
-    private static func mapRange(
-        _ range: Range<String.Index>,
-        in original: String,
-        comparedTo lowered: String
-    ) -> Range<String.Index>? {
-        // Fast path: original == lowered (common case).
-        if original == lowered { return range }
-        let startOffset = lowered.distance(from: lowered.startIndex, to: range.lowerBound)
-        let endOffset   = lowered.distance(from: lowered.startIndex, to: range.upperBound)
-        guard let start = original.index(
-            original.startIndex, offsetBy: startOffset, limitedBy: original.endIndex
-        ), let end = original.index(
-            original.startIndex, offsetBy: endOffset, limitedBy: original.endIndex
-        ) else { return nil }
-        return start..<end
-    }
 }

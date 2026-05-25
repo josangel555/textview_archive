@@ -120,4 +120,36 @@ final class CrossFileSearchTests: XCTestCase {
             XCTAssertEqual(String(m.line[r]).lowercased(), "world")
         }
     }
+
+    /// S2-D: case-insensitive search across characters whose
+    /// lowercasing changes character count (German ß → "ss",
+    /// Greek Σ → σ/ς, Turkish İ → "i\u{0307}"). The previous
+    /// implementation lowercased the haystack and back-mapped by
+    /// ordinal distance, which dropped matchRange to nil for these
+    /// locales — visible as a missing highlight in the result row.
+    func test_matchRange_germanSharpS_caseInsensitive() {
+        write("a.md", "Straße ist groß\n")
+        let groups = CrossFileSearch.search(root: tmpDir, query: "STRASSE")
+        // Default `range(of:options:)` with caseInsensitive matches
+        // ß ↔ "ss" via Unicode case-folding. Just confirm we got the
+        // hit AND the matchRange is non-nil on the original (with-ß)
+        // line — that's the S2-D regression.
+        XCTAssertEqual(groups.count, 1)
+        let m = groups[0].matches[0]
+        XCTAssertNotNil(
+            m.matchRange,
+            "matchRange should survive multi-scalar lowercasing (ß → ss)"
+        )
+        if let r = m.matchRange {
+            // The matched substring must be a valid slice of the
+            // original line — substring extraction here would have
+            // crashed under the prior bug if mapRange had returned a
+            // stale index.
+            let matched = String(m.line[r])
+            XCTAssertTrue(
+                matched.lowercased().contains("stra"),
+                "matched text \(matched) should overlap the German Straße"
+            )
+        }
+    }
 }
