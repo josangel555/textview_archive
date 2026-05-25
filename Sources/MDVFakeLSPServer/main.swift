@@ -1,0 +1,330 @@
+import Foundation
+
+// MDVFakeLSPServer — a tiny deterministic LSP server used by host-side
+// tests of `LSPClient` and `LSPPool`. Speaks JSON-RPC over stdio using
+// LSP's `Content-Length` framing. No sourcekit-lsp dependency: behavior
+// is driven by env vars + the file URI so tests can dial in:
+//
+//   MDV_FAKE_LSP_SCENARIO    Selects the behavior bundle. One of:
+//     "normal"     (default)  Standard, fast canned responses.
+//     "slow_init"             Sleeps before responding to `initialize`.
+//     "crash_after_init"      Exits 1 right after `initialized`.
+//     "garbled_after_init"    Writes garbage bytes after `initialized`
+//                             so the framing decoder errors out.
+//     "fail_initialize"       Returns a JSON-RPC error to `initialize`.
+//     "encoding_utf8"         Negotiates `utf-8` instead of `utf-16`.
+//
+//   MDV_FAKE_LSP_HOVER_DELAY_MS    Per-hover artificial delay.
+//   MDV_FAKE_LSP_PUBLISH_DIAGNOSTICS=1   Push a publishDiagnostics with
+//                                        one .error diagnostic on `initialized`.
+//
+// Canned response shapes are kept in lockstep with `LSPClient`'s
+// decoders (`decodeHover`, `decodeDefinition`, `decodeDocumentSymbol`,
+// `decodeFoldingRange`, `decodeWorkspaceSymbol`, `parseDiagnostic`).
+// We don't try to fake "interesting" coordinates — tests prove the
+// wire path closes and the structured value reaches the caller; the
+// decoders themselves are exhaustively tested by LSPProtocolDecodeTests
+// etc. with literal JSON inputs.
+
+@MainActor
+final class FakeServer {
+
+    let scenario: String
+    let hoverDelayMs: Int
+    let pushDiags: Bool
+    var buffer = Data()
+    var shouldExit = false
+
+    init() {
+        let env = ProcessInfo.processInfo.environment
+        self.scenario = env["MDV_FAKE_LSP_SCENARIO"] ?? "normal"
+        self.hoverDelayMs = Int(env["MDV_FAKE_LSP_HOVER_DELAY_MS"] ?? "0") ?? 0
+        self.pushDiags = env["MDV_FAKE_LSP_PUBLISH_DIAGNOSTICS"] == "1"
+    }
+
+    // MARK: - Framing
+
+    func writeFramed(_ body: Data) {
+        let header = "Content-Length: \(body.count)\r\n\r\n"
+        var out = Data(header.utf8)
+        out.append(body)
+        FileHandle.standardOutput.write(out)
+    }
+
+    func writeJSON(_ obj: [String: Any]) {
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: obj, options: [.fragmentsAllowed]) else { return }
+        writeFramed(data)
+    }
+
+    // MARK: - Response builders
+
+    func canonicalRange() -> [String: Any] {
+        return [
+            "start": ["line": 0, "character": 0] as [String: Any],
+            "end":   ["line": 0, "character": 1] as [String: Any]
+        ]
+    }
+
+    func locationDict(uri: String) -> [String: Any] {
+        return ["uri": uri, "range": canonicalRange()] as [String: Any]
+    }
+
+    func hoverResult(line: Int, character: Int) -> [String: Any] {
+        return [
+            "contents": [
+                "kind": "markdown",
+                "value": "**fake**\nhover at \(line):\(character)"
+            ] as [String: Any],
+            "range": canonicalRange()
+        ] as [String: Any]
+    }
+
+    func documentSymbolResult() -> [Any] {
+        let child: [String: Any] = [
+            "name": "Child", "kind": 13,
+            "range": canonicalRange(),
+            "selectionRange": canonicalRange()
+        ]
+        let root: [String: Any] = [
+            "name": "RootSym", "kind": 5, "detail": "struct",
+            "range": canonicalRange(),
+            "selectionRange": canonicalRange(),
+            "children": [child]
+        ]
+        return [root]
+    }
+
+    func foldingRangeResult() -> [Any] {
+        return [
+            ["startLine": 1, "endLine": 3, "kind": "region"] as [String: Any]
+        ]
+    }
+
+    func workspaceSymbolResult(query: String, fileURI: String) -> [Any] {
+        return [
+            [
+                "name": query.isEmpty ? "FakeSym" : query,
+                "kind": 12,
+                "containerName": "FakeModule",
+                "location": locationDict(uri: fileURI)
+            ] as [String: Any]
+        ]
+    }
+
+    func paramFileURI(_ params: Any) -> String {
+        if let d = params as? [String: Any],
+           let td = d["textDocument"] as? [String: Any],
+           let uri = td["uri"] as? String {
+            return uri
+        }
+        return "file:///fake"
+    }
+
+    func responseEnvelope(id: Any, result: Any) -> [String: Any] {
+        return ["jsonrpc": "2.0", "id": id, "result": result]
+    }
+
+    func errorEnvelope(id: Any, code: Int, message: String) -> [String: Any] {
+        return [
+            "jsonrpc": "2.0", "id": id,
+            "error": ["code": code, "message": message] as [String: Any]
+        ]
+    }
+
+    // MARK: - Dispatch
+
+    func handle(message obj: [String: Any]) {
+        let method = obj["method"] as? String
+        let id = obj["id"]
+        let params = obj["params"] ?? [:]
+
+        // Notification: no id.
+        if id == nil, let method = method {
+            switch method {
+            case "initialized":
+                if scenario == "crash_after_init" {
+                    exit(1)
+                }
+                if scenario == "garbled_after_init" {
+                    FileHandle.standardOutput.write(Data("not-a-valid-lsp-frame\n".utf8))
+                    FileHandle.standardOutput.write(Data("XXX".utf8))
+                    exit(0)
+                }
+                if pushDiags {
+                    let uri = "file:///fake/published.swift"
+                    let diag: [String: Any] = [
+                        "range": canonicalRange(),
+                        "severity": 1, "code": "FAKE001",
+                        "source": "mdv-fake", "message": "fake diagnostic"
+                    ]
+                    writeJSON([
+                        "jsonrpc": "2.0",
+                        "method": "textDocument/publishDiagnostics",
+                        "params": [
+                            "uri": uri, "diagnostics": [diag]
+                        ] as [String: Any]
+                    ])
+                }
+            case "exit":
+                shouldExit = true
+            default:
+                // didOpen/didChange/didClose/$/cancelRequest — drop silently.
+                break
+            }
+            return
+        }
+
+        guard let id = id, let method = method else { return }
+
+        // Requests.
+        switch method {
+        case "initialize":
+            if scenario == "fail_initialize" {
+                writeJSON(errorEnvelope(id: id, code: -32603,
+                                        message: "fake init failure"))
+                return
+            }
+            if scenario == "slow_init" {
+                Thread.sleep(forTimeInterval: 0.5)
+            }
+            let posEncoding: String = (scenario == "encoding_utf8") ? "utf-8" : "utf-16"
+            let caps: [String: Any] = [
+                "positionEncoding": posEncoding,
+                "textDocumentSync": 1,
+                "hoverProvider": true,
+                "definitionProvider": true,
+                "referencesProvider": true,
+                "declarationProvider": true,
+                "typeDefinitionProvider": true,
+                "implementationProvider": true,
+                "documentSymbolProvider": true,
+                "foldingRangeProvider": true,
+                "workspaceSymbolProvider": true
+            ]
+            writeJSON(responseEnvelope(
+                id: id,
+                result: [
+                    "capabilities": caps,
+                    "serverInfo": ["name": "MDVFakeLSPServer", "version": "0.1"]
+                        as [String: Any]
+                ] as [String: Any]))
+
+        case "shutdown":
+            writeJSON(responseEnvelope(id: id, result: NSNull()))
+
+        case "textDocument/hover":
+            if hoverDelayMs > 0 {
+                Thread.sleep(forTimeInterval: Double(hoverDelayMs) / 1000.0)
+            }
+            let p = params as? [String: Any] ?? [:]
+            let pos = p["position"] as? [String: Any] ?? [:]
+            let line = pos["line"] as? Int ?? 0
+            let character = pos["character"] as? Int ?? 0
+            writeJSON(responseEnvelope(
+                id: id, result: hoverResult(line: line, character: character)))
+
+        case "textDocument/definition":
+            writeJSON(responseEnvelope(
+                id: id, result: locationDict(uri: paramFileURI(params))))
+
+        case "textDocument/references":
+            let uri = paramFileURI(params)
+            writeJSON(responseEnvelope(
+                id: id, result: [locationDict(uri: uri), locationDict(uri: uri)]))
+
+        case "textDocument/declaration":
+            writeJSON(responseEnvelope(
+                id: id, result: locationDict(uri: paramFileURI(params))))
+
+        case "textDocument/typeDefinition":
+            writeJSON(responseEnvelope(
+                id: id, result: locationDict(uri: paramFileURI(params))))
+
+        case "textDocument/implementation":
+            let uri = paramFileURI(params)
+            writeJSON(responseEnvelope(
+                id: id, result: [locationDict(uri: uri), locationDict(uri: uri)]))
+
+        case "textDocument/documentSymbol":
+            writeJSON(responseEnvelope(id: id, result: documentSymbolResult()))
+
+        case "textDocument/foldingRange":
+            writeJSON(responseEnvelope(id: id, result: foldingRangeResult()))
+
+        case "workspace/symbol":
+            let p = params as? [String: Any] ?? [:]
+            let q = p["query"] as? String ?? ""
+            writeJSON(responseEnvelope(
+                id: id, result: workspaceSymbolResult(
+                    query: q, fileURI: "file:///fake/sym.swift")))
+
+        default:
+            writeJSON(errorEnvelope(id: id, code: -32601,
+                                    message: "no \(method)"))
+        }
+    }
+
+    // MARK: - Reader
+
+    func tryDecodeOne() -> Data? {
+        let needle: [UInt8] = [0x0D, 0x0A, 0x0D, 0x0A]
+        guard buffer.count >= 4 else { return nil }
+        var hdrEnd: Int?
+        buffer.withUnsafeBytes { raw in
+            let p = raw.bindMemory(to: UInt8.self)
+            let limit = p.count - 4
+            var i = 0
+            while i <= limit {
+                if p[i] == needle[0] && p[i+1] == needle[1]
+                    && p[i+2] == needle[2] && p[i+3] == needle[3] {
+                    hdrEnd = i
+                    return
+                }
+                i += 1
+            }
+        }
+        guard let headerEnd = hdrEnd else { return nil }
+        guard let hdrStr = String(data: buffer.prefix(headerEnd), encoding: .ascii)
+        else { return nil }
+        var contentLength: Int?
+        for line in hdrStr.components(separatedBy: "\r\n") {
+            let lower = line.lowercased()
+            if lower.hasPrefix("content-length:") {
+                let v = line.dropFirst("content-length:".count)
+                    .trimmingCharacters(in: .whitespaces)
+                contentLength = Int(v)
+            }
+        }
+        guard let n = contentLength else { return nil }
+        let bodyStart = headerEnd + 4
+        let needed = bodyStart + n
+        if buffer.count < needed { return nil }
+        let body = buffer.subdata(in: bodyStart..<needed)
+        buffer.removeFirst(needed)
+        return body
+    }
+
+    func run() {
+        let stdin = FileHandle.standardInput
+        while !shouldExit {
+            let chunk = stdin.availableData
+            if chunk.isEmpty {
+                // EOF on stdin — client closed transport.
+                break
+            }
+            buffer.append(chunk)
+            while let body = tryDecodeOne() {
+                guard let obj = try? JSONSerialization.jsonObject(
+                        with: body, options: [.fragmentsAllowed]) as? [String: Any]
+                else { continue }
+                handle(message: obj)
+                if shouldExit { break }
+            }
+        }
+    }
+}
+
+MainActor.assumeIsolated {
+    FakeServer().run()
+}
