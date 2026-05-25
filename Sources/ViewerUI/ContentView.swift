@@ -11,6 +11,11 @@ public struct ContentView: View {
     /// would re-eval on a visibility toggle was through the (now-
     /// removed) `objectWillChange` forwarding.
     @ObservedObject var sidebar: SidebarModel
+    /// Find state lives on its own coordinator (Quality #E, 2026-05-25).
+    /// ContentView observes it directly so that the rendered/source/
+    /// editor sub-branches re-eval when find query / case / next-nonce
+    /// changes — without re-publishing every DocumentModel observer.
+    @ObservedObject var find: FindCoordinator
     @StateObject var walkthrough: WalkthroughPlayerController
     /// App-level sessions coordinator. Optional so SwiftUI previews
     /// and host-side unit tests that construct a bare `ContentView`
@@ -24,6 +29,7 @@ public struct ContentView: View {
     public init(model: DocumentModel, sessionsApp: SessionsAppCoordinator? = nil) {
         self.model = model
         self.sidebar = model.sidebar
+        self.find = model.find
         self.sessionsApp = sessionsApp
         self.stylesheet = MarkdownStylesheet.load()
         // Persist the controller across body re-evals. The controller
@@ -247,7 +253,7 @@ public struct ContentView: View {
             }
             VStack(spacing: 0) {
                 if model.isEditorFindBarPresented {
-                    EditorFindBar(model: model)
+                    EditorFindBar(find: model.find)
                 }
                 CodeMirrorEditorView(
                     text: buf?.text ?? file.contents,
@@ -348,6 +354,7 @@ public struct ContentView: View {
             SourceModeView(
                 model: model,
                 highlightCache: model.highlightCacheActor(forTabID: tabID),
+                find: model.find,
                 file: file,
                 tabID: tabID
             )
@@ -375,7 +382,7 @@ public struct ContentView: View {
         let tabID = model.tabs.selected?.id ?? UUID(uuid: (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
         VStack(spacing: 0) {
             if model.isRenderedFindBarPresented {
-                MarkdownFindBar(model: model)
+                MarkdownFindBar(find: model.find)
             }
             MarkdownRenderedView(
                 html: model.renderedHTML(
@@ -415,6 +422,11 @@ struct SourceModeView: View {
     /// Per-tab cache. Storing `@ObservedObject` is the narrow channel
     /// — only this subtree re-bodies on highlight-ready.
     @ObservedObject var highlightCache: HighlightCacheActor
+    /// Find state pulled in directly so source-find keystrokes
+    /// (query, case, next/prev nonce) re-eval the TextDisplayView
+    /// without going through DocumentModel republish. The whole
+    /// point of the FindCoordinator split (Quality #E, 2026-05-25).
+    @ObservedObject var find: FindCoordinator
     let file: TextFile
     let tabID: UUID
 
@@ -424,7 +436,7 @@ struct SourceModeView: View {
         let runs = computeRuns(text: displayed, language: lang)
         VStack(spacing: 0) {
             if model.isSourceFindBarPresented {
-                SourceFindBar(model: model)
+                SourceFindBar(find: model.find)
             }
             HStack(spacing: 0) {
                 SourceGutterView(

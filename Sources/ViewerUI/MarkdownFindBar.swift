@@ -115,25 +115,27 @@ struct FindBar: View {
     }
 }
 
-/// Backwards-compat shim: rendered find bar from before the FindBar
-/// refactor. ContentView consumed `MarkdownFindBar(model:)` directly.
+/// Rendered-mode find bar. Observes `FindCoordinator` directly so
+/// typing into the field doesn't re-render any DocumentModel observer
+/// (TabBar, Sidebar, etc.) — the keystroke only ticks `find.
+/// objectWillChange`, leaving the rest of the model untouched.
 struct MarkdownFindBar: View {
-    @ObservedObject var model: DocumentModel
+    @ObservedObject var find: FindCoordinator
 
     var body: some View {
         FindBar(
             placeholder: "Find in rendered markdown…",
-            query: $model.renderedFindQuery,
-            caseSensitive: $model.renderedFindCaseSensitive,
+            query: $find.renderedQuery,
+            caseSensitive: $find.renderedCaseSensitive,
             isRegex: .constant(false),  // WKWebView find can't regex; toggle is hidden visually but state is unused
             // Rendered now supports proper count via JS injection
             // (Coordinator.findScript). Show n/N just like source.
-            matchSummary: $model.renderedFindMatchSummary,
+            matchSummary: $find.renderedMatchSummary,
             noResultsMode: .countOnly,
-            focusRequest: model.renderedFindFocusRequest,
-            onNext: { model.renderedFindNext() },
-            onPrev: { model.renderedFindPrev() },
-            onDismiss: { model.dismissRenderedFindBar() },
+            focusRequest: find.renderedFocusRequest,
+            onNext: { find.renderedNext() },
+            onPrev: { find.renderedPrev() },
+            onDismiss: { find.dismissRenderedBar() },
             accessibilityID: "mdv.renderedFindBar"
         )
     }
@@ -144,20 +146,20 @@ struct MarkdownFindBar: View {
 /// rather than opening CM's panel. Same visual surface as the source
 /// find bar — single mental model for the user across modes.
 struct EditorFindBar: View {
-    @ObservedObject var model: DocumentModel
+    @ObservedObject var find: FindCoordinator
 
     var body: some View {
         FindBar(
             placeholder: "Find in editor…",
-            query: $model.editorFindQuery,
-            caseSensitive: $model.editorFindCaseSensitive,
-            isRegex: $model.editorFindIsRegex,
-            matchSummary: $model.editorFindMatchSummary,
+            query: $find.editorQuery,
+            caseSensitive: $find.editorCaseSensitive,
+            isRegex: $find.editorIsRegex,
+            matchSummary: $find.editorMatchSummary,
             noResultsMode: .countOnly,
-            focusRequest: model.editorFindFocusRequest,
-            onNext: { model.editorFindNext() },
-            onPrev: { model.editorFindPrev() },
-            onDismiss: { model.dismissEditorFindBar() },
+            focusRequest: find.editorFocusRequest,
+            onNext: { find.editorNext() },
+            onPrev: { find.editorPrev() },
+            onDismiss: { find.dismissEditorBar() },
             accessibilityID: "mdv.editorFindBar"
         )
     }
@@ -166,20 +168,20 @@ struct EditorFindBar: View {
 /// Source-mode find bar. Surfaces the match count [n/N] that
 /// TextDisplayView publishes via its `onFindSummary` callback.
 struct SourceFindBar: View {
-    @ObservedObject var model: DocumentModel
+    @ObservedObject var find: FindCoordinator
 
     var body: some View {
         FindBar(
             placeholder: "Find in source…",
-            query: $model.sourceFindQuery,
-            caseSensitive: $model.sourceFindCaseSensitive,
-            isRegex: $model.sourceFindIsRegex,
-            matchSummary: $model.sourceFindMatchSummary,
+            query: $find.sourceQuery,
+            caseSensitive: $find.sourceCaseSensitive,
+            isRegex: $find.sourceIsRegex,
+            matchSummary: $find.sourceMatchSummary,
             noResultsMode: .countOnly,
-            focusRequest: model.sourceFindFocusRequest,
-            onNext: { model.sourceFindNext() },
-            onPrev: { model.sourceFindPrev() },
-            onDismiss: { model.dismissSourceFindBar() },
+            focusRequest: find.sourceFocusRequest,
+            onNext: { find.sourceNext() },
+            onPrev: { find.sourcePrev() },
+            onDismiss: { find.dismissSourceBar() },
             accessibilityID: "mdv.sourceFindBar"
         )
     }

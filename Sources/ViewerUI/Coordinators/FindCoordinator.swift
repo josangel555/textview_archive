@@ -1,0 +1,130 @@
+import Foundation
+import Combine
+import SwiftUI
+
+/// Owns the three find-mode bags (rendered, source, editor). Extracted
+/// from `DocumentModel` (Quality #E, 2026-05-25) so that views that
+/// only care about find state stop paying the cost of every other
+/// `DocumentModel` mutation, and inversely so that find-bar keystrokes
+/// stop forcing the entire model's observers to re-evaluate.
+///
+/// Three independent bags by design — they back distinct UI surfaces:
+///   - rendered: WKWebView find runtime, "n/N" in MarkdownFindBar
+///   - source:   NSTextView find, match minimap on the gutter
+///   - editor:   CodeMirror v6 find bridge, "n/N" via JS callback
+///
+/// "Nonce" pattern recap: SwiftUI's value-blind dedupe swallows
+/// `query = same`, but `…NextRequest &+= 1` always re-fires. We use it
+/// for next/prev/focus signals — semantically these are *commands*, not
+/// values, so the bump-counter shape is correct (LESSONS.md).
+@MainActor
+public final class FindCoordinator: ObservableObject {
+
+    // MARK: Rendered (WKWebView)
+
+    @Published public var isRenderedBarPresented: Bool = false
+    @Published public var renderedQuery: String = ""
+    @Published public var renderedCaseSensitive: Bool = false
+    @Published public var renderedMatched: Bool? = nil
+    @Published public var renderedMatchSummary: String = ""
+
+    @Published public var renderedNextRequest: Int = 0
+    @Published public var renderedPrevRequest: Int = 0
+    @Published public var renderedFocusRequest: Int = 0
+
+    public func setRenderedMatchSummary(_ s: String) {
+        guard s != renderedMatchSummary else { return }
+        renderedMatchSummary = s
+    }
+
+    public func showRenderedBar() {
+        isRenderedBarPresented = true
+        renderedFocusRequest &+= 1
+    }
+
+    public func dismissRenderedBar() {
+        isRenderedBarPresented = false
+        renderedQuery = ""
+        renderedMatched = nil
+    }
+
+    public func renderedNext() { renderedNextRequest &+= 1 }
+    public func renderedPrev() { renderedPrevRequest &+= 1 }
+
+    // MARK: Source (NSTextView)
+
+    @Published public var isSourceBarPresented: Bool = false
+    @Published public var sourceQuery: String = ""
+    @Published public var sourceCaseSensitive: Bool = false
+    @Published public var sourceIsRegex: Bool = false
+    @Published public var sourceMatchSummary: String = ""
+    @Published public var sourceMatchLines: [Int] = []
+    @Published public var sourceCurrentMatchIndex: Int? = nil
+
+    @Published public var sourceNextRequest: Int = 0
+    @Published public var sourcePrevRequest: Int = 0
+    @Published public var sourceFocusRequest: Int = 0
+
+    public func setSourceMatchSummary(_ s: String) {
+        guard s != sourceMatchSummary else { return }
+        sourceMatchSummary = s
+    }
+
+    /// Apply a `FindMatchSet` update from the source view. Dedupes on
+    /// equality so the publish chain doesn't churn SwiftUI on every
+    /// apply() tick when the match set is unchanged.
+    public func setSourceMatches(lines: [Int], currentIndex: Int?) {
+        if sourceMatchLines != lines {
+            sourceMatchLines = lines
+        }
+        if sourceCurrentMatchIndex != currentIndex {
+            sourceCurrentMatchIndex = currentIndex
+        }
+    }
+
+    public func showSourceBar() {
+        isSourceBarPresented = true
+        sourceFocusRequest &+= 1
+    }
+
+    public func dismissSourceBar() {
+        isSourceBarPresented = false
+        sourceQuery = ""
+        setSourceMatchSummary("")
+        setSourceMatches(lines: [], currentIndex: nil)
+    }
+
+    public func sourceNext() { sourceNextRequest &+= 1 }
+    public func sourcePrev() { sourcePrevRequest &+= 1 }
+
+    // MARK: Editor (CM6)
+
+    @Published public var isEditorBarPresented: Bool = false
+    @Published public var editorQuery: String = ""
+    @Published public var editorCaseSensitive: Bool = false
+    @Published public var editorIsRegex: Bool = false
+    @Published public var editorMatchSummary: String = ""
+
+    @Published public var editorNextRequest: Int = 0
+    @Published public var editorPrevRequest: Int = 0
+    @Published public var editorFocusRequest: Int = 0
+
+    public func setEditorMatchSummary(_ s: String) {
+        guard s != editorMatchSummary else { return }
+        editorMatchSummary = s
+    }
+
+    public func showEditorBar() {
+        isEditorBarPresented = true
+        editorFocusRequest &+= 1
+    }
+
+    public func dismissEditorBar() {
+        isEditorBarPresented = false
+        editorQuery = ""
+        editorMatchSummary = ""
+    }
+
+    public func editorNext() { editorNextRequest &+= 1 }
+    public func editorPrev() { editorPrevRequest &+= 1 }
+}
