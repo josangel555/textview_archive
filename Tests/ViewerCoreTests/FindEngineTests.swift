@@ -169,4 +169,46 @@ final class FindEngineTests: XCTestCase {
         XCTAssertEqual(matches[0].line, 10000)
         XCTAssertEqual(matches[0].column, 1)
     }
+
+    // MARK: S2-E — CR / CRLF line counting
+
+    /// Classic-Mac / CR-only files used to report every match as
+    /// `line: 1, column: <doc-offset>`. After the fix bare `\r`
+    /// advances the line counter the same as bare `\n`.
+    func test_lineColumn_CR_only_files_countLines() throws {
+        let text = "alpha\rbeta\rgamma hit here\r"
+        let matches = try engine.search(in: text, query: FindQuery(pattern: "hit"))
+        XCTAssertEqual(matches.count, 1)
+        XCTAssertEqual(matches[0].line, 3, "bare CR must advance line")
+        // After "gamma " the column is 7 (1-based).
+        XCTAssertEqual(matches[0].column, 7)
+    }
+
+    /// CRLF files used to count `\r` into the column (off-by-one).
+    /// After the fix CRLF advances the line ONCE and `lineStart`
+    /// lands after both terminator bytes — so columns are right.
+    func test_lineColumn_CRLF_files_columnIsCorrect() throws {
+        let text = "alpha\r\nbeta\r\nhit\r\n"
+        let matches = try engine.search(in: text, query: FindQuery(pattern: "hit"))
+        XCTAssertEqual(matches.count, 1)
+        XCTAssertEqual(matches[0].line, 3)
+        XCTAssertEqual(
+            matches[0].column, 1,
+            "column on a CRLF-terminated line should be 1, not 2"
+        )
+    }
+
+    /// Mixed terminators within one file must each be honoured by
+    /// their own rule. Synthetic but exercises every branch.
+    func test_lineColumn_mixed_LF_CR_CRLF() throws {
+        // Line 1: "x\n"            (LF)
+        // Line 2: "y\r"            (bare CR)
+        // Line 3: "z\r\n"          (CRLF)
+        // Line 4: "hit"
+        let text = "x\ny\rz\r\nhit"
+        let matches = try engine.search(in: text, query: FindQuery(pattern: "hit"))
+        XCTAssertEqual(matches.count, 1)
+        XCTAssertEqual(matches[0].line, 4)
+        XCTAssertEqual(matches[0].column, 1)
+    }
 }

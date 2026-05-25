@@ -68,17 +68,37 @@ public struct FindEngine: Sendable {
         }
         guard !matches.isEmpty else { return matches }
 
+        // Line/column accounting handles LF, CR, and CRLF consistently
+        // (S2-E). Previously only `\n` advanced the line counter, so:
+        //   * Classic-Mac / CR-only files reported every match as line 1.
+        //   * CRLF files had columns off by one (the `\r` was counted
+        //     into `column = target - lineStart + 1`).
+        // Now: bare `\r` advances line. `\r\n` advances once. `lineStart`
+        // is set to the offset AFTER the terminator(s), so columns
+        // count from the first character of the new line.
         var line = 1
         var lineStart = 0
         var cursor = 0
         for i in 0..<matches.count {
             let target = matches[i].range.location
             while cursor < target && cursor < nsText.length {
-                if nsText.character(at: cursor) == 0x0A {
+                let ch = nsText.character(at: cursor)
+                if ch == 0x0D {  // CR
                     line += 1
-                    lineStart = cursor + 1
+                    if cursor + 1 < nsText.length
+                       && nsText.character(at: cursor + 1) == 0x0A {
+                        cursor += 2  // CRLF
+                    } else {
+                        cursor += 1
+                    }
+                    lineStart = cursor
+                } else if ch == 0x0A {  // bare LF
+                    line += 1
+                    cursor += 1
+                    lineStart = cursor
+                } else {
+                    cursor += 1
                 }
-                cursor += 1
             }
             matches[i] = FindMatch(
                 range: matches[i].range,
