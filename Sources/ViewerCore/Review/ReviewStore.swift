@@ -45,9 +45,9 @@ public struct ReviewSummary: Codable, Equatable, Sendable, Identifiable {
 /// Reads + writes `Review` JSON files under
 /// `~/Library/Application Support/MarkdownViewer/Reviews/`.
 ///
-/// Same shape as `WorkspaceStore`. One file per review, named
-/// `<id>.json`. `_index.json` (leading underscore reserves the
-/// namespace) caches list metadata.
+/// One file per review, named `<id>.json`. `_index.json` (leading
+/// underscore reserves the namespace) caches list metadata. Mirrors
+/// `SessionStore`'s shape.
 ///
 /// The class is `Sendable` — no mutable state, just the directory
 /// URL. All I/O goes through `JSONFileStore` which is itself
@@ -82,7 +82,7 @@ public final class ReviewStore: Sendable {
     /// Persist `review` to `<id>.json`. Bumps no fields — callers are
     /// responsible for stamping `updatedAt` before calling save.
     /// Best-effort; failures (disk full, permission denied) are
-    /// swallowed to match `WorkspaceStore` semantics.
+    /// swallowed (atomic write means no partial state on failure).
     @discardableResult
     public func save(_ review: Review) -> Bool {
         let url = fileURL(for: review.id)

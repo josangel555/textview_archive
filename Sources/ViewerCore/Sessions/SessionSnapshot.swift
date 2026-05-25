@@ -1,11 +1,25 @@
 import Foundation
 
+/// On-disk shape of a single tab inside a session. Lifted out of the
+/// retired `WorkspaceStore` (decision G, 2026-05-25): kept its name +
+/// shape so existing `Sessions/<uuid>.json` files round-trip without a
+/// schema bump.
+public struct TabSnapshot: Codable, Equatable, Sendable {
+    public let path: String
+    public let viewMode: String     // ViewMode.rawValue
+
+    public init(path: String, viewMode: String) {
+        self.path = path
+        self.viewMode = viewMode
+    }
+}
+
 /// On-disk shape of a single session ("a project the user has open").
 ///
 /// Schema v2 of the workspace state — see `docs/SESSIONS_DESIGN.md`
-/// §5.3. Old `WorkspaceSnapshot` (schema v1) files are read through
-/// `SessionSnapshot.fromLegacy(_:)`; identity fields are synthesized
-/// so the legacy single-workspace flow becomes "one Default session".
+/// §5.3. The legacy v1 `WorkspaceSnapshot` / `WorkspaceStore` files
+/// were retired in decision G (2026-05-25) — `SessionStore` is the
+/// only on-disk shape.
 ///
 /// All additive fields beyond the v1 baseline are `Optional` so a
 /// future v3 reader can still decode v2 files, and a v2 reader faced
@@ -77,52 +91,6 @@ public struct SessionSnapshot: Codable, Equatable, Sendable {
         self.themeOverride = themeOverride
     }
 
-    /// Migrate a legacy `WorkspaceSnapshot` (schema v1) into a session.
-    /// Identity uses a fresh UUID and derives the display name from
-    /// the sidebar root path — matches design §8.1.
-    public static func fromLegacy(_ legacy: WorkspaceSnapshot) -> SessionSnapshot {
-        let name: String = {
-            if let p = legacy.sidebarRootPath, !p.isEmpty {
-                let last = (p as NSString).lastPathComponent
-                return last.isEmpty ? "Default" : last
-            }
-            return "Default"
-        }()
-        return SessionSnapshot(
-            schemaVersion: SessionSnapshot.currentSchema,
-            savedAt: legacy.savedAt,
-            id: UUID(),
-            displayName: name,
-            createdAt: legacy.savedAt,
-            lastActiveAt: legacy.savedAt,
-            sidebarRootPath: legacy.sidebarRootPath,
-            openTabs: legacy.openTabs,
-            selectedTabIndex: legacy.selectedTabIndex,
-            sidebarExpandedPaths: nil,
-            sidebarIncludeHidden: nil,
-            splitURL: nil,
-            zoom: legacy.zoom,
-            wordWrap: legacy.wordWrap,
-            themeOverride: legacy.themeOverride
-        )
-    }
-
-    /// Project this session back to a legacy `WorkspaceSnapshot` shape
-    /// so we can keep writing `Workspaces/_last.json` as a compat
-    /// bridge for one release (per Phase-1 plan). Identity fields are
-    /// dropped; v1 readers ignore everything beyond the v1 schema.
-    public func toLegacyWorkspaceSnapshot() -> WorkspaceSnapshot {
-        WorkspaceSnapshot(
-            schemaVersion: WorkspaceSnapshot.currentSchema,
-            savedAt: savedAt,
-            sidebarRootPath: sidebarRootPath,
-            openTabs: openTabs,
-            selectedTabIndex: selectedTabIndex,
-            zoom: zoom,
-            wordWrap: wordWrap,
-            themeOverride: themeOverride
-        )
-    }
 }
 
 /// On-disk shape of the session list ("which sessions exist, which is

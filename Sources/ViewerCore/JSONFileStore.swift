@@ -1,7 +1,7 @@
 import Foundation
 
 /// Tiny shared helper for the read/write-JSON-to-disk pattern used by
-/// `HistoryStore`, `BookmarksStore`, `WorkspaceStore`. Same encoder
+/// `HistoryStore`, `BookmarksStore`, `SessionStore`. Same encoder
 /// config (ISO-8601 dates, pretty-printed + sorted-keys), same
 /// max-size check before decoding (so a tampered file can't inflate
 /// into memory), same atomic write + parent-dir creation.

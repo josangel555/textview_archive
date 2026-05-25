@@ -1,8 +1,8 @@
 import Foundation
 
 /// Filesystem wrapper around `Sessions/index.json` plus the
-/// per-session `<uuid>.json` files. Mirrors `WorkspaceStore`'s shape:
-/// best-effort atomic-write semantics, swallows IO errors.
+/// per-session `<uuid>.json` files. Best-effort atomic-write semantics,
+/// swallows IO errors. Supersedes the retired `WorkspaceStore` (G).
 ///
 /// **Concurrency model (design-doc gap #1, fixed):** all disk writes
 /// are funneled through a single private serial `DispatchQueue`
@@ -79,9 +79,9 @@ public final class SessionStore: @unchecked Sendable {
         guard let idx = JSONFileStore.read(SessionIndex.self, from: url) else {
             return nil
         }
-        // Same forward-compat guard as WorkspaceStore: refuse files
-        // written by a newer schema so we don't truncate v3 fields on
-        // the next re-encode. Mirrors ReviewStore's policy.
+        // Forward-compat guard: refuse files written by a newer schema
+        // so we don't truncate v3 fields on the next re-encode. Mirrors
+        // ReviewStore's policy.
         if idx.version > SessionIndex.currentSchema { return nil }
         return idx
     }
@@ -167,16 +167,6 @@ public final class SessionStore: @unchecked Sendable {
                 try? fm.removeItem(at: url)
             }
         }
-    }
-
-    // MARK: Legacy bridge --------------------------------------------
-
-    /// Lift a legacy `WorkspaceSnapshot` into a new `SessionSnapshot`.
-    /// Caller persists the result + writes a fresh index. Design §8.1.
-    public func migrateLegacyWorkspace(from legacy: WorkspaceSnapshot)
-        -> SessionSnapshot
-    {
-        SessionSnapshot.fromLegacy(legacy)
     }
 
     // MARK: - private

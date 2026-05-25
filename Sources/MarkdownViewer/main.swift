@@ -176,14 +176,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             }
         }
 
-        // Phase 1 sessions: subsumes the old
-        // `restorePreviousFolderIfAvailable()` +
-        // `restoreWorkspaceAutoSlot()` pair — the sessions coordinator
-        // reads `Sessions/index.json`, migrates from
-        // `Workspaces/_last.json` on first launch of the new build,
-        // and hydrates the shared `model` from the active session's
-        // snapshot. See SESSIONS_DESIGN.md §8 for the migration
-        // contract.
+        // Sessions: subsumes the old `restorePreviousFolderIfAvailable()`
+        // + `restoreWorkspaceAutoSlot()` pair — the sessions coordinator
+        // reads `Sessions/index.json` and hydrates the shared `model`
+        // from the active session's snapshot. The legacy
+        // `Workspaces/_last.json` migration path was retired in
+        // decision G (2026-05-25); a downgrade now loses persisted
+        // tabs.
         if ProcessInfo.processInfo.environment["MDV_SKIP_WORKSPACE_RESTORE"] != "1" {
             sessions.bootstrap()
         }
