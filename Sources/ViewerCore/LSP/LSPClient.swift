@@ -548,6 +548,24 @@ public actor LSPClient {
         return Self.decodeWorkspaceSymbol(raw)
     }
 
+    /// `textDocument/foldingRange` — returns the foldable regions in
+    /// `url` as the server understands them (per LSP 3.17 §16.18).
+    /// Used by CM6's fold gutter via a `foldService.of(...)` extension
+    /// driven through the editor bridge. Servers that don't implement
+    /// it return `null`; we normalize to an empty array.
+    public func foldingRange(
+        url: URL, token: LSPCancellationToken? = nil
+    ) async throws -> [LSPFoldingRange] {
+        guard initialized else { throw LSPError.notInitialized }
+        let params: [String: Any] = [
+            "textDocument": ["uri": url.absoluteString]
+        ]
+        let raw = try await request(
+            method: "textDocument/foldingRange", params: params,
+            timeout: .seconds(5), token: token)
+        return Self.decodeFoldingRange(raw)
+    }
+
     /// `textDocument/documentSymbol` — returns a flat list of document
     /// symbols (hierarchy preserved via `children`). Used by the outline
     /// sidebar. Server may return either `SymbolInformation[]` (legacy)
@@ -684,6 +702,33 @@ public actor LSPClient {
         // Discriminate by presence of `location` (SymbolInformation) vs
         // `range` (DocumentSymbol).
         return arr.compactMap { parseDocumentSymbol($0) }
+    }
+
+    /// `textDocument/foldingRange` decode. Spec says either
+    /// `FoldingRange[]` or `null`. Unparseable entries drop silently;
+    /// a totally missing / non-array result returns `[]`.
+    static func decodeFoldingRange(_ data: Data) -> [LSPFoldingRange] {
+        guard let any = try? JSONSerialization.jsonObject(
+                with: data, options: [.fragmentsAllowed]) else { return [] }
+        if any is NSNull { return [] }
+        guard let arr = any as? [[String: Any]] else { return [] }
+        var out: [LSPFoldingRange] = []
+        out.reserveCapacity(arr.count)
+        for d in arr {
+            // `startLine` + `endLine` are required per the spec; reject
+            // entries that lack them rather than silently substituting
+            // zero (would collapse the file's top into a fold).
+            guard let s = d["startLine"] as? Int,
+                  let e = d["endLine"] as? Int,
+                  s >= 0, e >= s else { continue }
+            out.append(LSPFoldingRange(
+                startLine: s, endLine: e,
+                startCharacter: d["startCharacter"] as? Int,
+                endCharacter: d["endCharacter"] as? Int,
+                kind: d["kind"] as? String
+            ))
+        }
+        return out
     }
 
     /// `workspace/symbol` decode. Accepts either

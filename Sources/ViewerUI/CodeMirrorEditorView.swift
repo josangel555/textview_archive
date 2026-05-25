@@ -43,6 +43,15 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
     /// the flag only takes effect when `text` itself changes.
     public let externalRewrite: Bool
     public let showInvisibles: Bool
+    /// Phase 4 (v2): toggle the indent-guides decoration plugin.
+    /// Pure visual cue; no language-pack dependency.
+    public let indentGuides: Bool
+    /// Phase 4 (v2): LSP-driven fold ranges (UTF-16 doc offsets).
+    /// Empty clears the override and CM falls back to language-default
+    /// fold heuristics. Array equality means stable redraws no-op.
+    public let foldingRanges: [CMFoldRange]
+    /// Phase 4 (v2): diff + blame gutter markers, one per line.
+    public let gutterMarkers: [CMGutterMarker]
     /// Pending diagnostics to push to CM6. Empty array clears any
     /// previously-pushed set. Compared by value (Array equality), so a
     /// stable redraw with the same diagnostics is a no-op.
@@ -93,6 +102,9 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         gotoLineRequest: CMGotoLineRequest? = nil,
         externalRewrite: Bool = false,
         showInvisibles: Bool = false,
+        indentGuides: Bool = false,
+        foldingRanges: [CMFoldRange] = [],
+        gutterMarkers: [CMGutterMarker] = [],
         diagnostics: [CMDiagnostic] = [],
         findQuery: String = "",
         findCaseSensitive: Bool = false,
@@ -121,6 +133,9 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         self.gotoLineRequest = gotoLineRequest
         self.externalRewrite = externalRewrite
         self.showInvisibles = showInvisibles
+        self.indentGuides = indentGuides
+        self.foldingRanges = foldingRanges
+        self.gutterMarkers = gutterMarkers
         self.diagnostics = diagnostics
         self.findQuery = findQuery
         self.findCaseSensitive = findCaseSensitive
@@ -222,6 +237,9 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         private var pendingGotoLine: CMGotoLineRequest?
         private var pendingExternalRewrite: Bool = false
         private var pendingShowInvisibles: Bool?
+        private var pendingIndentGuides: Bool?
+        private var pendingFoldingRanges: [CMFoldRange]?
+        private var pendingGutterMarkers: [CMGutterMarker]?
         private var pendingDiagnostics: [CMDiagnostic]?
         private var pendingFindQuery: String?
         private var pendingFindCaseSensitive: Bool = false
@@ -244,6 +262,9 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         private var lastSentIndentation: CMIndentation?
         private var lastAppliedGotoLine: CMGotoLineRequest?
         private var lastSentShowInvisibles: Bool?
+        private var lastSentIndentGuides: Bool?
+        private var lastSentFoldingRanges: [CMFoldRange]?
+        private var lastSentGutterMarkers: [CMGutterMarker]?
         private var lastSentDiagnostics: [CMDiagnostic]?
         /// (query, case, regex) tuple last shipped — comparing skips
         /// the bridge call when the user clears + re-shows the same
@@ -281,6 +302,9 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             self.pendingGotoLine = view.gotoLineRequest
             self.pendingExternalRewrite = view.externalRewrite
             self.pendingShowInvisibles = view.showInvisibles
+            self.pendingIndentGuides = view.indentGuides
+            self.pendingFoldingRanges = view.foldingRanges
+            self.pendingGutterMarkers = view.gutterMarkers
             self.pendingDiagnostics = view.diagnostics
             self.pendingFindQuery = view.findQuery
             self.pendingFindCaseSensitive = view.findCaseSensitive
@@ -380,6 +404,18 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
                 lastSentShowInvisibles = inv
                 dispatch(.setShowInvisibles(inv), webView: webView)
             }
+            if let guides = pendingIndentGuides, guides != lastSentIndentGuides {
+                lastSentIndentGuides = guides
+                dispatch(.setIndentGuides(guides), webView: webView)
+            }
+            if let folds = pendingFoldingRanges, folds != lastSentFoldingRanges {
+                lastSentFoldingRanges = folds
+                dispatch(.setFoldingRanges(folds), webView: webView)
+            }
+            if let markers = pendingGutterMarkers, markers != lastSentGutterMarkers {
+                lastSentGutterMarkers = markers
+                dispatch(.setGutterMarkers(markers), webView: webView)
+            }
             if let diags = pendingDiagnostics, diags != lastSentDiagnostics {
                 lastSentDiagnostics = diags
                 dispatch(.setDiagnostics(diags), webView: webView)
@@ -456,6 +492,30 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             case .change(let text, _, _):
                 lastSentText = text  // echo-suppress: JS already has this
                 onTextChange?(text)
+            case .incrementalChange(let edits, _, let contentLength):
+                // v2: apply edits to our mirror of the doc, then forward
+                // as a normal text-change. This keeps the Swift-side
+                // `EditorBuffer` semantics identical (`onTextChange`
+                // still receives a full String), while saving the JS →
+                // Swift IPC the cost of marshalling the entire doc on
+                // every keystroke debounce window. The full-text fall-
+                // back protects against drift if JS and Swift ever
+                // disagree on doc length.
+                let base = lastSentText ?? ""
+                if let applied = CMEditApplier.apply(edits, to: base),
+                   contentLength < 0 || applied.utf16.count == contentLength {
+                    lastSentText = applied
+                    onTextChange?(applied)
+                } else {
+                    // Drift: ask JS to ship a full text. We do this by
+                    // explicitly requesting a full change emit; the
+                    // editor's `flushChanges` will produce a v1
+                    // `change` envelope with the canonical text.
+                    Self.log.debug("CM incrementalChange drift; requesting full text")
+                    if let webView = webView {
+                        dispatch(.flushChanges, webView: webView)
+                    }
+                }
             case .save:
                 onSaveRequested?()
             case .cursorPositionChanged(let line, let column, let head, let ranges):

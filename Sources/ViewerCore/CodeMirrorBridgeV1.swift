@@ -29,14 +29,73 @@ import Foundation
 // MARK: - Envelope constants
 
 public enum CMProtocol {
-    public static let currentVersion: Int = 1
+    /// The wire version Swift writes and the lowest version Swift
+    /// requires JS to speak. Bumped to **2** in Phase 4 to introduce
+    /// `incrementalChange` (JS → Swift) and `applyEdits`
+    /// (Swift → JS) — both opt-in and forward-compatible.
+    ///
+    /// Forward-compat policy: the decoder accepts envelopes with
+    /// `v == currentVersion` **or** `v == currentVersion - 1`, so a
+    /// pre-v2 JS bundle still parses while users wait for an in-place
+    /// app update to refresh `Resources/codemirror/`. Anything older /
+    /// newer is dropped.
+    public static let currentVersion: Int = 2
+    public static let oldestSupportedVersion: Int = 1
 }
 
 // MARK: - Inbound (JS → Swift)
 
+/// One incremental edit as emitted by CM6's
+/// `tr.changes.iterChangedRanges(...)` and accumulated across the
+/// 200 ms debounce window. `from`/`to` are doc offsets (UTF-16)
+/// **before** the edit; `insert` is the text that replaces the range.
+/// A pure delete is `insert: ""`; a pure insert is `from == to`.
+public struct CMEdit: Equatable, Sendable, Hashable {
+    public let from: Int
+    public let to: Int
+    public let insert: String
+    public init(from: Int, to: Int, insert: String) {
+        self.from = from; self.to = to; self.insert = insert
+    }
+}
+
+/// One block-foldable region. `from`/`to` are CM6 doc offsets (UTF-16);
+/// `kind` is the LSP `FoldingRangeKind` ("comment" | "imports" |
+/// "region" | nil). JS side ignores `kind` today but we ship it so the
+/// fold service can colour-code or default-collapse later.
+public struct CMFoldRange: Equatable, Sendable, Hashable {
+    public let from: Int
+    public let to: Int
+    public let kind: String?
+    public init(from: Int, to: Int, kind: String? = nil) {
+        self.from = from; self.to = to; self.kind = kind
+    }
+}
+
+/// One gutter marker for a single line. Used for diff bars
+/// (added/modified/removed) and git-blame swatches. `line` is 1-based
+/// (matches `CMCursorPosition`). `kind` is opaque to the codec — the
+/// JS side maps "added"|"removed"|"modified"|"blame" to CSS classes.
+/// `tooltip` is optional hover text.
+public struct CMGutterMarker: Equatable, Sendable, Hashable {
+    public let line: Int
+    public let kind: String
+    public let tooltip: String?
+    public init(line: Int, kind: String, tooltip: String? = nil) {
+        self.line = line; self.kind = kind; self.tooltip = tooltip
+    }
+}
+
 public enum CMInboundMessage: Equatable, Sendable {
     case ready(version: Int)
     case change(text: String, version: Int, contentLength: Int)
+    /// **v2.** Incremental edit stream — sent in place of `change`
+    /// when the JS bundle was built with the v2 emitter. Carries the
+    /// accumulated change ranges since the last `change`/`incrementalChange`,
+    /// plus a `contentLength` for cheap sanity-check on the Swift
+    /// side. Swift may still fall back to a full `change` if the
+    /// applied buffer's length ≠ `contentLength` (drift detected).
+    case incrementalChange(edits: [CMEdit], version: Int, contentLength: Int)
     case save
     case cursorPositionChanged(line: Int, column: Int, head: Int, ranges: Int)
     case selectionChanged(selectionJSON: String, hasSelection: Bool)
@@ -120,6 +179,26 @@ public enum CMOutboundMessage: Equatable, Sendable {
     /// `editorBlurred`; this gates whether Swift acts on it. Wired here
     /// for symmetry with other compartment toggles.
     case setSaveOnBlur(enabled: Bool)
+    /// **v2.** Apply a list of incremental edits without going through
+    /// `setText`. Reciprocal to `incrementalChange` (inbound). Each
+    /// edit references the pre-edit `from`/`to`; the JS side dispatches
+    /// them as a single transaction so undo collapses to one step.
+    /// `version` lets JS drop stale edits if its doc has moved on.
+    case applyEdits(edits: [CMEdit], version: Int)
+    /// **v2.** Push a server-provided fold range set. Wired to a
+    /// `foldService.of(...)` extension on the JS side so CM6's fold
+    /// gutter and `foldAll` operate on LSP-computed ranges. Empty
+    /// array clears the override (falls back to language-default
+    /// fold heuristics).
+    case setFoldingRanges([CMFoldRange])
+    /// **v2.** Push a server-provided per-line gutter marker set.
+    /// Drives diff bars (added/modified/removed) and git-blame
+    /// swatches. Empty array clears all markers.
+    case setGutterMarkers([CMGutterMarker])
+    /// **v2.** Toggle indent guides — the hand-rolled
+    /// `ViewPlugin` that draws vertical rules at each indent level.
+    /// Pure decoration; no language dependency.
+    case setIndentGuides(Bool)
 }
 
 /// One inline-diagnostic decoration in CM6 doc coordinates (UTF-16
@@ -171,8 +250,14 @@ public enum CMBridgeCodec {
             return nil
         }
 
-        // Version must be present and match. Reject silently otherwise.
-        guard let v = dict["v"] as? Int, v == CMProtocol.currentVersion else { return nil }
+        // Version must be present and fall within the supported range.
+        // We accept `[oldestSupportedVersion ... currentVersion]` so a
+        // freshly-bumped Swift binary can still talk to a not-yet-
+        // rebundled JS payload (or vice versa during dev hot-reload).
+        guard let v = dict["v"] as? Int,
+              v >= CMProtocol.oldestSupportedVersion,
+              v <= CMProtocol.currentVersion
+        else { return nil }
         guard let type = dict["type"] as? String else { return nil }
 
         switch type {
@@ -183,6 +268,24 @@ public enum CMBridgeCodec {
             let version = dict["version"] as? Int ?? 0
             let contentLength = (dict["contentLength"] as? Int) ?? text.utf16.count
             return .change(text: text, version: version, contentLength: contentLength)
+        case "incrementalChange":
+            // v2 — list of `{from, to, insert}`. Drop the whole envelope
+            // if `edits` isn't an array; partial drops would silently
+            // diverge the Swift buffer from JS.
+            guard let arr = dict["edits"] as? [[String: Any]] else { return nil }
+            var out: [CMEdit] = []
+            out.reserveCapacity(arr.count)
+            for item in arr {
+                let from = item["from"] as? Int ?? -1
+                let to = item["to"] as? Int ?? -1
+                let insert = item["insert"] as? String ?? ""
+                guard from >= 0, to >= from else { return nil }
+                out.append(CMEdit(from: from, to: to, insert: insert))
+            }
+            let version = dict["version"] as? Int ?? 0
+            let contentLength = dict["contentLength"] as? Int ?? -1
+            return .incrementalChange(
+                edits: out, version: version, contentLength: contentLength)
         case "save":
             return .save
         case "cursorPositionChanged":
@@ -392,6 +495,29 @@ public enum CMBridgeCodec {
             dict["to"] = to
         case .setSaveOnBlur(let enabled):
             dict["type"] = "setSaveOnBlur"
+            dict["enabled"] = enabled
+        case .applyEdits(let edits, let version):
+            dict["type"] = "applyEdits"
+            dict["version"] = version
+            dict["edits"] = edits.map { e -> [String: Any] in
+                ["from": e.from, "to": e.to, "insert": e.insert]
+            }
+        case .setFoldingRanges(let ranges):
+            dict["type"] = "setFoldingRanges"
+            dict["ranges"] = ranges.map { r -> [String: Any] in
+                var o: [String: Any] = ["from": r.from, "to": r.to]
+                if let k = r.kind { o["kind"] = k }
+                return o
+            }
+        case .setGutterMarkers(let markers):
+            dict["type"] = "setGutterMarkers"
+            dict["markers"] = markers.map { m -> [String: Any] in
+                var o: [String: Any] = ["line": m.line, "kind": m.kind]
+                if let t = m.tooltip { o["tooltip"] = t }
+                return o
+            }
+        case .setIndentGuides(let enabled):
+            dict["type"] = "setIndentGuides"
             dict["enabled"] = enabled
         }
         return dict

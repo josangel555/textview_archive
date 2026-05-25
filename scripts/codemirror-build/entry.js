@@ -14,13 +14,14 @@
 
 import {
   EditorState, EditorSelection, Compartment, Transaction,
+  StateField, StateEffect, RangeSetBuilder,
 } from "@codemirror/state";
 import {
   EditorView, keymap, lineNumbers, highlightActiveLine,
   highlightActiveLineGutter, drawSelection, rectangularSelection,
   crosshairCursor, dropCursor,
   Decoration, ViewPlugin, WidgetType,
-  hoverTooltip,
+  hoverTooltip, gutter, GutterMarker,
 } from "@codemirror/view";
 import {
   defaultKeymap, history, historyKeymap, undo, redo,
@@ -36,6 +37,7 @@ import {
   syntaxHighlighting, defaultHighlightStyle, bracketMatching,
   foldKeymap, foldGutter, indentOnInput,
   indentUnit, foldAll, unfoldAll,
+  foldService,
 } from "@codemirror/language";
 import {
   linter, lintGutter, setDiagnostics, forEachDiagnostic, Diagnostic,
@@ -55,10 +57,11 @@ const EditorStateTabSize = EditorState.tabSize;
 // beyond `window.CM` (set by esbuild --global-name).
 export {
   EditorState, EditorView, EditorSelection, Compartment, Transaction,
+  StateField, StateEffect, RangeSetBuilder,
   keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter,
   drawSelection, rectangularSelection, crosshairCursor, dropCursor,
   Decoration, ViewPlugin, WidgetType,
-  hoverTooltip,
+  hoverTooltip, gutter, GutterMarker,
   defaultKeymap, history, historyKeymap, undo, redo, indentWithTab,
   search, searchKeymap, highlightSelectionMatches,
   openSearchPanel, closeSearchPanel,
@@ -67,6 +70,7 @@ export {
   syntaxHighlighting, defaultHighlightStyle, bracketMatching,
   foldKeymap, foldGutter, indentOnInput,
   indentUnit, foldAll, unfoldAll, EditorStateTabSize,
+  foldService,
   linter, lintGutter, setDiagnostics, forEachDiagnostic,
   markdown, javascript, python, json, oneDark,
 };

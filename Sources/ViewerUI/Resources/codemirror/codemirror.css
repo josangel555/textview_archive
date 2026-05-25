@@ -53,3 +53,35 @@ body.light { background: #ffffff; color: #1f2328; }
   border-radius: 3px;
   overflow-x: auto;
 }
+/* Phase 4 (v2): diff + blame gutter markers. Sits left of the line-
+ * number gutter. Visual is a 3px coloured bar; tooltip on hover gives
+ * the LSP/git message. */
+.cm-diff-gutter {
+  min-width: 4px;
+  padding: 0;
+}
+.cm-diff-gutter .cm-gutterElement {
+  padding: 0;
+}
+.cm-diff-added,
+.cm-diff-removed,
+.cm-diff-modified,
+.cm-blame-marker {
+  display: inline-block;
+  width: 3px;
+  height: 100%;
+  vertical-align: top;
+  pointer-events: auto;
+}
+.cm-diff-added    { background: #2ea043; }
+.cm-diff-modified { background: #d29922; }
+.cm-diff-removed  { background: #f85149; }
+.cm-blame-marker  { background: rgba(120, 120, 120, 0.45); }
+/* Phase 4 (v2): indent guides. Quiet hairline that hugs the leading
+ * whitespace so users have a column-ruler cue without grid noise. */
+.cm-indent-guides {
+  pointer-events: none;
+}
+.cm-indent-guide {
+  color: currentColor;
+}
