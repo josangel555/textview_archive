@@ -526,6 +526,14 @@ public enum CMBridgeCodec {
     /// Encode to a UTF-8 JSON string. Stable ordering not guaranteed —
     /// callers that need a deterministic textual form (tests, hashing)
     /// should sort keys themselves.
+    ///
+    /// The output is safe to embed inside a JS source-text literal
+    /// produced via string interpolation (e.g.
+    /// `"window.cmDispatch(\(json))"`). `JSONSerialization` does not
+    /// escape U+2028 / U+2029, which are valid in JSON strings but
+    /// are line terminators in JavaScript source — embedding them
+    /// raw breaks the surrounding script. We post-process to escape
+    /// both via `JSStringEmbedding.sanitize`.
     public static func encodeOutboundJSON(_ msg: CMOutboundMessage) -> String {
         let obj = encodeOutbound(msg)
         guard let data = try? JSONSerialization.data(
@@ -534,6 +542,6 @@ public enum CMBridgeCodec {
         let str = String(data: data, encoding: .utf8) else {
             return "{\"v\":\(CMProtocol.currentVersion),\"type\":\"errorEncoding\"}"
         }
-        return str
+        return JSStringEmbedding.sanitize(str)
     }
 }
