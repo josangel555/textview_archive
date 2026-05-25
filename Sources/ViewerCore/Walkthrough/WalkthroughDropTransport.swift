@@ -30,6 +30,27 @@ public final class WalkthroughDropTransport: @unchecked Sendable {
     public enum Error: Swift.Error {
         case streamCreateFailed
         case dropDirCreateFailed(String)
+        /// `init` refused to register the FSEvents watcher because the
+        /// caller didn't pass `requireEnvOptIn: false` and the env var
+        /// `TV_WALKTHROUGH_DROP` was unset. See policy note on init.
+        case envGateDisabled
+    }
+
+    /// Environment variable that unlocks the drop transport. Defaults
+    /// off: the transport is an unauthenticated automation channel
+    /// (any co-resident process under the same uid can drop a script)
+    /// and must be explicitly enabled per launch.
+    public static let envGateVariable: String = "TV_WALKTHROUGH_DROP"
+
+    /// True iff the env gate is currently set to a value the transport
+    /// accepts (`1`, `true`, `yes`, case-insensitive). Exposed for
+    /// callers that want to decide whether to construct the transport
+    /// at all (rather than swallowing the throw).
+    public static func isEnvGateEnabled() -> Bool {
+        guard let raw = ProcessInfo.processInfo.environment[envGateVariable]
+        else { return false }
+        let v = raw.lowercased()
+        return v == "1" || v == "true" || v == "yes"
     }
 
     /// Default drop directory.
@@ -69,13 +90,23 @@ public final class WalkthroughDropTransport: @unchecked Sendable {
     /// directory (e.g. the user opens a Finder window over the inbox).
     private var delivered: Set<String> = []
 
+    /// `requireEnvOptIn` defaults true: the transport refuses to start
+    /// unless `TV_WALKTHROUGH_DROP` is set in the environment. This is
+    /// the **production default** — see security finding §1.2 in
+    /// `docs/code-review/SECURITY_CONCURRENCY_2026-05-25.md`. Tests
+    /// pass `requireEnvOptIn: false` to keep their wiring boring; the
+    /// app's launch path must NOT pass that override.
     public init(
         dropDirectory: URL? = nil,
         latency: CFTimeInterval = 0.25,
         debounce: DispatchTimeInterval = .milliseconds(200),
         queue: DispatchQueue = .main,
-        delegate: WalkthroughDropTransportDelegate? = nil
+        delegate: WalkthroughDropTransportDelegate? = nil,
+        requireEnvOptIn: Bool = true
     ) throws {
+        if requireEnvOptIn && !Self.isEnvGateEnabled() {
+            throw Error.envGateDisabled
+        }
         self.dropDirectory = (dropDirectory ?? Self.defaultDropDirectory())
             .standardizedFileURL
         self.queue = queue
@@ -225,7 +256,11 @@ public final class WalkthroughDropTransport: @unchecked Sendable {
             lock.unlock()
             if alreadyDelivered { continue }
 
-            let result = WalkthroughLoader.load(fileAt: url)
+            // S1.4 — at the untrusted boundary, refuse scripts that
+            // omit `rootHint`. Without it, the loader's path-escape
+            // check is a no-op and `openFile` / `addBookmark` could
+            // target any absolute path the app has TCC access to.
+            let result = WalkthroughLoader.load(fileAt: url, requireRootHint: true)
             switch result {
             case .success(let script):
                 delegate?.walkthroughDropTransport(self, didReceive: script, from: url)

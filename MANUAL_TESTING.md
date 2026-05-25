@@ -285,6 +285,32 @@ Full GUI smoke (build-app.sh + verify-app.sh) on the VM was historically
 blocked on WindowServer/keychain/TCC issues — see SSH session notes.
 Stick to `swift test` until that's unblocked.
 
+## URL scheme (`markdownviewer://`) containment — security policy
+
+Added 2026-05-25 as part of the `SECURITY_CONCURRENCY_2026-05-25.md`
+remediation pass (finding §1.1). The URL scheme handler now funnels
+every `path=` / `root=` query argument through `URLSchemePolicy.containedPath`,
+which only accepts paths inside `$HOME` or the per-user temp dir.
+
+Manual verification:
+
+1. Build + install the app (`scripts/build-app.sh`).
+2. From Terminal: `open 'markdownviewer://open?path=~/Documents/foo.md'`
+   should open the file (positive control).
+3. From Terminal: `open 'markdownviewer://open?path=/etc/hosts'`
+   should be silently dropped (no window, no error toast — by design,
+   the URL scheme is fire-and-forget). Verify nothing appears.
+4. From Terminal: `open 'markdownviewer://search?root=/private/etc&q=x'`
+   should not reroot the sidebar. Verify sidebar root unchanged.
+5. From Terminal: `open 'markdownviewer://open?path=~/../../etc/passwd'`
+   should be dropped — `..` traversal standardizes outside `$HOME`.
+
+The deliberate behavior change from the pre-patch handler is that
+absolute paths outside `$HOME` and `$TMPDIR` no longer open. If a
+user reports "my URL bookmark stopped working after the security
+patch," the cause is almost certainly a system-folder or other-user
+path that was acceptable pre-patch.
+
 ## Sidebar padding alignment
 
 After moving FILES to the top of the sidebar and adding

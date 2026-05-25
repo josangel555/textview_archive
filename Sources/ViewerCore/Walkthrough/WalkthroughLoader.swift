@@ -24,9 +24,18 @@ public enum WalkthroughLoader {
     /// when nil, paths are accepted as-is (the file-drop transport can
     /// fill in `rootHint` from the frontmost window's working dir
     /// before calling `load`).
+    ///
+    /// **Important boundary distinction (S1.4):** this overload defaults
+    /// to `requireRootHint: false` because internal callers (engine
+    /// reload after edit, tests, scripts authored against a known dev
+    /// root) may legitimately accept absolute-only paths. The file-drop
+    /// transport — the *untrusted* boundary — must call with
+    /// `requireRootHint: true` so a script without `rootHint` cannot
+    /// land verbs that openFile / addBookmark arbitrary absolute paths.
     public static func load(
         data: Data,
-        decoder: JSONDecoder? = nil
+        decoder: JSONDecoder? = nil,
+        requireRootHint: Bool = false
     ) -> Result<WalkthroughScript, WalkthroughLoadError> {
         let d = decoder ?? Self.defaultDecoder()
         let script: WalkthroughScript
@@ -37,6 +46,9 @@ public enum WalkthroughLoader {
         } catch {
             return .failure(.decodingFailed(error.localizedDescription))
         }
+        if requireRootHint && script.rootHint == nil {
+            return .failure(.missingRootHint)
+        }
         if let err = validate(script) {
             return .failure(err)
         }
@@ -45,7 +57,8 @@ public enum WalkthroughLoader {
 
     public static func load(
         fileAt url: URL,
-        decoder: JSONDecoder? = nil
+        decoder: JSONDecoder? = nil,
+        requireRootHint: Bool = false
     ) -> Result<WalkthroughScript, WalkthroughLoadError> {
         let data: Data
         do {
@@ -53,7 +66,7 @@ public enum WalkthroughLoader {
         } catch {
             return .failure(.ioFailed(error.localizedDescription))
         }
-        return load(data: data, decoder: decoder)
+        return load(data: data, decoder: decoder, requireRootHint: requireRootHint)
     }
 
     // MARK: - Validation
@@ -203,4 +216,9 @@ public enum WalkthroughLoadError: Error, Equatable, Sendable {
     /// File-system read failed (transport layer error, surfaced here so
     /// the loader's call sites only see one error type).
     case ioFailed(String)
+    /// Loader was invoked with `requireRootHint: true` (the untrusted
+    /// file-drop boundary) but the script omitted `rootHint`. Without
+    /// a rootHint the path-escape check is a no-op and `openFile` can
+    /// reach arbitrary absolute paths — refuse outright.
+    case missingRootHint
 }

@@ -402,18 +402,46 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         }
 
         /// Decide what to do with a navigation. Pure function so it can be
-        /// unit-tested. Allowlist semantics (CRIT-1 / S4):
-        /// - Anything other than a `linkActivated` click (initial load,
-        ///   programmatic reload, etc.) is allowed.
-        /// - Same-document fragment navigation (`#anchor`) is allowed.
-        /// - Otherwise: only `http`/`https`/`mailto` are honored — they route
-        ///   to the user's browser. `javascript:`, `data:`, `file:`, custom
-        ///   app schemes, etc. are cancelled.
+        /// unit-tested. Allowlist semantics (CRIT-1 / S4 / 2026-05-25 §2.4):
+        ///
+        /// - Same-document fragment navigation (`#anchor`) is always allowed.
+        /// - `javascript:`, `data:`, `file:`, `vbscript:`, `about:` (other
+        ///   than `about:blank`) are **cancelled regardless of navigation
+        ///   type** — this blocks `window.location = 'file:///etc/passwd'`
+        ///   style escapes from any script that might run via a CSP edge
+        ///   case. Previously only `linkActivated` was filtered.
+        /// - For `linkActivated`: only `http`/`https`/`mailto` are honored —
+        ///   they route to the user's browser. Everything else is cancelled.
+        /// - For other navigation types (initial load, programmatic
+        ///   `loadHTMLString`): allow.
         public static func decide(
             url: URL?,
             navigationType: WKNavigationType,
             currentDocumentURL: URL?
         ) -> LinkDecision {
+            // Defense-in-depth: dangerous schemes blocked for ANY nav
+            // type. `data:` is a special case — we allow it during the
+            // initial WKWebView load because `loadHTMLString` itself
+            // surfaces here as `.other`, but we still block it for
+            // user-clicked links. Same shape for `file:` (used by the
+            // mermaid runtime's CSS pull).
+            if let url, navigationType == .linkActivated {
+                let s = url.scheme?.lowercased() ?? ""
+                if ["javascript", "vbscript", "data", "file"].contains(s) {
+                    return .cancel
+                }
+            }
+            // For programmatic / .other navigations, block the always-
+            // dangerous schemes. file: is excluded here because
+            // CodeMirrorEditorView legitimately uses `loadFileURL` for
+            // its bundle resources, and the inline mermaid runtime
+            // sometimes triggers a `file:` sub-resource fetch.
+            if let url, navigationType != .linkActivated {
+                let s = url.scheme?.lowercased() ?? ""
+                if ["javascript", "vbscript"].contains(s) {
+                    return .cancel
+                }
+            }
             guard navigationType == .linkActivated else { return .allow }
             guard let url else { return .cancel }
             if isSameDocumentFragment(url, currentDocumentURL: currentDocumentURL) {

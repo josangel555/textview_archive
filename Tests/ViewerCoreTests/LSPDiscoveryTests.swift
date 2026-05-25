@@ -225,4 +225,52 @@ final class LSPDiscoveryTests: XCTestCase {
         // de-dup: no path appears twice
         XCTAssertEqual(paths.count, Set(paths).count)
     }
+
+    // MARK: - Binary ownership safety (S3.1, 2026-05-25)
+
+    func test_isBinarySafeToSpawn_acceptsOwnerWritableDir() throws {
+        let dir = tmpRoot.appendingPathComponent("safe-bin")
+        try FileManager.default.createDirectory(
+            at: dir, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o755]
+        )
+        let bin = dir.appendingPathComponent("lsp-server")
+        FileManager.default.createFile(atPath: bin.path, contents: Data("#!/bin/sh\n".utf8))
+        XCTAssertTrue(LSPDiscovery.isBinarySafeToSpawn(atPath: bin.path))
+    }
+
+    func test_isBinarySafeToSpawn_refusesGroupWritableDir() throws {
+        let dir = tmpRoot.appendingPathComponent("group-write-bin")
+        try FileManager.default.createDirectory(
+            at: dir, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o775]
+        )
+        let bin = dir.appendingPathComponent("lsp-server")
+        FileManager.default.createFile(atPath: bin.path, contents: nil)
+        // 0o775 = owner rwx, group rwx, other rx — group can drop in
+        // a replacement binary. Refuse.
+        XCTAssertFalse(LSPDiscovery.isBinarySafeToSpawn(atPath: bin.path))
+    }
+
+    func test_isBinarySafeToSpawn_refusesWorldWritableDir() throws {
+        let dir = tmpRoot.appendingPathComponent("world-write-bin")
+        try FileManager.default.createDirectory(
+            at: dir, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o777]
+        )
+        let bin = dir.appendingPathComponent("lsp-server")
+        FileManager.default.createFile(atPath: bin.path, contents: nil)
+        XCTAssertFalse(LSPDiscovery.isBinarySafeToSpawn(atPath: bin.path))
+    }
+
+    func test_isBinarySafeToSpawn_unknownPathConservativelyAllows() {
+        // Path we can't stat → return true. The intent is "don't lock
+        // out a user whose dev setup we don't understand"; we still
+        // catch the obviously-bad world-writable case.
+        XCTAssertTrue(
+            LSPDiscovery.isBinarySafeToSpawn(
+                atPath: "/definitely/not/here/lsp-\(UUID().uuidString)"
+            )
+        )
+    }
 }

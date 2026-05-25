@@ -619,7 +619,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         for url in urls {
             if url.scheme == "markdownviewer" {
                 handleCustomURLScheme(url)
-            } else if FileManager.default.fileExists(atPath: url.path) {
+            } else if url.isFileURL,
+                      FileManager.default.fileExists(atPath: url.path) {
+                // S6.5 — only honor `file://` URLs from the fallthrough.
+                // Without `isFileURL`, an `https://example.com/etc/passwd`
+                // URL would land here, `url.path` would be `/etc/passwd`,
+                // and `fileExists` would happily say "yes" if that
+                // path happened to exist. Defense-in-depth even though
+                // Launch Services normally only routes file URLs here.
                 model.openPath(url)
             }
         }
@@ -630,6 +637,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     ///   - markdownviewer://open?path=~/notes/foo.md     (~ expanded)
     ///   - markdownviewer://search?root=/path&q=hello
     /// More verbs can be added as we go; each is a URL host.
+    ///
+    /// **Policy (S1.1 hardening, 2026-05-25):** every path supplied to
+    /// this entry-point is funneled through `URLSchemePolicy.containedPath`,
+    /// which expands `~`, standardizes, and rejects anything outside the
+    /// user's home directory or per-user temp dir. A malicious browser
+    /// link like `markdownviewer://open?path=/etc/passwd` is dropped at
+    /// the boundary. The previous behavior — accept any absolute path —
+    /// made the scheme a one-click read-anything primitive from any web
+    /// page. Documented in `MANUAL_TESTING.md` so testers know to verify
+    /// that out-of-home paths bounce.
     private func handleCustomURLScheme(_ url: URL) {
         guard let host = url.host else { return }
         let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
@@ -639,14 +656,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
         switch host {
         case "open":
-            if let raw = q("path") {
-                let expanded = (raw as NSString).expandingTildeInPath
-                model.openPath(URL(fileURLWithPath: expanded))
+            if let raw = q("path"),
+               let safeURL = URLSchemePolicy.containedPath(raw) {
+                model.openPath(safeURL)
             }
         case "search":
-            if let root = q("root") {
-                let expanded = (root as NSString).expandingTildeInPath
-                model.sidebar.setRoot(URL(fileURLWithPath: expanded))
+            if let root = q("root"),
+               let safeURL = URLSchemePolicy.containedPath(root) {
+                model.sidebar.setRoot(safeURL)
             }
             if let queryStr = q("q") {
                 model.crossSearchQuery = queryStr

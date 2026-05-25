@@ -320,9 +320,22 @@ public struct PluginSubprocessHost: Sendable {
         durationMs: Int, invocationID: String
     ) {
         let url = auditURLOverride ?? Self.auditLogURL()
+        // S3.3/5.6 (2026-05-25): create the directory with owner-only
+        // perms. The audit log contains plugin ids + stderr tails;
+        // without 0o700 a co-resident user on a multi-user macOS
+        // host can read those. Setting the perms on createDirectory
+        // is the lightest fix; existing dirs (created pre-patch) are
+        // chmod'd on the first write.
+        let dir = url.deletingLastPathComponent()
         try? FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(),
-            withIntermediateDirectories: true
+            at: dir,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        // Idempotent best-effort chmod: if the dir already existed
+        // with looser perms (pre-patch install), tighten now.
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o700], ofItemAtPath: dir.path
         )
 
         // ISO-8601 with milliseconds. Hand-rolled because

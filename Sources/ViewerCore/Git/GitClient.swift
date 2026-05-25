@@ -437,27 +437,35 @@ public final class GitClient: Sendable {
         // full pipe (kernel buffer is ~64 KB) and `waitUntilExit()`
         // would hang forever. Same shape as GitService.run() and
         // JQRunner.run().
+        //
+        // S4.4 (2026-05-25): the captured vars used to be plain `var
+        // outData = Data()` mutated from escaping closures. Swift 6
+        // strict-concurrency tolerates that today only because
+        // DispatchQueue.async closures aren't `@Sendable`-marked;
+        // align with the `_Box` pattern from JQRunner + GitService so
+        // a future refactor doesn't reintroduce the race.
+        final class _DataBox: @unchecked Sendable { var data = Data() }
+        let outBox = _DataBox()
+        let errBox = _DataBox()
         let outQ = DispatchQueue(label: "gitclient.stdout")
         let errQ = DispatchQueue(label: "gitclient.stderr")
         let group = DispatchGroup()
-        var outData = Data()
-        var errData = Data()
         group.enter()
         outQ.async {
-            outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+            outBox.data = outPipe.fileHandleForReading.readDataToEndOfFile()
             group.leave()
         }
         group.enter()
         errQ.async {
-            errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+            errBox.data = errPipe.fileHandleForReading.readDataToEndOfFile()
             group.leave()
         }
         try p.run()
         p.waitUntilExit()
         group.wait()
-        let out = String(data: outData, encoding: .utf8) ?? ""
+        let out = String(data: outBox.data, encoding: .utf8) ?? ""
         if p.terminationStatus != 0 {
-            let estr = String(data: errData, encoding: .utf8) ?? ""
+            let estr = String(data: errBox.data, encoding: .utf8) ?? ""
             if estr.lowercased().contains("not a git repository") {
                 throw Error.notARepo
             }
