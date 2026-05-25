@@ -91,8 +91,10 @@ final class MermaidHostingTests: XCTestCase {
         guard case .loaded(let file) = m.currentState else {
             return XCTFail("Expected .loaded, got \(m.currentState)")
         }
+        guard let tabID = m.tabs.selected?.id else { return XCTFail("no selected tab") }
         let html = m.renderedHTML(
-            forURL: file.url,
+            forTabID: tabID,
+            file: file,
             contents: file.contents,
             renderer: HTMLRenderer(),
             stylesheet: ""
@@ -114,10 +116,11 @@ final class MermaidHostingTests: XCTestCase {
         let url = try writeFile("diagram.md", "```mermaid\nflowchart LR\nA-->B\n```\n")
         m.open(url: url)
         guard case .loaded(let file) = m.currentState else { return XCTFail() }
+        guard let tabID = m.tabs.selected?.id else { return XCTFail("no selected tab") }
         let renderer = HTMLRenderer()
-        let html1 = m.renderedHTML(forURL: file.url, contents: file.contents,
+        let html1 = m.renderedHTML(forTabID: tabID, file: file, contents: file.contents,
                                    renderer: renderer, stylesheet: "")
-        let html2 = m.renderedHTML(forURL: file.url, contents: file.contents,
+        let html2 = m.renderedHTML(forTabID: tabID, file: file, contents: file.contents,
                                    renderer: renderer, stylesheet: "")
         XCTAssertEqual(html1, html2)
     }

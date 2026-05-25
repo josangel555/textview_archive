@@ -1431,11 +1431,26 @@ public final class DocumentModel: ObservableObject {
                 var t = tabs.tabs[idx]
                 if case .loaded(let oldFile) = t.state {
                     let bytes = buf.text.data(using: buf.encoding)?.count ?? oldFile.byteCount
+                    // We just wrote the file — re-stat its mtime so the
+                    // rendered-HTML / highlight caches pick up the new
+                    // identity even when the rewrite happens to be the
+                    // same byte length. Falling back to `Date()` keeps
+                    // the cache invariant ("mtime differs after a write")
+                    // intact if the filesystem can't report attrs.
+                    let mtime: Date? = {
+                        if let attrs = try? FileManager.default
+                            .attributesOfItem(atPath: oldFile.url.path),
+                           let d = attrs[.modificationDate] as? Date {
+                            return d
+                        }
+                        return Date()
+                    }()
                     let newFile = TextFile(
                         url: oldFile.url,
                         contents: buf.text,
                         encoding: oldFile.encoding,
-                        byteCount: bytes
+                        byteCount: bytes,
+                        modifiedTime: mtime
                     )
                     t.state = .loaded(newFile)
                     tabs.replace(at: idx, with: t)
@@ -1637,20 +1652,41 @@ public final class DocumentModel: ObservableObject {
 
     // MARK: Rendered markdown cache
 
-    /// Memoizes `HTMLRenderer.renderPage` output keyed by content hash.
-    /// Without this, ContentView.body re-runs renderPage on every model
+    /// Memoizes `HTMLRenderer.renderPage` output keyed by tab identity
+    /// + the file's filesystem identity (mtime + byteCount). Without
+    /// this, ContentView.body re-runs renderPage on every model
     /// mutation — and renderPage now drives TreeSitter highlighting
     /// for every fenced code block, which is expensive enough to be
-    /// visible as latency. Stylesheet doesn't enter the key because it
-    /// only changes between app launches.
+    /// visible as latency.
+    ///
+    /// Why mtime + byteCount instead of a content hash:
+    ///   - The prior key was `(URL, fnv64(contents))`. fnv64 walks
+    ///     the entire UTF-8 of the file on every body re-eval —
+    ///     ~1ms per MB on the main actor. With finding #1's republish
+    ///     storm, that was the dominant cost for multi-MB markdown.
+    ///   - mtime + byteCount is O(1) per lookup and `TextFile`
+    ///     captures both at load time, so the key formation never
+    ///     touches the file contents.
+    ///   - Same-byte-length reloads (`# Hello\n` → `# World\n`)
+    ///     still invalidate because the watcher reload path runs
+    ///     `TextFileLoader.load(url:)` again, which re-stats the
+    ///     file and gets a new mtime. APFS mtime is nanosecond-
+    ///     resolution; back-to-back rewrites produce distinct
+    ///     timestamps in practice.
+    ///   - `EditorBuffer.save(...)` re-stats after write to capture
+    ///     the new mtime (see `saveEditorBuffer(forTabID:)`).
+    ///
+    /// Stylesheet doesn't enter the key because it only changes
+    /// between app launches.
     public struct RenderedHTMLKey: Hashable, Sendable {
-        public let url: URL
-        /// SHA-256 truncated to UInt64. Replaces the prior `length`
-        /// key — same-byte-length file-watcher reloads (`# Hello\n` →
-        /// `# World\n`) used to serve stale HTML because the key
-        /// didn't change. A content hash makes the cache lookup
-        /// content-addressable.
-        public let contentHash: UInt64
+        public let tabID: UUID
+        public let byteCount: Int
+        /// `nil` only for synthetic `TextFile`s constructed without
+        /// an mtime (in-memory tests). Two same-tab, same-bytecount
+        /// renders with nil mtime collapse to the same cache entry —
+        /// acceptable for tests; in production every `TextFile` from
+        /// the loader carries one.
+        public let modifiedTime: Date?
     }
     private var renderedHTMLCache: [RenderedHTMLKey: String] = [:]
     /// Insertion-order list mirroring `renderedHTMLCache`. Used to evict
@@ -1664,20 +1700,6 @@ public final class DocumentModel: ObservableObject {
     // working set and caps the worst-case RAM footprint of this
     // cache around 15-20 MB. Cold-render on a miss is fast.
     private static let renderedHTMLCacheMax = 4
-
-    /// FNV-1a 64-bit hash. Fast, no allocations, collision-resistant
-    /// enough for a 4-entry cache. Used as the content-addressable
-    /// key for the rendered-HTML cache so same-byte-length file
-    /// reloads still invalidate. NOT cryptographic — never use for
-    /// security purposes.
-    private static func fnv64(_ s: String) -> UInt64 {
-        var h: UInt64 = 0xcbf2_9ce4_8422_2325
-        for byte in s.utf8 {
-            h ^= UInt64(byte)
-            h &*= 0x0000_0100_0000_01B3
-        }
-        return h
-    }
 
     /// Returns the rendered HTML for `contents`, building+caching on
     /// miss. Call from a SwiftUI body — it's main-thread, sync, and the
@@ -1744,13 +1766,28 @@ public final class DocumentModel: ObservableObject {
         }
     }
 
+    /// Returns the rendered HTML for `file` in `tabID`, building+caching
+    /// on miss. Call from a SwiftUI body — it's main-thread, sync, and
+    /// the cached path is just a dict lookup so re-renders are fast.
+    ///
+    /// Cache key is `(tabID, file.byteCount, file.modifiedTime)`. The
+    /// caller passes `contents` separately because the mermaid host
+    /// wraps the raw file in a fence (`"```mermaid\n…```\n"`) — the
+    /// cache key intentionally ignores the wrapper since each tab only
+    /// ever renders one shape (mermaid vs raw md), so a tabID match
+    /// guarantees the same wrapping.
     public func renderedHTML(
-        forURL url: URL,
+        forTabID tabID: UUID,
+        file: TextFile,
         contents: String,
         renderer: HTMLRenderer,
         stylesheet: String
     ) -> String {
-        let key = RenderedHTMLKey(url: url, contentHash: Self.fnv64(contents))
+        let key = RenderedHTMLKey(
+            tabID: tabID,
+            byteCount: file.byteCount,
+            modifiedTime: file.modifiedTime
+        )
         if let hit = renderedHTMLCache[key] { return hit }
         // Mermaid CSS rides along on every rendered markdown page. It's
         // tiny (~1 KB) and inlining it unconditionally avoids the flash
@@ -2028,7 +2065,7 @@ public final class DocumentModel: ObservableObject {
             csvFilterStates.removeValue(forKey: t.id)
             editorBuffers.removeValue(forKey: t.id)
             hexBytesPerRow.removeValue(forKey: t.id)
-            purgeCaches(forURL: t.url)
+            purgeCaches(forURL: t.url, tabID: t.id)
         }
         updateDerived()
         startWatchingCurrentFile()
@@ -2067,7 +2104,7 @@ public final class DocumentModel: ObservableObject {
             csvFilterStates.removeValue(forKey: t.id)
             editorBuffers.removeValue(forKey: t.id)
             hexBytesPerRow.removeValue(forKey: t.id)
-            purgeCaches(forURL: t.url)
+            purgeCaches(forURL: t.url, tabID: t.id)
         }
         // Intersect tab-id sets with the still-open ids. Cheaper than
         // tracking every closed id and symmetric across the three
@@ -2111,7 +2148,7 @@ public final class DocumentModel: ObservableObject {
             csvFilterStates.removeValue(forKey: t.id)
             editorBuffers.removeValue(forKey: t.id)
             hexBytesPerRow.removeValue(forKey: t.id)
-            purgeCaches(forURL: t.url)
+            purgeCaches(forURL: t.url, tabID: t.id)
         }
         let openIDs = Set(tabs.tabs.map { $0.id })
         formattedTabIDs.formIntersection(openIDs)
@@ -2119,24 +2156,29 @@ public final class DocumentModel: ObservableObject {
         startWatchingCurrentFile()
     }
 
-    /// Drop all URL-keyed cache entries for a closed tab. Skipped if
-    /// another tab still holds the same URL (Open-in-new-tab → close
-    /// one → other still benefits from cached runs/HTML). Sidebar
-    /// diff marks for the file get cleared too.
-    private func purgeCaches(forURL url: URL?) {
-        guard let url else { return }
-        if tabs.tabs.contains(where: { $0.url == url }) { return }
-        let priorHighlightOrder = highlightCacheOrder
-        highlightCache = highlightCache.filter { $0.key.url != url }
-        let survivorHL = Set(highlightCache.keys)
-        highlightCacheOrder = priorHighlightOrder.filter { survivorHL.contains($0) }
+    /// Drop all cache entries belonging to a closed tab. Highlight runs
+    /// are URL-keyed (still — they're a content-addressable product
+    /// shared across tabs viewing the same file); only purge the
+    /// highlight cache when no remaining tab holds the URL. Rendered-
+    /// HTML entries are tabID-keyed since the cache moved to
+    /// `(tabID, mtime, byteCount)`; purge unconditionally on tab close
+    /// because no other tab can hit the same key anyway.
+    private func purgeCaches(forURL url: URL?, tabID: UUID? = nil) {
+        if let url, !tabs.tabs.contains(where: { $0.url == url }) {
+            let priorHighlightOrder = highlightCacheOrder
+            highlightCache = highlightCache.filter { $0.key.url != url }
+            let survivorHL = Set(highlightCache.keys)
+            highlightCacheOrder = priorHighlightOrder.filter { survivorHL.contains($0) }
+        }
 
-        let priorOrder = renderedHTMLCacheOrder
-        renderedHTMLCache = renderedHTMLCache.filter { $0.key.url != url }
-        // Keep the order list in sync — drop the URL's entries while
-        // preserving relative ordering of survivors (S2-G).
-        let survivorKeys = Set(renderedHTMLCache.keys)
-        renderedHTMLCacheOrder = priorOrder.filter { survivorKeys.contains($0) }
+        if let tabID {
+            let priorOrder = renderedHTMLCacheOrder
+            renderedHTMLCache = renderedHTMLCache.filter { $0.key.tabID != tabID }
+            // Keep the order list in sync — drop the tab's entries while
+            // preserving relative ordering of survivors (S2-G).
+            let survivorKeys = Set(renderedHTMLCache.keys)
+            renderedHTMLCacheOrder = priorOrder.filter { survivorKeys.contains($0) }
+        }
     }
 
     public func moveTab(from src: Int, to dst: Int) {

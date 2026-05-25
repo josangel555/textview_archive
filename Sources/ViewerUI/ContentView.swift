@@ -460,13 +460,20 @@ public struct ContentView: View {
             }
             return file.contents
         }()
+        // tabID is the cache identity. We're inside the loaded-tab
+        // branch so `tabs.selected` is non-nil in practice; fall back
+        // to a zero UUID for the theoretical case where the body
+        // re-evals between a selectTab and an updateDerived (the
+        // cache entry would then be orphaned, evicted by LRU).
+        let tabID = model.tabs.selected?.id ?? UUID(uuid: (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
         VStack(spacing: 0) {
             if model.isRenderedFindBarPresented {
                 MarkdownFindBar(model: model)
             }
             MarkdownRenderedView(
                 html: model.renderedHTML(
-                    forURL: file.url,
+                    forTabID: tabID,
+                    file: file,
                     contents: renderedContents,
                     renderer: renderer,
                     stylesheet: stylesheet

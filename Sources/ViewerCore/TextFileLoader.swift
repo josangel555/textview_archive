@@ -13,12 +13,31 @@ public struct TextFile: Sendable {
     public let contents: String
     public let encoding: String.Encoding
     public let byteCount: Int
+    /// Mtime captured at `TextFileLoader.load` time from
+    /// `attributesOfItem(atPath:)[.modificationDate]`. `nil` only when
+    /// the filesystem failed to report a mtime (rare — synthetic
+    /// in-memory `TextFile`s constructed by tests).
+    ///
+    /// Used as part of derived-product cache keys (rendered HTML,
+    /// highlight runs) so a same-byte-length file-watcher reload
+    /// (`# Hello\n` → `# World\n`) invalidates without paying an
+    /// O(N) content hash on every SwiftUI body re-eval. APFS mtime
+    /// is nanosecond-resolution so a back-to-back edit-and-reload
+    /// produces a distinct timestamp.
+    public let modifiedTime: Date?
 
-    public init(url: URL, contents: String, encoding: String.Encoding, byteCount: Int) {
+    public init(
+        url: URL,
+        contents: String,
+        encoding: String.Encoding,
+        byteCount: Int,
+        modifiedTime: Date? = nil
+    ) {
         self.url = url
         self.contents = contents
         self.encoding = encoding
         self.byteCount = byteCount
+        self.modifiedTime = modifiedTime
     }
 }
 
@@ -27,6 +46,11 @@ public struct TextFile: Sendable {
 /// file size virtually always differs); for the pathological "edit
 /// in place same length" case, callers that need bit-equality compare
 /// `contents` explicitly.
+///
+/// `modifiedTime` is intentionally NOT part of equality — it's the
+/// cache-key channel, not the "are these the same file?" check. Two
+/// loads of an unchanged file constructed at different wall times
+/// still compare equal so SwiftUI doesn't see redundant diff churn.
 extension TextFile: Equatable {
     public static func == (lhs: TextFile, rhs: TextFile) -> Bool {
         lhs.url == rhs.url
@@ -53,6 +77,13 @@ public struct TextFileLoader: Sendable {
         if let size = attrs?[.size] as? Int, size > maxBytes {
             throw FileLoadError.tooLarge(bytes: size)
         }
+        // Captured once at load time so derived-product caches (rendered
+        // HTML, highlight runs) can key off it without re-stat'ing the
+        // file on every body re-eval. APFS gives nanosecond resolution,
+        // so a back-to-back rewrite of the same byte length still
+        // produces a distinct timestamp — invalidates the cache where
+        // the prior `byteCount`-only key would have served stale output.
+        let mtime = attrs?[.modificationDate] as? Date
 
         let data: Data
         do {
@@ -65,7 +96,10 @@ public struct TextFileLoader: Sendable {
         // unambiguous. Without this, a UTF-16-LE file decodes to garbage every-
         // other-NUL via the Latin-1 fallback (and reports "Latin-1").
         if let (sniffed, sniffedEncoding) = Self.decodeViaBOM(data) {
-            return TextFile(url: url, contents: sniffed, encoding: sniffedEncoding, byteCount: data.count)
+            return TextFile(
+                url: url, contents: sniffed, encoding: sniffedEncoding,
+                byteCount: data.count, modifiedTime: mtime
+            )
         }
 
         // B5: binary-blob guard. Sample the first 8 KB for NUL bytes — any
@@ -80,17 +114,24 @@ public struct TextFileLoader: Sendable {
             if let s = Self.decodeUTF16WithoutBOM(data) {
                 return TextFile(
                     url: url, contents: s.string,
-                    encoding: s.encoding, byteCount: data.count
+                    encoding: s.encoding, byteCount: data.count,
+                    modifiedTime: mtime
                 )
             }
             throw FileLoadError.binaryFile
         }
 
         if let s = String(data: data, encoding: .utf8) {
-            return TextFile(url: url, contents: s, encoding: .utf8, byteCount: data.count)
+            return TextFile(
+                url: url, contents: s, encoding: .utf8,
+                byteCount: data.count, modifiedTime: mtime
+            )
         }
         if let s = String(data: data, encoding: .isoLatin1) {
-            return TextFile(url: url, contents: s, encoding: .isoLatin1, byteCount: data.count)
+            return TextFile(
+                url: url, contents: s, encoding: .isoLatin1,
+                byteCount: data.count, modifiedTime: mtime
+            )
         }
         throw FileLoadError.decodingFailed
     }
