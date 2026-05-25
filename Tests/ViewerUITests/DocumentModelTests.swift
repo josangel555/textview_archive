@@ -348,15 +348,24 @@ final class DocumentModelTests: XCTestCase {
 
         // Mutate `a` while `b` is selected — no reload should happen on `b`
         // (CRIT-4: watcher events for `a` must not corrupt `b`'s state).
+        // Old version used a fixed Thread.sleep(0.2); on a slow VM the
+        // watcher could still fire after that window and the bug would
+        // slip through. Instead, poll for ~1.5 s: at every sample point
+        // we assert b is still v1-b. The instant the watcher
+        // misbehaves, the test catches it.
         try "v2-a".write(to: a, atomically: true, encoding: .utf8)
-        let preB: String
-        if case .loaded(let f) = model.tabs.tabs[0].state { preB = f.contents } else { preB = "" }
-        // Note: tabs.tabs[0] is `a`, tabs.tabs[1] is `b`. Check b stays unchanged.
-        Thread.sleep(forTimeInterval: 0.2)
-        if case .loaded(let f) = model.tabs.tabs[1].state {
-            XCTAssertEqual(f.contents, "v1-b")  // /b unchanged
+        let deadline = Date().addingTimeInterval(1.5)
+        var samples = 0
+        while Date() < deadline {
+            if case .loaded(let f) = model.tabs.tabs[1].state {
+                XCTAssertEqual(f.contents, "v1-b",
+                    "b must remain v1-b even though a was mutated")
+            }
+            samples += 1
+            Thread.sleep(forTimeInterval: 0.05)
         }
-        _ = preB  // silence unused warning if compiler complains
+        XCTAssertGreaterThan(samples, 5,
+            "poll budget should fit at least a handful of samples")
 
         // Now switch to `a` and reload — should pick up the new contents.
         model.selectTab(at: 0)
@@ -366,6 +375,51 @@ final class DocumentModelTests: XCTestCase {
         } else {
             XCTFail("expected .loaded")
         }
+    }
+
+    // MARK: - Split pane
+
+    func test_openInSplit_setsSplitURL_andPublishesChange() throws {
+        let model = makeModel()
+        let a = try writeFile("a.md", "# a\n")
+        XCTAssertNil(model.splitURL, "fresh model has no split open")
+        XCTAssertFalse(model.isSplitOpen)
+        model.openInSplit(a)
+        XCTAssertNotNil(model.splitURL,
+            "openInSplit must stash the URL on splitURL")
+        XCTAssertTrue(model.isSplitOpen,
+            "isSplitOpen must reflect splitURL != nil")
+        XCTAssertEqual(
+            model.splitURL?.standardizedFileURL.resolvingSymlinksInPath(),
+            a.standardizedFileURL.resolvingSymlinksInPath(),
+            "splitURL must be normalized but content-equal to the input")
+    }
+
+    func test_openInSplit_thenClose_resetsSplitURL() throws {
+        let model = makeModel()
+        let a = try writeFile("a.md", "# a\n")
+        model.openInSplit(a)
+        XCTAssertNotNil(model.splitURL)
+        model.closeSplit()
+        XCTAssertNil(model.splitURL,
+            "closeSplit must clear splitURL back to nil")
+        XCTAssertFalse(model.isSplitOpen)
+    }
+
+    func test_toggleSplit_opensWithCurrentFile_thenCloses() throws {
+        let model = makeModel()
+        let a = try writeFile("a.md", "# a\n")
+        model.open(url: a)
+        XCTAssertFalse(model.isSplitOpen)
+        model.toggleSplit()
+        XCTAssertTrue(model.isSplitOpen,
+            "toggleSplit on a model with a current file must open the split")
+        XCTAssertEqual(
+            model.splitURL?.standardizedFileURL.resolvingSymlinksInPath(),
+            a.standardizedFileURL.resolvingSymlinksInPath())
+        model.toggleSplit()
+        XCTAssertFalse(model.isSplitOpen,
+            "toggleSplit on an open split must close it")
     }
 
     // MARK: - Unified zoom (drives both content + chrome via uiSize)

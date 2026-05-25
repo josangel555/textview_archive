@@ -37,37 +37,77 @@ final class FileTreeRecencyConcurrencyTests: XCTestCase {
     }
 
     // MARK: - Concurrent reads
+    //
+    // Crash-detection is the primary signal these tests offer — the
+    // cache is `nonisolated(unsafe)` + `NSLock`, so any race
+    // surfaces as a malloc fault under TSan. But "no crash" is a
+    // weak assertion on its own; the predicates below also confirm
+    // every concurrent reader observed a coherent, well-formed
+    // `FileTreeRecencyAttributes` value (rather than a partially-
+    // initialized struct or a thread-local snapshot).
 
-    func test_concurrentReads_acrossManyKeys_doNotCrash() async {
+    func test_concurrentReads_acrossManyKeys_returnCoherentAttrs() async {
         let urls = fanOutURLs(count: 64)
-        // Multiple bursts so we exercise both miss + hit paths.
-        await withTaskGroup(of: Void.self) { group in
-            for _ in 0..<8 {
+        // Each task accumulates its observed attrs into an array.
+        // After the join we assert every task saw the same number of
+        // entries (no dropped reads) and that within a single task
+        // every entry is well-formed (synthetic URLs → both fields nil).
+        let readers = 8
+        let collected: [[FileTreeRecencyAttributes]] = await withTaskGroup(
+            of: [FileTreeRecencyAttributes].self
+        ) { group in
+            for _ in 0..<readers {
                 group.addTask {
+                    var local: [FileTreeRecencyAttributes] = []
+                    local.reserveCapacity(urls.count)
                     for url in urls {
-                        _ = FileTreeRecencyCache.attributes(for: url)
+                        local.append(FileTreeRecencyCache.attributes(for: url))
                     }
+                    return local
                 }
             }
+            var out: [[FileTreeRecencyAttributes]] = []
+            for await arr in group { out.append(arr) }
+            return out
         }
-        // If we got here without a crash, the lock did its job.
+        XCTAssertEqual(collected.count, readers,
+            "every reader task should have returned a result")
+        for batch in collected {
+            XCTAssertEqual(batch.count, urls.count,
+                "no reader should have dropped a key")
+            // Synthetic URLs don't exist; FileManager returns empty
+            // attrs → both fields nil. A torn read would surface as a
+            // non-nil garbage Date.
+            for a in batch {
+                XCTAssertNil(a.modifiedAt)
+                XCTAssertNil(a.createdAt)
+            }
+        }
     }
 
     // MARK: - Read/write/invalidate contention
 
-    func test_concurrentReadsAndInvalidates_doNotCrash() async {
+    func test_concurrentReadsAndInvalidates_returnCoherentAttrs() async {
         let urls = fanOutURLs(count: 32)
-        await withTaskGroup(of: Void.self) { group in
-            // Half the tasks read, half invalidate. The interleavings
-            // hit both "cache hit", "cache miss" and "concurrent
-            // dictionary write" code paths.
-            for _ in 0..<4 {
+        // Same shape, but with half the tasks invalidating concurrently.
+        // We can't predict per-key hit/miss interleaving, but every
+        // returned value must still be coherent.
+        let readers = 4
+        let collected: [Int] = await withTaskGroup(of: Int.self) { group in
+            for _ in 0..<readers {
                 group.addTask {
+                    var coherentCount = 0
                     for _ in 0..<10 {
                         for url in urls {
-                            _ = FileTreeRecencyCache.attributes(for: url)
+                            let a = FileTreeRecencyCache.attributes(for: url)
+                            // Both fields must be nil for a synthetic
+                            // path; any non-nil indicates torn state.
+                            if a.modifiedAt == nil && a.createdAt == nil {
+                                coherentCount += 1
+                            }
                         }
                     }
+                    return coherentCount
                 }
                 group.addTask {
                     for _ in 0..<10 {
@@ -75,8 +115,18 @@ final class FileTreeRecencyConcurrencyTests: XCTestCase {
                             FileTreeRecencyCache.invalidate(url)
                         }
                     }
+                    return -1 // sentinel — invalidate tasks don't count
                 }
             }
+            var out: [Int] = []
+            for await v in group { if v >= 0 { out.append(v) } }
+            return out
+        }
+        XCTAssertEqual(collected.count, readers,
+            "every reader task should have returned a count")
+        for c in collected {
+            XCTAssertEqual(c, urls.count * 10,
+                "every read observed by a reader must be coherent under contention")
         }
     }
 
@@ -93,11 +143,19 @@ final class FileTreeRecencyConcurrencyTests: XCTestCase {
                 for: anchorURL.appendingPathComponent("cap-key-\(i)"))
         }
         // Cache is bounded — internal `count > capacity` triggers a
-        // `removeAll(keepingCapacity:)`. We don't expose the count,
-        // but we can prove "still reachable" by reading again:
-        let post = FileTreeRecencyCache.attributes(
+        // `removeAll(keepingCapacity:)`. Prove "still reachable + still
+        // well-formed" by reading both a never-before-seen key and one
+        // of the original burst keys.
+        let fresh = FileTreeRecencyCache.attributes(
             for: anchorURL.appendingPathComponent("cap-key-after-drop"))
-        XCTAssertNotNil(post.modifiedAt ?? Date())  // either nil or a date — must not crash
+        XCTAssertNil(fresh.modifiedAt,
+            "synthetic URL must produce nil modifiedAt; non-nil = torn read")
+        XCTAssertNil(fresh.createdAt,
+            "synthetic URL must produce nil createdAt; non-nil = torn read")
+        let repeated = FileTreeRecencyCache.attributes(
+            for: anchorURL.appendingPathComponent("cap-key-0"))
+        XCTAssertNil(repeated.modifiedAt)
+        XCTAssertNil(repeated.createdAt)
     }
 
     // MARK: - invalidateAll round-trip

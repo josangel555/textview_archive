@@ -75,8 +75,16 @@ final class CrossSearchIntegrationTests: XCTestCase {
         let model = makeModel()
         model.crossSearchQuery = "anything"
         model.runCrossSearch()
-        try? await Task.sleep(nanoseconds: 200_000_000)
-        XCTAssertEqual(model.crossSearchResults.count, 0)
+        // Wait until isRunning settles back to false (the run actually
+        // completed) before asserting on the result count. The old
+        // version asserted after a fixed 200 ms sleep — if the publish
+        // hadn't happened yet, a stale-empty snapshot trivially passed.
+        let didSettle = await waitFor(timeout: 2.0) {
+            model.crossSearchIsRunning == false
+        }
+        XCTAssertTrue(didSettle, "isRunning should resolve to false within 2s")
+        XCTAssertEqual(model.crossSearchResults.count, 0,
+            "no folder root → no results, after the search actually ran")
     }
 
     func test_runCrossSearch_findsMatches() async throws {

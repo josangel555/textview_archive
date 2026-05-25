@@ -75,14 +75,17 @@ final class InteractionDeepTests: MultiScenarioTestCase {
                         show-palette
                         """) { dumps, file, line in
                 XCTAssertEqual(dumps.count, 3, file: file, line: line)
-                // Palette overlay produces a NSHostingView — detect via
-                // total-node-count delta.
-                let counts = dumps.map { Pages(dump: $0).generic.totalNodeCount }
-                XCTAssertGreaterThan(counts[0], counts[1],
-                    "After dismiss-palette the view tree should shrink. Counts: \(counts)",
-                    file: file, line: line)
-                XCTAssertGreaterThan(counts[2], counts[1],
-                    "After re-show-palette the view tree should grow again. Counts: \(counts)",
+                // Read `model.isPalettePresented` directly from each
+                // dump. Earlier this test compared `totalNodeCount`
+                // deltas — any unrelated tree change (focus ring, stale
+                // @State, tooltip) would also perturb that, so the
+                // test gave false positives. The model bool is the
+                // authoritative wire.
+                let flags = dumps.map { d -> Bool in
+                    (Pages(dump: d).generic.model["isPalettePresented"] as? Bool) ?? false
+                }
+                XCTAssertEqual(flags, [true, false, true],
+                    "Expected isPalettePresented to toggle show→dismiss→show; got \(flags)",
                     file: file, line: line)
             }
         ])
@@ -173,8 +176,10 @@ final class InteractionDeepTests: MultiScenarioTestCase {
         try runScenarios([
             // Set root to subfolder, then walk up. Walk-up only moves
             // *selection* if there's a selection inside the root — here
-            // there's none, so sidebar root stays put. This still
-            // exercises the code path.
+            // there's none, so sidebar root stays put. We assert that
+            // sidebar-set-root actually flipped `model.sidebar.rootURL`
+            // to the requested path (regression guard for a silent
+            // no-op in the command dispatcher).
             Scenario(name: "sidebar-set-root-then-walk-up",
                      argFile: outer,
                      script: """
@@ -184,7 +189,20 @@ final class InteractionDeepTests: MultiScenarioTestCase {
                         sidebar-select-prev
                         """) { dumps, file, line in
                 XCTAssertEqual(dumps.count, 4, file: file, line: line)
-                // Just verify no crash and all 4 dumps were produced.
+                // After `sidebar-set-root <sub>` the sidebar root must
+                // point at the requested directory. URLs round-trip via
+                // `URL.absoluteString` in the dump, so we compare the
+                // trailing path component.
+                let afterSetRoot = Pages(dump: dumps[0]).sidebar
+                XCTAssertNotNil(afterSetRoot.rootURLString,
+                    "sidebar-set-root should populate model.sidebar.rootURL",
+                    file: file, line: line)
+                afterSetRoot.assertRoot(endsWith: "sub/", file: file, line: line)
+
+                // After `sidebar-walk-up` with no selection inside the
+                // root, the rootURL is unchanged — same expectation.
+                let afterWalkUp = Pages(dump: dumps[1]).sidebar
+                afterWalkUp.assertRoot(endsWith: "sub/", file: file, line: line)
             }
         ])
     }
