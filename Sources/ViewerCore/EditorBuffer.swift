@@ -136,6 +136,13 @@ public extension EditorBuffer {
 public enum EditorWriteError: Error, Equatable {
     case encodingFailed(String.Encoding)
     case writeFailed(String)
+    /// The target path is a symlink. `Data.write(.atomic)` would
+    /// rename over the link, replacing it with the file contents and
+    /// silently de-symlinking the user's setup. Surfaces as a
+    /// recoverable error so the UI can prompt "follow the link?"
+    /// (S5.1, 2026-05-25 review). Carries the resolved target path
+    /// for the prompt.
+    case targetIsSymlink(resolvedTarget: String)
 }
 
 /// Stateless on-disk writer for `EditorBuffer.text`. Lives separately
@@ -146,14 +153,39 @@ public enum EditorWriter {
     /// mid-write doesn't leave a half-written file. Returns the
     /// post-write `(mtime, size)` fingerprint so the caller can stamp
     /// the `EditorBuffer` via `markSaved`.
+    ///
+    /// **Symlink safety (S5.1, 2026-05-25):** if `url` is a symbolic
+    /// link, `Data.write(.atomic)` would rename the new file over the
+    /// link, replacing the symlink with the file contents and
+    /// breaking the user's setup. `allowSymlink: false` (the default)
+    /// throws `.targetIsSymlink` so the caller can prompt; pass
+    /// `true` to opt into the legacy "write through, de-symlinking"
+    /// behavior. The UI hasn't been updated yet to surface the
+    /// prompt — the throw becomes a save error that the user sees,
+    /// which is strictly better than silently breaking their dotfile.
     @discardableResult
     public static func save(
         _ text: String,
         to url: URL,
-        encoding: String.Encoding = .utf8
+        encoding: String.Encoding = .utf8,
+        allowSymlink: Bool = false
     ) throws -> (mtime: Date?, size: Int?) {
         guard let data = text.data(using: encoding) else {
             throw EditorWriteError.encodingFailed(encoding)
+        }
+        // Symlink check. Use destinationOfSymbolicLink which throws
+        // when the path is NOT a symlink — that's the "safe" case.
+        if !allowSymlink {
+            // `attributesOfItem(atPath:)` reports the *link's* type
+            // when the path is itself a symlink — does NOT follow.
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+               let type = attrs[.type] as? FileAttributeType,
+               type == .typeSymbolicLink {
+                let target = (try? FileManager.default.destinationOfSymbolicLink(
+                    atPath: url.path
+                )) ?? url.path
+                throw EditorWriteError.targetIsSymlink(resolvedTarget: target)
+            }
         }
         do {
             try data.write(to: url, options: [.atomic])

@@ -209,6 +209,68 @@ final class EditorBufferTests: XCTestCase {
         }
     }
 
+    // MARK: - Symlink safety (S5.1, 2026-05-25)
+
+    func test_save_refusesSymlinkTarget_byDefault() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        // Create a real file, then a symlink that points to it. Saving
+        // through the symlink should refuse — otherwise Data.write would
+        // replace the symlink with a regular file, breaking the user's
+        // dotfile / config layout.
+        let realFile = dir.appendingPathComponent("real.txt")
+        try "real contents".write(to: realFile, atomically: true, encoding: .utf8)
+        let linkFile = dir.appendingPathComponent("link.txt")
+        try FileManager.default.createSymbolicLink(
+            at: linkFile, withDestinationURL: realFile
+        )
+        XCTAssertThrowsError(
+            try EditorWriter.save("new contents", to: linkFile)
+        ) { err in
+            guard case EditorWriteError.targetIsSymlink(let target) = err else {
+                return XCTFail("expected targetIsSymlink, got \(err)")
+            }
+            XCTAssertTrue(target.hasSuffix("real.txt"))
+        }
+        // The original file must still contain its original bytes —
+        // the refused save did NOT silently overwrite via the link.
+        let still = try String(contentsOf: realFile, encoding: .utf8)
+        XCTAssertEqual(still, "real contents")
+    }
+
+    func test_save_allowSymlinkOptIn_writesThroughLink() throws {
+        // The opt-in path preserves the legacy "follow the link"
+        // behavior for callers that have explicitly prompted the
+        // user. Note: Data.write(.atomic) still replaces the symlink
+        // with a regular file — the opt-in only suppresses the throw.
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let realFile = dir.appendingPathComponent("real.txt")
+        try "real contents".write(to: realFile, atomically: true, encoding: .utf8)
+        let linkFile = dir.appendingPathComponent("link.txt")
+        try FileManager.default.createSymbolicLink(
+            at: linkFile, withDestinationURL: realFile
+        )
+        _ = try EditorWriter.save(
+            "new contents", to: linkFile, allowSymlink: true
+        )
+        // The new file lives where the link was (now a regular file).
+        let written = try String(contentsOf: linkFile, encoding: .utf8)
+        XCTAssertEqual(written, "new contents")
+    }
+
+    func test_save_regularFile_unchanged() throws {
+        // Regression guard for the non-symlink case — the new
+        // pre-check must not change behavior when the path is a
+        // plain file.
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("plain.txt")
+        try "x".write(to: url, atomically: true, encoding: .utf8)
+        _ = try EditorWriter.save("y", to: url)
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "y")
+    }
+
     // MARK: - Helpers
 
     private func makeTempDir() throws -> URL {
