@@ -1,5 +1,32 @@
 import Foundation
 
+/// Typed status row used by callers that want a `.modified` / `.added`
+/// enum instead of raw porcelain v1 X/Y characters. Lifted from the
+/// retired `GitService` so the sidebar's badge code keeps a stable
+/// public surface. `GitClient.statusEntries()` parses to this shape;
+/// callers that need the raw chars (the panel's per-file status row)
+/// still use `GitClient.status()` → `[StatusEntry]`.
+public struct GitStatusEntry: Equatable, Sendable {
+    public enum Status: String, Equatable, Sendable {
+        case modified   = "M"
+        case added      = "A"
+        case deleted    = "D"
+        case renamed    = "R"
+        case copied     = "C"
+        case untracked  = "?"
+        case ignored    = "!"
+        case conflicted = "U"
+    }
+
+    public let path: String   // relative to repo root
+    public let status: Status
+
+    public init(path: String, status: Status) {
+        self.path = path
+        self.status = status
+    }
+}
+
 /// Minimal git client that shells out to /usr/bin/git. Not a
 /// libgit2 wrapper — for viewer-side reads we don't need
 /// transactional anything, just `git status --porcelain`, `git diff`,
@@ -71,6 +98,66 @@ public final class GitClient: Sendable {
             ))
         }
         return entries
+    }
+
+    /// `git status --porcelain=v1` parsed into typed entries. This is
+    /// the shape the file-tree badge consumes (one row → one enum
+    /// case). Threw `GitError.commandFailed` in the old `GitService`
+    /// API; here we follow the rest of `GitClient` and return `[]` on
+    /// failure so the caller doesn't have to wrap every read in `try?`.
+    public func statusEntries() -> [GitStatusEntry] {
+        guard let out = try? run(["status", "--porcelain=v1"]) else { return [] }
+        return Self.parseStatusEntries(out)
+    }
+
+    /// Pure-logic parser. Public so tests can pin parsing semantics
+    /// (the literal " -> " gating on R/C status, unicode paths, the
+    /// modified-priority rule) without spawning a real git process.
+    public static func parseStatusEntries(_ output: String) -> [GitStatusEntry] {
+        var entries: [GitStatusEntry] = []
+        for raw in output.split(separator: "\n", omittingEmptySubsequences: true) {
+            // porcelain v1: "XY path" (X = index, Y = worktree). "?? path"
+            // for untracked. Renames/copies produce "XY old -> new" — but
+            // **only** when X or Y is R/C. Plain M/A/D files can legally
+            // contain the literal substring " -> " in their names, so we
+            // must gate the split on the status (B6).
+            guard raw.count >= 3 else { continue }
+            let chars = Array(raw)
+            let x = chars[0]
+            let y = chars[1]
+            let pathRaw = String(chars.dropFirst(3))
+            let isRenameOrCopy = (x == "R" || x == "C" || y == "R" || y == "C")
+            let path: String
+            if isRenameOrCopy, let arrow = pathRaw.range(of: " -> ") {
+                path = String(pathRaw[arrow.upperBound...])
+            } else {
+                path = pathRaw
+            }
+            let trimmed = path.trimmingCharacters(in: .whitespaces)
+            guard let status = mapStatus(x: x, y: y) else { continue }
+            entries.append(GitStatusEntry(path: trimmed, status: status))
+        }
+        return entries
+    }
+
+    private static func mapStatus(x: Character, y: Character) -> GitStatusEntry.Status? {
+        if x == "?" && y == "?" { return .untracked }
+        if x == "!" && y == "!" { return .ignored }
+        if x == "U" || y == "U" || x == "A" && y == "A" || x == "D" && y == "D" {
+            return .conflicted
+        }
+        // Priority: worktree state, then index state.
+        for ch in [y, x] {
+            switch ch {
+            case "M": return .modified
+            case "A": return .added
+            case "D": return .deleted
+            case "R": return .renamed
+            case "C": return .copied
+            default: break
+            }
+        }
+        return nil
     }
 
     // MARK: - diff

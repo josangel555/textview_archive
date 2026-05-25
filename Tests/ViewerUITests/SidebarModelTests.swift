@@ -139,12 +139,23 @@ final class SidebarModelTests: XCTestCase {
 
     // MARK: T6 — refreshGitStatus integration (no test existed previously)
 
+    private func runGit(_ args: [String], in dir: URL) throws {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        p.arguments = ["git"] + args
+        p.currentDirectoryURL = dir
+        try p.run()
+        p.waitUntilExit()
+        if p.terminationStatus != 0 {
+            throw NSError(domain: "git", code: Int(p.terminationStatus))
+        }
+    }
+
     func test_refreshGitStatus_populatesFromRepo() async throws {
         // Set up a tiny git repo with one untracked file.
-        let git = GitService()
-        try git.run(["-c", "init.defaultBranch=main", "init"], in: tmpDir)
-        try git.run(["config", "user.email", "test@example.com"], in: tmpDir)
-        try git.run(["config", "user.name", "Test"], in: tmpDir)
+        try runGit(["-c", "init.defaultBranch=main", "init"], in: tmpDir)
+        try runGit(["config", "user.email", "test@example.com"], in: tmpDir)
+        try runGit(["config", "user.name", "Test"], in: tmpDir)
         try touch("a.md")
 
         let model = SidebarModel()
