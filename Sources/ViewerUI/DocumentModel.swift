@@ -234,16 +234,37 @@ public final class DocumentModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Forward sidebar's @Published changes up so views observing
-        // DocumentModel (e.g. ContentView) re-render when the user
-        // toggles visibility, expands a folder, etc. Without this,
-        // child-ObservableObject changes are invisible to the parent
-        // observer — classic SwiftUI footgun.
-        self.sidebar.objectWillChange
-            .sink { [weak self] _ in
-                self?.objectWillChange.send()
-            }
-            .store(in: &cancellables)
+        // PERF #1 (2026-05-25): the previous build forwarded every
+        // `sidebar.objectWillChange` tick into `DocumentModel.
+        // objectWillChange`. That works for visibility but cascades
+        // every sidebar mutation (hover-driven `selectedURL`, the
+        // 60s git poll, the FolderWatcher debounce, expand/collapse,
+        // sort-mode toggles) into a re-body of every view observing
+        // DocumentModel — including the content tree that runs
+        // `renderedHTML`, `highlightRuns`, gutter math, etc. The
+        // fan-out was the single largest contributor to perceived
+        // sidebar-driven lag.
+        //
+        // Fix is the textbook narrow-observation pattern: views
+        // that depend on sidebar state observe `sidebar` directly
+        // via `@ObservedObject var sidebar: SidebarModel`. Views
+        // that only need DocumentModel state stop paying sidebar
+        // ticks entirely.
+        //
+        // Audit (every view that reads `model.sidebar.<published>`
+        // from a body or a Combine-publishing `.onChange`):
+        //   - ContentView (sidebar.isVisible)
+        //   - ClaudeTimelineSection (sidebar.rootURL)
+        //   - RecentChangesSection (sidebar.rootURL)
+        //   - Git/GitPanelSection (sidebar.rootURL)
+        //   - CrossSearchPanel (sidebar.rootURL, multi-site body)
+        //   - SearchAnywhereSection (sidebar.rootURL, multi-site)
+        //   - SettingsView (sidebar.isVisible Toggle binding)
+        //   - SidebarView / FileRowContextMenu — already observes
+        //     `sidebar` directly; unchanged.
+        // Write-only call sites (no observation needed):
+        //   - WalkthroughPlayerImpl (sets `isVisible`)
+        //   - Sessions/SessionState (setRoot)
     }
 
     private var cancellables: Set<AnyCancellable> = []

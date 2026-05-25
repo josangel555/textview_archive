@@ -5,6 +5,12 @@ import ViewerCore
 
 public struct ContentView: View {
     @ObservedObject var model: DocumentModel
+    /// Direct observation of the sidebar — see PERF #1 note in
+    /// `DocumentModel.init`. ContentView's body branches on
+    /// `sidebar.isVisible`; without this, the only way the body
+    /// would re-eval on a visibility toggle was through the (now-
+    /// removed) `objectWillChange` forwarding.
+    @ObservedObject var sidebar: SidebarModel
     @StateObject var walkthrough: WalkthroughPlayerController
     /// App-level sessions coordinator. Optional so SwiftUI previews
     /// and host-side unit tests that construct a bare `ContentView`
@@ -17,6 +23,7 @@ public struct ContentView: View {
 
     public init(model: DocumentModel, sessionsApp: SessionsAppCoordinator? = nil) {
         self.model = model
+        self.sidebar = model.sidebar
         self.sessionsApp = sessionsApp
         self.stylesheet = MarkdownStylesheet.load()
         // Persist the controller across body re-evals. The controller
@@ -50,7 +57,7 @@ public struct ContentView: View {
                     .accessibilityIdentifier("mdv.modebar")
                 Divider()
                 HStack(spacing: 0) {
-                    if model.sidebar.isVisible {
+                    if sidebar.isVisible {
                         DraggableSidebar(model: model)
                             .accessibilityIdentifier("mdv.sidebar")
                         Divider()
@@ -121,7 +128,7 @@ public struct ContentView: View {
                 Color.black.opacity(0.18)
                     .ignoresSafeArea()
                     .onTapGesture { model.dismissCrossSearch() }
-                CrossSearchPanel(model: model)
+                CrossSearchPanel(model: model, sidebar: sidebar)
                     .padding(.top, 80)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
