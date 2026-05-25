@@ -245,19 +245,21 @@ struct HTMLVisitor: MarkupVisitor {
         return out
     }
 
-    /// A9 — Raw HTML pass-through. We deliberately emit CommonMark's
-    /// HTMLBlock / InlineHTML payloads verbatim so authored markdown can
-    /// embed legitimate HTML (figures, asides, etc). The trust assumption is
-    /// "the markdown file is something the user opened", and the WKWebView
-    /// host neutralizes the dangerous payloads via:
-    ///  • allowsContentJavaScript = false (no inline `<script>` execution)
-    ///  • CSP `<meta>` injected by renderPage (no remote resources,
-    ///    no iframes/objects/forms/connect)
-    /// If we ever render markdown from a truly untrusted source (network
-    /// fetch, etc.), this method should be swapped for one that sanitizes
-    /// against an allowlist.
+    /// A9 — Raw HTML pass-through.
+    ///
+    /// **Hardened 2026-05-25 (finding §2.1):** raw HTML now flows through
+    /// `HTMLSanitizer.sanitize` before being emitted. We still emit
+    /// CommonMark's HTMLBlock / InlineHTML payloads so authored markdown
+    /// can embed legitimate HTML (figures, asides, tables, MathJax-style
+    /// spans, etc.), but `<script>`, `<iframe>`, `<form>`, on-handlers,
+    /// and `javascript:` URLs are stripped at the renderer boundary.
+    /// The previous defense — inline CSP `<meta>` only — was fragile
+    /// against WebKit version differences and against `<script>` blocks
+    /// that race the CSP processing order. See
+    /// `docs/code-review/SECURITY_CONCURRENCY_2026-05-25.md` §2.1 for
+    /// the full threat model.
     mutating func visitHTMLBlock(_ html: HTMLBlock) -> String {
-        html.rawHTML
+        HTMLSanitizer.sanitize(html.rawHTML)
     }
 
     // MARK: Inline
@@ -348,7 +350,9 @@ struct HTMLVisitor: MarkupVisitor {
     }
 
     mutating func visitInlineHTML(_ inlineHTML: InlineHTML) -> String {
-        inlineHTML.rawHTML
+        // See visitHTMLBlock for the rationale on routing through
+        // HTMLSanitizer (finding §2.1).
+        HTMLSanitizer.sanitize(inlineHTML.rawHTML)
     }
 
     mutating func visitSoftBreak(_ softBreak: SoftBreak) -> String { "\n" }
