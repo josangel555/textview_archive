@@ -276,18 +276,4 @@ final class SessionStoreTests: XCTestCase {
         untouched.emptyTrashOlderThan(30)
     }
 
-    // MARK: Legacy bridge --------------------------------------------
-
-    func testMigrateLegacyReturnsValidSession() {
-        let legacy = WorkspaceSnapshot(
-            sidebarRootPath: "/some/path/proj",
-            openTabs: [TabSnapshot(path: "/some/path/proj/a.md", viewMode: "rendered")],
-            selectedTabIndex: 0,
-            zoom: 1.0, wordWrap: false, themeOverride: nil
-        )
-        let migrated = store.migrateLegacyWorkspace(from: legacy)
-        XCTAssertEqual(migrated.displayName, "proj")
-        XCTAssertEqual(migrated.openTabs.count, 1)
-        XCTAssertEqual(migrated.schemaVersion, SessionSnapshot.currentSchema)
-    }
 }

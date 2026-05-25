@@ -4,8 +4,9 @@ import ViewerKit
 
 /// Pure-data tests for `SessionSnapshot` / `SessionIndex`. Focus is on
 /// the contract that future schema versions can't silently corrupt
-/// older readers — codable round-trip + v1 legacy migration + the
-/// "additive optional fields tolerate missing keys" property.
+/// older readers — codable round-trip + the "additive optional fields
+/// tolerate missing keys" property. The legacy `WorkspaceSnapshot`
+/// migration was retired in decision G (2026-05-25).
 ///
 /// No UI, no FS state (we round-trip through `Data`, not files). Safe
 /// to run on the host Mac per CLAUDE.md.
@@ -75,88 +76,6 @@ final class SessionSnapshotTests: XCTestCase {
         // Pin the constant: any bump needs to be explicit + paired
         // with a migration step.
         XCTAssertEqual(SessionSnapshot.currentSchema, 2)
-    }
-
-    // MARK: Legacy migration -----------------------------------------
-
-    func testFromLegacyPreservesUserState() {
-        let savedAt = Date(timeIntervalSince1970: 1_650_000_000)
-        let legacy = WorkspaceSnapshot(
-            schemaVersion: WorkspaceSnapshot.currentSchema,
-            savedAt: savedAt,
-            sidebarRootPath: "/Users/me/code/myproj",
-            openTabs: [
-                TabSnapshot(path: "/Users/me/code/myproj/README.md", viewMode: "rendered"),
-            ],
-            selectedTabIndex: 0,
-            zoom: 1.5,
-            wordWrap: true,
-            themeOverride: "xcodeDark"
-        )
-        let migrated = SessionSnapshot.fromLegacy(legacy)
-        XCTAssertEqual(migrated.schemaVersion, SessionSnapshot.currentSchema)
-        XCTAssertEqual(migrated.savedAt, savedAt)
-        XCTAssertEqual(migrated.sidebarRootPath, "/Users/me/code/myproj")
-        XCTAssertEqual(migrated.openTabs, legacy.openTabs)
-        XCTAssertEqual(migrated.selectedTabIndex, 0)
-        XCTAssertEqual(migrated.zoom, 1.5)
-        XCTAssertEqual(migrated.wordWrap, true)
-        XCTAssertEqual(migrated.themeOverride, "xcodeDark")
-        // Display name is derived from the last path component.
-        XCTAssertEqual(migrated.displayName, "myproj")
-        // Timestamps clone savedAt — there's no better signal in v1.
-        XCTAssertEqual(migrated.createdAt, savedAt)
-        XCTAssertEqual(migrated.lastActiveAt, savedAt)
-    }
-
-    func testFromLegacyEmptyRootDisplayNameFallback() {
-        let legacy = WorkspaceSnapshot(
-            sidebarRootPath: nil,
-            openTabs: [],
-            selectedTabIndex: nil,
-            zoom: nil,
-            wordWrap: nil,
-            themeOverride: nil
-        )
-        let migrated = SessionSnapshot.fromLegacy(legacy)
-        XCTAssertEqual(migrated.displayName, "Default")
-    }
-
-    func testFromLegacyRootEndingInSlashStillResolvesName() {
-        // (NSString as Path).lastPathComponent strips trailing slashes.
-        let legacy = WorkspaceSnapshot(
-            sidebarRootPath: "/Users/me/code/myproj/",
-            openTabs: [],
-            selectedTabIndex: nil,
-            zoom: nil, wordWrap: nil, themeOverride: nil
-        )
-        let migrated = SessionSnapshot.fromLegacy(legacy)
-        XCTAssertEqual(migrated.displayName, "myproj")
-    }
-
-    func testToLegacyProjectsBackToV1Shape() {
-        // Round-trip property: v2 → legacy → v2 (via fromLegacy) loses
-        // identity but preserves user-facing state. Tests the
-        // compat-bridge write path used on quit.
-        let original = SessionSnapshot(
-            id: UUID(),
-            displayName: "Project",
-            createdAt: Date(timeIntervalSince1970: 1_000_000),
-            lastActiveAt: Date(timeIntervalSince1970: 2_000_000),
-            sidebarRootPath: "/x/y/z",
-            openTabs: [TabSnapshot(path: "/x/y/z/a.md", viewMode: "source")],
-            selectedTabIndex: 0,
-            zoom: 1.1,
-            wordWrap: false,
-            themeOverride: nil
-        )
-        let legacy = original.toLegacyWorkspaceSnapshot()
-        XCTAssertEqual(legacy.schemaVersion, WorkspaceSnapshot.currentSchema)
-        XCTAssertEqual(legacy.sidebarRootPath, "/x/y/z")
-        XCTAssertEqual(legacy.openTabs, original.openTabs)
-        XCTAssertEqual(legacy.selectedTabIndex, 0)
-        XCTAssertEqual(legacy.zoom, 1.1)
-        XCTAssertEqual(legacy.wordWrap, false)
     }
 
     // MARK: Forward-compat decode tolerance --------------------------

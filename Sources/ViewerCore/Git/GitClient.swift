@@ -411,10 +411,6 @@ public final class GitClient: Sendable {
         p.executableURL = URL(fileURLWithPath: bin)
         p.currentDirectoryURL = repoRoot
         p.arguments = Self.protectiveFlags + args
-        let outPipe = Pipe()
-        let errPipe = Pipe()
-        p.standardOutput = outPipe
-        p.standardError = errPipe
         // Don't inherit the parent's stdin. The app's stdin can be
         // pointed at arbitrary content (e.g., `mdv -` pipe mode);
         // git inheriting that would let a hostile config / hook prompt
@@ -431,45 +427,21 @@ public final class GitClient: Sendable {
         env["GIT_PAGER"] = "cat"
         env["GIT_OPTIONAL_LOCKS"] = "0"
         p.environment = env
-        // Drain both pipes concurrently with `git`'s run. `git log`,
-        // `git diff`, and friends easily produce >64 KB; if we waited
-        // for exit before reading, `git` would block writing into a
-        // full pipe (kernel buffer is ~64 KB) and `waitUntilExit()`
-        // would hang forever. Same shape as GitService.run() and
-        // JQRunner.run().
-        //
-        // S4.4 (2026-05-25): the captured vars used to be plain `var
-        // outData = Data()` mutated from escaping closures. Swift 6
-        // strict-concurrency tolerates that today only because
-        // DispatchQueue.async closures aren't `@Sendable`-marked;
-        // align with the `_Box` pattern from JQRunner + GitService so
-        // a future refactor doesn't reintroduce the race.
-        final class _DataBox: @unchecked Sendable { var data = Data() }
-        let outBox = _DataBox()
-        let errBox = _DataBox()
-        let outQ = DispatchQueue(label: "gitclient.stdout")
-        let errQ = DispatchQueue(label: "gitclient.stderr")
-        let group = DispatchGroup()
-        group.enter()
-        outQ.async {
-            outBox.data = outPipe.fileHandleForReading.readDataToEndOfFile()
-            group.leave()
-        }
-        group.enter()
-        errQ.async {
-            errBox.data = errPipe.fileHandleForReading.readDataToEndOfFile()
-            group.leave()
-        }
-        try p.run()
-        p.waitUntilExit()
-        group.wait()
-        let out = String(data: outBox.data, encoding: .utf8) ?? ""
-        if p.terminationStatus != 0 {
-            let estr = String(data: errBox.data, encoding: .utf8) ?? ""
+        // Drain both pipes concurrently via the shared `ProcessRunner`
+        // (H, 2026-05-25). `git log` / `git diff` easily produce >64 KB;
+        // a sequential read after exit would deadlock on the pipe-
+        // buffer cap.
+        let result = try ProcessRunner.run(p)
+        let out = String(data: result.stdout, encoding: .utf8) ?? ""
+        if result.terminationStatus != 0 {
+            let estr = String(data: result.stderr, encoding: .utf8) ?? ""
             if estr.lowercased().contains("not a git repository") {
                 throw Error.notARepo
             }
-            throw Error.processFailed(p.terminationStatus, estr.trimmingCharacters(in: .whitespacesAndNewlines))
+            throw Error.processFailed(
+                result.terminationStatus,
+                estr.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
         }
         return out
     }

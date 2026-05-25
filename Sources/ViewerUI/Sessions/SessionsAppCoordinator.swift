@@ -37,7 +37,6 @@ public final class SessionsAppCoordinator: ObservableObject {
     @Published public private(set) var active: SessionState?
 
     private let store: SessionStore
-    private let workspace: WorkspaceStore
     private let initialRoot: URL?
     private var lifecycleBridge: LifecycleBridge?
 
@@ -55,11 +54,9 @@ public final class SessionsAppCoordinator: ObservableObject {
 
     public init(model: DocumentModel,
                 store: SessionStore = SessionStore(),
-                workspace: WorkspaceStore = WorkspaceStore(),
                 initialRoot: URL? = nil) {
         self.model = model
         self.store = store
-        self.workspace = workspace
         self.core = SessionsCoordinator(store: store)
         self.initialRoot = initialRoot
     }
@@ -73,16 +70,18 @@ public final class SessionsAppCoordinator: ObservableObject {
     ///      calls reach our SessionState.
     ///   2. Try restoring from `Sessions/index.json`. If present,
     ///      mount the active session.
-    ///   3. Otherwise migrate from legacy `Workspaces/_last.json`
-    ///      → create a "Default" session.
-    ///   4. Otherwise (fresh user) seed from `initialRoot` if it
+    ///   3. Otherwise (fresh user) seed from `initialRoot` if it
     ///      points at an existing folder.
+    ///
+    /// Note: the legacy `Workspaces/_last.json` migration path was
+    /// retired in decision G (2026-05-25) — `SessionStore` is the
+    /// only on-disk shape.
     public func bootstrap() {
         let bridge = LifecycleBridge(owner: self)
         lifecycleBridge = bridge
         core.setLifecycle(bridge)
 
-        // 1. Try the v2 session store first.
+        // 1. Try the v2 session store.
         core.restore()
         if let activeSnap = core.active {
             mountSession(from: activeSnap, hydrate: .fromSession(activeSnap))
@@ -90,34 +89,7 @@ public final class SessionsAppCoordinator: ObservableObject {
             return
         }
 
-        // 2. No v2 state. Try migrating legacy _last.json.
-        if let legacy = workspace.loadAutoSlot() {
-            let migrated = SessionSnapshot.fromLegacy(legacy)
-            store.saveSync(migrated)
-            store.saveIndexSync(SessionIndex(
-                sessions: [
-                    .init(id: migrated.id,
-                          rootPath: migrated.sidebarRootPath ?? "",
-                          displayName: migrated.displayName,
-                          lastActiveAt: migrated.lastActiveAt)
-                ],
-                lastActiveID: migrated.id
-            ))
-            // Replay restore so coordinator state + lifecycle fire.
-            // The lifecycle bridge picks up the mount and would build
-            // a SessionState; we suppress that during the replay so
-            // we can hydrate explicitly from the legacy snapshot.
-            suppressNextMount = true
-            core.restore()
-            suppressNextMount = false
-            if let snap = core.active {
-                mountSession(from: snap, hydrate: .fromLegacy(legacy))
-            }
-            store.emptyTrashOlderThan(30)
-            return
-        }
-
-        // 3. Fresh user. If we have an initialRoot from prefs, seed
+        // 2. Fresh user. If we have an initialRoot from prefs, seed
         //    a session. Otherwise leave the strip empty.
         if let root = initialRoot,
            FileManager.default.fileExists(atPath: root.path),
@@ -214,14 +186,12 @@ public final class SessionsAppCoordinator: ObservableObject {
     /// Force a synchronous write of the active session's state and
     /// drain the persistence queue. Call from
     /// `applicationWillTerminate` so we exit with everything on
-    /// disk. Also writes a legacy `_last.json` bridge for one
-    /// release so a downgrade keeps user state (design §8.3).
+    /// disk. The legacy `_last.json` bridge writeback was retired in
+    /// decision G (2026-05-25).
     public func flushForTermination() {
         if let active {
             let snap = active.makeSnapshot()
             core.replaceSnapshot(id: active.id, with: snap)
-            let legacy = snap.toLegacyWorkspaceSnapshot()
-            workspace.saveAutoSlot(legacy)
         }
         core.flushPersistenceSync()
     }
@@ -230,14 +200,8 @@ public final class SessionsAppCoordinator: ObservableObject {
 
     private enum HydrateSource {
         case fromSession(SessionSnapshot)
-        case fromLegacy(WorkspaceSnapshot)
         case skip
     }
-
-    /// If true, the *next* mount call from the bridge is dropped on
-    /// the floor. Used by the migration path so a restore-replay
-    /// doesn't double-hydrate the DocumentModel.
-    private var suppressNextMount: Bool = false
 
     /// Build a fresh `SessionState` for `snap` against the shared
     /// `model`, hydrate the model if requested, and mount.
@@ -263,8 +227,6 @@ public final class SessionsAppCoordinator: ObservableObject {
         switch source {
         case .fromSession(let s):
             state.hydrate(from: s)
-        case .fromLegacy(let l):
-            state.hydrate(from: SessionSnapshot.fromLegacy(l))
         case .skip:
             // No hydration: caller (e.g. openFolder for a fresh
             // folder) will populate the model directly.
@@ -325,10 +287,6 @@ public final class SessionsAppCoordinator: ObservableObject {
 
         func mount(_ session: SessionSnapshot) {
             guard let owner else { return }
-            if owner.suppressNextMount {
-                owner.suppressNextMount = false
-                return
-            }
             // If we already track this exact session, just remount it
             // (re-enable the file watcher).
             if let active = owner.active, active.id == session.id {

@@ -322,17 +322,12 @@ public enum LSPDiscovery {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: executable)
         p.arguments = arguments
-        let out = Pipe()
-        p.standardOutput = out
-        p.standardError = Pipe()
-        do {
-            try p.run()
-        } catch {
-            return nil
-        }
-        p.waitUntilExit()
-        guard p.terminationStatus == 0 else { return nil }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8)
+        // Use the shared drain helper (H, 2026-05-25). The previous
+        // open-coded path read only stdout (stderr stayed un-drained),
+        // which was a latent pipe-buffer deadlock against a chatty
+        // `--version` flag on some servers.
+        guard let result = try? ProcessRunner.run(p) else { return nil }
+        guard result.terminationStatus == 0 else { return nil }
+        return String(data: result.stdout, encoding: .utf8)
     }
 }

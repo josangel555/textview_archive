@@ -3,6 +3,13 @@ import Foundation
 import ViewerCore
 import ViewerKit
 
+// MARK: - SessionState
+//
+// Session façade over a single `DocumentModel`. Decision G
+// (2026-05-25): the legacy `WorkspaceStore` migration bridge that used
+// to live in this file was retired with the rest of the `Workspace*`
+// surface; hydration now reads `SessionSnapshot` directly.
+
 /// Phase-1 façade variant of `SessionState`. Wraps a single
 /// `DocumentModel` instance and exposes the lifecycle hooks
 /// (`mount` / `detach`) that drive the file watcher's
@@ -88,8 +95,7 @@ public final class SessionState: ObservableObject {
     }
 
     /// Serialize the live `DocumentModel` state into a
-    /// `SessionSnapshot`. The coordinator persists the result. Phase
-    /// 1 mirrors the existing `WorkspaceSnapshot` field set; new
+    /// `SessionSnapshot`. The coordinator persists the result. New
     /// session-scoped fields (sidebar expansion, split URL) land
     /// over Phase 1.5 / Phase 2 as `DocumentModel` exposes the
     /// underlying state.
@@ -119,32 +125,40 @@ public final class SessionState: ObservableObject {
     }
 
     /// Hydrate the wrapped `DocumentModel` from a `SessionSnapshot`.
-    /// Mirrors the existing `restoreWorkspaceAutoSlot` path, but
-    /// keyed off the session's persisted snapshot instead of
-    /// `_last.json`.
-    ///
-    /// Phase 1 reuses `DocumentModel.restoreWorkspaceAutoSlot` for
-    /// the actual restore work by *temporarily* projecting the
-    /// snapshot back to a `WorkspaceSnapshot` shape on disk. That
-    /// indirection is gone in Phase 2 when `DocumentModel` gains a
-    /// session-aware restore entry point. For now it keeps the
-    /// Phase-1 diff against `DocumentModel` minimal.
+    /// Drives sidebar root + the lazy tab restore (so 15 tabs from
+    /// yesterday don't read 15 files at launch — only the focused
+    /// one) + zoom / wrap / theme overrides.
     public func hydrate(from snapshot: SessionSnapshot) {
         // Set sidebar root first so any subsequent tab open doesn't
         // implicitly reset it.
         if let rootPath = snapshot.sidebarRootPath {
             let url = URL(fileURLWithPath: rootPath)
             if FileManager.default.fileExists(atPath: url.path) {
-                model.openFolder(url)
+                model.sidebar.setRoot(url)
             }
         }
-        // Lazy-restore the tab list. The model's existing
-        // `restoreWorkspaceAutoSlot` does this against a legacy
-        // snapshot on disk; for phase 1 we write a one-shot legacy
-        // file in a tmp location and call that path, so we don't
-        // duplicate the lazy-tab logic.
-        let legacy = snapshot.toLegacyWorkspaceSnapshot()
-        SessionStateRestoreBridge.restoreInto(model: model, legacy: legacy)
+        for t in snapshot.openTabs {
+            let url = URL(fileURLWithPath: t.path)
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                continue
+            }
+            let mode = ViewMode(rawValue: t.viewMode)
+                ?? ViewModeOptions.defaultMode(for: url)
+            model.appendLazyTab(url: url, viewMode: mode)
+        }
+        if let zoom = snapshot.zoom { model.zoom = zoom }
+        if let wrap = snapshot.wordWrap { model.sourceWordWrap = wrap }
+        if let theme = snapshot.themeOverride {
+            model.themeOverride = SyntaxTheme.Name(rawValue: theme)
+        }
+        // Distinguish nil (deliberate "no selection persisted") from 0
+        // (first tab). Previously nil collapsed to 0 and restoring a
+        // session with an explicit empty selection refocused tab 0
+        // anyway.
+        if let target = snapshot.selectedTabIndex,
+           model.tabs.tabs.indices.contains(target) {
+            model.selectTab(at: target)
+        }
     }
 
     /// Best-effort display name from a folder URL. The last path
@@ -155,69 +169,5 @@ public final class SessionState: ObservableObject {
         let last = url.lastPathComponent
         if last.isEmpty || last == "/" { return "Untitled" }
         return last
-    }
-}
-
-/// Tiny helper so `SessionState.hydrate` doesn't duplicate the lazy
-/// tab-restore logic that lives on `DocumentModel`. Writes a
-/// per-call temporary `_last.json` and calls the model's existing
-/// restore method. This is Phase-1 expedience — Phase 2 will route
-/// directly through a session-aware restore on DocumentModel.
-@MainActor
-enum SessionStateRestoreBridge {
-    static func restoreInto(model: DocumentModel, legacy: WorkspaceSnapshot) {
-        // Render the legacy snapshot into an in-memory ad-hoc file so
-        // the existing restore path picks it up. We can't simply call
-        // a private path on DocumentModel from here without expanding
-        // its API surface; the throwaway file is the smallest seam.
-        //
-        // Note: we can't reuse `WorkspaceStore.defaultDirectory()/_last.json`
-        // because that's the global compat slot — overwriting it would
-        // race with `saveWorkspaceAutoSlot` (the bridge writer). A
-        // per-session tmp file in the per-user `temporaryDirectory`
-        // sidesteps that entirely.
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent(
-                "mdv-session-restore-\(UUID().uuidString).json"
-            )
-        guard JSONFileStore.write(legacy, to: tmp) else { return }
-        defer { try? FileManager.default.removeItem(at: tmp) }
-        // Read it back via the model's stock path. We do a direct
-        // load-and-apply by routing through a TempWorkspaceStore
-        // shape rather than touching the real `_last.json`.
-        if let snap = JSONFileStore.read(WorkspaceSnapshot.self, from: tmp) {
-            applyLegacySnapshot(snap, to: model)
-        }
-    }
-
-    /// Apply a legacy WorkspaceSnapshot's contents to a DocumentModel.
-    /// Mirrors `DocumentModel.restoreWorkspaceAutoSlot()` minus the
-    /// `_last.json` read step — we already have the value in hand.
-    private static func applyLegacySnapshot(_ snap: WorkspaceSnapshot,
-                                            to model: DocumentModel) {
-        if let root = snap.sidebarRootPath {
-            let url = URL(fileURLWithPath: root)
-            if FileManager.default.fileExists(atPath: url.path) {
-                model.sidebar.setRoot(url)
-            }
-        }
-        for t in snap.openTabs {
-            let url = URL(fileURLWithPath: t.path)
-            guard FileManager.default.fileExists(atPath: url.path) else {
-                continue
-            }
-            let mode = ViewMode(rawValue: t.viewMode)
-                ?? ViewModeOptions.defaultMode(for: url)
-            model.appendLazyTab(url: url, viewMode: mode)
-        }
-        if let zoom = snap.zoom { model.zoom = zoom }
-        if let wrap = snap.wordWrap { model.sourceWordWrap = wrap }
-        if let theme = snap.themeOverride {
-            model.themeOverride = SyntaxTheme.Name(rawValue: theme)
-        }
-        let target = snap.selectedTabIndex ?? 0
-        if model.tabs.tabs.indices.contains(target) {
-            model.selectTab(at: target)
-        }
     }
 }

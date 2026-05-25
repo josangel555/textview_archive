@@ -65,19 +65,13 @@ final class SessionTabPersistenceTests: XCTestCase {
             at: storesDir, withIntermediateDirectories: true
         )
         let sessionsDir = storesDir.appendingPathComponent("Sessions")
-        let workspaceDir = storesDir.appendingPathComponent("Workspaces")
         try? FileManager.default.createDirectory(
             at: sessionsDir, withIntermediateDirectories: true
         )
-        try? FileManager.default.createDirectory(
-            at: workspaceDir, withIntermediateDirectories: true
-        )
         let store = SessionStore(directory: sessionsDir)
-        let workspace = WorkspaceStore(directory: workspaceDir)
         let model = DocumentModel()
         let coord = SessionsAppCoordinator(
-            model: model, store: store, workspace: workspace,
-            initialRoot: nil
+            model: model, store: store, initialRoot: nil
         )
         coord.bootstrap()
         return coord
