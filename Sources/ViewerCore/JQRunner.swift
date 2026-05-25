@@ -58,62 +58,27 @@ public enum JQRunner {
         // viewer — drop -e so empty matches return "" cleanly.
         // --tab is too aggressive for a viewer; default 2-space indent.
         p.arguments = [filter]
-        let inPipe = Pipe()
-        let outPipe = Pipe()
-        let errPipe = Pipe()
-        p.standardInput = inPipe
-        p.standardOutput = outPipe
-        p.standardError = errPipe
         // Minimal env: no GIT_* or LANG quirks needed for jq.
         p.environment = [
             "PATH": "/usr/bin:/bin",
             "LANG": "C",
         ]
-        try p.run()
-
-        // Write JSON input + close. Drain stdout / stderr concurrently
-        // to avoid the 64 KB pipe-buffer deadlock (same lesson as
-        // GitService.run).
-        let inputData = Data(json.utf8)
-        DispatchQueue.global(qos: .userInitiated).async {
-            inPipe.fileHandleForWriting.write(inputData)
-            try? inPipe.fileHandleForWriting.close()
-        }
-
-        // Box for the drain results — same pattern as GitService.
-        final class _Box: @unchecked Sendable { var data = Data() }
-        let outBox = _Box(); let errBox = _Box()
-        let group = DispatchGroup()
-        let q = DispatchQueue.global(qos: .userInitiated)
-        group.enter()
-        q.async {
-            outBox.data = outPipe.fileHandleForReading.readDataToEndOfFile()
-            group.leave()
-        }
-        group.enter()
-        q.async {
-            errBox.data = errPipe.fileHandleForReading.readDataToEndOfFile()
-            group.leave()
-        }
-
-        // Timeout watchdog. If jq is still running past the budget,
-        // terminate it. Test on the main wait below — the group will
-        // unblock once both pipes EOF (i.e., process is gone).
-        let deadline = DispatchTime.now() + timeoutSeconds
-        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: deadline) {
-            if p.isRunning { p.terminate() }
-        }
-
-        group.wait()
-        p.waitUntilExit()
-
-        if p.terminationStatus != 0 {
-            let err = String(data: errBox.data, encoding: .utf8) ?? ""
+        // Drain stdout/stderr concurrently + write stdin off-thread +
+        // enforce a wall-clock timeout via the shared `ProcessRunner`
+        // (H, 2026-05-25). Same pipe-buffer-deadlock lesson as
+        // `GitClient`.
+        let result = try ProcessRunner.run(
+            p,
+            stdin: Data(json.utf8),
+            timeout: timeoutSeconds
+        )
+        if result.terminationStatus != 0 {
+            let err = String(data: result.stderr, encoding: .utf8) ?? ""
             throw Error.filterError(
-                exitCode: p.terminationStatus,
+                exitCode: result.terminationStatus,
                 stderr: err.trimmingCharacters(in: .whitespacesAndNewlines)
             )
         }
-        return String(data: outBox.data, encoding: .utf8) ?? ""
+        return String(data: result.stdout, encoding: .utf8) ?? ""
     }
 }
