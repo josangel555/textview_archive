@@ -90,6 +90,11 @@ public struct ClaudeLogParser: Sendable {
         var lineStart = 0
         let count = data.count
         var i = 0
+        // S3-C: bailing from the closure with `return` only exits the
+        // closure body — the trailing-line block beneath still ran,
+        // appending another batch past maxEvents. Use an explicit
+        // flag so the trailing-line block also bails.
+        var hitCap = false
         data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
             let bytes = raw.bindMemory(to: UInt8.self)
             while i < count {
@@ -102,12 +107,15 @@ public struct ClaudeLogParser: Sendable {
                         }
                     }
                     lineStart = i + 1
-                    if events.count >= self.maxEvents { return }
+                    if events.count >= self.maxEvents {
+                        hitCap = true
+                        return
+                    }
                 }
                 i += 1
             }
-            // Trailing line without newline
-            if lineStart < count {
+            // Trailing line without newline.
+            if !hitCap, lineStart < count {
                 let lineLen = count - lineStart
                 if lineLen > 0 && lineLen <= self.maxLineBytes {
                     let slice = data.subdata(in: lineStart..<count)

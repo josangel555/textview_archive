@@ -1206,14 +1206,18 @@ public final class DocumentModel: ObservableObject {
 
         // WebKit posts CM6's contextmenu coordinates as `screenX/Y`,
         // which originate top-left. NSMenu.popUp expects AppKit
-        // screen coords (bottom-left). Convert via the active screen
-        // height.
+        // screen coords (bottom-left). The flip pivot in the global
+        // AppKit coordinate space is the PRIMARY screen's `frame.maxY`
+        // (NSScreen.screens[0] — the screen with the menu bar), NOT
+        // the height of whichever monitor the cursor is on. Using a
+        // secondary screen's frame.height produced wrong y on multi-
+        // monitor setups (especially when secondaries had non-zero
+        // frame.origin.y, e.g. a portrait monitor below the primary).
         let webkitPoint = request.screenPoint
-        let mainScreen = NSScreen.screens.first { screen in
-            screen.frame.contains(NSPoint(x: webkitPoint.x, y: 0))
-        } ?? NSScreen.main
-        let screenHeight = mainScreen?.frame.height ?? 0
-        let appkitY = screenHeight - webkitPoint.y
+        let pivotY = (NSScreen.screens.first?.frame.maxY)
+            ?? (NSScreen.main?.frame.maxY)
+            ?? 0
+        let appkitY = pivotY - webkitPoint.y
         let popPoint = NSPoint(x: webkitPoint.x, y: appkitY)
         menu.popUp(positioning: nil, at: popPoint, in: nil)
     }
@@ -1507,20 +1511,25 @@ public final class DocumentModel: ObservableObject {
             return hit.formatted
         }
         let result = Formatter.prettyPrint(file.contents, as: format)
+        if formattedTextCache[id] == nil {
+            formattedTextCacheOrder.append(id)
+        }
         formattedTextCache[id] = (sourceLength: len, formatted: result)
         if formattedTextCache.count > Self.formattedTextCacheMax {
-            // Arbitrary drop — tab ids are UUIDs with no ordering
-            // signal we can use. Acceptable: caller will repopulate
-            // on next access for the dropped tab.
-            let drop = formattedTextCache.count - Self.formattedTextCacheMax * 2 / 3
-            for k in formattedTextCache.keys.prefix(drop) {
+            // S4-G: evict oldest by insertion order; same fix as the
+            // renderedHTMLCache (S2-G).
+            let dropCount = formattedTextCache.count - Self.formattedTextCacheMax * 2 / 3
+            let toDrop = formattedTextCacheOrder.prefix(dropCount)
+            for k in toDrop {
                 formattedTextCache.removeValue(forKey: k)
             }
+            formattedTextCacheOrder.removeFirst(toDrop.count)
         }
         return result
     }
 
     private var formattedTextCache: [UUID: (sourceLength: Int, formatted: String)] = [:]
+    private var formattedTextCacheOrder: [UUID] = []
     private static let formattedTextCacheMax = 8
 
     // MARK: Syntax highlighting
@@ -1531,12 +1540,25 @@ public final class DocumentModel: ObservableObject {
     /// cached runs. Using URL+length is O(1) per lookup; hashing the
     /// full text on every body re-eval (the prior key) was O(N) per
     /// call and dominated large-file render cost.
+    ///
+    /// Documented limitation: same-byte-length reloads
+    /// (`# Hello\n` → `# World\n`) won't invalidate. The flagged
+    /// inconsistency with renderedHTMLCache (which uses a content
+    /// hash) is real but the perf cost of hashing on every body
+    /// re-eval was the original motivation — leaving as-is. Run
+    /// SwiftUI-level invalidation through a dedicated nonce instead
+    /// when this becomes user-visible.
     public struct HighlightCacheKey: Hashable, Sendable {
         public let url: URL
         public let length: Int
         public let language: HighlightLanguage
     }
     @Published public private(set) var highlightCache: [HighlightCacheKey: [HighlightRun]] = [:]
+    /// Insertion-order list mirroring `highlightCache`. Used to evict
+    /// the OLDEST entries on overflow (S2-G class). Updated by
+    /// `highlightRuns(forURL:text:language:)` and pruned by
+    /// `purgeCaches(forURL:)`.
+    private var highlightCacheOrder: [HighlightCacheKey] = []
     private var highlightInFlight: Set<HighlightCacheKey> = []
 
     /// Currently-active syntax theme. Computed from system appearance;
@@ -1585,6 +1607,9 @@ public final class DocumentModel: ObservableObject {
             )
             await MainActor.run { [weak self] in
                 guard let self else { return }
+                if self.highlightCache[key] == nil {
+                    self.highlightCacheOrder.append(key)
+                }
                 self.highlightCache[key] = runs
                 self.highlightInFlight.remove(key)
                 self.pruneHighlightCacheIfNeeded()
@@ -1599,12 +1624,15 @@ public final class DocumentModel: ObservableObject {
     private static let highlightCacheMax = 32
     private func pruneHighlightCacheIfNeeded() {
         guard highlightCache.count > Self.highlightCacheMax else { return }
-        // Drop a third of entries (oldest first by insertion order is
-        // hard with a plain Dictionary; we drop arbitrary entries).
+        // S2-G class: evict by insertion order (oldest first). The
+        // prior "drop arbitrary Dictionary.keys.prefix(N)" sometimes
+        // dropped the freshly-inserted entry.
         let dropCount = highlightCache.count - Self.highlightCacheMax * 2 / 3
-        for key in highlightCache.keys.prefix(dropCount) {
+        let toDrop = highlightCacheOrder.prefix(dropCount)
+        for key in toDrop {
             highlightCache.removeValue(forKey: key)
         }
+        highlightCacheOrder.removeFirst(toDrop.count)
     }
 
     // MARK: Rendered markdown cache
@@ -1625,6 +1653,12 @@ public final class DocumentModel: ObservableObject {
         public let contentHash: UInt64
     }
     private var renderedHTMLCache: [RenderedHTMLKey: String] = [:]
+    /// Insertion-order list mirroring `renderedHTMLCache`. Used to evict
+    /// the OLDEST entries on overflow (S2-G). Previously eviction used
+    /// `Dictionary.keys.prefix(N)`, whose iteration order is
+    /// implementation-defined — sometimes evicting the entry we'd just
+    /// inserted, defeating the cache.
+    private var renderedHTMLCacheOrder: [RenderedHTMLKey] = []
     // Each entry is a 2-5× inflation of source size (code-fence
     // highlighting). Four covers the typical "couple of open MDs"
     // working set and caps the worst-case RAM footprint of this
@@ -1701,8 +1735,11 @@ public final class DocumentModel: ObservableObject {
         if let theme = snap.themeOverride {
             self.themeOverride = SyntaxTheme.Name(rawValue: theme)
         }
-        let target = snap.selectedTabIndex ?? 0
-        if tabs.tabs.indices.contains(target) {
+        // S3-J: distinguish nil (deliberate "no selection persisted")
+        // from 0 (first tab). Previously nil collapsed to 0 and
+        // restoring a workspace with an explicit empty selection
+        // refocused tab 0 anyway.
+        if let target = snap.selectedTabIndex, tabs.tabs.indices.contains(target) {
             selectTab(at: target)
         }
     }
@@ -1725,12 +1762,19 @@ public final class DocumentModel: ObservableObject {
             stylesheet: stylesheet,
             extraStylesheet: MermaidBundle.shimCSS
         )
+        if renderedHTMLCache[key] == nil {
+            renderedHTMLCacheOrder.append(key)
+        }
         renderedHTMLCache[key] = html
         if renderedHTMLCache.count > Self.renderedHTMLCacheMax {
-            let drop = renderedHTMLCache.count - Self.renderedHTMLCacheMax * 2 / 3
-            for k in renderedHTMLCache.keys.prefix(drop) {
+            // S2-G: evict by insertion order, oldest first. Drop down
+            // to ~2/3 of the cap so we don't churn on every insert.
+            let dropCount = renderedHTMLCache.count - Self.renderedHTMLCacheMax * 2 / 3
+            let toDrop = renderedHTMLCacheOrder.prefix(dropCount)
+            for k in toDrop {
                 renderedHTMLCache.removeValue(forKey: k)
             }
+            renderedHTMLCacheOrder.removeFirst(toDrop.count)
         }
         return html
     }
@@ -1888,25 +1932,16 @@ public final class DocumentModel: ObservableObject {
         } else {
             // Refresh the fingerprint so the next watcher tick (often
             // a duplicate event from the same write) doesn't re-prompt.
+            // Crucially we MUST NOT touch `originalText` — keeping the
+            // pre-conflict baseline preserves `isDirty == true` and
+            // leaves Revert / future "compare original" features usable.
             if var buf = editorBuffers[id] {
                 let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
-                buf.markSaved(
+                buf.refreshSavedFingerprint(
                     diskMTime: attrs?[.modificationDate] as? Date,
                     diskSize: attrs?[.size] as? Int
                 )
-                // markSaved snapshots `text` as `originalText`, which
-                // would wrongly clear dirt. Undo by reseeding originals
-                // to a sentinel that keeps `isDirty` true. We do this
-                // by creating a fresh buffer with the user's text +
-                // a different `originalText`.
-                editorBuffers[id] = EditorBuffer(
-                    url: buf.url,
-                    original: buf.originalText,  // pre-existing baseline
-                    encoding: buf.encoding,
-                    lastSavedMTime: attrs?[.modificationDate] as? Date,
-                    lastSavedSize: attrs?[.size] as? Int
-                )
-                editorBuffers[id]?.setText(buf.text)
+                editorBuffers[id] = buf
             }
         }
     }
@@ -2047,6 +2082,13 @@ public final class DocumentModel: ObservableObject {
         // Same dirty-prompt loop as closeOtherTabs. Process the
         // doomed tabs from right-to-left so a Cancel partway through
         // leaves a contiguous tail intact (rather than holes).
+        // Bounds-check up front: a stale gesture (menu/script verb
+        // firing after the tab vanished from another path) can hand
+        // us an out-of-range index, and the `(index+1)..<count`
+        // range construction below would trap before the
+        // `tabs.tabs.indices.contains(index)` check on line ~2061
+        // ever runs.
+        guard index >= 0, index < tabs.tabs.count else { return }
         let toClose = (index + 1)..<tabs.tabs.count
         let doomedDirty = toClose.reversed().filter { tabs.tabs[$0].isDirty }
         for i in doomedDirty {
@@ -2084,8 +2126,17 @@ public final class DocumentModel: ObservableObject {
     private func purgeCaches(forURL url: URL?) {
         guard let url else { return }
         if tabs.tabs.contains(where: { $0.url == url }) { return }
+        let priorHighlightOrder = highlightCacheOrder
         highlightCache = highlightCache.filter { $0.key.url != url }
+        let survivorHL = Set(highlightCache.keys)
+        highlightCacheOrder = priorHighlightOrder.filter { survivorHL.contains($0) }
+
+        let priorOrder = renderedHTMLCacheOrder
         renderedHTMLCache = renderedHTMLCache.filter { $0.key.url != url }
+        // Keep the order list in sync — drop the URL's entries while
+        // preserving relative ordering of survivors (S2-G).
+        let survivorKeys = Set(renderedHTMLCache.keys)
+        renderedHTMLCacheOrder = priorOrder.filter { survivorKeys.contains($0) }
     }
 
     public func moveTab(from src: Int, to dst: Int) {

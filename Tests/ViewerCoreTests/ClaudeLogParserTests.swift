@@ -203,6 +203,24 @@ final class ClaudeLogParserTests: XCTestCase {
         XCTAssertEqual(cappedParser.parse(many).count, 10)
     }
 
+    /// S3-C: cap bail-out used `return` inside a `withUnsafeBytes`
+    /// closure, which only exited the closure body. The trailing-
+    /// line block beneath then appended one more record past the
+    /// cap. The trailing prefix(maxEvents) hid it, but the closure
+    /// shouldn't do work past the cap. Test ensures the trailing-
+    /// no-newline branch is bypassed once the cap fires inside the
+    /// main loop.
+    func test_eventCap_skipsTrailingNoNewlineLine() {
+        let userLine = #"{"type":"user","uuid":"u","message":{"role":"user","content":"hi"}}"#
+        // 10 newline-terminated lines (triggers cap) then a trailing
+        // line WITHOUT terminator (must not be parsed).
+        let body = Array(repeating: userLine, count: 10).joined(separator: "\n")
+            + "\n" + userLine  // no trailing \n
+        let parser = ClaudeLogParser(maxEvents: 10)
+        let events = parser.parse(body)
+        XCTAssertEqual(events.count, 10)
+    }
+
     // MARK: Real-transcript shape (uses heterogeneous JSONL fixture inline)
 
     func test_realisticTranscript_yieldsExpectedKindMix() {

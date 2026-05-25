@@ -181,24 +181,69 @@ public enum DiffParser {
         partial = nil
     }
 
-    /// `diff --git a/old b/new` → ("old", "new"). Falls back to the
-    /// raw token after `a/` / `b/` if the names have spaces (rare).
+    /// `diff --git a/old b/new` → ("old", "new"). Handles paths with
+    /// spaces, surrounding double-quotes (git's auto-quoting for
+    /// names with control chars), and rename-style same-side
+    /// `a/foo b/bar` correctly.
+    ///
+    /// S3-A: previous split-at-first-space implementation collapsed
+    /// `a/foo bar.txt b/foo bar.txt` into a junk second token. The
+    /// ` b/`-search fallback also picked the FIRST ` b/` it found,
+    /// which broke when path components themselves contained ` b/`.
+    /// New strategy:
+    ///   1. If both sides are quoted (`"a/…" "b/…"`), use the quote
+    ///      boundaries as the splitter — unambiguous.
+    ///   2. Otherwise split such that the two halves have equal
+    ///      content after stripping the `a/` / `b/` prefixes (rename
+    ///      diffs apart, the same-file case is the dominant one).
+    ///   3. Fall back to the LAST ` b/` (most likely to be the true
+    ///      separator if the path itself contains ` b/`).
     private static func parseDiffGitPaths(_ line: String) -> (String, String) {
-        // Strip "diff --git " prefix.
-        let rest = line.dropFirst("diff --git ".count)
-        // Quoted paths: a/"name with spaces". Not bullet-proof but the
-        // common shapes are handled.
+        let rest = String(line.dropFirst("diff --git ".count))
+
+        // (1) Quoted form: `"a/…" "b/…"`. Look for `" "`.
+        if rest.hasPrefix("\""),
+           let mid = rest.range(of: "\" \"") {
+            let a = rest[rest.startIndex..<mid.lowerBound]
+            let b = rest[mid.upperBound...]
+            // Strip the dangling trailing quote on the b-side.
+            var bs = String(b)
+            if bs.hasSuffix("\"") { bs = String(bs.dropLast()) }
+            return (stripPathPrefix(String(a) + "\""), stripPathPrefix(bs))
+        }
+
+        // (2) Find a ` b/` candidate where the prefix before it has
+        // the form `a/PATH` AND the suffix after it equals `PATH`
+        // (the common same-file case). If found, split there.
+        var search = rest.startIndex
+        while let bRange = rest.range(of: " b/", range: search..<rest.endIndex) {
+            let aPart = rest[rest.startIndex..<bRange.lowerBound]
+            let bPart = rest[bRange.upperBound...]
+            if aPart.hasPrefix("a/") {
+                let aPath = aPart.dropFirst(2)
+                if aPath == bPart {
+                    return (String(aPath), String(bPart))
+                }
+            }
+            // Try the next ` b/` occurrence.
+            search = rest.index(after: bRange.lowerBound)
+        }
+
+        // (3) Rename or otherwise asymmetric — fall back to the LAST
+        // ` b/` (assumes the b-side is one path component, no spaces).
+        if let bRange = rest.range(of: " b/", options: .backwards) {
+            let a = rest[rest.startIndex..<bRange.lowerBound]
+            let b = rest[bRange.upperBound...]
+            return (stripPathPrefix(String(a)), String(b))
+        }
+
+        // (4) Last resort: split at first space (preserves the
+        // previous behaviour for malformed lines).
         let tokens = rest.split(separator: " ", maxSplits: 1).map(String.init)
         if tokens.count == 2 {
             return (stripPathPrefix(tokens[0]), stripPathPrefix(tokens[1]))
         }
-        // Last resort: split at " b/".
-        if let bRange = rest.range(of: " b/") {
-            let a = rest[..<bRange.lowerBound]
-            let b = rest[bRange.upperBound...]
-            return (stripPathPrefix(String(a)), String(b))
-        }
-        return (String(rest), String(rest))
+        return (rest, rest)
     }
 
     /// Strip leading `a/`, `b/`, surrounding quotes, trailing newline.

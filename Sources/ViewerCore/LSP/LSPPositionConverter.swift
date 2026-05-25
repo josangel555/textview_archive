@@ -103,6 +103,14 @@ public struct LSPPositionConverter: Sendable {
             let ch = text[idx]
             if ch == "\n" { break }
             let units = Self.codeUnitCount(of: ch, in: encoding)
+            // S2-H: if the server position lands "inside" a multi-
+            // code-unit grapheme (surrogate pair / emoji), consuming
+            // the whole character would overshoot — we'd advance idx
+            // PAST the character the position was meant to land in.
+            // Clamp to the char boundary instead. LSP is undefined
+            // for inside-grapheme positions; the most conservative
+            // valid interpretation is "don't cross the boundary".
+            if units > remaining { break }
             remaining -= units
             idx = text.index(after: idx)
         }

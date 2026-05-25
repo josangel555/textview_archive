@@ -184,6 +184,42 @@ final class DiffParserTests: XCTestCase {
         XCTAssertEqual(kinds, [.removed, .noNewline, .added])
     }
 
+    /// S3-A: paths with spaces previously broke the first-space-split
+    /// parsing — the b-side ended up as "bar.txt b/foo bar.txt"
+    /// minus the b/ prefix.
+    func test_diffGitPaths_withSpaces_inFilename() {
+        let diff = """
+        diff --git a/foo bar.txt b/foo bar.txt
+        --- a/foo bar.txt
+        +++ b/foo bar.txt
+        @@ -1 +1 @@
+        -old
+        +new
+        """
+        let files = DiffParser.parse(diff)
+        XCTAssertEqual(files.count, 1)
+        XCTAssertEqual(files[0].oldPath, "foo bar.txt")
+        XCTAssertEqual(files[0].newPath, "foo bar.txt")
+    }
+
+    /// S3-A: filename containing ` b/` substring (rare but legal on
+    /// non-Windows filesystems). Previously the first-` b/`-split
+    /// fallback would split too early.
+    func test_diffGitPaths_filenameContainingBSlash() {
+        let diff = """
+        diff --git a/x b/y.txt b/x b/y.txt
+        --- a/x b/y.txt
+        +++ b/x b/y.txt
+        @@ -1 +1 @@
+        -old
+        +new
+        """
+        let files = DiffParser.parse(diff)
+        XCTAssertEqual(files.count, 1)
+        XCTAssertEqual(files[0].oldPath, "x b/y.txt")
+        XCTAssertEqual(files[0].newPath, "x b/y.txt")
+    }
+
     func test_hunk_header_context_tail_preserved() {
         let diff = """
         diff --git a/x b/x

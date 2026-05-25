@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import ViewerCore
 import WebKit
 
 /// Loads a self-contained HTML string into a `WKWebView`. JavaScript is disabled
@@ -243,12 +244,16 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         }
 
         /// JSON-escape a query for embedding in a JS string literal.
+        /// JSONSerialization does NOT escape U+2028 / U+2029 — both are
+        /// JS line terminators, so a query like `"foo\u{2028}bar"`
+        /// would produce a syntax error in the synthesized script.
+        /// Sanitize via `JSStringEmbedding` to escape both.
         static func jsEscape(_ s: String) -> String {
             if let data = try? JSONSerialization.data(withJSONObject: [s]),
                let str = String(data: data, encoding: .utf8) {
                 // ["…"] → strip surrounding [ ]
                 let inner = String(str.dropFirst().dropLast())
-                return inner
+                return JSStringEmbedding.sanitize(inner)
             }
             return "\"\""
         }

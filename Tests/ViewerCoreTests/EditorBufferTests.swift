@@ -30,6 +30,42 @@ final class EditorBufferTests: XCTestCase {
         XCTAssertFalse(buf.isDirty)
     }
 
+    func test_refreshSavedFingerprint_keepsDirtyAndBaseline() {
+        // S1-A: "Keep My Edits" branch must preserve `originalText`
+        // (so isDirty stays true and a future Revert still works)
+        // while bumping the disk fingerprint so the next duplicate
+        // watcher event doesn't re-prompt.
+        var buf = EditorBuffer(
+            url: URL(fileURLWithPath: "/tmp/x.txt"),
+            original: "baseline",
+            lastSavedMTime: Date(timeIntervalSince1970: 100),
+            lastSavedSize: 8
+        )
+        buf.setText("baseline + my edits")
+        XCTAssertTrue(buf.isDirty)
+        let newMTime = Date(timeIntervalSince1970: 200)
+        let newSize = 99  // disk size (other process wrote something)
+        buf.refreshSavedFingerprint(diskMTime: newMTime, diskSize: newSize)
+        // Baseline unchanged → still dirty.
+        XCTAssertTrue(
+            buf.isDirty,
+            "refreshSavedFingerprint must not collapse dirt"
+        )
+        XCTAssertEqual(buf.originalText, "baseline")
+        XCTAssertEqual(buf.text, "baseline + my edits")
+        // Fingerprint updated → watcher sees no external edit at new size.
+        XCTAssertFalse(
+            buf.hasExternalEdit(currentMTime: newMTime, currentSize: newSize),
+            "duplicate watcher event for same write should be silent"
+        )
+        // But a later, different write IS still detected.
+        XCTAssertTrue(
+            buf.hasExternalEdit(
+                currentMTime: newMTime.addingTimeInterval(10), currentSize: newSize
+            )
+        )
+    }
+
     func test_markSaved_clearsDirty_andRefreshesBaseline() {
         var buf = EditorBuffer(url: URL(fileURLWithPath: "/tmp/x.txt"), original: "v1")
         buf.setText("v2")

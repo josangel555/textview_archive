@@ -110,6 +110,27 @@ final class SessionsCoordinatorTests: XCTestCase {
         XCTAssertEqual(coord.activeID, sA.id)
     }
 
+    /// S2-A: activate() bumps lastActiveAt on BOTH the outgoing AND
+    /// the incoming session. Previously only the outgoing was bumped,
+    /// so A → B → A then close(A) would re-activate B because A's
+    /// timestamp was stale.
+    func testActivateBumpsBothOutgoingAndIncomingLastActiveAt() throws {
+        let a = try makeTmpFolder(name: "alpha")
+        let b = try makeTmpFolder(name: "beta")
+        let sA = coord.openFolder(a)
+        let _  = coord.openFolder(b)  // sB becomes active
+        // A → B already, switch back to A then close A.
+        // Sleep tiny amount so timestamps are monotonically increasing
+        // and the LRU sort has a stable distinction.
+        Thread.sleep(forTimeInterval: 0.01)
+        coord.activate(id: sA.id)
+        // sA should now have the freshest lastActiveAt.
+        let aSnap = coord.sessions.first(where: { $0.id == sA.id })!
+        let bSnap = coord.sessions.first(where: { $0.displayName == "beta" })!
+        XCTAssertGreaterThan(aSnap.lastActiveAt, bSnap.lastActiveAt,
+            "incoming session must end up with the newest lastActiveAt")
+    }
+
     func testActivateNoopWhenAlreadyActive() throws {
         let a = try makeTmpFolder()
         let sA = coord.openFolder(a)
