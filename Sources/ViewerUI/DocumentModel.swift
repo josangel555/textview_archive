@@ -1206,14 +1206,18 @@ public final class DocumentModel: ObservableObject {
 
         // WebKit posts CM6's contextmenu coordinates as `screenX/Y`,
         // which originate top-left. NSMenu.popUp expects AppKit
-        // screen coords (bottom-left). Convert via the active screen
-        // height.
+        // screen coords (bottom-left). The flip pivot in the global
+        // AppKit coordinate space is the PRIMARY screen's `frame.maxY`
+        // (NSScreen.screens[0] — the screen with the menu bar), NOT
+        // the height of whichever monitor the cursor is on. Using a
+        // secondary screen's frame.height produced wrong y on multi-
+        // monitor setups (especially when secondaries had non-zero
+        // frame.origin.y, e.g. a portrait monitor below the primary).
         let webkitPoint = request.screenPoint
-        let mainScreen = NSScreen.screens.first { screen in
-            screen.frame.contains(NSPoint(x: webkitPoint.x, y: 0))
-        } ?? NSScreen.main
-        let screenHeight = mainScreen?.frame.height ?? 0
-        let appkitY = screenHeight - webkitPoint.y
+        let pivotY = (NSScreen.screens.first?.frame.maxY)
+            ?? (NSScreen.main?.frame.maxY)
+            ?? 0
+        let appkitY = pivotY - webkitPoint.y
         let popPoint = NSPoint(x: webkitPoint.x, y: appkitY)
         menu.popUp(positioning: nil, at: popPoint, in: nil)
     }
@@ -1625,6 +1629,12 @@ public final class DocumentModel: ObservableObject {
         public let contentHash: UInt64
     }
     private var renderedHTMLCache: [RenderedHTMLKey: String] = [:]
+    /// Insertion-order list mirroring `renderedHTMLCache`. Used to evict
+    /// the OLDEST entries on overflow (S2-G). Previously eviction used
+    /// `Dictionary.keys.prefix(N)`, whose iteration order is
+    /// implementation-defined — sometimes evicting the entry we'd just
+    /// inserted, defeating the cache.
+    private var renderedHTMLCacheOrder: [RenderedHTMLKey] = []
     // Each entry is a 2-5× inflation of source size (code-fence
     // highlighting). Four covers the typical "couple of open MDs"
     // working set and caps the worst-case RAM footprint of this
@@ -1725,12 +1735,19 @@ public final class DocumentModel: ObservableObject {
             stylesheet: stylesheet,
             extraStylesheet: MermaidBundle.shimCSS
         )
+        if renderedHTMLCache[key] == nil {
+            renderedHTMLCacheOrder.append(key)
+        }
         renderedHTMLCache[key] = html
         if renderedHTMLCache.count > Self.renderedHTMLCacheMax {
-            let drop = renderedHTMLCache.count - Self.renderedHTMLCacheMax * 2 / 3
-            for k in renderedHTMLCache.keys.prefix(drop) {
+            // S2-G: evict by insertion order, oldest first. Drop down
+            // to ~2/3 of the cap so we don't churn on every insert.
+            let dropCount = renderedHTMLCache.count - Self.renderedHTMLCacheMax * 2 / 3
+            let toDrop = renderedHTMLCacheOrder.prefix(dropCount)
+            for k in toDrop {
                 renderedHTMLCache.removeValue(forKey: k)
             }
+            renderedHTMLCacheOrder.removeFirst(toDrop.count)
         }
         return html
     }
@@ -2083,7 +2100,12 @@ public final class DocumentModel: ObservableObject {
         guard let url else { return }
         if tabs.tabs.contains(where: { $0.url == url }) { return }
         highlightCache = highlightCache.filter { $0.key.url != url }
+        let priorOrder = renderedHTMLCacheOrder
         renderedHTMLCache = renderedHTMLCache.filter { $0.key.url != url }
+        // Keep the order list in sync — drop the URL's entries while
+        // preserving relative ordering of survivors (S2-G).
+        let survivorKeys = Set(renderedHTMLCache.keys)
+        renderedHTMLCacheOrder = priorOrder.filter { survivorKeys.contains($0) }
     }
 
     public func moveTab(from src: Int, to dst: Int) {
