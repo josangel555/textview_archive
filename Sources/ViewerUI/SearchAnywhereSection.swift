@@ -32,6 +32,12 @@ import ViewerKit
 /// will fail and steer the change toward an explicit decision.
 struct SearchAnywhereSection: View {
     @ObservedObject var model: DocumentModel
+    /// PERF #1: observe sidebar directly. The section body reads
+    /// `sidebar.rootURL` from the scope picker (disable state +
+    /// fallback resolution + label); without this, sidebar-driven
+    /// re-renders would have required the (removed) DocumentModel-
+    /// wide objectWillChange forwarding.
+    @ObservedObject var sidebar: SidebarModel
     @State private var isExpanded = true
     @State private var query: String = ""
     @State private var caseSensitive: Bool = false
@@ -132,12 +138,12 @@ struct SearchAnywhereSection: View {
             scope: scope,
             modeRequiresFolder: true
         ) {
-            return model.sidebar.rootURL
+            return sidebar.rootURL
         }
         return SearchScopeResolver.resolve(
             scope,
             activeFile: model.currentURL,
-            activeFolder: model.sidebar.rootURL
+            activeFolder: sidebar.rootURL
         )
     }
 
@@ -167,7 +173,7 @@ struct SearchAnywhereSection: View {
                 } label: {
                     Label("Sidebar Folder", systemImage: "folder")
                 }
-                .disabled(model.sidebar.rootURL == nil)
+                .disabled(sidebar.rootURL == nil)
                 .accessibilityIdentifier("mdv.searchAnywhere.scope.activeFolder")
 
                 Button {

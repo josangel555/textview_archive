@@ -234,16 +234,37 @@ public final class DocumentModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Forward sidebar's @Published changes up so views observing
-        // DocumentModel (e.g. ContentView) re-render when the user
-        // toggles visibility, expands a folder, etc. Without this,
-        // child-ObservableObject changes are invisible to the parent
-        // observer — classic SwiftUI footgun.
-        self.sidebar.objectWillChange
-            .sink { [weak self] _ in
-                self?.objectWillChange.send()
-            }
-            .store(in: &cancellables)
+        // PERF #1 (2026-05-25): the previous build forwarded every
+        // `sidebar.objectWillChange` tick into `DocumentModel.
+        // objectWillChange`. That works for visibility but cascades
+        // every sidebar mutation (hover-driven `selectedURL`, the
+        // 60s git poll, the FolderWatcher debounce, expand/collapse,
+        // sort-mode toggles) into a re-body of every view observing
+        // DocumentModel — including the content tree that runs
+        // `renderedHTML`, `highlightRuns`, gutter math, etc. The
+        // fan-out was the single largest contributor to perceived
+        // sidebar-driven lag.
+        //
+        // Fix is the textbook narrow-observation pattern: views
+        // that depend on sidebar state observe `sidebar` directly
+        // via `@ObservedObject var sidebar: SidebarModel`. Views
+        // that only need DocumentModel state stop paying sidebar
+        // ticks entirely.
+        //
+        // Audit (every view that reads `model.sidebar.<published>`
+        // from a body or a Combine-publishing `.onChange`):
+        //   - ContentView (sidebar.isVisible)
+        //   - ClaudeTimelineSection (sidebar.rootURL)
+        //   - RecentChangesSection (sidebar.rootURL)
+        //   - Git/GitPanelSection (sidebar.rootURL)
+        //   - CrossSearchPanel (sidebar.rootURL, multi-site body)
+        //   - SearchAnywhereSection (sidebar.rootURL, multi-site)
+        //   - SettingsView (sidebar.isVisible Toggle binding)
+        //   - SidebarView / FileRowContextMenu — already observes
+        //     `sidebar` directly; unchanged.
+        // Write-only call sites (no observation needed):
+        //   - WalkthroughPlayerImpl (sets `isVisible`)
+        //   - Sessions/SessionState (setRoot)
     }
 
     private var cancellables: Set<AnyCancellable> = []
@@ -1431,11 +1452,26 @@ public final class DocumentModel: ObservableObject {
                 var t = tabs.tabs[idx]
                 if case .loaded(let oldFile) = t.state {
                     let bytes = buf.text.data(using: buf.encoding)?.count ?? oldFile.byteCount
+                    // We just wrote the file — re-stat its mtime so the
+                    // rendered-HTML / highlight caches pick up the new
+                    // identity even when the rewrite happens to be the
+                    // same byte length. Falling back to `Date()` keeps
+                    // the cache invariant ("mtime differs after a write")
+                    // intact if the filesystem can't report attrs.
+                    let mtime: Date? = {
+                        if let attrs = try? FileManager.default
+                            .attributesOfItem(atPath: oldFile.url.path),
+                           let d = attrs[.modificationDate] as? Date {
+                            return d
+                        }
+                        return Date()
+                    }()
                     let newFile = TextFile(
                         url: oldFile.url,
                         contents: buf.text,
                         encoding: oldFile.encoding,
-                        byteCount: bytes
+                        byteCount: bytes,
+                        modifiedTime: mtime
                     )
                     t.state = .loaded(newFile)
                     tabs.replace(at: idx, with: t)
@@ -1534,32 +1570,33 @@ public final class DocumentModel: ObservableObject {
 
     // MARK: Syntax highlighting
 
-    /// Cache of (file URL + content length + language) → [HighlightRun].
-    /// The byte-length acts as a coarse change detector so a file
-    /// watcher reload (which keeps the same URL) invalidates the
-    /// cached runs. Using URL+length is O(1) per lookup; hashing the
-    /// full text on every body re-eval (the prior key) was O(N) per
-    /// call and dominated large-file render cost.
+    /// PERF #5 (2026-05-25): per-tab cache, owned by
+    /// `HighlightCacheActor` and stored in `highlightCaches`. The
+    /// previous design kept a single `@Published highlightCache` on
+    /// `DocumentModel` — every tokenize completion republished the
+    /// model, which cascaded re-bodies through every observing view
+    /// even though only the source view depended on the runs.
     ///
-    /// Documented limitation: same-byte-length reloads
-    /// (`# Hello\n` → `# World\n`) won't invalidate. The flagged
-    /// inconsistency with renderedHTMLCache (which uses a content
-    /// hash) is real but the perf cost of hashing on every body
-    /// re-eval was the original motivation — leaving as-is. Run
-    /// SwiftUI-level invalidation through a dedicated nonce instead
-    /// when this becomes user-visible.
-    public struct HighlightCacheKey: Hashable, Sendable {
-        public let url: URL
-        public let length: Int
-        public let language: HighlightLanguage
+    /// Now: each tab has its own actor. Tokenize completions bump
+    /// the actor's `@Published version`, which only the source view
+    /// for that tab observes. DocumentModel never republishes.
+    ///
+    /// `HighlightCacheKey` lives in `Highlight/HighlightCacheActor.swift`
+    /// — re-aliased here for source compatibility with callers that
+    /// reference `DocumentModel.HighlightCacheKey`.
+    public typealias HighlightCacheKey = ViewerUI.HighlightCacheKey
+    private var highlightCaches: [UUID: HighlightCacheActor] = [:]
+
+    /// Returns the per-tab cache actor for `tabID`, creating one
+    /// lazily on first request. Views that need to observe
+    /// highlight-ready events take `@ObservedObject` on the returned
+    /// instance.
+    public func highlightCacheActor(forTabID tabID: UUID) -> HighlightCacheActor {
+        if let existing = highlightCaches[tabID] { return existing }
+        let fresh = HighlightCacheActor()
+        highlightCaches[tabID] = fresh
+        return fresh
     }
-    @Published public private(set) var highlightCache: [HighlightCacheKey: [HighlightRun]] = [:]
-    /// Insertion-order list mirroring `highlightCache`. Used to evict
-    /// the OLDEST entries on overflow (S2-G class). Updated by
-    /// `highlightRuns(forURL:text:language:)` and pruned by
-    /// `purgeCaches(forURL:)`.
-    private var highlightCacheOrder: [HighlightCacheKey] = []
-    private var highlightInFlight: Set<HighlightCacheKey> = []
 
     /// Currently-active syntax theme. Computed from system appearance;
     /// re-publishes when the user flips Light/Dark. Override field is
@@ -1570,17 +1607,18 @@ public final class DocumentModel: ObservableObject {
         return SyntaxTheme.resolved(forAppearance: NSApp?.effectiveAppearance)
     }
 
-    /// View-facing accessor. Returns runs immediately if cached;
-    /// otherwise returns [] and kicks off an async tokenize task that
-    /// will populate `highlightCache`, triggering a re-render via
-    /// @Published. Calls with the same key while a task is in flight
+    /// View-facing accessor. Returns runs immediately if cached on the
+    /// active tab's actor; otherwise returns `[]` and kicks off an
+    /// async tokenize whose completion bumps the per-tab cache actor's
+    /// `version`. Calls with the same key while a task is in flight
     /// are coalesced. Safe to call from `body`.
     ///
-    /// `url` is the cache key — `text` is the content to tokenize.
-    /// Reloading the same file with new content invalidates because
-    /// `text.utf16.count` differs.
+    /// PERF #5: writes go to the per-tab `HighlightCacheActor`, not a
+    /// `@Published` property on this model — so a tokenize completion
+    /// never republishes DocumentModel.
     public func highlightRuns(
-        forURL url: URL, text: String, language: HighlightLanguage
+        forTabID tabID: UUID,
+        url: URL, text: String, language: HighlightLanguage
     ) -> [HighlightRun] {
         // .diff / .patch files use a hand-rolled per-line highlighter
         // — there's no TreeSitter grammar for unified diff and the
@@ -1597,60 +1635,48 @@ public final class DocumentModel: ObservableObject {
         // SwiftUI body re-evals on multi-hundred-KB files.
         let length = text.utf8.count
         let key = HighlightCacheKey(url: url, length: length, language: language)
-        if let cached = highlightCache[key] { return cached }
-        guard !highlightInFlight.contains(key) else { return [] }
-        highlightInFlight.insert(key)
-        let snapshot = text
-        Task.detached(priority: .userInitiated) { [weak self] in
-            let runs = TreeSitterEngine.shared.tokenize(
-                snapshot, language: language
-            )
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                if self.highlightCache[key] == nil {
-                    self.highlightCacheOrder.append(key)
-                }
-                self.highlightCache[key] = runs
-                self.highlightInFlight.remove(key)
-                self.pruneHighlightCacheIfNeeded()
-            }
-        }
-        return []
+        let actor = highlightCacheActor(forTabID: tabID)
+        return actor.runsOrEnqueue(key: key, text: text)
     }
 
-    /// Cap the cache so we don't grow without bound when the user
-    /// scrubs through many files. The numbers are arbitrary — enough
-    /// to cover a session of normal usage.
-    private static let highlightCacheMax = 32
-    private func pruneHighlightCacheIfNeeded() {
-        guard highlightCache.count > Self.highlightCacheMax else { return }
-        // S2-G class: evict by insertion order (oldest first). The
-        // prior "drop arbitrary Dictionary.keys.prefix(N)" sometimes
-        // dropped the freshly-inserted entry.
-        let dropCount = highlightCache.count - Self.highlightCacheMax * 2 / 3
-        let toDrop = highlightCacheOrder.prefix(dropCount)
-        for key in toDrop {
-            highlightCache.removeValue(forKey: key)
-        }
-        highlightCacheOrder.removeFirst(toDrop.count)
-    }
 
     // MARK: Rendered markdown cache
 
-    /// Memoizes `HTMLRenderer.renderPage` output keyed by content hash.
-    /// Without this, ContentView.body re-runs renderPage on every model
+    /// Memoizes `HTMLRenderer.renderPage` output keyed by tab identity
+    /// + the file's filesystem identity (mtime + byteCount). Without
+    /// this, ContentView.body re-runs renderPage on every model
     /// mutation — and renderPage now drives TreeSitter highlighting
     /// for every fenced code block, which is expensive enough to be
-    /// visible as latency. Stylesheet doesn't enter the key because it
-    /// only changes between app launches.
+    /// visible as latency.
+    ///
+    /// Why mtime + byteCount instead of a content hash:
+    ///   - The prior key was `(URL, fnv64(contents))`. fnv64 walks
+    ///     the entire UTF-8 of the file on every body re-eval —
+    ///     ~1ms per MB on the main actor. With finding #1's republish
+    ///     storm, that was the dominant cost for multi-MB markdown.
+    ///   - mtime + byteCount is O(1) per lookup and `TextFile`
+    ///     captures both at load time, so the key formation never
+    ///     touches the file contents.
+    ///   - Same-byte-length reloads (`# Hello\n` → `# World\n`)
+    ///     still invalidate because the watcher reload path runs
+    ///     `TextFileLoader.load(url:)` again, which re-stats the
+    ///     file and gets a new mtime. APFS mtime is nanosecond-
+    ///     resolution; back-to-back rewrites produce distinct
+    ///     timestamps in practice.
+    ///   - `EditorBuffer.save(...)` re-stats after write to capture
+    ///     the new mtime (see `saveEditorBuffer(forTabID:)`).
+    ///
+    /// Stylesheet doesn't enter the key because it only changes
+    /// between app launches.
     public struct RenderedHTMLKey: Hashable, Sendable {
-        public let url: URL
-        /// SHA-256 truncated to UInt64. Replaces the prior `length`
-        /// key — same-byte-length file-watcher reloads (`# Hello\n` →
-        /// `# World\n`) used to serve stale HTML because the key
-        /// didn't change. A content hash makes the cache lookup
-        /// content-addressable.
-        public let contentHash: UInt64
+        public let tabID: UUID
+        public let byteCount: Int
+        /// `nil` only for synthetic `TextFile`s constructed without
+        /// an mtime (in-memory tests). Two same-tab, same-bytecount
+        /// renders with nil mtime collapse to the same cache entry —
+        /// acceptable for tests; in production every `TextFile` from
+        /// the loader carries one.
+        public let modifiedTime: Date?
     }
     private var renderedHTMLCache: [RenderedHTMLKey: String] = [:]
     /// Insertion-order list mirroring `renderedHTMLCache`. Used to evict
@@ -1664,20 +1690,6 @@ public final class DocumentModel: ObservableObject {
     // working set and caps the worst-case RAM footprint of this
     // cache around 15-20 MB. Cold-render on a miss is fast.
     private static let renderedHTMLCacheMax = 4
-
-    /// FNV-1a 64-bit hash. Fast, no allocations, collision-resistant
-    /// enough for a 4-entry cache. Used as the content-addressable
-    /// key for the rendered-HTML cache so same-byte-length file
-    /// reloads still invalidate. NOT cryptographic — never use for
-    /// security purposes.
-    private static func fnv64(_ s: String) -> UInt64 {
-        var h: UInt64 = 0xcbf2_9ce4_8422_2325
-        for byte in s.utf8 {
-            h ^= UInt64(byte)
-            h &*= 0x0000_0100_0000_01B3
-        }
-        return h
-    }
 
     /// Returns the rendered HTML for `contents`, building+caching on
     /// miss. Call from a SwiftUI body — it's main-thread, sync, and the
@@ -1744,13 +1756,28 @@ public final class DocumentModel: ObservableObject {
         }
     }
 
+    /// Returns the rendered HTML for `file` in `tabID`, building+caching
+    /// on miss. Call from a SwiftUI body — it's main-thread, sync, and
+    /// the cached path is just a dict lookup so re-renders are fast.
+    ///
+    /// Cache key is `(tabID, file.byteCount, file.modifiedTime)`. The
+    /// caller passes `contents` separately because the mermaid host
+    /// wraps the raw file in a fence (`"```mermaid\n…```\n"`) — the
+    /// cache key intentionally ignores the wrapper since each tab only
+    /// ever renders one shape (mermaid vs raw md), so a tabID match
+    /// guarantees the same wrapping.
     public func renderedHTML(
-        forURL url: URL,
+        forTabID tabID: UUID,
+        file: TextFile,
         contents: String,
         renderer: HTMLRenderer,
         stylesheet: String
     ) -> String {
-        let key = RenderedHTMLKey(url: url, contentHash: Self.fnv64(contents))
+        let key = RenderedHTMLKey(
+            tabID: tabID,
+            byteCount: file.byteCount,
+            modifiedTime: file.modifiedTime
+        )
         if let hit = renderedHTMLCache[key] { return hit }
         // Mermaid CSS rides along on every rendered markdown page. It's
         // tiny (~1 KB) and inlining it unconditionally avoids the flash
@@ -2028,7 +2055,7 @@ public final class DocumentModel: ObservableObject {
             csvFilterStates.removeValue(forKey: t.id)
             editorBuffers.removeValue(forKey: t.id)
             hexBytesPerRow.removeValue(forKey: t.id)
-            purgeCaches(forURL: t.url)
+            purgeCaches(forURL: t.url, tabID: t.id)
         }
         updateDerived()
         startWatchingCurrentFile()
@@ -2067,7 +2094,7 @@ public final class DocumentModel: ObservableObject {
             csvFilterStates.removeValue(forKey: t.id)
             editorBuffers.removeValue(forKey: t.id)
             hexBytesPerRow.removeValue(forKey: t.id)
-            purgeCaches(forURL: t.url)
+            purgeCaches(forURL: t.url, tabID: t.id)
         }
         // Intersect tab-id sets with the still-open ids. Cheaper than
         // tracking every closed id and symmetric across the three
@@ -2111,7 +2138,7 @@ public final class DocumentModel: ObservableObject {
             csvFilterStates.removeValue(forKey: t.id)
             editorBuffers.removeValue(forKey: t.id)
             hexBytesPerRow.removeValue(forKey: t.id)
-            purgeCaches(forURL: t.url)
+            purgeCaches(forURL: t.url, tabID: t.id)
         }
         let openIDs = Set(tabs.tabs.map { $0.id })
         formattedTabIDs.formIntersection(openIDs)
@@ -2119,24 +2146,26 @@ public final class DocumentModel: ObservableObject {
         startWatchingCurrentFile()
     }
 
-    /// Drop all URL-keyed cache entries for a closed tab. Skipped if
-    /// another tab still holds the same URL (Open-in-new-tab → close
-    /// one → other still benefits from cached runs/HTML). Sidebar
-    /// diff marks for the file get cleared too.
-    private func purgeCaches(forURL url: URL?) {
-        guard let url else { return }
-        if tabs.tabs.contains(where: { $0.url == url }) { return }
-        let priorHighlightOrder = highlightCacheOrder
-        highlightCache = highlightCache.filter { $0.key.url != url }
-        let survivorHL = Set(highlightCache.keys)
-        highlightCacheOrder = priorHighlightOrder.filter { survivorHL.contains($0) }
+    /// Drop all cache entries belonging to a closed tab. Highlight
+    /// runs now live in per-tab `HighlightCacheActor`s (PERF #5);
+    /// closing a tab drops the actor entirely — no fan-out to other
+    /// tabs because each tab has its own. Rendered-HTML entries are
+    /// tabID-keyed (PERF #2 finding); purge unconditionally on tab
+    /// close since no other tab can hit the same key.
+    private func purgeCaches(forURL _: URL?, tabID: UUID? = nil) {
+        if let tabID {
+            // PERF #5: drop the per-tab highlight cache actor.
+            // GC happens automatically once the last observer (the
+            // source view) drops its `@ObservedObject` reference.
+            highlightCaches.removeValue(forKey: tabID)
 
-        let priorOrder = renderedHTMLCacheOrder
-        renderedHTMLCache = renderedHTMLCache.filter { $0.key.url != url }
-        // Keep the order list in sync — drop the URL's entries while
-        // preserving relative ordering of survivors (S2-G).
-        let survivorKeys = Set(renderedHTMLCache.keys)
-        renderedHTMLCacheOrder = priorOrder.filter { survivorKeys.contains($0) }
+            let priorOrder = renderedHTMLCacheOrder
+            renderedHTMLCache = renderedHTMLCache.filter { $0.key.tabID != tabID }
+            // Keep the order list in sync — drop the tab's entries while
+            // preserving relative ordering of survivors (S2-G).
+            let survivorKeys = Set(renderedHTMLCache.keys)
+            renderedHTMLCacheOrder = priorOrder.filter { survivorKeys.contains($0) }
+        }
     }
 
     public func moveTab(from src: Int, to dst: Int) {

@@ -5,6 +5,12 @@ import ViewerCore
 
 public struct ContentView: View {
     @ObservedObject var model: DocumentModel
+    /// Direct observation of the sidebar — see PERF #1 note in
+    /// `DocumentModel.init`. ContentView's body branches on
+    /// `sidebar.isVisible`; without this, the only way the body
+    /// would re-eval on a visibility toggle was through the (now-
+    /// removed) `objectWillChange` forwarding.
+    @ObservedObject var sidebar: SidebarModel
     @StateObject var walkthrough: WalkthroughPlayerController
     /// App-level sessions coordinator. Optional so SwiftUI previews
     /// and host-side unit tests that construct a bare `ContentView`
@@ -17,6 +23,7 @@ public struct ContentView: View {
 
     public init(model: DocumentModel, sessionsApp: SessionsAppCoordinator? = nil) {
         self.model = model
+        self.sidebar = model.sidebar
         self.sessionsApp = sessionsApp
         self.stylesheet = MarkdownStylesheet.load()
         // Persist the controller across body re-evals. The controller
@@ -50,7 +57,7 @@ public struct ContentView: View {
                     .accessibilityIdentifier("mdv.modebar")
                 Divider()
                 HStack(spacing: 0) {
-                    if model.sidebar.isVisible {
+                    if sidebar.isVisible {
                         DraggableSidebar(model: model)
                             .accessibilityIdentifier("mdv.sidebar")
                         Divider()
@@ -121,7 +128,7 @@ public struct ContentView: View {
                 Color.black.opacity(0.18)
                     .ignoresSafeArea()
                     .onTapGesture { model.dismissCrossSearch() }
-                CrossSearchPanel(model: model)
+                CrossSearchPanel(model: model, sidebar: sidebar)
                     .padding(.top, 80)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
@@ -358,92 +365,20 @@ public struct ContentView: View {
                 renderedMarkdownView(for: file, category: category)
             }
         } else {
-            let displayed = model.displayText(for: file)
-            // Effective language honors the manual override picked
-            // from the language dropdown in the ModeBar (per-tab).
-            let lang: HighlightLanguage = {
-                if let id = model.tabs.selected?.id {
-                    return model.effectiveLanguage(forTabID: id, url: file.url)
-                }
-                return HighlightLanguage.detect(from: file.url)
-            }()
-            VStack(spacing: 0) {
-                if model.isSourceFindBarPresented {
-                    SourceFindBar(model: model)
-                }
-                HStack(spacing: 0) {
-                    SourceGutterView(
-                        state: model.sourceScrollState,
-                        fontSize: 13 * model.zoom,
-                        theme: model.activeTheme,
-                        diffMarks: model.sourceDiffMarks,
-                        bookmarkedLines: model.bookmarkedLines(for: file.url)
-                    )
-                    TextDisplayView(
-                        text: displayed,
-                        fontSize: 13 * model.zoom,
-                        language: lang,
-                        runs: model.highlightRuns(forURL: file.url, text: displayed, language: lang),
-                        theme: model.activeTheme,
-                        findState: TextDisplayView.FindState(
-                            query: model.isSourceFindBarPresented ? model.sourceFindQuery : "",
-                            caseSensitive: model.sourceFindCaseSensitive,
-                            isRegex: model.sourceFindIsRegex,
-                            nextNonce: model.sourceFindNextRequest,
-                            prevNonce: model.sourceFindPrevRequest
-                        ),
-                        wordWrap: model.sourceWordWrap,
-                        showInvisibles: model.showInvisibleChars,
-                        scrollLineRequest: TextDisplayView.ScrollLineRequest(
-                            line: model.sourceScrollLineTarget,
-                            nonce: model.sourceScrollLineNonce
-                        ),
-                        onFindSummary: { summary in
-                            model.setSourceFindMatchSummary(summary)
-                        },
-                        onScrollChange: { state in
-                            model.sourceScrollState = state
-                        },
-                        onSelectionChange: { sel in
-                            model.sourceSelection = sel
-                        },
-                        onFindMatchesChange: { set in
-                            model.setSourceFindMatches(
-                                lines: set.lines, currentIndex: set.currentIndex
-                            )
-                        }
-                    )
-                    // Force the NSViewControllerRepresentable to claim
-                    // the full HStack width. Without this, the inner
-                    // NSScrollView's intrinsicContentSize (driven by
-                    // the text-document width) wins over the outer
-                    // VStack frame and the source pane collapses to a
-                    // narrow centered strip. Putting the frame on the
-                    // outer VStack alone is not enough — SwiftUI sizes
-                    // the AppKit child to its intrinsic and pads the
-                    // remainder.
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    // Find-match minimap: thin vertical strip showing
-                    // a tick per find-bar match. Only visible while the
-                    // source find bar is presented AND there's at least
-                    // one match — otherwise it'd just be a blank
-                    // 10pt-wide rail. Click a tick to jump to that line.
-                    if model.isSourceFindBarPresented,
-                       !model.sourceFindMatchLines.isEmpty {
-                        FindMatchMinimapView(
-                            matchLines: model.sourceFindMatchLines,
-                            totalLines: max(1, model.sourceScrollState.lineCount),
-                            currentMatchIndex: model.sourceFindCurrentMatchIndex,
-                            theme: model.activeTheme,
-                            onClickLine: { line in
-                                model.scrollSource(toLine: line)
-                            }
-                        )
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // PERF #5: source view subtree extracted into
+            // `SourceModeView` so it can observe the per-tab
+            // `HighlightCacheActor` via `@ObservedObject`. The actor
+            // bumps its `version` when a tokenize completes, which
+            // re-evals only this subtree (not ContentView and not
+            // every sibling).
+            let tabID = model.tabs.selected?.id
+                ?? UUID(uuid: (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
+            SourceModeView(
+                model: model,
+                highlightCache: model.highlightCacheActor(forTabID: tabID),
+                file: file,
+                tabID: tabID
+            )
         }
     }
 
@@ -460,13 +395,20 @@ public struct ContentView: View {
             }
             return file.contents
         }()
+        // tabID is the cache identity. We're inside the loaded-tab
+        // branch so `tabs.selected` is non-nil in practice; fall back
+        // to a zero UUID for the theoretical case where the body
+        // re-evals between a selectTab and an updateDerived (the
+        // cache entry would then be orphaned, evicted by LRU).
+        let tabID = model.tabs.selected?.id ?? UUID(uuid: (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
         VStack(spacing: 0) {
             if model.isRenderedFindBarPresented {
                 MarkdownFindBar(model: model)
             }
             MarkdownRenderedView(
                 html: model.renderedHTML(
-                    forURL: file.url,
+                    forTabID: tabID,
+                    file: file,
                     contents: renderedContents,
                     renderer: renderer,
                     stylesheet: stylesheet
@@ -485,6 +427,122 @@ public struct ContentView: View {
                 }
             )
         }
+    }
+}
+
+/// PERF #5 (2026-05-25): source-view subtree.
+///
+/// Extracted from `ContentView.loadedView` so it can take the per-tab
+/// `HighlightCacheActor` as an `@ObservedObject`. When a TreeSitter
+/// tokenize completes the actor bumps its `version` — SwiftUI re-evals
+/// only this view (because nothing above it observes the actor) and
+/// re-reads `runs(for:)` synchronously off the cache. ContentView,
+/// TabBar, StatusBar etc. are not republished.
+struct SourceModeView: View {
+    @ObservedObject var model: DocumentModel
+    /// Per-tab cache. Storing `@ObservedObject` is the narrow channel
+    /// — only this subtree re-bodies on highlight-ready.
+    @ObservedObject var highlightCache: HighlightCacheActor
+    let file: TextFile
+    let tabID: UUID
+
+    var body: some View {
+        let displayed = model.displayText(for: file)
+        let lang = effectiveLanguage()
+        let runs = computeRuns(text: displayed, language: lang)
+        VStack(spacing: 0) {
+            if model.isSourceFindBarPresented {
+                SourceFindBar(model: model)
+            }
+            HStack(spacing: 0) {
+                SourceGutterView(
+                    state: model.sourceScrollState,
+                    fontSize: 13 * model.zoom,
+                    theme: model.activeTheme,
+                    diffMarks: model.sourceDiffMarks,
+                    bookmarkedLines: model.bookmarkedLines(for: file.url)
+                )
+                TextDisplayView(
+                    text: displayed,
+                    fontSize: 13 * model.zoom,
+                    language: lang,
+                    runs: runs,
+                    theme: model.activeTheme,
+                    findState: TextDisplayView.FindState(
+                        query: model.isSourceFindBarPresented ? model.sourceFindQuery : "",
+                        caseSensitive: model.sourceFindCaseSensitive,
+                        isRegex: model.sourceFindIsRegex,
+                        nextNonce: model.sourceFindNextRequest,
+                        prevNonce: model.sourceFindPrevRequest
+                    ),
+                    wordWrap: model.sourceWordWrap,
+                    showInvisibles: model.showInvisibleChars,
+                    scrollLineRequest: TextDisplayView.ScrollLineRequest(
+                        line: model.sourceScrollLineTarget,
+                        nonce: model.sourceScrollLineNonce
+                    ),
+                    onFindSummary: { summary in
+                        model.setSourceFindMatchSummary(summary)
+                    },
+                    onScrollChange: { state in
+                        model.sourceScrollState = state
+                    },
+                    onSelectionChange: { sel in
+                        model.sourceSelection = sel
+                    },
+                    onFindMatchesChange: { set in
+                        model.setSourceFindMatches(
+                            lines: set.lines, currentIndex: set.currentIndex
+                        )
+                    }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if model.isSourceFindBarPresented,
+                   !model.sourceFindMatchLines.isEmpty {
+                    FindMatchMinimapView(
+                        matchLines: model.sourceFindMatchLines,
+                        totalLines: max(1, model.sourceScrollState.lineCount),
+                        currentMatchIndex: model.sourceFindCurrentMatchIndex,
+                        theme: model.activeTheme,
+                        onClickLine: { line in
+                            model.scrollSource(toLine: line)
+                        }
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Effective language honors the manual override picked from the
+    /// language dropdown in the ModeBar (per-tab).
+    private func effectiveLanguage() -> HighlightLanguage {
+        if let id = model.tabs.selected?.id {
+            return model.effectiveLanguage(forTabID: id, url: file.url)
+        }
+        return HighlightLanguage.detect(from: file.url)
+    }
+
+    /// Cache lookup via the per-tab actor. .diff/.patch use the
+    /// hand-rolled per-line highlighter synchronously (no TreeSitter
+    /// grammar; cost is O(n)). Everything else goes through the
+    /// actor's `runsOrEnqueue` — returns cached runs immediately on
+    /// hit, returns [] and kicks off the off-thread tokenize on miss.
+    /// On completion the actor bumps `version`; SwiftUI re-evals this
+    /// view and re-calls into `runsOrEnqueue` which now hits the cache.
+    private func computeRuns(text: String, language: HighlightLanguage) -> [HighlightRun] {
+        // Read `version` so SwiftUI's dependency tracker registers
+        // the dependency even when the cache is cold on first body.
+        _ = highlightCache.version
+        let ext = file.url.pathExtension.lowercased()
+        if ext == "diff" || ext == "patch" {
+            return DiffHighlighter.highlight(text)
+        }
+        guard language != .plainText else { return [] }
+        let length = text.utf8.count
+        let key = HighlightCacheKey(url: file.url, length: length, language: language)
+        return highlightCache.runsOrEnqueue(key: key, text: text)
     }
 }
 

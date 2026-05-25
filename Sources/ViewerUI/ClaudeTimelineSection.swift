@@ -10,6 +10,10 @@ import ViewerCore
 /// the sidebar uncluttered for non-Claude-Code workflows.
 struct ClaudeTimelineSection: View {
     @ObservedObject var model: DocumentModel
+    /// PERF #1: observe the sidebar directly so `.onChange(of:
+    /// sidebar.rootURL)` fires from the sidebar's own publisher
+    /// rather than via the (removed) DocumentModel forwarding.
+    @ObservedObject var sidebar: SidebarModel
     @State private var isExpanded = false  // collapsed by default; logs can be huge
     @State private var events: [ClaudeEvent] = []
     @State private var refreshTask: Task<Void, Never>?
@@ -32,7 +36,7 @@ struct ClaudeTimelineSection: View {
             }
         }
         .onAppear { refresh() }
-        .onChange(of: model.sidebar.rootURL) { _, _ in refresh() }
+        .onChange(of: sidebar.rootURL) { _, _ in refresh() }
         .accessibilityIdentifier("mdv.claudeTimeline")
     }
 
@@ -135,7 +139,7 @@ struct ClaudeTimelineSection: View {
 
     private func refresh() {
         refreshTask?.cancel()
-        guard let root = model.sidebar.rootURL else {
+        guard let root = sidebar.rootURL else {
             events = []; transcriptCount = 0; return
         }
         let dir = ClaudeLogParser.transcriptDirectory(for: root)

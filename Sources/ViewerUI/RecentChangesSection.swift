@@ -9,6 +9,12 @@ import ViewerCore
 /// Hidden when the sidebar root isn't inside a git repository.
 struct RecentChangesSection: View {
     @ObservedObject var model: DocumentModel
+    /// PERF #1: observe sidebar directly so `sidebar.rootURL` changes
+    /// don't require DocumentModel-wide republish. Not instantiated
+    /// in the current UI tree (the section was replaced by
+    /// `GitPanelSection`'s status tab; `discoverRepo` lives on as a
+    /// static helper); future re-instantiation must pass the sidebar.
+    @ObservedObject var sidebar: SidebarModel
     @State private var isExpanded = true
     @State private var entries: [GitClient.StatusEntry] = []
     @State private var repoRoot: URL?
@@ -26,7 +32,7 @@ struct RecentChangesSection: View {
             }
         }
         .onAppear { refresh() }
-        .onChange(of: model.sidebar.rootURL) { _, _ in refresh() }
+        .onChange(of: sidebar.rootURL) { _, _ in refresh() }
         // Also re-discover when the current file changes — opening a
         // file inside a different repo (or a file with no folder root
         // set) should still light up the section.
@@ -232,7 +238,7 @@ struct RecentChangesSection: View {
     private func refresh() {
         refreshTask?.cancel()
         repoRoot = Self.discoverRepo(
-            sidebarRoot: model.sidebar.rootURL,
+            sidebarRoot: sidebar.rootURL,
             currentURL: model.currentURL
         )
         guard let root = repoRoot else {

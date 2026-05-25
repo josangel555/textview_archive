@@ -213,15 +213,15 @@ struct SidebarView: View {
                 .environment(\.sidebarSectionBodyHeight,
                              SidebarPanelHeights.clamp(CGFloat(bookmarksHeight)))
         case .searchAnywhere:
-            SearchAnywhereSection(model: model)
+            SearchAnywhereSection(model: model, sidebar: sidebar)
                 .environment(\.sidebarSectionBodyHeight,
                              SidebarPanelHeights.clamp(CGFloat(searchHeight)))
         case .git:
-            GitPanelSection(model: model)
+            GitPanelSection(model: model, sidebar: sidebar)
                 .environment(\.sidebarSectionBodyHeight,
                              SidebarPanelHeights.clamp(CGFloat(gitHeight)))
         case .claudeTimeline:
-            ClaudeTimelineSection(model: model)
+            ClaudeTimelineSection(model: model, sidebar: sidebar)
                 .environment(\.sidebarSectionBodyHeight,
                              SidebarPanelHeights.clamp(CGFloat(claudeHeight)))
         case .lspOutline:
@@ -587,7 +587,7 @@ private struct FileRowContextMenu: View {
                 model.showCrossSearch(scope: .pickedFolder(node.url))
             }
         }
-        if model.sidebar.gitRepoRoot != nil {
+        if sidebar.gitRepoRoot != nil {
             Divider()
             if !node.isDirectory {
                 Button("Show File History") {

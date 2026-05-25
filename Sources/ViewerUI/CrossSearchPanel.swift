@@ -25,6 +25,12 @@ import ViewerCore
 ///   - `mdv.unifiedSearch.scope.pickFolder`
 struct CrossSearchPanel: View {
     @ObservedObject var model: DocumentModel
+    /// PERF #1: observe sidebar directly. The panel reads
+    /// `sidebar.rootURL` from multiple body sites (scope picker
+    /// labels, disable conditions, fallback resolution), so a
+    /// `sidebar.rootURL` change has to drive a body re-eval. The
+    /// (removed) DocumentModel-wide forwarding used to do this.
+    @ObservedObject var sidebar: SidebarModel
     @FocusState private var fieldFocused: Bool
 
     // MARK: - Scope picker (search-scope agent)
@@ -161,12 +167,12 @@ struct CrossSearchPanel: View {
             scope: scope,
             modeRequiresFolder: mode.requiresFolderScope
         ) {
-            return model.sidebar.rootURL
+            return sidebar.rootURL
         }
         return SearchScopeResolver.resolve(
             scope,
             activeFile: model.currentURL,
-            activeFolder: model.sidebar.rootURL
+            activeFolder: sidebar.rootURL
         )
     }
 
@@ -182,7 +188,7 @@ struct CrossSearchPanel: View {
             scope = .activeFolder
             return
         }
-        if model.currentURL == nil, model.sidebar.rootURL != nil {
+        if model.currentURL == nil, sidebar.rootURL != nil {
             scope = .activeFolder
         } else {
             scope = .activeFile
@@ -228,7 +234,7 @@ struct CrossSearchPanel: View {
                 } label: {
                     Label("Active Folder", systemImage: "folder")
                 }
-                .disabled(model.sidebar.rootURL == nil || mode.requiresFileScope)
+                .disabled(sidebar.rootURL == nil || mode.requiresFileScope)
                 .accessibilityIdentifier("mdv.unifiedSearch.scope.activeFolder")
 
                 Divider()
@@ -325,7 +331,7 @@ struct CrossSearchPanel: View {
             Image(systemName: "doc.text.magnifyingglass")
                 .font(.system(size: 28))
                 .foregroundStyle(.secondary)
-            Text(model.sidebar.rootURL == nil
+            Text(sidebar.rootURL == nil
                  ? "Open a folder to search across files."
                  : "Type to search the folder.")
                 .font(.subheadline)

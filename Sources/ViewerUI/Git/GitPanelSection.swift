@@ -9,6 +9,10 @@ import ViewerCore
 /// `GitPanelView` directly without this wrapper.
 struct GitPanelSection: View {
     @ObservedObject var model: DocumentModel
+    /// PERF #1: observe sidebar directly so `sidebar.rootURL` is fed
+    /// to `.onChange` by the sidebar's own publisher rather than the
+    /// (removed) DocumentModel forwarding.
+    @ObservedObject var sidebar: SidebarModel
     @StateObject private var panel = GitPanelModel()
     @AppStorage("MarkdownViewer.sidebar.gitExpanded") private var isExpanded: Bool = true
 
@@ -27,7 +31,7 @@ struct GitPanelSection: View {
             }
         }
         .onAppear { syncRepo() }
-        .onChange(of: model.sidebar.rootURL) { _, _ in syncRepo() }
+        .onChange(of: sidebar.rootURL) { _, _ in syncRepo() }
         .onChange(of: model.currentURL) { _, _ in syncRepo() }
         // Menu-triggered focus: expand the section + switch tab.
         .onChange(of: model.gitPanelFocusRequest) { _, _ in
@@ -78,7 +82,7 @@ struct GitPanelSection: View {
 
     private func syncRepo() {
         let discovered = RecentChangesSection.discoverRepo(
-            sidebarRoot: model.sidebar.rootURL,
+            sidebarRoot: sidebar.rootURL,
             currentURL: model.currentURL
         )
         panel.setRepoRoot(discovered)

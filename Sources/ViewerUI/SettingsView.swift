@@ -13,9 +13,14 @@ import ViewerCore
 /// has no sibling-blank concerns.
 public struct SettingsView: View {
     @ObservedObject var model: DocumentModel
+    /// PERF #1: `Show sidebar by default` is a Toggle bound to
+    /// `sidebar.isVisible`; direct observation keeps the toggle in
+    /// sync without DocumentModel-wide republish.
+    @ObservedObject var sidebar: SidebarModel
 
     public init(model: DocumentModel) {
         self.model = model
+        self.sidebar = model.sidebar
     }
 
     public var body: some View {
@@ -172,8 +177,8 @@ public struct SettingsView: View {
         section("Sidebar") {
             row("Show sidebar by default") {
                 Toggle("", isOn: Binding(
-                    get: { model.sidebar.isVisible },
-                    set: { model.sidebar.isVisible = $0 }
+                    get: { sidebar.isVisible },
+                    set: { sidebar.isVisible = $0 }
                 )).labelsHidden()
             }
             row("Width") {
