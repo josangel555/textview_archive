@@ -79,6 +79,28 @@ final class LSPPositionConverterTests: XCTestCase {
         XCTAssertEqual(nsr.length, 3)    // "efg"
     }
 
+    /// S2-H: an LSP position whose `character` lands "inside" a
+    /// multi-code-unit grapheme (surrogate pair / emoji) used to
+    /// overshoot — the loop consumed the whole char and advanced
+    /// `idx` past it. After the fix the loop breaks at the boundary
+    /// so the returned `idx` is at the grapheme's start.
+    func test_insideGraphemeClampsToCharBoundary() {
+        // "ab🚀cd" — UTF-16: a(1) b(1) 🚀(2 surrogate units) c(1) d(1)
+        let text = "ab🚀cd"
+        let c = LSPPositionConverter(text: text, encoding: .utf16)
+        // Position character=3 lands INSIDE the surrogate pair (after
+        // first unit). Pre-fix: idx advanced past 🚀 → pointed at 'c'.
+        // Post-fix: idx stays at 🚀 start.
+        let badPos = LSPPosition(line: 0, character: 3)
+        let idx = c.stringIndex(for: badPos)
+        // Distance from start should be 2 graphemes ("ab"), not 3.
+        let dist = text.distance(from: text.startIndex, to: idx)
+        XCTAssertEqual(
+            dist, 2,
+            "inside-grapheme LSP position must clamp to char boundary, not overshoot"
+        )
+    }
+
     func test_combining_marks_utf16() {
         // 'é' as base + combining acute = 2 unicode scalars, 2 UTF-16 units.
         // 'é' as precomposed = 1 scalar, 1 UTF-16 unit.

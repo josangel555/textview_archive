@@ -207,24 +207,52 @@ public actor LSPClient {
         // Server-originated request or notification path.
         // We handle the notifications we care about (publishDiagnostics)
         // and drop the rest (window/logMessage, telemetry/event, etc.).
-        // Server-originated *requests* (with `id` AND `method`) are
-        // still dropped — `workspace.applyEdit` is deliberately not
-        // advertised. A future polish could reply `methodNotFound` per
-        // LSP_DESIGN.md §8.3, but the current behavior is safe.
-        if let method = obj["method"] as? String, obj["id"] == nil {
-            if method == "textDocument/publishDiagnostics" {
-                if let params = obj["params"] as? [String: Any],
-                   let uriString = params["uri"] as? String,
-                   let url = URL(string: uriString),
-                   let diagsArr = params["diagnostics"] as? [[String: Any]] {
-                    let diagnostics = diagsArr.compactMap(Self.parseDiagnostic)
-                    if let cb = onDiagnostics {
-                        cb(url, diagnostics)
+        if let method = obj["method"] as? String {
+            if obj["id"] == nil {
+                // Notification.
+                if method == "textDocument/publishDiagnostics" {
+                    if let params = obj["params"] as? [String: Any],
+                       let uriString = params["uri"] as? String,
+                       let url = URL(string: uriString),
+                       let diagsArr = params["diagnostics"] as? [[String: Any]] {
+                        let diagnostics = diagsArr.compactMap(Self.parseDiagnostic)
+                        if let cb = onDiagnostics {
+                            cb(url, diagnostics)
+                        }
                     }
                 }
+                // Other notifications: drop silently.
+            } else if let id = obj["id"] {
+                // S2-I: server-originated REQUEST (id + method). Per LSP
+                // spec these MUST be responded to or the server logs
+                // timeouts and eventually degrades. sourcekit-lsp
+                // tolerates dropping; clangd / rust-analyzer / pyright
+                // / typescript-language-server do not. Reply with
+                // MethodNotFound (-32601) for everything until we
+                // explicitly handle a request (e.g. workspace/configuration).
+                replyMethodNotFound(id: id, method: method)
             }
-            // Other notifications: drop silently.
         }
+    }
+
+    /// Reply to an inbound server request with JSON-RPC error
+    /// `MethodNotFound` (-32601). Best-effort: write errors are
+    /// swallowed (transport may already be dead). See S2-I in the
+    /// 2026-05-25 correctness review.
+    private func replyMethodNotFound(id: Any, method: String) {
+        let env: [String: Any] = [
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": [
+                "code": -32601,
+                "message": "Method not found: \(method)"
+            ] as [String: Any]
+        ]
+        guard let body = try? JSONSerialization.data(withJSONObject: env, options: []) else {
+            return
+        }
+        let framed = LSPFraming.frame(body)
+        try? stdinPipe.fileHandleForWriting.write(contentsOf: framed)
     }
 
     private func idAsInt64(_ raw: Any) -> Int64? {
