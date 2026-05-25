@@ -1,66 +1,107 @@
 import XCTest
 @testable import ViewerUI
 
-/// Unit-level coverage for the right-click → "Open in New Session"
-/// callback. The actual menu items (in SidebarView's FileRowContextMenu
-/// + BookmarksSection's BookmarkRow) are SwiftUI Buttons whose tap
-/// closures invoke `model.openFolderInNewSession?(url)`. Without
-/// ViewInspector, we can't introspect the menu directly — but we can
-/// pin down the contract the menu items depend on:
+/// Coverage for the `openFolderInNewSession` integration. The earlier
+/// shape of this file asserted four Swift-closure tautologies
+/// ("a `var closure: ((URL) -> Void)?` defaults to nil; assigning it
+/// then calling it calls it") — every assertion would pass on any
+/// stored optional closure of any type, anywhere. Zero signal.
 ///
-///   1. The closure exists as a stored property on DocumentModel.
-///   2. It starts nil (no UI host) so tests + previews don't see the
-///      menu item.
-///   3. When set, the menu's `if let` guard activates and invoking the
-///      stored closure forwards the URL verbatim.
+/// The replacement tests pin the real wiring: `commitGoToPath(...,
+/// newSession: true)` is the headless entry point both the Go-To-Path
+/// prompt and the right-click menu route through. It must:
+///   - call `openFolderInNewSession` for an existing directory when
+///     the callback is set,
+///   - fall back to `openPath` when the callback is nil OR when the
+///     resolved URL is a file (not a directory),
+///   - never call `openFolderInNewSession` for a non-existent path.
 ///
-/// The actual rendering — that the menu item is *visible* under the
-/// guard — is a VM live-app concern.
+/// The rendering of the menu item itself — that the SwiftUI `if let
+/// openInNewSession = model.openFolderInNewSession` reveals/hides the
+/// button — is still a VM live-app concern; we don't fake it here.
 @MainActor
 final class OpenInNewSessionTests: XCTestCase {
 
-    func test_openFolderInNewSession_defaultsToNil() {
+    private var tmpDir: URL!
+
+    override func setUp() async throws {
+        tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("OpenInNewSession-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: tmpDir, withIntermediateDirectories: true)
+    }
+
+    override func tearDown() async throws {
+        try? FileManager.default.removeItem(at: tmpDir)
+    }
+
+    func test_commitGoToPath_newSession_directory_routesToOpenFolderInNewSession() {
+        let sub = tmpDir.appendingPathComponent("sub")
+        try? FileManager.default.createDirectory(
+            at: sub, withIntermediateDirectories: true)
+        let model = DocumentModel()
+        var newSessionCalls: [URL] = []
+        model.openFolderInNewSession = { newSessionCalls.append($0) }
+
+        model.commitGoToPath(sub.path, newSession: true)
+
+        XCTAssertEqual(newSessionCalls.count, 1,
+            "newSession=true on a directory must invoke openFolderInNewSession exactly once")
+        XCTAssertEqual(newSessionCalls.first?.path, sub.path)
+        // It also clears any prior go-to error + dismisses the prompt.
+        XCTAssertEqual(model.lastGoToError, "")
+        XCTAssertFalse(model.isGoToPathPresented)
+    }
+
+    func test_commitGoToPath_newSession_file_fallsBackToOpenPath() throws {
+        // A *file* path with newSession=true must NOT call the
+        // openFolderInNewSession callback — sessions are folder-scoped.
+        let file = tmpDir.appendingPathComponent("doc.md")
+        try "# hi\n".write(to: file, atomically: true, encoding: .utf8)
+        let model = DocumentModel()
+        var newSessionCalls: [URL] = []
+        model.openFolderInNewSession = { newSessionCalls.append($0) }
+
+        model.commitGoToPath(file.path, newSession: true)
+
+        XCTAssertTrue(newSessionCalls.isEmpty,
+            "files must never route through openFolderInNewSession")
+        // openPath should have produced a tab.
+        XCTAssertEqual(model.tabs.tabs.count, 1,
+            "openPath should have created a tab for the file")
+    }
+
+    func test_commitGoToPath_newSession_callbackNil_fallsBackToOpenPath() throws {
+        // If the UI host hasn't installed the callback (e.g. a test
+        // process running without a Sessions coordinator), the
+        // newSession=true request must degrade to a regular openPath.
+        let sub = tmpDir.appendingPathComponent("sub")
+        try FileManager.default.createDirectory(
+            at: sub, withIntermediateDirectories: true)
         let model = DocumentModel()
         XCTAssertNil(model.openFolderInNewSession,
-            "default must be nil so SwiftUI `if let` hides the menu item")
+            "default must be nil so the SwiftUI `if let` hides the menu item")
+
+        model.commitGoToPath(sub.path, newSession: true)
+
+        // openPath on a directory sets the sidebar root (rather than
+        // opening a tab).
+        XCTAssertNotNil(model.sidebar.rootURL,
+            "callback-nil + directory should still route through openPath → setRoot")
+        XCTAssertEqual(model.sidebar.rootURL?.path, sub.path)
     }
 
-    func test_openFolderInNewSession_invokesClosureWithURL() {
+    func test_commitGoToPath_newSession_missingPath_setsErrorAndDoesNotInvoke() {
+        let missing = tmpDir.appendingPathComponent("does-not-exist")
         let model = DocumentModel()
-        let target = URL(fileURLWithPath: "/tmp/proj/sub")
-        var received: URL?
-        model.openFolderInNewSession = { received = $0 }
-        model.openFolderInNewSession?(target)
-        XCTAssertEqual(received, target,
-            "closure must receive the URL passed by the menu item verbatim")
-    }
+        var newSessionCalls: [URL] = []
+        model.openFolderInNewSession = { newSessionCalls.append($0) }
 
-    func test_openFolderInNewSession_multipleInvocations() {
-        // The menu item is repeatable — user can right-click multiple
-        // folders in succession. Each invocation must reach the callback
-        // independently; no debouncing or coalescing in this path.
-        let model = DocumentModel()
-        var calls: [URL] = []
-        model.openFolderInNewSession = { calls.append($0) }
-        let urls = [
-            URL(fileURLWithPath: "/a"),
-            URL(fileURLWithPath: "/b"),
-            URL(fileURLWithPath: "/c"),
-        ]
-        for u in urls { model.openFolderInNewSession?(u) }
-        XCTAssertEqual(calls, urls)
-    }
+        model.commitGoToPath(missing.path, newSession: true)
 
-    func test_openFolderInNewSession_clearable() {
-        // Setting to nil disables the menu item (UI host detaches).
-        // Subsequent invocations through `?(...)` must be no-ops, not
-        // crashes.
-        let model = DocumentModel()
-        var calls = 0
-        model.openFolderInNewSession = { _ in calls += 1 }
-        model.openFolderInNewSession?(URL(fileURLWithPath: "/a"))
-        model.openFolderInNewSession = nil
-        model.openFolderInNewSession?(URL(fileURLWithPath: "/b"))
-        XCTAssertEqual(calls, 1)
+        XCTAssertTrue(newSessionCalls.isEmpty,
+            "a path that doesn't resolve must not reach the callback")
+        XCTAssertFalse(model.lastGoToError.isEmpty,
+            "the user-facing error must be surfaced")
     }
 }

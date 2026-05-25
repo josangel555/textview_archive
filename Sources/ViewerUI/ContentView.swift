@@ -161,40 +161,12 @@ public struct ContentView: View {
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        // Collect every dropped URL into an ordered array, then open
-        // them on the main actor in drag order. The previous version
-        // fired model.openPath per loadObject completion, which:
-        //   - silently dropped missing files (didn't even show an
-        //     error tab — inconsistent with openPath's intent)
-        //   - opened multi-file drops in non-deterministic order
-        //     (loadObject is async, completions race)
-        let total = providers.count
-        var collected: [URL?] = Array(repeating: nil, count: total)
-        let lock = NSLock()
-        var completed = 0
-        for (i, provider) in providers.enumerated() {
-            _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                lock.lock()
-                collected[i] = url
-                completed += 1
-                let done = completed
-                // Snapshot under the lock so the Task closure captures a
-                // value-typed copy instead of the outer `var collected`,
-                // which otherwise warns under strict-concurrency about
-                // concurrent var capture.
-                let snapshot: [URL?]? = (done == total) ? collected : nil
-                lock.unlock()
-                if let urls = snapshot {
-                    Task { @MainActor in
-                        // Lazy multi-open: only the last file is read
-                        // into memory + becomes the focused tab. Tabs
-                        // for the rest are appended with state = .empty
-                        // and materialize when the user clicks them.
-                        let resolved = urls.compactMap { $0 }
-                        model.openMultiple(resolved)
-                    }
-                }
-            }
+        // Delegates to `DropRouter.handle` so the test suite can
+        // exercise the same code path. Lazy multi-open: only the
+        // last file becomes the focused tab; the rest land as empty
+        // tabs that materialize on first click.
+        DropRouter.handle(providers) { [model] resolved in
+            model.openMultiple(resolved)
         }
         return true
     }
