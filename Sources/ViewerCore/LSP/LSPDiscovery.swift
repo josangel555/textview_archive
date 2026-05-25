@@ -80,7 +80,8 @@ public enum LSPDiscovery {
         let candidatePrefixes: [String] = augmentedSearchPaths()
         for prefix in candidatePrefixes {
             let candidate = (prefix as NSString).appendingPathComponent(name)
-            if FileManager.default.isExecutableFile(atPath: candidate) {
+            if FileManager.default.isExecutableFile(atPath: candidate),
+               isBinarySafeToSpawn(atPath: candidate) {
                 return URL(fileURLWithPath: candidate)
             }
         }
@@ -91,11 +92,47 @@ public enum LSPDiscovery {
         ) {
             let path = viaWhich.trimmingCharacters(in: .whitespacesAndNewlines)
             if !path.isEmpty,
-               FileManager.default.isExecutableFile(atPath: path) {
+               FileManager.default.isExecutableFile(atPath: path),
+               isBinarySafeToSpawn(atPath: path) {
                 return URL(fileURLWithPath: path)
             }
         }
         return nil
+    }
+
+    /// Ownership + permission safety check (S3.1, 2026-05-25).
+    ///
+    /// We refuse to spawn an LSP binary whose **containing directory**
+    /// is group- or world-writable. A directory writable by `other`
+    /// can have any file inside it replaced by a non-owner — so a
+    /// compromised npm postinstall (or a malicious package on a
+    /// shared dev machine) could swap in a hostile `pyright` /
+    /// `typescript-language-server` and we'd hand it inherited env +
+    /// stdio.
+    ///
+    /// We deliberately do NOT enforce ownership on the binary itself:
+    /// `~/.npm-global/bin/pyright` is legitimately owned by the
+    /// current user (that's the whole point of a user-prefix install).
+    /// The container dir's perms are the meaningful signal.
+    ///
+    /// Returns true (= safe) for any path we can't stat — better to
+    /// preserve "language servers Just Work" than to lock out a user
+    /// whose dev setup we don't understand. The narrow case we're
+    /// blocking is the obviously-bad `0o777` lab-machine scenario.
+    static func isBinarySafeToSpawn(atPath path: String) -> Bool {
+        let dir = (path as NSString).deletingLastPathComponent
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: dir),
+              let perms = attrs[.posixPermissions] as? NSNumber else {
+            return true
+        }
+        let mode = perms.uint16Value
+        // Group-write (020) or world-write (002) on the dir means
+        // someone else can drop a binary in or replace the existing
+        // one. Refuse.
+        if (mode & 0o022) != 0 {
+            return false
+        }
+        return true
     }
 
     /// Path prefixes searched when locating LSP server binaries. Order
