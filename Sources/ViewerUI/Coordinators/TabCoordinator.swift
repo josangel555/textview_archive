@@ -1,0 +1,444 @@
+import Foundation
+import Combine
+import ViewerKit
+import ViewerCore
+
+/// Owns the open-tab list, the selection, and the six per-tab caches
+/// that follow tab identity (CSV filter state, HEX bytes-per-row,
+/// language override, formatted-flag set, formatted-text cache,
+/// editor buffers). Extracted from `DocumentModel` so that views
+/// observing tabs (TabBar, content tree) don't pay for unrelated
+/// `DocumentModel` mutations (sidebar churn, recents updates, etc.)
+/// and inversely so that mutations of unrelated DocumentModel slices
+/// don't re-render every tab consumer.
+///
+/// Precedent: `FindCoordinator` (same shape — child ObservableObject
+/// hung off DocumentModel via `tabCoordinator`, forwarders on the
+/// parent so call sites in views / tests remain unchanged).
+///
+/// Split status: `splitURL` lives here too because it's part of the
+/// "what's currently on screen" surface; the split pane is a sibling
+/// view of the active tab. The `closeSplit / toggleSplit` family is
+/// owned alongside.
+///
+/// `materializeTasks` (lazy file-read Tasks keyed by tab id) is
+/// coordinator-owned for the same reason as the close paths: cancel
+/// is fan-out from a single close site and must follow the tabs map
+/// 1:1.
+///
+/// Not moved here (yet): `editorCursorByTab`, `editorScrollByTab`,
+/// `pendingEditorDiagnostics`. Those go to the upcoming
+/// `EditorCoordinator`. Likewise `highlightCaches` (per-tab actor
+/// map, but conceptually a highlight subsystem concern) and
+/// `renderedHTMLCache` (keyed by `RenderedHTMLKey`, not raw UUID).
+///
+/// Cleanup discipline: all three close paths (`closeTab`,
+/// `closeOtherTabs`, `closeTabsToRight`) MUST funnel through
+/// `cleanupAfterClose(id:)` so the six dicts stay in lock-step with
+/// `tabs`. The previous in-line 6-line cleanup blocks were repeated
+/// in each path and silently diverged as fields were added; folding
+/// them here closes that gap.
+@MainActor
+public final class TabCoordinator: ObservableObject {
+
+    // MARK: - Core state
+
+    /// Ordered list of open tabs plus selected index. Mutated only
+    /// through the methods below so derived state (`openTabURLs`)
+    /// stays in sync.
+    @Published public private(set) var tabs: TabsState = .init()
+
+    /// O(1)-contains set of URLs currently open in any tab. Maintained
+    /// after every tabs mutation. Sidebar uses this to render
+    /// "open elsewhere" indicators without scanning `tabs.tabs` per row.
+    @Published public private(set) var openTabURLs: Set<URL> = []
+
+    // MARK: - Per-tab dicts (the six pruned in every close path)
+
+    /// Per-tab CSV filter state. Persists across tab switches so the
+    /// user doesn't lose their filter when navigating away and back.
+    /// Keyed by tab id.
+    @Published public private(set) var csvFilterStates: [UUID: CSVFilterState] = [:]
+
+    /// Per-tab HEX viewer bytes-per-row. Falls back to the global
+    /// default in PreferencesStore. Not persisted across app
+    /// relaunches — intentional: globally changing the default is
+    /// the durable knob; per-tab is a session-scoped override.
+    @Published public private(set) var hexBytesPerRow: [UUID: Int] = [:]
+
+    /// Per-tab override of the auto-detected language. Keyed by Tab.id
+    /// so two tabs of the same file can have independent overrides.
+    @Published public private(set) var languageOverrides: [UUID: HighlightLanguage] = [:]
+
+    /// Tab.id's the user has toggled into "formatted" (pretty-printed)
+    /// view. Keyed by Tab.id (not URL) so two tabs of the same file
+    /// have independent format state.
+    @Published public private(set) var formattedTabIDs: Set<UUID> = []
+
+    /// Memoized pretty-printer output per tab id. Invalidated when
+    /// the source length changes (file watcher reload). Bounded by
+    /// `formattedTextCacheMax`; eviction is insertion-order.
+    public private(set) var formattedTextCache: [UUID: (sourceLength: Int, formatted: String)] = [:]
+    public private(set) var formattedTextCacheOrder: [UUID] = []
+    public static let formattedTextCacheMax = 8
+
+    /// One EditorBuffer per tab id. Lazily seeded by
+    /// `editorBuffer(forTabID:)` or `ensureEditorBuffer(for:tabID:)`.
+    /// Dropped in the close paths (and on user-confirmed discard).
+    @Published public private(set) var editorBuffers: [UUID: EditorBuffer] = [:]
+
+    // MARK: - Materialize tasks (lazy file reads, keyed by tab id)
+
+    /// In-flight materialization Tasks keyed by tab id. Cancelled in
+    /// every close path so a doomed tab's still-running file read
+    /// doesn't waste I/O.
+    private var materializeTasks: [UUID: Task<Void, Never>] = [:]
+
+    // MARK: - Split pane
+
+    /// URL displayed in the right-hand secondary pane, or nil when
+    /// split is closed. The secondary pane is read-only and stateless
+    /// — no tab bar, no per-tab view-mode — it just shows whatever
+    /// file the user pinned there. Lives on the tab coordinator
+    /// because it shares the "what's on screen" lifecycle.
+    @Published public var splitURL: URL? = nil
+
+    public init() {}
+
+    // MARK: - Value types
+
+    /// Per-tab CSV filter state. Mirror of the prior nested type on
+    /// `DocumentModel.CSVFilterState`; aliased there for source
+    /// compatibility.
+    public struct CSVFilterState: Equatable, Sendable {
+        public var globalQuery: String = ""
+        public var globalScope: Int? = nil
+        public var perColumn: [Int: String] = [:]
+        public var advancedShown: Bool = false
+
+        public init(globalQuery: String = "", globalScope: Int? = nil,
+                    perColumn: [Int: String] = [:], advancedShown: Bool = false) {
+            self.globalQuery = globalQuery
+            self.globalScope = globalScope
+            self.perColumn = perColumn
+            self.advancedShown = advancedShown
+        }
+    }
+
+    // MARK: - Derived
+
+    public var selected: ViewerCore.Tab? { tabs.selected }
+    public var selectedIndex: Int? { tabs.selectedIndex }
+    public var isSplitOpen: Bool { splitURL != nil }
+
+    // MARK: - Tab mutation primitives
+
+    /// Append `tab` and select it. Updates `openTabURLs` cheaply.
+    public func append(_ tab: ViewerCore.Tab) {
+        tabs.append(tab)
+        refreshOpenTabURLs()
+    }
+
+    public func select(at index: Int) {
+        tabs.select(at: index)
+        // `selectedIndex` change doesn't shift the URL set; skip the
+        // recompute to keep hot-path tab clicks cheap.
+    }
+
+    public func replace(at index: Int, with tab: ViewerCore.Tab) {
+        tabs.replace(at: index, with: tab)
+        // A replace can swap URL (lazy materialize finish, viewMode
+        // flip with URL retained, etc.); recompute conservatively.
+        refreshOpenTabURLs()
+    }
+
+    public func move(from src: Int, to dst: Int) {
+        tabs.move(from: src, to: dst)
+        // Move never changes the URL set; skip the recompute.
+    }
+
+    public func swapWithPrevious(at index: Int) {
+        tabs.swapWithPrevious(at: index)
+    }
+
+    public func swapWithNext(at index: Int) {
+        tabs.swapWithNext(at: index)
+    }
+
+    @discardableResult
+    public func openOrReveal(url: URL, state: DocumentState, viewMode: ViewMode) -> Int {
+        let i = tabs.openOrReveal(url: url, state: state, viewMode: viewMode)
+        refreshOpenTabURLs()
+        return i
+    }
+
+    // MARK: - Close paths (the three that prune per-tab dicts)
+
+    /// Close the tab at `index` and prune every per-tab cache that
+    /// belonged to it. Caller is responsible for any dirty-buffer
+    /// prompting BEFORE invoking this (the prompt lives on
+    /// DocumentModel so it can run NSAlert and call `saveEditor`).
+    ///
+    /// Returns the closed tab's id (or nil for an out-of-bounds
+    /// index) so the caller can run additional post-close cleanup
+    /// (e.g. DocumentModel's `purgeCaches(forURL:tabID:)`).
+    @discardableResult
+    public func closeTab(at index: Int) -> UUID? {
+        guard tabs.tabs.indices.contains(index) else { return nil }
+        let closed = tabs.tabs[index]
+        tabs.close(at: index)
+        cleanupAfterClose(id: closed.id)
+        refreshOpenTabURLs()
+        return closed.id
+    }
+
+    /// Close every tab except the one at `index`. Returns the ids of
+    /// the closed tabs (in original order) for any caller-side
+    /// follow-up cleanup. Caller is responsible for dirty prompts.
+    @discardableResult
+    public func closeOtherTabs(keeping index: Int) -> [UUID] {
+        guard tabs.tabs.indices.contains(index) else { return [] }
+        let keepID = tabs.tabs[index].id
+        let closedIDs = tabs.tabs.filter { $0.id != keepID }.map { $0.id }
+        tabs.closeAll(except: index)
+        for id in closedIDs { cleanupAfterClose(id: id) }
+        // The `formattedTabIDs` set is the one cleanup that's cheaper
+        // to do as a set-intersection than as a per-id remove (it's a
+        // Set not a Dict and the surviving set is a single element).
+        // Same final state either way; the intersect just avoids an
+        // O(n_closed) loop on a set that's almost always tiny.
+        let openIDs = Set(tabs.tabs.map { $0.id })
+        formattedTabIDs.formIntersection(openIDs)
+        refreshOpenTabURLs()
+        return closedIDs
+    }
+
+    /// Close every tab whose index is greater than `index`. Returns
+    /// the closed-tab ids for any caller-side follow-up cleanup.
+    @discardableResult
+    public func closeTabsToRight(of index: Int) -> [UUID] {
+        guard tabs.tabs.indices.contains(index) else { return [] }
+        if tabs.tabs.count <= index + 1 { return [] }
+        let closed = Array(tabs.tabs.suffix(from: index + 1))
+        let closedIDs = closed.map { $0.id }
+        tabs.closeAllToRight(of: index)
+        for id in closedIDs { cleanupAfterClose(id: id) }
+        let openIDs = Set(tabs.tabs.map { $0.id })
+        formattedTabIDs.formIntersection(openIDs)
+        refreshOpenTabURLs()
+        return closedIDs
+    }
+
+    /// Single fan-out point for the per-tab cleanup. Called from each
+    /// of the three close paths. Whenever a new per-tab dict gets
+    /// added here, EVERY close path picks up the cleanup automatically
+    /// — this is the invariant the previous in-line cleanup blocks
+    /// kept silently breaking.
+    ///
+    /// Order matters minimally (these are independent dict deletes)
+    /// but we keep the listing alphabetical so additions land in
+    /// predictable spots.
+    private func cleanupAfterClose(id: UUID) {
+        cancelMaterialize(forTabID: id)
+        csvFilterStates.removeValue(forKey: id)
+        editorBuffers.removeValue(forKey: id)
+        // formattedTabIDs handled by the caller via intersection
+        // (it's a Set, cheaper to recompute once at end of batch
+        // close). For single-tab close we drop it explicitly here:
+        formattedTabIDs.remove(id)
+        formattedTextCache.removeValue(forKey: id)
+        if let idx = formattedTextCacheOrder.firstIndex(of: id) {
+            formattedTextCacheOrder.remove(at: idx)
+        }
+        hexBytesPerRow.removeValue(forKey: id)
+        languageOverrides.removeValue(forKey: id)
+    }
+
+    /// Recompute the open-tab URL set from `tabs`. Dedupe assignment
+    /// so observers don't re-publish on no-op URL-set changes
+    /// (selection moves, viewMode flips, etc.).
+    private func refreshOpenTabURLs() {
+        let newSet = Set(tabs.tabs.compactMap { $0.url })
+        if newSet != openTabURLs { openTabURLs = newSet }
+    }
+
+    // MARK: - Per-tab dict accessors / mutators
+
+    public func csvFilterState(forTabID id: UUID) -> CSVFilterState {
+        csvFilterStates[id] ?? CSVFilterState()
+    }
+
+    public func setCsvFilterState(_ state: CSVFilterState, forTabID id: UUID) {
+        if csvFilterStates[id] != state { csvFilterStates[id] = state }
+    }
+
+    public func clearCsvFilterState(forTabID id: UUID) {
+        csvFilterStates.removeValue(forKey: id)
+    }
+
+    public func hexWidth(forTabID id: UUID, fallback: Int) -> Int {
+        if let w = hexBytesPerRow[id] { return HexLayout.clampWidth(w) }
+        return HexLayout.clampWidth(fallback)
+    }
+
+    public func setHexWidth(_ width: Int, forTabID id: UUID) {
+        let clamped = HexLayout.clampWidth(width)
+        if hexBytesPerRow[id] != clamped { hexBytesPerRow[id] = clamped }
+    }
+
+    /// Effective language for `tabID` — override wins over the
+    /// auto-detected language passed in by the caller. The caller
+    /// owns the autodetect (uses URL extension) so this coordinator
+    /// stays UI-toolkit-free; we only adjudicate the override map.
+    public func effectiveLanguage(
+        forTabID id: UUID, autodetected: HighlightLanguage
+    ) -> HighlightLanguage {
+        languageOverrides[id] ?? autodetected
+    }
+
+    /// Set the language for the selected tab. Pass `autodetected` so
+    /// we can clear the override when it would no longer have an
+    /// effect (i.e. user selected the natural language).
+    public func setSelectedTabLanguage(
+        _ lang: HighlightLanguage, autodetected: HighlightLanguage
+    ) {
+        guard let id = tabs.selected?.id,
+              let i = tabs.tabs.firstIndex(where: { $0.id == id })
+        else { return }
+        if lang == autodetected {
+            languageOverrides.removeValue(forKey: id)
+        } else {
+            languageOverrides[id] = lang
+        }
+        // Re-publish the tab so source-view downstream recomputes its
+        // highlight runs. No payload change — only the override map
+        // shifted — but the cached `highlightRuns(forTabID:url:text:
+        // language:)` keys on `language`, so the language flip alone
+        // is enough to invalidate.
+        let t = tabs.tabs[i]
+        tabs.replace(at: i, with: t)
+    }
+
+    public var hasLanguageOverrideForSelected: Bool {
+        guard let id = tabs.selected?.id else { return false }
+        return languageOverrides[id] != nil
+    }
+
+    /// Toggle the formatted flag on the selected tab. Caller has
+    /// already verified `supportsFormatToggle` (it depends on URL
+    /// type, which is a DocumentModel-level concern).
+    public func toggleFormatForSelected() {
+        guard let id = tabs.selected?.id else { return }
+        if formattedTabIDs.contains(id) {
+            formattedTabIDs.remove(id)
+        } else {
+            formattedTabIDs.insert(id)
+        }
+    }
+
+    public func setFormatted(_ on: Bool, forTabID id: UUID) {
+        if on { formattedTabIDs.insert(id) }
+        else  { formattedTabIDs.remove(id) }
+    }
+
+    public var isSelectedTabFormatted: Bool {
+        guard let id = tabs.selected?.id else { return false }
+        return formattedTabIDs.contains(id)
+    }
+
+    /// LRU-ish read-through for the pretty-printer output. Returns
+    /// the cached value when the source length still matches the
+    /// cached entry's, nil otherwise (caller computes + caches).
+    public func formattedHit(forTabID id: UUID, sourceLength: Int) -> String? {
+        guard let hit = formattedTextCache[id], hit.sourceLength == sourceLength
+        else { return nil }
+        return hit.formatted
+    }
+
+    /// Store a fresh pretty-print result and evict the oldest entries
+    /// once over cap. The 2/3 drop-down matches the rendered-HTML
+    /// cache eviction strategy (S2-G / S4-G).
+    public func cacheFormatted(_ result: String, forTabID id: UUID, sourceLength: Int) {
+        if formattedTextCache[id] == nil {
+            formattedTextCacheOrder.append(id)
+        }
+        formattedTextCache[id] = (sourceLength: sourceLength, formatted: result)
+        if formattedTextCache.count > Self.formattedTextCacheMax {
+            let dropCount = formattedTextCache.count - Self.formattedTextCacheMax * 2 / 3
+            let toDrop = formattedTextCacheOrder.prefix(dropCount)
+            for k in toDrop {
+                formattedTextCache.removeValue(forKey: k)
+            }
+            formattedTextCacheOrder.removeFirst(toDrop.count)
+        }
+    }
+
+    // MARK: - Editor buffer accessors
+
+    /// Returns the cached buffer for `id`, or seeds one from the
+    /// tab's `.loaded` state if not yet present. Returns nil for
+    /// binary / empty / error tabs.
+    public func editorBuffer(forTabID id: UUID) -> EditorBuffer? {
+        if let cached = editorBuffers[id] { return cached }
+        guard let tab = tabs.tabs.first(where: { $0.id == id }),
+              case .loaded(let file) = tab.state else { return nil }
+        let buf = EditorBuffer(from: file)
+        editorBuffers[id] = buf
+        return buf
+    }
+
+    /// Idempotent seed — preserves an existing buffer with unsaved
+    /// edits. Called when the view-mode switch lands on `.editor` and
+    /// on lazy-materialize completion for an `.editor`-mode tab.
+    public func ensureEditorBuffer(for file: TextFile, tabID: UUID) {
+        if editorBuffers[tabID] != nil { return }
+        editorBuffers[tabID] = EditorBuffer(from: file)
+    }
+
+    /// Replace the buffer for `id`. Used by the save path
+    /// (post-stamp refresh) and the editor-text update path.
+    public func setEditorBuffer(_ buf: EditorBuffer, forTabID id: UUID) {
+        editorBuffers[id] = buf
+    }
+
+    /// Drop the buffer for a tab. Called by the close paths via
+    /// `cleanupAfterClose`, and explicitly by the dirty-confirm
+    /// "Don't Save" branch.
+    public func discardEditorBuffer(forTabID id: UUID) {
+        editorBuffers.removeValue(forKey: id)
+    }
+
+    // MARK: - Materialize tasks
+
+    /// Record an in-flight materialize Task for `id`. Replaces any
+    /// existing entry; caller is expected to have cancelled the prior
+    /// task before this call if it wanted the old result dropped.
+    public func setMaterializeTask(_ task: Task<Void, Never>, forTabID id: UUID) {
+        materializeTasks[id] = task
+    }
+
+    public func materializeTask(forTabID id: UUID) -> Task<Void, Never>? {
+        materializeTasks[id]
+    }
+
+    /// Clear the materialize slot for `id`. Doesn't cancel — used by
+    /// the task's completion path after it finishes its on-main hop.
+    public func clearMaterializeTask(forTabID id: UUID) {
+        materializeTasks[id] = nil
+    }
+
+    /// Cancel + drop the materialize Task for `id`. Called from every
+    /// tab-close path (folded into `cleanupAfterClose`).
+    public func cancelMaterialize(forTabID id: UUID) {
+        materializeTasks[id]?.cancel()
+        materializeTasks[id] = nil
+    }
+
+    // MARK: - Split pane
+
+    public func openInSplit(_ url: URL) {
+        splitURL = url.standardizedFileURL.resolvingSymlinksInPath()
+    }
+
+    public func closeSplit() { splitURL = nil }
+}

@@ -4,80 +4,74 @@ import SwiftUI
 import ViewerKit
 import ViewerCore
 
-/// Top-level app state. Owns the open tabs, file history, and bridging to
-/// the pure-logic `DocumentController`. Lives on the main actor.
+/// Top-level app state. Owns the file history, sidebar root, bookmarks,
+/// LSP plumbing, and bridging to the pure-logic `DocumentController`.
+/// Tabs + their per-tab caches now live on `tabCoordinator` (Quality
+/// #1, 2026-05-25) — see `TabCoordinator` for that surface. Most of
+/// the legacy public API (`tabs`, `csvFilterStates`, `editorBuffers`,
+/// `splitURL`, etc.) is retained on `DocumentModel` as forwarders so
+/// existing call sites compile unchanged. Lives on the main actor.
 @MainActor
 public final class DocumentModel: ObservableObject {
-    @Published public private(set) var tabs: TabsState = .init()
-    /// O(1)-contains set of URLs currently open in any tab. Maintained
-    /// by `updateDerived()` after every tabs mutation. Sidebar uses
-    /// this to render "open elsewhere" indicators without scanning
-    /// `tabs.tabs` per row.
-    @Published public private(set) var openTabURLs: Set<URL> = []
 
-    /// Per-tab CSV filter state. Persists across tab switches so the
-    /// user doesn't lose their filter when navigating away and back.
-    /// Keyed by tab id; pruned in the close paths next to the other
-    /// tab-id-keyed caches.
-    @Published public private(set) var csvFilterStates: [UUID: CSVFilterState] = [:]
+    /// Tabs + per-tab caches. Views that only need tab state (TabBar,
+    /// per-tab content tree) should observe this directly so that
+    /// unrelated DocumentModel ticks (history changes, sidebar root
+    /// rebinds, etc.) don't force them to re-render. Same pattern as
+    /// `find` for find state.
+    public let tabCoordinator = TabCoordinator()
 
-    /// In-flight materialization Tasks keyed by tab id. Tracked so:
-    /// (a) rapid re-select of the same lazy tab cancels the previous
-    /// read before starting a new one, and (b) tab close / closeOthers
-    /// /closeToRight cancels the read for the doomed tab so we don't
-    /// waste I/O finishing a load whose result is going to be dropped.
-    private var materializeTasks: [UUID: Task<Void, Never>] = [:]
+    /// Backwards-compat forwarder. New code should read
+    /// `tabCoordinator.tabs` directly.
+    public var tabs: TabsState { tabCoordinator.tabs }
+
+    /// Backwards-compat forwarder. New code should read
+    /// `tabCoordinator.openTabURLs` directly.
+    public var openTabURLs: Set<URL> { tabCoordinator.openTabURLs }
+
+    // MARK: - Per-tab dict forwarders (move-here-only — TabCoordinator
+    //  owns the storage; these keep external call sites unchanged)
+
+    /// Forwarder. New code should call `tabCoordinator.csvFilterStates`.
+    public var csvFilterStates: [UUID: CSVFilterState] {
+        tabCoordinator.csvFilterStates
+    }
 
     public func csvFilterState(forTabID id: UUID) -> CSVFilterState {
-        csvFilterStates[id] ?? CSVFilterState()
+        tabCoordinator.csvFilterState(forTabID: id)
     }
 
     public func setCsvFilterState(_ state: CSVFilterState, forTabID id: UUID) {
-        if csvFilterStates[id] != state { csvFilterStates[id] = state }
+        tabCoordinator.setCsvFilterState(state, forTabID: id)
     }
 
     public func clearCsvFilterState(forTabID id: UUID) {
-        csvFilterStates.removeValue(forKey: id)
+        tabCoordinator.clearCsvFilterState(forTabID: id)
     }
 
-    /// Per-tab HEX viewer bytes-per-row. Falls back to the global
-    /// default in PreferencesStore (`hexBytesPerRow`). Pruned in the
-    /// tab-close paths alongside other tab-id-keyed maps. Not
-    /// persisted across app relaunches — intentional: globally
-    /// changing the default is the durable knob; per-tab is a
-    /// session-scoped override.
-    @Published public private(set) var hexBytesPerRow: [UUID: Int] = [:]
+    /// Forwarder. New code should call `tabCoordinator.hexBytesPerRow`.
+    public var hexBytesPerRow: [UUID: Int] { tabCoordinator.hexBytesPerRow }
 
     public func hexWidth(forTabID id: UUID) -> Int {
-        if let w = hexBytesPerRow[id] { return HexLayout.clampWidth(w) }
-        return HexLayout.clampWidth(preferences.hexBytesPerRow)
+        tabCoordinator.hexWidth(forTabID: id, fallback: preferences.hexBytesPerRow)
     }
 
     public func setHexWidth(_ width: Int, forTabID id: UUID) {
-        let clamped = HexLayout.clampWidth(width)
-        if hexBytesPerRow[id] != clamped { hexBytesPerRow[id] = clamped }
+        tabCoordinator.setHexWidth(width, forTabID: id)
         // Also bump the global default so the next opened binary
         // remembers what the user picked. Cheap; matches Sublime
-        // "remember last setting" feel.
+        // "remember last setting" feel. Lives on DocumentModel
+        // because PreferencesStore is a DocumentModel dependency.
+        let clamped = HexLayout.clampWidth(width)
         if preferences.hexBytesPerRow != clamped {
             preferences.hexBytesPerRow = clamped
         }
     }
 
-    public struct CSVFilterState: Equatable, Sendable {
-        public var globalQuery: String = ""
-        public var globalScope: Int? = nil
-        public var perColumn: [Int: String] = [:]
-        public var advancedShown: Bool = false
-
-        public init(globalQuery: String = "", globalScope: Int? = nil,
-                    perColumn: [Int: String] = [:], advancedShown: Bool = false) {
-            self.globalQuery = globalQuery
-            self.globalScope = globalScope
-            self.perColumn = perColumn
-            self.advancedShown = advancedShown
-        }
-    }
+    /// Source-compat alias — the type was previously nested on
+    /// DocumentModel; CSVTableView constructs `DocumentModel.CSVFilterState()`.
+    /// Keeps that call site valid without churning view code.
+    public typealias CSVFilterState = TabCoordinator.CSVFilterState
     @Published public private(set) var windowTitle: String = "TextView"
     @Published public private(set) var recents: [HistoryEntry] = []
     @Published public private(set) var bookmarks: [BookmarkEntry] = []
@@ -854,23 +848,26 @@ public final class DocumentModel: ObservableObject {
         sourceScrollLineNonce &+= 1
     }
 
-    // MARK: - Split view
+    // MARK: - Split view (forwarders to TabCoordinator)
+    //
+    // The split pane lives on `tabCoordinator` because it shares the
+    // "what's currently on screen" lifecycle with the tab list.
+    // Forwarders here preserve the existing `model.splitURL` /
+    // `model.openInSplit` / `model.closeSplit` / `model.toggleSplit`
+    // call sites.
 
-    /// URL displayed in the right-hand secondary pane, or nil when
-    /// split is closed. v1 is read-only and stateless: the secondary
-    /// pane has no tab bar, no find bar, no per-tab view-mode — it
-    /// just shows whatever file the user pinned there. Tab bar /
-    /// find / etc stay on the primary (left) side.
-    @Published public var splitURL: URL? = nil
-    /// True when the split is open. Convenience for menu validation.
-    public var isSplitOpen: Bool { splitURL != nil }
+    public var splitURL: URL? {
+        get { tabCoordinator.splitURL }
+        set { tabCoordinator.splitURL = newValue }
+    }
+    public var isSplitOpen: Bool { tabCoordinator.isSplitOpen }
 
     public func openInSplit(_ url: URL) {
-        splitURL = url.standardizedFileURL.resolvingSymlinksInPath()
+        tabCoordinator.openInSplit(url)
     }
-    public func closeSplit() { splitURL = nil }
+    public func closeSplit() { tabCoordinator.closeSplit() }
     public func toggleSplit() {
-        if splitURL != nil { closeSplit() }
+        if tabCoordinator.splitURL != nil { closeSplit() }
         else if let url = currentURL { openInSplit(url) }
     }
 
@@ -1099,7 +1096,7 @@ public final class DocumentModel: ObservableObject {
             guard let tabURL = tab.url else { continue }
             let stdTab = tabURL.standardizedFileURL.resolvingSymlinksInPath()
             guard stdTab == standardized else { continue }
-            guard let buf = editorBuffers[tab.id] else { continue }
+            guard let buf = tabCoordinator.editorBuffers[tab.id] else { continue }
             let cmDiags = CMDiagnosticMapping.cmDiagnostics(
                 from: diags,
                 documentText: buf.text,
@@ -1281,50 +1278,30 @@ public final class DocumentModel: ObservableObject {
 
     // MARK: Pretty-print / Format
 
-    /// Tab.id's that the user has toggled into "formatted" (pretty-
-    /// printed) view. Keyed by Tab.id (not URL) so:
-    ///   - opening the same file in two tabs gives them independent
-    ///     format state (otherwise toggling one toggles both)
-    ///   - closing a tab automatically prunes its entry below
-    @Published private var formattedTabIDs: Set<UUID> = []
-
-    /// Per-tab override of the auto-detected language. User can pick
-    /// from the language badge dropdown to force a `.txt` file into
-    /// JSON mode (or whatever). Keyed by Tab.id so two tabs of the
-    /// same file can have independent overrides.
-    @Published private var languageOverrides: [UUID: HighlightLanguage] = [:]
-
     /// Effective language for a given tab — override wins over
     /// auto-detection. Public so the ModeBar dropdown + the source
-    /// view both read the same source of truth.
+    /// view both read the same source of truth. Forwards to
+    /// `tabCoordinator` for the override; auto-detect lives here
+    /// (URL-based, no coordinator coupling required).
     public func effectiveLanguage(forTabID id: UUID, url: URL) -> HighlightLanguage {
-        languageOverrides[id] ?? HighlightLanguage.detect(from: url)
+        tabCoordinator.effectiveLanguage(
+            forTabID: id,
+            autodetected: HighlightLanguage.detect(from: url)
+        )
     }
 
     /// Set or clear the override for the current tab. Passing the
     /// auto-detected language clears the override (so a follow-up
     /// rename still does the right thing).
     public func setCurrentLanguage(_ lang: HighlightLanguage) {
-        guard let id = tabs.selected?.id,
-              let i = tabs.tabs.firstIndex(where: { $0.id == id }),
-              let url = tabs.tabs[i].url else { return }
+        guard let url = tabs.selected?.url else { return }
         let auto = HighlightLanguage.detect(from: url)
-        if lang == auto {
-            languageOverrides.removeValue(forKey: id)
-        } else {
-            languageOverrides[id] = lang
-        }
-        // Kick a re-highlight by touching the tab's state without
-        // mutating it (no-op assignment). The publish triggers the
-        // source view's highlightRuns recompute downstream.
-        let t = tabs.tabs[i]
-        tabs.replace(at: i, with: t)
+        tabCoordinator.setSelectedTabLanguage(lang, autodetected: auto)
     }
 
     /// True if a manual override is set for the current tab.
     public var hasLanguageOverride: Bool {
-        guard let id = tabs.selected?.id else { return false }
-        return languageOverrides[id] != nil
+        tabCoordinator.hasLanguageOverrideForSelected
     }
 
     /// True if the current tab's file is a format that can be pretty-
@@ -1337,27 +1314,30 @@ public final class DocumentModel: ObservableObject {
     /// True if the current tab is currently showing pretty-printed
     /// content (as opposed to the raw file).
     public var isCurrentTabFormatted: Bool {
-        guard let id = tabs.selected?.id else { return false }
-        return formattedTabIDs.contains(id)
+        tabCoordinator.isSelectedTabFormatted
     }
 
     public func toggleFormat() {
-        guard let id = tabs.selected?.id, supportsFormatToggle else { return }
-        if formattedTabIDs.contains(id) {
-            formattedTabIDs.remove(id)
-        } else {
-            formattedTabIDs.insert(id)
-        }
+        guard supportsFormatToggle else { return }
+        tabCoordinator.toggleFormatForSelected()
     }
 
     // MARK: Editor mode (Phase 6.x — editable plain-text buffer)
     //
-    // PoC: one EditorBuffer per tab id, keyed off the same `tabs.tabs`
+    // One EditorBuffer per tab id, keyed off the same `tabs.tabs`
     // identity used by every other per-tab cache. The buffer is lazy
     // — created on first read for the tab in `.editor` view mode and
-    // dropped on tab close (see closeTab / closeOthers / closeToRight).
+    // dropped on tab close. Storage lives on `tabCoordinator`; the
+    // dirty-prompt / save-write logic stays here because it has to
+    // run AppKit `NSAlert` and touch `PreferencesStore` /
+    // file-watcher state.
 
-    @Published public private(set) var editorBuffers: [UUID: EditorBuffer] = [:]
+    /// Forwarder. New code should observe
+    /// `tabCoordinator.editorBuffers` directly so editor-text changes
+    /// don't republish DocumentModel.
+    public var editorBuffers: [UUID: EditorBuffer] {
+        tabCoordinator.editorBuffers
+    }
 
     /// Result of `confirmCloseIfDirty(...)`. Plain enum so view code
     /// (NSAlert response handler) can switch without leaking AppKit
@@ -1381,23 +1361,14 @@ public final class DocumentModel: ObservableObject {
     /// Returns the active tab's buffer (creating it on demand if the
     /// tab's state is `.loaded`). Returns nil for binary / empty /
     /// error tabs — `.editor` mode is only meaningful when there's
-    /// loaded text to seed the buffer with.
+    /// loaded text to seed the buffer with. Forwarder.
     public func editorBuffer(forTabID id: UUID) -> EditorBuffer? {
-        if let cached = editorBuffers[id] { return cached }
-        guard let tab = tabs.tabs.first(where: { $0.id == id }),
-              case .loaded(let file) = tab.state else { return nil }
-        let buf = EditorBuffer(from: file)
-        editorBuffers[id] = buf
-        return buf
+        tabCoordinator.editorBuffer(forTabID: id)
     }
 
-    /// Seed a fresh buffer for `tabID` from `file`. Called when the
-    /// view-mode switch lands on `.editor` (and on loadAsync
-    /// completion when an editor-mode tab finishes materializing).
-    /// Idempotent — preserves an existing buffer with unsaved edits.
+    /// Seed a fresh buffer for `tabID` from `file`. Forwarder.
     public func ensureEditorBuffer(for file: TextFile, tabID: UUID) {
-        if editorBuffers[tabID] != nil { return }
-        editorBuffers[tabID] = EditorBuffer(from: file)
+        tabCoordinator.ensureEditorBuffer(for: file, tabID: tabID)
     }
 
     /// Push a new text value into the active tab's buffer. Called from
@@ -1408,20 +1379,20 @@ public final class DocumentModel: ObservableObject {
     /// is the one place that runs the (cheap, length-short-circuited)
     /// String equality.
     public func updateEditorText(_ newText: String, forTabID id: UUID) {
-        guard var buf = editorBuffer(forTabID: id) else { return }
+        guard var buf = tabCoordinator.editorBuffer(forTabID: id) else { return }
         // Fast path: identical-string assignment is a no-op. Avoids
         // republishing `editorBuffers` for callers that fire the
         // setter on every paint (some NSTextView subclasses do).
         if buf.text == newText { return }
         buf.setText(newText)
-        editorBuffers[id] = buf
+        tabCoordinator.setEditorBuffer(buf, forTabID: id)
         // Sync the Tab snapshot so SwiftUI re-renders the dirty dot.
         if let idx = tabs.tabs.firstIndex(where: { $0.id == id }) {
             let nowDirty = buf.isDirty
             if tabs.tabs[idx].isDirty != nowDirty {
                 var t = tabs.tabs[idx]
                 t.isDirty = nowDirty
-                tabs.replace(at: idx, with: t)
+                tabCoordinator.replace(at: idx, with: t)
             }
         }
     }
@@ -1439,7 +1410,7 @@ public final class DocumentModel: ObservableObject {
     /// by the close-confirm path that targets a non-active tab.
     @discardableResult
     public func saveEditor(forTabID id: UUID) -> Bool {
-        guard var buf = editorBuffers[id] else { return false }
+        guard var buf = tabCoordinator.editorBuffers[id] else { return false }
         // File-watcher reload during save would race the write — pause
         // it for the moment the write is in flight + the immediate
         // post-write watcher event we'd otherwise re-enter on.
@@ -1452,12 +1423,12 @@ public final class DocumentModel: ObservableObject {
         do {
             let stamp = try EditorWriter.save(buf.text, to: buf.url, encoding: buf.encoding)
             buf.markSaved(diskMTime: stamp.mtime, diskSize: stamp.size)
-            editorBuffers[id] = buf
+            tabCoordinator.setEditorBuffer(buf, forTabID: id)
             // Clear the dirty dot.
             if let idx = tabs.tabs.firstIndex(where: { $0.id == id }) {
                 var t = tabs.tabs[idx]
                 t.isDirty = false
-                tabs.replace(at: idx, with: t)
+                tabCoordinator.replace(at: idx, with: t)
             }
             // Refresh the loaded TextFile so the rest of the app sees
             // the new bytes (sidebar diff marks, formatted cache, etc.
@@ -1489,7 +1460,7 @@ public final class DocumentModel: ObservableObject {
                         modifiedTime: mtime
                     )
                     t.state = .loaded(newFile)
-                    tabs.replace(at: idx, with: t)
+                    tabCoordinator.replace(at: idx, with: t)
                 }
             }
             return true
@@ -1509,11 +1480,11 @@ public final class DocumentModel: ObservableObject {
     /// user has confirmed discard, and as part of normal close cleanup
     /// (no-op when the buffer isn't present).
     public func discardEditorBuffer(forTabID id: UUID) {
-        editorBuffers.removeValue(forKey: id)
+        tabCoordinator.discardEditorBuffer(forTabID: id)
         if let idx = tabs.tabs.firstIndex(where: { $0.id == id }), tabs.tabs[idx].isDirty {
             var t = tabs.tabs[idx]
             t.isDirty = false
-            tabs.replace(at: idx, with: t)
+            tabCoordinator.replace(at: idx, with: t)
         }
     }
 
@@ -1553,35 +1524,18 @@ public final class DocumentModel: ObservableObject {
     /// reload).
     public func displayText(for file: TextFile) -> String {
         guard let id = tabs.selected?.id,
-              formattedTabIDs.contains(id),
+              tabCoordinator.formattedTabIDs.contains(id),
               let format = Formatter.SupportedFormat.detect(file.url) else {
             return file.contents
         }
         let len = file.contents.utf8.count
-        if let hit = formattedTextCache[id], hit.sourceLength == len {
-            return hit.formatted
+        if let hit = tabCoordinator.formattedHit(forTabID: id, sourceLength: len) {
+            return hit
         }
         let result = Formatter.prettyPrint(file.contents, as: format)
-        if formattedTextCache[id] == nil {
-            formattedTextCacheOrder.append(id)
-        }
-        formattedTextCache[id] = (sourceLength: len, formatted: result)
-        if formattedTextCache.count > Self.formattedTextCacheMax {
-            // S4-G: evict oldest by insertion order; same fix as the
-            // renderedHTMLCache (S2-G).
-            let dropCount = formattedTextCache.count - Self.formattedTextCacheMax * 2 / 3
-            let toDrop = formattedTextCacheOrder.prefix(dropCount)
-            for k in toDrop {
-                formattedTextCache.removeValue(forKey: k)
-            }
-            formattedTextCacheOrder.removeFirst(toDrop.count)
-        }
+        tabCoordinator.cacheFormatted(result, forTabID: id, sourceLength: len)
         return result
     }
-
-    private var formattedTextCache: [UUID: (sourceLength: Int, formatted: String)] = [:]
-    private var formattedTextCacheOrder: [UUID] = []
-    private static let formattedTextCacheMax = 8
 
     // MARK: Syntax highlighting
 
@@ -1812,7 +1766,7 @@ public final class DocumentModel: ObservableObject {
         // "user is in HEX, opens another file" workflow.
         let initialMode = ViewModeOptions.defaultMode(for: resolved)
         if forceNewTab {
-            tabs.append(Tab(url: resolved, state: state, viewMode: initialMode))
+            tabCoordinator.append(Tab(url: resolved, state: state, viewMode: initialMode))
         } else {
             // If the active tab has a non-default mode the user
             // explicitly picked (e.g. HEX, Format), carry it. Otherwise
@@ -1823,7 +1777,7 @@ public final class DocumentModel: ObservableObject {
             } else {
                 carryMode = initialMode
             }
-            tabs.openOrReveal(url: resolved, state: state, viewMode: carryMode)
+            tabCoordinator.openOrReveal(url: resolved, state: state, viewMode: carryMode)
         }
         // Carry HEX mode across file switch: if the active tab now
         // shows a different file in HEX, but the underlying state is
@@ -1883,7 +1837,7 @@ public final class DocumentModel: ObservableObject {
               tabs.tabs.indices.contains(i),
               tabs.tabs[i].url == watchedURL else { return }
         let tab = tabs.tabs[i]
-        if tab.isDirty, let buf = editorBuffers[tab.id] {
+        if tab.isDirty, let buf = tabCoordinator.editorBuffers[tab.id] {
             let attrs = try? FileManager.default.attributesOfItem(atPath: watchedURL.path)
             let mtime = attrs?[.modificationDate] as? Date
             let size = attrs?[.size] as? Int
@@ -1917,13 +1871,13 @@ public final class DocumentModel: ObservableObject {
             // Crucially we MUST NOT touch `originalText` — keeping the
             // pre-conflict baseline preserves `isDirty == true` and
             // leaves Revert / future "compare original" features usable.
-            if var buf = editorBuffers[id] {
+            if var buf = tabCoordinator.editorBuffers[id] {
                 let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
                 buf.refreshSavedFingerprint(
                     diskMTime: attrs?[.modificationDate] as? Date,
                     diskSize: attrs?[.size] as? Int
                 )
-                editorBuffers[id] = buf
+                tabCoordinator.setEditorBuffer(buf, forTabID: id)
             }
         }
     }
@@ -1932,7 +1886,7 @@ public final class DocumentModel: ObservableObject {
         let state = controller.open(url: url)
         var t = tabs.tabs[index]
         t.state = state
-        tabs.replace(at: index, with: t)
+        tabCoordinator.replace(at: index, with: t)
         updateDerived()
     }
 
@@ -1982,7 +1936,7 @@ public final class DocumentModel: ObservableObject {
     // MARK: Tab management
 
     public func newTab() {
-        tabs.append(Tab())
+        tabCoordinator.append(Tab())
         updateDerived()
     }
 
@@ -2000,17 +1954,15 @@ public final class DocumentModel: ObservableObject {
         case .cancel:
             return
         }
-        let closedTab = tabs.tabs.indices.contains(index) ? tabs.tabs[index] : nil
-        tabs.close(at: index)
-        if let t = closedTab {
-            cancelMaterialize(forTabID: t.id)
-            formattedTabIDs.remove(t.id)
-            formattedTextCache.removeValue(forKey: t.id)
-            languageOverrides.removeValue(forKey: t.id)
-            csvFilterStates.removeValue(forKey: t.id)
-            editorBuffers.removeValue(forKey: t.id)
-            hexBytesPerRow.removeValue(forKey: t.id)
-            purgeCaches(forURL: t.url, tabID: t.id)
+        guard tabs.tabs.indices.contains(index) else { return }
+        let closedURL = tabs.tabs[index].url
+        // Coordinator handles the tabs mutation + all six per-tab dict
+        // cleanups in lock-step (folded into `cleanupAfterClose`).
+        // Returns the closed tab's id so we can also purge non-
+        // coordinator caches that key off it (renderedHTML, highlight
+        // actor).
+        if let id = tabCoordinator.closeTab(at: index) {
+            purgeCaches(forURL: closedURL, tabID: id)
         }
         updateDerived()
         startWatchingCurrentFile()
@@ -2040,22 +1992,18 @@ public final class DocumentModel: ObservableObject {
                 return
             }
         }
-        let closedTabs = tabs.tabs.filter { $0.id != keepID }
-        tabs.closeAll(except: index)
-        for t in closedTabs {
-            cancelMaterialize(forTabID: t.id)
-            formattedTextCache.removeValue(forKey: t.id)
-            languageOverrides.removeValue(forKey: t.id)
-            csvFilterStates.removeValue(forKey: t.id)
-            editorBuffers.removeValue(forKey: t.id)
-            hexBytesPerRow.removeValue(forKey: t.id)
-            purgeCaches(forURL: t.url, tabID: t.id)
+        // Snapshot doomed tabs' URLs *before* the coordinator mutates
+        // `tabs`, so the non-coordinator cache purge has the right
+        // URLs to pass.
+        let doomedURLsByID: [UUID: URL?] = Dictionary(
+            uniqueKeysWithValues: tabs.tabs
+                .filter { $0.id != keepID }
+                .map { ($0.id, $0.url) }
+        )
+        let closedIDs = tabCoordinator.closeOtherTabs(keeping: index)
+        for id in closedIDs {
+            purgeCaches(forURL: doomedURLsByID[id] ?? nil, tabID: id)
         }
-        // Intersect tab-id sets with the still-open ids. Cheaper than
-        // tracking every closed id and symmetric across the three
-        // tab-id-keyed maps.
-        let openIDs = Set(tabs.tabs.map { $0.id })
-        formattedTabIDs.formIntersection(openIDs)
         updateDerived()
         startWatchingCurrentFile()
     }
@@ -2067,8 +2015,7 @@ public final class DocumentModel: ObservableObject {
         // Bounds-check up front: a stale gesture (menu/script verb
         // firing after the tab vanished from another path) can hand
         // us an out-of-range index, and the `(index+1)..<count`
-        // range construction below would trap before the
-        // `tabs.tabs.indices.contains(index)` check on line ~2061
+        // range construction below would trap before the coordinator
         // ever runs.
         guard index >= 0, index < tabs.tabs.count else { return }
         let toClose = (index + 1)..<tabs.tabs.count
@@ -2082,31 +2029,28 @@ public final class DocumentModel: ObservableObject {
                 return
             }
         }
-        let closedTabs = tabs.tabs.indices.contains(index)
-            ? Array(tabs.tabs.suffix(from: index + 1))
-            : []
-        tabs.closeAllToRight(of: index)
-        for t in closedTabs {
-            cancelMaterialize(forTabID: t.id)
-            formattedTextCache.removeValue(forKey: t.id)
-            languageOverrides.removeValue(forKey: t.id)
-            csvFilterStates.removeValue(forKey: t.id)
-            editorBuffers.removeValue(forKey: t.id)
-            hexBytesPerRow.removeValue(forKey: t.id)
-            purgeCaches(forURL: t.url, tabID: t.id)
+        let doomedURLsByID: [UUID: URL?] = Dictionary(
+            uniqueKeysWithValues: tabs.tabs
+                .suffix(from: index + 1)
+                .map { ($0.id, $0.url) }
+        )
+        let closedIDs = tabCoordinator.closeTabsToRight(of: index)
+        for id in closedIDs {
+            purgeCaches(forURL: doomedURLsByID[id] ?? nil, tabID: id)
         }
-        let openIDs = Set(tabs.tabs.map { $0.id })
-        formattedTabIDs.formIntersection(openIDs)
         updateDerived()
         startWatchingCurrentFile()
     }
 
     /// Drop all cache entries belonging to a closed tab. Highlight
-    /// runs now live in per-tab `HighlightCacheActor`s (PERF #5);
+    /// runs live in per-tab `HighlightCacheActor`s (PERF #5);
     /// closing a tab drops the actor entirely — no fan-out to other
     /// tabs because each tab has its own. Rendered-HTML entries are
     /// tabID-keyed (PERF #2 finding); purge unconditionally on tab
-    /// close since no other tab can hit the same key.
+    /// close since no other tab can hit the same key. These two
+    /// caches stay on DocumentModel (not TabCoordinator) because
+    /// they're conceptually subsystems (highlighting, markdown
+    /// rendering), and only their *eviction* is tab-id-keyed.
     private func purgeCaches(forURL _: URL?, tabID: UUID? = nil) {
         if let tabID {
             // PERF #5: drop the per-tab highlight cache actor.
@@ -2124,25 +2068,25 @@ public final class DocumentModel: ObservableObject {
     }
 
     public func moveTab(from src: Int, to dst: Int) {
-        tabs.move(from: src, to: dst)
+        tabCoordinator.move(from: src, to: dst)
         updateDerived()
     }
 
     public func moveCurrentTabLeft() {
         guard let i = tabs.selectedIndex else { return }
-        tabs.swapWithPrevious(at: i)
+        tabCoordinator.swapWithPrevious(at: i)
         updateDerived()
     }
 
     public func moveCurrentTabRight() {
         guard let i = tabs.selectedIndex else { return }
-        tabs.swapWithNext(at: i)
+        tabCoordinator.swapWithNext(at: i)
         updateDerived()
     }
 
 
     public func selectTab(at index: Int) {
-        tabs.select(at: index)
+        tabCoordinator.select(at: index)
         materializeIfNeeded(at: index)
         updateDerived()
         startWatchingCurrentFile()
@@ -2166,7 +2110,7 @@ public final class DocumentModel: ObservableObject {
         let safeMode = allowed.contains(viewMode)
             ? viewMode
             : ViewModeOptions.defaultMode(for: resolved)
-        tabs.append(Tab(url: resolved, state: .empty, viewMode: safeMode))
+        tabCoordinator.append(Tab(url: resolved, state: .empty, viewMode: safeMode))
     }
 
     /// Open many URLs at once. Only the LAST URL is read into memory;
@@ -2210,10 +2154,10 @@ public final class DocumentModel: ObservableObject {
         // would otherwise pile up). Cooperative cancellation: we can't
         // interrupt the sync `controller.open(url:)` mid-read, but the
         // completion checks `Task.isCancelled` before hopping to main.
-        materializeTasks[tabID]?.cancel()
+        tabCoordinator.materializeTask(forTabID: tabID)?.cancel()
         var loading = t
         loading.state = .loading(url)
-        tabs.replace(at: index, with: loading)
+        tabCoordinator.replace(at: index, with: loading)
         let viewMode = t.viewMode
         let task = Task.detached(priority: .userInitiated) { [controller] in
             let state = controller.open(url: url)
@@ -2222,7 +2166,7 @@ public final class DocumentModel: ObservableObject {
                 guard let self else { return }
                 // Clear our slot regardless of outcome — the Task is
                 // done from here on out, even if we drop the result.
-                self.materializeTasks[tabID] = nil
+                self.tabCoordinator.clearMaterializeTask(forTabID: tabID)
                 if Task.isCancelled { return }
                 // The tab may have been closed, replaced, or had its
                 // state mutated meanwhile. Only swap if the slot we
@@ -2237,7 +2181,7 @@ public final class DocumentModel: ObservableObject {
                 }
                 var t2 = current
                 t2.state = state
-                self.tabs.replace(at: idx, with: t2)
+                self.tabCoordinator.replace(at: idx, with: t2)
                 // Mirror openResolved's HEX-mode carry: if a binary file
                 // lands with the tab already set to .hex view, kick the
                 // binary load.
@@ -2250,15 +2194,7 @@ public final class DocumentModel: ObservableObject {
                 }
             }
         }
-        materializeTasks[tabID] = task
-    }
-
-    /// Cancel + drop the materialize Task slot for `tabID`. Called from
-    /// every tab-close path so a doomed tab's still-running file read
-    /// doesn't waste I/O.
-    private func cancelMaterialize(forTabID tabID: UUID) {
-        materializeTasks[tabID]?.cancel()
-        materializeTasks[tabID] = nil
+        tabCoordinator.setMaterializeTask(task, forTabID: tabID)
     }
 
     public func selectNextTab() {
@@ -2305,10 +2241,10 @@ public final class DocumentModel: ObservableObject {
             }
         case .formatted:
             if let url = t.url, Formatter.SupportedFormat.detect(url) != nil {
-                formattedTabIDs.insert(t.id)
+                tabCoordinator.setFormatted(true, forTabID: t.id)
             }
         case .source, .rendered, .table, .diff:
-            formattedTabIDs.remove(t.id)
+            tabCoordinator.setFormatted(false, forTabID: t.id)
             if let url = t.url, case .binary = t.state {
                 loadTextAsync(url: url, intoTabID: t.id)
             }
@@ -2318,7 +2254,7 @@ public final class DocumentModel: ObservableObject {
             // the buffer has something to bind to; the buffer itself
             // is created lazily by `editorBuffer(forTabID:)` once
             // the file lands as `.loaded`.
-            formattedTabIDs.remove(t.id)
+            tabCoordinator.setFormatted(false, forTabID: t.id)
             if let url = t.url, case .binary = t.state {
                 loadTextAsync(url: url, intoTabID: t.id)
             }
@@ -2326,11 +2262,11 @@ public final class DocumentModel: ObservableObject {
             // loaded so the view's first frame has real text rather
             // than an empty placeholder.
             if case .loaded(let file) = t.state {
-                ensureEditorBuffer(for: file, tabID: t.id)
+                tabCoordinator.ensureEditorBuffer(for: file, tabID: t.id)
             }
         }
         t.viewMode = mode
-        tabs.replace(at: i, with: t)
+        tabCoordinator.replace(at: i, with: t)
     }
 
     /// Off-main file read, on-main state swap. Keeps the UI
@@ -2346,7 +2282,7 @@ public final class DocumentModel: ObservableObject {
                 else { return }
                 var tab = self.tabs.tabs[idx]
                 tab.state = .binary(bin)
-                self.tabs.replace(at: idx, with: tab)
+                self.tabCoordinator.replace(at: idx, with: tab)
             }
         }
     }
@@ -2360,7 +2296,7 @@ public final class DocumentModel: ObservableObject {
                 else { return }
                 var tab = self.tabs.tabs[idx]
                 tab.state = .loaded(text)
-                self.tabs.replace(at: idx, with: tab)
+                self.tabCoordinator.replace(at: idx, with: tab)
             }
         }
     }
@@ -2376,13 +2312,10 @@ public final class DocumentModel: ObservableObject {
 
     private func updateDerived() {
         windowTitle = tabs.selected?.title ?? "TextView"
-        // Maintain a Set<URL> of open-tab URLs so views can answer
-        // "is this URL open?" in O(1) rather than scanning the tabs
-        // array per row per body re-eval. Called on every tabs
-        // mutation; `openTabURLs` is the @Published observable
-        // sidebar/palette read.
-        let newSet = Set(tabs.tabs.compactMap { $0.url })
-        if newSet != openTabURLs { openTabURLs = newSet }
+        // `openTabURLs` maintenance now lives on `TabCoordinator`
+        // — every coordinator-side mutation refreshes it. We don't
+        // need to fan that out from here.
+        //
         // Recompute the source-view diff stripe when the focused
         // file changes. Cheap-ish: shells `git diff` once per switch
         // (off-main); skipped when not inside a repo.
