@@ -753,66 +753,95 @@ public final class DocumentModel: ObservableObject {
         }
     }
 
-    // MARK: Find bar (rendered mode)
+    // MARK: Find — three modes, one coordinator (Quality #E + J, 2026-05-25)
+    //
+    // The three find bags (rendered / source / editor) used to live as
+    // ~15 `@Published` fields directly on DocumentModel. Each keystroke
+    // into a find field fired `DocumentModel.objectWillChange` and
+    // forced every observer (TabBar, Sidebar, StatusBar, all per-tab
+    // content views) to re-evaluate. Now find state lives on a child
+    // `FindCoordinator`; views that care observe `model.find` directly,
+    // views that don't no longer pay for find keystrokes.
+    //
+    // Backwards-compat: the old `renderedFindQuery` / `sourceFindQuery`
+    // / `editorFindQuery` / etc. surface is preserved as computed-
+    // property forwarders below. These do NOT trigger
+    // `DocumentModel.objectWillChange` — they bottom out in `find.*`
+    // assignments which fire `find.objectWillChange`. Tests that
+    // poke `model.renderedFindQuery = "x"` keep working unchanged.
+    public let find = FindCoordinator()
 
-    /// Whether the rendered-view find bar is showing. The source-view's
-    /// find bar is owned by NSTextView (via `performFindPanelAction:`)
-    /// and is not tracked here.
-    @Published public var isRenderedFindBarPresented: Bool = false
+    // MARK: Find bar (rendered mode) — forwarders
 
-    /// Current query string in the rendered-view find bar. The
-    /// MarkdownRenderedView Coordinator observes this and calls
-    /// `WKWebView.find(_:configuration:)` as it changes.
-    @Published public var renderedFindQuery: String = ""
+    public var isRenderedFindBarPresented: Bool {
+        get { find.isRenderedBarPresented }
+        set { find.isRenderedBarPresented = newValue }
+    }
+    public var renderedFindQuery: String {
+        get { find.renderedQuery }
+        set { find.renderedQuery = newValue }
+    }
+    public var renderedFindNextRequest: Int {
+        get { find.renderedNextRequest }
+        set { find.renderedNextRequest = newValue }
+    }
+    public var renderedFindPrevRequest: Int {
+        get { find.renderedPrevRequest }
+        set { find.renderedPrevRequest = newValue }
+    }
+    public var renderedFindCaseSensitive: Bool {
+        get { find.renderedCaseSensitive }
+        set { find.renderedCaseSensitive = newValue }
+    }
+    public var renderedFindMatched: Bool? {
+        get { find.renderedMatched }
+        set { find.renderedMatched = newValue }
+    }
+    public var renderedFindMatchSummary: String {
+        get { find.renderedMatchSummary }
+        set { find.renderedMatchSummary = newValue }
+    }
+    public var renderedFindFocusRequest: Int {
+        get { find.renderedFocusRequest }
+        set { find.renderedFocusRequest = newValue }
+    }
 
-    /// Bumped when the user clicks "Next" or "Previous" in the find bar.
-    /// The Coordinator observes the counter, runs find with the
-    /// `backwards` flag set appropriately, then ignores the counter
-    /// until it changes again.
-    @Published public var renderedFindNextRequest: Int = 0
-    @Published public var renderedFindPrevRequest: Int = 0
-    @Published public var renderedFindCaseSensitive: Bool = false
-
-    /// Whether the last WKWebView `find` call returned a match. Reset
-    /// to `nil` when the query is empty (no search has run) so the
-    /// find bar can distinguish "haven't searched" from "no matches."
-    @Published public var renderedFindMatched: Bool? = nil
-    /// Pre-formatted "n/N" surface for the find bar. Empty when no
-    /// active search. Set by MarkdownRenderedView.Coordinator after
-    /// each JS find call returns total + currentIndex.
-    @Published public var renderedFindMatchSummary: String = ""
     public func setRenderedFindMatchSummary(_ s: String) {
-        guard s != renderedFindMatchSummary else { return }
-        renderedFindMatchSummary = s
+        find.setRenderedMatchSummary(s)
     }
+    public func showRenderedFindBar() { find.showRenderedBar() }
+    public func dismissRenderedFindBar() { find.dismissRenderedBar() }
 
-    /// Nonce that increments each time the user requests the find bar
-    /// (Cmd+F). The bar's TextField observes this and refocuses on
-    /// every bump, so pressing Cmd+F while the bar is already open
-    /// brings focus back to the field instead of being a no-op.
-    @Published public var renderedFindFocusRequest: Int = 0
-    public func showRenderedFindBar() {
-        isRenderedFindBarPresented = true
-        renderedFindFocusRequest &+= 1
+    // MARK: Find bar (source mode) — forwarders
+
+    public var isSourceFindBarPresented: Bool {
+        get { find.isSourceBarPresented }
+        set { find.isSourceBarPresented = newValue }
     }
-    public func dismissRenderedFindBar() {
-        isRenderedFindBarPresented = false
-        renderedFindQuery = ""
-        renderedFindMatched = nil
+    public var sourceFindQuery: String {
+        get { find.sourceQuery }
+        set { find.sourceQuery = newValue }
     }
-
-    // MARK: Find bar (source mode)
-
-    /// Same find-bar pattern as renderedFind* above, applied to the
-    /// NSTextView source viewer. We keep separate state so view-mode
-    /// transitions don't clobber the user's query.
-    @Published public var isSourceFindBarPresented: Bool = false
-    @Published public var sourceFindQuery: String = ""
-    @Published public var sourceFindCaseSensitive: Bool = false
-    @Published public var sourceFindIsRegex: Bool = false
-    @Published public var sourceFindNextRequest: Int = 0
-    @Published public var sourceFindPrevRequest: Int = 0
-    @Published public var sourceFindFocusRequest: Int = 0
+    public var sourceFindCaseSensitive: Bool {
+        get { find.sourceCaseSensitive }
+        set { find.sourceCaseSensitive = newValue }
+    }
+    public var sourceFindIsRegex: Bool {
+        get { find.sourceIsRegex }
+        set { find.sourceIsRegex = newValue }
+    }
+    public var sourceFindNextRequest: Int {
+        get { find.sourceNextRequest }
+        set { find.sourceNextRequest = newValue }
+    }
+    public var sourceFindPrevRequest: Int {
+        get { find.sourcePrevRequest }
+        set { find.sourcePrevRequest = newValue }
+    }
+    public var sourceFindFocusRequest: Int {
+        get { find.sourceFocusRequest }
+        set { find.sourceFocusRequest = newValue }
+    }
 
     /// Scroll the active source view to this 1-based line number on
     /// the next render. The controller debounces by comparing to its
@@ -937,90 +966,76 @@ public final class DocumentModel: ObservableObject {
         splitURL = primary
         openPath(secondary)
     }
-    /// Human-readable "n/N" or "" — published by the TextDisplayView
-    /// coordinator after it recomputes match ranges. The find bar
-    /// renders this directly.
-    @Published public var sourceFindMatchSummary: String = ""
-    /// 1-based document line numbers for every active find-bar match,
-    /// in document order. Published by `SourceTextController` whenever
-    /// the find set changes. Consumed by `FindMatchMinimapView` to
-    /// draw tick marks alongside the source-view scrollbar.
-    @Published public var sourceFindMatchLines: [Int] = []
-    /// Index into `sourceFindMatchLines` of the active match — the
-    /// one find-bar "next" would land on. Nil when no current match.
-    @Published public var sourceFindCurrentMatchIndex: Int? = nil
-    /// Guarded setter — call this instead of direct assignment from
-    /// SwiftUI callbacks. The `@Published` storage stays writable
-    /// because `FindBar` takes the value as a Binding (display only;
-    /// it doesn't mutate but SwiftUI's Binding needs setter access).
+    // MARK: Find bar (source mode) — match state forwarders
+
+    public var sourceFindMatchSummary: String {
+        get { find.sourceMatchSummary }
+        set { find.sourceMatchSummary = newValue }
+    }
+    public var sourceFindMatchLines: [Int] {
+        get { find.sourceMatchLines }
+        set { find.sourceMatchLines = newValue }
+    }
+    public var sourceFindCurrentMatchIndex: Int? {
+        get { find.sourceCurrentMatchIndex }
+        set { find.sourceCurrentMatchIndex = newValue }
+    }
+
     public func setSourceFindMatchSummary(_ s: String) {
-        guard s != sourceFindMatchSummary else { return }
-        sourceFindMatchSummary = s
+        find.setSourceMatchSummary(s)
     }
-    /// Apply a `FindMatchSet` update from the source view. Dedupes on
-    /// equality so the publish chain doesn't churn SwiftUI on every
-    /// apply() tick when the match set is unchanged.
     public func setSourceFindMatches(lines: [Int], currentIndex: Int?) {
-        if sourceFindMatchLines != lines {
-            sourceFindMatchLines = lines
-        }
-        if sourceFindCurrentMatchIndex != currentIndex {
-            sourceFindCurrentMatchIndex = currentIndex
-        }
+        find.setSourceMatches(lines: lines, currentIndex: currentIndex)
     }
 
-    public func showSourceFindBar() {
-        isSourceFindBarPresented = true
-        sourceFindFocusRequest &+= 1
-    }
-    public func dismissSourceFindBar() {
-        isSourceFindBarPresented = false
-        sourceFindQuery = ""
-        setSourceFindMatchSummary("")
-        setSourceFindMatches(lines: [], currentIndex: nil)
-    }
-    public func sourceFindNext() { sourceFindNextRequest &+= 1 }
-    public func sourceFindPrev() { sourceFindPrevRequest &+= 1 }
-    public func renderedFindNext() { renderedFindNextRequest &+= 1 }
-    public func renderedFindPrev() { renderedFindPrevRequest &+= 1 }
+    public func showSourceFindBar() { find.showSourceBar() }
+    public func dismissSourceFindBar() { find.dismissSourceBar() }
+    public func sourceFindNext() { find.sourceNext() }
+    public func sourceFindPrev() { find.sourcePrev() }
+    public func renderedFindNext() { find.renderedNext() }
+    public func renderedFindPrev() { find.renderedPrev() }
 
-    // MARK: Find bar (CM6 editor mode) — Phase 2 of CM6 integration
-    //
-    // Mirrors the source-mode find state so the SwiftUI `FindBar`
-    // component can drive both back-ends with one shape. Editor-mode
-    // find dispatches CM6 search commands via the v1 bridge
-    // (`setSearchQuery` / `findNext` / `findPrev`); the readout comes
-    // back as `findResultChanged`. The CM built-in panel is suppressed
-    // — we own the visual surface.
+    // MARK: Find bar (CM6 editor mode) — forwarders
 
-    @Published public var isEditorFindBarPresented: Bool = false
-    @Published public var editorFindQuery: String = ""
-    @Published public var editorFindCaseSensitive: Bool = false
-    @Published public var editorFindIsRegex: Bool = false
-    /// Bumped on every `editorFindNext()` / `editorFindPrev()` so
-    /// `CodeMirrorEditorView` (which compares `Equatable` props) can
-    /// notice the request and ship the bridge call. Same pattern as
-    /// the source bar.
-    @Published public var editorFindNextRequest: Int = 0
-    @Published public var editorFindPrevRequest: Int = 0
-    @Published public var editorFindFocusRequest: Int = 0
-    /// "3/12"-style readout — set from JS via `findResultChanged`.
-    @Published public var editorFindMatchSummary: String = ""
+    public var isEditorFindBarPresented: Bool {
+        get { find.isEditorBarPresented }
+        set { find.isEditorBarPresented = newValue }
+    }
+    public var editorFindQuery: String {
+        get { find.editorQuery }
+        set { find.editorQuery = newValue }
+    }
+    public var editorFindCaseSensitive: Bool {
+        get { find.editorCaseSensitive }
+        set { find.editorCaseSensitive = newValue }
+    }
+    public var editorFindIsRegex: Bool {
+        get { find.editorIsRegex }
+        set { find.editorIsRegex = newValue }
+    }
+    public var editorFindNextRequest: Int {
+        get { find.editorNextRequest }
+        set { find.editorNextRequest = newValue }
+    }
+    public var editorFindPrevRequest: Int {
+        get { find.editorPrevRequest }
+        set { find.editorPrevRequest = newValue }
+    }
+    public var editorFindFocusRequest: Int {
+        get { find.editorFocusRequest }
+        set { find.editorFocusRequest = newValue }
+    }
+    public var editorFindMatchSummary: String {
+        get { find.editorMatchSummary }
+        set { find.editorMatchSummary = newValue }
+    }
 
-    public func showEditorFindBar() {
-        isEditorFindBarPresented = true
-        editorFindFocusRequest &+= 1
-    }
-    public func dismissEditorFindBar() {
-        isEditorFindBarPresented = false
-        editorFindQuery = ""
-        editorFindMatchSummary = ""
-    }
-    public func editorFindNext() { editorFindNextRequest &+= 1 }
-    public func editorFindPrev() { editorFindPrevRequest &+= 1 }
+    public func showEditorFindBar() { find.showEditorBar() }
+    public func dismissEditorFindBar() { find.dismissEditorBar() }
+    public func editorFindNext() { find.editorNext() }
+    public func editorFindPrev() { find.editorPrev() }
     public func setEditorFindMatchSummary(_ s: String) {
-        guard s != editorFindMatchSummary else { return }
-        editorFindMatchSummary = s
+        find.setEditorMatchSummary(s)
     }
 
     // MARK: Editor mode — show-invisibles + cursor + diagnostics push

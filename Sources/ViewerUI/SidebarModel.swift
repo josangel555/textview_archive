@@ -31,7 +31,6 @@ public final class SidebarModel: ObservableObject {
     @Published public private(set) var selectedURL: URL?
 
     private let service: FileTreeService
-    private let git: GitService
     private var childrenCache: [URL: [FileNode]] = [:]
 
     /// FSEvents stream watching the current root recursively.
@@ -39,11 +38,9 @@ public final class SidebarModel: ObservableObject {
     private var folderWatcher: FolderWatcher?
 
     public init(
-        service: FileTreeService = FileTreeService(),
-        git: GitService = GitService()
+        service: FileTreeService = FileTreeService()
     ) {
         self.service = service
-        self.git = git
     }
 
     public func setRoot(_ url: URL?) {
@@ -245,7 +242,7 @@ public final class SidebarModel: ObservableObject {
         let repoRoot: URL
         if let override = gitRootOverride {
             repoRoot = override
-        } else if let discovered = git.repoRoot(for: root) {
+        } else if let discovered = GitClient.discoverRoot(from: root) {
             repoRoot = discovered
         } else {
             gitStatuses = [:]
@@ -253,7 +250,6 @@ public final class SidebarModel: ObservableObject {
             return
         }
         gitRepoRoot = repoRoot
-        let service = git
         // CRIT-5: capture the repo root as a token so the main-actor hop
         // can refuse to write stale results if `setRoot(_:)` switched us
         // to a different folder while git was running. The outer Task is
@@ -264,7 +260,8 @@ public final class SidebarModel: ObservableObject {
         Task { @MainActor [weak self] in
             let map = await Task.detached(priority: .userInitiated) {
                 () -> [URL: GitStatusEntry.Status] in
-                let entries = (try? service.status(at: repoRoot)) ?? []
+                let client = GitClient(repoRoot: repoRoot)
+                let entries = client.statusEntries()
                 var result: [URL: GitStatusEntry.Status] = [:]
                 for entry in entries {
                     let url = repoRoot.appendingPathComponent(entry.path)
