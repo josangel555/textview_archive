@@ -60,18 +60,41 @@ final class LSPClientSmokeTests: XCTestCase {
         // Probe a position inside a known identifier. `LSPPosition`
         // declaration line is stable in the source we just authored.
         // Use line 7 char 16 — that puts the cursor on `LSPPosition`
-        // in the type name (0-indexed UTF-16). The point of this test
-        // is not exact response content but proof the loop closes;
-        // a non-nil hover OR a clean "no response" both count as
-        // "transport works".
+        // in the type name (0-indexed UTF-16). Cold/uncached sourcekit
+        // can legitimately return nil for either; we don't gate on a
+        // positive response (would re-introduce flakiness).
+        //
+        // Decision (2026-05-29): restate. The prior `_ = hover` / `_ =
+        // defs` discards turned the request/response loop into the only
+        // thing this test exercised — if `decodeHover` ever silently
+        // dropped fields or returned a struct with an empty `contents`
+        // blob, this test would still pass. Now: if the server *does*
+        // respond, the response must be coherent. Nil/empty stays
+        // legitimate (cold indexer); malformed is a real bug.
         let hover = try? await client.hover(url: target, line: 7, character: 16)
-        // Either we got hover content, or sourcekit-lsp had nothing to
-        // say but didn't crash. Both are fine; what we're proving here
-        // is the request/response loop closes.
-        _ = hover
+        if let hover = hover {
+            // Per LSPHover.contents docs: "pre-flattened to a markdown/
+            // plaintext blob". A non-nil hover with empty contents means
+            // the decode-order discipline regressed and dropped the
+            // value field — the bug the LSPProtocol.swift comment
+            // explicitly warns about.
+            XCTAssertFalse(hover.contents.isEmpty,
+                "non-nil hover must have non-empty contents — decoder regressed?")
+        }
 
-        // Definition too — same lenient policy.
+        // Definition: same lenient policy on presence, but if results
+        // came back they must point at *something* — empty uri or
+        // inverted range means the decoder broke.
         let defs = try? await client.definition(url: target, line: 7, character: 16)
-        _ = defs
+        if let defs = defs {
+            for loc in defs {
+                XCTAssertFalse(loc.uri.isEmpty,
+                    "definition location with empty uri — decoder regressed?")
+                // file:// or untitled: are the realistic shapes
+                // sourcekit-lsp emits. Reject obvious garbage.
+                XCTAssertTrue(loc.uri.contains(":"),
+                    "definition uri '\(loc.uri)' is not a URI shape")
+            }
+        }
     }
 }
