@@ -314,16 +314,31 @@ struct SidebarView: View {
                 if filesExpanded {
                     ScrollViewReader { proxy in
                         ScrollView {
+                            // PERF #6: flatten the visible tree once and
+                            // enumerate it inside a single LazyVStack so
+                            // virtualization kicks in for deep trees.
+                            // The prior shape recursed `FileRowView` ->
+                            // `ForEach` -> child `FileRowView`, which
+                            // SwiftUI materialized eagerly past the
+                            // outer LazyVStack — defeating it as soon
+                            // as the root expanded.
+                            //
+                            // `flatVisibleRows()` is memoized on
+                            // SidebarModel; reading it from the body is
+                            // O(1) on cache-hit (the common case) and
+                            // O(visible-row-count) on miss. It does no
+                            // IO either way.
+                            let rows = sidebar.flatVisibleRows()
                             LazyVStack(alignment: .leading, spacing: 0) {
-                                FileRowView(
-                                    node: FileNode(url: root,
-                                                   name: root.lastPathComponent,
-                                                   isDirectory: true),
-                                    depth: 0,
-                                    sidebar: sidebar,
-                                    model: model,
-                                    recencyMode: recencyMode
-                                )
+                                ForEach(rows) { row in
+                                    FileRowView(
+                                        node: row.node,
+                                        depth: row.depth,
+                                        sidebar: sidebar,
+                                        model: model,
+                                        recencyMode: recencyMode
+                                    )
+                                }
                             }
                             .padding(.vertical, 4)
                         }
@@ -682,19 +697,33 @@ private struct FileRowView: View {
     @State private var recencyAttrs: FileTreeRecencyAttributes?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button(action: activate) {
-                HStack(spacing: 0) {
-                    // MARK: - Recency stripe (file-tree-recency agent)
-                    //
-                    // 3 px vertical bar at the leading edge of the row.
-                    // The `padding(.leading, depth*14 + 8)` previously
-                    // hugged the chevron; we move the indent + the
-                    // existing HStack into an inner HStack and prepend
-                    // the stripe so it always touches the row's left
-                    // edge regardless of depth.
-                    recencyStripe
-                    HStack(spacing: 4) {
+        // PERF #6: renders exactly *this* row — children live as
+        // sibling rows in the parent `LazyVStack`, fed by
+        // `SidebarModel.flatVisibleRows()`. The previous shape
+        // wrapped the child enumeration in a non-lazy `VStack`
+        // inside each row's body, which forced SwiftUI to
+        // materialize every descendant of an expanded root in one
+        // pass (defeating the outer LazyVStack's virtualization).
+        //
+        // FolderWatcher publishes via `expanded`; observing it
+        // here would re-fire on every collapse/expand too, which
+        // is wasteful. We accept that the stripe is "as of first
+        // render" — `FileTreeRecencyCache.invalidate(_:)` is the
+        // public escape hatch for callers that touch a file from
+        // within the app (Save, Git apply, etc.) and want the
+        // stripe refreshed on the next body pass.
+        Button(action: activate) {
+            HStack(spacing: 0) {
+                // MARK: - Recency stripe (file-tree-recency agent)
+                //
+                // 3 px vertical bar at the leading edge of the row.
+                // The `padding(.leading, depth*14 + 8)` previously
+                // hugged the chevron; we move the indent + the
+                // existing HStack into an inner HStack and prepend
+                // the stripe so it always touches the row's left
+                // edge regardless of depth.
+                recencyStripe
+                HStack(spacing: 4) {
                     if node.isDirectory {
                         Image(systemName: sidebar.isExpanded(node.url) ? "chevron.down" : "chevron.right")
                             .font(.system(size: 9, weight: .semibold))
@@ -730,42 +759,26 @@ private struct FileRowView: View {
                     if let status = sidebar.gitStatus(for: node.url) {
                         GitStatusBadge(status: status)
                     }
-                    }  // inner HStack(spacing: 4)
-                    .padding(.leading, CGFloat(depth) * 14 + 8)
-                    .padding(.vertical, 3)
-                    .padding(.trailing, 8)
-                }  // outer HStack(spacing: 0) — stripe + content
-                .contentShape(Rectangle())
-                .background(rowBackground)
-            }
-            .buttonStyle(.plain)
-            .id(node.url)  // for ScrollViewReader.scrollTo
-            .help(node.url.path)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(accessibilityLabel)
-            .accessibilityAddTraits(.isButton)
-            .contextMenu {
-                FileRowContextMenu(node: node, sidebar: sidebar, model: model)
-            }
-            .onAppear {
-                if recencyAttrs == nil {
-                    recencyAttrs = FileTreeRecencyCache.attributes(for: node.url)
-                }
-            }
-            // FolderWatcher publishes via `expanded`; observing it here
-            // would re-fire on every collapse/expand too, which is
-            // wasteful. We accept that the stripe is "as of first
-            // render" — `FileTreeRecencyCache.invalidate(_:)` is the
-            // public escape hatch for callers that touch a file from
-            // within the app (Save, Git apply, etc.) and want the
-            // stripe refreshed on the next body pass.
-
-            if node.isDirectory && sidebar.isExpanded(node.url) {
-                ForEach(sidebar.children(of: node.url)) { child in
-                    FileRowView(node: child, depth: depth + 1,
-                                sidebar: sidebar, model: model,
-                                recencyMode: recencyMode)
-                }
+                }  // inner HStack(spacing: 4)
+                .padding(.leading, CGFloat(depth) * 14 + 8)
+                .padding(.vertical, 3)
+                .padding(.trailing, 8)
+            }  // outer HStack(spacing: 0) — stripe + content
+            .contentShape(Rectangle())
+            .background(rowBackground)
+        }
+        .buttonStyle(.plain)
+        .id(node.url)  // for ScrollViewReader.scrollTo
+        .help(node.url.path)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityAddTraits(.isButton)
+        .contextMenu {
+            FileRowContextMenu(node: node, sidebar: sidebar, model: model)
+        }
+        .onAppear {
+            if recencyAttrs == nil {
+                recencyAttrs = FileTreeRecencyCache.attributes(for: node.url)
             }
         }
     }

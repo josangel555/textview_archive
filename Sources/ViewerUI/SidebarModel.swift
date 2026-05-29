@@ -119,34 +119,60 @@ public final class SidebarModel: ObservableObject {
         selectedURL = new
     }
 
-    /// Flat list of nodes currently visible in the tree, in display order.
-    /// Cached and invalidated whenever expansion / root / hidden-toggle /
-    /// children-cache changes (`invalidateFlatCache()`).
-    public func flatVisibleNodes() -> [FileNode] {
-        if let cached = cachedFlat { return cached }
+    /// A single visible row in the flattened file tree, with the depth
+    /// it should be indented at. Depth 0 == root.
+    public struct VisibleRow: Equatable, Sendable, Identifiable {
+        public let node: FileNode
+        public let depth: Int
+        public var id: URL { node.url }
+    }
+
+    /// Flat list of (node, depth) pairs currently visible in the tree, in
+    /// display order. Cached and invalidated whenever expansion / root /
+    /// hidden-toggle / children-cache changes (`invalidateFlatCache()`).
+    ///
+    /// This is the source of truth for the SwiftUI `LazyVStack`-backed
+    /// `FileRowView` rendering: by flattening server-side we let
+    /// `LazyVStack` virtualize the entire visible window, which it can't
+    /// do when each row's body recursively materializes its own
+    /// children via a non-lazy `ForEach` (perf #6).
+    public func flatVisibleRows() -> [VisibleRow] {
+        if let cached = cachedFlatRows { return cached }
         guard let root = rootURL else {
-            cachedFlat = []
+            cachedFlatRows = []
             return []
         }
-        var out: [FileNode] = [
-            FileNode(url: root, name: root.lastPathComponent, isDirectory: true)
+        var out: [VisibleRow] = [
+            VisibleRow(
+                node: FileNode(url: root, name: root.lastPathComponent, isDirectory: true),
+                depth: 0
+            )
         ]
-        appendVisibleChildren(of: root, into: &out)
-        cachedFlat = out
+        appendVisibleChildren(of: root, depth: 1, into: &out)
+        cachedFlatRows = out
         return out
+    }
+
+    /// Backward-compat wrapper around `flatVisibleRows()` that drops the
+    /// depth column. Kept so existing callers (keyboard nav,
+    /// `node(for:)`, tests) don't have to care about depth.
+    public func flatVisibleNodes() -> [FileNode] {
+        flatVisibleRows().map { $0.node }
     }
 
     /// Returns the FileNode for `url` if it's currently in the visible tree.
     private func node(for url: URL) -> FileNode? {
-        flatVisibleNodes().first { $0.url == url }
+        flatVisibleRows().first { $0.node.url == url }?.node
     }
 
-    private func appendVisibleChildren(of url: URL, into out: inout [FileNode]) {
+    private func appendVisibleChildren(
+        of url: URL, depth: Int, into out: inout [VisibleRow]
+    ) {
         guard isExpanded(url) else { return }
         for child in children(of: url) {
-            out.append(child)
+            out.append(VisibleRow(node: child, depth: depth))
             if child.isDirectory {
-                appendVisibleChildren(of: child.url, into: &out)
+                appendVisibleChildren(of: child.url, depth: depth + 1, into: &out)
             }
         }
     }
@@ -412,14 +438,15 @@ public final class SidebarModel: ObservableObject {
 
     // MARK: Flat-visible cache
 
-    /// Memoized flat list of visible nodes — recomputed lazily after any
-    /// expand/collapse/setRoot/hidden-toggle/children-cache mutation.
-    /// Avoids walking the tree on every arrow-key keystroke (which used to
-    /// call flatVisibleNodes twice per press).
-    private var cachedFlat: [FileNode]?
+    /// Memoized flat list of visible (node, depth) rows — recomputed
+    /// lazily after any expand/collapse/setRoot/hidden-toggle/children-
+    /// cache mutation. Avoids walking the tree on every arrow-key
+    /// keystroke (which used to call flatVisibleNodes twice per press)
+    /// and serves the LazyVStack-based render path in `SidebarView`.
+    private var cachedFlatRows: [VisibleRow]?
 
     private func invalidateFlatCache() {
-        cachedFlat = nil
+        cachedFlatRows = nil
     }
 
     public func clearCache() {
