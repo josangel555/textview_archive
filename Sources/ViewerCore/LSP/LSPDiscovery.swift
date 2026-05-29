@@ -326,7 +326,24 @@ public enum LSPDiscovery {
         // open-coded path read only stdout (stderr stayed un-drained),
         // which was a latent pipe-buffer deadlock against a chatty
         // `--version` flag on some servers.
-        guard let result = try? ProcessRunner.run(p) else { return nil }
+        //
+        // Resource caps (S, 2026-05-29). These are tiny `--version`
+        // probes; any honest server prints in <100 ms of CPU. A 10s
+        // CPU cap is 100x headroom and still kills a wedged binary
+        // that pegs a core. The file-size cap is irrelevant for
+        // version probes (they don't write files); included for
+        // defense-in-depth. NOTE: full LSP-server lifecycle in
+        // `LSPClient.init` is *not* gated by these caps — that's a
+        // long-running daemon, and `sourcekit-lsp` indexing a big
+        // workspace can legitimately spend minutes of CPU. The pool
+        // already terminates idle entries; adding CPU caps there is a
+        // separate decision and out of scope here.
+        let limits = ProcessRunner.ResourceLimits(
+            cpuSeconds: 10,
+            fileSizeBlocks: 2048,  // 1 MB
+            openFiles: 256
+        )
+        guard let result = try? ProcessRunner.run(p, limits: limits) else { return nil }
         guard result.terminationStatus == 0 else { return nil }
         return String(data: result.stdout, encoding: .utf8)
     }
