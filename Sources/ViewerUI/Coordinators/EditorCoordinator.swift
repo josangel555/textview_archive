@@ -108,6 +108,17 @@ public final class EditorCoordinator: ObservableObject {
     /// don't re-ship the same set.
     @Published public internal(set) var pendingEditorDiagnostics: [UUID: [CMDiagnostic]] = [:]
 
+    /// Per-tab pending diff/blame gutter markers (added / modified /
+    /// removed bars). Fed by `DocumentModel.refreshDiffMarks` (the
+    /// off-main `git diff HEAD -- <path>` task) and consumed by the
+    /// active `CodeMirrorEditorView` on its next `updateNSView` cycle.
+    /// Empty array clears all markers for that tab.
+    ///
+    /// Mirror of `pendingEditorDiagnostics` in shape + lifecycle —
+    /// drained in lock-step with the other three editor-owned dicts
+    /// via the TabCoordinator close hook.
+    @Published public internal(set) var pendingEditorGutterMarkers: [UUID: [CMGutterMarker]] = [:]
+
     // MARK: - Test seams
 
     /// Override the dirty-close NSAlert with a test-driven response.
@@ -171,6 +182,7 @@ public final class EditorCoordinator: ObservableObject {
             self.editorCursorByTab.removeValue(forKey: id)
             self.editorScrollByTab.removeValue(forKey: id)
             self.pendingEditorDiagnostics.removeValue(forKey: id)
+            self.pendingEditorGutterMarkers.removeValue(forKey: id)
         }
     }
 
@@ -267,6 +279,31 @@ public final class EditorCoordinator: ObservableObject {
     /// the diagnostics so the next `updateNSView` doesn't re-ship them.
     public func consumePendingEditorDiagnostics(forTabID id: UUID) {
         pendingEditorDiagnostics.removeValue(forKey: id)
+    }
+
+    /// Called by `CodeMirrorEditorView.Coordinator` once it's pushed
+    /// the gutter markers so the next `updateNSView` doesn't re-ship them.
+    public func consumePendingEditorGutterMarkers(forTabID id: UUID) {
+        pendingEditorGutterMarkers.removeValue(forKey: id)
+    }
+
+    /// Park a diff/blame gutter-marker payload on the per-tab pending
+    /// dict for `url`. No-op if `url` isn't open in any editor tab.
+    /// Empty array clears (a previously-marked file now shows clean).
+    ///
+    /// Producer side: `DocumentModel.refreshDiffMarks` runs the off-
+    /// main `git diff` task and calls this with the parsed markers
+    /// once the result arrives. We resolve URL → tab here (rather
+    /// than the caller passing tab id) so an editor switch between
+    /// task launch + completion can't mis-route the payload.
+    public func setEditorGutterMarkers(_ markers: [CMGutterMarker], forURL url: URL) {
+        let standardized = url.standardizedFileURL.resolvingSymlinksInPath()
+        for tab in tabsSnapshot() {
+            guard let tabURL = tab.url else { continue }
+            let stdTab = tabURL.standardizedFileURL.resolvingSymlinksInPath()
+            guard stdTab == standardized else { continue }
+            pendingEditorGutterMarkers[tab.id] = markers
+        }
     }
 
     /// Push LSP diagnostics for `url` into the CM6 editor as squiggles.

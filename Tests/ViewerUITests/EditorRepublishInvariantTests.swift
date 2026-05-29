@@ -201,6 +201,63 @@ final class EditorRepublishInvariantTests: XCTestCase {
             "LSP diagnostics push must not republish DocumentModel")
     }
 
+    // MARK: - Pending gutter markers (git diff feed)
+
+    func test_setEditorGutterMarkers_doesNotRepublishDocumentModel() async throws {
+        // DocumentModel.refreshDiffMarks fires on every file open / save
+        // / reload / tab switch. Its main-actor hop assigns
+        // `editor.pendingEditorGutterMarkers` — must NOT republish
+        // DocumentModel or the entire UI re-evals on every tab switch
+        // in a git repo.
+        let model = makeModel()
+        let url = try writeFile("a.swift", "let x = 1\n")
+        model.open(url: url)
+        await Task.yield()
+        let markers = [CMGutterMarker(line: 1, kind: "added")]
+        let count = await countDocumentRepublishes(of: model) {
+            model.editor.setEditorGutterMarkers(markers, forURL: url)
+        }
+        XCTAssertEqual(count, 0,
+            "git diff feed must not republish DocumentModel; CodeMirror view observes model.editor")
+    }
+
+    func test_consumePendingEditorGutterMarkers_doesNotRepublishDocumentModel() async throws {
+        // Consumed on every CodeMirror updateNSView. Same constraint
+        // as the diagnostics consume — must not ride DocumentModel.
+        let model = makeModel()
+        let url = try writeFile("a.swift", "let x = 1\n")
+        model.open(url: url)
+        await Task.yield()
+        let id = model.tabs.selected!.id
+        model.editor.setEditorGutterMarkers(
+            [CMGutterMarker(line: 3, kind: "modified")], forURL: url)
+        await Task.yield()
+        let count = await countDocumentRepublishes(of: model) {
+            model.editor.consumePendingEditorGutterMarkers(forTabID: id)
+        }
+        XCTAssertEqual(count, 0)
+    }
+
+    func test_editorCoordinator_doesRepublishOnGutterMarkerSet() async throws {
+        // Negative-control twin: without this, a silently-disabled
+        // @Published on `pendingEditorGutterMarkers` would make the
+        // perf assertion above vacuously true. The CodeMirrorEditorView
+        // depends on the coordinator publishing so SwiftUI re-evals
+        // ContentView and pushes the new markers through the bridge.
+        let model = makeModel()
+        let url = try writeFile("a.swift", "let x = 1\n")
+        model.open(url: url)
+        await Task.yield()
+        var count = 0
+        let sub = model.editor.objectWillChange.sink { _ in count += 1 }
+        defer { sub.cancel() }
+        model.editor.setEditorGutterMarkers(
+            [CMGutterMarker(line: 1, kind: "added")], forURL: url)
+        await Task.yield()
+        XCTAssertGreaterThan(count, 0,
+            "EditorCoordinator must publish on gutter-marker set so the CM6 view picks it up")
+    }
+
     func test_consumePendingEditorDiagnostics_doesNotRepublishDocumentModel() async throws {
         // Called on every CodeMirror updateNSView. Must be free of
         // DocumentModel chain.

@@ -87,14 +87,18 @@ final class EditorCoordinatorCleanupTests: XCTestCase {
             CMDiagnostic(from: 0, to: 1, severity: .error,
                          message: "boom", source: nil)
         ]
+        model.editor.pendingEditorGutterMarkers[ids.1] = [
+            CMGutterMarker(line: 1, kind: "added")
+        ]
         // Verify seeds populated.
         XCTAssertNotNil(model.editor.editorCursorByTab[ids.1])
         XCTAssertNotNil(model.editor.editorScrollByTab[ids.1])
         XCTAssertNotNil(model.editor.pendingEditorDiagnostics[ids.1])
+        XCTAssertNotNil(model.editor.pendingEditorGutterMarkers[ids.1])
         return (model, ids)
     }
 
-    /// Assert all three editor-owned dicts are empty for `id`.
+    /// Assert all four editor-owned dicts are empty for `id`.
     /// Asserts spelled out so a failure names the leaking dict.
     private func assertAllEditorDictsEmpty(
         _ model: DocumentModel, forTabID id: UUID,
@@ -106,6 +110,8 @@ final class EditorCoordinatorCleanupTests: XCTestCase {
             "editorScrollByTab leaked for closed tab", line: line)
         XCTAssertNil(model.editor.pendingEditorDiagnostics[id],
             "pendingEditorDiagnostics leaked for closed tab", line: line)
+        XCTAssertNil(model.editor.pendingEditorGutterMarkers[id],
+            "pendingEditorGutterMarkers leaked for closed tab", line: line)
     }
 
     // MARK: - closeTab(at:)
@@ -134,6 +140,9 @@ final class EditorCoordinatorCleanupTests: XCTestCase {
             CMDiagnostic(from: 0, to: 1, severity: .warning,
                          message: "x", source: nil)
         ]
+        model.editor.pendingEditorGutterMarkers[ids.2] = [
+            CMGutterMarker(line: 7, kind: "modified")
+        ]
         model.closeOtherTabs(keeping: 0)
         assertAllEditorDictsEmpty(model, forTabID: ids.1)
         assertAllEditorDictsEmpty(model, forTabID: ids.2)
@@ -157,6 +166,9 @@ final class EditorCoordinatorCleanupTests: XCTestCase {
             CMDiagnostic(from: 0, to: 1, severity: .info,
                          message: "x", source: nil)
         ]
+        model.editor.pendingEditorGutterMarkers[ids.2] = [
+            CMGutterMarker(line: 12, kind: "removed")
+        ]
         // Pivot at 1; close everything right of 1 → just tab 2 dies.
         model.closeTabsToRight(of: 1)
         // Tab 1 (middle) must KEEP its state.
@@ -166,6 +178,8 @@ final class EditorCoordinatorCleanupTests: XCTestCase {
             "tab left of pivot must keep its scroll record")
         XCTAssertNotNil(model.editor.pendingEditorDiagnostics[ids.1],
             "tab left of pivot must keep its pending diagnostics")
+        XCTAssertNotNil(model.editor.pendingEditorGutterMarkers[ids.1],
+            "tab left of pivot must keep its pending gutter markers")
         // Tab 2 must DROP everything.
         assertAllEditorDictsEmpty(model, forTabID: ids.2)
     }

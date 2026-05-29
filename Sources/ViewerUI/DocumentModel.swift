@@ -703,15 +703,27 @@ public final class DocumentModel: ObservableObject {
         diffMarksTask = Task.detached(priority: .userInitiated) { [weak self] in
             // 150 ms debounce: if the user is rapidly switching tabs,
             // we'll get cancelled before the git invocation even starts.
+            // Same debounce protects against keystroke-rate calls — the
+            // file-watcher / save / external-edit feed all funnel through
+            // here, so we get one git process per quiescent window
+            // rather than one per event.
             try? await Task.sleep(nanoseconds: 150_000_000)
             if Task.isCancelled { return }
             let client = GitClient(repoRoot: repoRoot)
             let diff = client.diff(forPath: relPath)
             if Task.isCancelled { return }
             let marks = DiffHunkParser.parse(diff)
+            // Build the CM6 marker payload off-main so the main-actor
+            // hop below is just an assignment. `markers(from:)` is a
+            // sort + map; cheap, but no point doing it on the main thread.
+            let cmMarkers = DiffGutterFeeder.markers(from: marks)
             await MainActor.run { [weak self] in
                 guard let self, self.currentURL == token else { return }
                 self.sourceDiffMarks = marks
+                // Mirror into the CM6 editor's pending-marker channel.
+                // `setEditorGutterMarkers` resolves URL → tab itself so a
+                // tab-switch racing the task completion can't mis-route.
+                self.editor.setEditorGutterMarkers(cmMarkers, forURL: token)
             }
         }
     }
@@ -1151,6 +1163,15 @@ public final class DocumentModel: ObservableObject {
         editor.consumePendingEditorDiagnostics(forTabID: id)
     }
 
+    /// Forwarder. New code should read `editor.pendingEditorGutterMarkers`.
+    public var pendingEditorGutterMarkers: [UUID: [CMGutterMarker]] {
+        editor.pendingEditorGutterMarkers
+    }
+
+    public func consumePendingEditorGutterMarkers(forTabID id: UUID) {
+        editor.consumePendingEditorGutterMarkers(forTabID: id)
+    }
+
     // MARK: - CM6 LSP bridge (hover / Cmd-click definition / context menu)
 
     /// Forwarder. New code should bind `$editor.saveEditorOnBlur`.
@@ -1400,15 +1421,24 @@ public final class DocumentModel: ObservableObject {
     }
 
     /// Forwarder. New code should call `editor.saveActiveEditor()`.
+    /// Also re-runs the git diff feed on success so the CM6 gutter
+    /// bars + source-view diff stripe update against the new HEAD
+    /// delta — without this, the bars stay frozen at "as of file open"
+    /// until the next tab switch (which is what hits `updateDerived`).
     @discardableResult
     public func saveActiveEditor() -> Bool {
-        editor.saveActiveEditor()
+        let ok = editor.saveActiveEditor()
+        if ok { refreshDiffMarks() }
+        return ok
     }
 
     /// Forwarder. New code should call `editor.saveEditor(forTabID:)`.
+    /// Same refresh-on-success rationale as `saveActiveEditor` above.
     @discardableResult
     public func saveEditor(forTabID id: UUID) -> Bool {
-        editor.saveEditor(forTabID: id)
+        let ok = editor.saveEditor(forTabID: id)
+        if ok { refreshDiffMarks() }
+        return ok
     }
 
     /// Forwarder. New code should call `editor.discardEditorBuffer(...)`.

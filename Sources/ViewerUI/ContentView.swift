@@ -248,6 +248,7 @@ public struct ContentView: View {
             let buf = model.editorBuffer(forTabID: tid)
             let lang = model.effectiveLanguage(forTabID: tid, url: file.url)
             let diags = model.pendingEditorDiagnostics[tid] ?? []
+            let gutter = model.pendingEditorGutterMarkers[tid] ?? []
             let seed = model.editorCursorByTab[tid].map {
                 CMSelectionSeed(anchor: $0.head, head: $0.head, scroll: true)
             }
@@ -265,6 +266,7 @@ public struct ContentView: View {
                     indentation: model.editorIndentation,
                     gotoLineRequest: model.editorGotoLine,
                     showInvisibles: model.showInvisibleChars,
+                    gutterMarkers: gutter,
                     diagnostics: diags,
                     findQuery: model.isEditorFindBarPresented ? model.editorFindQuery : "",
                     findCaseSensitive: model.editorFindCaseSensitive,
@@ -314,14 +316,18 @@ public struct ContentView: View {
                 )
                 .accessibilityIdentifier("mdv.editor")
                 .onAppear {
-                    // Clear pending diagnostics once they're shipped to
-                    // the editor so updateNSView doesn't re-push every
-                    // SwiftUI redraw. Coordinator-side `lastSent*`
-                    // dedup is the primary defense; this is belt-and-
-                    // suspenders for the model's `@Published` churn.
+                    // Clear pending diagnostics + gutter markers once
+                    // they're shipped to the editor so updateNSView
+                    // doesn't re-push every SwiftUI redraw. Coordinator-
+                    // side `lastSent*` dedup is the primary defense;
+                    // this is belt-and-suspenders for the model's
+                    // `@Published` churn.
                     DispatchQueue.main.async {
                         if !diags.isEmpty {
                             model.consumePendingEditorDiagnostics(forTabID: tid)
+                        }
+                        if !gutter.isEmpty {
+                            model.consumePendingEditorGutterMarkers(forTabID: tid)
                         }
                     }
                 }
