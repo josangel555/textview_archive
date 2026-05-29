@@ -369,3 +369,118 @@ budget, viewer-policy, signing, and cross-cutting UX.
 - Full risk dump: same doc §17.8–17.13 + §21.2.
 - Citations / source: `docs/CM6_CAPABILITIES_QNA_2026-05-23.md`
   (all `[Q#]` tags above reference its question numbering).
+
+---
+
+## 2026-05-29 — code-review remediation backlog
+
+Items from the 5-lens review (2026-05-25) that landed partially or
+not at all. See `docs/code-review/*_2026-05-25.md` for full
+context.
+
+### Performance — findings #6–#10
+
+The first-tier perf root causes (#1 sidebar republish chain, #2
+renderedHTML key, #5 highlightCache `@Published`) landed in commit
+`bf88840`. Remaining:
+
+- **#6 Eager `ForEach` recursion inside `LazyVStack`** —
+  `SidebarView.swift:763`. Only top-level rows are lazy; deep
+  trees materialize eagerly. Probable fix: hoist each level into
+  its own `LazyVStack` or use `OutlineGroup`.
+- **#7 `LSPPositionConverter` linear scan labelled "binary search"**
+  — `LSPPositionConverter.swift:70`. Built per-hover, walked
+  linearly. Probable fix: actual binary search on the cached line-start
+  array.
+- **#8 `HexView.buildDump` synchronous on main thread** —
+  `HexView.swift:477`. 4 MB file at width=16 builds ~20 MB string
+  + attributed string before `setAttributedString`. Move off main
+  to a background actor; stream into NSTextView in chunks.
+- **#9 `CrossFileSearch.lowercased()` per file** —
+  `CrossFileSearch.swift:130, 140`. Plus per-line in matched files.
+  Pre-compute lowercased buffer per scan, not per match.
+- **#10 `CSVParser Array(text.unicodeScalars)`** —
+  `CSVParser.swift:66`. Doubles peak memory on big CSVs. Iterate
+  scalars in-place without materializing the array.
+
+Each is an independent small agent; can ship in parallel.
+
+### Security — remaining findings
+
+`docs/code-review/SECURITY_CONCURRENCY_2026-05-25.md` listed 27
+findings. Top 11 landed in commit-batch around 2026-05-25. Still
+open (M/L severity):
+
+- §3.4 LSP/jq/git lack `setrlimit`-style CPU+memory caps. Needs a
+  small C bridging layer (only `PluginSubprocessHost` has it
+  today). Per-request timeouts mitigate but don't bound CPU on a
+  single request.
+- §5.7 / §6.3 / §6.4 — additional regex-engine and URL-handler
+  hardening. Diminishing returns now that the primary surfaces
+  are covered.
+- `MCPServer` `DispatchQueue.main.sync` from a background thread —
+  latent wedge risk if a future MainActor handler awaits anything
+  bouncing through the same thread. Refactor to a continuation-based
+  bridge.
+- Mermaid `mermaidInjected` flag is permanent per-WebView once
+  set. Should reset on document change. (`MarkdownRenderedView.swift`.)
+
+### Tests — open follow-ups
+
+- `Tests/ViewerUITests/{ComponentVisualTests, InteractionScriptTests,
+  InteractionDeepTests, DragDropTests}` had 9 of 12 dishonest
+  assertions restated in commit `3707629`. The 3 remaining were
+  borderline (smoke tests with `_ = result` discards); evaluate
+  whether the smoke value justifies the brittle shape.
+- `FakeLSPServer` covers transport behaviors; the LSP `Pool` actor
+  hasn't been exercised against the fake (only `Client`). Extend
+  to cover idle reaper, restart-on-crash, dead-cooldown, concurrent
+  `ensureLive` races.
+- VM E2E tests for the CM6 editor (hover popover render, Cmd-click
+  jump, NSMenu context-menu pop, paste-large-confirm prompt) are
+  not exercised. Per CLAUDE.md they're VM-only — sweep via the
+  `MultiScenarioTestCase` harness when VM is up.
+
+### Code quality — landed decisions + remaining
+
+E (DocumentModel split), F (git layer), G (WorkspaceStore retire),
+H (ProcessRunner), I (main.swift slim), J (find-bag collapse) all
+landed across commits `bb9dc4d` / `38f8175` / `bc5f320` / `b89f767`.
+
+Remaining quality follow-ups:
+
+- **`TabKeyedStore<T>` generic**: deferred per the TabCoordinator
+  agent's report. Would fold the 9× per-tab dict cleanup into one
+  fan-out. Pairs naturally with whatever-comes-next-coordinator if
+  there is one.
+- **`HighlightCacheActor` map + `renderedHTMLCache` extraction**.
+  Currently still on DocumentModel; they're per-tab-keyed and
+  conceptually subsystem state. Candidates for a future
+  `CacheCoordinator` if a fourth split is needed.
+- **`main.swift` further extraction**: 1580 LOC after `I` landed.
+  Menus, NSServices, walkthrough wiring, MCP startup are all still
+  inline. Each is a small further-extraction.
+- Apply the `Data(rawBuffer)` defensive pattern in any other framing
+  code beyond `LSPFraming`. Audit `MCPFraming` + any other custom
+  framing for the macOS 26 `Data.subdata` slice-offset bug.
+
+### CM6 — Phase 4 items held for explicit decision
+
+- **Vim mode** (`@replit/codemirror-vim`, MIT, ~210 KB). New JS
+  dep — awaits explicit user approval per the no-new-deps rule.
+- **Shared WebView refactor** — conditional on a perf prototype.
+  Current per-tab WebView is stable; the perf win is speculative
+  until measured.
+- **Diff/blame gutter Swift-side wiring**. JS API in place; the
+  Swift-side feed belongs in `GitService`/`DocumentModel`, not the
+  CM6 layer.
+- **LSP `requestHover` markdown rendering**. Plain-text today;
+  `LSPMarkdownRenderer` is AppKit-only and can't run in WKWebView.
+  Either ship a ~5 KB JS markdown→HTML in the CM6 bundle or
+  convert to NSAttributedString → HTML at the bridge.
+- **`workspaceSymbol/resolve` for URI-only stubs**. Modern lazy
+  resolve shape isn't supported. Rare in practice; sourcekit-lsp
+  + pyright inline the full `Location`.
+- **`lsp.json` per-workspace override**. Designed in
+  `docs/LSP_DESIGN.md` §11; not implemented.
+

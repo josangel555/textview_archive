@@ -775,3 +775,211 @@ After Phase 2.4 (palette), the next "value per hour" wins are likely:
 4. **Remember sidebar width + last-open folder** — 1 hour.
 
 Workspaces, Split view, Format are all great but should wait until the core is dogfooded for a few sessions.
+
+---
+
+## DocumentModel coordinator pattern (2026-05-25 split)
+
+`DocumentModel` was a 2377-LOC, 71-`@Published`, 107-method god
+object. Split into three child `@MainActor ObservableObject`
+coordinators, each owning one cohesive domain. DocumentModel
+stays as the aggregate ObservableObject + the home of cross-cutting
+state that doesn't fit a single coordinator (sidebar reference,
+LSP pool, bookmarks, zoom, theme, walkthrough bridge, history).
+
+### `FindCoordinator`
+
+Owns the three find-mode bags — rendered (WKWebView markdown find),
+source (NSTextView find), editor (CM6 find). Each bag exposes
+`query`, `caseSensitive`, `isRegex` (where applicable), `matched`,
+`matchSummary`, `nextRequest`/`prevRequest`/`focusRequest` request-
+nonce counters, plus `matchLines` + `currentMatchIndex` for the
+source bag.
+
+`commit` from request-nonces happens through methods on the
+coordinator; views observing the request-nonce see one bump per
+user-pressed Next/Previous. `setMatchSummary(_:)` dedupes on equal
+value to avoid spurious republishes.
+
+### `TabCoordinator`
+
+Owns `tabs` (`TabsState`), the open/openInNewTab/openInSplit/
+closeTab/closeOtherTabs/closeTabsToRight family, `openTabURLs`,
+`splitURL`, and 6 per-tab dicts (`csvFilterStates`,
+`hexBytesPerRow`, `languageOverrides`, `formattedTabIDs`,
+`formattedTextCache`+`Order`, `editorBuffers`). The
+`materializeTasks` slot is also per-tab.
+
+**`addCloseHook(_:)`** is the canonical extension point for any
+new per-tab subsystem. Register a hook in `init`; the hook runs
+inside `cleanupAfterClose(id:)` which is called by every close path.
+Don't enumerate per-tab dicts per-path; subscribe to the hook.
+
+### `EditorCoordinator`
+
+Owns CM6 editor-mode state: `editorGotoLine`, `editorIndentation`,
+`saveEditorOnBlur`, `editorCursorByTab`, `editorScrollByTab`,
+`pendingEditorDiagnostics`. Owns `saveActiveEditor()` / `saveEditor(forTabID:)`
+plus close-prompt routing (`confirmCloseIfDirty(at:)`) and
+external-edit conflict (`presentExternalEditConflict(...)`).
+
+Test seams: `dirtyClosePromptOverride`, `externalEditPromptOverride`
+let tests bypass the NSAlert calls. Injected effect closures
+(`onPauseFileWatcher`, `onResumeFileWatcherIfApplicable`,
+`onReloadFromDisk`, etc.) keep the coordinator headless-testable
+without dragging FileWatcher state into the coordinator.
+
+`editorBuffers` lives on `TabCoordinator` (single cleanup fan-out);
+EditorCoordinator references it via `tabsSnapshot` / etc.
+
+### Forwarder discipline
+
+Every public DocumentModel API moved to a coordinator gets a thin
+forwarder kept on DocumentModel. Existing call sites don't change;
+new code can call through either surface. The forwarders are
+plain getters/setters into the coordinator — no caching, no extra
+state.
+
+When you grep "where is X mutated," you'll see both the coordinator
+mutation and the DocumentModel forwarder. The forwarder is
+authoritative for the public API; the coordinator is the home of
+the state. Tests cover both paths.
+
+### Republish-invariant test pattern
+
+For each coordinator, a `*RepublishInvariantTests.swift` pins the
+contract: mutating a field on the coordinator fires `objectWillChange`
+on the coordinator only, **never** on DocumentModel.
+
+```swift
+let count = countDocumentRepublishes(while: {
+    coord.someField = newValue
+})
+XCTAssertEqual(count, 0)
+```
+
+`countDocumentRepublishes(while:)` is in
+`Tests/ViewerUITests/TabRepublishInvariantTests.swift`. Each
+invariant suite also has at least one **negative-control** test
+that asserts a real DocumentModel mutation still does fire
+`objectWillChange` — guards against "publisher silently disabled."
+
+This pattern caught two regressions during the original splits and
+one during the recent EditorCoordinator extraction; mirror it for
+any future coordinator.
+
+### Why this matters
+
+Before: a keystroke in cross-search field re-evaluated every TabBar
+row body; a tab rename re-rendered the editor; CrossSearchPanel
+re-rendered on tab close. After: each domain's republishes are
+scoped to that domain's observers. Quantifiable per-domain wins are
+pinned by the invariant tests.
+
+## CM6 editor architecture
+
+CodeMirror 6 hosted in a `WKWebView`. The bundle is vendored under
+`Sources/ViewerUI/Resources/codemirror/` (HTML/JS/CSS); the build
+recipe lives in `scripts/codemirror-build/` (npm + esbuild;
+no `node_modules` in the runtime app).
+
+### Bridge protocol — versioned envelope
+
+`{v: 1|2, type: "…", replyId?: int, …}`. All messages encoded by
+`CMBridgeCodec` (`Sources/ViewerCore/CodeMirrorBridgeV1.swift`).
+
+- `v=1` baseline: every JS→Swift / Swift→JS message goes through
+  one shape: `webView.evaluateJavaScript("window.cmDispatch(\(JSON))")`
+  for outbound, `WKScriptMessageHandler("mdvEditor")` for inbound.
+- `v=2` adds `incrementalChange` (inbound, edit batches) +
+  `applyEdits` / `setFoldingRanges` / `setGutterMarkers` /
+  `setIndentGuides` (outbound).
+- Unknown types decode to `.unknown` (forward-compat); the receiver
+  ignores the message instead of crashing.
+
+### JS-safe JSON
+
+`Sources/ViewerCore/JSStringEmbedding.sanitize` is the single source
+of truth for embedding JSON in `evaluateJavaScript`. Escapes
+U+2028 / U+2029 (LINE/PARAGRAPH SEPARATOR) since `JSONSerialization`
+doesn't. **Don't `evaluateJavaScript` JSON without going through this.**
+
+### Incremental change applier
+
+`Sources/ViewerCore/CMEditApplier.swift` replays JS-batched
+ChangeSet edits Swift-side. UTF-16 indexed, rejects overlap/OOB.
+On length drift Swift requests `flushChanges` → falls back to v1
+full-text `setText`.
+
+### Editor-mode lifecycle
+
+Owned by `EditorCoordinator`. ⌘S routes through both the macOS menu
+item AND the CM6 JS-bridge `saveRequested` message (the in-WebView
+keystroke). Dirty state shows as a dot on the tab title. External
+edits while dirty trigger `presentExternalEditConflict` (NSAlert).
+
+50 MB hard cap on Editor mode — larger files render
+`LargeEditorPlaceholderView` instead. Cap pinned by tests.
+
+## Process-running pattern
+
+`Sources/ViewerCore/ProcessRunner.swift` is the canonical
+`Process + Pipe + drain` helper. Used by `GitClient`, `JQRunner`,
+`PluginSubprocessHost`, `LSPDiscovery`. Don't reimplement; if you
+need a new shape, extend the helper.
+
+`PluginSubprocessHost` additionally applies env-scrub +
+`setrlimit`-style discipline. LSP / git / jq don't yet — see
+BACKLOG.
+
+## Security model
+
+Documented in detail in `docs/code-review/SECURITY_CONCURRENCY_2026-05-25.md`.
+Key invariants now enforced:
+
+- **URL scheme containment** (`URLSchemePolicy`): `markdownviewer://open?path=…`
+  rejects paths outside `$HOME ∪ $TMPDIR`.
+- **Walkthrough drop transport** requires `TV_WALKTHROUGH_DROP=1`
+  env var. Defaults off.
+- **HTML sanitizer** (`HTMLSanitizer`): allowlist for user-supplied
+  HTML rendered to WKWebView. CSP becomes defense-in-depth.
+- **Regex complexity guard** (`RegexComplexityGuard`): nested-quant
+  + overlapping-alt detection on `FindEngine` + MCP `find` input.
+- **EditorWriter symlink refuse**: `Data.write(.atomic)` would
+  follow symlinks (TOCTOU). Default-deny; `allowSymlink:` opt-in.
+- **LSP binary ownership**: refuse group/world-writable lookup
+  dirs (`~/.npm-global/bin` was unfiltered).
+- **Audit dir perms 0o700**: plugin grant store + walkthrough drop.
+
+## Multi-agent dispatch workflow
+
+Worktree-isolated parallel agents are the standard for any
+multi-file change exceeding ~200 LOC.
+
+- `isolation: "worktree"` for code-changing agents. Each lands on
+  its own branch.
+- Orchestrator merges with `git fetch ./.claude/worktrees/agent-XXXX
+  <branch>` + `git merge --no-ff FETCH_HEAD`.
+- **Agents must commit incrementally**, not at the end. Worktrees
+  can be pruned on agent completion; uncommitted work has been
+  lost more than once.
+- **Coexistence via marker comments**: when two agents touch
+  overlapping files, brief them with `// MARK: - feature-X
+  (agent-name)` conventions so merges are mechanical.
+
+## Subagent prompt discipline
+
+Per `/Users/me/.claude/CLAUDE.md`: research / exploration agent
+prompts must be **generic** — goal + constraints + coexistence
+context. Don't pre-bake a hypothesis or a numbered scenario list;
+let the agent surface unknowns. Prescriptive prompts are reserved
+for focused mechanical fixes where the cause is already known.
+
+The exception is *executing an already-decided plan* — those
+agents get the plan + constraints, but still don't get pre-baked
+file paths or sub-decision trees (those belong to the agent's
+own choices). Example: the FindCoordinator / TabCoordinator /
+EditorCoordinator extractions each got the user-locked scope (E2
++ J), constraints, and pattern references — they chose their own
+file layout, test grouping, and per-feature ordering.
+

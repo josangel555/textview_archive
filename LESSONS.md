@@ -1075,3 +1075,318 @@ in `ContentView.loadedView`, `SplitPaneView.textContent`, etc.) must
 claim `.frame(maxWidth: .infinity, maxHeight: .infinity)`. WKWebView
 escapes this because it reports no useful intrinsic size; AppKit
 text/scroll views do.
+
+---
+
+## DocumentModel god-object split (2026-05-25 — coordinator pattern)
+
+`DocumentModel` reached 2377 LOC, 71 `@Published` props, 107 public
+methods spanning 12+ unrelated domains. Every `@Published` write
+republished the entire observable to every observer in the app — a
+keystroke in the cross-search field re-evaluated every TabBar row;
+a tab rename re-rendered the editor; the CrossSearchPanel re-rendered
+on tab close. The first canary was 12+ inline `if x != newX { x = newX }`
+republish-suppression guards scattered through setters.
+
+### Pattern
+
+Extract child `@MainActor ObservableObject` per domain. Store on
+`DocumentModel` as `public let find / tabs / editor: …Coordinator`.
+Keep call sites unchanged via thin forwarders (`var foo: T { get
+{ tabs.foo } set { tabs.foo = newValue } }`). Three coordinators
+landed: `FindCoordinator` (rendered/source/editor find-mode bags
+collapsed into one), `TabCoordinator` (tabs + open/close family +
+6 per-tab dicts), `EditorCoordinator` (editor mode + ⌘S + dirty +
+close prompt + external-edit conflict + cursor/scroll).
+
+### Don't forget the invariant tests
+
+For every coordinator: a "view doesn't republish when unrelated
+thing changes" test pinning `DocumentModel.objectWillChange` fires
+**zero times** on coordinator-only mutations. The shared helper is
+`countDocumentRepublishes(while:)` in
+`Tests/ViewerUITests/TabRepublishInvariantTests.swift`. Negative-
+control tests inside the same file catch the "publisher silently
+disabled" regression where the chain isn't broken but isn't
+reachable either.
+
+Mirror this pattern for any new coordinator. The pattern survived
+silently broken under three separate prior refactors — invariant
+tests are what made it durable.
+
+### `TabCoordinator.addCloseHook(_:)`
+
+Three close paths (`closeTab`, `closeOtherTabs`, `closeTabsToRight`)
+all fan out per-tab dict cleanup. Originally each path enumerated
+every per-tab dict; adding a new dict meant adding it in three
+places. EditorCoordinator's per-tab cursor/scroll/diagnostics dicts
+were silently leaking forever — nothing cleaned them. The fix:
+TabCoordinator exposes `addCloseHook { id in … }` and runs every
+registered hook in `cleanupAfterClose(id:)`. New per-tab subsystems
+register a hook in their `init`; cleanup is one site.
+
+## SwiftUI republish forwarding amplifies every tick
+
+The original `DocumentModel.init` had:
+
+```swift
+sidebar.objectWillChange
+    .sink { [weak self] in self?.objectWillChange.send() }
+    .store(in: &cancellables)
+```
+
+Every sidebar tick (FS event, git poll, expand/collapse, hover)
+republished the entire DocumentModel → every observer of DocumentModel
+re-evaluated its body. The pattern is seductive ("I want my parent
+to update when my child changes") but in practice it's the same as
+SwiftUI's `@Published` cascade with worse scoping.
+
+### Fix
+
+Don't forward. Every view that needs sidebar state holds its own
+`@ObservedObject sidebar`. Files that needed updating after the
+chain was severed: `ContentView`, `ClaudeTimelineSection`,
+`RecentChangesSection`, `Git/GitPanelSection`, `CrossSearchPanel`,
+`SearchAnywhereSection`, `SettingsView`, `SidebarView`.
+`SidebarRepublishInvariantTests` pins the new contract; its
+negative-control test guards against "I broke the chain *and* never
+reconnected the few legitimate parent observers" — that landed once
+and the test caught it.
+
+## `@Published` dictionary caches republish the whole observable
+
+`highlightCache: [HighlightCacheKey: [HighlightRun]]` was on
+DocumentModel. Every TreeSitter tokenize-complete wrote to it →
+DocumentModel republished → entire UI tree re-evaluated → cascaded
+into all the other republish chains.
+
+### Fix
+
+Per-tab actor. `Sources/ViewerUI/Highlight/HighlightCacheActor.swift`
+owns its own cache + a `@Published var version: Int`. DocumentModel
+holds `[UUID: HighlightCacheActor]` as a plain (non-`@Published`)
+dict. Consumers extract `SourceModeView` and observe the actor
+directly — highlight-ready re-evals only the source view's subtree.
+
+Per-tab cap dropped from 32 (global) to 8 (per-tab) — eviction is
+now bounded by working-set size.
+
+## Rendered-HTML cache: length-keyed = stale on same-length rewrites
+
+`renderedHTMLCache` keyed on `(tabID, contentLength)`. Same-length
+content rewrite returned a stale render. Other caches with the
+same shape: `formattedTextCache`, `highlightCache` (before its
+actor rewrite).
+
+### Fix
+
+Add `modifiedTime: Date?` to the key. Plumb through
+`TextFileLoader.load` on every encoding path (UTF-8 / UTF-16 / Latin-1
+/ BOM-stripping). Editor-save path re-stats after write.
+`RenderedHTMLKey = (tabID, byteCount, modifiedTime)`.
+
+The body-time FNV-1a hash that previously ran on every re-eval is
+gone. `purgeCaches` is now strictly tabID-keyed at every close site.
+
+## CodeMirror peer-dep version-floor (silent dup-bundle → blank editor)
+
+`@codemirror/view@6.43` declares peer `@codemirror/state ^6.6.0`.
+We pinned state to `6.5.2`. npm nested a second `state@6.6.0` under
+`view`. esbuild bundled both. `EditorState.create(...)` threw
+`"multiple instances of @codemirror/state ... breaking instanceof
+checks"` inside the bundle's IIFE; `window.cmDispatch` never
+registered; `#editor` stayed empty. **CSP swallowed the error to a
+generic `"Script error."`** so nothing surfaced in the in-app
+console.
+
+### Fix + future-proofing
+
+`scripts/codemirror-build/package.json` must satisfy every CM6
+peer-dep's lower bound. Bumping any `@codemirror/*` package: also
+bump its peer-deps to satisfy the floor, then re-bundle. Rebuild
+recipe in `Sources/ViewerUI/Resources/codemirror/BUILD.md`. A CI
+check `find scripts/codemirror-build/node_modules -name 'state'
+-path '*@codemirror*' | wc -l == 1` would have caught this; not
+implemented yet.
+
+## `Data.subdata(in:)` after `removeFirst` (macOS 26 slice-offset bug)
+
+After `Data.removeFirst(n)` the resulting value's `count` reflects
+the truncated length, but the internal start-offset isn't surfaced
+consistently to `subdata(in:)` / index arithmetic. On macOS 26 this
+returns garbage bytes when the slice has been retained across
+generations.
+
+### Workaround
+
+Rebuild via `[UInt8]`:
+
+```swift
+let bytes = Array(data)
+data = Data(bytes[..<n])  // canonical view, no offset state
+```
+
+`LSPFraming.decode` already defends with `Data(rawBuffer)`. Apply
+the same pattern wherever framing code touches `Data.subdata` on
+retained buffers. Caught by `MDVFakeLSPServer` while building the
+LSP transport tests.
+
+## `FileHandle.read(upToCount:)` + `write(contentsOf:)` wedge on a `Pipe`
+
+Concurrent `read(upToCount:)` and `write(contentsOf:)` on the same
+`Pipe` (one in a `Task.detached`, one on the actor) wedges writes
+after 1–2 messages. `FileHandle`'s Cocoa layer serializes I/O
+through a shared kqueue source that deadlocks under this pattern.
+
+### Fix
+
+Use POSIX `read(2)` / `write(2)` on the raw fds (`Pipe.fileHandleForReading.fileDescriptor`).
+Move the reader to a dedicated `Thread`, not `Task.detached` —
+blocking `read(2)` starves the cooperative pool and manifests as
+`CancellationError` at unrelated `await` sites. Pin
+`F_SETNOSIGPIPE` on the write end so a clean child exit doesn't
+crash the host.
+
+Surfaced by FakeLSPServer; was papered over by env-gated smoke
+tests (real `sourcekit-lsp` is fast enough to dodge the wedge).
+Real bug; fix in `LSPClient.swift`.
+
+## `evaluateJavaScript` JSON embed: U+2028 / U+2029
+
+`JSONSerialization.data` doesn't escape U+2028 (LINE SEPARATOR)
+or U+2029 (PARAGRAPH SEPARATOR). Both are valid JSON characters
+**and** valid JavaScript line terminators inside string literals.
+Pasting them into `webView.evaluateJavaScript("...\(jsonString)...")`
+breaks the bundle parse silently.
+
+### Fix
+
+`Sources/ViewerCore/JSStringEmbedding.sanitize` — all bridge JSON
+routes through it. CM6 outbound messages + the markdown renderer
+both use it.
+
+## SwiftUI dishonest test class
+
+The 5-lens code review surfaced ~15 tests asserting tautologies,
+state-already-true-after-setup conditions, or callback invocation
+of a callback that was just called manually. They were emitting
+**false green signal** — worse than missing tests, because they
+gave confidence where there was none.
+
+### Pattern
+
+`OpenInNewSessionTests` was the canonical case: every test set a
+`((URL) -> Void)?` closure, then called the closure, then asserted
+it was called. Tests would pass for any optional stored closure of
+any type, anywhere.
+
+### Fix
+
+Restate to exercise the actual production code path. The
+replacement asserts `model.commitGoToPath(path, newSession: true)`
+correctly routes (a) to `openFolderInNewSession` when callback set
++ path is a folder, (b) to `openPath` when callback nil OR path is
+a file, (c) never to callback for nonexistent paths. The previous
+shape never noticed any of these routing paths.
+
+Hygiene: every test should answer "what production behavior
+breaks if I delete this line of source?" If the answer is "nothing
+the test could detect," restate or delete.
+
+## Worktree-pruning + uncommitted-work-loss (multi-agent gotcha)
+
+Background agents working in `.claude/worktrees/agent-XXXX/`
+worktrees: the harness may prune the worktree on agent completion.
+If the agent didn't commit, its file mutations survive only in the
+*parent* repo's working tree (shared filesystem). Subsequent
+`git status` shows the changes as uncommitted in main; the
+agent-reported branch name doesn't exist as a ref.
+
+### Failure mode
+
+Agent reports "all work is on `worktree-agent-XXXX`". You try
+`git fetch ./.claude/worktrees/agent-XXXX <branch>` → branch ref
+missing → "Already up to date" or similar misleading output.
+`grep` reveals the agent's added symbols *do* exist in the main
+repo's source dir — just uncommitted. Easy to lose to a `git
+checkout --` or a `git stash drop`.
+
+### Mitigation
+
+Brief agents to **commit incrementally to the worktree branch**,
+not at the end. If the agent rate-limits or fails mid-run, partial
+work is preserved. Check `git status` and `git log --all --oneline`
+before assuming work is lost.
+
+## SwiftUI body-name collision with private helper
+
+`LSPOutlineSection.body` (the SwiftUI required computed property)
+plus `private var body: some View` (a helper using `@ViewBuilder`)
+in the same struct → Swift compiler can resolve `body` inside
+`body` to either, and SwiftUI's compiler treats it as recursion.
+Error: "branches have mismatching types 'ModifiedContent<some
+View, AccessibilityAttachmentModifier>' and 'EmptyView'."
+
+### Fix
+
+Rename helpers. Convention: `outlineBody`, `sidebarBody`, etc. Don't
+shadow `body`.
+
+## CSP `style-src 'unsafe-inline'` allowed in recent WebKit
+
+We tightened the markdown-renderer CSP after a sanitizer audit,
+expecting it to block inline styles in user-rendered HTML. Recent
+WebKit allows `style-src 'unsafe-inline'` by default for documents
+loaded via `loadHTMLString(_:baseURL:)`. CSP is not a sufficient
+HTML-injection defense.
+
+### Fix
+
+`Sources/ViewerCore/HTMLSanitizer.swift` — explicit allowlist for
+tag / attribute / URL-scheme. CSP becomes defense-in-depth, not
+primary. Applied to `HTMLRenderer.visitHTMLBlock` /
+`visitInlineHTML` before emission.
+
+## Editor cursor/scroll/diagnostics dicts: latent per-tab leak
+
+`editorCursorByTab`, `editorScrollByTab`, `pendingEditorDiagnostics`
+were per-tab keyed but no close path drained them. Every tab close
+left one stale entry behind for the life of the workspace. No
+test pinned it; the EditorCoordinator extraction surfaced it.
+
+### Fix
+
+EditorCoordinator registers in `TabCoordinator.addCloseHook`.
+Every new per-tab subsystem must register a hook; the convention is
+documented in TabCoordinator's header comment.
+
+## Two coexisting git layers
+
+`GitService.swift` (190 LOC, used only by `SidebarModel`) duplicated
+`GitClient.swift` (468 LOC, used elsewhere). Protective-flags table,
+subprocess-drain pattern, and repo-root walk were copied
+byte-for-byte. A comment in `GitClient.swift:394` cross-referenced
+`GitService` — the author had noticed the gap but didn't close it.
+
+### Fix
+
+`GitService` deleted; `SidebarModel` migrated to `GitClient`. The
+status-parser + `GitStatusEntry` were lifted onto `GitClient` as
+`statusEntries()` + `parseStatusEntries(_:)`. Sibling lesson: when
+you notice a duplicate during a review, close it now. Comment-only
+"TODO: dedupe" is the canary for a six-month-old duplicate.
+
+## Subprocess+drain pattern duplicated 5 times
+
+`Process + Pipe + DispatchGroup` drain was duplicated across
+`GitClient`, `GitService`, `JQRunner`, `PluginSubprocessHost`,
+`LSPDiscovery`. Each had its own small bugs (one captured
+`var outData` in a background closure; one missed `setrlimit` —
+sibling concerns).
+
+### Fix
+
+`Sources/ViewerCore/ProcessRunner.swift` — single helper. All 4
+remaining sites migrated (`GitService` was deleted in the same
+batch).
+
