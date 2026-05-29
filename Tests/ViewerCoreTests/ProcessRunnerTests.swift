@@ -104,4 +104,145 @@ final class ProcessRunnerTests: XCTestCase {
         XCTAssertNotEqual(r.terminationStatus, 0)
         XCTAssertFalse(r.timedOut)
     }
+
+    // MARK: Resource limits (S, 2026-05-29)
+
+    /// An empty `ResourceLimits` (all-nil) must NOT change behavior —
+    /// the wrapper is bypassed and the child runs as if `limits` were
+    /// never passed. Guards against accidentally regressing every
+    /// existing call-site if someone hands in `ResourceLimits()` by
+    /// reflex.
+    func test_run_emptyLimitsBypassesWrapper() throws {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/echo")
+        p.arguments = ["hi"]
+        let r = try ProcessRunner.run(
+            p,
+            limits: ProcessRunner.ResourceLimits()
+        )
+        XCTAssertEqual(r.terminationStatus, 0)
+        XCTAssertEqual(String(data: r.stdout, encoding: .utf8), "hi\n")
+        // Sanity: with no-limits, the spawned binary should be the
+        // one the caller asked for, not `/bin/sh`. We can't observe
+        // the pid argv from here, but we *can* observe that no
+        // shell-quoting nonsense leaked into stdout.
+        XCTAssertEqual(r.stderr.count, 0)
+    }
+
+    /// CPU cap actually kills a CPU-bound child. We spin a tight
+    /// busy loop in `/bin/sh` and assert the kernel sends SIGXCPU
+    /// (default action: terminate) within a few wall-clock seconds.
+    /// Without the cap, the loop would burn until the wall-clock
+    /// timeout — which is also asserted on as a backstop so a broken
+    /// implementation doesn't hang the test suite.
+    func test_run_cpuLimitKillsRunawayChild() throws {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        // Spin without yielding. `while :;` is the cheapest POSIX
+        // busy loop; ":" is the shell no-op builtin.
+        p.arguments = ["-c", "while :; do :; done"]
+        let limits = ProcessRunner.ResourceLimits(cpuSeconds: 1)
+        let start = Date()
+        // Generous wall-clock backstop: if rlimit doesn't fire, the
+        // watchdog must still bail us out before the test bot times
+        // out.
+        let r = try ProcessRunner.run(p, timeout: 10, limits: limits)
+        let elapsed = Date().timeIntervalSince(start)
+        // The CPU cap should land well before the wall-clock backstop.
+        // 1s of CPU on a busy loop ≈ 1s of wall time on an idle host,
+        // ≈ 2-3s on a loaded CI host. 8s gives plenty of slack.
+        XCTAssertLessThan(elapsed, 8.0,
+                          "CPU cap should kill the busy loop in ~1-2s, " +
+                          "watchdog backstop is 10s — got \(elapsed)s")
+        // The watchdog should NOT have fired: rlimit kills first.
+        XCTAssertFalse(r.timedOut,
+                       "RLIMIT_CPU should fire before the 10s watchdog")
+        // SIGXCPU = 24, default action terminate. Exit code is then
+        // 128 + 24 = 152 (when killed by a signal, Process surfaces
+        // 128 + signal). Some shells/runtimes may report -SIGXCPU or
+        // a different shape; we accept any non-zero exit as proof
+        // the cap landed.
+        XCTAssertNotEqual(r.terminationStatus, 0,
+                          "expected non-zero exit from SIGXCPU")
+    }
+
+    /// CPU cap must NOT regress a quick honest child. A trivial
+    /// `/usr/bin/true` under a low CPU cap should still exit 0
+    /// cleanly — proves the wrapper isn't injecting noise or
+    /// reordering signals.
+    func test_run_cpuLimitDoesNotRegressFastChild() throws {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+        let limits = ProcessRunner.ResourceLimits(cpuSeconds: 5)
+        let r = try ProcessRunner.run(p, limits: limits)
+        XCTAssertEqual(r.terminationStatus, 0)
+        XCTAssertFalse(r.timedOut)
+    }
+
+    /// `currentDirectoryURL` set on the original `Process` must
+    /// survive the shell wrapper — the target binary should see the
+    /// caller's cwd, not `/`. We confirm by running `/bin/pwd` under
+    /// limits with cwd pointed at the test temp dir.
+    func test_run_cwdPropagatesThroughLimitsWrapper() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ProcessRunnerTests-\(UUID().uuidString)",
+                                    isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: tmp, withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/pwd")
+        p.currentDirectoryURL = tmp
+        let limits = ProcessRunner.ResourceLimits(cpuSeconds: 5)
+        let r = try ProcessRunner.run(p, limits: limits)
+        XCTAssertEqual(r.terminationStatus, 0)
+        let stdout = String(data: r.stdout, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        // macOS realpath always resolves /var -> /private/var; the
+        // shell wrapper drops $PWD across `sh -c` + `exec`, so the
+        // child's getcwd returns the kernel's resolved path, not the
+        // string Swift handed `currentDirectoryURL`. Resolve both
+        // sides via realpath(3) for a stable compare regardless of
+        // which form the child reports.
+        let expected = URL(fileURLWithPath: tmp.path)
+            .resolvingSymlinksInPath().path
+        let stdoutResolved = URL(fileURLWithPath: stdout)
+            .resolvingSymlinksInPath().path
+        XCTAssertEqual(
+            stdoutResolved, expected,
+            "pwd inside limits wrapper should equal cwd; got '\(stdout)' " +
+            "expected '\(expected)'"
+        )
+    }
+
+    /// `environment` set on the original `Process` must survive the
+    /// shell wrapper — the target sees the caller's env vars
+    /// (inherited across `exec` from the shell).
+    func test_run_environmentPropagatesThroughLimitsWrapper() throws {
+        let token = "MDV_TEST_\(UUID().uuidString.prefix(8))"
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", "printf %s \"$MDV_PROBE\""]
+        p.environment = ["MDV_PROBE": token, "PATH": "/usr/bin:/bin"]
+        let limits = ProcessRunner.ResourceLimits(cpuSeconds: 5)
+        let r = try ProcessRunner.run(p, limits: limits)
+        XCTAssertEqual(r.terminationStatus, 0)
+        XCTAssertEqual(String(data: r.stdout, encoding: .utf8), token)
+    }
+
+    /// stdin must still round-trip through the wrapper. Reuses the
+    /// existing cat-echo idiom under a CPU cap.
+    func test_run_stdinRoundTripsThroughLimitsWrapper() throws {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/cat")
+        let payload = "wrapped-\(UUID().uuidString)"
+        let limits = ProcessRunner.ResourceLimits(cpuSeconds: 5)
+        let r = try ProcessRunner.run(
+            p, stdin: Data(payload.utf8), limits: limits
+        )
+        XCTAssertEqual(r.terminationStatus, 0)
+        XCTAssertEqual(String(data: r.stdout, encoding: .utf8), payload)
+    }
 }
