@@ -1,0 +1,340 @@
+import XCTest
+import ViewerKit
+@testable import ViewerCore
+
+/// Regression tests for the continuation-based main-actor bridge in
+/// `MCPServer` (previously `DispatchQueue.main.sync`).
+///
+/// # What changed
+///
+/// `handle(requestBody:)` used to dispatch the handler via
+/// `DispatchQueue.main.sync { MainActor.assumeIsolated { ... } }`.
+/// It now uses a `Task { @MainActor in ... }` + `DispatchSemaphore`
+/// bridge in `runOnMainActor`.
+///
+/// # Why the old bridge was wedge-prone
+///
+/// `DispatchQueue.main.sync` from a background thread has two
+/// well-documented failure modes:
+///
+/// 1. **Main-on-main.** If a refactor ever causes the bridge to be
+///    invoked from the main thread (a re-entrant tool call, an
+///    accidental `await Task { @MainActor in mcpServer.handle(...) }`
+///    in some future tooling code), `main.sync` from main is an
+///    instant libdispatch self-wait — the process hangs with no
+///    diagnostic.
+/// 2. **QoS / scheduler inversion.** Swift 6's strict-concurrency
+///    runtime flags `main.sync` from a non-main Task because the
+///    Task is forced to wait on libdispatch instead of the cooperative
+///    actor executor, defeating priority inheritance.
+///
+/// The new bridge:
+///
+/// 1. The reader thread parks on a kernel `DispatchSemaphore`, not on
+///    a libdispatch queue. No queue-drain wedge.
+/// 2. A `precondition(!Thread.isMainThread, ...)` catches main-on-main
+///    misuse loudly instead of hanging.
+/// 3. The handler runs inside a `Task { @MainActor in ... }`, which
+///    integrates with the Swift concurrency scheduler — priority
+///    inheritance, cancellation, etc. — without forcing a libdispatch
+///    sync wait on main.
+///
+/// # What these tests prove
+///
+/// These tests can't reproduce the production wedge inside the
+/// XCTest harness because `XCTestExpectation.wait` pumps the main
+/// run loop, which keeps `DispatchQueue.main` draining. The wedge
+/// is real in production where main can be in a non-pumping kernel
+/// wait. So instead these tests pin the bridge's **positive contract**
+/// — which would be broken by any "fix" that swung back to a
+/// brittle dispatch pattern.
+///
+/// - `test_bridge_dispatchesQuickly` — the bridge resolves a
+///   round-trip with no perceptible overhead (proxy for "no wedge,
+///   no busy-wait, no priority inversion").
+/// - `test_longRunningHandler_doesNotBlockSubsequentRequests` — a
+///   handler that holds the main actor for ~100 ms doesn't wedge
+///   the next request; the second response arrives within budget.
+///   This is the closest test-harness analogue to the original
+///   wedge.
+/// - `test_manyRequests_inSequence_complete` — 25 sequential
+///   requests cycle cleanly; catches a bridge that leaks Tasks /
+///   semaphores or fails to signal after some N invocations.
+/// - `test_handler_runsOnOSMainThread` — the handler still sees
+///   `Thread.isMainThread == true`. Pins the AppKit contract: the
+///   bridge swap didn't silently demote isolation.
+
+@MainActor
+private final class StubHost: AutomationHost {
+    var stateResult = AutomationState(
+        tabs: [], selectedTabIndex: nil, viewMode: "rendered",
+        zoom: 1.0, sidebarRoot: nil, isPalettePresented: false
+    )
+    func automationOpenPath(_ url: URL, newTab: Bool) -> UUID { UUID() }
+    func automationSelectTab(byIndex index: Int?, byId id: UUID?) -> Bool { true }
+    func automationSetViewMode(_ mode: ViewMode) {}
+    func automationGotoLine(_ line: Int, column: Int?) {}
+    func automationFind(_ query: FindQuery) -> [FindMatch] { [] }
+    func automationVisibleText() -> String { "" }
+    func automationCurrentState() -> AutomationState { stateResult }
+    func automationToggleBookmark(line: Int?) {}
+    func automationListBookmarks() -> [BookmarkEntry] { [] }
+    func automationSnapshotPNG() throws -> Data { Data() }
+}
+
+/// Host that holds the main actor for a configurable duration on
+/// each `current_state` call, simulating a long-running synchronous
+/// handler (e.g., a model walk over thousands of tabs).
+private final class SleepingHost: AutomationHost, @unchecked Sendable {
+    let sleepFor: TimeInterval
+    private let lock = NSLock()
+    nonisolated(unsafe) private var _callCount = 0
+
+    init(sleepFor: TimeInterval) {
+        self.sleepFor = sleepFor
+    }
+
+    var callCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return _callCount
+    }
+
+    @MainActor func automationOpenPath(_ url: URL, newTab: Bool) -> UUID { UUID() }
+    @MainActor func automationSelectTab(byIndex index: Int?, byId id: UUID?) -> Bool { true }
+    @MainActor func automationSetViewMode(_ mode: ViewMode) {}
+    @MainActor func automationGotoLine(_ line: Int, column: Int?) {}
+    @MainActor func automationFind(_ query: FindQuery) -> [FindMatch] { [] }
+    @MainActor func automationVisibleText() -> String { "" }
+    @MainActor func automationCurrentState() -> AutomationState {
+        // Sync sleep on main — simulates a long-running model
+        // operation. The bridge must wait for this to finish before
+        // signalling and accepting the next request.
+        Thread.sleep(forTimeInterval: sleepFor)
+        lock.lock(); _callCount += 1; lock.unlock()
+        return AutomationState(
+            tabs: [], selectedTabIndex: nil,
+            viewMode: "rendered", zoom: 1.0,
+            sidebarRoot: nil, isPalettePresented: false)
+    }
+    @MainActor func automationToggleBookmark(line: Int?) {}
+    @MainActor func automationListBookmarks() -> [BookmarkEntry] { [] }
+    @MainActor func automationSnapshotPNG() throws -> Data { Data() }
+}
+
+@MainActor
+final class MCPServerWedgeTests: XCTestCase {
+
+    // MARK: - Helpers
+
+    /// Set up a live server with the given host. Caller is responsible
+    /// for `start()` + a deferred `stop()`.
+    private func makeServer(host: AutomationHost)
+        -> (server: MCPServer, inPipe: Pipe, outPipe: Pipe)
+    {
+        let inPipe = Pipe()
+        let outPipe = Pipe()
+        let server = MCPServer(
+            host: host,
+            input: inPipe.fileHandleForReading,
+            output: outPipe.fileHandleForWriting,
+            logger: nil
+        )
+        return (server, inPipe, outPipe)
+    }
+
+    /// Pull `n` framed responses off `outPipe`, fulfilling
+    /// `expectation` when done. Uses a background dispatch queue so
+    /// the main run loop can pump (which the new bridge's
+    /// `Task { @MainActor in }` requires to land its work).
+    private func drainResponses(
+        from outPipe: Pipe,
+        count n: Int,
+        expectation: XCTestExpectation,
+        into holder: ResponseHolder
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            var reader = MCPFraming.FileHandleReader(outPipe.fileHandleForReading)
+            var bodies: [Data] = []
+            for _ in 0..<n {
+                do {
+                    if let body = try MCPFraming.decode(from: &reader) {
+                        bodies.append(body)
+                    } else {
+                        break
+                    }
+                } catch {
+                    DispatchQueue.main.async {
+                        holder.error = error
+                        expectation.fulfill()
+                    }
+                    return
+                }
+            }
+            DispatchQueue.main.async {
+                holder.allBodies = bodies
+                expectation.fulfill()
+            }
+        }
+    }
+
+    @MainActor
+    private final class ResponseHolder {
+        var allBodies: [Data]?
+        var error: Error?
+    }
+
+    // MARK: - Tests
+
+    /// The bridge resolves a single round-trip with no perceptible
+    /// overhead. Proxy for "no wedge, no busy-wait, no priority
+    /// inversion".
+    func test_bridge_dispatchesQuickly() throws {
+        let host = StubHost()
+        let env = makeServer(host: host)
+        env.server.start()
+        defer { env.server.stop() }
+
+        let req = Data(#"""
+        {"jsonrpc":"2.0","id":1,"method":"ping"}
+        """#.utf8)
+        try env.inPipe.fileHandleForWriting.write(contentsOf: MCPFraming.encode(body: req))
+
+        let arrived = XCTestExpectation(description: "ping response")
+        let holder = ResponseHolder()
+        drainResponses(from: env.outPipe, count: 1, expectation: arrived, into: holder)
+
+        // 1 s budget for a sub-millisecond operation. A wedge or a
+        // serious scheduler stall would blow through this.
+        wait(for: [arrived], timeout: 1.0)
+
+        if let err = holder.error { throw err }
+        XCTAssertEqual(holder.allBodies?.count, 1)
+    }
+
+    /// # The wedge-analogue test.
+    ///
+    /// A handler that holds the main actor for ~100 ms (synchronous
+    /// `Thread.sleep` on main) doesn't wedge the bridge for
+    /// subsequent requests. Two back-to-back requests both complete
+    /// within a budget tight enough to fail on wedge.
+    ///
+    /// Under the OLD `DispatchQueue.main.sync` bridge: the reader
+    /// thread parks in libdispatch's queue-drain wait for ~100 ms,
+    /// then it picks up the next request. Under specific QoS /
+    /// scheduling pressure scenarios (which we can't easily
+    /// reproduce in unit tests), the second request can be delayed
+    /// arbitrarily — `main.sync`'s priority semantics fight Swift
+    /// concurrency's scheduler.
+    ///
+    /// Under the NEW bridge: the reader parks on a kernel semaphore
+    /// while a MainActor Task runs the handler. The Task scheduler
+    /// integrates cleanly with QoS; the second request lands
+    /// promptly after the first.
+    ///
+    /// The hard guarantee this test pins: **two sequential requests
+    /// through long-running handlers complete in < 3 s**. A
+    /// regression to a wedge-prone bridge would fail here in some
+    /// schedule scenarios; even if it passes deterministically in
+    /// CI, the test prevents a *worse* regression where requests
+    /// stop serializing entirely.
+    func test_longRunningHandler_doesNotBlockSubsequentRequests() throws {
+        let host = SleepingHost(sleepFor: 0.1)
+        let env = makeServer(host: host)
+        env.server.start()
+        defer { env.server.stop() }
+
+        for i in 1...2 {
+            let req = Data(#"""
+            {"jsonrpc":"2.0","id":\#(i),"method":"tools/call",
+             "params":{"name":"current_state","arguments":{}}}
+            """#.utf8)
+            try env.inPipe.fileHandleForWriting.write(contentsOf: MCPFraming.encode(body: req))
+        }
+
+        let arrived = XCTestExpectation(description: "two responses arrive")
+        let holder = ResponseHolder()
+        drainResponses(from: env.outPipe, count: 2, expectation: arrived, into: holder)
+
+        // 2 × 100 ms handler + bridge overhead + scheduler latency.
+        // 3 s is forgiving; a wedge would never complete.
+        wait(for: [arrived], timeout: 3.0)
+
+        XCTAssertEqual(holder.allBodies?.count, 2,
+                       "second request never got through; bridge wedged behind first long handler")
+        XCTAssertEqual(host.callCount, 2,
+                       "handler must have run twice, got \(host.callCount)")
+    }
+
+    /// Sequential load smoke. 25 round-trips back-to-back. Catches a
+    /// bridge that leaks Tasks / semaphores or whose signal/wait
+    /// pair becomes unbalanced after some N calls.
+    func test_manyRequests_inSequence_complete() throws {
+        let host = StubHost()
+        let env = makeServer(host: host)
+        env.server.start()
+        defer { env.server.stop() }
+
+        let count = 25
+        for i in 0..<count {
+            let req = Data(#"""
+            {"jsonrpc":"2.0","id":\#(i),"method":"ping"}
+            """#.utf8)
+            try env.inPipe.fileHandleForWriting.write(contentsOf: MCPFraming.encode(body: req))
+        }
+
+        let arrived = XCTestExpectation(description: "\(count) responses")
+        let holder = ResponseHolder()
+        drainResponses(from: env.outPipe, count: count, expectation: arrived, into: holder)
+
+        wait(for: [arrived], timeout: 10.0)
+        if let err = holder.error { throw err }
+        XCTAssertEqual(holder.allBodies?.count, count,
+                       "bridge wedged or leaked state under sequential load")
+    }
+
+    /// The handler runs on the OS main thread, not just at MainActor
+    /// isolation. Pins the AppKit contract: the bridge swap didn't
+    /// silently demote isolation by, e.g., scheduling the Task on a
+    /// different actor.
+    func test_handler_runsOnOSMainThread() throws {
+        final class CheckingHost: AutomationHost, @unchecked Sendable {
+            let lock = NSLock()
+            nonisolated(unsafe) var sawMainThread = false
+            @MainActor func automationOpenPath(_ url: URL, newTab: Bool) -> UUID { UUID() }
+            @MainActor func automationSelectTab(byIndex index: Int?, byId id: UUID?) -> Bool { true }
+            @MainActor func automationSetViewMode(_ mode: ViewMode) {}
+            @MainActor func automationGotoLine(_ line: Int, column: Int?) {}
+            @MainActor func automationFind(_ query: FindQuery) -> [FindMatch] { [] }
+            @MainActor func automationVisibleText() -> String { "" }
+            @MainActor func automationCurrentState() -> AutomationState {
+                lock.lock(); sawMainThread = Thread.isMainThread; lock.unlock()
+                return AutomationState(
+                    tabs: [], selectedTabIndex: nil,
+                    viewMode: "rendered", zoom: 1.0,
+                    sidebarRoot: nil, isPalettePresented: false)
+            }
+            @MainActor func automationToggleBookmark(line: Int?) {}
+            @MainActor func automationListBookmarks() -> [BookmarkEntry] { [] }
+            @MainActor func automationSnapshotPNG() throws -> Data { Data() }
+        }
+        let host = CheckingHost()
+        let env = makeServer(host: host)
+        env.server.start()
+        defer { env.server.stop() }
+
+        let req = Data(#"""
+        {"jsonrpc":"2.0","id":1,"method":"tools/call",
+         "params":{"name":"current_state","arguments":{}}}
+        """#.utf8)
+        try env.inPipe.fileHandleForWriting.write(contentsOf: MCPFraming.encode(body: req))
+
+        let arrived = XCTestExpectation(description: "response arrives")
+        let holder = ResponseHolder()
+        drainResponses(from: env.outPipe, count: 1, expectation: arrived, into: holder)
+        wait(for: [arrived], timeout: 2.0)
+
+        host.lock.lock(); defer { host.lock.unlock() }
+        XCTAssertTrue(host.sawMainThread,
+                      "handler must run on the OS main thread, not just at MainActor isolation")
+    }
+}
