@@ -333,4 +333,129 @@ final class SidebarModelTests: XCTestCase {
         model.expandOrFocusFirstChild()  // already expanded → move into child
         XCTAssertEqual(model.selectedURL?.lastPathComponent, "inside.md")
     }
+
+    // MARK: - PERF #6 — flatVisibleRows pins virtualization shape
+
+    /// Pin: a deep tree with no expanded children must report only the
+    /// rows that are actually on-screen — the root plus its immediate
+    /// (collapsed) children. The previous SidebarView shape recursed
+    /// `FileRowView` -> non-lazy `ForEach`, so any expand of the root
+    /// materialized every descendant in one body pass and defeated the
+    /// outer `LazyVStack`. After flattening, the visible row set is
+    /// exactly what the `LazyVStack` will consider candidates.
+    func test_flatVisibleRows_deepCollapsedTree_onlyTopLevelMaterialized() async throws {
+        let model = SidebarModel()
+        // Build: root/                       (depth 0, auto-expanded)
+        //          d0/                       (depth 1, collapsed)
+        //            d1/d2/.../d29/leaf.md   (depth 2..31, all COLLAPSED)
+        //          file_000.md ... file_049.md (depth 1, files)
+        //
+        // The depth (30) is deliberately moderate to stay well under
+        // darwin PATH_MAX; the perf claim is about the relationship
+        // between *materialized row count* and *expansion state*, not
+        // about absolute depth. A 30-level collapsed subtree + 50
+        // sibling files is plenty to falsify the pre-fix recursive
+        // shape, which would have unconditionally walked every level.
+        try mkdir("d0")
+        var path = "d0"
+        for i in 0..<30 {
+            path += "/d\(i + 1)"
+            try mkdir(path)
+        }
+        try touch(path + "/leaf.md")  // 30 + 1 levels deep
+        for i in 0..<50 {
+            try touch(String(format: "file_%03d.md", i))
+        }
+        model.setRoot(tmpDir)
+
+        // Only the root is expanded by default. Visible rows = root +
+        // its direct children = 1 + (1 dir + 50 files) = 52.
+        let rows = model.flatVisibleRows()
+        XCTAssertEqual(
+            rows.count, 52,
+            "Deep collapsed tree must only materialize top-level rows " +
+            "(1 root + 1 directory + 50 files = 52); got \(rows.count)"
+        )
+        XCTAssertEqual(rows.first?.depth, 0)
+        XCTAssertTrue(rows.dropFirst().allSatisfy { $0.depth == 1 })
+
+        // Negative-control: expanding one level adds exactly 1 row
+        // (the next directory), proving the flat list grows by the
+        // visible delta, not by the whole subtree.
+        let before = model.flatVisibleRows().count
+        model.toggleExpansion(tmpDir.appendingPathComponent("d0"))
+        let after = model.flatVisibleRows().count
+        XCTAssertEqual(
+            after - before, 1,
+            "Expanding one directory must add only its immediate visible " +
+            "children (1 here); got delta \(after - before)"
+        )
+    }
+
+    /// Depths must equal the number of slashes between root and node —
+    /// i.e. the indentation the sidebar applies (`depth * 14 + 8`)
+    /// remains visually correct after the flatten refactor.
+    func test_flatVisibleRows_depthsMatchTreeStructure() async throws {
+        let model = SidebarModel()
+        try mkdir("a/b/c")
+        try touch("a/b/c/leaf.md")
+        try touch("a/sibling.md")
+        try touch("root.md")
+        model.setRoot(tmpDir)
+        let a = tmpDir.appendingPathComponent("a")
+        let b = a.appendingPathComponent("b")
+        let c = b.appendingPathComponent("c")
+        model.toggleExpansion(a)
+        model.toggleExpansion(b)
+        model.toggleExpansion(c)
+
+        let byName = Dictionary(
+            uniqueKeysWithValues:
+                model.flatVisibleRows().map { ($0.node.name, $0.depth) }
+        )
+        XCTAssertEqual(byName[tmpDir.lastPathComponent], 0)
+        XCTAssertEqual(byName["a"], 1)
+        XCTAssertEqual(byName["b"], 2)
+        XCTAssertEqual(byName["c"], 3)
+        XCTAssertEqual(byName["leaf.md"], 4)
+        XCTAssertEqual(byName["sibling.md"], 2)
+        XCTAssertEqual(byName["root.md"], 1)
+    }
+
+    /// flatVisibleNodes (existing API) must keep returning the same
+    /// node list, in the same order, as the new rows-with-depth API —
+    /// keyboard navigation relies on it.
+    func test_flatVisibleNodes_matchesFlatVisibleRowsOrder() async throws {
+        let model = SidebarModel()
+        try mkdir("x")
+        try touch("x/y.md")
+        try touch("z.md")
+        model.setRoot(tmpDir)
+        model.toggleExpansion(tmpDir.appendingPathComponent("x"))
+
+        XCTAssertEqual(
+            model.flatVisibleNodes().map { $0.url },
+            model.flatVisibleRows().map { $0.node.url }
+        )
+    }
+
+    /// flatVisibleRows must be memoized — repeated reads return the
+    /// same array contents without re-walking. Toggling expansion
+    /// invalidates the cache. We can't directly observe the cache, but
+    /// we can pin the contract on a wider tree: identical results
+    /// before and after a no-op read; correct results after a
+    /// mutation.
+    func test_flatVisibleRows_invalidatesOnMutation() async throws {
+        let model = SidebarModel()
+        try mkdir("dir")
+        try touch("dir/child.md")
+        model.setRoot(tmpDir)
+        let first = model.flatVisibleRows()
+        let second = model.flatVisibleRows()
+        XCTAssertEqual(first, second)
+        model.toggleExpansion(tmpDir.appendingPathComponent("dir"))
+        let third = model.flatVisibleRows()
+        XCTAssertNotEqual(first.count, third.count)
+        XCTAssertEqual(third.map { $0.node.name }.last, "child.md")
+    }
 }
