@@ -69,14 +69,24 @@ public struct LSPPositionConverter: Sendable {
     /// to the document end.
     public func lspPosition(for stringIndex: String.Index) -> LSPPosition {
         let clamped = min(stringIndex, text.endIndex)
-        // Binary-search the line-start array to find the line number.
-        var line = 0
-        for i in (0..<lineStartCharacterIndices.count).reversed() {
-            if lineStartCharacterIndices[i] <= clamped {
-                line = i
-                break
+        // Binary-search the line-start array for the largest `i` with
+        // `lineStartCharacterIndices[i] <= clamped`. The array is
+        // strictly ascending (each entry is the index after a `\n`) so
+        // a standard upper-bound search applies: find the first entry
+        // strictly greater than `clamped`, then back up one. The array
+        // always contains at least one element (startIndex), so the
+        // result is well-defined.
+        var lo = 0
+        var hi = lineStartCharacterIndices.count // exclusive
+        while lo < hi {
+            let mid = lo &+ (hi &- lo) / 2
+            if lineStartCharacterIndices[mid] <= clamped {
+                lo = mid &+ 1
+            } else {
+                hi = mid
             }
         }
+        let line = lo - 1 // lo is the first index > clamped; predecessor is the line
         let lineStart = lineStartCharacterIndices[line]
         // Count code units from line start to clamped index.
         var codeUnits = 0
