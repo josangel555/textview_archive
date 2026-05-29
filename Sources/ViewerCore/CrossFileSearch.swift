@@ -146,21 +146,43 @@ public enum CrossFileSearch {
             }
 
             // Compute per-line matches.
+            //
+            // Hot loop. Two perf-relevant choices here:
+            //   - Search the `Substring` directly. `Substring.range(of:)`
+            //     shares its index space with the parent `content` and
+            //     skips an allocation per non-matching line. In a typical
+            //     scan most lines DON'T match, so this avoids ~N
+            //     `String(lineSub)` allocations per file (N = line count).
+            //   - Only materialize `String(lineSub)` on a hit. We re-run
+            //     `range(of:)` once on that short String to get a
+            //     `Range<String.Index>` valid in `line` (Match.matchRange
+            //     is documented to index into `Match.line`). The double
+            //     work is bounded by match count, which is typically tiny
+            //     compared to total lines scanned.
+            //
+            // Why not `lowercased()` the haystack once? Because Unicode
+            // case-folding can change character count (German ß → "ss",
+            // Greek Σ → σ/ς, Turkish İ → "i\u{0307}") — back-mapping
+            // indices from the folded buffer to the original breaks for
+            // exactly the locales that need it (S2-D regression).
+            // `.caseInsensitive` honors the original indices natively.
             var fileMatches: [Match] = []
             let lines = content.split(
                 separator: "\n", omittingEmptySubsequences: false
             )
             for (i, lineSub) in lines.enumerated() {
-                let line = String(lineSub)
-                if let range = line.range(of: needle, options: containsOpts) {
-                    fileMatches.append(Match(
-                        lineNumber: i + 1,
-                        line: line,
-                        matchRange: range
-                    ))
-                    totalMatches += 1
-                    if totalMatches >= options.maxResults { break }
+                guard lineSub.range(of: needle, options: containsOpts) != nil else {
+                    continue
                 }
+                let line = String(lineSub)
+                let range = line.range(of: needle, options: containsOpts)
+                fileMatches.append(Match(
+                    lineNumber: i + 1,
+                    line: line,
+                    matchRange: range
+                ))
+                totalMatches += 1
+                if totalMatches >= options.maxResults { break }
             }
             if !fileMatches.isEmpty {
                 results.append(FileMatches(url: url, matches: fileMatches))
