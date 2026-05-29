@@ -121,26 +121,88 @@ public final class MCPServer: @unchecked Sendable {
             return
         }
 
-        // Dispatch on the main thread — every handler touches
-        // DocumentModel. `DispatchQueue.main.sync` is synchronous
-        // (no Task boundary) so we can hand the Response back to the
-        // background loop thread without tripping the Swift 6
-        // strict-concurrency `sending` checker. We use
-        // `MainActor.assumeIsolated` inside the block because the
-        // sync dispatch lands us on the main thread but the compiler
-        // doesn't know that statically.
+        // Dispatch on the main actor — every handler touches
+        // DocumentModel. We previously used `DispatchQueue.main.sync`
+        // which wedges if any main-actor handler (or anything it
+        // awaits) needs to bounce through the main queue while we're
+        // parked there: main is blocked-on-itself.
+        //
+        // Continuation bridge instead: spawn a `Task { @MainActor in
+        // ... }` that runs the handler and signals a kernel
+        // semaphore. The reader thread blocks on that semaphore —
+        // **not** on main — so main is free to service the handler's
+        // own awaits, NSEvent reentries, run-loop hops, etc.
         //
         // Sequencing: stdio is a single channel, clients send requests
-        // serially and expect ordered responses. Running dispatch
-        // serially on main is fine — the latency floor on each tool
-        // is dominated by main-thread work anyway.
+        // serially and expect ordered responses. We block the reader
+        // thread per-request so responses still emit in request order.
         let captured: (MCP.ID, String, MCP.Value?) = (id, request.method, request.params)
-        let response = DispatchQueue.main.sync {
-            MainActor.assumeIsolated {
-                self.dispatch(id: captured.0, method: captured.1, params: captured.2)
-            }
+        let response = runOnMainActor { [self] in
+            // `self` is captured strongly: the read-loop thread holds
+            // us alive while it's parked on the semaphore, and the
+            // captured reference is touched only inside the
+            // main-actor Task.
+            self.dispatch(id: captured.0, method: captured.1, params: captured.2)
         }
         send(response: response)
+    }
+
+    /// Synchronously bridge a `@MainActor` closure call from a
+    /// background thread without ever calling `DispatchQueue.main.sync`.
+    ///
+    /// # Why not `DispatchQueue.main.sync`
+    ///
+    /// `main.sync` from a background thread parks the calling thread
+    /// in libdispatch's queue-drain wait. Two classes of wedge follow:
+    ///
+    /// 1. **Main-on-main invocation.** If a refactor ever causes the
+    ///    bridge to be called from the main thread itself,
+    ///    `main.sync` is an immediate libdispatch deadlock (filing
+    ///    work behind ourselves on the queue we're already running).
+    ///    The cost surfaces as a hang rather than a crash, which is
+    ///    much harder to diagnose.
+    /// 2. **QoS inversion under strict concurrency.** Swift 6's
+    ///    runtime warns about `main.sync` from a non-main Task; the
+    ///    Task is forced to wait on libdispatch instead of the actor
+    ///    executor, defeating priority inheritance.
+    ///
+    /// # The new bridge
+    ///
+    /// 1. Spawn a `Task { @MainActor in ... }` for the work.
+    /// 2. Park the caller thread on a `DispatchSemaphore`.
+    /// 3. Main-actor executor runs the work, signals the semaphore.
+    /// 4. Caller wakes, returns the boxed result.
+    ///
+    /// The reader thread parks on a kernel semaphore — not on
+    /// `DispatchQueue.main` — so libdispatch's "queue waiting for
+    /// itself" trap is impossible. The `precondition` below catches
+    /// the main-on-main misuse loudly instead of letting it become a
+    /// silent hang.
+    ///
+    /// # Visibility
+    ///
+    /// `internal` (not `private`) so the wedge regression tests in
+    /// `MCPServerWedgeTests` can `@testable` import and exercise the
+    /// bridge directly. The implementation is otherwise an
+    /// implementation detail of `handle(requestBody:)`.
+    @inline(__always)
+    nonisolated internal func runOnMainActor<T: Sendable>(
+        _ work: @escaping @Sendable @MainActor () -> T
+    ) -> T {
+        precondition(!Thread.isMainThread,
+                     "MCPServer.runOnMainActor must not be called from the main thread")
+        let semaphore = DispatchSemaphore(value: 0)
+        // `nonisolated(unsafe)` is the canonical pattern for a
+        // single-writer / single-reader cell ordered by a semaphore
+        // signal/wait pair (happens-before is established by the
+        // semaphore on macOS / libdispatch).
+        nonisolated(unsafe) var box: T?
+        Task { @MainActor in
+            box = work()
+            semaphore.signal()
+        }
+        semaphore.wait()
+        return box!
     }
 
     @MainActor
