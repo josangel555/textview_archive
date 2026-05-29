@@ -378,6 +378,76 @@ Items from the 5-lens review (2026-05-25) that landed partially or
 not at all. See `docs/code-review/*_2026-05-25.md` for full
 context.
 
+### LANDED 2026-05-29 (workflow `wf_fd4d4db5`, 14 worktree agents → main `45aa0d8`)
+
+Tier 1 + Tier 2 fanout from `docs/NEXT_STEPS_2026-05-29.md`. All
+host-verified (`ViewerCoreTests` 1248 → **1347**, 0 failures; +132
+host UI suite). VM E2E sweep still pending (VM was offline at merge).
+
+- ✅ **Perf #6** — SidebarView flattened to `SidebarModel.flatVisibleRows()`
+  so the outer `LazyVStack` actually virtualizes deep trees (was eager
+  recursion). Keyboard-nav order preserved.
+- ✅ **Perf #7** — `LSPPositionConverter` real binary search (was a
+  reverse linear scan mislabeled "binary"). ~4600–5000× on a 10k-line
+  doc, fuzz-checked vs linear oracle.
+- ✅ **Perf #8** — `HexView.buildDump` → `HexDumpBuilder` actor streaming
+  in chunks (beginEditing/endEditing per chunk). ~65× faster
+  time-to-first-paint, full work off main.
+- ✅ **Perf #10** — `CSVParser` streams `unicodeScalars` via iterator
+  (was `Array(...)` materialization, ~2× peak RSS on big CSVs). All 16
+  existing parser tests unchanged.
+- ⚠️ **Perf #9** — was already done (`.caseInsensitive` option, not
+  `lowercased()`). Agent instead removed a per-line `String(lineSub)`
+  alloc before the reject check (reject on `Substring`, allocate only
+  on match). Modest (~1.14× debug) but safe + regression-pinned.
+- ✅ **Security setrlimit** — `ProcessRunner.ResourceLimits` (CPU +
+  file-size + nofile via `/bin/sh ulimit … exec`) wired into jq / git /
+  LSP-discovery. **NB:** macOS does NOT enforce `RLIMIT_AS`/`RLIMIT_DATA`
+  so there is no memory cap — see LESSONS.md.
+- ✅ **Security MCPServer** — `DispatchQueue.main.sync` → `Task{@MainActor}`
+  + `DispatchSemaphore` continuation bridge (reader thread no longer in
+  libdispatch drain; `precondition(!isMainThread)` guards main-on-main).
+- ✅ **Security Mermaid flag** — reset per document + evict runtime when
+  switching to a non-mermaid doc (was set-once for WebView lifetime).
+- ✅ **Security Data slice-offset** — `Data(rawBuffer)` defense applied to
+  `MCPFraming.DataReader`/`FileHandleReader` + `ClaudeLogParser.parse`.
+- ✅ **Tests LSPPool** — 14 tests against `MDVFakeLSPServer` (idle reaper,
+  restart-on-crash, dead-cooldown, concurrent `ensureLive`).
+- ✅ **Tests dishonest discards** — the 3 named files were already clean;
+  agent restated 5 real discards in the LSP smoke suites instead.
+- ✅ **Test-doc audit** — `docs/UI_TEST_GAPS_2026-05-29.md` (new; old doc
+  preserved).
+- ✅ **CM6 diff gutter** — `DiffGutterFeeder` (pure transform) fed from
+  the existing debounced `refreshDiffMarks` through a new
+  `EditorCoordinator.pendingEditorGutterMarkers` dict (drained via the
+  TabCoordinator close hook; republish-invariant tested).
+- ✅ **CM6 lsp.json** — per-workspace override loader (`LSPWorkspaceOverrides`)
+  wired into the default registry launchers; override beats discovery.
+
+### New follow-ups surfaced by the fanout
+
+- **LSP `initializationOptions` not forwarded.** `lsp.json` parses +
+  round-trips `initializationOptions` into `ServerOverride`, but
+  `LSPClient.initialize()` still builds a fixed init-params dict and
+  ignores it. Small thread-through. (cm6-lsp-json risk note.)
+- **`lsp.json` re-read per cold spawn**, not cached. Matches §11's
+  "rarely changes" assumption; revisit if pool churn becomes a concern.
+- **`LSPLog.warn` → status-bar surface.** Malformed `lsp.json` logs one
+  stderr line; design §11 wanted a status-bar warning. No ViewerCore
+  observability sink exists yet.
+- **No subprocess memory cap** (macOS `RLIMIT_AS` unenforced). If a true
+  RSS bound is needed: `sandbox-exec` (deprecated) or private
+  `posix_spawnattr_setjetsam_ext_np`. LESSONS.md documents the trap.
+- **Pre-existing host test failure (macOS 26).**
+  `MarkdownRenderedViewTests.test_decide_sameDocFragment_isAllowed`
+  fails on the host (Darwin 25.x) — Foundation URL fragment parser
+  regressed past the 15.6.1 `c0a9092` fix. Fails identically on clean
+  `main`; not a regression. Needs a Foundation-version-robust
+  same-doc-fragment compare. Passes on the macOS 15.6.1 VM.
+- **VM E2E sweep for this batch** still owed (VM offline at merge time) —
+  CM6 gutter render, mermaid evict in a live WebView, HexView streaming
+  responsiveness, sidebar deep-tree virtualization visual.
+
 ### Performance — findings #6–#10
 
 The first-tier perf root causes (#1 sidebar republish chain, #2

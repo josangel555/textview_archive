@@ -965,10 +965,22 @@ LazyVStack(alignment: .leading, spacing: 0,
 The 2.5 MB mermaid.min.js was being added as a `WKUserScript` on
 **every** WKWebView creation. Gate on `html.contains("mdv-mermaid")`
 at `updateNSView` time and a Coordinator-side `mermaidInjected: Bool`
-flag (idempotent): scripts only attach when the first mermaid-bearing
-document loads in this WebView. Subsequent non-mermaid pages on the
-same WebView still see the runtime — fine; non-mermaid pages don't
-reference `window.mermaid`.
+flag: scripts only attach when a mermaid-bearing document loads in
+this WebView.
+
+**Updated 2026-05-29 (security):** the flag is no longer set-once for
+the WebView lifetime. `nextMermaidInjectionState(currentlyInjected:
+documentWantsMermaid:)` returns `.install` / `.evict` / `.noChange`
+per document, and `updateNSView` calls `addUserScript` or
+`removeAllUserScripts()` accordingly. Rationale: a `WKUserScript`
+bypasses CSP (`SECURITY_CONCURRENCY_2026-05-25.md §2.1`), so leaving
+the 2.5 MB runtime attached to a WebView that has since navigated to a
+non-mermaid document is needless JS attack surface + parse/JIT cost on
+every later page-load. Eviction uses `removeAllUserScripts()` because
+WebKit has no remove-one API — safe **only** while the mermaid script
+is the lone user script (find-runtime uses per-load `evaluateJavaScript`,
+not a user script). If a second user script is ever added to this
+WebView, move mermaid to a dedicated `WKContentWorld` first.
 
 ## Shared `WKProcessPool` across all `MarkdownRenderedView` instances
 
@@ -1389,4 +1401,42 @@ sibling concerns).
 `Sources/ViewerCore/ProcessRunner.swift` — single helper. All 4
 remaining sites migrated (`GitService` was deleted in the same
 batch).
+
+## `RLIMIT_AS` / `RLIMIT_DATA` are accepted but NOT enforced on macOS
+
+When adding subprocess resource caps to `ProcessRunner` (2026-05-29),
+the obvious "cap memory" knob turned out to be a trap. The macOS
+kernel accepts `setrlimit(RLIMIT_AS, ...)` / `RLIMIT_DATA` and
+`ulimit -v` / `ulimit -d` without error but **silently does not
+enforce them** — `ulimit -v 1048576` even returns "cannot modify
+limit: Invalid argument" in zsh, and the `setrlimit` call no-ops in
+`/bin/sh`. So a memory cap on LSP/jq/git would be security theater.
+
+What macOS *does* enforce: `RLIMIT_CPU` (CPU seconds → `SIGXCPU`),
+`RLIMIT_FSIZE` (file size), `RLIMIT_NOFILE` (open fds). `ProcessRunner.ResourceLimits`
+ships exactly those three and deliberately omits a memory cap (doc
+comment explains why). For a true RSS bound you'd need `sandbox-exec`
+(deprecated but functional) or the private `posix_spawnattr_setjetsam_ext_np`.
+
+Mechanism that works without a C shim: prefix the spawn with
+`/bin/sh -c 'ulimit -t N 2>/dev/null; ...; exec "$0" "$@"' /real/binary arg0 arg1 …`.
+The `exec` replaces the shell in-place so `Process.processIdentifier`
+still points at the real child and the SIGTERM watchdog still lands.
+**Gotcha:** `exec "$@"` silently drops `$0` (the binary path) — you
+must pass the binary as `$0` and use `exec "$0" "$@"`, or the child
+exits 127. Caught by the env-propagation test.
+
+## macOS 26 URL fragment parser regresses *further* than 15.6.1
+
+`LESSONS.md` already notes Foundation's `about:`-URL fragment drift on
+macOS 15.6.1. On macOS 26 (Darwin 25.x) it's worse: even the
+same-document-fragment navigation-policy compare that `c0a9092`
+"fixed for 15.6.1+" now fails on the host —
+`MarkdownRenderedViewTests.test_decide_sameDocFragment_isAllowed`
+returns `cancel` where it expects `allow`. This is a **host-only,
+pre-existing** failure (fails identically on a clean `main`), not a
+regression, but it means the host (macOS 26) and the VM (macOS 15.6.1)
+disagree on URL-policy tests. Treat URL fragment/scheme comparisons as
+Foundation-version-fragile and pin them with field-by-field compares,
+not parser round-trips. Tracked in `BACKLOG.md` for a real fix.
 
