@@ -248,6 +248,23 @@ private final class HexTextController: NSViewController {
     private var headerCharCount: Int = 0
     private var currentWidth: Int = HexLayout.defaultWidth
     private var byteCount: Int = 0
+    /// Monotonic counter incremented on every `apply` whose
+    /// (file, font, width) tuple differs from `lastDumpKey`. The
+    /// background build task captures the current value and discards
+    /// chunks if it changes — drops a stale dump when the user
+    /// switches files / widths mid-render.
+    private var buildGeneration: Int = 0
+    /// True while a background chunked build is filling `textStorage`.
+    /// Highlights cannot be applied yet — the storage doesn't have
+    /// final character offsets — so `applyHighlights` queues the
+    /// requested key in `pendingHighlightKey` and we re-run it from
+    /// `finishBuild()`.
+    private var isStreaming: Bool = false
+    private var pendingHighlightKey: PendingHighlightKey?
+    /// First row index in the streaming build for which we've already
+    /// pushed a chunk. Used to know whether the placeholder is still
+    /// in the storage and needs replacing.
+    private var streamingHasPlaceholder: Bool = false
 
     var onClickPattern: (([UInt8]) -> Void)?
     var onClearClickPattern: (() -> Void)?
@@ -265,6 +282,13 @@ private final class HexTextController: NSViewController {
         let clickOffsets: [Int]
         let clickPatternLength: Int
         let width: Int
+    }
+    private struct PendingHighlightKey {
+        let matches: [Int]
+        let matchPatternLength: Int
+        let currentMatch: Int?
+        let clickOffsets: [Int]
+        let clickPatternLength: Int
     }
 
     init() {
@@ -333,14 +357,10 @@ private final class HexTextController: NSViewController {
             currentWidth = width
             byteCount = file.byteCount
             fileData = file.data
-
-            let result = Self.buildDump(file: file,
-                                        fontSize: fontSize,
-                                        width: width)
-            textView.textStorage?.setAttributedString(result.attr)
-            headerCharCount = result.headerCharCount
             rowLength = HexLayout.renderedRowLength(width: width)
-            textView.scrollToBeginningOfDocument(nil)
+            startChunkedBuild(file: file,
+                              fontSize: fontSize,
+                              width: width)
             lastHighlightKey = nil // force re-apply
         }
 
@@ -351,11 +371,159 @@ private final class HexTextController: NSViewController {
                         clickPatternLength: clickPatternLength)
     }
 
+    // MARK: Chunked build
+
+    /// Kick off a background build of the dump. The first chunk (plan
+    /// header, or a small placeholder for empty files) goes in
+    /// synchronously so the text view never flashes empty content.
+    /// Subsequent chunks are computed on a detached task and appended
+    /// on the main actor — each appended via `replaceCharacters`
+    /// wrapped in `beginEditing` / `endEditing` to coalesce TextKit
+    /// layout invalidation into one pass per chunk.
+    private func startChunkedBuild(file: BinaryFile,
+                                   fontSize: CGFloat,
+                                   width: Int) {
+        buildGeneration &+= 1
+        let generation = buildGeneration
+        let font = NSFont.monospacedSystemFont(ofSize: fontSize,
+                                               weight: .regular)
+        let placeholder: NSAttributedString = {
+            let s = "Building hex dump…\n"
+            return NSAttributedString(string: s, attributes: [
+                .font: font,
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ])
+        }()
+
+        guard let storage = textView.textStorage else { return }
+        // Show the placeholder immediately so the user sees a hint
+        // before the first body chunk lands.
+        storage.beginEditing()
+        storage.setAttributedString(placeholder)
+        storage.endEditing()
+        textView.scrollToBeginningOfDocument(nil)
+
+        // Empty body — nothing more to do, but make sure the storage
+        // is empty so character indices line up with the layout math.
+        let plan = HexDumpBuilder.plan(byteCount: file.byteCount,
+                                       totalByteCount: file.totalByteCount,
+                                       isTruncated: file.isTruncated,
+                                       width: width)
+        if plan.rowCount == 0 && plan.headerCharCount == 0 {
+            storage.beginEditing()
+            storage.setAttributedString(NSAttributedString())
+            storage.endEditing()
+            headerCharCount = 0
+            isStreaming = false
+            streamingHasPlaceholder = false
+            return
+        }
+
+        isStreaming = true
+        streamingHasPlaceholder = true
+        headerCharCount = plan.headerCharCount
+
+        // Detached task: build each chunk's plain `String` on a
+        // background thread (pure work over the immutable
+        // `BinaryFile`), then hop to the main actor to wrap it into
+        // an `NSAttributedString` and push it into `textStorage`.
+        //
+        // We pass `String` (Sendable) across the hop rather than
+        // `NSAttributedString` / `[NSAttributedString.Key: Any]`
+        // (neither is Sendable). The wrap happens main-actor-side
+        // where it's also captured by storage — no cross-actor
+        // reference to mutable Cocoa state.
+        //
+        // The builder's chunked callback is synchronous so we
+        // serialize render-then-push — one chunk in flight at a
+        // time (natural backpressure; storage append never falls
+        // behind the producer).
+        let captureFontSize = fontSize
+        Task.detached(priority: .userInitiated) { [weak self] in
+            HexDumpBuilder.build(file: file,
+                                 width: width) { _, chunk in
+                // `DispatchQueue.main.sync` lets the synchronous
+                // builder callback wait for the main-actor append
+                // before producing the next chunk. Safe here because
+                // this task is detached (no parent main-actor frame
+                // to deadlock).
+                let keepGoing: Bool = DispatchQueue.main.sync {
+                    guard let self else { return false }
+                    let f = NSFont.monospacedSystemFont(
+                        ofSize: captureFontSize, weight: .regular)
+                    let chunkAttr = NSAttributedString(
+                        string: chunk,
+                        attributes: [
+                            .font: f,
+                            .foregroundColor: NSColor.labelColor,
+                        ])
+                    return self.appendChunk(chunkAttr,
+                                            generation: generation)
+                }
+                return keepGoing
+            }
+            await MainActor.run {
+                self?.finishBuild(generation: generation)
+            }
+        }
+    }
+
+    /// Append a chunk to the text storage on the main actor. Returns
+    /// `false` if the build is stale (user changed file/width) so the
+    /// background task can stop producing further chunks.
+    @MainActor
+    private func appendChunk(_ chunk: NSAttributedString,
+                             generation: Int) -> Bool {
+        guard generation == buildGeneration else { return false }
+        guard let storage = textView.textStorage else { return false }
+        storage.beginEditing()
+        if streamingHasPlaceholder {
+            // First real chunk — replace the placeholder wholesale.
+            storage.setAttributedString(chunk)
+            streamingHasPlaceholder = false
+        } else {
+            let end = NSRange(location: storage.length, length: 0)
+            storage.replaceCharacters(in: end, with: chunk)
+        }
+        storage.endEditing()
+        return true
+    }
+
+    /// Wrap up after the final chunk. Re-applies any highlights that
+    /// were requested mid-stream against the now-final character
+    /// offsets.
+    @MainActor
+    private func finishBuild(generation: Int) {
+        guard generation == buildGeneration else { return }
+        isStreaming = false
+        streamingHasPlaceholder = false
+        if let pending = pendingHighlightKey {
+            pendingHighlightKey = nil
+            applyHighlights(matches: pending.matches,
+                            matchPatternLength: pending.matchPatternLength,
+                            currentMatch: pending.currentMatch,
+                            clickOffsets: pending.clickOffsets,
+                            clickPatternLength: pending.clickPatternLength)
+        }
+    }
+
     private func applyHighlights(matches: [Int],
                                  matchPatternLength: Int,
                                  currentMatch: Int?,
                                  clickOffsets: [Int],
                                  clickPatternLength: Int) {
+        if isStreaming {
+            // Storage doesn't have its final character offsets yet —
+            // any addAttribute call now would target stale ranges. Hold
+            // the request and reapply from `finishBuild()`.
+            pendingHighlightKey = PendingHighlightKey(
+                matches: matches,
+                matchPatternLength: matchPatternLength,
+                currentMatch: currentMatch,
+                clickOffsets: clickOffsets,
+                clickPatternLength: clickPatternLength)
+            return
+        }
         let key = HighlightKey(matches: matches,
                                matchPatternLength: matchPatternLength,
                                currentMatch: currentMatch,
@@ -467,89 +635,8 @@ private final class HexTextController: NSViewController {
         onClearClickPattern?()
     }
 
-    // MARK: Rendering
-
-    struct DumpResult {
-        let attr: NSAttributedString
-        let headerCharCount: Int
-    }
-
-    static func buildDump(file: BinaryFile,
-                          fontSize: CGFloat,
-                          width: Int) -> DumpResult {
-        let bytesPerRow = width
-        let bytes = file.data
-        let byteCount = file.byteCount
-        let rowCount = HexLayout.rowCount(byteCount: byteCount, width: bytesPerRow)
-        let perRowChars = HexLayout.renderedRowLength(width: bytesPerRow)
-
-        var s = String()
-        s.reserveCapacity(rowCount * perRowChars + 80)
-        var headerCharCount = 0
-        if file.isTruncated {
-            let header = "Showing first \(byteCount) of \(file.totalByteCount) bytes\n\n"
-            s += header
-            headerCharCount = header.count
-        }
-
-        let hexChars: [Character] = ["0","1","2","3","4","5","6","7",
-                                     "8","9","a","b","c","d","e","f"]
-
-        var rowStart = 0
-        while rowStart < byteCount {
-            var off = rowStart
-            var offBuf = [Character](repeating: "0", count: 8)
-            for i in stride(from: 7, through: 0, by: -1) {
-                offBuf[i] = hexChars[off & 0xF]
-                off >>= 4
-            }
-            s += String(offBuf)
-            s += "  "
-
-            let rowEnd = min(rowStart + bytesPerRow, byteCount)
-            for i in 0..<bytesPerRow {
-                let pos = rowStart + i
-                if pos < rowEnd {
-                    let b = bytes[pos]
-                    s.append(hexChars[Int(b >> 4)])
-                    s.append(hexChars[Int(b & 0xF)])
-                } else {
-                    s += "  "
-                }
-                if i != bytesPerRow - 1 { s.append(" ") }
-            }
-            s += "  "
-            // Pad short final row so every row has the same character
-            // length — lets us address bytes by
-            // `(row * rowLength + col)` without tracking per-row
-            // variable lengths.
-            for i in 0..<bytesPerRow {
-                let pos = rowStart + i
-                if pos < rowEnd {
-                    let b = bytes[pos]
-                    if (32...126).contains(b) {
-                        s.append(Character(UnicodeScalar(b)))
-                    } else {
-                        s.append(".")
-                    }
-                } else {
-                    s.append(" ")
-                }
-            }
-            s.append("\n")
-            rowStart += bytesPerRow
-        }
-
-        let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: NSColor.labelColor,
-        ]
-        return DumpResult(
-            attr: NSAttributedString(string: s, attributes: attrs),
-            headerCharCount: headerCharCount
-        )
-    }
+    // MARK: Rendering — see HexDumpBuilder in ViewerCore for the
+    // chunked text-build implementation.
 }
 
 // MARK: - NSTextView subclass for click-to-highlight
