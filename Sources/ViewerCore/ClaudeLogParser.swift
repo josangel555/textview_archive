@@ -85,7 +85,16 @@ public struct ClaudeLogParser: Sendable {
         return parse(data)
     }
 
-    public func parse(_ data: Data) -> [ClaudeEvent] {
+    public func parse(_ rawData: Data) -> [ClaudeEvent] {
+        // Re-base via `Data(_:)` so the `subdata(in: lineStart..<i)`
+        // and 0-based `withUnsafeBytes` indexing below behave the same
+        // whether the caller hands us a freshly-loaded `Data` or a
+        // slice carved out of a larger buffer. Slices keep their
+        // parent's non-zero `startIndex`, which on macOS 26 makes
+        // `subdata(in:)` return garbage bytes for 0-based ranges (see
+        // LESSONS.md "Data.subdata(in:) after removeFirst slice-offset
+        // bug"; LSPFraming.decode applies the same defensive rebase).
+        let data = Data(rawData)
         var events: [ClaudeEvent] = []
         var lineStart = 0
         let count = data.count
