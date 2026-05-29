@@ -62,10 +62,17 @@ final class LSPMultiLanguageSmokeTests: XCTestCase {
         defer { Task { await client.shutdown() } }
 
         try await client.didOpen(url: target, languageId: "typescript", text: text)
-        // Probe hover on the identifier `x`. Lenient: not all TS server
-        // versions return hover for a const declaration; the point is
-        // that the request/response loop closes without crash.
-        _ = try? await client.hover(url: target, line: 0, character: 13)
+        // Probe hover on the identifier `x`. Lenient on *presence*: not
+        // all TS server versions return hover for a const declaration.
+        //
+        // Decision (2026-05-29): restate. The `_ = try? await` discard
+        // meant a server returning malformed JSON, a decoder regression,
+        // or a hover blob that lost its `contents` field would all pass
+        // silently. Now: if hover came back, contents must be non-empty
+        // — the only payload-shape claim we can make without depending
+        // on which TS version is installed.
+        let hover = try? await client.hover(url: target, line: 0, character: 13)
+        Self.assertHoverCoherent(hover)
     }
 
     // MARK: - pyright
@@ -95,7 +102,12 @@ final class LSPMultiLanguageSmokeTests: XCTestCase {
         defer { Task { await client.shutdown() } }
 
         try await client.didOpen(url: target, languageId: "python", text: text)
-        _ = try? await client.hover(url: target, line: 0, character: 0)
+        // Decision (2026-05-29): restate. Same rationale as the TS test
+        // above — pyright's hover for `x = 1` may or may not include
+        // type info depending on the version, but any returned hover
+        // blob must have non-empty contents.
+        let hover = try? await client.hover(url: target, line: 0, character: 0)
+        Self.assertHoverCoherent(hover)
     }
 
     // MARK: - jdtls
@@ -129,5 +141,23 @@ final class LSPMultiLanguageSmokeTests: XCTestCase {
         defer { Task { await client.shutdown() } }
 
         try await client.didOpen(url: target, languageId: "java", text: text)
+    }
+
+    // MARK: - shared coherence checks
+
+    /// Accept nil (server had nothing to say) but reject a non-nil
+    /// hover with empty `contents`. The LSP decode-order discipline
+    /// in LSPProtocol.swift warns: if MarkupContent is matched before
+    /// MarkedString, the `value` key is silently dropped and we end
+    /// up with a hover struct whose contents got blanked. This
+    /// assertion catches that exact regression.
+    static func assertHoverCoherent(
+        _ hover: LSPHover?,
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        guard let hover = hover else { return }
+        XCTAssertFalse(hover.contents.isEmpty,
+            "non-nil hover must have non-empty contents — decode-order regressed?",
+            file: file, line: line)
     }
 }

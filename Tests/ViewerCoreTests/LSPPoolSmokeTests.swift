@@ -61,11 +61,16 @@ final class LSPPoolSmokeTests: XCTestCase {
             "routed wrappers haven't been called yet")
         XCTAssertNil(pre.first?.status.lastResponseMillis)
 
-        // Make the routed call. We don't care about the actual symbol
-        // set — sourcekit-lsp may or may not return entries depending
-        // on indexing state. The signal we want is that the request
-        // completed and recordRequest fired.
-        let result: [LSPDocumentSymbol]?
+        // Decision (2026-05-29): restate. The prior `_ = result` discard
+        // hid the fact that we *could* assert payload-shape coherence
+        // even when entry count is server/index-dependent. The counter
+        // bump + lastResponseMillis assertions below were honest, but
+        // the discard line claimed "result is unassertable" — false.
+        // Now we route through `assertCoherent` which validates every
+        // returned symbol's fields if any came back, and accepts
+        // empty-array as legitimate (cold index). Empty is fine; *malformed*
+        // payload (empty name, inverted range) is the bug we want to catch.
+        let result: [LSPDocumentSymbol]
         do {
             result = try await pool.documentSymbol(fileURL: target)
         } catch LSPError.timeout {
@@ -75,7 +80,7 @@ final class LSPPoolSmokeTests: XCTestCase {
             if requireSmoke() { XCTFail("documentSymbol failed: \(error)") }
             throw XCTSkip("documentSymbol failed: \(error)")
         }
-        _ = result   // shape is server-dependent; presence isn't the assertion
+        Self.assertSymbolsCoherent(result)
 
         // Post-call snapshot: the routed wrapper must have bumped both
         // counters. Without this assertion the diagnostics panel
@@ -114,9 +119,16 @@ final class LSPPoolSmokeTests: XCTestCase {
         let text = try String(contentsOf: target, encoding: .utf8)
         do {
             try await pool.ensureOpened(fileURL: target, text: text)
-            _ = try await pool.documentSymbol(fileURL: target)
-            _ = try await pool.documentSymbol(fileURL: target)
-            _ = try await pool.documentSymbol(fileURL: target)
+            // Decision (2026-05-29): restate. Discarding the result on a
+            // pool-routed call is fine *here* because the test is about
+            // the counter — but funnelling each call through the
+            // coherence check costs nothing and protects against a
+            // future decoder regression silently returning malformed
+            // symbols on every retry.
+            for _ in 0..<3 {
+                let symbols = try await pool.documentSymbol(fileURL: target)
+                Self.assertSymbolsCoherent(symbols)
+            }
         } catch LSPError.timeout {
             throw XCTSkip("sourcekit request timed out")
         } catch {
@@ -126,5 +138,52 @@ final class LSPPoolSmokeTests: XCTestCase {
         let snap = await pool.snapshot()
         XCTAssertEqual(snap.first?.status.requestCount, 3,
             "three routed calls must each bump the counter; \(snap.first?.status.requestCount ?? -1) seen")
+    }
+
+    // MARK: - shared coherence checks
+
+    /// Validate that any document symbols actually returned by the
+    /// server decoded into structurally-coherent values. Empty arrays
+    /// are accepted (cold index, server choice) — the bug we catch
+    /// is malformed *contents*: blank names, inverted ranges, kinds
+    /// that didn't decode. If LSPClient's decoder ever silently maps
+    /// a malformed wire entry to a zero-valued struct, this fires.
+    static func assertSymbolsCoherent(
+        _ symbols: [LSPDocumentSymbol],
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        // Empty is legitimate — sourcekit-lsp can return no symbols
+        // for files it hasn't indexed yet. We don't assert non-empty
+        // because that would just re-introduce the flakiness this
+        // suite was built to avoid.
+        for sym in symbols {
+            XCTAssertFalse(sym.name.isEmpty,
+                "document symbol has empty name (decoder lost the field?)",
+                file: file, line: line)
+            assertRangeOrdered(sym.range, label: "range of \(sym.name)",
+                               file: file, line: line)
+            assertRangeOrdered(sym.selectionRange,
+                               label: "selectionRange of \(sym.name)",
+                               file: file, line: line)
+            // Recurse — children share the same invariants.
+            assertSymbolsCoherent(sym.children, file: file, line: line)
+        }
+    }
+
+    private static func assertRangeOrdered(
+        _ r: LSPRange, label: String,
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        // start must be ≤ end (lexicographically over (line, character)).
+        let ok =
+            r.start.line < r.end.line ||
+            (r.start.line == r.end.line && r.start.character <= r.end.character)
+        XCTAssertTrue(ok,
+            "\(label) is inverted: start=\(r.start.line):\(r.start.character) > end=\(r.end.line):\(r.end.character)",
+            file: file, line: line)
+        XCTAssertGreaterThanOrEqual(r.start.line, 0,
+            "\(label) start.line is negative", file: file, line: line)
+        XCTAssertGreaterThanOrEqual(r.start.character, 0,
+            "\(label) start.character is negative", file: file, line: line)
     }
 }
