@@ -163,7 +163,17 @@ extension MCPFraming {
     public struct DataReader: ByteReader {
         private let data: Data
         private var offset: Int = 0
-        public init(_ data: Data) { self.data = data }
+        /// Re-base via `Data(_:)` so `subdata(in:)` / subscript indexing
+        /// below is always 0-based. Without this, a caller that hands us
+        /// a `Data` slice with non-zero internal `startIndex` (e.g.
+        /// `bigBuffer.suffix(from: k)`) hits the macOS 26
+        /// `Data.subdata(in:)` slice-offset bug — `subdata(in: 0..<n)`
+        /// returns garbage bytes because the underlying storage offset
+        /// isn't surfaced consistently. See `LSPFraming.decode` for the
+        /// same defensive pattern. Same goes for `data[offset]`: the
+        /// subscript is in the slice's index space, so a slice with
+        /// startIndex > 0 reads from the wrong position.
+        public init(_ data: Data) { self.data = Data(data) }
 
         public mutating func read(exactly count: Int) throws -> Data? {
             guard offset + count <= data.count else { return nil }
@@ -192,6 +202,14 @@ extension MCPFraming {
         /// pay a syscall per byte. Body reads bypass this and call
         /// `read(exactly:)` directly which still works correctly because
         /// we drain the buffer first.
+        ///
+        /// INVARIANT: every assignment to `buffer` goes through
+        /// `Data(_:)` so its internal `startIndex` is 0. `removeFirst`
+        /// and `suffix(from:)` both produce slices with non-zero start
+        /// offsets that, on macOS 26, mis-interpret subsequent
+        /// `subdata(in:)` / subscript indexing (see LESSONS.md
+        /// "Data.subdata(in:) after removeFirst slice-offset bug").
+        /// LSPFraming.decode applies the same rebase defensively.
         private var buffer: Data = Data()
 
         public init(_ handle: FileHandle) { self.handle = handle }
@@ -203,6 +221,9 @@ extension MCPFraming {
                 buffer = chunk
             }
             let b = buffer.removeFirst()
+            // Re-base after `removeFirst` so the next `prefix` /
+            // subscript / `subdata` against `buffer` is 0-based.
+            buffer = Data(buffer)
             return b
         }
 
@@ -214,6 +235,7 @@ extension MCPFraming {
                 let take = min(buffer.count, count)
                 out.append(buffer.prefix(take))
                 buffer.removeFirst(take)
+                buffer = Data(buffer)
             }
             while out.count < count {
                 let chunk = handle.availableData
@@ -227,7 +249,9 @@ extension MCPFraming {
                     out.append(chunk)
                 } else {
                     out.append(chunk.prefix(needed))
-                    buffer = chunk.suffix(from: chunk.startIndex.advanced(by: needed))
+                    // `suffix(from:)` returns a slice with non-zero
+                    // startIndex; rebase to a canonical 0-based view.
+                    buffer = Data(chunk.suffix(from: chunk.startIndex.advanced(by: needed)))
                 }
             }
             return out
