@@ -159,6 +159,12 @@ public struct LSPLanguageRegistry: Sendable {
 
     /// Built-in registry. One entry per supported language. New languages
     /// are added here; UI and pool layers pick them up automatically.
+    ///
+    /// Each `serverLauncher` first consults
+    /// `LSPWorkspaceOverrides.load(workspaceRoot:)` (the per-workspace
+    /// `lsp.json` file from LSP_DESIGN.md §11) for a matching entry; if
+    /// present, the override wins over default discovery. When no
+    /// override file exists, default discovery runs unchanged.
     public static let `default` = LSPLanguageRegistry(entries: [
         .init(
             language: .swift,
@@ -167,6 +173,12 @@ public struct LSPLanguageRegistry: Sendable {
                 LSPDiscovery.swiftPackageRoot(for: fileURL)
             },
             serverLauncher: { workspaceRoot in
+                if let cfg = LSPLanguageRegistry.overrideConfig(
+                    for: .swift, workspaceRoot: workspaceRoot,
+                    defaultArguments: []
+                ) {
+                    return cfg
+                }
                 guard let binary = LSPDiscovery.locateSourceKitLSP() else {
                     return nil
                 }
@@ -183,6 +195,12 @@ public struct LSPLanguageRegistry: Sendable {
                 LSPDiscovery.tsWorkspaceRoot(for: fileURL)
             },
             serverLauncher: { workspaceRoot in
+                if let cfg = LSPLanguageRegistry.overrideConfig(
+                    for: .typescript, workspaceRoot: workspaceRoot,
+                    defaultArguments: ["--stdio"]
+                ) {
+                    return cfg
+                }
                 guard let binary = LSPDiscovery.locate(binary: "typescript-language-server") else {
                     return nil
                 }
@@ -199,6 +217,16 @@ public struct LSPLanguageRegistry: Sendable {
                 LSPDiscovery.javaWorkspaceRoot(for: fileURL)
             },
             serverLauncher: { workspaceRoot in
+                // jdtls requires `-data <workspaceDir>` for default
+                // discovery; if the user overrides we trust them to
+                // supply any data-dir handling in their `args` (e.g.
+                // they may already wrap jdtls in a launcher script).
+                if let cfg = LSPLanguageRegistry.overrideConfig(
+                    for: .java, workspaceRoot: workspaceRoot,
+                    defaultArguments: []
+                ) {
+                    return cfg
+                }
                 guard let binary = LSPDiscovery.locate(binary: "jdtls") else {
                     return nil
                 }
@@ -221,6 +249,12 @@ public struct LSPLanguageRegistry: Sendable {
                 LSPDiscovery.pythonWorkspaceRoot(for: fileURL)
             },
             serverLauncher: { workspaceRoot in
+                if let cfg = LSPLanguageRegistry.overrideConfig(
+                    for: .python, workspaceRoot: workspaceRoot,
+                    defaultArguments: ["--stdio"]
+                ) {
+                    return cfg
+                }
                 guard let binary = LSPDiscovery.locate(binary: "pyright-langserver") else {
                     return nil
                 }
@@ -231,4 +265,45 @@ public struct LSPLanguageRegistry: Sendable {
             }
         ),
     ])
+
+    /// Translate a workspace-root override (LSP_DESIGN.md §11, per-
+    /// workspace placement) into an `LSPClient.Config`. Returns nil
+    /// when no override file is present, no entry matches the
+    /// language, or the override's `command` points at a file that
+    /// does not exist on disk — in the last case a warning is
+    /// emitted and we fall back to default discovery so a stale
+    /// override file doesn't lock the user out (matches §11's "never
+    /// crash on bad config" stance).
+    ///
+    /// `defaultArguments` are accepted for forward-compat — today the
+    /// override's `args` array is honoured verbatim (an absent JSON
+    /// key parses as `[]`, so we can't distinguish "omitted" from
+    /// "deliberately empty"; the conservative choice for an explicit
+    /// override is "user is taking over spawn configuration").
+    public static func overrideConfig(
+        for language: LSPLanguage,
+        workspaceRoot: URL,
+        defaultArguments: [String]
+    ) -> LSPClient.Config? {
+        _ = defaultArguments
+        guard let overrides = LSPWorkspaceOverrides.load(
+            workspaceRoot: workspaceRoot
+        ) else {
+            return nil
+        }
+        guard let entry = overrides.servers[language] else {
+            return nil
+        }
+        let binaryURL = URL(fileURLWithPath: entry.command)
+        guard FileManager.default.fileExists(atPath: binaryURL.path) else {
+            LSPLog.warn(
+                "LSP override command not found on disk: \(entry.command) (\(overrides.sourceFile.path))")
+            return nil
+        }
+        return LSPClient.Config(
+            executable: binaryURL,
+            arguments: entry.arguments,
+            workspaceRoot: workspaceRoot,
+            environment: overrides.mergedEnvironment(for: language))
+    }
 }
