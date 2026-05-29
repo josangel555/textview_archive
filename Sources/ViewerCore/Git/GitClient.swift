@@ -518,7 +518,24 @@ public final class GitClient: Sendable {
         // (H, 2026-05-25). `git log` / `git diff` easily produce >64 KB;
         // a sequential read after exit would deadlock on the pipe-
         // buffer cap.
-        let result = try ProcessRunner.run(p)
+        //
+        // Resource caps (S, 2026-05-29). `git log` on a large repo
+        // can legitimately take 30s+ of CPU on cold cache; we set a
+        // 120s CPU cap so honest operations are not regressed while a
+        // wedged `git log --all --reflog` style runaway still gets
+        // SIGXCPU'd. No wall-clock timeout is set (`timeout: nil`)
+        // because `GitClient` is invoked from UI flows where a slow
+        // `git status` must surface as "still working", not as a
+        // hard truncation. File-size cap is generous (1 GB worth of
+        // 512-byte blocks) so legitimate `git archive | tee` style
+        // ops on large repos still succeed; open-file cap is loose
+        // because git's pack reader opens many fds.
+        let limits = ProcessRunner.ResourceLimits(
+            cpuSeconds: 120,
+            fileSizeBlocks: 2_097_152,  // ~1 GB
+            openFiles: 4096
+        )
+        let result = try ProcessRunner.run(p, limits: limits)
         let out = String(data: result.stdout, encoding: .utf8) ?? ""
         if result.terminationStatus != 0 {
             let estr = String(data: result.stderr, encoding: .utf8) ?? ""

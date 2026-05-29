@@ -67,10 +67,37 @@ public enum JQRunner {
         // enforce a wall-clock timeout via the shared `ProcessRunner`
         // (H, 2026-05-25). Same pipe-buffer-deadlock lesson as
         // `GitClient`.
+        //
+        // Resource caps (S, 2026-05-29). The wall-clock `timeout`
+        // alone doesn't defend against a CPU-bound filter (e.g. a
+        // recursive `def f: f; f`, or pathological backtracking in a
+        // `select(...)` over a 100 MB doc): the watchdog SIGTERMs at
+        // `timeoutSeconds`, but for the whole window the child pegs a
+        // core. The CPU rlimit makes the kernel send `SIGXCPU` after
+        // N seconds of *CPU* time (vs wall-clock), giving us defense-
+        // in-depth and a much cheaper bail when the host is busy.
+        //
+        // Chosen at `timeoutSeconds + 5s` so an honest large-file
+        // filter that hits the wall-clock first still surfaces as
+        // `timedOut` (with the timeout the caller asked for) rather
+        // than as `RLIMIT_CPU killed it slightly earlier`. The +5
+        // covers ulimit/wall-clock skew on a loaded host.
+        let cpuCap = Int(timeoutSeconds.rounded(.up)) + 5
+        let limits = ProcessRunner.ResourceLimits(
+            cpuSeconds: cpuCap,
+            // 256 MB worth of 512-byte blocks. jq writing megabytes
+            // to a file would be a config bug; capping protects the
+            // disk against an `output|tee /tmp/x` style abuse.
+            fileSizeBlocks: 524_288,
+            // jq has no business opening files; 64 is plenty for the
+            // stdio fds + whatever libc opens at startup.
+            openFiles: 64
+        )
         let result = try ProcessRunner.run(
             p,
             stdin: Data(json.utf8),
-            timeout: timeoutSeconds
+            timeout: timeoutSeconds,
+            limits: limits
         )
         if result.terminationStatus != 0 {
             let err = String(data: result.stderr, encoding: .utf8) ?? ""
