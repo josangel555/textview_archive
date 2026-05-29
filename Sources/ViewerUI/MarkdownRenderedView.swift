@@ -83,14 +83,37 @@ public struct MarkdownRenderedView: NSViewRepresentable {
 
     public func updateNSView(_ webView: WKWebView, context: Context) {
         let coord = context.coordinator
-        // Lazy mermaid runtime injection. Detect once per WebView
-        // instance: the host element pattern is stable from
-        // HTMLRenderer's mermaid interceptor. We add the user scripts
-        // BEFORE loadHTMLString so the about-to-load page picks them
-        // up. After install, the flag stays true so non-mermaid pages
-        // on the same WebView still get the runtime (cheap; idempotent
-        // for them).
-        if !coord.mermaidInjected && html.contains("mdv-mermaid") {
+        // Lazy mermaid runtime injection / eviction. The host element
+        // pattern is stable from HTMLRenderer's mermaid interceptor.
+        // User scripts are added BEFORE loadHTMLString so the
+        // about-to-load page picks them up.
+        //
+        // SECURITY (2026-05-29): previously the flag was set once and
+        // never reset, so a markdown file with one mermaid block
+        // followed by a non-mermaid file in the same tab kept the 2.5
+        // MB runtime + shim attached to that WebView for its entire
+        // lifetime. Two problems: (a) extra JS attack surface on docs
+        // that don't need it — `addUserScript` bypasses CSP, so any
+        // runtime bug becomes exploitable from pages that should be
+        // script-free; (b) ~2.5 MB of JS parsed + JITted on every
+        // subsequent page-load in that WebView.
+        //
+        // Fix: decide injection state per document via the pure
+        // `nextMermaidInjectionState` helper, evict via
+        // `removeAllUserScripts()` when transitioning away from
+        // mermaid, and re-attach when transitioning back. Only the
+        // mermaid runtime + shim are managed here, so the blanket
+        // removeAll is safe (no other code adds user scripts to this
+        // WebView).
+        let wantsMermaid = MarkdownRenderedView.htmlNeedsMermaid(html)
+        let action = MarkdownRenderedView.nextMermaidInjectionState(
+            currentlyInjected: coord.mermaidInjected,
+            documentWantsMermaid: wantsMermaid
+        )
+        switch action {
+        case .noChange:
+            break
+        case .install:
             let userContent = webView.configuration.userContentController
             if !MermaidBundle.runtime.isEmpty {
                 userContent.addUserScript(WKUserScript(
@@ -105,6 +128,16 @@ public struct MarkdownRenderedView: NSViewRepresentable {
                     forMainFrameOnly: true))
             }
             coord.mermaidInjected = true
+        case .evict:
+            // `removeAllUserScripts` is the only API for removing
+            // a previously-added script. We don't add any other
+            // user scripts to this WebView (find-runtime uses
+            // `evaluateJavaScript` per-load instead), so blanket
+            // removal is safe today. If that changes, switch to a
+            // dedicated `WKContentWorld` for mermaid.
+            let userContent = webView.configuration.userContentController
+            userContent.removeAllUserScripts()
+            coord.mermaidInjected = false
         }
         // Only reload when the HTML actually changed. body() re-runs on every
         // @Published mutation, and reloading the page on each tick causes
@@ -165,6 +198,51 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         case openExternally(URL)
     }
 
+    /// Resolution of the per-update injection decision. Pure value so the
+    /// state-transition logic for `mermaidInjected` is testable host-side
+    /// without an actual `WKWebView`.
+    public enum MermaidInjectionAction: Equatable, Sendable {
+        /// Current state matches the document — do nothing.
+        case noChange
+        /// Document wants mermaid; runtime + shim must be attached.
+        case install
+        /// Document doesn't want mermaid but runtime is currently
+        /// attached — evict before the new HTML loads, so the next
+        /// page doesn't inherit unnecessary script surface.
+        case evict
+    }
+
+    /// Cheap content-sniff: does this HTML payload reference the
+    /// mermaid host element? Exposed as a `static` helper so tests
+    /// can pin the contract without a `WKWebView`.
+    public static func htmlNeedsMermaid(_ html: String) -> Bool {
+        html.contains("mdv-mermaid")
+    }
+
+    /// Decide what to do with the WebView's mermaid user-scripts on
+    /// the current `updateNSView` tick.
+    ///
+    /// State transitions:
+    ///   - (injected=false, wants=false) → `.noChange`
+    ///   - (injected=false, wants=true ) → `.install`
+    ///   - (injected=true,  wants=true ) → `.noChange`  (idempotent re-render)
+    ///   - (injected=true,  wants=false) → `.evict`     (security: drop runtime
+    ///                                                   so the next non-mermaid
+    ///                                                   doc doesn't inherit
+    ///                                                   the 2.5 MB JS surface
+    ///                                                   nor the CSP-bypass)
+    public static func nextMermaidInjectionState(
+        currentlyInjected: Bool,
+        documentWantsMermaid: Bool
+    ) -> MermaidInjectionAction {
+        switch (currentlyInjected, documentWantsMermaid) {
+        case (false, false): return .noChange
+        case (false, true):  return .install
+        case (true,  true):  return .noChange
+        case (true,  false): return .evict
+        }
+    }
+
     @MainActor
     public final class Coordinator: NSObject, WKNavigationDelegate {
         /// Last HTML payload sent to `loadHTMLString`. Updated only when the
@@ -172,10 +250,15 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         /// same content don't re-load the page (CRIT-4 fix for the
         /// "vanishing tabs" reload storm).
         var lastHTML: String?
-        /// True once the mermaid runtime + shim user scripts have been
-        /// added to this WebView's userContentController. Set on first
-        /// document containing the mermaid host marker; never reset
-        /// (user scripts cannot be removed cheaply).
+        /// True iff the mermaid runtime + shim user scripts are
+        /// currently attached to this WebView's
+        /// userContentController. Set on first document containing
+        /// the mermaid host marker; **reset** when the active
+        /// document no longer contains the marker (security: prevents
+        /// non-mermaid docs from inheriting the 2.5 MB JS surface +
+        /// CSP-bypass of `addUserScript`). See
+        /// `MarkdownRenderedView.nextMermaidInjectionState(...)` for
+        /// the transition table.
         var mermaidInjected: Bool = false
         /// True once the current document has reported didFinish. Used
         /// to gate find() — calling it before the DOM is ready silently
