@@ -54,6 +54,13 @@ public enum CSVParser {
         // Iterate Unicode scalars so `\r\n` decomposes into two
         // separate scalars (Swift's `Character` view collapses them
         // into one grapheme cluster, which broke CRLF parsing).
+        //
+        // Stream the scalar view directly via an iterator rather than
+        // materializing `Array(text.unicodeScalars)` — for a 50 MB
+        // CSV the array form holds ~200 MB of `Unicode.Scalar` (4 B
+        // each) for the duration of the parse, doubling peak RSS.
+        // We keep a single `pending` slot for the one-scalar lookahead
+        // that escaped quotes and CRLF need.
         let delimScalar = delim.unicodeScalars.first!
         let quoteScalar: Unicode.Scalar = "\""
         let crScalar:    Unicode.Scalar = "\r"
@@ -63,37 +70,42 @@ public enum CSVParser {
         var field = ""
         var row: [String] = []
         var inQuotes = false
-        let scalars = Array(text.unicodeScalars)
-        var i = 0
-        while i < scalars.count {
-            let c = scalars[i]
+
+        var iter = text.unicodeScalars.makeIterator()
+        var pending: Unicode.Scalar? = nil
+
+        @inline(__always) func nextScalar() -> Unicode.Scalar? {
+            if let p = pending { pending = nil; return p }
+            return iter.next()
+        }
+
+        while let c = nextScalar() {
             if inQuotes {
                 if c == quoteScalar {
-                    if i + 1 < scalars.count, scalars[i + 1] == quoteScalar {
+                    // Peek one scalar to distinguish `""` (escaped
+                    // quote → emit a literal `"`) from a closing
+                    // quote. Re-stash the lookahead if it's not a
+                    // quote so the outer loop processes it.
+                    let peek = iter.next()
+                    if peek == quoteScalar {
                         field.append("\"")
-                        i += 2
-                        continue
                     } else {
                         inQuotes = false
-                        i += 1
-                        continue
+                        pending = peek
                     }
                 } else {
                     field.unicodeScalars.append(c)
-                    i += 1
-                    continue
                 }
+                continue
             }
             // Outside quotes.
             if c == quoteScalar, field.isEmpty {
                 inQuotes = true
-                i += 1
                 continue
             }
             if c == delimScalar {
                 row.append(field)
                 field = ""
-                i += 1
                 continue
             }
             if c == lfScalar {
@@ -101,26 +113,24 @@ public enum CSVParser {
                 field = ""
                 rows.append(row)
                 row = []
-                i += 1
                 continue
             }
             if c == crScalar {
                 // Treat CR as a line terminator too (Mac classic) but
                 // swallow a following LF to avoid an empty row on
-                // CRLF input.
+                // CRLF input. If the peeked scalar isn't LF, stash
+                // it for the next iteration.
                 row.append(field)
                 field = ""
                 rows.append(row)
                 row = []
-                if i + 1 < scalars.count, scalars[i + 1] == lfScalar {
-                    i += 2
-                } else {
-                    i += 1
+                let peek = iter.next()
+                if peek != lfScalar {
+                    pending = peek
                 }
                 continue
             }
             field.unicodeScalars.append(c)
-            i += 1
         }
         // Flush trailing field / row.
         if !field.isEmpty || !row.isEmpty {
