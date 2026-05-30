@@ -69,7 +69,19 @@ Is the **macOS app the product** (other UIs are nice-to-haves) — or is the **r
 - "Same UI in remote mode": does the Swift Mac UI talk the same protocol as the browser UI? (Argues for one transport-agnostic protocol, not two.)
 - FFI tooling: `uniffi` vs `swift-bridge`.
 
-## Companion investigations (in progress, read-only)
+## Companion investigations (complete, read-only)
 
-- `docs/CORE_UI_BOUNDARY_AUDIT_2026-05-30.md` — current UI↔Core boundary, what can move to Core, interface critique + a proposed elegant/serializable interface.
-- `docs/CORE_LINUX_PORTABILITY_2026-05-30.md` — what blocks `ViewerCore`/`ViewerKit` from running on Linux, and what each blocker would take.
+- `docs/CORE_UI_BOUNDARY_AUDIT_2026-05-30.md` — current UI↔Core boundary, what can move to Core, interface critique + proposed serializable interface.
+- `docs/CORE_LINUX_PORTABILITY_2026-05-30.md` — Linux blockers (severity + cost each), already-portable subsystems, Rust-vanishes vs solve-either-way.
+
+## Update — investigation landed (2026-05-30), corrections to the above
+
+The audit refined several premises here (validated against the code):
+
+- **ViewerCore is healthier than assumed** — only **2** AppKit imports in all of Core/Kit (`SyntaxTheme`, `FileTreeRecency`), zero SwiftUI. **The obstacle is the boundary's *shape*, not its purity.**
+- **`DocumentModel` lives in ViewerUI, not Core** — it's a 2261-LOC `@MainActor ObservableObject` *caller*. The real (months-long) work isn't "move ViewerCore" (it's mostly clean) — it's **extracting the orchestration state machine out of ViewerUI** into a headless Core.
+- **`--mcp-stdio` is not actually headless** — it still builds the SwiftUI `DocumentModel` + calls `NSApplication.run()`. The core can't run without AppKit *today*.
+- **The single biggest gap is the missing server→client event stream** — the MCP surface is request/response only (10 tools) and explicitly drops notifications. Every live remote/browser UI (and the integrated terminal, LSP diagnostics, file-watch, streaming search) needs this duplex channel. **Build it first.**
+- **Combine-in-Core = 3 hard Linux blockers** (validator catch): `SessionsCoordinator`, `LSPNavigationStore`, `LSPDiagnosticsStore` — the LSP layer is *not* "fully portable."
+- **Rendering is already web tech** — `HTMLRenderer.renderPage`, Mermaid, CodeMirror 6 are browser-native; a browser front-end reuses more than it reimplements (but `HTMLRenderer` output isn't exposed over the boundary yet).
+- **Recommended interface: Option C** — one serializable **Command / Query / Event** protocol as the contract, with an in-process Swift fast-path for the Mac UI. Serves both headless-Linux+browser and same-Mac-UI-remote, and maps onto a future `uniffi`/`swift-bridge` Rust FFI surface. The event-stream + protocol must be built **either way** (Swift-portable-core *or* Rust); most *compile* blockers vanish only under Rust.
