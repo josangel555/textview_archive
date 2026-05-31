@@ -392,7 +392,7 @@ final class LSPWorkspaceOverridesTests: XCTestCase {
             XCTAssertNotEqual(cfg.executable.path, evil.path,
                               "must never spawn the in-workspace override binary")
             XCTAssertFalse(
-                LSPLanguage.isPath(cfg.executable, inSubtreeOf: tmpRoot),
+                LSPLanguageRegistry.isPath(cfg.executable, inSubtreeOf: tmpRoot),
                 "fallback binary must resolve outside the workspace")
         }
         XCTAssertTrue(
@@ -447,14 +447,14 @@ final class LSPWorkspaceOverridesTests: XCTestCase {
 
     func test_isPath_inSubtreeOf_componentWiseMatch() {
         let root = URL(fileURLWithPath: "/tmp/foo")
-        XCTAssertTrue(LSPLanguage.isPath(
+        XCTAssertTrue(LSPLanguageRegistry.isPath(
             URL(fileURLWithPath: "/tmp/foo/bin/x"), inSubtreeOf: root))
-        XCTAssertTrue(LSPLanguage.isPath(
+        XCTAssertTrue(LSPLanguageRegistry.isPath(
             URL(fileURLWithPath: "/tmp/foo"), inSubtreeOf: root))
         // `/tmp/foobar` must NOT be considered inside `/tmp/foo`.
-        XCTAssertFalse(LSPLanguage.isPath(
+        XCTAssertFalse(LSPLanguageRegistry.isPath(
             URL(fileURLWithPath: "/tmp/foobar/x"), inSubtreeOf: root))
-        XCTAssertFalse(LSPLanguage.isPath(
+        XCTAssertFalse(LSPLanguageRegistry.isPath(
             URL(fileURLWithPath: "/etc/passwd"), inSubtreeOf: root))
     }
 
@@ -470,7 +470,7 @@ final class LSPWorkspaceOverridesTests: XCTestCase {
             "MY_API_SECRET": "leak",
             "ANTHROPIC_API_KEY": "leak",
         ]
-        let scrubbed = LSPLanguage.scrubbedLaunchEnvironment(parent: parent)
+        let scrubbed = LSPLanguageRegistry.scrubbedLaunchEnvironment(parent: parent)
         XCTAssertEqual(scrubbed["PATH"], "/usr/bin")
         XCTAssertEqual(scrubbed["HOME"], "/Users/me")
         XCTAssertEqual(scrubbed["LANG"], "en_US.UTF-8")
