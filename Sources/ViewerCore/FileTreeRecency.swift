@@ -161,10 +161,17 @@ public enum FileTreeRecencyCache {
 
     nonisolated(unsafe) private static var cache: [URL: FileTreeRecencyAttributes] = [:]
     private static let lock = NSLock()
-    /// Soft cap — when exceeded we drop the whole map. Same strategy
-    /// as `BookmarksSection.dirCache`; an LRU with per-key recency
-    /// would be overkill for this hit pattern.
+    /// Soft cap on the number of cached per-URL attribute records.
+    /// MAGIC-006: named constant (was an inline `2048`).
     private static let capacity = 2048
+    /// On overflow we drop *half* the entries rather than nuking the
+    /// whole map (RWC-6/MAGIC-006). The cache has no recency axis, so
+    /// the half we drop is arbitrary — but halving (vs `removeAll`)
+    /// keeps the hot working set warm and turns a full re-stat storm
+    /// after every cap hit into at most a half-storm, while still
+    /// bounding memory. A true LRU would be overkill for this hit
+    /// pattern (the visible window + recently-scrolled-out rows).
+    private static let evictFraction = 2
 
     /// Fast read with stat-on-miss. Safe to call from the main actor.
     public static func attributes(for url: URL) -> FileTreeRecencyAttributes {
@@ -174,7 +181,14 @@ public enum FileTreeRecencyCache {
             return hit
         }
         if cache.count > capacity {
-            cache.removeAll(keepingCapacity: true)
+            // Drop a fraction (≈half) instead of the whole map so the
+            // hot set survives the overflow (RWC-6). `Dictionary.keys`
+            // order is unspecified — fine here, the eviction victim
+            // choice is intentionally arbitrary (no recency axis).
+            let dropCount = cache.count / evictFraction
+            for key in cache.keys.prefix(dropCount) {
+                cache.removeValue(forKey: key)
+            }
         }
         lock.unlock()
 

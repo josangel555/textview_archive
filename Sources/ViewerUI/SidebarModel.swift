@@ -16,8 +16,31 @@ public final class SidebarModel: ObservableObject {
         }
     }
     @Published public var isVisible: Bool = false
-    @Published public private(set) var gitStatuses: [URL: GitStatusEntry.Status] = [:]
+
+    /// Git working-tree status, keyed by **repo-relative path** (exactly
+    /// the path string git reports in `--porcelain`). SCALE-3/PERF-08:
+    /// the previous map keyed fully-resolved file URLs, which meant one
+    /// `realpath(3)` syscall per changed entry on the build side *and*
+    /// one per visible row on the lookup side. Both are gone — keys are
+    /// plain strings, and `gitStatus(for:)` derives the relative path by
+    /// stripping the (once-resolved) repo-root prefix from the row URL,
+    /// which is itself already canonicalised by `FileTreeService`.
+    @Published public private(set) var gitStatuses: [String: GitStatusEntry.Status] = [:]
+
+    /// The git working-tree root, fully resolved (standardized +
+    /// symlinks). Stored resolved so (a) the `isGitRoot` UI check
+    /// (`gitRepoRoot == node.url`) matches the resolved node URLs even
+    /// when the repo lives behind a symlink, and (b) `gitStatus(for:)`
+    /// can compute repo-relative paths against a canonical prefix.
     @Published public private(set) var gitRepoRoot: URL?
+
+    /// Cheap dirty token for the status map (SCALE-3). A content
+    /// signature computed off the main actor inside the detached git
+    /// task; lets the main-actor hop short-circuit with an O(1) integer
+    /// compare instead of an O(N) dictionary-equality walk on every idle
+    /// poll / tab-switch refresh (which commonly produce an identical
+    /// map). `nil` until the first successful refresh.
+    private var gitStatusToken: UInt64?
 
     /// User-set git-root override. When set, `refreshGitStatus()`
     /// uses this folder as the repo root instead of auto-discovering
@@ -30,8 +53,28 @@ public final class SidebarModel: ObservableObject {
     /// with arrow keys without opening every file you scroll past.
     @Published public private(set) var selectedURL: URL?
 
+    /// Monotonic counter bumped whenever the recency-stripe inputs for
+    /// one or more visible files may have changed (RWC-3). `FileRowView`
+    /// observes this to re-load its cached `FileTreeRecencyAttributes`
+    /// after `FileTreeRecencyCache.invalidate(_:)` has been called for
+    /// the affected URLs — closing the gap where the stripe was frozen
+    /// "as of first render" because the per-URL `invalidate` was never
+    /// wired to the FolderWatcher / save path. Incremented on the main
+    /// actor only.
+    @Published public private(set) var recencyVersion: Int = 0
+
     private let service: FileTreeService
     private var childrenCache: [URL: [FileNode]] = [:]
+    /// Insertion / touch order for `childrenCache`, oldest first
+    /// (RWC-5). Plain `Dictionary` iteration order is unspecified, so
+    /// the old prune evicted arbitrary entries — easily the ones we'd
+    /// re-read next. This list gives the prune a real LRU axis: a key
+    /// is appended (and any prior occurrence removed) every time its
+    /// cache entry is written, so the tail is the most-recently-touched
+    /// and the head is the coldest. Kept in lockstep with the dict:
+    /// writes go through `storeChildren(_:for:)`, removals through the
+    /// prune loop / `clearCache()`.
+    private var childrenCacheOrder: [URL] = []
 
     /// FSEvents stream watching the current root recursively.
     /// Replaced on every `setRoot(_:)`. nil when no root open.
@@ -59,6 +102,7 @@ public final class SidebarModel: ObservableObject {
         invalidateFlatCache()
         gitStatuses = [:]
         gitRepoRoot = nil
+        gitStatusToken = nil
         folderWatcher?.stop()
         folderWatcher = nil
         if let url = rootURL {
@@ -83,25 +127,44 @@ public final class SidebarModel: ObservableObject {
     }
 
     /// Called by the FSEvents stream when one or more directories in
-    /// the watched tree have changed. Only invalidates dirs we
-    /// actually have cached (so a `node_modules` burst doesn't fan
-    /// out into a full reload). Re-publishes by mutating
-    /// `childrenCache` indirectly via the flat-cache invalidation +
-    /// a no-op assignment to a published prop.
+    /// the watched tree have changed. Re-reads a changed dir if its
+    /// children are (or should be) on screen, then re-publishes.
+    ///
+    /// FW-6: the visibility test is now explicit. A directory's children
+    /// are rendered iff the directory is `expanded`. We refresh a changed
+    /// dir when it's `expanded` OR already cached — so a creation inside a
+    /// visible-but-pruned directory (cache evicted, still expanded) is no
+    /// longer silently dropped. We deliberately still skip changed dirs
+    /// that are neither (a `node_modules` write burst under a collapsed
+    /// node doesn't fan out into a reload).
+    ///
+    /// RWC-3: for every refreshed dir we invalidate the recency-attribute
+    /// cache for the dir and its children, then bump `recencyVersion` so
+    /// `FileRowView` re-loads its stripe color (previously frozen because
+    /// `FileTreeRecencyCache.invalidate` was never wired to anything).
     private func onFolderChange(_ dirs: [URL]) {
         var touched = false
+        var recencyDirty = false
         let norm = dirs.map(normalize)
         for d in norm {
-            if childrenCache[d] != nil {
-                // Re-read on the spot. Cheap (single readdir).
-                let kids = (try? service.children(of: d, includeHidden: includeHidden)) ?? []
-                if kids != childrenCache[d] {
-                    childrenCache[d] = kids
-                    sortedCache = sortedCache.filter { $0.key.url != d }
-                    touched = true
-                }
+            // Visible-children test (FW-6): expanded dirs render their
+            // children; cached dirs we keep coherent regardless.
+            guard expanded.contains(d) || childrenCache[d] != nil else { continue }
+            // Re-read on the spot. Cheap (single readdir).
+            let kids = (try? service.children(of: d, includeHidden: includeHidden)) ?? []
+            if kids != childrenCache[d] {
+                storeChildren(kids, for: d)
+                sortedCache = sortedCache.filter { $0.key.url != d }
+                touched = true
             }
+            // A change under `d` can mean a child's mtime/ctime moved
+            // (content edited) or the dir's own mtime moved (add/remove).
+            // Drop the affected recency entries so the next read re-stats.
+            FileTreeRecencyCache.invalidate(d)
+            for kid in kids { FileTreeRecencyCache.invalidate(kid.url) }
+            recencyDirty = true
         }
+        if recencyDirty { recencyVersion &+= 1 }
         guard touched else { return }
         invalidateFlatCache()
         // Force a publish so SwiftUI re-bodies. expanded is the
@@ -109,6 +172,21 @@ public final class SidebarModel: ObservableObject {
         // value is value-blind and refires (LESSONS).
         let snapshot = expanded
         expanded = snapshot
+    }
+
+    /// SidebarModel-side hook for in-app file mutations (Save, Git apply,
+    /// formatter rewrite, etc.) — RWC-3's "save-observer". FSEvents
+    /// *will* eventually fire `onFolderChange` for the parent directory,
+    /// but with latency; calling this immediately after a write refreshes
+    /// the row's recency stripe on the next body pass without waiting for
+    /// the FSEvents coalesce window. Invalidates the URL's recency entry
+    /// (and its parent dir's, whose mtime moves on add/remove) and bumps
+    /// `recencyVersion`. Cheap + idempotent; safe to over-call.
+    public func fileDidChange(_ url: URL) {
+        let resolved = normalize(url)
+        FileTreeRecencyCache.invalidate(resolved)
+        FileTreeRecencyCache.invalidate(resolved.deletingLastPathComponent())
+        recencyVersion &+= 1
     }
 
     // MARK: Keyboard navigation (CRIT-6)
@@ -236,43 +314,51 @@ public final class SidebarModel: ObservableObject {
         }
     }
 
+    /// Look up the git status for a row URL. SCALE-3/PERF-08: derives
+    /// the repo-relative path by stripping the (resolved) repo-root
+    /// prefix from the row URL via component comparison — **no
+    /// `realpath` syscall** and no per-row normalization cache. The row
+    /// URL is already canonical (`FileTreeService` resolves every node),
+    /// and `gitRepoRoot` is stored resolved, so the two share a prefix.
     public func gitStatus(for url: URL) -> GitStatusEntry.Status? {
-        gitStatuses[normalizedForGit(url)]
+        guard let rel = repoRelativePath(for: url) else { return nil }
+        return gitStatuses[rel]
     }
 
-    /// `resolvingSymlinksInPath()` is a `realpath` syscall. Called
-    /// per visible sidebar row per body re-eval, on a 200-row tree
-    /// this fired hundreds of stats per redraw. Cache the input→
-    /// resolved mapping; entries are cleared whenever the sidebar
-    /// root or git status map churns (callers set both at once).
-    private var normalizationCache: [URL: URL] = [:]
-    private func normalizedForGit(_ url: URL) -> URL {
-        if let hit = normalizationCache[url] { return hit }
-        let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
-        // Cap the dict size; sidebar churns row URLs as it scrolls,
-        // but the visible set + recently-scrolled-out is bounded.
-        if normalizationCache.count > 2048 {
-            normalizationCache.removeAll(keepingCapacity: true)
-        }
-        normalizationCache[url] = resolved
-        return resolved
+    /// Repo-relative path string for `url`, or `nil` if `url` isn't
+    /// under `gitRepoRoot`. Pure string/array work — joins components
+    /// with "/" to match git's porcelain path format. Both inputs are
+    /// already symlink-resolved (node URLs by `FileTreeService`,
+    /// `gitRepoRoot` by `refreshGitStatus`), so this is purely lexical.
+    private func repoRelativePath(for url: URL) -> String? {
+        guard let root = gitRepoRoot else { return nil }
+        let rootComponents = root.pathComponents
+        let urlComponents = url.standardizedFileURL.pathComponents
+        guard urlComponents.count > rootComponents.count,
+              Array(urlComponents.prefix(rootComponents.count)) == rootComponents
+        else { return nil }
+        return urlComponents.dropFirst(rootComponents.count).joined(separator: "/")
     }
 
     public func refreshGitStatus() {
         guard let root = rootURL else {
             gitStatuses = [:]
             gitRepoRoot = nil
+            gitStatusToken = nil
             return
         }
-        // User override wins over auto-discovery.
+        // User override wins over auto-discovery. Resolve ONCE here so
+        // the build loop and `gitStatus(for:)` share a canonical prefix
+        // and the per-entry `realpath` is gone (SCALE-3/PERF-08).
         let repoRoot: URL
         if let override = gitRootOverride {
-            repoRoot = override
+            repoRoot = override.standardizedFileURL.resolvingSymlinksInPath()
         } else if let discovered = GitClient.discoverRoot(from: root) {
-            repoRoot = discovered
+            repoRoot = discovered.standardizedFileURL.resolvingSymlinksInPath()
         } else {
             gitStatuses = [:]
             gitRepoRoot = nil
+            gitStatusToken = nil
             return
         }
         gitRepoRoot = repoRoot
@@ -281,26 +367,58 @@ public final class SidebarModel: ObservableObject {
         // to a different folder while git was running. The outer Task is
         // @MainActor so `self` can be captured safely; the blocking git
         // shell-out lives in a detached child whose return value is a
-        // Sendable `[URL: Status]` map.
+        // Sendable `([String: Status], UInt64)` (map + content token).
         let token = repoRoot
         Task { @MainActor [weak self] in
-            let map = await Task.detached(priority: .userInitiated) {
-                () -> [URL: GitStatusEntry.Status] in
+            let (map, contentToken) = await Task.detached(priority: .userInitiated) {
+                () -> ([String: GitStatusEntry.Status], UInt64) in
                 let client = GitClient(repoRoot: repoRoot)
                 let entries = client.statusEntries()
-                var result: [URL: GitStatusEntry.Status] = [:]
+                var result: [String: GitStatusEntry.Status] = [:]
+                result.reserveCapacity(entries.count)
+                // Key by the relative path git already gave us — no
+                // URL build, no per-entry realpath. Fold a cheap content
+                // signature over the entry stream so the main actor can
+                // short-circuit identical refreshes in O(1). The fold is
+                // order-sensitive, but git's porcelain output order is
+                // stable for a given tree state, so equal trees hash equal.
+                var sig: UInt64 = 1469598103934665603  // FNV-1a offset basis
                 for entry in entries {
-                    let url = repoRoot.appendingPathComponent(entry.path)
-                        .standardizedFileURL.resolvingSymlinksInPath()
-                    result[url] = entry.status
+                    result[entry.path] = entry.status
+                    sig = Self.fnv1a(sig, entry.path)
+                    sig = Self.fnv1a(sig, entry.status.rawValue)
                 }
-                return result
+                return (result, sig)
             }.value
             guard let self, self.gitRepoRoot == token else { return }
-            // Equality guard: idle polls + tab-switch refreshes
-            // commonly produce identical maps.
-            if self.gitStatuses != map { self.gitStatuses = map }
+            // Cheap dirty token (SCALE-3): idle polls + tab-switch
+            // refreshes commonly produce an identical map. The O(1)
+            // token compare replaces the prior O(N) dict-equality walk
+            // on the main actor (the hashing happened off-actor above).
+            // Note the token is order-sensitive over the entry stream;
+            // git's porcelain output order is stable for a given tree
+            // state, so equal trees produce equal tokens. A spurious
+            // miss only costs one extra assignment, never a wrong result.
+            if self.gitStatusToken != contentToken {
+                self.gitStatusToken = contentToken
+                self.gitStatuses = map
+            }
         }
+    }
+
+    /// FNV-1a folded over a string's UTF-8 bytes plus a separator, so
+    /// the running signature stays sensitive to entry boundaries.
+    /// `nonisolated` so the detached git task (off the main actor) can
+    /// fold the signature without hopping back.
+    private nonisolated static func fnv1a(_ seed: UInt64, _ s: String) -> UInt64 {
+        var h = seed
+        for byte in s.utf8 {
+            h ^= UInt64(byte)
+            h = h &* 1099511628211  // FNV prime
+        }
+        h ^= 0x1F  // unit separator between fields
+        h = h &* 1099511628211
+        return h
     }
 
     public func toggleVisibility() {
@@ -408,28 +526,56 @@ public final class SidebarModel: ObservableObject {
         let key = normalize(url)
         if let cached = childrenCache[key] { return cached }
         let kids = (try? service.children(of: key, includeHidden: includeHidden)) ?? []
-        childrenCache[key] = kids
+        storeChildren(kids, for: key)
         invalidateFlatCache()
         pruneChildrenCacheIfNeeded()
         return kids
     }
 
+    /// Write a `childrenCache` entry and record it as most-recently-used
+    /// in `childrenCacheOrder`. Centralised so the dict and the LRU list
+    /// never drift (RWC-5).
+    private func storeChildren(_ kids: [FileNode], for key: URL) {
+        childrenCache[key] = kids
+        if let i = childrenCacheOrder.firstIndex(of: key) {
+            childrenCacheOrder.remove(at: i)
+        }
+        childrenCacheOrder.append(key)
+    }
+
     /// Cap on `childrenCache` size. Each entry is `[FileNode]` for one
     /// directory; on a wide monorepo, expanded directories can pile
-    /// up to thousands of entries over a long session. Pruning is
-    /// arbitrary (Dictionary key order has no semantic meaning); the
-    /// dropped entries repopulate on next expand.
+    /// up to thousands of entries over a long session.
+    ///
+    /// RWC-5: prune the genuinely-coldest entries (head of the LRU
+    /// `childrenCacheOrder` list), skipping the root and any expanded
+    /// dir (evicting those would visibly collapse the tree), and **loop
+    /// until we're actually under target**. The previous version sliced
+    /// `prefix(dropCount)` off an unordered `Dictionary.keys`, so (a)
+    /// eviction was arbitrary rather than LRU, and (b) every skipped
+    /// root/expanded key still consumed a slot in that fixed-size slice,
+    /// so a working set dominated by expanded dirs under-evicted and the
+    /// cache could sit permanently over cap.
     private static let childrenCacheMax = 256
     private func pruneChildrenCacheIfNeeded() {
+        let target = Self.childrenCacheMax * 2 / 3
         guard childrenCache.count > Self.childrenCacheMax else { return }
-        let dropCount = childrenCache.count - Self.childrenCacheMax * 2 / 3
-        for key in childrenCache.keys.prefix(dropCount) {
-            // Skip dirs we still actively need: the root and any
-            // currently-expanded directory. Without this guard, the
-            // sidebar tree would visibly collapse on prune.
-            if key == rootURL || expanded.contains(key) { continue }
+        var idx = 0
+        // Walk oldest → newest. `childrenCacheOrder` head is coldest.
+        while childrenCache.count > target, idx < childrenCacheOrder.count {
+            let key = childrenCacheOrder[idx]
+            // Keep dirs we still actively need on screen.
+            if key == rootURL || expanded.contains(key) {
+                idx += 1
+                continue
+            }
             childrenCache.removeValue(forKey: key)
+            childrenCacheOrder.remove(at: idx)
+            // Don't advance idx: remove(at:) shifted the next element
+            // into this slot.
         }
+        // Order list can accumulate stale keys only via the paths above,
+        // which keep it in sync; nothing else to reconcile here.
     }
 
     private func normalize(_ url: URL) -> URL {
@@ -451,6 +597,7 @@ public final class SidebarModel: ObservableObject {
 
     public func clearCache() {
         childrenCache.removeAll()
+        childrenCacheOrder.removeAll()
         sortedCache.removeAll()
     }
 }
