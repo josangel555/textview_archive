@@ -231,31 +231,42 @@ public enum CrossFileSearch {
     /// real lines rather than collapsing to one. A trailing terminator
     /// yields a final empty line, matching `split(separator:"\n",
     /// omittingEmptySubsequences:false)` semantics for LF files.
+    ///
+    /// Scans the **unicode-scalar** view, not `Character`s: Swift's
+    /// grapheme segmentation fuses `\r\n` into ONE extended grapheme
+    /// cluster, so a `Character`-level scan would never see a lone `\n`
+    /// or `\r` in CRLF input and would collapse the whole file into a
+    /// single line. (Same reason `CSVParser` iterates scalars.) The
+    /// returned `Substring`s are rebuilt from scalar ranges; callers run
+    /// `range(of:)` against them directly.
     static func splitLines(_ content: String) -> [Substring] {
         var lines: [Substring] = []
-        var lineStart = content.startIndex
-        var i = content.startIndex
-        while i < content.endIndex {
-            let ch = content[i]
-            if ch == "\n" {
-                lines.append(content[lineStart..<i])
-                i = content.index(after: i)
+        let scalars = content.unicodeScalars
+        var lineStart = scalars.startIndex
+        var i = scalars.startIndex
+        let lf: Unicode.Scalar = "\n"
+        let cr: Unicode.Scalar = "\r"
+        while i < scalars.endIndex {
+            let s = scalars[i]
+            if s == lf {
+                lines.append(Substring(scalars[lineStart..<i]))
+                i = scalars.index(after: i)
                 lineStart = i
-            } else if ch == "\r" {
-                lines.append(content[lineStart..<i])
-                let next = content.index(after: i)
-                // Swallow the LF of a CRLF pair so it's one break.
-                if next < content.endIndex, content[next] == "\n" {
-                    i = content.index(after: next)
+            } else if s == cr {
+                lines.append(Substring(scalars[lineStart..<i]))
+                let next = scalars.index(after: i)
+                // Swallow the LF of a CRLF pair so it counts as one break.
+                if next < scalars.endIndex, scalars[next] == lf {
+                    i = scalars.index(after: next)
                 } else {
                     i = next
                 }
                 lineStart = i
             } else {
-                i = content.index(after: i)
+                i = scalars.index(after: i)
             }
         }
-        lines.append(content[lineStart..<content.endIndex])
+        lines.append(Substring(scalars[lineStart..<scalars.endIndex]))
         return lines
     }
 
