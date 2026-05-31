@@ -235,6 +235,43 @@ final class LSPClientFakeServerTests: XCTestCase {
         await client.shutdown()
     }
 
+    /// CONC-011: a token cancelled BEFORE the request binds it must
+    /// still resume the awaiter *promptly* with `CancellationError` —
+    /// not hang until the per-request timeout. The prior ordering bound
+    /// the token at the top of `request(...)` before `pending[id]`
+    /// existed, so a pre-bind cancel ran `cancelRequest` against an
+    /// empty table and the awaiter leaked until the 3s hover timeout.
+    /// The fix moved the bind inside the continuation block, after the
+    /// pending entry is registered. We use the slow-hover server (1s
+    /// delay) and a generous-but-sub-timeout deadline (well under the
+    /// 3s hover timeout) to prove promptness.
+    func test_preBindCancel_resumesPromptly_withCancellationError() async throws {
+        let (client, root) = try await makeInitializedClient(hoverDelayMs: 1_000)
+        defer { FakeLSPServerHelper.cleanup(root) }
+        let url = URL(fileURLWithPath: "/fake/prebind.swift")
+        let token = LSPCancellationToken()
+        // Cancel FIRST — before the request is even issued. `bind` must
+        // observe the pre-cancel and fire immediately on registration.
+        token.cancel()
+
+        let start = Date()
+        do {
+            _ = try await client.hover(url: url, line: 0, character: 0, token: token)
+            XCTFail("pre-bind-cancelled request should throw CancellationError")
+        } catch is CancellationError {
+            // expected
+        } catch {
+            XCTFail("expected CancellationError, got \(error)")
+        }
+        let elapsed = Date().timeIntervalSince(start)
+        // Must be well under both the 1s hover delay and the 3s hover
+        // timeout. 1.5s leaves slack for a busy CI host while still
+        // proving we didn't fall through to the timeout path.
+        XCTAssertLessThan(elapsed, 1.5,
+            "pre-bind cancel must resume promptly (got \(elapsed)s) — token bound before pending[id]?")
+        await client.shutdown()
+    }
+
     // MARK: - Crash detection
 
     func test_serverCrash_after_init_fires_onCrash_and_failsPending() async throws {

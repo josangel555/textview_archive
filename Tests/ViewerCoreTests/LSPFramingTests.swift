@@ -122,4 +122,100 @@ final class LSPFramingTests: XCTestCase {
         }
         XCTAssertEqual(got, body)
     }
+
+    // MARK: PARSE-01 — Content-Length cap (OOM guard)
+
+    func test_decode_rejectsOversizeContentLength_beforeAllocating() {
+        // Content-Length one past the cap must throw a framing error
+        // *without* waiting for / allocating the body. We send only the
+        // header (no body bytes) — a correct cap-check rejects here; a
+        // missing one would return `.needMore` and start buffering.
+        let oversize = LSPFraming.maxBodyBytes + 1
+        let header = Data("Content-Length: \(oversize)\r\n\r\n".utf8)
+        XCTAssertThrowsError(try LSPFraming.decode(header)) { err in
+            guard case LSPError.framingError(let m) = err else {
+                return XCTFail("expected framingError, got \(err)")
+            }
+            XCTAssertTrue(m.contains("exceeds cap"),
+                "cap rejection should name the cap, got: \(m)")
+        }
+    }
+
+    func test_decode_acceptsContentLengthAtCapBoundary() throws {
+        // Exactly at the cap is allowed (boundary is inclusive). We
+        // don't supply the body, so the result is `.needMore` — the
+        // point is it must NOT throw.
+        let atCap = LSPFraming.maxBodyBytes
+        let header = Data("Content-Length: \(atCap)\r\n\r\n".utf8)
+        let step = try LSPFraming.decode(header)
+        XCTAssertEqual(step, .needMore,
+            "a Content-Length at the cap must be accepted (awaiting body)")
+    }
+
+    // MARK: PARSE-01 — header cap (unterminated header guard)
+
+    func test_decode_rejectsUnterminatedHeaderPastCap() {
+        // A stream that never emits `\r\n\r\n` must not let us buffer
+        // without bound. Feed > maxHeaderBytes with no terminator.
+        let junk = Data(repeating: 0x41 /* 'A' */, count: LSPFraming.maxHeaderBytes + 16)
+        XCTAssertThrowsError(try LSPFraming.decode(junk)) { err in
+            guard case LSPError.framingError(let m) = err else {
+                return XCTFail("expected framingError, got \(err)")
+            }
+            XCTAssertTrue(m.lowercased().contains("header"),
+                "unterminated-header rejection should mention header, got: \(m)")
+        }
+    }
+
+    // MARK: PARSE-01 — O(n) header scan via resume cursor
+
+    func test_decode_resumeCursor_findsTerminatorSplitAcrossChunks() throws {
+        // Simulate a header arriving in two reads where the `\r\n\r\n`
+        // straddles the chunk boundary. The resume cursor backs up 3
+        // bytes, so the split terminator must still be found.
+        var cursor = 0
+        // First chunk ends mid-terminator: "...\r\n\r" (3 of 4 bytes).
+        var buf = Data("Content-Length: 2\r\n\r".utf8)
+        let step1 = try LSPFraming.decode(buf, headerScanStart: &cursor)
+        XCTAssertEqual(step1, .needMore)
+        XCTAssertGreaterThan(cursor, 0, "cursor should advance on needMore")
+        // Cursor must be backed up enough to re-find the split terminator.
+        XCTAssertLessThanOrEqual(cursor, buf.count - 1)
+
+        // Second chunk completes the terminator + body.
+        buf.append(Data("\n{}".utf8)) // now "...\r\n\r\n{}"
+        let step2 = try LSPFraming.decode(buf, headerScanStart: &cursor)
+        guard case .message(let body, let consumed) = step2 else {
+            return XCTFail("expected message after completing the split terminator, got \(step2)")
+        }
+        XCTAssertEqual(body, Data("{}".utf8))
+        XCTAssertEqual(consumed, buf.count)
+        XCTAssertEqual(cursor, 0, "cursor resets to 0 once a terminator is found")
+    }
+
+    func test_decode_resumeCursor_matchesPlainDecode_onBackToBack() throws {
+        // The resume-cursor variant must agree with the plain `decode`
+        // on a realistic back-to-back drain.
+        let a = Data(#"{"id":1}"#.utf8)
+        let b = Data(#"{"id":2}"#.utf8)
+        var buf = LSPFraming.frame(a)
+        buf.append(LSPFraming.frame(b))
+
+        var cursor = 0
+        var collected: [Data] = []
+        while true {
+            let step = try LSPFraming.decode(buf, headerScanStart: &cursor)
+            switch step {
+            case .needMore: break
+            case .message(let body, let consumed):
+                collected.append(body)
+                buf.removeFirst(consumed)
+                cursor = 0
+                continue
+            }
+            break
+        }
+        XCTAssertEqual(collected, [a, b])
+        XCTAssertEqual(buf.count, 0)
+    }
 }
