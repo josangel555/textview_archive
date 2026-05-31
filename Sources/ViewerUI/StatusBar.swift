@@ -33,6 +33,14 @@ struct StatusBar: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.head)
+                // The path is the LEAST critical field — it already
+                // head-truncates. Give it the lowest layout priority so
+                // SwiftUI shrinks IT (not the live metric chips) first
+                // under width pressure. Without this, a normal-width
+                // footer with the WAVE1 date chips appended distributed
+                // truncation across every chip ("Col…", "50.…") instead
+                // of collapsing the path.
+                .layoutPriority(-1)
                 .help(model.currentURL?.path ?? "")
                 .accessibilityIdentifier("mdv.statusBar.path")
 
@@ -52,48 +60,21 @@ struct StatusBar: View {
 
             Spacer(minLength: 8)
 
-            if let metrics = currentMetrics {
-                Group {
-                    if metrics.lineCount > 0, model.sourceSelection.line > 0 {
-                        // Ln/Col only meaningful for text files. Hide
-                        // for media previews where everything is 0, and
-                        // for large read-only files where the source
-                        // view publishes a `line == 0` sentinel (it
-                        // skips the O(N) newline-index build that would
-                        // otherwise resolve precise line:col).
-                        metric("Ln",
-                            "\(model.sourceSelection.line)" +
-                            ", Col \(model.sourceSelection.column)")
-                    }
-                    metric("Lines", "\(metrics.lineCount)")
-                    metric("Chars", formatNumber(metrics.charCount))
-                    metric("Size",  formatBytes(metrics.byteCount))
-                    if !metrics.indent.isEmpty {
-                        metric("Indent", metrics.indent)
-                    }
-                    metric("EOL",   metrics.lineEndings)
-                    metric("Enc",   metrics.encodingShort)
+            // Trailing block: live metrics first, then the WAVE1 date
+            // chips. `ViewThatFits` tries the full layout (metrics +
+            // dates) and falls back to metrics-only when the row is too
+            // narrow — so the date chips DROP CLEANLY under width
+            // pressure instead of clipping the live metrics. Combined
+            // with the path's `.layoutPriority(-1)` and the per-chip
+            // `.fixedSize()`, the live line/cursor/size/encoding chips
+            // are guaranteed to render whole or not at all (never the
+            // "Col…" / "50.…" half-truncation the date chips introduced).
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    metricsGroup
+                    dateChips
                 }
-                // A11Y-16: collapse the per-metric label/value pairs into
-                // a single VoiceOver element so the rotor surfaces one
-                // "Lines 42, Chars 1.2k, …" element instead of a dozen
-                // fragments. `.combine` concatenates each metric's own
-                // accessibility label (set in `metric(_:_:)`).
-                .accessibilityElement(children: .combine)
-            }
-
-            // item7/0d: Created / Modified dates. "Modified" turns RED when
-            // the active tab's disk-staleness signal says the on-disk file
-            // changed since we loaded it (consumes Tab.diskState). Dates are
-            // today-relative (time-only when the date is today) and cached so
-            // the body hot path doesn't stat on every re-eval.
-            if let dates = currentFileDates {
-                if let created = dates.created {
-                    metric("Created", Self.formatDate(created))
-                }
-                if let modified = dates.modified {
-                    modifiedMetric(Self.formatDate(modified), stale: isActiveTabStale)
-                }
+                metricsGroup
             }
         }
         .padding(.horizontal, 10)
@@ -102,6 +83,64 @@ struct StatusBar: View {
         .background(Palette.windowBackground.opacity(0.65))
         .overlay(alignment: .top) { Divider() }
         .accessibilityIdentifier("mdv.statusBar")
+    }
+
+    /// Live document metrics (line/cursor, lines, chars, size, indent,
+    /// EOL, encoding). These are the HIGH-priority chips — never dropped,
+    /// each `.fixedSize()` so it renders whole. The trailing date chips
+    /// (`dateChips`) drop ahead of these via `ViewThatFits`.
+    @ViewBuilder
+    private var metricsGroup: some View {
+        if let metrics = currentMetrics {
+            HStack(spacing: 12) {
+                if metrics.lineCount > 0, model.sourceSelection.line > 0 {
+                    // Ln/Col only meaningful for text files. Hide
+                    // for media previews where everything is 0, and
+                    // for large read-only files where the source
+                    // view publishes a `line == 0` sentinel (it
+                    // skips the O(N) newline-index build that would
+                    // otherwise resolve precise line:col).
+                    metric("Ln",
+                        "\(model.sourceSelection.line)" +
+                        ", Col \(model.sourceSelection.column)")
+                }
+                metric("Lines", "\(metrics.lineCount)")
+                metric("Chars", formatNumber(metrics.charCount))
+                metric("Size",  formatBytes(metrics.byteCount))
+                if !metrics.indent.isEmpty {
+                    metric("Indent", metrics.indent)
+                }
+                metric("EOL",   metrics.lineEndings)
+                metric("Enc",   metrics.encodingShort)
+            }
+            // A11Y-16: collapse the per-metric label/value pairs into
+            // a single VoiceOver element so the rotor surfaces one
+            // "Lines 42, Chars 1.2k, …" element instead of a dozen
+            // fragments. `.combine` concatenates each metric's own
+            // accessibility label (set in `metric(_:_:)`).
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    /// item7/0d: Created / Modified dates. "Modified" turns RED when
+    /// the active tab's disk-staleness signal says the on-disk file
+    /// changed since we loaded it (consumes Tab.diskState). Dates are
+    /// today-relative (time-only when the date is today) and cached so
+    /// the body hot path doesn't stat on every re-eval. LOW priority —
+    /// the `ViewThatFits` in `body` drops this whole block when the row
+    /// is too narrow rather than truncating the live metrics.
+    @ViewBuilder
+    private var dateChips: some View {
+        if let dates = currentFileDates {
+            HStack(spacing: 12) {
+                if let created = dates.created {
+                    metric("Created", Self.formatDate(created))
+                }
+                if let modified = dates.modified {
+                    modifiedMetric(Self.formatDate(modified), stale: isActiveTabStale)
+                }
+            }
+        }
     }
 
     /// True when the active tab's loaded copy is stale vs disk (or deleted).
@@ -124,6 +163,9 @@ struct StatusBar: View {
                 .font(.system(size: model.uiSize(10), design: .monospaced))
                 .foregroundStyle(stale ? Color.red : Color.primary)
         }
+        // Render whole or not at all — never a half-truncated "Mod… 6:12…".
+        // The whole date block is dropped by `ViewThatFits` when too narrow.
+        .fixedSize()
         .help(stale ? "Modified: \(value) — the file changed on disk since it was loaded"
                     : "Modified: \(value)")
         .accessibilityElement(children: .ignore)
@@ -141,6 +183,11 @@ struct StatusBar: View {
                 .font(.system(size: model.uiSize(10), design: .monospaced))
                 .foregroundStyle(.primary)
         }
+        // A status-bar chip must render whole — `.fixedSize()` stops
+        // SwiftUI from compressing "Col 1" → "Col…" or "50.0k" → "50.…"
+        // under width pressure. The path (lowest layout priority) absorbs
+        // the shrink; the trailing date chips drop via `ViewThatFits`.
+        .fixedSize()
         .help("\(label): \(value)")
         // One combined element per metric so the parent's
         // `.accessibilityElement(children: .combine)` (A11Y-16) reads

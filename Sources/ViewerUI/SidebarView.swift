@@ -454,9 +454,30 @@ struct SidebarView: View {
                 if hovering { NSCursor.pointingHand.push() }
                 else { NSCursor.pop() }
             }
+            // Trailing controls cluster: sort + recency menus, lock, pin.
+            // Wrapped in `ViewThatFits` so the two menus' VALUE LABELS
+            // ("Name", "Modified") collapse to icon-only when the sidebar
+            // is too narrow to fit them. The lock + pin icon-buttons stay
+            // visible in BOTH variants. Without this the `.fixedSize()`
+            // menus + the WAVE1 pin button overflowed a narrow header —
+            // pushing the "FILES" title and the lock/pin buttons off-screen.
+            ViewThatFits(in: .horizontal) {
+                headerControls(showMenuLabels: true)
+                headerControls(showMenuLabels: false)
+            }
+        }
+        .sidebarHeaderRow()
+    }
+
+    /// The FILES-header trailing controls (sort menu, recency menu, lock,
+    /// pin). `showMenuLabels` drives whether the two menus show their value
+    /// text or collapse to icon-only — the `ViewThatFits` in `filesHeader`
+    /// picks the widest variant that fits the sidebar's current width.
+    @ViewBuilder
+    private func headerControls(showMenuLabels: Bool) -> some View {
+        HStack(spacing: 4) {
             // Sort mode picker. Folders always sort before files
-            // (Finder-like); the chosen mode applies within each
-            // group.
+            // (Finder-like); the chosen mode applies within each group.
             Menu {
                 ForEach(SidebarModel.FolderSortMode.allCases) { mode in
                     Button {
@@ -474,8 +495,11 @@ struct SidebarView: View {
                 HStack(spacing: 2) {
                     Image(systemName: "arrow.up.arrow.down")
                         .font(.system(size: 9))
-                    Text(sidebar.sortMode.rawValue)
-                        .font(.system(size: model.uiSize(10)))
+                    if showMenuLabels {
+                        Text(sidebar.sortMode.rawValue)
+                            .font(.system(size: model.uiSize(10)))
+                            .lineLimit(1)
+                    }
                 }
                 .foregroundStyle(.secondary)
             }
@@ -508,8 +532,11 @@ struct SidebarView: View {
                 HStack(spacing: 2) {
                     Image(systemName: "paintpalette")
                         .font(.system(size: 9))
-                    Text(recencyMode.rawValue)
-                        .font(.system(size: model.uiSize(10)))
+                    if showMenuLabels {
+                        Text(recencyMode.rawValue)
+                            .font(.system(size: model.uiSize(10)))
+                            .lineLimit(1)
+                    }
                 }
                 .foregroundStyle(.secondary)
             }
@@ -551,7 +578,9 @@ struct SidebarView: View {
                         : "Reveal the active tab's file in the sidebar on every tab switch")
             .accessibilityIdentifier("mdv.sidebar.followActiveTab")
         }
-        .sidebarHeaderRow()
+        // Cluster hugs its content so the `ViewThatFits` measurement is the
+        // cluster's intrinsic width (not a stretched one).
+        .fixedSize()
     }
 
     private var header: some View {
