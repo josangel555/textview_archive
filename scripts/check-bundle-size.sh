@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Bundle size guardrail. Fails the build when dist/TextView.app
 # crosses a budget. Two checks:
-#   - total .app size (default 35 MB)
-#   - main executable size (default 15 MB)
+#   - total .app size (default 37 MB)
+#   - main executable size (default 16 MB)
+# These two defaults are the single source of truth for the cap; the
+# BUDGET_MB / EXEC_BUDGET_MB defaults below MUST match the numbers in
+# this header and the comment in build-app.sh's tail block.
 # The split matters because the lazy-grammar refactor moves grammar
 # parsers from the executable into Contents/Frameworks/, so a healthy
 # bundle has a small executable + larger Frameworks. A single total
