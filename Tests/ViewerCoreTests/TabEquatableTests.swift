@@ -28,4 +28,32 @@ final class TabEquatableTests: XCTestCase {
         let b = Tab(id: id, url: urlA, state: .loading(urlB))
         XCTAssertNotEqual(a, b)
     }
+
+    // MARK: - View-hosting tab kind (WAVE 2b item 1)
+
+    /// Two hosted-view tabs with the same id + title compare equal —
+    /// the AnyView payload lives outside ViewerCore so equality is by
+    /// the hosted id (+ title) only.
+    func test_hostedViewTabs_sameIDAndTitle_areEqual() {
+        let hostID = UUID()
+        let id = UUID()
+        let a = Tab(id: id, state: .hostedView(id: hostID, title: "History: x.swift"))
+        let b = Tab(id: id, state: .hostedView(id: hostID, title: "History: x.swift"))
+        XCTAssertEqual(a, b)
+    }
+
+    /// Different hosted ids differ (distinct embedded views).
+    func test_hostedViewTabs_differentHostID_areUnequal() {
+        let id = UUID()
+        let a = Tab(id: id, state: .hostedView(id: UUID(), title: "History"))
+        let b = Tab(id: id, state: .hostedView(id: UUID(), title: "History"))
+        XCTAssertNotEqual(a, b)
+    }
+
+    /// The tab title surfaces the hosted-view title for the strip.
+    func test_hostedViewTab_titleIsHostedTitle() {
+        let t = Tab(state: .hostedView(id: UUID(), title: "History: README.md"))
+        XCTAssertEqual(t.title, "History: README.md")
+        XCTAssertFalse(t.isBlank)
+    }
 }

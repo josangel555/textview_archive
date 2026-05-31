@@ -314,6 +314,17 @@ public struct ContentView: View {
                     model: model)
         case .error(let failure):
             ErrorView(failure: failure, model: model)
+        case .hostedView(let id, _):
+            // View-hosting tab (WAVE 2b item 1): render the embedded
+            // SwiftUI view the model owns for this hosted id. If the
+            // registry entry is gone (shouldn't happen while the tab is
+            // live), fall back to the empty state rather than crashing.
+            if let hosted = model.hostedView(forID: id) {
+                hosted
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                EmptyStateView()
+            }
         case .preview(let url, let cat):
             HStack(spacing: 0) {
                 MediaPreviewView(
@@ -329,7 +340,11 @@ public struct ContentView: View {
 
     @ViewBuilder
     private func loadedView(for file: TextFile) -> some View {
-        let category = FileTypeDetector.category(for: file.url)
+        // WAVE 2b item 6: a per-tab "Open As…" override wins over
+        // extension/UTI detection so e.g. a `.db` opened as Markdown
+        // renders through the markdown pipeline.
+        let category = model.tabs.selected?.categoryOverride
+            ?? FileTypeDetector.category(for: file.url)
         if model.currentViewMode == .table {
             // Per-tab CSV filter state lives on DocumentModel keyed by
             // tab id; pass the active tab id so state persists across
@@ -799,6 +814,12 @@ struct ModeBar: View {
                     .help("Show invisible characters (spaces · tabs → returns ¶)")
                     .accessibilityIdentifier("mdv.invisiblesToggle")
             }
+            // Universal "Open As…" chip (WAVE 2b item 6). Offers every
+            // applicable viewer for ANY file, including binaries, so the
+            // user can force a `.db` open as CSV, a `.png` as HEX, etc.
+            if let url = model.currentURL {
+                openAsMenu(url: url)
+            }
             if let badge = languageBadgeText {
                 Menu {
                     // "Auto" reverts to extension-based detection by
@@ -850,6 +871,78 @@ struct ModeBar: View {
             // mode-switch controls).
         }
         .frame(height: 22)
+    }
+
+    /// The "Open As…" chip + dropdown (WAVE 2b item 6). Lists every
+    /// applicable viewer for the current file (Source, Markdown, HTML,
+    /// Image, SQLite, HEX, …) plus an "Auto" entry that clears the
+    /// override. Reachable for ANY file, including binaries currently
+    /// shown in HEX.
+    @ViewBuilder
+    private func openAsMenu(url: URL) -> some View {
+        let overridden = model.hasCategoryOverride
+        Menu {
+            Button(action: { model.setCurrentCategoryOverride(nil) }) {
+                HStack {
+                    Text("Auto (\(Self.categoryLabel(FileTypeDetector.category(for: url))))")
+                    if !overridden { Image(systemName: "checkmark") }
+                }
+            }
+            Divider()
+            ForEach(model.openAsCategories(for: url), id: \.self) { cat in
+                Button(action: { model.setCurrentCategoryOverride(cat) }) {
+                    HStack {
+                        Text(Self.categoryLabel(cat))
+                        if model.tabs.selected?.categoryOverride == cat {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 2) {
+                Image(systemName: "doc.viewfinder")
+                    .font(.system(size: 8))
+                Text("Open As")
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 7, weight: .bold))
+            }
+            .font(.system(size: model.uiSize(10), weight: .semibold))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(overridden
+                          ? Color.accentColor.opacity(0.20)
+                          : Color.secondary.opacity(0.15))
+            )
+            .foregroundStyle(overridden ? Color.accentColor : .secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(overridden
+              ? "Opened as an overridden type — click to change or pick Auto"
+              : "Open this file as a different viewer (Source, SQLite, HEX, …)")
+        .accessibilityIdentifier("mdv.openAs")
+    }
+
+    /// Human-readable label for an "Open As…" category entry.
+    static func categoryLabel(_ cat: FileCategory) -> String {
+        switch cat {
+        case .markdown:  return "Markdown (rendered)"
+        case .mermaid:   return "Mermaid"
+        case .plainText: return "Plain Text / CSV"
+        case .code:      return "Source / JSON"
+        case .html:      return "HTML"
+        case .image:     return "Image"
+        case .audio:     return "Audio"
+        case .video:     return "Video"
+        case .pdf:       return "PDF"
+        case .sqlite:    return "SQLite"
+        case .binary:    return "HEX (raw bytes)"
+        case .unknown:   return "Unknown"
+        }
     }
 
     private var showsSourceToggles: Bool {

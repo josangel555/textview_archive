@@ -17,6 +17,14 @@ public enum DocumentState: Sendable {
     /// transition to `.loaded` / `.binary` / `.error`. The URL is the
     /// file we're loading so the placeholder can name it.
     case loading(URL)
+    /// A tab that hosts an arbitrary embedded SwiftUI view rather than a
+    /// file. The `id` keys into the UI layer's `hostedView` registry
+    /// (`DocumentModel.hostedViews`), which owns the actual `AnyView`
+    /// (SwiftUI can't live in ViewerCore). `title` is shown in the tab
+    /// strip. These tabs are not persisted (no URL) and are skipped by
+    /// session snapshotting; closing the tab drops the registered view.
+    /// First consumer: the in-app File History view (WAVE 2b item 2).
+    case hostedView(id: UUID, title: String)
 
     public struct LoadFailure: Equatable, Sendable {
         public let url: URL
@@ -51,6 +59,10 @@ extension DocumentState: Equatable {
             return lu == ru && lc == rc
         case (.loading(let lu), .loading(let ru)):
             return lu == ru
+        case (.hostedView(let lid, let lt), .hostedView(let rid, let rt)):
+            // Identity-based: the AnyView payload lives elsewhere (UI
+            // registry), so a tab is "the same" iff its hosted id matches.
+            return lid == rid && lt == rt
         default:
             return false
         }
@@ -70,12 +82,23 @@ public struct DocumentController: Sendable {
         self.binaryLoader = binaryLoader
     }
 
-    public func open(url: URL) -> DocumentState {
+    /// Open `url` into a `DocumentState`. `forcedCategory` (WAVE 2b item
+    /// 6 — universal "Open As…") overrides the extension/UTI auto-detection
+    /// so ANY file — including binaries — can be opened as an arbitrary
+    /// viewer:
+    ///   - a preview category (image/audio/video/pdf/sqlite) → `.preview`
+    ///     (the renderer reads the URL directly; no bytes into Swift mem);
+    ///   - `.binary` → `.binary` (HEX) unconditionally;
+    ///   - any text-shaped category (markdown/code/plainText/html/mermaid)
+    ///     → force the text loader to decode even NUL-heavy bytes, so e.g.
+    ///     a `.db` opened as Source / CSV shows its textual content.
+    /// `nil` keeps the historical auto-detection path.
+    public func open(url: URL, forcedCategory: FileCategory? = nil) -> DocumentState {
         // Native-preview fast path: detect by extension/UTI before
         // even attempting the text loader. Skips reading huge media
         // files into Swift memory just to fail-back to a viewer that
         // doesn't need the bytes anyway.
-        let category = FileTypeDetector.category(for: url)
+        let category = forcedCategory ?? FileTypeDetector.category(for: url)
         switch category {
         case .image, .audio, .video, .pdf, .sqlite:
             // Only declare a preview if the file actually exists +
@@ -85,11 +108,20 @@ public struct DocumentController: Sendable {
             } else {
                 return .error(.init(url: url, message: "File could not be read."))
             }
+        case .binary:
+            // Explicit "Open As… HEX" on any file.
+            if let bin = try? binaryLoader.load(url: url) {
+                return .binary(bin)
+            }
+            // Fall through to the text path on a binary-load failure.
         default:
             break
         }
+        // When a text-shaped category is forced, decode even binary /
+        // undecodable bytes (lossy Latin-1) instead of falling back to HEX.
+        let forceText = forcedCategory != nil
         do {
-            let file = try loader.load(url: url)
+            let file = try loader.load(url: url, forceText: forceText)
             return .loaded(file)
         } catch FileLoadError.binaryFile {
             // Seamless fall-through to the hex viewer.

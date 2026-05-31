@@ -4,7 +4,22 @@ import ViewerCore
 struct TabBar: View {
     @ObservedObject var model: DocumentModel
 
+    /// item12: tab-strip width budget. Idle width per tab + the floor it
+    /// shrinks to under crowding (icon + close glyph, label clipped). The
+    /// strip first shrinks every tab toward `minShrunkWidth`; once even
+    /// the floor doesn't fit, the surrounding ScrollView takes over and
+    /// the strip overflows / scrolls (scroll-to-selected already shipped
+    /// in WAVE 1). Scaled by zoom so high-zoom tabs stay legible.
+    private static let idealTabWidth: CGFloat = 180
+    private static let minShrunkWidth: CGFloat = 54
+
     var body: some View {
+        GeometryReader { geo in
+        let tabWidth = Self.computedTabWidth(
+            available: geo.size.width,
+            count: model.tabs.tabs.count,
+            scale: CGFloat(model.zoom)
+        )
         HStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -15,6 +30,7 @@ struct TabBar: View {
                                 isSelected: model.tabs.selectedIndex == index,
                                 isBookmarked: tab.url.map { model.bookmarksStore.contains($0) } ?? false,
                                 scale: CGFloat(model.zoom),
+                                width: tabWidth,
                                 onSelect: { model.selectTab(at: index) },
                                 onClose: { model.closeTab(at: index) }
                             )
@@ -67,6 +83,26 @@ struct TabBar: View {
         }
         .frame(height: 30)
         .background(Palette.windowBackground)
+        } // GeometryReader
+        .frame(height: 30)
+    }
+
+    /// item12: per-tab width under a width budget. Reserve the trailing
+    /// "+" new-tab button (~32 pt), divide the rest by the tab count, and
+    /// clamp to `[minShrunkWidth … idealTabWidth]` (both zoom-scaled).
+    ///
+    /// - Few tabs → each gets `idealTabWidth` (clamp upper bound) and the
+    ///   strip is left-packed with empty trailing space.
+    /// - Crowded → tabs shrink toward `minShrunkWidth` (the lower clamp).
+    /// - Past the floor (even shrunk tabs overflow) → the value sticks at
+    ///   `minShrunkWidth` and the enclosing ScrollView scrolls.
+    static func computedTabWidth(available: CGFloat, count: Int, scale: CGFloat) -> CGFloat {
+        let lower = minShrunkWidth * scale
+        let upper = idealTabWidth * scale
+        guard count > 0, available > 0 else { return upper }
+        let usable = max(available - 32, lower)  // reserve the "+" button
+        let per = usable / CGFloat(count)
+        return min(max(per, lower), upper)
     }
 
     /// Bring the currently-selected tab into view. Centers it so a tab near
@@ -140,6 +176,31 @@ private struct TabContextMenu: View {
             // discards unsaved edits.
             Button("Refresh") { model.refreshTab(at: tabIndex) }
             Divider()
+            // WAVE 2b item 2: open the in-app File History view for this
+            // tab's file as a view-hosting tab. Enabled only when the
+            // file is in a repo AND tracked (otherwise there's no history
+            // to show); `canShowFileHistory` does the discoverRoot +
+            // tracked gate.
+            Button("File History") { model.openFileHistory(for: url) }
+                .disabled(!model.canShowFileHistory(for: url))
+            // WAVE 2b item 6: universal "Open As…" — re-open this tab as
+            // any applicable viewer (Source, SQLite, HEX, Image, …),
+            // including for binaries. Acts on this tab (selects it first
+            // so the per-tab override lands on the right one).
+            Menu("Open As…") {
+                Button("Auto") {
+                    model.selectTab(at: tabIndex)
+                    model.setCurrentCategoryOverride(nil)
+                }
+                Divider()
+                ForEach(model.openAsCategories(for: url), id: \.self) { cat in
+                    Button(ModeBar.categoryLabel(cat)) {
+                        model.selectTab(at: tabIndex)
+                        model.setCurrentCategoryOverride(cat)
+                    }
+                }
+            }
+            Divider()
             Button("Copy Path") { Pasteboard.copy(url.path) }
             Button("Reveal in Finder") { Finder.reveal(url) }
             Button("Reveal in Sidebar") {
@@ -154,6 +215,10 @@ struct TabBarItem: View {
     let isSelected: Bool
     let isBookmarked: Bool
     let scale: CGFloat
+    /// item12: width assigned by the strip's width budget. The tab shrinks
+    /// toward `minShrunkWidth` (icon + close) under crowding; the title
+    /// truncates as the width drops.
+    let width: CGFloat
     let onSelect: () -> Void
     let onClose: () -> Void
 
@@ -216,8 +281,11 @@ struct TabBarItem: View {
                 }
                 .padding(.horizontal, 10)
             }
-            .frame(minWidth: 100, idealWidth: 180, maxWidth: 240)
-            .frame(height: 28)
+            // item12: fixed width from the strip's budget (shrinks under
+            // crowding). `clipped()` so the label cleanly truncates rather
+            // than overflowing its neighbor when the tab is at the floor.
+            .frame(width: width, height: 28)
+            .clipped()
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

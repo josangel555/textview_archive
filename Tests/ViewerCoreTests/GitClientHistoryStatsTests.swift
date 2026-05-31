@@ -60,6 +60,32 @@ final class GitClientHistoryStatsTests: XCTestCase {
         XCTAssertEqual(GitClient(repoRoot: dir).fileHistory(path: "x.txt"), [])
     }
 
+    // MARK: - isTracked (WAVE 2b item 2 — File-History menu gating)
+
+    func test_isTracked_trueForCommittedFile_falseOtherwise() throws {
+        let repo = try makeRepo()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        try writeFile("tracked.txt", "x\n", in: repo)
+        try run(["add", "tracked.txt"], in: repo)
+        try run(["commit", "-q", "-m", "add tracked"], in: repo)
+        // An untracked file present on disk but never `git add`ed.
+        try writeFile("untracked.txt", "y\n", in: repo)
+
+        let client = GitClient(repoRoot: repo)
+        XCTAssertTrue(client.isTracked(path: "tracked.txt"))
+        XCTAssertFalse(client.isTracked(path: "untracked.txt"))
+        XCTAssertFalse(client.isTracked(path: "does-not-exist.txt"))
+        XCTAssertFalse(client.isTracked(path: ""), "empty path is never tracked")
+    }
+
+    func test_isTracked_falseForNonRepo() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("not-a-repo-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        XCTAssertFalse(GitClient(repoRoot: dir).isTracked(path: "anything.txt"))
+    }
+
     func test_fileHistory_returns_full_and_short_sha_newest_first() throws {
         let repo = try makeRepo()
         defer { try? FileManager.default.removeItem(at: repo) }

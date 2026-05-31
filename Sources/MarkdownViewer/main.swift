@@ -22,6 +22,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private var openRecentMenu: NSMenu?
     private var sessionJumpMenu: NSMenu?
     private var windowMenu: NSMenu?
+    /// Auxiliary tool windows (WAVE 2b items 4 + 5). Retained so a second
+    /// menu invocation re-focuses the existing window instead of spawning
+    /// duplicates; `isReleasedWhenClosed = false` keeps them alive across
+    /// close/reopen.
+    private var diagnosticWindow: NSWindow?
+    private var instrumentationWindow: NSWindow?
+    /// The process-wide observability ring buffer (WAVE 2b item 5).
+    /// Installed into `Obs` at launch so emitters across ViewerCore land
+    /// in it; the same instance backs the instrumentation tool window's
+    /// `ObservabilityProjection`, so the Logs/Metrics views show real
+    /// events. Retained here for the projection's lifetime.
+    private let observabilitySink = RingBufferSink()
     private var cancellables: Set<AnyCancellable> = []
     /// Retained DispatchSource for the SIGUSR1 diagnostic-dump trap.
     /// Set by `installDiagnosticSignalHandler` (Diagnostics.swift).
@@ -49,6 +61,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // Opt out of macOS's automatic window tabbing — we ship our own in-app
         // tab bar; the system "Show Tab Bar" menu item is confusing here.
         NSWindow.allowsAutomaticWindowTabbing = false
+
+        // WAVE 2b item 5: install the process-wide observability ring
+        // buffer so emitters across ViewerCore (LSP, grammar loader, MCP)
+        // land in it and the instrumentation tool window has real data.
+        // `installIfNeeded` won't clobber a test-installed capturing sink.
+        Obs.installIfNeeded { self.observabilitySink }
 
         buildMenu()
         registerAsServicesProvider()
@@ -1179,10 +1197,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         mainMenu.addItem(editMenuItem)
         mainMenu.addItem(viewMenuItem)
         mainMenu.addItem(sessionMenuItem)
+        // WAVE 2b items 4 + 5: the Debug menu (Diagnostics +
+        // Instrumentation tool windows) is built ONLY when the diagnostic
+        // gate is on (DEBUG build OR `MDV_ENABLE_DIAGNOSTICS=1`). A stock
+        // release binary with the env var unset never grows this menu.
+        // These windows are never exposed via the MCP tool catalog.
+        if DiagnosticGate.isEnabled, let debugMenuItem = buildDebugMenu() {
+            mainMenu.addItem(debugMenuItem)
+        }
         mainMenu.addItem(windowMenuItem)
         mainMenu.addItem(helpMenuItem)
 
         NSApp.mainMenu = mainMenu
+    }
+
+    /// Build the gated Debug menu (WAVE 2b items 4 + 5). Returns `nil`
+    /// when the diagnostic gate is off so callers can skip adding it
+    /// entirely. Items target this AppDelegate's window openers.
+    private func buildDebugMenu() -> NSMenuItem? {
+        guard DiagnosticGate.isEnabled else { return nil }
+        let debugMenuItem = NSMenuItem()
+        let debugMenu = NSMenu(title: "Debug")
+
+        let diagItem = NSMenuItem(
+            title: "Diagnostic Window",
+            action: #selector(showDiagnosticWindow(_:)),
+            keyEquivalent: ""
+        )
+        diagItem.target = self
+        debugMenu.addItem(diagItem)
+
+        let instrItem = NSMenuItem(
+            title: "Instrumentation",
+            action: #selector(showInstrumentationWindow(_:)),
+            keyEquivalent: ""
+        )
+        instrItem.target = self
+        debugMenu.addItem(instrItem)
+
+        debugMenuItem.submenu = debugMenu
+        return debugMenuItem
     }
 
     /// Build the Session menu. The "Jump to Session" submenu is
@@ -1447,16 +1501,90 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.showGitPanel(tab: .status)
     }
 
-    /// Show File History — opens the Git panel on the Log tab.
-    /// Per-file path scoping is a follow-up (the panel doesn't yet
-    /// accept a path filter; today this shows full repo log).
+    /// Show File History — opens the in-app FileHistoryView for the
+    /// current tab's file when it's a tracked file in a repo (WAVE 2b
+    /// item 2). Falls back to the Git panel's Log tab otherwise (no
+    /// current file, or it isn't tracked).
     @objc func showFileHistory(_ sender: Any?) {
-        model.showGitPanel(tab: .log)
+        if let url = model.currentURL, model.canShowFileHistory(for: url) {
+            model.openFileHistory(for: url)
+        } else {
+            model.showGitPanel(tab: .log)
+        }
     }
 
     /// Show Repository History — opens the Git panel on the Log tab.
     @objc func showRepoHistory(_ sender: Any?) {
         model.showGitPanel(tab: .log)
+    }
+
+    // MARK: - Debug tool windows (WAVE 2b items 4 + 5)
+
+    /// Open (or re-focus) the diagnostic window. DEBUG / opt-in only —
+    /// the menu item is only built when `DiagnosticGate.isEnabled`, and we
+    /// re-check here as defence in depth (the view itself also no-ops its
+    /// content when the gate is off). Never reachable via the MCP catalog.
+    @objc func showDiagnosticWindow(_ sender: Any?) {
+        guard DiagnosticGate.isEnabled else { return }
+        if let win = diagnosticWindow {
+            win.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let host = NSHostingController(rootView: DiagnosticWindowView(model: model))
+        let win = makeToolWindow(
+            title: "Diagnostics", contentSize: NSSize(width: 720, height: 560),
+            autosave: "DiagnosticWindow", controller: host
+        )
+        diagnosticWindow = win
+        win.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Open (or re-focus) the instrumentation tool window — the
+    /// Logs / Metrics / Memory views over the live `RingBufferSink`
+    /// installed at launch. Gated identically to the diagnostic window.
+    @objc func showInstrumentationWindow(_ sender: Any?) {
+        guard DiagnosticGate.isEnabled else { return }
+        if let win = instrumentationWindow {
+            win.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let host = NSHostingController(
+            rootView: InstrumentationWindowView(model: model, sink: observabilitySink)
+        )
+        let win = makeToolWindow(
+            title: "Instrumentation", contentSize: NSSize(width: 760, height: 540),
+            autosave: "InstrumentationWindow", controller: host
+        )
+        instrumentationWindow = win
+        win.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Shared builder for the auxiliary tool windows. `isReleasedWhenClosed
+    /// = false` so the retained reference stays valid across close/reopen
+    /// (re-focus rather than rebuild).
+    private func makeToolWindow(
+        title: String, contentSize: NSSize, autosave: String,
+        controller: NSViewController
+    ) -> NSWindow {
+        let win = NSWindow(
+            contentRect: NSRect(origin: .zero, size: contentSize),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered, defer: false
+        )
+        win.title = title
+        win.contentViewController = controller
+        win.isReleasedWhenClosed = false
+        win.tabbingMode = .disallowed
+        win.contentMinSize = NSSize(width: 360, height: 280)
+        _ = win.setFrameAutosaveName(autosave)
+        if UserDefaults.standard.string(forKey: "NSWindow Frame \(autosave)") == nil {
+            win.center()
+        }
+        return win
     }
 
     @objc func toggleBookmark(_ sender: Any?) {

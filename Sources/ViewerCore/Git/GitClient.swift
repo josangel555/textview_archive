@@ -90,6 +90,20 @@ public final class GitClient: Sendable {
         return nil
     }
 
+    /// True iff `path` (relative to this client's `repoRoot`) is tracked
+    /// in the index. Used by the File-History entry points to gate the
+    /// menu item: an untracked / never-committed file has no history to
+    /// show. `git ls-files --error-unmatch <path>` exits 0 when tracked,
+    /// non-zero otherwise — and `run` returns nil on a non-zero exit, so
+    /// we map a successful (non-nil) run to tracked.
+    ///
+    /// Cheap (touches the index, not the full history) so it's safe to
+    /// call synchronously from the menu-visibility check.
+    public func isTracked(path: String) -> Bool {
+        guard !path.isEmpty else { return false }
+        return (try? run(["ls-files", "--error-unmatch", "--", path])) != nil
+    }
+
     // MARK: - status
 
     public struct StatusEntry: Equatable, Sendable {

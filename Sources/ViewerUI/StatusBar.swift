@@ -235,7 +235,7 @@ struct StatusBar: View {
                 encodingShort: cat.rawValue,
                 indent: ""
             )
-        case .empty, .error, .loading:
+        case .empty, .error, .loading, .hostedView:
             return nil
         }
     }

@@ -38,6 +38,13 @@ public struct Tab: Sendable, Identifiable {
     /// Disk-vs-loaded staleness signal (see `DiskState`). Default `.fresh`;
     /// updated by the watcher / stat sweep, reset to `.fresh` on reload.
     public var diskState: DiskState
+    /// Per-tab "Open As…" category override (WAVE 2b item 6). When set,
+    /// it overrides extension/UTI auto-detection — both for HOW the file
+    /// was loaded (`DocumentController.open(forcedCategory:)`) and for
+    /// WHICH viewer renders it (`ContentView` reads this first). `nil` =
+    /// auto-detect. Additive-optional; persisted as a raw string in
+    /// `TabSnapshot.categoryOverride` with a downgrade guard.
+    public var categoryOverride: FileCategory?
 
     public init(
         id: UUID = UUID(),
@@ -45,7 +52,8 @@ public struct Tab: Sendable, Identifiable {
         state: DocumentState = .empty,
         viewMode: ViewMode = .rendered,
         isDirty: Bool = false,
-        diskState: DiskState = .fresh
+        diskState: DiskState = .fresh,
+        categoryOverride: FileCategory? = nil
     ) {
         self.id = id
         self.url = url
@@ -53,6 +61,7 @@ public struct Tab: Sendable, Identifiable {
         self.viewMode = viewMode
         self.isDirty = isDirty
         self.diskState = diskState
+        self.categoryOverride = categoryOverride
     }
 
     /// Pure staleness classification, reusing the same mtime-OR-size
@@ -80,6 +89,7 @@ public struct Tab: Sendable, Identifiable {
         case .error(let f):       return f.url.lastPathComponent
         case .preview(let u, _):  return u.lastPathComponent
         case .loading(let u):     return u.lastPathComponent
+        case .hostedView(_, let t): return t
         case .empty:              return url?.lastPathComponent ?? "Untitled"
         }
     }
@@ -105,6 +115,7 @@ extension Tab: Equatable {
         guard lhs.viewMode == rhs.viewMode else { return false }
         guard lhs.isDirty == rhs.isDirty else { return false }
         guard lhs.diskState == rhs.diskState else { return false }
+        guard lhs.categoryOverride == rhs.categoryOverride else { return false }
         // Compare state by case-only, not by payload. Payload changes
         // are reflected by other model state (e.g. loadState, watcher
         // reload nonce); state-payload-equality isn't a property
@@ -123,6 +134,8 @@ extension Tab: Equatable {
             return lu == ru
         case (.preview(let lu, let lc), .preview(let ru, let rc)):
             return lu == ru && lc == rc
+        case (.hostedView(let lid, let lt), .hostedView(let rid, let rt)):
+            return lid == rid && lt == rt
         default:
             return false
         }

@@ -18,9 +18,22 @@ public enum ViewMode: String, Equatable, Sendable, CaseIterable, Codable {
 /// includes `.source` + `.hex`. Adds `.rendered` for markdown and
 /// `.formatted` when the URL has a registered pretty-printer.
 public enum ViewModeOptions {
-    public static func availableModes(for url: URL?) -> [ViewMode] {
+    /// Available view modes for `url`. `forcedCategory` (WAVE 2b item 6 —
+    /// "Open As…") overrides the extension/UTI detection so the picker
+    /// offers the modes for the chosen viewer instead of the auto-detected
+    /// one (e.g. a `.db` opened as Source gets Source + HEX; opened as
+    /// CSV gets Table + Source + HEX).
+    public static func availableModes(
+        for url: URL?, forcedCategory: FileCategory? = nil
+    ) -> [ViewMode] {
         guard let url else { return [.source, .hex] }
-        let cat = FileTypeDetector.category(for: url)
+        // Preview categories (image/audio/video/pdf/sqlite) render via the
+        // `.preview` document state, not a ViewMode — they have no
+        // mode-picker entries beyond HEX (raw bytes always available).
+        if let forced = forcedCategory, !hasTextRepresentation(forced) {
+            return [.hex]
+        }
+        let cat = forcedCategory ?? FileTypeDetector.category(for: url)
         // Binary / unknown files have no meaningful text rendering — the
         // content switch shows them in HexView unconditionally, so offering
         // "Source" was a dead control: selecting it re-read a file the loader
@@ -29,10 +42,14 @@ public enum ViewModeOptions {
         // for categories that actually have a text representation.
         var modes: [ViewMode] = hasTextRepresentation(cat) ? [.source] : []
         if cat == .markdown || cat == .mermaid { modes.insert(.rendered, at: 0) }
-        if Self.supportsFormatting(url) { modes.append(.formatted) }
-        // CSV / TSV files get a table mode. Default-on for these
-        // extensions but `.source` stays available for raw-text view.
-        if Self.supportsTable(url) { modes.insert(.table, at: 0) }
+        // With an explicit text override the user is inspecting the file
+        // through a chosen lens, so offer the structured modes (Table for
+        // CSV-style, Formatted for JSON/XML-style) regardless of the
+        // file's real extension. Without an override we keep the
+        // extension-driven gating (only true CSV/JSON get these).
+        let isTextOverride = forcedCategory.map { hasTextRepresentation($0) } ?? false
+        if Self.supportsFormatting(url) || isTextOverride { modes.append(.formatted) }
+        if Self.supportsTable(url) || isTextOverride { modes.insert(.table, at: 0) }
         // .diff / .patch files get the dedicated DiffView as default,
         // with `.source` still available for raw-text inspection.
         if Self.supportsDiff(url) { modes.insert(.diff, at: 0) }
@@ -41,7 +58,7 @@ public enum ViewModeOptions {
         // / video / pdf / sqlite (which never have a text view to edit)
         // and for `.diff` files (editing a unified-diff representation
         // would silently desync from the actual repo state).
-        if Self.supportsEditor(url) {
+        if Self.supportsEditor(url) || isTextOverride {
             // Slot right after `.source` so the picker reads
             // Source | Editor | Formatted | … from left to right.
             if let sourceIdx = modes.firstIndex(of: .source) {
@@ -56,9 +73,20 @@ public enum ViewModeOptions {
 
     /// True for files where `.table` is a sensible default. We
     /// preselect Table mode for CSV/TSV by inserting it at the
-    /// front of the picker.
-    public static func defaultMode(for url: URL?) -> ViewMode {
+    /// front of the picker. `forcedCategory` (WAVE 2b item 6) overrides
+    /// detection so an "Open As…" tab opens straight into the chosen
+    /// viewer's natural default mode.
+    public static func defaultMode(
+        for url: URL?, forcedCategory: FileCategory? = nil
+    ) -> ViewMode {
         guard let url else { return .source }
+        if let forced = forcedCategory {
+            // Preview categories render through `.preview`; HEX is the
+            // only meaningful ViewMode for them in the picker.
+            if !hasTextRepresentation(forced) { return .hex }
+            if forced == .markdown || forced == .mermaid { return .rendered }
+            return .source
+        }
         if Self.supportsDiff(url) { return .diff }
         if Self.supportsTable(url) { return .table }
         let cat = FileTypeDetector.category(for: url)

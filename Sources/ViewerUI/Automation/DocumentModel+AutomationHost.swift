@@ -64,7 +64,7 @@ extension DocumentModel: AutomationHost {
         let text: String
         switch tab.state {
         case .loaded(let f):     text = f.contents
-        case .binary, .preview, .error, .empty, .loading:
+        case .binary, .preview, .error, .empty, .loading, .hostedView:
             return []
         }
         // FindEngine throws only on invalid regex — surface as an
@@ -77,7 +77,7 @@ extension DocumentModel: AutomationHost {
         guard let tab = tabs.selected else { return "" }
         switch tab.state {
         case .loaded(let f): return f.contents
-        case .binary, .preview, .error, .empty, .loading:
+        case .binary, .preview, .error, .empty, .loading, .hostedView:
             return ""
         }
     }

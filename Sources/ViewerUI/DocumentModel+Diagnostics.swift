@@ -111,6 +111,7 @@ extension DocumentModel {
         case .error:   return "error"
         case .preview: return "preview"
         case .loading: return "loading"
+        case .hostedView: return "hostedView"
         }
     }
 

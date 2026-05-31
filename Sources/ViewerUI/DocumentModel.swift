@@ -1126,6 +1126,69 @@ public final class DocumentModel: ObservableObject {
         gitPanelFocusRequest &+= 1
     }
 
+    /// Folder-stats slide-down visibility (WAVE 2b item 3). Lives on the
+    /// model (not as `SidebarView` `@State`) so it survives sidebar
+    /// re-bodies AND is drivable by the `--script` verification harness.
+    /// Defaults closed; it's an on-demand inspector, not persisted.
+    @Published public var folderStatsExpanded = false
+
+    /// Long-lived HEAD-invalidated repo-statistics cache (WAVE 2b item 3).
+    /// Owned here (not on the transient `SidebarView`) so it survives
+    /// sidebar re-bodies / tab switches / reopens — a fresh
+    /// `FolderStatsView` instance reuses the cached aggregates instead of
+    /// re-walking the whole history each time the panel is opened. The
+    /// cache is HEAD-keyed, so a new commit transparently recomputes.
+    public let repoStatsCache = RepoStatsCache()
+
+    // MARK: - Git File History (WAVE 2b item 2)
+
+    /// True iff `url` lives in a git repo AND is tracked — i.e. the
+    /// in-app File-History view has something to show. Drives the
+    /// enable/disable state of the "File History" menu items in the
+    /// TabBar and sidebar context menus. Synchronous: `discoverRoot` is
+    /// a filesystem walk and `isTracked` is a cheap index probe.
+    public func canShowFileHistory(for url: URL) -> Bool {
+        guard let root = GitClient.discoverRoot(from: url) else { return false }
+        let rel = Self.repoRelativePath(of: url, root: root)
+        guard let rel, !rel.isEmpty else { return false }
+        return GitClient(repoRoot: root).isTracked(path: rel)
+    }
+
+    /// Open the in-app `FileHistoryView` for `url` as a view-hosting tab
+    /// (WAVE 2b item 2). Replaces the old `showGitLog(.file)` path that
+    /// rendered a synthetic markdown table. Computes the repo root via
+    /// `GitClient.discoverRoot`, the path relative to that root (what
+    /// `git log -- <path>` wants), and the leaf as the display name.
+    /// No-op when the file isn't in a repo / isn't tracked, so callers
+    /// can wire it unconditionally and rely on `canShowFileHistory` only
+    /// for the menu-item enable state.
+    public func openFileHistory(for url: URL) {
+        guard let root = GitClient.discoverRoot(from: url),
+              let rel = Self.repoRelativePath(of: url, root: root),
+              !rel.isEmpty else { return }
+        let view = FileHistoryView(
+            doc: self,
+            repoRoot: root,
+            relativePath: rel,
+            displayName: url.lastPathComponent
+        )
+        openHostedView(title: "History: \(url.lastPathComponent)", rootView: view)
+    }
+
+    /// Path of `url` relative to `root` (slash-joined, no leading slash),
+    /// or `nil` when `url` isn't under `root`. Standardizes + resolves
+    /// symlinks on both sides so a repo under `/var` (symlink to
+    /// `/private/var`, the macOS scratch space) still matches.
+    /// `nonisolated` so it's a pure helper testable off the main actor.
+    nonisolated static func repoRelativePath(of url: URL, root: URL) -> String? {
+        let rootPath = root.standardizedFileURL.resolvingSymlinksInPath().path
+        let filePath = url.standardizedFileURL.resolvingSymlinksInPath().path
+        if filePath == rootPath { return "" }
+        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        guard filePath.hasPrefix(prefix) else { return nil }
+        return String(filePath.dropFirst(prefix.count))
+    }
+
     // MARK: - Git log (legacy)
 
     public enum GitLogScope: Sendable { case file, folder, repo }
@@ -1758,6 +1821,36 @@ public final class DocumentModel: ObservableObject {
     public typealias HighlightCacheKey = ViewerUI.HighlightCacheKey
     private var highlightCaches: [UUID: HighlightCacheActor] = [:]
 
+    // MARK: - View-hosting tabs (WAVE 2b item 1)
+    //
+    // A view-hosting tab renders an arbitrary embedded SwiftUI `rootView`
+    // (the one genuine integration point for the built-but-unwired WAVE 2a
+    // views). The `DocumentState.hostedView(id:title:)` case lives in
+    // ViewerCore (Sendable, no SwiftUI); the actual `AnyView` payload is
+    // owned HERE, keyed by the hosted-view id, because SwiftUI types must
+    // not leak into ViewerCore. The registry is purged on tab close via
+    // `purgeCaches`, so a closed File-History tab releases its model.
+    private var hostedViews: [UUID: AnyView] = [:]
+
+    /// The embedded view for `id`, or `nil` if no such hosted tab exists.
+    /// `ContentView` calls this for the `.hostedView` document state.
+    public func hostedView(forID id: UUID) -> AnyView? { hostedViews[id] }
+
+    /// Open a new tab that hosts an arbitrary SwiftUI `rootView`. Always a
+    /// fresh tab (these aren't file-backed, so there's nothing to reveal /
+    /// dedup against). Returns the tab id so callers can identify it. The
+    /// view is rendered by `ContentView` via `hostedView(forID:)`; closing
+    /// the tab drops the registered view.
+    @discardableResult
+    public func openHostedView<V: View>(title: String, rootView: V) -> UUID {
+        let hostID = UUID()
+        hostedViews[hostID] = AnyView(rootView)
+        let tab = Tab(state: .hostedView(id: hostID, title: title), viewMode: .source)
+        tabCoordinator.append(tab)
+        updateDerived()
+        return hostID
+    }
+
     /// Returns the per-tab cache actor for `tabID`, creating one
     /// lazily on first request. Views that need to observe
     /// highlight-ready events take `@ObservedObject` on the returned
@@ -1930,8 +2023,109 @@ public final class DocumentModel: ObservableObject {
 
     public var supportsViewModeToggle: Bool {
         guard let url = currentURL else { return false }
-        let cat = FileTypeDetector.category(for: url)
+        let cat = currentCategory ?? FileTypeDetector.category(for: url)
         return cat == .markdown || cat == .mermaid
+    }
+
+    /// The effective category for the current tab — its "Open As…"
+    /// override if set, else extension/UTI auto-detection (WAVE 2b item 6).
+    public var currentCategory: FileCategory? {
+        if let override = tabs.selected?.categoryOverride { return override }
+        guard let url = currentURL else { return nil }
+        return FileTypeDetector.category(for: url)
+    }
+
+    /// Whether the current tab has an explicit "Open As…" override.
+    public var hasCategoryOverride: Bool {
+        tabs.selected?.categoryOverride != nil
+    }
+
+    // MARK: - Open As… (WAVE 2b item 6)
+
+    /// The viewers offered by the universal "Open As…" menu for `url`.
+    /// Every applicable category for ANY file, including binaries — the
+    /// user can force a `.db` open as CSV, a `.png` as HEX, etc. Optional
+    /// magic-byte sniff promotes a likely-real category to the top (an
+    /// auto-hint, not a restriction).
+    public func openAsCategories(for url: URL) -> [FileCategory] {
+        // The full menu of viewers. Order = the menu order.
+        var cats: [FileCategory] = [
+            .code, .plainText, .markdown, .html, .image, .sqlite, .binary
+        ]
+        // Magic-byte hint: if the bytes look like a known type the
+        // extension didn't reveal (e.g. `mydb.db.bak` → SQLite), float
+        // that category to the front so it's the obvious first pick.
+        if let hint = Self.sniffCategory(url: url),
+           let idx = cats.firstIndex(of: hint) {
+            cats.remove(at: idx)
+            cats.insert(hint, at: 0)
+        }
+        return cats
+    }
+
+    /// Open `url` in a NEW tab forced to `category` (WAVE 2b item 6).
+    /// Used by the sidebar file context menu's "Open As…" submenu, where
+    /// the target file may not be the current tab. Loads through the
+    /// chosen lens and selects the new tab.
+    public func openAs(url: URL, category: FileCategory) {
+        let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
+        let state = controller.open(url: resolved, forcedCategory: category)
+        let mode = ViewModeOptions.defaultMode(for: resolved, forcedCategory: category)
+        tabCoordinator.append(Tab(
+            url: resolved, state: state, viewMode: mode, categoryOverride: category))
+        updateDerived()
+        recordOpenedFile(state: state, resolved: resolved)
+        startWatchingCurrentFile()
+    }
+
+    /// Set (or clear, with `nil`) the current tab's "Open As…" category
+    /// override and re-open the tab through that lens. Re-runs the loader
+    /// with the forced category (so a binary can be decoded as text /
+    /// rendered as a SQLite preview / shown in HEX) and resets the view
+    /// mode to that viewer's natural default.
+    public func setCurrentCategoryOverride(_ category: FileCategory?) {
+        guard let i = tabs.selectedIndex, tabs.tabs.indices.contains(i),
+              let url = tabs.tabs[i].url else { return }
+        let tabID = tabs.tabs[i].id
+        // Recompute the load + the default mode under the override.
+        let state = controller.open(url: url, forcedCategory: category)
+        let mode = ViewModeOptions.defaultMode(for: url, forcedCategory: category)
+        var t = tabs.tabs[i]
+        t.categoryOverride = category
+        t.state = state
+        t.viewMode = mode
+        tabCoordinator.replace(at: i, with: t)
+        // Drop derived caches keyed on the old rendering so the new
+        // viewer doesn't show stale rendered HTML / highlight runs.
+        purgeCaches(forURL: url, tabID: tabID)
+        updateDerived()
+    }
+
+    /// Best-effort magic-byte category sniff for the "Open As…" auto-hint.
+    /// Reads only the file's header — cheap, never the whole file. Returns
+    /// `nil` when nothing recognizable matches (then the menu just uses
+    /// its default order). This is a HINT, never a gate.
+    nonisolated static func sniffCategory(url: URL) -> FileCategory? {
+        guard let fh = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? fh.close() }
+        guard let head = try? fh.read(upToCount: 16), !head.isEmpty else { return nil }
+        let b = [UInt8](head)
+        // SQLite: "SQLite format 3\0".
+        let sqliteMagic: [UInt8] = Array("SQLite format 3".utf8)
+        if b.count >= sqliteMagic.count, Array(b.prefix(sqliteMagic.count)) == sqliteMagic {
+            return .sqlite
+        }
+        // PNG.
+        if b.count >= 8, Array(b.prefix(8)) == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] {
+            return .image
+        }
+        // JPEG.
+        if b.count >= 3, b[0] == 0xFF, b[1] == 0xD8, b[2] == 0xFF { return .image }
+        // GIF.
+        if b.count >= 6, Array(b.prefix(3)) == Array("GIF".utf8) { return .image }
+        // PDF — "%PDF".
+        if b.count >= 4, Array(b.prefix(4)) == Array("%PDF".utf8) { return .pdf }
+        return nil
     }
 
     /// Full file path of the current tab, with `$HOME` shortened to `~`.
@@ -2009,7 +2203,7 @@ public final class DocumentModel: ObservableObject {
         // lie about what's on screen.
         if let t = tabs.selected, t.viewMode == .hex {
             switch t.state {
-            case .binary, .empty, .loading: break
+            case .binary, .empty, .loading, .hostedView: break
             case .loaded, .preview, .error:
                 loadBinaryAsync(url: resolved, intoTabID: t.id)
             }
@@ -2086,7 +2280,7 @@ public final class DocumentModel: ObservableObject {
                 // Carry HEX mode (mirrors the sync path).
                 if t.viewMode == .hex {
                     switch state {
-                    case .binary, .empty, .loading: break
+                    case .binary, .empty, .loading, .hostedView: break
                     case .loaded, .preview, .error:
                         self.loadBinaryAsync(url: resolved, intoTabID: tabID)
                     }
@@ -2119,7 +2313,7 @@ public final class DocumentModel: ObservableObject {
                 sidebar.setSelected(resolved)
                 preferences.lastFolderURL = sidebar.rootURL
             }
-        case .empty, .error, .loading:
+        case .empty, .error, .loading, .hostedView:
             break
         }
     }
@@ -2212,7 +2406,10 @@ public final class DocumentModel: ObservableObject {
 
     /// Shared reload body once the target index is validated.
     private func applyReload(url: URL, at index: Int) {
-        let state = controller.open(url: url)
+        // Preserve a per-tab "Open As…" override across a watcher reload
+        // so an overridden file doesn't snap back to auto-detection when
+        // it changes on disk (WAVE 2b item 6).
+        let state = controller.open(url: url, forcedCategory: tabs.tabs[index].categoryOverride)
         var t = tabs.tabs[index]
         let wasEditor = t.viewMode == .editor
         t.state = state
@@ -2495,6 +2692,19 @@ public final class DocumentModel: ObservableObject {
             let survivorKeys = Set(renderedHTMLCache.keys)
             renderedHTMLCacheOrder = priorOrder.filter { survivorKeys.contains($0) }
         }
+        // Drop any hosted-view payloads no longer referenced by a live
+        // tab. `purgeCaches` runs AFTER the coordinator has mutated
+        // `tabs`, so a sweep over the surviving tabs' hosted ids is the
+        // safe, close-path-agnostic way to release closed File-History
+        // views (and their FileHistoryModel) without threading the
+        // hosted id through every close entry point.
+        if !hostedViews.isEmpty {
+            var live = Set<UUID>()
+            for t in tabs.tabs {
+                if case .hostedView(let hid, _) = t.state { live.insert(hid) }
+            }
+            hostedViews = hostedViews.filter { live.contains($0.key) }
+        }
     }
 
     public func moveTab(from src: Int, to dst: Int) {
@@ -2534,7 +2744,7 @@ public final class DocumentModel: ObservableObject {
     /// `materializeIfNeeded(at:)` actually read the file. Workspace
     /// restore and multi-file drops use this so a 15-file session
     /// doesn't read 15 files at launch — only the focused one.
-    public func appendLazyTab(url: URL, viewMode: ViewMode) {
+    public func appendLazyTab(url: URL, viewMode: ViewMode, categoryOverride: FileCategory? = nil) {
         let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
         // Dedup invariant (matches `TabsState.openOrReveal`): never create a
         // SECOND tab for a file that's already open. `appendLazyTab` was the
@@ -2557,11 +2767,17 @@ public final class DocumentModel: ObservableObject {
         // not in its tag list and the ModeBar would show no
         // selection at all. Fall back to the file's defaultMode in
         // that case.
-        let allowed = ViewModeOptions.availableModes(for: resolved)
+        // With a category override, mode validity is judged against the
+        // OVERRIDE category's modes (e.g. a `.db` opened as Source must
+        // keep .source), not the URL's extension-derived ones.
+        let allowed = ViewModeOptions.availableModes(
+            for: resolved, forcedCategory: categoryOverride)
         let safeMode = allowed.contains(viewMode)
             ? viewMode
-            : ViewModeOptions.defaultMode(for: resolved)
-        tabCoordinator.append(Tab(url: resolved, state: .empty, viewMode: safeMode))
+            : ViewModeOptions.defaultMode(for: resolved, forcedCategory: categoryOverride)
+        tabCoordinator.append(Tab(
+            url: resolved, state: .empty, viewMode: safeMode,
+            categoryOverride: categoryOverride))
     }
 
     /// Open many URLs at once. Files are appended as lazy tabs (state
@@ -2637,8 +2853,11 @@ public final class DocumentModel: ObservableObject {
         loading.state = .loading(url)
         tabCoordinator.replace(at: index, with: loading)
         let viewMode = t.viewMode
+        // WAVE 2b item 6: honor a restored "Open As…" override when the
+        // lazy tab finally materializes.
+        let override = t.categoryOverride
         let task = Task.detached(priority: .userInitiated) { [controller] in
-            let state = controller.open(url: url)
+            let state = controller.open(url: url, forcedCategory: override)
             if Task.isCancelled { return }
             await MainActor.run { [weak self] in
                 guard let self else { return }
@@ -2665,7 +2884,7 @@ public final class DocumentModel: ObservableObject {
                 // binary load.
                 if viewMode == .hex {
                     switch state {
-                    case .binary, .empty, .loading: break
+                    case .binary, .empty, .loading, .hostedView: break
                     case .loaded, .preview, .error:
                         self.loadBinaryAsync(url: url, intoTabID: tabID)
                     }
@@ -2712,7 +2931,7 @@ public final class DocumentModel: ObservableObject {
             // otherwise.
             if let url = t.url {
                 switch t.state {
-                case .binary, .empty, .loading: break
+                case .binary, .empty, .loading, .hostedView: break
                 case .loaded, .preview, .error:
                     loadBinaryAsync(url: url, intoTabID: t.id)
                 }

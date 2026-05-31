@@ -148,6 +148,52 @@ extension AppDelegate {
                 frame.size = NSSize(width: dims[0], height: dims[1])
                 win.setFrame(frame, display: true, animate: false)
             }
+        // ---- WAVE 2b verification verbs (drive the model directly so
+        // the screencap harness can open the built-but-unwired views) ----
+        case "file-history":
+            // Open the in-app FileHistoryView for `arg` (a file path) as
+            // a view-hosting tab. No-op if not a tracked file in a repo.
+            model.openFileHistory(for: URL(fileURLWithPath: arg))
+        case "diagnostic-window":
+            // WAVE 2b item 4: open the diagnostic tool window (gated).
+            showDiagnosticWindow(nil)
+        case "instrumentation-window":
+            // WAVE 2b item 5: open the instrumentation tool window (gated).
+            showInstrumentationWindow(nil)
+        case "emit-test-log":
+            // Emit a couple of observability events so the Logs view has
+            // visible data in a fresh run (the sink is otherwise quiet
+            // until real ViewerCore activity happens).
+            Obs.shared.emit(ObsEvent(
+                level: .info, subsystem: "wave2b",
+                message: "instrumentation smoke event 1"))
+            Obs.shared.emit(ObsEvent(
+                level: .warn, subsystem: "wave2b",
+                message: "instrumentation smoke event 2"))
+        case "open-as":
+            // WAVE 2b item 6: "<category> <path>" — open a file forced to
+            // a viewer category (sqlite/code/plainText/markdown/image/
+            // binary/...). Verifies opening a binary as another viewer.
+            let bits = arg.split(separator: " ", maxSplits: 1).map(String.init)
+            if bits.count == 2, let cat = FileCategory(rawValue: bits[0]) {
+                model.openAs(url: URL(fileURLWithPath: bits[1]), category: cat)
+            }
+        case "set-open-as":
+            // Override the CURRENT tab's viewer category. "<category>" or
+            // "auto" to clear.
+            if arg == "auto" {
+                model.setCurrentCategoryOverride(nil)
+            } else if let cat = FileCategory(rawValue: arg) {
+                model.setCurrentCategoryOverride(cat)
+            }
+        case "folder-stats":
+            // Toggle the folder-stats slide-down under the FILES header.
+            // `arg` "on"/"off" sets explicitly; empty toggles.
+            switch arg {
+            case "on":  model.folderStatsExpanded = true
+            case "off": model.folderStatsExpanded = false
+            default:    model.folderStatsExpanded.toggle()
+            }
         case "find":
             // Invoke the system find action on first responder NSTextView.
             NSApp.sendAction(

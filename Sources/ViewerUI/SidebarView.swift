@@ -27,6 +27,10 @@ struct SidebarView: View {
     /// header reads as clickable.
     @State private var filesHeaderHovering = false
 
+    // Folder-stats slide-down visibility lives on `DocumentModel`
+    // (`folderStatsExpanded`) so it survives sidebar re-bodies and is
+    // scriptable — see the model property doc (WAVE 2b item 3).
+
     // MARK: - Recency mode dropdown (file-tree-recency agent)
     //
     // Drives the left-edge color stripe on each `FileRowView`.
@@ -363,6 +367,23 @@ struct SidebarView: View {
         if let root = sidebar.rootURL {
             VStack(spacing: 0) {
                 filesHeader
+                // Folder-stats slide-down (WAVE 2b item 3). Renders the
+                // WAVE 2a `FolderStatsView` inline under the header when
+                // the `chart.bar` toggle is on AND the root is inside a
+                // repo. The cache is the long-lived one on DocumentModel
+                // (survives reopens); scope is repo-wide.
+                if model.folderStatsExpanded, let repoRoot = GitClient.discoverRoot(from: root) {
+                    Divider()
+                    FolderStatsView(
+                        doc: model,
+                        repoRoot: repoRoot,
+                        scope: .repo,
+                        cache: model.repoStatsCache,
+                        title: repoRoot.lastPathComponent
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    Divider()
+                }
                 if filesExpanded {
                     ScrollViewReader { proxy in
                         ScrollView {
@@ -545,6 +566,25 @@ struct SidebarView: View {
             .helpInfo(title: "Recency colors",
                       description: "Color-code file rows by recency (Modified / Added / Created)")
             .accessibilityIdentifier("mdv.sidebar.recencyMode")
+            // Folder-stats toggle (WAVE 2b item 3). Slides
+            // `FolderStatsView` down under the FILES header. Shown only
+            // when the root is inside a git repo (the stats are repo-wide
+            // aggregates). Mirrors the lock/pin icon-button styling.
+            if folderStatsAvailable {
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        model.folderStatsExpanded.toggle()
+                    }
+                }) {
+                    Image(systemName: "chart.bar")
+                        .font(.system(size: 10))
+                        .foregroundStyle(model.folderStatsExpanded ? Color.accentColor : .secondary)
+                }
+                .buttonStyle(.plain)
+                .helpInfo(title: model.folderStatsExpanded ? "Hide folder statistics" : "Folder statistics",
+                          description: "Show repo commit / author / file-type stats")
+                .accessibilityIdentifier("mdv.sidebar.folderStats")
+            }
             // Lock toggle. When locked, auto-reveal-on-click +
             // tab-reveal won't change the sidebar root; the user's
             // chosen folder stays put.
@@ -610,6 +650,15 @@ struct SidebarView: View {
         .padding(.vertical, 6)
     }
 
+    /// True when the sidebar root is inside a git repo — gates the
+    /// folder-stats `chart.bar` toggle (WAVE 2b item 3). FolderStatsView
+    /// reads repo-wide aggregates, so there's nothing to show outside a
+    /// repo.
+    private var folderStatsAvailable: Bool {
+        guard let root = sidebar.rootURL else { return false }
+        return GitClient.discoverRoot(from: root) != nil
+    }
+
     /// True when the current root has a parent we can navigate to (not `/`).
     private var canGoUp: Bool {
         guard let root = sidebar.rootURL else { return false }
@@ -661,6 +710,16 @@ private struct FileRowContextMenu: View {
             Button("Open") { model.open(url: node.url) }
             Button("Open in New Tab") { model.openInNewTab(node.url) }
             Button("Open in Split") { model.openInSplit(node.url) }
+            // WAVE 2b item 6: universal "Open As…" — open this file in a
+            // new tab through any applicable viewer (Source, SQLite, HEX,
+            // Image, …), including for binaries.
+            Menu("Open As…") {
+                ForEach(model.openAsCategories(for: node.url), id: \.self) { cat in
+                    Button(ModeBar.categoryLabel(cat)) {
+                        model.openAs(url: node.url, category: cat)
+                    }
+                }
+            }
             Divider()
             Button(model.bookmarksStore.contains(node.url)
                    ? "Remove Bookmark" : "Bookmark File") {
@@ -723,9 +782,14 @@ private struct FileRowContextMenu: View {
         if trackedRepos.trackedRoots.isEmpty == false {
             Divider()
             if !node.isDirectory {
-                Button("Show File History") {
-                    model.showGitLog(forPath: node.url, scope: .file)
+                // WAVE 2b item 2: route to the in-app FileHistoryView
+                // (master-detail commits + diff) instead of the old
+                // synthetic-markdown `showGitLog`. Gated on the file
+                // being in a repo + tracked.
+                Button("File History") {
+                    model.openFileHistory(for: node.url)
                 }
+                .disabled(!model.canShowFileHistory(for: node.url))
             } else {
                 Button("Show Folder History") {
                     model.showGitLog(forPath: node.url, scope: .folder)

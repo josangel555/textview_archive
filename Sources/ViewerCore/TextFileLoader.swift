@@ -156,7 +156,13 @@ public struct TextFileLoader: Sendable {
         self.softWarnBytes = min(64 * 1024 * 1024, maxBytes)
     }
 
-    public func load(url: URL) throws -> TextFile {
+    /// Load `url` as text. `forceText` (WAVE 2b item 6 — "Open As… text /
+    /// CSV / JSON / source") bypasses the NUL-byte binary heuristic: when
+    /// the user explicitly asks to view a binary file as text, we decode
+    /// the bytes with a lossy fallback (Latin-1 never fails) rather than
+    /// throwing `.binaryFile`. The size ceiling + not-readable / not-found
+    /// errors still apply.
+    public func load(url: URL, forceText: Bool = false) throws -> TextFile {
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw FileLoadError.fileNotFound
         }
@@ -199,10 +205,38 @@ public struct TextFileLoader: Sendable {
                 isLargeReadOnly: data.count > softWarnBytes
             )
         case .binary:
+            // "Open As… text" override: decode the raw bytes as Latin-1
+            // (a total, never-failing 1:1 byte→codepoint map) so the user
+            // can inspect a binary's textual fragments. Without the
+            // override this is a hard `.binaryFile` → HEX fall-through.
+            if forceText {
+                let s = String(decoding: data, as: UTF8.self).isEmpty
+                    ? Self.latin1(data)
+                    : (String(data: data, encoding: .utf8) ?? Self.latin1(data))
+                return TextFile(
+                    url: url, contents: s, encoding: .isoLatin1,
+                    byteCount: data.count, modifiedTime: mtime,
+                    isLargeReadOnly: data.count > softWarnBytes
+                )
+            }
             throw FileLoadError.binaryFile
         case .undecodable:
+            if forceText {
+                return TextFile(
+                    url: url, contents: Self.latin1(data), encoding: .isoLatin1,
+                    byteCount: data.count, modifiedTime: mtime,
+                    isLargeReadOnly: data.count > softWarnBytes
+                )
+            }
             throw FileLoadError.decodingFailed
         }
+    }
+
+    /// Lossless Latin-1 decode: every byte 0x00–0xFF maps to the same
+    /// Unicode scalar, so this never fails — the fallback for the
+    /// force-text path on otherwise-undecodable / binary content.
+    private static func latin1(_ data: Data) -> String {
+        String(data: data, encoding: .isoLatin1) ?? ""
     }
 
     // Encoding-detection statics moved to `TextDecoder` (shared with

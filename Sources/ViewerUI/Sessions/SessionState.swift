@@ -162,7 +162,13 @@ public final class SessionState: ObservableObject {
             }
             seen.insert(key)
             liveToOut[liveIdx] = out.count
-            out.append(TabSnapshot(path: url.path, viewMode: t.viewMode.rawValue))
+            out.append(TabSnapshot(
+                path: url.path,
+                viewMode: t.viewMode.rawValue,
+                // WAVE 2b item 6: persist the per-tab "Open As…" override
+                // so the chosen viewer survives a restart. nil → key
+                // omitted by the encoder (additive-optional).
+                categoryOverride: t.categoryOverride?.rawValue))
         }
         let remapped: Int? = selectedIndex.flatMap { liveToOut[$0] }
         return (out, remapped)
@@ -223,14 +229,26 @@ public final class SessionState: ObservableObject {
         let restoreTabs = TabsState.dedupedRestoreTabs(
             snapshot.openTabs.map { (path: $0.path, viewMode: $0.viewMode) }
         )
+        // Path → persisted "Open As…" override (WAVE 2b item 6). An
+        // unknown raw string (a future category this build doesn't know)
+        // maps back to nil = auto-detect — the downgrade-safe default.
+        let overrideByPath: [String: FileCategory] = Dictionary(
+            snapshot.openTabs.compactMap { snap -> (String, FileCategory)? in
+                guard let raw = snap.categoryOverride,
+                      let cat = FileCategory(rawValue: raw) else { return nil }
+                return (snap.path, cat)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
         for t in restoreTabs {
             let url = URL(fileURLWithPath: t.path)
             guard FileManager.default.fileExists(atPath: url.path) else {
                 continue
             }
+            let override = overrideByPath[t.path]
             let mode = ViewMode(rawValue: t.viewMode)
-                ?? ViewModeOptions.defaultMode(for: url)
-            model.appendLazyTab(url: url, viewMode: mode)
+                ?? ViewModeOptions.defaultMode(for: url, forcedCategory: override)
+            model.appendLazyTab(url: url, viewMode: mode, categoryOverride: override)
         }
         if let zoom = snapshot.zoom { model.zoom = zoom }
         if let wrap = snapshot.wordWrap { model.sourceWordWrap = wrap }

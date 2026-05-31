@@ -7,10 +7,20 @@ import Foundation
 public struct TabSnapshot: Codable, Equatable, Sendable {
     public let path: String
     public let viewMode: String     // ViewMode.rawValue
+    /// Per-tab "Open As…" category override (WAVE 2b item 6).
+    /// `FileCategory.rawValue`, or `nil` for auto-detect. **Additive-
+    /// optional**: an older reader (no `categoryOverride` key) decodes
+    /// fine (the synthesized optional defaults to `nil`), and a newer
+    /// reader faced with a legacy file with no key gets `nil` =
+    /// auto-detect — the downgrade-safe default. On hydrate, an unknown
+    /// raw string (a future category this build doesn't know) maps back
+    /// to `nil` rather than crashing.
+    public let categoryOverride: String?
 
-    public init(path: String, viewMode: String) {
+    public init(path: String, viewMode: String, categoryOverride: String? = nil) {
         self.path = path
         self.viewMode = viewMode
+        self.categoryOverride = categoryOverride
     }
 }
 
