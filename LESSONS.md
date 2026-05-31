@@ -1440,3 +1440,72 @@ disagree on URL-policy tests. Treat URL fragment/scheme comparisons as
 Foundation-version-fragile and pin them with field-by-field compares,
 not parser round-trips. Tracked in `BACKLOG.md` for a real fix.
 
+## Multi-agent fix workflows: worktree leak + commit-discipline drift
+
+From the 2026-05-30 47-agent pre-launch audit (worktree-isolated fix
+agents, 15 groups). Three recurring hygiene failures to expect and
+guard against next time:
+
+1. **Worktree changes leak into the MAIN working tree as uncommitted
+   residue.** One group's fixes appeared *both* committed on its
+   `worktree-<id>` branch *and* uncommitted in the parent repo's
+   working tree (shared filesystem; harness pruned/raced the worktree).
+   The branch was authoritative (its content was near-identical, green-
+   verified). Mitigation: before merging, `git status` the main tree;
+   if dirty with agent residue, `git diff <branch> -- <files>` to
+   confirm redundancy, then **stash the residue** (recoverable) rather
+   than discard — `git stash push -m "..."`. Never `git checkout --`
+   blindly (LESSONS "worktree-pruning + uncommitted-work-loss").
+
+2. **Agents ignore "only touch your files / no `git add -A`."** Several
+   fix agents swept unrelated files (the 5 `docs/reusable-core` strategy
+   docs, which lived on a *different* branch) into their commits via
+   broad `git add`. Result: the "file-disjoint" guarantee held for real
+   source but 3 branches collided on those docs (auto-resolved only
+   because the content was byte-identical). Brief future fix agents with
+   an explicit allowlist AND verify each branch's `git diff --name-only`
+   against its assigned file set before merging.
+
+3. **`GitClient.swift` edited by two groups** (security + process-runner)
+   — the triage's file-disjoint partition isn't perfectly honored.
+   Survived only because the hunks didn't overlap (git auto-combined).
+   Don't *assume* disjointness; run the cross-branch collision check
+   (`for b in <branches>; do git diff --name-only main..$b; done | sort
+   | uniq -d`) before the merge loop.
+
+## Auto-fix agents can stray into "surface-only" / one-way-door items
+
+Same audit: a fix group was told an item was **surface-only** (the
+"inside-out signing to drop `--deep`" — a Phase-9 distribution change).
+The agent **implemented it anyway**, replacing `build-app.sh`'s working
+`--deep` signing with per-Mach-O inside-out signing — which **broke the
+`.bundle` resource-wrapper signing** (the exact FinderInfo /
+`--options runtime` failure that originally forced `--deep`; the agent
+even deleted the warning comment). Crucially, **`swift build` + `swift
+test` PASSED** — the break only surfaced on a real `scripts/build-app.sh`
+run (codesign step, exit 1: "bundle format unrecognized").
+
+Lessons: (a) the test/CI gate does NOT cover the signing/packaging path
+— a pre-launch/dist change must be validated by an actual `build-app.sh`
+run, not just unit tests; (b) auto-fix workflows can violate "do not
+implement surface-only items" — re-verify the diff of any group that was
+near a surfaced one-way-door; (c) the fix was a clean revert
+(`git checkout main -- scripts/build-app.sh`) — keep `--deep` until
+Phase-9 does inside-out signing *with a VM re-test of the FinderInfo
+issue*.
+
+## Exec sub-cap is a moving target as the codebase grows
+
+`check-bundle-size.sh` exec sub-cap has climbed 16 → 18 MB (2026-05-30)
+as legitimate Swift code accreted (rails + large-file + the audit's ~140
+fixes pushed the main exec to 16.3 MB). The cap exists to catch a
+TreeSitter grammar *silently static-linking* into the exec (a multi-MB
+jump) — NOT to police normal growth. When it trips: check
+`du -sh Contents/Frameworks` (grammars should still be the ~16 MB there,
+not in the exec) and the build log's "copied N grammar dylib(s)" line; if
+grammars are correctly in `Frameworks/`, the growth is real code — bump
+the cap (`EXEC_BUDGET_MB`) and move on. Total stays well under the 37 MB
+cap (36 MB). The `.app` is assembled+signed *before* the size check, so a
+cap trip (exit 2) does not mean an invalid bundle — `codesign -v` it and
+install if valid.
+
