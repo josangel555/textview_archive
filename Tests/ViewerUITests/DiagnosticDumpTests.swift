@@ -269,6 +269,34 @@ final class DiagnosticDumpTests: XCTestCase {
             "Could not find a TabBar-shaped PlatformContainer (narrow + wide). Tree depth=\(host.subviews.count) top-level subviews.")
     }
 
+    // MARK: - Content redaction (OBS-1 / CR-06)
+
+    /// `redactContent: true` must drop `string_head` (the first 120 chars
+    /// of an NSTextView's string) so a persisted release/SIGUSR1 dump
+    /// can't embed a slice of the user's document. Default (false) keeps
+    /// it for forensic value in DEBUG / `--diagnose`.
+    func test_describeView_redactsTextViewContent_whenRequested() throws {
+        _ = NSApplication.shared
+        let tv = NSTextView(frame: NSRect(x: 0, y: 0, width: 200, height: 100))
+        let secret = "TOP-SECRET-DOCUMENT-CONTENTS"
+        tv.string = secret
+
+        let unredacted = DiagnosticDump.describeView(
+            tv, depth: 0, includeRecursive: false, redactContent: false)
+        let unredHead = (unredacted["nsTextView"] as? [String: Any])?["string_head"] as? String
+        XCTAssertEqual(unredHead, secret,
+                       "default (unredacted) dump should carry the content")
+
+        let redacted = DiagnosticDump.describeView(
+            tv, depth: 0, includeRecursive: false, redactContent: true)
+        let redHead = (redacted["nsTextView"] as? [String: Any])?["string_head"] as? String
+        XCTAssertEqual(redHead, "<redacted>",
+                       "redacted dump must not carry the content")
+        // string_length is metadata (not content) and stays available.
+        XCTAssertEqual((redacted["nsTextView"] as? [String: Any])?["string_length"] as? Int,
+                       secret.count)
+    }
+
     // MARK: - Whole-tree sanity
 
     func test_wholeTree_noOpacityZeroOrAncestorHidden() throws {
