@@ -2970,6 +2970,17 @@ public final class DocumentModel: ObservableObject {
                 }
             }
         case .editor:
+            // Activation gate: refuse the editor upgrade for files past
+            // the CM6 cap (50 MB). `ContentView` already renders the
+            // LargeEditorPlaceholderView so no 60 MB JS string reaches a
+            // WebContent process — but without refusing here the mode
+            // itself flips to `.editor`, which is both wrong (the picker
+            // lies) and the contract EditorPhase4ScenarioTests pins. Keep
+            // the tab on its current mode instead.
+            if case .loaded(let file) = t.state,
+               file.byteCount > codeMirrorEditorMaxBytes {
+                return
+            }
             // Editor needs the text contents in memory. If the tab
             // currently holds a binary view, kick a text re-load so
             // the buffer has something to bind to; the buffer itself

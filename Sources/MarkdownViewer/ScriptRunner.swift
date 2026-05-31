@@ -253,6 +253,15 @@ extension AppDelegate {
             "lastGoToError": model.lastGoToError,
             "sessions": sessionSummaries,
             "activeSessionID": sessions.core.activeID?.uuidString ?? "",
+            // Nested sidebar projection. SidebarPage reads
+            // `model.sidebar.rootURL` from here; without it the
+            // sidebar-set-root regression guard (InteractionDeepTests)
+            // always saw nil and failed. `absoluteString` preserves the
+            // directory trailing slash the assertions match on.
+            "sidebar": [
+                "rootURL": model.sidebar.rootURL?.absoluteString ?? "",
+                "isVisible": model.sidebar.isVisible,
+            ],
         ]
         if let data = try? JSONSerialization.data(
             withJSONObject: enriched,
@@ -261,6 +270,25 @@ extension AppDelegate {
             try? data.write(to: URL(fileURLWithPath: json))
         }
         _ = DiagnosticDump.captureWindowToPNG(win, path: png)
+        // Verification-only: when a separate tool window (Diagnostics /
+        // Instrumentation) is the key window, also snapshot it via the
+        // same permission-free in-process cacheDisplay path. The main
+        // capture above only ever targets `self.window`, so without this
+        // the WAVE-2b tool windows are uncapturable by the screencap
+        // harness. No effect on app behaviour — purely an extra artifact.
+        // Prefer the key window, but fall back to any *other* visible
+        // window — in MDV_BACKGROUND / non-activated runs the app has no
+        // key window, yet the tool window is still ordered-in and fully
+        // laid out, so cacheDisplay snapshots it correctly.
+        let otherWindow = NSApp.keyWindow.flatMap { $0 !== win ? $0 : nil }
+            ?? NSApp.windows.first { $0 !== win && $0.isVisible && $0.contentView != nil }
+        if let other = otherWindow {
+            let keyPNG = tmp.appendingPathComponent("mdv-step-\(n)-key.png").path
+            if DiagnosticDump.captureWindowToPNG(other, path: keyPNG) {
+                FileHandle.standardError.write(
+                    Data("step \(n) [\(label)] tool-window '\(other.title)' → \(keyPNG)\n".utf8))
+            }
+        }
         FileHandle.standardError.write(
             Data("step \(n) [\(label)] → \(json) + \(png)\n".utf8))
     }

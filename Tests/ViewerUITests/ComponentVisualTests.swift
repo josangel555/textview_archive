@@ -121,7 +121,14 @@ final class ComponentVisualTests: XCTestCase {
         let nodes = descendants(of: host)
         let needle = "uniquelynamed"
         let foundInLabel = nodes.contains { node in
-            if let s = (node.value(forKey: "stringValue") as? String),
+            // Guard the KVC probe with `responds(to:)`. A bare
+            // `value(forKey: "stringValue")` throws NSUnknownKeyException
+            // on nodes that aren't KVC-compliant for the key (e.g.
+            // `NSHostingView<ContentView>`), which can't be caught from
+            // Swift and aborts the whole test process. Only NSControls
+            // (NSTextField etc.) expose `stringValue`.
+            if node.responds(to: NSSelectorFromString("stringValue")),
+               let s = (node.value(forKey: "stringValue") as? String),
                s.contains(needle) { return true }
             if let s = node.accessibilityLabel(), s.contains(needle) { return true }
             if let s = node.accessibilityValue() as? String, s.contains(needle) { return true }

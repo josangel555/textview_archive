@@ -44,10 +44,46 @@ final class LaunchHarness {
     }
 
     init(label: String, file: StaticString = #filePath) {
-        let project = URL(fileURLWithPath: String(describing: file))
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
+        // Resolve the project root by walking UP from this source file
+        // until we find a directory that actually contains the built
+        // bundle (or `Package.swift`). The previous fixed "strip three
+        // path components" assumed the caller's file sat exactly at
+        // `Tests/ViewerUITests/<file>.swift`. That broke once the shared
+        // harness moved one level deeper into `Harness/` and subclasses
+        // (MultiScenarioTestCase) construct `LaunchHarness(label:)`
+        // *without* forwarding their own `#filePath`: the default
+        // `#filePath` then pointed at `Harness/MultiScenarioTestCase.swift`,
+        // stripping to `<root>/Tests/` and looking for a `dist/` that
+        // doesn't exist — so EVERY live/scenario/interaction test silently
+        // XCTSkip'd with "Build .app first" even on a freshly built app.
+        // Walking up is robust to the file's depth.
+        let fileURL = URL(fileURLWithPath: String(describing: file))
+        let relBundle = "dist/TextView.app/Contents/MacOS/MarkdownViewer"
+        let fm = FileManager.default
+        var dir = fileURL.deletingLastPathComponent()
+        var project = dir
+        var found = false
+        // Bound the walk so a pathological path can't loop to "/".
+        for _ in 0..<12 {
+            if fm.fileExists(atPath: dir.appendingPathComponent(relBundle).path)
+                || fm.fileExists(atPath: dir.appendingPathComponent("Package.swift").path) {
+                project = dir
+                found = true
+                break
+            }
+            let parent = dir.deletingLastPathComponent()
+            if parent.path == dir.path { break }  // reached filesystem root
+            dir = parent
+        }
+        if !found {
+            // Fall back to the historical strip-3 behaviour so a caller
+            // that genuinely sits at Tests/ViewerUITests/<file>.swift
+            // still resolves the same way it always did.
+            project = fileURL
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+        }
         self.appBundlePath = project.appendingPathComponent("dist/TextView.app").path
         self.appExecutable = project.appendingPathComponent(
             "dist/TextView.app/Contents/MacOS/MarkdownViewer")

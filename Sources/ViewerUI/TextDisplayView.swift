@@ -463,6 +463,18 @@ public final class SourceTextController: NSViewController {
     /// so a queued closure can't resurrect attributes on a torn-down view.
     func teardownStorage() {
         pendingSelectionHighlightWork?.cancel()
+        // CRITICAL: drop the notification observers BEFORE mutating storage.
+        // `endEditing()` below flushes layout, which makes NSTextView clamp
+        // its now-stale selection into the emptied storage and synchronously
+        // post `didChangeSelectionNotification`. If `selectionObserver` is
+        // still live, that fires `publishSelection()` → mutates the
+        // @Published `sourceSelection` → SwiftUI `GraphHost.invalidate()`,
+        // re-entering a graph mutation already in flight at dismantle time —
+        // an exclusive-access trap (SIGABRT). `removeObserver` is idempotent
+        // and we nil the handles so `deinit` doesn't double-remove.
+        if let o = scrollObserver    { NotificationCenter.default.removeObserver(o); scrollObserver = nil }
+        if let o = frameObserver     { NotificationCenter.default.removeObserver(o); frameObserver = nil }
+        if let o = selectionObserver { NotificationCenter.default.removeObserver(o); selectionObserver = nil }
         if let storage = textView.textStorage {
             storage.beginEditing()
             storage.setAttributedString(NSAttributedString(string: ""))
