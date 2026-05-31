@@ -281,10 +281,16 @@ public enum GrammarLoader {
     // MARK: - Logging
 
     private static func log(_ message: String) {
+        // Route to the unified observability sink (subsystem "grammar").
+        // The sink ring-buffers the event and only fans out to os_log if
+        // the app explicitly configured that fan-out.
+        Obs.shared.emit(.warn, "grammar", message)
+
         // Single-line stderr log — quiet by default but greppable.
-        // We deliberately don't use `os_log` because this code runs
-        // inside both the app and the xctest harness; the latter
-        // routes os_log to a separate stream that's harder to capture.
+        // Preserved as the PRIMARY channel: this code runs inside both
+        // the app and the xctest harness, and the latter routes os_log
+        // to a separate stream that's harder to capture. stderr stays
+        // the reliable capture path regardless of sink configuration.
         FileHandle.standardError.write(Data("[GrammarLoader] \(message)\n".utf8))
     }
 

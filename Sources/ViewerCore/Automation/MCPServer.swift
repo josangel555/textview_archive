@@ -321,9 +321,15 @@ public final class MCPServer: @unchecked Sendable {
     }
 
     private func log(_ s: String) {
+        // Route to the unified observability sink (subsystem "mcp"). The
+        // sink ring-buffers in memory; per the security model the MCP
+        // host must NEVER read that buffer back out (no audit/consent),
+        // but emitting the server's OWN diagnostics into it is fine.
+        Obs.shared.emit(.info, "mcp", s)
+
         // Logger optional — production callers route to stderr or
         // ~/Library/Logs; tests pass nil. Stdout must stay clean for
-        // protocol bytes only.
+        // protocol bytes only. Preserved verbatim.
         logger?(s)
     }
 

@@ -241,19 +241,41 @@ public struct LSPWorkspaceOverrides: Sendable, Equatable {
     }
 }
 
-/// Minimal logging seam. The LSP layer does not currently use OSLog
-/// (the dev-diagnostics panel is the canonical surface), so this
-/// keeps overrides from pulling in a new dependency. Tests can read
-/// `LSPLog.captured` to assert that warnings fired.
+/// Minimal logging seam for the LSP override layer. Warnings now flow
+/// through the process-wide `Obs.shared` observability sink (subsystem
+/// `"lsp"`), which ring-buffers them and optionally fans out to
+/// `os_log` — but the legacy behaviour is preserved: each warning is
+/// still written to stderr (cheap; override files are rare), and the
+/// `captured()`/`resetCaptured()` test seam still works.
+///
+/// `captured()` reads from an in-process mirror buffer maintained here
+/// rather than from `Obs.shared`, so tests that assert on LSP warnings
+/// don't have to install or introspect a `RingBufferSink`. The mirror
+/// is deliberately tiny and bounded to avoid the unbounded-growth /
+/// content-leak surface the design flags for any message buffer.
 public enum LSPLog {
     nonisolated(unsafe) private static var _captured: [String] = []
     private static let lock = NSLock()
 
+    /// Bound on the test-mirror buffer. Override files are parsed rarely;
+    /// a real session emits a handful of warnings, but a pathological
+    /// loop must not grow this without limit. Drop-oldest on overflow.
+    private static let captureCap = 1_000
+
     public static func warn(_ message: String) {
-        lock.lock(); defer { lock.unlock() }
+        // Route to the unified sink (ring buffer + optional os_log).
+        Obs.shared.emit(.warn, "lsp", message)
+
+        lock.lock()
         _captured.append(message)
+        if _captured.count > captureCap {
+            _captured.removeFirst(_captured.count - captureCap)
+        }
+        lock.unlock()
+
         // Surface to stderr for live-app debugging. Cheap; one line
-        // per malformed config and override files are rare.
+        // per malformed config and override files are rare. Preserved
+        // verbatim so existing `[LSP] WARN ...` grep habits keep working.
         FileHandle.standardError.write(
             Data("[LSP] WARN \(message)\n".utf8))
     }
