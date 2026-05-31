@@ -4,6 +4,12 @@ import ViewerCore
 struct SidebarView: View {
     @ObservedObject var sidebar: SidebarModel
     @ObservedObject var model: DocumentModel
+    /// Multi-repo git registry observation surface. Observed DIRECTLY
+    /// (a third independent observable alongside `sidebar` + `model`) so
+    /// badge colors / repo-root glyphs / section visibility re-eval on a
+    /// `version` bump WITHOUT routing through `DocumentModel.objectWillChange`
+    /// — see `TrackedReposRepublishInvariantTests`.
+    @ObservedObject var trackedRepos: TrackedReposChannel
 
     /// File-tree accordion state. Persisted across the session via
     /// `@AppStorage` so the user's last collapse choice survives a
@@ -174,7 +180,9 @@ struct SidebarView: View {
     /// the active tab isn't an LSP language.
     private var panelVisibility: [(panel: SidebarPanelKind, isVisible: Bool)] {
         let hasRoot = sidebar.rootURL != nil
-        let hasRepo = sidebar.gitRepoRoot != nil
+        // Git accordion shows when ANY repo is tracked (multi-repo), not
+        // just the single auto-discovered sidebar-root repo.
+        let hasRepo = trackedRepos.trackedRoots.isEmpty == false
         let hasLSPLanguage: Bool = {
             guard let url = model.currentURL else { return false }
             return LSPLanguageRegistry.default.language(for: url) != nil
@@ -222,7 +230,7 @@ struct SidebarView: View {
                 .environment(\.sidebarSectionBodyHeight,
                              SidebarPanelHeights.clamp(CGFloat(searchHeight)))
         case .git:
-            GitPanelSection(model: model, sidebar: sidebar)
+            GitPanelSection(model: model, sidebar: sidebar, trackedRepos: trackedRepos)
                 .environment(\.sidebarSectionBodyHeight,
                              SidebarPanelHeights.clamp(CGFloat(gitHeight)))
         case .claudeTimeline:
@@ -341,6 +349,7 @@ struct SidebarView: View {
                                         depth: row.depth,
                                         sidebar: sidebar,
                                         model: model,
+                                        trackedRepos: trackedRepos,
                                         recencyMode: recencyMode
                                     )
                                 }
@@ -557,6 +566,7 @@ private struct FileRowContextMenu: View {
     let node: FileNode
     @ObservedObject var sidebar: SidebarModel
     @ObservedObject var model: DocumentModel
+    @ObservedObject var trackedRepos: TrackedReposChannel
 
     var body: some View {
         if !node.isDirectory {
@@ -595,19 +605,18 @@ private struct FileRowContextMenu: View {
                 )
                 model.refreshBookmarks()
             }
-            // Override the auto-discovered git root. Useful for nested
-            // worktrees or submodules where the user wants TextView
-            // to treat a subfolder as the repo root.
-            Button(sidebar.gitRootOverride == node.url
-                   ? "Clear Git Root Override" : "Set as Git Root") {
-                if sidebar.gitRootOverride == node.url {
-                    sidebar.gitRootOverride = nil
-                } else {
-                    sidebar.gitRootOverride = node.url
+            // Pin a repo into the tracked set so its badges / gutter /
+            // panel stay live even with no open tab inside it (monorepo
+            // subdir, submodule, or a repo you're about to work in). The
+            // multi-pin successor to the old single-slot "Set as Git
+            // Root" override.
+            if trackedRepos.isRepoRoot(node.url) {
+                Button(model.repoFocus.pinned.contains(TrackedReposReducer.normalize(node.url))
+                       ? "Unpin Repo" : "Pin Repo") {
+                    model.repoFocus.togglePin(node.url)
                 }
-                sidebar.refreshGitStatus()
+                Divider()
             }
-            Divider()
         }
         Button("Copy Path") { Pasteboard.copy(node.url.path) }
         Button("Copy Relative Path") { Pasteboard.copy(relativePath) }
@@ -623,7 +632,7 @@ private struct FileRowContextMenu: View {
                 model.showCrossSearch(scope: .pickedFolder(node.url))
             }
         }
-        if sidebar.gitRepoRoot != nil {
+        if trackedRepos.trackedRoots.isEmpty == false {
             Divider()
             if !node.isDirectory {
                 Button("Show File History") {
@@ -705,6 +714,7 @@ private struct FileRowView: View {
     let depth: Int
     @ObservedObject var sidebar: SidebarModel
     @ObservedObject var model: DocumentModel
+    @ObservedObject var trackedRepos: TrackedReposChannel
     /// Active recency mode — chosen via the FILES header dropdown,
     /// stored in `@AppStorage` on the parent. Threaded through here
     /// so every child row paints stripes in the same mode without
@@ -769,10 +779,25 @@ private struct FileRowView: View {
                         url: node.url,
                         isDirectory: node.isDirectory,
                         isExpanded: sidebar.isExpanded(node.url),
-                        isGitRoot: node.isDirectory && sidebar.gitRepoRoot == node.url,
+                        isGitRoot: repoRootKind == .repo,
+                        isNestedRoot: repoRootKind == .nested,
                         size: .tree
                     )
                     .frame(width: 16, height: 16)
+                    // Active-repo treatment: a filled dot when this repo
+                    // root is LIVE in the tracked set (cheap stat said
+                    // it's a repo; the tracked-set membership says it's
+                    // actively being observed). Lets the user see WHICH
+                    // repo roots are live vs merely on-disk.
+                    .overlay(alignment: .bottomTrailing) {
+                        if repoRootKind != .none && trackedRepos.isTrackedRoot(node.url) {
+                            Circle()
+                                .fill(Color.accentColor)
+                                .frame(width: 4, height: 4)
+                                .offset(x: 1, y: 1)
+                                .accessibilityHidden(true)
+                        }
+                    }
                     Text(node.name)
                         // Bold the file's name if it's the currently-
                         // visible tab — matches the bold treatment in
@@ -789,7 +814,7 @@ private struct FileRowView: View {
                             .accessibilityLabel("Bookmarked")
                     }
                     Spacer(minLength: 0)
-                    if let status = sidebar.gitStatus(for: node.url) {
+                    if let status = trackedRepos.status(for: node.url) {
                         GitStatusBadge(status: status)
                     }
                 }  // inner HStack(spacing: 4)
@@ -807,7 +832,10 @@ private struct FileRowView: View {
         .accessibilityLabel(accessibilityLabel)
         .accessibilityAddTraits(.isButton)
         .contextMenu {
-            FileRowContextMenu(node: node, sidebar: sidebar, model: model)
+            FileRowContextMenu(
+                node: node, sidebar: sidebar, model: model,
+                trackedRepos: trackedRepos
+            )
         }
         .onAppear {
             if recencyAttrs == nil {
@@ -920,7 +948,7 @@ private struct FileRowView: View {
             parts.append("File")
         }
         parts.append(node.name)
-        if let s = sidebar.gitStatus(for: node.url) {
+        if let s = trackedRepos.status(for: node.url) {
             parts.append("git: \(s.rawValue)")
         }
         if isCurrent { parts.append("currently open") }
@@ -929,6 +957,14 @@ private struct FileRowView: View {
 
     private var isCurrent: Bool {
         model.currentURL == node.url
+    }
+
+    /// Repo-root classification for this row's directory (cheap cached
+    /// `.git`-existence stat, NOT git status). `.none` for files and
+    /// ordinary folders. Drives the folder glyph.
+    private var repoRootKind: RepoRootKind {
+        guard node.isDirectory else { return .none }
+        return trackedRepos.repoRootKind(node.url)
     }
 
 }

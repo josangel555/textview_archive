@@ -24,11 +24,11 @@ public struct FileIconView: View {
     /// Convenience: derive the icon from a URL without the caller
     /// importing the classifier.
     public init(url: URL, isDirectory: Bool, isExpanded: Bool = false,
-                isGitRoot: Bool = false, isSymlink: Bool = false,
-                size: Size = .tree) {
+                isGitRoot: Bool = false, isNestedRoot: Bool = false,
+                isSymlink: Bool = false, size: Size = .tree) {
         self.kind = FileIconClassifier.icon(
             for: url, isDirectory: isDirectory, isExpanded: isExpanded,
-            isGitRoot: isGitRoot, isSymlink: isSymlink
+            isGitRoot: isGitRoot, isNestedRoot: isNestedRoot, isSymlink: isSymlink
         )
         self.size = size
     }
@@ -60,6 +60,7 @@ public struct FileIconView: View {
             case .collapsed: return "Folder"
             case .open:      return "Open folder"
             case .root:      return "Repository root folder"
+            case .nestedRoot: return "Nested repository root folder"
             case .hidden:    return "Hidden folder"
             case .locked:    return "Read-only folder"
             case .symlink:   return "Symlinked folder"
@@ -242,6 +243,7 @@ extension FolderState {
         case .collapsed: return IconCategory.bin.palette
         case .open:      return IconCategory.code.palette
         case .root:      return IconCategory.config.palette
+        case .nestedRoot: return IconCategory.data.palette
         case .hidden:    return IconCategory.generic.palette
         case .locked:    return IconCategory.media.palette
         case .symlink:   return IconCategory.doc.palette
@@ -257,6 +259,10 @@ extension FolderState {
         case .collapsed: return "folder"
         case .open:      return "folder.fill"
         case .root:      return "folder.fill.badge.gearshape"
+        // Subordinate / submodule repo: a plus-badged folder reads as
+        // "a repo within a repo" without colliding with the gearshape
+        // top-level root glyph.
+        case .nestedRoot: return "folder.fill.badge.plus"
         case .hidden:    return "folder.badge.questionmark"
         case .locked:    return "folder.fill"
         case .symlink:   return "arrow.up.forward.square.fill"

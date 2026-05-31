@@ -28,8 +28,10 @@ public enum IconCategory: String, Equatable, Sendable, CaseIterable {
 public enum FolderState: Equatable, Sendable {
     case collapsed
     case open
-    case root      // workspace root / contains .git
-    case hidden    // dot-prefixed dirs
-    case locked    // node_modules, vendor, dist, .build…
+    case root        // top-level repo root / contains .git
+    case nestedRoot  // a repo root that is itself inside another repo
+                     // (submodule / nested worktree)
+    case hidden      // dot-prefixed dirs
+    case locked      // node_modules, vendor, dist, .build…
     case symlink
 }

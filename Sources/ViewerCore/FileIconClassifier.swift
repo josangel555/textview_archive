@@ -18,6 +18,7 @@ public enum FileIconClassifier {
         isDirectory: Bool,
         isExpanded: Bool = false,
         isGitRoot: Bool = false,
+        isNestedRoot: Bool = false,
         isSymlink: Bool = false
     ) -> FileIconKind {
         if isDirectory {
@@ -25,6 +26,7 @@ public enum FileIconClassifier {
                 name: url.lastPathComponent,
                 isExpanded: isExpanded,
                 isGitRoot: isGitRoot,
+                isNestedRoot: isNestedRoot,
                 isSymlink: isSymlink
             ))
         }
@@ -60,9 +62,15 @@ public enum FileIconClassifier {
         name: String,
         isExpanded: Bool,
         isGitRoot: Bool,
+        isNestedRoot: Bool,
         isSymlink: Bool
     ) -> FolderState {
         if isSymlink { return .symlink }
+        // A repo root nested inside another repo (submodule / nested
+        // worktree) gets its own subordinate glyph; a top-level repo
+        // root gets the gearshape root glyph. Symlink still wins (a
+        // symlinked repo reads primarily as a link).
+        if isNestedRoot { return .nestedRoot }
         if isGitRoot { return .root }
         if lockedFolderNames.contains(name) { return .locked }
         if name.hasPrefix(".") && name.count > 1 { return .hidden }

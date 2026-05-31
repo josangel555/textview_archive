@@ -17,36 +17,12 @@ public final class SidebarModel: ObservableObject {
     }
     @Published public var isVisible: Bool = false
 
-    /// Git working-tree status, keyed by **repo-relative path** (exactly
-    /// the path string git reports in `--porcelain`). SCALE-3/PERF-08:
-    /// the previous map keyed fully-resolved file URLs, which meant one
-    /// `realpath(3)` syscall per changed entry on the build side *and*
-    /// one per visible row on the lookup side. Both are gone — keys are
-    /// plain strings, and `gitStatus(for:)` derives the relative path by
-    /// stripping the (once-resolved) repo-root prefix from the row URL,
-    /// which is itself already canonicalised by `FileTreeService`.
-    @Published public private(set) var gitStatuses: [String: GitStatusEntry.Status] = [:]
-
-    /// The git working-tree root, fully resolved (standardized +
-    /// symlinks). Stored resolved so (a) the `isGitRoot` UI check
-    /// (`gitRepoRoot == node.url`) matches the resolved node URLs even
-    /// when the repo lives behind a symlink, and (b) `gitStatus(for:)`
-    /// can compute repo-relative paths against a canonical prefix.
-    @Published public private(set) var gitRepoRoot: URL?
-
-    /// Cheap dirty token for the status map (SCALE-3). A content
-    /// signature computed off the main actor inside the detached git
-    /// task; lets the main-actor hop short-circuit with an O(1) integer
-    /// compare instead of an O(N) dictionary-equality walk on every idle
-    /// poll / tab-switch refresh (which commonly produce an identical
-    /// map). `nil` until the first successful refresh.
-    private var gitStatusToken: UInt64?
-
-    /// User-set git-root override. When set, `refreshGitStatus()`
-    /// uses this folder as the repo root instead of auto-discovering
-    /// via `.git/` walk. Useful for nested worktrees, monorepo
-    /// subdirs, or submodules.
-    @Published public var gitRootOverride: URL? = nil
+    // Git status / repo-root / root-override moved OUT of SidebarModel
+    // into the multi-repo git registry (`TrackedReposChannel` read side,
+    // `TrackedReposStore` write side, `RepoFocusTracker` demand/pins).
+    // SidebarModel is back to pure file-tree state. Views read git via
+    // `model.trackedRepos.status(for:)` / `.repoRootKind(_:)` etc., and
+    // pin via `model.repoFocus.togglePin(_:)`.
 
     /// Keyboard-driven row selection (CRIT-6). Distinct from the currently-
     /// open file (`DocumentModel.currentURL`): you can navigate the sidebar
@@ -100,15 +76,14 @@ public final class SidebarModel: ObservableObject {
         expanded.removeAll()
         clearCache()
         invalidateFlatCache()
-        gitStatuses = [:]
-        gitRepoRoot = nil
-        gitStatusToken = nil
         folderWatcher?.stop()
         folderWatcher = nil
         if let url = rootURL {
             expanded.insert(url)
             ensureLoaded(url: url)
-            refreshGitStatus()
+            // Git status is now driven by RepoFocusTracker's $rootURL
+            // Combine sink → recompute() (which retains the repo + starts
+            // its per-root watcher). SidebarModel no longer spawns git.
             selectedURL = url
             // Start the FSEvents stream. Any external change in the
             // tree (new file via Terminal, branch switch, etc.)
@@ -312,113 +287,6 @@ public final class SidebarModel: ObservableObject {
         if let first = children(of: cur).first {
             setSelected(first.url)
         }
-    }
-
-    /// Look up the git status for a row URL. SCALE-3/PERF-08: derives
-    /// the repo-relative path by stripping the (resolved) repo-root
-    /// prefix from the row URL via component comparison — **no
-    /// `realpath` syscall** and no per-row normalization cache. The row
-    /// URL is already canonical (`FileTreeService` resolves every node),
-    /// and `gitRepoRoot` is stored resolved, so the two share a prefix.
-    public func gitStatus(for url: URL) -> GitStatusEntry.Status? {
-        guard let rel = repoRelativePath(for: url) else { return nil }
-        return gitStatuses[rel]
-    }
-
-    /// Repo-relative path string for `url`, or `nil` if `url` isn't
-    /// under `gitRepoRoot`. Pure string/array work — joins components
-    /// with "/" to match git's porcelain path format. Both inputs are
-    /// already symlink-resolved (node URLs by `FileTreeService`,
-    /// `gitRepoRoot` by `refreshGitStatus`), so this is purely lexical.
-    private func repoRelativePath(for url: URL) -> String? {
-        guard let root = gitRepoRoot else { return nil }
-        let rootComponents = root.pathComponents
-        let urlComponents = url.standardizedFileURL.pathComponents
-        guard urlComponents.count > rootComponents.count,
-              Array(urlComponents.prefix(rootComponents.count)) == rootComponents
-        else { return nil }
-        return urlComponents.dropFirst(rootComponents.count).joined(separator: "/")
-    }
-
-    public func refreshGitStatus() {
-        guard let root = rootURL else {
-            gitStatuses = [:]
-            gitRepoRoot = nil
-            gitStatusToken = nil
-            return
-        }
-        // User override wins over auto-discovery. Resolve ONCE here so
-        // the build loop and `gitStatus(for:)` share a canonical prefix
-        // and the per-entry `realpath` is gone (SCALE-3/PERF-08).
-        let repoRoot: URL
-        if let override = gitRootOverride {
-            repoRoot = override.standardizedFileURL.resolvingSymlinksInPath()
-        } else if let discovered = GitClient.discoverRoot(from: root) {
-            repoRoot = discovered.standardizedFileURL.resolvingSymlinksInPath()
-        } else {
-            gitStatuses = [:]
-            gitRepoRoot = nil
-            gitStatusToken = nil
-            return
-        }
-        gitRepoRoot = repoRoot
-        // CRIT-5: capture the repo root as a token so the main-actor hop
-        // can refuse to write stale results if `setRoot(_:)` switched us
-        // to a different folder while git was running. The outer Task is
-        // @MainActor so `self` can be captured safely; the blocking git
-        // shell-out lives in a detached child whose return value is a
-        // Sendable `([String: Status], UInt64)` (map + content token).
-        let token = repoRoot
-        Task { @MainActor [weak self] in
-            let (map, contentToken) = await Task.detached(priority: .userInitiated) {
-                () -> ([String: GitStatusEntry.Status], UInt64) in
-                let client = GitClient(repoRoot: repoRoot)
-                let entries = client.statusEntries()
-                var result: [String: GitStatusEntry.Status] = [:]
-                result.reserveCapacity(entries.count)
-                // Key by the relative path git already gave us — no
-                // URL build, no per-entry realpath. Fold a cheap content
-                // signature over the entry stream so the main actor can
-                // short-circuit identical refreshes in O(1). The fold is
-                // order-sensitive, but git's porcelain output order is
-                // stable for a given tree state, so equal trees hash equal.
-                var sig: UInt64 = 1469598103934665603  // FNV-1a offset basis
-                for entry in entries {
-                    result[entry.path] = entry.status
-                    sig = Self.fnv1a(sig, entry.path)
-                    sig = Self.fnv1a(sig, entry.status.rawValue)
-                }
-                return (result, sig)
-            }.value
-            guard let self, self.gitRepoRoot == token else { return }
-            // Cheap dirty token (SCALE-3): idle polls + tab-switch
-            // refreshes commonly produce an identical map. The O(1)
-            // token compare replaces the prior O(N) dict-equality walk
-            // on the main actor (the hashing happened off-actor above).
-            // Note the token is order-sensitive over the entry stream;
-            // git's porcelain output order is stable for a given tree
-            // state, so equal trees produce equal tokens. A spurious
-            // miss only costs one extra assignment, never a wrong result.
-            if self.gitStatusToken != contentToken {
-                self.gitStatusToken = contentToken
-                self.gitStatuses = map
-            }
-        }
-    }
-
-    /// FNV-1a folded over a string's UTF-8 bytes plus a separator, so
-    /// the running signature stays sensitive to entry boundaries.
-    /// `nonisolated` so the detached git task (off the main actor) can
-    /// fold the signature without hopping back.
-    private nonisolated static func fnv1a(_ seed: UInt64, _ s: String) -> UInt64 {
-        var h = seed
-        for byte in s.utf8 {
-            h ^= UInt64(byte)
-            h = h &* 1099511628211  // FNV prime
-        }
-        h ^= 0x1F  // unit separator between fields
-        h = h &* 1099511628211
-        return h
     }
 
     public func toggleVisibility() {

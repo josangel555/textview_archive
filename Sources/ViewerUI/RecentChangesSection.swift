@@ -106,6 +106,13 @@ struct RecentChangesSection: View {
     /// "current folder" intent); fall back to the open file's directory
     /// so a file-only open inside a repo still lights up. Extracted so
     /// the rule is unit-testable without spinning up a SwiftUI view.
+    ///
+    /// DEPRECATED for panel use: `GitPanelSection` now follows
+    /// `RepoFocusTracker.focusedRoot` (multi-repo). This helper survives
+    /// only as `RecentChangesSection`'s own discovery (the section isn't
+    /// in the live UI tree) and its unit tests. Do not add new callers —
+    /// read `model.repoFocus.focusedRoot` / `model.trackedRepos` instead.
+    /// Slated for deletion once `RecentChangesSection` is removed.
     internal static func discoverRepo(sidebarRoot: URL?, currentURL: URL?) -> URL? {
         let probe = sidebarRoot ?? currentURL?.deletingLastPathComponent()
         return probe.flatMap(GitClient.discoverRoot(from:))

@@ -9,11 +9,12 @@ final class FileIconClassifierTests: XCTestCase {
     private func icon(_ path: String, isDirectory: Bool = false,
                       isExpanded: Bool = false,
                       isGitRoot: Bool = false,
+                      isNestedRoot: Bool = false,
                       isSymlink: Bool = false) -> FileIconKind {
         FileIconClassifier.icon(
             for: URL(fileURLWithPath: path),
             isDirectory: isDirectory, isExpanded: isExpanded,
-            isGitRoot: isGitRoot, isSymlink: isSymlink
+            isGitRoot: isGitRoot, isNestedRoot: isNestedRoot, isSymlink: isSymlink
         )
     }
 
@@ -80,6 +81,33 @@ final class FileIconClassifierTests: XCTestCase {
         assertFolder(
             icon("/x/node_modules", isDirectory: true, isGitRoot: true),
             .root
+        )
+    }
+
+    /// Multi-repo consumer phase: a repo root nested inside another repo
+    /// (submodule / nested worktree) gets the subordinate `.nestedRoot`
+    /// glyph. `isNestedRoot` wins over `isGitRoot` (a nested root is still
+    /// a root, but its *nested* classification is the more specific signal)
+    /// and over locked/hidden/expanded — but symlink still wins.
+    func test_folder_state_nestedRoot() {
+        assertFolder(
+            icon("/x/mono/sub", isDirectory: true, isNestedRoot: true),
+            .nestedRoot
+        )
+        // isNestedRoot + isGitRoot both true → nestedRoot (more specific).
+        assertFolder(
+            icon("/x/mono/sub", isDirectory: true, isGitRoot: true, isNestedRoot: true),
+            .nestedRoot
+        )
+        // Expanded + nested → nestedRoot (not open).
+        assertFolder(
+            icon("/x/mono/sub", isDirectory: true, isExpanded: true, isNestedRoot: true),
+            .nestedRoot
+        )
+        // Symlink still wins over nestedRoot.
+        assertFolder(
+            icon("/x/mono/alias", isDirectory: true, isNestedRoot: true, isSymlink: true),
+            .symlink
         )
     }
 

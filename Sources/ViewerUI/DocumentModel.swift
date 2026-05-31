@@ -37,6 +37,20 @@ public final class DocumentModel: ObservableObject {
     /// to TabCoordinator for buffer access.
     public let editor: EditorCoordinator
 
+    /// Multi-repo git registry: demand resolution + per-root watchers +
+    /// focus tracking. A sibling coordinator (like `editor`) that drives
+    /// `trackedRepos` (the channel) and the off-main store. Views NEVER
+    /// observe `repoFocus`; they observe `trackedRepos` (the version
+    /// tick). See `RepoFocusTracker` / `TrackedReposChannel`.
+    public let repoFocus: RepoFocusTracker
+
+    /// THE published observation surface for git status / repo-root
+    /// classification across all tracked repos. SidebarView / GitPanelView
+    /// observe THIS directly via `@ObservedObject` — its `version` ticks
+    /// on real status change, scoped so it never republishes
+    /// DocumentModel. Convenience forwarder to `repoFocus.channel`.
+    public var trackedRepos: TrackedReposChannel { repoFocus.channel }
+
     // Lifecycle wiring — see init for the side-effect closures we
     // hand to `editor` so its save / cursor-mirror / reload paths
     // can drive DocumentModel state without holding a strong reference.
@@ -242,6 +256,17 @@ public final class DocumentModel: ObservableObject {
         // EditorCoordinator registers a close-hook on TabCoordinator
         // in its init — must happen before any tab can close.
         self.editor = EditorCoordinator(tabCoordinator: tabCoordinator)
+        // Multi-repo git registry. A sibling coordinator that subscribes
+        // to tabCoordinator/sidebar @Published streams (the views already
+        // observe those) and drives the off-main store + channel. Its
+        // republish path is `trackedRepos.version`, entirely separate
+        // from DocumentModel.objectWillChange. Constructed here (before
+        // the self-capturing editor closures) so all stored properties
+        // are initialized first.
+        self.repoFocus = RepoFocusTracker(
+            tabCoordinator: tabCoordinator,
+            sidebar: sidebar
+        )
         let tc = tabCoordinator
         let weakSelfBox2 = WeakModelBox(self)
         editor.tabsSnapshot = { [tc] in tc.tabs.tabs }
@@ -676,6 +701,15 @@ public final class DocumentModel: ObservableObject {
     /// launching a new one when the focused file changes — otherwise
     /// rapid tab switches stack git processes.
     private var diffMarksTask: Task<Void, Never>?
+    /// Separate in-flight task for the SPLIT pane's gutter diff. The
+    /// split pane gets its own diff feed (it can be a file in a DIFFERENT
+    /// repo than the primary pane — "two repos colored simultaneously").
+    private var splitDiffMarksTask: Task<Void, Never>?
+
+    /// Wall-clock cap for the gutter's `git diff` (CHANGE 3). On timeout
+    /// we leave the prior markers rather than clearing. `nonisolated` so
+    /// the `Task.detached` diff bodies can read it off-main.
+    private nonisolated static let gutterDiffTimeout: TimeInterval = 3
 
     /// Debounce window for the off-main `git diff` that feeds the
     /// source-view diff stripe. A flurry of `updateDerived()` calls
@@ -691,23 +725,23 @@ public final class DocumentModel: ObservableObject {
     /// Cancels any prior in-flight task before launching the new one
     /// so a flurry of `updateDerived()` calls (e.g. opening 50 files
     /// via "Open Recent") doesn't pile up 50 git processes.
+    ///
+    /// CHANGE 1 (root sharing): resolve the repo root via the multi-repo
+    /// registry (`trackedRepos.repoRoot(enclosing:)`) so we reuse its
+    /// cached resolution + the per-root watcher that's already running.
+    /// Falls back to `GitClient.discoverRoot` if the file's repo isn't
+    /// tracked yet (it will be — opening the tab triggers
+    /// `repoFocus.recompute()` which retains it).
     public func refreshDiffMarks() {
         diffMarksTask?.cancel()
         guard let url = currentURL,
-              let repoRoot = GitClient.discoverRoot(from: url)
+              let repoRoot = resolveGutterRoot(for: url)
         else {
             if !sourceDiffMarks.isEmpty { sourceDiffMarks = [:] }
             diffMarksTask = nil
             return
         }
-        let relPath: String = {
-            let rootPath = repoRoot.standardizedFileURL.resolvingSymlinksInPath().path
-            let filePath = url.standardizedFileURL.resolvingSymlinksInPath().path
-            if filePath.hasPrefix(rootPath + "/") {
-                return String(filePath.dropFirst(rootPath.count + 1))
-            }
-            return filePath
-        }()
+        let relPath = Self.relativePath(of: url, under: repoRoot)
         let token = url
         diffMarksTask = Task.detached(priority: .userInitiated) { [weak self] in
             // Debounce: if the user is rapidly switching tabs, we'll be
@@ -718,7 +752,8 @@ public final class DocumentModel: ObservableObject {
             // rather than one per event.
             try? await Task.sleep(nanoseconds: Self.diffMarksDebounceNanos)
             if Task.isCancelled { return }
-            let client = GitClient(repoRoot: repoRoot)
+            // CHANGE 3: per-call 3s wall-clock timeout on the diff.
+            let client = GitClient(repoRoot: repoRoot, statusTimeout: Self.gutterDiffTimeout)
             let diff = client.diff(forPath: relPath)
             if Task.isCancelled { return }
             let marks = DiffHunkParser.parse(diff)
@@ -735,6 +770,59 @@ public final class DocumentModel: ObservableObject {
                 self.editor.setEditorGutterMarkers(cmMarkers, forURL: token)
             }
         }
+    }
+
+    /// CHANGE 2 (split coverage): refresh the SPLIT pane's gutter diff.
+    /// The split pane's file gets NO gutter marks today — `refreshDiffMarks`
+    /// only runs for `currentURL`. This parallel path keys on `splitURL`,
+    /// pushing markers via `editor.setEditorGutterMarkers(_, forURL:)`,
+    /// which makes "two repos colored simultaneously" true for gutters in
+    /// split view. Shares the same debounce / cancel / per-tab routing
+    /// shape; the split pane may resolve to a DIFFERENT repo than the
+    /// primary pane. Does NOT publish `sourceDiffMarks` (that's the
+    /// primary pane's source-view stripe only).
+    public func refreshSplitDiffMarks() {
+        splitDiffMarksTask?.cancel()
+        guard let url = tabCoordinator.splitURL,
+              let repoRoot = resolveGutterRoot(for: url)
+        else {
+            splitDiffMarksTask = nil
+            return
+        }
+        let relPath = Self.relativePath(of: url, under: repoRoot)
+        let token = url
+        splitDiffMarksTask = Task.detached(priority: .userInitiated) { [weak self] in
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            if Task.isCancelled { return }
+            let client = GitClient(repoRoot: repoRoot, statusTimeout: Self.gutterDiffTimeout)
+            let diff = client.diff(forPath: relPath)
+            if Task.isCancelled { return }
+            let marks = DiffHunkParser.parse(diff)
+            let cmMarkers = DiffGutterFeeder.markers(from: marks)
+            await MainActor.run { [weak self] in
+                guard let self, self.tabCoordinator.splitURL == token else { return }
+                self.editor.setEditorGutterMarkers(cmMarkers, forURL: token)
+            }
+        }
+    }
+
+    /// Resolve the gutter's repo root via the registry first (shared
+    /// cached resolution + already-running watcher), falling back to a
+    /// fresh `.git` walk for files in not-yet-tracked repos.
+    private func resolveGutterRoot(for url: URL) -> URL? {
+        if let root = trackedRepos.repoRoot(enclosing: url) { return root }
+        return GitClient.discoverRoot(from: url)
+    }
+
+    /// Path of `url` relative to `root` (forward-slashed, normalized),
+    /// or the absolute path if `url` isn't under `root`.
+    private static func relativePath(of url: URL, under root: URL) -> String {
+        let rootPath = root.standardizedFileURL.resolvingSymlinksInPath().path
+        let filePath = url.standardizedFileURL.resolvingSymlinksInPath().path
+        if filePath.hasPrefix(rootPath + "/") {
+            return String(filePath.dropFirst(rootPath.count + 1))
+        }
+        return filePath
     }
 
     // MARK: Cross-file search
@@ -935,8 +1023,17 @@ public final class DocumentModel: ObservableObject {
 
     public func openInSplit(_ url: URL) {
         tabCoordinator.openInSplit(url)
+        // CHANGE 2: feed the split pane's gutter diff. The `$splitURL`
+        // Combine sink in RepoFocusTracker keeps the registry demand set
+        // in sync; this drives the per-file gutter (which needs diff
+        // TEXT, not status, so it stays a separate path).
+        refreshSplitDiffMarks()
     }
-    public func closeSplit() { tabCoordinator.closeSplit() }
+    public func closeSplit() {
+        tabCoordinator.closeSplit()
+        // Clears the split task + leaves no markers (splitURL is now nil).
+        refreshSplitDiffMarks()
+    }
     public func toggleSplit() {
         if tabCoordinator.splitURL != nil { closeSplit() }
         else if let url = currentURL { openInSplit(url) }
@@ -1457,7 +1554,13 @@ public final class DocumentModel: ObservableObject {
     @discardableResult
     public func saveActiveEditor() -> Bool {
         let ok = editor.saveActiveEditor()
-        if ok { refreshDiffMarks() }
+        if ok {
+            refreshDiffMarks()
+            // Sibling: refresh the tracked repo's badge status against
+            // the new on-disk state (deterministic; doesn't wait on the
+            // FSEvents debounce).
+            if let url = currentURL { repoFocus.refreshRepo(enclosing: url) }
+        }
         return ok
     }
 
@@ -1466,7 +1569,12 @@ public final class DocumentModel: ObservableObject {
     @discardableResult
     public func saveEditor(forTabID id: UUID) -> Bool {
         let ok = editor.saveEditor(forTabID: id)
-        if ok { refreshDiffMarks() }
+        if ok {
+            refreshDiffMarks()
+            if let url = tabs.tabs.first(where: { $0.id == id })?.url {
+                repoFocus.refreshRepo(enclosing: url)
+            }
+        }
         return ok
     }
 
@@ -2442,6 +2550,14 @@ public final class DocumentModel: ObservableObject {
         // file changes. Cheap-ish: shells `git diff` once per switch
         // (off-main); skipped when not inside a repo.
         refreshDiffMarks()
+        // Sibling to refreshDiffMarks: keep the multi-repo registry's
+        // demand set in sync with the open-tab/selection state. The
+        // tabCoordinator/sidebar Combine sinks in RepoFocusTracker cover
+        // generic mutations, but this synchronous call makes the
+        // open/save/reload paths deterministic (no debounce window).
+        // Idempotent + equality-guarded — a no-op when demand is
+        // unchanged.
+        repoFocus.recompute()
     }
 }
 

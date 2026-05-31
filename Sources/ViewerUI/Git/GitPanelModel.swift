@@ -47,6 +47,13 @@ public final class GitPanelModel: ObservableObject {
     @Published public var repoRoot: URL?
     @Published public var head: GitClient.HeadInfo?
 
+    /// Explicit user repo pick from the header picker. When set, the
+    /// panel stays pinned to this root even as focus follows tabs —
+    /// until focus moves to a DIFFERENT tracked repo, at which point
+    /// follow resumes (see `followFocus(_:tracked:)`). nil = follow
+    /// the focused root.
+    @Published public private(set) var userPinnedPanelRoot: URL?
+
     @Published public var statusEntries: [GitClient.StatusEntry] = []
     @Published public var logEntries: [GitClient.GraphCommit] = []
     @Published public var stashEntries: [GitClient.StashEntry] = []
@@ -106,6 +113,40 @@ public final class GitPanelModel: ObservableObject {
         logLoadedCount = 0
         lastRefreshed = [:]
         refreshCurrent()
+    }
+
+    /// Explicit user repo pick from the header picker. The panel pins to
+    /// `root` (overriding focus-follow) until focus moves to a DIFFERENT
+    /// tracked repo. A no-op `setRepoRoot` guard means re-picking the
+    /// current root just (re)asserts the pin without churning caches.
+    public func pickRepoRoot(_ root: URL) {
+        userPinnedPanelRoot = root
+        setRepoRoot(root)
+    }
+
+    /// Reconcile the panel's repo with the registry's focused root.
+    /// Called by the host on focus / version changes.
+    ///
+    /// - If the user has pinned a panel root via the picker, stay on it
+    ///   AS LONG AS it's still tracked. Once `focusedRoot` moves to a
+    ///   different tracked repo (the user navigated to a tab in another
+    ///   repo), the explicit pick is released and follow resumes.
+    /// - Otherwise follow `focusedRoot` directly.
+    public func followFocus(_ focusedRoot: URL?, tracked: [URL]) {
+        if let pinned = userPinnedPanelRoot {
+            // Released when focus has moved to a *different* tracked repo,
+            // or when the pinned root is no longer tracked at all.
+            let focusMovedAway = (focusedRoot != nil && focusedRoot != pinned)
+            let pinDropped = !tracked.contains(pinned)
+            if focusMovedAway || pinDropped {
+                userPinnedPanelRoot = nil
+                setRepoRoot(focusedRoot)
+            } else {
+                setRepoRoot(pinned)
+            }
+            return
+        }
+        setRepoRoot(focusedRoot)
     }
 
     // MARK: - Tab selection

@@ -39,6 +39,21 @@ public struct GitStatusEntry: Equatable, Sendable {
 public final class GitClient: Sendable {
     public let repoRoot: URL
 
+    /// Optional wall-clock cap (seconds) applied to every `run(_:)`
+    /// invocation via the existing `ProcessRunner.run(timeout:)`
+    /// SIGTERM watchdog. `nil` (the default) preserves the historical
+    /// "no wall-clock timeout — a slow `git status` surfaces as 'still
+    /// working', not a hard truncation" behavior for the ~15 existing
+    /// call sites. The multi-repo registry injects a value (5s for
+    /// status/HEAD, 3s for gutter diff, 10s for the heavy graph log) so
+    /// a wedged repo can't freeze badge refresh.
+    ///
+    /// This is the responsiveness guarantee; the 120s `RLIMIT_CPU` cap
+    /// in `run(_:)` stays as the runaway-CPU backstop. The two are
+    /// complementary — CPU cap defends a pinned core, wall-clock defends
+    /// UI latency.
+    public let statusTimeout: TimeInterval?
+
     public enum Error: Swift.Error, CustomStringConvertible {
         case gitNotFound
         case notARepo
@@ -53,8 +68,9 @@ public final class GitClient: Sendable {
         }
     }
 
-    public init(repoRoot: URL) {
+    public init(repoRoot: URL, statusTimeout: TimeInterval? = nil) {
         self.repoRoot = repoRoot
+        self.statusTimeout = statusTimeout
     }
 
     /// Returns the working-tree root if any ancestor of `url` has
@@ -108,6 +124,21 @@ public final class GitClient: Sendable {
     public func statusEntries() -> [GitStatusEntry] {
         guard let out = try? run(["status", "--porcelain=v1"]) else { return [] }
         return Self.parseStatusEntries(out)
+    }
+
+    /// `statusEntries()` variant that surfaces whether the wall-clock
+    /// `statusTimeout` fired. The registry store uses this to keep its
+    /// prior snapshot (frozen badges) on timeout rather than blanking.
+    ///
+    /// On a non-timeout failure (e.g. not a repo) returns `([], false)`
+    /// — same "empty on failure" contract as `statusEntries()`, so the
+    /// caller still treats a genuinely-not-a-repo path as clean. Only a
+    /// real timeout sets `timedOut: true`.
+    public func statusEntriesResult() -> (entries: [GitStatusEntry], timedOut: Bool) {
+        guard let r = try? runResult(["status", "--porcelain=v1"]) else {
+            return ([], false)
+        }
+        return (Self.parseStatusEntries(r.output), r.timedOut)
     }
 
     /// Pure-logic parser. Public so tests can pin parsing semantics
@@ -423,11 +454,25 @@ public final class GitClient: Sendable {
     }
 
     public func headInfo() -> HeadInfo? {
+        headInfoResult().head
+    }
+
+    /// `headInfo()` variant that surfaces the wall-clock-timeout flag.
+    /// `timedOut` is true iff EITHER underlying git call tripped the
+    /// `statusTimeout`. The registry pairs this with
+    /// `statusEntriesResult()` so a single timeout on either freezes the
+    /// snapshot.
+    public func headInfoResult() -> (head: HeadInfo?, timedOut: Bool) {
         let fs = "\u{1F}"
         let format = "--format=%(HEAD)\(fs)%(refname:short)\(fs)%(upstream:short)\(fs)%(upstream:track)"
-        guard let out = try? run(["for-each-ref", format, "--points-at=HEAD",
-                                  "refs/heads/"]) else { return nil }
-        let shaOut = (try? run(["rev-parse", "--short", "HEAD"]))?
+        var timedOut = false
+        guard let r = try? runResult(["for-each-ref", format, "--points-at=HEAD",
+                                      "refs/heads/"]) else { return (nil, false) }
+        timedOut = timedOut || r.timedOut
+        let out = r.output
+        let shaResult = try? runResult(["rev-parse", "--short", "HEAD"])
+        timedOut = timedOut || (shaResult?.timedOut ?? false)
+        let shaOut = (shaResult?.output)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         for line in out.split(separator: "\n") {
             let parts = line.split(separator: Character(fs), omittingEmptySubsequences: false)
@@ -443,13 +488,14 @@ public final class GitClient: Sendable {
             if let m = track.range(of: #"behind (\d+)"#, options: .regularExpression) {
                 behind = Int(track[m].dropFirst("behind ".count)) ?? 0
             }
-            return HeadInfo(sha: shaOut, branch: branch, upstream: upstream,
-                            ahead: ahead, behind: behind)
+            return (HeadInfo(sha: shaOut, branch: branch, upstream: upstream,
+                             ahead: ahead, behind: behind), timedOut)
         }
         // Detached HEAD or no matching branch.
-        return shaOut.isEmpty
+        let head = shaOut.isEmpty
             ? nil
             : HeadInfo(sha: shaOut, branch: nil, upstream: nil, ahead: 0, behind: 0)
+        return (head, timedOut)
     }
 
     // MARK: - file-scoped diff (richer than `diff(forPath:)`)
@@ -510,6 +556,21 @@ public final class GitClient: Sendable {
     }
 
     private func run(_ args: [String]) throws -> String {
+        try runResult(args).output
+    }
+
+    /// `run(_:)` variant that surfaces the wall-clock-timeout flag.
+    /// `output` is the drained stdout (possibly partial when
+    /// `timedOut == true`); `timedOut` is true iff `statusTimeout` was
+    /// set and the SIGTERM watchdog fired. Used by the registry's
+    /// `*Result` methods so the store can distinguish "clean tree" from
+    /// "timed out" and keep the prior snapshot rather than blanking
+    /// badges.
+    ///
+    /// A timed-out git is terminated by SIGTERM, so it exits non-zero;
+    /// we DON'T throw `processFailed` in that case — we return the
+    /// partial output + `timedOut: true` and let the caller decide.
+    private func runResult(_ args: [String]) throws -> (output: String, timedOut: Bool) {
         guard let bin = Self.resolvedGitBinary else {
             throw Error.gitNotFound
         }
@@ -558,11 +619,12 @@ public final class GitClient: Sendable {
         // can legitimately take 30s+ of CPU on cold cache; we set a
         // 120s CPU cap so honest operations are not regressed while a
         // wedged `git log --all --reflog` style runaway still gets
-        // SIGXCPU'd. No wall-clock timeout is set (`timeout: nil`)
-        // because `GitClient` is invoked from UI flows where a slow
-        // `git status` must surface as "still working", not as a
-        // hard truncation. File-size cap is generous (1 GB worth of
-        // 512-byte blocks) so legitimate `git archive | tee` style
+        // SIGXCPU'd. The wall-clock `statusTimeout` (when set by the
+        // registry) is the responsiveness guarantee on top of that —
+        // see the property doc. When `nil` we keep the historical
+        // behavior: a slow `git status` surfaces as "still working",
+        // not a hard truncation. File-size cap is generous (1 GB worth
+        // of 512-byte blocks) so legitimate `git archive | tee` style
         // ops on large repos still succeed; open-file cap is loose
         // because git's pack reader opens many fds.
         let limits = ProcessRunner.ResourceLimits(
@@ -576,8 +638,10 @@ public final class GitClient: Sendable {
         // here. 512 MB is well past any honest viewer-side git read; on
         // overflow the child is SIGTERM'd (→SIGKILL) and `truncated` is
         // surfaced below as a process failure rather than an OOM.
+        // The registry's `statusTimeout` (when set) layers a wall-clock
+        // bound on top, surfaced via `timedOut` below.
         let result = try ProcessRunner.run(
-            p, limits: limits, maxOutputBytes: 512 * 1024 * 1024
+            p, timeout: statusTimeout, limits: limits, maxOutputBytes: 512 * 1024 * 1024
         )
         if result.truncated {
             throw Error.processFailed(
@@ -586,6 +650,13 @@ public final class GitClient: Sendable {
             )
         }
         let out = String(data: result.stdout, encoding: .utf8) ?? ""
+        // A timed-out git was SIGTERM'd → non-zero exit, but that's a
+        // timeout, not a "not a repo" / hard error. Surface it via the
+        // flag and return whatever partial output we drained; the caller
+        // (registry) keeps its prior snapshot instead of blanking.
+        if result.timedOut {
+            return (out, true)
+        }
         if result.terminationStatus != 0 {
             let estr = String(data: result.stderr, encoding: .utf8) ?? ""
             if estr.lowercased().contains("not a git repository") {
@@ -596,6 +667,6 @@ public final class GitClient: Sendable {
                 estr.trimmingCharacters(in: .whitespacesAndNewlines)
             )
         }
-        return out
+        return (out, false)
     }
 }

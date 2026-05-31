@@ -137,99 +137,10 @@ final class SidebarModelTests: XCTestCase {
         XCTAssertTrue(model.expanded.isEmpty)
     }
 
-    // MARK: T6 — refreshGitStatus integration (no test existed previously)
-
-    private func runGit(_ args: [String], in dir: URL) throws {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        p.arguments = ["git"] + args
-        p.currentDirectoryURL = dir
-        try p.run()
-        p.waitUntilExit()
-        if p.terminationStatus != 0 {
-            throw NSError(domain: "git", code: Int(p.terminationStatus))
-        }
-    }
-
-    func test_refreshGitStatus_populatesFromRepo() async throws {
-        // Set up a tiny git repo with one untracked file.
-        try runGit(["-c", "init.defaultBranch=main", "init"], in: tmpDir)
-        try runGit(["config", "user.email", "test@example.com"], in: tmpDir)
-        try runGit(["config", "user.name", "Test"], in: tmpDir)
-        try touch("a.md")
-
-        let model = SidebarModel()
-        model.setRoot(tmpDir)
-
-        // refreshGitStatus dispatches a detached task; poll up to ~1 s.
-        var statuses: [String: GitStatusEntry.Status] = [:]
-        let deadline = Date().addingTimeInterval(1.5)
-        while Date() < deadline {
-            statuses = model.gitStatuses
-            if !statuses.isEmpty { break }
-            try await Task.sleep(nanoseconds: 50_000_000)  // 50 ms
-        }
-        XCTAssertFalse(statuses.isEmpty, "git status should have populated the map")
-        // SCALE-3: map is now keyed by repo-relative path string.
-        XCTAssertEqual(statuses["a.md"], .untracked)
-        // The public accessor resolves a row URL → relative path with no
-        // realpath and returns the same status.
-        let aURL = tmpDir.appendingPathComponent("a.md")
-            .standardizedFileURL.resolvingSymlinksInPath()
-        XCTAssertEqual(model.gitStatus(for: aURL), .untracked)
-    }
-
-    func test_refreshGitStatus_outsideRepo_clearsMap() async throws {
-        // Build state: populate `gitStatuses` and `gitRepoRoot` via a
-        // repo tmpdir first, then re-`setRoot` to a non-repo dir and
-        // assert both fields actually got cleared. The old version
-        // started with an empty model and asserted the (already-empty)
-        // map was empty after 100 ms — meaningless.
-        let repoDir = tmpDir.appendingPathComponent("repo")
-        try FileManager.default.createDirectory(
-            at: repoDir, withIntermediateDirectories: true)
-        // Initialise a tiny git repo so refreshGitStatus has something
-        // to populate. `git init -q` is fast and offline.
-        let init1 = Process()
-        init1.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        init1.arguments = ["git", "init", "-q", repoDir.path]
-        try init1.run(); init1.waitUntilExit()
-        let aURL = repoDir.appendingPathComponent("a.md")
-        try "x".write(to: aURL, atomically: true, encoding: .utf8)
-
-        let model = SidebarModel()
-        model.setRoot(repoDir)
-        // Wait until git status has populated AND gitRepoRoot is set.
-        let populated = await {
-            let deadline = Date().addingTimeInterval(2.0)
-            while Date() < deadline {
-                if model.gitRepoRoot != nil && !model.gitStatuses.isEmpty {
-                    return true
-                }
-                try? await Task.sleep(nanoseconds: 50_000_000)
-            }
-            return false
-        }()
-        XCTAssertTrue(populated, "git status should have populated in the repo dir")
-
-        // Now switch to a non-repo dir. Both the map and the repo root
-        // must clear.
-        let nonRepoDir = tmpDir.appendingPathComponent("not-a-repo")
-        try FileManager.default.createDirectory(
-            at: nonRepoDir, withIntermediateDirectories: true)
-        model.setRoot(nonRepoDir)
-        let cleared = await {
-            let deadline = Date().addingTimeInterval(2.0)
-            while Date() < deadline {
-                if model.gitRepoRoot == nil && model.gitStatuses.isEmpty {
-                    return true
-                }
-                try? await Task.sleep(nanoseconds: 50_000_000)
-            }
-            return false
-        }()
-        XCTAssertTrue(cleared, "switching to a non-repo dir should clear git state")
-    }
+    // NOTE: the former T6 tests (`refreshGitStatus` populates / clears)
+    // were deleted with the SidebarModel git path. Git status now lives
+    // in the multi-repo registry — covered by `TrackedReposStoreTests`
+    // (write side) and `TrackedReposChannelReadTests` (read side).
 
     // MARK: CRIT-6 — keyboard navigation
 
@@ -461,48 +372,6 @@ final class SidebarModelTests: XCTestCase {
         let third = model.flatVisibleRows()
         XCTAssertNotEqual(first.count, third.count)
         XCTAssertEqual(third.map { $0.node.name }.last, "child.md")
-    }
-
-    // MARK: - SCALE-3 / PERF-08 — git status keyed by relative path
-
-    func test_gitStatus_lookupForNestedFileAndOutsideRepo() async throws {
-        // Stand up a repo with a tracked-then-modified nested file and
-        // an untracked top-level file, exercising the relative-path
-        // keying + the no-realpath lookup path.
-        try runGit(["-c", "init.defaultBranch=main", "init"], in: tmpDir)
-        try runGit(["config", "user.email", "test@example.com"], in: tmpDir)
-        try runGit(["config", "user.name", "Test"], in: tmpDir)
-        try touch("src/app.swift")
-        try runGit(["add", "."], in: tmpDir)
-        try runGit(["commit", "-m", "init"], in: tmpDir)
-        // Modify the nested tracked file + add an untracked file.
-        let nested = tmpDir.appendingPathComponent("src/app.swift")
-        try "changed".write(to: nested, atomically: true, encoding: .utf8)
-        try touch("README.md")
-
-        let model = SidebarModel()
-        model.setRoot(tmpDir)
-
-        let ok = await {
-            let deadline = Date().addingTimeInterval(2.0)
-            while Date() < deadline {
-                if model.gitStatus(for: nested) == .modified { return true }
-                try? await Task.sleep(nanoseconds: 50_000_000)
-            }
-            return false
-        }()
-        XCTAssertTrue(ok, "nested modified file should map to .modified via relative-path key")
-
-        // Relative-path key present for the nested file.
-        XCTAssertEqual(model.gitStatuses["src/app.swift"], .modified)
-        XCTAssertEqual(model.gitStatuses["README.md"], .untracked)
-
-        // A URL outside the repo root returns nil (no realpath, no crash).
-        let outside = FileManager.default.temporaryDirectory
-            .appendingPathComponent("definitely-not-in-repo-\(UUID().uuidString).md")
-        XCTAssertNil(model.gitStatus(for: outside))
-        // The repo root itself isn't a status entry.
-        XCTAssertNil(model.gitStatus(for: model.gitRepoRoot!))
     }
 
     // MARK: - RWC-5 — childrenCache LRU prune

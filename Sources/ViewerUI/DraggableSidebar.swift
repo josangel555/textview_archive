@@ -20,7 +20,7 @@ struct DraggableSidebar: View {
     }
 
     var body: some View {
-        SidebarView(sidebar: model.sidebar, model: model)
+        SidebarView(sidebar: model.sidebar, model: model, trackedRepos: model.trackedRepos)
             .frame(width: currentWidth)
             .overlay(alignment: .trailing) {
                 Color.clear

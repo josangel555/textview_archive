@@ -13,6 +13,10 @@ struct GitPanelSection: View {
     /// to `.onChange` by the sidebar's own publisher rather than the
     /// (removed) DocumentModel forwarding.
     @ObservedObject var sidebar: SidebarModel
+    /// The multi-repo registry. Observed directly so the panel re-syncs
+    /// (follows the focused repo) on a `version` bump WITHOUT routing
+    /// through DocumentModel.objectWillChange.
+    @ObservedObject var trackedRepos: TrackedReposChannel
     @StateObject private var panel = GitPanelModel()
     @AppStorage("MarkdownViewer.sidebar.gitExpanded") private var isExpanded: Bool = true
 
@@ -22,7 +26,7 @@ struct GitPanelSection: View {
                 VStack(spacing: 0) {
                     header
                     if isExpanded {
-                        GitPanelView(model: panel, doc: model)
+                        GitPanelView(model: panel, doc: model, trackedRepos: trackedRepos)
                     }
                 }
                 .sidebarSectionContainer()
@@ -31,6 +35,12 @@ struct GitPanelSection: View {
             }
         }
         .onAppear { syncRepo() }
+        // The registry drives the focused repo now; re-sync on its version
+        // tick (status / tracked-root-set change) and on the current-file
+        // change (focus may have moved to a tab in a different repo). The
+        // sidebar.rootURL trigger stays so a folder reopen re-syncs even
+        // before the registry settles.
+        .onChange(of: trackedRepos.version) { _, _ in syncRepo() }
         .onChange(of: sidebar.rootURL) { _, _ in syncRepo() }
         .onChange(of: model.currentURL) { _, _ in syncRepo() }
         // Menu-triggered focus: expand the section + switch tab.
@@ -81,10 +91,13 @@ struct GitPanelSection: View {
     }
 
     private func syncRepo() {
-        let discovered = RecentChangesSection.discoverRepo(
-            sidebarRoot: sidebar.rootURL,
-            currentURL: model.currentURL
+        // Follow the registry's focused root (selected tab's repo →
+        // sidebar folder's repo → single tracked → most-recently-touched),
+        // honoring an explicit picker pin until focus moves to a different
+        // tracked repo. Replaces the old single-root `discoverRepo` path.
+        panel.followFocus(
+            model.repoFocus.focusedRoot,
+            tracked: trackedRepos.trackedRoots
         )
-        panel.setRepoRoot(discovered)
     }
 }
