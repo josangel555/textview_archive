@@ -184,3 +184,48 @@ final class HighlightCacheDoesNotRepublishDocumentModelTests: XCTestCase {
                       "repeat calls with same id must return the same actor")
     }
 }
+
+/// RWC-1 (2026-05-30): the highlight cache key now folds in
+/// `modifiedTime`, so a same-byte-length reload (length + url + language
+/// unchanged) is a MISS instead of returning stale syntax spans.
+@MainActor
+final class HighlightCacheKeyMtimeTests: XCTestCase {
+
+    func test_sameLengthDifferentMtime_areDistinctKeys() {
+        let url = URL(fileURLWithPath: "/tmp/k.swift")
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        let t1 = Date(timeIntervalSince1970: 2_000)
+        let k0 = HighlightCacheKey(url: url, length: 9, language: .swift, modifiedTime: t0)
+        let k1 = HighlightCacheKey(url: url, length: 9, language: .swift, modifiedTime: t1)
+        XCTAssertNotEqual(k0, k1,
+            "same-byte reload (new mtime) must form a distinct cache key")
+    }
+
+    func test_sameMtime_collidesAsHit() {
+        let url = URL(fileURLWithPath: "/tmp/k.swift")
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        let a = HighlightCacheKey(url: url, length: 9, language: .swift, modifiedTime: t0)
+        let b = HighlightCacheKey(url: url, length: 9, language: .swift, modifiedTime: t0)
+        XCTAssertEqual(a, b, "identical key fields must hash/compare equal")
+    }
+
+    func test_actorMissesAcrossMtimeChange() {
+        let actor = HighlightCacheActor()
+        let url = URL(fileURLWithPath: "/tmp/k.swift")
+        let oldKey = HighlightCacheKey(
+            url: url, length: 9, language: .swift,
+            modifiedTime: Date(timeIntervalSince1970: 1_000))
+        actor._testInstall(
+            [HighlightRun(range: NSRange(location: 0, length: 3), kind: .keyword)],
+            for: oldKey)
+        // Same length/url/language, file rewritten in place (new mtime).
+        let newKey = HighlightCacheKey(
+            url: url, length: 9, language: .swift,
+            modifiedTime: Date(timeIntervalSince1970: 2_000))
+        XCTAssertNil(actor.runs(for: newKey),
+            "same-byte reload must miss so stale spans aren't served")
+        XCTAssertNotNil(actor.runs(for: oldKey),
+            "the original mtime keeps hitting")
+    }
+}
+

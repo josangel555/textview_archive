@@ -129,18 +129,41 @@ public final class HighlightCacheActor: ObservableObject {
     }
 }
 
-/// Cache key. Unchanged from the prior `DocumentModel.HighlightCacheKey`
-/// — re-exported here as the canonical home now that the cache lives
-/// per-tab. `DocumentModel.HighlightCacheKey` aliases this for source
-/// compatibility with existing callers / tests.
+/// Cache key. Re-exported here as the canonical home now that the
+/// cache lives per-tab. `DocumentModel.HighlightCacheKey` aliases this
+/// for source compatibility with existing callers / tests.
+///
+/// RWC-1 (2026-05-30): `modifiedTime` joined the key so a same-byte
+/// reload invalidates. The prior `(url, length, language)` key served
+/// STALE syntax spans when the watcher (or an editor save) rewrote a
+/// file to the exact same byte length (`let x = 1` → `let y = 2`):
+/// `length` matched, so the cache returned the spans tokenized against
+/// the OLD text. mtime is the same channel the rendered-HTML cache uses
+/// (see `DocumentModel.RenderedHTMLKey`) — O(1) to read, captured at
+/// load time, and nanosecond-resolution on APFS so back-to-back edits
+/// produce distinct stamps. `length` stays in the key too: it cheaply
+/// separates entries when mtime is nil (synthetic in-memory `TextFile`s
+/// from tests), and is free to compare.
 public struct HighlightCacheKey: Hashable, Sendable {
     public let url: URL
     public let length: Int
     public let language: HighlightLanguage
+    /// `nil` only for synthetic `TextFile`s constructed without an
+    /// mtime (in-memory tests). In production every `TextFile` from the
+    /// loader carries one. Two same-url/same-length/nil-mtime keys
+    /// collapse to one entry — acceptable for tests (no watcher reload
+    /// races there).
+    public let modifiedTime: Date?
 
-    public init(url: URL, length: Int, language: HighlightLanguage) {
+    public init(
+        url: URL,
+        length: Int,
+        language: HighlightLanguage,
+        modifiedTime: Date? = nil
+    ) {
         self.url = url
         self.length = length
         self.language = language
+        self.modifiedTime = modifiedTime
     }
 }
