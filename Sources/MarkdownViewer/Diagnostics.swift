@@ -15,12 +15,52 @@ import ViewerUI
 ///      during an interactive session that's exhibiting a visual bug.
 extension AppDelegate {
 
+    /// Is the SIGUSR1 diagnostic trap enabled for this build/run?
+    ///
+    /// OBS-1: the trap used to be installed unconditionally — meaning a
+    /// shipped release binary would, on any `kill -USR1`, write a JSON
+    /// view-tree dump *and* a PNG screenshot of the user's window to a
+    /// per-user tmp file. Even a contained tmpdir is more attack surface
+    /// (and content leakage) than a release build should carry. We now
+    /// gate it: on in DEBUG builds, or when the operator opts in via
+    /// `MDV_ENABLE_DIAGNOSTICS=1`. When neither holds the handler is
+    /// never installed and SIGUSR1 keeps its default disposition.
+    static var diagnosticsTrapEnabled: Bool {
+        #if DEBUG
+        return true
+        #else
+        return ProcessInfo.processInfo.environment["MDV_ENABLE_DIAGNOSTICS"] == "1"
+        #endif
+    }
+
+    /// In a shipped release the dump must not embed user document content
+    /// (the first 120 chars of whatever's open). DEBUG / opted-in dumps
+    /// keep content for forensic value. Mirrors `diagnosticsTrapEnabled`'s
+    /// gating but expressed as "should we redact".
+    static var redactDiagnosticContent: Bool {
+        #if DEBUG
+        return false
+        #else
+        return true
+        #endif
+    }
+
     /// Trap SIGUSR1 to dump the live NSView tree to
     /// /var/folders/.../mdv-diagnostic-<pid>.json. Lets us inspect state
     /// DURING an interactive session that's exhibiting a visual bug,
     /// instead of only on headless launch (which may differ from real use).
     /// Usage: `kill -USR1 $(pgrep MarkdownViewer)`
+    ///
+    /// Gated by `diagnosticsTrapEnabled` (OBS-1): no-op in a stock
+    /// release build unless `MDV_ENABLE_DIAGNOSTICS=1` is set.
     func installDiagnosticSignalHandler() {
+        // Best-effort sweep of stale diagnostic artifacts from prior runs
+        // (crashed processes leave `mdv-diagnostic-<pid>.json` /
+        // `mdv-snapshot-<pid>.png` behind). Runs even when the trap is
+        // disabled so an upgrade from an old binary cleans up too (OBS-2).
+        Self.cleanStaleDiagnosticArtifacts()
+
+        guard Self.diagnosticsTrapEnabled else { return }
         let src = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
         src.setEventHandler { [weak self] in
             guard let self, let win = self.window else { return }
@@ -39,18 +79,28 @@ extension AppDelegate {
                 let tmp = FileManager.default.temporaryDirectory
                 let jsonPath = tmp.appendingPathComponent("mdv-diagnostic-\(pid).json").path
                 let pngPath  = tmp.appendingPathComponent("mdv-snapshot-\(pid).png").path
-                let dump = DiagnosticDump.dump(window: win)
+                // Redact document content in release dumps; keep it under
+                // DEBUG / opt-in for forensic value (OBS-1).
+                let dump = DiagnosticDump.dump(
+                    window: win,
+                    options: DiagnosticDump.Options(
+                        redactContent: Self.redactDiagnosticContent
+                    )
+                )
                 do {
                     let data = try JSONSerialization.data(
                         withJSONObject: dump,
                         options: [.prettyPrinted, .sortedKeys]
                     )
-                    try data.write(to: URL(fileURLWithPath: jsonPath))
+                    // Write with explicit owner-only (0600) perms so a
+                    // co-resident user can't read the dump (OBS-2).
+                    try Self.writeDataPrivate(data, toPath: jsonPath)
                 } catch {
                     FileHandle.standardError.write(
                         Data("diagnostic dump failed: \(error)\n".utf8))
                 }
                 let captured = DiagnosticDump.captureWindowToPNG(win, path: pngPath)
+                if captured { Self.tightenPermissions(atPath: pngPath) }
                 FileHandle.standardError.write(
                     Data("diagnostic → \(jsonPath)\(captured ? " + \(pngPath)" : " (PNG capture failed)")\n".utf8))
             }
@@ -82,13 +132,17 @@ extension AppDelegate {
                 let tmp = FileManager.default.temporaryDirectory
                 let json = tmp.appendingPathComponent("mdv-auto.json").path
                 let png  = tmp.appendingPathComponent("mdv-auto.png").path
+                // `--auto-snapshot` is an explicit headless flag (dev /
+                // test harness only), so we keep content here — but still
+                // write 0600 so the artifact isn't world-readable (OBS-2).
                 let dump = DiagnosticDump.dump(window: win)
                 let data = (try? JSONSerialization.data(
                     withJSONObject: dump,
                     options: [.prettyPrinted, .sortedKeys]
                 )) ?? Data()
-                try? data.write(to: URL(fileURLWithPath: json))
+                try? Self.writeDataPrivate(data, toPath: json)
                 let captured = DiagnosticDump.captureWindowToPNG(win, path: png)
+                if captured { Self.tightenPermissions(atPath: png) }
                 FileHandle.standardError.write(
                     Data("auto-snapshot → \(json) + \(captured ? png : "PNG-failed")\n".utf8))
                 exit(captured ? 0 : 3)
@@ -132,6 +186,83 @@ extension AppDelegate {
                     exit(1)
                 }
             }
+        }
+    }
+
+    // MARK: - Private artifact I/O (OBS-2)
+
+    /// Write `data` to `path` with owner-only (0600) permissions, created
+    /// atomically. We open with `O_CREAT|O_EXCL`-free `O_TRUNC` and an
+    /// explicit 0600 mode so the file is never momentarily group/other
+    /// readable (a `write` followed by `chmod` would briefly expose it
+    /// under the process umask). Existing files are truncated and the
+    /// mode re-asserted.
+    static func writeDataPrivate(_ data: Data, toPath path: String) throws {
+        let fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0o600)
+        guard fd >= 0 else {
+            throw NSError(
+                domain: NSPOSIXErrorDomain, code: Int(errno),
+                userInfo: [NSLocalizedDescriptionKey:
+                    "open(\(path)) failed: \(String(cString: strerror(errno)))"]
+            )
+        }
+        defer { close(fd) }
+        // Re-assert mode in case the file pre-existed with looser perms
+        // (open() honors the mode arg only on creation).
+        _ = fchmod(fd, 0o600)
+        var remaining = data
+        while !remaining.isEmpty {
+            let written = remaining.withUnsafeBytes { ptr -> Int in
+                write(fd, ptr.baseAddress, remaining.count)
+            }
+            if written <= 0 {
+                throw NSError(
+                    domain: NSPOSIXErrorDomain, code: Int(errno),
+                    userInfo: [NSLocalizedDescriptionKey:
+                        "write(\(path)) failed: \(String(cString: strerror(errno)))"]
+                )
+            }
+            remaining = remaining.suffix(remaining.count - written)
+        }
+    }
+
+    /// Best-effort tighten of an existing file to 0600. Used for PNGs,
+    /// which `DiagnosticDump.captureWindowToPNG` writes via `Data.write`
+    /// (under the umask) since that helper lives in ViewerUI and can't be
+    /// changed from this group.
+    static func tightenPermissions(atPath path: String) {
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o600], ofItemAtPath: path
+        )
+    }
+
+    /// Sweep stale diagnostic artifacts left by previous (possibly
+    /// crashed) processes. We only touch our own `mdv-diagnostic-*.json`
+    /// / `mdv-snapshot-*.png` / `mdv-auto.{json,png}` names in the
+    /// per-user tmpdir, and we never remove the file for the *current*
+    /// pid. Best-effort: failures are ignored (OBS-2).
+    static func cleanStaleDiagnosticArtifacts() {
+        let fm = FileManager.default
+        let tmp = fm.temporaryDirectory
+        guard let entries = try? fm.contentsOfDirectory(
+            at: tmp, includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else { return }
+        let myPID = getpid()
+        let mineDiag = "mdv-diagnostic-\(myPID).json"
+        let mineSnap = "mdv-snapshot-\(myPID).png"
+        for url in entries {
+            let name = url.lastPathComponent
+            let isOurArtifact =
+                (name.hasPrefix("mdv-diagnostic-") && name.hasSuffix(".json"))
+                || (name.hasPrefix("mdv-snapshot-") && name.hasSuffix(".png"))
+                || name == "mdv-auto.json"
+                || name == "mdv-auto.png"
+            guard isOurArtifact else { continue }
+            // Never clobber the current process's own (about-to-be-written)
+            // files.
+            if name == mineDiag || name == mineSnap { continue }
+            try? fm.removeItem(at: url)
         }
     }
 }

@@ -20,8 +20,20 @@ public enum DiagnosticDump {
         /// If true, include recursiveDescription. It's a private API call so
         /// we gate behind a flag — production code paths shouldn't depend on it.
         public var includeRecursiveDescription: Bool
-        public init(includeRecursiveDescription: Bool = true) {
+        /// If true, drop fields that may carry user document content
+        /// (e.g. `string_head`, the first 120 chars of an NSTextView's
+        /// string). Release/SIGUSR1 dumps land in a per-user tmp file;
+        /// even at 0600 we don't want a forensic dump to embed a slice
+        /// of whatever the user happens to have open. Tests and the
+        /// `--diagnose` headless path keep content (default false) since
+        /// that output never persists past the process.
+        public var redactContent: Bool
+        public init(
+            includeRecursiveDescription: Bool = true,
+            redactContent: Bool = false
+        ) {
             self.includeRecursiveDescription = includeRecursiveDescription
+            self.redactContent = redactContent
         }
     }
 
@@ -46,14 +58,34 @@ public enum DiagnosticDump {
         ]
         if let cv = window.contentView {
             out["contentView"] = describeView(cv, depth: 0,
-                                              includeRecursive: options.includeRecursiveDescription)
+                                              includeRecursive: options.includeRecursiveDescription,
+                                              redactContent: options.redactContent)
         } else {
             out["contentView"] = NSNull()
         }
         if options.includeRecursiveDescription, let cv = window.contentView {
-            out["recursiveDescription"] = (cv.value(forKey: "recursiveDescription") as? String) ?? "<unavailable>"
+            // `recursiveDescription` is a private NSView debug selector.
+            // KVC `value(forKey:)` on a key the receiver doesn't implement
+            // throws an *uncatchable* ObjC `NSUnknownKeyException` →
+            // SIGABRT. Guard with a responds-to-selector probe so a future
+            // AppKit that drops the method yields "<unavailable>" instead
+            // of crashing the dump (CR-06).
+            out["recursiveDescription"] = Self.recursiveDescription(of: cv)
         }
         return out
+    }
+
+    /// Safely read the private `recursiveDescription` debug selector.
+    /// Returns "<unavailable>" if the receiver doesn't respond to it
+    /// (e.g. Apple removes/renames it on a future macOS) rather than
+    /// letting an uncatchable `NSUnknownKeyException` abort the process.
+    private static func recursiveDescription(of view: NSView) -> String {
+        let sel = NSSelectorFromString("recursiveDescription")
+        guard view.responds(to: sel) else { return "<unavailable>" }
+        // perform(_:) returns an Unmanaged<AnyObject>?; recursiveDescription
+        // returns an autoreleased NSString, so we don't take ownership.
+        let result = view.perform(sel)?.takeUnretainedValue()
+        return (result as? String) ?? "<unavailable>"
     }
 
     /// Describe a single view + its subtree. Captures every property
@@ -66,7 +98,8 @@ public enum DiagnosticDump {
     public static func describeView(
         _ view: NSView,
         depth: Int,
-        includeRecursive: Bool
+        includeRecursive: Bool,
+        redactContent: Bool = false
     ) -> [String: Any] {
         var d: [String: Any] = [
             "class": String(describing: type(of: view)),
@@ -118,7 +151,7 @@ public enum DiagnosticDump {
         }
 
         if let tv = view as? NSTextView {
-            d["nsTextView"] = describeTextView(tv)
+            d["nsTextView"] = describeTextView(tv, redactContent: redactContent)
         }
         if let sv = view as? NSScrollView {
             d["nsScrollView"] = describeScrollView(sv)
@@ -129,16 +162,23 @@ public enum DiagnosticDump {
 
         if !view.subviews.isEmpty {
             d["subviews"] = view.subviews.map {
-                describeView($0, depth: depth + 1, includeRecursive: false)
+                describeView($0, depth: depth + 1, includeRecursive: false,
+                             redactContent: redactContent)
             }
         }
         return d
     }
 
-    private static func describeTextView(_ tv: NSTextView) -> [String: Any] {
+    private static func describeTextView(
+        _ tv: NSTextView,
+        redactContent: Bool = false
+    ) -> [String: Any] {
         var t: [String: Any] = [
             "string_length": tv.string.count,
-            "string_head": String(tv.string.prefix(120)),
+            // `string_head` echoes the first 120 chars of the document.
+            // Redact it in persisted (release/SIGUSR1) dumps so a forensic
+            // file never embeds a slice of the user's content (OBS-1).
+            "string_head": redactContent ? "<redacted>" : String(tv.string.prefix(120)),
             "drawsBackground": tv.drawsBackground,
             "isEditable": tv.isEditable,
             "isSelectable": tv.isSelectable,
