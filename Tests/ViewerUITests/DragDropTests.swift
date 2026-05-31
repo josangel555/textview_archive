@@ -66,7 +66,7 @@ final class DragDropTests: XCTestCase {
             // Mirror ContentView: call openMultiple. We also peek
             // at the resolved URL list via a sink so the test can
             // distinguish "router fired" from "model opened".
-            Task { await resolved.set(urls) }
+            resolved.set(urls)
             model.openMultiple(urls)
         }
         XCTAssertTrue(accepted,
@@ -85,39 +85,82 @@ final class DragDropTests: XCTestCase {
     }
 
     func test_drop_missingFile_doesNotOpen() async throws {
-        // The router resolves whatever URL the provider vends —
-        // existence checking happens in the model. So a missing
-        // file does flow through the router, but `openMultiple` is
-        // expected to filter it out. Same behavior as before;
-        // assertion is now hung off the router's contract.
+        // The router itself filters non-existent paths now (UDC-1):
+        // existence checking is no longer inlined in the test or left
+        // to the model. A missing file is resolved by the provider but
+        // dropped by `DropRouter.handle` before `onResolved` fires, so
+        // the completion receives an empty list and no tab opens.
         let model = makeModel()
         let url = tmpDir.appendingPathComponent("not-there.md")
         let provider = NSItemProvider(object: url as NSURL)
         let resolved = ResolvedURLsSink()
         DropRouter.handle([provider]) { urls in
-            Task { await resolved.set(urls) }
-            // Replicate ContentView's filter: only open paths that
-            // actually exist on disk. Doing the filter here keeps
-            // the test honest about *why* the missing file doesn't
-            // become a tab.
-            let existing = urls.filter { FileManager.default.fileExists(atPath: $0.path) }
-            model.openMultiple(existing)
+            resolved.set(urls)
+            model.openMultiple(urls)
         }
-        // Wait for the router to fire (resolved snapshot becomes
-        // non-empty), then assert openMultiple skipped the missing
-        // path. Without this we'd race against the load completion.
-        let fired = await waitFor(timeout: 2.0) {
-            let snap = Task { await resolved.snapshot() }
-            // Synchronous read isn't possible from a non-async
-            // closure; treat "any tab change OR small wait" as
-            // settled. We just need *some* time for the load.
-            _ = snap
-            return true
-        }
-        _ = fired
-        try? await Task.sleep(nanoseconds: 250_000_000)
+        // Wait for the router's completion to fire. We can't read the
+        // actor snapshot synchronously, so poll it via a settled flag.
+        let fired = await waitFor(timeout: 2.0) { resolved.firedFlag }
+        XCTAssertTrue(fired, "Router completion should fire even for a missing file")
+        let snapshot = await resolved.snapshot()
+        XCTAssertEqual(snapshot, [],
+            "DropRouter must filter out a non-existent path before resolving")
         XCTAssertEqual(model.tabs.tabs.count, 0,
             "Dropping a non-existent file path should not open a tab")
+    }
+
+    func test_drop_mixed_filtersMissingKeepsExisting() async throws {
+        // UDC-1: existence filtering is the router's job. A drop mixing
+        // a real file and a dead path forwards only the live one — the
+        // same filter the production `.onDrop` path runs.
+        let model = makeModel()
+        let real = tmpDir.appendingPathComponent("real.md")
+        try "# real\n".write(to: real, atomically: true, encoding: .utf8)
+        let dead = tmpDir.appendingPathComponent("ghost.md")
+
+        let providers = [NSItemProvider(object: real as NSURL),
+                         NSItemProvider(object: dead as NSURL)]
+        let resolved = ResolvedURLsSink()
+        DropRouter.handle(providers) { urls in
+            resolved.set(urls)
+            model.openMultiple(urls)
+        }
+        let fired = await waitFor(timeout: 2.0) { resolved.firedFlag }
+        XCTAssertTrue(fired)
+        let snapshot = await resolved.snapshot()
+        XCTAssertEqual(snapshot, [real],
+            "Only the existing path should survive the router's filter, in drag order")
+    }
+
+    func test_drop_stuckProvider_flushesPartialAtDeadline() async throws {
+        // UDC-9: if a provider's load completion never fires, the drop
+        // must not silently no-op. With a short deadline the router
+        // flushes whatever resolved so far instead of waiting forever.
+        // We pair a normal file-URL provider with one that registers a
+        // URL-class loader whose completion is never invoked.
+        let model = makeModel()
+        let real = tmpDir.appendingPathComponent("resolves.md")
+        try "# resolves\n".write(to: real, atomically: true, encoding: .utf8)
+
+        let stuck = NSItemProvider()
+        // Register a loader for URL that captures the completion and
+        // drops it on the floor — simulating a provider whose source
+        // process died mid-drag.
+        stuck.registerObject(ofClass: URL.self, visibility: .all) { _ in
+            return Progress(totalUnitCount: 1)  // never calls completion
+        }
+        let providers = [NSItemProvider(object: real as NSURL), stuck]
+        let resolved = ResolvedURLsSink()
+        DropRouter.handle(providers, deadline: 0.3) { urls in
+            resolved.set(urls)
+            model.openMultiple(urls)
+        }
+        let fired = await waitFor(timeout: 2.0) { resolved.firedFlag }
+        XCTAssertTrue(fired,
+            "Router must flush at the deadline even though one provider never resolved")
+        let snapshot = await resolved.snapshot()
+        XCTAssertEqual(snapshot, [real],
+            "The resolved file should still open; the stuck provider is dropped")
     }
 }
 
@@ -125,8 +168,32 @@ final class DragDropTests: XCTestCase {
 /// can hand the resolved URL list to the test thread without a
 /// shared mutable reference. Hops via detached Task; tests read
 /// `snapshot()`.
-actor ResolvedURLsSink {
+///
+/// `firedFlag` is a lock-guarded, synchronously-readable mirror of
+/// "did the router completion fire at least once". The actor's own
+/// state can't be read from a non-async `waitFor` predicate, so the
+/// flag lets a polling loop detect completion without awaiting.
+final class ResolvedURLsSink: @unchecked Sendable {
+    private let lock = NSLock()
     private var urls: [URL] = []
-    func set(_ value: [URL]) { urls = value }
-    func snapshot() -> [URL] { urls }
+    private var fired = false
+
+    func set(_ value: [URL]) {
+        lock.lock()
+        urls = value
+        fired = true
+        lock.unlock()
+    }
+
+    func snapshot() -> [URL] {
+        lock.lock()
+        defer { lock.unlock() }
+        return urls
+    }
+
+    var firedFlag: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return fired
+    }
 }
