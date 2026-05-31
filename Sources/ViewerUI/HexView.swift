@@ -44,6 +44,19 @@ struct HexView: View {
     @State private var queryIsInvalid: Bool = false
     @State private var clickPattern: [UInt8] = []
     @State private var clickOffsets: [Int] = []
+    /// True when `HexSearchEngine.find` returned more than `Self.matchCap`
+    /// hits and we kept only the first `matchCap`. Drives the "N+ matches"
+    /// label and the capped highlight paint.
+    @State private var matchesCapped: Bool = false
+
+    /// Hard cap on the number of search / click match offsets we retain
+    /// and paint. A pathological query (e.g. searching `00` across a 4 MB
+    /// zero-filled blob) yields millions of hits; each painted match is two
+    /// `addAttribute(.backgroundColor:)` ranges, so an uncapped list both
+    /// balloons `@State` arrays and pins the main thread re-painting a
+    /// screenful's worth of invisible highlights. 50k is far more than any
+    /// human steps through and keeps the paint loop bounded.
+    static let matchCap: Int = 50_000
 
     private var width: Int { model.hexWidth(forTabID: tabID) }
 
@@ -71,6 +84,7 @@ struct HexView: View {
             searchQuery = ""
             searchPattern = []
             matches = []
+            matchesCapped = false
             currentMatch = 0
             queryIsInvalid = false
             clickPattern = []
@@ -117,6 +131,8 @@ struct HexView: View {
             .buttonStyle(.borderless)
             .disabled(matches.isEmpty)
             .accessibilityIdentifier("mdv.hex.search.prev")
+            .accessibilityLabel("Previous match")
+            .help("Previous match (⇧⌘G)")
             .keyboardShortcut("g", modifiers: [.command, .shift])
 
             Button(action: { stepMatch(by: 1) }) {
@@ -125,6 +141,8 @@ struct HexView: View {
             .buttonStyle(.borderless)
             .disabled(matches.isEmpty)
             .accessibilityIdentifier("mdv.hex.search.next")
+            .accessibilityLabel("Next match")
+            .help("Next match (⌘G)")
             .keyboardShortcut("g", modifiers: [.command])
 
             Spacer()
@@ -148,6 +166,11 @@ struct HexView: View {
     private var matchCountLabel: String {
         if queryIsInvalid { return "invalid" }
         if matches.isEmpty { return searchQuery.isEmpty ? "" : "0 matches" }
+        if matchesCapped {
+            // We stepped through the first `matchCap`; signal there are more
+            // than we retained rather than implying an exact total.
+            return "\(currentMatch + 1) / \(matches.count)+"
+        }
         return "\(currentMatch + 1) / \(matches.count)"
     }
 
@@ -157,6 +180,7 @@ struct HexView: View {
         guard !searchQuery.isEmpty else {
             searchPattern = []
             matches = []
+            matchesCapped = false
             currentMatch = 0
             queryIsInvalid = false
             return
@@ -165,13 +189,18 @@ struct HexView: View {
             queryIsInvalid = true
             searchPattern = []
             matches = []
+            matchesCapped = false
             return
         }
         queryIsInvalid = false
         searchPattern = pattern
-        matches = pattern.isEmpty
-            ? []
-            : HexSearchEngine.find(pattern: pattern, in: file.data)
+        let capped = HexMatchCap.cap(
+            pattern.isEmpty
+                ? []
+                : HexSearchEngine.find(pattern: pattern, in: file.data),
+            to: Self.matchCap)
+        matches = capped.offsets
+        matchesCapped = capped.wasCapped
         currentMatch = 0
     }
 
@@ -185,14 +214,36 @@ struct HexView: View {
 
     private func handleClickPattern(_ pattern: [UInt8]) {
         clickPattern = pattern
-        clickOffsets = pattern.isEmpty
-            ? []
-            : HexSearchEngine.find(pattern: pattern, in: file.data)
+        // Click-to-highlight can match a single byte across the whole 4 MB
+        // buffer; cap the offsets we retain/paint with the same bound as
+        // search so the highlight loop stays O(matchCap).
+        clickOffsets = HexMatchCap.cap(
+            pattern.isEmpty
+                ? []
+                : HexSearchEngine.find(pattern: pattern, in: file.data),
+            to: Self.matchCap).offsets
     }
 
     private func clearClickHighlight() {
         clickPattern = []
         clickOffsets = []
+    }
+}
+
+// MARK: - Match-list cap (pure, host-testable)
+
+/// Caps a list of match offsets so the hex view never retains or paints
+/// an unbounded number of highlights. Pure value logic, kept out of the
+/// SwiftUI `View` so it's unit-testable without an `NSApplication`.
+enum HexMatchCap {
+    /// Returns the first `limit` offsets and whether the input exceeded the
+    /// cap. `limit <= 0` is treated as "no matches retained".
+    static func cap(_ offsets: [Int], to limit: Int)
+        -> (offsets: [Int], wasCapped: Bool)
+    {
+        guard limit > 0 else { return ([], !offsets.isEmpty) }
+        if offsets.count <= limit { return (offsets, false) }
+        return (Array(offsets.prefix(limit)), true)
     }
 }
 
@@ -328,6 +379,9 @@ private final class HexTextController: NSViewController {
         tv.isAutomaticSpellingCorrectionEnabled = false
         tv.isAutomaticLinkDetectionEnabled = false
         tv.isAutomaticDataDetectionEnabled = false
+        // VoiceOver otherwise announces this as an unlabeled text area.
+        // `apply(...)` refines the label with the byte count / truncation.
+        tv.setAccessibilityLabel("Hex dump")
         scroll.documentView = tv
         self.textView = tv
 
@@ -358,6 +412,8 @@ private final class HexTextController: NSViewController {
             byteCount = file.byteCount
             fileData = file.data
             rowLength = HexLayout.renderedRowLength(width: width)
+            textView.setAccessibilityLabel(
+                Self.accessibilityLabel(for: file))
             startChunkedBuild(file: file,
                               fontSize: fontSize,
                               width: width)
@@ -635,8 +691,34 @@ private final class HexTextController: NSViewController {
         onClearClickPattern?()
     }
 
+    static func accessibilityLabel(for file: BinaryFile) -> String {
+        HexAccessibility.dumpLabel(byteCount: file.byteCount,
+                                   totalByteCount: file.totalByteCount,
+                                   isTruncated: file.isTruncated)
+    }
+
     // MARK: Rendering — see HexDumpBuilder in ViewerCore for the
     // chunked text-build implementation.
+}
+
+// MARK: - Accessibility label formatting (pure, host-testable)
+
+/// VoiceOver label formatting for the hex dump text area. Pure value logic,
+/// kept out of the `private` controller so it's unit-testable without an
+/// `NSApplication`.
+enum HexAccessibility {
+    /// Label for the dump text area. Makes the truncated case explicit
+    /// ("showing first N of M bytes") so a non-sighted user gets the same
+    /// "this is a partial view" cue the on-screen banner gives a sighted one.
+    static func dumpLabel(byteCount: Int,
+                          totalByteCount: Int,
+                          isTruncated: Bool) -> String {
+        if isTruncated {
+            return "Hex dump, showing first \(byteCount) "
+                + "of \(totalByteCount) bytes"
+        }
+        return "Hex dump, \(byteCount) bytes"
+    }
 }
 
 // MARK: - NSTextView subclass for click-to-highlight
