@@ -10,6 +10,26 @@ import Foundation
 /// server.
 public enum LSPFraming {
 
+    // MARK: - Caps (PARSE-01 / MAGIC-001)
+
+    /// Hard ceiling on a single framed message body. A hostile or buggy
+    /// server can send `Content-Length: 9999999999` and, without a cap,
+    /// the reader keeps buffering until the body "arrives" — an
+    /// unbounded heap allocation (OOM the viewer). 32 MiB comfortably
+    /// covers the largest realistic LSP payloads (a huge
+    /// `documentSymbol` / `workspace/symbol` result on a monorepo) while
+    /// bounding the blast radius. Oversize is rejected as a framing
+    /// error *before* we wait for / allocate the body.
+    public static let maxBodyBytes = 32 * 1024 * 1024
+
+    /// Hard ceiling on the header section (everything up to and
+    /// including `\r\n\r\n`). Legitimate LSP headers are <200 bytes
+    /// (`Content-Length` + optional `Content-Type`). A stream that
+    /// never emits the terminator would otherwise make us buffer +
+    /// re-scan without bound. 16 KiB is generous slack; exceeding it
+    /// means the peer isn't speaking LSP framing.
+    public static let maxHeaderBytes = 16 * 1024
+
     /// Frame an outgoing JSON body into the on-wire `Content-Length`
     /// envelope. `body` must already be UTF-8 encoded JSON.
     public static func frame(_ body: Data) -> Data {
@@ -35,6 +55,20 @@ public enum LSPFraming {
     /// loop and drain repeatedly until `.needMore` is returned, because
     /// a single read may deliver multiple framed messages back-to-back.
     public static func decode(_ rawBuffer: Data) throws -> DecodeStep {
+        var ignored = 0
+        return try decode(rawBuffer, headerScanStart: &ignored)
+    }
+
+    /// Streaming-aware variant. `headerScanStart` is a resume hint: the
+    /// scan for the `\r\n\r\n` terminator begins there instead of at 0,
+    /// so a header dribbling in over many reads costs O(total header)
+    /// across all calls rather than O(n²) (PARSE-01). The caller keeps
+    /// the cursor between `.needMore` results and resets it to 0 after
+    /// consuming a message (the buffer's front shifts). Passing 0 is
+    /// always correct, just potentially slower.
+    public static func decode(
+        _ rawBuffer: Data, headerScanStart: inout Int
+    ) throws -> DecodeStep {
         // Re-base the slice so all index arithmetic below works from 0.
         // `Data` slices keep their parent's `startIndex` non-zero after
         // a `removeFirst` / `dropFirst`, which makes `buffer.subdata(in:)`
@@ -43,9 +77,32 @@ public enum LSPFraming {
         // robust to any slice the caller hands us.
         let buffer = Data(rawBuffer)
         // Find `\r\n\r\n` header terminator. Byte-search; no string
-        // decode — header section is ASCII per spec.
-        guard let headerEnd = findHeaderTerminator(in: buffer) else {
+        // decode — header section is ASCII per spec. Resume from the
+        // last scanned offset (backed up 3 bytes so a terminator that
+        // straddled the previous chunk boundary isn't missed).
+        let scanFrom = max(0, min(headerScanStart, buffer.count))
+        guard let headerEnd = findHeaderTerminator(in: buffer, from: scanFrom) else {
+            // No terminator yet. Advance the resume cursor to just
+            // before the buffer end (keeping a 3-byte overlap so a
+            // split `\r\n\r\n` is caught next time) and bound the
+            // header section: a peer that never terminates the header
+            // must not make us buffer without limit.
+            if buffer.count > maxHeaderBytes {
+                throw LSPError.framingError(
+                    "header exceeds \(maxHeaderBytes) bytes without terminator")
+            }
+            headerScanStart = max(0, buffer.count - 3)
             return .needMore
+        }
+        // Found — the next decode pass on the remaining buffer starts
+        // fresh from 0 (the caller drops `consumed` bytes after a
+        // message, or re-scans the same header on `.needMore` below).
+        headerScanStart = 0
+        // Defensive: a header longer than the cap (but terminated) is
+        // still pathological. Reject before parsing.
+        if headerEnd > maxHeaderBytes {
+            throw LSPError.framingError(
+                "header section \(headerEnd) bytes exceeds cap \(maxHeaderBytes)")
         }
         let headerData = buffer.prefix(headerEnd)
         guard let headerStr = String(data: headerData, encoding: .ascii) else {
@@ -64,6 +121,13 @@ public enum LSPFraming {
                 guard let n = Int(value), n >= 0 else {
                     throw LSPError.framingError("invalid Content-Length: \(value)")
                 }
+                // PARSE-01: reject oversize BEFORE returning `.needMore`
+                // and waiting for the body. Without this we'd buffer up
+                // to `n` bytes of attacker-controlled length → OOM.
+                guard n <= maxBodyBytes else {
+                    throw LSPError.framingError(
+                        "Content-Length \(n) exceeds cap \(maxBodyBytes)")
+                }
                 contentLength = n
             }
             // Content-Type: ignored. Spec says we may assume UTF-8.
@@ -80,19 +144,20 @@ public enum LSPFraming {
         return .message(body: body, consumed: totalNeeded)
     }
 
-    private static func findHeaderTerminator(in buf: Data) -> Int? {
+    private static func findHeaderTerminator(in buf: Data, from start: Int = 0) -> Int? {
         // Scan for the 4-byte sequence `\r\n\r\n`. Position is the
-        // index of the first `\r`.
-        let needle: [UInt8] = [0x0D, 0x0A, 0x0D, 0x0A]
+        // index of the first `\r`. `start` lets the caller resume a
+        // scan it has already done up to (PARSE-01: turns the repeated
+        // re-scan of a slowly-arriving header from O(n^2) into O(n)).
         guard buf.count >= 4 else { return nil }
-        // O(n*m) is fine: header is small (<200 bytes typical).
+        let begin = max(0, min(start, buf.count - 4))
         return buf.withUnsafeBytes { raw -> Int? in
             let p = raw.bindMemory(to: UInt8.self)
             let limit = p.count - 4
-            var i = 0
+            var i = begin
             while i <= limit {
-                if p[i] == needle[0] && p[i+1] == needle[1]
-                    && p[i+2] == needle[2] && p[i+3] == needle[3] {
+                if p[i] == 0x0D && p[i+1] == 0x0A
+                    && p[i+2] == 0x0D && p[i+3] == 0x0A {
                     return i
                 }
                 i += 1

@@ -226,6 +226,14 @@ public struct LSPDiagnostic: Sendable, Hashable {
 /// Tokens are single-use; rebind is a no-op. `cancel()` is safe to
 /// call before bind — it marks the token as cancelled and the binder
 /// fires immediately upon bind.
+///
+/// **Single-request only.** A token binds to exactly one `(id, owner)`
+/// pair — the first request that binds it wins; later binds are no-ops.
+/// Do NOT share one token across a fan-out (e.g. `LSPPool.workspaceSymbol`
+/// over N clients): `cancel()` would only reach the first client's
+/// request, leaving the rest running. Mint a fresh token per request, or
+/// rely on structured-concurrency cancellation (`Task.checkCancellation`)
+/// between requests.
 public final class LSPCancellationToken: @unchecked Sendable {
 
     private let lock = NSLock()
@@ -234,6 +242,15 @@ public final class LSPCancellationToken: @unchecked Sendable {
     private var didCancel = false
 
     public init() {}
+
+    /// Whether `cancel()` has been called. Lets a fan-out caller
+    /// (e.g. `LSPPool.workspaceSymbol`) mirror a pre-cancelled shared
+    /// token onto the per-client tokens it mints. Lock-guarded read.
+    public var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return didCancel
+    }
 
     /// Internal: invoked by `LSPClient.request(...)`.
     func bind(id: Int64, owner: LSPClient) {

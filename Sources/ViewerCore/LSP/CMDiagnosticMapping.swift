@@ -27,18 +27,31 @@ public enum CMDiagnosticMapping {
     ) -> [CMDiagnostic] {
         guard !lspDiagnostics.isEmpty else { return [] }
         let converter = LSPPositionConverter(text: documentText, encoding: encoding)
+        return cmDiagnostics(
+            from: lspDiagnostics, documentText: documentText, converter: converter)
+    }
+
+    /// PERF-02 overload: translate using a caller-supplied (possibly
+    /// cached) converter, avoiding the O(documentLength) rebuild on
+    /// every diagnostics push against an unchanged buffer. `converter`
+    /// MUST have been built from `documentText` — the UTF-16 clamp uses
+    /// `documentText.utf16.count` for bounds. See
+    /// `LSPPositionConverterCache`.
+    public static func cmDiagnostics(
+        from lspDiagnostics: [LSPDiagnostic],
+        documentText: String,
+        converter: LSPPositionConverter
+    ) -> [CMDiagnostic] {
+        guard !lspDiagnostics.isEmpty else { return [] }
         let docUTF16Count = documentText.utf16.count
         var out: [CMDiagnostic] = []
         out.reserveCapacity(lspDiagnostics.count)
         for d in lspDiagnostics {
-            let startIdx = converter.stringIndex(for: d.range.start)
-            let endIdx = converter.stringIndex(for: d.range.end)
-            let from = documentText.utf16.distance(
-                from: documentText.startIndex, to: startIdx
-            )
-            let to = documentText.utf16.distance(
-                from: documentText.startIndex, to: endIdx
-            )
+            // PERF-02: `converter.utf16Offset(for:)` is O(intra-line);
+            // the prior `utf16.distance(from: startIndex, to: idx)`
+            // rescanned the whole document prefix per range (O(N · D)).
+            let from = converter.utf16Offset(for: d.range.start)
+            let to = converter.utf16Offset(for: d.range.end)
             let clampedFrom = max(0, min(docUTF16Count, from))
             var clampedTo = max(clampedFrom, min(docUTF16Count, to))
             if clampedTo == clampedFrom {

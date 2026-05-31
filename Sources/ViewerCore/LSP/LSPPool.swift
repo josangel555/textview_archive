@@ -78,6 +78,15 @@ public actor LSPPool {
         /// `didChange` so sourcekit-lsp can detect out-of-order
         /// notifications. Starts at 1 on `didOpen`.
         var fileVersions: [URL: Int] = [:]
+        /// PERF-01: per-file content hash of the text last shipped to
+        /// the server (via `didOpen` / `didChange`). Lets `didChange`
+        /// skip the notification + version bump when the text is
+        /// byte-identical to what the server already has — the common
+        /// case on a tab switch, where the outline re-runs
+        /// `ensureOpened` + `didChange` with the same unchanged buffer.
+        /// Re-shipping the full document text on every focus change is
+        /// pure waste (and re-triggers a server re-parse).
+        var fileHashes: [URL: Int] = [:]
     }
 
     /// Snapshot of pool / client health for the dev diagnostics panel.
@@ -150,17 +159,36 @@ public actor LSPPool {
 
     /// Force shutdown of every live server and prevent any further
     /// spawns. Idempotent. Awaitable: each client's `shutdown()` is
-    /// invoked sequentially with a short timeout.
+    /// invoked sequentially.
+    ///
+    /// `isClosed` is latched first so any `ensureLive` that wakes up
+    /// mid-teardown bails (`client(for:)` guards on it). Because each
+    /// `await shutdown()` is a suspension point, a spawn that was
+    /// already past the `isClosed` guard could still install a fresh
+    /// `.live` entry while we're iterating. We therefore drain in a
+    /// loop until no live client remains, rather than a single pass —
+    /// otherwise that late entry would leak its subprocess (RC-1 deinit
+    /// is the backstop, but we want a clean reap here).
     public func closeAll() async {
         isClosed = true
         reaperTask?.cancel()
         reaperTask = nil
-        for (key, entry) in entries {
-            if case .live(let client, _) = entry.state {
-                await client.shutdown()
+        while true {
+            var live: [(Key, LSPClient)] = []
+            for (key, entry) in entries {
+                if case .live(let client, _) = entry.state {
+                    live.append((key, client))
+                }
             }
-            entries.removeValue(forKey: key)
+            if live.isEmpty { break }
+            for (key, client) in live {
+                await client.shutdown()
+                entries.removeValue(forKey: key)
+            }
         }
+        // Drop any residual non-live entries (cold/starting/dead) — no
+        // client to shut down, but we don't want stale state lingering.
+        entries.removeAll()
     }
 
     // MARK: - Lookups for the UI
@@ -211,20 +239,33 @@ public actor LSPPool {
         guard let root = entry.rootFinder(fileURL) else { return }
         let key = Key(language: entry.language, workspaceRoot: root)
         let client = try await ensureLive(key: key, registry: entry)
-        guard case .live(_, var opened) = entries[key]?.state else { return }
+        guard case .live(_, let opened) = entries[key]?.state else { return }
         if opened.contains(fileURL) { return }
         try await client.didOpen(
             url: fileURL,
             languageId: entry.language.languageID(for: fileURL),
             text: text)
-        opened.insert(fileURL)
-        // Mutate entry in place.
-        if var e = entries[key] {
-            e.state = .live(client, openedFiles: opened)
-            e.lastUsed = clock.now
-            e.fileVersions[fileURL] = 1
-            entries[key] = e
-        }
+        // CONC-007: re-read the entry AFTER the `didOpen` await and apply
+        // a *minimal in-place* mutation. The prior code snapshotted the
+        // whole `Entry` before the await and wrote it back wholesale,
+        // clobbering any concurrent change (another file's didChange
+        // version bump, a recordRequest status update, or a crash demote
+        // that happened while we were suspended). Re-reading the fresh
+        // entry and only touching the fields we own avoids the lost
+        // update. If the entry vanished or is no longer live (reaped /
+        // crashed mid-await), we drop the bookkeeping — the next acquire
+        // will respawn and re-open.
+        guard var fresh = entries[key],
+              case .live(let liveClient, var freshOpened) = fresh.state,
+              liveClient === client else { return }
+        freshOpened.insert(fileURL)
+        fresh.state = .live(liveClient, openedFiles: freshOpened)
+        fresh.lastUsed = clock.now
+        fresh.fileVersions[fileURL] = 1
+        // PERF-01: record the hash of the text we just `didOpen`ed so a
+        // following `didChange` with the same text is a no-op.
+        fresh.fileHashes[fileURL] = Self.contentHash(text)
+        entries[key] = fresh
     }
 
     /// Notify the server that `fileURL`'s on-disk content changed.
@@ -236,18 +277,55 @@ public actor LSPPool {
         guard let entry = registry.language(for: fileURL) else { return }
         guard let root = entry.rootFinder(fileURL) else { return }
         let key = Key(language: entry.language, workspaceRoot: root)
-        guard var e = entries[key],
+        guard let e = entries[key],
               case .live(let client, let opened) = e.state,
               opened.contains(fileURL) else { return }
+        // PERF-01: skip the notification entirely when the text is
+        // byte-identical to what the server already has. This is the
+        // hot path on tab switches — the outline re-runs ensureOpened +
+        // didChange with the same unchanged buffer, and re-shipping the
+        // full document forces a needless server re-parse on every focus
+        // change. A 64-bit content hash makes the gate O(text length)
+        // once (cheaper than the JSON-encode + write + server parse it
+        // avoids); a collision would only cause a missed update, which
+        // for a read-only viewer is benign (next real edit re-syncs).
+        let newHash = Self.contentHash(text)
+        if e.fileHashes[fileURL] == newHash { return }
         let nextVersion = (e.fileVersions[fileURL] ?? 1) + 1
         try await client.didChange(
             url: fileURL,
             text: text,
             version: nextVersion
         )
-        e.fileVersions[fileURL] = nextVersion
-        e.lastUsed = clock.now
-        entries[key] = e
+        // CONC-007: re-read after the `didChange` await and commit the
+        // version bump against the FRESH entry, not the pre-await
+        // snapshot. The old code wrote back the stale whole-`Entry` copy,
+        // silently reverting any concurrent mutation (e.g. a parallel
+        // didChange to another file, or recordRequest). We also guard
+        // monotonicity: if a concurrent didChange already advanced the
+        // counter past `nextVersion`, keep the higher value so the
+        // server never sees a version go backwards.
+        guard var fresh = entries[key],
+              case .live(let liveClient, _) = fresh.state,
+              liveClient === client else { return }
+        let committed = max(nextVersion, fresh.fileVersions[fileURL] ?? 0)
+        fresh.fileVersions[fileURL] = committed
+        fresh.fileHashes[fileURL] = newHash
+        fresh.lastUsed = clock.now
+        entries[key] = fresh
+    }
+
+    /// Stable 64-bit content hash for the PERF-01 didChange gate. We use
+    /// the UTF-8 bytes through `Hasher` rather than `String.hashValue`
+    /// because the latter is seeded per-process-run (randomized) — fine
+    /// within a single run, but using the byte-level hash keeps the
+    /// gate's behavior obvious and avoids any surprise if the value ever
+    /// escapes the process. Collisions only risk a missed sync, benign
+    /// for a read-only viewer.
+    private static func contentHash(_ text: String) -> Int {
+        var hasher = Hasher()
+        hasher.combine(text)
+        return hasher.finalize()
     }
 
     private func ensureLive(
@@ -292,6 +370,18 @@ public actor LSPPool {
             let client = try LSPClient(config: cfg)
             if let onDiag = onDiagnostics {
                 await client.setOnDiagnostics(onDiag)
+            }
+            // CONC-002: wire the crash callback so an EOF/framing failure
+            // *between requests* (no in-flight call to carry the error
+            // back through the routed-request catch) still demotes the
+            // entry. Without this, `setOnCrash` was dead code: a server
+            // that died idle would keep its stale `.live` entry until the
+            // next request happened to fail. We hop back onto the actor
+            // via a Task (the callback is @Sendable, fired from the
+            // reader thread's failAllPending). `recordCrash` also shuts
+            // down the now-dead client (RC-3).
+            await client.setOnCrash { [weak self] err in
+                Task { await self?.recordCrash(key: key, error: "\(err)") }
             }
             try await client.initialize()
             var e = entries[key] ?? Entry(
@@ -357,6 +447,17 @@ public actor LSPPool {
                 key: key, isLive: live, isDead: dead,
                 status: entry.serverStatus)
         }
+    }
+
+    /// Test-only: current per-file LSP version for `fileURL`, or nil if
+    /// the file isn't tracked. Lets PERF-01 tests assert that an
+    /// unchanged-text `didChange` does NOT bump the version while a
+    /// real edit does. Not part of the production surface.
+    func _testFileVersion(for fileURL: URL) -> Int? {
+        guard let entry = registry.language(for: fileURL),
+              let root = entry.rootFinder(fileURL) else { return nil }
+        let key = Key(language: entry.language, workspaceRoot: root)
+        return entries[key]?.fileVersions[fileURL]
     }
 
     /// Record a successful request's wall time for the diag panel.
@@ -520,10 +621,23 @@ public actor LSPPool {
         var merged: [LSPWorkspaceSymbol] = []
         var seen = Set<String>()
         for (key, client) in liveKeys {
+            // CONC-003: an `LSPCancellationToken` binds to a single
+            // (id, owner) — sharing the caller's `token` across N
+            // clients would only ever cancel the FIRST client's request.
+            // Instead we (a) mint a fresh per-client token so each
+            // request is independently bindable/cancellable, and (b)
+            // check structured-concurrency cancellation between clients
+            // so a cancelled enclosing Task stops the fan-out promptly.
+            // If the caller pre-cancelled their shared token, mirror that
+            // onto the per-client token before issuing the request.
+            try Task.checkCancellation()
+            let childToken: LSPCancellationToken? = (token != nil)
+                ? LSPCancellationToken() : nil
+            if token?.isCancelled == true { childToken?.cancel() }
             let start = clock.now
             do {
                 let result = try await client.workspaceSymbol(
-                    query: query, token: token)
+                    query: query, token: childToken)
                 recordRequest(key: key, millis: millisElapsed(since: start))
                 for sym in result {
                     let dedupeKey = "\(sym.location.uri)#\(sym.location.range.start.line):\(sym.location.range.start.character)"
@@ -563,12 +677,30 @@ public actor LSPPool {
 
     /// Mark a key as crashed; bumps the counter and demotes to cold so
     /// the next acquire respawns with the backoff policy.
+    ///
+    /// RC-3: if the entry was `.live`, the prior client is now defunct
+    /// (the crash callback fires from the reader thread's
+    /// `failAllPending`, or a routed request threw). We must reclaim it
+    /// — `terminate()` + reap the subprocess and close fds — before we
+    /// drop the reference, otherwise the demoted-but-not-shutdown client
+    /// leaks until its `deinit` (RC-1) eventually runs. We fire the
+    /// `shutdown()` on a detached task so demotion stays synchronous and
+    /// we don't serialize the pool actor behind a teardown handshake.
     func recordCrash(key: Key, error: String) {
         guard var e = entries[key] else { return }
+        let priorClient: LSPClient?
+        if case .live(let client, _) = e.state {
+            priorClient = client
+        } else {
+            priorClient = nil
+        }
         e.serverStatus.crashCount += 1
         e.serverStatus.lastError = error
         e.state = .cold
         entries[key] = e
+        if let priorClient {
+            Task.detached { await priorClient.shutdown() }
+        }
     }
 
     // MARK: - Reaper

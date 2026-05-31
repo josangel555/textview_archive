@@ -53,6 +53,12 @@ public actor LSPClient {
     /// useful error when the server crashes / closes the transport.
     private var pendingMethods: [Int64: String] = [:]
     private var initialized = false
+    /// Set once `shutdown()` has reaped the child. Guards against a
+    /// second `Process.waitUntilExit()` — calling it twice on the same
+    /// already-reaped `Process` busy-spins at 100% CPU forever (the
+    /// internal wait never re-signals once the zombie is collected).
+    /// `test_shutdown_twice_is_safe` exercises exactly this.
+    private var didReap = false
     /// Dedicated OS thread that drives the stdout read loop. We use
     /// a separate `Thread` (not `Task.detached`) so blocking POSIX
     /// reads don't starve the cooperative pool. See `startReader()`
@@ -172,6 +178,15 @@ public actor LSPClient {
         }
     }
 
+    /// Test-only: is the subprocess still running? Lets RC-3 tests
+    /// assert the prior client's process was reaped after a crash demote
+    /// / shutdown. Not part of the production surface.
+    var debugIsRunning: Bool { process.isRunning }
+
+    /// Test-only: the subprocess PID (for diagnostics in failure
+    /// messages). Stable for the client's lifetime.
+    var debugProcessIdentifier: Int32 { process.processIdentifier }
+
     /// Kick off the background stdout reader. Must run on the actor;
     /// caller invokes from `initialize()`.
     ///
@@ -200,6 +215,12 @@ public actor LSPClient {
         let weakBox = WeakLSPClientBox(client: self)
         let thread = Thread {
             var buffer = Data()
+            // PARSE-01: header-scan resume cursor, preserved across read
+            // iterations so a header arriving in dribs doesn't get
+            // re-scanned from 0 every time (O(n^2) → O(n)). Reset to 0
+            // by `decode` whenever a terminator is found / a message is
+            // consumed.
+            var headerScanStart = 0
             let bufSize = 8 * 1024
             var scratch = [UInt8](repeating: 0, count: bufSize)
             while true {
@@ -218,7 +239,8 @@ public actor LSPClient {
                 while true {
                     let step: LSPFraming.DecodeStep
                     do {
-                        step = try LSPFraming.decode(buffer)
+                        step = try LSPFraming.decode(
+                            buffer, headerScanStart: &headerScanStart)
                     } catch {
                         if let client = weakBox.client {
                             Task { await client.failAllPending(error) }
@@ -230,6 +252,10 @@ public actor LSPClient {
                         break
                     case .message(let body, let consumed):
                         buffer.removeFirst(consumed)
+                        // The buffer front shifted; any stale scan cursor
+                        // no longer maps. Reset so the next header is
+                        // found from the new front.
+                        headerScanStart = 0
                         if let client = weakBox.client {
                             Task { await client.dispatchInbound(body) }
                         }
@@ -369,9 +395,6 @@ public actor LSPClient {
     ) async throws -> Data {
         let id = nextID
         nextID &+= 1
-        if let token = token {
-            token.bind(id: id, owner: self)
-        }
         let envelope: [String: Any] = [
             "jsonrpc": "2.0", "id": id, "method": method, "params": params
         ]
@@ -396,6 +419,25 @@ public actor LSPClient {
         return try await withCheckedThrowingContinuation { cont in
             self.pending[id] = cont
             self.pendingMethods[id] = method
+            // CONC-011: bind the cancellation token AFTER `pending[id]`
+            // exists, not before. The prior ordering bound the token at
+            // the top of `request(...)`, so a `cancel()` that landed
+            // between bind and continuation-registration ran
+            // `cancelRequest(id:)` against an empty `pending` table — the
+            // local awaiter was never resumed and leaked until the
+            // per-request timeout fired (an 8s hang for hover). With the
+            // bind inside the continuation block, a pre-bind `cancel()`
+            // sets the token's `didCancel` flag and `bind` fires the
+            // cancel immediately; the continuation is already in
+            // `pending`, so `cancelRequest` resumes it promptly.
+            //
+            // We're still on the actor here (the continuation closure on
+            // a checked continuation runs synchronously on the awaiting
+            // actor), so this is ordered before any inbound dispatch /
+            // timeout hop can observe `pending[id]`.
+            if let token = token {
+                token.bind(id: id, owner: self)
+            }
             if !self.writeFramedToChild(framed) {
                 self.pending.removeValue(forKey: id)
                 self.pendingMethods.removeValue(forKey: id)
@@ -716,22 +758,88 @@ public actor LSPClient {
     }
 
     /// Best-effort graceful shutdown. Caller is responsible for not
-    /// using the client afterwards. PoC: send `shutdown`+`exit`, wait
-    /// briefly, then SIGTERM if still alive.
+    /// using the client afterwards. Sequence: `shutdown`+`exit` →
+    /// brief grace → `terminate()` (SIGTERM) → poll → `SIGKILL` →
+    /// `waitUntilExit()` so the child is reaped, not left a zombie.
+    ///
+    /// CR-02: the old path stopped at `terminate()` and never reaped.
+    /// A server that ignores SIGTERM (some language servers trap it to
+    /// flush caches and hang) would leak the subprocess + its fds + the
+    /// reader thread for the lifetime of the parent. We now escalate to
+    /// SIGKILL and `waitUntilExit()`, mirroring `PluginSubprocessHost`.
     public func shutdown() async {
+        // Idempotent: a second shutdown() must be a no-op. Calling
+        // `Process.waitUntilExit()` twice on an already-reaped process
+        // spins at 100% CPU forever, so we hard-gate on `didReap`.
+        guard !didReap else {
+            try? stdinPipe.fileHandleForWriting.close()
+            return
+        }
         if initialized {
             _ = try? await request(method: "shutdown", params: NSNull(), timeout: .seconds(2))
             try? notify(method: "exit", params: NSNull())
+            initialized = false
         }
-        // Reader thread exits when the child's stdout closes (EOF
-        // after `process.terminate()` below). We don't need to cancel
-        // it explicitly — POSIX `read` doesn't honor Task
-        // cancellation and the thread cleans itself up on EOF.
-        // Give the child a moment to exit voluntarily.
+        // Reader thread exits when the child's stdout closes (EOF after
+        // the child dies below). POSIX `read` doesn't honor Task
+        // cancellation; the thread self-terminates on EOF.
+        // Give the child a moment to exit voluntarily after `exit`.
         try? await Task.sleep(for: .milliseconds(200))
+        // Did we still have a live child when we entered the teardown?
+        // Only then do we own a reap (one `waitUntilExit()`, guarded by
+        // `didReap`). A child that already exited on its own was
+        // collected by Foundation's launch run-loop, and a
+        // `waitUntilExit()` against it would busy-spin.
+        let wasRunning = process.isRunning
+        if wasRunning {
+            process.terminate() // SIGTERM
+            // Poll for a clean SIGTERM exit on a short async cadence
+            // (does not block the cooperative pool). ~5 x 40ms = 200ms.
+            for _ in 0..<5 {
+                if !process.isRunning { break }
+                try? await Task.sleep(for: .milliseconds(40))
+            }
+            if process.isRunning {
+                // SIGTERM ignored — escalate. F_SETNOSIGPIPE already
+                // shields us from EPIPE on the stdin fd.
+                kill(process.processIdentifier, SIGKILL)
+            }
+            // Reap exactly once so the child doesn't linger as a zombie.
+            // `waitUntilExit` blocks; hop it off the cooperative pool
+            // onto a detached Task so a wedged child (SIGKILL sent) can't
+            // stall the actor's executor while it reaps.
+            let proc = process
+            await Task.detached(priority: .utility) {
+                proc.waitUntilExit()
+            }.value
+        }
+        didReap = true
+        try? stdinPipe.fileHandleForWriting.close()
+    }
+
+    /// RC-1: last-line-of-defense cleanup if the client is dropped
+    /// without `shutdown()` being awaited (e.g. the pool demotes a
+    /// crashed entry, an `initialize()` throws mid-spawn, or a test
+    /// lets the client fall out of scope). Without this, the subprocess,
+    /// its three pipe fds, and the stderr `readabilityHandler`'s
+    /// retain on the read handle all leak for the parent's lifetime.
+    ///
+    /// `deinit` is non-isolated, so it may only touch immutable stored
+    /// properties (the `let` pipes + `process`) — never the actor's
+    /// mutable state (`pending`, `initialized`, …). All of these are
+    /// `let`, so this is safe and synchronous. We do NOT attempt the
+    /// graceful `shutdown` handshake here (can't `await` in deinit);
+    /// a hard terminate is the correct teardown for an orphaned client.
+    deinit {
+        // Detach the stderr drain so the closure stops retaining the
+        // read handle (and the handle's fd can close).
+        stderrPipe.fileHandleForReading.readabilityHandler = nil
         if process.isRunning {
             process.terminate()
         }
+        // Close the stdin write end so the child sees EOF on stdin and
+        // the kernel can release the pipe buffer. The read ends close
+        // when their FileHandles deinit alongside the Pipes.
         try? stdinPipe.fileHandleForWriting.close()
     }
 }
