@@ -145,6 +145,26 @@ public struct TextDisplayView: NSViewControllerRepresentable {
         )
     }
 
+    /// RC-7 (memory-on-close): when SwiftUI discards the source-view
+    /// representable (tab close, mode switch, content replaced), proactively
+    /// release the heavy `NSTextStorage` / `NSLayoutManager` glyph store.
+    ///
+    /// For a multi-MB source file `NSLayoutManager` lays out the entire
+    /// document into a glyph store that can dwarf the file (a 5 MB file →
+    /// 100+ MB resident). ARC frees this when the controller deinits, but
+    /// the dealloc can be deferred to a later autorelease-pool drain, and
+    /// `NSTextView`'s teardown of its own layout managers is itself
+    /// lazy. Doing it here, synchronously at the dismantle point, frees
+    /// the buffer at the earliest deterministic moment so the pages are
+    /// immediately available for reuse by the next large file (verified:
+    /// repeated open/close of a 5 MB file plateaus rather than ratchets)
+    /// and become reclaimable on memory pressure right away.
+    public static func dismantleNSViewController(
+        _ controller: SourceTextController, coordinator: ()
+    ) {
+        controller.teardownStorage()
+    }
+
     public func updateNSViewController(_ controller: SourceTextController, context: Context) {
         controller.apply(
             text: text,
@@ -429,6 +449,36 @@ public final class SourceTextController: NSViewController {
         if let o = frameObserver     { NotificationCenter.default.removeObserver(o) }
         if let o = selectionObserver { NotificationCenter.default.removeObserver(o) }
         pendingSelectionHighlightWork?.cancel()
+    }
+
+    /// Release the heavy `NSTextStorage` / `NSLayoutManager` glyph store.
+    /// Called from `dismantleNSViewController` on close so the buffer is
+    /// freed at the earliest deterministic point (see that method's note).
+    ///
+    /// We empty the storage AND detach every layout manager: a populated
+    /// `NSLayoutManager` keeps its glyph store until *it* deallocs, and
+    /// `NSTextView` releases its layout managers lazily — detaching here
+    /// forces the glyph store to drop now rather than at some later
+    /// autorelease drain. Cancel any pending selection-highlight work too,
+    /// so a queued closure can't resurrect attributes on a torn-down view.
+    func teardownStorage() {
+        pendingSelectionHighlightWork?.cancel()
+        if let storage = textView.textStorage {
+            storage.beginEditing()
+            storage.setAttributedString(NSAttributedString(string: ""))
+            storage.endEditing()
+            for lm in storage.layoutManagers {
+                storage.removeLayoutManager(lm)
+            }
+        }
+        lastAttrKey = nil
+        lastFindKey = nil
+        findMatches = []
+        currentMatchIndex = nil
+        newlineOffsets = nil
+        newlineOffsetsFor = NSRange(location: 0, length: -1)
+        selectionHighlightRanges.removeAll()
+        lastCurrentLineRange = nil
     }
 
     /// Publish current scroll state to the SwiftUI gutter. Reads from
