@@ -62,7 +62,20 @@ is rough priority — most-asked-for first.
 ## Build hygiene
 
 - ~~**Bundle size guard.**~~ DONE (`scripts/check-bundle-size.sh`,
-  25 MB cap, wired into `build-app.sh`).
+  wired into `build-app.sh`). Current caps: **37 MB total + 16 MB
+  main-executable sub-cap** (the old "25 MB" single cap predated the
+  lazy TreeSitter grammar expansion, which moved parsers into
+  `Contents/Frameworks/`). Override via `BUDGET_MB` / `EXEC_BUDGET_MB`.
+- ~~**Third-party attribution (DEP-001).**~~ DONE.
+  `scripts/gen-third-party-notices.sh` aggregates every shipped
+  component's license (SwiftPM checkouts + vendored Mermaid/CodeMirror)
+  into `THIRD_PARTY_NOTICES.md`; `--check` mode flags staleness;
+  `ThirdPartyNoticesTests` guards coverage. The build-app.sh copy into
+  `Contents/Resources/` is G14's step.
+- ~~**CTSPatch scanner provenance (DEP-003).**~~ DONE. Each vendored
+  `Sources/CTSPatch*/scanner.c` carries an upstream-repo / pinned-
+  revision / MIT-license banner; `CTSPatchProvenanceTests` pins a
+  SHA-256 drift guard.
 
 ## Larger features (named)
 
@@ -153,6 +166,29 @@ is rough priority — most-asked-for first.
   gated behind `MDV_ENABLE_BROKEN_RULER=1` for the meta-regression
   test that catches the compositor bug class. Shared test helpers
   not addressed.
+- **Dead-code doc clarifications (BR-06 / BR-09 / BR-10).** Audit
+  follow-up; doc-only here, the in-file edits live in their owning
+  groups:
+  - **BR-06 — keep `LineNumberRulerView`.** It looks like dead code
+    but is intentionally retained as the `MDV_ENABLE_BROKEN_RULER=1`
+    fixture for the compositor-bug meta-regression test (see
+    `LESSONS.md` compositor section). Do NOT delete it. A keep-note
+    header on the file itself is owned by G1.
+  - **BR-09 — retired `WorkspaceStore` comments.** Stale references to
+    the retired `WorkspaceStore` should be scrubbed from the comments
+    in its successor type (owning group's file).
+  - **BR-10 — selector hardening.** `NSSelectorFromString(...)` in
+    ContentView (G1) should become a compile-checked `#selector(...)`.
+    Deferred — tracked here, fix in G1.
+- **API-03/04 — test-only hooks demoted to `internal`.** DONE.
+  `GrammarLoader._resetForTesting` / `._injectForTesting`,
+  `TreeSitterEngine._jsonLanguagePointerForTesting` (now also
+  `#if DEBUG`), and `PluginRegistry._setSubprocessHost` /
+  `._resetForTests` were `public`, widening ViewerCore's API. Demoted
+  to `internal` (tests reach them via `@testable import`). Do NOT
+  re-promote. TODO (owner of `LESSONS.md`): add these to the
+  "Internal-for-testing surfaces" list there — that file is outside
+  this group's edit scope, so it's recorded here instead.
 - ~~**`test_zoom_persistsAcrossNewTab`.**~~ NO LONGER FLAKY as of
   2026-05-18 VM run (passed in 4.681s clean). Guard remains as
   defensive (`return XCTFail` on dumps.count mismatch) but no

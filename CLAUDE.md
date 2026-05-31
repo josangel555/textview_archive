@@ -30,8 +30,12 @@
 - Bundle id stays `com.markdownviewer.MarkdownViewer` (TCC-stable).
 - Local signing only (cert `MarkdownViewer Local Dev`); no Developer
   ID until shipping public.
-- Bundle size cap 25 MB; enforced by `scripts/check-bundle-size.sh`
-  wired into `scripts/build-app.sh`.
+- Bundle size cap: 37 MB total + 16 MB main-executable sub-cap (the
+  lazy-grammar split moves parsers into `Contents/Frameworks/`, so the
+  two caps are tracked separately). Enforced by
+  `scripts/check-bundle-size.sh` (override via `BUDGET_MB` /
+  `EXEC_BUDGET_MB`), wired into `scripts/build-app.sh`. The old "25 MB"
+  figure predated the TreeSitter grammar expansion.
 - Never write to `~/Documents`, `~/Desktop`, `~/Downloads` from
   automated paths. Use `FileManager.default.temporaryDirectory` (per-
   user `/var/folders/...`) for test scratch.
