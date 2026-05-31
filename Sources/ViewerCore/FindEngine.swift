@@ -105,10 +105,17 @@ public struct FindEngine: Sendable {
                     cursor += 1
                 }
             }
+            // CORR-6: clamp to a 1-based minimum. When a match starts
+            // exactly on the LF of a `\r\n` pair, the CRLF-skip above
+            // advances `cursor`/`lineStart` to AFTER the LF — past
+            // `target` — so the raw `target - lineStart + 1` underflows
+            // to 0 (or negative). Columns are documented 1-based, so a
+            // match sitting on the line terminator reports column 1 of
+            // the line it terminates rather than a nonsensical 0.
             matches[i] = FindMatch(
                 range: matches[i].range,
                 line: line,
-                column: target - lineStart + 1
+                column: max(1, target - lineStart + 1)
             )
         }
         return matches
