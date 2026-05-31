@@ -59,12 +59,33 @@ extension TextFile: Equatable {
     }
 }
 
+/// Hard cap on the bytes the source / `NSTextView` loader will pull into
+/// memory. This is the WIDEST display cap in the app and MUST be >= every
+/// downstream display cap so a file the editor / markdown / highlight path
+/// would accept can always at least be loaded off disk.
+///
+/// SCALE-1 / MAGIC-002: the loader previously hard-coded 32 MB, which is
+/// *below* `codeMirrorEditorMaxBytes` (50 MB). A 40 MB file the CM6 editor
+/// would happily open could not even be read off disk — the loader threw
+/// `.tooLarge` first, so the editor's higher ceiling was dead code. The
+/// loader is the single funnel every viewer reads through, so its cap is
+/// the union (max) of the per-view caps, never the min.
+///
+/// Downstream display caps stay at their (lower) values — they govern
+/// whether a *successfully loaded* file gets highlighted / rendered /
+/// editor-mode, not whether it can be opened at all:
+///   * `highlightMaxBytes`        = 512 KB
+///   * `markdownRenderMaxBytes`   =   4 MB
+///   * `codeMirrorEditorMaxBytes` =  50 MB
+public let sourceViewMaxBytes: Int = 64 * 1024 * 1024
+
 public struct TextFileLoader: Sendable {
     /// Maximum file size for in-memory loading. Larger files will throw.
-    /// Phase 0 keeps a hard cap; a streaming/mmap loader comes with the hex viewer (Phase 6).
+    /// Defaults to `sourceViewMaxBytes`, the widest display cap, so the
+    /// loader never rejects a file a downstream viewer would accept.
     public let maxBytes: Int
 
-    public init(maxBytes: Int = 32 * 1024 * 1024) {
+    public init(maxBytes: Int = sourceViewMaxBytes) {
         self.maxBytes = maxBytes
     }
 
@@ -92,48 +113,96 @@ public struct TextFileLoader: Sendable {
             throw FileLoadError.notReadable
         }
 
-        // B4: sniff byte-order-marks before guessing — UTF-16 / UTF-8 BOMs are
-        // unambiguous. Without this, a UTF-16-LE file decodes to garbage every-
-        // other-NUL via the Latin-1 fallback (and reports "Latin-1").
-        if let (sniffed, sniffedEncoding) = Self.decodeViaBOM(data) {
+        switch TextDecoder.decode(data) {
+        case .text(let s, let enc):
             return TextFile(
-                url: url, contents: sniffed, encoding: sniffedEncoding,
+                url: url, contents: s, encoding: enc,
                 byteCount: data.count, modifiedTime: mtime
             )
-        }
-
-        // B5: binary-blob guard. Sample the first 8 KB for NUL bytes — any
-        // legitimate text file is essentially never going to contain a NUL.
-        // Catches `/bin/ls`, archives, images, etc. that otherwise round-trip
-        // through Latin-1 as gigabytes of nonsense.
-        if Self.looksBinary(data) {
-            // BUT: UTF-16 files without a BOM also contain NUL bytes (one
-            // per ASCII char). They look "binary" to the NUL heuristic.
-            // Probe both endianness before falling back to .binaryFile,
-            // so common Windows / Notepad files don't go to the hex view.
-            if let s = Self.decodeUTF16WithoutBOM(data) {
-                return TextFile(
-                    url: url, contents: s.string,
-                    encoding: s.encoding, byteCount: data.count,
-                    modifiedTime: mtime
-                )
-            }
+        case .binary:
             throw FileLoadError.binaryFile
+        case .undecodable:
+            throw FileLoadError.decodingFailed
+        }
+    }
+
+    // Encoding-detection statics moved to `TextDecoder` (shared with
+    // `CrossFileSearch`). Thin re-exports retained for the existing
+    // unit tests that probe them by name.
+    static func decodeViaBOM(_ data: Data) -> (String, String.Encoding)? {
+        TextDecoder.decodeViaBOM(data)
+    }
+    static func looksBinary(_ data: Data) -> Bool { TextDecoder.looksBinary(data) }
+    static func decodeUTF16WithoutBOM(_ data: Data) -> (string: String, encoding: String.Encoding)? {
+        TextDecoder.decodeUTF16WithoutBOM(data)
+    }
+}
+
+/// Shared text-decoding chain used by both `TextFileLoader` (whole-file
+/// open) and `CrossFileSearch` (per-file grep). Centralizes the BOM →
+/// UTF-16 → UTF-8 → Windows-1252 → Latin-1 ladder so the two call sites
+/// can't drift (I18N-02 / PARSE-08).
+///
+/// Ordering rationale:
+///   1. **BOM** — unambiguous; UTF-16/UTF-8 BOMs pin the encoding.
+///   2. **NUL heuristic** — a NUL in the first 8 KB means either real
+///      binary OR BOM-less UTF-16 (one NUL per ASCII char). Probe
+///      BOM-less UTF-16 before declaring `.binary`.
+///   3. **Strict UTF-8** — the overwhelmingly common case.
+///   4. **Windows-1252 (CP1252)** — inserted BEFORE Latin-1 (I18N-01).
+///      CP1252 is a superset of Latin-1 over 0x80–0x9F (smart quotes,
+///      em-dash, euro sign). Latin-1 maps those bytes to C1 control
+///      codes, silently mis-decoding the most common non-UTF-8 Windows
+///      text. We only fall to CP1252 when strict UTF-8 fails, so valid
+///      UTF-8 is never mis-attributed.
+///   5. **Latin-1** — final catch-all. Maps every byte 0x00–0xFF to a
+///      scalar, so it never fails; reached only for the rare byte
+///      sequence CP1252 rejects (0x81/0x8D/0x8F/0x90/0x9D are undefined
+///      in CP1252 and make `String(data:encoding:.windowsCP1252)` fail).
+public enum TextDecoder {
+
+    public enum Decoded: Equatable {
+        case text(String, String.Encoding)
+        case binary
+        case undecodable
+    }
+
+    /// Full chain. Returns the decoded string + the encoding chosen
+    /// (so callers can surface it to a status bar), `.binary` for NUL-
+    /// laden non-UTF-16 content, or `.undecodable` (effectively never —
+    /// Latin-1 is total — but kept for symmetry).
+    public static func decode(_ data: Data) -> Decoded {
+        // (1) BOM.
+        if let (s, enc) = decodeViaBOM(data) { return .text(s, enc) }
+
+        // (2) Binary guard, with a BOM-less UTF-16 escape hatch.
+        if looksBinary(data) {
+            if let s = decodeUTF16WithoutBOM(data) {
+                return .text(s.string, s.encoding)
+            }
+            return .binary
         }
 
+        // (3) Strict UTF-8.
         if let s = String(data: data, encoding: .utf8) {
-            return TextFile(
-                url: url, contents: s, encoding: .utf8,
-                byteCount: data.count, modifiedTime: mtime
-            )
+            return .text(s, .utf8)
         }
+        // (4) Windows-1252 before Latin-1 (I18N-01).
+        if let s = String(data: data, encoding: .windowsCP1252) {
+            return .text(s, .windowsCP1252)
+        }
+        // (5) Latin-1 — total, last resort.
         if let s = String(data: data, encoding: .isoLatin1) {
-            return TextFile(
-                url: url, contents: s, encoding: .isoLatin1,
-                byteCount: data.count, modifiedTime: mtime
-            )
+            return .text(s, .isoLatin1)
         }
-        throw FileLoadError.decodingFailed
+        return .undecodable
+    }
+
+    /// Convenience for callers that only need the string and treat
+    /// binary / undecodable as "skip" (e.g. CrossFileSearch).
+    public static func decodeToString(_ data: Data) -> String? {
+        if case .text(let s, _) = decode(data) { return s }
+        return nil
     }
 
     /// Attempt to decode `data` as UTF-16 (either endianness) when the
@@ -146,7 +215,7 @@ public struct TextFileLoader: Sendable {
     /// NUL in one parity is almost certainly real binary content.
     /// Requires the sample to be at least 32 bytes, otherwise the
     /// signal is too weak to trust.
-    static func decodeUTF16WithoutBOM(_ data: Data) -> (string: String, encoding: String.Encoding)? {
+    public static func decodeUTF16WithoutBOM(_ data: Data) -> (string: String, encoding: String.Encoding)? {
         guard data.count >= 32, data.count % 2 == 0 else { return nil }
         let sample = data.prefix(2048)
         let n = sample.count
@@ -182,9 +251,12 @@ public struct TextFileLoader: Sendable {
 
     // MARK: - Encoding detection
 
-    static func decodeViaBOM(_ data: Data) -> (String, String.Encoding)? {
+    public static func decodeViaBOM(_ data: Data) -> (String, String.Encoding)? {
         guard data.count >= 2 else { return nil }
-        let b0 = data[0], b1 = data[1]
+        // Index via `startIndex` offsets so a non-zero-based slice (the
+        // macOS-26 `Data` slice-offset trap) still reads the right bytes.
+        let base = data.startIndex
+        let b0 = data[base], b1 = data[base + 1]
         // UTF-16 LE (FF FE)
         if b0 == 0xFF && b1 == 0xFE {
             if let s = String(data: data.dropFirst(2), encoding: .utf16LittleEndian) {
@@ -198,7 +270,7 @@ public struct TextFileLoader: Sendable {
             }
         }
         // UTF-8 (EF BB BF)
-        if data.count >= 3 && b0 == 0xEF && b1 == 0xBB && data[2] == 0xBF {
+        if data.count >= 3 && b0 == 0xEF && b1 == 0xBB && data[base + 2] == 0xBF {
             if let s = String(data: data.dropFirst(3), encoding: .utf8) {
                 return (s, .utf8)
             }
@@ -206,7 +278,7 @@ public struct TextFileLoader: Sendable {
         return nil
     }
 
-    static func looksBinary(_ data: Data) -> Bool {
+    public static func looksBinary(_ data: Data) -> Bool {
         let sample = data.prefix(8192)
         for byte in sample where byte == 0 {
             return true

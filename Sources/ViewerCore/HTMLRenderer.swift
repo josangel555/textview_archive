@@ -62,18 +62,51 @@ struct HTMLVisitor: MarkupVisitor {
     /// Used to de-dupe heading anchor IDs within a single document.
     var usedSlugs: [String: Int] = [:]
 
+    /// Current AST recursion depth. PARSE-03: `swift-markdown` parses
+    /// adversarial input like 5000 nested `>` blockquotes (or list
+    /// items) into an equally-deep tree, and a naive recursive visitor
+    /// blows the stack walking it — a hard crash, not a graceful
+    /// failure. We bound the recursion: beyond `maxDepth` we stop
+    /// descending and emit a single truncation marker instead of
+    /// recursing further.
+    var depth: Int = 0
+
+    /// Recursion ceiling. ~512 is comfortably deep enough for any
+    /// legitimate document (real prose rarely nests past single
+    /// digits) while staying well under the stack budget — each
+    /// `visit` frame for a container node is modest, and the default
+    /// main-thread stack (512 KB–8 MB) tolerates a few thousand, but we
+    /// keep a wide margin since the off-main render hop (G1) may run on
+    /// a thread with a smaller stack.
+    static let maxDepth = 512
+
+    /// HTML comment emitted in place of a subtree we refused to descend
+    /// into. Invisible in the rendered page; greppable in the source.
+    static let truncationMarker = "<!-- markdown nesting too deep; truncated -->\n"
+
+    /// Visit `children` one level deeper, returning the truncation
+    /// marker (without recursing) once `maxDepth` is hit. Centralizes
+    /// the depth bookkeeping so every container visitor shares it.
+    mutating func descend<S: Sequence>(_ children: S) -> String
+        where S.Element == any Markup {
+        if depth >= Self.maxDepth { return Self.truncationMarker }
+        depth += 1
+        defer { depth -= 1 }
+        return children.map { visit($0) }.joined()
+    }
+
     mutating func defaultVisit(_ markup: any Markup) -> String {
-        markup.children.map { visit($0) }.joined()
+        descend(markup.children)
     }
 
     mutating func visitDocument(_ document: Document) -> String {
-        document.children.map { visit($0) }.joined()
+        descend(document.children)
     }
 
     // MARK: Block-level
 
     mutating func visitHeading(_ heading: Heading) -> String {
-        let inner = heading.children.map { visit($0) }.joined()
+        let inner = descend(heading.children)
         let slug = HTMLVisitor.uniqueSlug(for: heading.plainText, used: &usedSlugs)
         return "<h\(heading.level) id=\"\(slug)\">\(inner)</h\(heading.level)>\n"
     }
@@ -107,7 +140,7 @@ struct HTMLVisitor: MarkupVisitor {
     }
 
     mutating func visitParagraph(_ paragraph: Paragraph) -> String {
-        let inner = paragraph.children.map { visit($0) }.joined()
+        let inner = descend(paragraph.children)
         return "<p>\(inner)</p>\n"
     }
 
@@ -203,22 +236,26 @@ struct HTMLVisitor: MarkupVisitor {
     }
 
     mutating func visitBlockQuote(_ blockQuote: BlockQuote) -> String {
-        let inner = blockQuote.children.map { visit($0) }.joined()
+        if depth >= Self.maxDepth { return Self.truncationMarker }
+        let inner = descend(blockQuote.children)
         return "<blockquote>\n\(inner)</blockquote>\n"
     }
 
     mutating func visitOrderedList(_ orderedList: OrderedList) -> String {
-        let items = orderedList.children.map { visit($0) }.joined()
+        if depth >= Self.maxDepth { return Self.truncationMarker }
+        let items = descend(orderedList.children)
         return "<ol>\n\(items)</ol>\n"
     }
 
     mutating func visitUnorderedList(_ unorderedList: UnorderedList) -> String {
-        let items = unorderedList.children.map { visit($0) }.joined()
+        if depth >= Self.maxDepth { return Self.truncationMarker }
+        let items = descend(unorderedList.children)
         return "<ul>\n\(items)</ul>\n"
     }
 
     mutating func visitListItem(_ listItem: ListItem) -> String {
-        let inner = listItem.children.map { visit($0) }.joined()
+        if depth >= Self.maxDepth { return Self.truncationMarker }
+        let inner = descend(listItem.children)
         return "<li>\(inner)</li>\n"
     }
 
@@ -229,14 +266,14 @@ struct HTMLVisitor: MarkupVisitor {
     mutating func visitTable(_ table: Table) -> String {
         var out = "<table>\n<thead><tr>"
         for cell in table.head.cells {
-            let inner = cell.children.map { visit($0) }.joined()
+            let inner = descend(cell.children)
             out += "<th>\(inner)</th>"
         }
         out += "</tr></thead>\n<tbody>\n"
         for row in table.body.rows {
             out += "<tr>"
             for cell in row.cells {
-                let inner = cell.children.map { visit($0) }.joined()
+                let inner = descend(cell.children)
                 out += "<td>\(inner)</td>"
             }
             out += "</tr>\n"
@@ -269,17 +306,17 @@ struct HTMLVisitor: MarkupVisitor {
     }
 
     mutating func visitEmphasis(_ emphasis: Emphasis) -> String {
-        let inner = emphasis.children.map { visit($0) }.joined()
+        let inner = descend(emphasis.children)
         return "<em>\(inner)</em>"
     }
 
     mutating func visitStrong(_ strong: Strong) -> String {
-        let inner = strong.children.map { visit($0) }.joined()
+        let inner = descend(strong.children)
         return "<strong>\(inner)</strong>"
     }
 
     mutating func visitStrikethrough(_ strikethrough: Strikethrough) -> String {
-        let inner = strikethrough.children.map { visit($0) }.joined()
+        let inner = descend(strikethrough.children)
         return "<del>\(inner)</del>"
     }
 
@@ -289,7 +326,7 @@ struct HTMLVisitor: MarkupVisitor {
 
     mutating func visitLink(_ link: Link) -> String {
         let href = HTMLVisitor.safeURL(link.destination ?? "", for: .link)
-        let inner = link.children.map { visit($0) }.joined()
+        let inner = descend(link.children)
         let titleAttr: String
         if let title = link.title, !title.isEmpty {
             titleAttr = " title=\"\(htmlEscape(title))\""
@@ -360,19 +397,50 @@ struct HTMLVisitor: MarkupVisitor {
 
     // MARK: Helpers
 
+    /// HTML-escape the five significant characters. PERF-06-escape:
+    /// iterates `s.utf8` (a contiguous byte view, no grapheme-cluster
+    /// segmentation) with a fast path that copies whole runs of safe
+    /// bytes via `appendUnsafe`, only breaking the run to emit an
+    /// entity reference for `& < > " '`. The escapable set is all
+    /// ASCII, and UTF-8 guarantees a multibyte scalar's continuation
+    /// bytes are all ≥ 0x80, so they can never be mistaken for one of
+    /// the escapables — byte-level scanning is correct without decoding
+    /// scalars. The previous version walked `Character`s, paying
+    /// grapheme-breaking cost on every char of (typically) escape-free
+    /// text.
     func htmlEscape(_ s: String) -> String {
+        let utf8 = s.utf8
         var out = ""
-        out.reserveCapacity(s.count)
-        for ch in s {
-            switch ch {
-            case "&":  out += "&amp;"
-            case "<":  out += "&lt;"
-            case ">":  out += "&gt;"
-            case "\"": out += "&quot;"
-            case "'":  out += "&#39;"
-            default:   out.append(ch)
+        out.reserveCapacity(utf8.count)
+        var run = utf8.startIndex
+        var i = utf8.startIndex
+        // Flush the pending safe-byte run [run, i) into `out`.
+        func flush() {
+            if run < i {
+                out += String(decoding: utf8[run..<i], as: UTF8.self)
             }
         }
+        while i < utf8.endIndex {
+            let b = utf8[i]
+            let entity: StaticString?
+            switch b {
+            case 0x26: entity = "&amp;"   // &
+            case 0x3C: entity = "&lt;"    // <
+            case 0x3E: entity = "&gt;"    // >
+            case 0x22: entity = "&quot;"  // "
+            case 0x27: entity = "&#39;"   // '
+            default:   entity = nil
+            }
+            if let entity {
+                flush()
+                entity.withUTF8Buffer { out += String(decoding: $0, as: UTF8.self) }
+                i = utf8.index(after: i)
+                run = i
+            } else {
+                i = utf8.index(after: i)
+            }
+        }
+        flush()
         return out
     }
 }

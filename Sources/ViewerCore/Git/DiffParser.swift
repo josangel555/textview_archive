@@ -282,10 +282,28 @@ public enum DiffParser {
         )
     }
 
+    /// Upper bound on a hunk's parsed start line / count. A unified
+    /// diff line number can't exceed the working tree's line count, and
+    /// no real file approaches a billion lines. PARSE-07: a garbage or
+    /// adversarial header (`@@ -99999999999999999 +-5 @@`) previously
+    /// flowed straight into `oldCursor`/`newCursor`, which then drive
+    /// `Line.oldLineNo`/`newLineNo`. An absurd or negative seed makes
+    /// every emitted line number nonsense and, downstream, an
+    /// `Int`-overflowing cursor (`Int(parts) ?? 0` happily parses
+    /// `"99999999999999999999"` to `nil`, but a merely-huge in-range
+    /// value still corrupts the gutter). Clamp both coordinates to
+    /// `0...maxCoord` so the structure stays sane.
+    private static let maxCoord = 1_000_000_000
+
     private static func parseCoord(_ s: String) -> (Int, Int) {
         let parts = s.split(separator: ",").map(String.init)
-        let start = Int(parts.first ?? "0") ?? 0
-        let count = parts.count > 1 ? (Int(parts[1]) ?? 1) : 1
+        let rawStart = Int(parts.first ?? "0") ?? 0
+        let rawCount = parts.count > 1 ? (Int(parts[1]) ?? 1) : 1
+        // Clamp non-negative and below a sane ceiling. Counts default
+        // to 1 when omitted (unified-diff convention) but a parsed
+        // negative count is meaningless — floor at 0.
+        let start = min(max(rawStart, 0), maxCoord)
+        let count = min(max(rawCount, 0), maxCoord)
         return (start, count)
     }
 

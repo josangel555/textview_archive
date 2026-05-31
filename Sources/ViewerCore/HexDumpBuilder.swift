@@ -209,6 +209,17 @@ public enum HexDumpBuilder {
 
     /// Render `rowsInChunk` rows starting at byte `startByte`. Pure;
     /// no allocation other than the returned string.
+    ///
+    /// CORR-4: indexes `bytes` through `withUnsafeBytes` (0-based,
+    /// slice-offset-immune) rather than the `Data` integer subscript. A
+    /// `Data` value carved out of a larger buffer keeps its parent's
+    /// non-zero `startIndex`; on macOS 26 the subscript `bytes[pos]`
+    /// against such a slice returns garbage for 0-based offsets (see
+    /// LESSONS.md "Data.subdata(in:) after removeFirst slice-offset
+    /// bug"). `HexSearchEngine.find` already uses this raw-pointer
+    /// pattern; matching it keeps the hex dump and hex search agreeing
+    /// on byte addresses and is faster (no per-byte bounds/ARC overhead
+    /// on `Data`'s accessor).
     private static func renderRows(bytes: Data,
                                    startByte: Int,
                                    endByte: Int,
@@ -218,49 +229,54 @@ public enum HexDumpBuilder {
         var s = String()
         s.reserveCapacity(rowsInChunk * perRowChars)
 
-        var rowStart = startByte
-        while rowStart < endByte {
-            var off = rowStart
-            var offBuf = [Character](repeating: "0", count: 8)
-            for i in stride(from: 7, through: 0, by: -1) {
-                offBuf[i] = hexChars[off & 0xF]
-                off >>= 4
-            }
-            s += String(offBuf)
-            s += "  "
+        bytes.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            // `base[0]` is the first logical byte of this `Data`
+            // regardless of any retained slice offset.
+            let base = raw.bindMemory(to: UInt8.self)
+            var rowStart = startByte
+            while rowStart < endByte {
+                var off = rowStart
+                var offBuf = [Character](repeating: "0", count: 8)
+                for i in stride(from: 7, through: 0, by: -1) {
+                    offBuf[i] = hexChars[off & 0xF]
+                    off >>= 4
+                }
+                s += String(offBuf)
+                s += "  "
 
-            let rowEnd = min(rowStart + width, endByte)
-            for i in 0..<width {
-                let pos = rowStart + i
-                if pos < rowEnd {
-                    let b = bytes[pos]
-                    s.append(hexChars[Int(b >> 4)])
-                    s.append(hexChars[Int(b & 0xF)])
-                } else {
-                    s += "  "
-                }
-                if i != width - 1 { s.append(" ") }
-            }
-            s += "  "
-            // Pad short final row so every row has the same character
-            // length — lets the highlight code address bytes by
-            // `(row * rowLength + col)` without per-row variable
-            // lengths.
-            for i in 0..<width {
-                let pos = rowStart + i
-                if pos < rowEnd {
-                    let b = bytes[pos]
-                    if (32...126).contains(b) {
-                        s.append(Character(UnicodeScalar(b)))
+                let rowEnd = min(rowStart + width, endByte)
+                for i in 0..<width {
+                    let pos = rowStart + i
+                    if pos < rowEnd {
+                        let b = base[pos]
+                        s.append(hexChars[Int(b >> 4)])
+                        s.append(hexChars[Int(b & 0xF)])
                     } else {
-                        s.append(".")
+                        s += "  "
                     }
-                } else {
-                    s.append(" ")
+                    if i != width - 1 { s.append(" ") }
                 }
+                s += "  "
+                // Pad short final row so every row has the same character
+                // length — lets the highlight code address bytes by
+                // `(row * rowLength + col)` without per-row variable
+                // lengths.
+                for i in 0..<width {
+                    let pos = rowStart + i
+                    if pos < rowEnd {
+                        let b = base[pos]
+                        if (32...126).contains(b) {
+                            s.append(Character(UnicodeScalar(b)))
+                        } else {
+                            s.append(".")
+                        }
+                    } else {
+                        s.append(" ")
+                    }
+                }
+                s.append("\n")
+                rowStart += width
             }
-            s.append("\n")
-            rowStart += width
         }
         return s
     }

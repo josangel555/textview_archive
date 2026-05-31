@@ -86,54 +86,72 @@ public struct ClaudeLogParser: Sendable {
     }
 
     public func parse(_ rawData: Data) -> [ClaudeEvent] {
-        // Re-base via `Data(_:)` so the `subdata(in: lineStart..<i)`
-        // and 0-based `withUnsafeBytes` indexing below behave the same
-        // whether the caller hands us a freshly-loaded `Data` or a
-        // slice carved out of a larger buffer. Slices keep their
-        // parent's non-zero `startIndex`, which on macOS 26 makes
-        // `subdata(in:)` return garbage bytes for 0-based ranges (see
-        // LESSONS.md "Data.subdata(in:) after removeFirst slice-offset
-        // bug"; LSPFraming.decode applies the same defensive rebase).
+        // Re-base via `Data(_:)` so the per-line slicing and 0-based
+        // `withUnsafeBytes` newline scan below behave the same whether
+        // the caller hands us a freshly-loaded `Data` or a slice carved
+        // out of a larger buffer. Slices keep their parent's non-zero
+        // `startIndex`, which on macOS 26 makes `subdata(in:)` return
+        // garbage bytes for 0-based ranges (see LESSONS.md
+        // "Data.subdata(in:) after removeFirst slice-offset bug";
+        // LSPFraming.decode applies the same defensive rebase).
         let data = Data(rawData)
         var events: [ClaudeEvent] = []
-        var lineStart = 0
+        // Two-pass to keep the zero-copy slicing clean: scan newline
+        // offsets under `withUnsafeBytes` (raw pointer, no per-byte
+        // `Data` accessor cost), then slice + JSON-decode outside the
+        // closure. SCALE-9/PERF-09: the per-line `data.subdata(in:)`
+        // copied every line's bytes into a fresh allocation before
+        // handing it to JSONSerialization — for a 100 MB transcript
+        // that's ~one full extra copy of the file split across hundreds
+        // of thousands of small allocations. `data[lineStart..<i]` is a
+        // copy-free slice over the already-rebased buffer; because
+        // `data` is 0-based after the rebase, the slice's logical range
+        // is what JSONSerialization reads (it is range-aware, unlike
+        // the buggy `subdata(in:)`). Covered by
+        // DataSliceOffsetDefenseTests' offset-slice cases.
+        var lineRanges: [Range<Int>] = []
         let count = data.count
-        var i = 0
-        // S3-C: bailing from the closure with `return` only exits the
-        // closure body — the trailing-line block beneath still ran,
-        // appending another batch past maxEvents. Use an explicit
-        // flag so the trailing-line block also bails.
-        var hitCap = false
         data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
             let bytes = raw.bindMemory(to: UInt8.self)
+            var lineStart = 0
+            var i = 0
             while i < count {
                 if bytes[i] == 0x0A { // \n
                     let lineLen = i - lineStart
                     if lineLen > 0 && lineLen <= self.maxLineBytes {
-                        let slice = data.subdata(in: lineStart..<i)
-                        if let obj = try? JSONSerialization.jsonObject(with: slice, options: []) as? [String: Any] {
-                            events.append(contentsOf: Self.parseRecord(obj))
+                        lineRanges.append(lineStart..<i)
+                        // S3-C / cap: stop scanning once we've collected
+                        // enough candidate lines to reach maxEvents. One
+                        // line can emit multiple events, so this is an
+                        // over-collect that the final prefix trims — but
+                        // it still bounds the scan for a pathological
+                        // many-line file.
+                        if lineRanges.count >= self.maxEvents {
+                            return
                         }
                     }
                     lineStart = i + 1
-                    if events.count >= self.maxEvents {
-                        hitCap = true
-                        return
-                    }
                 }
                 i += 1
             }
             // Trailing line without newline.
-            if !hitCap, lineStart < count {
+            if lineStart < count, lineRanges.count < self.maxEvents {
                 let lineLen = count - lineStart
                 if lineLen > 0 && lineLen <= self.maxLineBytes {
-                    let slice = data.subdata(in: lineStart..<count)
-                    if let obj = try? JSONSerialization.jsonObject(with: slice, options: []) as? [String: Any] {
-                        events.append(contentsOf: Self.parseRecord(obj))
-                    }
+                    lineRanges.append(lineStart..<count)
                 }
             }
         }
+
+        for range in lineRanges {
+            // Zero-copy slice over the rebased (0-based) buffer.
+            let slice = data[range]
+            if let obj = try? JSONSerialization.jsonObject(with: slice, options: []) as? [String: Any] {
+                events.append(contentsOf: Self.parseRecord(obj))
+                if events.count >= maxEvents { break }
+            }
+        }
+
         if events.count > maxEvents {
             events = Array(events.prefix(maxEvents))
         }

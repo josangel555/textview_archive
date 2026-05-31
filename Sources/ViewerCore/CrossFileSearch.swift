@@ -58,10 +58,20 @@ public enum CrossFileSearch {
 
     /// Synchronous search. Returns up to `options.maxResults` total
     /// matches grouped by file.
+    ///
+    /// `isCancelled` is polled every `cancelCheckStride` entries (and
+    /// once per file before the relatively expensive read+decode) so a
+    /// long walk over a large tree can be abandoned promptly when the
+    /// caller's `Task` is cancelled or the user retypes the query.
+    /// SCALE-5: the walk was previously a single uninterruptible blocking
+    /// loop — a search kicked off against a huge root kept the worker
+    /// pegged even after the UI moved on. Defaults to "never cancel" so
+    /// existing call sites are unaffected.
     public static func search(
         root: URL,
         query: String,
-        options: Options = Options()
+        options: Options = Options(),
+        isCancelled: () -> Bool = { false }
     ) -> [FileMatches] {
         guard !query.isEmpty else { return [] }
         // Needle is passed as-is; case-insensitive matching is done
@@ -92,6 +102,11 @@ public enum CrossFileSearch {
             if totalMatches >= options.maxResults { break }
             entriesScanned += 1
             if entriesScanned > options.maxEntriesScanned { break }
+            // In-loop cancellation (SCALE-5). Cheap modulo check so the
+            // common no-cancel path costs ~nothing; poll every K entries
+            // rather than per-entry to keep the closure call out of the
+            // hottest part of the directory walk.
+            if entriesScanned % cancelCheckStride == 0, isCancelled() { break }
 
             let lastComponent = url.lastPathComponent
             // Skip well-known build / VCS dirs.
@@ -125,10 +140,17 @@ public enum CrossFileSearch {
             guard rv?.isRegularFile == true else { continue }
             guard (rv?.fileSize ?? 0) <= options.maxFileBytes else { continue }
 
-            // Read content. Skip binaries.
+            // Per-file cancellation point, before the read+decode cost.
+            if isCancelled() { break }
+
+            // Read content. Decode via the shared chain (BOM → UTF-16 →
+            // UTF-8 → CP1252 → Latin-1) so cross-file search matches the
+            // same files `TextFileLoader` can open (I18N-02 / PARSE-08).
+            // Previously this decoded strict UTF-8 only and `continue`'d
+            // on anything else — a needle in a Latin-1 / CP1252 / BOM-less
+            // UTF-16 file was silently invisible to project-wide search.
             guard let data = try? Data(contentsOf: url) else { continue }
-            if containsNUL(data) { continue }
-            guard let content = String(data: data, encoding: .utf8) else { continue }
+            guard let content = TextDecoder.decodeToString(data) else { continue }
 
             // Search.
             // For case-insensitive, use `range(of:options:)` directly
@@ -167,9 +189,15 @@ public enum CrossFileSearch {
             // exactly the locales that need it (S2-D regression).
             // `.caseInsensitive` honors the original indices natively.
             var fileMatches: [Match] = []
-            let lines = content.split(
-                separator: "\n", omittingEmptySubsequences: false
-            )
+            // Split into lines handling LF, CRLF, and CR-only endings
+            // (I18N-04). Previously a bare `split(separator: "\n")` left
+            // a trailing `\r` glued onto every line of a CRLF file (so a
+            // line-anchored needle could miss, and `Match.line` carried a
+            // stray carriage return) and collapsed a classic-Mac CR-only
+            // file into one giant "line 1". `splitLines` normalizes
+            // CRLF/CR to single line breaks the way FindEngine's
+            // line/column accounting does.
+            let lines = splitLines(content)
             for (i, lineSub) in lines.enumerated() {
                 guard lineSub.range(of: needle, options: containsOpts) != nil else {
                     continue
@@ -191,16 +219,55 @@ public enum CrossFileSearch {
         return results
     }
 
-    /// Quick NUL-byte heuristic for binary detection. Same one used by
-    /// TextFileLoader. We only scan the first 4 KiB — text files
-    /// occasionally have stray binary bytes deep into them, but if the
-    /// first chunk is clean it's almost always real text.
-    private static func containsNUL(_ data: Data) -> Bool {
-        let n = min(data.count, 4096)
-        for i in 0..<n {
-            if data[i] == 0x00 { return true }
+    /// How often (in scanned entries) the walk polls `isCancelled`.
+    /// Modulo against this keeps the cancellation check off the hottest
+    /// per-entry path while still bounding worst-case post-cancel work
+    /// to a few hundred directory entries.
+    private static let cancelCheckStride = 256
+
+    /// Split `content` into lines, treating `\n`, `\r\n`, and bare `\r`
+    /// each as a single line break (I18N-04). No empty phantom line is
+    /// introduced for a CRLF pair, and a CR-only file is split into its
+    /// real lines rather than collapsing to one. A trailing terminator
+    /// yields a final empty line, matching `split(separator:"\n",
+    /// omittingEmptySubsequences:false)` semantics for LF files.
+    ///
+    /// Scans the **unicode-scalar** view, not `Character`s: Swift's
+    /// grapheme segmentation fuses `\r\n` into ONE extended grapheme
+    /// cluster, so a `Character`-level scan would never see a lone `\n`
+    /// or `\r` in CRLF input and would collapse the whole file into a
+    /// single line. (Same reason `CSVParser` iterates scalars.) The
+    /// returned `Substring`s are rebuilt from scalar ranges; callers run
+    /// `range(of:)` against them directly.
+    static func splitLines(_ content: String) -> [Substring] {
+        var lines: [Substring] = []
+        let scalars = content.unicodeScalars
+        var lineStart = scalars.startIndex
+        var i = scalars.startIndex
+        let lf: Unicode.Scalar = "\n"
+        let cr: Unicode.Scalar = "\r"
+        while i < scalars.endIndex {
+            let s = scalars[i]
+            if s == lf {
+                lines.append(Substring(scalars[lineStart..<i]))
+                i = scalars.index(after: i)
+                lineStart = i
+            } else if s == cr {
+                lines.append(Substring(scalars[lineStart..<i]))
+                let next = scalars.index(after: i)
+                // Swallow the LF of a CRLF pair so it counts as one break.
+                if next < scalars.endIndex, scalars[next] == lf {
+                    i = scalars.index(after: next)
+                } else {
+                    i = next
+                }
+                lineStart = i
+            } else {
+                i = scalars.index(after: i)
+            }
         }
-        return false
+        lines.append(Substring(scalars[lineStart..<scalars.endIndex]))
+        return lines
     }
 
 }
