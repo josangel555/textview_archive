@@ -14,3 +14,11 @@ dist/
 # Iconset is a working dir for iconutil; the resulting .icns is committed
 # (Resources/AppIcon.icns) so daily builds don't re-render the iconset.
 scripts/AppIcon.iconset/
+
+# Claude Code working state. `.claude/worktrees/` holds ephemeral git
+# worktrees spawned for parallel agent runs and must never be committed.
+# Ignore the whole `.claude/` tree by default; re-include any config we
+# deliberately want tracked by un-ignoring it below.
+.claude/
+# Example: keep a checked-in project config if/when we add one:
+# !.claude/settings.json
