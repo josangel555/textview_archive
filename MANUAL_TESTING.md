@@ -132,7 +132,17 @@ with eyes.
 - [ ] Sidebar width is the same as before.
 - [ ] Tab restoration is **not** yet implemented (Phase 8.5 workspaces). Note as expected gap.
 
-### 10. Bundle hygiene (30 s)
+### 10. Image preview zoom (45 s)
+
+- [ ] Open an image (PNG/JPG). Confirm it loads fit-to-window and is centered.
+- [ ] **Trackpad pinch-out** zooms in; pinch-in zooms out. Zoom anchors at the pinch center.
+- [ ] **Cmd + mousewheel up** zooms in; Cmd + wheel down zooms out. Zoom anchors at the cursor — the image point under the cursor stays under the cursor.
+- [ ] **Plain wheel** (no Cmd) when the image is zoomed in still pans, doesn't zoom.
+- [ ] Clamps at 10× (max) and 0.1× (min) — keep scrolling past either and the % readout pegs.
+- [ ] After wheel/pinch zoom, the % HUD in the control bar reflects the new magnification.
+- [ ] Switching to another image tab and back resets the zoom to fit-to-window (per-tab zoom is ephemeral by design).
+
+### 11. Bundle hygiene (30 s)
 
 - [ ] `bash scripts/verify-app.sh` exits 0 with all 17 checks green.
 - [ ] `codesign -dv dist/MarkdownViewer.app` reports an ad-hoc signature (no errors).

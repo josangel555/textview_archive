@@ -71,6 +71,13 @@ struct ImagePreview: View {
                             onLoad: { size in
                                 pixelSize = size
                                 if !didFit { didFit = true; fitToWindow() }
+                            },
+                            onUserZoom: { newMag in
+                                // Push wheel/pinch-driven zoom back
+                                // into the SwiftUI state so the % HUD
+                                // stays in sync and subsequent
+                                // updateNSView calls don't snap back.
+                                magnification = newMag
                             })
             VStack {
                 Spacer()
@@ -203,8 +210,10 @@ struct ImagePreview: View {
     }
 
     private func zoom(by factor: CGFloat) {
-        let next = (magnification * factor).clamped(to: 0.05...16)
-        magnification = next
+        // Clamp through ImageZoomState so the keyboard zoom range stays
+        // identical to the wheel / pinch zoom range (0.1×–10×).
+        magnification = ImageZoomState.nextMagnification(
+            current: magnification, factor: factor)
     }
 
     private func fitToWindow() {
@@ -239,26 +248,53 @@ private struct ImageScrollHost: NSViewRepresentable {
     let url: URL
     let magnification: CGFloat
     let onLoad: (NSSize) -> Void
+    /// Called when the user drives the zoom themselves (mousewheel +
+    /// Cmd, or trackpad pinch) so the SwiftUI side can mirror the
+    /// new magnification into `@State`. Without this, the next
+    /// `updateNSView` would snap back to the stale SwiftUI value.
+    let onUserZoom: (CGFloat) -> Void
 
     /// Coordinator tracks the loaded URL so we know whether
     /// `updateNSView` actually needs to swap the image. Was using
     /// `NSImage.setName(url.path)` as a cache key — but that name
     /// registers globally in `NSImage.imageNamed(_:)`, collides across
     /// tabs viewing different images, and never frees.
-    final class Coordinator {
+    final class Coordinator: NSObject {
         var lastURL: URL?
+        /// Captured reference to the SwiftUI callback. Updated on each
+        /// SwiftUI pass so it always sees current `@State` setters.
+        var onUserZoom: (CGFloat) -> Void = { _ in }
+
+        /// Fires on `NSScrollView.willStartLiveMagnifyNotification`'s
+        /// counterpart end notification — pushes the post-gesture
+        /// magnification back into SwiftUI state. Hooked from
+        /// `makeNSView`.
+        @objc func didEndLiveMagnify(_ note: Notification) {
+            guard let scroll = note.object as? NSScrollView else { return }
+            onUserZoom(scroll.magnification)
+        }
+
+        /// Fires when our ZoomableImageScrollView completes a wheel
+        /// zoom (Cmd+scroll). Posted manually by the subclass — see
+        /// `wheelZoomDidChangeNotification`.
+        @objc func didWheelZoom(_ note: Notification) {
+            guard let scroll = note.object as? NSScrollView else { return }
+            onUserZoom(scroll.magnification)
+        }
     }
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scroll = NSScrollView()
+        let scroll = ZoomableImageScrollView()
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = true
         scroll.autohidesScrollers = true
         scroll.borderType = .noBorder
         scroll.allowsMagnification = true
-        scroll.maxMagnification = 16
-        scroll.minMagnification = 0.05
+        // Bounds match ImageZoomState.{min,max}Magnification so direct
+        // setMagnification calls and the pure-value-type clamp agree.
+        scroll.maxMagnification = ImageZoomState.maxMagnification
+        scroll.minMagnification = ImageZoomState.minMagnification
         scroll.drawsBackground = false
         scroll.usesPredominantAxisScrolling = false
 
@@ -267,10 +303,36 @@ private struct ImageScrollHost: NSViewRepresentable {
         imageView.imageAlignment = .alignCenter
         scroll.documentView = imageView
         loadIfNeeded(into: imageView, url: url, coord: context.coordinator)
+        // Trackpad pinch-to-zoom is handled for free by NSScrollView's
+        // own magnify-gesture path because `allowsMagnification = true`.
+        // That path already anchors at the gesture's center point.
+        // Mousewheel + Cmd is handled by ZoomableImageScrollView's
+        // scrollWheel override below.
+
+        // Sync user-driven magnification (pinch or Cmd+scroll) back to
+        // SwiftUI state. Two notifications:
+        //   - System pinch: NSScrollView posts
+        //     `didEndLiveMagnifyNotification` when the gesture ends.
+        //   - Cmd+scroll: our subclass posts `wheelZoomDidChange` on
+        //     each wheel tick (no system notification for that path).
+        context.coordinator.onUserZoom = onUserZoom
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.didEndLiveMagnify(_:)),
+            name: NSScrollView.didEndLiveMagnifyNotification,
+            object: scroll)
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.didWheelZoom(_:)),
+            name: ZoomableImageScrollView.wheelZoomDidChangeNotification,
+            object: scroll)
         return scroll
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
+        // Refresh the captured callback so it always sees the latest
+        // SwiftUI binding setters.
+        context.coordinator.onUserZoom = onUserZoom
         guard let iv = scroll.documentView as? CenteredImageView else { return }
         loadIfNeeded(into: iv, url: url, coord: context.coordinator)
         // SwiftUI side wants magnification = 0 to mean "fit to window".
@@ -307,13 +369,74 @@ private struct ImageScrollHost: NSViewRepresentable {
         let fit = min(viewportSize.width / imgSize.width,
                       viewportSize.height / imgSize.height,
                       1.0)
-        scroll.magnification = max(0.05, fit)
+        scroll.magnification = ImageZoomState.clamped(fit)
         // Center scroll position in the document.
         let docFrame = imageView.frame
         let scrollX = max(0, (docFrame.width - viewportSize.width / fit) / 2)
         let scrollY = max(0, (docFrame.height - viewportSize.height / fit) / 2)
         scroll.contentView.scroll(to: NSPoint(x: scrollX, y: scrollY))
         scroll.reflectScrolledClipView(scroll.contentView)
+    }
+}
+
+/// NSScrollView subclass that adds Cmd+scroll-to-zoom on top of the
+/// built-in trackpad pinch-magnify. Plain scroll (no modifier) is
+/// passed through to the default pan behavior so a zoomed-in image
+/// can still be panned with the wheel.
+///
+/// Zoom anchoring: we convert the wheel event's `locationInWindow`
+/// into clip-view coordinates and feed that to
+/// `setMagnification(_:centeredAt:)`, which keeps the document point
+/// under the cursor stationary across the zoom.
+///
+/// Range is enforced by NSScrollView's own
+/// `minMagnification`/`maxMagnification`, which we set to match
+/// `ImageZoomState.{min,max}Magnification` (0.1×–10×).
+final class ZoomableImageScrollView: NSScrollView {
+
+    /// Posted on every successful Cmd+scroll-induced magnification
+    /// change. There's no system equivalent for the wheel path (only
+    /// pinch fires `didEndLiveMagnifyNotification`), so we synthesize
+    /// one and the SwiftUI coordinator observes it.
+    static let wheelZoomDidChangeNotification = Notification.Name(
+        "ZoomableImageScrollView.wheelZoomDidChange")
+
+    /// Tuning constant: how aggressive a single wheel tick is. Empirical
+    /// — matches Preview.app's feel within a few percent. Pixel-precise
+    /// trackpad scroll events come in many small deltas, so a low gain
+    /// here is on purpose.
+    private static let wheelZoomGain: CGFloat = 0.0025
+
+    override func scrollWheel(with event: NSEvent) {
+        // Only intercept when Cmd is held; otherwise leave default
+        // pan-on-wheel behavior intact (matters when image is zoomed
+        // in past the viewport).
+        guard event.modifierFlags.contains(.command),
+              allowsMagnification else {
+            super.scrollWheel(with: event)
+            return
+        }
+        // Combine both axes — many mice report on Y, trackpads can
+        // produce X too. scrollingDeltaY is the larger-magnitude
+        // primary axis on virtually every device.
+        let delta = event.scrollingDeltaY + event.scrollingDeltaX
+        guard delta != 0 else { return }
+        // Floor at a small positive to keep factor strictly > 0 even
+        // for a runaway-large negative delta (single high-momentum
+        // trackpad tick can easily exceed 400 logical units).
+        let factor = max(0.1, 1 + delta * Self.wheelZoomGain)
+        let newMag = ImageZoomState.nextMagnification(
+            current: magnification, factor: factor)
+        guard abs(newMag - magnification) > 0.0001 else { return }
+        // Convert cursor position to clip-view (content view) coords.
+        // `setMagnification(_:centeredAt:)` interprets its point in
+        // content-view coordinates and keeps that point stationary
+        // across the zoom — the "anchor under cursor" behavior we want.
+        let cursorInClip = contentView.convert(
+            event.locationInWindow, from: nil)
+        setMagnification(newMag, centeredAt: cursorInClip)
+        NotificationCenter.default.post(
+            name: Self.wheelZoomDidChangeNotification, object: self)
     }
 }
 
