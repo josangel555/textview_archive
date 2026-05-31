@@ -694,4 +694,104 @@ final class DocumentModelTests: XCTestCase {
         XCTAssertEqual(model.sourceScrollLineNonce, baselineNonce,
                        "line<=0 must not touch the scroll channel")
     }
+
+    // MARK: - UDC-2: clean editor tab refreshes buffer on reload
+
+    func test_reload_editorMode_cleanBuffer_refreshesFromDisk() throws {
+        let model = makeModel()
+        let url = try writeFile("e.txt", "v1")
+        model.open(url: url)
+        model.setCurrentViewMode(.editor)
+        let id = model.tabs.selected!.id
+        // Seed a clean editor buffer reflecting v1.
+        let buf0 = model.editorBuffer(forTabID: id)
+        XCTAssertEqual(buf0?.text, "v1")
+        XCTAssertFalse(buf0?.isDirty ?? true)
+        // External edit lands on disk; watcher reloads.
+        try "v2".write(to: url, atomically: true, encoding: .utf8)
+        model.reloadCurrentFile()
+        // The clean buffer must now reflect the reloaded bytes so CM6
+        // shows v2 and a subsequent save doesn't clobber the edit.
+        let buf1 = model.editorBuffer(forTabID: id)
+        XCTAssertEqual(buf1?.text, "v2",
+            "UDC-2: clean editor buffer must rebase onto reloaded disk text")
+        XCTAssertFalse(buf1?.isDirty ?? true,
+            "rebased buffer stays clean (originalText == text)")
+    }
+
+    func test_reload_editorMode_dirtyBuffer_isNotClobbered() throws {
+        let model = makeModel()
+        let url = try writeFile("e2.txt", "v1")
+        model.open(url: url)
+        model.setCurrentViewMode(.editor)
+        let id = model.tabs.selected!.id
+        _ = model.editorBuffer(forTabID: id)
+        // User types — buffer now dirty with "mine".
+        model.updateEditorText("mine", forTabID: id)
+        XCTAssertTrue(model.editorBuffer(forTabID: id)?.isDirty ?? false)
+        // A direct reload of the same path must NOT discard the dirty
+        // buffer (the dirty external-edit case is gated by the conflict
+        // prompt upstream; a plain reload leaves dirty edits intact).
+        try "v2".write(to: url, atomically: true, encoding: .utf8)
+        model.reloadCurrentFile()
+        XCTAssertEqual(model.editorBuffer(forTabID: id)?.text, "mine",
+            "UDC-2: a dirty editor buffer must not be clobbered by reload")
+    }
+
+    // MARK: - UDC-5: multi-drop with a folder
+
+    func test_openMultiple_folderAmongFiles_doesNotCreateBrokenTab() throws {
+        let model = makeModel()
+        let f1 = try writeFile("one.md", "# one")
+        let folder = tmpDir.appendingPathComponent("subdir")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let f2 = try writeFile("two.md", "# two")
+        // Folder is in the MIDDLE — the pre-fix code lazy-appended it as
+        // a file tab that errored on materialize.
+        model.openMultiple([f1, folder, f2])
+        // Only the two files become tabs; the folder routes to sidebar.
+        let tabURLs = model.tabs.tabs.compactMap { $0.url?.lastPathComponent }
+        XCTAssertEqual(Set(tabURLs), ["one.md", "two.md"],
+            "UDC-5: a dropped folder must not become a tab")
+        XCTAssertEqual(model.sidebar.rootURL?.resolvingSymlinksInPath(),
+                       folder.resolvingSymlinksInPath(),
+            "UDC-5: the dropped folder sets the sidebar root")
+        // No tab should be in an error state.
+        for tab in model.tabs.tabs {
+            if case .error = tab.state {
+                XCTFail("UDC-5: no tab should be in .error after multi-drop")
+            }
+        }
+    }
+
+    func test_openMultiple_lastFileIsEagerAndFocused() throws {
+        let model = makeModel()
+        let f1 = try writeFile("first.md", "# first")
+        let f2 = try writeFile("last.md", "# last")
+        model.openMultiple([f1, f2])
+        // Last file wins focus and is eagerly loaded.
+        XCTAssertEqual(model.currentURL?.lastPathComponent, "last.md")
+        if case .loaded(let f) = model.currentState {
+            XCTAssertEqual(f.contents, "# last")
+        } else {
+            XCTFail("last file must be eagerly .loaded")
+        }
+    }
+
+    // MARK: - TD-09 / RWC-2: displayedText reports byte length + mtime
+
+    func test_displayedText_rawPath_reportsFileByteCountAndMtime() throws {
+        let model = makeModel()
+        let url = try writeFile("plain.txt", "hello")
+        model.open(url: url)
+        guard case .loaded(let file) = model.currentState else {
+            return XCTFail("expected .loaded")
+        }
+        let info = model.displayedText(for: file)
+        XCTAssertEqual(info.text, "hello")
+        XCTAssertEqual(info.byteLength, file.byteCount,
+            "raw path must report file.byteCount (no utf8 re-walk)")
+        XCTAssertEqual(info.modifiedTime, file.modifiedTime,
+            "displayedText must surface the source mtime for the cache key")
+    }
 }

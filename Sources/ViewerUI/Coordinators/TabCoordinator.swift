@@ -75,10 +75,39 @@ public final class TabCoordinator: ObservableObject {
     /// have independent format state.
     @Published public private(set) var formattedTabIDs: Set<UUID> = []
 
-    /// Memoized pretty-printer output per tab id. Invalidated when
-    /// the source length changes (file watcher reload). Bounded by
+    /// Memoized pretty-printer output per tab id. Bounded by
     /// `formattedTextCacheMax`; eviction is insertion-order.
-    public private(set) var formattedTextCache: [UUID: (sourceLength: Int, formatted: String)] = [:]
+    ///
+    /// RWC-2 / TD-09 (2026-05-30): the entry carries the source
+    /// `modifiedTime` alongside `sourceLength`, and the hit guard
+    /// compares BOTH. The prior length-only key served STALE pretty-
+    /// printed output when an edit/reload kept the byte length identical
+    /// (`{"a":1}` → `{"b":2}` reformats the same length): `sourceLength`
+    /// matched, so the cache returned the formatting of the OLD bytes.
+    /// mtime is the same invalidation channel the rendered-HTML and
+    /// highlight caches use — O(1), captured at load, nanosecond-
+    /// resolution on APFS.
+    ///
+    /// `formattedLength` is the utf8 length of the *formatted output*
+    /// (not the source). It's cached here so `displayText`'s highlight
+    /// path can form its cache key without re-walking the formatted
+    /// string on every body re-eval (PERF-04).
+    public struct FormattedCacheEntry: Sendable {
+        public let sourceLength: Int
+        public let modifiedTime: Date?
+        public let formatted: String
+        public let formattedLength: Int
+        public init(
+            sourceLength: Int, modifiedTime: Date?,
+            formatted: String, formattedLength: Int
+        ) {
+            self.sourceLength = sourceLength
+            self.modifiedTime = modifiedTime
+            self.formatted = formatted
+            self.formattedLength = formattedLength
+        }
+    }
+    public private(set) var formattedTextCache: [UUID: FormattedCacheEntry] = [:]
     public private(set) var formattedTextCacheOrder: [UUID] = []
     public static let formattedTextCacheMax = 8
 
@@ -371,23 +400,39 @@ public final class TabCoordinator: ObservableObject {
         return formattedTabIDs.contains(id)
     }
 
-    /// LRU-ish read-through for the pretty-printer output. Returns
-    /// the cached value when the source length still matches the
-    /// cached entry's, nil otherwise (caller computes + caches).
-    public func formattedHit(forTabID id: UUID, sourceLength: Int) -> String? {
-        guard let hit = formattedTextCache[id], hit.sourceLength == sourceLength
+    /// LRU-ish read-through for the pretty-printer output. Returns the
+    /// cached entry when BOTH the source length AND the source mtime
+    /// match the cached entry's, nil otherwise (caller computes +
+    /// caches). The mtime compare is what makes a same-byte-length
+    /// reload a miss (RWC-2 / TD-09).
+    public func formattedHit(
+        forTabID id: UUID, sourceLength: Int, modifiedTime: Date?
+    ) -> FormattedCacheEntry? {
+        guard let hit = formattedTextCache[id],
+              hit.sourceLength == sourceLength,
+              hit.modifiedTime == modifiedTime
         else { return nil }
-        return hit.formatted
+        return hit
     }
 
     /// Store a fresh pretty-print result and evict the oldest entries
     /// once over cap. The 2/3 drop-down matches the rendered-HTML
-    /// cache eviction strategy (S2-G / S4-G).
-    public func cacheFormatted(_ result: String, forTabID id: UUID, sourceLength: Int) {
+    /// cache eviction strategy (S2-G / S4-G). `formattedLength` is the
+    /// utf8 length of `result`, computed once by the caller so the
+    /// highlight path doesn't re-walk it (PERF-04).
+    public func cacheFormatted(
+        _ result: String, forTabID id: UUID,
+        sourceLength: Int, modifiedTime: Date?, formattedLength: Int
+    ) {
         if formattedTextCache[id] == nil {
             formattedTextCacheOrder.append(id)
         }
-        formattedTextCache[id] = (sourceLength: sourceLength, formatted: result)
+        formattedTextCache[id] = FormattedCacheEntry(
+            sourceLength: sourceLength,
+            modifiedTime: modifiedTime,
+            formatted: result,
+            formattedLength: formattedLength
+        )
         if formattedTextCache.count > Self.formattedTextCacheMax {
             let dropCount = formattedTextCache.count - Self.formattedTextCacheMax * 2 / 3
             let toDrop = formattedTextCacheOrder.prefix(dropCount)

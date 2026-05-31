@@ -215,15 +215,18 @@ final class TabCoordinatorTests: XCTestCase {
         let c = TabCoordinator()
         // Fill cache to its cap (8), then push one more — oldest should evict.
         var ids: [UUID] = []
+        let mtime = Date(timeIntervalSince1970: 1_000)
         for i in 0..<8 {
             let id = UUID()
             ids.append(id)
-            c.cacheFormatted("R\(i)", forTabID: id, sourceLength: 10)
+            c.cacheFormatted("R\(i)", forTabID: id, sourceLength: 10,
+                             modifiedTime: mtime, formattedLength: 2)
         }
         XCTAssertEqual(c.formattedTextCache.count, 8)
         // Push a 9th to trigger eviction.
         let extra = UUID()
-        c.cacheFormatted("R9", forTabID: extra, sourceLength: 10)
+        c.cacheFormatted("R9", forTabID: extra, sourceLength: 10,
+                         modifiedTime: mtime, formattedLength: 2)
         // Eviction strategy drops to 2/3 of cap (=5) so the cache
         // contains 5 most recent entries (plus the new one = 6).
         // Specifically the OLDEST should be gone.
@@ -236,10 +239,48 @@ final class TabCoordinatorTests: XCTestCase {
     func test_formattedHit_mismatchedLength_returnsNil() {
         let c = TabCoordinator()
         let id = UUID()
-        c.cacheFormatted("R", forTabID: id, sourceLength: 10)
-        XCTAssertEqual(c.formattedHit(forTabID: id, sourceLength: 10), "R")
-        XCTAssertNil(c.formattedHit(forTabID: id, sourceLength: 11),
-                     "length change invalidates the cached pretty-print")
+        let mtime = Date(timeIntervalSince1970: 1_000)
+        c.cacheFormatted("R", forTabID: id, sourceLength: 10,
+                         modifiedTime: mtime, formattedLength: 1)
+        XCTAssertEqual(
+            c.formattedHit(forTabID: id, sourceLength: 10, modifiedTime: mtime)?.formatted,
+            "R")
+        XCTAssertNil(
+            c.formattedHit(forTabID: id, sourceLength: 11, modifiedTime: mtime),
+            "length change invalidates the cached pretty-print")
+    }
+
+    // RWC-2 / TD-09: a same-byte-length reload (mtime changed, length
+    // unchanged) must MISS so we don't serve pretty-printed output of
+    // the prior bytes. The pre-fix length-only guard returned the stale
+    // value here.
+    func test_formattedHit_sameLengthNewMtime_returnsNil() {
+        let c = TabCoordinator()
+        let id = UUID()
+        let oldMtime = Date(timeIntervalSince1970: 1_000)
+        let newMtime = Date(timeIntervalSince1970: 2_000)
+        c.cacheFormatted("OLD", forTabID: id, sourceLength: 10,
+                         modifiedTime: oldMtime, formattedLength: 3)
+        // Same length, same id, but the file was rewritten (new mtime).
+        XCTAssertNil(
+            c.formattedHit(forTabID: id, sourceLength: 10, modifiedTime: newMtime),
+            "same-byte reload (new mtime) must invalidate the formatted cache")
+        // Original mtime still hits.
+        XCTAssertEqual(
+            c.formattedHit(forTabID: id, sourceLength: 10, modifiedTime: oldMtime)?.formatted,
+            "OLD")
+    }
+
+    // PERF-04: the formatted-output byte length is cached so the
+    // highlight path forms its key without re-walking the string.
+    func test_formattedHit_carriesFormattedLength() {
+        let c = TabCoordinator()
+        let id = UUID()
+        let mtime = Date(timeIntervalSince1970: 1_000)
+        c.cacheFormatted("hello world", forTabID: id, sourceLength: 5,
+                         modifiedTime: mtime, formattedLength: 11)
+        let hit = c.formattedHit(forTabID: id, sourceLength: 5, modifiedTime: mtime)
+        XCTAssertEqual(hit?.formattedLength, 11)
     }
 
     // MARK: - Editor buffer
