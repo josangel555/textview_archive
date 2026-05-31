@@ -10,6 +10,11 @@ struct SidebarView: View {
     /// tab switch (DocumentModel sub-views recreate this view).
     @AppStorage("MarkdownViewer.sidebar.filesExpanded") private var filesExpanded: Bool = true
 
+    /// Pointer-hover state for the FILES section-header row (UIRESP-13).
+    /// Drives a faint hover tint + pointing-hand cursor so the collapse
+    /// header reads as clickable.
+    @State private var filesHeaderHovering = false
+
     // MARK: - Recency mode dropdown (file-tree-recency agent)
     //
     // Drives the left-edge color stripe on each `FileRowView`.
@@ -373,7 +378,14 @@ struct SidebarView: View {
     /// Visually consistent with every other section's header row.
     private var filesHeader: some View {
         HStack(spacing: 4) {
-            Button(action: { filesExpanded.toggle() }) {
+            Button(action: {
+                // Animate the collapse so the section-header chevron
+                // (driven by `isExpanded`) eases rather than snaps
+                // (UIRESP-13).
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    filesExpanded.toggle()
+                }
+            }) {
                 HStack(spacing: 4) {
                     SidebarSectionHeaderLabel(
                         title: "Files",
@@ -383,8 +395,17 @@ struct SidebarView: View {
                     Spacer()
                 }
                 .contentShape(Rectangle())
+                // UIRESP-13: faint hover tint on the header row.
+                .background(filesHeaderHovering
+                            ? Color(nsColor: .selectedContentBackgroundColor).opacity(0.10)
+                            : Color.clear)
             }
             .buttonStyle(.plain)
+            .onHover { hovering in
+                filesHeaderHovering = hovering
+                if hovering { NSCursor.pointingHand.push() }
+                else { NSCursor.pop() }
+            }
             // Sort mode picker. Folders always sort before files
             // (Finder-like); the chosen mode applies within each
             // group.
@@ -696,6 +717,11 @@ private struct FileRowView: View {
     /// only. Re-loaded when FolderWatcher invalidates the URL.
     @State private var recencyAttrs: FileTreeRecencyAttributes?
 
+    /// Pointer-hover state for the row affordance (UIRESP-01/13). Drives
+    /// a faint hover tint (below the selection/current/other-tab tints)
+    /// and a pointing-hand cursor so file rows read as clickable.
+    @State private var isHovering = false
+
     var body: some View {
         // PERF #6: renders exactly *this* row — children live as
         // sibling rows in the parent `LazyVStack`, fed by
@@ -725,10 +751,17 @@ private struct FileRowView: View {
                 recencyStripe
                 HStack(spacing: 4) {
                     if node.isDirectory {
-                        Image(systemName: sidebar.isExpanded(node.url) ? "chevron.down" : "chevron.right")
+                        // UIRESP: animate the disclosure chevron via a
+                        // rotation on a single glyph (collapsed = 0°,
+                        // expanded = 90°) instead of swapping two SF
+                        // symbols — gives a smooth spin on expand/collapse.
+                        Image(systemName: "chevron.right")
                             .font(.system(size: 9, weight: .semibold))
                             .frame(width: 12)
                             .foregroundStyle(.secondary)
+                            .rotationEffect(.degrees(sidebar.isExpanded(node.url) ? 90 : 0))
+                            .animation(.easeInOut(duration: 0.15),
+                                       value: sidebar.isExpanded(node.url))
                     } else {
                         Spacer().frame(width: 12)
                     }
@@ -780,6 +813,22 @@ private struct FileRowView: View {
             if recencyAttrs == nil {
                 recencyAttrs = FileTreeRecencyCache.attributes(for: node.url)
             }
+        }
+        // RWC-3: re-load the stripe attributes when the model signals a
+        // recency change (FolderWatcher fire / in-app save). The cache
+        // entry for this URL was already invalidated by the bump source,
+        // so this re-read sees fresh mtime/ctime. Cheap: cache-hit unless
+        // *this* URL was the one that changed.
+        .onChange(of: sidebar.recencyVersion) { _, _ in
+            recencyAttrs = FileTreeRecencyCache.attributes(for: node.url)
+        }
+        // UIRESP-01/13: pointer affordance for file rows. Hover updates
+        // the tint (via `rowBackground`) and shows the pointing-hand
+        // cursor so rows read as clickable.
+        .onHover { hovering in
+            isHovering = hovering
+            if hovering { NSCursor.pointingHand.push() }
+            else { NSCursor.pop() }
         }
     }
 
@@ -841,6 +890,13 @@ private struct FileRowView: View {
         if isSelected { return Color(nsColor: .alternateSelectedControlColor).opacity(0.25) }
         if isOpenInOtherTab {
             return Color.accentColor.opacity(0.08)
+        }
+        // UIRESP-01/13: faint hover tint, strictly below the
+        // selection / current / other-tab tints so it never masks a
+        // stronger state. Uses the system control-accent at low alpha
+        // for theme consistency.
+        if isHovering {
+            return Color(nsColor: .selectedContentBackgroundColor).opacity(0.12)
         }
         return Color.clear
     }

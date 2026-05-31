@@ -162,7 +162,7 @@ final class SidebarModelTests: XCTestCase {
         model.setRoot(tmpDir)
 
         // refreshGitStatus dispatches a detached task; poll up to ~1 s.
-        var statuses: [URL: GitStatusEntry.Status] = [:]
+        var statuses: [String: GitStatusEntry.Status] = [:]
         let deadline = Date().addingTimeInterval(1.5)
         while Date() < deadline {
             statuses = model.gitStatuses
@@ -170,9 +170,13 @@ final class SidebarModelTests: XCTestCase {
             try await Task.sleep(nanoseconds: 50_000_000)  // 50 ms
         }
         XCTAssertFalse(statuses.isEmpty, "git status should have populated the map")
+        // SCALE-3: map is now keyed by repo-relative path string.
+        XCTAssertEqual(statuses["a.md"], .untracked)
+        // The public accessor resolves a row URL → relative path with no
+        // realpath and returns the same status.
         let aURL = tmpDir.appendingPathComponent("a.md")
             .standardizedFileURL.resolvingSymlinksInPath()
-        XCTAssertEqual(statuses[aURL], .untracked)
+        XCTAssertEqual(model.gitStatus(for: aURL), .untracked)
     }
 
     func test_refreshGitStatus_outsideRepo_clearsMap() async throws {
@@ -457,5 +461,149 @@ final class SidebarModelTests: XCTestCase {
         let third = model.flatVisibleRows()
         XCTAssertNotEqual(first.count, third.count)
         XCTAssertEqual(third.map { $0.node.name }.last, "child.md")
+    }
+
+    // MARK: - SCALE-3 / PERF-08 — git status keyed by relative path
+
+    func test_gitStatus_lookupForNestedFileAndOutsideRepo() async throws {
+        // Stand up a repo with a tracked-then-modified nested file and
+        // an untracked top-level file, exercising the relative-path
+        // keying + the no-realpath lookup path.
+        try runGit(["-c", "init.defaultBranch=main", "init"], in: tmpDir)
+        try runGit(["config", "user.email", "test@example.com"], in: tmpDir)
+        try runGit(["config", "user.name", "Test"], in: tmpDir)
+        try touch("src/app.swift")
+        try runGit(["add", "."], in: tmpDir)
+        try runGit(["commit", "-m", "init"], in: tmpDir)
+        // Modify the nested tracked file + add an untracked file.
+        let nested = tmpDir.appendingPathComponent("src/app.swift")
+        try "changed".write(to: nested, atomically: true, encoding: .utf8)
+        try touch("README.md")
+
+        let model = SidebarModel()
+        model.setRoot(tmpDir)
+
+        let ok = await {
+            let deadline = Date().addingTimeInterval(2.0)
+            while Date() < deadline {
+                if model.gitStatus(for: nested) == .modified { return true }
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+            return false
+        }()
+        XCTAssertTrue(ok, "nested modified file should map to .modified via relative-path key")
+
+        // Relative-path key present for the nested file.
+        XCTAssertEqual(model.gitStatuses["src/app.swift"], .modified)
+        XCTAssertEqual(model.gitStatuses["README.md"], .untracked)
+
+        // A URL outside the repo root returns nil (no realpath, no crash).
+        let outside = FileManager.default.temporaryDirectory
+            .appendingPathComponent("definitely-not-in-repo-\(UUID().uuidString).md")
+        XCTAssertNil(model.gitStatus(for: outside))
+        // The repo root itself isn't a status entry.
+        XCTAssertNil(model.gitStatus(for: model.gitRepoRoot!))
+    }
+
+    // MARK: - RWC-5 — childrenCache LRU prune
+
+    /// Loading far more directories than the cache cap must (a) bound
+    /// the cache (cold entries evicted), (b) never evict the root or an
+    /// expanded dir, and (c) actually get under target — the previous
+    /// `prefix(dropCount)` over unordered keys could under-evict when
+    /// the working set was dominated by protected dirs.
+    func test_childrenCache_pruneKeepsRootAndExpanded_andBounds() async throws {
+        let model = SidebarModel()
+        // 400 sibling dirs (> childrenCacheMax 256), each with one file.
+        let dirCount = 400
+        for i in 0..<dirCount {
+            try touch(String(format: "d%03d/f.md", i))
+        }
+        model.setRoot(tmpDir)
+        let root = model.rootURL!
+
+        // Expand a handful — these must survive every prune.
+        var expandedDirs: [URL] = []
+        for i in [0, 5, 10, 50, 100] {
+            let d = tmpDir.appendingPathComponent(String(format: "d%03d", i))
+                .standardizedFileURL.resolvingSymlinksInPath()
+            model.toggleExpansion(d)
+            expandedDirs.append(d)
+        }
+
+        // Now load (ensureLoaded) every dir's children, forcing many
+        // prunes along the way.
+        for i in 0..<dirCount {
+            let d = tmpDir.appendingPathComponent(String(format: "d%03d", i))
+            model.ensureLoaded(url: d)
+        }
+
+        // Root + every expanded dir must still be cached (children
+        // non-empty proves the cache entry survived).
+        XCTAssertFalse(model.children(of: root).isEmpty,
+                       "root must never be evicted by prune")
+        for d in expandedDirs {
+            XCTAssertEqual(model.children(of: d).count, 1,
+                           "expanded dir \(d.lastPathComponent) must survive prune")
+        }
+
+        // The cache must be bounded — count distinct dirs that still
+        // have a warm entry. We can only observe via children(of:),
+        // which returns [] for evicted dirs. The protected set (root +
+        // 5 expanded) is tiny, so the warm count should sit near the
+        // 2/3 target (170) and well under the 400 we loaded.
+        var warm = 0
+        for i in 0..<dirCount {
+            let d = tmpDir.appendingPathComponent(String(format: "d%03d", i))
+            if !model.children(of: d).isEmpty { warm += 1 }
+        }
+        XCTAssertLessThan(warm, dirCount,
+                          "cache must have evicted cold entries; nothing was pruned")
+        XCTAssertLessThanOrEqual(warm, 256,
+                                 "warm set must stay under the cap after prune")
+    }
+
+    /// FW-6 invariant: every expanded directory remains cached even
+    /// after heavy prune pressure — so an FSEvents change for a visible
+    /// (expanded) dir always finds a cache entry to refresh against.
+    func test_expandedDirsStayCachedUnderPrunePressure() async throws {
+        let model = SidebarModel()
+        for i in 0..<400 {
+            try touch(String(format: "d%03d/f.md", i))
+        }
+        model.setRoot(tmpDir)
+        // Expand 20 dirs.
+        var expandedDirs: [URL] = []
+        for i in stride(from: 0, to: 200, by: 10) {
+            let d = tmpDir.appendingPathComponent(String(format: "d%03d", i))
+                .standardizedFileURL.resolvingSymlinksInPath()
+            model.toggleExpansion(d)
+            expandedDirs.append(d)
+        }
+        // Churn the cache hard.
+        for i in 0..<400 {
+            model.ensureLoaded(url: tmpDir.appendingPathComponent(String(format: "d%03d", i)))
+        }
+        for d in expandedDirs {
+            XCTAssertTrue(model.isExpanded(d))
+            XCTAssertEqual(model.children(of: d).count, 1,
+                           "expanded (visible) dir \(d.lastPathComponent) must stay cached")
+        }
+    }
+
+    // MARK: - RWC-3 — recency stripe invalidation
+
+    func test_fileDidChange_bumpsRecencyVersion() async throws {
+        let model = SidebarModel()
+        let url = try touch("a.md")
+        let before = model.recencyVersion
+        model.fileDidChange(url)
+        XCTAssertEqual(model.recencyVersion, before &+ 1,
+                       "fileDidChange must bump recencyVersion so rows re-load the stripe")
+    }
+
+    func test_recencyVersion_startsAtZero() async throws {
+        let model = SidebarModel()
+        XCTAssertEqual(model.recencyVersion, 0)
     }
 }
