@@ -275,17 +275,45 @@ public struct LSPLanguageRegistry: Sendable {
     /// override file doesn't lock the user out (matches §11's "never
     /// crash on bad config" stance).
     ///
-    /// `defaultArguments` are accepted for forward-compat — today the
-    /// override's `args` array is honoured verbatim (an absent JSON
-    /// key parses as `[]`, so we can't distinguish "omitted" from
-    /// "deliberately empty"; the conservative choice for an explicit
-    /// override is "user is taking over spawn configuration").
+    /// ## Interim trust hardening (SEC-001 / SEC-002)
+    ///
+    /// `lsp.json` lives **inside the workspace**, so a hostile repo
+    /// can ship one that points `command` at an attacker-controlled
+    /// binary and get arbitrary code execution the moment a file in
+    /// that repo is opened. The real fix is a trust-UI ("this
+    /// workspace wants to run `<x>` as its language server — allow?"),
+    /// which is surface-only work tracked separately. Until that
+    /// ships we apply a conservative interim policy here:
+    ///
+    ///   1. **`command` is only honoured if it is plausibly trusted.**
+    ///      A command is trusted iff it (a) passes
+    ///      `LSPDiscovery.isBinarySafeToSpawn` (its containing dir is
+    ///      not group/world-writable) **and** (b) its canonical
+    ///      resolved path is **outside** the `workspaceRoot` subtree.
+    ///      A binary checked into / dropped under the workspace is the
+    ///      exact RCE vector we refuse: `./node_modules/.bin/evil`,
+    ///      `./.tools/sourcekit-lsp`, etc.
+    ///   2. **When `command` is not trusted we ignore it** and fall
+    ///      back to default discovery for this language's real server
+    ///      binary, re-applying the override's `args` (on top of the
+    ///      language's `defaultArguments`) and `env`. This lets a repo
+    ///      tune flags/env for a server we already trust without
+    ///      letting it pick the executable. If discovery also fails we
+    ///      return nil (no server) rather than spawn an untrusted path.
+    ///   3. **The child env is scrubbed** at this boundary
+    ///      (`scrubbedLaunchEnvironment`) before the override's `env`
+    ///      is layered on, so the language server never inherits the
+    ///      app's `*_TOKEN` / `*_SECRET` / `AWS_*` / cloud creds.
+    ///
+    /// `defaultArguments` are prepended to the override's `args` only
+    /// on the untrusted/discovered path (where we own spawn config);
+    /// when a trusted `command` is honoured the user's `args` are used
+    /// verbatim (they are taking over spawn configuration).
     public static func overrideConfig(
         for language: LSPLanguage,
         workspaceRoot: URL,
         defaultArguments: [String]
     ) -> LSPClient.Config? {
-        _ = defaultArguments
         guard let overrides = LSPWorkspaceOverrides.load(
             workspaceRoot: workspaceRoot
         ) else {
@@ -300,10 +328,123 @@ public struct LSPLanguageRegistry: Sendable {
                 "LSP override command not found on disk: \(entry.command) (\(overrides.sourceFile.path))")
             return nil
         }
+
+        // SEC-002: scrubbed base env, override env layered on top.
+        // `mergedEnvironment` returns nil when the override declares no
+        // env of its own; we deliberately do NOT propagate that nil
+        // (which `LSPClient` treats as "inherit the full parent env").
+        // We always hand `LSPClient` an explicit, scrubbed dictionary so
+        // the server never sees the app's unscrubbed environment.
+        let baseEnv = scrubbedLaunchEnvironment()
+        let environment = overrides.mergedEnvironment(
+            for: language, parent: baseEnv) ?? baseEnv
+
+        // SEC-001-interim: decide whether to trust the override command.
+        if isOverrideCommandTrusted(binaryURL, workspaceRoot: workspaceRoot) {
+            return LSPClient.Config(
+                executable: binaryURL,
+                arguments: entry.arguments,
+                workspaceRoot: workspaceRoot,
+                environment: environment)
+        }
+
+        // Untrusted command. Refuse to spawn it; instead discover the
+        // real server binary and apply only the override's args/env.
+        LSPLog.warn(
+            "LSP override command refused (untrusted: inside workspace or "
+            + "writable dir): \(entry.command) (\(overrides.sourceFile.path)); "
+            + "falling back to discovered \(language.binaryName ?? "<server>")")
+        guard let discovered = discoverServerBinary(for: language) else {
+            return nil
+        }
         return LSPClient.Config(
-            executable: binaryURL,
-            arguments: entry.arguments,
+            executable: discovered,
+            arguments: defaultArguments + entry.arguments,
             workspaceRoot: workspaceRoot,
-            environment: overrides.mergedEnvironment(for: language))
+            environment: environment)
+    }
+
+    /// A workspace-supplied override `command` is trusted iff its
+    /// containing directory is not group/world-writable AND its
+    /// canonical path is not inside the workspace subtree. See
+    /// `overrideConfig` for the full rationale (SEC-001 interim).
+    static func isOverrideCommandTrusted(
+        _ binaryURL: URL,
+        workspaceRoot: URL
+    ) -> Bool {
+        let canonical = binaryURL.resolvingSymlinksInPath()
+            .standardizedFileURL
+        if !LSPDiscovery.isBinarySafeToSpawn(atPath: canonical.path) {
+            return false
+        }
+        if isPath(canonical, inSubtreeOf: workspaceRoot) {
+            return false
+        }
+        return true
+    }
+
+    /// True iff `path`'s canonical location is the workspace root or a
+    /// descendant of it. Both sides are resolved through symlinks +
+    /// standardized so `lsp.json` can't escape the check with `../` or
+    /// a symlinked binary that lands back inside the tree.
+    static func isPath(_ path: URL, inSubtreeOf root: URL) -> Bool {
+        let canonicalRoot = root.resolvingSymlinksInPath()
+            .standardizedFileURL
+        let rootComponents = canonicalRoot.pathComponents
+        let pathComponents = path.resolvingSymlinksInPath()
+            .standardizedFileURL.pathComponents
+        guard pathComponents.count >= rootComponents.count else {
+            return false
+        }
+        // Component-wise prefix match avoids the `/foo` vs `/foobar`
+        // false positive that a raw `hasPrefix(string)` would hit.
+        return Array(pathComponents.prefix(rootComponents.count))
+            == rootComponents
+    }
+
+    /// Discover this language's real server binary via the same path
+    /// `serverLauncher` uses for default discovery (which already runs
+    /// every candidate through `isBinarySafeToSpawn`). Returns nil when
+    /// the server isn't installed.
+    static func discoverServerBinary(for language: LSPLanguage) -> URL? {
+        switch language {
+        case .swift:
+            return LSPDiscovery.locateSourceKitLSP()
+        default:
+            guard let name = language.binaryName else { return nil }
+            return LSPDiscovery.locate(binary: name)
+        }
+    }
+
+    /// Scrubbed base environment for an LSP child spawned via an
+    /// override (SEC-002). Mirrors the not-passed list documented on
+    /// `PluginSubprocessHost.scrubbedEnvironment` but is less strict:
+    /// language servers legitimately need `PATH` (to find `node` /
+    /// toolchain helpers), `HOME` (config/cache), locale, and
+    /// `TMPDIR`. We pass that allowlist through and drop everything
+    /// else — crucially every credential-shaped var
+    /// (`*_TOKEN` / `*_SECRET` / `*_KEY` / `AWS_*` / cloud).
+    ///
+    /// Returned env is the *base*; the override's own `env` is layered
+    /// on top by `mergedEnvironment`, so a user who genuinely needs an
+    /// extra var can opt it back in explicitly per-workspace.
+    static func scrubbedLaunchEnvironment(
+        parent: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [String: String] {
+        // Exact-name allowlist: vars an honest server needs.
+        let allowExact: Set<String> = [
+            "PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "USER", "LOGNAME",
+            // Toolchain locators that servers shell out through.
+            "DEVELOPER_DIR", "SDKROOT", "TOOLCHAINS",
+            "JAVA_HOME", "NODE_PATH", "NPM_CONFIG_PREFIX",
+            "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
+        ]
+        var env: [String: String] = [:]
+        for (k, v) in parent {
+            if allowExact.contains(k) || k.hasPrefix("LC_") {
+                env[k] = v
+            }
+        }
+        return env
     }
 }

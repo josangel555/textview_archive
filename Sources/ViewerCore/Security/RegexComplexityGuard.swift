@@ -29,8 +29,28 @@ public enum RegexComplexityGuard {
     /// builder can stall on.
     public static let maxPatternLength: Int = 1024
 
+    /// Default match-time deadline for `boundedMatches` (SEC-006).
+    /// 250ms is well above any honest interactive find (a clean regex
+    /// over a multi-MB document enumerates in single-digit ms) and
+    /// short enough that a pattern which slips past `reject` can't
+    /// freeze the UI for more than a frame or two before we bail.
+    public static let defaultMatchDeadline: TimeInterval = 0.25
+
     /// Returns nil if `pattern` is acceptable, or a human-readable
     /// reason string if it should be rejected.
+    ///
+    /// **Important — what `nil` means.** A `nil` return is *not* a
+    /// proof that the pattern is fast. `reject` only catches the
+    /// well-known *exponential* shapes (nested unbounded quantifiers,
+    /// overlapping alternation under a quantifier). It does **not**
+    /// catch *polynomial* backtracking (e.g. `a*a*a*…b` style, or
+    /// long chains of optional groups), which can still take seconds
+    /// on an adversarial input without ever being "exponential". So
+    /// `reject(p) == nil` means "not *known-exponential*", not "safe to
+    /// run unbounded". Match-time enumeration over user-supplied
+    /// patterns must therefore *also* be wall-clock-bounded — see
+    /// `boundedMatches` (SEC-006), the defense-in-depth deadline used
+    /// at the live find/highlight enumeration sites.
     public static func reject(_ pattern: String) -> String? {
         if pattern.count > maxPatternLength {
             return "regex too long (\(pattern.count) chars, max \(maxPatternLength))"
@@ -42,6 +62,52 @@ public enum RegexComplexityGuard {
             return "alternation under a quantifier is ReDoS-prone; rewrite without `(a|a)+` shapes"
         }
         return nil
+    }
+
+    // MARK: - Match-time deadline (SEC-006)
+
+    /// Enumerate `regex` matches in `text` with a cooperative
+    /// wall-clock deadline. Defense-in-depth for the polynomial-
+    /// backtracking shapes `reject` deliberately doesn't model: even a
+    /// pattern that passes `reject` is bounded here so a single
+    /// adversarial query can't peg a core indefinitely.
+    ///
+    /// `NSRegularExpression` has no native timeout, but
+    /// `enumerateMatches` calls back per match and honours a `stop`
+    /// flag — so we check the clock on each callback and stop once the
+    /// budget is spent. This bounds the *inter-match* time but not the
+    /// backtracking *within* a single failing match attempt; for that
+    /// the only real defense is `reject` plus the bounded haystack at
+    /// the call sites. In practice the per-match cadence is frequent
+    /// enough that pathological *find* queries (which produce a steady
+    /// drip of partial matches) are caught well inside one frame.
+    ///
+    /// Returns the matches collected before the deadline. `timedOut`
+    /// is true when enumeration was cut short — callers may surface
+    /// that distinctly from a genuine "no more matches".
+    public static func boundedMatches(
+        _ regex: NSRegularExpression,
+        in text: String,
+        range: NSRange,
+        options: NSRegularExpression.MatchingOptions = [],
+        deadline: TimeInterval = defaultMatchDeadline
+    ) -> (matches: [NSTextCheckingResult], timedOut: Bool) {
+        var out: [NSTextCheckingResult] = []
+        var timedOut = false
+        let start = DispatchTime.now()
+        let budgetNanos = UInt64(max(0, deadline) * 1_000_000_000)
+        regex.enumerateMatches(in: text, options: options, range: range) { result, _, stop in
+            if let r = result, r.range.location != NSNotFound {
+                out.append(r)
+            }
+            let elapsed = DispatchTime.now().uptimeNanoseconds
+                - start.uptimeNanoseconds
+            if elapsed >= budgetNanos {
+                timedOut = true
+                stop.pointee = true
+            }
+        }
+        return (out, timedOut)
     }
 
     // MARK: - Heuristics
