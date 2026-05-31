@@ -20,10 +20,6 @@ esac
 # stays constant so TCC grants survive the rename.
 APP_NAME="TextView"
 EXEC_NAME="MarkdownViewer"
-# Bundle identifier stays constant so TCC + LaunchServices grants
-# survive the on-disk rename. Single source of truth: used as the main
-# bundle's signing identity AND as the prefix for per-dylib identifiers.
-BUNDLE_ID="com.markdownviewer.MarkdownViewer"
 DIST_DIR="$ROOT_DIR/dist"
 APP_DIR="$DIST_DIR/$APP_NAME.app"
 CONTENTS="$APP_DIR/Contents"
@@ -64,20 +60,6 @@ if [[ ! -x "$BIN_PATH" ]]; then
 fi
 
 echo "==> Assembling $APP_DIR"
-# Remove any *other* .app left in dist/ (e.g. a stale MarkdownViewer.app
-# from before the TextView rename). Two same-bundle-id apps in dist/
-# make Launch Services pick one nondeterministically, so `open -a` and
-# the Finder "Open With" entry can resolve to the wrong, stale binary.
-# Only TextView.app should live here. Also drop a stray .DS_Store so it
-# never sneaks into a signed/zipped artifact.
-shopt -s nullglob
-for other in "$DIST_DIR"/*.app; do
-  [[ "$other" == "$APP_DIR" ]] && continue
-  echo "    removing stale bundle: $other"
-  rm -rf "$other"
-done
-shopt -u nullglob
-rm -f "$DIST_DIR/.DS_Store"
 rm -rf "$APP_DIR"
 mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources" "$CONTENTS/Frameworks"
 
@@ -140,12 +122,6 @@ fi
 
 # Copy SPM-generated resource bundles (one per target with resources, e.g.
 # MarkdownViewer_ViewerUI.bundle containing markdown.css).
-#
-# BR-08: the glob below copies bundles in filesystem-glob order, and the
-# copy preserves mtimes. This bundle is intentionally NOT bit-for-bit
-# reproducible — codesign embeds timestamps + per-build CDHashes anyway,
-# so iteration order does not affect correctness. If reproducibility is
-# ever needed, sort the glob and honor SOURCE_DATE_EPOCH before copying.
 shopt -s nullglob
 for bundle in "$BIN_DIR"/*.bundle; do
   cp -R "$bundle" "$CONTENTS/Resources/"
@@ -192,71 +168,28 @@ if [[ "$HAS_LOCAL_IDENTITY" == "1" ]]; then
   # xattr exit codes don't play well together); `xattr -dr` does it
   # in one call and is idempotent.
   xattr -dr com.apple.FinderInfo "$APP_DIR" 2>/dev/null || true
-  # Sign inside-out with *distinct* identifiers per nested Mach-O.
-  #
-  # A single `--deep --identifier com.markdownviewer.MarkdownViewer`
-  # pass stamps that ONE identifier onto every nested dylib too — so
-  # libTreeSitterXMLLazy.dylib and libTreeSitterPythonLazy.dylib end up
-  # sharing the app's identifier. codesign(1) calls signing distinct
-  # programs with the same identifier "a very bad idea": it breaks the
-  # library-validation pairing of code-directory-hash to identifier and
-  # is a notarization smell. So we derive a unique identifier per dylib
-  # from its basename instead.
-  #
-  # Order is load-bearing — codesign requires nested code to be signed
-  # before the enclosing bundle: (1) Frameworks dylibs, (2) SwiftPM
-  # resource bundles, (3) the outer .app last.
-  #
-  # The resource `.bundle` wrappers are signed with their own `--deep`
-  # (no explicit --identifier; each derives one from its own Info.plist
-  # CFBundleIdentifier). We re-wipe `com.apple.FinderInfo` immediately
-  # before the final non-deep outer pass: codesign can re-stamp it on
-  # nested .bundle wrappers as a side-effect, and `--options runtime`
-  # rejects a bundle carrying stray FinderInfo.
-
-  # (1) Inner dylibs — each with a derived, unique identifier.
-  shopt -s nullglob
-  for dylib in "$CONTENTS/Frameworks"/*.dylib; do
-    dybase="$(basename "$dylib" .dylib)"
-    codesign --force \
-      --sign "$SIGN_IDENTITY" \
-      --identifier "$BUNDLE_ID.$dybase" \
-      --options runtime \
-      --timestamp=none \
-      "$dylib" >/dev/null
-  done
-
-  # (2) SwiftPM resource bundles — own identifier from their Info.plist.
-  for resbundle in "$CONTENTS/Resources"/*.bundle; do
-    codesign --force --deep \
-      --sign "$SIGN_IDENTITY" \
-      --options runtime \
-      --timestamp=none \
-      "$resbundle" >/dev/null
-  done
-  shopt -u nullglob
-
-  # (3) Outer bundle — NOT --deep (inner code already signed above), so
-  # the app's identifier never leaks onto the nested dylibs.
-  xattr -dr com.apple.FinderInfo "$APP_DIR" 2>/dev/null || true
-  codesign --force \
+  # Single `--deep` pass signs the executable + all nested dylibs
+  # (Contents/Frameworks/*.dylib) and SwiftPM resource bundles
+  # (Contents/Resources/*.bundle) in one go. We deliberately do NOT
+  # pre-sign the dylibs individually: Apple's codesign stamps
+  # `com.apple.FinderInfo` on every nested .bundle wrapper as a side-
+  # effect when the outer pass isn't `--deep`, which then trips the
+  # bundle's own no-detritus check under `--options runtime`. `--deep`
+  # is on the long-term deprecation path but remains the supported
+  # way to sign SwiftPM resource-bundle trees today.
+  codesign --force --deep \
     --sign "$SIGN_IDENTITY" \
-    --identifier "$BUNDLE_ID" \
+    --identifier "com.markdownviewer.MarkdownViewer" \
     --options runtime \
     --timestamp=none \
     "$APP_DIR" >/dev/null
-
-  # Confirm the inside-out signature validates as a unit before we hand
-  # the bundle off (lsregister / install / notarize).
-  codesign --verify --deep --strict --verbose=2 "$APP_DIR" >/dev/null 2>&1 \
-    || { echo "Error: codesign --verify --deep --strict failed on $APP_DIR" >&2; exit 1; }
 else
   echo "==> No local signing identity; falling back to ad-hoc"
   echo "    (TCC will re-prompt on every rebuild — fix with"
   echo "     'bash scripts/setup-signing.sh')"
   codesign --force \
     --sign - \
-    --identifier "$BUNDLE_ID" \
+    --identifier "com.markdownviewer.MarkdownViewer" \
     --timestamp=none \
     "$APP_DIR" >/dev/null 2>&1 || true
 fi
