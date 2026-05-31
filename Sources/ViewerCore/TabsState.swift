@@ -122,8 +122,55 @@ public struct TabsState: Equatable, Sendable {
     /// policy (`SessionsCoordinator.openFolder` resolves symlinks) and the
     /// resolved path `appendLazyTab` stores on restored tabs — closing the
     /// asymmetry that produced "close with 1 tab → reopen shows 2 tabs".
-    static func dedupKey(_ url: URL) -> URL {
+    ///
+    /// `public` so the UI-layer restore path (`DocumentModel.appendLazyTab`)
+    /// and the snapshot writer can apply the SAME normalized-key dedup the
+    /// eager `openOrReveal` path uses. Restore previously appended every
+    /// persisted tab unconditionally, so a duplicated persisted entry — or a
+    /// snapshot that had already accumulated dupes across launches — spawned a
+    /// fresh tab each time, and `makeSnapshot()` faithfully re-persisted the
+    /// bloat: a one-way ratchet that grew an active session to ~2000 tabs of
+    /// ~35 unique files and ballooned launch footprint to ~1 GB. See
+    /// `TabsState.dedupedRestoreTabs(_:)`.
+    public static func dedupKey(_ url: URL) -> URL {
         url.standardizedFileURL.resolvingSymlinksInPath()
+    }
+
+    /// Defensive ceiling on how many tabs a single session may restore.
+    /// Even after the dedup fix below makes duplicate-accumulation
+    /// impossible, a legitimately enormous (or maliciously crafted)
+    /// persisted snapshot must not be able to allocate unbounded per-tab
+    /// state at launch. 200 distinct open files is already far past any
+    /// realistic working set; beyond it we keep the most-recent entries
+    /// (the tail of the persisted list, nearest the user's last focus).
+    public static let maxRestoredTabs = 200
+
+    /// Pure restore-time dedup + cap. Given the persisted `(path, viewMode)`
+    /// pairs in on-disk order, returns the surviving pairs with:
+    ///   1. duplicates collapsed by normalized `dedupKey` (FIRST occurrence
+    ///      wins, preserving on-disk order), and
+    ///   2. the result clamped to the last `maxRestoredTabs` entries.
+    ///
+    /// Lives here (pure value logic, no FileManager / no `@MainActor`) so it
+    /// is unit-testable in `ViewerCoreTests` without launching the app. The
+    /// caller still applies its own `fileExists` filter — this only fixes the
+    /// duplicate-ratchet and the unbounded-count blow-up.
+    public static func dedupedRestoreTabs(
+        _ tabs: [(path: String, viewMode: String)]
+    ) -> [(path: String, viewMode: String)] {
+        var seen = Set<String>()
+        var out: [(path: String, viewMode: String)] = []
+        out.reserveCapacity(min(tabs.count, maxRestoredTabs))
+        for t in tabs {
+            let key = dedupKey(URL(fileURLWithPath: t.path)).path
+            if seen.insert(key).inserted {
+                out.append(t)
+            }
+        }
+        if out.count > maxRestoredTabs {
+            out = Array(out.suffix(maxRestoredTabs))
+        }
+        return out
     }
 
     /// If a tab already displays `url`, switch to it and return its index.

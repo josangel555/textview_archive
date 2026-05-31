@@ -2536,6 +2536,20 @@ public final class DocumentModel: ObservableObject {
     /// doesn't read 15 files at launch — only the focused one.
     public func appendLazyTab(url: URL, viewMode: ViewMode) {
         let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
+        // Dedup invariant (matches `TabsState.openOrReveal`): never create a
+        // SECOND tab for a file that's already open. `appendLazyTab` was the
+        // one open-path that skipped this guard, so workspace restore (and
+        // multi-file drop) appended a fresh tab per persisted entry even when
+        // an identical path was already present. Combined with `makeSnapshot`
+        // re-persisting the live list, that ratcheted an active session up to
+        // ~2000 tabs of ~35 unique files and pushed launch footprint to ~1 GB.
+        // A no-op here keeps "one tab per file" true regardless of caller.
+        let key = TabsState.dedupKey(resolved)
+        if tabCoordinator.tabs.tabs.contains(where: {
+            $0.url.map(TabsState.dedupKey) == key
+        }) {
+            return
+        }
         // Clamp the requested viewMode to one the URL actually
         // supports. Workspaces persisted before mode-set validation
         // could end up with e.g. `.formatted` saved against a `.md`

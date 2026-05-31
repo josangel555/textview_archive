@@ -102,7 +102,21 @@ public final class SessionState: ObservableObject {
     /// over Phase 1.5 / Phase 2 as `DocumentModel` exposes the
     /// underlying state.
     public func makeSnapshot() -> SessionSnapshot {
-        SessionSnapshot(
+        // Dedup defensively on the WRITE side too (matches the restore read
+        // side). Once `appendLazyTab` is idempotent the live list can't carry
+        // dupes — but serializing through the dedup makes a snapshot that
+        // ALREADY grew huge on a pre-fix build heal to its unique set on the
+        // next write instead of being re-persisted at full bloat. This is the
+        // path that shrinks the owner's 317 KB / 1951-tab file back to ~35
+        // entries. We remap `selectedTabIndex` onto the deduped list so the
+        // persisted index stays consistent with the persisted `openTabs`
+        // (restore re-resolves selection by path anyway, but a coherent index
+        // avoids a one-launch off-by selection while the file heals).
+        let (openTabs, selectedIndex) = SessionState.dedupedSnapshotTabs(
+            from: model.tabs.tabs,
+            selectedIndex: model.tabs.selectedIndex
+        )
+        return SessionSnapshot(
             schemaVersion: SessionSnapshot.currentSchema,
             savedAt: Date(),
             id: id,
@@ -111,12 +125,8 @@ public final class SessionState: ObservableObject {
             lastActiveAt: lastActiveAt,
             sidebarRootPath: model.sidebar.rootURL?.path
                 ?? rootURL.path,
-            openTabs: model.tabs.tabs.compactMap { t in
-                guard let url = t.url else { return nil }
-                return TabSnapshot(path: url.path,
-                                   viewMode: t.viewMode.rawValue)
-            },
-            selectedTabIndex: model.tabs.selectedIndex,
+            openTabs: openTabs,
+            selectedTabIndex: selectedIndex,
             sidebarExpandedPaths: nil,
             sidebarIncludeHidden: nil,
             splitURL: nil,
@@ -124,6 +134,48 @@ public final class SessionState: ObservableObject {
             wordWrap: model.sourceWordWrap,
             themeOverride: model.themeOverride?.rawValue
         )
+    }
+
+    /// Serialize the live tab list into `[TabSnapshot]`, collapsing duplicate
+    /// file paths (normalized via `TabsState.dedupKey`, first occurrence wins)
+    /// and remapping the live `selectedIndex` onto the resulting compacted
+    /// list. Tabs with no URL are dropped (they can't be persisted). Pure /
+    /// `nonisolated` so the heavy lifting is testable; the only reason it
+    /// lives on `SessionState` is the `@MainActor` `model` accessor in the
+    /// caller. Returns the deduped tab snapshots plus the remapped selection.
+    nonisolated static func dedupedSnapshotTabs(
+        from tabs: [Tab],
+        selectedIndex: Int?
+    ) -> (tabs: [TabSnapshot], selectedIndex: Int?) {
+        var seen = Set<String>()
+        var out: [TabSnapshot] = []
+        // Map a LIVE tab index → its index in the compacted output, so we can
+        // translate `selectedIndex`. A live index that dedups away (a dup of
+        // an earlier survivor) maps to that survivor's output slot.
+        var liveToOut: [Int: Int] = [:]
+        for (liveIdx, t) in tabs.enumerated() {
+            guard let url = t.url else { continue }
+            let key = TabsState.dedupKey(url).path
+            if let firstOut = lastIndexForKey(seen: seen, out: out, key: key) {
+                liveToOut[liveIdx] = firstOut
+                continue
+            }
+            seen.insert(key)
+            liveToOut[liveIdx] = out.count
+            out.append(TabSnapshot(path: url.path, viewMode: t.viewMode.rawValue))
+        }
+        let remapped: Int? = selectedIndex.flatMap { liveToOut[$0] }
+        return (out, remapped)
+    }
+
+    /// Helper for `dedupedSnapshotTabs`: find the output slot a previously
+    /// seen `key` was written to. Linear scan — `out` is bounded by the unique
+    /// file count (tens), so this stays cheap even for a pre-fix bloated input.
+    private nonisolated static func lastIndexForKey(
+        seen: Set<String>, out: [TabSnapshot], key: String
+    ) -> Int? {
+        guard seen.contains(key) else { return nil }
+        return out.firstIndex { TabsState.dedupKey(URL(fileURLWithPath: $0.path)).path == key }
     }
 
     /// Hydrate the wrapped `DocumentModel` from a `SessionSnapshot`.
@@ -157,7 +209,21 @@ public final class SessionState: ObservableObject {
             return URL(fileURLWithPath: snapshot.openTabs[i].path)
                 .standardizedFileURL.resolvingSymlinksInPath().path
         }()
-        for t in snapshot.openTabs {
+        // PERSIST-12 (launch-memory fix): collapse duplicate persisted tabs
+        // (normalized by path) and clamp to `TabsState.maxRestoredTabs` BEFORE
+        // appending. Restore + `makeSnapshot` formed a one-way ratchet that
+        // grew an active session to ~2000 tabs / ~35 unique files and pushed
+        // launch footprint to ~1 GB. `appendLazyTab` is now idempotent too, so
+        // this is belt-and-suspenders — but doing it here also bounds the
+        // count (the per-tab guard alone wouldn't cap a list of 2000 *unique*
+        // files). Resolving the selected target by PATH (above) stays correct:
+        // the cap keeps the tail of the list, which is where the last-focused
+        // tab lives. The persisted file on disk is healed on the next clean
+        // `makeSnapshot()` write, which now serializes the deduped live list.
+        let restoreTabs = TabsState.dedupedRestoreTabs(
+            snapshot.openTabs.map { (path: $0.path, viewMode: $0.viewMode) }
+        )
+        for t in restoreTabs {
             let url = URL(fileURLWithPath: t.path)
             guard FileManager.default.fileExists(atPath: url.path) else {
                 continue
