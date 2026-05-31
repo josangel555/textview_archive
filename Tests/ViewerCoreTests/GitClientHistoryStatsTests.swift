@@ -370,4 +370,117 @@ final class GitClientHistoryStatsTests: XCTestCase {
         let after = await cache.stats(repoRoot: repo, scope: .repo)
         XCTAssertEqual(after.totalCommits, 1)
     }
+
+    // MARK: - RepoStatsCache (extended HEAD-invalidation coverage)
+
+    func test_repoStatsCache_scopes_cache_independently() async throws {
+        // The cache is keyed on (repoRoot, scope). A `.repo` lookup and a
+        // `.folder` lookup at the same HEAD must NOT collide — each scope
+        // caches and returns its own aggregate.
+        let repo = try makeRepo()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        try writeFile("root.txt", "r\n", in: repo)
+        try run(["add", "."], in: repo)
+        try run(["commit", "-q", "-m", "root"], in: repo)
+        try writeFile("sub/x.txt", "x\n", in: repo)
+        try run(["add", "."], in: repo)
+        try run(["commit", "-q", "-m", "sub one"], in: repo)
+        try writeFile("sub/y.txt", "y\n", in: repo)
+        try run(["add", "."], in: repo)
+        try run(["commit", "-q", "-m", "sub two"], in: repo)
+
+        let cache = RepoStatsCache()
+        // Prime both scopes at the same HEAD.
+        let whole = await cache.stats(repoRoot: repo, scope: .repo)
+        let folder = await cache.stats(repoRoot: repo, scope: .folder(relativePath: "sub"))
+        XCTAssertEqual(whole.totalCommits, 3)
+        XCTAssertEqual(folder.totalCommits, 2)
+        // Re-read both: must return their own cached value, not the other
+        // scope's (a single-key cache would alias them).
+        let wholeAgain = await cache.stats(repoRoot: repo, scope: .repo)
+        let folderAgain = await cache.stats(repoRoot: repo, scope: .folder(relativePath: "sub"))
+        XCTAssertEqual(wholeAgain.totalCommits, 3)
+        XCTAssertEqual(folderAgain.totalCommits, 2)
+        XCTAssertEqual(folderAgain.trackedFileCount, 2)
+    }
+
+    func test_repoStatsCache_invalidateAll_clears_every_repo() async throws {
+        // `invalidateAll()` must drop entries across DIFFERENT repos, not
+        // just one — the UI calls it on a wholesale root change.
+        let repoA = try makeRepo()
+        let repoB = try makeRepo()
+        defer {
+            try? FileManager.default.removeItem(at: repoA)
+            try? FileManager.default.removeItem(at: repoB)
+        }
+        try writeFile("a.txt", "a\n", in: repoA)
+        try run(["add", "."], in: repoA)
+        try run(["commit", "-q", "-m", "a1"], in: repoA)
+        try writeFile("b.txt", "b\n", in: repoB)
+        try run(["add", "."], in: repoB)
+        try run(["commit", "-q", "-m", "b1"], in: repoB)
+
+        let cache = RepoStatsCache()
+        let primedA = await cache.stats(repoRoot: repoA, scope: .repo)
+        let primedB = await cache.stats(repoRoot: repoB, scope: .repo)
+        XCTAssertEqual(primedA.totalCommits, 1)
+        XCTAssertEqual(primedB.totalCommits, 1)
+        await cache.invalidateAll()
+        // Recompute path must still work for both after a wholesale clear.
+        let recomputedA = await cache.stats(repoRoot: repoA, scope: .repo)
+        let recomputedB = await cache.stats(repoRoot: repoB, scope: .repo)
+        XCTAssertEqual(recomputedA.totalCommits, 1)
+        XCTAssertEqual(recomputedB.totalCommits, 1)
+    }
+
+    func test_repoStatsCache_invalidate_isScopedToOneRepo() async throws {
+        // `invalidate(repoRoot:)` must drop ONLY the named repo's entries.
+        let repoA = try makeRepo()
+        let repoB = try makeRepo()
+        defer {
+            try? FileManager.default.removeItem(at: repoA)
+            try? FileManager.default.removeItem(at: repoB)
+        }
+        try writeFile("a.txt", "a\n", in: repoA)
+        try run(["add", "."], in: repoA)
+        try run(["commit", "-q", "-m", "a1"], in: repoA)
+        try writeFile("b.txt", "b\n", in: repoB)
+        try run(["add", "."], in: repoB)
+        try run(["commit", "-q", "-m", "b1"], in: repoB)
+
+        let cache = RepoStatsCache()
+        _ = await cache.stats(repoRoot: repoA, scope: .repo)
+        _ = await cache.stats(repoRoot: repoB, scope: .repo)
+        // Move repoB's HEAD, then invalidate ONLY repoA. repoB's cached
+        // entry (now stale-by-HEAD) should still recompute on next read
+        // because the cache is HEAD-keyed — proving both paths coexist.
+        try writeFile("b2.txt", "b2\n", in: repoB)
+        try run(["add", "."], in: repoB)
+        try run(["commit", "-q", "-m", "b2"], in: repoB)
+        await cache.invalidate(repoRoot: repoA)
+        let afterA = await cache.stats(repoRoot: repoA, scope: .repo)
+        let afterB = await cache.stats(repoRoot: repoB, scope: .repo)
+        XCTAssertEqual(afterA.totalCommits, 1)
+        XCTAssertEqual(afterB.totalCommits, 2,
+                       "repoB HEAD moved ⇒ recomputed regardless of repoA invalidation")
+    }
+
+    func test_repoStatsCache_emptyRepo_doesNotCacheEmptyHead() async throws {
+        // An empty repo has no HEAD; the cache must fall through to a
+        // fresh compute and NOT cache (empty headSHA never matches). After
+        // the first commit, the next read must reflect the new HEAD rather
+        // than serving a stale empty-HEAD entry.
+        let repo = try makeRepo()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        let cache = RepoStatsCache()
+        let empty = await cache.stats(repoRoot: repo, scope: .repo)
+        XCTAssertEqual(empty.totalCommits, 0)
+
+        try writeFile("a.txt", "a\n", in: repo)
+        try run(["add", "."], in: repo)
+        try run(["commit", "-q", "-m", "first"], in: repo)
+        let after = await cache.stats(repoRoot: repo, scope: .repo)
+        XCTAssertEqual(after.totalCommits, 1,
+                       "empty-HEAD result must not be cached over the first commit")
+    }
 }
