@@ -1,4 +1,3 @@
-import Combine
 import Foundation
 import ViewerCore
 import ViewerKit
@@ -46,8 +45,6 @@ public final class SessionState: ObservableObject {
     /// want to gray out an inactive session's strip cell.
     @Published public private(set) var isMounted: Bool = false
 
-    private var cancellables: Set<AnyCancellable> = []
-
     public init(id: UUID = UUID(),
                 rootURL: URL,
                 displayName: String? = nil,
@@ -60,20 +57,25 @@ public final class SessionState: ObservableObject {
         self.createdAt = createdAt
         self.lastActiveAt = lastActiveAt
         self.model = model
-        wireForwarding()
     }
 
-    /// Re-publish any change in the wrapped `DocumentModel` as a
-    /// change on this `SessionState`. Without this, SwiftUI views
-    /// that observe SessionState (the outer strip's `@ObservedObject`)
-    /// won't re-render when DocumentModel emits — same SwiftUI gotcha
-    /// LESSONS.md "SwiftUI child-ObservableObject changes don't
-    /// propagate" calls out for SidebarModel.
-    private func wireForwarding() {
-        model.objectWillChange
-            .sink { [weak self] _ in self?.objectWillChange.send() }
-            .store(in: &cancellables)
-    }
+    // NOTE (REPUB-1, 2026-05-30): we deliberately do NOT forward
+    // `model.objectWillChange` into `SessionState.objectWillChange`.
+    // That child→parent republish was the exact anti-pattern LESSONS.md
+    // ("SwiftUI republish forwarding amplifies every tick") was written
+    // to kill: every DocumentModel tick (keystroke, FS event, git poll,
+    // highlight-ready) would republish the whole SessionState graph.
+    //
+    // It's also dead weight here: the session strip (`SessionTabBar`)
+    // observes the value-level `SessionsCoordinator.sessions` snapshots,
+    // and `ContentView` observes the `DocumentModel` directly — nothing
+    // binds `@ObservedObject` to a `SessionState`. `SessionState`'s own
+    // identity/lifecycle fields (`displayName`, `rootURL`,
+    // `lastActiveAt`, `isMounted`) are already `@Published`, so a view
+    // that *does* observe SessionState in the future re-renders on those
+    // without dragging in the full model. If a future strip cell needs a
+    // specific DocumentModel-derived field, expose a narrow `@Published`
+    // mirror with an equality guard rather than re-wiring this forward.
 
     /// Detach the session: stop the file watcher so background
     /// reloads don't fire for a session the user isn't looking at.
@@ -137,6 +139,24 @@ public final class SessionState: ObservableObject {
                 model.sidebar.setRoot(url)
             }
         }
+        // PERSIST-01: `selectedTabIndex` indexes into the *persisted*
+        // `openTabs` array, but we skip tabs whose file no longer exists
+        // below. Applying the raw index against the compacted live list
+        // would select the wrong tab (or none) whenever an earlier tab's
+        // file went missing. Resolve the intended target's path up front,
+        // then re-find it by path after building the surviving list.
+        //
+        // Match `appendLazyTab`'s normalization (standardized +
+        // symlinks resolved) so the comparison holds even when the
+        // session root lives under a symlinked dir (e.g. /tmp, the
+        // macOS /var/folders scratch space) — otherwise the live tab's
+        // resolved path would never equal the raw persisted path.
+        let targetPath: String? = {
+            guard let i = snapshot.selectedTabIndex,
+                  snapshot.openTabs.indices.contains(i) else { return nil }
+            return URL(fileURLWithPath: snapshot.openTabs[i].path)
+                .standardizedFileURL.resolvingSymlinksInPath().path
+        }()
         for t in snapshot.openTabs {
             let url = URL(fileURLWithPath: t.path)
             guard FileManager.default.fileExists(atPath: url.path) else {
@@ -155,9 +175,16 @@ public final class SessionState: ObservableObject {
         // (first tab). Previously nil collapsed to 0 and restoring a
         // session with an explicit empty selection refocused tab 0
         // anyway.
-        if let target = snapshot.selectedTabIndex,
-           model.tabs.tabs.indices.contains(target) {
-            model.selectTab(at: target)
+        //
+        // Select by matching the resolved path against the surviving
+        // (compacted) tab list — never by the stale persisted index.
+        // If the target tab's own file was the one that went missing,
+        // there's nothing to re-focus; `appendLazyTab` already left the
+        // first surviving tab selected, which is the sensible fallback.
+        if let targetPath,
+           let liveIndex = model.tabs.tabs.firstIndex(
+               where: { $0.url?.path == targetPath }) {
+            model.selectTab(at: liveIndex)
         }
     }
 

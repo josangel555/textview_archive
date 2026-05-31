@@ -74,16 +74,66 @@ public final class SessionStore: @unchecked Sendable {
 
     // MARK: Index ----------------------------------------------------
 
-    public func loadIndex() -> SessionIndex? {
+    /// Outcome of attempting to load `index.json`. Distinguishes the
+    /// three cases the coordinator must treat differently (PERSIST-03):
+    ///
+    ///   - `.loaded`: a valid, schema-compatible index was read. The
+    ///     coordinator may persist freely.
+    ///   - `.absent`: there is no index file (fresh install, or the
+    ///     file was deleted). Persisting a fresh index is safe.
+    ///   - `.corrupt`: a file exists but doesn't parse (truncated /
+    ///     wrong-shape JSON). The coordinator starts empty but may
+    ///     overwrite — the bytes are already unusable, so re-persisting
+    ///     can only improve matters.
+    ///   - `.newerSchema`: a file exists and parses far enough to read
+    ///     a `version` greater than `currentSchema`. This is a *running
+    ///     an older build against a newer on-disk index* (downgrade)
+    ///     situation. The coordinator MUST NOT overwrite it — doing so
+    ///     would truncate the newer build's fields (PERSIST-04). We
+    ///     surface a banner instead.
+    public enum IndexLoadResult: Equatable {
+        case loaded(SessionIndex)
+        case absent
+        case corrupt
+        case newerSchema(foundVersion: Int)
+    }
+
+    /// Probe just the `version` field of a JSON object on disk. Used to
+    /// classify a file that `JSONFileStore.read(SessionIndex.self, …)`
+    /// can't fully decode — so we can tell "newer schema" apart from
+    /// "corrupt". Returns nil when the file is missing, oversized,
+    /// non-JSON, or has no integer `version`.
+    private struct SchemaProbe: Decodable { let version: Int }
+
+    /// Rich load that classifies the outcome. Existing callers can keep
+    /// using `loadIndex()`; the coordinator uses this to gate writes.
+    public func loadIndexResult() -> IndexLoadResult {
         let url = indexURL
-        guard let idx = JSONFileStore.read(SessionIndex.self, from: url) else {
-            return nil
+        // Fast path: a clean, compatible decode.
+        if let idx = JSONFileStore.read(SessionIndex.self, from: url) {
+            if idx.version > SessionIndex.currentSchema {
+                return .newerSchema(foundVersion: idx.version)
+            }
+            return .loaded(idx)
         }
-        // Forward-compat guard: refuse files written by a newer schema
-        // so we don't truncate v3 fields on the next re-encode. Mirrors
-        // ReviewStore's policy.
-        if idx.version > SessionIndex.currentSchema { return nil }
-        return idx
+        // The full decode failed (or the file is absent). Disambiguate.
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return .absent
+        }
+        // A file exists but didn't decode as SessionIndex. It might be a
+        // newer schema whose *required* fields drifted (so the full
+        // decode failed) yet still carries a readable `version`. Probe
+        // for that before declaring it corrupt.
+        if let probe = JSONFileStore.read(SchemaProbe.self, from: url),
+           probe.version > SessionIndex.currentSchema {
+            return .newerSchema(foundVersion: probe.version)
+        }
+        return .corrupt
+    }
+
+    public func loadIndex() -> SessionIndex? {
+        if case let .loaded(idx) = loadIndexResult() { return idx }
+        return nil
     }
 
     /// Synchronous write — for tests and the rare "I need this on
@@ -128,11 +178,33 @@ public final class SessionStore: @unchecked Sendable {
     /// from `applicationWillTerminate`. Safe to call from any thread
     /// — but typically the main thread on quit.
     ///
-    /// Implementation: dispatches a no-op `sync` block onto the same
-    /// serial queue that drains writes. By the time `sync` returns,
-    /// every earlier-enqueued write block has run to completion.
+    /// Implementation (PERSIST-07): a single `sync` barrier only waits
+    /// for blocks *already dispatched*. To be robust against any timing
+    /// window where a coalesced value is still pending but its draining
+    /// block races the barrier, we drain to a fixpoint: run a barrier
+    /// block that writes any straggler pending value inline, and repeat
+    /// until the queue observes an empty `pending` map. Because the
+    /// write queue is serial, no new block can sneak between iterations
+    /// without us seeing its pending value first.
     public func flushSync() {
-        Self.writeQueue.sync { /* drain marker */ }
+        while true {
+            var drainedSomething = false
+            Self.writeQueue.sync {
+                // Inside the serial queue: snapshot + clear every
+                // currently-pending write and flush it synchronously.
+                // Any enqueue that lands after this block is, by FIFO,
+                // ordered after the next iteration's barrier too.
+                Self.coalesceLock.lock()
+                let pending = Self.pending
+                Self.pending.removeAll(keepingCapacity: true)
+                Self.coalesceLock.unlock()
+                for (url, value) in pending {
+                    drainedSomething = true
+                    Self._encodeAndWrite(value, to: url)
+                }
+            }
+            if !drainedSomething { break }
+        }
     }
 
     /// Move a session's snapshot to `trash/`, preserving filename. No-op

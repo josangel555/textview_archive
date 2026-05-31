@@ -4,6 +4,16 @@ public struct HistoryEntry: Codable, Equatable, Sendable, Identifiable {
     public enum Kind: String, Codable, Equatable, Sendable {
         case file
         case folder
+
+        /// Forward-compat: a future build may persist a `kind` this
+        /// build doesn't know (PERSIST-02). Decode the unknown value to
+        /// `.file` rather than throwing — a single unrecognized kind
+        /// must not drop the whole entry (and, with the lenient array
+        /// decode, must not drop the rest of the history either).
+        public init(from decoder: Decoder) throws {
+            let raw = try decoder.singleValueContainer().decode(String.self)
+            self = Kind(rawValue: raw) ?? .file
+        }
     }
 
     public var id: String { url.path }
@@ -100,8 +110,10 @@ public final class HistoryStore {
     private func load() {
         // S8: max-size guard inside JSONFileStore.read prevents a
         // tampered file from inflating into memory.
-        guard let decoded = JSONFileStore.read(
-            [HistoryEntry].self, from: storeURL, maxSize: maxStoreFileBytes
+        // PERSIST-02: lenient array decode — one malformed entry is
+        // dropped rather than discarding the whole history.
+        guard let decoded = JSONFileStore.readLenientArray(
+            HistoryEntry.self, from: storeURL, maxSize: maxStoreFileBytes
         ) else { return }
         entries = decoded
             .sorted(by: { $0.lastOpenedAt > $1.lastOpenedAt })

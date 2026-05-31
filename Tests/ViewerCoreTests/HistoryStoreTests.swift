@@ -208,4 +208,51 @@ final class HistoryStoreTests: XCTestCase {
         store.record(url: makeFile("a.md"))
         XCTAssertEqual(store.count, 1)
     }
+
+    // MARK: PERSIST-02 — one bad element must not nuke the whole store
+
+    func test_oneMalformedEntry_doesNotDiscardTheRest() throws {
+        // Two valid entries plus one element missing the required `url`
+        // key. The lenient array decode must keep the two good ones and
+        // drop only the bad element — not start from empty.
+        let json = """
+        [
+          {"url":"file:///x/a.md","kind":"file",
+           "lastOpenedAt":"2026-05-14T00:00:00Z","displayName":"a.md"},
+          {"kind":"file","lastOpenedAt":"2026-05-14T00:00:00Z","displayName":"broken"},
+          {"url":"file:///x/b.md","kind":"file",
+           "lastOpenedAt":"2026-05-13T00:00:00Z","displayName":"b.md"}
+        ]
+        """
+        try json.write(to: storeURL, atomically: true, encoding: .utf8)
+        let store = makeStore()
+        XCTAssertEqual(store.count, 2,
+            "the bad middle element should be dropped, the two valid ones kept (PERSIST-02)")
+        XCTAssertEqual(Set(store.recent().map { $0.url.lastPathComponent }),
+                       ["a.md", "b.md"])
+    }
+
+    // PERSIST-02 — an unknown `kind` from a newer build must not drop
+    // the entry; it decodes to `.file` as a forward-compat fallback.
+    func test_unknownKind_fallsBackToFile_andEntrySurvives() throws {
+        let json = """
+        [
+          {"url":"file:///x/a.md","kind":"symlink",
+           "lastOpenedAt":"2026-05-14T00:00:00Z","displayName":"a.md"}
+        ]
+        """
+        try json.write(to: storeURL, atomically: true, encoding: .utf8)
+        let store = makeStore()
+        XCTAssertEqual(store.count, 1, "unknown kind must not poison the entry")
+        XCTAssertEqual(store.recent().first?.kind, .file,
+                       "unknown kind should fall back to .file")
+    }
+
+    func test_emptyArray_loadsAsEmpty_notNil() throws {
+        try "[]".write(to: storeURL, atomically: true, encoding: .utf8)
+        let store = makeStore()
+        XCTAssertEqual(store.count, 0)
+        store.record(url: makeFile("a.md"))
+        XCTAssertEqual(store.count, 1)
+    }
 }

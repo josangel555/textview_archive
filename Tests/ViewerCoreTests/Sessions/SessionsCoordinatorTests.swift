@@ -292,6 +292,140 @@ final class SessionsCoordinatorTests: XCTestCase {
         XCTAssertNotNil(coord2.lastError)
     }
 
+    // MARK: PERSIST-04 — downgrade must not clobber a newer index ----
+
+    func testRestoreWithNewerIndexBlocksWritesAndSurfacesBanner() throws {
+        // A newer build wrote a v99 index. This older build must NOT
+        // overwrite it on the next persist (which would truncate the
+        // newer fields). It also leaves the live list empty and surfaces
+        // a banner.
+        let indexURL = tmp.appendingPathComponent("index.json")
+        let v99 = """
+        { "version": 99, "sessions": [], "lastActiveID": null }
+        """
+        try v99.write(to: indexURL, atomically: true, encoding: .utf8)
+
+        let coord2 = SessionsCoordinator(store: store)
+        coord2.restore()
+        XCTAssertTrue(coord2.indexWriteBlocked,
+            "newer on-disk index schema must block index writes (PERSIST-04)")
+        XCTAssertTrue(coord2.sessions.isEmpty)
+        XCTAssertNotNil(coord2.lastError)
+
+        // Capture the exact on-disk bytes, then drive a mutation that
+        // would normally persist the index, and confirm it's untouched.
+        let before = try String(contentsOf: indexURL, encoding: .utf8)
+        let folder = try makeTmpFolder(name: "newproj")
+        _ = coord2.openFolder(folder)   // triggers persist()
+        coord2.flushPersistenceSync()
+        let after = try String(contentsOf: indexURL, encoding: .utf8)
+        XCTAssertEqual(before, after,
+            "index.json must be byte-identical — the older build must not overwrite a v99 index")
+    }
+
+    func testRestoreWithValidIndexLeavesWritesUnblocked() throws {
+        let a = try makeTmpFolder(name: "alpha")
+        _ = coord.openFolder(a)
+        coord.flushPersistenceSync()
+        let coord2 = SessionsCoordinator(store: store)
+        coord2.restore()
+        XCTAssertFalse(coord2.indexWriteBlocked)
+    }
+
+    func testRestoreWithCorruptIndexStartsEmptyButAllowsWrites() throws {
+        try Data("garbage".utf8).write(to: tmp.appendingPathComponent("index.json"))
+        let coord2 = SessionsCoordinator(store: store)
+        coord2.restore()
+        XCTAssertFalse(coord2.indexWriteBlocked,
+            "corrupt bytes are already unusable — re-persisting is allowed")
+        XCTAssertTrue(coord2.sessions.isEmpty)
+        XCTAssertNotNil(coord2.lastError)
+    }
+
+    // MARK: PERSIST-10 — empty/nil root must not silently re-root $HOME
+
+    func testRestoreDropsSessionWithEmptyRootPath() throws {
+        // A snapshot whose sidebarRootPath is "" would otherwise be
+        // re-rooted at $HOME by the UI mount path. Drop it from the live
+        // list (the file stays on disk) and flag it.
+        let real = UUID()
+        let empty = UUID()
+        store.saveSync(SessionSnapshot(
+            id: real, displayName: "real",
+            createdAt: Date(), lastActiveAt: Date(),
+            sidebarRootPath: "/p", openTabs: [], selectedTabIndex: nil
+        ))
+        store.saveSync(SessionSnapshot(
+            id: empty, displayName: "homeless",
+            createdAt: Date(), lastActiveAt: Date(),
+            sidebarRootPath: "", openTabs: [], selectedTabIndex: nil
+        ))
+        store.saveIndexSync(SessionIndex(
+            sessions: [
+                .init(id: real, rootPath: "/p", displayName: "real", lastActiveAt: Date()),
+                .init(id: empty, rootPath: "", displayName: "homeless", lastActiveAt: Date()),
+            ],
+            lastActiveID: real
+        ))
+        let coord2 = SessionsCoordinator(store: store)
+        coord2.restore()
+        XCTAssertEqual(coord2.sessions.count, 1,
+            "empty-root session must be dropped, not re-rooted at $HOME (PERSIST-10)")
+        XCTAssertEqual(coord2.sessions.first?.id, real)
+        XCTAssertNotNil(coord2.lastError)
+        // Non-destructive: the dropped snapshot file is still on disk.
+        let stillThere = tmp.appendingPathComponent("\(empty.uuidString).json")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stillThere.path))
+    }
+
+    func testRestoreKeepsSessionWithMissingButNonEmptyRoot() throws {
+        // A non-empty but currently-missing path does NOT trigger the
+        // $HOME re-root and is left alone (hydrate guards setRoot).
+        let id = UUID()
+        store.saveSync(SessionSnapshot(
+            id: id, displayName: "external",
+            createdAt: Date(), lastActiveAt: Date(),
+            sidebarRootPath: "/Volumes/gone/proj", openTabs: [], selectedTabIndex: nil
+        ))
+        store.saveIndexSync(SessionIndex(
+            sessions: [.init(id: id, rootPath: "/Volumes/gone/proj",
+                             displayName: "external", lastActiveAt: Date())],
+            lastActiveID: id
+        ))
+        let coord2 = SessionsCoordinator(store: store)
+        coord2.restore()
+        XCTAssertEqual(coord2.sessions.count, 1,
+            "a non-empty missing path is harmless and must be kept")
+    }
+
+    // MARK: PERSIST-08 — partial snapshot on restore -----------------
+
+    func testRestoreWithOneTruncatedSnapshotLoadsTheRestAndFlags() throws {
+        let good = UUID()
+        let bad = UUID()
+        store.saveSync(SessionSnapshot(
+            id: good, displayName: "good",
+            createdAt: Date(), lastActiveAt: Date(),
+            sidebarRootPath: "/g", openTabs: [], selectedTabIndex: nil
+        ))
+        // Truncated snapshot file for `bad`.
+        try Data(#"{ "schemaVersion": 2, "id": "#.utf8)
+            .write(to: tmp.appendingPathComponent("\(bad.uuidString).json"))
+        store.saveIndexSync(SessionIndex(
+            sessions: [
+                .init(id: good, rootPath: "/g", displayName: "good", lastActiveAt: Date()),
+                .init(id: bad, rootPath: "/b", displayName: "bad", lastActiveAt: Date()),
+            ],
+            lastActiveID: good
+        ))
+        let coord2 = SessionsCoordinator(store: store)
+        coord2.restore()
+        XCTAssertEqual(coord2.sessions.count, 1,
+            "the truncated snapshot is skipped; the valid one loads (PERSIST-08)")
+        XCTAssertEqual(coord2.activeID, good)
+        XCTAssertNotNil(coord2.lastError)
+    }
+
     // MARK: replaceSnapshot ------------------------------------------
 
     func testReplaceSnapshotPreservesIdentityFields() throws {

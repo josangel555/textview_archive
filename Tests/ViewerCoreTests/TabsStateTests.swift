@@ -273,6 +273,40 @@ final class TabsStateTests: XCTestCase {
         XCTAssertEqual(s.selectedIndex, 1)
     }
 
+    // CORR-1: revealing an already-open URL must NOT discard the tab's
+    // dirty flag. Dropping it made a tab with unsaved edits look clean,
+    // so a later close skipped the save prompt → silent data loss.
+    func test_openOrReveal_existingDirtyTab_preservesIsDirty() {
+        let url = URL(fileURLWithPath: "/a.md")
+        let dirtyTab = Tab(
+            url: url,
+            state: .preview(url, .markdown),
+            viewMode: .source,
+            isDirty: true
+        )
+        var s = TabsState(tabs: [dirtyTab, makeTab("b")])
+        s.select(at: 1)
+        let i = s.openOrReveal(url: url, state: .preview(url, .markdown), viewMode: .rendered)
+        XCTAssertEqual(i, 0)
+        XCTAssertTrue(s.tabs[0].isDirty,
+                      "revealing a dirty tab must keep isDirty — else close skips the save prompt (CORR-1)")
+        // The materialized tab also keeps its chosen viewMode.
+        XCTAssertEqual(s.tabs[0].viewMode, .source)
+    }
+
+    // CORR-1: a lazy (unmaterialized) dirty tab — unusual but possible
+    // if a buffer was hydrated dirty — must likewise keep the flag when
+    // revealed/materialized.
+    func test_openOrReveal_lazyDirtyTab_preservesIsDirty() {
+        let url = URL(fileURLWithPath: "/a.md")
+        let lazyDirty = Tab(url: url, state: .empty, viewMode: .source, isDirty: true)
+        var s = TabsState(tabs: [lazyDirty])
+        let i = s.openOrReveal(url: url, state: .empty, viewMode: .rendered)
+        XCTAssertEqual(i, 0)
+        XCTAssertTrue(s.tabs[0].isDirty,
+                      "lazy dirty tab must keep isDirty across reveal (CORR-1)")
+    }
+
     func test_openOrReveal_reusesBlankTab() {
         var s = TabsState()
         s.append(Tab())  // blank

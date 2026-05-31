@@ -136,17 +136,31 @@ public struct TabsState: Equatable, Sendable {
             let isLazy: Bool
             if case .empty = tabs[existing].state { isLazy = true } else { isLazy = false }
             let modeToUse = isLazy ? viewMode : tabs[existing].viewMode
+            // Preserve the dirty flag: rebuilding the Tab here must not
+            // silently discard unsaved-editor state. Dropping it made the
+            // tab look clean, so a later close skipped the
+            // unsaved-changes prompt → data loss (CORR-1).
             tabs[existing] = Tab(
                 id: tabs[existing].id,
                 url: url,
                 state: state,
-                viewMode: modeToUse
+                viewMode: modeToUse,
+                isDirty: tabs[existing].isDirty
             )
             selectedIndex = existing
             return existing
         }
         if let cur = selectedIndex, tabs.indices.contains(cur), tabs[cur].isBlank {
-            tabs[cur] = Tab(id: tabs[cur].id, url: url, state: state, viewMode: viewMode)
+            // A blank tab is by definition never dirty (it has no buffer),
+            // but carry the flag through explicitly so the invariant is
+            // local to this call site rather than an implicit default.
+            tabs[cur] = Tab(
+                id: tabs[cur].id,
+                url: url,
+                state: state,
+                viewMode: viewMode,
+                isDirty: tabs[cur].isDirty
+            )
             return cur
         }
         let tab = Tab(url: url, state: state, viewMode: viewMode)
