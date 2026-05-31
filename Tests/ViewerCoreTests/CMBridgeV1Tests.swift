@@ -12,8 +12,20 @@ final class CMBridgeV1Tests: XCTestCase {
         XCTAssertNil(CMBridgeCodec.decodeInbound(["type": "ready"]))
     }
 
-    func testDecodeRejectsWrongVersion() {
-        XCTAssertNil(CMBridgeCodec.decodeInbound(["v": 99, "type": "ready"]))
+    func testDecodeRejectsTooOldVersion() {
+        // Below oldestSupportedVersion is a hard drop — we no longer
+        // speak that dialect. (Too-NEW is handled separately as
+        // .unsupportedVersion; see CMBridgeV2Tests.)
+        XCTAssertNil(CMBridgeCodec.decodeInbound(["v": 0, "type": "ready"]))
+    }
+
+    func testDecodeTooNewVersionIsUnsupportedNotNil() {
+        // API-08: a too-new envelope is NOT a bare nil — it surfaces
+        // .unsupportedVersion so the host can log + downgrade.
+        XCTAssertEqual(
+            CMBridgeCodec.decodeInbound(["v": 99, "type": "ready"]),
+            .unsupportedVersion(99)
+        )
     }
 
     func testDecodeRejectsMissingType() {

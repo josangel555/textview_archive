@@ -199,6 +199,58 @@ final class CMEditApplierTests: XCTestCase {
         XCTAssertEqual(applied?.utf16.count, length)
     }
 
+    // MARK: - Ill-formed UTF-16 (EDIT-S3-APPLIER)
+
+    func testSplittingSurrogatePairReturnsNil() {
+        // Base "😀" is one scalar = 2 UTF-16 units (high+low surrogate).
+        // Deleting ONLY the high surrogate [0..1] would leave a lone low
+        // surrogate — ill-formed UTF-16. The applier must return nil (so
+        // the caller resyncs) rather than silently substituting U+FFFD
+        // and permanently corrupting the buffer.
+        let base = "😀"
+        XCTAssertEqual(base.utf16.count, 2)
+        let r = CMEditApplier.apply(
+            [CMEdit(from: 0, to: 1, insert: "")],
+            to: base
+        )
+        XCTAssertNil(r,
+            "splitting a surrogate pair must refuse, not produce U+FFFD")
+    }
+
+    func testInsertingLoneSurrogateViaUnpairedTailReturnsNil() {
+        // Delete the LOW surrogate [1..2], leaving a lone high surrogate.
+        let base = "😀"
+        let r = CMEditApplier.apply(
+            [CMEdit(from: 1, to: 2, insert: "")],
+            to: base
+        )
+        XCTAssertNil(r,
+            "leaving a lone high surrogate must refuse, not produce U+FFFD")
+    }
+
+    func testValidEmojiEditStillSucceeds() {
+        // Regression: a well-formed edit that keeps surrogate pairs
+        // intact must still decode (no false rejection from the
+        // validating decoder).
+        let base = "a😀b"
+        let r = CMEditApplier.apply(
+            [CMEdit(from: 0, to: 1, insert: "X")],  // replace 'a' with 'X'
+            to: base
+        )
+        XCTAssertEqual(r, "X😀b")
+    }
+
+    func testDecodeValidatingUTF16_rejectsLoneSurrogate() {
+        // Directly exercise the validating decoder helper.
+        let loneHigh: [UTF16.CodeUnit] = [0xD83D]       // unpaired high
+        let loneLow: [UTF16.CodeUnit] = [0xDE00]        // unpaired low
+        let wellFormed: [UTF16.CodeUnit] = Array("hi 😀".utf16)
+        XCTAssertNil(CMEditApplier.decodeValidatingUTF16(loneHigh))
+        XCTAssertNil(CMEditApplier.decodeValidatingUTF16(loneLow))
+        XCTAssertEqual(CMEditApplier.decodeValidatingUTF16(wellFormed), "hi 😀")
+        XCTAssertEqual(CMEditApplier.decodeValidatingUTF16([]), "")
+    }
+
     func testDecoderRejectsBatchWithNegativeFrom() throws {
         // Defensive: a single bad edit drops the whole envelope, so the
         // caller sees `nil` and asks JS to resync via flushChanges.

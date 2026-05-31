@@ -40,10 +40,12 @@ final class CMBridgeV2Tests: XCTestCase {
     }
 
     func testDecoderRejectsTooNewEnvelope() {
-        // Future v3 messages shouldn't accidentally parse as v2 / v1 —
-        // safer to drop and log than to misinterpret a renamed field.
+        // Future messages must NOT parse as v2 / v1 (misinterpreting a
+        // renamed field would be worse than dropping). API-08: rather
+        // than a bare nil, surface `.unsupportedVersion` so the host can
+        // log an actionable "update the app" and pin outbound down.
         let dict: [String: Any] = ["v": 99, "type": "ready"]
-        XCTAssertNil(CMBridgeCodec.decodeInbound(dict))
+        XCTAssertEqual(CMBridgeCodec.decodeInbound(dict), .unsupportedVersion(99))
     }
 
     func testEncoderStampsCurrentVersion() {
@@ -220,5 +222,101 @@ final class CMBridgeV2Tests: XCTestCase {
             with: raw.data(using: .utf8)!) as? [String: Any]
         XCTAssertEqual(dict?["type"] as? String, "setIndentGuides")
         XCTAssertEqual(dict?["enabled"] as? Bool, true)
+    }
+
+    // MARK: - API-08: v > current surfaces as .unsupportedVersion
+
+    func testDecodeTooNewEnvelopeReturnsUnsupportedVersion() {
+        // A future v3 envelope must NOT silently nil-drop — it surfaces
+        // as .unsupportedVersion(3) so the host can log "update the app"
+        // and the bridge can pin outbound traffic down.
+        let got = CMBridgeCodec.decodeInbound(["v": 3, "type": "ready"])
+        XCTAssertEqual(got, .unsupportedVersion(3))
+    }
+
+    func testDecodeTooNewEnvelopeWithoutTypeStillSurfacesVersion() {
+        // A too-new envelope surfaces `.unsupportedVersion` even without
+        // a `type`: a future protocol might rename/drop `type`, and the
+        // actionable signal is the version itself. (We must NOT require
+        // `type` here or the "please update" log never fires for exactly
+        // the protocols that need it.)
+        XCTAssertEqual(CMBridgeCodec.decodeInbound(["v": 3]), .unsupportedVersion(3))
+    }
+
+    func testDecodeMissingVersionStillNil() {
+        // No `v` at all is unclassifiable garbage → hard nil (not
+        // unsupportedVersion, which is specifically "newer than us").
+        XCTAssertNil(CMBridgeCodec.decodeInbound(["type": "ready"]))
+    }
+
+    func testDecodeTooOldEnvelopeStillNil() {
+        // Too-OLD is still a hard drop — we no longer speak that dialect.
+        XCTAssertNil(CMBridgeCodec.decodeInbound(["v": 0, "type": "ready"]))
+    }
+
+    // MARK: - API-06/07: peer-version-aware outbound encode
+
+    func testMinimumVersionTable() {
+        // v2-only message types report minimumVersion 2; everything else 1.
+        XCTAssertEqual(CMOutboundMessage.setIndentGuides(true).minimumVersion, 2)
+        XCTAssertEqual(CMOutboundMessage.setGutterMarkers([]).minimumVersion, 2)
+        XCTAssertEqual(CMOutboundMessage.setFoldingRanges([]).minimumVersion, 2)
+        XCTAssertEqual(CMOutboundMessage.applyEdits(edits: [], version: 0).minimumVersion, 2)
+        XCTAssertEqual(
+            CMOutboundMessage.setText(text: "x", resetHistory: false, preserveSelection: true)
+                .minimumVersion, 1)
+        XCTAssertEqual(CMOutboundMessage.undo.minimumVersion, 1)
+        XCTAssertEqual(CMOutboundMessage.flushChanges.minimumVersion, 1)
+    }
+
+    func testEncodeDowngradesEnvelopeToPeerVersion() {
+        // A v1 message bound for a v1 peer must stamp v:1 even though the
+        // Swift binary is at currentVersion 2 — otherwise the JS guard
+        // (which only accepts oldest..PROTOCOL_VERSION it knows) rejects.
+        let dict = CMBridgeCodec.encodeOutbound(
+            .setText(text: "hi", resetHistory: false, preserveSelection: true),
+            peerVersion: 1
+        )
+        XCTAssertEqual(dict?["v"] as? Int, 1, "envelope must downgrade to the peer's version")
+        XCTAssertEqual(dict?["type"] as? String, "setText")
+    }
+
+    func testEncodeRefusesV2OnlyMessageToV1Peer() {
+        // setGutterMarkers has no handler in a v1 JS bundle. Encoding it
+        // for a v1 peer must REFUSE (nil) so the caller skips the
+        // dispatch — shipping it stamped v:1 would land as an
+        // "unknown message type" error and the host would wrongly
+        // believe the push succeeded.
+        XCTAssertNil(
+            CMBridgeCodec.encodeOutbound(.setGutterMarkers([
+                CMGutterMarker(line: 1, kind: "added"),
+            ]), peerVersion: 1)
+        )
+        XCTAssertNil(
+            CMBridgeCodec.encodeOutboundJSON(.setIndentGuides(true), peerVersion: 1)
+        )
+    }
+
+    func testEncodeAllowsV2MessageToV2Peer() {
+        let dict = CMBridgeCodec.encodeOutbound(.setIndentGuides(true), peerVersion: 2)
+        XCTAssertEqual(dict?["v"] as? Int, 2)
+        XCTAssertEqual(dict?["type"] as? String, "setIndentGuides")
+    }
+
+    func testEncodePeerVersionAboveCurrentClampsToCurrent() {
+        // A peer that claims a higher version than we know: we still
+        // stamp our currentVersion (we can't speak a dialect we don't
+        // have), never a `v` above currentVersion.
+        let dict = CMBridgeCodec.encodeOutbound(.undo, peerVersion: 99)
+        XCTAssertEqual(dict?["v"] as? Int, CMProtocol.currentVersion)
+    }
+
+    func testConvenienceEncodeMatchesCurrentVersionPeer() {
+        // The no-peer convenience must behave exactly like passing
+        // currentVersion as the peer.
+        let a = CMBridgeCodec.encodeOutbound(.focus)
+        let b = CMBridgeCodec.encodeOutbound(.focus, peerVersion: CMProtocol.currentVersion)
+        XCTAssertEqual(a["v"] as? Int, b?["v"] as? Int)
+        XCTAssertEqual(a["type"] as? String, b?["type"] as? String)
     }
 }

@@ -37,11 +37,6 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
     /// nothing. Compare-by-equality means stable tab redraws don't
     /// re-trigger the jump.
     public let gotoLineRequest: CMGotoLineRequest?
-    /// "External rewrite" mode for the next `text` push — true means
-    /// "don't make this undoable" (file-watcher rewrites). Defaults
-    /// to false (user-typed setText keeps history). Per-bump semantics:
-    /// the flag only takes effect when `text` itself changes.
-    public let externalRewrite: Bool
     public let showInvisibles: Bool
     /// Phase 4 (v2): toggle the indent-guides decoration plugin.
     /// Pure visual cue; no language-pack dependency.
@@ -100,7 +95,6 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         lineNumbers: Bool = true,
         indentation: CMIndentation = .spaces(2),
         gotoLineRequest: CMGotoLineRequest? = nil,
-        externalRewrite: Bool = false,
         showInvisibles: Bool = false,
         indentGuides: Bool = false,
         foldingRanges: [CMFoldRange] = [],
@@ -131,7 +125,6 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         self.lineNumbers = lineNumbers
         self.indentation = indentation
         self.gotoLineRequest = gotoLineRequest
-        self.externalRewrite = externalRewrite
         self.showInvisibles = showInvisibles
         self.indentGuides = indentGuides
         self.foldingRanges = foldingRanges
@@ -235,7 +228,6 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         private var pendingLineNumbers: Bool?
         private var pendingIndentation: CMIndentation?
         private var pendingGotoLine: CMGotoLineRequest?
-        private var pendingExternalRewrite: Bool = false
         private var pendingShowInvisibles: Bool?
         private var pendingIndentGuides: Bool?
         private var pendingFoldingRanges: [CMFoldRange]?
@@ -300,7 +292,6 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             self.pendingLineNumbers = view.lineNumbers
             self.pendingIndentation = view.indentation
             self.pendingGotoLine = view.gotoLineRequest
-            self.pendingExternalRewrite = view.externalRewrite
             self.pendingShowInvisibles = view.showInvisibles
             self.pendingIndentGuides = view.indentGuides
             self.pendingFoldingRanges = view.foldingRanges
@@ -369,15 +360,23 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             }
             if let text = pendingText, text != lastSentText {
                 lastSentText = text
-                // External rewrites = file-watcher reload: don't pollute
-                // the user's undo stack. User-typed setText (rare) gets
-                // dispatch with history skipped too but Swift never
-                // pushes back what it just received (echo-suppressed
-                // above when text == lastEmitted).
+                // Swift→JS text pushes are rare (the editor is the
+                // source of truth; Swift normally only echo-suppresses
+                // what it just received). When one does happen, we keep
+                // the caret where it was (`preserveSelection: true`).
+                //
+                // NOTE: `resetHistory: false` means the JS side applies
+                // the change with `Transaction.addToHistory.of(false)`,
+                // so a Swift-driven rewrite is NOT a user-undoable step —
+                // but it is also NOT cleared from history, and a prior
+                // edit can still be un-done "through" it. Full undo
+                // isolation for a true external (file-watcher) rewrite
+                // would need `resetHistory: true`; that path isn't wired
+                // yet (see UDC-2 buffer-refresh), so we don't claim it.
                 dispatch(
                     .setText(text: text,
                              resetHistory: false,
-                             preserveSelection: !pendingExternalRewrite),
+                             preserveSelection: true),
                     webView: webView
                 )
             }
@@ -558,6 +557,15 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
                 Self.log.error("CM JS error in \(phase, privacy: .public): \(message, privacy: .public)")
             case .unknown(let type):
                 Self.log.debug("CM bridge: unknown message type \(type, privacy: .public)")
+            case .unsupportedVersion(let v):
+                // The JS bundle posted an envelope newer than this
+                // binary understands — the user is running an app build
+                // older than the vendored Resources/codemirror/ payload
+                // (or a dev hot-reload skew). Log actionably; drop the
+                // message (we can't trust its field layout).
+                Self.log.error(
+                    "CM bridge: peer protocol v\(v, privacy: .public) > supported v\(CMProtocol.currentVersion, privacy: .public); update the app"
+                )
             }
         }
 

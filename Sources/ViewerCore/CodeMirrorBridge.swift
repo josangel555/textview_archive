@@ -1,28 +1,40 @@
-// CodeMirror 6 bridge — protocol v1.
+// CodeMirror 6 bridge — versioned wire protocol (currently v1 + v2).
+//
+// Renamed from `CodeMirrorBridgeV1.swift`: the file was named for
+// Phase 1 but now carries both protocol versions (v2 added the
+// incremental-edit / fold / gutter / indent-guide messages), so the
+// `V1` suffix mis-described its scope. The *file* is version-agnostic;
+// `CMProtocol.currentVersion` is the single source of truth for what
+// Swift speaks.
 //
 // See `docs/CM6_INTEGRATION_DESIGN_2026-05-23.md` §13 for the
-// exhaustive spec. This file is the pure-logic kernel of Phase 1:
-// versioned envelope, typed enums for both directions, Codable-driven
-// JSON encode/decode. No AppKit / WebKit / UI imports — every value
-// here is testable from `ViewerCoreTests` without spinning up a
-// WKWebView.
+// exhaustive spec. This is the pure-logic kernel: versioned envelope,
+// typed enums for both directions, Codable-driven JSON encode/decode.
+// No AppKit / WebKit / UI imports — every value here is testable from
+// `ViewerCoreTests` without spinning up a WKWebView.
 //
 // Envelope:
 //
-//     { "v": 1, "type": "<message-name>", "replyId"?: "...", ...payload }
+//     { "v": <n>, "type": "<message-name>", "replyId"?: "...", ...payload }
 //
 // `CMInboundMessage`  ─ JS  → Swift (posted via `WKScriptMessageHandler`).
 // `CMOutboundMessage` ─ Swift → JS (delivered via
 //                       `window.cmDispatch({...})` in the host HTML).
 //
-// Forward-compatibility rules (per §13.6):
+// Forward/backward-compatibility rules (per §13.6):
 //
-// - Decoder returns `nil` for malformed envelopes (missing `v`, wrong
-//   shape) and `.unknown(...)` for known envelope + unknown `type` so
-//   callers can log without crashing.
+// - Decoder returns `nil` for malformed envelopes (missing `v`,
+//   too-old `v`, missing `type`, wrong shape), `.unsupportedVersion`
+//   for a well-formed envelope whose `v` is NEWER than this binary
+//   (so the host can log + downgrade rather than silently drop), and
+//   `.unknown(...)` for a known envelope + unknown `type`.
 // - Unknown payload fields on a recognized `type` are ignored.
-// - Bumping the protocol version is a flag day; v2 work will keep v1
-//   decodable for one release cycle alongside.
+// - Outbound encoding negotiates `v` down to the peer's version and
+//   REFUSES to encode a message the peer's version can't handle
+//   (see `encodeOutbound(_:peerVersion:)` + `minimumVersion`).
+// - The decoder accepts `[oldestSupportedVersion ... currentVersion]`
+//   so a freshly-bumped binary keeps talking to a stale JS bundle (and
+//   vice versa) for one release cycle.
 
 import Foundation
 
@@ -128,6 +140,13 @@ public enum CMInboundMessage: Equatable, Sendable {
     /// Recognized envelope, unknown `type`. Surfaced so the host can
     /// log once + drop, rather than treat as a hard parse error.
     case unknown(type: String)
+    /// Well-formed envelope whose `v` is **newer** than this binary
+    /// understands (`v > CMProtocol.currentVersion`). Distinct from a
+    /// malformed-envelope `nil` so the host can log "peer is speaking a
+    /// future protocol; please update" instead of silently dropping —
+    /// and so the bridge can downgrade subsequent *outbound* traffic to
+    /// the peer's floor. Carries the offending version. (API-08.)
+    case unsupportedVersion(Int)
 }
 
 // MARK: - Outbound (Swift → JS)
@@ -199,6 +218,25 @@ public enum CMOutboundMessage: Equatable, Sendable {
     /// `ViewPlugin` that draws vertical rules at each indent level.
     /// Pure decoration; no language dependency.
     case setIndentGuides(Bool)
+
+    /// The lowest protocol version in which this message's `type` exists
+    /// on the JS side. Outbound encoding consults this against the
+    /// peer's negotiated version: a v2-only message must NOT be sent to
+    /// a v1 peer (the JS dispatch switch has no handler for it and would
+    /// post an `errorOccurred`, or worse, silently no-op a state push
+    /// the host believes landed). (API-06/07.)
+    ///
+    /// Keep this in lock-step with the `case` arms `codemirror.html`'s
+    /// `cmDispatch` switch handles per version. New v2 message types are
+    /// listed explicitly; everything else is v1.
+    public var minimumVersion: Int {
+        switch self {
+        case .applyEdits, .setFoldingRanges, .setGutterMarkers, .setIndentGuides:
+            return 2
+        default:
+            return 1
+        }
+    }
 }
 
 /// One inline-diagnostic decoration in CM6 doc coordinates (UTF-16
@@ -250,14 +288,23 @@ public enum CMBridgeCodec {
             return nil
         }
 
-        // Version must be present and fall within the supported range.
-        // We accept `[oldestSupportedVersion ... currentVersion]` so a
-        // freshly-bumped Swift binary can still talk to a not-yet-
-        // rebundled JS payload (or vice versa during dev hot-reload).
-        guard let v = dict["v"] as? Int,
-              v >= CMProtocol.oldestSupportedVersion,
-              v <= CMProtocol.currentVersion
-        else { return nil }
+        // Version must be present. We accept
+        // `[oldestSupportedVersion ... currentVersion]` so a freshly-
+        // bumped Swift binary can still talk to a not-yet-rebundled JS
+        // payload (or vice versa during dev hot-reload).
+        guard let v = dict["v"] as? Int else { return nil }
+        // Too-OLD envelopes are a hard drop — we no longer speak that
+        // dialect and can't trust the field layout. Missing `type` is
+        // also a hard drop (can't even classify).
+        guard v >= CMProtocol.oldestSupportedVersion else { return nil }
+        // Too-NEW envelopes (peer speaks a future protocol) are
+        // surfaced as `.unsupportedVersion` rather than dropped: the
+        // host logs an actionable "please update" and the bridge can
+        // pin outbound traffic to the peer's floor. We still require a
+        // `type` to have been a well-formed envelope at all. (API-08.)
+        guard v <= CMProtocol.currentVersion else {
+            return .unsupportedVersion(v)
+        }
         guard let type = dict["type"] as? String else { return nil }
 
         switch type {
@@ -393,9 +440,38 @@ public enum CMBridgeCodec {
 
     /// Encode an outbound message as a JSON dictionary suitable for
     /// `JSONSerialization.data(withJSONObject:)`. Always includes the
-    /// `v` envelope field. Pure value transform; no I/O.
+    /// `v` envelope field, stamped with `CMProtocol.currentVersion`.
+    /// Pure value transform; no I/O.
+    ///
+    /// This convenience assumes the peer speaks the current version. To
+    /// down-encode for a peer pinned to an older version (and to refuse
+    /// messages the peer can't handle), use
+    /// `encodeOutbound(_:peerVersion:)`.
     public static func encodeOutbound(_ msg: CMOutboundMessage) -> [String: Any] {
-        var dict: [String: Any] = ["v": CMProtocol.currentVersion]
+        // Safe to force-unwrap: passing `currentVersion` as the peer can
+        // never refuse (every message's minimumVersion <= currentVersion).
+        return encodeOutbound(msg, peerVersion: CMProtocol.currentVersion)!
+    }
+
+    /// Encode an outbound message, negotiating the envelope `v` down to
+    /// the peer's version. Stamps `v = min(currentVersion, peerVersion)`
+    /// so a Swift binary that's been bumped ahead of the JS bundle keeps
+    /// talking the bundle's dialect instead of stamping a `v` the JS
+    /// `cmDispatch` guard rejects outright. (API-06.)
+    ///
+    /// Returns `nil` — refusing to encode — when `msg.minimumVersion`
+    /// exceeds `peerVersion`: a v2-only message (e.g. `setGutterMarkers`)
+    /// has no handler in a v1 JS bundle, so shipping it stamped `v:1`
+    /// would land as an `unknown message type` error and the host would
+    /// wrongly believe the state push succeeded. The caller must treat
+    /// `nil` as "peer too old for this feature; skip / fall back".
+    /// (API-07.)
+    public static func encodeOutbound(
+        _ msg: CMOutboundMessage, peerVersion: Int
+    ) -> [String: Any]? {
+        guard msg.minimumVersion <= peerVersion else { return nil }
+        let wireVersion = min(CMProtocol.currentVersion, peerVersion)
+        var dict: [String: Any] = ["v": wireVersion]
         switch msg {
         case .setText(let text, let resetHistory, let preserveSelection):
             dict["type"] = "setText"
@@ -535,13 +611,26 @@ public enum CMBridgeCodec {
     /// raw breaks the surrounding script. We post-process to escape
     /// both via `JSStringEmbedding.sanitize`.
     public static func encodeOutboundJSON(_ msg: CMOutboundMessage) -> String {
-        let obj = encodeOutbound(msg)
+        return encodeOutboundJSON(msg, peerVersion: CMProtocol.currentVersion) ?? fallbackEncodingError
+    }
+
+    /// Peer-aware JSON encode. Returns `nil` when the message can't be
+    /// represented for `peerVersion` (a v2-only message to a v1 peer) so
+    /// the caller skips the `evaluateJavaScript` entirely rather than
+    /// shipping a payload the peer will reject. (API-06/07.)
+    public static func encodeOutboundJSON(
+        _ msg: CMOutboundMessage, peerVersion: Int
+    ) -> String? {
+        guard let obj = encodeOutbound(msg, peerVersion: peerVersion) else { return nil }
         guard let data = try? JSONSerialization.data(
             withJSONObject: obj, options: [.sortedKeys]
         ),
         let str = String(data: data, encoding: .utf8) else {
-            return "{\"v\":\(CMProtocol.currentVersion),\"type\":\"errorEncoding\"}"
+            return fallbackEncodingError
         }
         return JSStringEmbedding.sanitize(str)
     }
+
+    private static let fallbackEncodingError =
+        "{\"v\":\(CMProtocol.currentVersion),\"type\":\"errorEncoding\"}"
 }

@@ -1,4 +1,5 @@
 import XCTest
+import Darwin
 @testable import ViewerCore
 
 final class EditorBufferTests: XCTestCase {
@@ -269,6 +270,165 @@ final class EditorBufferTests: XCTestCase {
         try "x".write(to: url, atomically: true, encoding: .utf8)
         _ = try EditorWriter.save("y", to: url)
         XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "y")
+    }
+
+    // MARK: - Metadata preservation (EDIT-attrs)
+
+    func test_save_preservesRestrictivePermissions_0600() throws {
+        // The atomic-rename write must NOT reset the file to default
+        // umask permissions. A 0600 secret (private key, token file)
+        // staying 0600 across an in-editor save is the contract.
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("secret.txt")
+        try "secret v1".write(to: url, atomically: true, encoding: .utf8)
+        // Lock it down to owner-only read/write.
+        XCTAssertEqual(chmod(url.path, 0o600), 0, "test setup chmod failed")
+
+        _ = try EditorWriter.save("secret v2", to: url)
+
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "secret v2")
+        let perms = try posixPerms(url)
+        XCTAssertEqual(perms, 0o600,
+            "save must preserve 0600 — a world-readable rewrite leaks secrets")
+    }
+
+    func test_save_preservesExecutableBit() throws {
+        // Editing a script in-place must keep it runnable (+x). Losing
+        // the exec bit on every save would break shebang scripts.
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("script.sh")
+        try "#!/bin/sh\necho v1\n".write(to: url, atomically: true, encoding: .utf8)
+        XCTAssertEqual(chmod(url.path, 0o755), 0, "test setup chmod failed")
+
+        _ = try EditorWriter.save("#!/bin/sh\necho v2\n", to: url)
+
+        let perms = try posixPerms(url)
+        XCTAssertEqual(perms, 0o755,
+            "save must preserve the executable bit on a script")
+    }
+
+    func test_save_preservesExtendedAttributes() throws {
+        // Extended attributes (e.g. com.apple.quarantine, custom tags)
+        // must ride across the atomic rewrite. Data.write(.atomic) drops
+        // them; the metadata-replay path restores them.
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("tagged.txt")
+        try "v1".write(to: url, atomically: true, encoding: .utf8)
+        let attrName = "com.markdownviewer.test.tag"
+        let attrValue = "hello-xattr".data(using: .utf8)!
+        let setRC = attrValue.withUnsafeBytes { raw in
+            setxattr(url.path, attrName, raw.baseAddress, raw.count, 0, 0)
+        }
+        XCTAssertEqual(setRC, 0, "test setup setxattr failed")
+
+        _ = try EditorWriter.save("v2", to: url)
+
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "v2")
+        // Read the xattr back off the saved file.
+        let len = getxattr(url.path, attrName, nil, 0, 0, 0)
+        XCTAssertGreaterThan(len, 0, "xattr must survive the save")
+        var buf = Data(count: len)
+        let got = buf.withUnsafeMutableBytes { raw in
+            getxattr(url.path, attrName, raw.baseAddress, len, 0, 0)
+        }
+        XCTAssertEqual(got, len)
+        XCTAssertEqual(buf, attrValue, "xattr value must round-trip exactly")
+    }
+
+    func test_save_newFile_usesDefaultPermissions() throws {
+        // When the target doesn't exist yet, there's nothing to preserve;
+        // the write must still succeed and produce a readable file.
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("brand-new.txt")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+        let stamp = try EditorWriter.save("fresh", to: url)
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "fresh")
+        XCTAssertEqual(stamp.size, 5)
+    }
+
+    func test_save_atomicRename_noTempFileLeftBehind() throws {
+        // The temp sibling used for the atomic rename must not survive.
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("clean.txt")
+        try "v1".write(to: url, atomically: true, encoding: .utf8)
+        _ = try EditorWriter.save("v2", to: url)
+        let leftovers = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+            .filter { $0.contains(".mdv-") }
+        XCTAssertTrue(leftovers.isEmpty,
+            "no .mdv-*.tmp sibling should remain after a successful save")
+    }
+
+    private func posixPerms(_ url: URL) throws -> mode_t {
+        var st = stat()
+        guard stat(url.path, &st) == 0 else {
+            throw NSError(domain: "test", code: Int(errno))
+        }
+        return st.st_mode & 0o7777
+    }
+
+    // MARK: - Unknown disk state (EDIT-nil-fp / FW-8)
+
+    func test_hasUnknownDiskState_noBaseline_isUnknown() {
+        // Buffer never captured a fingerprint (file unreadable at load):
+        // we can't prove the disk is unchanged → unknown.
+        let buf = EditorBuffer(url: URL(fileURLWithPath: "/tmp/x.txt"), original: "hi")
+        XCTAssertTrue(
+            buf.hasUnknownDiskState(currentMTime: Date(), currentSize: 5),
+            "no saved baseline → state is unknown, not 'unchanged'"
+        )
+        // And hasExternalEdit still returns false here — proving the
+        // asymmetry the caller must guard against.
+        XCTAssertFalse(buf.hasExternalEdit(currentMTime: Date(), currentSize: 5))
+    }
+
+    func test_hasUnknownDiskState_nilCurrentStat_isUnknown() {
+        // Watcher couldn't stat the file this tick (deleted / perm-
+        // stripped / racing a rename): can't compare → unknown.
+        let saved = Date(timeIntervalSince1970: 1_000)
+        let buf = EditorBuffer(
+            url: URL(fileURLWithPath: "/tmp/x.txt"), original: "hi",
+            lastSavedMTime: saved, lastSavedSize: 2
+        )
+        XCTAssertTrue(
+            buf.hasUnknownDiskState(currentMTime: nil, currentSize: nil),
+            "nil current stat → unknown"
+        )
+    }
+
+    func test_hasUnknownDiskState_fullyComparable_isKnown() {
+        // Both dimensions present on both sides → we CAN compare, so
+        // state is known (whether or not it diverged).
+        let saved = Date(timeIntervalSince1970: 1_000)
+        let buf = EditorBuffer(
+            url: URL(fileURLWithPath: "/tmp/x.txt"), original: "hi",
+            lastSavedMTime: saved, lastSavedSize: 2
+        )
+        XCTAssertFalse(
+            buf.hasUnknownDiskState(currentMTime: saved, currentSize: 2),
+            "matching fingerprint is a KNOWN (unchanged) state"
+        )
+        XCTAssertFalse(
+            buf.hasUnknownDiskState(currentMTime: saved.addingTimeInterval(5), currentSize: 2),
+            "diverged-but-comparable is also a KNOWN state"
+        )
+    }
+
+    func test_hasUnknownDiskState_partialComparable_isKnown() {
+        // Only size comparable (mtime missing on one side) — still
+        // enough to prove/disprove change, so NOT unknown.
+        let buf = EditorBuffer(
+            url: URL(fileURLWithPath: "/tmp/x.txt"), original: "hi",
+            lastSavedMTime: nil, lastSavedSize: 2
+        )
+        XCTAssertFalse(
+            buf.hasUnknownDiskState(currentMTime: nil, currentSize: 2),
+            "a comparable size dimension makes the state known"
+        )
     }
 
     // MARK: - Helpers
