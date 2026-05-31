@@ -151,15 +151,101 @@ final class SessionStateTests: XCTestCase {
 
     // MARK: forwarding -----------------------------------------------
 
-    func testDocumentModelChangePropagatesToObjectWillChange() {
-        let exp = expectation(description: "objectWillChange fires")
-        var cancellables: Set<AnyCancellable> = []
-        state.objectWillChange
-            .sink { _ in exp.fulfill() }
-            .store(in: &cancellables)
-        // Any @Published mutation on the wrapped model should bubble.
+    /// REPUB-1 (2026-05-30): the old `wireForwarding()` bridged
+    /// `model.objectWillChange` → `SessionState.objectWillChange`. That
+    /// was the banned child→parent republish (LESSONS.md "SwiftUI
+    /// republish forwarding amplifies every tick") and it was dead
+    /// weight — no view binds `@ObservedObject` to a `SessionState`.
+    /// We now assert the *inverse*: a DocumentModel-only mutation must
+    /// NOT republish SessionState. The dedicated invariant pin lives in
+    /// `SessionStateRepublishInvariantTests`; this keeps the behavioral
+    /// suite honest after the removal.
+    func testDocumentModelChangeDoesNotPropagateToObjectWillChange() async {
+        var count = 0
+        let sub = state.objectWillChange.sink { _ in count += 1 }
+        defer { sub.cancel() }
+        // A @Published mutation on the wrapped model must not bubble up.
         model.sourceWordWrap.toggle()
-        wait(for: [exp], timeout: 1.0)
+        await Task.yield()
+        XCTAssertEqual(count, 0,
+            "DocumentModel ticks must not republish SessionState (REPUB-1)")
+    }
+
+    // MARK: hydrate selection (PERSIST-01) ---------------------------
+
+    /// PERSIST-01: `selectedTabIndex` indexes the *persisted* tab list,
+    /// but hydrate skips tabs whose file is missing. The middle file is
+    /// gone here, so the surviving live list is [a, c] — selecting by
+    /// the raw persisted index (2) would point past the end or at the
+    /// wrong tab. Selection must resolve by path → tab `c`.
+    func testHydrateSelectsByPathWhenAMiddleFileIsMissing() throws {
+        let a = tmpDir.appendingPathComponent("a.md")
+        let c = tmpDir.appendingPathComponent("c.md")
+        try "# a\n".write(to: a, atomically: true, encoding: .utf8)
+        try "# c\n".write(to: c, atomically: true, encoding: .utf8)
+        let missingB = tmpDir.appendingPathComponent("b.md")  // never created
+
+        let snap = SessionSnapshot(
+            id: state.id, displayName: "TestSession",
+            createdAt: Date(), lastActiveAt: Date(),
+            sidebarRootPath: tmpDir.path,
+            openTabs: [
+                TabSnapshot(path: a.path, viewMode: "rendered"),
+                TabSnapshot(path: missingB.path, viewMode: "rendered"),
+                TabSnapshot(path: c.path, viewMode: "rendered"),
+            ],
+            selectedTabIndex: 2   // points at c in the *persisted* list
+        )
+        state.hydrate(from: snap)
+
+        XCTAssertEqual(model.tabs.tabs.count, 2, "missing file should be skipped")
+        XCTAssertEqual(model.tabs.selected?.url?.path, c.path,
+            "selection must resolve by path to c, not by the stale index (PERSIST-01)")
+    }
+
+    /// When the *selected* tab's own file is the one that went missing,
+    /// there's nothing to refocus — fall back to the first surviving tab
+    /// rather than crashing or selecting nothing.
+    func testHydrateFallsBackWhenSelectedTabFileMissing() throws {
+        let a = tmpDir.appendingPathComponent("a.md")
+        try "# a\n".write(to: a, atomically: true, encoding: .utf8)
+        let missingB = tmpDir.appendingPathComponent("b.md")
+
+        let snap = SessionSnapshot(
+            id: state.id, displayName: "TestSession",
+            createdAt: Date(), lastActiveAt: Date(),
+            sidebarRootPath: tmpDir.path,
+            openTabs: [
+                TabSnapshot(path: a.path, viewMode: "rendered"),
+                TabSnapshot(path: missingB.path, viewMode: "rendered"),
+            ],
+            selectedTabIndex: 1   // the missing one
+        )
+        state.hydrate(from: snap)
+        XCTAssertEqual(model.tabs.tabs.count, 1)
+        XCTAssertEqual(model.tabs.selected?.url?.path, a.path,
+            "selected-but-missing tab falls back to first surviving tab")
+    }
+
+    func testHydrateNilSelectionDoesNotForceSelection() throws {
+        let a = tmpDir.appendingPathComponent("a.md")
+        let b = tmpDir.appendingPathComponent("b.md")
+        try "# a\n".write(to: a, atomically: true, encoding: .utf8)
+        try "# b\n".write(to: b, atomically: true, encoding: .utf8)
+        let snap = SessionSnapshot(
+            id: state.id, displayName: "TestSession",
+            createdAt: Date(), lastActiveAt: Date(),
+            sidebarRootPath: tmpDir.path,
+            openTabs: [
+                TabSnapshot(path: a.path, viewMode: "rendered"),
+                TabSnapshot(path: b.path, viewMode: "rendered"),
+            ],
+            selectedTabIndex: nil
+        )
+        state.hydrate(from: snap)
+        // appendLazyTab leaves the last-appended tab selected; nil
+        // selection means "don't override", so it stays where append left it.
+        XCTAssertEqual(model.tabs.tabs.count, 2)
     }
 
     // MARK: default display name -------------------------------------
