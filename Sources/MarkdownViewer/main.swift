@@ -58,6 +58,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // times. Must run before any LSP client spawns so the callback
         // is in place when the first server reports diagnostics.
         model.bootstrapLSP()
+        // CONC-001/CR-01/RC-2: start the pool's idle-reaper. Without this
+        // spawned LSP servers were never reaped on idle, leaking server
+        // subprocesses for the lifetime of the app. `start()` is an actor
+        // method and idempotent; we fire-and-forget into the actor since
+        // app launch must not block on it.
+        Task { await model.lspPool.start() }
 
         // CRITICAL: use NSHostingController.view (not a bare NSHostingView
         // set as contentView). The controller's view installs auto-layout
@@ -240,13 +246,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             if a.hasPrefix("--") { continue }
             pathArgs.append(a)
         }
-        if let path = pathArgs.first {
+        // CORR-10: open EVERY positional path, not just the first. The
+        // first opens via `openPath` (reuses/replaces the initial blank
+        // tab and detects folder-vs-file); subsequent paths each get
+        // their own tab via `openInNewTab` so multi-file launches
+        // (`open -a TextView a.md b.md c.json`, drag-drop of several
+        // files onto the Dock icon) land all of them. Each path is
+        // guarded by `fileExists` independently so one bad path doesn't
+        // skip the rest.
+        let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        var openedFirst = false
+        for path in pathArgs {
             let expanded = (path as NSString).expandingTildeInPath
-            let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             let url = URL(fileURLWithPath: expanded, relativeTo: cwd)
                 .standardizedFileURL
-            if FileManager.default.fileExists(atPath: url.path) {
-                model.openPath(url)
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            if !openedFirst {
+                model.openPath(url)   // handles folder vs file
+                openedFirst = true
+            } else {
+                // `openInNewTab` is file-oriented; route directories
+                // through `openPath` so a folder arg still opens its
+                // sidebar instead of being treated as a file tab.
+                var isDir: ObjCBool = false
+                if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir),
+                   isDir.boolValue {
+                    model.openPath(url)
+                } else {
+                    model.openInNewTab(url)
+                }
             }
         }
 
@@ -366,6 +394,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // write queue (design-doc gap #1) so the user's last state
         // is on disk before the process exits.
         sessions.flushForTermination()
+
+        // RC-5: shut down every live LSP server before the process exits.
+        // Without this, `terminate()` tore the host down while child LSP
+        // servers (sourcekit-lsp, etc.) were still running — they'd be
+        // reparented to launchd and linger until their own idle/exit
+        // logic fired. `closeAll()` is async on the actor; we bridge it
+        // to this synchronous AppKit callback with a bounded semaphore
+        // wait so a wedged server can't block quit indefinitely. 2s is
+        // generous for the sequential, short-timeout shutdowns the pool
+        // performs; on timeout we proceed and let the OS reap the
+        // children at process exit.
+        let pool = model.lspPool
+        let done = DispatchSemaphore(value: 0)
+        Task.detached {
+            await pool.closeAll()
+            done.signal()
+        }
+        _ = done.wait(timeout: .now() + 2.0)
     }
 
     @objc func openDocument(_ sender: Any?) {
@@ -507,6 +553,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     @objc func clearRecents(_ sender: Any?) {
+        // UX-10: "Clear Menu" wipes the recents history irreversibly.
+        // Confirm first so an accidental click (it sits right below the
+        // recent entries) doesn't silently discard it. No-op if already
+        // empty — validateMenuItem disables the item then, but guard
+        // anyway for the keyboard/scripted path.
+        guard !model.recents.isEmpty else { return }
+        let alert = NSAlert()
+        alert.messageText = "Clear recent files?"
+        alert.informativeText = "This removes all entries from the Open Recent menu. It can't be undone."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Clear")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
         model.clearRecents()
     }
 
@@ -1234,7 +1293,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         guard JQRunner.isAvailable else {
             let alert = NSAlert()
             alert.messageText = "jq is not installed"
-            alert.informativeText = "Install with `brew install jq` or upgrade macOS to 15.x (ships jq at /usr/bin/jq)."
+            // UX-08: drop the "upgrade macOS" advice — it's stale (the app
+            // already targets 15+) and reads as off-topic OS nagging in a
+            // filter dialog. Keep the actionable install hint only.
+            alert.informativeText = "Install jq (e.g. `brew install jq`) and try again."
             alert.runModal()
             return
         }
@@ -1454,11 +1516,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         alert.addButton(withTitle: "Go")
         alert.addButton(withTitle: "Cancel")
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 22))
+        // UX-09/10: give the field a placeholder so the expected input is
+        // obvious, and make it the alert's initial first responder so the
+        // user can type the number immediately without clicking in.
+        field.placeholderString = "Line number"
         alert.accessoryView = field
+        alert.window.initialFirstResponder = field
         let response = alert.runModal()
         guard response == .alertFirstButtonReturn else { return }
         let trimmed = field.stringValue.trimmingCharacters(in: .whitespaces)
-        guard let n = Int(trimmed), n > 0 else { return }
+        guard let n = Int(trimmed), n > 0 else {
+            // UX-09: invalid / empty input gets an audible beep instead of
+            // silently dismissing, so a fat-fingered entry is noticed.
+            NSSound.beep()
+            return
+        }
         model.editorGotoLine = CMGotoLineRequest(line: n)
     }
 
