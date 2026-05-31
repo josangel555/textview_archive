@@ -355,6 +355,127 @@ final class EditorCoordinatorTests: XCTestCase {
         XCTAssertFalse(ec.saveActiveEditor())
     }
 
+    // MARK: - EDIT-S2-SAVE: single write stamp drives buffer + TextFile
+
+    func test_saveEditor_buffersBaselineMatchesRefreshedTextFile() throws {
+        // The post-save buffer baseline (markSaved) and the refreshed
+        // .loaded TextFile.modifiedTime must come from the SAME write
+        // stamp — not two independent stats that could read different
+        // mtimes if the file is touched between them.
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        let box = wire(ec, tc)
+        let url = try writeFile("s2.txt", "v1")
+        let file = TextFile(url: url, contents: "v1", encoding: .utf8,
+                            byteCount: 2, modifiedTime: nil)
+        tc.append(Tab(url: url, state: .loaded(file)))
+        let id = tc.selected!.id
+        _ = ec.editorBuffer(forTabID: id)
+        ec.updateEditorText("v2-longer", forTabID: id)
+        XCTAssertTrue(ec.saveEditor(forTabID: id))
+
+        let savedBaseline = ec.editorBuffers[id]?.lastSavedMTime
+        XCTAssertNotNil(savedBaseline)
+        guard let tab = tc.tabs.tabs.first(where: { $0.id == id }),
+              case .loaded(let refreshed) = tab.state else {
+            return XCTFail("tab must be .loaded after save")
+        }
+        XCTAssertEqual(refreshed.modifiedTime, savedBaseline,
+            "TextFile.modifiedTime must equal the buffer's saved baseline (one stamp)")
+        XCTAssertEqual(refreshed.byteCount, "v2-longer".utf8.count,
+            "byteCount must reflect the on-disk size from the same stamp")
+        _ = box  // silence unused
+    }
+
+    // MARK: - FW-7: lost-event window reconciliation
+
+    func test_saveEditor_externalWriteInUnwatchedWindow_cleanBuffer_reloads() throws {
+        // Simulate another process writing the file AFTER our save but
+        // while the watcher is still paused: do it from the resume hook.
+        // The post-resume reconcile must notice the divergence and, since
+        // the buffer is clean post-save, trigger a straight reload (no
+        // prompt, nothing to lose).
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        let box = wire(ec, tc)
+        let url = try writeFile("fw7.txt", "v1")
+        let file = TextFile(url: url, contents: "v1", encoding: .utf8,
+                            byteCount: 2, modifiedTime: nil)
+        tc.append(Tab(url: url, state: .loaded(file)))
+        let id = tc.selected!.id
+        _ = ec.editorBuffer(forTabID: id)
+        ec.updateEditorText("my save", forTabID: id)
+
+        // Resume hook stands in for "watcher comes back up" — and we use
+        // that exact moment to land a racing external write so the
+        // fingerprint diverges from the stamp we just wrote.
+        ec.onResumeFileWatcherIfApplicable = { [box] _ in
+            box.resumeCount += 1
+            Thread.sleep(forTimeInterval: 0.05) // ensure a distinct mtime
+            try? "clobbered by another process".write(
+                to: url, atomically: true, encoding: .utf8)
+        }
+
+        XCTAssertTrue(ec.saveEditor(forTabID: id))
+        XCTAssertEqual(box.reloadLog.count, 1,
+            "lost external write on a clean buffer must trigger a reload")
+        XCTAssertEqual(box.reloadLog.first?.0, url)
+    }
+
+    func test_saveEditor_noExternalWrite_doesNotReload() throws {
+        // The common case: nothing else touches the file. The post-resume
+        // reconcile must be a NO-OP — the disk fingerprint equals the
+        // stamp we just wrote, so no spurious reload.
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        let box = wire(ec, tc)
+        let url = try writeFile("fw7-noop.txt", "v1")
+        let file = TextFile(url: url, contents: "v1", encoding: .utf8,
+                            byteCount: 2, modifiedTime: nil)
+        tc.append(Tab(url: url, state: .loaded(file)))
+        let id = tc.selected!.id
+        _ = ec.editorBuffer(forTabID: id)
+        ec.updateEditorText("clean save", forTabID: id)
+        XCTAssertTrue(ec.saveEditor(forTabID: id))
+        XCTAssertTrue(box.reloadLog.isEmpty,
+            "an undisturbed save must not spuriously reload")
+    }
+
+    func test_saveEditor_lostWindowWrite_whileDirtyAgain_promptsConflict() throws {
+        // Edge case: the user typed again after the save completed (so
+        // the buffer is dirty again) AND an external write raced in the
+        // unwatched window. That's a genuine conflict → prompt, not a
+        // silent reload that would drop the re-typed edits.
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        let box = wire(ec, tc)
+        let url = try writeFile("fw7-conflict.txt", "v1")
+        let file = TextFile(url: url, contents: "v1", encoding: .utf8,
+                            byteCount: 2, modifiedTime: nil)
+        tc.append(Tab(url: url, state: .loaded(file)))
+        let id = tc.selected!.id
+        _ = ec.editorBuffer(forTabID: id)
+        ec.updateEditorText("first save", forTabID: id)
+
+        var promptCalled = false
+        ec.externalEditPromptOverride = { _ in promptCalled = true; return .keepEdits }
+        ec.onResumeFileWatcherIfApplicable = { [box] _ in
+            box.resumeCount += 1
+            // External write races in...
+            Thread.sleep(forTimeInterval: 0.05)
+            try? "external clobber".write(to: url, atomically: true, encoding: .utf8)
+            // ...and the user keeps typing, re-dirtying the buffer before
+            // the reconcile reads isDirty.
+            ec.updateEditorText("re-typed after save", forTabID: id)
+        }
+
+        XCTAssertTrue(ec.saveEditor(forTabID: id))
+        XCTAssertTrue(promptCalled,
+            "dirty-again + lost external write must surface the conflict prompt")
+        XCTAssertTrue(box.reloadLog.isEmpty,
+            "conflict path must not silently reload")
+    }
+
     func test_saveEditor_noBuffer_returnsFalse() {
         let tc = TabCoordinator()
         let ec = EditorCoordinator(tabCoordinator: tc)

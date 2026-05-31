@@ -354,12 +354,29 @@ public final class EditorCoordinator: ObservableObject {
         // post-write watcher event we'd otherwise re-enter on. Caller
         // (DocumentModel) re-binds via the resume hook.
         let wasWatchingURL = watchedURLSnapshot?()
+        let savedURL = buf.url
         onPauseFileWatcher?()
+        // FW-7: the watcher is blind between pause and resume. If another
+        // process writes the file in that window (after OUR write lands),
+        // its inotify/FSEvents tick is dropped and we'd never reconcile.
+        // We close the window deterministically (no polling): after the
+        // watcher re-attaches, re-stat and compare to the fingerprint we
+        // just wrote; a mismatch means a lost external edit → reconcile.
+        // The post-save stamp is published into this box on the success
+        // path so the recheck (which runs after resume) can read it.
+        var savedStamp: (mtime: Date?, size: Int?)? = nil
         defer {
             onResumeFileWatcherIfApplicable?(wasWatchingURL)
+            // Run the lost-event recheck only when we actually wrote
+            // (savedStamp non-nil) and the watcher was/now is bound to
+            // this file (avoid re-stat'ing an unrelated active tab).
+            if let stamp = savedStamp {
+                reconcileLostWatcherEvent(forTabID: id, url: savedURL, savedStamp: stamp)
+            }
         }
         do {
             let stamp = try EditorWriter.save(buf.text, to: buf.url, encoding: buf.encoding)
+            savedStamp = stamp
             buf.markSaved(diskMTime: stamp.mtime, diskSize: stamp.size)
             tabCoordinator.setEditorBuffer(buf, forTabID: id)
             // Clear the dirty dot.
@@ -377,14 +394,24 @@ public final class EditorCoordinator: ObservableObject {
             if let idx = tabsAfterClear.firstIndex(where: { $0.id == id }) {
                 var t = tabsAfterClear[idx]
                 if case .loaded(let oldFile) = t.state {
-                    let bytes = buf.text.data(using: buf.encoding)?.count ?? oldFile.byteCount
-                    // We just wrote the file — re-stat its mtime so the
-                    // rendered-HTML / highlight caches pick up the new
-                    // identity even when the rewrite happens to be the
-                    // same byte length. Falling back to `Date()` keeps
-                    // the cache invariant ("mtime differs after a write")
-                    // intact if the filesystem can't report attrs.
-                    let mtime: Date? = {
+                    // EDIT-S2-SAVE: reuse the SINGLE write stamp for both
+                    // the `markSaved` baseline (above) and this TextFile
+                    // identity. The prior code re-stat'd the file here,
+                    // which can read a *different* mtime/size than the
+                    // one `markSaved` captured if another process touched
+                    // the file in the window between the two stats — the
+                    // two would then disagree about the post-save
+                    // baseline and the external-edit detector could
+                    // mis-fire (or fail to fire). One stamp, one truth.
+                    //
+                    // Fall back to a fresh stat only if the writer
+                    // couldn't report attrs (`stamp.mtime == nil`); a
+                    // last-resort `Date()` keeps the cache invalidation
+                    // invariant ("mtime advances after a write") intact.
+                    let bytes = stamp.size
+                        ?? buf.text.data(using: buf.encoding)?.count
+                        ?? oldFile.byteCount
+                    let mtime: Date? = stamp.mtime ?? {
                         if let attrs = try? FileManager.default
                             .attributesOfItem(atPath: oldFile.url.path),
                            let d = attrs[.modificationDate] as? Date {
@@ -413,6 +440,51 @@ public final class EditorCoordinator: ObservableObject {
             alert.informativeText = "\(error)"
             alert.runModal()
             return false
+        }
+    }
+
+    /// FW-7: reconcile a write that another process may have landed while
+    /// the file watcher was paused around our own save. Compares the
+    /// current on-disk fingerprint against the stamp we just wrote; if
+    /// they diverge, an external edit slipped through the unwatched
+    /// window and we reconcile it the same way a live watcher tick would
+    /// — *without* polling.
+    ///
+    /// Branching mirrors `DocumentModel.reloadCurrentFile(matching:)`:
+    ///   - buffer now dirty (user typed again post-save, racing the
+    ///     external write): definite conflict → run the prompt.
+    ///   - buffer clean (the common case): straight reload to pick up the
+    ///     external bytes — nothing to lose, so no prompt.
+    /// A nil current stat (file deleted/renamed in the window) is left to
+    /// the watcher's own delete handling; we only act on a *proven*
+    /// divergence so we never reload spuriously.
+    private func reconcileLostWatcherEvent(
+        forTabID id: UUID, url: URL, savedStamp: (mtime: Date?, size: Int?)
+    ) {
+        // Only meaningful if this file is the one the watcher tracks
+        // (the active tab). If the snapshot is wired and disagrees, the
+        // watcher will handle its own file; skip to avoid cross-tab
+        // reloads. When the snapshot is unwired (tests), proceed.
+        if let snapshot = watchedURLSnapshot, let watched = snapshot(), watched != url {
+            return
+        }
+        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        let curMTime = attrs?[.modificationDate] as? Date
+        let curSize = attrs?[.size] as? Int
+        // Compare against the stamp we just wrote. A mismatch on either
+        // dimension == someone else wrote after us in the blind window.
+        let diverged: Bool = {
+            if let s = savedStamp.mtime, let c = curMTime, s != c { return true }
+            if let s = savedStamp.size, let c = curSize, s != c { return true }
+            return false
+        }()
+        guard diverged else { return }
+        let tabs = tabsSnapshot()
+        guard let idx = tabs.firstIndex(where: { $0.id == id }) else { return }
+        if tabs[idx].isDirty {
+            presentExternalEditConflict(forTabID: id, at: idx, url: url)
+        } else {
+            onReloadFromDisk?(url, idx)
         }
     }
 
