@@ -42,8 +42,15 @@ final class G5ParserHardeningTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(sourceViewMaxBytes, highlightMaxBytes)
     }
 
-    func test_defaultLoader_cap_matches_sourceViewMaxBytes() {
-        XCTAssertEqual(TextFileLoader().maxBytes, sourceViewMaxBytes)
+    func test_defaultLoader_caps_align_with_sourceViewMaxBytes() {
+        // Two-tier read cap (post session-ui merge): the SOFT watermark
+        // (softWarnBytes) equals the source-view threshold — above it a file
+        // still loads but read-only / degraded — while the HARD read ceiling
+        // (readableMaxBytes, aliased by maxBytes) sits well above it as the
+        // OOM backstop. So they no longer match by equality; the watermark
+        // does, and the ceiling covers it.
+        XCTAssertEqual(TextFileLoader().softWarnBytes, sourceViewMaxBytes)
+        XCTAssertGreaterThanOrEqual(TextFileLoader().maxBytes, sourceViewMaxBytes)
         // A file the editor would accept (just over the old 32 MB cap,
         // under the editor's 50 MB) must not be rejected by the loader.
         XCTAssertGreaterThan(TextFileLoader().maxBytes, 40 * 1024 * 1024)
