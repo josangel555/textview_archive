@@ -1509,3 +1509,66 @@ cap (36 MB). The `.app` is assembled+signed *before* the size check, so a
 cap trip (exit 2) does not mean an invalid bundle — `codesign -v` it and
 install if valid.
 
+## Multi-agent workflow orchestration — playbook + gotchas (2026-05-30)
+
+This session ran ~7 Workflow-tool orchestrations (next-steps fanout = 14
+agents, multi-repo, rails, large-file, boundary investigation, 9-agent
+research, the 47-agent / ~6.5M-token / ~100-min pre-launch audit). What
+held up and what bit:
+
+**The shape that worked** (reuse it): `scope → parallel review/fan-out →
+triage (dedup + partition into FILE-DISJOINT fix groups + a surface-only
+queue) → fix (worktree-isolated, each agent self-verifies swift build +
+ViewerCoreTests) → return green branches`. Then the *orchestrator* (me,
+not the workflow) merges green branches with `git merge --no-ff` and runs
+the combined gate. Design phases used a judge-panel (N angled proposals →
+1 synthesis). Read-only investigations returned MD bodies I wrote to disk.
+
+**Gotcha — advisory `blockers` ≠ "red".** My workflow guards logged
+"phase blocked/red" whenever a fix/impl agent returned a non-empty
+`blockers[]` — but agents routinely put *advisory* notes there ("VM-only
+verification deferred", "not a code blocker"). This misfired 3×. Gate the
+decision on `build_clean && host_tests_pass`; treat `blockers[]` as
+informational unless an entry literally says the code is broken. (Fixing
+the guard semantics is a TODO if these scripts are reused.)
+
+**Gotcha — `git merge` loop in zsh.** `for n in $order; do ...` does NOT
+word-split an unquoted scalar in zsh (unlike bash) — the whole string
+arrives as one token and every merge fails with "not something we can
+merge". Use a real array: `order=(33 34 35 …)` (or `${=order}`). Cost me
+one failed loop.
+
+**Gotcha — triage's "file-disjoint" guarantee is not guaranteed.** Two
+audit groups independently edited `GitClient.swift` (survived only because
+hunks didn't overlap → git auto-combined). ALWAYS run the collision check
+before the merge loop:
+`for b in <branches>; do git diff --name-only main..$b; done | sort | uniq -d`.
+See also the worktree-leak lesson above — fix agents leak into the main
+tree and sweep unrelated files via broad `git add`.
+
+**Technique — resume-to-extend a running workflow.** To add agents
+mid-run: `TaskStop <task>` → edit the persisted script (the tool prints
+its path) to add to the `parallel(...)` array → re-invoke
+`Workflow({scriptPath, resumeFromRunId})`. Completed agents return cached
+(matched by prompt+opts); new agents run live; dependent phases (verify,
+synthesis) re-run because their prompt changed. Used to add the
+IntelliJ + general-exploration research agents without losing the 5
+already done. Web-research agents need `agentType: 'general-purpose'`
+(for WebSearch/WebFetch).
+
+**Technique — two workflows concurrently is fine.** The 47-agent audit
+(CPU-bound build/test) and the 9-agent web research (I/O-bound) ran
+together without much contention. Each Workflow has its own concurrency
+cap (~min(16, cores-2)).
+
+**Scale note.** The audit was ~6.5M output tokens. Justified for a real
+pre-launch audit; do NOT reach for a 47-agent fan-out for routine work.
+
+**Process debt this created — BRANCH SOUP.** Running many fix-workflows
+produced **6+ feature branches off `main`, none merged** (see
+`HANDOFF_2026-05-30.md` §0). Consolidation is owed and is itself a careful
+job (several branches overlap on `DocumentModel`/`ContentView`). Lesson:
+when running back-to-back fix-workflows, either merge to `main` between
+runs (when verified) or accept that a consolidation/merge-ordering pass is
+deferred — and write it down so it isn't lost.
+
