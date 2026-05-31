@@ -121,29 +121,53 @@ public enum HTMLSanitizer {
     /// We don't rewrite all attribute values — just the URL-bearing
     /// ones — so `<code>` blocks containing literal "javascript:" text
     /// are unaffected.
+    ///
+    /// WV-2: handles BOTH quoted and **unquoted** values. The original
+    /// regex required a surrounding quote (`(["'])…\2`), so
+    /// `<a href=javascript:alert(1)>` (a perfectly valid HTML unquoted
+    /// attribute) sailed through untouched. We run two passes:
+    ///   1. quoted form — rewrites the value between the quotes,
+    ///      preserving the quote char;
+    ///   2. unquoted form — a bare `javascript:`/`vbscript:`/
+    ///      `data:text/html` token up to the next whitespace or `>`.
     static func neutralizeJavaScriptURLs(in source: String) -> String {
-        // Comma-separated alternation in the lookbehind for the
-        // attribute name. NSRegularExpression supports fixed-width
-        // lookbehinds in modern macOS, but to stay portable we
-        // capture the attribute name + quote and reproduce it.
-        let pattern = #"(?i)(href|src|xlink:href|action|formaction|background|poster)\s*=\s*(["'])\s*(?:javascript|vbscript|data:text/html)[^"']*\2"#
-        guard let re = try? NSRegularExpression(
-            pattern: pattern, options: []
-        ) else { return source }
-        let r = NSRange(source.startIndex..., in: source)
-        return re.stringByReplacingMatches(
-            in: source, options: [], range: r,
-            withTemplate: #"$1=$2about:blank$2"#
-        )
+        let urlAttrs = "href|src|xlink:href|action|formaction|background|poster"
+        // (1) Quoted: capture attr name + quote char, reproduce them.
+        let quoted = #"(?i)("# + urlAttrs + #")\s*=\s*(["'])\s*(?:javascript|vbscript|data:text/html)[^"']*\2"#
+        // (2) Unquoted: value runs to whitespace or the tag close `>`.
+        //     The leading whitespace requirement on the attr name keeps
+        //     us from matching mid-token; `\s*=\s*` allows `href =`.
+        let unquoted = #"(?i)("# + urlAttrs + #")\s*=\s*(?:javascript|vbscript|data:text/html)[^\s>]*"#
+
+        var out = source
+        if let re = try? NSRegularExpression(pattern: quoted, options: []) {
+            let r = NSRange(out.startIndex..., in: out)
+            out = re.stringByReplacingMatches(
+                in: out, options: [], range: r,
+                withTemplate: #"$1=$2about:blank$2"#
+            )
+        }
+        if let re = try? NSRegularExpression(pattern: unquoted, options: []) {
+            let r = NSRange(out.startIndex..., in: out)
+            out = re.stringByReplacingMatches(
+                in: out, options: [], range: r,
+                withTemplate: #"$1=about:blank"#
+            )
+        }
+        return out
     }
 
     /// Apply `transform` to every `<…>` segment in `source`, leaving
-    /// text between tags alone. Tolerates `>` inside attribute values
-    /// only insofar as the input is well-formed (CommonMark normalizes
-    /// most of these). Pathological input that breaks the tokenizer
-    /// degrades to "the body of the regex pass still runs, just with
-    /// imprecise segmentation" — which is acceptable because the
-    /// outer CSP is still in force.
+    /// text between tags alone.
+    ///
+    /// WV-1: the tag's closing `>` is found **quote-aware** — a `>`
+    /// inside a single- or double-quoted attribute value does NOT end
+    /// the tag. The previous `firstIndex(of: ">")` cut the segment at
+    /// the first literal `>`, so a payload like
+    /// `<a href="javascript:x>" onclick="steal()">` was split such that
+    /// the `onclick=` handler fell OUTSIDE the scanned segment and
+    /// survived `stripEventHandlers`. Tracking the quote state means the
+    /// whole tag (handler included) is handed to `transform`.
     private static func rewriteTagBodies(
         _ source: String,
         transform: (String) -> String
@@ -152,7 +176,7 @@ public enum HTMLSanitizer {
         out.reserveCapacity(source.count)
         var i = source.startIndex
         while i < source.endIndex {
-            if source[i] == "<", let end = source[i...].firstIndex(of: ">") {
+            if source[i] == "<", let end = tagEnd(in: source, from: i) {
                 let segment = String(source[i...end])
                 out += transform(segment)
                 i = source.index(after: end)
@@ -162,5 +186,28 @@ public enum HTMLSanitizer {
             }
         }
         return out
+    }
+
+    /// Index of the `>` that closes the tag opened at `start`, skipping
+    /// any `>` that sits inside a `"…"` or `'…'` attribute value.
+    /// Returns `nil` if the tag is never closed (caller then treats the
+    /// `<` as literal text). Mirrors the HTML tokenizer's rule that a
+    /// quote toggles "inside attribute value" and `>` only terminates
+    /// the tag when outside quotes.
+    private static func tagEnd(in source: String, from start: String.Index) -> String.Index? {
+        var i = source.index(after: start)   // skip the '<'
+        var quote: Character? = nil
+        while i < source.endIndex {
+            let c = source[i]
+            if let q = quote {
+                if c == q { quote = nil }
+            } else if c == "\"" || c == "'" {
+                quote = c
+            } else if c == ">" {
+                return i
+            }
+            i = source.index(after: i)
+        }
+        return nil
     }
 }
