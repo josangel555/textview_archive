@@ -70,7 +70,11 @@ public final class PluginRegistry {
 
     /// Test seam: swap the subprocess host with a fixture (e.g. one
     /// that returns canned rows without spawning).
-    public func _setSubprocessHost(_ host: PluginSubprocessHost) {
+    /// `internal` (not `public`): tests reach it via `@testable import`;
+    /// keeping it off the public surface avoids handing third parties a
+    /// way to swap the subprocess host. See LESSONS.md
+    /// "internal-for-testing hooks".
+    func _setSubprocessHost(_ host: PluginSubprocessHost) {
         self.subprocessHost = host
     }
 
@@ -352,7 +356,8 @@ public final class PluginRegistry {
     }
 
     /// Test seam — reset all state between unit tests.
-    public func _resetForTests() {
+    /// `internal` (not `public`): see `_setSubprocessHost`.
+    func _resetForTests() {
         for id in Array(loaded.keys) { unload(id) }
     }
 }
