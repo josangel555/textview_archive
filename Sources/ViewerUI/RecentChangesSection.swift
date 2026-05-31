@@ -92,47 +92,14 @@ struct RecentChangesSection: View {
     }
 
     private func row(_ entry: GitClient.StatusEntry) -> some View {
-        Button(action: { openEntry(entry) }) {
-            HStack(spacing: 6) {
-                Text(statusBadge(entry))
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundStyle(statusColor(entry))
-                    .frame(width: 18, alignment: .center)
-                // File-type icon for visual parity with the sidebar.
-                // Cheap — FileIconView caches by extension internally.
-                FileIconView(
-                    url: resolvedURL(for: entry),
-                    isDirectory: false,
-                    size: .tree
-                )
-                .frame(width: 14, height: 14)
-                Text(entry.path)
-                    .font(.system(size: 11, design: .monospaced))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .foregroundStyle(.primary)
-                Spacer(minLength: 0)
-                // Right-side button: open the unified diff for this
-                // path in a new tab. Hidden until hover so the row
-                // stays clean.
-                Button(action: { showDiff(entry) }) {
-                    Image(systemName: "doc.text.magnifyingglass")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Show diff")
-            }
-            .padding(.horizontal, 10)
-            .frame(height: 20)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(entry.path)
-        .contextMenu {
-            Button("Open File") { openEntry(entry) }
-            Button("Show Diff") { showDiff(entry) }
-        }
+        RecentChangeRow(
+            entry: entry,
+            iconURL: resolvedURL(for: entry),
+            badge: statusBadge(entry),
+            badgeColor: statusColor(entry),
+            onOpen: { openEntry(entry) },
+            onShowDiff: { showDiff(entry) }
+        )
     }
 
     /// Pure repo discovery: sidebar root takes precedence (matches the
@@ -249,6 +216,66 @@ struct RecentChangesSection: View {
             let client = GitClient(repoRoot: root)
             let status = client.status()
             await MainActor.run { self.entries = status }
+        }
+    }
+}
+
+/// Single changed-file row. Split into its own view so it can own a
+/// per-row `@State` hover flag — the diff button is revealed only on
+/// hover (UIRESP-07), and the whole row gets the shared hover/cursor
+/// affordance (UIRESP-03).
+private struct RecentChangeRow: View {
+    let entry: GitClient.StatusEntry
+    let iconURL: URL
+    let badge: String
+    let badgeColor: Color
+    let onOpen: () -> Void
+    let onShowDiff: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: onOpen) {
+            HStack(spacing: 6) {
+                Text(badge)
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(badgeColor)
+                    .frame(width: 18, alignment: .center)
+                // File-type icon for visual parity with the sidebar.
+                // Cheap — FileIconView caches by extension internally.
+                FileIconView(url: iconURL, isDirectory: false, size: .tree)
+                    .frame(width: 14, height: 14)
+                Text(entry.path)
+                    .font(.system(size: 11, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 0)
+                // Right-side button: open the unified diff for this path
+                // in a new tab. Revealed on hover so the row stays clean
+                // at rest. `.opacity(0)` (vs removing it) keeps the row's
+                // layout width stable as the button fades in/out.
+                Button(action: onShowDiff) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Show diff")
+                .opacity(isHovering ? 1 : 0)
+                .accessibilityHidden(!isHovering)
+                .accessibilityLabel("Show diff for \(entry.path)")
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 20)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(RowHoverButtonStyle(cornerRadius: 0))
+        .help(entry.path)
+        .onHover { isHovering = $0 }
+        .contextMenu {
+            Button("Open File", action: onOpen)
+            Button("Show Diff", action: onShowDiff)
         }
     }
 }

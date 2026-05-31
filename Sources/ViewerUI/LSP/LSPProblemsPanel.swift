@@ -58,12 +58,19 @@ public struct LSPProblemsPanel: View {
                                 .padding(.vertical, 8)
                         } else {
                             ForEach(Array(rows.enumerated()), id: \.offset) { (_, row) in
-                                ProblemRow(url: row.url, diagnostic: row.diagnostic)
-                                    .onTapGesture {
-                                        onJump(row.url, row.diagnostic.range.start.line + 1)
-                                    }
-                                    .accessibilityIdentifier(
-                                        "mdv.problems.row.\(row.url.lastPathComponent):\(row.diagnostic.range.start.line)")
+                                // UIRESP-07: a Button (rather than a bare
+                                // `.onTapGesture` on an inert HStack) gives
+                                // the row hover feedback + a pointing-hand
+                                // cursor + proper button a11y semantics.
+                                Button {
+                                    onJump(row.url, row.diagnostic.range.start.line + 1)
+                                } label: {
+                                    ProblemRow(url: row.url, diagnostic: row.diagnostic)
+                                }
+                                .buttonStyle(RowHoverButtonStyle(cornerRadius: 0))
+                                .accessibilityLabel(accessibilityLabel(for: row))
+                                .accessibilityIdentifier(
+                                    "mdv.problems.row.\(row.url.lastPathComponent):\(row.diagnostic.range.start.line)")
                             }
                         }
                     }
@@ -148,6 +155,21 @@ public struct LSPProblemsPanel: View {
             return "No problems detected."
         }
         return "No problems match this filter."
+    }
+
+    /// VoiceOver label for a problem row: spells out the severity (the
+    /// icon-only glyph is otherwise inaudible), file, 1-based line, and
+    /// message. e.g. "Error in Foo.swift line 42: missing semicolon".
+    private func accessibilityLabel(for row: (url: URL, diagnostic: LSPDiagnostic)) -> String {
+        let severity: String
+        switch row.diagnostic.severity {
+        case .error:       severity = "Error"
+        case .warning:     severity = "Warning"
+        case .information: severity = "Info"
+        case .hint:        severity = "Hint"
+        }
+        let line = row.diagnostic.range.start.line + 1
+        return "\(severity) in \(row.url.lastPathComponent) line \(line): \(row.diagnostic.message)"
     }
 }
 

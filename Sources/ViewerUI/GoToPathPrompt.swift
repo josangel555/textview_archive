@@ -186,7 +186,12 @@ struct GoToPathPrompt: View {
     private func submit(newSession: Bool) {
         switch GoToPathExpansion.resolveExisting(path) {
         case .failure(let err):
-            errorMessage = userMessage(for: err)
+            let message = userMessage(for: err)
+            errorMessage = message
+            // A11Y-15: the inline red error text isn't focusable, so
+            // VoiceOver users would never hear that the path was
+            // rejected. Announce it.
+            AccessibilityAnnouncer.announce(message)
             return
         case .success(let url):
             // Persist the expanded absolute path for history.

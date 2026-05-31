@@ -114,7 +114,8 @@ struct CSVTableView: View {
                     }
                     Section {
                         ForEach(filtered.rows.indices, id: \.self) { i in
-                            cellRow(filtered.rows[i], isAlt: i % 2 == 1)
+                            cellRow(filtered.rows[i], isAlt: i % 2 == 1,
+                                    header: result.header)
                         }
                     } header: {
                         headerRow(result)
@@ -319,6 +320,10 @@ struct CSVTableView: View {
                     .frame(width: widthFor(i), height: rowHeight, alignment: .topLeading)
                     .background(Palette.controlBackground)
                     .overlay(alignment: .trailing) { columnResizer(forIndex: i) }
+                    // A11Y-01: mark header cells with the header trait so
+                    // VoiceOver's table navigation announces column titles.
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityLabel(Self.columnName(name, index: i))
             }
         }
         .overlay(alignment: .bottom) {
@@ -327,7 +332,7 @@ struct CSVTableView: View {
     }
 
     @ViewBuilder
-    private func cellRow(_ row: [String], isAlt: Bool) -> some View {
+    private func cellRow(_ row: [String], isAlt: Bool, header: [String]) -> some View {
         HStack(spacing: 0) {
             ForEach(row.indices, id: \.self) { i in
                 let cell = row[i]
@@ -343,10 +348,35 @@ struct CSVTableView: View {
                     .contextMenu {
                         Button("Copy Cell") { Pasteboard.copy(cell) }
                     }
+                    // A11Y-01: per-cell VoiceOver label "<column>: <value>"
+                    // so each cell announces which column it belongs to
+                    // rather than reading a bare value out of context.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(Self.cellLabel(column: i, header: header, value: cell))
             }
         }
         .background(isAlt ? Palette.controlBackground.opacity(0.3) : Color.clear)
         .textSelection(.enabled)
+        // A11Y-01: group the cells under a single row container so the
+        // grid reads as rows-of-cells in VoiceOver's table rotor.
+        .accessibilityElement(children: .contain)
+    }
+
+    /// Column title for VoiceOver — falls back to "Column N" for blank
+    /// header cells, matching the visible scope-picker label. `internal
+    /// static` so `CSVAccessibilityLabelTests` can exercise the pure
+    /// label math without a window.
+    static func columnName(_ name: String, index: Int) -> String {
+        name.isEmpty ? "Column \(index + 1)" : name
+    }
+
+    /// "<column>: <value>" per-cell accessibility label. Tolerates a
+    /// ragged row (more cells than header columns) by falling back to
+    /// the positional "Column N" name.
+    static func cellLabel(column: Int, header: [String], value: String) -> String {
+        let name = column < header.count ? columnName(header[column], index: column)
+                                         : "Column \(column + 1)"
+        return "\(name): \(value)"
     }
 
     private func columnResizer(forIndex i: Int) -> some View {

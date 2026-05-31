@@ -51,6 +51,11 @@ struct ResizableSectionDivider: View {
     /// first pressed). Nil between drags.
     @State private var dragStartHeight: CGFloat? = nil
 
+    /// Tracks whether this divider has an outstanding `NSCursor.push()`
+    /// on the global cursor stack, so hover-out / disappear pop exactly
+    /// once. See UIRESP-10 below.
+    @State private var pushedResizeCursor = false
+
     var body: some View {
         ZStack {
             // The hairline. Matches a stock `Divider()` in colour
@@ -65,20 +70,38 @@ struct ResizableSectionDivider: View {
         .frame(height: 4)
         .contentShape(Rectangle())
         .onHover { hovering in
-            // Only swap the cursor when the section above can
-            // actually be resized — i.e. it's expanded.
-            guard !isAboveCollapsed else {
-                if !hovering { NSCursor.arrow.set() }
-                return
-            }
-            if hovering {
-                NSCursor.resizeUpDown.set()
-            } else {
-                NSCursor.arrow.set()
-            }
+            // UIRESP-10: use the balanced push()/pop() cursor stack
+            // rather than `set()`. The previous `.set()` / `.arrow.set()`
+            // pair clobbered the global cursor unconditionally — on
+            // hover-out it forced the arrow even if some other view
+            // (e.g. a text field's I-beam) legitimately owned the cursor,
+            // and a section collapsing mid-hover stranded the resize
+            // cursor entirely. push()/pop() restores whatever cursor was
+            // active before we pushed.
+            updateCursor(hovering: hovering && !isAboveCollapsed)
+        }
+        .onDisappear {
+            // Balance any outstanding push if the divider is torn down
+            // while hovered.
+            updateCursor(hovering: false)
         }
         .gesture(dragGesture)
         .accessibilityIdentifier("mdv.sidebar.resizeHandle")
+    }
+
+    /// Pushes the resize cursor on hover-in, pops it on hover-out —
+    /// exactly once each way, guarded by `pushedResizeCursor` so AppKit
+    /// re-firing `onHover(true)` can't leak an unbalanced push.
+    private func updateCursor(hovering: Bool) {
+        if hovering {
+            if !pushedResizeCursor {
+                NSCursor.resizeUpDown.push()
+                pushedResizeCursor = true
+            }
+        } else if pushedResizeCursor {
+            NSCursor.pop()
+            pushedResizeCursor = false
+        }
     }
 
     private var dragGesture: some Gesture {
