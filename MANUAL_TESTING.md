@@ -352,3 +352,41 @@ After moving FILES to the top of the sidebar and adding
 `LSPNavigationPanel`, and PROBLEMS, verify every accordion section
 terminates with the same bottom breathing room (no section ends
 flush with the next divider). Visual check on VM only.
+
+## Large-file read-only source mode (two-tier read cap)
+
+The text loader now uses a two-tier cap: files at/below `readableMaxBytes`
+(512 MiB default) load fully; above the `softWarnBytes` watermark
+(64 MiB default) the file is tagged `isLargeReadOnly` so the source
+view skips per-interaction O(N) overlays (newline index, selection
+highlight) and pretty-print. Above 512 MiB the loader still throws
+`.tooLarge` (OOM backstop) with a message naming the ceiling.
+
+The acquisition/window/index logic is host-tested
+(`TextFileLoaderTests`, `DocumentControllerTests`, `LargeFileOpenTests`).
+The live NSTextView render of a genuinely huge file is **VM-only** —
+the host test suite cannot observe RSS, scroll frame pacing, or the
+gutter compositor blank-sibling bug (only `screencapture`, not
+`cacheDisplay`, surfaces it). On the UTM macOS15 VM:
+
+1. Open a real ~200 MB log/JSON/CSV-as-text file. It must open in
+   source mode **without** the "File is too large" refusal and without
+   a beachball on open (the eager read is routed off-main; the tab
+   should briefly show a `.loading` placeholder, then the text).
+2. Observe RSS: expect ~1.5–2x file size (e.g. ~400–600 MB for a
+   200 MB file). It must be **bounded** by file size and not grow at
+   idle (the ~5 MB/s republish-loop RSS-growth bug class).
+3. Scroll the file end-to-end — should not drop frames or hang.
+4. Confirm the SwiftUI gutter line numbers still render correctly
+   (compositor-bug regression — sibling views must not blank). Verify
+   via `SourceViewVisualRegressionTests` screencapture, not xctest.
+5. Status bar: `Ln/Col` is intentionally **hidden** for a large file
+   (the newline index is skipped); `Lines`/`Size`/`Enc` still show.
+6. **Huge-line edge case:** open a ~200 MB single-line minified JSON
+   (degenerate newline index). Confirm the plain fast path
+   (`textView.string = text`) doesn't hang on a no-newline blob.
+7. Confirm a >512 MiB file still refuses with the improved ceiling
+   message ("exceeds the 512 MB read limit").
+8. Editing stays capped: picking Editor mode on a >50 MiB file shows
+   the `LargeEditorPlaceholderView` with "View as Source"; the split
+   pane shows "File too large for split view" for >64 MiB.

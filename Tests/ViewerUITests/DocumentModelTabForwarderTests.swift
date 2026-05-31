@@ -1,4 +1,5 @@
 import XCTest
+import Combine
 import ViewerKit
 import ViewerCore
 @testable import ViewerUI
@@ -240,6 +241,47 @@ final class DocumentModelTabForwarderTests: XCTestCase {
         let a = URL(fileURLWithPath: "/a")
         model.splitURL = a
         XCTAssertEqual(model.tabCoordinator.splitURL, a)
+    }
+
+    // MARK: - view-mode change republishes the model (regression)
+
+    /// Regression for the "Render|Source|Editor|HEX picker is broken /
+    /// view stuck in Render" bug. `Tab.viewMode` lives on
+    /// `TabCoordinator`, but `ContentView` / `ModeBar` observe
+    /// `DocumentModel`. PERF #1 (2026-05-25) severed the child→model
+    /// `objectWillChange` forwarding and re-added direct observation
+    /// only for `sidebar` + `find` — not `tabs`. So every tab mutation
+    /// that does NOT republish `DocumentModel` leaves the picker +
+    /// content pane frozen on the previous mode. `setCurrentViewMode`
+    /// was the lone display-changing mutation missing the
+    /// `updateDerived()` republish that open/close/select all do.
+    ///
+    /// The model STATE was always correct (`currentViewMode` reflects
+    /// the pick) — so a state-only assertion can't catch this. The
+    /// load-bearing assertion is that the PUBLISH fires.
+    func test_viewModePicker_eachSwitch_republishesAndUpdates() throws {
+        let model = makeModel()
+        let url = try writeFile("doc.md", "# hi\n")
+        model.open(url: url)
+        XCTAssertEqual(model.currentViewMode, .rendered,
+            "markdown opens in rendered mode by default")
+
+        var publishes = 0
+        let cancellable = model.objectWillChange.sink { publishes += 1 }
+        defer { cancellable.cancel() }
+
+        // Walk the whole markdown picker: Source | Editor | HEX | back to
+        // Rendered. Each switch must (a) update the model state and
+        // (b) fire objectWillChange so the observing views re-render.
+        for mode in [ViewMode.source, .editor, .hex, .rendered] {
+            let before = publishes
+            model.setCurrentViewMode(mode)
+            XCTAssertEqual(model.currentViewMode, mode,
+                "model state must reflect the \(mode) pick")
+            XCTAssertGreaterThan(publishes, before,
+                "switching to \(mode) must republish DocumentModel — otherwise "
+                + "the picker + content stay stuck (the reported bug)")
+        }
     }
 
     // MARK: - DocumentModel.CSVFilterState typealias

@@ -34,6 +34,24 @@ struct SplitPaneView: View {
     /// and never freed.
     @State private var splitCSVTabID: UUID = UUID()
 
+    /// True when the split-pane file is large enough that a synchronous
+    /// in-`body` read would stall the main thread. Media categories
+    /// don't read bytes into Swift memory, so this only matters for the
+    /// text/markdown/CSV path. Uses the loader's soft watermark so the
+    /// split-pane guard and the main-pane large-read tagging agree.
+    private var isSplitFileTooLargeForSyncRead: Bool {
+        switch FileTypeDetector.category(for: url) {
+        case .image, .audio, .video, .pdf, .sqlite:
+            return false
+        default:
+            break
+        }
+        guard let bytes = (try? FileManager.default
+            .attributesOfItem(atPath: url.path)[.size]) as? Int
+        else { return false }
+        return bytes > TextFileLoader().softWarnBytes
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -91,9 +109,29 @@ struct SplitPaneView: View {
 
     @ViewBuilder
     private var textContent: some View {
-        // Lazy file load so a huge file doesn't block view body
-        // construction. The text only renders when we have it.
-        if let file = try? TextFileLoader().load(url: url) {
+        // Large-file guard for the SPLIT pane. This read is synchronous
+        // and runs inside `body` — it re-reads the whole file on every
+        // SwiftUI invalidation. For a few-hundred-MB file that is a
+        // per-body main-thread stall (far worse than the main pane's
+        // single off-main read). The split pane is a secondary surface;
+        // route the user to open the file in the MAIN pane, which has
+        // the proper off-main load + read-only degradation. Stat is
+        // cheap and never reads the bytes.
+        if isSplitFileTooLargeForSyncRead {
+            VStack(spacing: 8) {
+                Image(systemName: "doc.text.magnifyingglass")
+                    .font(.system(size: 32, weight: .light))
+                    .foregroundStyle(.tertiary)
+                Text("File too large for split view")
+                    .font(.callout)
+                Text("Open it in the main pane to view large files.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(24)
+        } else if let file = try? TextFileLoader().load(url: url) {
             let ext = url.pathExtension.lowercased()
             let cat = FileTypeDetector.category(for: url)
             if cat == .markdown || cat == .mermaid {

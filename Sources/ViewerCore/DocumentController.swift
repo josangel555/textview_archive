@@ -127,10 +127,15 @@ public struct DocumentController: Sendable {
             return "File could not be read."
         case .decodingFailed:
             return "File is not valid UTF-8 or Latin-1 text."
-        case .tooLarge(let bytes):
+        case .tooLarge(let bytes, let ceiling):
             let mb = Double(bytes) / 1_048_576.0
             let formatted = mbFormatter.string(from: NSNumber(value: mb)) ?? "\(mb)"
-            return "File is too large (\(formatted) MB)."
+            // Express the ceiling in whole MB — it's a configured power-
+            // of-two limit (512 MiB by default), so a clean integer reads
+            // better than "512.0". Carrying the ceiling makes this read as
+            // a hard cap, not an arbitrary refusal of a merely-big file.
+            let ceilingMB = ceiling / 1_048_576
+            return "File is too large (\(formatted) MB) — exceeds the \(ceilingMB) MB read limit."
         case .binaryFile:
             return "File appears to be binary (contains NUL bytes)."
         }

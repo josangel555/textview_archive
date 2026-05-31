@@ -24,6 +24,21 @@ public final class SidebarModel: ObservableObject {
     // `model.trackedRepos.status(for:)` / `.repoRootKind(_:)` etc., and
     // pin via `model.repoFocus.togglePin(_:)`.
 
+    /// "Does the current project have Claude transcripts?" — single
+    /// source of truth for both the accordion (Claude timeline section)
+    /// and the shoulder rail's Claude button filled-state.
+    ///
+    /// Previously cached in `SidebarView`'s `@State` and refreshed via
+    /// an `.onChange(of: rootURL)`; moved here so the rail (which lives
+    /// OUTSIDE `SidebarView`) reads the same flag — otherwise the
+    /// button's filled-state and the accordion's presence diverge.
+    ///
+    /// Refreshed in `setRoot(_:)` via a shallow `FileManager` existence
+    /// check (`ClaudeLogParser.hasTranscripts`). It already ran on the
+    /// main actor (indirectly via the view's `.onChange`); keep it a
+    /// shallow check — a deep scan would have to move off-main.
+    @Published public private(set) var claudeHasTranscripts: Bool = false
+
     /// Keyboard-driven row selection (CRIT-6). Distinct from the currently-
     /// open file (`DocumentModel.currentURL`): you can navigate the sidebar
     /// with arrow keys without opening every file you scroll past.
@@ -78,6 +93,11 @@ public final class SidebarModel: ObservableObject {
         invalidateFlatCache()
         folderWatcher?.stop()
         folderWatcher = nil
+        // Refresh the Claude-transcript flag on every root change. Cheap
+        // shallow FS existence check; runs on the main actor (this whole
+        // method is @MainActor) — same place it ran before via the
+        // view's `.onChange(of: rootURL)`.
+        claudeHasTranscripts = ClaudeLogParser.hasTranscripts(for: rootURL)
         if let url = rootURL {
             expanded.insert(url)
             ensureLoaded(url: url)

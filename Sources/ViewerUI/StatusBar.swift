@@ -36,9 +36,13 @@ struct StatusBar: View {
 
             if let metrics = currentMetrics {
                 Group {
-                    if metrics.lineCount > 0 {
+                    if metrics.lineCount > 0, model.sourceSelection.line > 0 {
                         // Ln/Col only meaningful for text files. Hide
-                        // for media previews where everything is 0.
+                        // for media previews where everything is 0, and
+                        // for large read-only files where the source
+                        // view publishes a `line == 0` sentinel (it
+                        // skips the O(N) newline-index build that would
+                        // otherwise resolve precise line:col).
                         metric("Ln",
                             "\(model.sourceSelection.line)" +
                             ", Col \(model.sourceSelection.column)")

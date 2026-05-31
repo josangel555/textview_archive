@@ -4,7 +4,13 @@ public enum FileLoadError: Error, Equatable {
     case fileNotFound
     case notReadable
     case decodingFailed
-    case tooLarge(bytes: Int)
+    /// File exceeds the loader's hard read ceiling. `bytes` is the
+    /// file's on-disk size; `ceiling` is the limit it tripped. Carrying
+    /// the ceiling lets the user-facing message present this as a real
+    /// cap ("exceeds the 512 MB read limit") rather than an arbitrary
+    /// refusal — the prior message only said the size, which read as a
+    /// bug for a 33 MB file under the old 32 MB gate.
+    case tooLarge(bytes: Int, ceiling: Int)
     case binaryFile
 }
 
@@ -26,18 +32,38 @@ public struct TextFile: Sendable {
     /// produces a distinct timestamp.
     public let modifiedTime: Date?
 
+    /// True when the file loaded above the loader's `softWarnBytes`
+    /// watermark (default 64 MiB). A signal — NOT an identity field —
+    /// that tells the read/view path to degrade gracefully: source
+    /// mode forces the no-allocation plain fast path and skips the
+    /// O(N)-per-interaction overlays (newline-offset index, selection-
+    /// highlight, pretty-print) so a few-hundred-MB log stays
+    /// interactive. Syntax highlighting is already auto-off above the
+    /// 512 KiB `highlightMaxBytes` cap, so a large file never paints
+    /// runs regardless.
+    ///
+    /// Intentionally NOT part of `Equatable` (mirrors `modifiedTime`):
+    /// it's derived from `byteCount` + the loader's watermark, so two
+    /// equal-`byteCount` loads always agree on it. Folding it into
+    /// equality would either be redundant or — if a caller constructed
+    /// the same file with a different watermark — introduce spurious
+    /// SwiftUI diff churn.
+    public let isLargeReadOnly: Bool
+
     public init(
         url: URL,
         contents: String,
         encoding: String.Encoding,
         byteCount: Int,
-        modifiedTime: Date? = nil
+        modifiedTime: Date? = nil,
+        isLargeReadOnly: Bool = false
     ) {
         self.url = url
         self.contents = contents
         self.encoding = encoding
         self.byteCount = byteCount
         self.modifiedTime = modifiedTime
+        self.isLargeReadOnly = isLargeReadOnly
     }
 }
 
@@ -80,13 +106,54 @@ extension TextFile: Equatable {
 public let sourceViewMaxBytes: Int = 64 * 1024 * 1024
 
 public struct TextFileLoader: Sendable {
-    /// Maximum file size for in-memory loading. Larger files will throw.
-    /// Defaults to `sourceViewMaxBytes`, the widest display cap, so the
-    /// loader never rejects a file a downstream viewer would accept.
-    public let maxBytes: Int
+    /// Two-tier read cap (read/view path, read-only).
+    ///
+    /// `readableMaxBytes` is the HARD ceiling (default 512 MiB): files
+    /// at/below it load fully into a single Swift `String`; above it we
+    /// still throw `.tooLarge` — no app survives slurping a multi-GB
+    /// file into one String, so this is the OOM backstop, not an
+    /// arbitrary refusal. We accept ~1.5–2x file-size resident cost for
+    /// the open tab (String + UTF-16 NSTextStorage backing) as the
+    /// documented v1 tradeoff; the ceiling bounds the worst case.
+    ///
+    /// `softWarnBytes` is the watermark (default 64 MiB) above which the
+    /// resulting `TextFile.isLargeReadOnly` is set so the view layer
+    /// degrades gracefully (plain fast path, skip O(N) overlays). It
+    /// does NOT block the load — the file still opens read-only in
+    /// source mode.
+    ///
+    /// A true mmap / line-indexed pager with bounded RAM for GB-class
+    /// files (and its own Find / jump-to-line / SIGBUS-lifecycle design)
+    /// is the deferred follow-up; `Data(.mappedIfSafe)` is the lower-
+    /// risk path to evaluate then (note: bridging mapped `Data` to
+    /// `String` copies the whole thing, so it is not a free win for v1).
+    public let readableMaxBytes: Int
 
-    public init(maxBytes: Int = sourceViewMaxBytes) {
-        self.maxBytes = maxBytes
+    /// Files above this size load successfully but are tagged
+    /// `isLargeReadOnly` so the source view skips per-interaction O(N)
+    /// overlay work. See `readableMaxBytes` doc for the full rationale.
+    public let softWarnBytes: Int
+
+    /// Back-compat alias for the prior single `maxBytes` knob — maps to
+    /// the hard read ceiling so existing callers / tests that pass
+    /// `TextFileLoader(maxBytes:)` keep working unchanged.
+    public var maxBytes: Int { readableMaxBytes }
+
+    public init(
+        readableMaxBytes: Int = 512 * 1024 * 1024,
+        softWarnBytes: Int = 64 * 1024 * 1024
+    ) {
+        self.readableMaxBytes = readableMaxBytes
+        self.softWarnBytes = softWarnBytes
+    }
+
+    /// Back-compat initializer mirroring the prior `init(maxBytes:)`.
+    /// Sets the hard read ceiling to `maxBytes` and keeps the default
+    /// soft watermark (clamped never to exceed the ceiling so a small
+    /// custom ceiling can't accidentally leave the watermark above it).
+    public init(maxBytes: Int) {
+        self.readableMaxBytes = maxBytes
+        self.softWarnBytes = min(64 * 1024 * 1024, maxBytes)
     }
 
     public func load(url: URL) throws -> TextFile {
@@ -95,9 +162,20 @@ public struct TextFileLoader: Sendable {
         }
 
         let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
-        if let size = attrs?[.size] as? Int, size > maxBytes {
-            throw FileLoadError.tooLarge(bytes: size)
+        // Stat-first refusal: we check size BEFORE reading so a file
+        // above the ceiling never allocates. (Tests rely on this
+        // ordering — a sparse/truncated file whose stat size exceeds the
+        // ceiling trips this without writing the bytes. Do NOT reorder
+        // to read-before-stat.)
+        if let size = attrs?[.size] as? Int, size > readableMaxBytes {
+            throw FileLoadError.tooLarge(bytes: size, ceiling: readableMaxBytes)
         }
+        // Derived once from the on-disk size; threaded into every
+        // TextFile construction below. `byteCount` (data.count) equals
+        // the stat size for the non-BOM paths and is 2–3 bytes smaller
+        // for BOM-stripped paths — immaterial at the 64 MiB watermark,
+        // and we key the flag off the actual `data.count` we store so
+        // the flag and byteCount never disagree.
         // Captured once at load time so derived-product caches (rendered
         // HTML, highlight runs) can key off it without re-stat'ing the
         // file on every body re-eval. APFS gives nanosecond resolution,
@@ -117,7 +195,8 @@ public struct TextFileLoader: Sendable {
         case .text(let s, let enc):
             return TextFile(
                 url: url, contents: s, encoding: enc,
-                byteCount: data.count, modifiedTime: mtime
+                byteCount: data.count, modifiedTime: mtime,
+                isLargeReadOnly: data.count > softWarnBytes
             )
         case .binary:
             throw FileLoadError.binaryFile

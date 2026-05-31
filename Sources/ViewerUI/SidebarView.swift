@@ -10,6 +10,12 @@ struct SidebarView: View {
     /// `version` bump WITHOUT routing through `DocumentModel.objectWillChange`
     /// — see `TrackedReposRepublishInvariantTests`.
     @ObservedObject var trackedRepos: TrackedReposChannel
+    /// Shoulder-rail layout. Observed directly so the accordion's
+    /// per-panel presence resolves through the SAME store the rails
+    /// drive — toggling a rail button re-bodies this view and flips the
+    /// matching section in/out. The explicit `.shown` / `.hidden`
+    /// override is layered on top of the data-presence heuristic.
+    @ObservedObject var panelLayout: PanelLayoutStore
 
     /// File-tree accordion state. Persisted across the session via
     /// `@AppStorage` so the user's last collapse choice survives a
@@ -165,37 +171,41 @@ struct SidebarView: View {
     // `SidebarSectionPlanner` (pure logic in ViewerCore, unit-tested),
     // and render exactly the panels + dividers it returns.
 
-    /// Cached "does this project have Claude transcripts?" flag.
-    /// Refreshed when the sidebar root changes (cheap FS check; not
-    /// worth running per body re-eval).
-    @State private var claudeHasTranscripts: Bool = false
-
-    /// Visibility predicates for each accordion panel. Mirrors what
-    /// the panel views themselves use to self-gate — keeping the
-    /// predicate up here lets us drop the divider too. The bookmarks
-    /// panel is always visible (its fixed envelope + "(empty)"
-    /// placeholder is intentional). LSP navigation + problems are
-    /// always visible because they hold cross-file state (workspace
-    /// symbol queries / publish-diagnostics) that's useful even when
-    /// the active tab isn't an LSP language.
+    /// Resolved visibility for each accordion panel, in accordion order.
+    ///
+    /// `dataPresent` is the shared `SidebarDataPresence` heuristic (the
+    /// same one the rail reads, so the rail button's filled-state and
+    /// the accordion's presence can't diverge); the explicit
+    /// `.auto` / `.shown` / `.hidden` override is layered on top via
+    /// `panelLayout.isVisible(_:dataPresent:)`. Fresh-install (`.auto`
+    /// everywhere) resolves === today's data-presence behavior.
+    ///
+    /// FILES + plugin sections render OUTSIDE this accordion stack, so
+    /// they're excluded here. The bookmarks panel is data-present
+    /// always (its fixed "(empty)" envelope is intentional); LSP
+    /// navigation + problems are present whenever a root is open (they
+    /// hold cross-file state useful even when the active tab isn't an
+    /// LSP language) — all encoded in `SidebarDataPresence`.
     private var panelVisibility: [(panel: SidebarPanelKind, isVisible: Bool)] {
-        let hasRoot = sidebar.rootURL != nil
-        // Git accordion shows when ANY repo is tracked (multi-repo), not
-        // just the single auto-discovered sidebar-root repo.
-        let hasRepo = trackedRepos.trackedRoots.isEmpty == false
-        let hasLSPLanguage: Bool = {
-            guard let url = model.currentURL else { return false }
-            return LSPLanguageRegistry.default.language(for: url) != nil
-        }()
-        return [
-            (.bookmarks,      true),
-            (.searchAnywhere, hasRoot),
-            (.git,            hasRoot && hasRepo),
-            (.claudeTimeline, hasRoot && claudeHasTranscripts),
-            (.lspOutline,     hasRoot && hasLSPLanguage),
-            (.lspNavigation,  hasRoot),
-            (.lspProblems,    hasRoot),
+        let presence = SidebarDataPresence.evaluate(
+            SidebarDataPresence.Inputs(
+                hasRoot: sidebar.rootURL != nil,
+                // Multi-repo: the git accordion shows when ANY repo is
+                // tracked, not just a single auto-discovered sidebar-root.
+                hasRepo: trackedRepos.trackedRoots.isEmpty == false,
+                hasLSPLanguage: model.currentURL.flatMap {
+                    LSPLanguageRegistry.default.language(for: $0)
+                } != nil,
+                claudeHasTranscripts: sidebar.claudeHasTranscripts
+            )
+        )
+        let accordionOrder: [SidebarPanelKind] = [
+            .bookmarks, .searchAnywhere, .git, .claudeTimeline,
+            .lspOutline, .lspNavigation, .lspProblems,
         ]
+        return accordionOrder.map { kind in
+            (kind, panelLayout.isVisible(kind, dataPresent: presence[kind] ?? false))
+        }
     }
 
     @ViewBuilder
@@ -207,15 +217,11 @@ struct SidebarView: View {
                 divider(below: entry.panel)
             }
         }
-        // Refresh the Claude transcript flag when the sidebar root
-        // changes — the FS check is cheap but not free, and we only
-        // need it once per project switch.
-        Color.clear
-            .frame(height: 0)
-            .onAppear { refreshClaudeTranscripts() }
-            .onChange(of: sidebar.rootURL) { _, _ in
-                refreshClaudeTranscripts()
-            }
+        // Claude-transcript presence now lives on `SidebarModel`
+        // (refreshed in `setRoot`) so the rail + accordion read one
+        // source of truth. The old `@State` + `.onAppear` /
+        // `.onChange(of: rootURL)` refresh plumbing that lived here was
+        // removed — `sidebar.claudeHasTranscripts` is observed directly.
     }
 
     @ViewBuilder
@@ -296,12 +302,6 @@ struct SidebarView: View {
         case .lspProblems, .files, .pluginSections:
             EmptyView()
         }
-    }
-
-    private func refreshClaudeTranscripts() {
-        claudeHasTranscripts = ClaudeLogParser.hasTranscripts(
-            for: sidebar.rootURL
-        )
     }
 
     // MARK: - FILES panel

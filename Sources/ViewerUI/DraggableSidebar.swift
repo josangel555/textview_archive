@@ -20,7 +20,17 @@ struct DraggableSidebar: View {
     }
 
     var body: some View {
-        SidebarView(sidebar: model.sidebar, model: model, trackedRepos: model.trackedRepos)
+        // `panelLayout` + `trackedRepos` are read off the model and handed
+        // to SidebarView so the accordion resolves per-panel visibility and
+        // git badges through the SAME stores the rails / registry drive.
+        // SidebarView observes both directly (`@ObservedObject`) — no
+        // forwarding through DraggableSidebar.
+        SidebarView(
+            sidebar: model.sidebar,
+            model: model,
+            trackedRepos: model.trackedRepos,
+            panelLayout: model.panelLayout
+        )
             .frame(width: currentWidth)
             .overlay(alignment: .trailing) {
                 Color.clear

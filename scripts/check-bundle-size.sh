@@ -33,10 +33,14 @@ BUDGET_MB="${BUDGET_MB:-${1:-37}}"
 # release. The CodeMirror 6 editor (Swift wrapper + JS bridge code)
 # bumped the executable by ~200 KB; CM6 itself is a JS resource
 # (~570 KB) under Resources/codemirror/, not in the executable. The
-# 1 MB headroom over the post-CM6 baseline catches a TreeSitter
-# grammar silently regressing to static linkage (look for an
-# unintended `import TreeSitter<X>` in ViewerCore). Override via env
-# to opt out:
+# Headroom over the post-CM6 baseline catches a TreeSitter grammar
+# silently regressing to static linkage (look for an unintended
+# `import TreeSitter<X>` in ViewerCore). Bumped 16 -> 18 (2026-05-30):
+# the shoulder-rails + large-file read-only + picker-fix work added
+# ~140 KB of legitimate Swift to the exec (15.91 -> 16.05 MB),
+# tipping the old 16 MB line; grammars remain dylibs in
+# Contents/Frameworks/, so this is real code growth, not a
+# static-link regression. Override via env to opt out:
 #   EXEC_BUDGET_MB=0 bash scripts/check-bundle-size.sh
 EXEC_BUDGET_MB="${EXEC_BUDGET_MB:-18}"
 BUDGET_BYTES=$(( BUDGET_MB * 1024 * 1024 ))

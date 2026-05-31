@@ -40,6 +40,12 @@ public struct TextDisplayView: NSViewControllerRepresentable {
     public let findState: FindState
     public let wordWrap: Bool
     public let showInvisibles: Bool
+    /// True when the backing file loaded above the read-only soft
+    /// watermark (`TextFile.isLargeReadOnly`). Threaded down so the
+    /// controller skips per-interaction O(N) overlays (newline index,
+    /// selection highlight) that would make a few-hundred-MB file
+    /// unusable. Default false keeps every existing call site unchanged.
+    public let isLargeReadOnly: Bool
     /// Scroll-to-line request. (`line: nil` = no-op; otherwise scroll
     /// to that 1-based line and place the caret there.) The nonce
     /// distinguishes repeat requests for the same line.
@@ -67,6 +73,7 @@ public struct TextDisplayView: NSViewControllerRepresentable {
         findState: FindState = .empty,
         wordWrap: Bool = false,
         showInvisibles: Bool = false,
+        isLargeReadOnly: Bool = false,
         scrollLineRequest: ScrollLineRequest = .none,
         onFindSummary: ((String) -> Void)? = nil,
         onScrollChange: ((SourceScrollState) -> Void)? = nil,
@@ -81,6 +88,7 @@ public struct TextDisplayView: NSViewControllerRepresentable {
         self.findState = findState
         self.wordWrap = wordWrap
         self.showInvisibles = showInvisibles
+        self.isLargeReadOnly = isLargeReadOnly
         self.scrollLineRequest = scrollLineRequest
         self.onFindSummary = onFindSummary
         self.onScrollChange = onScrollChange
@@ -147,6 +155,7 @@ public struct TextDisplayView: NSViewControllerRepresentable {
             showInvisibles: showInvisibles,
             scrollLineRequest: scrollLineRequest,
             findState: findState,
+            isLargeReadOnly: isLargeReadOnly,
             onFindSummary: onFindSummary,
             onScrollChange: onScrollChange,
             onSelectionChange: onSelectionChange,
@@ -261,6 +270,14 @@ public final class SourceTextController: NSViewController {
     private var cachedTextByteCount: Int = 0
     private var cachedFontSize: CGFloat = 13
     private var cachedLineCount: Int = 1
+    /// When true, the file loaded above the read-only soft watermark
+    /// (see `TextFile.isLargeReadOnly`). The source view then skips the
+    /// O(N)-per-interaction overlays that would make a few-hundred-MB
+    /// file unusable: the newline-offset index build (walks the whole
+    /// UTF-16 storage to resolve line:col) and the selection-highlight
+    /// pass. The plain-text fast path already runs because highlighting
+    /// is auto-off above the 512 KiB cap, so `runs` is always empty here.
+    private var isLargeReadOnly: Bool = false
     private var lastPublishedScrollState: SourceScrollState?
     /// Dedupe for the find-summary + selection callbacks. Without
     /// these, every apply() call re-fires the callback even when the
@@ -479,16 +496,37 @@ public final class SourceTextController: NSViewController {
         // Cheap (single line range), debounced internally by range
         // equality below.
         applyCurrentLineHighlight()
-        // Selection-driven "highlight all instances of selection" —
-        // throttled to ~150ms so per-keystroke caret drags don't fire
-        // an O(text) find on every change. Bails for short / long /
-        // multi-line selections and for huge files (see engine policy).
-        scheduleSelectionHighlightRefresh()
+        // Large read-only files skip the selection-highlight pass
+        // entirely. The engine policy already bails above 5 MB
+        // (`maxHaystackBytes`), but skipping the schedule avoids even
+        // the throttle/work-item churn on a file that can never paint.
+        if !isLargeReadOnly {
+            // Selection-driven "highlight all instances of selection" —
+            // throttled to ~150ms so per-keystroke caret drags don't fire
+            // an O(text) find on every change. Bails for short / long /
+            // multi-line selections and for huge files (see engine policy).
+            scheduleSelectionHighlightRefresh()
+        }
 
         guard let cb = onSelectionChange else { return }
         let sel = textView.selectedRange()
         let total = textView.textStorage?.length ?? 0
         let loc = min(sel.location, total)
+        // Large read-only files skip the newline-offset index build.
+        // That index walks the ENTIRE UTF-16 storage (`ns.character(at:)`
+        // per char) to resolve a precise (line, column); on a few-
+        // hundred-MB file the first build is multi-second and a single-
+        // line minified blob degenerates it entirely. We still publish a
+        // selection so the status bar updates, but with line:col = 0:0
+        // sentinel meaning "not computed for a large file" — the caret
+        // offset (length) is still accurate for selection-length needs.
+        if isLargeReadOnly {
+            let degraded = SourceSelection(line: 0, column: 0, length: sel.length)
+            if degraded == lastPublishedSelection { return }
+            lastPublishedSelection = degraded
+            cb(degraded)
+            return
+        }
         let offsets = newlineOffsetsRefreshed()
         // Number of newlines BEFORE `loc` = the count of offsets < loc.
         // Binary search for the first offset >= loc; that index is also
@@ -675,6 +713,7 @@ public final class SourceTextController: NSViewController {
         showInvisibles: Bool,
         scrollLineRequest: TextDisplayView.ScrollLineRequest,
         findState: TextDisplayView.FindState,
+        isLargeReadOnly: Bool = false,
         onFindSummary: ((String) -> Void)?,
         onScrollChange: ((SourceScrollState) -> Void)?,
         onSelectionChange: ((SourceSelection) -> Void)?,
@@ -683,6 +722,7 @@ public final class SourceTextController: NSViewController {
         self.onScrollChange = onScrollChange
         self.onSelectionChange = onSelectionChange
         self.onFindMatchesChange = onFindMatchesChange
+        self.isLargeReadOnly = isLargeReadOnly
         self.cachedFontSize = fontSize
         self.currentTheme = theme
         // Refresh cached byte count for the selection-highlight

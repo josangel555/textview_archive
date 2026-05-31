@@ -172,6 +172,13 @@ public final class DocumentModel: ObservableObject {
     @Published public var lastGoToError: String = ""
     public let sidebar: SidebarModel
 
+    /// Shoulder-rail layout (per-panel edge + explicit-visibility
+    /// override). Constructor-injected like `sidebar` — a `let`, owned
+    /// here but observed DIRECTLY by the rails / sidebar / ContentView
+    /// (see the PERF #1 audit note in `init`). NOT forwarded into
+    /// `DocumentModel.objectWillChange`.
+    public let panelLayout: PanelLayoutStore
+
     private let controller: DocumentController
     public let history: HistoryStore
     /// Persisted history for the Go-to-path prompt. Small (cap 10),
@@ -245,6 +252,13 @@ public final class DocumentModel: ObservableObject {
         self.bookmarksStore = bookmarks
         self.sidebar = sidebar
         self.preferences = preferences
+        // Shoulder-rail layout shares the SAME defaults instance the
+        // injected PreferencesStore uses (tests inject a throwaway
+        // suite; production uses .standard). Loaded from the two
+        // comma-joined keys (panelEdges / panelOverrides) — empty on a
+        // fresh install ⇒ all panels on .left, all overrides .auto ⇒
+        // visibility === data-presence, today's behavior unchanged.
+        self.panelLayout = PanelLayoutStore(defaults: preferences.defaults)
         self.recents = history.recent()
         self.bookmarks = bookmarks.all()
         self.sidebarWidth = preferences.sidebarWidth
@@ -334,6 +348,17 @@ public final class DocumentModel: ObservableObject {
         // Write-only call sites (no observation needed):
         //   - WalkthroughPlayerImpl (sets `isVisible`)
         //   - Sessions/SessionState (setRoot)
+        //
+        // Shoulder rails (2026-05-30): `panelLayout` (PanelLayoutStore)
+        // follows the SAME narrow-observation rule. It is a `let` owned
+        // here but its `objectWillChange` is NOT forwarded into
+        // DocumentModel — the rails / SidebarView / ContentView observe
+        // `model.panelLayout` directly via `@ObservedObject`. Forwarding
+        // it would reintroduce the PERF #1 republish storm (a rail
+        // toggle would re-body the whole content tree); leaving it
+        // observed-by-nobody would reintroduce the `setCurrentViewMode`
+        // dead-toggle (the rail/sidebar would never re-body on a
+        // toggle). Pinned by `PanelLayoutRepublishInvariantTests`.
     }
 
     private var cancellables: Set<AnyCancellable> = []
@@ -1620,7 +1645,19 @@ public final class DocumentModel: ObservableObject {
     /// returning stale output. The not-formatted fast path reports
     /// `file.byteCount` (already O(1) on `TextFile`) instead of walking
     /// `file.contents.utf8` (PERF-04).
+    ///
+    /// Large read-only files skip pretty-print entirely: it's an O(N)
+    /// text-walk that allocates a second full copy of the file, which
+    /// for a few-hundred-MB log defeats the raised read ceiling — they
+    /// render raw contents via the no-allocation plain fast path.
     public func displayedText(for file: TextFile) -> DisplayedText {
+        if file.isLargeReadOnly {
+            return DisplayedText(
+                text: file.contents,
+                byteLength: file.byteCount,
+                modifiedTime: file.modifiedTime
+            )
+        }
         guard let id = tabs.selected?.id,
               tabCoordinator.formattedTabIDs.contains(id),
               let format = Formatter.SupportedFormat.detect(file.url) else {
@@ -1889,24 +1926,41 @@ public final class DocumentModel: ObservableObject {
 
     private func openResolved(_ url: URL, forceNewTab: Bool) {
         let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
-        let state = controller.open(url: resolved)
         // Pick the per-extension default mode: .table for CSV/TSV,
         // .rendered for markdown, .source for everything else. The
         // "carry current mode" branch below overrides for the common
         // "user is in HEX, opens another file" workflow.
         let initialMode = ViewModeOptions.defaultMode(for: resolved)
-        if forceNewTab {
-            tabCoordinator.append(Tab(url: resolved, state: state, viewMode: initialMode))
-        } else {
+        let carryMode: ViewMode = {
+            if forceNewTab { return initialMode }
             // If the active tab has a non-default mode the user
             // explicitly picked (e.g. HEX, Format), carry it. Otherwise
             // use the new file's natural default.
-            let carryMode: ViewMode
             if let cur = tabs.selected, cur.viewMode != .rendered, cur.viewMode != .source {
-                carryMode = cur.viewMode
-            } else {
-                carryMode = initialMode
+                return cur.viewMode
             }
+            return initialMode
+        }()
+
+        // Off-main eager open for large text files. `controller.open`
+        // reads + decodes the entire file synchronously; for a few-
+        // hundred-MB log that is a multi-hundred-ms main-thread stall
+        // (beachball on open). We stat first (cheap, no read) and, when
+        // the file is above the loader's soft watermark AND would take
+        // the text-load path (not a native preview / media URL handled
+        // without a read), open the tab in `.loading(URL)` and read off-
+        // main — reusing the exact `materializeIfNeeded` identity-guard
+        // pattern (Task.isCancelled + re-find-by-id) so a slow read
+        // never lands in the wrong or closed tab.
+        if shouldDeferOpenOffMain(resolved) {
+            openLargeFileOffMain(resolved, forceNewTab: forceNewTab, viewMode: carryMode)
+            return
+        }
+
+        let state = controller.open(url: resolved)
+        if forceNewTab {
+            tabCoordinator.append(Tab(url: resolved, state: state, viewMode: initialMode))
+        } else {
             tabCoordinator.openOrReveal(url: resolved, state: state, viewMode: carryMode)
         }
         // Carry HEX mode across file switch: if the active tab now
@@ -1921,8 +1975,92 @@ public final class DocumentModel: ObservableObject {
             }
         }
         updateDerived()
-        // Both text and binary opens count as a successful "user saw this
-        // file"; record either as a recent. Errors don't.
+        recordOpenedFile(state: state, resolved: resolved)
+        startWatchingCurrentFile()
+    }
+
+    /// True when `openResolved` should route the file read off the main
+    /// thread instead of slurping it synchronously. Gated on (a) the
+    /// file being above the loader's soft watermark and (b) it NOT being
+    /// a native-preview category (image/audio/video/pdf/sqlite) — those
+    /// never read bytes into Swift memory, so the sync path is already
+    /// cheap and routing them through `.loading` would just add a flash.
+    private func shouldDeferOpenOffMain(_ resolved: URL) -> Bool {
+        switch FileTypeDetector.category(for: resolved) {
+        case .image, .audio, .video, .pdf, .sqlite:
+            return false
+        default:
+            break
+        }
+        guard let bytes = (try? FileManager.default
+            .attributesOfItem(atPath: resolved.path)[.size]) as? Int
+        else { return false }
+        return bytes > controller.loader.softWarnBytes
+    }
+
+    /// Open a large text file off the main thread. Mirrors
+    /// `materializeIfNeeded`: place the tab in `.loading(url)`, read on a
+    /// detached Task, then re-find the tab by id and swap to the final
+    /// state only if it is still `.loading` for the same URL. Post-open
+    /// bookkeeping (history / recents / sidebar root / watcher) runs on
+    /// completion via `recordOpenedFile`, matching the sync path.
+    private func openLargeFileOffMain(_ resolved: URL, forceNewTab: Bool, viewMode: ViewMode) {
+        let loading: DocumentState = .loading(resolved)
+        let tabID: UUID
+        if forceNewTab {
+            let tab = Tab(url: resolved, state: loading, viewMode: viewMode)
+            tabCoordinator.append(tab)
+            tabID = tab.id
+        } else {
+            let idx = tabCoordinator.openOrReveal(
+                url: resolved, state: loading, viewMode: viewMode
+            )
+            tabID = tabs.tabs.indices.contains(idx) ? tabs.tabs[idx].id : UUID()
+        }
+        updateDerived()
+        // Watch immediately — the tab + URL are known now; we don't need
+        // the contents to bind the file watcher, and waiting for the read
+        // would miss edits during a multi-hundred-ms load.
+        startWatchingCurrentFile()
+
+        tabCoordinator.materializeTask(forTabID: tabID)?.cancel()
+        let task = Task.detached(priority: .userInitiated) { [controller] in
+            let state = controller.open(url: resolved)
+            if Task.isCancelled { return }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.tabCoordinator.clearMaterializeTask(forTabID: tabID)
+                if Task.isCancelled { return }
+                guard let idx = self.tabs.tabs.firstIndex(where: { $0.id == tabID }) else {
+                    return
+                }
+                let current = self.tabs.tabs[idx]
+                guard case .loading(let pendingURL) = current.state,
+                      pendingURL == resolved else { return }
+                var t = current
+                t.state = state
+                self.tabCoordinator.replace(at: idx, with: t)
+                // Carry HEX mode (mirrors the sync path).
+                if t.viewMode == .hex {
+                    switch state {
+                    case .binary, .empty, .loading: break
+                    case .loaded, .preview, .error:
+                        self.loadBinaryAsync(url: resolved, intoTabID: tabID)
+                    }
+                }
+                self.updateDerived()
+                self.recordOpenedFile(state: state, resolved: resolved)
+            }
+        }
+        tabCoordinator.setMaterializeTask(task, forTabID: tabID)
+    }
+
+    /// Shared post-open bookkeeping: record a successful open as a recent
+    /// and auto-root the sidebar to the file's parent if none is open.
+    /// Errors / empty / still-loading states record nothing. Extracted so
+    /// both the synchronous open path and the off-main large-file
+    /// completion run identical bookkeeping.
+    private func recordOpenedFile(state: DocumentState, resolved: URL) {
         switch state {
         case .loaded, .binary, .preview:
             history.record(url: resolved, kind: .file)
@@ -1941,7 +2079,6 @@ public final class DocumentModel: ObservableObject {
         case .empty, .error, .loading:
             break
         }
-        startWatchingCurrentFile()
     }
 
     /// Re-reads the current tab's file and refreshes its state. Used by the
@@ -2469,6 +2606,17 @@ public final class DocumentModel: ObservableObject {
         }
         t.viewMode = mode
         tabCoordinator.replace(at: i, with: t)
+        // Republish DocumentModel so the picker + content re-evaluate.
+        // View mode lives on `TabCoordinator`, but `ContentView` /
+        // `ModeBar` observe `DocumentModel` — PERF #1 severed the
+        // child→model `objectWillChange` forwarding and re-added direct
+        // `@ObservedObject` only for `sidebar` + `find`, NOT `tabs`.
+        // Every other display-changing tab mutation (open / close /
+        // select) republishes through `updateDerived()`; this was the
+        // lone gap, which left the Render|Source|Editor|HEX picker and
+        // the content pane stuck on the previous mode. `updateDerived`'s
+        // unconditional `windowTitle` assignment fires the publisher.
+        updateDerived()
     }
 
     /// Off-main file read, on-main state swap. Keeps the UI

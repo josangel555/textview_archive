@@ -16,6 +16,14 @@ public struct ContentView: View {
     /// editor sub-branches re-eval when find query / case / next-nonce
     /// changes — without re-publishing every DocumentModel observer.
     @ObservedObject var find: FindCoordinator
+    /// Shoulder-rail layout (per-panel edge + visibility override).
+    /// Observed DIRECTLY (same narrow pattern as `sidebar` / `find`) so
+    /// the `leftContainerVisible` predicate — which reads BOTH
+    /// `sidebar.isVisible` and the resolved per-panel visibility off
+    /// `panelLayout` — re-evaluates on a rail toggle. Without this
+    /// second observation the predicate would go stale (the latent
+    /// derived-state trap; pinned by `PanelLayoutResolutionTests`).
+    @ObservedObject var panelLayout: PanelLayoutStore
     @StateObject var walkthrough: WalkthroughPlayerController
     /// App-level sessions coordinator. Optional so SwiftUI previews
     /// and host-side unit tests that construct a bare `ContentView`
@@ -30,6 +38,7 @@ public struct ContentView: View {
         self.model = model
         self.sidebar = model.sidebar
         self.find = model.find
+        self.panelLayout = model.panelLayout
         self.sessionsApp = sessionsApp
         self.stylesheet = MarkdownStylesheet.load()
         // Persist the controller across body re-evals. The controller
@@ -62,48 +71,60 @@ public struct ContentView: View {
                     .padding(.vertical, 6)
                     .accessibilityIdentifier("mdv.modebar")
                 Divider()
+                // MARK: - Shoulder rails + body band
+                //
+                // The rails frame the MIDDLE band only (between ModeBar
+                // and StatusBar). They are pure-SwiftUI sibling strips
+                // wrapping the UNTOUCHED center column — they never
+                // change how `TextDisplayView` / the WKWebView are
+                // hosted. COMPOSITOR RULE (LESSONS.md, load-bearing):
+                // every wrapper around `content` keeps
+                // `.frame(maxWidth:.infinity, maxHeight:.infinity)` so
+                // the NSScrollView/WKWebView intrinsic size can't
+                // collapse the pane; rails are FIXED thickness via
+                // `.frame(width:)` / `.frame(height:)` so they never
+                // claim the flex axis. StatusBar stays the last sibling
+                // of the OUTER VStack (the "siblings-after-source-render-
+                // fine" property).
                 HStack(spacing: 0) {
+                    // LEFT rail: gated on the master switch (left
+                    // shoulder = one unit; menu "off" hides rail +
+                    // accordion together).
                     if sidebar.isVisible {
-                        DraggableSidebar(model: model)
-                            .accessibilityIdentifier("mdv.sidebar")
-                        Divider()
-                    }
-                    VStack(spacing: 0) {
-                        content
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .accessibilityIdentifier("mdv.content")
-                            .overlay(
-                                // Window-root overlay scoped to the
-                                // content pane. Lives above the source
-                                // view so highlight stripes and
-                                // floating popovers align with the
-                                // editor, not the whole window.
-                                WalkthroughOverlay(model: model)
-                                    .allowsHitTesting(
-                                        model.walkthroughBridge.popover != nil
-                                    )
-                            )
-                        if walkthrough.isActive {
-                            // Docked at the bottom of the right pane.
-                            // Only present when a walkthrough is
-                            // running (per user decision §1).
-                            WalkthroughPlayerView(controller: walkthrough)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    if let splitURL = model.splitURL {
-                        Divider()
-                        SplitPaneView(
-                            url: splitURL,
-                            zoom: model.zoom,
-                            theme: model.activeTheme,
-                            onClose: { model.closeSplit() },
+                        ShoulderRailView(
+                            edge: .left,
+                            panelLayout: panelLayout,
+                            sidebar: sidebar,
                             model: model
                         )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .accessibilityIdentifier("mdv.split")
+                        Divider()
                     }
+                    // Center column: body row over the bottom rail.
+                    VStack(spacing: 0) {
+                        bodyRow
+                        Divider()
+                        // BOTTOM rail: independent of the master switch;
+                        // empty strip today (frame for future bottom-
+                        // docked panels).
+                        ShoulderRailView(
+                            edge: .bottom,
+                            panelLayout: panelLayout,
+                            sidebar: sidebar,
+                            model: model
+                        )
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    Divider()
+                    // RIGHT rail: independent of the master switch;
+                    // empty strip today.
+                    ShoulderRailView(
+                        edge: .right,
+                        panelLayout: panelLayout,
+                        sidebar: sidebar,
+                        model: model
+                    )
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 if model.currentURL != nil {
                     StatusBar(model: model)
                 }
@@ -158,6 +179,96 @@ public struct ContentView: View {
         // SessionsAppCoordinator bumps `firstPaintGoToToken`. We
         // observe the bump, consume the gate, and present the prompt.
         .background(firstPaintGoToBridge)
+    }
+
+    // MARK: - Body row (sidebar accordion + content + split)
+    //
+    // Extracted VERBATIM from the prior middle `HStack` so the rails
+    // restructure stays minimal + reviewable. The ONLY change vs the
+    // pre-rails tree: the `if sidebar.isVisible` accordion gate is now
+    // `leftContainerVisible` (sidebar not master-hidden AND ≥1 left
+    // panel resolves visible), and the row carries an explicit
+    // `.frame(maxWidth:.infinity, maxHeight:.infinity)` so the new
+    // wrapping VStack/HStack can't let the NSScrollView/WKWebView
+    // intrinsic size collapse the content pane. The `content` /
+    // `loadedView` subtree is byte-for-byte unchanged.
+    @ViewBuilder
+    private var bodyRow: some View {
+        HStack(spacing: 0) {
+            if leftContainerVisible {
+                DraggableSidebar(model: model)
+                    .accessibilityIdentifier("mdv.sidebar")
+                Divider()
+            }
+            VStack(spacing: 0) {
+                content
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityIdentifier("mdv.content")
+                    .overlay(
+                        // Window-root overlay scoped to the content
+                        // pane. Lives above the source view so highlight
+                        // stripes and floating popovers align with the
+                        // editor, not the whole window.
+                        WalkthroughOverlay(model: model)
+                            .allowsHitTesting(
+                                model.walkthroughBridge.popover != nil
+                            )
+                    )
+                if walkthrough.isActive {
+                    // Docked at the bottom of the right pane. Only
+                    // present when a walkthrough is running (per user
+                    // decision §1).
+                    WalkthroughPlayerView(controller: walkthrough)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if let splitURL = model.splitURL {
+                Divider()
+                SplitPaneView(
+                    url: splitURL,
+                    zoom: model.zoom,
+                    theme: model.activeTheme,
+                    onClose: { model.closeSplit() },
+                    model: model
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("mdv.split")
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Sidebar / left-shoulder reconciliation
+    //
+    // `sidebar.isVisible` is the COLLECTIVE left-shoulder master switch
+    // (driven by the menu "Toggle Sidebar"; unchanged). The accordion
+    // CONTAINER additionally gates on ≥1 left-docked panel resolving
+    // visible — so when every left panel resolves hidden (no folder, no
+    // data, or user `.hidden` everything) the accordion collapses while
+    // the rail (gated only on `sidebar.isVisible`) stays, ready to bring
+    // a panel back. Pinned by `PanelLayoutResolutionTests`.
+    private var leftContainerVisible: Bool {
+        guard sidebar.isVisible else { return false }
+        let pres = railDataPresence
+        return panelLayout.railPanels(on: .left).contains {
+            panelLayout.isVisible($0, dataPresent: pres[$0] ?? false)
+        }
+    }
+
+    /// Per-panel data-presence for the CURRENT inputs. Same heuristic
+    /// (`SidebarDataPresence`) the rail buttons + accordion read, so the
+    /// container gate, the rail fills, and the accordion presence agree.
+    private var railDataPresence: [SidebarPanelKind: Bool] {
+        SidebarDataPresence.evaluate(
+            SidebarDataPresence.Inputs(
+                hasRoot: sidebar.rootURL != nil,
+                hasRepo: model.trackedRepos.trackedRoots.isEmpty == false,
+                hasLSPLanguage: model.currentURL.flatMap {
+                    LSPLanguageRegistry.default.language(for: $0)
+                } != nil,
+                claudeHasTranscripts: sidebar.claudeHasTranscripts
+            )
+        )
     }
 
     /// Hidden bridge view that observes the coordinator's published
@@ -473,6 +584,7 @@ struct SourceModeView: View {
                     ),
                     wordWrap: model.sourceWordWrap,
                     showInvisibles: model.showInvisibleChars,
+                    isLargeReadOnly: file.isLargeReadOnly,
                     scrollLineRequest: TextDisplayView.ScrollLineRequest(
                         line: model.sourceScrollLineTarget,
                         nonce: model.sourceScrollLineNonce
@@ -599,9 +711,12 @@ struct LargeMarkdownPlaceholderView: View {
 /// Shown for files that exceed `codeMirrorEditorMaxBytes` in editor
 /// mode. The WKWebView path can technically render them but the JS
 /// heap pressure (CM6 doc model + decoration set + LSP diagnostic
-/// JSON push) compounds quickly. NSTextView TK1 in source mode handles
-/// gigabyte-class log files at constant RAM, so we route the user
-/// there explicitly. Design lock: `docs/CM6_INTEGRATION_DESIGN_2026-05-23.md` §17.5.
+/// JSON push) compounds quickly. NSTextView TK1 in source mode reads
+/// much larger files read-only — at ~1.5–2x file-size resident cost,
+/// bounded by the loader's 512 MiB hard ceiling (NOT constant RAM; a
+/// true bounded-RAM pager is a deferred follow-up) — so we route the
+/// user there explicitly.
+/// Design lock: `docs/CM6_INTEGRATION_DESIGN_2026-05-23.md` §17.5.
 struct LargeEditorPlaceholderView: View {
     let file: TextFile
     @ObservedObject var model: DocumentModel
@@ -616,7 +731,7 @@ struct LargeEditorPlaceholderView: View {
             Text("This file is \(byteString(file.byteCount)). " +
                  "CodeMirror is capped at \(byteString(codeMirrorEditorMaxBytes)) " +
                  "to avoid JS-heap pressure in the WebView. Source view " +
-                 "(NSTextView) handles much larger files at constant memory.")
+                 "handles larger files read-only (high memory use above ~64 MB).")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

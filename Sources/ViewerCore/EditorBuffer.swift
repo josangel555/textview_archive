@@ -143,7 +143,16 @@ public extension EditorBuffer {
     /// share the BOM-sniff / encoding fallback path with the read-only
     /// `Source` view. Throws `FileLoadError` unchanged so the caller
     /// can route to the same error surface.
-    static func load(url: URL, loader: TextFileLoader = TextFileLoader()) throws -> EditorBuffer {
+    ///
+    /// EDIT-path cap is deliberately conservative (32 MiB) and does NOT
+    /// inherit the read/view path's raised 512 MiB ceiling: editing a
+    /// few-hundred-MB file is out of scope (the CM6/WKWebView editor JS
+    /// heap can't take it — see `codeMirrorEditorMaxBytes`), and the
+    /// read-only Source view is the right surface for files that big.
+    static func load(
+        url: URL,
+        loader: TextFileLoader = TextFileLoader(maxBytes: 32 * 1024 * 1024)
+    ) throws -> EditorBuffer {
         let file = try loader.load(url: url)
         let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
         let mtime = attrs?[.modificationDate] as? Date

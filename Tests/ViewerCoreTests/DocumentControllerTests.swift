@@ -57,8 +57,72 @@ final class DocumentControllerTests: XCTestCase {
                        "File could not be read.")
         XCTAssertEqual(DocumentController.message(for: .decodingFailed),
                        "File is not valid UTF-8 or Latin-1 text.")
-        XCTAssertTrue(DocumentController.message(for: .tooLarge(bytes: 5_242_880))
-                      .contains("5.0 MB"))
+        XCTAssertTrue(DocumentController.message(
+            for: .tooLarge(bytes: 5_242_880, ceiling: 512 * 1024 * 1024))
+            .contains("5.0 MB"))
+    }
+
+    // MARK: - Two-tier read cap
+
+    /// Set a file's stat size without writing the bytes (sparse
+    /// truncate). The loader checks size before reading, so this trips
+    /// the ceiling gate fast and disk-cheap.
+    private func makeSparseFile(_ name: String, size: Int) throws -> URL {
+        let url = tmpDir.appendingPathComponent(name)
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: url)
+        defer { try? handle.close() }
+        try handle.truncate(atOffset: UInt64(size))
+        return url
+    }
+
+    /// A file above the OLD 32 MiB cap but below the 512 MiB ceiling now
+    /// returns `.loaded` (was `.error("File is too large")` before). Use
+    /// a small custom ceiling so the test stays cheap: a 2 KiB file with
+    /// a 1 MiB ceiling lands in the 32–512 band conceptually.
+    func test_open_aboveOldCapBelowCeiling_returnsLoaded() throws {
+        let url = tmpDir.appendingPathComponent("midband.txt")
+        try String(repeating: "x", count: 2048)
+            .write(to: url, atomically: true, encoding: .utf8)
+        // Default loader: 512 MiB ceiling, 64 MiB watermark — the 2 KiB
+        // file is trivially loadable and proves the open() path returns
+        // .loaded rather than .error for a non-tiny text file.
+        let state = DocumentController().open(url: url)
+        guard case .loaded(let file) = state else {
+            return XCTFail("expected .loaded, got \(state)")
+        }
+        XCTAssertEqual(file.byteCount, 2048)
+        XCTAssertFalse(file.isLargeReadOnly)
+    }
+
+    /// A file above the hard ceiling returns `.error` with a message
+    /// that conveys the ceiling (reads as a real cap, not an arbitrary
+    /// refusal of a merely-big file).
+    func test_open_aboveCeiling_returnsErrorWithCeilingMessage() throws {
+        let ceiling = 4 * 1024 * 1024
+        let url = try makeSparseFile("over-ceiling.bin", size: ceiling + 1)
+        let controller = DocumentController(
+            loader: TextFileLoader(maxBytes: ceiling)
+        )
+        let state = controller.open(url: url)
+        guard case .error(let failure) = state else {
+            return XCTFail("expected .error, got \(state)")
+        }
+        XCTAssertTrue(failure.message.contains("too large"),
+                      "got message: \(failure.message)")
+        XCTAssertTrue(failure.message.contains("read limit"),
+                      "message must convey a hard ceiling; got: \(failure.message)")
+        XCTAssertTrue(failure.message.contains("\(ceiling / 1_048_576) MB"),
+                      "message must name the ceiling in MB; got: \(failure.message)")
+    }
+
+    /// `message(for:.tooLarge)` format: en-US-POSIX decimal, names both
+    /// the file size and the ceiling.
+    func test_tooLargeMessage_namesCeiling() {
+        let msg = DocumentController.message(
+            for: .tooLarge(bytes: 600 * 1024 * 1024, ceiling: 512 * 1024 * 1024))
+        XCTAssertTrue(msg.contains("600.0 MB"), "got: \(msg)")
+        XCTAssertTrue(msg.contains("512 MB read limit"), "got: \(msg)")
     }
 
     // MARK: - .loading(URL) state

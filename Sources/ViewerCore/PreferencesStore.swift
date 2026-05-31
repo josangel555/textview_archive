@@ -3,7 +3,13 @@ import Foundation
 /// Thin wrapper around `UserDefaults` for our small set of persisted prefs.
 /// Pure data → easy to unit-test with a custom `UserDefaults(suiteName:)`.
 public final class PreferencesStore: @unchecked Sendable {
-    private let defaults: UserDefaults
+    /// The backing store. Exposed so sibling value-type stores
+    /// (`PanelEdgeAssignment`, `PanelVisibilityOverrides`) that own
+    /// their own comma-joined keys can persist into the SAME defaults
+    /// instance the app + tests inject here, rather than reaching for a
+    /// second `.standard` handle. Read-only on purpose — callers route
+    /// preference writes through the typed accessors above.
+    public let defaults: UserDefaults
 
     private enum Key {
         static let sidebarWidth = "MarkdownViewer.sidebarWidth"
