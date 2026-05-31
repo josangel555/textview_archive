@@ -590,3 +590,32 @@ Remaining quality follow-ups:
 - **`lsp.json` per-workspace override**. Designed in
   `docs/LSP_DESIGN.md` §11; not implemented.
 
+## Merge-campaign follow-ups (2026-05-31)
+
+- **VM-verify the landed UI merges** (build + host-unit verified, NOT
+  VM-verified — VM was offline):
+  - multi-repo: git badges, repo picker, repo-root glyphs, per-repo accordion
+    presence.
+  - session-ui: shoulder rails on all 3 edges, large-file source render
+    (>64 MiB → `isLargeReadOnly` fast path), view-mode picker, Claude-rail
+    filled-state.
+- **Two merges DEFERRED** (large UI conflict regions; need VM + careful
+  resolution):
+  - `feat/unified-search-panel` — ~305-line `main.swift` conflict
+    (post-integration) + `CrossSearchPanel → UnifiedSearchPanel` replacement
+    cascading through `DocumentModel`/`SearchAnywhereSection`.
+  - `fix/sidebar-zoomshortcut-metadatafont` — ~480-line `SidebarView` conflict.
+- **If `unified-search` lands later, RE-APPLY the audit's CrossSearchPanel
+  fixes to `UnifiedSearchPanel`.** The branch DELETES `CrossSearchPanel`
+  (created before the 2026-05-30 audit), so its a11y labels + hardcoded-color
+  fix (audit finding #57 / the WV·a11y pass) are NOT in the replacement.
+  Verify/port them.
+- **Branch cleanup available**: ~14 already-shipped feature branches
+  (`feat/cm6-editor`, `feat/lsp-v1`, `feat/sessions-v1`, `feat/walkthrough-ui`,
+  `feat/plugins-v1`, `feat/treesitter-lazyload`, `feat/code-folding`,
+  `feat/lsp-roadmap-phases-A-E`, `feat/mcp-stdio`,
+  `feat/search-anywhere-highlight`, `feat/editor-mode-poc`, `agent-cm6-phase2`,
+  `fix/sidebar-panels-polish`, `phase5b-treesitter`), plus `audit/pre-launch`
+  (now an ancestor of `main`) and `docs/reusable-core` (content on `main`).
+  Prune the confirmed-landed; KEEP `poc/{lsp,plugins,sessions}` (per owner).
+

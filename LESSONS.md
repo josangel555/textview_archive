@@ -1572,3 +1572,58 @@ when running back-to-back fix-workflows, either merge to `main` between
 runs (when verified) or accept that a consolidation/merge-ordering pass is
 deferred — and write it down so it isn't lost.
 
+## Branch consolidation merge campaign (2026-05-31)
+
+The deferred consolidation was executed: `main` fast-forwarded to
+`audit/pre-launch` (141 audit fixes + docs), then 4 feature branches were
+squash-merged in (image-scroll-zoom, media-preview-bugs, multi-repo-git,
+session-ui). Hard-won knowledge:
+
+**Squash-merge, not per-commit rebase, for divergent branches.** Each landed
+via `git merge --squash <branch>` → resolve conflicts ONCE against the final
+tree → one clean commit → linear trunk. Per-commit rebase re-conflicts at
+every commit. (Matches the git-workflow "squash recommended" rule.)
+
+**`swift build` does NOT compile tests** — a merge can be build-green yet
+test-compile-broken. After any merge that removes/renames API, run
+`swift test --filter <target>`. Two hits this session: (a) `SidebarModelTests`
+had git tests OUTSIDE the conflict region — the branch's own test-removal
+only knew its own tests, not ones `main` added after the branch forked →
+surfaced as `error: fatalError` at test-compile, not in `swift build`;
+(b) `TextFileLoaderTests` had a stale `0xC3 0x28 → .isoLatin1` expectation
+that `main`'s audited CP1252-before-Latin1 ladder (I18N-01) decodes as CP1252.
+
+**Cascading conflicts — merge ORDER matters.** Landing `integration/session-ui`
+first (it rewrote `main.swift`'s rails/sessions region) ballooned
+`feat/unified-search-panel`'s `main.swift` conflict to ~305 lines. Sequence
+overlapping-file branches cheapest-first, or accept the later one grows.
+
+**Key reconciliation decisions (so a future reader doesn't "fix" them back):**
+- `GitClient`: `run()` delegates to `runResult()`; ONE
+  `ProcessRunner.run(p, timeout: statusTimeout, limits:, maxOutputBytes: 512MiB)`
+  carries BOTH the audit's SCALE-2 byte-cap AND the multi-repo wall-clock
+  timeout. Kept `Self.resolvedGitBinary` (the branch had regressed to a
+  hardcoded `/usr/bin/git`).
+- `SidebarModel`: git status was DELIBERATELY moved OUT into the registry
+  (`TrackedReposChannel`/`Store`/`RepoFocusTracker`). The old SidebarModel git
+  API (`gitStatus`/`gitStatuses`/`gitRepoRoot`/`gitRootOverride`/
+  `refreshGitStatus`/`fnv1a`) is GONE; the SCALE-3 string-keyed optimization is
+  moot (git no longer lives there). Views read git via
+  `model.trackedRepos.status(for:)` / `.trackedRoots`. Kept integration's new
+  `claudeHasTranscripts` flag; dropped the resurrected `gitRootOverride`.
+- `TextFileLoader`: kept `main`'s `TextDecoder.decode -> Decoded` ladder
+  (shared with CrossFileSearch); took integration's two-tier cap
+  (`readableMaxBytes` 512 MiB hard / `softWarnBytes` 64 MiB watermark) +
+  back-compat `maxBytes` alias; `isLargeReadOnly` grafted onto the `.text`
+  TextFile construction.
+- `DocumentModel.displayedText`: large-file short-circuit
+  (`if file.isLargeReadOnly { return raw DisplayedText }`, skip the O(N)
+  formatter) grafted onto `main`'s `DisplayedText`-returning API.
+- `SidebarView`/`ContentView`/`ShoulderRailView`: panel-presence `hasRepo` now
+  reads `model.trackedRepos.trackedRoots.isEmpty == false` (was the removed
+  `sidebar.gitRepoRoot`). Both `trackedRepos` (registry) + `panelLayout`
+  (rails) observed directly.
+
+**Still VM-unverified** (build + host-unit verified only): multi-repo git
+badges/picker, session-ui rails/large-file-render/view-mode-picker. See BACKLOG.
+
