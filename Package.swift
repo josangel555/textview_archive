@@ -40,7 +40,11 @@ let package = Package(
         .library(name: "TreeSitterLuaLazy",        type: .dynamic, targets: ["TreeSitterLuaLazy"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-markdown.git", from: "0.3.0"),
+        // Pinned to the 0.8.x minor (the currently-resolved version).
+        // swift-markdown is pre-1.0, so `from:` would let SwiftPM walk
+        // to any future 0.x that bumps an arbitrary amount of API;
+        // `.upToNextMinor` caps the drift to patch releases of 0.8.
+        .package(url: "https://github.com/apple/swift-markdown.git", .upToNextMinor(from: "0.8.0")),
         // Spike-only: TreeSitter binding + one grammar to validate
         // (a) Swift 6 strict-concurrency clean build, (b) binary-size
         // delta, (c) cold-build-time delta. Both pull-throughs (the
@@ -50,8 +54,14 @@ let package = Package(
         .package(url: "https://github.com/tree-sitter/tree-sitter-json",          from: "0.24.0"),
         // alex-pinkus' main branch ships only grammar.json — parser.c
         // lives on the `with-generated-files` branch (and its tagged
-        // -with-generated-files variants).
-        .package(url: "https://github.com/alex-pinkus/tree-sitter-swift",         branch: "with-generated-files"),
+        // -with-generated-files variants). We pin to an exact revision
+        // rather than tracking the branch HEAD: a floating branch means
+        // any push to `with-generated-files` silently rewrites our
+        // generated parser on the next `swift package update`, with no
+        // tag/version to review. This revision is the tip that
+        // Package.resolved already locked. Re-pin deliberately (and
+        // re-diff the generated parser.c) when bumping.
+        .package(url: "https://github.com/alex-pinkus/tree-sitter-swift",         revision: "7b7909f2f6b9414be0958275f4c8e5d69c3bca43"),
         .package(url: "https://github.com/tree-sitter-grammars/tree-sitter-xml",  from: "0.7.0"),
         .package(url: "https://github.com/tree-sitter/tree-sitter-python",        from: "0.23.0"),
         .package(url: "https://github.com/tree-sitter/tree-sitter-javascript",    from: "0.23.0"),
