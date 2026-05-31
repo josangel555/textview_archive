@@ -11,10 +11,16 @@ import ViewerKit
 /// fail at the SQLite level, not at the UI level.
 public struct SQLiteBrowserView: View {
     public let url: URL
+    /// Unified zoom multiplier (`DocumentModel.zoom`, 1.0 = default).
+    /// Every font/row/size literal below is multiplied by this so the
+    /// browser tracks the same Cmd++/Cmd+− / Settings slider as the rest
+    /// of the app — matching CSVTableView's `model.zoom` scaling.
+    public let uiScale: CGFloat
     @StateObject private var model: SQLiteBrowserModel
 
-    public init(url: URL) {
+    public init(url: URL, uiScale: CGFloat = 1.0) {
         self.url = url
+        self.uiScale = uiScale
         self._model = StateObject(wrappedValue: SQLiteBrowserModel(url: url))
     }
 
@@ -69,7 +75,7 @@ public struct SQLiteBrowserView: View {
     private func schemaGroup(_ title: String, items: [String], icon: String) -> some View {
         if !items.isEmpty {
             Text(title.uppercased())
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 10 * uiScale, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
                 .padding(.top, 8)
@@ -78,17 +84,17 @@ public struct SQLiteBrowserView: View {
                 Button(action: { model.select(name: name) }) {
                     HStack(spacing: 6) {
                         Image(systemName: icon)
-                            .font(.system(size: 10))
+                            .font(.system(size: 10 * uiScale))
                             .foregroundStyle(.secondary)
-                            .frame(width: 14)
+                            .frame(width: 14 * uiScale)
                         Text(name)
-                            .font(.system(size: 12, weight: model.selectedName == name ? .semibold : .regular))
+                            .font(.system(size: 12 * uiScale, weight: model.selectedName == name ? .semibold : .regular))
                             .lineLimit(1)
                             .truncationMode(.middle)
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 10)
-                    .frame(height: 22)
+                    .frame(height: 22 * uiScale)
                     .contentShape(Rectangle())
                     .background(model.selectedName == name
                         ? Color.accentColor.opacity(0.20)
@@ -111,7 +117,7 @@ public struct SQLiteBrowserView: View {
         VStack(spacing: 0) {
             HStack {
                 Text("Query")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 11 * uiScale, weight: .semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
                 // SQL-01/SQL-03: while a query runs off-main, swap Run
@@ -134,8 +140,8 @@ public struct SQLiteBrowserView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             TextEditor(text: $model.query)
-                .font(.system(size: 12, design: .monospaced))
-                .frame(height: 110)
+                .font(.system(size: 12 * uiScale, design: .monospaced))
+                .frame(height: 110 * uiScale)
                 .padding(.horizontal, 4)
         }
         .background(Palette.windowBackground)
@@ -150,28 +156,28 @@ public struct SQLiteBrowserView: View {
             VStack(spacing: 10) {
                 ProgressView()
                 Text("Running query…")
-                    .font(.system(size: 11))
+                    .font(.system(size: 11 * uiScale))
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let err = model.queryError {
             VStack(spacing: 8) {
                 Text("Query error")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 12 * uiScale, weight: .semibold))
                     .foregroundStyle(.red)
                 Text(err)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: 11 * uiScale, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 20)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let result = model.queryResult {
-            ResultTableView(result: result)
+            ResultTableView(result: result, uiScale: uiScale)
         } else {
             VStack(spacing: 8) {
                 Text("Click a table or write a SELECT, then ⌘↵ to run.")
-                    .font(.system(size: 11))
+                    .font(.system(size: 11 * uiScale))
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -290,6 +296,11 @@ private final class SQLiteBrowserModel: ObservableObject {
 
 internal struct ResultTableView: View {
     let result: SQLiteReader.QueryResult
+    /// Unified zoom multiplier (`DocumentModel.zoom`, 1.0 = default).
+    /// Defaults to 1.0 so CSVTableView's reuse of the pure width helpers
+    /// (which pass no scale) and any test constructing the view bare
+    /// keep the original 1.0 metrics.
+    var uiScale: CGFloat = 1.0
 
     /// Per-column widths (one entry per column index). Auto-sized at
     /// first render from header + sample of cell widths; user can drag
@@ -334,14 +345,15 @@ internal struct ResultTableView: View {
 
     /// Bump font height to a stable line height across header + cells
     /// (NSAttributedString's intrinsic height fluctuates with content;
-    /// fixing it here keeps every row the same vertical size).
-    private let rowHeight: CGFloat = 22
+    /// fixing it here keeps every row the same vertical size). Scales
+    /// with `uiScale` to track the cell font growth.
+    private var rowHeight: CGFloat { 22 * uiScale }
 
     private var headerRow: some View {
         HStack(spacing: 0) {
             ForEach(Array(result.columns.enumerated()), id: \.offset) { (i, name) in
                 Text(name)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 11 * uiScale, weight: .semibold, design: .monospaced))
                     .padding(.horizontal, 8)
                     .frame(width: widthFor(i), height: rowHeight, alignment: .topLeading)
                     .background(Palette.controlBackground)
@@ -373,7 +385,7 @@ internal struct ResultTableView: View {
             ForEach(row.indices, id: \.self) { i in
                 let cell = row[i]
                 Text(displayText(cell))
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: 11 * uiScale, design: .monospaced))
                     .foregroundStyle(cell == nil ? .tertiary : .primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -408,7 +420,7 @@ internal struct ResultTableView: View {
                     .gesture(
                         DragGesture(minimumDistance: 0, coordinateSpace: .local)
                             .onChanged { value in
-                                let newWidth = max(40, widthFor(i) + value.translation.width)
+                                let newWidth = max(40 * uiScale, widthFor(i) + value.translation.width)
                                 if columnWidths.indices.contains(i) {
                                     columnWidths[i] = newWidth
                                 }
@@ -419,7 +431,7 @@ internal struct ResultTableView: View {
 
     private func widthFor(_ i: Int) -> CGFloat {
         if columnWidths.indices.contains(i) { return columnWidths[i] }
-        return 120
+        return 120 * uiScale
     }
 
     /// Compute widths from a sample of rows. Avoids touching every cell
@@ -432,7 +444,9 @@ internal struct ResultTableView: View {
     }
 
     private func recomputeWidths() {
-        columnWidths = Self.computeWidths(columns: result.columns, rows: result.rows)
+        columnWidths = Self.computeWidths(columns: result.columns,
+                                          rows: result.rows,
+                                          uiScale: uiScale)
     }
 
     private func fingerprint(for r: SQLiteReader.QueryResult) -> String {
@@ -443,21 +457,34 @@ internal struct ResultTableView: View {
     /// width + max of the first `sampleRows` cell widths per column,
     /// each clamped to keep one giant cell from making the column
     /// hundreds of points wide.
+    ///
+    /// Pure: `uiScale` is an explicit parameter (default 1.0), never a
+    /// global read, so the metric constants (`+24` padding, the
+    /// `80/220/320` clamps) and the per-char estimate all scale in
+    /// lockstep with the cell font and the result stays unit-testable.
+    /// CSVTableView reuses this at the default 1.0.
     internal static func computeWidths(columns: [String], rows: [[String?]],
-                                        sampleRows: Int = 200) -> [CGFloat] {
-        columns.enumerated().map { (i, name) -> CGFloat in
-            let headerW = approxTextWidth(name)
+                                        sampleRows: Int = 200,
+                                        uiScale: CGFloat = 1.0) -> [CGFloat] {
+        let pad: CGFloat = 24 * uiScale
+        let floor: CGFloat = 80 * uiScale
+        let headerCap: CGFloat = 220 * uiScale
+        let cellCap: CGFloat = 320 * uiScale
+        return columns.enumerated().map { (i, name) -> CGFloat in
+            let headerW = approxTextWidth(name, uiScale: uiScale)
             let cellW = rows.prefix(sampleRows).reduce(CGFloat(0)) { acc, row in
                 guard row.indices.contains(i), let cell = row[i] else { return acc }
-                return max(acc, min(approxTextWidth(cell), 320))
+                return max(acc, min(approxTextWidth(cell, uiScale: uiScale), cellCap))
             }
-            return max(80, min(headerW + 24, 220), min(cellW + 24, 320))
+            return max(floor, min(headerW + pad, headerCap), min(cellW + pad, cellCap))
         }
     }
 
     /// Cheap monospaced-width estimate. 7 pt per char @ 11 pt mono is
-    /// close enough for column sizing; users can drag to refine.
-    internal static func approxTextWidth(_ s: String) -> CGFloat {
-        CGFloat(s.count) * 7
+    /// close enough for column sizing; users can drag to refine. The
+    /// per-char estimate scales with `uiScale` (default 1.0) so wider
+    /// columns track the larger font.
+    internal static func approxTextWidth(_ s: String, uiScale: CGFloat = 1.0) -> CGFloat {
+        CGFloat(s.count) * 7 * uiScale
     }
 }

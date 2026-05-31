@@ -318,7 +318,8 @@ public struct ContentView: View {
             HStack(spacing: 0) {
                 MediaPreviewView(
                     url: url, category: cat,
-                    onOpenSibling: { sibling in model.open(url: sibling) }
+                    onOpenSibling: { sibling in model.open(url: sibling) },
+                    uiScale: CGFloat(model.zoom)
                 )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 MetadataPanel(url: url, category: cat)

@@ -20,12 +20,19 @@ public struct MediaPreviewView: View {
     /// Called when the user navigates within a file family (prev/next
     /// image in the same directory). Nil disables navigation.
     public let onOpenSibling: ((URL) -> Void)?
+    /// Unified zoom multiplier (`DocumentModel.zoom`). Only the SQLite
+    /// browser consumes it today — the image/audio/video/pdf previews
+    /// have their own zoom UX — so it defaults to 1.0 for call sites
+    /// (e.g. SplitPaneView) that never reach the `.sqlite` arm.
+    public let uiScale: CGFloat
 
     public init(url: URL, category: FileCategory,
-                onOpenSibling: ((URL) -> Void)? = nil) {
+                onOpenSibling: ((URL) -> Void)? = nil,
+                uiScale: CGFloat = 1.0) {
         self.url = url
         self.category = category
         self.onOpenSibling = onOpenSibling
+        self.uiScale = uiScale
     }
 
     public var body: some View {
@@ -45,7 +52,7 @@ public struct MediaPreviewView: View {
             case .video: VideoPreview(url: url)
             case .pdf:   PDFPreview(url: url)
             case .sqlite:
-                SQLiteBrowserView(url: url)
+                SQLiteBrowserView(url: url, uiScale: uiScale)
             default:
                 UnsupportedPreview(url: url, category: category)
             }
