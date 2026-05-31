@@ -95,4 +95,46 @@ final class ViewModeEditorTests: XCTestCase {
         XCTAssertFalse(ViewModeOptions.supportsEditor(URL(fileURLWithPath: "/tmp/a.png")))
         XCTAssertFalse(ViewModeOptions.supportsEditor(URL(fileURLWithPath: "/tmp/a.diff")))
     }
+
+    // MARK: - Source gating for binary / unknown / media (bug3)
+
+    // An unknown-extension file (e.g. `mydb.db.bak`) lands as `.unknown` and is
+    // shown in HexView; offering "Source" was a dead control. The picker must
+    // be HEX-only and the default must be HEX, not an unreachable Source.
+    func test_unknownExtension_isHexOnly() {
+        let m = modes("/tmp/mydb.db.bak")
+        XCTAssertEqual(m, [.hex], "unknown/binary-shaped files must offer HEX only; got \(m)")
+        XCTAssertFalse(m.contains(.source), "Source must be gated out for unknown files (bug3)")
+    }
+
+    func test_unknownExtension_defaultsToHex() {
+        XCTAssertEqual(ViewModeOptions.defaultMode(for: URL(fileURLWithPath: "/tmp/x.bak")), .hex)
+        XCTAssertEqual(ViewModeOptions.defaultMode(for: URL(fileURLWithPath: "/tmp/blob.xyzzy")), .hex)
+    }
+
+    // Media / preview categories render via the `.preview` document state and
+    // have no text representation — Source must not appear in their picker.
+    func test_mediaCategories_excludeSource() {
+        for path in ["/tmp/pic.png", "/tmp/song.mp3", "/tmp/clip.mp4",
+                     "/tmp/doc.pdf", "/tmp/db.sqlite"] {
+            let m = modes(path)
+            XCTAssertFalse(m.contains(.source), "Source must be gated out for \(path); got \(m)")
+            XCTAssertTrue(m.contains(.hex), "HEX must remain available for \(path); got \(m)")
+        }
+    }
+
+    // Text-shaped files keep Source (no over-gating regression).
+    func test_textFiles_keepSource() {
+        XCTAssertTrue(modes("/tmp/notes.txt").contains(.source))
+        XCTAssertTrue(modes("/tmp/main.swift").contains(.source))
+        XCTAssertTrue(modes("/tmp/README.md").contains(.source))
+        XCTAssertTrue(modes("/tmp/LICENSE").contains(.source), "extensionless text is .plainText, keeps Source")
+    }
+
+    // The empty-tab placeholder relies on the nil-URL baseline staying
+    // [.source, .hex] — keep that contract intact.
+    func test_nilURL_baselineUnchanged() {
+        XCTAssertEqual(ViewModeOptions.availableModes(for: nil), [.source, .hex])
+        XCTAssertEqual(ViewModeOptions.defaultMode(for: nil), .source)
+    }
 }

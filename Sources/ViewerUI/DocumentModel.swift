@@ -437,6 +437,46 @@ public final class DocumentModel: ObservableObject {
 
     public func toggleSidebarLock() { isSidebarLocked.toggle() }
 
+    /// "Pin" / follow-active-tab (item9). When on, switching the active tab
+    /// auto-reveals its file in the sidebar — but SELECT + EXPAND ONLY, never
+    /// re-rooting. So following a tab whose file lives outside the current
+    /// root is a no-op (no jarring root jump); a tab inside the root selects
+    /// and expands its ancestors. Global flag (per-session variant rides
+    /// session independence later).
+    @Published public var sidebarFollowsActiveTab: Bool = false
+
+    public func toggleSidebarFollowsActiveTab() { sidebarFollowsActiveTab.toggle() }
+
+    /// If follow-mode is on, reveal the active tab's file in the sidebar
+    /// without re-rooting. Called on tab-selection change.
+    private func followActiveTabIfNeeded() {
+        guard sidebarFollowsActiveTab, let url = currentURL else { return }
+        revealInSidebarWithinRoot(url)
+    }
+
+    /// Select + expand `url` in the sidebar IFF it's inside the current root.
+    /// Never changes the root (unlike `revealInSidebar`, which can re-root).
+    /// No-op when there's no root or the URL is outside it.
+    private func revealInSidebarWithinRoot(_ url: URL) {
+        let target = url.standardizedFileURL.resolvingSymlinksInPath()
+        guard let root = sidebar.rootURL else { return }
+        let rootStd = root.standardizedFileURL.resolvingSymlinksInPath()
+        let inRoot = target.path == rootStd.path
+            || target.path.hasPrefix(rootStd.path + "/")
+        guard inRoot else { return }   // outside root → don't re-root
+        var cur = rootStd
+        let rel = target.path
+            .replacingOccurrences(of: rootStd.path + "/", with: "")
+            .split(separator: "/")
+            .map(String.init)
+        if !sidebar.isExpanded(cur) { sidebar.toggleExpansion(cur) }
+        for segment in rel.dropLast() {
+            cur = cur.appendingPathComponent(segment, isDirectory: true)
+            if !sidebar.isExpanded(cur) { sidebar.toggleExpansion(cur) }
+        }
+        sidebar.setSelected(target)
+    }
+
     public func openPath(_ url: URL) {
         var isDir: ObjCBool = false
         if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir),
@@ -1977,6 +2017,9 @@ public final class DocumentModel: ObservableObject {
         updateDerived()
         recordOpenedFile(state: state, resolved: resolved)
         startWatchingCurrentFile()
+        // item9: follow-mode reveal for opens (open doesn't route through
+        // selectTab). Select + expand within the current root only.
+        followActiveTabIfNeeded()
     }
 
     /// True when `openResolved` should route the file read off the main
@@ -2103,6 +2146,13 @@ public final class DocumentModel: ObservableObject {
         guard let i = tabs.selectedIndex,
               tabs.tabs.indices.contains(i),
               tabs.tabs[i].url == watchedURL else { return }
+        // 0d: compute the disk-staleness SIGNAL on the watcher tick. This is
+        // purely additive — the auto-reload below still runs (and resets the
+        // signal to `.fresh`), so behavior is unchanged. The signal is what a
+        // future flag-instead-of-reload pref + the status-bar red "Modified"
+        // chip consume; for a clean tab it's transient (reload clears it),
+        // but a deleted file persists as `.deleted`.
+        refreshDiskState(at: i)
         let tab = tabs.tabs[i]
         if tab.isDirty, let buf = tabCoordinator.editorBuffers[tab.id] {
             let attrs = try? FileManager.default.attributesOfItem(atPath: watchedURL.path)
@@ -2166,6 +2216,9 @@ public final class DocumentModel: ObservableObject {
         var t = tabs.tabs[index]
         let wasEditor = t.viewMode == .editor
         t.state = state
+        // 0d: a successful reload re-baselines the loaded copy against disk,
+        // so the staleness signal is cleared.
+        t.diskState = .fresh
         tabCoordinator.replace(at: index, with: t)
         // UDC-2: rebase a clean editor buffer onto the reloaded text.
         if wasEditor, case .loaded(let newFile) = state {
@@ -2184,6 +2237,87 @@ public final class DocumentModel: ObservableObject {
             // seed one from the fresh `.loaded` state on first access.
         }
         updateDerived()
+    }
+
+    /// Recompute the disk-staleness SIGNAL for the tab at `index` by statting
+    /// its file and comparing against the loaded `(mtime, size)` baseline.
+    /// Stores the result on `Tab.diskState`. Pure signal — does NOT reload
+    /// or change any behavior (0d): consumers (status-bar red "Modified"
+    /// chip, future tab red-dot) read it; auto-reload still runs unchanged.
+    ///
+    /// Baseline source: the loaded `TextFile.modifiedTime/byteCount`, falling
+    /// back to an editor buffer's `lastSavedMTime/Size`. A tab with no
+    /// baseline (e.g. binary/preview/loading) can't be classified → `.fresh`.
+    func refreshDiskState(at index: Int) {
+        guard tabs.tabs.indices.contains(index) else { return }
+        let tab = tabs.tabs[index]
+        guard let url = tab.url else { return }
+
+        // Loaded-copy baseline.
+        var baselineMTime: Date? = nil
+        var baselineSize: Int? = nil
+        if case .loaded(let file) = tab.state {
+            baselineMTime = file.modifiedTime
+            baselineSize = file.byteCount
+        } else if let buf = tabCoordinator.editorBuffers[tab.id] {
+            baselineMTime = buf.lastSavedMTime
+            baselineSize = buf.lastSavedSize
+        } else {
+            // No comparable baseline (binary / preview / loading). Leave as-is
+            // unless the file vanished — a deleted signal is still meaningful.
+            if !FileManager.default.fileExists(atPath: url.path) {
+                setDiskState(.deleted, at: index)
+            }
+            return
+        }
+
+        let exists = FileManager.default.fileExists(atPath: url.path)
+        let attrs = exists ? (try? FileManager.default.attributesOfItem(atPath: url.path)) : nil
+        let newState = ViewerCore.Tab.classifyDiskState(
+            baselineMTime: baselineMTime, baselineSize: baselineSize,
+            currentMTime: attrs?[.modificationDate] as? Date,
+            currentSize: attrs?[.size] as? Int,
+            currentExists: exists
+        )
+        setDiskState(newState, at: index)
+    }
+
+    /// Recompute the active tab's disk-staleness signal.
+    func refreshDiskStateForActiveTab() {
+        if let i = tabs.selectedIndex { refreshDiskState(at: i) }
+    }
+
+    /// Set `Tab.diskState` at `index`, republishing only on an actual change
+    /// (Equatable Tab → SwiftUI diff). No-op if unchanged.
+    private func setDiskState(_ state: ViewerCore.Tab.DiskState, at index: Int) {
+        guard tabs.tabs.indices.contains(index),
+              tabs.tabs[index].diskState != state else { return }
+        var t = tabs.tabs[index]
+        t.diskState = state
+        tabCoordinator.replace(at: index, with: t)
+        objectWillChange.send()
+    }
+
+    /// Force-reload the tab at `index` from disk, regardless of whether the
+    /// watcher detected an on-disk change. Backs the right-click tab →
+    /// "Refresh" menu item (bug6). Reuses the existing reload path and the
+    /// dirty-buffer conflict prompt: a tab with unsaved editor edits routes
+    /// through `presentExternalEditConflict` (Keep My Edits / Discard &
+    /// Reload) so a force-refresh never silently clobbers the user's typing;
+    /// a clean tab reloads unconditionally.
+    public func refreshTab(at index: Int) {
+        guard tabs.tabs.indices.contains(index),
+              let url = tabs.tabs[index].url else { return }
+        let tab = tabs.tabs[index]
+        if tab.isDirty, tabCoordinator.editorBuffers[tab.id] != nil {
+            // Dirty editor buffer: prompt before discarding. The prompt's
+            // "Discard & Reload" branch drops the buffer and calls back into
+            // `reload(url:at:)` via `onReloadFromDisk`; "Keep My Edits"
+            // leaves the buffer untouched.
+            _ = editor.presentExternalEditConflict(forTabID: tab.id, at: index, url: url)
+            return
+        }
+        reload(url: url, at: index)
     }
 
     private func startWatchingCurrentFile() {
@@ -2386,6 +2520,13 @@ public final class DocumentModel: ObservableObject {
         materializeIfNeeded(at: index)
         updateDerived()
         startWatchingCurrentFile()
+        // 0d: refresh the staleness signal for the now-active tab (background
+        // tabs aren't watched, so a switch is when we re-stat). Signal only —
+        // no reload.
+        refreshDiskStateForActiveTab()
+        // item9: if "pin"/follow is on, reveal the now-active file in the
+        // sidebar (select + expand only, never re-root).
+        followActiveTabIfNeeded()
     }
 
     /// Append a tab pointing at `url` without loading its contents.
@@ -2582,9 +2723,17 @@ public final class DocumentModel: ObservableObject {
                 case .image, .audio, .video, .pdf, .sqlite:
                     let state = controller.open(url: url)
                     t.state = state
-                case .markdown, .mermaid, .plainText, .code, .html,
-                        .binary, .unknown:
+                case .markdown, .mermaid, .plainText, .code, .html:
                     loadTextAsync(url: url, intoTabID: t.id)
+                case .binary, .unknown:
+                    // bug3: binary / unknown files have no Source/Rendered/
+                    // Table/Diff mode (see ViewModeOptions.availableModes), so
+                    // this arm is no longer reachable via the picker. Keep the
+                    // tab in `.binary` (HexView) rather than kicking a
+                    // `loadTextAsync` the loader already rejected as binary —
+                    // that re-read silently failed and left the picker and the
+                    // content view disagreeing. No-op.
+                    break
                 }
             }
         case .editor:

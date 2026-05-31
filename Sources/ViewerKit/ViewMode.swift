@@ -20,8 +20,14 @@ public enum ViewMode: String, Equatable, Sendable, CaseIterable, Codable {
 public enum ViewModeOptions {
     public static func availableModes(for url: URL?) -> [ViewMode] {
         guard let url else { return [.source, .hex] }
-        var modes: [ViewMode] = [.source]
         let cat = FileTypeDetector.category(for: url)
+        // Binary / unknown files have no meaningful text rendering — the
+        // content switch shows them in HexView unconditionally, so offering
+        // "Source" was a dead control: selecting it re-read a file the loader
+        // already rejected as binary, silently failed, and left the picker
+        // claiming "Source" while HexView stayed up (bug3). Seed Source only
+        // for categories that actually have a text representation.
+        var modes: [ViewMode] = hasTextRepresentation(cat) ? [.source] : []
         if cat == .markdown || cat == .mermaid { modes.insert(.rendered, at: 0) }
         if Self.supportsFormatting(url) { modes.append(.formatted) }
         // CSV / TSV files get a table mode. Default-on for these
@@ -57,7 +63,25 @@ public enum ViewModeOptions {
         if Self.supportsTable(url) { return .table }
         let cat = FileTypeDetector.category(for: url)
         if cat == .markdown || cat == .mermaid { return .rendered }
+        // Binary / unknown files have no Source mode (see availableModes) —
+        // default straight into HEX so a binary opens into a usable view
+        // rather than a now-unavailable Source (bug3).
+        if !hasTextRepresentation(cat) { return .hex }
         return .source
+    }
+
+    /// True for categories that have a real plain-text / source rendering.
+    /// `.binary` and `.unknown` do not — the loader rejects them as binary
+    /// and the content switch shows them in HexView. The preview-only media
+    /// categories (image/audio/video/pdf/sqlite) also have no text view; they
+    /// render via the `.preview` document state, not a Source ViewMode.
+    static func hasTextRepresentation(_ cat: FileCategory) -> Bool {
+        switch cat {
+        case .markdown, .mermaid, .plainText, .code, .html:
+            return true
+        case .image, .audio, .video, .pdf, .sqlite, .binary, .unknown:
+            return false
+        }
     }
 
     private static let formatterExtensions: Set<String> = [
@@ -92,11 +116,6 @@ public enum ViewModeOptions {
     /// or a non-text payload.
     public static func supportsEditor(_ url: URL) -> Bool {
         if supportsDiff(url) { return false }
-        switch FileTypeDetector.category(for: url) {
-        case .markdown, .mermaid, .plainText, .code, .html:
-            return true
-        case .image, .audio, .video, .pdf, .sqlite, .binary, .unknown:
-            return false
-        }
+        return hasTextRepresentation(FileTypeDetector.category(for: url))
     }
 }

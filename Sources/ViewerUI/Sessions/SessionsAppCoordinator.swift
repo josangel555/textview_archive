@@ -52,13 +52,49 @@ public final class SessionsAppCoordinator: ObservableObject {
     @Published public private(set) var firstPaintGoToToken: UUID? = nil
     private var firstPaintGate = FirstPaintGoToGate()
 
+    // MARK: Incremental / debounced autosave (crash recovery, §5.4) -----
+    //
+    // The only writers of live tab/sidebar/zoom state used to be the
+    // session-switch (`detach`) and clean-quit (`flushForTermination`)
+    // edges — so a crash / SIGKILL / force-quit between them lost
+    // everything since the last switch or quit. This drives the existing
+    // coalescing `enqueueSave` (via `replaceSnapshot`) off a NARROW set of
+    // `@Published` streams so a crash recovers the last ~500 ms of state.
+    //
+    // REPUB-1 discipline: we subscribe to the SPECIFIC publishers that
+    // change persisted fields (`tabCoordinator.$tabs`, `sidebar.$rootURL`,
+    // `$zoom`/`$sourceWordWrap`/`$themeOverride`) — never `model`'s whole
+    // `objectWillChange` firehose (which fires per keystroke / FS event /
+    // git poll / highlight-ready). Each tick reschedules a single debounce
+    // timer; on fire we make a snapshot and persist ONLY if its persisted
+    // content actually changed (equality guard), so a no-op re-publish or a
+    // typing storm collapses to at most one write per window.
+    private var autosaveCancellables: Set<AnyCancellable> = []
+    /// Monotonic token identifying the latest scheduled debounce. A deferred
+    /// fire only runs if its token still matches — so a later reschedule (or
+    /// an explicit flush) cleanly supersedes an in-flight timer without
+    /// relying on DispatchWorkItem cancel semantics.
+    private var autosaveToken: UInt64 = 0
+    /// True while a debounce is pending — drives the test flush hook.
+    private var autosavePending: Bool = false
+    /// Session the autosave subscriptions are currently bound to, so a
+    /// stale subscription can't snapshot the wrong session into the wrong
+    /// file after a switch (Phase-2 per-session-model safety).
+    private var autosaveBoundSessionID: UUID?
+    /// Last persisted snapshot per session — the equality-guard baseline.
+    private var lastPersistedContent: [UUID: SessionSnapshot] = [:]
+    /// Debounce window. Injectable so tests can drive it to ~0.
+    private let autosaveDebounce: TimeInterval
+
     public init(model: DocumentModel,
                 store: SessionStore = SessionStore(),
-                initialRoot: URL? = nil) {
+                initialRoot: URL? = nil,
+                autosaveDebounce: TimeInterval = 0.5) {
         self.model = model
         self.store = store
         self.core = SessionsCoordinator(store: store)
         self.initialRoot = initialRoot
+        self.autosaveDebounce = autosaveDebounce
     }
 
     /// Boot the coordinator. Call exactly once from
@@ -103,14 +139,17 @@ public final class SessionsAppCoordinator: ObservableObject {
     }
 
     /// Open a folder as a session — reveal existing if path matches,
-    /// else create a new session. When `forceNew` is true, also arms
-    /// the first-paint Go-to-path gate so the view layer can present
-    /// the prompt as the empty-session entry point.
+    /// else create a new session.
+    ///
+    /// Every caller of `openFolder(forceNew:)` already supplies a
+    /// concrete folder URL ("Open in New Session" passes the right-clicked
+    /// node's URL; bootstrap passes the prefs root). The empty-session
+    /// entry point that *wants* the Go-to-path prompt uses the dedicated
+    /// `requestNewSessionViaGoTo()` instead — it never routes through here.
+    /// So arming the first-paint gate on `forceNew` had no legitimate
+    /// caller and only produced a spurious GoTo prompt stacked on top of
+    /// the just-opened session (bug2). Removed.
     public func openFolder(_ url: URL, forceNew: Bool = false) {
-        firstPaintGate.recordOpenFolder(forceNew: forceNew)
-        if forceNew, firstPaintGate.isArmed {
-            firstPaintGoToToken = UUID()
-        }
         core.openFolder(url, forceNew: forceNew)
     }
 
@@ -189,11 +228,106 @@ public final class SessionsAppCoordinator: ObservableObject {
     /// disk. The legacy `_last.json` bridge writeback was retired in
     /// decision G (2026-05-25).
     public func flushForTermination() {
+        // Cancel any pending debounce; the explicit snapshot below is the
+        // final, authoritative write (don't let a half-window timer race it).
+        autosaveToken &+= 1
+        autosavePending = false
         if let active {
             let snap = active.makeSnapshot()
+            lastPersistedContent[active.id] = snap
             core.replaceSnapshot(id: active.id, with: snap)
         }
         core.flushPersistenceSync()
+    }
+
+    // MARK: - Autosave wiring
+
+    /// Bind the debounced autosave to `state`'s wrapped model. Tears down
+    /// any prior binding first so exactly one session is observed at a time
+    /// (the Phase-1 façade shares one DocumentModel, but keying the baseline
+    /// + bound-id on the session makes this correct once Phase-2 splits into
+    /// per-session models). Seeds the equality-guard baseline from the
+    /// session's current snapshot so the first idle tick doesn't write a
+    /// no-op.
+    private func armAutosave(for state: SessionState) {
+        disarmAutosave()
+        autosaveBoundSessionID = state.id
+        // Seed baseline so an immediate re-publish that changes nothing is a
+        // no-op. The session was just hydrated/created; its current snapshot
+        // matches what `replaceSnapshot` already holds.
+        lastPersistedContent[state.id] = state.makeSnapshot()
+
+        let m = state.model
+        // Merge the narrow persisted-field publishers. `map { _ in () }`
+        // erases the heterogeneous element types into a uniform tick.
+        let tabs = m.tabCoordinator.$tabs.map { _ in () }
+        let root = m.sidebar.$rootURL.map { _ in () }
+        let zoom = m.$zoom.map { _ in () }
+        let wrap = m.$sourceWordWrap.map { _ in () }
+        let theme = m.$themeOverride.map { _ in () }
+        Publishers.MergeMany([
+            tabs.eraseToAnyPublisher(),
+            root.eraseToAnyPublisher(),
+            zoom.eraseToAnyPublisher(),
+            wrap.eraseToAnyPublisher(),
+            theme.eraseToAnyPublisher(),
+        ])
+        // Each `@Published` emits its current value on subscribe, so arming
+        // produces an initial volley of ticks. We DON'T `dropFirst` them —
+        // relying on a publisher-count magic number is brittle. Instead the
+        // equality guard in `fireAutosave` makes that initial volley a no-op
+        // (the snapshot equals the freshly-seeded baseline), which is the
+        // same protection that suppresses any later equal-value re-publish.
+        .sink { [weak self] _ in self?.scheduleAutosave() }
+        .store(in: &autosaveCancellables)
+    }
+
+    /// Cancel the debounce + drop subscriptions. Called on detach / switch.
+    private func disarmAutosave() {
+        autosaveToken &+= 1   // supersede any in-flight deferred fire
+        autosavePending = false
+        autosaveCancellables.removeAll()
+        autosaveBoundSessionID = nil
+    }
+
+    /// (Re)schedule the single debounce timer. Coalesces a burst of ticks
+    /// into one fire by bumping the token: only the latest deferred block
+    /// matches and runs.
+    private func scheduleAutosave() {
+        autosaveToken &+= 1
+        autosavePending = true
+        let scheduled = autosaveToken
+        DispatchQueue.main.asyncAfter(deadline: .now() + autosaveDebounce) { [weak self] in
+            guard let self, self.autosaveToken == scheduled else { return }
+            self.autosavePending = false
+            self.fireAutosave()
+        }
+    }
+
+    /// Snapshot the bound session and persist ONLY if its persisted content
+    /// changed since the last write (equality guard). Exposed for tests via
+    /// `flushAutosaveNow()`.
+    private func fireAutosave() {
+        guard let id = autosaveBoundSessionID,
+              let active, active.id == id else { return }
+        let snap = active.makeSnapshot()
+        if let prev = lastPersistedContent[id],
+           prev.hasSamePersistedContent(as: snap) {
+            return  // no persisted change — don't spam the write queue
+        }
+        lastPersistedContent[id] = snap
+        core.replaceSnapshot(id: id, with: snap)
+    }
+
+    /// Test hook: run the pending debounced autosave immediately (skipping
+    /// the wall-clock wait) so tests can assert the equality-guarded write
+    /// without sleeping. No-op if nothing is pending. Bumps the token so the
+    /// still-scheduled deferred block becomes a no-op.
+    func flushAutosaveNow() {
+        guard autosavePending else { return }
+        autosaveToken &+= 1
+        autosavePending = false
+        fireAutosave()
     }
 
     // MARK: - private
@@ -234,6 +368,7 @@ public final class SessionsAppCoordinator: ObservableObject {
         }
         state.mount()
         active = state
+        armAutosave(for: state)
     }
 
     /// Switch the active SessionState to point at `snap` without
@@ -276,6 +411,7 @@ public final class SessionsAppCoordinator: ObservableObject {
         state.hydrate(from: snap)
         state.mount()
         active = state
+        armAutosave(for: state)
     }
 
     // MARK: Lifecycle bridge -----------------------------------------
@@ -316,7 +452,13 @@ public final class SessionsAppCoordinator: ObservableObject {
             // bootstrap, so coming back to this session via activate(id:)
             // hydrates from a stale empty-tabs snapshot — the user
             // experiences this as "my tabs disappeared on switch".
+            // Stop the debounced autosave for the outgoing session before
+            // its final detach-time snapshot so a stale timer can't fire a
+            // write after we've handed off. The explicit snapshot below is
+            // the authoritative final write for this session.
+            owner.disarmAutosave()
             let snap = active.makeSnapshot()
+            owner.lastPersistedContent[active.id] = snap
             owner.core.replaceSnapshot(id: active.id, with: snap)
             active.detach()
         }

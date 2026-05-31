@@ -82,6 +82,8 @@ final class SidebarPanelHeightsTests: XCTestCase {
                        "MarkdownViewer.sidebar.claudeTimeline.height")
         XCTAssertEqual(SidebarPanel.lspOutline.appStorageKey,
                        "MarkdownViewer.sidebar.lspOutline.height")
+        XCTAssertEqual(SidebarPanel.recentlyOpened.appStorageKey,
+                       "MarkdownViewer.sidebar.recentlyOpened.height")
         XCTAssertEqual(SidebarPanel.pluginSections.appStorageKey,
                        "MarkdownViewer.sidebar.pluginSections.height")
     }

@@ -26,6 +26,15 @@ final class SidebarDataPresenceTests: XCTestCase {
         }
     }
 
+    // MARK: - recently-opened (global, gated on history presence)
+
+    func test_recentlyOpened_gatedOnRecents() {
+        // No recents → hidden, even with a root open.
+        XCTAssertEqual(presence(SidebarDataPresence.Inputs(hasRoot: true))[.recentlyOpened], false)
+        // Recents present → shown, even without a root (it's global).
+        XCTAssertEqual(presence(SidebarDataPresence.Inputs(hasRecents: true))[.recentlyOpened], true)
+    }
+
     // MARK: - no root open
 
     func test_noRoot_onlyAlwaysOnPanelsPresent() {

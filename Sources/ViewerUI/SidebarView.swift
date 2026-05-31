@@ -67,6 +67,8 @@ struct SidebarView: View {
     private var lspNavHeight: Double = Double(SidebarPanelKind.lspNavigation.defaultHeight)
     @AppStorage(SidebarPanelKind.lspProblems.appStorageKey)
     private var lspProblemsHeight: Double = Double(SidebarPanelKind.lspProblems.defaultHeight)
+    @AppStorage(SidebarPanelKind.recentlyOpened.appStorageKey)
+    private var recentsHeight: Double = Double(SidebarPanelKind.recentlyOpened.defaultHeight)
     @AppStorage(SidebarPanelKind.pluginSections.appStorageKey)
     private var pluginHeight: Double = Double(SidebarPanelKind.pluginSections.defaultHeight)
 
@@ -119,9 +121,24 @@ struct SidebarView: View {
             // Plugin-contributed sidebar sections. Self-managing
             // collapse state; appears above FILES regardless of
             // whether a folder is open (a plugin may not need one).
-            PluginSidebarSections(model: model)
-                .environment(\.sidebarSectionBodyHeight,
-                             SidebarPanelHeights.clamp(CGFloat(pluginHeight)))
+            //
+            // bug5: gate on the resolved visibility so the rail's
+            // `.pluginSections` toggle actually works. This panel was
+            // mounted unconditionally, bypassing `panelLayout.isVisible`
+            // entirely — so its rail button's `.hidden` override was
+            // computed but never read, leaving the "ROW COUNTS" window
+            // permanently visible with a dead toggle. `dataPresent` is
+            // always `true` for `.pluginSections` (a plugin section shows
+            // regardless of folder), so only an explicit `.hidden` override
+            // hides it — which is exactly the path the rail button drives.
+            if panelLayout.isVisible(
+                .pluginSections,
+                dataPresent: SidebarDataPresence.isPresent(.pluginSections, presenceInputs)
+            ) {
+                PluginSidebarSections(model: model)
+                    .environment(\.sidebarSectionBodyHeight,
+                                 SidebarPanelHeights.clamp(CGFloat(pluginHeight)))
+            }
         }
         .frame(minWidth: 180, idealWidth: 240)
         // Top-align: without this, a short content stack centers
@@ -186,22 +203,30 @@ struct SidebarView: View {
     /// navigation + problems are present whenever a root is open (they
     /// hold cross-file state useful even when the active tab isn't an
     /// LSP language) — all encoded in `SidebarDataPresence`.
-    private var panelVisibility: [(panel: SidebarPanelKind, isVisible: Bool)] {
-        let presence = SidebarDataPresence.evaluate(
-            SidebarDataPresence.Inputs(
-                hasRoot: sidebar.rootURL != nil,
-                // Multi-repo: the git accordion shows when ANY repo is
-                // tracked, not just a single auto-discovered sidebar-root.
-                hasRepo: trackedRepos.trackedRoots.isEmpty == false,
-                hasLSPLanguage: model.currentURL.flatMap {
-                    LSPLanguageRegistry.default.language(for: $0)
-                } != nil,
-                claudeHasTranscripts: sidebar.claudeHasTranscripts
-            )
+    /// Single source for the `SidebarDataPresence.Inputs` so the accordion
+    /// (`panelVisibility`), the plugin-section gate, and any other presence
+    /// read all derive from one heuristic — the file's single-source-of-truth
+    /// discipline. Lifted out of `panelVisibility` so #4/#5 don't recompute it
+    /// independently and drift.
+    private var presenceInputs: SidebarDataPresence.Inputs {
+        SidebarDataPresence.Inputs(
+            hasRoot: sidebar.rootURL != nil,
+            // Multi-repo: the git accordion shows when ANY repo is
+            // tracked, not just a single auto-discovered sidebar-root.
+            hasRepo: trackedRepos.trackedRoots.isEmpty == false,
+            hasLSPLanguage: model.currentURL.flatMap {
+                LSPLanguageRegistry.default.language(for: $0)
+            } != nil,
+            claudeHasTranscripts: sidebar.claudeHasTranscripts,
+            hasRecents: !model.recents.isEmpty
         )
+    }
+
+    private var panelVisibility: [(panel: SidebarPanelKind, isVisible: Bool)] {
+        let presence = SidebarDataPresence.evaluate(presenceInputs)
         let accordionOrder: [SidebarPanelKind] = [
             .bookmarks, .searchAnywhere, .git, .claudeTimeline,
-            .lspOutline, .lspNavigation, .lspProblems,
+            .lspOutline, .lspNavigation, .lspProblems, .recentlyOpened,
         ]
         return accordionOrder.map { kind in
             (kind, panelLayout.isVisible(kind, dataPresent: presence[kind] ?? false))
@@ -236,15 +261,21 @@ struct SidebarView: View {
                 .environment(\.sidebarSectionBodyHeight,
                              SidebarPanelHeights.clamp(CGFloat(searchHeight)))
         case .git:
-            GitPanelSection(model: model, sidebar: sidebar, trackedRepos: trackedRepos)
+            // bug4: pass the forced-`.shown` override so the section renders
+            // a "Not a git repository" placeholder (instead of EmptyView)
+            // when the rail button forces it on in a non-repo folder.
+            GitPanelSection(model: model, sidebar: sidebar, trackedRepos: trackedRepos,
+                            forcedShown: panelLayout.override(for: .git) == .shown)
                 .environment(\.sidebarSectionBodyHeight,
                              SidebarPanelHeights.clamp(CGFloat(gitHeight)))
         case .claudeTimeline:
-            ClaudeTimelineSection(model: model, sidebar: sidebar)
+            ClaudeTimelineSection(model: model, sidebar: sidebar,
+                                  forcedShown: panelLayout.override(for: .claudeTimeline) == .shown)
                 .environment(\.sidebarSectionBodyHeight,
                              SidebarPanelHeights.clamp(CGFloat(claudeHeight)))
         case .lspOutline:
-            LSPOutlineWrapper(model: model)
+            LSPOutlineWrapper(model: model,
+                              forcedShown: panelLayout.override(for: .lspOutline) == .shown)
                 .environment(\.sidebarSectionBodyHeight,
                              SidebarPanelHeights.clamp(CGFloat(lspHeight)))
         case .lspNavigation:
@@ -277,6 +308,10 @@ struct SidebarView: View {
             )
             .environment(\.sidebarSectionBodyHeight,
                          SidebarPanelHeights.clamp(CGFloat(lspProblemsHeight)))
+        case .recentlyOpened:
+            RecentlyOpenedSection(model: model)
+                .environment(\.sidebarSectionBodyHeight,
+                             SidebarPanelHeights.clamp(CGFloat(recentsHeight)))
         case .files, .pluginSections:
             // FILES is rendered inline at the top of the sidebar
             // (above this accordion stack). pluginSections is below.
@@ -299,7 +334,11 @@ struct SidebarView: View {
             ResizableSectionDivider(heightAbove: heightBinding($lspHeight))
         case .lspNavigation:
             ResizableSectionDivider(heightAbove: heightBinding($lspNavHeight))
-        case .lspProblems, .files, .pluginSections:
+        case .lspProblems:
+            ResizableSectionDivider(heightAbove: heightBinding($lspProblemsHeight))
+        case .recentlyOpened:
+            ResizableSectionDivider(heightAbove: heightBinding($recentsHeight))
+        case .files, .pluginSections:
             EmptyView()
         }
     }
@@ -442,7 +481,9 @@ struct SidebarView: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .help("Sort folder contents")
+            // 0c: uniform HelpInfo — bubble title + status-bar description.
+            .helpInfo(title: "Sort",
+                      description: "Sort folder contents by name, date, or kind")
             .accessibilityIdentifier("mdv.sidebar.sort")
             // MARK: - Recency mode dropdown (file-tree-recency agent)
             //
@@ -474,7 +515,8 @@ struct SidebarView: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .help("Color-code file rows by recency (Modified / Added / Created)")
+            .helpInfo(title: "Recency colors",
+                      description: "Color-code file rows by recency (Modified / Added / Created)")
             .accessibilityIdentifier("mdv.sidebar.recencyMode")
             // Lock toggle. When locked, auto-reveal-on-click +
             // tab-reveal won't change the sidebar root; the user's
@@ -488,9 +530,26 @@ struct SidebarView: View {
                                      : .secondary)
             }
             .buttonStyle(.plain)
-            .help(model.isSidebarLocked
-                  ? "Sidebar root locked — click to unlock"
-                  : "Lock sidebar root (prevent auto-navigation)")
+            .helpInfo(title: model.isSidebarLocked ? "Unlock sidebar" : "Lock sidebar",
+                      description: model.isSidebarLocked
+                        ? "Sidebar root locked — click to unlock"
+                        : "Lock sidebar root (prevent auto-navigation)")
+            // item9: pin / follow-active-tab. When on, switching tabs reveals
+            // the active file in the tree (select + expand, no re-root).
+            Button(action: { model.toggleSidebarFollowsActiveTab() }) {
+                Image(systemName: model.sidebarFollowsActiveTab
+                      ? "pin.fill" : "pin")
+                    .font(.system(size: 10))
+                    .foregroundStyle(model.sidebarFollowsActiveTab
+                                     ? Color.accentColor
+                                     : .secondary)
+            }
+            .buttonStyle(.plain)
+            .helpInfo(title: model.sidebarFollowsActiveTab ? "Following active tab" : "Follow active tab",
+                      description: model.sidebarFollowsActiveTab
+                        ? "Sidebar follows the active tab — click to stop"
+                        : "Reveal the active tab's file in the sidebar on every tab switch")
+            .accessibilityIdentifier("mdv.sidebar.followActiveTab")
         }
         .sidebarHeaderRow()
     }
@@ -976,10 +1035,16 @@ private struct FileRowView: View {
 @MainActor
 struct LSPOutlineWrapper: View {
     @ObservedObject var model: DocumentModel
+    /// True when the rail button forced the OUTLINE panel on
+    /// (`PanelOverride.shown`) even though the current file has no language
+    /// server. Renders a placeholder instead of nothing so the toggle
+    /// visibly works (bug4).
+    var forcedShown: Bool = false
     @StateObject private var outline: LSPOutlineModel
 
-    init(model: DocumentModel) {
+    init(model: DocumentModel, forcedShown: Bool = false) {
         self.model = model
+        self.forcedShown = forcedShown
         _outline = StateObject(
             wrappedValue: LSPOutlineModel(pool: model.lspPool)
         )
@@ -999,6 +1064,9 @@ struct LSPOutlineWrapper: View {
                     let line = symbol.selectionRange.start.line + 1
                     model.scrollSource(toLine: line)
                 }
+            } else if forcedShown {
+                SidebarEmptyPlaceholder(message: "No language server for this file.")
+                    .sidebarSectionContainer()
             }
         }
         .onAppear { refresh() }

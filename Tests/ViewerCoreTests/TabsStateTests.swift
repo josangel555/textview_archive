@@ -320,6 +320,59 @@ final class TabsStateTests: XCTestCase {
         XCTAssertEqual(s.tabs[0].url?.lastPathComponent, "a")
     }
 
+    // MARK: openOrReveal — symlink/normalization dedup (bug1)
+
+    // Regression for "close with 1 tab → reopen shows 2 tabs": the on-disk
+    // restored tab carries a symlink-resolved path, while a freshly-opened URL
+    // may carry an unresolved form. Raw `URL ==` missed that and appended a
+    // duplicate; the dedup key must normalize both. The macOS /var→/private/var
+    // case is exercised against a *real* on-disk symlink in
+    // `test_openOrReveal_realSymlink_dedups` below (resolvingSymlinksInPath is
+    // filesystem-dependent — string-shaped fixtures don't collapse).
+
+    // Trailing-slash / non-standardized differences must not defeat dedup.
+    func test_openOrReveal_nonStandardizedPath_dedups() {
+        let canonical = URL(fileURLWithPath: "/Users/x/a.md")
+        let dotted = URL(fileURLWithPath: "/Users/x/./a.md")
+        var s = TabsState(tabs: [Tab(url: canonical, state: .empty, viewMode: .rendered)])
+        let i = s.openOrReveal(url: dotted, state: .empty, viewMode: .rendered)
+        XCTAssertEqual(s.tabs.count, 1, "non-standardized path forms must dedup to one tab")
+        XCTAssertEqual(i, 0)
+    }
+
+    // Distinct files must still open distinct tabs (no over-collapsing).
+    func test_openOrReveal_distinctFiles_stayDistinct() {
+        var s = TabsState(tabs: [Tab(url: URL(fileURLWithPath: "/Users/x/a.md"))])
+        let i = s.openOrReveal(url: URL(fileURLWithPath: "/Users/x/b.md"),
+                               state: .empty, viewMode: .rendered)
+        XCTAssertEqual(s.tabs.count, 2)
+        XCTAssertEqual(i, 1)
+    }
+
+    // Exercise a real on-disk symlink to mirror the macOS /var symlink case
+    // with a path that actually resolves, not just string-shaped fixtures.
+    func test_openOrReveal_realSymlink_dedups() throws {
+        let fm = FileManager.default
+        let base = fm.temporaryDirectory
+            .appendingPathComponent("tabsstate-\(UUID().uuidString)", isDirectory: true)
+        try fm.createDirectory(at: base, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: base) }
+
+        let realDir = base.appendingPathComponent("real", isDirectory: true)
+        try fm.createDirectory(at: realDir, withIntermediateDirectories: true)
+        let realFile = realDir.appendingPathComponent("doc.md")
+        try Data("x".utf8).write(to: realFile)
+
+        let linkDir = base.appendingPathComponent("link", isDirectory: true)
+        try fm.createSymbolicLink(at: linkDir, withDestinationURL: realDir)
+        let viaLink = linkDir.appendingPathComponent("doc.md")
+
+        var s = TabsState(tabs: [Tab(url: realFile, state: .empty, viewMode: .rendered)])
+        let i = s.openOrReveal(url: viaLink, state: .empty, viewMode: .rendered)
+        XCTAssertEqual(s.tabs.count, 1, "same file via symlinked dir must reveal the existing tab")
+        XCTAssertEqual(i, 0)
+    }
+
     // MARK: Replace
 
     func test_replace_updatesTabAtIndex() {

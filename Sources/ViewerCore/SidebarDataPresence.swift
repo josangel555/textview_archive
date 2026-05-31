@@ -20,17 +20,20 @@ public enum SidebarDataPresence {
         public var hasRepo: Bool
         public var hasLSPLanguage: Bool
         public var claudeHasTranscripts: Bool
+        public var hasRecents: Bool
 
         public init(
             hasRoot: Bool = false,
             hasRepo: Bool = false,
             hasLSPLanguage: Bool = false,
-            claudeHasTranscripts: Bool = false
+            claudeHasTranscripts: Bool = false,
+            hasRecents: Bool = false
         ) {
             self.hasRoot = hasRoot
             self.hasRepo = hasRepo
             self.hasLSPLanguage = hasLSPLanguage
             self.claudeHasTranscripts = claudeHasTranscripts
+            self.hasRecents = hasRecents
         }
     }
 
@@ -54,6 +57,10 @@ public enum SidebarDataPresence {
             .lspOutline:      i.hasRoot && i.hasLSPLanguage,
             .lspNavigation:   i.hasRoot,
             .lspProblems:     i.hasRoot,
+            // Recently-opened is global (not root-scoped): present whenever
+            // the history has any entries. Root-filtered variant rides
+            // session independence later.
+            .recentlyOpened:  i.hasRecents,
             .pluginSections:  true,
         ]
     }

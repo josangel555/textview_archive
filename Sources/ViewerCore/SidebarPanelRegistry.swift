@@ -26,6 +26,7 @@ public enum SidebarPanelRegistry {
         .lspOutline,
         .lspNavigation,
         .lspProblems,
+        .recentlyOpened,
         .pluginSections,
     ]
 

@@ -14,6 +14,10 @@ struct ClaudeTimelineSection: View {
     /// sidebar.rootURL)` fires from the sidebar's own publisher
     /// rather than via the (removed) DocumentModel forwarding.
     @ObservedObject var sidebar: SidebarModel
+    /// True when the rail button forced this panel on (`PanelOverride.shown`)
+    /// despite there being no transcripts. Renders a placeholder instead of
+    /// `EmptyView()` so the toggle visibly works (bug4).
+    var forcedShown: Bool = false
     @State private var isExpanded = false  // collapsed by default; logs can be huge
     @State private var events: [ClaudeEvent] = []
     @State private var refreshTask: Task<Void, Never>?
@@ -26,6 +30,16 @@ struct ClaudeTimelineSection: View {
                 VStack(spacing: 0) {
                     header
                     if isExpanded { eventList }
+                }
+                .sidebarSectionContainer()
+            } else if forcedShown {
+                // No transcripts, but the user forced the panel on — show a
+                // placeholder so the rail toggle has a visible effect.
+                VStack(spacing: 0) {
+                    header
+                    if isExpanded {
+                        SidebarEmptyPlaceholder(message: "No Claude activity for this project.")
+                    }
                 }
                 .sidebarSectionContainer()
             } else {

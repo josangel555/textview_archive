@@ -115,6 +115,17 @@ public struct TabsState: Equatable, Sendable {
         }
     }
 
+    /// Normalize a file URL for tab-dedup comparison: standardize and resolve
+    /// symlinks so the macOS `/var`→`/private/var` symlink (and trailing-slash /
+    /// percent-encoding differences) don't defeat the dedup and spawn a second
+    /// tab for the same on-disk file. This matches the session-level dedup
+    /// policy (`SessionsCoordinator.openFolder` resolves symlinks) and the
+    /// resolved path `appendLazyTab` stores on restored tabs — closing the
+    /// asymmetry that produced "close with 1 tab → reopen shows 2 tabs".
+    static func dedupKey(_ url: URL) -> URL {
+        url.standardizedFileURL.resolvingSymlinksInPath()
+    }
+
     /// If a tab already displays `url`, switch to it and return its index.
     /// Otherwise: if the currently-selected tab is blank (no URL, .empty state)
     /// reuse it; else append a new tab. Returns the resulting index.
@@ -124,7 +135,8 @@ public struct TabsState: Equatable, Sendable {
         state: DocumentState,
         viewMode: ViewMode
     ) -> Int {
-        if let existing = tabs.firstIndex(where: { $0.url == url }) {
+        let key = TabsState.dedupKey(url)
+        if let existing = tabs.firstIndex(where: { $0.url.map(TabsState.dedupKey) == key }) {
             // For an already-materialized tab (state != .empty) we
             // preserve the user's current viewMode — they may have
             // switched it deliberately (e.g. Source for an .md file).

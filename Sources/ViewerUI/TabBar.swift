@@ -6,38 +6,51 @@ struct TabBar: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 0) {
-                    ForEach(Array(model.tabs.tabs.enumerated()), id: \.element.id) { index, tab in
-                        TabBarItem(
-                            tab: tab,
-                            isSelected: model.tabs.selectedIndex == index,
-                            isBookmarked: tab.url.map { model.bookmarksStore.contains($0) } ?? false,
-                            scale: CGFloat(model.zoom),
-                            onSelect: { model.selectTab(at: index) },
-                            onClose: { model.closeTab(at: index) }
-                        )
-                        .contextMenu {
-                            TabContextMenu(model: model, tabIndex: index, tab: tab)
-                        }
-                        .onDrag {
-                            // Encode the tab's stable id, not its index.
-                            // Indices go stale the instant tabs reorder
-                            // (another drag, a close, a programmatic
-                            // move) between drag-start and drop, which
-                            // would move the wrong tab. The id is
-                            // resolved back to a live index at drop time.
-                            NSItemProvider(object: NSString(string: "mdv-tab:\(tab.id.uuidString)"))
-                        }
-                        .onDrop(
-                            of: [.plainText],
-                            delegate: TabDropDelegate(model: model, targetID: tab.id)
-                        )
-                        if index < model.tabs.tabs.count - 1 {
-                            Divider().frame(height: 16)
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 0) {
+                        ForEach(Array(model.tabs.tabs.enumerated()), id: \.element.id) { index, tab in
+                            TabBarItem(
+                                tab: tab,
+                                isSelected: model.tabs.selectedIndex == index,
+                                isBookmarked: tab.url.map { model.bookmarksStore.contains($0) } ?? false,
+                                scale: CGFloat(model.zoom),
+                                onSelect: { model.selectTab(at: index) },
+                                onClose: { model.closeTab(at: index) }
+                            )
+                            // item12a: scroll anchor so the active tab can be
+                            // brought into view via ScrollViewReader.
+                            .id(tab.id)
+                            .contextMenu {
+                                TabContextMenu(model: model, tabIndex: index, tab: tab)
+                            }
+                            .onDrag {
+                                // Encode the tab's stable id, not its index.
+                                // Indices go stale the instant tabs reorder
+                                // (another drag, a close, a programmatic
+                                // move) between drag-start and drop, which
+                                // would move the wrong tab. The id is
+                                // resolved back to a live index at drop time.
+                                NSItemProvider(object: NSString(string: "mdv-tab:\(tab.id.uuidString)"))
+                            }
+                            .onDrop(
+                                of: [.plainText],
+                                delegate: TabDropDelegate(model: model, targetID: tab.id)
+                            )
+                            if index < model.tabs.tabs.count - 1 {
+                                Divider().frame(height: 16)
+                            }
                         }
                     }
                 }
+                // item12a: keep the active tab visible. Fires on programmatic
+                // selection too (⌘1-9, command palette, revealInSidebar,
+                // close-shifts-selection) — driven by selectedIndex, not a tap
+                // closure — so an off-screen selection always scrolls in.
+                .onChange(of: model.tabs.selectedIndex) { _, _ in
+                    scrollToSelected(proxy)
+                }
+                .onAppear { scrollToSelected(proxy, animated: false) }
             }
             Button(action: { model.newTab() }) {
                 Image(systemName: "plus")
@@ -45,12 +58,30 @@ struct TabBar: View {
                     .frame(width: 24, height: 24)
             }
             .buttonStyle(.borderless)
-            .help("New Tab (⌘T)")
-            .accessibilityLabel("New Tab")
+            // 0c: migrated to the uniform HelpInfo model — native tooltip
+            // shows the title, the status bar shows the longer description
+            // on hover, and a11y label/hint are set from the same source.
+            .helpInfo(title: "New Tab (⌘T)",
+                      description: "Open a new empty tab in the current session")
             .padding(.horizontal, 4)
         }
         .frame(height: 30)
         .background(Palette.windowBackground)
+    }
+
+    /// Bring the currently-selected tab into view. Centers it so a tab near
+    /// either edge isn't left half-clipped. No-op when there's no selection.
+    private func scrollToSelected(_ proxy: ScrollViewProxy, animated: Bool = true) {
+        guard let i = model.tabs.selectedIndex,
+              model.tabs.tabs.indices.contains(i) else { return }
+        let id = model.tabs.tabs[i].id
+        if animated {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                proxy.scrollTo(id, anchor: .center)
+            }
+        } else {
+            proxy.scrollTo(id, anchor: .center)
+        }
     }
 }
 
@@ -103,6 +134,12 @@ private struct TabContextMenu: View {
             .disabled(tabIndex >= model.tabs.tabs.count - 1)
         Divider()
         if let url = tab.url {
+            // bug6: force-reload this tab from disk regardless of detected
+            // change. Dirty editor buffers route through the Keep/Discard
+            // prompt (see DocumentModel.refreshTab) so this never silently
+            // discards unsaved edits.
+            Button("Refresh") { model.refreshTab(at: tabIndex) }
+            Divider()
             Button("Copy Path") { Pasteboard.copy(url.path) }
             Button("Reveal in Finder") { Finder.reveal(url) }
             Button("Reveal in Sidebar") {
@@ -172,8 +209,10 @@ struct TabBarItem: View {
                     // glyph eases to visible on hover and back out on
                     // leave instead of snapping.
                     .animation(.easeInOut(duration: 0.12), value: isHovering || isSelected)
-                    .help("Close Tab (⌘W)")
-                    .accessibilityLabel("Close \(tab.title)")
+                    // 0c: uniform HelpInfo — title for the bubble, longer
+                    // description fed to the status bar on hover.
+                    .helpInfo(title: "Close Tab (⌘W)",
+                              description: "Close \(tab.title)")
                 }
                 .padding(.horizontal, 10)
             }

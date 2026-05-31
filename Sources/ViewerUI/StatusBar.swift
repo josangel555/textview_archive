@@ -21,6 +21,10 @@ import ViewerKit
 ///   • Spaces vs tabs — Phase 8.5 polish
 struct StatusBar: View {
     @ObservedObject var model: DocumentModel
+    /// Hover-description sink (0c). Defaults to the process-wide shared sink
+    /// that the `.helpInfo(_:)` modifier feeds — `StatusBar(model:)` keeps
+    /// working without a new injection at the (out-of-scope) ContentView root.
+    @ObservedObject var helpSink: HelpSink = .shared
 
     var body: some View {
         HStack(spacing: 12) {
@@ -31,6 +35,20 @@ struct StatusBar: View {
                 .truncationMode(.head)
                 .help(model.currentURL?.path ?? "")
                 .accessibilityIdentifier("mdv.statusBar.path")
+
+            // 0c: hover-description slot. Shows the longer `description` of
+            // whatever element the pointer is over (fed by `.helpInfo`).
+            // Empty when nothing is hovered. Truncates so it never pushes the
+            // metrics off-screen.
+            if let desc = helpSink.hovered?.description, !desc.isEmpty {
+                Text(desc)
+                    .font(.system(size: model.uiSize(11)))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .layoutPriority(-1)
+                    .accessibilityIdentifier("mdv.statusBar.helpDescription")
+            }
 
             Spacer(minLength: 8)
 
@@ -63,6 +81,20 @@ struct StatusBar: View {
                 // accessibility label (set in `metric(_:_:)`).
                 .accessibilityElement(children: .combine)
             }
+
+            // item7/0d: Created / Modified dates. "Modified" turns RED when
+            // the active tab's disk-staleness signal says the on-disk file
+            // changed since we loaded it (consumes Tab.diskState). Dates are
+            // today-relative (time-only when the date is today) and cached so
+            // the body hot path doesn't stat on every re-eval.
+            if let dates = currentFileDates {
+                if let created = dates.created {
+                    metric("Created", Self.formatDate(created))
+                }
+                if let modified = dates.modified {
+                    modifiedMetric(Self.formatDate(modified), stale: isActiveTabStale)
+                }
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
@@ -70,6 +102,33 @@ struct StatusBar: View {
         .background(Palette.windowBackground.opacity(0.65))
         .overlay(alignment: .top) { Divider() }
         .accessibilityIdentifier("mdv.statusBar")
+    }
+
+    /// True when the active tab's loaded copy is stale vs disk (or deleted).
+    private var isActiveTabStale: Bool {
+        switch model.tabs.selected?.diskState {
+        case .staleVsDisk, .deleted: return true
+        default: return false
+        }
+    }
+
+    /// "Modified" chip that renders red on staleness. Mirrors `metric(_:_:)`
+    /// but with a conditional value color + a "(on disk changed)" a11y hint.
+    @ViewBuilder
+    private func modifiedMetric(_ value: String, stale: Bool) -> some View {
+        HStack(spacing: 3) {
+            Text("Modified")
+                .font(.system(size: model.uiSize(10), weight: .medium))
+                .foregroundStyle(stale ? Color.red : Color.secondary)
+            Text(value)
+                .font(.system(size: model.uiSize(10), design: .monospaced))
+                .foregroundStyle(stale ? Color.red : Color.primary)
+        }
+        .help(stale ? "Modified: \(value) — the file changed on disk since it was loaded"
+                    : "Modified: \(value)")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(stale ? "Modified \(value), changed on disk" : "Modified: \(value)")
+        .accessibilityIdentifier("mdv.statusBar.modified")
     }
 
     @ViewBuilder
@@ -188,6 +247,61 @@ struct StatusBar: View {
         previewSizeCache = (url, size, now)
         previewLock.unlock()
         return size
+    }
+
+    // MARK: - File dates (Created / Modified)
+
+    /// Creation + modification dates for the active tab's file. Cached by
+    /// (url, mtime, size) so the body hot path doesn't `stat` on every
+    /// re-eval. Reuses the same TTL-window discipline as the preview-size
+    /// cache. `nil` for tabs with no file (empty / error / loading).
+    private var currentFileDates: (created: Date?, modified: Date?)? {
+        guard let tab = model.tabs.selected, let url = tab.url else { return nil }
+        switch tab.state {
+        case .empty, .error, .loading: return nil
+        default: return Self.cachedFileDates(for: url)
+        }
+    }
+
+    nonisolated(unsafe) private static var datesCache:
+        (url: URL, created: Date?, modified: Date?, sampledAt: TimeInterval)? = nil
+    nonisolated(unsafe) private static let datesLock = NSLock()
+    private static let datesCacheTTL: TimeInterval = 1.0
+
+    private static func cachedFileDates(for url: URL) -> (created: Date?, modified: Date?) {
+        let now = Date().timeIntervalSinceReferenceDate
+        datesLock.lock()
+        if let hit = datesCache, hit.url == url, now - hit.sampledAt < datesCacheTTL {
+            datesLock.unlock()
+            return (hit.created, hit.modified)
+        }
+        datesLock.unlock()
+        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        let created = attrs?[.creationDate] as? Date
+        let modified = attrs?[.modificationDate] as? Date
+        datesLock.lock()
+        datesCache = (url, created, modified, now)
+        datesLock.unlock()
+        return (created, modified)
+    }
+
+    /// Today-relative formatting: time-only ("3:42 PM") when the date is
+    /// today, otherwise medium date + short time (reuses MetadataPanel's
+    /// `dateFmt`). Keeps the status-bar chip narrow for the common
+    /// "edited today" case.
+    private static let timeOnlyFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .none
+        f.timeStyle = .short
+        return f
+    }()
+
+    static func formatDate(_ date: Date, now: Date = Date(),
+                           calendar: Calendar = .current) -> String {
+        if calendar.isDate(date, inSameDayAs: now) {
+            return timeOnlyFmt.string(from: date)
+        }
+        return MetadataPanel.dateFmt.string(from: date)
     }
 
     private static func lineCount(in s: String) -> Int {

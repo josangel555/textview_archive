@@ -17,6 +17,13 @@ struct GitPanelSection: View {
     /// (follows the focused repo) on a `version` bump WITHOUT routing
     /// through DocumentModel.objectWillChange.
     @ObservedObject var trackedRepos: TrackedReposChannel
+    /// True when the user explicitly forced this panel on via the rail
+    /// button (`PanelOverride.shown`) even though there's no repo data.
+    /// Without this, the section self-gated to `EmptyView()` and the
+    /// forced-`.shown` override was silently discarded — the rail button
+    /// "did nothing" (bug4). When forced-on-but-empty, render a placeholder
+    /// so the toggle visibly works.
+    var forcedShown: Bool = false
     @StateObject private var panel = GitPanelModel()
     @AppStorage("MarkdownViewer.sidebar.gitExpanded") private var isExpanded: Bool = true
 
@@ -27,6 +34,14 @@ struct GitPanelSection: View {
                     header
                     if isExpanded {
                         GitPanelView(model: panel, doc: model, trackedRepos: trackedRepos)
+                    }
+                }
+                .sidebarSectionContainer()
+            } else if forcedShown {
+                VStack(spacing: 0) {
+                    header
+                    if isExpanded {
+                        SidebarEmptyPlaceholder(message: "Not a git repository.")
                     }
                 }
                 .sidebarSectionContainer()

@@ -24,6 +24,8 @@ public enum SidebarPanelKind: String, CaseIterable, Sendable, Codable, Identifia
     case lspNavigation
     /// "Problems" panel — server-pushed LSP diagnostics (LSP Phase E).
     case lspProblems
+    /// Recently-opened files (global, newest-first) — reads `model.recents`.
+    case recentlyOpened
     case pluginSections
 
     public var id: String { rawValue }
@@ -44,6 +46,9 @@ public enum SidebarPanelKind: String, CaseIterable, Sendable, Codable, Identifia
         case .lspOutline:     return "MarkdownViewer.sidebar.lspOutline.height"
         case .lspNavigation:  return "MarkdownViewer.sidebar.lspNavigation.height"
         case .lspProblems:    return "MarkdownViewer.sidebar.lspProblems.height"
+        // Fresh, stable key (pinned by SidebarPanelHeightsTests). Derived
+        // names are forbidden here — pick the key once and never change it.
+        case .recentlyOpened: return "MarkdownViewer.sidebar.recentlyOpened.height"
         case .pluginSections: return "MarkdownViewer.sidebar.pluginSections.height"
         }
     }
@@ -69,6 +74,7 @@ public enum SidebarPanelKind: String, CaseIterable, Sendable, Codable, Identifia
         case .lspOutline:     return "Outline"
         case .lspNavigation:  return "References"
         case .lspProblems:    return "Problems"
+        case .recentlyOpened: return "Recent"
         case .pluginSections: return "Plugins"
         }
     }
@@ -86,6 +92,7 @@ public enum SidebarPanelKind: String, CaseIterable, Sendable, Codable, Identifia
         case .lspOutline:     return "list.bullet.indent"
         case .lspNavigation:  return "arrow.triangle.turn.up.right.circle"
         case .lspProblems:    return "exclamationmark.triangle"
+        case .recentlyOpened: return "clock.arrow.circlepath"
         case .pluginSections: return "puzzlepiece.extension"
         }
     }

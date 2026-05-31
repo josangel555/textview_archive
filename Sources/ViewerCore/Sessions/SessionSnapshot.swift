@@ -91,6 +91,28 @@ public struct SessionSnapshot: Codable, Equatable, Sendable {
         self.themeOverride = themeOverride
     }
 
+    /// True when two snapshots carry identical *persisted content*, ignoring
+    /// the bookkeeping timestamps (`savedAt`, `lastActiveAt`) that change on
+    /// every `makeSnapshot()` even when nothing the user can see changed.
+    ///
+    /// Used as the debounced-autosave equality guard (REPUB-1): a `@Published`
+    /// tick that doesn't actually alter persisted state (e.g. an equal-value
+    /// re-publish, a transient highlight-ready) must NOT schedule a disk write.
+    /// `displayName` IS compared (a rename is a real content change), but the
+    /// LRU/identity timestamps are not.
+    public func hasSamePersistedContent(as other: SessionSnapshot) -> Bool {
+        id == other.id
+            && displayName == other.displayName
+            && sidebarRootPath == other.sidebarRootPath
+            && openTabs == other.openTabs
+            && selectedTabIndex == other.selectedTabIndex
+            && sidebarExpandedPaths == other.sidebarExpandedPaths
+            && sidebarIncludeHidden == other.sidebarIncludeHidden
+            && splitURL == other.splitURL
+            && zoom == other.zoom
+            && wordWrap == other.wordWrap
+            && themeOverride == other.themeOverride
+    }
 }
 
 /// On-disk shape of the session list ("which sessions exist, which is

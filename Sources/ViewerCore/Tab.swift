@@ -2,6 +2,28 @@ import Foundation
 import ViewerKit
 
 public struct Tab: Sendable, Identifiable {
+    /// How the tab's loaded copy relates to the file on disk. Orthogonal
+    /// to `isDirty` (which is about the *editor buffer* vs. the loaded
+    /// copy): a tab can be both edited-by-you AND changed-on-disk.
+    ///
+    /// This is the per-tab generalization of `EditorBuffer.hasExternalEdit`
+    /// (which only covered the active editor tab). Computed by the watcher /
+    /// a stat sweep against the `(mtime, size)` baseline the loaded
+    /// `TextFile` already carries. Consumed by the status-bar "Modified" red
+    /// chip and (later) a tab red-dot.
+    ///
+    /// IMPORTANT: introducing this is a SIGNAL only — it does NOT change the
+    /// watcher's current auto-reload behavior. Any "flag instead of reload"
+    /// is a future opt-in pref defaulting to today's behavior.
+    public enum DiskState: String, Sendable, Equatable {
+        /// Loaded copy matches disk (or we can't prove otherwise).
+        case fresh
+        /// The on-disk file changed since we loaded it.
+        case staleVsDisk
+        /// The on-disk file no longer exists (deleted / moved away).
+        case deleted
+    }
+
     public let id: UUID
     public var url: URL?
     public var state: DocumentState
@@ -13,19 +35,41 @@ public struct Tab: Sendable, Identifiable {
     /// Updated by `DocumentModel.updateEditorText` and cleared by
     /// `saveActiveEditor`.
     public var isDirty: Bool
+    /// Disk-vs-loaded staleness signal (see `DiskState`). Default `.fresh`;
+    /// updated by the watcher / stat sweep, reset to `.fresh` on reload.
+    public var diskState: DiskState
 
     public init(
         id: UUID = UUID(),
         url: URL? = nil,
         state: DocumentState = .empty,
         viewMode: ViewMode = .rendered,
-        isDirty: Bool = false
+        isDirty: Bool = false,
+        diskState: DiskState = .fresh
     ) {
         self.id = id
         self.url = url
         self.state = state
         self.viewMode = viewMode
         self.isDirty = isDirty
+        self.diskState = diskState
+    }
+
+    /// Pure staleness classification, reusing the same mtime-OR-size
+    /// mismatch logic as `EditorBuffer.hasExternalEdit`. `currentExists`
+    /// false → `.deleted`. A mismatch on either dimension → `.staleVsDisk`.
+    /// Otherwise (proven match, or can't-tell) → `.fresh` — a display
+    /// signal must not false-positive into "stale" when it can't prove a
+    /// change, mirroring `hasExternalEdit`'s conservative `false`.
+    public static func classifyDiskState(
+        baselineMTime: Date?, baselineSize: Int?,
+        currentMTime: Date?, currentSize: Int?,
+        currentExists: Bool
+    ) -> DiskState {
+        guard currentExists else { return .deleted }
+        if let b = baselineMTime, let c = currentMTime, b != c { return .staleVsDisk }
+        if let b = baselineSize, let c = currentSize, b != c { return .staleVsDisk }
+        return .fresh
     }
 
     /// What to display in the tab strip.
@@ -60,6 +104,7 @@ extension Tab: Equatable {
         guard lhs.url == rhs.url else { return false }
         guard lhs.viewMode == rhs.viewMode else { return false }
         guard lhs.isDirty == rhs.isDirty else { return false }
+        guard lhs.diskState == rhs.diskState else { return false }
         // Compare state by case-only, not by payload. Payload changes
         // are reflected by other model state (e.g. loadState, watcher
         // reload nonce); state-payload-equality isn't a property
