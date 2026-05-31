@@ -110,4 +110,38 @@ final class RegexComplexityGuardTests: XCTestCase {
         let matches = try? engine.search(in: "abbbc and abc", query: q)
         XCTAssertEqual(matches?.count, 2)
     }
+
+    // MARK: - SEC-006: match-time deadline (boundedMatches)
+
+    func test_boundedMatches_returnsAllMatchesForBenignPattern() throws {
+        let re = try NSRegularExpression(pattern: "\\d+")
+        let text = "1 22 333 4444"
+        let full = NSRange(location: 0, length: (text as NSString).length)
+        let r = RegexComplexityGuard.boundedMatches(re, in: text, range: full)
+        XCTAssertEqual(r.matches.count, 4)
+        XCTAssertFalse(r.timedOut, "benign pattern shouldn't hit the deadline")
+    }
+
+    func test_boundedMatches_zeroDeadlineCutsEnumerationShort() throws {
+        // A zero (already-expired) budget makes the very first callback
+        // stop. We still expect the first match to be recorded (it's
+        // appended before the deadline check), then a clean bail.
+        let re = try NSRegularExpression(pattern: "\\d+")
+        let text = "1 22 333 4444"
+        let full = NSRange(location: 0, length: (text as NSString).length)
+        let r = RegexComplexityGuard.boundedMatches(
+            re, in: text, range: full, deadline: 0)
+        XCTAssertTrue(r.timedOut, "zero deadline must report timedOut")
+        XCTAssertLessThan(r.matches.count, 4,
+                          "enumeration should stop before collecting all matches")
+    }
+
+    func test_boundedMatches_emptyResultWhenNoMatch() throws {
+        let re = try NSRegularExpression(pattern: "zzz")
+        let text = "no matches here"
+        let full = NSRange(location: 0, length: (text as NSString).length)
+        let r = RegexComplexityGuard.boundedMatches(re, in: text, range: full)
+        XCTAssertTrue(r.matches.isEmpty)
+        XCTAssertFalse(r.timedOut)
+    }
 }

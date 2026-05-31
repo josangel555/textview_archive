@@ -1057,6 +1057,18 @@ public final class SourceTextController: NSViewController {
         defer { regexCacheLock.unlock() }
         if lastRegexKey == key, let re = lastRegex { return re }
         if lastFailedRegexKey == key { return nil }
+        // SEC-003: ReDoS guard for the source-view find bar. The find
+        // bar fires per keystroke against the full document, so a
+        // catastrophic-backtracking pattern (e.g. `(a+)+$`) would peg
+        // the main thread enumerating matches. Reject the known
+        // exponential shapes before `NSRegularExpression` ever sees
+        // them — the negative-cache slot stops us re-checking every
+        // keystroke. `findRanges` treats a nil return as "no matches",
+        // matching the existing invalid-pattern behaviour.
+        if RegexComplexityGuard.reject(pattern) != nil {
+            lastFailedRegexKey = key
+            return nil
+        }
         guard let re = try? NSRegularExpression(pattern: pattern, options: opts)
         else {
             lastFailedRegexKey = key
@@ -1081,7 +1093,15 @@ public final class SourceTextController: NSViewController {
             guard let re = cachedRegex(pattern: query, caseSensitive: caseSensitive)
             else { return [] }
             let full = NSRange(location: 0, length: (haystack as NSString).length)
-            return re.matches(in: haystack, options: [], range: full).map(\.range)
+            // SEC-006: defense-in-depth wall-clock deadline on top of
+            // the compile-time `reject` in `cachedRegex`. A pattern that
+            // passes the shape check but backtracks polynomially can
+            // still stall the main thread mid-enumeration over a large
+            // document; cap it so the find bar degrades to a partial
+            // result set instead of a frozen window.
+            let result = RegexComplexityGuard.boundedMatches(
+                re, in: haystack, range: full)
+            return result.matches.map(\.range)
         }
         let ns = haystack as NSString
         let opts: NSString.CompareOptions = caseSensitive

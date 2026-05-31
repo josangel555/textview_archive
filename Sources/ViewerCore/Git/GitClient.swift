@@ -45,7 +45,7 @@ public final class GitClient: Sendable {
         case processFailed(Int32, String)
         public var description: String {
             switch self {
-            case .gitNotFound:           return "/usr/bin/git not available"
+            case .gitNotFound:           return "git not found (looked in /usr/bin, /opt/homebrew/bin, /usr/local/bin)"
             case .notARepo:              return "Not a git repository"
             case .processFailed(let c, let msg):
                 return "git exited \(c): \(msg)"
@@ -489,9 +489,28 @@ public final class GitClient: Sendable {
         "-c", "core.quotePath=false",
     ]
 
+    /// Candidate `git` locations, probed in order on first use
+    /// (MAGIC-004). GUI-launched apps don't inherit a useful shell
+    /// `$PATH`, so we can't rely on a bare `git` resolving — but
+    /// hard-coding `/usr/bin/git` excludes the common Homebrew install
+    /// (`/opt/homebrew/bin/git` on Apple Silicon, `/usr/local/bin/git`
+    /// on Intel). Mirrors `JQRunner.binaryPath`'s probe approach.
+    private static let gitProbePaths: [String] = [
+        "/usr/bin/git",
+        "/opt/homebrew/bin/git",
+        "/usr/local/bin/git",
+    ]
+
+    /// Resolved `git` path, or nil if none of the probes exist. Lazy +
+    /// cached for the process lifetime (`isExecutableFile` is cheap but
+    /// `run` is called frequently from UI flows). A new git install
+    /// requires an app relaunch to pick up — acceptable for a viewer.
+    private static let resolvedGitBinary: String? = gitProbePaths.first {
+        FileManager.default.isExecutableFile(atPath: $0)
+    }
+
     private func run(_ args: [String]) throws -> String {
-        let bin = "/usr/bin/git"
-        guard FileManager.default.isExecutableFile(atPath: bin) else {
+        guard let bin = Self.resolvedGitBinary else {
             throw Error.gitNotFound
         }
         let p = Process()
@@ -503,16 +522,32 @@ public final class GitClient: Sendable {
         // git inheriting that would let a hostile config / hook prompt
         // for input that the caller never sees.
         p.standardInput = FileHandle.nullDevice
-        // Defense against malicious repo configs: never honor a
-        // .git/config from the working tree. `safe.directory = *` skips
-        // the safety prompt only; `protocol.file.allow=user` and
-        // disabling external editors / pagers blocks the common
-        // RCE-on-clone vectors. We treat repos as untrusted data.
-        var env = ProcessInfo.processInfo.environment
-        env["GIT_TERMINAL_PROMPT"] = "0"
-        env["GIT_EDITOR"] = "/usr/bin/true"
-        env["GIT_PAGER"] = "cat"
-        env["GIT_OPTIONAL_LOCKS"] = "0"
+        // SEC-005: build git's env from a minimal allowlist rather than
+        // overlaying onto the full parent env. Inheriting the parent
+        // env leaks the app's environment (`*_TOKEN` / `*_SECRET` /
+        // cloud creds) into a process that runs against untrusted repo
+        // data, AND — worse — lets the *parent's* own `GIT_*` control
+        // vars (`GIT_DIR`, `GIT_CONFIG_GLOBAL`, `GIT_SSH`,
+        // `GIT_PROXY_COMMAND`, …) redirect where git reads config /
+        // which helper it spawns. We never copy `GIT_*` from the
+        // parent; we set only the four hardening overrides below atop a
+        // bare `PATH` + `HOME`. `protocol.file.allow=user` and the
+        // disabled editors / pagers already block the RCE-on-clone
+        // vectors; this closes the env-injection side.
+        let home = ProcessInfo.processInfo.environment["HOME"]
+        var env: [String: String] = [
+            // git needs to find its own subcommands / `ssh` / `cat`;
+            // keep this minimal and fixed rather than user-controlled.
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "GIT_TERMINAL_PROMPT": "0",
+            "GIT_EDITOR": "/usr/bin/true",
+            "GIT_PAGER": "cat",
+            "GIT_OPTIONAL_LOCKS": "0",
+        ]
+        // HOME is required for git to resolve `~/.gitconfig`; without it
+        // git falls back to `/` and can emit noisy warnings. We pass the
+        // real HOME but explicitly nothing else from the parent.
+        if let home { env["HOME"] = home }
         p.environment = env
         // Drain both pipes concurrently via the shared `ProcessRunner`
         // (H, 2026-05-25). `git log` / `git diff` easily produce >64 KB;

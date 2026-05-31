@@ -141,6 +141,51 @@ final class GitClientTests: XCTestCase {
                       "diff must work with spaces in path, got:\n\(diff)")
     }
 
+    // MARK: - SEC-005: env scrub (GIT_* control vars never inherited)
+
+    func test_status_ignoresHostileGitDirFromParentEnv() throws {
+        // A stray/hostile GIT_DIR in the app's environment must NOT
+        // redirect where GitClient reads the repo. The scrubbed env in
+        // `run` only sets the four hardening vars + PATH/HOME, so
+        // GIT_DIR is dropped and git resolves the repo from
+        // currentDirectoryURL (repoRoot) as intended.
+        try "hello".write(
+            to: tmp.appendingPathComponent("a.txt"),
+            atomically: true, encoding: .utf8)
+        setenv("GIT_DIR", "/definitely/not/a/real/git/dir", 1)
+        defer { unsetenv("GIT_DIR") }
+        let entries = GitClient(repoRoot: tmp).status()
+        XCTAssertTrue(
+            entries.contains(where: { $0.path == "a.txt" && $0.isUntracked }),
+            "GIT_DIR from parent env leaked through and broke repo resolution")
+    }
+
+    func test_log_ignoresHostileGitConfigGlobalFromParentEnv() throws {
+        try "x".write(
+            to: tmp.appendingPathComponent("x.txt"),
+            atomically: true, encoding: .utf8)
+        _ = try git(["add", "."])
+        _ = try git(["commit", "-q", "-m", "first commit"])
+        // GIT_CONFIG_GLOBAL pointing at a bogus path would, if
+        // inherited, change which global config git reads. We just
+        // confirm the operation is unaffected (the var is scrubbed).
+        setenv("GIT_CONFIG_GLOBAL", "/definitely/not/a/real/gitconfig", 1)
+        defer { unsetenv("GIT_CONFIG_GLOBAL") }
+        let log = GitClient(repoRoot: tmp).log()
+        XCTAssertEqual(log.count, 1)
+        XCTAssertEqual(log[0].subject, "first commit")
+    }
+
+    func test_gitClient_resolvesBinary_andRunsBasicCommand() throws {
+        // MAGIC-004: probe-list resolution. On a host with git on the
+        // standard path, a basic op must succeed (proves the resolved
+        // binary is invoked, not a hard-coded path that might be wrong).
+        try "v1".write(
+            to: tmp.appendingPathComponent("a.txt"),
+            atomically: true, encoding: .utf8)
+        XCTAssertFalse(GitClient(repoRoot: tmp).status().isEmpty)
+    }
+
     private func git(_ args: [String]) throws -> String {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
