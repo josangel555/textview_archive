@@ -53,4 +53,37 @@ final class RegexCacheTests: XCTestCase {
         XCTAssertEqual(ranges[0].location, 0)
         XCTAssertEqual(ranges[1].location, 8)
     }
+
+    // MARK: - SEC-003: ReDoS guard on the source-view find bar
+
+    func test_redos_pattern_is_rejected_by_cachedRegex() {
+        // `(a+)+` is the canonical exponential shape. The guard should
+        // refuse to compile it (returns nil, like an invalid pattern)
+        // rather than hand it to NSRegularExpression.
+        let re = SourceTextController.cachedRegex(
+            pattern: "(a+)+", caseSensitive: false)
+        XCTAssertNil(re, "nested-quantifier ReDoS shape must be rejected")
+    }
+
+    func test_redos_findRanges_returns_no_matches_quickly() {
+        // The classic catastrophic input: many `a`s then a non-match.
+        // Without the guard this enumerate-match call would hang the
+        // main thread; with it, findRanges bails to [] immediately.
+        let haystack = String(repeating: "a", count: 40) + "!"
+        let start = Date()
+        let ranges = SourceTextController.findRanges(
+            in: haystack, query: "(a+)+$", caseSensitive: false, isRegex: true)
+        let elapsed = Date().timeIntervalSince(start)
+        XCTAssertTrue(ranges.isEmpty,
+                      "rejected pattern yields no matches")
+        XCTAssertLessThan(elapsed, 1.0,
+                          "guard must short-circuit, not backtrack for seconds")
+    }
+
+    func test_benign_regex_still_compiles_through_guard() {
+        // Sanity: a normal pattern is unaffected by the new guard.
+        let re = SourceTextController.cachedRegex(
+            pattern: "foo\\d+", caseSensitive: false)
+        XCTAssertNotNil(re)
+    }
 }

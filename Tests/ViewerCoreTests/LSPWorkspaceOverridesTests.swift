@@ -11,20 +11,32 @@ import XCTest
 final class LSPWorkspaceOverridesTests: XCTestCase {
 
     private var tmpRoot: URL!
+    /// A directory that is a *sibling* of `tmpRoot`, i.e. outside the
+    /// workspace subtree. SEC-001 only honours an override `command`
+    /// that resolves outside the workspace, so trusted-path tests put
+    /// their fake binary here.
+    private var trustedBinDir: URL!
 
     override func setUp() {
         super.setUp()
-        let base = FileManager.default.temporaryDirectory
+        let parent = FileManager.default.temporaryDirectory
             .appendingPathComponent("lsp-override-\(UUID().uuidString)")
+        let base = parent.appendingPathComponent("workspace")
+        let bin = parent.appendingPathComponent("trusted-bin")
         try? FileManager.default.createDirectory(
             at: base, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(
+            at: bin, withIntermediateDirectories: true)
         tmpRoot = base
+        trustedBinDir = bin
         LSPLog.resetCaptured()
     }
 
     override func tearDown() {
+        // Remove the shared parent of tmpRoot + trustedBinDir.
         if let tmpRoot = tmpRoot {
-            try? FileManager.default.removeItem(at: tmpRoot)
+            try? FileManager.default.removeItem(
+                at: tmpRoot.deletingLastPathComponent())
         }
         LSPLog.resetCaptured()
         super.tearDown()
@@ -331,8 +343,14 @@ final class LSPWorkspaceOverridesTests: XCTestCase {
             "expected a 'not found' warning; got \(LSPLog.captured())")
     }
 
-    func test_registry_overrideConfig_omitsEnvWhenAbsent() throws {
+    func test_registry_overrideConfig_scrubsEnvWhenAbsent() throws {
+        // SEC-002: an override with no `env` of its own must still get
+        // an explicit, scrubbed env (NOT nil → which `LSPClient` reads
+        // as "inherit the full parent env"). Credential-shaped vars in
+        // the parent must not survive; PATH/HOME must.
         let bin = makeFakeBinary(named: "x")
+        setenv("AWS_SECRET_ACCESS_KEY", "leakme", 1)
+        defer { unsetenv("AWS_SECRET_ACCESS_KEY") }
         try writeOverride("""
         {
           "servers": {
@@ -342,8 +360,126 @@ final class LSPWorkspaceOverridesTests: XCTestCase {
         """)
         let cfg = LSPLanguageRegistry.overrideConfig(
             for: .swift, workspaceRoot: tmpRoot, defaultArguments: [])
-        XCTAssertNil(cfg?.environment,
-                     "no override env → nil so LSPClient inherits parent env")
+        XCTAssertNotNil(cfg?.environment,
+                        "scrubbed env must be explicit, never nil (SEC-002)")
+        XCTAssertNil(cfg?.environment?["AWS_SECRET_ACCESS_KEY"],
+                     "credential-shaped var must be scrubbed from LSP child env")
+        // PATH carried through the allowlist.
+        if let parentPath = ProcessInfo.processInfo.environment["PATH"] {
+            XCTAssertEqual(cfg?.environment?["PATH"], parentPath)
+        }
+    }
+
+    // MARK: - SEC-001 interim trust hardening
+
+    func test_overrideConfig_refusesCommandInsideWorkspace() throws {
+        // A binary checked into / dropped under the workspace is the
+        // RCE vector. The override command must be refused and we must
+        // NOT spawn it. (sourcekit-lsp may or may not be installed on
+        // the host; if it is, we fall back to it — never to the
+        // in-workspace path.)
+        let evil = makeFakeBinary(named: "evil-lsp", inWorkspace: true)
+        try writeOverride("""
+        {
+          "servers": {
+            "swift": { "command": "\(evil.path)", "args": ["--pwn"] }
+          }
+        }
+        """)
+        let cfg = LSPLanguageRegistry.overrideConfig(
+            for: .swift, workspaceRoot: tmpRoot, defaultArguments: [])
+        if let cfg {
+            XCTAssertNotEqual(cfg.executable.path, evil.path,
+                              "must never spawn the in-workspace override binary")
+            XCTAssertFalse(
+                LSPLanguage.isPath(cfg.executable, inSubtreeOf: tmpRoot),
+                "fallback binary must resolve outside the workspace")
+        }
+        XCTAssertTrue(
+            LSPLog.captured().contains(where: { $0.contains("refused") }),
+            "expected a refusal warning; got \(LSPLog.captured())")
+    }
+
+    func test_overrideConfig_honoursTrustedCommandOutsideWorkspace() throws {
+        // Binary outside the workspace subtree, dir not world-writable
+        // → trusted, honoured verbatim.
+        let good = makeFakeBinary(named: "trusted-lsp")
+        try writeOverride("""
+        {
+          "servers": {
+            "swift": { "command": "\(good.path)", "args": ["--ok"] }
+          }
+        }
+        """)
+        let cfg = LSPLanguageRegistry.overrideConfig(
+            for: .swift, workspaceRoot: tmpRoot, defaultArguments: [])
+        XCTAssertEqual(cfg?.executable.path, good.path)
+        XCTAssertEqual(cfg?.arguments, ["--ok"],
+                       "trusted command uses user args verbatim (no defaults prepended)")
+    }
+
+    func test_overrideConfig_refusesCommandInWorldWritableDir() throws {
+        // Even outside the workspace, a world-writable container dir
+        // means anyone can swap the binary → refuse.
+        let good = makeFakeBinary(named: "swappable-lsp")
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o777], ofItemAtPath: trustedBinDir.path)
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o755], ofItemAtPath: trustedBinDir.path)
+        }
+        try writeOverride("""
+        {
+          "servers": {
+            "swift": { "command": "\(good.path)" }
+          }
+        }
+        """)
+        let cfg = LSPLanguageRegistry.overrideConfig(
+            for: .swift, workspaceRoot: tmpRoot, defaultArguments: [])
+        if let cfg {
+            XCTAssertNotEqual(cfg.executable.path, good.path,
+                              "world-writable dir → command must be refused")
+        }
+        XCTAssertTrue(
+            LSPLog.captured().contains(where: { $0.contains("refused") }))
+    }
+
+    func test_isPath_inSubtreeOf_componentWiseMatch() {
+        let root = URL(fileURLWithPath: "/tmp/foo")
+        XCTAssertTrue(LSPLanguage.isPath(
+            URL(fileURLWithPath: "/tmp/foo/bin/x"), inSubtreeOf: root))
+        XCTAssertTrue(LSPLanguage.isPath(
+            URL(fileURLWithPath: "/tmp/foo"), inSubtreeOf: root))
+        // `/tmp/foobar` must NOT be considered inside `/tmp/foo`.
+        XCTAssertFalse(LSPLanguage.isPath(
+            URL(fileURLWithPath: "/tmp/foobar/x"), inSubtreeOf: root))
+        XCTAssertFalse(LSPLanguage.isPath(
+            URL(fileURLWithPath: "/etc/passwd"), inSubtreeOf: root))
+    }
+
+    func test_scrubbedLaunchEnvironment_dropsCredsKeepsAllowlist() {
+        let parent: [String: String] = [
+            "PATH": "/usr/bin",
+            "HOME": "/Users/me",
+            "LANG": "en_US.UTF-8",
+            "LC_CTYPE": "UTF-8",
+            "TMPDIR": "/var/folders/x",
+            "AWS_SECRET_ACCESS_KEY": "leak",
+            "GITHUB_TOKEN": "leak",
+            "MY_API_SECRET": "leak",
+            "ANTHROPIC_API_KEY": "leak",
+        ]
+        let scrubbed = LSPLanguage.scrubbedLaunchEnvironment(parent: parent)
+        XCTAssertEqual(scrubbed["PATH"], "/usr/bin")
+        XCTAssertEqual(scrubbed["HOME"], "/Users/me")
+        XCTAssertEqual(scrubbed["LANG"], "en_US.UTF-8")
+        XCTAssertEqual(scrubbed["LC_CTYPE"], "UTF-8")
+        XCTAssertEqual(scrubbed["TMPDIR"], "/var/folders/x")
+        XCTAssertNil(scrubbed["AWS_SECRET_ACCESS_KEY"])
+        XCTAssertNil(scrubbed["GITHUB_TOKEN"])
+        XCTAssertNil(scrubbed["MY_API_SECRET"])
+        XCTAssertNil(scrubbed["ANTHROPIC_API_KEY"])
     }
 
     // MARK: - Default-discovery preservation
@@ -456,9 +592,13 @@ final class LSPWorkspaceOverridesTests: XCTestCase {
 
     /// Make an executable file we can point an override `command` at.
     /// The override loader only checks `FileManager.fileExists`; we
-    /// don't need to actually run it.
-    private func makeFakeBinary(named name: String) -> URL {
-        let bin = tmpRoot.appendingPathComponent(name)
+    /// don't need to actually run it. Default location is the
+    /// *trusted* (outside-workspace) bin dir so `overrideConfig`
+    /// honours the command (SEC-001). Pass `inWorkspace: true` to
+    /// exercise the refusal path.
+    private func makeFakeBinary(named name: String, inWorkspace: Bool = false) -> URL {
+        let dir = inWorkspace ? tmpRoot! : trustedBinDir!
+        let bin = dir.appendingPathComponent(name)
         FileManager.default.createFile(
             atPath: bin.path,
             contents: Data("#!/bin/sh\n".utf8),

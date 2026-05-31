@@ -117,4 +117,47 @@ final class HighlightedTextTests: XCTestCase {
         XCTAssertEqual(sensitive.count, 1)
         XCTAssertEqual(String(text[sensitive[0]]), "foo")
     }
+
+    // MARK: - SEC-004: ReDoS guard (falls back to literal)
+
+    func testCatastrophicRegexFallsBackToLiteral() {
+        // `(a+)+` is the canonical exponential shape. The guard refuses
+        // it and treats the query as a literal — so a haystack that
+        // contains the literal text `(a+)+` still highlights it, while
+        // a haystack that doesn't matches nothing (no hang).
+        let text = "pattern (a+)+ shown literally"
+        let ranges = HighlightedText.ranges(
+            in: text, query: "(a+)+", mode: .regex(caseSensitive: false))
+        XCTAssertEqual(ranges.count, 1)
+        XCTAssertEqual(String(text[ranges[0]]), "(a+)+")
+    }
+
+    func testCatastrophicRegexDoesNotHang() {
+        // Worst-case input for `(a+)+$`: many `a`s then a non-match.
+        let text = String(repeating: "a", count: 40) + "!"
+        let start = Date()
+        let ranges = HighlightedText.ranges(
+            in: text, query: "(a+)+$", mode: .regex(caseSensitive: false))
+        let elapsed = Date().timeIntervalSince(start)
+        // Falls back to literal — the literal "(a+)+$" isn't present.
+        XCTAssertEqual(ranges.count, 0)
+        XCTAssertLessThan(elapsed, 1.0,
+                          "guard must short-circuit, not backtrack for seconds")
+    }
+
+    func testAlternationOverlapUnderQuantifierRejected() {
+        XCTAssertTrue(HighlightedText.isLikelyCatastrophicRegex("(a|aa)+"))
+    }
+
+    func testBenignRegexNotRejected() {
+        XCTAssertFalse(HighlightedText.isLikelyCatastrophicRegex("\\d+"))
+        XCTAssertFalse(HighlightedText.isLikelyCatastrophicRegex("(cat|dog)+"))
+        XCTAssertFalse(HighlightedText.isLikelyCatastrophicRegex("[abc]+"))
+        XCTAssertFalse(HighlightedText.isLikelyCatastrophicRegex("foo(bar)?"))
+    }
+
+    func testOversizePatternRejected() {
+        let big = String(repeating: "a", count: 2048)
+        XCTAssertTrue(HighlightedText.isLikelyCatastrophicRegex(big))
+    }
 }
