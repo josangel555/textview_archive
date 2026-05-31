@@ -56,6 +56,86 @@ final class MarkdownRenderedViewTests: XCTestCase {
         XCTAssertEqual(decide("file:///tmp/page.html", navigationType: .other), .allow)
     }
 
+    // MARK: WV-4 — post-initial-load .other file:/data: is a script escape
+
+    func test_decide_other_fileScheme_beforeLoad_isAllowed() {
+        // Bootstrap loadFileURL / loadHTMLString surfaces as `.other`
+        // before didFinish — must be allowed or the page never renders.
+        let result = MarkdownRenderedView.Coordinator.decide(
+            url: URL(string: "file:///tmp/page.html"),
+            navigationType: .other,
+            currentDocumentURL: nil,
+            initialLoadComplete: false
+        )
+        XCTAssertEqual(result, .allow)
+    }
+
+    func test_decide_other_fileScheme_afterLoad_isCancelled() {
+        // `window.location = 'file:///etc/passwd'` from in-page script
+        // arrives as a top-level `.other` AFTER the initial load — cancel.
+        let result = MarkdownRenderedView.Coordinator.decide(
+            url: URL(string: "file:///etc/passwd"),
+            navigationType: .other,
+            currentDocumentURL: URL(string: "file:///tmp/page.html"),
+            initialLoadComplete: true
+        )
+        XCTAssertEqual(result, .cancel)
+    }
+
+    func test_decide_other_dataScheme_afterLoad_isCancelled() {
+        // `location.replace('data:text/html,…')` style escape.
+        let result = MarkdownRenderedView.Coordinator.decide(
+            url: URL(string: "data:text/html,%3Cscript%3E1%3C/script%3E"),
+            navigationType: .other,
+            currentDocumentURL: URL(string: "file:///tmp/page.html"),
+            initialLoadComplete: true
+        )
+        XCTAssertEqual(result, .cancel)
+    }
+
+    func test_decide_other_dataScheme_beforeLoad_isAllowed() {
+        // `loadHTMLString(baseURL: nil)` can surface as a data: `.other`
+        // during bootstrap — must be permitted until first load completes.
+        let result = MarkdownRenderedView.Coordinator.decide(
+            url: URL(string: "data:text/html,%3Ch1%3Ehi%3C/h1%3E"),
+            navigationType: .other,
+            currentDocumentURL: nil,
+            initialLoadComplete: false
+        )
+        XCTAssertEqual(result, .allow)
+    }
+
+    func test_decide_other_httpScheme_afterLoad_isAllowed() {
+        // The post-load guard is scoped to file:/data: only — a legit
+        // http(s) sub-frame / programmatic nav is unaffected.
+        let result = MarkdownRenderedView.Coordinator.decide(
+            url: URL(string: "https://example.com/page"),
+            navigationType: .other,
+            currentDocumentURL: URL(string: "file:///tmp/page.html"),
+            initialLoadComplete: true
+        )
+        XCTAssertEqual(result, .allow)
+    }
+
+    func test_decide_other_javascript_afterLoad_isCancelled() {
+        // javascript: stays unconditionally blocked regardless of the flag.
+        let result = MarkdownRenderedView.Coordinator.decide(
+            url: URL(string: "javascript:alert(1)"),
+            navigationType: .other,
+            currentDocumentURL: URL(string: "file:///tmp/page.html"),
+            initialLoadComplete: true
+        )
+        XCTAssertEqual(result, .cancel)
+    }
+
+    func test_coordinator_didFinishFirstLoad_startsFalse() {
+        // Bootstrap-permissive default: a fresh coordinator has NOT
+        // finished its first load, so the very first `.other` file:/data:
+        // bootstrap is allowed.
+        let coordinator = MarkdownRenderedView.Coordinator()
+        XCTAssertFalse(coordinator.didFinishFirstLoad)
+    }
+
     // MARK: Fragment navigation (CRIT-8 — anchor clicks work)
 
     func test_decide_sameDocFragment_isAllowed() {
@@ -230,5 +310,27 @@ final class MarkdownRenderedViewTests: XCTestCase {
         // to be attached pre-load to fire).
         let coordinator = MarkdownRenderedView.Coordinator()
         XCTAssertFalse(coordinator.mermaidInjected)
+    }
+
+    // MARK: WV-7 — sole-owner user-script count invariant
+    //
+    // The `.install` / `.evict` branches in `updateNSView` assert that
+    // `userContentController.userScripts` holds exactly the mermaid
+    // scripts after install and zero after evict — relying on this view
+    // being the *sole owner* of that controller's user-scripts. The
+    // expected post-install count is centralized in
+    // `expectedMermaidScriptCount` so the assertion and any future caller
+    // share one definition. The live WKWebView assertion path runs in
+    // VM-only hosting tests; here we pin the count helper itself.
+
+    func test_expectedMermaidScriptCount_matchesBundleAvailability() {
+        // Each non-empty mermaid resource contributes one user-script.
+        let expected =
+            (MermaidBundle.runtime.isEmpty ? 0 : 1)
+            + (MermaidBundle.shimJS.isEmpty ? 0 : 1)
+        XCTAssertEqual(MarkdownRenderedView.expectedMermaidScriptCount, expected)
+        // Must be in the 0...2 range regardless of bundle state.
+        XCTAssertGreaterThanOrEqual(MarkdownRenderedView.expectedMermaidScriptCount, 0)
+        XCTAssertLessThanOrEqual(MarkdownRenderedView.expectedMermaidScriptCount, 2)
     }
 }

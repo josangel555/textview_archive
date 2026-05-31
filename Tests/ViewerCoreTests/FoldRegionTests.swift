@@ -168,6 +168,88 @@ final class FoldRegionTests: XCTestCase {
         XCTAssertTrue(r.isEmpty)
     }
 
+    // MARK: RWC-4 — fold cache keys on (language, contentHash) with LRU
+
+    /// Two distinct same-language documents must BOTH stay cached — the
+    /// old single-slot-per-language design evicted one when the other was
+    /// computed, so two open JSON tabs re-parsed on every switch.
+    func testFoldCache_TwoSameLanguageDocs_BothCached() async {
+        let a = """
+        {
+          "a": [1, 2]
+        }
+        """
+        let b = """
+        {
+          "b": {
+            "c": 3
+          }
+        }
+        """
+        TreeSitterEngine.shared._testOnly_clearFoldCaches()
+        _ = await TreeSitterEngine.shared.computeFolds(text: a, language: .json)
+        _ = await TreeSitterEngine.shared.computeFolds(text: b, language: .json)
+        // Both content hashes occupy their own slot — no thrash.
+        XCTAssertEqual(
+            TreeSitterEngine.shared._testOnly_foldCacheSlotCount(for: .json),
+            2,
+            "both same-language docs must coexist in the cache"
+        )
+    }
+
+    /// The per-language LRU is bounded: feeding more distinct documents
+    /// than `FoldCacheEntry.maxEntries` must not grow the slot count
+    /// without limit, and the most recently computed doc must survive.
+    func testFoldCache_BoundedLRU_EvictsOldest() async {
+        TreeSitterEngine.shared._testOnly_clearFoldCaches()
+        let cap = 8   // mirrors FoldCacheEntry.maxEntries
+        // Generate cap+4 distinct JSON docs (distinct content → distinct hash).
+        var docs: [String] = []
+        for i in 0..<(cap + 4) {
+            docs.append("""
+            {
+              "k\(i)": [
+                \(i)
+              ]
+            }
+            """)
+        }
+        for d in docs {
+            _ = await TreeSitterEngine.shared.computeFolds(text: d, language: .json)
+        }
+        let count = TreeSitterEngine.shared._testOnly_foldCacheSlotCount(for: .json)
+        XCTAssertLessThanOrEqual(count, cap, "LRU must cap slots at maxEntries")
+        XCTAssertEqual(count, cap, "after overflowing, the cache should sit at the cap")
+
+        // The most-recently computed doc must be a hit (no recompute).
+        // Re-running it should not change the slot count (already present).
+        _ = await TreeSitterEngine.shared.computeFolds(text: docs.last!, language: .json)
+        XCTAssertEqual(
+            TreeSitterEngine.shared._testOnly_foldCacheSlotCount(for: .json),
+            cap,
+            "recomputing the most-recent doc must be a cache hit, not a new slot"
+        )
+    }
+
+    /// Different languages keep independent slot budgets — caching a JSON
+    /// doc must not evict an XML doc and vice versa.
+    func testFoldCache_DistinctLanguages_IndependentSlots() async {
+        TreeSitterEngine.shared._testOnly_clearFoldCaches()
+        let json = """
+        {
+          "a": [1]
+        }
+        """
+        _ = await TreeSitterEngine.shared.computeFolds(text: json, language: .json)
+        XCTAssertEqual(
+            TreeSitterEngine.shared._testOnly_foldCacheSlotCount(for: .json), 1
+        )
+        XCTAssertEqual(
+            TreeSitterEngine.shared._testOnly_foldCacheSlotCount(for: .xml), 0,
+            "a JSON store must not populate the XML language bucket"
+        )
+    }
+
     // MARK: Region sorting + dedup
 
     func testRegions_AreSortedAndDeduped() {

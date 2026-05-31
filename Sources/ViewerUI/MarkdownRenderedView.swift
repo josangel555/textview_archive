@@ -114,7 +114,25 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         case .noChange:
             break
         case .install:
+            // WV-7 invariant: `updateNSView` is the *sole owner* of this
+            // WebView's `userContentController` user-scripts — the
+            // find-runtime is injected via `evaluateJavaScript` (not a
+            // user-script), and nothing else adds any. So after a fresh
+            // install the controller must hold exactly the mermaid scripts
+            // and nothing pre-existing. We only reach `.install` from the
+            // (false → true) transition, so the controller should be empty
+            // here; assert that before adding, to catch any future code
+            // that quietly starts adding its own user-scripts (which would
+            // break the blanket-`removeAllUserScripts()` eviction below).
             let userContent = webView.configuration.userContentController
+            assert(
+                userContent.userScripts.isEmpty,
+                "WV-7: userContentController must be empty before mermaid "
+                + "install (sole-owner invariant violated — \(userContent.userScripts.count) "
+                + "pre-existing user-scripts). If another subsystem now adds "
+                + "user-scripts, isolate mermaid into a named WKContentWorld "
+                + "instead of relying on removeAllUserScripts()."
+            )
             if !MermaidBundle.runtime.isEmpty {
                 userContent.addUserScript(WKUserScript(
                     source: MermaidBundle.runtime,
@@ -128,22 +146,44 @@ public struct MarkdownRenderedView: NSViewRepresentable {
                     forMainFrameOnly: true))
             }
             coord.mermaidInjected = true
+            // Post-install invariant: exactly the non-empty mermaid scripts.
+            assert(
+                userContent.userScripts.count == Self.expectedMermaidScriptCount,
+                "WV-7: post-install user-script count "
+                + "\(userContent.userScripts.count) != expected "
+                + "\(Self.expectedMermaidScriptCount)"
+            )
         case .evict:
             // `removeAllUserScripts` is the only API for removing
             // a previously-added script. We don't add any other
             // user scripts to this WebView (find-runtime uses
             // `evaluateJavaScript` per-load instead), so blanket
-            // removal is safe today. If that changes, switch to a
-            // dedicated `WKContentWorld` for mermaid.
+            // removal is safe today — this is the WV-7 sole-owner
+            // invariant. If that ever changes, switch to a dedicated
+            // `WKContentWorld` for mermaid so eviction is scoped.
             let userContent = webView.configuration.userContentController
             userContent.removeAllUserScripts()
             coord.mermaidInjected = false
+            // Post-evict invariant: zero user-scripts remain.
+            assert(
+                userContent.userScripts.isEmpty,
+                "WV-7: post-evict user-script count "
+                + "\(userContent.userScripts.count) != 0"
+            )
         }
         // Only reload when the HTML actually changed. body() re-runs on every
         // @Published mutation, and reloading the page on each tick causes
         // a render storm + a brief blank-content flash that was being
         // perceived as "tabs vanishing".
         if coord.lastHTML != html {
+            // WV-4: mark this as OUR programmatic load so the nav-policy
+            // guard doesn't mistake it for an in-page script escape. A
+            // `loadHTMLString(_:baseURL:)` reload surfaces in
+            // `decidePolicyFor` as a `.other` navigation to the (file:)
+            // baseURL — indistinguishable by scheme alone from a
+            // `window.location = 'file://…'` escape. The flag is consumed
+            // (cleared) by the next `.other` policy decision.
+            coord.expectingProgrammaticLoad = true
             webView.loadHTMLString(html, baseURL: baseURL)
             coord.lastHTML = html
         }
@@ -189,6 +229,28 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         Coordinator()
     }
 
+    /// RC-6: deterministic teardown when SwiftUI discards the
+    /// representable (tab close, view replaced). Without this, the
+    /// `WKWebView` is released only when ARC happens to drop it, and a
+    /// load in flight can keep firing navigation-delegate callbacks into
+    /// a Coordinator that's about to go away.
+    ///
+    /// - `stopLoading()` cancels any in-flight navigation/sub-resource
+    ///   fetch so no further `didFinish`/`decidePolicyFor` callbacks land.
+    /// - `navigationDelegate = nil` severs the (unowned) delegate link to
+    ///   the Coordinator immediately.
+    /// - `removeAllUserScripts()` drops the mermaid runtime + shim so the
+    ///   pooled `WKProcessPool`'s WebContent process doesn't carry stale
+    ///   user-scripts forward (hygiene; the controller is per-WebView, but
+    ///   we don't rely on dealloc timing for that to clear).
+    public static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
+        webView.stopLoading()
+        webView.navigationDelegate = nil
+        webView.configuration.userContentController.removeAllUserScripts()
+        coordinator.mermaidInjected = false
+        coordinator.pendingFindWebView = nil
+    }
+
     /// Outcome of a single navigation policy decision. Exposed as a pure value
     /// so the (otherwise hard-to-test) Coordinator delegate method has a
     /// testable kernel — see `Coordinator.decide(url:navigationType:currentDocumentURL:)`.
@@ -217,6 +279,16 @@ public struct MarkdownRenderedView: NSViewRepresentable {
     /// can pin the contract without a `WKWebView`.
     public static func htmlNeedsMermaid(_ html: String) -> Bool {
         html.contains("mdv-mermaid")
+    }
+
+    /// WV-7: number of `WKUserScript`s the `.install` branch attaches —
+    /// one each for the non-empty mermaid runtime and shim. Empty
+    /// resources (missing from the bundle) are skipped, so this is 0–2.
+    /// Exposed so the invariant assertion and host tests share one
+    /// source of truth for the expected post-install count.
+    static var expectedMermaidScriptCount: Int {
+        (MermaidBundle.runtime.isEmpty ? 0 : 1)
+            + (MermaidBundle.shimJS.isEmpty ? 0 : 1)
     }
 
     /// Decide what to do with the WebView's mermaid user-scripts on
@@ -264,6 +336,23 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         /// to gate find() — calling it before the DOM is ready silently
         /// fails with matchFound=false, so we defer until ready.
         var documentReady: Bool = false
+        /// WV-4: true once the current document has finished its initial
+        /// load. Drives `decide(..., initialLoadComplete:)` so that a
+        /// post-load top-level `.other` navigation to `file:`/`data:`
+        /// (i.e. an in-page script escape) is cancelled, while the
+        /// bootstrap `loadHTMLString`/`loadFileURL` (also `.other`) is
+        /// allowed. Reset on each new provisional navigation so a
+        /// genuine tab switch / reload re-opens the permissive window.
+        var didFinishFirstLoad: Bool = false
+        /// WV-4: set immediately before each `loadHTMLString` WE initiate
+        /// (content change / tab switch). A `loadHTMLString(_:baseURL:)`
+        /// reload arrives in `decidePolicyFor` as a `.other` navigation to
+        /// the `file:` baseURL — by scheme alone it is indistinguishable
+        /// from a `window.location = 'file://…'` escape. This flag lets the
+        /// policy handler tell the two apart: an expected programmatic load
+        /// is allowed and the flag is cleared; an UNexpected post-load
+        /// `.other` file:/data: is a script escape and is cancelled.
+        var expectingProgrammaticLoad: Bool = false
         /// Holds the webView weakly so `webView(_:didFinish:)` can
         /// re-run any find that was queued before the page was ready.
         weak var pendingFindWebView: WKWebView?
@@ -346,6 +435,10 @@ public struct MarkdownRenderedView: NSViewRepresentable {
             didFinish navigation: WKNavigation!
         ) {
             documentReady = true
+            // WV-4: from here on, any top-level `.other` navigation to
+            // file:/data: is an in-page script escape, not the bootstrap
+            // load — see `decide(..., initialLoadComplete:)`.
+            didFinishFirstLoad = true
             // Inject our find runtime once per page load. CSP forbids
             // <script> tags from the rendered page, but
             // evaluateJavaScript is API-injected and not subject to
@@ -468,10 +561,24 @@ public struct MarkdownRenderedView: NSViewRepresentable {
             decidePolicyFor navigationAction: WKNavigationAction,
             decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
         ) {
+            // WV-4: the WV-4 guard only fires for a post-first-load `.other`
+            // file:/data: navigation that we did NOT initiate. Our own
+            // `loadHTMLString` reloads set `expectingProgrammaticLoad`; the
+            // first such `.other` decision consumes (clears) it so a later
+            // script-driven `.other` is no longer mistaken for our load.
+            let wasExpectingOurLoad = expectingProgrammaticLoad
+            if navigationAction.navigationType == .other {
+                expectingProgrammaticLoad = false
+            }
+            // Treat the initial load as "complete" for guarding purposes
+            // only when first load finished AND this `.other` isn't the
+            // programmatic reload we just kicked off.
+            let guardAsPostLoad = didFinishFirstLoad && !wasExpectingOurLoad
             let decision = Coordinator.decide(
                 url: navigationAction.request.url,
                 navigationType: navigationAction.navigationType,
-                currentDocumentURL: webView.url
+                currentDocumentURL: webView.url,
+                initialLoadComplete: guardAsPostLoad
             )
             switch decision {
             case .allow:
@@ -485,22 +592,42 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         }
 
         /// Decide what to do with a navigation. Pure function so it can be
-        /// unit-tested. Allowlist semantics (CRIT-1 / S4 / 2026-05-25 §2.4):
+        /// unit-tested. Allowlist semantics (CRIT-1 / S4 / 2026-05-25 §2.4,
+        /// WV-4 2026-05-30):
         ///
         /// - Same-document fragment navigation (`#anchor`) is always allowed.
-        /// - `javascript:`, `data:`, `file:`, `vbscript:`, `about:` (other
-        ///   than `about:blank`) are **cancelled regardless of navigation
-        ///   type** — this blocks `window.location = 'file:///etc/passwd'`
+        /// - `javascript:` and `vbscript:` are **cancelled regardless of
+        ///   navigation type** — blocks `window.location = 'javascript:…'`
         ///   style escapes from any script that might run via a CSP edge
         ///   case. Previously only `linkActivated` was filtered.
         /// - For `linkActivated`: only `http`/`https`/`mailto` are honored —
-        ///   they route to the user's browser. Everything else is cancelled.
-        /// - For other navigation types (initial load, programmatic
-        ///   `loadHTMLString`): allow.
+        ///   they route to the user's browser. `data:`/`file:` and every
+        ///   other scheme are cancelled.
+        /// - For `.other` (programmatic / `loadHTMLString` / `loadFileURL`)
+        ///   navigations, `file:`/`data:` are allowed **unless this is a
+        ///   post-initial-load navigation that we did not initiate**. WV-4:
+        ///   once the first load has reported `didFinish`, a top-level
+        ///   `.other` to `file:`/`data:` that isn't one of our own
+        ///   `loadHTMLString` reloads can only come from in-page script
+        ///   (`window.location = 'file:///etc/passwd'`,
+        ///   `location.replace('data:text/html,…')`) — there is no legitimate
+        ///   programmatic re-navigation to those schemes from the page, so we
+        ///   cancel it. The caller distinguishes its own reloads via
+        ///   `Coordinator.expectingProgrammaticLoad` and only passes
+        ///   `initialLoadComplete: true` for the un-expected case.
+        /// - Any other `.other` navigation: allow.
+        ///
+        /// - Parameter initialLoadComplete: the post-load script-escape
+        ///   guard signal. The caller passes `true` only when the first load
+        ///   has finished AND this `.other` navigation was NOT a reload it
+        ///   just initiated (see `Coordinator.decidePolicyFor`). Defaults to
+        ///   `false` so the bootstrap load and our own reloads stay
+        ///   permissive; a `true` value blocks `file:`/`data:` `.other`.
         public static func decide(
             url: URL?,
             navigationType: WKNavigationType,
-            currentDocumentURL: URL?
+            currentDocumentURL: URL?,
+            initialLoadComplete: Bool = false
         ) -> LinkDecision {
             // Defense-in-depth: dangerous schemes blocked for ANY nav
             // type. `data:` is a special case — we allow it during the
@@ -515,13 +642,24 @@ public struct MarkdownRenderedView: NSViewRepresentable {
                 }
             }
             // For programmatic / .other navigations, block the always-
-            // dangerous schemes. file: is excluded here because
-            // CodeMirrorEditorView legitimately uses `loadFileURL` for
-            // its bundle resources, and the inline mermaid runtime
-            // sometimes triggers a `file:` sub-resource fetch.
+            // dangerous schemes. file: is excluded from the *unconditional*
+            // block here because CodeMirrorEditorView legitimately uses
+            // `loadFileURL` for its bundle resources, and the inline mermaid
+            // runtime sometimes triggers a `file:` sub-resource fetch — but
+            // only during the bootstrap load (see the WV-4 guard below).
             if let url, navigationType != .linkActivated {
                 let s = url.scheme?.lowercased() ?? ""
                 if ["javascript", "vbscript"].contains(s) {
+                    return .cancel
+                }
+                // WV-4: after the initial load completes, a top-level
+                // `.other` navigation to `file:`/`data:` can only be an
+                // in-page script escape (there is no legitimate programmatic
+                // re-navigation to those schemes once the page is up). Cancel
+                // it. During the bootstrap (`initialLoadComplete == false`)
+                // these remain allowed so `loadHTMLString`/`loadFileURL`
+                // render at all.
+                if initialLoadComplete, ["file", "data"].contains(s) {
                     return .cancel
                 }
             }

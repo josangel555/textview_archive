@@ -317,22 +317,35 @@ extension TreeSitterEngine {
     }
 
     // MARK: Result cache
+    //
+    // RWC-4 (2026-05-30): the cache used to keep a *single slot per
+    // language* (`[HighlightLanguage: (hash, regions)]`). With two or
+    // more open files of the same language (two JSON tabs, a Swift file
+    // + its test), each `computeFolds` call evicted the other's entry,
+    // so switching tabs re-parsed every time — the cache thrashed and
+    // effectively did nothing for the common multi-tab case.
+    //
+    // Fix: key on `(language, contentHash)` via a bounded LRU per
+    // language. Each `FoldCacheEntry` is now an order-list LRU mirroring
+    // `HighlightCacheActor.prune()` (insertion-ordered keys, drop oldest
+    // first, never the just-inserted one). Bounded at
+    // `FoldCacheEntry.maxEntries` slots per language so a pathological
+    // edit-churn loop can't grow it without limit.
 
     fileprivate func foldCacheLookup(
         language: HighlightLanguage, hash: UInt64
     ) -> [FoldRegion]? {
         foldLock.lock(); defer { foldLock.unlock() }
-        guard let entry = foldCache[language], entry.hash == hash else {
-            return nil
-        }
-        return entry.regions
+        return foldCache[language]?.lookup(hash: hash)
     }
 
     fileprivate func foldCacheStore(
         language: HighlightLanguage, hash: UInt64, regions: [FoldRegion]
     ) {
         foldLock.lock()
-        foldCache[language] = FoldCacheEntry(hash: hash, regions: regions)
+        let entry = foldCache[language] ?? FoldCacheEntry()
+        entry.store(hash: hash, regions: regions)
+        foldCache[language] = entry
         foldLock.unlock()
     }
 
@@ -343,6 +356,16 @@ extension TreeSitterEngine {
         foldCache.removeAll()
         foldLock.unlock()
     }
+
+    /// Test-only: number of cached `(hash → regions)` slots for a
+    /// language. Lets the LRU-eviction test assert the bound holds
+    /// without exposing the lock or the entry internals.
+    public func _testOnly_foldCacheSlotCount(
+        for language: HighlightLanguage
+    ) -> Int {
+        foldLock.lock(); defer { foldLock.unlock() }
+        return foldCache[language]?.slotCount ?? 0
+    }
 }
 
 /// Per-language compiled fold query, parallel to the highlight bundle.
@@ -351,7 +374,62 @@ internal struct FoldBundle {
     let query: Query
 }
 
-internal struct FoldCacheEntry {
-    let hash: UInt64
-    let regions: [FoldRegion]
+/// Per-language bounded LRU of `(contentHash → fold regions)`.
+///
+/// Reference type so it can be mutated in place under `foldLock`
+/// without re-assigning back through the `[HighlightLanguage: …]`
+/// dictionary on every store. Not independently thread-safe — all
+/// access is serialized by `TreeSitterEngine.foldLock`, the same lock
+/// that already guards `foldCache`.
+///
+/// Eviction mirrors `HighlightCacheActor.prune()`: an insertion-ordered
+/// key list (oldest first), drop from the front when over capacity, and
+/// re-touch on hit so the freshly-used entry moves to the back. Because
+/// the just-stored hash is appended last, it is never the one evicted.
+internal final class FoldCacheEntry {
+    /// Per-language slot cap. Matches `HighlightCacheActor.maxEntries`
+    /// (8) — a single open file usually needs 1–2 slots (current
+    /// content × the occasional edit-driven re-parse), so 8 covers a
+    /// handful of same-language tabs with headroom while staying small.
+    static let maxEntries = 8
+
+    private var regionsByHash: [UInt64: [FoldRegion]] = [:]
+    /// Insertion / recency order, oldest first. Last == most recently
+    /// used. Kept in lockstep with `regionsByHash`.
+    private var order: [UInt64] = []
+
+    func lookup(hash: UInt64) -> [FoldRegion]? {
+        guard let regions = regionsByHash[hash] else { return nil }
+        // Touch: move to the most-recently-used end so a hot entry
+        // doesn't get evicted by churn on cold ones.
+        if let idx = order.firstIndex(of: hash) {
+            order.remove(at: idx)
+            order.append(hash)
+        }
+        return regions
+    }
+
+    func store(hash: UInt64, regions: [FoldRegion]) {
+        if regionsByHash[hash] == nil {
+            order.append(hash)
+        } else if let idx = order.firstIndex(of: hash) {
+            // Overwrite of an existing slot also refreshes recency.
+            order.remove(at: idx)
+            order.append(hash)
+        }
+        regionsByHash[hash] = regions
+        prune()
+    }
+
+    var slotCount: Int { regionsByHash.count }
+
+    private func prune() {
+        guard regionsByHash.count > Self.maxEntries else { return }
+        let dropCount = regionsByHash.count - Self.maxEntries
+        let toDrop = order.prefix(dropCount)
+        for hash in toDrop {
+            regionsByHash.removeValue(forKey: hash)
+        }
+        order.removeFirst(toDrop.count)
+    }
 }
