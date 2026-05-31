@@ -677,6 +677,15 @@ public final class DocumentModel: ObservableObject {
     /// rapid tab switches stack git processes.
     private var diffMarksTask: Task<Void, Never>?
 
+    /// Debounce window for the off-main `git diff` that feeds the
+    /// source-view diff stripe. A flurry of `updateDerived()` calls
+    /// (opening many files, keystroke-rate watcher/save events) all
+    /// funnel through `refreshDiffMarks`; sleeping this long before the
+    /// git invocation collapses the burst into one process per
+    /// quiescent window. MAGIC-005: named so the timing isn't an
+    /// unexplained literal at the call site.
+    private static let diffMarksDebounceNanos: UInt64 = 150_000_000  // 150 ms
+
     /// Recompute `sourceDiffMarks` by shelling out to `git diff` for
     /// the current file. Off-main; main-actor publish at the end.
     /// Cancels any prior in-flight task before launching the new one
@@ -701,13 +710,13 @@ public final class DocumentModel: ObservableObject {
         }()
         let token = url
         diffMarksTask = Task.detached(priority: .userInitiated) { [weak self] in
-            // 150 ms debounce: if the user is rapidly switching tabs,
-            // we'll get cancelled before the git invocation even starts.
-            // Same debounce protects against keystroke-rate calls — the
-            // file-watcher / save / external-edit feed all funnel through
+            // Debounce: if the user is rapidly switching tabs, we'll be
+            // cancelled before the git invocation even starts. Same
+            // window protects against keystroke-rate calls — the file-
+            // watcher / save / external-edit feed all funnel through
             // here, so we get one git process per quiescent window
             // rather than one per event.
-            try? await Task.sleep(nanoseconds: 150_000_000)
+            try? await Task.sleep(nanoseconds: Self.diffMarksDebounceNanos)
             if Task.isCancelled { return }
             let client = GitClient(repoRoot: repoRoot)
             let diff = client.diff(forPath: relPath)
@@ -1258,6 +1267,11 @@ public final class DocumentModel: ObservableObject {
     ) {
         let menu = NSMenu(title: "Editor")
 
+        // Key for the side-storage entry, captured so the `defer` at the
+        // end of this method can drop it once `popUp` returns. nil when
+        // no LSP item was added (no target to park).
+        var menuTargetKey: ObjectIdentifier?
+
         // LSP nav submenu — only when a language is configured.
         if LSPLanguageRegistry.default.language(for: fileURL) != nil {
             let target = EditorMenuTarget { [weak self] in
@@ -1273,10 +1287,12 @@ public final class DocumentModel: ObservableObject {
                 keyEquivalent: "")
             goDef.target = target
             menu.addItem(goDef)
-            // NSMenu doesn't retain item targets across popUp dismissal,
-            // so we park the target on the menu via objc_setAssociatedObject
-            // by simply stashing in a side dict bound to menu lifetime.
-            editorMenuTargets[ObjectIdentifier(goDef)] = target
+            // NSMenuItem holds only a weak `target`, so a closure-backed
+            // shim would deallocate before the action fires. Park it in
+            // a side dict for the duration of the (synchronous) popUp.
+            let key = ObjectIdentifier(goDef)
+            editorMenuTargets[key] = target
+            menuTargetKey = key
             menu.addItem(NSMenuItem.separator())
         }
 
@@ -1308,15 +1324,28 @@ public final class DocumentModel: ObservableObject {
             ?? 0
         let appkitY = pivotY - webkitPoint.y
         let popPoint = NSPoint(x: webkitPoint.x, y: appkitY)
+        // CORR-2: `popUp` runs its own synchronous modal tracking loop —
+        // the menu-item action (if any) fires DURING this call, before
+        // it returns. So the parked target only needs to outlive the
+        // popUp; drop it on return so the dict can't grow without bound.
+        // (The prior code only overwrote the entry on the NEXT
+        // invocation, and since each popUp creates a fresh NSMenuItem
+        // with a fresh ObjectIdentifier, no overwrite ever happened and
+        // the dict leaked one EditorMenuTarget per right-click.)
+        defer {
+            if let key = menuTargetKey {
+                editorMenuTargets.removeValue(forKey: key)
+            }
+        }
         menu.popUp(positioning: nil, at: popPoint, in: nil)
     }
 
     /// Side-storage for NSMenuItem targets created in
-    /// `showEditorContextMenu`. NSMenu does not retain `target`, so a
-    /// closure-backed shim would deallocate before the menu action
-    /// fires. Keying by `ObjectIdentifier(menuItem)` keeps lifetime
-    /// scoped without leaking — the dict survives only until the next
-    /// context-menu invocation drops the entry.
+    /// `showEditorContextMenu`. NSMenuItem holds only a weak `target`,
+    /// so a closure-backed shim would deallocate before the menu action
+    /// fires. The entry is parked for the duration of the synchronous
+    /// `popUp` and dropped via `defer` on return, so the dict holds at
+    /// most one entry and never grows (CORR-2).
     private var editorMenuTargets: [ObjectIdentifier: EditorMenuTarget] = [:]
 
     private func sendEditorHoverResponse(replyId: String, contents: String) {
@@ -1451,29 +1480,78 @@ public final class DocumentModel: ObservableObject {
         editor.confirmCloseIfDirty(at: index)
     }
 
+    /// The displayed source text plus its utf8 byte length, computed
+    /// once per body re-eval. The length is carried so callers (the
+    /// syntax-highlight path) can form a cache key without re-walking
+    /// the string with `utf8.count` on every re-eval (PERF-04).
+    public struct DisplayedText: Sendable {
+        public let text: String
+        public let byteLength: Int
+        public let modifiedTime: Date?
+        public init(text: String, byteLength: Int, modifiedTime: Date?) {
+            self.text = text
+            self.byteLength = byteLength
+            self.modifiedTime = modifiedTime
+        }
+    }
+
     /// Returns the text that should be shown in the source view for
     /// the currently selected tab and `file`: either pretty-printed
-    /// (when toggled and supported) or the raw contents.
+    /// (when toggled and supported) or the raw contents — along with
+    /// its byte length and the source file's mtime so the highlight
+    /// cache key can be formed O(1).
     ///
     /// Memoizes the formatter output per tab id. Without this, every
     /// SwiftUI body re-eval (and there are many — find keystrokes,
     /// selection changes, scroll) reruns `Formatter.prettyPrint` on
-    /// the full file, which is O(N) text-walk per call. Cache is
-    /// invalidated when the source length changes (file watcher
-    /// reload).
-    public func displayText(for file: TextFile) -> String {
+    /// the full file, which is O(N) text-walk per call.
+    ///
+    /// RWC-2 / TD-09 (2026-05-30): the memo keys on `(sourceLength,
+    /// modifiedTime)` rather than length alone, so a same-byte reload
+    /// (`{"a":1}` → `{"b":2}`) re-runs the formatter instead of
+    /// returning stale output. The not-formatted fast path reports
+    /// `file.byteCount` (already O(1) on `TextFile`) instead of walking
+    /// `file.contents.utf8` (PERF-04).
+    public func displayedText(for file: TextFile) -> DisplayedText {
         guard let id = tabs.selected?.id,
               tabCoordinator.formattedTabIDs.contains(id),
               let format = Formatter.SupportedFormat.detect(file.url) else {
-            return file.contents
+            // Raw path: `file.byteCount` is the utf8 length captured at
+            // load — no re-walk.
+            return DisplayedText(
+                text: file.contents,
+                byteLength: file.byteCount,
+                modifiedTime: file.modifiedTime
+            )
         }
-        let len = file.contents.utf8.count
-        if let hit = tabCoordinator.formattedHit(forTabID: id, sourceLength: len) {
-            return hit
+        let len = file.byteCount
+        if let hit = tabCoordinator.formattedHit(
+            forTabID: id, sourceLength: len, modifiedTime: file.modifiedTime
+        ) {
+            return DisplayedText(
+                text: hit.formatted,
+                byteLength: hit.formattedLength,
+                modifiedTime: file.modifiedTime
+            )
         }
         let result = Formatter.prettyPrint(file.contents, as: format)
-        tabCoordinator.cacheFormatted(result, forTabID: id, sourceLength: len)
-        return result
+        let formattedLen = result.utf8.count
+        tabCoordinator.cacheFormatted(
+            result, forTabID: id,
+            sourceLength: len, modifiedTime: file.modifiedTime,
+            formattedLength: formattedLen
+        )
+        return DisplayedText(
+            text: result,
+            byteLength: formattedLen,
+            modifiedTime: file.modifiedTime
+        )
+    }
+
+    /// Backwards-compat string-only accessor. New callers should use
+    /// `displayedText(for:)` to get the byte length + mtime for free.
+    public func displayText(for file: TextFile) -> String {
+        displayedText(for: file).text
     }
 
     // MARK: Syntax highlighting
@@ -1526,7 +1604,8 @@ public final class DocumentModel: ObservableObject {
     /// never republishes DocumentModel.
     public func highlightRuns(
         forTabID tabID: UUID,
-        url: URL, text: String, language: HighlightLanguage
+        url: URL, text: String, language: HighlightLanguage,
+        modifiedTime: Date? = nil
     ) -> [HighlightRun] {
         // .diff / .patch files use a hand-rolled per-line highlighter
         // — there's no TreeSitter grammar for unified diff and the
@@ -1542,7 +1621,11 @@ public final class DocumentModel: ObservableObject {
         // is O(N) per call and was a measurable hot-path cost from
         // SwiftUI body re-evals on multi-hundred-KB files.
         let length = text.utf8.count
-        let key = HighlightCacheKey(url: url, length: length, language: language)
+        // RWC-1: mtime joins the key so a same-byte reload invalidates.
+        let key = HighlightCacheKey(
+            url: url, length: length, language: language,
+            modifiedTime: modifiedTime
+        )
         let actor = highlightCacheActor(forTabID: tabID)
         return actor.runsOrEnqueue(key: key, text: text)
     }
@@ -1798,11 +1881,63 @@ public final class DocumentModel: ObservableObject {
     /// edit "Discard & Reload" branch (via the `onReloadFromDisk`
     /// closure wired at init). `fileprivate` so EditorCoordinator
     /// reaches it through the closure rather than direct access.
+    ///
+    /// CORR-3 (2026-05-30): the external-edit "Discard & Reload" path
+    /// captures `index` BEFORE running a modal NSAlert. Between the
+    /// capture and this call the user could close another tab, shifting
+    /// indices — so `index` may now be out of bounds or point at a
+    /// different tab. We re-locate by the tab's URL at `index` and bail
+    /// if the slot no longer matches, instead of blindly subscripting
+    /// (which trapped on a stale index) or rewriting the wrong tab.
+    ///
+    /// UDC-2 (2026-05-30): when the tab is in `.editor` mode and its
+    /// buffer is CLEAN, refresh the buffer from the reloaded file so
+    /// CM6 shows the new bytes. The prior code only swapped `tab.state`
+    /// (which feeds source/rendered views); the editor kept rendering
+    /// the stale buffer, and a subsequent save wrote those stale bytes
+    /// back over the external edit — silent data loss. A DIRTY buffer
+    /// is never clobbered here: the dirty case is gated upstream by
+    /// `reloadCurrentFile(matching:)`, which routes to the external-
+    /// edit conflict prompt; the prompt's "Discard & Reload" branch
+    /// drops the buffer entirely before calling back in, so by the time
+    /// we see it the buffer is gone (re-seeds lazily from new state).
     fileprivate func reload(url: URL, at index: Int) {
+        // CORR-3: tolerate a stale index handed across a modal.
+        guard tabs.tabs.indices.contains(index),
+              tabs.tabs[index].url == url else {
+            // Last resort: try to re-locate by URL in case the tab just
+            // shifted position. Only act on an unambiguous single match.
+            let matches = tabs.tabs.indices.filter { tabs.tabs[$0].url == url }
+            guard matches.count == 1, let idx = matches.first else { return }
+            applyReload(url: url, at: idx)
+            return
+        }
+        applyReload(url: url, at: index)
+    }
+
+    /// Shared reload body once the target index is validated.
+    private func applyReload(url: URL, at index: Int) {
         let state = controller.open(url: url)
         var t = tabs.tabs[index]
+        let wasEditor = t.viewMode == .editor
         t.state = state
         tabCoordinator.replace(at: index, with: t)
+        // UDC-2: rebase a clean editor buffer onto the reloaded text.
+        if wasEditor, case .loaded(let newFile) = state {
+            let id = t.id
+            if let existing = tabCoordinator.editorBuffers[id] {
+                if !existing.isDirty {
+                    tabCoordinator.setEditorBuffer(
+                        EditorBuffer(from: newFile), forTabID: id
+                    )
+                }
+                // Dirty buffers are intentionally left alone — see the
+                // doc comment on `reload`; the dirty path never reaches
+                // here without the buffer first being discarded.
+            }
+            // If no buffer exists yet, `editorBuffer(forTabID:)` will
+            // seed one from the fresh `.loaded` state on first access.
+        }
         updateDerived()
     }
 
@@ -2029,23 +2164,50 @@ public final class DocumentModel: ObservableObject {
         tabCoordinator.append(Tab(url: resolved, state: .empty, viewMode: safeMode))
     }
 
-    /// Open many URLs at once. Only the LAST URL is read into memory;
-    /// the others are appended as lazy tabs (state = .empty, url set).
-    /// The selection ends on the last opened tab so the user sees the
-    /// file they probably care about — matches Finder's "drop several
-    /// files, the last one wins focus" convention.
+    /// Open many URLs at once. Files are appended as lazy tabs (state
+    /// = .empty, url set); only the LAST file is read into memory and
+    /// gets selection, matching Finder's "drop several files, the last
+    /// one wins focus" convention. Folders are routed to `openFolder`
+    /// (they set the sidebar root, they are not tabs).
+    ///
+    /// UDC-5 (2026-05-30): the prior code lazy-appended every non-last
+    /// URL unconditionally, then `openPath`'d the last. A dropped FOLDER
+    /// anywhere but last became a lazy file tab; selecting it ran
+    /// `controller.open` on a directory and produced a broken `.error`
+    /// tab. We now partition folders from files up front so folders
+    /// never enter the tab list.
     public func openMultiple(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
-        // All but the last: lazy.
-        for url in urls.dropLast() {
+        let fm = FileManager.default
+        var folders: [URL] = []
+        var files: [URL] = []
+        for url in urls {
+            var isDir: ObjCBool = false
+            // A non-existent path is treated as a "file" so the user
+            // still sees the standard "File not found" error tab rather
+            // than silently vanishing.
+            if fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+                folders.append(url)
+            } else {
+                files.append(url)
+            }
+        }
+        // Folders first: each sets/updates the sidebar root. The last
+        // folder wins (matches `openPath`/`openFolder` "last root wins").
+        for folder in folders {
+            openFolder(folder)
+        }
+        // Files: all but the last lazy, last eager (history-recorded,
+        // watcher-bound, focused).
+        for url in files.dropLast() {
             let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
             let mode = ViewModeOptions.defaultMode(for: resolved)
             appendLazyTab(url: resolved, viewMode: mode)
         }
-        // Last one: eager open through the normal path so it gets
-        // history-recorded, watcher-bound, sidebar-rooted, etc.
-        if let last = urls.last {
-            openPath(last)
+        if let lastFile = files.last {
+            // `open(url:)` — not `openPath` — since we've already
+            // classified this as a non-directory.
+            open(url: lastFile)
         }
     }
 
@@ -2189,15 +2351,35 @@ public final class DocumentModel: ObservableObject {
     /// responsive for multi-MB files. We re-locate the tab by id at
     /// completion time so a meanwhile-closed tab is a no-op rather
     /// than crashing.
+    ///
+    /// CORR-5 (2026-05-30): after the async hop we also re-validate
+    /// that the relocated tab's URL still equals `url` before mutating
+    /// — a meanwhile-completed re-open / reload could have repointed
+    /// the same tab id at a different file, and writing this stale read
+    /// into it would show the wrong contents. Mirrors the guard in
+    /// `materializeIfNeeded`'s completion.
+    ///
+    /// CR-04 (2026-05-30): a read failure no longer silently no-ops
+    /// (leaving the prior, now-stale view). It routes through
+    /// `controller.open(url:)` to reuse the standard error mapping so
+    /// the tab flips to an `.error` placeholder.
     private func loadBinaryAsync(url: URL, intoTabID id: UUID) {
         Task.detached(priority: .userInitiated) { [weak self] in
             let loaded = try? BinaryFileLoader().load(url: url)
             await MainActor.run { [weak self] in
-                guard let self, let bin = loaded,
-                      let idx = self.tabs.tabs.firstIndex(where: { $0.id == id })
+                guard let self,
+                      let idx = self.tabs.tabs.firstIndex(where: { $0.id == id }),
+                      self.tabs.tabs[idx].url == url
                 else { return }
                 var tab = self.tabs.tabs[idx]
-                tab.state = .binary(bin)
+                if let bin = loaded {
+                    tab.state = .binary(bin)
+                } else {
+                    // CR-04: surface the failure rather than leaving the
+                    // prior (stale) state. `controller.open` maps the
+                    // read error to a user-facing `.error` message.
+                    tab.state = self.controller.open(url: url)
+                }
                 self.tabCoordinator.replace(at: idx, with: tab)
             }
         }
@@ -2207,11 +2389,19 @@ public final class DocumentModel: ObservableObject {
         Task.detached(priority: .userInitiated) { [weak self] in
             let loaded = try? TextFileLoader().load(url: url)
             await MainActor.run { [weak self] in
-                guard let self, let text = loaded,
-                      let idx = self.tabs.tabs.firstIndex(where: { $0.id == id })
+                guard let self,
+                      let idx = self.tabs.tabs.firstIndex(where: { $0.id == id }),
+                      self.tabs.tabs[idx].url == url
                 else { return }
                 var tab = self.tabs.tabs[idx]
-                tab.state = .loaded(text)
+                if let text = loaded {
+                    tab.state = .loaded(text)
+                } else {
+                    // CR-04: route the read failure through the standard
+                    // error mapping so the tab shows an error placeholder
+                    // instead of silently keeping stale content.
+                    tab.state = self.controller.open(url: url)
+                }
                 self.tabCoordinator.replace(at: idx, with: tab)
             }
         }

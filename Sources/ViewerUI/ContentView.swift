@@ -437,9 +437,15 @@ struct SourceModeView: View {
     let tabID: UUID
 
     var body: some View {
-        let displayed = model.displayText(for: file)
+        let displayedInfo = model.displayedText(for: file)
+        let displayed = displayedInfo.text
         let lang = effectiveLanguage()
-        let runs = computeRuns(text: displayed, language: lang)
+        let runs = computeRuns(
+            text: displayed,
+            byteLength: displayedInfo.byteLength,
+            modifiedTime: displayedInfo.modifiedTime,
+            language: lang
+        )
         VStack(spacing: 0) {
             if model.isSourceFindBarPresented {
                 SourceFindBar(find: model.find)
@@ -521,7 +527,18 @@ struct SourceModeView: View {
     /// hit, returns [] and kicks off the off-thread tokenize on miss.
     /// On completion the actor bumps `version`; SwiftUI re-evals this
     /// view and re-calls into `runsOrEnqueue` which now hits the cache.
-    private func computeRuns(text: String, language: HighlightLanguage) -> [HighlightRun] {
+    ///
+    /// `byteLength` + `modifiedTime` are pre-computed by
+    /// `DocumentModel.displayedText(for:)` — `byteLength` avoids an
+    /// O(N) `utf8.count` walk per body re-eval (PERF-04), and
+    /// `modifiedTime` joins the cache key so a same-byte reload
+    /// invalidates instead of serving stale spans (RWC-1).
+    private func computeRuns(
+        text: String,
+        byteLength: Int,
+        modifiedTime: Date?,
+        language: HighlightLanguage
+    ) -> [HighlightRun] {
         // Read `version` so SwiftUI's dependency tracker registers
         // the dependency even when the cache is cold on first body.
         _ = highlightCache.version
@@ -530,8 +547,12 @@ struct SourceModeView: View {
             return DiffHighlighter.highlight(text)
         }
         guard language != .plainText else { return [] }
-        let length = text.utf8.count
-        let key = HighlightCacheKey(url: file.url, length: length, language: language)
+        let key = HighlightCacheKey(
+            url: file.url,
+            length: byteLength,
+            language: language,
+            modifiedTime: modifiedTime
+        )
         return highlightCache.runsOrEnqueue(key: key, text: text)
     }
 }
