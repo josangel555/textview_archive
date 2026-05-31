@@ -49,6 +49,14 @@ public final class SessionsCoordinator: ObservableObject {
     /// effort, matching the rest of the persistence layer.
     @Published public private(set) var lastError: String?
 
+    /// True when the on-disk `index.json` was written by a newer
+    /// schema than this build understands (downgrade scenario). While
+    /// set, `persist()` skips the index write so we never truncate the
+    /// newer build's fields (PERSIST-04). Per-session snapshot writes
+    /// are independently gated by `SessionStore.load`'s own
+    /// forward-compat guard, so they remain safe to issue.
+    public private(set) var indexWriteBlocked: Bool = false
+
     private let store: SessionStore
     private weak var lifecycle: (any Lifecycle)?
 
@@ -80,19 +88,65 @@ public final class SessionsCoordinator: ObservableObject {
         // Detach-before-mount invariant: defensive guard for the rare
         // case where `restore()` is called twice (e.g. test reset).
         if let prev = active { lifecycle?.detach(prev) }
-        guard let idx = store.loadIndex() else {
+        // Reset the downgrade guard each restore — a fresh probe decides.
+        indexWriteBlocked = false
+        let idx: SessionIndex
+        switch store.loadIndexResult() {
+        case .loaded(let loaded):
+            idx = loaded
+        case .absent:
+            // Fresh install / no index. Empty state; writes are safe.
             sessions = []
             activeID = nil
+            return
+        case .corrupt:
+            // Unparseable bytes: start empty. Re-persisting can only
+            // improve matters, so we leave writes unblocked but flag
+            // the loss for diagnostics.
+            sessions = []
+            activeID = nil
+            lastError = "Session index was unreadable; starting with no sessions."
+            return
+        case .newerSchema(let found):
+            // Downgrade: a newer build wrote this index. Do NOT clobber
+            // it. Present a non-destructive banner and leave the live
+            // list empty for this older build. (PERSIST-04)
+            indexWriteBlocked = true
+            sessions = []
+            activeID = nil
+            lastError = "This app version is older than your saved sessions "
+                + "(index schema v\(found) > v\(SessionIndex.currentSchema)). "
+                + "Sessions are preserved on disk; update the app to restore them."
             return
         }
         var loaded: [SessionSnapshot] = []
         var skipped: [UUID] = []
+        var missingFolder: [UUID] = []
         for entry in idx.sessions {
-            if let snap = store.load(id: entry.id) {
-                loaded.append(snap)
-            } else {
+            guard let snap = store.load(id: entry.id) else {
                 skipped.append(entry.id)
+                continue
             }
+            // PERSIST-10: a session whose sidebar root is empty/nil must
+            // NOT be loaded. The UI layer's mount path falls back to
+            // `NSHomeDirectory()` for an empty/nil root (see
+            // `SessionsAppCoordinator.mountSession`), which silently
+            // re-roots the whole session at $HOME — surprising and
+            // potentially exposing the user's home folder. Drop it from
+            // the live list (the snapshot file stays on disk, so this is
+            // non-destructive and recoverable) and flag it.
+            //
+            // A *non-empty but currently-missing* path (e.g. a deleted
+            // project dir on an external drive) is left alone here: it
+            // does NOT trigger the $HOME re-root, and `hydrate` already
+            // guards `sidebar.setRoot` behind a `fileExists` check, so
+            // the session restores harmlessly and recovers if the folder
+            // reappears.
+            guard let root = snap.sidebarRootPath, !root.isEmpty else {
+                missingFolder.append(entry.id)
+                continue
+            }
+            loaded.append(snap)
         }
         sessions = loaded
         if let last = idx.lastActiveID, loaded.contains(where: { $0.id == last }) {
@@ -102,8 +156,15 @@ public final class SessionsCoordinator: ObservableObject {
                 .sorted(by: { $0.lastActiveAt > $1.lastActiveAt })
                 .first?.id
         }
+        var notes: [String] = []
         if !skipped.isEmpty {
-            lastError = "Skipped \(skipped.count) unreadable session snapshot(s)."
+            notes.append("Skipped \(skipped.count) unreadable session snapshot(s).")
+        }
+        if !missingFolder.isEmpty {
+            notes.append("Skipped \(missingFolder.count) session(s) whose folder is missing.")
+        }
+        if !notes.isEmpty {
+            lastError = notes.joined(separator: " ")
         }
         if let id = activeID, let s = sessions.first(where: { $0.id == id }) {
             lifecycle?.mount(s)
@@ -297,16 +358,24 @@ public final class SessionsCoordinator: ObservableObject {
     /// Write the index + every per-session snapshot through the
     /// coalescing write queue. Returns immediately.
     private func persist() {
-        let entries = sessions.map { s in
-            SessionIndex.Entry(
-                id: s.id,
-                rootPath: s.sidebarRootPath ?? "",
-                displayName: s.displayName,
-                lastActiveAt: s.lastActiveAt
-            )
+        // PERSIST-04: when the on-disk index was written by a newer
+        // schema (downgrade), skip the index write so we don't truncate
+        // the newer build's fields. Per-session snapshot writes below
+        // are still issued — each carries its own schemaVersion and the
+        // newer build's reader applies the same forward-compat guard, so
+        // they can't be silently truncated by us.
+        if !indexWriteBlocked {
+            let entries = sessions.map { s in
+                SessionIndex.Entry(
+                    id: s.id,
+                    rootPath: s.sidebarRootPath ?? "",
+                    displayName: s.displayName,
+                    lastActiveAt: s.lastActiveAt
+                )
+            }
+            let idx = SessionIndex(sessions: entries, lastActiveID: activeID)
+            store.enqueueSaveIndex(idx)
         }
-        let idx = SessionIndex(sessions: entries, lastActiveID: activeID)
-        store.enqueueSaveIndex(idx)
         let saveTime = Date()
         for s in sessions {
             // Stamp `savedAt` on the disk copy without disturbing the

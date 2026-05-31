@@ -111,6 +111,98 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertNil(store.loadIndex())
     }
 
+    // MARK: PERSIST-03 — classify the index load outcome ----------------
+
+    func testLoadIndexResultAbsentWhenMissing() {
+        XCTAssertEqual(store.loadIndexResult(), .absent)
+    }
+
+    func testLoadIndexResultLoadedForValidIndex() throws {
+        let id = UUID()
+        store.saveIndexSync(SessionIndex(
+            sessions: [.init(id: id, rootPath: "/x", displayName: "X", lastActiveAt: Date())],
+            lastActiveID: id
+        ))
+        guard case .loaded(let idx) = store.loadIndexResult() else {
+            return XCTFail("expected .loaded")
+        }
+        XCTAssertEqual(idx.sessions.count, 1)
+    }
+
+    func testLoadIndexResultNewerSchemaForFutureVersion() throws {
+        let v99JSON = """
+        { "version": 99, "sessions": [], "lastActiveID": null }
+        """.data(using: .utf8)!
+        try v99JSON.write(to: tmp.appendingPathComponent("index.json"))
+        XCTAssertEqual(store.loadIndexResult(), .newerSchema(foundVersion: 99))
+    }
+
+    func testLoadIndexResultNewerSchemaEvenWhenRequiredFieldsDrift() throws {
+        // A newer build dropped/renamed a required field, so the full
+        // SessionIndex decode fails — but the version probe still reads
+        // 99. We must classify this as newerSchema, NOT corrupt, so the
+        // coordinator blocks the overwrite (PERSIST-03/04).
+        let weird = """
+        { "version": 99, "totallyNewField": 7 }
+        """.data(using: .utf8)!
+        try weird.write(to: tmp.appendingPathComponent("index.json"))
+        XCTAssertEqual(store.loadIndexResult(), .newerSchema(foundVersion: 99))
+    }
+
+    func testLoadIndexResultCorruptForGarbage() throws {
+        try Data("not json".utf8).write(to: tmp.appendingPathComponent("index.json"))
+        XCTAssertEqual(store.loadIndexResult(), .corrupt)
+    }
+
+    func testLoadIndexResultCorruptForTruncatedJSON() throws {
+        try Data(#"{ "version": 1, "sessions": ["#.utf8)
+            .write(to: tmp.appendingPathComponent("index.json"))
+        XCTAssertEqual(store.loadIndexResult(), .corrupt)
+    }
+
+    // MARK: PERSIST-08 — truncated / partial / wrong-shape snapshots ----
+
+    func testLoadTruncatedSnapshotReturnsNil() throws {
+        let id = UUID()
+        let url = tmp.appendingPathComponent("\(id.uuidString).json")
+        try Data(#"{ "schemaVersion": 2, "id": "#.utf8).write(to: url)
+        XCTAssertNil(store.load(id: id))
+    }
+
+    func testLoadZeroByteSnapshotReturnsNil() throws {
+        let id = UUID()
+        try Data().write(to: tmp.appendingPathComponent("\(id.uuidString).json"))
+        XCTAssertNil(store.load(id: id))
+    }
+
+    func testLoadWrongShapeSnapshotReturnsNil() throws {
+        let id = UUID()
+        // An array where an object is expected.
+        try Data("[]".utf8).write(to: tmp.appendingPathComponent("\(id.uuidString).json"))
+        XCTAssertNil(store.load(id: id))
+    }
+
+    func testLoadStringSchemaVersionReturnsNil() throws {
+        // schemaVersion as a string instead of an int → decode fails.
+        let id = UUID()
+        let url = tmp.appendingPathComponent("\(id.uuidString).json")
+        let json = """
+        {
+          "schemaVersion": "two",
+          "savedAt": "2026-01-01T00:00:00Z",
+          "id": "\(id.uuidString)",
+          "displayName": "X",
+          "createdAt": "2026-01-01T00:00:00Z",
+          "lastActiveAt": "2026-01-01T00:00:00Z",
+          "sidebarRootPath": "/p",
+          "openTabs": [],
+          "selectedTabIndex": null
+        }
+        """
+        try json.write(to: url, atomically: true, encoding: .utf8)
+        XCTAssertNil(store.load(id: id))
+    }
+
     // MARK: Coalescing + flush ---------------------------------------
 
     func testCoalescerCollapsesBurstToSingleValue() {
@@ -154,6 +246,42 @@ final class SessionStoreTests: XCTestCase {
         // No retry, no asyncAfter — flushSync must guarantee the read
         // sees the write.
         XCTAssertEqual(store.load(id: id)?.displayName, "flushed")
+    }
+
+    // PERSIST-07: the terminate sequence is "enqueue latest state, then
+    // flushSync". flushSync must land the just-enqueued value on disk
+    // with no sleep/poll — including the index, which is enqueued
+    // alongside per-session snapshots.
+    func testFlushSyncLandsFinalStateForIndexAndSnapshotTogether() {
+        let id = UUID()
+        store.enqueueSaveIndex(SessionIndex(
+            sessions: [.init(id: id, rootPath: "/p", displayName: "final",
+                             lastActiveAt: Date())],
+            lastActiveID: id
+        ))
+        store.enqueueSave(SessionSnapshot(
+            id: id, displayName: "final-snap",
+            createdAt: Date(), lastActiveAt: Date(),
+            sidebarRootPath: "/p", openTabs: [], selectedTabIndex: 0
+        ))
+        store.flushSync()
+        XCTAssertEqual(store.loadIndex()?.sessions.first?.displayName, "final")
+        XCTAssertEqual(store.load(id: id)?.displayName, "final-snap")
+    }
+
+    // PERSIST-07: calling flushSync twice in a row must be safe and
+    // idempotent (the fixpoint loop must terminate when nothing is
+    // pending).
+    func testFlushSyncIsIdempotent() {
+        let id = UUID()
+        store.enqueueSave(SessionSnapshot(
+            id: id, displayName: "x",
+            createdAt: Date(), lastActiveAt: Date(),
+            sidebarRootPath: "/p", openTabs: [], selectedTabIndex: nil
+        ))
+        store.flushSync()
+        store.flushSync()  // must not hang or re-error
+        XCTAssertEqual(store.load(id: id)?.displayName, "x")
     }
 
     func testCoalescingIsPerURL() {
