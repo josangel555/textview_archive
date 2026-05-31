@@ -99,14 +99,28 @@
     if (changeTimer) clearTimeout(changeTimer);
     changeTimer = setTimeout(emitChange, 200);
   }
-  function emitChange() {
+  // emitChange(force):
+  //   force === false (debounced keystroke flow): ship the accumulated
+  //     incremental batch when in incrementalChangeMode, else a full
+  //     `change`. The `text === lastEmittedText` short-circuit avoids
+  //     re-posting an unchanged doc.
+  //   force === true (drift recovery): Swift detected its mirror
+  //     diverged from ours and asked (via `flushChanges`) for the
+  //     canonical text. We MUST bypass the `lastEmittedText` guard —
+  //     from JS's view nothing changed since the last emit, so the
+  //     guard would no-op and leave Swift permanently diverged
+  //     (EDIT-drift). A forced emit always posts a FULL v1 `change`
+  //     (never an incremental batch): the whole point is to re-seed
+  //     Swift's mirror with ground truth, and an incremental batch
+  //     would re-apply against the very mirror we don't trust.
+  function emitChange(force) {
     changeTimer = null;
     const text = view.state.doc.toString();
-    if (text === lastEmittedText) {
+    if (!force && text === lastEmittedText) {
       pendingChanges = null;
       return;
     }
-    if (incrementalChangeMode && pendingChanges) {
+    if (!force && incrementalChangeMode && pendingChanges) {
       // Walk the composed ChangeSet to produce a flat batch of
       // {from, to, insert} entries — each in the pre-batch frame,
       // ordered by `fromA` ascending. That's exactly what Swift's
@@ -124,13 +138,22 @@
       });
       return;
     }
+    // Full-text path: forced drift-recovery, or non-incremental mode,
+    // or no pending batch to ship incrementally.
     pendingChanges = null;
     lastEmittedText = text;
     post("change", { text: text, version: docVersion, contentLength: text.length });
   }
   function emitChangeImmediate() {
     if (changeTimer) { clearTimeout(changeTimer); changeTimer = null; }
-    emitChange();
+    emitChange(false);
+  }
+  // Forced full-text re-emit, bypassing the unchanged-text guard. Wired
+  // to the `flushChanges` dispatch so Swift's drift-recovery actually
+  // gets a fresh canonical `change` (EDIT-drift fix).
+  function flushChangesForced() {
+    if (changeTimer) { clearTimeout(changeTimer); changeTimer = null; }
+    emitChange(true);
   }
 
   // Compose this transaction's changes onto the running accumulator.
@@ -827,7 +850,7 @@
         case "undo":               undo(view); break;
         case "redo":               redo(view); break;
         case "focus":              view.focus(); break;
-        case "flushChanges":       emitChangeImmediate(); break;
+        case "flushChanges":       flushChangesForced(); break;
         case "getDocument":
           post("requestReply", { replyId: msg.replyId, value: {
             text: view.state.doc.toString(), version: docVersion,
