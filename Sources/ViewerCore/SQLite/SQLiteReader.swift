@@ -16,16 +16,28 @@ public final class SQLiteReader {
     private var db: OpaquePointer?
     public let url: URL
 
+    /// SQL-01/PARSE-02: cooperative cancellation. A long-running query
+    /// is interrupted by setting this flag; the `sqlite3_progress_handler`
+    /// polls it every N VM ops and returns non-zero, which makes
+    /// `sqlite3_step` fail with `SQLITE_INTERRUPT`. The box is heap-
+    /// allocated and passed to the C progress handler as its `void *`
+    /// context, so the callback reads it without capturing `self`.
+    private let cancelBox = _CancelBox()
+
     public enum SQLiteError: Error, CustomStringConvertible {
         case openFailed(String)
         case prepareFailed(String)
         case stepFailed(String)
+        /// SQL-01/PARSE-02: query was interrupted (deadline hit or
+        /// explicit `cancel()`), surfaced from the progress handler.
+        case interrupted
 
         public var description: String {
             switch self {
             case .openFailed(let m):    return "Open failed: \(m)"
             case .prepareFailed(let m): return "Prepare failed: \(m)"
             case .stepFailed(let m):    return "Step failed: \(m)"
+            case .interrupted:          return "Query cancelled"
             }
         }
     }
@@ -40,10 +52,79 @@ public final class SQLiteReader {
             db = nil
             throw SQLiteError.openFailed(msg)
         }
+        // SQL-01: bound time spent blocked on a locked DB (e.g. a WAL
+        // checkpoint from another process). 5s is generous for a
+        // read-only viewer; without it a contended file could hang the
+        // step loop indefinitely.
+        sqlite3_busy_timeout(db, 5_000)
+        installAuthorizer()
+        installProgressHandler()
     }
 
     deinit {
         if let db { sqlite3_close(db) }
+    }
+
+    // MARK: - Cancellation (SQL-01/PARSE-02)
+
+    /// Request cancellation of any in-flight query on this reader. The
+    /// progress handler observes the flag and aborts the next step with
+    /// `SQLITE_INTERRUPT`. Safe to call from any thread (the box is
+    /// lock-guarded). Idempotent.
+    public func cancel() { cancelBox.cancel() }
+
+    /// Clear a prior cancellation so the reader can run further queries.
+    /// `query(...)` resets this automatically at entry.
+    public func resetCancel() { cancelBox.reset() }
+
+    /// SQL-02: deny `ATTACH DATABASE` so a crafted query can't open and
+    /// read arbitrary files on disk (`ATTACH '/etc/passwd' AS x`), and
+    /// belt-and-suspenders deny every write/DDL verb (the connection is
+    /// already `SQLITE_OPEN_READONLY`, but the authorizer makes the
+    /// read-only contract explicit and rejects writes at *prepare* time
+    /// with a clear error instead of at step time). Read/select verbs
+    /// and the PRAGMAs we issue (`table_info`) are allowed.
+    private func installAuthorizer() {
+        let ctx = Unmanaged.passUnretained(self).toOpaque()
+        sqlite3_set_authorizer(db, { _, action, _, _, _, _ in
+            switch action {
+            // Hard-deny: cross-file reads and any mutation/DDL.
+            case SQLITE_ATTACH, SQLITE_DETACH:
+                return SQLITE_DENY
+            case SQLITE_INSERT, SQLITE_UPDATE, SQLITE_DELETE,
+                 SQLITE_DROP_TABLE, SQLITE_DROP_INDEX, SQLITE_DROP_VIEW,
+                 SQLITE_DROP_TRIGGER, SQLITE_DROP_TEMP_TABLE,
+                 SQLITE_DROP_TEMP_INDEX, SQLITE_DROP_TEMP_VIEW,
+                 SQLITE_DROP_TEMP_TRIGGER,
+                 SQLITE_CREATE_TABLE, SQLITE_CREATE_INDEX,
+                 SQLITE_CREATE_VIEW, SQLITE_CREATE_TRIGGER,
+                 SQLITE_CREATE_TEMP_TABLE, SQLITE_CREATE_TEMP_INDEX,
+                 SQLITE_CREATE_TEMP_VIEW, SQLITE_CREATE_TEMP_TRIGGER,
+                 SQLITE_ALTER_TABLE, SQLITE_REINDEX, SQLITE_ANALYZE,
+                 SQLITE_CREATE_VTABLE, SQLITE_DROP_VTABLE:
+                return SQLITE_DENY
+            // Everything else (SELECT, READ, FUNCTION, PRAGMA the viewer
+            // needs, transaction control) is allowed.
+            default:
+                return SQLITE_OK
+            }
+        }, ctx)
+    }
+
+    /// SQL-01/PARSE-02: install a progress handler that fires every
+    /// `instructionInterval` VM ops. It returns non-zero (→ abort) when
+    /// the cancel flag is set, turning a runaway query (cross join,
+    /// `WITH RECURSIVE` blowup) into a prompt `SQLITE_INTERRUPT` instead
+    /// of an unbounded main-thread/off-thread spin.
+    private func installProgressHandler() {
+        let ctx = cancelBox.opaque()
+        // ~50k ops between checks: frequent enough that cancellation is
+        // snappy (sub-millisecond on modern hardware) but rare enough
+        // not to measurably slow honest queries.
+        sqlite3_progress_handler(db, 50_000, { raw in
+            guard let raw else { return 0 }
+            return _CancelBox.isCancelled(raw) ? 1 : 0
+        }, ctx)
     }
 
     // MARK: - Schema queries
@@ -141,6 +222,9 @@ public final class SQLiteReader {
     /// UI from accidentally fetching 10M rows. `truncated` reports
     /// whether the cap was hit.
     public func query(_ sql: String, maxRows: Int = 1_000) throws -> QueryResult {
+        // SQL-01: a fresh query starts un-cancelled. Caller may flip the
+        // flag mid-flight (Cancel button / deadline) from another thread.
+        cancelBox.reset()
         let stmt = try prepare(sql)
         defer { sqlite3_finalize(stmt) }
         let cols = Int(sqlite3_column_count(stmt))
@@ -158,6 +242,10 @@ public final class SQLiteReader {
             let rc = sqlite3_step(stmt)
             if rc == SQLITE_DONE { break }
             if rc != SQLITE_ROW {
+                // SQL-01: progress-handler abort surfaces as
+                // SQLITE_INTERRUPT — distinguish it from a genuine
+                // step failure so the UI shows "Cancelled" not an error.
+                if rc == SQLITE_INTERRUPT { throw SQLiteError.interrupted }
                 throw SQLiteError.stepFailed(String(cString: sqlite3_errmsg(db)))
             }
             if rows.count >= maxRows { truncated = true; break }
@@ -201,4 +289,37 @@ public final class SQLiteReader {
         return out
     }
 
+}
+
+/// SQL-01/PARSE-02: heap-allocated, lock-guarded cancel flag shared
+/// between the query thread and the `sqlite3_progress_handler` C
+/// callback. Passed to the handler as its `void *` context so the
+/// callback never captures the (`@MainActor`-unaware) Swift closure or
+/// `SQLiteReader` itself. `@unchecked Sendable`: the only state is a
+/// `Bool` behind `NSLock`, and the box outlives the connection (held by
+/// `SQLiteReader` for its full lifetime, and we clear the progress
+/// handler implicitly when `sqlite3_close` runs in deinit).
+private final class _CancelBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    func cancel() { lock.lock(); cancelled = true; lock.unlock() }
+    func reset() { lock.lock(); cancelled = false; lock.unlock() }
+    func isCancelled() -> Bool {
+        lock.lock(); defer { lock.unlock() }; return cancelled
+    }
+
+    /// Stable opaque pointer to this box for the C progress handler.
+    /// Unretained — the box's lifetime is tied to its owning
+    /// `SQLiteReader`, which always outlives the connection's progress
+    /// handler (cleared by `sqlite3_close`).
+    func opaque() -> UnsafeMutableRawPointer {
+        Unmanaged.passUnretained(self).toOpaque()
+    }
+
+    /// Read the cancel flag through an opaque pointer handed back by
+    /// the C callback.
+    static func isCancelled(_ raw: UnsafeMutableRawPointer) -> Bool {
+        Unmanaged<_CancelBox>.fromOpaque(raw).takeUnretainedValue().isCancelled()
+    }
 }

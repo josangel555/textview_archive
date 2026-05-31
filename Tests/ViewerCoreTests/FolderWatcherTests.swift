@@ -108,6 +108,74 @@ final class FolderWatcherTests: XCTestCase {
         XCTAssertTrue(paths.contains("/tmp/a/b"))
         XCTAssertTrue(paths.contains("/tmp/a/c"))
     }
+
+    /// FW-2: renaming the watched root fires `onRootChanged` (driven by
+    /// kFSEventStreamCreateFlagWatchRoot + the RootChanged event flag).
+    /// We watch `<root>/watched`, then rename it; the kernel reports a
+    /// root change so the consumer can re-resolve.
+    func test_rootRename_firesOnRootChanged() throws {
+        let watched = root.appendingPathComponent("watched")
+        try FileManager.default.createDirectory(
+            at: watched, withIntermediateDirectories: true
+        )
+        let rootChanged = expectation(description: "onRootChanged fires")
+        rootChanged.assertForOverFulfill = false
+
+        let watcher = try FolderWatcher(
+            url: watched,
+            onRootChanged: { rootChanged.fulfill() },
+            onChange: { _ in }
+        )
+        defer { watcher.stop() }
+
+        // Let the stream arm.
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        // Rename the watched root out from under the stream.
+        let renamed = root.appendingPathComponent("renamed")
+        try FileManager.default.moveItem(at: watched, to: renamed)
+
+        // Callback fires on .main; `wait(for:timeout:)` spins the
+        // runloop so the dispatched callback can run. WatchRoot events
+        // can take a beat to surface, hence the slack.
+        wait(for: [rootChanged], timeout: 8)
+    }
+
+    /// FW-12: under a continuous event stream that keeps re-arming the
+    /// debounce timer, the max-wait still forces a flush. We set a tiny
+    /// maxWait and a debounce long enough that, without the max-wait
+    /// cap, the steady drip of writes would defer onChange past our
+    /// observation window.
+    func test_maxWait_flushesUnderContinuousEvents() throws {
+        let counter = Counter()
+        // debounce 400ms (long), maxWait 300ms (short). A drip of
+        // writes every ~120ms keeps re-arming the 400ms debounce, so
+        // only the 300ms max-wait can produce a flush.
+        let watcher = try FolderWatcher(
+            url: root,
+            debounce: .milliseconds(400),
+            maxWait: .milliseconds(300)
+        ) { _ in counter.bump() }
+        defer { watcher.stop() }
+
+        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        // Drip writes for ~1s, spaced under the debounce window.
+        let end = Date().addingTimeInterval(1.0)
+        var i = 0
+        while Date() < end {
+            try "x".write(
+                to: root.appendingPathComponent("drip\(i).txt"),
+                atomically: true, encoding: .utf8
+            )
+            i += 1
+            RunLoop.current.run(until: Date().addingTimeInterval(0.12))
+        }
+        // Let any trailing flush land.
+        RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+        XCTAssertGreaterThanOrEqual(
+            counter.value, 1,
+            "max-wait should force at least one flush during a continuous burst"
+        )
+    }
 }
 
 /// Threadsafe int counter for the burst test.

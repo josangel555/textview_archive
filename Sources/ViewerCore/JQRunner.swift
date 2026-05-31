@@ -16,6 +16,10 @@ public enum JQRunner {
         /// `jq` exited non-zero — stderr returned for the caller to
         /// display inline (typically "jq: error (at <stdin>:1): …").
         case filterError(exitCode: Int32, stderr: String)
+        /// SCALE-2/CR-05: the filter produced more than the output cap;
+        /// the child was killed and the buffered output is partial, so
+        /// we refuse to hand back a truncated (likely invalid) blob.
+        case outputTooLarge
 
         public var description: String {
             switch self {
@@ -23,6 +27,8 @@ public enum JQRunner {
                 return "jq is not installed at /usr/bin/jq or /opt/homebrew/bin/jq"
             case .filterError(let code, let err):
                 return "jq exited \(code): \(err)"
+            case .outputTooLarge:
+                return "jq output exceeded the size cap and was truncated"
             }
         }
     }
@@ -97,8 +103,22 @@ public enum JQRunner {
             p,
             stdin: Data(json.utf8),
             timeout: timeoutSeconds,
-            limits: limits
+            limits: limits,
+            // SCALE-2/CR-05: bound the buffered output. A filter like
+            // `[range(1e9)]` produces unbounded stdout; the RLIMIT_FSIZE
+            // cap only bites if it writes to a *file*, not the pipe.
+            // 256 MB matches the file-size cap above — well past any
+            // honest filter result, but the process is SIGTERM'd
+            // (→SIGKILL) the moment it overflows rather than OOMing us.
+            maxOutputBytes: 256 * 1024 * 1024
         )
+        if result.truncated {
+            // Killed mid-stream on overflow — the partial stdout isn't a
+            // complete JSON document; surface the cap rather than a
+            // misleading half-result (which would also race the non-zero
+            // exit from the SIGTERM below).
+            throw Error.outputTooLarge
+        }
         if result.terminationStatus != 0 {
             let err = String(data: result.stderr, encoding: .utf8) ?? ""
             throw Error.filterError(

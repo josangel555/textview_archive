@@ -114,9 +114,22 @@ public struct SQLiteBrowserView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("Run") { model.runQuery() }
-                    .keyboardShortcut(.return, modifiers: [.command])
-                    .disabled(model.query.trimmingCharacters(in: .whitespaces).isEmpty)
+                // SQL-01/SQL-03: while a query runs off-main, swap Run
+                // for a Cancel button so a runaway query (cross join,
+                // recursive CTE) can be interrupted instead of freezing
+                // the UI. `model.cancelQuery()` flips the reader's
+                // cancel flag → SQLITE_INTERRUPT on the next step.
+                if model.isRunning {
+                    ProgressView()
+                        .controlSize(.small)
+                        .padding(.trailing, 4)
+                    Button("Cancel") { model.cancelQuery() }
+                        .keyboardShortcut(".", modifiers: [.command])
+                } else {
+                    Button("Run") { model.runQuery() }
+                        .keyboardShortcut(.return, modifiers: [.command])
+                        .disabled(model.query.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
@@ -130,7 +143,18 @@ public struct SQLiteBrowserView: View {
 
     @ViewBuilder
     private var resultsArea: some View {
-        if let err = model.queryError {
+        if model.isRunning {
+            // SQL-01/SQL-03: explicit loading state while the query runs
+            // off the main actor. Keeps the UI responsive (and the
+            // Cancel button live) instead of a synchronous freeze.
+            VStack(spacing: 10) {
+                ProgressView()
+                Text("Running query…")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let err = model.queryError {
             VStack(spacing: 8) {
                 Text("Query error")
                     .font(.system(size: 12, weight: .semibold))
@@ -167,20 +191,46 @@ private final class SQLiteBrowserModel: ObservableObject {
     @Published var query: String = ""
     @Published var queryResult: SQLiteReader.QueryResult?
     @Published var queryError: String?
+    /// SQL-01: true while a query runs on `dbQueue`. Drives the
+    /// loading state + Cancel button.
+    @Published var isRunning: Bool = false
 
-    private var reader: SQLiteReader?
+    /// SQL-01/PARSE-02: the connection is confined to a dedicated
+    /// serial queue and NEVER touched from `@MainActor`. `SQLiteReader`
+    /// isn't `Sendable`, so we only ever read/query it from `dbQueue`;
+    /// `cancel()` is the one method that's lock-safe to call from main.
+    /// `nonisolated(unsafe)` is sound here precisely because every
+    /// access except the thread-safe `cancel()` is serialized on
+    /// `dbQueue`.
+    nonisolated(unsafe) private var reader: SQLiteReader?
+    private let dbQueue = DispatchQueue(label: "SQLiteBrowser.db", qos: .userInitiated)
+    /// Monotonic token so a result from a superseded/cancelled query
+    /// can't clobber a newer one (user hits Run again before the old
+    /// query is interrupted).
+    private var runToken: UInt64 = 0
 
     init(url: URL) { self.url = url }
 
     func load() {
-        do {
-            reader = try SQLiteReader(url: url)
-            tables   = (try? reader?.tableNames())   ?? []
-            views    = (try? reader?.viewNames())    ?? []
-            indexes  = (try? reader?.indexNames())   ?? []
-            triggers = (try? reader?.triggerNames()) ?? []
-        } catch {
-            openError = "\(error)"
+        dbQueue.async { [weak self] in
+            guard let self else { return }
+            do {
+                let r = try SQLiteReader(url: self.url)
+                let tables   = (try? r.tableNames())   ?? []
+                let views    = (try? r.viewNames())    ?? []
+                let indexes  = (try? r.indexNames())   ?? []
+                let triggers = (try? r.triggerNames()) ?? []
+                self.reader = r
+                Task { @MainActor in
+                    self.tables = tables
+                    self.views = views
+                    self.indexes = indexes
+                    self.triggers = triggers
+                }
+            } catch {
+                let msg = "\(error)"
+                Task { @MainActor in self.openError = msg }
+            }
         }
     }
 
@@ -197,13 +247,44 @@ private final class SQLiteBrowserModel: ObservableObject {
 
     func runQuery() {
         queryError = nil
-        guard let reader else { return }
-        do {
-            queryResult = try reader.query(query)
-        } catch {
-            queryResult = nil
-            queryError = "\(error)"
+        runToken &+= 1
+        let token = runToken
+        let sql = query
+        isRunning = true
+        dbQueue.async { [weak self] in
+            guard let self else { return }
+            guard let reader = self.reader else {
+                Task { @MainActor in self.isRunning = false }
+                return
+            }
+            do {
+                let result = try reader.query(sql)
+                Task { @MainActor in
+                    // Drop the result if a newer query has superseded
+                    // this one.
+                    guard token == self.runToken else { return }
+                    self.queryResult = result
+                    self.isRunning = false
+                }
+            } catch {
+                let msg = "\(error)"
+                Task { @MainActor in
+                    guard token == self.runToken else { return }
+                    self.queryResult = nil
+                    self.queryError = msg
+                    self.isRunning = false
+                }
+            }
         }
+    }
+
+    /// SQL-01: interrupt the in-flight query. The flag is observed by
+    /// the reader's progress handler on its next poll, aborting the
+    /// step loop with `SQLITE_INTERRUPT` (surfaced as a "Cancelled"
+    /// error). Bumping `runToken` also makes a late result a no-op.
+    func cancelQuery() {
+        runToken &+= 1
+        reader?.cancel()
     }
 }
 
@@ -272,11 +353,26 @@ internal struct ResultTableView: View {
         }
     }
 
+    /// SQL-03: hard cap on the characters we hand to a `Text` cell. A
+    /// query like `SELECT zeroblob(50000000)` or a multi-MB JSON/TEXT
+    /// column yields a single giant string; even with `lineLimit(1)`,
+    /// SwiftUI/TextKit measures and stores the whole NSAttributedString
+    /// per cell, which spikes memory + main-thread layout time. We only
+    /// ever show one truncated line, so clamp the source string.
+    private static let maxCellChars = 2_000
+
+    private func displayText(_ cell: String?) -> String {
+        guard let cell else { return "NULL" }
+        if cell.count <= Self.maxCellChars { return cell }
+        let head = cell.prefix(Self.maxCellChars)
+        return "\(head)… (\(cell.count) chars)"
+    }
+
     private func cellRow(_ row: [String?], isAlt: Bool) -> some View {
         HStack(spacing: 0) {
             ForEach(row.indices, id: \.self) { i in
                 let cell = row[i]
-                Text(cell ?? "NULL")
+                Text(displayText(cell))
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(cell == nil ? .tertiary : .primary)
                     .lineLimit(1)

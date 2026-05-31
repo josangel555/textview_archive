@@ -245,4 +245,76 @@ final class ProcessRunnerTests: XCTestCase {
         XCTAssertEqual(r.terminationStatus, 0)
         XCTAssertEqual(String(data: r.stdout, encoding: .utf8), payload)
     }
+
+    // MARK: Output byte cap (SCALE-2 / TD-03 / CR-05)
+
+    /// A child streaming far more than the cap must be cut off: the
+    /// result is flagged `truncated`, the buffered output stays near
+    /// the cap (not the full unbounded stream), and the child is
+    /// terminated so we don't hang.
+    func test_run_maxOutputBytesTruncatesAndTerminates() throws {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/yes")
+        // `yes` emits "y\n" forever — unbounded stdout.
+        let start = Date()
+        let r = try ProcessRunner.run(
+            p, timeout: 10, maxOutputBytes: 256 * 1024
+        )
+        let elapsed = Date().timeIntervalSince(start)
+        XCTAssertTrue(r.truncated, "expected overflow to set truncated")
+        // Buffered output is bounded. One final chunk past the cap is
+        // fine; assert we didn't read megabytes.
+        XCTAssertLessThan(r.stdout.count + r.stderr.count, 8 * 1024 * 1024,
+                          "output should be bounded near the cap")
+        XCTAssertGreaterThanOrEqual(r.stdout.count, 256 * 1024,
+                                    "should have read up to the cap")
+        // Overflow terminates the child; we must not block on the 10s
+        // watchdog.
+        XCTAssertLessThan(elapsed, 8.0,
+                          "overflow should terminate promptly, not wait for timeout")
+    }
+
+    /// A well-behaved child whose output is under the cap returns
+    /// normally with `truncated == false` and complete output.
+    func test_run_maxOutputBytesUnderCapNotTruncated() throws {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/echo")
+        p.arguments = ["hello"]
+        let r = try ProcessRunner.run(p, maxOutputBytes: 1024)
+        XCTAssertFalse(r.truncated)
+        XCTAssertEqual(String(data: r.stdout, encoding: .utf8), "hello\n")
+    }
+
+    /// A child that traps SIGTERM must still be killed: the timeout
+    /// watchdog SIGTERMs, the child ignores it, and the SIGKILL
+    /// escalation lands so `waitUntilExit()` can't hang. We use a short
+    /// `killGrace` to keep the test fast.
+    func test_run_sigkillEscalationForSigtermTrappingChild() throws {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        // Trap SIGTERM (15) to a no-op, then sleep long. SIGTERM alone
+        // won't kill it — only SIGKILL will.
+        p.arguments = ["-c", "trap '' TERM; sleep 30"]
+        let start = Date()
+        let r = try ProcessRunner.run(p, timeout: 0.5, killGrace: 0.5)
+        let elapsed = Date().timeIntervalSince(start)
+        XCTAssertTrue(r.timedOut, "watchdog should have fired SIGTERM")
+        XCTAssertTrue(r.killed,
+                      "SIGTERM-trapping child should require SIGKILL escalation")
+        XCTAssertLessThan(elapsed, 5.0,
+                          "SIGKILL must bail us out well under the 30s sleep")
+        XCTAssertNotEqual(r.terminationStatus, 0)
+    }
+
+    /// A child that honors SIGTERM exits on the first signal and must
+    /// NOT be escalated to SIGKILL (`killed == false`).
+    func test_run_noSigkillWhenChildHonorsSigterm() throws {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        p.arguments = ["30"]
+        let r = try ProcessRunner.run(p, timeout: 0.5, killGrace: 2.0)
+        XCTAssertTrue(r.timedOut)
+        XCTAssertFalse(r.killed,
+                       "sleep honors SIGTERM; no SIGKILL escalation expected")
+    }
 }

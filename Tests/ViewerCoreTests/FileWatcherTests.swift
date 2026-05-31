@@ -142,6 +142,11 @@ final class FileWatcherTests: XCTestCase {
             queue: .global(),
             reattachDelay: 0.01,
             maxReattachAttempts: 20,
+            // debounce: 0 — this test counts individual fires to prove
+            // reattach works; the trailing-edge debounce would coalesce
+            // the delete-event fire and the post-recreate write into a
+            // single handler call and the n>=2 expectation never lands.
+            debounce: 0,
             handler: {
                 let n = counter.tick()
                 if n == 1 { firstEvent.fulfill() }
@@ -163,6 +168,75 @@ final class FileWatcherTests: XCTestCase {
         try fh.write(contentsOf: Data(" more".utf8))
         try fh.close()
         wait(for: [secondEvent], timeout: 2.0)
+        XCTAssertFalse(watcher.isStopped)
+    }
+
+    // FW-13: a burst of writes within the debounce window coalesces
+    // into a single handler() call (chunked-write reload storm fix).
+    func test_debounce_coalescesBurstIntoSingleFire() throws {
+        let url = tmpDir.appendingPathComponent("burst.txt")
+        try "v0".write(to: url, atomically: false, encoding: .utf8)
+
+        let counter = Counter()
+        // 250ms debounce so the test's 20-write burst (issued back to
+        // back) comfortably lands inside one window.
+        let watcher = try FileWatcher(
+            url: url, queue: .global(), debounce: 0.25
+        ) {
+            _ = counter.tick()
+        }
+        defer { watcher.stop() }
+
+        Thread.sleep(forTimeInterval: 0.1)  // let source arm
+        let fh = try FileHandle(forWritingTo: url)
+        for _ in 0..<20 {
+            try fh.seekToEnd()
+            try fh.write(contentsOf: Data("x".utf8))
+        }
+        try fh.close()
+
+        // Wait well past the debounce window for the trailing-edge fire.
+        Thread.sleep(forTimeInterval: 0.6)
+        let fires = counter.read()
+        XCTAssertGreaterThanOrEqual(fires, 1, "should fire at least once")
+        XCTAssertLessThanOrEqual(
+            fires, 2,
+            "20-write burst should coalesce to ~1 fire (got \(fires))"
+        )
+    }
+
+    // FW-5/FW-11: the reattach failure counter must count *attach
+    // failures*, not inbound events. A file that's deleted+recreated
+    // (rename) many times — each reattach succeeding — must NOT trip
+    // onLost, even with a low maxReattachAttempts. Previously the
+    // counter bumped per event and would falsely exhaust.
+    func test_repeatedAtomicWrites_doNotFalselyTriggerOnLost() throws {
+        let url = tmpDir.appendingPathComponent("churn.txt")
+        try "v0".write(to: url, atomically: true, encoding: .utf8)
+
+        let lostFlag = Flag()
+        let watcher = try FileWatcher(
+            url: url,
+            queue: .global(),
+            reattachDelay: 0,
+            maxReattachAttempts: 2,   // low — would trip fast if buggy
+            debounce: 0,
+            onLost: { lostFlag.set(true) },
+            handler: {}
+        )
+        defer { watcher.stop() }
+
+        Thread.sleep(forTimeInterval: 0.1)
+        // Several atomic writes (each = rename = reattach). With the
+        // fix, every reattach succeeds and resets failures to 0, so
+        // onLost never fires despite >2 rename events.
+        for i in 0..<6 {
+            try "v\(i)".write(to: url, atomically: true, encoding: .utf8)
+            Thread.sleep(forTimeInterval: 0.06)  // let each reattach settle
+        }
+        Thread.sleep(forTimeInterval: 0.2)
+        XCTAssertFalse(lostFlag.get(),
+                       "successful reattaches must not exhaust the failure counter")
         XCTAssertFalse(watcher.isStopped)
     }
 
