@@ -56,6 +56,51 @@ final class SidebarPanelKindTests: XCTestCase {
                        SidebarPanelKind.git.appStorageKey)
     }
 
+    // MARK: - Rail-button identity (icon + tooltip)
+    //
+    // The shoulder-rail toggle buttons (`ShoulderRailView` /
+    // `PanelRailButton`) render `kind.systemImage` as their only
+    // visible content and `kind.displayName` as the hover tooltip /
+    // accessibility label. An EMPTY `systemImage` renders as a blank
+    // SF Symbol — i.e. an invisible, un-discoverable button (the exact
+    // "I can't see the shoulder buttons" failure class). Pin both
+    // surfaces non-empty + unique so a future panel can't ship a
+    // button that renders blank or collides with another's tooltip.
+
+    func test_everyKind_hasNonEmptySystemImage() {
+        for kind in SidebarPanelKind.allCases {
+            XCTAssertFalse(
+                kind.systemImage.trimmingCharacters(in: .whitespaces).isEmpty,
+                "\(kind) has an empty systemImage — its rail button would render blank/invisible"
+            )
+        }
+    }
+
+    func test_everyKind_hasNonEmptyDisplayName() {
+        for kind in SidebarPanelKind.allCases {
+            XCTAssertFalse(
+                kind.displayName.trimmingCharacters(in: .whitespaces).isEmpty,
+                "\(kind) has an empty displayName — its rail button would have no tooltip / a11y label"
+            )
+        }
+    }
+
+    func test_systemImages_areUnique() {
+        let images = SidebarPanelKind.allCases.map(\.systemImage)
+        XCTAssertEqual(
+            Set(images).count, images.count,
+            "Two panels share an SF Symbol — rail buttons would be visually ambiguous: \(images)"
+        )
+    }
+
+    func test_displayNames_areUnique() {
+        let names = SidebarPanelKind.allCases.map(\.displayName)
+        XCTAssertEqual(
+            Set(names).count, names.count,
+            "Two panels share a displayName — rail tooltips would be ambiguous: \(names)"
+        )
+    }
+
     // MARK: - SidebarPanelRegistry default order
 
     /// FILES sits at the top — pinned with an explicit head check so

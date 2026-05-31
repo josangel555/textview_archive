@@ -75,11 +75,46 @@ struct ShoulderRailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        // Slightly recessed from the content's `Palette.textBackground`
-        // so the rail reads as chrome, not content. Empty rails are a
-        // bare strip of this background (no buttons / no header).
-        .background(Palette.windowBackground)
+        // Recessed activity-bar background. The accordion next to us
+        // paints `Palette.textBackground` (pure white in light mode);
+        // `windowBackground` is only a hair off that, so the rail USED
+        // to vanish into the sidebar — the "I can't see the shoulder
+        // buttons" report. `underPageBackground` is the canonical macOS
+        // "behind content" chrome tone (the same recessed grey AppKit
+        // uses for source-list / activity-bar columns), so the rail now
+        // reads as a distinct toggle strip, not sidebar margin. Pure
+        // SwiftUI chrome — no NSView nesting, so the compositor rule
+        // (LESSONS.md) is untouched.
+        .background(Palette.underPageBackground)
+        // Edge separator on the rail's INNER border so the column is
+        // bounded even when the sibling `Divider()` in ContentView reads
+        // faint against the recessed background. Left/right rails get a
+        // vertical hairline on the content-facing edge; the bottom rail
+        // gets a horizontal hairline on its top edge.
+        .overlay(alignment: railSeparatorAlignment) {
+            switch edge {
+            case .left, .right:
+                Rectangle()
+                    .fill(Palette.separator)
+                    .frame(width: 1)
+            case .bottom:
+                Rectangle()
+                    .fill(Palette.separator)
+                    .frame(height: 1)
+            }
+        }
         .accessibilityIdentifier("mdv.rail.\(edge.rawValue)")
+    }
+
+    /// Which edge of the rail carries its own hairline separator: the
+    /// content-facing edge. Left rail → its trailing edge; right rail →
+    /// its leading edge; bottom rail → its top edge.
+    private var railSeparatorAlignment: Alignment {
+        switch edge {
+        case .left:   return .trailing
+        case .right:  return .leading
+        case .bottom: return .top
+        }
     }
 
     private func button(
@@ -105,21 +140,33 @@ struct PanelRailButton: View {
     let uiSize: (CGFloat) -> CGFloat
     let action: () -> Void
 
+    /// Pointer-hover state — drives a faint fill + the pointing-hand
+    /// cursor so each icon reads as a clickable control, not decoration.
+    @State private var hovering = false
+
     var body: some View {
         Button(action: action) {
             Image(systemName: kind.systemImage)
-                .font(.system(size: uiSize(13)))
+                .font(.system(size: uiSize(13), weight: .medium))
+                // Off-state was `Color.secondary` — too faint against the
+                // recessed rail to read as a control (part of the "can't
+                // see the buttons" report). `Palette.labelColor` is the
+                // full-strength primary label tone, so off icons are
+                // clearly legible; on icons stay accent-tinted.
+                .foregroundStyle(isOn ? Color.accentColor : Palette.labelColor)
                 .frame(width: uiSize(26), height: uiSize(26))
-                .foregroundStyle(isOn ? Color.accentColor : Color.secondary)
                 .background(
                     RoundedRectangle(cornerRadius: 5)
                         .fill(isOn
                               ? Color.accentColor.opacity(0.18)
-                              : Color.clear)
+                              : (hovering
+                                 ? Palette.labelColor.opacity(0.10)
+                                 : Color.clear))
                 )
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onHover { hovering = $0 }
         .help(kind.displayName)
         .accessibilityLabel(kind.displayName)
         .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
