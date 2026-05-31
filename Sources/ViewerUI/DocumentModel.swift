@@ -2324,7 +2324,23 @@ public final class DocumentModel: ObservableObject {
         case .source, .rendered, .table, .diff:
             tabCoordinator.setFormatted(false, forTabID: t.id)
             if let url = t.url, case .binary = t.state {
-                loadTextAsync(url: url, intoTabID: t.id)
+                // Coming back from HEX. If the file is a media type
+                // (image / audio / video / pdf / sqlite) it has no text
+                // representation — `loadTextAsync` would silently fail
+                // and the tab would stay in `.binary` state, so the
+                // content area would keep showing HexView even though
+                // the picker now says Source/Rendered. Restore the
+                // native `.preview` state instead. For real text files
+                // we still fall through to the async text reload.
+                let cat = FileTypeDetector.category(for: url)
+                switch cat {
+                case .image, .audio, .video, .pdf, .sqlite:
+                    let state = controller.open(url: url)
+                    t.state = state
+                case .markdown, .mermaid, .plainText, .code, .html,
+                        .binary, .unknown:
+                    loadTextAsync(url: url, intoTabID: t.id)
+                }
             }
         case .editor:
             // Editor needs the text contents in memory. If the tab

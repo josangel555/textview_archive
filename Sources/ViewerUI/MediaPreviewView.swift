@@ -29,16 +29,28 @@ public struct MediaPreviewView: View {
     }
 
     public var body: some View {
-        switch category {
-        case .image: ImagePreview(url: url, onOpenSibling: onOpenSibling)
-        case .audio: AudioPreview(url: url)
-        case .video: VideoPreview(url: url)
-        case .pdf:   PDFPreview(url: url)
-        case .sqlite:
-            SQLiteBrowserView(url: url)
-        default:
-            UnsupportedPreview(url: url, category: category)
+        // All non-text previews want centered (both axes) content
+        // inside the content pane. Each child is an `NSViewRepresentable`
+        // wrapping an AppKit view that fills `maxWidth/maxHeight: .infinity`
+        // and handles internal centering of small content (image:
+        // CenteringClipView in ImageScrollHost; PDF: PDFView's autoScales;
+        // AV: AVPlayerView centers natively). The outer `.frame(...)` here
+        // guarantees the SwiftUI host gives them the full content rect —
+        // without it, AppKit-representables can collapse to their
+        // intrinsic size and end up bottom-left in the parent HStack.
+        Group {
+            switch category {
+            case .image: ImagePreview(url: url, onOpenSibling: onOpenSibling)
+            case .audio: AudioPreview(url: url)
+            case .video: VideoPreview(url: url)
+            case .pdf:   PDFPreview(url: url)
+            case .sqlite:
+                SQLiteBrowserView(url: url)
+            default:
+                UnsupportedPreview(url: url, category: category)
+            }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -297,6 +309,15 @@ private struct ImageScrollHost: NSViewRepresentable {
         scroll.minMagnification = ImageZoomState.minMagnification
         scroll.drawsBackground = false
         scroll.usesPredominantAxisScrolling = false
+        // Replace the stock NSClipView with one that centers the
+        // documentView when it's smaller than the viewport (either axis).
+        // Without this the image sticks to the bottom-left corner of
+        // the clip view — NSScrollView's default clip behavior assumes
+        // documents that are at least as large as the viewport, which
+        // an image scaled to fit isn't.
+        let clip = CenteringClipView()
+        clip.drawsBackground = false
+        scroll.contentView = clip
 
         let imageView = CenteredImageView()
         imageView.imageScaling = .scaleProportionallyUpOrDown
@@ -446,9 +467,35 @@ final class ZoomableImageScrollView: NSScrollView {
 private final class CenteredImageView: NSImageView {
     override var isFlipped: Bool { false }
     override func adjustScroll(_ newVisible: NSRect) -> NSRect {
-        // Centering happens via documentView resizing in ImageScrollHost;
-        // this override prevents scroll snap-back to (0,0).
+        // Centering happens via CenteringClipView's bounds override
+        // (below); this hook prevents scroll snap-back to (0,0).
         return newVisible
+    }
+}
+
+/// NSClipView that centers its documentView when the document is
+/// smaller than the visible rect on either axis. The default
+/// `constrainBoundsRect` clamps the bounds origin to the document's
+/// rect, so a small document ends up wedged in the lower-left of the
+/// clip (origin.x == origin.y == 0). Shifting the bounds origin
+/// negative pulls the doc visually to the center of the clip.
+///
+/// This is the canonical "centered image viewer" pattern in AppKit
+/// and the only correct fix — neither resizing the documentView nor
+/// overriding `adjustScroll` on the documentView achieves the same
+/// effect across both fit-to-window and pinch-to-zoom-out.
+private final class CenteringClipView: NSClipView {
+    override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
+        var rect = super.constrainBoundsRect(proposedBounds)
+        guard let docView = documentView else { return rect }
+        let docFrame = docView.frame
+        if rect.size.width > docFrame.size.width {
+            rect.origin.x = (docFrame.size.width - rect.size.width) / 2.0
+        }
+        if rect.size.height > docFrame.size.height {
+            rect.origin.y = (docFrame.size.height - rect.size.height) / 2.0
+        }
+        return rect
     }
 }
 

@@ -553,6 +553,81 @@ final class DocumentModelTests: XCTestCase {
                       "HEX must persist across file switch — bug fixed in d175548")
     }
 
+    // MARK: - Media file: HEX round-trip restores `.preview` state
+
+    /// Regression: PNG tab opens as `.preview` → user picks HEX (state
+    /// flips to `.binary`) → user picks Render/Source again. Before the
+    /// fix, `setCurrentViewMode` called `loadTextAsync` for any
+    /// `.binary` state, which silently fails for a binary file, leaving
+    /// the tab stuck in `.binary` + showing HexView even though the
+    /// picker said Source/Rendered. Fix restores `.preview` for media.
+    func test_setSource_on_binaryImage_restoresPreview() throws {
+        let model = makeModel()
+        let url = tmpDir.appendingPathComponent("pixel.png")
+        try Self.minimalPNG.write(to: url)
+        model.open(url: url)
+        // Sanity: native preview state.
+        if case .preview(_, let cat) = model.currentState {
+            XCTAssertEqual(cat, .image)
+        } else {
+            XCTFail("expected .preview for a PNG, got \(model.currentState)")
+        }
+        // Flip to HEX. State should swap to .binary (async).
+        model.setCurrentViewMode(.hex)
+        let toHex = waitFor(timeout: 2.0) {
+            if case .binary = model.currentState { return true }
+            return false
+        }
+        XCTAssertTrue(toHex, "expected .binary after HEX")
+        XCTAssertEqual(model.currentViewMode, .hex)
+
+        // Flip back to Rendered. Mode must update *and* state must
+        // restore to .preview (not stay stuck at .binary).
+        model.setCurrentViewMode(.rendered)
+        XCTAssertEqual(model.currentViewMode, .rendered)
+        if case .preview(_, let cat) = model.currentState {
+            XCTAssertEqual(cat, .image)
+        } else {
+            XCTFail("expected .preview restored after Render, got \(model.currentState)")
+        }
+    }
+
+    /// Same round-trip via `.source` — picker offers Source for images
+    /// (no Rendered button), so this is the realistic user path.
+    func test_setSource_on_binaryImage_restoresPreview_viaSource() throws {
+        let model = makeModel()
+        let url = tmpDir.appendingPathComponent("pixel.png")
+        try Self.minimalPNG.write(to: url)
+        model.open(url: url)
+        model.setCurrentViewMode(.hex)
+        _ = waitFor(timeout: 2.0) {
+            if case .binary = model.currentState { return true }
+            return false
+        }
+        model.setCurrentViewMode(.source)
+        XCTAssertEqual(model.currentViewMode, .source)
+        if case .preview = model.currentState {
+            // ok
+        } else {
+            XCTFail("expected .preview restored after Source, got \(model.currentState)")
+        }
+    }
+
+    /// Smallest valid PNG: 1×1 transparent. Used by the HEX round-trip
+    /// tests to give `FileTypeDetector` a real image with bytes that
+    /// `BinaryFileLoader` can actually read.
+    private static let minimalPNG: Data = Data([
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+        0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+        0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41,
+        0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+        0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
+        0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+        0x42, 0x60, 0x82
+    ])
+
     // MARK: - Bookmark folder support (Batch A item)
 
     func test_bookmarkTargetURL_prefers_currentFile_over_folder() throws {

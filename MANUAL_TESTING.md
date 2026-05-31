@@ -209,6 +209,30 @@ brew install jdtls
 - [ ] Open the **References / Workspace Symbols** sidebar section.
   The header menu lets you switch to "Workspace Symbols". Type a
   query. Results appear (server-side fuzzy match); click → jump.
+### 12. Media preview alignment (45 s)
+
+`MediaPreviewView` content (image / audio / video / PDF / unsupported)
+must sit centered — both axes — inside the content pane. Regression
+fixed by `CenteringClipView` in `Sources/ViewerUI/MediaPreviewView.swift`
+plus the outer `.frame(maxWidth/maxHeight: .infinity)` on the routing
+view; SwiftUI / ViewInspector can't see the AppKit-level clip-view
+geometry, so this stays manual.
+
+- [ ] Open a **small PNG** (<= a few hundred px each side) on a wide
+      window. The image sits **centered** in the preview pane — not
+      pinned to the bottom-left corner. Resize the window: the image
+      stays centered while the viewport grows around it.
+- [ ] Open a **large PNG** that requires `Fit` (press `0`). The
+      proportionally-scaled image is centered both axes; pressing `1`
+      (1:1) and scrolling shows the full pixel grid.
+- [ ] Open an **MP4 / MOV**. The AVPlayerView is centered in its pane.
+- [ ] Open a **PDF** with one short page. The page is centered
+      horizontally; vertically it sits at the top of the scroll region
+      (PDFView's continuous-mode default — that's fine).
+- [ ] Open an **MP3**. The AVPlayerView's audio controls row sits
+      vertically centered, not pinned to the bottom.
+- [ ] After viewing any of the above, switch to HEX (⌃⌘H) and back —
+      preview re-appears centered, not stuck in HEX. *(Bug 1 regression.)*
 
 ## When something fails
 
