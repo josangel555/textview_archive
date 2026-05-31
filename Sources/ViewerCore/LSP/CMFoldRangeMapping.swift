@@ -26,26 +26,34 @@ public enum CMFoldRangeMapping {
     ) -> [CMFoldRange] {
         guard !lspFolds.isEmpty else { return [] }
         let converter = LSPPositionConverter(text: documentText, encoding: encoding)
+        return cmFoldRanges(
+            from: lspFolds, documentText: documentText, converter: converter)
+    }
+
+    /// PERF-02 overload: translate using a caller-supplied (possibly
+    /// cached) converter — see `LSPPositionConverterCache`. The
+    /// converter MUST have been built from `documentText`.
+    public static func cmFoldRanges(
+        from lspFolds: [LSPFoldingRange],
+        documentText: String,
+        converter: LSPPositionConverter
+    ) -> [CMFoldRange] {
+        guard !lspFolds.isEmpty else { return [] }
         let docUTF16Count = documentText.utf16.count
         var out: [CMFoldRange] = []
         out.reserveCapacity(lspFolds.count)
 
-        // Pre-compute line bounds via a single scan; cheaper than
-        // re-walking the doc for every range.
         for r in lspFolds {
             // Resolve start position. Without `startCharacter`, fold
             // opens at the end of `startLine` (CM6 + VSCode convention
             // — folds the body, leaves the header visible).
             let startCol = r.startCharacter ?? Int.max
             let endCol = r.endCharacter ?? Int.max
-            let startIdx = converter.stringIndex(for:
+            // PERF-02: O(intra-line) per range (was O(N · D)).
+            let from = converter.utf16Offset(for:
                 LSPPosition(line: r.startLine, character: startCol))
-            let endIdx = converter.stringIndex(for:
+            let to = converter.utf16Offset(for:
                 LSPPosition(line: r.endLine, character: endCol))
-            let from = documentText.utf16.distance(
-                from: documentText.startIndex, to: startIdx)
-            let to = documentText.utf16.distance(
-                from: documentText.startIndex, to: endIdx)
             let clampedFrom = max(0, min(docUTF16Count, from))
             let clampedTo = max(clampedFrom, min(docUTF16Count, to))
             // Drop zero / negative spans. CM6's fold service would

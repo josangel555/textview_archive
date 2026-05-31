@@ -30,26 +30,38 @@ public struct LSPPositionConverter: Sendable {
     /// read-only so this happens once per `didOpen`.
     private let lineStartCodeUnits: [Int]
     private let lineStartCharacterIndices: [String.Index]
+    /// PERF-02: line-start offsets in UTF-16 code units (NSRange unit).
+    /// Precomputed in the single init scan so `utf16Offset(for:)` is
+    /// O(intra-line) — it walks only the current line, not the whole
+    /// prefix of the document. The prior `text.utf16.distance(from:
+    /// startIndex, to: idx)` was O(offset-from-doc-start), so converting
+    /// a batch of N diagnostics on a large file was O(N · docLength).
+    private let lineStartUTF16: [Int]
 
     public init(text: String, encoding: LSPPositionEncoding) {
         self.text = text
         self.encoding = encoding
         var starts: [Int] = [0]
         var indexStarts: [String.Index] = [text.startIndex]
+        var utf16Starts: [Int] = [0]
         var codeUnits = 0
+        var utf16Units = 0
         var idx = text.startIndex
         while idx < text.endIndex {
             let ch = text[idx]
             codeUnits += Self.codeUnitCount(of: ch, in: encoding)
+            utf16Units += ch.utf16.count
             let next = text.index(after: idx)
             if ch == "\n" {
                 starts.append(codeUnits)
                 indexStarts.append(next)
+                utf16Starts.append(utf16Units)
             }
             idx = next
         }
         self.lineStartCodeUnits = starts
         self.lineStartCharacterIndices = indexStarts
+        self.lineStartUTF16 = utf16Starts
     }
 
     private static func codeUnitCount(
@@ -129,9 +141,49 @@ public struct LSPPositionConverter: Sendable {
 
     /// Convert an LSP position to an NSRange-compatible UTF-16 offset
     /// (used by NSTextView selection APIs).
+    ///
+    /// PERF-02: O(intra-line). We resolve the line's precomputed UTF-16
+    /// base from `lineStartUTF16`, then walk only within that line to
+    /// the target index counting UTF-16 units — instead of
+    /// `text.utf16.distance(from: startIndex, to: idx)`, which rescans
+    /// the entire prefix of the document on every call (O(offset)). For
+    /// a batch of N ranges on a D-length document that turns
+    /// O(N · D) into O(N · lineLength).
     public func utf16Offset(for position: LSPPosition) -> Int {
-        let idx = stringIndex(for: position)
-        return text.utf16.distance(from: text.startIndex, to: idx)
+        guard position.line >= 0, position.line < lineStartCharacterIndices.count else {
+            // Out-of-range line clamps to document end (matches
+            // `stringIndex(for:)`), so its UTF-16 offset is the full
+            // UTF-16 length. `lineStartUTF16.last` is the last line's
+            // base; add the trailing line's units by walking from there.
+            return utf16OffsetWalkingFromLine(
+                lineStartCharacterIndices.count - 1, to: text.endIndex)
+        }
+        let lineStartIdx = lineStartCharacterIndices[position.line]
+        let target = stringIndex(for: position)
+        // Walk from the line start to the resolved index, counting
+        // UTF-16 units. `stringIndex(for:)` never crosses the newline,
+        // so this stays within the line.
+        var units = lineStartUTF16[position.line]
+        var idx = lineStartIdx
+        while idx < target {
+            units += text[idx].utf16.count
+            idx = text.index(after: idx)
+        }
+        return units
+    }
+
+    /// Shared tail walk for the clamp-to-end path. `line` is a valid
+    /// index into `lineStartUTF16`; walks from that line's start to
+    /// `end` accumulating UTF-16 units onto the line's precomputed base.
+    private func utf16OffsetWalkingFromLine(_ line: Int, to end: String.Index) -> Int {
+        let safeLine = max(0, min(line, lineStartUTF16.count - 1))
+        var units = lineStartUTF16[safeLine]
+        var idx = lineStartCharacterIndices[safeLine]
+        while idx < end {
+            units += text[idx].utf16.count
+            idx = text.index(after: idx)
+        }
+        return units
     }
 
     /// Convert an LSP range to an `NSRange` in UTF-16 code units —
@@ -140,5 +192,69 @@ public struct LSPPositionConverter: Sendable {
         let start = utf16Offset(for: range.start)
         let end = utf16Offset(for: range.end)
         return NSRange(location: start, length: max(0, end - start))
+    }
+}
+
+/// PERF-02: a tiny single-slot cache for `LSPPositionConverter`.
+///
+/// Building a converter is O(documentLength) (one pass to compute the
+/// line-start arrays). Diagnostics pushes, fold-range requests, and
+/// hover/goto translations all happen repeatedly against the *same*
+/// unchanged buffer (the viewer is read-only between edits), so
+/// rebuilding the converter on every request re-pays that O(D) scan
+/// needlessly. Callers that translate against one document at a time
+/// (the editor coordinator, the outline section) hold one of these and
+/// call `converter(text:encoding:)`; a cache hit (same text identity +
+/// encoding) returns the memoized converter for free.
+///
+/// Keyed by `(text byte-length, a cheap content hash, encoding)` rather
+/// than the full string so the hit-check is O(1)-ish: we only fall back
+/// to a full `==` when the cheap key matches. Not thread-safe by design
+/// — instantiate one per isolation domain (e.g. a `@MainActor` field).
+/// Single-slot is sufficient because a given consumer works one active
+/// document at a time; a multi-entry LRU would add eviction policy for
+/// no measured win at this access pattern.
+public final class LSPPositionConverterCache {
+    private var cachedKey: Key?
+    private var cached: LSPPositionConverter?
+
+    /// Number of times `converter(text:encoding:)` had to build a fresh
+    /// converter (cache miss). A repeated call with unchanged inputs
+    /// must NOT increment this. Exposed so callers / tests can confirm
+    /// the O(documentLength) rebuild is actually being avoided
+    /// (`LSPPositionConverter` is a value type, so instance identity
+    /// can't be used to detect a hit).
+    public private(set) var buildCount: Int = 0
+
+    private struct Key: Equatable {
+        let count: Int
+        let hash: Int
+        let encoding: LSPPositionEncoding
+    }
+
+    public init() {}
+
+    /// Return a converter for `text`/`encoding`, reusing the cached one
+    /// when the inputs are unchanged. On a key match we still confirm
+    /// with a full `text == cached.text` comparison to rule out a hash
+    /// collision before handing back a stale converter.
+    public func converter(
+        text: String, encoding: LSPPositionEncoding
+    ) -> LSPPositionConverter {
+        let key = Key(count: text.utf8.count, hash: text.hashValue, encoding: encoding)
+        if key == cachedKey, let hit = cached, hit.text == text {
+            return hit
+        }
+        let fresh = LSPPositionConverter(text: text, encoding: encoding)
+        cachedKey = key
+        cached = fresh
+        buildCount += 1
+        return fresh
+    }
+
+    /// Drop the memoized converter (e.g. when the document closes).
+    public func invalidate() {
+        cachedKey = nil
+        cached = nil
     }
 }

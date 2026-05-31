@@ -508,6 +508,125 @@ final class LSPPoolFakeServerTests: XCTestCase {
             "didChange without a live entry must not spawn a server")
     }
 
+    // MARK: - PERF-01: didChange content-hash gate
+
+    func test_didChange_skipsVersionBump_whenTextUnchanged() async throws {
+        let binary = try FakeLSPServerHelper.locate()
+        let (root, file) = try makeTempFile()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let pool = LSPPool(
+            registry: makeRegistry(binary: binary),
+            config: tightConfig())
+        defer { Task { await pool.closeAll() } }
+
+        // didOpen sets version = 1, hash = H("v1").
+        try await pool.ensureOpened(fileURL: file, text: "let a = 1")
+        let v0 = await pool._testFileVersion(for: file)
+        XCTAssertEqual(v0, 1, "ensureOpened should set the initial version to 1")
+
+        // didChange with byte-identical text — the PERF-01 gate must
+        // short-circuit: no notification, no version bump. This is the
+        // tab-switch hot path (outline re-runs ensureOpened + didChange
+        // on the same unchanged buffer).
+        try await pool.didChange(fileURL: file, text: "let a = 1")
+        let v1 = await pool._testFileVersion(for: file)
+        XCTAssertEqual(v1, 1,
+            "didChange with unchanged text must NOT bump the version (PERF-01 gate)")
+
+        // Repeat — still gated.
+        try await pool.didChange(fileURL: file, text: "let a = 1")
+        let v2 = await pool._testFileVersion(for: file)
+        XCTAssertEqual(v2, 1, "repeated unchanged didChange stays gated")
+
+        // A real edit MUST bump the version.
+        try await pool.didChange(fileURL: file, text: "let a = 2")
+        let v3 = await pool._testFileVersion(for: file)
+        XCTAssertEqual(v3, 2,
+            "a genuine text change must bump the version past the gate")
+
+        // Re-sending the previous text bumps again (it differs from the
+        // current server-known text "let a = 2").
+        try await pool.didChange(fileURL: file, text: "let a = 1")
+        let v4 = await pool._testFileVersion(for: file)
+        XCTAssertEqual(v4, 3, "changing back to old text is still a change")
+    }
+
+    // MARK: - CONC-002 / RC-3: idle crash callback demotes + reclaims
+
+    func test_idleServerCrash_firesPoolCrashCallback_andDemotes() async throws {
+        let binary = try FakeLSPServerHelper.locate()
+        let (root, file) = try makeTempFile()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        // crash_after_init: the server EOFs right after `initialized`.
+        // CONC-002 wires `client.setOnCrash` so the reader-thread's
+        // failAllPending → onCrash demotes the entry WITHOUT any
+        // in-flight request to carry the error. The entry must flip off
+        // `.live` purely from the idle-crash callback.
+        let pool = LSPPool(
+            registry: makeRegistry(binary: binary, scenario: "crash_after_init"),
+            config: tightConfig(deadCooldown: .seconds(60), maxRestartAttempts: 5))
+        defer { Task { await pool.closeAll() } }
+
+        _ = try await pool.client(for: file)
+
+        // Do NOT issue any further request. Poll the snapshot: the idle
+        // crash callback alone must demote the live entry (crashCount
+        // climbs, isLive flips false). Pre-fix (dead setOnCrash) the
+        // entry would stay `.live` forever absent a request.
+        var demoted = false
+        let deadline = Date().addingTimeInterval(5.0)
+        while Date() < deadline {
+            let snap = await pool.snapshot()
+            if let s = snap.first,
+               !s.isLive, s.status.crashCount >= 1 {
+                demoted = true
+                break
+            }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertTrue(demoted,
+            "idle server crash must fire the wired onCrash → recordCrash demote (CONC-002)")
+    }
+
+    func test_recordCrash_afterLive_shutsDownPriorClient_noLeak() async throws {
+        let binary = try FakeLSPServerHelper.locate()
+        let (root, file) = try makeTempFile()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let pool = LSPPool(
+            registry: makeRegistry(binary: binary),
+            config: tightConfig())
+        defer { Task { await pool.closeAll() } }
+
+        let c1 = try await pool.client(for: file)
+        let pid1 = await c1.debugProcessIdentifier
+        guard let key = await pool.key(for: file) else {
+            return XCTFail("expected key")
+        }
+
+        // recordCrash on a live entry: RC-3 captures the prior client
+        // and shuts it down (terminate + reap) before demoting to cold.
+        await pool.recordCrash(key: key, error: "induced")
+
+        // The prior client's subprocess must be reaped — poll until it
+        // is no longer running (shutdown happens on a detached task).
+        var reaped = false
+        let deadline = Date().addingTimeInterval(3.0)
+        while Date() < deadline {
+            let running = await c1.debugIsRunning
+            if !running { reaped = true; break }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertTrue(reaped,
+            "recordCrash on a live entry must shut down the prior client (RC-3) — pid \(pid1) still running")
+
+        // Next acquire respawns a fresh, distinct client.
+        let c2 = try await pool.client(for: file)
+        XCTAssertFalse(c1 === c2, "post-crash acquire must spawn a fresh client")
+    }
+
     // MARK: - Routed-request bookkeeping
 
     func test_routedRequest_recordsResponseTime_andRequestCount() async throws {
