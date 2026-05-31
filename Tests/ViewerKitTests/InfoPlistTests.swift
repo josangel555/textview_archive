@@ -48,7 +48,13 @@ final class InfoPlistTests: XCTestCase {
         XCTAssertEqual(p["CFBundleName"] as? String, "TextView")
         XCTAssertEqual(p["CFBundleDisplayName"] as? String, "TextView")
         XCTAssertEqual(p["CFBundlePackageType"] as? String, "APPL")
-        XCTAssertEqual(p["LSMinimumSystemVersion"] as? String, "14.0")
+        // Must match Package.swift's `platforms: [.macOS(.v15)]`. The
+        // binary is compiled for the macOS 15 SDK deployment target; a
+        // 14.0 minimum would let LaunchServices launch it on Sonoma where
+        // weak-linked 15-only symbols are absent. See verify-app.sh, which
+        // asserts the built bundle's plist matches Package.swift, and
+        // test_minimumSystemVersionMatchesPackagePlatform below.
+        XCTAssertEqual(p["LSMinimumSystemVersion"] as? String, "15.0")
         XCTAssertEqual(p["NSPrincipalClass"] as? String, "NSApplication")
         XCTAssertEqual(p["NSHighResolutionCapable"] as? Bool, true)
         XCTAssertNotNil(p["CFBundleVersion"] as? String)
@@ -129,6 +135,36 @@ final class InfoPlistTests: XCTestCase {
             XCTAssertEqual(dt["CFBundleTypeRole"] as? String, "Viewer",
                            "document type \(dt) should declare Viewer role")
         }
+    }
+
+    func test_minimumSystemVersionMatchesPackagePlatform() throws {
+        // SIGN-03: LSMinimumSystemVersion must not advertise a lower floor
+        // than the SDK the binary is actually compiled against. Package.swift
+        // pins `platforms: [.macOS(.v<N>)]`; the plist's major version must
+        // equal <N>. Parse Package.swift's declared platform rather than
+        // hard-coding so this test fails loudly if either side moves.
+        let packageURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()  // ViewerKitTests
+            .deletingLastPathComponent()  // Tests
+            .deletingLastPathComponent()  // project root
+            .appendingPathComponent("Package.swift")
+        let pkg = try String(contentsOf: packageURL, encoding: .utf8)
+        guard let m = pkg.range(of: #"\.macOS\(\.v(\d+)\)"#, options: .regularExpression) else {
+            return XCTFail("could not find `.macOS(.vNN)` platform in Package.swift")
+        }
+        let matchText = String(pkg[m])
+        let declaredMajor = matchText
+            .replacingOccurrences(of: ".macOS(.v", with: "")
+            .replacingOccurrences(of: ")", with: "")
+
+        let p = try loadPlist()
+        let lsmsv = (p["LSMinimumSystemVersion"] as? String) ?? ""
+        let plistMajor = lsmsv.split(separator: ".").first.map(String.init) ?? ""
+        XCTAssertEqual(plistMajor, declaredMajor,
+                       "LSMinimumSystemVersion '\(lsmsv)' major must match "
+                       + "Package.swift platform .macOS(.v\(declaredMajor)); "
+                       + "a lower floor lets LaunchServices launch on an OS "
+                       + "missing weak-linked symbols the binary expects")
     }
 
     func test_versionStringsLookSensible() throws {
