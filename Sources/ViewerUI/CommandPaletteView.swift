@@ -7,6 +7,9 @@ struct CommandPaletteView: View {
     @State private var selectedIndex: Int = 0
     @State private var filtered: [(item: HistoryEntry, match: FuzzyMatcher.Match)] = []
     @FocusState private var fieldFocused: Bool
+    /// A11Y-06: honor the system Reduce Motion setting. When set, the
+    /// scroll-to-selection animation is suppressed (instant jump).
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
@@ -48,6 +51,14 @@ struct CommandPaletteView: View {
                                     isBookmark: bookmarkURLSet.contains(hit.item.url),
                                     onUnbookmark: {
                                         model.removeBookmark(hit.item.url)
+                                    },
+                                    // UIRESP-13: hovering a row moves the
+                                    // keyboard selection to it, so mouse +
+                                    // keyboard navigation stay in sync and
+                                    // Return opens whatever the pointer is
+                                    // over.
+                                    onHoverChanged: { hovering in
+                                        if hovering { selectedIndex = index }
                                     }
                                 ) {
                                     selectedIndex = index
@@ -59,7 +70,9 @@ struct CommandPaletteView: View {
                     }
                     .frame(maxHeight: 360)
                     .onChange(of: selectedIndex) { _, new in
-                        withAnimation(.linear(duration: 0.05)) {
+                        // Reduce Motion → nil animation → instant jump.
+                        withAnimation(MotionGate.animation(.linear(duration: 0.05),
+                                                           reduceMotion: reduceMotion)) {
                             proxy.scrollTo(new, anchor: .center)
                         }
                     }
@@ -175,6 +188,7 @@ private struct PaletteRow: View {
     let isSelected: Bool
     let isBookmark: Bool
     let onUnbookmark: () -> Void
+    var onHoverChanged: (Bool) -> Void = { _ in }
     let action: () -> Void
     @State private var isHovering: Bool = false
 
@@ -225,8 +239,15 @@ private struct PaletteRow: View {
             .background(isSelected ? Color.accentColor : Color.clear)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
+        // UIRESP-04/13: hover affordance + pointing-hand cursor. The
+        // accent-selected row paints its own background, so suppress the
+        // style's hover fill there to avoid muddying the accent colour;
+        // the cursor + pressed feedback still apply.
+        .buttonStyle(RowHoverButtonStyle(cornerRadius: 0, suppressesHoverFill: isSelected))
+        .onHover {
+            isHovering = $0
+            onHoverChanged($0)
+        }
     }
 
     private var iconName: String {

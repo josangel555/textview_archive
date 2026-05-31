@@ -106,7 +106,10 @@ struct SearchAnywhereSection: View {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: model.uiSize(11)))
                         .foregroundStyle(.secondary)
-                }.buttonStyle(.plain)
+                }
+                .buttonStyle(.plain)
+                .help("Clear search")
+                .accessibilityLabel("Clear search")
             }
             Toggle(isOn: $caseSensitive) {
                 Text("Aa")
@@ -116,6 +119,8 @@ struct SearchAnywhereSection: View {
             .toggleStyle(.button)
             .controlSize(.mini)
             .help("Match case")
+            .accessibilityLabel("Match case")
+            .accessibilityValue(caseSensitive ? "On" : "Off")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
@@ -280,7 +285,10 @@ struct SearchAnywhereSection: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            // UIRESP-11: search-result rows read as clickable (open the
+            // file at the matched line) with hover + pointing-hand cursor.
+            .buttonStyle(RowHoverButtonStyle(cornerRadius: 0))
+            .accessibilityLabel("\(file.url.lastPathComponent) line \(m.lineNumber): \(m.line)")
         }
     }
 

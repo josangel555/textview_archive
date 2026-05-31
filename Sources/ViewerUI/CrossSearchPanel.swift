@@ -91,6 +91,8 @@ struct CrossSearchPanel: View {
                 .toggleStyle(.button)
                 .controlSize(.small)
                 .help("Match case")
+                .accessibilityLabel("Match case")
+                .accessibilityValue(model.crossSearchCaseSensitive ? "On" : "Off")
                 if model.crossSearchIsRunning {
                     ProgressView().controlSize(.small)
                 }
@@ -102,6 +104,8 @@ struct CrossSearchPanel: View {
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.escape, modifiers: [])
+                .help("Close search (Esc)")
+                .accessibilityLabel("Close search")
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
@@ -370,7 +374,10 @@ private struct CrossSearchFileGroupView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 4)
             }
-            .buttonStyle(.plain)
+            // UIRESP-06: file-group header reads as clickable (opens the
+            // file) with hover background + pointing-hand cursor.
+            .buttonStyle(RowHoverButtonStyle(cornerRadius: 0))
+            .accessibilityLabel("Open \(group.url.lastPathComponent), \(group.matches.count) matches")
 
             ForEach(group.matches.prefix(8), id: \.lineNumber) { m in
                 // Search result jump (jump-wiring agent): each match
@@ -397,7 +404,9 @@ private struct CrossSearchFileGroupView: View {
                     .padding(.vertical, 1)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                // UIRESP-06: match row opens the file at the line.
+                .buttonStyle(RowHoverButtonStyle(cornerRadius: 0))
+                .accessibilityLabel("Line \(m.lineNumber): \(m.line)")
             }
             if group.matches.count > 8 {
                 Text("+ \(group.matches.count - 8) more")

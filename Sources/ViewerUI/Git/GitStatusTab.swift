@@ -86,7 +86,9 @@ struct GitStatusTab: View {
             .frame(height: 20)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        // UIRESP-05: hover background + pointing-hand cursor so each
+        // status row reads as clickable (opens the file).
+        .buttonStyle(RowHoverButtonStyle(cornerRadius: 0))
         .help(entry.path)
         .contextMenu {
             Button("Open File") { open(entry) }

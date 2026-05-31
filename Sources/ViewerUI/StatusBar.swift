@@ -52,6 +52,12 @@ struct StatusBar: View {
                     metric("EOL",   metrics.lineEndings)
                     metric("Enc",   metrics.encodingShort)
                 }
+                // A11Y-16: collapse the per-metric label/value pairs into
+                // a single VoiceOver element so the rotor surfaces one
+                // "Lines 42, Chars 1.2k, …" element instead of a dozen
+                // fragments. `.combine` concatenates each metric's own
+                // accessibility label (set in `metric(_:_:)`).
+                .accessibilityElement(children: .combine)
             }
         }
         .padding(.horizontal, 10)
@@ -73,6 +79,11 @@ struct StatusBar: View {
                 .foregroundStyle(.primary)
         }
         .help("\(label): \(value)")
+        // One combined element per metric so the parent's
+        // `.accessibilityElement(children: .combine)` (A11Y-16) reads
+        // "Lines: 42" as a unit rather than two separate fragments.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label): \(value)")
     }
 
     /// Lightweight per-render stats from the in-memory TextFile.

@@ -71,6 +71,11 @@ struct FindBar: View {
             .toggleStyle(.button)
             .controlSize(.small)
             .help("Match case")
+            // The "Aa" glyph carries no meaning to VoiceOver; give it
+            // an explicit role + on/off value so the toggle reads as
+            // "Match case, on/off" rather than just "Aa, button".
+            .accessibilityLabel("Match case")
+            .accessibilityValue(caseSensitive ? "On" : "Off")
 
             Toggle(isOn: $isRegex) {
                 Text(".*")
@@ -80,6 +85,8 @@ struct FindBar: View {
             .toggleStyle(.button)
             .controlSize(.small)
             .help("Regular expression")
+            .accessibilityLabel("Use regular expression")
+            .accessibilityValue(isRegex ? "On" : "Off")
 
             Button(action: onPrev) {
                 Image(systemName: "chevron.up")
@@ -111,7 +118,30 @@ struct FindBar: View {
         .overlay(alignment: .bottom) { Divider() }
         .onAppear { fieldFocused = true }
         .onChange(of: focusRequest) { _, _ in fieldFocused = true }
+        // A11Y-15: VoiceOver users get no signal that a search came up
+        // empty — the orange "No results" text is purely visual. Post
+        // a polite announcement on the no→results transition so the
+        // failure is spoken once (not on every keystroke). Gated on the
+        // computed `hasNoResults` so we only announce a real transition.
+        .onChange(of: hasNoResults) { _, nowEmpty in
+            if nowEmpty {
+                AccessibilityAnnouncer.announce("No results")
+            }
+        }
         .accessibilityIdentifier(accessibilityID)
+    }
+
+    /// True when the bar is in its visible "No results" state. Mirrors
+    /// the rendering condition in `body` so the announcement fires for
+    /// exactly the cases that paint the orange label.
+    private var hasNoResults: Bool {
+        guard !query.isEmpty else { return false }
+        switch noResultsMode {
+        case .boolean(let matched):
+            return matched == false
+        case .countOnly:
+            return matchSummary.isEmpty
+        }
     }
 }
 

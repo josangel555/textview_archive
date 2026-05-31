@@ -231,7 +231,10 @@ private struct BookmarkRow: View {
             .contentShape(Rectangle())
             .background(isCurrent ? Color.accentColor.opacity(0.18) : Color.clear)
         }
-        .buttonStyle(.plain)
+        // UIRESP-03: hover background + pointing-hand cursor so the row
+        // reads as clickable. Suppress the style's hover fill on the
+        // current-file row (it already carries an accent tint).
+        .buttonStyle(RowHoverButtonStyle(cornerRadius: 0, suppressesHoverFill: isCurrent))
         .help(tooltip)
         .contextMenu {
             Button("Remove Bookmark") {
