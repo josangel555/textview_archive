@@ -201,10 +201,29 @@ public final class GitClient: Sendable {
     // MARK: - log
 
     public struct LogEntry: Equatable, Sendable {
-        public let sha: String        // short SHA
+        public let sha: String        // short SHA (display)
         public let author: String
-        public let date: String       // ISO-ish from %ad
+        public let date: String       // ISO-ish from %ad / %ai
         public let subject: String
+        /// Full 40-hex object id. Empty for entries produced by the
+        /// legacy `log(forPath:)` path (which only fetched `%h`); the
+        /// file-history feature populates it (`fileHistory(path:)`) so
+        /// two-commit diffing can use unambiguous full SHAs instead of
+        /// abbreviation-collision-prone short ones. Additive field —
+        /// memberwise init keeps it optional via a default so existing
+        /// construction sites and tests don't break.
+        public let fullSHA: String
+
+        public init(
+            sha: String, author: String, date: String, subject: String,
+            fullSHA: String = ""
+        ) {
+            self.sha = sha
+            self.author = author
+            self.date = date
+            self.subject = subject
+            self.fullSHA = fullSHA
+        }
     }
 
     /// Last N commits touching a single file. With nil path → repo-wide.
@@ -224,6 +243,44 @@ public final class GitClient: Sendable {
                 author: String(parts[1]),
                 date: String(parts[2]),
                 subject: String(parts[3])
+            ))
+        }
+        return entries
+    }
+
+    /// Per-file commit history for the File History tab. Carries BOTH
+    /// the short SHA (`%h`, for compact display) and the full 40-hex id
+    /// (`%H`, for unambiguous two-commit diffing). Follows renames
+    /// (`--follow`) so a file's pre-rename history is reachable. With
+    /// `nil` path → repo-wide history (used as a fallback / for testing).
+    ///
+    /// Newest-first (git's default order). Returns `[]` on any failure
+    /// (not-a-repo, untracked file) — same non-throwing contract as
+    /// `log(forPath:)`.
+    public func fileHistory(path: String? = nil, maxEntries: Int = 200) -> [LogEntry] {
+        let fs = "\u{1F}"  // unit separator
+        // %H full sha, %h short, %an author, %ai author date (ISO 8601), %s subject.
+        let format = "--pretty=format:%H\(fs)%h\(fs)%an\(fs)%ai\(fs)%s"
+        var args = ["log", format, "-n", "\(maxEntries)"]
+        // --follow is only valid with a single pathspec; gate it on path.
+        if let path { args.append(contentsOf: ["--follow", "--", path]) }
+        guard let out = try? run(args) else { return [] }
+        var entries: [LogEntry] = []
+        for line in out.split(separator: "\n", omittingEmptySubsequences: true) {
+            // maxSplits keeps a subject containing the separator intact
+            // (defensive — the unit separator is astronomically unlikely
+            // in a subject, but %s is fully user-controlled).
+            let parts = line.split(
+                separator: Character(fs), maxSplits: 4,
+                omittingEmptySubsequences: false
+            )
+            guard parts.count == 5 else { continue }
+            entries.append(LogEntry(
+                sha: String(parts[1]),
+                author: String(parts[2]),
+                date: String(parts[3]),
+                subject: String(parts[4]),
+                fullSHA: String(parts[0])
             ))
         }
         return entries
@@ -498,6 +555,212 @@ public final class GitClient: Sendable {
         return (head, timedOut)
     }
 
+    // MARK: - repo / folder stats
+
+    /// Scope for `repoStats(scope:)`. `.repo` aggregates the whole
+    /// repository; `.folder(relativePath)` limits every aggregation to a
+    /// subtree via a `-- <path>` pathspec (the sidebar root may be a
+    /// *subdirectory* of the repo). The relative path is repo-root-
+    /// relative and must not be absolute / start with `-` (option
+    /// injection guard) — an unsafe path degrades to `.repo`.
+    public enum RepoStatsScope: Equatable, Sendable {
+        case repo
+        case folder(relativePath: String)
+
+        /// The trailing `["--", path]` pathspec for this scope, or `[]`
+        /// for the whole-repo case. Returns `[]` (whole-repo) for an
+        /// unsafe relative path rather than risking option injection.
+        var pathspec: [String] {
+            switch self {
+            case .repo:
+                return []
+            case .folder(let rel):
+                let trimmed = rel.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty, !trimmed.hasPrefix("-"),
+                      !trimmed.hasPrefix("/") else { return [] }
+                return ["--", trimmed]
+            }
+        }
+    }
+
+    /// One author's contribution line from `git shortlog -sne`.
+    public struct AuthorStat: Equatable, Sendable {
+        public let name: String       // "Jane Doe"
+        public let email: String      // "jane@example.com" (may be empty)
+        public let commitCount: Int
+        public init(name: String, email: String, commitCount: Int) {
+            self.name = name; self.email = email; self.commitCount = commitCount
+        }
+    }
+
+    /// One bucket of the tracked-file extension histogram.
+    public struct ExtensionStat: Equatable, Sendable {
+        public let ext: String        // lowercase, no dot; "" = no extension
+        public let fileCount: Int
+        public init(ext: String, fileCount: Int) {
+            self.ext = ext; self.fileCount = fileCount
+        }
+    }
+
+    /// Aggregated repo / folder statistics for the folder-stats card.
+    /// All fields are best-effort: any sub-query that fails leaves its
+    /// field at its zero/empty default rather than throwing, so a
+    /// partial result still renders. `Sendable` so it crosses the
+    /// `Task.detached` boundary as a single value (the `Payload` pattern).
+    public struct RepoStats: Equatable, Sendable {
+        public let scope: RepoStatsScope
+        public let totalCommits: Int
+        public let firstCommitDate: Date?
+        public let lastCommitDate: Date?
+        /// Author leaderboard, descending by commit count. Caller can
+        /// take the top N for display.
+        public let authors: [AuthorStat]
+        /// Tracked-file extension histogram, descending by file count.
+        public let extensions: [ExtensionStat]
+        public let trackedFileCount: Int
+
+        public init(
+            scope: RepoStatsScope,
+            totalCommits: Int,
+            firstCommitDate: Date?,
+            lastCommitDate: Date?,
+            authors: [AuthorStat],
+            extensions: [ExtensionStat],
+            trackedFileCount: Int
+        ) {
+            self.scope = scope
+            self.totalCommits = totalCommits
+            self.firstCommitDate = firstCommitDate
+            self.lastCommitDate = lastCommitDate
+            self.authors = authors
+            self.extensions = extensions
+            self.trackedFileCount = trackedFileCount
+        }
+    }
+
+    /// Aggregate commit / author / file statistics for `scope`. Composed
+    /// of a few cheap-ish shell-outs, each on the existing `run()` rail
+    /// (so the `statusTimeout` wall-clock cap, the env-allowlist, and the
+    /// 512 MB output cap all apply). Designed to be called once, OFF the
+    /// main actor (it walks history — seconds on a large monorepo), with
+    /// the single `RepoStats` value handed back across the actor
+    /// boundary.
+    ///
+    /// Note: `git count-objects` (on-disk repo size) is deliberately NOT
+    /// computed here — it can be slow on huge packs and should be opt-in
+    /// / lazy so it never blocks first paint of the card (triage perf
+    /// note). Add it as a separate method if/when the UI wants it.
+    public func repoStats(scope: RepoStatsScope = .repo) -> RepoStats {
+        let pathspec = scope.pathspec
+
+        // 1) Total commit count touching the scope.
+        let countOut = (try? run(["rev-list", "--count", "HEAD"] + pathspec)) ?? ""
+        let totalCommits = Int(countOut.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+
+        // 2) First / last commit dates (%ct = committer unix time).
+        //    `git log --format=%ct` newest-first; first line = last
+        //    commit, last line = first commit.
+        var firstDate: Date?
+        var lastDate: Date?
+        if let ctOut = try? run(["log", "--format=%ct"] + pathspec) {
+            let stamps = ctOut
+                .split(separator: "\n", omittingEmptySubsequences: true)
+                .compactMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            if let newest = stamps.first {
+                lastDate = Date(timeIntervalSince1970: TimeInterval(newest))
+            }
+            if let oldest = stamps.last {
+                firstDate = Date(timeIntervalSince1970: TimeInterval(oldest))
+            }
+        }
+
+        // 3) Author leaderboard. `git shortlog -sne HEAD` requires
+        //    reading commits from a non-interactive stdin-less context;
+        //    `--no-pager` + our `GIT_PAGER=cat` env keeps it batch-safe.
+        let shortlogOut = (try? run(["shortlog", "-sne", "HEAD"] + pathspec)) ?? ""
+        let authors = Self.parseShortlog(shortlogOut)
+
+        // 4) Tracked-file extension histogram via `git ls-files`.
+        let lsOut = (try? run(["ls-files"] + (pathspec.isEmpty ? [] : [pathspec[1]]))) ?? ""
+        let (exts, fileCount) = Self.parseExtensionHistogram(lsOut)
+
+        return RepoStats(
+            scope: scope,
+            totalCommits: totalCommits,
+            firstCommitDate: firstDate,
+            lastCommitDate: lastDate,
+            authors: authors,
+            extensions: exts,
+            trackedFileCount: fileCount
+        )
+    }
+
+    /// Parse `git shortlog -sne` output. Each line is
+    /// `   <count>\t<name> <<email>>`. Pure logic — public so tests can
+    /// pin the parsing (leading whitespace, tab split, the `<email>`
+    /// angle-bracket extraction, names containing spaces) without a real
+    /// repo. Returns descending by count (shortlog already sorts, but we
+    /// re-sort defensively).
+    public static func parseShortlog(_ output: String) -> [AuthorStat] {
+        var stats: [AuthorStat] = []
+        for raw in output.split(separator: "\n", omittingEmptySubsequences: true) {
+            let line = String(raw)
+            // Split count from the rest on the first tab.
+            let parts = line.split(separator: "\t", maxSplits: 1,
+                                   omittingEmptySubsequences: false)
+            guard parts.count == 2,
+                  let count = Int(parts[0].trimmingCharacters(in: .whitespaces))
+            else { continue }
+            var rest = String(parts[1]).trimmingCharacters(in: .whitespaces)
+            var email = ""
+            // Email is the last `<…>` token.
+            if let lt = rest.range(of: "<", options: .backwards),
+               let gt = rest.range(of: ">", options: .backwards),
+               lt.upperBound <= gt.lowerBound {
+                email = String(rest[lt.upperBound..<gt.lowerBound])
+                rest = String(rest[..<lt.lowerBound])
+                    .trimmingCharacters(in: .whitespaces)
+            }
+            stats.append(AuthorStat(name: rest, email: email, commitCount: count))
+        }
+        return stats.sorted { $0.commitCount > $1.commitCount }
+    }
+
+    /// Bucket a newline-separated `git ls-files` listing into an
+    /// extension histogram (lowercase, no dot; files with no extension
+    /// bucket under `""`). Returns the histogram (descending by count)
+    /// plus the total tracked-file count. Pure logic — public for tests.
+    public static func parseExtensionHistogram(_ output: String) -> (histogram: [ExtensionStat], total: Int) {
+        var counts: [String: Int] = [:]
+        var total = 0
+        for raw in output.split(separator: "\n", omittingEmptySubsequences: true) {
+            let path = String(raw)
+            total += 1
+            // Last path component, then its extension.
+            let name = path.split(separator: "/", omittingEmptySubsequences: false)
+                .last.map(String.init) ?? path
+            // A leading-dot dotfile ("..gitignore" style aside) has no
+            // extension: ".gitignore" → bucket "" not "gitignore".
+            let ext: String
+            if let dot = name.range(of: ".", options: .backwards),
+               dot.lowerBound != name.startIndex,
+               dot.upperBound != name.endIndex {
+                ext = String(name[dot.upperBound...]).lowercased()
+            } else {
+                ext = ""
+            }
+            counts[ext, default: 0] += 1
+        }
+        let histogram = counts
+            .map { ExtensionStat(ext: $0.key, fileCount: $0.value) }
+            .sorted {
+                $0.fileCount != $1.fileCount
+                    ? $0.fileCount > $1.fileCount
+                    : $0.ext < $1.ext   // stable tiebreak for deterministic tests
+            }
+        return (histogram, total)
+    }
+
     // MARK: - file-scoped diff (richer than `diff(forPath:)`)
 
     /// Unified diff for one path at a given commit (or HEAD by default).
@@ -519,6 +782,40 @@ public final class GitClient: Sendable {
             "--format=%H%n%an <%ae>%n%ad%n%n%s%n%n%b",
             sha,
         ])) ?? ""
+    }
+
+    /// Unified diff between two revisions for a single path. ONE method
+    /// covers both File-History selection modes:
+    ///   - **commit vs current**: `to == nil` → `git diff <from> -- <path>`
+    ///     (compares the historical commit against the working tree).
+    ///     Pass `to == "HEAD"` instead for "vs HEAD" rather than vs the
+    ///     (possibly dirty) working tree.
+    ///   - **commit vs commit**: `to == <sha>` → `git diff <from> <to> -- <path>`
+    ///     (the Cmd-click two-commit range).
+    ///
+    /// Revisions should be full SHAs from `fileHistory(...).fullSHA` to
+    /// avoid abbreviation collisions. Both `from` and `to` are validated
+    /// not to begin with `-` so a malformed value can never be
+    /// interpreted as a git option (defense-in-depth — the `--` already
+    /// terminates option parsing before `path`, but the revisions sit
+    /// *before* `--`). Returns `""` on validation failure or git error.
+    public func diff(from: String, to: String? = nil, path: String) -> String {
+        guard Self.isSafeRevision(from) else { return "" }
+        if let to, !Self.isSafeRevision(to) { return "" }
+        var args = ["diff", "--no-color", "--diff-algorithm=histogram", from]
+        if let to { args.append(to) }
+        args.append(contentsOf: ["--", path])
+        return (try? run(args)) ?? ""
+    }
+
+    /// A revision token is safe to pass as a positional git arg iff it
+    /// is non-empty and does not start with `-` (which git would parse
+    /// as an option). We deliberately do NOT whitelist to hex only —
+    /// `HEAD`, `HEAD~1`, branch names, and `tag:` refs are all legitimate
+    /// revisions a caller may want — we only block the option-injection
+    /// shape.
+    private static func isSafeRevision(_ rev: String) -> Bool {
+        !rev.isEmpty && !rev.hasPrefix("-")
     }
 
     // MARK: - private
