@@ -49,9 +49,23 @@ final class TextFileLoaderTests: XCTestCase {
         }
     }
 
-    func test_fallsBackToLatin1() throws {
-        // 0xC3 0x28 is invalid UTF-8 but valid Latin-1.
-        let url = try writeBytes("latin.txt", [0xC3, 0x28])
+    func test_fallsBackToWindowsCP1252() throws {
+        // 0xC3 0x28 is invalid UTF-8. Both bytes are defined in
+        // Windows-1252, so I18N-01 now reports CP1252 (the superset of
+        // Latin-1 that decodes the smart-quote / em-dash bytes Windows
+        // text actually uses). 0xC3 maps to Ã in both, so the decoded
+        // text is unchanged — only the surfaced encoding is more accurate.
+        let url = try writeBytes("cp1252.txt", [0xC3, 0x28])
+        let file = try TextFileLoader().load(url: url)
+        XCTAssertEqual(file.encoding, .windowsCP1252)
+        XCTAssertEqual(file.contents, "Ã(")
+    }
+
+    func test_fallsBackToLatin1_forCP1252UndefinedByte() throws {
+        // 0x81 is undefined in CP1252, so String(.windowsCP1252) fails
+        // and the total Latin-1 fallback catches it (I18N-01 keeps the
+        // Latin-1 backstop).
+        let url = try writeBytes("latin.txt", [0x41, 0x81, 0x42])
         let file = try TextFileLoader().load(url: url)
         XCTAssertEqual(file.encoding, .isoLatin1)
     }
