@@ -21,11 +21,17 @@ struct TabBar: View {
                             TabContextMenu(model: model, tabIndex: index, tab: tab)
                         }
                         .onDrag {
-                            NSItemProvider(object: NSString(string: "mdv-tab:\(index)"))
+                            // Encode the tab's stable id, not its index.
+                            // Indices go stale the instant tabs reorder
+                            // (another drag, a close, a programmatic
+                            // move) between drag-start and drop, which
+                            // would move the wrong tab. The id is
+                            // resolved back to a live index at drop time.
+                            NSItemProvider(object: NSString(string: "mdv-tab:\(tab.id.uuidString)"))
                         }
                         .onDrop(
                             of: [.plainText],
-                            delegate: TabDropDelegate(model: model, targetIndex: index)
+                            delegate: TabDropDelegate(model: model, targetID: tab.id)
                         )
                         if index < model.tabs.tabs.count - 1 {
                             Divider().frame(height: 16)
@@ -40,6 +46,7 @@ struct TabBar: View {
             }
             .buttonStyle(.borderless)
             .help("New Tab (⌘T)")
+            .accessibilityLabel("New Tab")
             .padding(.horizontal, 4)
         }
         .frame(height: 30)
@@ -49,23 +56,37 @@ struct TabBar: View {
 
 private struct TabDropDelegate: DropDelegate {
     let model: DocumentModel
-    let targetIndex: Int
+    let targetID: UUID
 
     func performDrop(info: DropInfo) -> Bool {
         guard let provider = info.itemProviders(for: [.plainText]).first else { return false }
         _ = provider.loadObject(ofClass: NSString.self) { obj, _ in
             guard let str = obj as? String,
                   str.hasPrefix("mdv-tab:"),
-                  let src = Int(str.dropFirst("mdv-tab:".count)) else { return }
+                  let srcID = UUID(uuidString: String(str.dropFirst("mdv-tab:".count))) else { return }
             Task { @MainActor in
-                guard src != self.targetIndex else { return }
-                // Drop onto a row → place the dragged tab in that row's
-                // position; the target tab slides to the other side.
-                let dst = src < self.targetIndex ? self.targetIndex + 1 : self.targetIndex
-                self.model.moveTab(from: src, to: dst)
+                Self.reorder(model: self.model, srcID: srcID, targetID: self.targetID)
             }
         }
         return true
+    }
+
+    /// Resolve both the dragged tab and the drop-target tab back to
+    /// live indices *at drop time* (not at drag-start), then move.
+    /// Index-based payloads went stale whenever the strip reordered
+    /// between picking up a tab and dropping it; resolving by id here
+    /// always targets the tabs the user actually grabbed and aimed at,
+    /// and bails cleanly if either has since been closed.
+    @MainActor
+    static func reorder(model: DocumentModel, srcID: UUID, targetID: UUID) {
+        guard srcID != targetID else { return }
+        let tabs = model.tabs.tabs
+        guard let src = tabs.firstIndex(where: { $0.id == srcID }),
+              let target = tabs.firstIndex(where: { $0.id == targetID }) else { return }
+        // Drop onto a row → place the dragged tab in that row's
+        // position; the target tab slides to the other side.
+        let dst = src < target ? target + 1 : target
+        model.moveTab(from: src, to: dst)
     }
 }
 
@@ -146,6 +167,11 @@ struct TabBarItem: View {
                     }
                     .buttonStyle(.plain)
                     .opacity(isHovering || isSelected ? 0.6 : 0)
+                    // Fade the close button in/out rather than popping
+                    // it. Driven by the hover/selection state so the
+                    // glyph eases to visible on hover and back out on
+                    // leave instead of snapping.
+                    .animation(.easeInOut(duration: 0.12), value: isHovering || isSelected)
                     .help("Close Tab (⌘W)")
                     .accessibilityLabel("Close \(tab.title)")
                 }
