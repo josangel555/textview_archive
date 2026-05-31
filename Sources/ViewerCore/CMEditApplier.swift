@@ -70,6 +70,35 @@ public enum CMEditApplier {
         if cursor < baseLen {
             out.append(contentsOf: baseUnits[cursor ..< baseLen])
         }
-        return String(decoding: out, as: UTF16.self)
+        // Validating decode: `String(decoding:as:)` would silently
+        // substitute U+FFFD for any ill-formed UTF-16 (a lone surrogate
+        // from a split-surrogate edit, or a hostile/buggy JS payload),
+        // permanently corrupting the buffer. Returning `nil` instead
+        // lets the caller fall back to a full-text resync (the
+        // drift-recovery path) so the buffer never diverges silently.
+        return Self.decodeValidatingUTF16(out)
+    }
+
+    /// Decode a UTF-16 code-unit array to a `String`, returning `nil`
+    /// on any ill-formed sequence (unpaired surrogate). Unlike
+    /// `String(decoding:as:)`, no U+FFFD substitution occurs.
+    static func decodeValidatingUTF16(_ units: [UTF16.CodeUnit]) -> String? {
+        var scalars = String.UnicodeScalarView()
+        scalars.reserveCapacity(units.count)
+        var parser = Unicode.UTF16.ForwardParser()
+        var iter = units.makeIterator()
+        loop: while true {
+            switch parser.parseScalar(from: &iter) {
+            case .valid(let encoded):
+                scalars.append(Unicode.UTF16.decode(encoded))
+            case .emptyInput:
+                break loop
+            case .error:
+                // Ill-formed (e.g. lone surrogate) — refuse rather than
+                // substituting U+FFFD.
+                return nil
+            }
+        }
+        return String(scalars)
     }
 }
