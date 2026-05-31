@@ -193,6 +193,188 @@ final class PluginSubprocessHostTests: XCTestCase {
         }
     }
 
+    // MARK: - SEC-007: symlink escape
+
+    /// A `bin` whose path is clean (no `..`) but is a symlink that, when
+    /// resolved, escapes the plugin folder must be rejected. This is the
+    /// case the old string-level check missed.
+    func test_symlink_bin_escaping_folder_rejected() throws {
+        // Create a real executable OUTSIDE the plugin folder, then plant
+        // a symlink to it inside. The symlink's literal path has no "..".
+        let outsideDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MDVOutside-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: outsideDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: outsideDir) }
+        let realBin = outsideDir.appendingPathComponent("evil.sh")
+        try "#!/bin/sh\necho '{\"rows\":[]}'\n".data(using: .utf8)!.write(to: realBin)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o755)], ofItemAtPath: realBin.path
+        )
+        let link = pluginDir.appendingPathComponent("tool.sh")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: realBin)
+
+        let result = host.call(
+            pluginID: "test.symlink", pluginFolder: pluginDir,
+            bin: "tool.sh", args: [], timeoutMs: 3000,
+            request: .init(kind: "listRows")
+        )
+        if case .spawnFailed(let msg) = result.outcome {
+            XCTAssertTrue(msg.lowercased().contains("escape"),
+                          "expected an escape message, got: \(msg)")
+        } else {
+            XCTFail("expected .spawnFailed for symlink escape, got \(result.outcome)")
+        }
+    }
+
+    /// A symlink that stays INSIDE the plugin folder is fine — we resolve
+    /// it and confirm containment, then spawn it normally.
+    func test_symlink_bin_staying_inside_folder_allowed() throws {
+        let realBin = pluginDir.appendingPathComponent("real.sh")
+        try "#!/bin/sh\ncat >/dev/null\necho '{\"rows\":[]}'\n".data(using: .utf8)!.write(to: realBin)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o755)], ofItemAtPath: realBin.path
+        )
+        let link = pluginDir.appendingPathComponent("alias.sh")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: realBin)
+
+        let result = host.call(
+            pluginID: "test.symlink.ok", pluginFolder: pluginDir,
+            bin: "alias.sh", args: [], timeoutMs: 3000,
+            request: .init(kind: "listRows")
+        )
+        if case .ok = result.outcome {} else {
+            XCTFail("expected .ok for in-folder symlink, got \(result.outcome)")
+        }
+    }
+
+    func test_path_containment_helper_rejects_sibling_prefix() {
+        // /a/plugins must NOT contain /a/plugins-evil (prefix-without-slash trap).
+        XCTAssertFalse(PluginSubprocessHost.path("/a/plugins-evil/x",
+                                                 isContainedIn: "/a/plugins"))
+        XCTAssertTrue(PluginSubprocessHost.path("/a/plugins/x",
+                                                isContainedIn: "/a/plugins"))
+        XCTAssertTrue(PluginSubprocessHost.path("/a/plugins",
+                                                isContainedIn: "/a/plugins"))
+    }
+
+    // MARK: - OBS-3: audit log file mode
+
+    func test_audit_log_is_owner_only_0600() throws {
+        let bin = try writeScript("ok.sh", body: """
+        #!/bin/sh
+        cat >/dev/null
+        echo '{"rows":[]}'
+        """)
+        _ = host.call(
+            pluginID: "test.perms", pluginFolder: pluginDir,
+            bin: bin, args: [], timeoutMs: 3000,
+            request: .init(kind: "listRows")
+        )
+        let attrs = try FileManager.default.attributesOfItem(atPath: auditURL.path)
+        let perms = (attrs[.posixPermissions] as? NSNumber)?.intValue ?? -1
+        XCTAssertEqual(perms, 0o600, "audit log must be owner-only (0600)")
+    }
+
+    /// A pre-existing 0o644 log (left by an older build) is tightened to
+    /// 0o600 on the next write.
+    func test_audit_log_preexisting_0644_is_chmod_to_0600() throws {
+        // Seed a loose-perms log file first.
+        FileManager.default.createFile(
+            atPath: auditURL.path, contents: Data(),
+            attributes: [.posixPermissions: NSNumber(value: 0o644)]
+        )
+        let bin = try writeScript("ok.sh", body: """
+        #!/bin/sh
+        cat >/dev/null
+        echo '{"rows":[]}'
+        """)
+        _ = host.call(
+            pluginID: "test.chmod", pluginFolder: pluginDir,
+            bin: bin, args: [], timeoutMs: 3000,
+            request: .init(kind: "listRows")
+        )
+        let attrs = try FileManager.default.attributesOfItem(atPath: auditURL.path)
+        let perms = (attrs[.posixPermissions] as? NSNumber)?.intValue ?? -1
+        XCTAssertEqual(perms, 0o600, "pre-existing 0644 log must be tightened to 0600")
+    }
+
+    // MARK: - OBS-6: stable, byte-free error descriptors
+
+    /// A decode failure must NOT echo the plugin's stdout bytes into the
+    /// audit log's `error` field; it records a stable DecodingError
+    /// descriptor instead.
+    func test_decode_failure_audit_error_is_byte_free() throws {
+        // Emit a JSON value of the wrong SHAPE (rows must be an array of
+        // objects; here it's a string) so we get a typeMismatch with a
+        // distinctive secret token the raw error would have quoted.
+        let secret = "SUPERSECRET-PLUGIN-PAYLOAD-9001"
+        let bin = try writeScript("badshape.sh", body: """
+        #!/bin/sh
+        cat >/dev/null
+        printf '{"rows":"%s"}' "\(secret)"
+        """)
+        let result = host.call(
+            pluginID: "test.decode", pluginFolder: pluginDir,
+            bin: bin, args: [], timeoutMs: 3000,
+            request: .init(kind: "listRows")
+        )
+        guard case .decodeFailed(let msg) = result.outcome else {
+            return XCTFail("expected .decodeFailed, got \(result.outcome)")
+        }
+        XCTAssertFalse(msg.contains(secret),
+                       "decode error must not embed plugin bytes: \(msg)")
+        // And the audit line must be byte-free too.
+        let log = try String(contentsOf: auditURL, encoding: .utf8)
+        XCTAssertFalse(log.contains(secret),
+                       "audit log must not embed plugin bytes")
+        XCTAssertTrue(log.contains("decode_failed"))
+    }
+
+    func test_stableDecodeErrorDescriptor_typeMismatch_keypath() {
+        struct Shape: Decodable { let rows: [Int] }
+        // rows present but a string, not [Int] → typeMismatch at rows.
+        let bad = Data(#"{"rows":"nope"}"#.utf8)
+        do {
+            _ = try JSONDecoder().decode(Shape.self, from: bad)
+            XCTFail("expected decode to throw")
+        } catch {
+            let desc = PluginSubprocessHost.stableDecodeErrorDescriptor(error)
+            XCTAssertTrue(desc.hasPrefix("typeMismatch"), "got: \(desc)")
+            XCTAssertTrue(desc.contains("rows"), "keypath should mention rows: \(desc)")
+            XCTAssertFalse(desc.contains("nope"), "must not echo the value: \(desc)")
+        }
+    }
+
+    func test_stableDecodeErrorDescriptor_keyNotFound() {
+        struct Shape: Decodable { let required: Int }
+        let bad = Data(#"{}"#.utf8)
+        do {
+            _ = try JSONDecoder().decode(Shape.self, from: bad)
+            XCTFail("expected decode to throw")
+        } catch {
+            let desc = PluginSubprocessHost.stableDecodeErrorDescriptor(error)
+            XCTAssertTrue(desc.hasPrefix("keyNotFound"), "got: \(desc)")
+            XCTAssertTrue(desc.contains("required"), "got: \(desc)")
+        }
+    }
+
+    /// spawnFailed for path-traversal should record a `bin_basename`
+    /// field and NOT leak any absolute path beyond the manifest-relative
+    /// bin string.
+    func test_spawnFailed_audit_records_bin_basename() throws {
+        _ = host.call(
+            pluginID: "test.spawnaudit", pluginFolder: pluginDir,
+            bin: "nested/dir/missing.sh", args: [], timeoutMs: 3000,
+            request: .init(kind: "listRows")
+        )
+        let log = try String(contentsOf: auditURL, encoding: .utf8)
+        let line = log.split(separator: "\n").first.map(String.init) ?? ""
+        let obj = try JSONSerialization.jsonObject(
+            with: line.data(using: .utf8)!) as! [String: Any]
+        XCTAssertEqual(obj["result"] as? String, "spawn_failed")
+        XCTAssertEqual(obj["bin_basename"] as? String, "missing.sh")
+    }
+
     func test_env_is_scrubbed_only_HOME_passes() {
         // Env scrub is static + only reads ProcessInfo. We assert the
         // contract directly rather than starting a subprocess: if HOME

@@ -20,10 +20,14 @@ import Foundation
 ///     fail the call. Tier B is for "describe the current state"
 ///     responses, not for streaming megabytes.
 ///   - **Audit log: JSONL.** One line per call, at
-///     `~/Library/Logs/com.markdownviewer.MarkdownViewer/plugins.log`.
-///     Captures plugin id + capability + bin path + exit code +
-///     duration. *Not* the stdout/stderr bytes (PII risk; the user
-///     can re-run with debug to capture those).
+///     `~/Library/Logs/com.markdownviewer.MarkdownViewer/plugins.log`,
+///     file mode 0o600. Captures plugin id + capability + bin path +
+///     exit code + duration. *Not* the stdout/stderr bytes, and *not*
+///     raw decode/spawn error strings — failure `error` fields are
+///     reduced to stable, byte-free descriptors (a DecodingError case +
+///     coding-key path, or an NSError domain#code) so neither plugin
+///     output nor absolute filesystem paths leak into the log (OBS-6).
+///     The user can re-run with debug stdout capture for the raw bytes.
 ///
 /// The host is `Sendable` and contains no per-call mutable state —
 /// each call holds its own `Process` + pipes locally. Safe to call
@@ -131,10 +135,8 @@ public struct PluginSubprocessHost: Sendable {
         let executable = pluginFolder.appendingPathComponent(bin)
 
         // Pre-flight: bin must exist and be executable inside the
-        // plugin folder. Refuse path traversal (any `..` segment).
-        // The path-traversal check operates on the *manifest-supplied*
-        // string, not the resolved URL, so a clever symlink can still
-        // escape — that's an OS sandbox problem, out of scope for v1.
+        // plugin folder. Refuse path traversal (any `..` segment) at the
+        // string level first — a cheap reject of the obvious case.
         if bin.contains("..") {
             return finish(.spawnFailed("bin path contains '..': \(bin)"),
                           pluginID: pluginID, bin: bin,
@@ -151,6 +153,24 @@ public struct PluginSubprocessHost: Sendable {
             return finish(.spawnFailed("bin not executable: \(executable.path)"),
                           pluginID: pluginID, bin: bin,
                           startedAt: started, invocationID: request.invocationID)
+        }
+        // SEC-007: the string-level `..` reject doesn't stop a symlink
+        // inside the plugin folder pointing OUT of it (e.g. `bin` ->
+        // /usr/bin/osascript). Resolve symlinks on BOTH the executable
+        // and the folder, then require the resolved executable to live
+        // under the resolved folder. Refuse otherwise. `resolveSymlinks`
+        // also collapses any `.`/`..` the OS would have followed, so this
+        // is the real containment boundary, not the string check above.
+        let resolvedFolder = pluginFolder
+            .resolvingSymlinksInPath().standardizedFileURL
+        let resolvedExe = executable
+            .resolvingSymlinksInPath().standardizedFileURL
+        if !Self.path(resolvedExe.path, isContainedIn: resolvedFolder.path) {
+            return finish(
+                .spawnFailed("bin escapes plugin folder after symlink resolution: \(bin)"),
+                pluginID: pluginID, bin: bin,
+                startedAt: started, invocationID: request.invocationID
+            )
         }
 
         let process = Process()
@@ -172,7 +192,7 @@ public struct PluginSubprocessHost: Sendable {
         do {
             envelopeData = try JSONEncoder().encode(request)
         } catch {
-            return finish(.spawnFailed("envelope encode: \(error)"),
+            return finish(.spawnFailed("envelope encode: \(Self.stableDecodeErrorDescriptor(error))"),
                           pluginID: pluginID, bin: bin,
                           startedAt: started, invocationID: request.invocationID)
         }
@@ -180,7 +200,11 @@ public struct PluginSubprocessHost: Sendable {
         do {
             try process.run()
         } catch {
-            return finish(.spawnFailed("\(error)"),
+            // OBS-6: `\(error)` on a `CocoaError`/`POSIXError` from run()
+            // can embed the absolute executable path. Surface a stable
+            // reason (errno-style) and let the audit log carry the bin
+            // basename separately.
+            return finish(.spawnFailed("process.run failed: \(Self.stableSpawnErrorDescriptor(error))"),
                           pluginID: pluginID, bin: bin,
                           startedAt: started, invocationID: request.invocationID)
         }
@@ -267,12 +291,75 @@ public struct PluginSubprocessHost: Sendable {
                 )
                 outcome = .ok(resp)
             } catch {
-                outcome = .decodeFailed("\(error)")
+                // OBS-6: `DecodingError`'s description embeds the offending
+                // value (decoded plugin bytes) and the full coding path. We
+                // surface a stable, byte-free descriptor here so neither the
+                // in-process `CallResult` nor the audit log leaks plugin
+                // output. The raw bytes remain available to a developer who
+                // re-runs with stdout capture.
+                outcome = .decodeFailed(Self.stableDecodeErrorDescriptor(error))
             }
         }
         return finish(outcome,
                       pluginID: pluginID, bin: bin,
                       startedAt: started, invocationID: request.invocationID)
+    }
+
+    // MARK: - Path containment (SEC-007)
+
+    /// True iff `childPath` is the directory `parentPath` itself or a
+    /// descendant of it. Compares on a trailing-slash-normalised parent
+    /// so `/a/plugins` does NOT contain `/a/plugins-evil`. Both inputs
+    /// are expected to be already symlink-resolved + standardized.
+    static func path(_ childPath: String, isContainedIn parentPath: String) -> Bool {
+        if childPath == parentPath { return true }
+        let parentPrefix = parentPath.hasSuffix("/") ? parentPath : parentPath + "/"
+        return childPath.hasPrefix(parentPrefix)
+    }
+
+    // MARK: - Stable error descriptors (OBS-6)
+
+    /// Map a (decode/encode) error to a stable, byte-free string. For
+    /// `DecodingError` we emit the case + coding-key PATH only — never
+    /// the offending value or the debugDescription, both of which can
+    /// echo decoded plugin bytes. For anything else we emit only the
+    /// error's type name. Stable across runs (good for grep/diff of the
+    /// audit log) and leak-free.
+    static func stableDecodeErrorDescriptor(_ error: Error) -> String {
+        guard let decoding = error as? DecodingError else {
+            return "encodeError(\(String(reflecting: type(of: error))))"
+        }
+        func keypath(_ context: DecodingError.Context) -> String {
+            let path = context.codingPath.map { key -> String in
+                if let idx = key.intValue { return "[\(idx)]" }
+                return key.stringValue
+            }.joined(separator: ".")
+            return path.isEmpty ? "<root>" : path
+        }
+        switch decoding {
+        case .typeMismatch(let type, let ctx):
+            return "typeMismatch(\(type)@\(keypath(ctx)))"
+        case .valueNotFound(let type, let ctx):
+            return "valueNotFound(\(type)@\(keypath(ctx)))"
+        case .keyNotFound(let key, let ctx):
+            let missing = key.intValue.map { "[\($0)]" } ?? key.stringValue
+            return "keyNotFound(\(missing)@\(keypath(ctx)))"
+        case .dataCorrupted(let ctx):
+            // dataCorrupted's debugDescription often quotes the bad bytes;
+            // emit only the keypath.
+            return "dataCorrupted@\(keypath(ctx))"
+        @unknown default:
+            return "decodingError(unknown)"
+        }
+    }
+
+    /// Map a `Process.run()` failure to a stable descriptor that omits
+    /// any embedded absolute path. `CocoaError`/`POSIXError` expose a
+    /// numeric code we can record; everything else degrades to its type
+    /// name.
+    static func stableSpawnErrorDescriptor(_ error: Error) -> String {
+        let ns = error as NSError
+        return "\(ns.domain)#\(ns.code)"
     }
 
     // MARK: - Env scrub
@@ -363,9 +450,15 @@ public struct PluginSubprocessHost: Sendable {
             line["exit"] = Int(code)
         case .spawnFailed(let msg):
             line["result"] = "spawn_failed"
+            // OBS-6: `msg` is already byte-free (stable descriptors built
+            // in `call`). Record the bin basename — not the full path —
+            // so the audit line stays free of absolute filesystem paths
+            // even if a future spawnFailed message regresses.
             line["error"] = msg
+            line["bin_basename"] = (bin as NSString).lastPathComponent
         case .decodeFailed(let msg):
             line["result"] = "decode_failed"
+            // `msg` is a stable DecodingError descriptor (no plugin bytes).
             line["error"] = msg
         }
 
@@ -382,9 +475,16 @@ public struct PluginSubprocessHost: Sendable {
         // interleave bytes. Up to PIPE_BUF (4 KB on macOS) the kernel
         // guarantees atomicity for a single write to a file opened
         // with O_APPEND — our lines are <500 bytes, well inside that.
-        let fd = open(url.path, O_WRONLY | O_APPEND | O_CREAT, 0o644)
+        //
+        // OBS-3: mode 0o600 (owner-only). The log holds plugin ids,
+        // bin basenames, exit codes, and stderr tails — readable by a
+        // co-resident user if the file were 0o644. open() only applies
+        // the mode on creation, so we also fchmod an existing log that a
+        // pre-patch (0o644) install may have left behind.
+        let fd = open(url.path, O_WRONLY | O_APPEND | O_CREAT, 0o600)
         guard fd >= 0 else { return }
         defer { close(fd) }
+        _ = fchmod(fd, 0o600)
         blob.withUnsafeBytes { _ = write(fd, $0.baseAddress, blob.count) }
     }
 
