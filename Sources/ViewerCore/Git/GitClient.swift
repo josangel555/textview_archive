@@ -535,7 +535,21 @@ public final class GitClient: Sendable {
             fileSizeBlocks: 2_097_152,  // ~1 GB
             openFiles: 4096
         )
-        let result = try ProcessRunner.run(p, limits: limits)
+        // SCALE-2/CR-05: cap buffered output at 512 MB. A pathological
+        // `git log --all -p` on a huge repo (or a hostile repo crafted
+        // to emit gigabytes) would otherwise be read fully into memory
+        // here. 512 MB is well past any honest viewer-side git read; on
+        // overflow the child is SIGTERM'd (→SIGKILL) and `truncated` is
+        // surfaced below as a process failure rather than an OOM.
+        let result = try ProcessRunner.run(
+            p, limits: limits, maxOutputBytes: 512 * 1024 * 1024
+        )
+        if result.truncated {
+            throw Error.processFailed(
+                result.terminationStatus,
+                "git output exceeded the \(512)MB cap and was truncated"
+            )
+        }
         let out = String(data: result.stdout, encoding: .utf8) ?? ""
         if result.terminationStatus != 0 {
             let estr = String(data: result.stderr, encoding: .utf8) ?? ""
