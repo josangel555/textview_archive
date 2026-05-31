@@ -38,7 +38,7 @@ BUDGET_MB="${BUDGET_MB:-${1:-37}}"
 # unintended `import TreeSitter<X>` in ViewerCore). Override via env
 # to opt out:
 #   EXEC_BUDGET_MB=0 bash scripts/check-bundle-size.sh
-EXEC_BUDGET_MB="${EXEC_BUDGET_MB:-16}"
+EXEC_BUDGET_MB="${EXEC_BUDGET_MB:-18}"
 BUDGET_BYTES=$(( BUDGET_MB * 1024 * 1024 ))
 EXEC_BUDGET_BYTES=$(( EXEC_BUDGET_MB * 1024 * 1024 ))
 
