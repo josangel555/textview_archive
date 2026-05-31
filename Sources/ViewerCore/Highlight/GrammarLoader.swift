@@ -126,7 +126,10 @@ public enum GrammarLoader {
 
     /// Test hook — clears the cache so tests can re-exercise the
     /// dlopen path between runs. Production code never calls this.
-    public static func _resetForTesting() {
+    /// `internal` (not `public`): tests reach it via `@testable import`
+    /// so it never widens ViewerCore's public API surface. See
+    /// LESSONS.md "internal-for-testing hooks".
+    static func _resetForTesting() {
         Locked.lock.lock()
         Locked.cache.removeAll()
         Locked.failed.removeAll()
@@ -136,7 +139,8 @@ public enum GrammarLoader {
     /// Test hook — pre-seed the cache with a `Language` resolved by
     /// the caller (typically a statically-linked grammar in tests
     /// where we can't ship a dylib). Production code never calls this.
-    public static func _injectForTesting(_ grammar: Grammar, language: Language) {
+    /// `internal` (not `public`): see `_resetForTesting`.
+    static func _injectForTesting(_ grammar: Grammar, language: Language) {
         Locked.lock.lock()
         Locked.cache[grammar] = language
         Locked.lock.unlock()

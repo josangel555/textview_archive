@@ -1,3 +1,29 @@
+// ---------------------------------------------------------------------------
+// PROVENANCE — vendored verbatim from upstream, do not edit by hand.
+//
+//   Source:   https://github.com/tree-sitter/tree-sitter-javascript
+//   File:     src/scanner.c
+//   Revision: 44c892e0be055ac465d5eeddae6d3e194424e7de  (tag v0.25.0)
+//   License:  MIT — Copyright (c) 2014 Max Brunsfeld
+//             (full text: tree-sitter-javascript LICENSE; aggregated
+//             into THIRD_PARTY_NOTICES.md)
+//
+// WHY THIS COPY EXISTS:
+//   tree-sitter-javascript's Package.swift gates `src/scanner.c` behind
+//   a `FileManager.fileExists` check evaluated against SwiftPM's working
+//   directory (not the package root), so on real builds the file is
+//   never compiled and parser.c fails to link
+//   (`tree_sitter_javascript_external_scanner_*` undefined). We vendor
+//   an exact copy of the scanner body + its private headers and compile
+//   them ourselves via the `CTSPatchJavaScript` target in Package.swift.
+//   Delete this whole target if upstream fixes the gate.
+//
+//   Everything BELOW this banner is the upstream scanner body, unmodified
+//   from the pinned revision. A drift-hash guard
+//   (Tests/ViewerCoreTests/CTSPatchProvenanceTests.swift) pins a SHA-256
+//   of this whole file so an accidental local edit fails CI; re-vendor +
+//   update that pinned hash in the same commit.
+// ---------------------------------------------------------------------------
 #include "tree_sitter/parser.h"
 
 #include <stdio.h>

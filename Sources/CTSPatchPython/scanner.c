@@ -1,3 +1,30 @@
+// ---------------------------------------------------------------------------
+// PROVENANCE — vendored verbatim from upstream, do not edit by hand.
+//
+//   Source:   https://github.com/tree-sitter/tree-sitter-python
+//   File:     src/scanner.c
+//   Revision: 293fdc02038ee2bf0e2e206711b69c90ac0d413f  (tag v0.25.0)
+//   License:  MIT — Copyright (c) 2016 Max Brunsfeld
+//             (full text: tree-sitter-python LICENSE; aggregated into
+//             THIRD_PARTY_NOTICES.md)
+//
+// WHY THIS COPY EXISTS:
+//   tree-sitter-python's Package.swift gates `src/scanner.c` behind a
+//   `FileManager.fileExists` check evaluated against SwiftPM's working
+//   directory (not the package root), so on real builds the file is
+//   never compiled and parser.c fails to link
+//   (`tree_sitter_python_external_scanner_*` undefined). We vendor an
+//   exact copy of the scanner body + its private headers (include/,
+//   tree_sitter/) and compile them ourselves via the `CTSPatchPython`
+//   target in Package.swift. Delete this whole target if upstream fixes
+//   the gate.
+//
+//   Everything BELOW this banner is the upstream scanner body, unmodified
+//   from the pinned revision. A drift-hash guard
+//   (Tests/ViewerCoreTests/CTSPatchProvenanceTests.swift) pins a SHA-256
+//   of this whole file so an accidental local edit fails CI; re-vendor +
+//   update that pinned hash in the same commit.
+// ---------------------------------------------------------------------------
 #include "tree_sitter/array.h"
 #include "tree_sitter/parser.h"
 

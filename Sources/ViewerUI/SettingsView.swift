@@ -32,6 +32,8 @@ public struct SettingsView: View {
                 Divider()
                 viewerSection
                 Divider()
+                privacySection
+                Divider()
                 pluginsSection
                 Divider()
                 lspSection
@@ -46,6 +48,11 @@ public struct SettingsView: View {
     @State private var pluginsWindow: NSWindow?
 
     @State private var lspDiagnosticsWindow: NSWindow?
+
+    /// Drives the "Clear all bookmarks" confirmation. Clearing is
+    /// destructive and irreversible, so we gate it behind a dialog with
+    /// a destructive primary (mirrors GitStashTab's Drop confirmation).
+    @State private var confirmingClearBookmarks = false
 
     private var lspSection: some View {
         section("Language servers (LSP)") {
@@ -198,18 +205,67 @@ public struct SettingsView: View {
     private var advancedSection: some View {
         section("Advanced") {
             row("Clear bookmarks") {
-                Button("Clear All") { model.clearBookmarks() }
+                Button("Clear All") { confirmingClearBookmarks = true }
+                    .confirmationDialog(
+                        "Clear all bookmarks?",
+                        isPresented: $confirmingClearBookmarks,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Clear All Bookmarks", role: .destructive) {
+                            model.clearBookmarks()
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("This removes every file and line bookmark. This can't be undone.")
+                    }
             }
             row("Reset window state") {
-                Button("Reset") {
-                    UserDefaults.standard.removeObject(forKey: "MarkdownViewer.sidebarWidth")
-                    UserDefaults.standard.removeObject(forKey: "MarkdownViewer.zoom")
-                }
+                Button("Reset") { resetWindowState() }
             }
-            Text("Quit and relaunch for window reset to take effect.")
+            Text("Resets zoom, sidebar width, and the saved window position. Quit and relaunch for the window to re-center.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .padding(.leading, 4)
+        }
+    }
+
+    /// Clear the persisted UI-state defaults so the next launch starts
+    /// fresh. Previously this only dropped zoom + sidebar width, leaving
+    /// the AppKit frame-autosave entry (`NSWindow Frame MainWindow`, see
+    /// MarkdownViewer/main.swift) untouched — so "Reset window state"
+    /// never actually re-centered the window. We now also remove that
+    /// key so the next launch falls through to `window.center()`.
+    private func resetWindowState() {
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: "MarkdownViewer.sidebarWidth")
+        defaults.removeObject(forKey: "MarkdownViewer.zoom")
+        // Frame autosave key written by NSWindow.setFrameAutosaveName.
+        // Keep this literal in sync with `autosaveName` in main.swift.
+        defaults.removeObject(forKey: "NSWindow Frame MainWindow")
+    }
+
+    private var privacySection: some View {
+        section("Privacy & Permissions") {
+            row("Full Disk Access") {
+                Button("Open System Settings…") { openFullDiskAccessSettings() }
+            }
+            Text("TextView reads files you open. Some locations (other apps' container folders, system paths) require Full Disk Access. Grant it in System Settings → Privacy & Security → Full Disk Access, then relaunch.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 4)
+        }
+    }
+
+    /// Deep-link to the Full Disk Access pane. The
+    /// `x-apple.systempreferences:` scheme with the
+    /// `Privacy_AllFiles` anchor is the documented way to land directly
+    /// on the FDA list; if it ever fails to resolve we fall back to the
+    /// Privacy & Security root.
+    private func openFullDiskAccessSettings() {
+        let fda = "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
+        if let url = URL(string: fda), NSWorkspace.shared.open(url) { return }
+        if let root = URL(string: "x-apple.systempreferences:com.apple.preference.security") {
+            NSWorkspace.shared.open(root)
         }
     }
 
@@ -266,7 +322,13 @@ public final class SettingsWindowController {
         }
         let hosting = NSHostingController(rootView: SettingsView(model: model))
         let win = NSWindow(contentViewController: hosting)
-        win.title = "MarkdownViewer Settings"
+        // Derive the display name from the bundle (CFBundleName ==
+        // "TextView") rather than hardcoding the old product name, so a
+        // future rebrand updates this title automatically. Falls back to
+        // "TextView" when running outside a bundle (e.g. `swift run`).
+        let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
+            ?? "TextView"
+        win.title = "\(appName) Settings"
         win.styleMask = [.titled, .closable, .miniaturizable]
         win.isReleasedWhenClosed = false
         win.center()

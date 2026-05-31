@@ -8,11 +8,17 @@ on:
 
 jobs:
   test:
-    name: Build & Test (macOS 14)
-    runs-on: macos-14
+    # Runner must match the app's deployment target (macOS 15+, see
+    # Package.swift `platforms: [.macOS(.v15)]`). macos-14 cannot run a
+    # macOS-15-targeted .app and silently masks v15-only API misuse.
+    name: Build & Test (macOS 15)
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
+      # macos-15 ships Xcode 16.x as the default toolchain (Swift 6).
+      # Pin explicitly so a runner-image bump can't silently swap the
+      # Swift version under us.
       - name: Select Xcode 16
         run: sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
 
