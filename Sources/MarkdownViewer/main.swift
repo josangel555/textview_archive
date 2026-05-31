@@ -162,11 +162,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // `screencapture -l<id>` against our specific window instead of
         // having to enumerate via private APIs. NSWindow.windowNumber
         // is a public Int corresponding to the CGWindowID. The file
-        // path is per-user tmp + bundle identifier so multiple users
-        // / multiple Mac windows don't collide.
+        // path is the run-scoped artifact dir (#193: per-test when
+        // `MDV_ARTIFACT_DIR` is set, else per-user tmp + bundle
+        // identifier so multiple users / Mac windows don't collide).
         if let identifier = Bundle.main.bundleIdentifier {
-            let tmp = FileManager.default.temporaryDirectory
-            let url = tmp.appendingPathComponent("\(identifier).windowid")
+            let url = ArtifactDir.url
+                .appendingPathComponent("\(identifier).windowid")
             try? "\(window.windowNumber)".write(
                 to: url, atomically: true, encoding: .utf8
             )
@@ -1761,6 +1762,34 @@ let app = NSApplication.shared
 /// `@MainActor`-isolated DocumentModel state can only be mutated from
 /// the main thread's run loop, which `NSApp.run` services.
 let mcpStdioMode = CommandLine.arguments.contains("--mcp-stdio")
+
+/// Run-scoped artifact directory for the L4/L5 script runner's per-step
+/// dumps (`mdv-step-NN.{json,png}`) and the WindowServer `.windowid`
+/// file.
+///
+/// #193: parallel live-app tests used to share ONE per-user tmpdir
+/// (`FileManager.default.temporaryDirectory`), so concurrently-running
+/// scenarios overwrote each other's `mdv-step-NN.json` — producing flaky
+/// `dumps.count` / empty-state asserts. The harness now threads a unique
+/// directory per test via the `MDV_ARTIFACT_DIR` launch env var; the app
+/// writes all artifacts there. When unset (normal interactive launches +
+/// `scripts/visual-smoke.sh`), we fall back to the per-user tmpdir so
+/// behaviour is unchanged. Threading the dir also fixes the visual-smoke
+/// windowid mismatch (harness + app now agree on the path).
+enum ArtifactDir {
+    static let url: URL = {
+        let env = ProcessInfo.processInfo.environment["MDV_ARTIFACT_DIR"]
+        guard let path = env, !path.isEmpty else {
+            return FileManager.default.temporaryDirectory
+        }
+        let dir = URL(fileURLWithPath: path, isDirectory: true)
+        // Best-effort create; if it fails the writes below just no-op
+        // via `try?`, same as the pre-#193 behaviour on an unwritable tmp.
+        try? FileManager.default.createDirectory(
+            at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+}
 
 /// `MDV_BACKGROUND=1` flips the app into accessory mode: window can
 /// show but won't become key (no keyboard-focus theft) and the app

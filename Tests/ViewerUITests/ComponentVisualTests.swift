@@ -19,8 +19,12 @@ final class ComponentVisualTests: XCTestCase {
     private var tmpDir: URL!
     private var suiteName: String!
     private var defaults: UserDefaults!
+    /// #192: tracked so tearDown can dismantle embedded WKWebViews.
+    private var hostedViews: [NSView] = []
 
     override func setUp() async throws {
+        // #192: process-isolated — skipped in the bare sweep.
+        try WebViewTestTeardown.skipUnlessEnabled()
         tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("ComponentVisual-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
@@ -29,8 +33,13 @@ final class ComponentVisualTests: XCTestCase {
     }
 
     override func tearDown() async throws {
-        try? FileManager.default.removeItem(at: tmpDir)
-        defaults.removePersistentDomain(forName: suiteName)
+        WebViewTestTeardown.teardown(hostedViews)  // #192
+        hostedViews.removeAll()
+        // tmpDir/defaults are nil when setUp early-skipped (#192 gate).
+        if let tmpDir { try? FileManager.default.removeItem(at: tmpDir) }
+        if let suiteName, let defaults {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
     }
 
     private func makeModel() -> DocumentModel {
@@ -64,6 +73,7 @@ final class ComponentVisualTests: XCTestCase {
         let h = NSHostingView(rootView: view)
         h.frame = NSRect(origin: .zero, size: size)
         h.layoutSubtreeIfNeeded()
+        hostedViews.append(h)  // #192: track for WebView teardown
         return h
     }
 

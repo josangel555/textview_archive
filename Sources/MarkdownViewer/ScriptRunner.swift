@@ -215,9 +215,12 @@ extension AppDelegate {
     func captureStepArtifacts(step: Int, label: String) {
         guard let win = window else { return }
         let n = String(format: "%02d", step)
-        // Per-user tmpdir at /var/folders/... is safe from the
-        // symlink-hijack scenario possible in /tmp.
-        let tmp = FileManager.default.temporaryDirectory
+        // #193: run-scoped artifact dir. `MDV_ARTIFACT_DIR` (set by the
+        // harness) gives each parallel live-app test its own directory so
+        // `mdv-step-NN.json` writes don't stomp each other; falls back to
+        // the per-user tmpdir (/var/folders/..., safe from the symlink-
+        // hijack scenario possible in /tmp) for non-test launches.
+        let tmp = ArtifactDir.url
         let json = tmp.appendingPathComponent("mdv-step-\(n).json").path
         let png  = tmp.appendingPathComponent("mdv-step-\(n).png").path
         let dump = DiagnosticDump.dump(window: win)

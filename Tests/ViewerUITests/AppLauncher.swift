@@ -49,14 +49,24 @@ enum AppLauncher {
         scriptPath: String,
         fileArg: URL,
         timeout: TimeInterval = 30,
-        existingProcessName: String = "MarkdownViewer"
+        existingProcessName: String = "MarkdownViewer",
+        artifactDir: URL? = nil
     ) throws -> [[String: Any]] {
+        // #193: run-scoped artifact dir. When the caller threads a unique
+        // per-test directory we point the spawned app at it via
+        // `MDV_ARTIFACT_DIR` so parallel live-app tests don't overwrite
+        // each other's `mdv-step-NN.json`. When nil we fall back to the
+        // shared per-user tmpdir — matching the app's own fallback — so a
+        // direct `AppLauncher.runScript(...)` caller keeps working.
+        let artifacts = artifactDir ?? tmpDir
+        try? FileManager.default.createDirectory(
+            at: artifacts, withIntermediateDirectories: true)
         for n in 1...99 {
             let s = String(format: "%02d", n)
             try? FileManager.default.removeItem(
-                at: tmpDir.appendingPathComponent("mdv-step-\(s).json"))
+                at: artifacts.appendingPathComponent("mdv-step-\(s).json"))
             try? FileManager.default.removeItem(
-                at: tmpDir.appendingPathComponent("mdv-step-\(s).png"))
+                at: artifacts.appendingPathComponent("mdv-step-\(s).png"))
         }
         try scriptContents.write(
             to: URL(fileURLWithPath: scriptPath),
@@ -78,6 +88,10 @@ enum AppLauncher {
         var env = ProcessInfo.processInfo.environment
         env["MDV_BACKGROUND"] = "1"
         env["MDV_SKIP_WORKSPACE_RESTORE"] = "1"
+        // #193: tell the app to write its per-step dumps + `.windowid`
+        // into this run's private directory rather than the shared
+        // per-user tmpdir.
+        env["MDV_ARTIFACT_DIR"] = artifacts.path
         p.environment = env
         p.standardOutput = FileHandle(forWritingAtPath: "/dev/null")
         p.standardError  = FileHandle(forWritingAtPath: "/dev/null")
@@ -100,7 +114,7 @@ enum AppLauncher {
             if p.isRunning { kill(p.processIdentifier, SIGKILL); p.waitUntilExit() }
         }
 
-        return collectStepDumps()
+        return collectStepDumps(from: artifacts)
     }
 
     /// Returns the PID of a running process with the given name, or nil.
@@ -119,12 +133,15 @@ enum AppLauncher {
     /// inside the app and is safe from symlink hijack (unlike `/tmp/`).
     static var tmpDir: URL { FileManager.default.temporaryDirectory }
 
-    /// Collect all `<tmp>/mdv-step-NN.json` files into memory.
-    static func collectStepDumps() -> [[String: Any]] {
+    /// Collect all `<dir>/mdv-step-NN.json` files into memory. Defaults
+    /// to the shared per-user tmpdir; #193 callers pass the run-scoped
+    /// artifact dir so concurrent runs read their own dumps.
+    static func collectStepDumps(from dir: URL? = nil) -> [[String: Any]] {
+        let base = dir ?? tmpDir
         var dumps: [[String: Any]] = []
         for n in 1...99 {
             let s = String(format: "%02d", n)
-            let url = tmpDir.appendingPathComponent("mdv-step-\(s).json")
+            let url = base.appendingPathComponent("mdv-step-\(s).json")
             guard let data = try? Data(contentsOf: url),
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             else { break }

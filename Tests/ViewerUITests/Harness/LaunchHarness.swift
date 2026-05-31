@@ -115,7 +115,11 @@ final class LaunchHarness {
             scriptContents: script,
             scriptPath: tmpDir.appendingPathComponent(scriptFileName).path,
             fileArg: fileArg,
-            timeout: timeout
+            timeout: timeout,
+            // #193: the harness's per-instance scratch dir doubles as the
+            // run-scoped artifact dir so parallel scenarios don't collide
+            // on `mdv-step-NN.json`.
+            artifactDir: tmpDir
         )
     }
 

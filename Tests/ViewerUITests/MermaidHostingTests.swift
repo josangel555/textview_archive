@@ -30,9 +30,14 @@ final class MermaidHostingTests: XCTestCase {
     private var defaults: UserDefaults!
     private var historyStoreURL: URL!
     private var bookmarksStoreURL: URL!
+    /// #192: every host(...) call that embeds a WKWebView is tracked so
+    /// tearDown can dismantle it and reclaim the WebContent process.
+    private var hostedViews: [NSView] = []
 
     override func setUp() async throws {
         // No super.setUp — @MainActor strict-concurrency.
+        // #192: process-isolated — skipped in the bare sweep.
+        try WebViewTestTeardown.skipUnlessEnabled()
         tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("MermaidHostingTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
@@ -43,6 +48,11 @@ final class MermaidHostingTests: XCTestCase {
     }
 
     override func tearDown() async throws {
+        // #192: dismantle any WKWebViews the test created before the
+        // host trees are released, so the WebContent helper processes
+        // are reclaimed deterministically instead of piling up.
+        WebViewTestTeardown.teardown(hostedViews)
+        hostedViews.removeAll()
         if let tmpDir { try? FileManager.default.removeItem(at: tmpDir) }
         if let suiteName, let defaults {
             defaults.removePersistentDomain(forName: suiteName)
@@ -71,6 +81,7 @@ final class MermaidHostingTests: XCTestCase {
         let host = NSHostingView(rootView: view)
         host.frame = NSRect(origin: .zero, size: size)
         host.layoutSubtreeIfNeeded()
+        hostedViews.append(host)  // #192: track for WebView teardown
         return host
     }
 
