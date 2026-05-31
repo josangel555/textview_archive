@@ -35,6 +35,40 @@ public enum JSONFileStore {
         return try? Self.decoder.decode(T.self, from: data)
     }
 
+    /// Read an *array* of Codable values from `url`, dropping any
+    /// element that fails to decode instead of discarding the whole
+    /// file (PERSIST-02). One malformed entry — a path the encoder
+    /// couldn't represent, a future `kind` an old build doesn't know —
+    /// would otherwise nuke the user's entire history / bookmarks list.
+    ///
+    /// Returns nil on the same hard-failure cases as `read` (missing
+    /// file, oversize, non-array JSON). An empty-but-valid array decodes
+    /// to `[]`, not nil. Per-element failures are silently skipped — the
+    /// caller's contract is "best-effort, start with what survived."
+    public static func readLenientArray<T: Decodable>(
+        _ element: T.Type,
+        from url: URL,
+        maxSize: Int = .max
+    ) -> [T]? {
+        guard let wrappers = read([FailableDecodable<T>].self,
+                                  from: url, maxSize: maxSize) else {
+            return nil
+        }
+        return wrappers.compactMap(\.value)
+    }
+
+    /// Decodes a `T` if possible; otherwise captures the failure and
+    /// yields `nil` for `value`, so a surrounding array decode doesn't
+    /// abort on one bad element. The thrown decode error is swallowed by
+    /// design — these stores are best-effort and never surface decode
+    /// errors to the user.
+    public struct FailableDecodable<T: Decodable>: Decodable {
+        public let value: T?
+        public init(from decoder: Decoder) {
+            value = try? T(from: decoder)
+        }
+    }
+
     /// Write `value` to `url`, creating parent dirs as needed. Atomic
     /// write; on disk failure the existing file is preserved.
     ///
