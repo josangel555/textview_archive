@@ -41,6 +41,14 @@ public enum WalkthroughLoader {
         let script: WalkthroughScript
         do {
             script = try d.decode(WalkthroughScript.self, from: data)
+        } catch let err as UnsupportedSchemaError {
+            // Distinct from a malformed-JSON failure: the script is
+            // well-formed but declares a schema version this binary
+            // doesn't know. Surface it structurally so callers can show
+            // an "update the app" message instead of a parse error.
+            return .failure(.unsupportedSchema(
+                version: err.version, supported: err.supported
+            ))
         } catch let err as DecodingError {
             return .failure(.decodingFailed(describe(err)))
         } catch {
@@ -131,6 +139,7 @@ public enum WalkthroughLoader {
         case .openFile(let p):        return [p.path]
         case .revealLine(let p):      return [p.path].compactMap { $0 }
         case .highlightRange(let p):  return [p.path].compactMap { $0 }
+        case .flash(let p):           return [p.path].compactMap { $0 }
         case .showPopover(let p):
             if case .line(let path?, _) = p.anchor { return [path] }
             return []
@@ -209,6 +218,11 @@ public enum WalkthroughLoadError: Error, Equatable, Sendable {
     /// JSON parse or schema-discriminator mismatch. The inner string is
     /// a human-readable diagnostic (codable coding-path + reason).
     case decodingFailed(String)
+    /// The script is well-formed JSON but declares a `schema` version
+    /// this binary doesn't support (e.g. an older app handed a newer
+    /// script). Distinct from `decodingFailed` so the UI can tell the
+    /// user to update the app rather than reporting a parse error.
+    case unsupportedSchema(version: String, supported: [String])
     /// Two steps share the same id; engine indexing would be ambiguous.
     case duplicateStepID(String)
     /// An action references a path that resolves outside `rootHint`.

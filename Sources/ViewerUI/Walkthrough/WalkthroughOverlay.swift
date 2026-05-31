@@ -30,6 +30,15 @@ public struct WalkthroughOverlay: View {
     /// position against the real rect.
     @State private var anchorFrames: [String: CGRect] = [:]
 
+    /// Drives the transient flash pulse. Bumped to 1 on a `flashNonce`
+    /// change (with animation), back to 0 when the pulse settles. Kept
+    /// as view-local @State so the animation lives entirely in SwiftUI
+    /// and never round-trips through the model.
+    @State private var flashPulse: Double = 0
+    /// Tracks the last flash nonce we animated so an unrelated overlay
+    /// re-render (scroll, popover change) doesn't re-trigger the pulse.
+    @State private var lastFlashNonce: Int = 0
+
     public init(model: DocumentModel) {
         self.model = model
         self.bridge = model.walkthroughBridge
@@ -43,6 +52,15 @@ public struct WalkthroughOverlay: View {
                h.url == model.currentURL {
                 highlightStripe(for: h)
             }
+            // Flash — transient pulse over a line range. Drawn above the
+            // persistent highlight so a flash can pulse on top of an
+            // existing stripe. Opacity is driven by `flashPulse`, which
+            // animates on each `flashNonce` change.
+            if let f = bridge.flash,
+               f.url == model.currentURL,
+               flashPulse > 0 {
+                flashStripe(for: f)
+            }
             // Popover — anchored according to its anchor enum. Line
             // anchors use the gutter math; sidebar/gitTab use frames
             // published via `WalkthroughAnchorKey`; window anchors
@@ -54,6 +72,9 @@ public struct WalkthroughOverlay: View {
         .coordinateSpace(name: "walkthroughOverlay")
         .onPreferenceChange(WalkthroughAnchorKey.self) { frames in
             anchorFrames = frames
+        }
+        .onChange(of: bridge.flashNonce) { _, nonce in
+            triggerFlash(nonce: nonce)
         }
         .allowsHitTesting(bridge.popover != nil)
     }
@@ -106,6 +127,71 @@ public struct WalkthroughOverlay: View {
         case .warn:  return Color(nsColor: .systemOrange)
         case .info:  return Color(nsColor: .systemBlue)
         case .agent: return Color(nsColor: .systemPurple)
+        }
+    }
+
+    // MARK: - Flash
+
+    /// Transient pulse over a line range. Same gutter line-math as the
+    /// persistent stripe; the difference is the fill opacity is keyed on
+    /// `flashPulse` (1 → 0 over the flash duration) so it fades out on
+    /// its own instead of persisting until the next step.
+    @ViewBuilder
+    private func flashStripe(
+        for f: WalkthroughBridge.FlashRange
+    ) -> some View {
+        let state = model.sourceScrollState
+        let lh = state.lineHeight
+        if lh > 0 {
+            let inset = state.topInset
+            let topDocY = inset + CGFloat(f.startLine - 1) * lh
+            let botDocY = inset + CGFloat(f.endLine) * lh
+            let y = topDocY - state.offsetY
+            let height = max(lh, botDocY - topDocY)
+            let visibleTop = max(0, y)
+            let visibleBot = min(state.viewportHeight, y + height)
+            if visibleBot > visibleTop {
+                Rectangle()
+                    .fill(color(for: f.style).opacity(0.55 * flashPulse))
+                    .frame(height: visibleBot - visibleTop)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .position(x: 0, y: (visibleTop + visibleBot) / 2)
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("mdv.walkthrough.flash")
+            }
+        }
+    }
+
+    /// Run the pulse: snap to full opacity, then animate down to zero
+    /// over the flash duration, and clear the bridge value once settled.
+    /// Guards on the nonce so a re-render that isn't a new flash request
+    /// (scroll tick, popover toggle) doesn't restart the animation.
+    private func triggerFlash(nonce: Int) {
+        guard nonce != lastFlashNonce else { return }
+        lastFlashNonce = nonce
+        guard let f = bridge.flash else {
+            // A clearFlash() bump (e.g. step transition) — settle.
+            flashPulse = 0
+            return
+        }
+        let durationSec = max(0.1, Double(f.durationMs) / 1000.0)
+        // Snap on instantly so the pulse is visible at peak, then fade.
+        flashPulse = 1
+        withAnimation(.easeOut(duration: durationSec)) {
+            flashPulse = 0
+        }
+        // Auto-clear the bridge value after the fade so a stale flash
+        // doesn't linger as model state. The opacity is already 0 by
+        // then; clearing also drops the stripe from the ZStack.
+        let nonceAtStart = nonce
+        Task { @MainActor in
+            try? await Task.sleep(
+                nanoseconds: UInt64(durationSec * 1_000_000_000)
+            )
+            // Only clear if no newer flash superseded this one.
+            if lastFlashNonce == nonceAtStart {
+                model.walkthroughBridge.clearFlash()
+            }
         }
     }
 

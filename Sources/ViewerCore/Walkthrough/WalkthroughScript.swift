@@ -12,6 +12,14 @@ public struct WalkthroughScript: Codable, Sendable, Equatable {
 
     /// Schema discriminator. Reject loads where this doesn't match the
     /// known set so additive evolution is possible without silent drift.
+    ///
+    /// Decode is hand-rolled (see `init(from:)`) rather than synthesized
+    /// so an *unknown* version produces a structured `UnsupportedSchemaError`
+    /// — naming the offending version + the set this binary supports —
+    /// instead of an opaque `dataCorrupted`. This is the graceful-failure
+    /// contract from `WALKTHROUGH_DESIGN_v2.md` §"Versioning policy": an
+    /// older binary handed a newer script must fail *clearly*, never
+    /// crash and never silently best-effort decode against the wrong shape.
     public let schema: SchemaVersion
 
     /// Stable identifier. Used for resume + completion log + targeting
@@ -36,8 +44,58 @@ public struct WalkthroughScript: Codable, Sendable, Equatable {
 
     public let steps: [Step]
 
-    public enum SchemaVersion: String, Codable, Sendable {
+    /// Known schema versions, newest last. `v2` adds the `flash` verb
+    /// (and reserves room for further additive verbs); a `v2` script is
+    /// otherwise structurally identical to `v1`. `CaseIterable` so the
+    /// decoder can report the full supported set in `UnsupportedSchemaError`.
+    public enum SchemaVersion: String, Codable, Sendable, CaseIterable {
         case v1 = "textview.walkthrough/v1"
+        case v2 = "textview.walkthrough/v2"
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case schema, id, title, subtitle, author, createdAt
+        case estimatedDurationSec, rootHint, defaultTargets, steps
+    }
+
+    /// Hand-rolled decode so an unknown `schema` string fails with a
+    /// structured `UnsupportedSchemaError` rather than a generic
+    /// `dataCorrupted`. Every other field uses the synthesized shape.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // Decode the discriminator as a raw String first so an unknown
+        // version is *our* error, not Codable's enum-rawValue failure.
+        let raw = try c.decode(String.self, forKey: .schema)
+        guard let version = SchemaVersion(rawValue: raw) else {
+            throw UnsupportedSchemaError(
+                version: raw,
+                supported: SchemaVersion.allCases.map(\.rawValue)
+            )
+        }
+        self.schema = version
+        self.id = try c.decode(String.self, forKey: .id)
+        self.title = try c.decode(String.self, forKey: .title)
+        self.subtitle = try c.decodeIfPresent(String.self, forKey: .subtitle)
+        self.author = try c.decodeIfPresent(String.self, forKey: .author)
+        self.createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt)
+        self.estimatedDurationSec = try c.decodeIfPresent(Int.self, forKey: .estimatedDurationSec)
+        self.rootHint = try c.decodeIfPresent(String.self, forKey: .rootHint)
+        self.defaultTargets = try c.decodeIfPresent(DefaultTargets.self, forKey: .defaultTargets)
+        self.steps = try c.decode([Step].self, forKey: .steps)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(schema, forKey: .schema)
+        try c.encode(id, forKey: .id)
+        try c.encode(title, forKey: .title)
+        try c.encodeIfPresent(subtitle, forKey: .subtitle)
+        try c.encodeIfPresent(author, forKey: .author)
+        try c.encodeIfPresent(createdAt, forKey: .createdAt)
+        try c.encodeIfPresent(estimatedDurationSec, forKey: .estimatedDurationSec)
+        try c.encodeIfPresent(rootHint, forKey: .rootHint)
+        try c.encodeIfPresent(defaultTargets, forKey: .defaultTargets)
+        try c.encode(steps, forKey: .steps)
     }
 
     public init(
@@ -114,6 +172,13 @@ public enum Action: Codable, Sendable, Equatable {
     case addBookmark(AddBookmarkPayload)
     case revealInSidebar(RevealInSidebarPayload)
     case openGitPanel(OpenGitPanelPayload)
+    /// Transient highlight pulse on an anchored line range. Unlike
+    /// `highlightRange` (a persistent stripe that lives until the next
+    /// step clears it), `flash` is a one-shot animation that fades on
+    /// its own. Added in schema `v2`; an older binary that only knows
+    /// `v1` verbs rejects a `flash` action at decode (the `default`
+    /// arm below), which is the intended graceful failure.
+    case flash(FlashPayload)
     case narrateOnly
 
     enum CodingKeys: String, CodingKey { case kind }
@@ -144,6 +209,8 @@ public enum Action: Codable, Sendable, Equatable {
             self = .revealInSidebar(try RevealInSidebarPayload(from: decoder))
         case "openGitPanel":
             self = .openGitPanel(try OpenGitPanelPayload(from: decoder))
+        case "flash":
+            self = .flash(try FlashPayload(from: decoder))
         case "narrateOnly":
             self = .narrateOnly
         default:
@@ -179,6 +246,8 @@ public enum Action: Codable, Sendable, Equatable {
             try c.encode("revealInSidebar", forKey: .kind); try p.encode(to: encoder)
         case .openGitPanel(let p):
             try c.encode("openGitPanel", forKey: .kind); try p.encode(to: encoder)
+        case .flash(let p):
+            try c.encode("flash", forKey: .kind); try p.encode(to: encoder)
         case .narrateOnly:
             try c.encode("narrateOnly", forKey: .kind)
         }
@@ -274,4 +343,60 @@ public struct RevealInSidebarPayload: Codable, Sendable, Equatable {
 
 public struct OpenGitPanelPayload: Codable, Sendable, Equatable {
     public let tab: GitTab
+}
+
+/// Transient highlight pulse on a line range (schema `v2`+). The overlay
+/// drives a one-shot opacity/scale pulse keyed on a nonce and clears it
+/// automatically after `durationMs`; nothing persists between steps.
+///
+/// `path` nil = the current file (same convention as `revealLine` /
+/// `highlightRange`). `style` nil = `.focus`. `durationMs` nil lets the
+/// overlay pick its default (≈900 ms) so authors don't have to tune it.
+public struct FlashPayload: Codable, Sendable, Equatable {
+    public let path: String?
+    public let startLine: Int            // 1-based
+    public let endLine: Int              // 1-based, inclusive
+    public let style: HighlightStyle?    // nil = .focus
+    public let durationMs: Int?          // nil = overlay default
+
+    public init(
+        path: String? = nil,
+        startLine: Int,
+        endLine: Int,
+        style: HighlightStyle? = nil,
+        durationMs: Int? = nil
+    ) {
+        self.path = path
+        self.startLine = startLine
+        self.endLine = endLine
+        self.style = style
+        self.durationMs = durationMs
+    }
+}
+
+// MARK: - Schema errors
+
+/// Thrown by `WalkthroughScript.init(from:)` when the `schema`
+/// discriminator names a version this binary doesn't know. Carries the
+/// offending version string and the set this build supports so the
+/// failure message can tell an author exactly what's wrong (e.g. "this
+/// script is `textview.walkthrough/v3`; this app supports v1, v2 —
+/// update the app"). This is the documented graceful-degradation path
+/// (`WALKTHROUGH_DESIGN_v2.md` §"Versioning policy"): never a crash,
+/// never a silent best-effort decode against the wrong shape.
+public struct UnsupportedSchemaError: Error, Equatable, Sendable {
+    public let version: String
+    public let supported: [String]
+
+    public init(version: String, supported: [String]) {
+        self.version = version
+        self.supported = supported
+    }
+}
+
+extension UnsupportedSchemaError: LocalizedError {
+    public var errorDescription: String? {
+        "Unsupported walkthrough schema \"\(version)\". "
+            + "This build supports: \(supported.joined(separator: ", "))."
+    }
 }

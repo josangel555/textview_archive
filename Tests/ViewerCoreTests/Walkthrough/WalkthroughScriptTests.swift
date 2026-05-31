@@ -167,6 +167,61 @@ final class WalkthroughScriptTests: XCTestCase {
         XCTAssertEqual(r.steps[0].actions, [a])
     }
 
+    func test_flash_roundTrips_allFields() throws {
+        let a = Action.flash(FlashPayload(
+            path: "a.swift", startLine: 10, endLine: 14,
+            style: .warn, durationMs: 1200
+        ))
+        let r = try roundTrip(makeScript(actions: [a]))
+        XCTAssertEqual(r.steps[0].actions, [a])
+    }
+
+    func test_flash_roundTrips_optionalsNil() throws {
+        // path / style / durationMs are all optional (current file,
+        // .focus, overlay-default duration respectively).
+        let a = Action.flash(FlashPayload(startLine: 3, endLine: 3))
+        let r = try roundTrip(makeScript(actions: [a]))
+        XCTAssertEqual(r.steps[0].actions, [a])
+        guard case .flash(let p) = r.steps[0].actions[0] else {
+            return XCTFail("not a flash")
+        }
+        XCTAssertNil(p.path)
+        XCTAssertNil(p.style)
+        XCTAssertNil(p.durationMs)
+    }
+
+    func test_flash_decodesFromWire() throws {
+        // Pin the wire shape an external author writes by hand.
+        let json = """
+        {
+          "schema": "textview.walkthrough/v2",
+          "id": "x", "title": "T",
+          "steps": [{ "id": "s1", "actions": [
+            { "kind": "flash", "startLine": 5, "endLine": 8,
+              "style": "agent", "durationMs": 600 }
+          ]}]
+        }
+        """
+        let s = try decoder.decode(WalkthroughScript.self, from: Data(json.utf8))
+        guard case .flash(let p) = s.steps[0].actions[0] else {
+            return XCTFail("expected flash, got \(s.steps[0].actions)")
+        }
+        XCTAssertEqual(p.startLine, 5)
+        XCTAssertEqual(p.endLine, 8)
+        XCTAssertEqual(p.style, .agent)
+        XCTAssertEqual(p.durationMs, 600)
+    }
+
+    func test_flash_encodesKindDiscriminator() throws {
+        let s = makeScript(actions: [.flash(FlashPayload(
+            startLine: 1, endLine: 1
+        ))])
+        let data = try encoder.encode(s)
+        let str = String(decoding: data, as: UTF8.self)
+        XCTAssertTrue(str.contains("\"kind\":\"flash\""),
+                      "flash action must encode a `kind` discriminator")
+    }
+
     // MARK: - Reject paths
 
     func test_unknownActionKind_isRejected() throws {
@@ -193,12 +248,15 @@ final class WalkthroughScriptTests: XCTestCase {
         }
     }
 
-    func test_unknownSchemaVersion_isRejected() throws {
-        // Forward-compat: a v2 payload must not silently decode as v1.
-        // The schema enum is the gate.
+    func test_unknownSchemaVersion_throwsUnsupportedSchemaError() throws {
+        // Forward-compat / graceful failure: a script declaring a
+        // version this binary doesn't know must throw the structured
+        // `UnsupportedSchemaError` (naming the version + the supported
+        // set) — NOT a generic dataCorrupted, and NOT a silent
+        // best-effort decode against the wrong shape.
         let json = """
         {
-          "schema": "textview.walkthrough/v2",
+          "schema": "textview.walkthrough/v3",
           "id": "x",
           "title": "T",
           "steps": []
@@ -206,7 +264,64 @@ final class WalkthroughScriptTests: XCTestCase {
         """
         XCTAssertThrowsError(try decoder.decode(
             WalkthroughScript.self, from: Data(json.utf8)
-        ))
+        )) { err in
+            guard let e = err as? UnsupportedSchemaError else {
+                return XCTFail("Expected UnsupportedSchemaError, got \(err)")
+            }
+            XCTAssertEqual(e.version, "textview.walkthrough/v3")
+            XCTAssertEqual(
+                e.supported,
+                ["textview.walkthrough/v1", "textview.walkthrough/v2"]
+            )
+        }
+    }
+
+    func test_v2Schema_decodes() throws {
+        // v2 is a known version and decodes to `.v2`.
+        let json = """
+        {
+          "schema": "textview.walkthrough/v2",
+          "id": "x", "title": "T",
+          "steps": [{ "id": "s1", "actions": [{ "kind": "narrateOnly" }] }]
+        }
+        """
+        let s = try decoder.decode(WalkthroughScript.self, from: Data(json.utf8))
+        XCTAssertEqual(s.schema, .v2)
+    }
+
+    func test_v2Schema_roundTrips() throws {
+        let s = WalkthroughScript(
+            schema: .v2,
+            id: "v2", title: "V2",
+            steps: [Step(id: "s1", actions: [.narrateOnly])]
+        )
+        let r = try roundTrip(s)
+        XCTAssertEqual(r, s)
+        XCTAssertEqual(r.schema, .v2)
+    }
+
+    func test_unknownActionKind_throwsDataCorrupted_notSchemaError() throws {
+        // An unknown VERB (vs unknown SCHEMA) is still a dataCorrupted
+        // decode error, not an UnsupportedSchemaError — the two failure
+        // modes are distinct. This is the other half of the old-binary
+        // graceful-failure story: a v2 binary that doesn't know a future
+        // verb rejects the action cleanly.
+        let json = """
+        {
+          "schema": "textview.walkthrough/v2",
+          "id": "x", "title": "T",
+          "steps": [{ "id": "s1", "actions": [{ "kind": "teleport" }] }]
+        }
+        """
+        XCTAssertThrowsError(try decoder.decode(
+            WalkthroughScript.self, from: Data(json.utf8)
+        )) { err in
+            XCTAssertNil(err as? UnsupportedSchemaError,
+                         "Unknown verb must NOT surface as a schema error")
+            guard case DecodingError.dataCorrupted = err else {
+                return XCTFail("Expected dataCorrupted, got \(err)")
+            }
+        }
     }
 
     // MARK: - PopoverAnchor union

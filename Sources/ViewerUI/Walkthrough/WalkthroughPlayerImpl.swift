@@ -59,6 +59,7 @@ public final class WalkthroughPlayerImpl: WalkthroughEngineDelegate {
         // canvas.
         model?.walkthroughBridge.clearPopover()
         model?.walkthroughBridge.clearHighlight()
+        model?.walkthroughBridge.clearFlash()
         pendingAwaitUser = nil
     }
 
@@ -100,6 +101,27 @@ public final class WalkthroughPlayerImpl: WalkthroughEngineDelegate {
                     startLine: p.startLine,
                     endLine: p.endLine,
                     style: p.style ?? .focus
+                )
+            )
+
+        case .flash(let p):
+            // Transient pulse. Resolve URL like highlightRange does:
+            // payload path or current tab. Scroll the start line into
+            // view so the pulse isn't off-screen when it fires.
+            let url: URL?
+            if let pathStr = p.path { url = resolve(pathStr) }
+            else { url = model.currentURL }
+            guard let url else { return }
+            if !model.selectTab(forURL: url) { model.openPath(url) }
+            model.scrollSource(toLine: p.startLine)
+            model.walkthroughBridge.requestFlash(
+                WalkthroughBridge.FlashRange(
+                    url: url,
+                    startLine: p.startLine,
+                    endLine: p.endLine,
+                    style: p.style ?? .focus,
+                    durationMs: p.durationMs
+                        ?? WalkthroughBridge.defaultFlashDurationMs
                 )
             )
 

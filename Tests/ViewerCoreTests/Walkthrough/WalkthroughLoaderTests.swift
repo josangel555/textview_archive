@@ -57,14 +57,63 @@ final class WalkthroughLoaderTests: XCTestCase {
     // MARK: - Schema rejection
 
     func test_unknownSchemaVersion_rejected() {
+        // A well-formed script declaring a version this binary doesn't
+        // know must fail with the structured `unsupportedSchema` error
+        // (NOT decodingFailed) so the UI can say "update the app" rather
+        // than report a parse error. This is the graceful-failure
+        // contract for an old binary handed a newer script.
         let json = """
         { "schema": "textview.walkthrough/v99", "id": "x",
           "title": "T", "steps": [] }
         """
         let r = WalkthroughLoader.load(data: Data(json.utf8))
-        guard case .failure(.decodingFailed) = r else {
-            return XCTFail("Expected decodingFailed, got \(r)")
+        guard case .failure(.unsupportedSchema(let version, let supported)) = r else {
+            return XCTFail("Expected unsupportedSchema, got \(r)")
         }
+        XCTAssertEqual(version, "textview.walkthrough/v99")
+        // The reported supported set is the current known versions.
+        XCTAssertTrue(supported.contains("textview.walkthrough/v1"))
+        XCTAssertTrue(supported.contains("textview.walkthrough/v2"))
+    }
+
+    func test_v2Schema_loads() {
+        // v2 is a known version — a v2 script with only v1-era verbs
+        // must load cleanly (additive evolution).
+        let json = """
+        {
+          "schema": "textview.walkthrough/v2",
+          "id": "v2-ok", "title": "V2",
+          "steps": [{ "id": "s1", "actions": [{ "kind": "narrateOnly" }] }]
+        }
+        """
+        let r = WalkthroughLoader.load(data: Data(json.utf8))
+        guard case .success(let s) = r else {
+            return XCTFail("Expected success, got \(r)")
+        }
+        XCTAssertEqual(s.schema, .v2)
+    }
+
+    func test_flashVerb_loadsAndValidatesPathEscape() {
+        // The flash verb carries an optional `path` — the loader's
+        // path-escape pass must cover it (exhaustive `pathsIn` switch).
+        let json = """
+        {
+          "schema": "textview.walkthrough/v2",
+          "id": "flash-escape", "title": "Flash",
+          "rootHint": "/tmp/repo",
+          "steps": [
+            { "id": "s1", "actions": [
+              { "kind": "flash", "path": "../../etc/passwd",
+                "startLine": 1, "endLine": 2 }
+            ]}
+          ]
+        }
+        """
+        let r = WalkthroughLoader.load(data: Data(json.utf8))
+        guard case .failure(.pathEscape(let sid, _)) = r else {
+            return XCTFail("Expected pathEscape on flash path, got \(r)")
+        }
+        XCTAssertEqual(sid, "s1")
     }
 
     func test_missingRequiredField_rejected() {

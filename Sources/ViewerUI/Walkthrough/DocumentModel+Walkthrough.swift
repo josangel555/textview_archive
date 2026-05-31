@@ -59,6 +59,52 @@ public final class WalkthroughBridge: ObservableObject {
         highlightNonce &+= 1
     }
 
+    // MARK: - Flash request
+    //
+    // Transient highlight pulse on a line range. Separate channel from
+    // `highlight` (the persistent stripe) so a flash can pulse over an
+    // existing highlight without disturbing it, and so the overlay can
+    // drive its own fade animation keyed on `flashNonce` without the
+    // value clearing causing a second redraw. The overlay starts an
+    // opacity pulse on each nonce bump and auto-clears via `clearFlash`
+    // after `durationMs`; the value is left in place so a re-issue of
+    // the *same* range still animates (the nonce is the trigger).
+
+    public struct FlashRange: Equatable, Sendable {
+        public let url: URL
+        public let startLine: Int        // 1-based
+        public let endLine: Int          // 1-based, inclusive
+        public let style: HighlightStyle
+        public let durationMs: Int       // resolved (default applied)
+        public init(
+            url: URL, startLine: Int, endLine: Int,
+            style: HighlightStyle, durationMs: Int
+        ) {
+            self.url = url
+            self.startLine = startLine
+            self.endLine = endLine
+            self.style = style
+            self.durationMs = durationMs
+        }
+    }
+
+    /// Overlay default flash duration when the script omits `durationMs`.
+    public static let defaultFlashDurationMs = 900
+
+    @Published public private(set) var flash: FlashRange? = nil
+    @Published public private(set) var flashNonce: Int = 0
+
+    public func requestFlash(_ range: FlashRange) {
+        flash = range
+        flashNonce &+= 1
+    }
+
+    public func clearFlash() {
+        guard flash != nil else { return }
+        flash = nil
+        flashNonce &+= 1
+    }
+
     // MARK: - Popover request
 
     public struct PopoverRequest: Equatable, Sendable {
