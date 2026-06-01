@@ -1954,10 +1954,18 @@ public final class DocumentModel: ObservableObject {
     /// implementation-defined — sometimes evicting the entry we'd just
     /// inserted, defeating the cache.
     private var renderedHTMLCacheOrder: [RenderedHTMLKey] = []
-    // Each entry is a 2-5× inflation of source size (code-fence
-    // highlighting). Four covers the typical "couple of open MDs"
-    // working set and caps the worst-case RAM footprint of this
-    // cache around 15-20 MB. Cold-render on a miss is fast.
+    // CACHE SIZING (corrected 2026-06-01 — P3d): the value is a plain Swift
+    // String (the rendered HTML page), a 2-5× inflation of source size from
+    // code-fence highlighting. For the COMMON case (KB-sized markdown) four
+    // entries are TENS OF KB, not megabytes. The "15-20 MB" prior wording was
+    // a pathological worst-case ceiling (four simultaneously-cached ~1 MB,
+    // almost-entirely-fenced docs) AND it sent profiling chasing the wrong
+    // object: the MB-scale rendered-markdown memory is the WebKit WebContent
+    // process (parsed DOM + render tree + IOSurface backing), a SEPARATE
+    // process this in-heap String cache has nothing to do with (see
+    // LESSONS.md WebKit XPC attribution + the P3a/P3e analysis). Four covers
+    // the typical "couple of open MDs" working set; cold-render on a miss is
+    // fast.
     private static let renderedHTMLCacheMax = 4
 
     // MARK: - Raw-HTML JavaScript opt-in (PER-TAB, default-OFF)

@@ -117,11 +117,20 @@ public final class SessionsAppCoordinator: ObservableObject {
         lifecycleBridge = bridge
         core.setLifecycle(bridge)
 
+        // P3c: trash GC has ZERO first-frame relevance — a directory
+        // enumeration + per-file stat + deletes. Defer it OFF the launch
+        // critical path to a low-priority detached task so it can't stall
+        // first paint. SessionStore is Sendable; the 30-day TTL is in
+        // wall-clock days, so running it a beat after launch is identical.
+        let store = self.store
+        Task.detached(priority: .background) {
+            store.emptyTrashOlderThan(30)
+        }
+
         // 1. Try the v2 session store.
         core.restore()
         if let activeSnap = core.active {
             mountSession(from: activeSnap, hydrate: .fromSession(activeSnap))
-            store.emptyTrashOlderThan(30)
             return
         }
 
@@ -135,7 +144,6 @@ public final class SessionsAppCoordinator: ObservableObject {
             // through the mount step.
             core.openFolder(root)
         }
-        store.emptyTrashOlderThan(30)
     }
 
     /// Open a folder as a session — reveal existing if path matches,
