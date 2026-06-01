@@ -10,6 +10,15 @@ struct DiffView: View {
     let text: String
     @ObservedObject var doc: DocumentModel
 
+    /// Optional review session (§6.2). When `nil` (the default — both
+    /// existing call sites), `DiffView` renders EXACTLY as before: read-only
+    /// diff, no gutter affordance, no comment threads. When non-nil, the
+    /// diff becomes review-aware: comment threads render under their anchored
+    /// lines and a hover gutter opens the composer. Every review affordance
+    /// is gated on `reviewSession != nil`, so the read-only path is provably
+    /// unchanged (pinned by `DiffViewReviewTests`).
+    var reviewSession: ReviewSession? = nil
+
     /// `DiffParser.parse` is O(diff size) and allocates a fresh
     /// `[UnifiedDiff.File]` tree per call. As a computed property
     /// it re-ran on every body re-eval (zoom change, hover, etc.) —
@@ -67,7 +76,7 @@ struct DiffView: View {
                     .padding(.vertical, 8)
             } else {
                 ForEach(Array(file.hunks.enumerated()), id: \.offset) { _, hunk in
-                    hunkBlock(hunk)
+                    hunkBlock(hunk, filePath: filePath(of: file))
                 }
             }
         }
@@ -137,7 +146,7 @@ struct DiffView: View {
     }
 
     @ViewBuilder
-    private func hunkBlock(_ hunk: UnifiedDiff.Hunk) -> some View {
+    private func hunkBlock(_ hunk: UnifiedDiff.Hunk, filePath: String) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             // Hunk header banner — like "@@ -10,3 +12,5 @@ func foo()"
             HStack(spacing: 6) {
@@ -159,6 +168,50 @@ struct DiffView: View {
 
             ForEach(Array(hunk.lines.enumerated()), id: \.offset) { _, line in
                 lineRow(line)
+                // Review affordances — entirely gated on a session being
+                // present. The nil (read-only) path renders only `lineRow`.
+                if reviewSession != nil {
+                    reviewAffordances(for: line, hunk: hunk, filePath: filePath)
+                }
+            }
+        }
+    }
+
+    /// New-path is what `ReviewComment.filePath` is keyed on (post-change
+    /// path); fall back to old path for pure deletions.
+    private func filePath(of file: UnifiedDiff.File) -> String {
+        file.newPath.isEmpty ? file.oldPath : file.newPath
+    }
+
+    /// Comment threads anchored to this line, plus the inline composer when
+    /// the user has opened it on this line. Only invoked when
+    /// `reviewSession != nil`.
+    @ViewBuilder
+    private func reviewAffordances(
+        for line: UnifiedDiff.Line, hunk: UnifiedDiff.Hunk, filePath: String
+    ) -> some View {
+        if let session = reviewSession {
+            let lineNo = line.newLineNo ?? line.oldLineNo
+            // Threads whose anchor start lands on this line.
+            let topLevel = session.review.comments.filter {
+                $0.parentId == nil && $0.filePath == filePath
+                && lineNo != nil && $0.anchor.startLine == lineNo
+            }
+            ForEach(topLevel) { parent in
+                CommentThreadView(
+                    doc: doc,
+                    parent: parent,
+                    replies: session.review.comments
+                        .filter { $0.parentId == parent.id }
+                        .sorted { $0.createdAt < $1.createdAt },
+                    anchorState: session.anchorStates[parent.id] ?? .unknown,
+                    onResolveToggle: { session.setResolved(id: parent.id, !parent.resolved) },
+                    onReply: { /* VM-owed: opens reply composer */ },
+                    onEdit: { /* VM-owed: opens edit composer */ },
+                    onDelete: { session.delete(id: parent.id) }
+                )
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
             }
         }
     }
