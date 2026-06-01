@@ -1,25 +1,30 @@
 import XCTest
-import AppKit
-import SwiftUI
 import ViewerKit
 import ViewerCore
 @testable import ViewerUI
 
-/// L3 tests for the format/pretty-print toggle. Verifies model state +
-/// view-tree wiring: the format button appears only for JSON/XML, and
-/// toggling it actually changes what the source view displays.
+/// T1m tests for the format/pretty-print toggle. Verifies model state:
+/// the format mode is available only for JSON/XML, and toggling it
+/// actually changes what `displayText(for:)` returns.
+///
+/// Every assertion reads `model.*` / `ViewModeOptions.*` directly, so
+/// this is a pure model-level suite — no `NSHostingView`, no live
+/// `WKWebView`, no `#192` gate, host-headless.
+///
+/// (History: this file used to carry `renderHost`/`hostedViews`/
+/// `descendants` plumbing and a `WebViewTestTeardown.skipUnlessEnabled()`
+/// gate from when it was a T2' suite. No test ever called the plumbing —
+/// it was dead code paying the WebView-gate tax — so it was deleted in
+/// the testing-pyramid migration, §3.2.)
 @MainActor
-final class FormatToggleTests: XCTestCase {
+final class FormatToggleTests: HeadlessUITestCase {
 
     private var tmpDir: URL!
     private var suiteName: String!
     private var defaults: UserDefaults!
-    /// #192: tracked so tearDown can dismantle embedded WKWebViews.
-    private var hostedViews: [NSView] = []
 
     override func setUp() async throws {
-        // #192: process-isolated — skipped in the bare sweep.
-        try WebViewTestTeardown.skipUnlessEnabled()
+        try await super.setUp()
         tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("Format-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
@@ -28,13 +33,11 @@ final class FormatToggleTests: XCTestCase {
     }
 
     override func tearDown() async throws {
-        WebViewTestTeardown.teardown(hostedViews)  // #192
-        hostedViews.removeAll()
-        // tmpDir/defaults are nil when setUp early-skipped (#192 gate).
         if let tmpDir { try? FileManager.default.removeItem(at: tmpDir) }
         if let suiteName, let defaults {
             defaults.removePersistentDomain(forName: suiteName)
         }
+        try await super.tearDown()
     }
 
     private func makeModel() -> DocumentModel {
@@ -51,21 +54,6 @@ final class FormatToggleTests: XCTestCase {
         let url = tmpDir.appendingPathComponent(name)
         try contents.write(to: url, atomically: true, encoding: .utf8)
         return url
-    }
-
-    private func renderHost<V: View>(_ view: V) -> NSView {
-        _ = NSApplication.shared
-        let h = NSHostingView(rootView: view)
-        h.frame = NSRect(origin: .zero, size: NSSize(width: 1200, height: 800))
-        h.layoutSubtreeIfNeeded()
-        hostedViews.append(h)  // #192: track for WebView teardown
-        return h
-    }
-
-    private func descendants(of view: NSView) -> [NSView] {
-        var out: [NSView] = [view]
-        for s in view.subviews { out.append(contentsOf: descendants(of: s)) }
-        return out
     }
 
     // MARK: - supportsFormatToggle
@@ -140,7 +128,7 @@ final class FormatToggleTests: XCTestCase {
         XCTAssertTrue(formatted.contains("\n"))
     }
 
-    // MARK: - View tree
+    // MARK: - Available view modes
 
     // Format toggle was unified into the segmented ViewMode picker
     // (commit 169a4de). Mode-bar tests are now under

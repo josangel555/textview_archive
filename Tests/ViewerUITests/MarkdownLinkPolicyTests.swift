@@ -2,8 +2,17 @@ import XCTest
 import WebKit
 @testable import ViewerUI
 
+/// T1 pure-logic suite for the rendered-view's link-scheme security
+/// policy + the mermaid-injection state machine. Despite the old name
+/// (`MarkdownRenderedViewTests`), it hosts NOTHING — it exercises the
+/// static `MarkdownRenderedView.Coordinator.decide(...)` link policy and
+/// the pure `htmlNeedsMermaid` / `nextMermaidInjectionState` /
+/// `expectedMermaidScriptCount` helpers. `WebKit` is imported only for
+/// the `WKNavigationType` enum the policy takes as input; no `WKWebView`
+/// is ever instantiated. Renamed to reflect what it actually covers
+/// (testing-pyramid migration, §3.2).
 @MainActor
-final class MarkdownRenderedViewTests: XCTestCase {
+final class MarkdownLinkPolicyTests: XCTestCase {
 
     private func decide(
         _ url: String?,

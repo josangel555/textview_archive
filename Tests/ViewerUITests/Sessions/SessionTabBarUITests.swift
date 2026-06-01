@@ -51,25 +51,12 @@ final class SessionTabBarUITests: MultiScenarioTestCase {
                 page.assertActiveSessionRoot(endsWith: "ProjectA", file: file, line: line)
             },
 
-            // The trailing `+` button identifier is present whenever
-            // the session bar is rendered. Soft-fail when the SwiftUI
-            // a11y id didn't propagate (same convention as
-            // TabBarPage.tabCount).
-            Scenario(
-                name: "shows-plus-button",
-                argFile: argFile,
-                script: """
-                    session-open-folder \(folderA.path)
-                    """
-            ) { dumps, file, line in
-                XCTAssertEqual(dumps.count, 1, file: file, line: line)
-                let page = Pages(dump: dumps[0]).sessionTabBar
-                // `+` button presence is best-effort — if the a11y id
-                // didn't propagate, the session count check below is
-                // the load-bearing assertion.
-                _ = page.newSessionButton
-                page.assertSessionCount(1, file: file, line: line)
-            },
+            // (Deleted: the `shows-plus-button` scenario was a no-op —
+            // it discarded `page.newSessionButton` (the a11y id never
+            // propagates to the realised NSView, so the probe was always
+            // best-effort/nil) and only re-asserted `assertSessionCount(1)`,
+            // a duplicate of the load-bearing check above. Testing-pyramid
+            // migration §3.2.)
         ])
     }
 
