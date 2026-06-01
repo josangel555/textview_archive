@@ -1,0 +1,18 @@
+[package]
+name = "mdvcore-core"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "Pure, sans-IO CSV parse + filterable session state for the MarkdownViewer Rust core."
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+# The wire module owns BOTH the serde-derived cross-language types AND the
+# MessagePack codec + length-prefix framing (the "proto" role folded into core
+# for the PoC). rmp-serde is therefore a real dependency, not dev-only.
+rmp-serde = { workspace = true }

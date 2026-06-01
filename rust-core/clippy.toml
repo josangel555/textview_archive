@@ -1,0 +1,14 @@
+# Determinism guard: ban ambient clock/RNG in the pure core. Time/randomness
+# must be injected so the core stays replayable. (The PoC core happens not to
+# use either yet, but the lint is wired from day one per the playbook.)
+disallowed-methods = [
+  { path = "std::time::Instant::now", reason = "inject a Clock port; time is a parameter" },
+  { path = "std::time::SystemTime::now", reason = "inject a Clock port" },
+]
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-indexing-slicing-in-tests = true
+
+# Proper nouns clippy::doc_markdown (pedantic) would otherwise flag as
+# "needs backticks". These EXTEND clippy's built-in default allowlist.
+doc-valid-idents = ["MessagePack", "PoC", ".."]

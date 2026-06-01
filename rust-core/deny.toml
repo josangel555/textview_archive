@@ -1,0 +1,30 @@
+# cargo-deny config (tightened — `cargo deny init` defaults are permissive
+# theater). Run with `cargo deny check` if the tool is installed.
+#
+# NOTE: cargo-deny was NOT installed on this host at PoC time (only cargo-audit
+# v0.22.1). This config is committed so the gate is ready the moment the tool
+# lands. See poc/STATUS.md.
+
+[advisories]
+yanked = "deny"
+
+[bans]
+# Duplicate versions of a -sys crate are a C one-definition-rule hazard
+# (correctness, not just bloat). The PoC has no -sys deps, but keep the gate.
+multiple-versions = "deny"
+
+[licenses]
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unicode-3.0",
+  "Zlib",
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

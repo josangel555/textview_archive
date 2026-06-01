@@ -1,6 +1,14 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
+// Absolute path to the Rust-core staging dir, where scripts/build-rust-core.sh
+// writes libmdvcore_ffi.a (the STATICLIB — see that script for why static, not
+// a dylib). Used as the linker `-L` search path; the .a is static-linked into
+// the executable, so there is no runtime dylib to locate (no rpath needed).
+// Context.packageDirectory is the package root, resolved at manifest-eval time
+// — portable across checkouts.
+let rustLinkDir = "\(Context.packageDirectory)/rust-core/link"
+
 let package = Package(
     name: "MarkdownViewer",
     platforms: [.macOS(.v15)],
@@ -8,6 +16,11 @@ let package = Package(
         .library(name: "ViewerKit", targets: ["ViewerKit"]),
         .library(name: "ViewerCore", targets: ["ViewerCore"]),
         .library(name: "ViewerUI", targets: ["ViewerUI"]),
+        // The Swift bridge over the Rust core's extern "C" boundary (in-proc
+        // transport tier). Links libmdvcore_ffi.a; see rust-core/ +
+        // scripts/build-rust-core.sh. A/B-able against the Swift CSVParser
+        // behind the RustCSVGate feature flag (default OFF).
+        .library(name: "RustCore", targets: ["RustCore"]),
         .executable(name: "MarkdownViewer", targets: ["MarkdownViewer"]),
         // Test-only helper: built on demand by `swift build --product
         // MDVFakeLSPServer` (or implicitly via `swift test`'s build
@@ -115,10 +128,41 @@ let package = Package(
             cSettings: [.headerSearchPath(".")]
         ),
         .target(name: "ViewerKit"),
+        // --- Rust core bridge ---------------------------------------
+        // systemLibrary: the cbindgen-generated C header + module map.
+        // `scripts/build-rust-core.sh` builds the Rust workspace and
+        // copies `mdvcore.h` here (gitignored) before any `swift build`.
+        .systemLibrary(
+            name: "CMdvCore",
+            path: "Sources/CMdvCore"
+        ),
+        // The throwing Swift wrapper over the C ABI. Static-links the
+        // Rust core via `-L <pkg>/rust-core/link -lmdvcore_ffi` (the .a,
+        // chosen over a dylib because a load-time dylib dep of a
+        // hardened-runtime self-signed exec is refused by dyld on a
+        // Team-ID mismatch — see scripts/build-rust-core.sh). The link
+        // dir is a deterministic in-repo path (gitignored) populated by
+        // scripts/build-rust-core.sh; `unsafeFlags` is acceptable here
+        // because RustCore is a leaf bridge consumed only inside this
+        // package (it is NOT exported for downstream package use). The
+        // shipping cross-platform setup will switch this to an
+        // xcframework `binaryTarget` once the x86_64/lipo slice is built
+        // (see docs/RUST_CSV_INTEGRATION.md — owner-review item).
+        .target(
+            name: "RustCore",
+            dependencies: ["CMdvCore"],
+            linkerSettings: [
+                .unsafeFlags([
+                    "-L", rustLinkDir,
+                    "-lmdvcore_ffi",
+                ])
+            ]
+        ),
         .target(
             name: "ViewerCore",
             dependencies: [
                 "ViewerKit",
+                "RustCore",
                 .product(name: "Markdown",                package: "swift-markdown"),
                 .product(name: "SwiftTreeSitter",         package: "SwiftTreeSitter"),
                 // Eager keeplist — statically linked into the executable
@@ -270,6 +314,14 @@ let package = Package(
         .testTarget(
             name: "ViewerUITests",
             dependencies: ["ViewerUI", "ViewerCore", "ViewerKit"]
+        ),
+        // Cross-language FFI-boundary tests + the A/B vs the Swift
+        // CSVParser/CSVFilter. Headless (no UI / no NSApplication), so
+        // safe on the host per CLAUDE.md testing rules. Depends on
+        // ViewerCore for the Swift parity oracle.
+        .testTarget(
+            name: "RustCoreTests",
+            dependencies: ["RustCore", "ViewerCore"]
         ),
     ]
 )

@@ -24,6 +24,15 @@ DIST_DIR="$ROOT_DIR/dist"
 APP_DIR="$DIST_DIR/$APP_NAME.app"
 CONTENTS="$APP_DIR/Contents"
 
+# Build the Rust core staticlib + cbindgen header FIRST. SwiftPM links
+# libmdvcore_ffi.a (the RustCore target's -L rust-core/link), so the .a and the
+# generated header must exist before any `swift build`. The Rust core backs the
+# CSV viewer behind the RustCSVGate feature flag (default OFF — the shipping
+# default keeps the Swift CSVParser). build-rust-core.sh builds the `dist`
+# profile (panic=unwind, GUI-host-correct).
+echo "==> bash scripts/build-rust-core.sh"
+bash "$SCRIPT_DIR/build-rust-core.sh"
+
 echo "==> swift build -c $CONFIG"
 ( cd "$ROOT_DIR" && swift build -c "$CONFIG" )
 
@@ -91,6 +100,14 @@ for dylib in "$BIN_DIR"/libTreeSitter*Lazy.dylib; do
 done
 shopt -u nullglob
 echo "    copied $DYLIB_COUNT grammar dylib(s)"
+
+# NOTE: the Rust core (libmdvcore_ffi.a) is STATIC-linked into the executable
+# by SwiftPM (see the RustCore target in Package.swift +
+# scripts/build-rust-core.sh) — it is NOT a dylib in Contents/Frameworks/. A
+# separate dylib would be smaller, but a non-platform dylib that is a load-time
+# dependency of a hardened-runtime, self-signed executable is refused by dyld on
+# a Team-ID mismatch. Static-linking avoids that entirely. The size cost is
+# accounted for in check-bundle-size.sh's caps.
 
 # Strip local symbols (`strip -S`). Safe for Swift: keeps global
 # symbols + dyld_info; only drops the local-symbol table that

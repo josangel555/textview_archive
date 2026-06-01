@@ -1,0 +1,308 @@
+//! `mdvcore-ffi` — the `extern "C"` boundary for the Rust-Core PoC.
+//!
+//! This is the ONLY crate that contains `unsafe` and exports symbols. It wraps
+//! the pure `mdvcore-core` logic in a C ABI that Swift (and any C consumer) calls.
+//!
+//! ## The contract, in one place
+//!
+//! - **Errors**: every fallible fn returns a [`MdvStatus`] (a `#[repr(C)]`
+//!   integer enum). Payloads ride in OUT-PARAMS, never mixed with the status.
+//!   Rich error detail (message + context) rides in the MessagePack wire body,
+//!   not the C signature. Swift maps the status to a `throws`.
+//!
+//! - **Panic safety**: every `extern "C"` fn body runs inside
+//!   [`std::panic::catch_unwind`] via the [`ffi_guard!`] macro. A caught panic
+//!   becomes [`MdvStatus::Panic`] and the process keeps running.
+//!   ⚠️ NOTE the build profile: the size-opt `release` profile sets
+//!   `panic = "abort"`, under which `catch_unwind` is a no-op (the panic
+//!   already aborted). The guard is still correct and load-bearing for the
+//!   `dev`/`test` profile (default `panic = "unwind"`), and the SHIPPING macOS
+//!   dylib for a GUI host would use `panic = "unwind"` so the guard keeps the
+//!   app alive. This is the belt-and-suspenders split the PoC spec asked for.
+//!
+//! - **Opaque handles**: a [`SessionHandle`] crosses by pointer
+//!   (`Box::into_raw`) and is freed exactly once via [`mdvcore_session_free`]
+//!   (`Box::from_raw`). Allocate-and-free on the same side: Swift must call
+//!   `mdvcore_session_free`, never libc `free`. Ordinary calls BORROW the handle;
+//!   they never round-trip ownership.
+//!
+//! - **Threading**: the handle wraps the session in a `Mutex` and is declared
+//!   `Send + Sync` so it is *sound* to touch from multiple threads — but the
+//!   model is **single-writer**: the Mutex serializes concurrent calls, and a
+//!   contended `try_lock` returns [`MdvStatus::Busy`] rather than blocking, so
+//!   a misbehaving multi-threaded caller is *rejected*, not silently
+//!   serialized into a deadlock risk. See [`handle`].
+//!
+//! - **Wire**: structured results (`Table`, `Snapshot`) leave as MessagePack
+//!   in a length-prefixed frame via an out byte-buffer ([`MdvBuf`]), freed by
+//!   [`mdvcore_buf_free`].
+
+// This crate intentionally opts out of #![forbid(unsafe_code)] (it IS the
+// unsafe edge). Lints are defined in Cargo.toml [lints.*] + below.
+#![deny(unsafe_op_in_unsafe_fn)]
+#![allow(
+    clippy::missing_safety_doc,
+    reason = "safety contracts are documented per-fn in prose above each extern fn"
+)]
+
+pub mod buf;
+pub mod guard;
+pub mod handle;
+pub mod status;
+
+use mdvcore_core::filter::{Query, Scope};
+use mdvcore_core::session::CsvSession;
+use mdvcore_core::wire;
+
+pub use buf::MdvBuf;
+pub use handle::SessionHandle;
+pub use status::MdvStatus;
+
+// ---------------------------------------------------------------------------
+// Stage 0 smoke: a trivial extern fn proving the codegen/cbindgen/link path.
+// ---------------------------------------------------------------------------
+
+/// Stage 0 smoke test: add two integers. Wrapped in the panic guard for
+/// uniformity even though it cannot panic.
+#[unsafe(no_mangle)]
+pub extern "C" fn mdvcore_add(a: i32, b: i32) -> i32 {
+    ffi_guard_value!(0i32, { a.wrapping_add(b) })
+}
+
+// ---------------------------------------------------------------------------
+// A deliberate panic path, used by tests to prove catch_unwind converts a
+// panic into MdvStatus::Panic and does NOT abort (under panic=unwind builds).
+// ---------------------------------------------------------------------------
+
+/// Test hook: forces a panic inside the guard. Returns [`MdvStatus::Panic`]
+/// (under `panic=unwind`) instead of crashing. Exposed (not test-gated) so the
+/// cross-language Swift harness can exercise the panic→error mapping too.
+#[unsafe(no_mangle)]
+pub extern "C" fn mdvcore_force_panic() -> MdvStatus {
+    ffi_guard!({
+        panic!("forced panic for FFI boundary test");
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Stage 1/2 feature surface: open → parse → setFilter → snapshot → free.
+//
+// Bytes cross IN by pointer+len (never owned by Rust beyond the call); handles
+// and structured results cross OUT by opaque pointer / framed byte buffer.
+// ---------------------------------------------------------------------------
+
+/// Open a CSV session from raw bytes. The bytes are COPIED into the session;
+/// the caller retains ownership of its buffer and may free it immediately
+/// after this returns.
+///
+/// # Parameters
+/// - `bytes`: pointer to the CSV bytes (may be null only if `len == 0`).
+/// - `len`: number of bytes.
+/// - `out_handle`: receives the new session handle on success; set to null on
+///   error. Caller MUST eventually call [`mdvcore_session_free`].
+///
+/// # Returns
+/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::BadUtf8`], or
+/// [`MdvStatus::Panic`].
+///
+/// # Safety
+/// `bytes` must point to `len` valid, initialized bytes (or be null with
+/// `len == 0`). `out_handle` must be a valid, writable pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_session_open(
+    bytes: *const u8,
+    len: usize,
+    out_handle: *mut *mut SessionHandle,
+) -> MdvStatus {
+    ffi_guard!({
+        if out_handle.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: caller contract — out_handle is valid & writable; we null it
+        // up front so an early-return error never leaves a dangling out value.
+        unsafe { *out_handle = core::ptr::null_mut() };
+
+        if bytes.is_null() && len != 0 {
+            return MdvStatus::NullArg;
+        }
+        let slice: &[u8] = if len == 0 {
+            &[]
+        } else {
+            // SAFETY: caller guarantees `bytes` points to `len` initialized
+            // bytes when len != 0; the len == 0 branch never dereferences.
+            unsafe { core::slice::from_raw_parts(bytes, len) }
+        };
+
+        match CsvSession::open(slice) {
+            Ok(session) => {
+                let handle = SessionHandle::new(session);
+                let raw = handle.into_raw();
+                // SAFETY: out_handle validated non-null above.
+                unsafe { *out_handle = raw };
+                MdvStatus::Ok
+            }
+            Err(_) => MdvStatus::BadUtf8,
+        }
+    })
+}
+
+/// Encode the session's parsed table (Stage 1 result) into a length-prefixed
+/// MessagePack frame, returned via `out_buf`. The frame is `u32` LE length +
+/// `to_vec_named` MessagePack body. Caller MUST call [`mdvcore_buf_free`].
+///
+/// # Safety
+/// `handle` must be a valid pointer returned by [`mdvcore_session_open`] and not
+/// yet freed. `out_buf` must be valid & writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_session_table(
+    handle: *mut SessionHandle,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_guard!({
+        if out_buf.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_buf validated; write an empty buf so error paths leave a
+        // safe-to-free value.
+        unsafe { *out_buf = MdvBuf::empty() };
+
+        // SAFETY: handle contract per fn docs.
+        let Some(h) = (unsafe { SessionHandle::as_ref(handle) }) else {
+            return MdvStatus::NullArg;
+        };
+        h.with(|session| {
+            let table = session.table().clone();
+            match wire::encode_frame(&table) {
+                Ok(frame) => {
+                    // SAFETY: out_buf validated non-null above.
+                    unsafe { *out_buf = MdvBuf::from_vec(frame) };
+                    MdvStatus::Ok
+                }
+                Err(_) => MdvStatus::WireError,
+            }
+        })
+        .unwrap_or(MdvStatus::Busy)
+    })
+}
+
+/// Set the active filter on the session. `query` is a UTF-8 string of `qlen`
+/// bytes. `scope` selects the search scope: `< 0` → all columns; `>= 0` → that
+/// column index.
+///
+/// # Safety
+/// `handle` valid & live; `query` points to `qlen` valid bytes (or null with
+/// `qlen == 0`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_session_set_filter(
+    handle: *mut SessionHandle,
+    query: *const u8,
+    qlen: usize,
+    scope: i64,
+) -> MdvStatus {
+    ffi_guard!({
+        if query.is_null() && qlen != 0 {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: handle contract per fn docs.
+        let Some(h) = (unsafe { SessionHandle::as_ref(handle) }) else {
+            return MdvStatus::NullArg;
+        };
+        let qbytes: &[u8] = if qlen == 0 {
+            &[]
+        } else {
+            // SAFETY: caller guarantees query/qlen describe valid bytes when
+            // qlen != 0; the qlen == 0 branch never dereferences.
+            unsafe { core::slice::from_raw_parts(query, qlen) }
+        };
+        let Ok(text) = core::str::from_utf8(qbytes) else {
+            return MdvStatus::BadUtf8;
+        };
+        let scope = if scope < 0 {
+            Scope::All
+        } else {
+            // i64 -> usize: non-negative branch; clamp on platforms where
+            // usize < 64 bits (won't happen on the Mac target, but be safe).
+            Scope::Column(usize::try_from(scope).unwrap_or(usize::MAX))
+        };
+        let q = Query {
+            text: text.to_string(),
+            scope,
+        };
+        h.with(|session| {
+            session.set_filter(q);
+            MdvStatus::Ok
+        })
+        .unwrap_or(MdvStatus::Busy)
+    })
+}
+
+/// Produce the level-triggered visible-rows snapshot (Stage 2) as a
+/// length-prefixed MessagePack frame via `out_buf`. Caller MUST call
+/// [`mdvcore_buf_free`].
+///
+/// # Safety
+/// `handle` valid & live; `out_buf` valid & writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_session_snapshot(
+    handle: *mut SessionHandle,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_guard!({
+        if out_buf.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_buf validated; safe empty default for error paths.
+        unsafe { *out_buf = MdvBuf::empty() };
+
+        // SAFETY: handle contract per fn docs.
+        let Some(h) = (unsafe { SessionHandle::as_ref(handle) }) else {
+            return MdvStatus::NullArg;
+        };
+        h.with(|session| {
+            let snap = session.snapshot();
+            match wire::encode_frame(&snap) {
+                Ok(frame) => {
+                    // SAFETY: out_buf validated non-null above.
+                    unsafe { *out_buf = MdvBuf::from_vec(frame) };
+                    MdvStatus::Ok
+                }
+                Err(_) => MdvStatus::WireError,
+            }
+        })
+        .unwrap_or(MdvStatus::Busy)
+    })
+}
+
+/// Free a session handle. Null-tolerant (matches C `free`). After this call the
+/// pointer is dangling and must not be used again.
+///
+/// # Safety
+/// `handle` must be a pointer returned by [`mdvcore_session_open`] that has not
+/// already been freed, or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_session_free(handle: *mut SessionHandle) {
+    // No status to return; still guard so a Drop panic can't unwind across C.
+    let _ = std::panic::catch_unwind(|| {
+        // SAFETY: caller contract — exactly-once free of a live handle, or null.
+        unsafe { SessionHandle::free(handle) };
+    });
+}
+
+/// Free a [`MdvBuf`] returned by an out-param. Null-data-tolerant.
+///
+/// # Safety
+/// `buf` must be a pointer to a `MdvBuf` previously written by this library,
+/// not already freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_buf_free(buf: *mut MdvBuf) {
+    let _ = std::panic::catch_unwind(|| {
+        if buf.is_null() {
+            return;
+        }
+        // SAFETY: caller contract — buf points to a MdvBuf we wrote.
+        unsafe { MdvBuf::free_in_place(buf) };
+    });
+}
+
+#[cfg(test)]
+mod tests;

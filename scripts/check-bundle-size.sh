@@ -1,8 +1,21 @@
 #!/usr/bin/env bash
 # Bundle size guardrail. Fails the build when dist/TextView.app
 # crosses a budget. Two checks:
-#   - total .app size (default 37 MB)
-#   - main executable size (default 16 MB)
+#   - total .app size (default 40 MB)
+#   - main executable size (default 20 MB)
+#
+# Caps bumped 37->40 / 18->20 (2026-05-31) for the Rust-core CSV integration.
+# Two facts justified the bump, MEASURED this run:
+#   1. The `main` release exec (NO Rust), stripped exactly like build-app.sh
+#      (`strip -S`), was ALREADY 18.60 MB — the old 18 MB exec cap was stale
+#      and `main` itself breached it (pre-existing drift, not this change).
+#   2. Static-linking libmdvcore_ffi.a adds only ~0.36 MB to the exec
+#      (18.60 -> ~18.96 MB) and ~0.3 MB to the bundle (measured 39 MB total).
+# The 20 MB exec / 40 MB total caps cover the real baseline + the Rust core +
+# modest headroom. The exec sub-cap still catches a TreeSitter grammar silently
+# regressing to static linkage. NOTE: the Rust core is purely ADDITIVE at this
+# beachhead (both Swift CSVParser AND the Rust core ship); the size recovers
+# when Swift duplicates are deleted in a later migration phase.
 # These two defaults are the single source of truth for the cap; the
 # BUDGET_MB / EXEC_BUDGET_MB defaults below MUST match the numbers in
 # this header and the comment in build-app.sh's tail block.
@@ -27,7 +40,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 ROOT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 APP_DIR="$ROOT_DIR/dist/TextView.app"
 
-BUDGET_MB="${BUDGET_MB:-${1:-37}}"
+BUDGET_MB="${BUDGET_MB:-${1:-40}}"
 # Per-exec check defaults to 16 MB. The eager keeplist (JSON, Swift,
 # Markdown) + everything-else-Swift-and-resources fits in ~11 MB
 # release. The CodeMirror 6 editor (Swift wrapper + JS bridge code)
@@ -42,7 +55,7 @@ BUDGET_MB="${BUDGET_MB:-${1:-37}}"
 # Contents/Frameworks/, so this is real code growth, not a
 # static-link regression. Override via env to opt out:
 #   EXEC_BUDGET_MB=0 bash scripts/check-bundle-size.sh
-EXEC_BUDGET_MB="${EXEC_BUDGET_MB:-18}"
+EXEC_BUDGET_MB="${EXEC_BUDGET_MB:-20}"
 BUDGET_BYTES=$(( BUDGET_MB * 1024 * 1024 ))
 EXEC_BUDGET_BYTES=$(( EXEC_BUDGET_MB * 1024 * 1024 ))
 

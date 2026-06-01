@@ -1,0 +1,93 @@
+# MarkdownViewer Rust core — virtual workspace root.
+#
+# Two crates:
+#   - mdvcore-core : pure, sans-IO, #![forbid(unsafe_code)] CSV logic + session state.
+#   - mdvcore-ffi  : the extern "C" boundary (cdylib + staticlib + rlib). The ONLY
+#                place unsafe + symbol exports live.
+#
+# Build dirs MUST live outside the worktree (worktree hygiene):
+#   export CARGO_TARGET_DIR=/private/tmp/claude-501/mdv-rust-csv-target
+#
+# Profile / resolver / lints are ROOT-ONLY (playbook §2): setting [profile.*]
+# or resolver in a member is silently ignored.
+
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/ffi"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.85"
+version = "0.0.0"
+publish = false
+license = "MIT"
+
+[workspace.dependencies]
+# Pinned exactly (no floating ranges) — minimal-deps posture.
+serde = { version = "=1.0.228", default-features = false, features = ["derive", "alloc"] }
+rmp-serde = "=1.3.0"
+cbindgen = { version = "=0.29.3", default-features = false }
+
+# ---------------------------------------------------------------------------
+# Workspace lints. The pure `mdvcore-core` crate inherits these via
+# `lints.workspace = true`. The FFI crate does NOT inherit (cargo #13157 makes
+# mixing workspace-inherited + package-local lints a hard error) — it defines
+# its own lints locally because it must opt OUT of `unsafe_code = "forbid"`.
+# ---------------------------------------------------------------------------
+[workspace.lints.rust]
+unsafe_code = "forbid"
+# Group needs lower priority than the cherry-picked `unsafe_code` so the
+# specific lint wins (clippy 1.92 now enforces lint_groups_priority even on the
+# `rust` table — the workspace-manifest false-negative noted in the playbook
+# was fixed upstream, so we set the priority explicitly).
+rust_2024_compatibility = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+# Group needs LOWER priority so cherry-picked specifics win (clippy #12729:
+# the lint_groups_priority auto-check is broken in workspace manifests, so we
+# set priority by hand).
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# No-panic enforcement in non-test code (allow-*-in-tests set in clippy.toml).
+unwrap_used = "deny"
+expect_used = "deny"
+indexing_slicing = "deny"
+panic = "deny"
+# Hygiene.
+module_name_repetitions = "allow"
+allow_attributes_without_reason = "warn"
+
+# ---------------------------------------------------------------------------
+# Profiles (root-only). Dev iteration profile + size-optimized release.
+#
+# PANIC STRATEGY (deliberate): release uses `panic = "abort"` per the PoC
+# spec's belt-and-suspenders requirement. NOTE the consequence, documented in
+# the FFI crate: under panic=abort `catch_unwind` cannot catch a panic (the
+# process already aborted). The FFI shims still wrap every entry point in
+# catch_unwind so that the SAME binary built WITHOUT panic=abort (the default
+# `dev`/`test` profile) converts panics to error codes and keeps the host
+# alive. `cargo test` ignores `panic=abort` anyway. The size-opt release here
+# follows the PoC instruction; the eventual SHIPPING macOS dylib for a GUI host
+# would flip back to `panic = "unwind"` so catch_unwind keeps the app alive
+# (playbook §7 / FFI-foundations §1).
+# ---------------------------------------------------------------------------
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.release]
+opt-level = "z"      # optimize for size
+lto = "fat"
+codegen-units = 1
+panic = "abort"      # belt + suspenders (see note above) — pure size figure
+strip = true
+
+# The profile the SHIPPING macOS GUI dylib actually links: same size ladder as
+# `release` BUT `panic = "unwind"`, so the `catch_unwind` shims convert a core
+# panic into MdvStatus::Panic and keep the host Swift app ALIVE (under
+# panic=abort the catch is a no-op — a bare abort would kill the app). This is
+# the playbook §7 / FFI-foundations §1 call. The cross-language Swift test
+# package links THIS profile so the panic→error path is exercised end-to-end.
+[profile.dist]
+inherits = "release"
+panic = "unwind"

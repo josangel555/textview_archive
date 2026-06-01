@@ -1,0 +1,36 @@
+[package]
+name = "mdvcore-ffi"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish.workspace = true
+license.workspace = true
+description = "extern \"C\" boundary for the MarkdownViewer Rust core. The only crate with unsafe + symbol exports."
+build = "build.rs"
+
+# cdylib  → the .dylib the Mac app embeds in Contents/Frameworks/.
+# staticlib → the .a for lipo/xcframework static linking.
+# rlib    → so `cargo test` and the cross-language Rust harness can link it.
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+# NOTE: this crate deliberately does NOT do `lints.workspace = true`.
+# Mixing workspace-inherited lints with package-local ones is a hard error
+# (cargo #13157), and this crate must opt OUT of `unsafe_code = "forbid"`
+# because the C ABI lives here. Lints are defined locally below + at the crate
+# root in src/lib.rs.
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+undocumented_unsafe_blocks = "deny"
+multiple_unsafe_ops_per_block = "deny"
+
+[dependencies]
+mdvcore-core = { path = "../core" }
+serde = { workspace = true }
+rmp-serde = { workspace = true }
+
+[build-dependencies]
+cbindgen = { workspace = true }

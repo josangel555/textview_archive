@@ -1,0 +1,5 @@
+# The cbindgen-generated C header is a build artifact, staged here by
+# scripts/build-rust-core.sh. It regenerates from the Rust extern "C" surface
+# and must never drift — so it is NOT committed. Only module.modulemap is
+# tracked. Run scripts/build-rust-core.sh before `swift build`.
+mdvcore.h

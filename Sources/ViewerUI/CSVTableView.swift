@@ -159,7 +159,11 @@ struct CSVTableView: View {
     }
 
     private func reparse() {
-        let result = CSVParser.parse(text)
+        // Routed parse: Rust core when RustCSVGate is on (UserDefaults toggle
+        // or MDV_RUST_CSV=1), else the incumbent Swift CSVParser. The adapter
+        // is fail-safe — a Rust bridge fault falls back to Swift, so a CSV view
+        // never goes blank because the experimental engine hiccuped.
+        let result = RustCSVAdapter.parse(text)
         parsedCache = result
         // O(rows × cols) one-time lowercase. Pays for itself after the
         // first ~3 keystrokes vs the previous per-keystroke approach.

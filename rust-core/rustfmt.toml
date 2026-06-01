@@ -1,0 +1,8 @@
+# Stable defaults only — rustfmt's stability guarantee covers DEFAULT
+# formatting. style_edition pins the formatting rules to the 2024 edition
+# (bare `rustfmt` otherwise defaults to 2015-era style).
+#
+# imports_granularity / group_imports are NIGHTLY-only — deliberately omitted
+# so `cargo fmt --check` works on stable.
+edition = "2024"
+style_edition = "2024"
