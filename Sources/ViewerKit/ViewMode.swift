@@ -42,6 +42,21 @@ public enum ViewModeOptions {
         // for categories that actually have a text representation.
         var modes: [ViewMode] = hasTextRepresentation(cat) ? [.source] : []
         if cat == .markdown || cat == .mermaid { modes.insert(.rendered, at: 0) }
+        // .html gets a Rendered mode too — through the SEPARATE,
+        // sanitized + JS-default-deny HTMLRenderedView path (NOT the
+        // markdown WebView). Inserted AFTER .source (not at the front
+        // like markdown): the conservative default for untrusted HTML
+        // stays Source (see `defaultMode`), and Rendered is an explicit
+        // opt-in mode. The later `.editor` insert also lands after
+        // .source, so the final picker reads Source | Editor | Rendered |
+        // … — what matters is Source is first/default, Rendered is not.
+        if cat == .html {
+            if let sourceIdx = modes.firstIndex(of: .source) {
+                modes.insert(.rendered, at: sourceIdx + 1)
+            } else {
+                modes.insert(.rendered, at: 0)
+            }
+        }
         // With an explicit text override the user is inspecting the file
         // through a chosen lens, so offer the structured modes (Table for
         // CSV-style, Formatted for JSON/XML-style) regardless of the

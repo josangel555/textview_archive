@@ -475,6 +475,27 @@ public struct ContentView: View {
             } else {
                 renderedMarkdownView(for: file, category: category)
             }
+        } else if category == .html && model.currentViewMode == .rendered {
+            // Raw-HTML rendered mode — the SEPARATE, sanitized +
+            // JS-default-deny path (HTMLRenderedView), NOT the markdown
+            // WebView. L0 size cap: above HTMLDocumentPolicy.renderMaxBytes
+            // we refuse to slurp an untrusted multi-MB document into the
+            // WebContent process and point the user at source mode.
+            if file.byteCount > HTMLDocumentPolicy.renderMaxBytes {
+                LargeHTMLPlaceholderView(file: file, model: model)
+            } else {
+                let tid = model.tabs.selected?.id
+                    ?? UUID(uuid: (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
+                HTMLRenderedView(
+                    rawHTML: file.contents,
+                    documentURL: file.url,
+                    zoom: model.zoom,
+                    // L2: per-tab JS opt-in. Default-OFF lives in the
+                    // model (absence of the tab id ⇒ false).
+                    javaScriptEnabled: model.htmlJavaScriptEnabled(forTabID: tid)
+                )
+                .accessibilityIdentifier("mdv.htmlRendered")
+            }
         } else {
             // PERF #5: source view subtree extracted into
             // `SourceModeView` so it can observe the per-tab
@@ -814,6 +835,25 @@ struct ModeBar: View {
                     .help("Show invisible characters (spaces · tabs → returns ¶)")
                     .accessibilityIdentifier("mdv.invisiblesToggle")
             }
+            // PER-TAB JavaScript opt-in for raw-HTML rendered mode.
+            // SECURITY: JS is DEFAULT-DENY; this is the ONLY way to turn
+            // it on, and it's scoped to the current tab. Shown only for
+            // `.html` files in rendered mode.
+            if model.showsHTMLJavaScriptToggle {
+                Toggle("Enable JS", isOn: Binding(
+                    get: { model.currentHTMLJavaScriptEnabled },
+                    set: { model.setHTMLJavaScriptEnabled(
+                        $0, forTabID: model.tabs.selected?.id ?? UUID()
+                    ) }
+                ))
+                .toggleStyle(.checkbox)
+                .controlSize(.mini)
+                .help("Run this HTML file's JavaScript (per-tab; off by "
+                      + "default — untrusted HTML runs no scripts). Page "
+                      + "scripts are still subject to the strict CSP and "
+                      + "sanitizer; remote and file:// loads stay blocked.")
+                .accessibilityIdentifier("mdv.htmlJSToggle")
+            }
             // Universal "Open As…" chip (WAVE 2b item 6). Offers every
             // applicable viewer for ANY file, including binaries, so the
             // user can force a `.db` open as CSV, a `.png` as HEX, etc.
@@ -978,6 +1018,10 @@ struct ModeBar: View {
         if model.supportsViewModeToggle, model.currentViewMode == .rendered {
             return nil
         }
+        // Hide the language chip while raw HTML is shown in rendered mode
+        // (the mode picker already conveys context; the chip is for
+        // source-side language overrides).
+        if model.showsHTMLJavaScriptToggle { return nil }
         return lang.displayName
     }
 }

@@ -1960,6 +1960,60 @@ public final class DocumentModel: ObservableObject {
     // cache around 15-20 MB. Cold-render on a miss is fast.
     private static let renderedHTMLCacheMax = 4
 
+    // MARK: - Raw-HTML JavaScript opt-in (PER-TAB, default-OFF)
+    //
+    // SECURITY: rendering a raw `.html` file runs JavaScript DEFAULT-DENY
+    // (see `HTMLDocumentPolicy` / `HTMLRenderedView`). The ONLY way JS is
+    // enabled is an explicit per-tab opt-in the user flips in the mode bar.
+    // Storage is a SET of opted-in tab ids: the SECURE DEFAULT is the
+    // ABSENCE of the tab from the set (no entry ⇒ JS off). We never store
+    // "off" — we only ever record an explicit opt-IN — so a fresh tab, a
+    // restored session, or a forgotten dict entry can only ever fail
+    // closed. The set is pruned on tab close via `purgeCaches`.
+    @Published private var htmlJavaScriptOptIn: Set<UUID> = []
+
+    /// PER-TAB JavaScript opt-in state for the raw-HTML renderer.
+    /// `false` unless the user explicitly opted this tab in. This is the
+    /// single read path the view consumes; the default is OFF.
+    public func htmlJavaScriptEnabled(forTabID tabID: UUID) -> Bool {
+        htmlJavaScriptOptIn.contains(tabID)
+    }
+
+    /// Convenience for the currently-selected tab. `false` when there is
+    /// no selected tab (fail-closed).
+    public var currentHTMLJavaScriptEnabled: Bool {
+        guard let id = tabs.selected?.id else { return false }
+        return htmlJavaScriptEnabled(forTabID: id)
+    }
+
+    /// Set the per-tab raw-HTML JS opt-in. The toggle is a deliberate
+    /// user action — flipping it on records the tab id; flipping it off
+    /// removes it (returning to the secure default). Only meaningful when
+    /// the current tab is an `.html` file in rendered mode; harmless
+    /// otherwise (the renderer for non-HTML files never reads it).
+    public func setHTMLJavaScriptEnabled(_ enabled: Bool, forTabID tabID: UUID) {
+        if enabled {
+            htmlJavaScriptOptIn.insert(tabID)
+        } else {
+            htmlJavaScriptOptIn.remove(tabID)
+        }
+    }
+
+    /// Toggle the current tab's raw-HTML JS opt-in.
+    public func toggleCurrentHTMLJavaScript() {
+        guard let id = tabs.selected?.id else { return }
+        setHTMLJavaScriptEnabled(!htmlJavaScriptEnabled(forTabID: id), forTabID: id)
+    }
+
+    /// True when the current tab is an `.html` file being shown in
+    /// rendered mode — i.e. when the "Enable JavaScript" toggle is
+    /// meaningful. Honors the per-tab "Open As…" override.
+    public var showsHTMLJavaScriptToggle: Bool {
+        guard let url = currentURL else { return false }
+        let cat = currentCategory ?? FileTypeDetector.category(for: url)
+        return cat == .html && currentViewMode == .rendered
+    }
+
     /// Returns the rendered HTML for `contents`, building+caching on
     /// miss. Call from a SwiftUI body — it's main-thread, sync, and the
     /// cached path is just a dict lookup so re-renders are fast.
@@ -2691,6 +2745,11 @@ public final class DocumentModel: ObservableObject {
             // preserving relative ordering of survivors (S2-G).
             let survivorKeys = Set(renderedHTMLCache.keys)
             renderedHTMLCacheOrder = priorOrder.filter { survivorKeys.contains($0) }
+
+            // Drop the closed tab's raw-HTML JS opt-in so a recycled
+            // UUID can't inherit a stale "JS on" decision (the set is
+            // keyed by tab id; absence = secure default off).
+            htmlJavaScriptOptIn.remove(tabID)
         }
         // Drop any hosted-view payloads no longer referenced by a live
         // tab. `purgeCaches` runs AFTER the coordinator has mutated
