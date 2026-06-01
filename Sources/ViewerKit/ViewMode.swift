@@ -11,6 +11,7 @@ public enum ViewMode: String, Equatable, Sendable, CaseIterable, Codable {
     case formatted   // JSON / XML / etc.: pretty-printed source
     case table       // csv / tsv: column-major grid
     case diff        // .diff / .patch: per-hunk colored DiffView
+    case preview     // image/audio/video/pdf/sqlite: native MediaPreviewView (state-driven)
     case hex         // every file: byte grid
 }
 
@@ -27,20 +28,22 @@ public enum ViewModeOptions {
         for url: URL?, forcedCategory: FileCategory? = nil
     ) -> [ViewMode] {
         guard let url else { return [.source, .hex] }
-        // Preview categories (image/audio/video/pdf/sqlite) render via the
-        // `.preview` document state, not a ViewMode — they have no
-        // mode-picker entries beyond HEX (raw bytes always available).
+        // Native-preview categories (image/audio/video/pdf/sqlite) render via
+        // the `.preview` document state. Their PRIMARY mode is the first-class
+        // `.preview` lens (native MediaPreviewView); HEX stays available as the
+        // raw-bytes secondary lens. `.binary` / `.unknown` have no native
+        // preview (they'd hit UnsupportedPreview), so they stay HEX-only.
         if let forced = forcedCategory, !hasTextRepresentation(forced) {
-            return [.hex]
+            return hasNativePreview(forced) ? [.preview, .hex] : [.hex]
         }
         let cat = forcedCategory ?? FileTypeDetector.category(for: url)
-        // Binary / unknown files have no meaningful text rendering — the
-        // content switch shows them in HexView unconditionally, so offering
-        // "Source" was a dead control: selecting it re-read a file the loader
-        // already rejected as binary, silently failed, and left the picker
-        // claiming "Source" while HexView stayed up (bug3). Seed Source only
-        // for categories that actually have a text representation.
-        var modes: [ViewMode] = hasTextRepresentation(cat) ? [.source] : []
+        if !hasTextRepresentation(cat) {
+            return hasNativePreview(cat) ? [.preview, .hex] : [.hex]
+        }
+        // Past the early returns above, `cat` always has a text
+        // representation (binary/unknown/native-preview already returned).
+        // Seed Source as the text baseline.
+        var modes: [ViewMode] = [.source]
         if cat == .markdown || cat == .mermaid { modes.insert(.rendered, at: 0) }
         // .html gets a Rendered mode too — through the SEPARATE,
         // sanitized + JS-default-deny HTMLRenderedView path (NOT the
@@ -96,9 +99,11 @@ public enum ViewModeOptions {
     ) -> ViewMode {
         guard let url else { return .source }
         if let forced = forcedCategory {
-            // Preview categories render through `.preview`; HEX is the
-            // only meaningful ViewMode for them in the picker.
-            if !hasTextRepresentation(forced) { return .hex }
+            // Native-preview categories render through `.preview` and default
+            // to the first-class Preview lens; binary/unknown default to HEX.
+            if !hasTextRepresentation(forced) {
+                return hasNativePreview(forced) ? .preview : .hex
+            }
             if forced == .markdown || forced == .mermaid { return .rendered }
             return .source
         }
@@ -106,10 +111,13 @@ public enum ViewModeOptions {
         if Self.supportsTable(url) { return .table }
         let cat = FileTypeDetector.category(for: url)
         if cat == .markdown || cat == .mermaid { return .rendered }
-        // Binary / unknown files have no Source mode (see availableModes) —
-        // default straight into HEX so a binary opens into a usable view
-        // rather than a now-unavailable Source (bug3).
-        if !hasTextRepresentation(cat) { return .hex }
+        // Native-preview categories default to the Preview lens (native
+        // MediaPreviewView). Binary / unknown have no native preview, so they
+        // default straight into HEX (bug3) — opening into a usable view rather
+        // than a now-unavailable Source.
+        if !hasTextRepresentation(cat) {
+            return hasNativePreview(cat) ? .preview : .hex
+        }
         return .source
     }
 
@@ -123,6 +131,20 @@ public enum ViewModeOptions {
         case .markdown, .mermaid, .plainText, .code, .html:
             return true
         case .image, .audio, .video, .pdf, .sqlite, .binary, .unknown:
+            return false
+        }
+    }
+
+    /// True for categories that have a first-class native preview rendered
+    /// through the `.preview` document state (`MediaPreviewView`). These get a
+    /// `.preview` ViewMode as their primary/default lens. `.binary` / `.unknown`
+    /// have NO native preview — they'd hit `UnsupportedPreview` — so they are
+    /// HEX-only and never offer `.preview`.
+    static func hasNativePreview(_ cat: FileCategory) -> Bool {
+        switch cat {
+        case .image, .audio, .video, .pdf, .sqlite:
+            return true
+        case .markdown, .mermaid, .plainText, .code, .html, .binary, .unknown:
             return false
         }
     }

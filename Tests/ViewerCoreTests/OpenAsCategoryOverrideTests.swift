@@ -105,11 +105,14 @@ final class OpenAsCategoryOverrideTests: XCTestCase {
 
     // MARK: - ViewModeOptions forced-category
 
-    func test_availableModes_forcedSQLite_isHexOnly() {
+    func test_availableModes_forcedSQLite_offersPreviewThenHex() {
         let url = URL(fileURLWithPath: "/tmp/x.txt")
-        // SQLite renders via .preview; only HEX is a meaningful ViewMode.
-        XCTAssertEqual(ViewModeOptions.availableModes(for: url, forcedCategory: .sqlite), [.hex])
-        XCTAssertEqual(ViewModeOptions.defaultMode(for: url, forcedCategory: .sqlite), .hex)
+        // Bug B: SQLite renders via the `.preview` document state and now
+        // exposes a first-class `.preview` ViewMode as its primary/default
+        // lens; HEX stays the raw-bytes secondary lens.
+        XCTAssertEqual(ViewModeOptions.availableModes(for: url, forcedCategory: .sqlite),
+                       [.preview, .hex])
+        XCTAssertEqual(ViewModeOptions.defaultMode(for: url, forcedCategory: .sqlite), .preview)
     }
 
     func test_availableModes_forcedText_offersTableAndFormatted() {

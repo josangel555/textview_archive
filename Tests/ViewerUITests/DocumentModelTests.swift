@@ -132,24 +132,25 @@ final class DocumentModelTests: XCTestCase {
         XCTAssertEqual(model.tabs.tabs[0].url, url.standardizedFileURL.resolvingSymlinksInPath())
     }
 
-    /// Regression: a freshly opened native-preview file whose DEFAULT
-    /// ViewMode is `.hex` (sqlite/image/audio/video/pdf — none have a
-    /// text representation, so `ViewModeOptions.defaultMode` returns
-    /// `.hex`) must STAY in its `.preview` document state. The old
-    /// hex-mode carry block in `openResolved`/`materializeIfNeeded`
-    /// kicked `loadBinaryAsync` for any `.hex` tab whose state was
-    /// `.preview`, flipping it to `.binary` and replacing the native
-    /// viewer (e.g. the SQLite browser) with a hex dump on every open —
-    /// the viewer flashed, then vanished. `controller.open` for a
-    /// preview category only stats the file (no parse), so a readable
-    /// `.db` is enough to exercise the routing.
+    /// Regression: a freshly opened native-preview file (sqlite/image/
+    /// audio/video/pdf) must STAY in its `.preview` document state AND
+    /// select the first-class `.preview` ViewMode (Bug B). The old
+    /// `ViewModeOptions.defaultMode` returned `.hex` for these categories,
+    /// so the picker selected HEX even though the content was a native
+    /// preview — the byte grid was one click away, and the persisted
+    /// snapshot carried `.hex`. The old hex-mode carry block in
+    /// `openResolved`/`materializeIfNeeded` could also kick
+    /// `loadBinaryAsync` and replace the native viewer with a hex dump.
+    /// `controller.open` for a preview category only stats the file (no
+    /// parse), so a readable `.db` is enough to exercise the routing.
     func test_open_sqlite_staysPreview_doesNotFlipToHex() async throws {
         let model = makeModel()
         let url = try writeFile("data.db", "SQLite format 3\u{0}")
         model.open(url: url)
-        // Default mode for sqlite is the byte-grid (no text view), but the
-        // content is rendered via the `.preview` document state regardless.
-        XCTAssertEqual(model.tabs.selected?.viewMode, .hex)
+        // Bug B: the selected ViewMode must be the native Preview lens, NOT
+        // HEX — the content is rendered via the `.preview` document state.
+        XCTAssertEqual(model.tabs.selected?.viewMode, .preview,
+                       "fresh sqlite open must select Preview mode, not HEX")
         if case .preview(_, let cat) = model.currentState {
             XCTAssertEqual(cat, .sqlite)
         } else {
@@ -643,6 +644,74 @@ final class DocumentModelTests: XCTestCase {
         } else {
             XCTFail("expected .preview restored after Source, got \(model.currentState)")
         }
+    }
+
+    // MARK: - Bug B: fresh image opens in Preview mode, not HEX
+
+    /// THE Bug-B model-level regression. A fresh `model.open(png)` must
+    /// select the first-class `.preview` ViewMode — the layer the owner's
+    /// action ("open a PNG") actually hits. Before the fix the selected mode
+    /// was `.hex` (no `.preview` ViewMode existed), so the picker said HEX and
+    /// the persisted snapshot carried HEX even though content was a preview.
+    /// TEETH: pre-fix the selected viewMode is `.hex`, so the `.preview`
+    /// assertion FAILS; post-fix it PASSES.
+    func test_open_png_defaultsToPreviewMode_notHex() throws {
+        let model = makeModel()
+        let url = tmpDir.appendingPathComponent("pixel.png")
+        try Self.minimalPNG.write(to: url)
+        model.open(url: url)
+        XCTAssertEqual(model.tabs.selected?.viewMode, .preview,
+                       "fresh PNG open must select Preview mode, not HEX")
+        guard case .preview(_, let cat) = model.currentState, cat == .image else {
+            return XCTFail("expected .preview(.image), got \(model.currentState)")
+        }
+    }
+
+    /// The picker-realistic round-trip now that `.preview` is a first-class
+    /// mode: PNG opens in `.preview` → HEX (state → `.binary`) → back to
+    /// `.preview` (the actual button the user clicks, not Source/Rendered).
+    /// State must restore to `.preview(.image)` and the mode to `.preview`.
+    func test_image_previewHexPreview_roundTrip() throws {
+        let model = makeModel()
+        let url = tmpDir.appendingPathComponent("pixel.png")
+        try Self.minimalPNG.write(to: url)
+        model.open(url: url)
+        XCTAssertEqual(model.currentViewMode, .preview)
+
+        model.setCurrentViewMode(.hex)
+        XCTAssertTrue(waitFor(timeout: 2.0) {
+            if case .binary = model.currentState { return true }
+            return false
+        }, "expected .binary after HEX")
+        XCTAssertEqual(model.currentViewMode, .hex)
+
+        model.setCurrentViewMode(.preview)
+        XCTAssertEqual(model.currentViewMode, .preview)
+        guard case .preview(_, let cat) = model.currentState, cat == .image else {
+            return XCTFail("expected .preview(.image) restored after Preview, got \(model.currentState)")
+        }
+    }
+
+    /// Carry-mode safety: with an image tab active (mode `.preview`), opening a
+    /// TEXT file into the same tab must NOT carry `.preview` (invalid for text)
+    /// — it falls back to the text file's natural default and the picker stays
+    /// consistent with `availableModes`.
+    func test_carryMode_doesNotSmuggle_preview_ontoTextFile() throws {
+        let model = makeModel()
+        let png = tmpDir.appendingPathComponent("pixel.png")
+        try Self.minimalPNG.write(to: png)
+        model.open(url: png)
+        XCTAssertEqual(model.currentViewMode, .preview)
+
+        let txt = try writeFile("note.txt", "hello\n")
+        model.open(url: txt)
+        let modes = ViewModeOptions.availableModes(for: txt)
+        XCTAssertFalse(modes.contains(.preview),
+                       "text file must not offer Preview")
+        XCTAssertTrue(modes.contains(model.currentViewMode),
+                      "carried/selected mode \(model.currentViewMode) must be in the text file's availableModes \(modes)")
+        XCTAssertNotEqual(model.currentViewMode, .preview,
+                          "Preview must not be smuggled onto a text file")
     }
 
     /// Smallest valid PNG: 1×1 transparent. Used by the HEX round-trip

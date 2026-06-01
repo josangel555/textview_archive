@@ -114,12 +114,17 @@ final class ViewModeEditorTests: XCTestCase {
 
     // Media / preview categories render via the `.preview` document state and
     // have no text representation — Source must not appear in their picker.
+    // Bug B: they default to the first-class `.preview` lens (NOT HEX), with
+    // HEX retained as the raw-bytes secondary.
     func test_mediaCategories_excludeSource() {
         for path in ["/tmp/pic.png", "/tmp/song.mp3", "/tmp/clip.mp4",
                      "/tmp/doc.pdf", "/tmp/db.sqlite"] {
             let m = modes(path)
             XCTAssertFalse(m.contains(.source), "Source must be gated out for \(path); got \(m)")
             XCTAssertTrue(m.contains(.hex), "HEX must remain available for \(path); got \(m)")
+            XCTAssertEqual(m.first, .preview, "\(path) primary mode must be Preview; got \(m)")
+            XCTAssertEqual(ViewModeOptions.defaultMode(for: URL(fileURLWithPath: path)), .preview,
+                           "\(path) must default to Preview, not HEX")
         }
     }
 

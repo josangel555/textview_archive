@@ -2236,7 +2236,18 @@ public final class DocumentModel: ObservableObject {
             // explicitly picked (e.g. HEX, Format), carry it. Otherwise
             // use the new file's natural default.
             if let cur = tabs.selected, cur.viewMode != .rendered, cur.viewMode != .source {
-                return cur.viewMode
+                // Only carry a mode the DESTINATION file actually offers.
+                // `.preview` is valid only for native-preview categories
+                // (image/audio/video/pdf/sqlite); carrying it onto a text
+                // file — or `.table`/`.diff` onto a file that doesn't
+                // support them — would leave the picker selecting a mode
+                // that isn't in `availableModes`, desyncing picker vs pane.
+                // Falling back to the destination's natural default keeps
+                // the carry useful for shared modes (e.g. HEX→HEX,
+                // image→image preview) without smuggling an invalid one.
+                if ViewModeOptions.availableModes(for: resolved).contains(cur.viewMode) {
+                    return cur.viewMode
+                }
             }
             return initialMode
         }()
@@ -2268,14 +2279,14 @@ public final class DocumentModel: ObservableObject {
         // what's on screen.
         //
         // NOT for `.preview`: a `.preview` state is ALWAYS a native-
-        // preview category (image/audio/video/pdf/sqlite) — and `.hex`
-        // is their DEFAULT (and only) ViewMode, not a deliberate user
-        // pick. Hex-loading them here flipped `.preview` → `.binary` on
-        // every fresh open, tearing down the just-mounted native viewer
-        // (e.g. the SQLite browser) and showing a hex dump instead — the
-        // viewer flashed, then vanished. The user reaches HEX for a
-        // preview only via an explicit `setCurrentViewMode(.hex)`, which
-        // still loads the bytes; the default open must keep `.preview`.
+        // preview category (image/audio/video/pdf/sqlite). Their default
+        // ViewMode is now the first-class `.preview` lens (Bug B fix), so
+        // a fresh open won't even enter this `.hex` block — but the case
+        // is kept defensive. Hex-loading a preview here flipped `.preview`
+        // → `.binary`, tearing down the just-mounted native viewer (e.g.
+        // the SQLite browser) and showing a hex dump instead. The user
+        // reaches HEX for a preview only via an explicit
+        // `setCurrentViewMode(.hex)`, which still loads the bytes.
         if let t = tabs.selected, t.viewMode == .hex {
             switch t.state {
             case .binary, .empty, .loading, .hostedView, .preview: break
@@ -2974,10 +2985,10 @@ public final class DocumentModel: ObservableObject {
                 // Mirror openResolved's HEX-mode carry: if a text file
                 // lands with the tab already set to .hex view, kick the
                 // binary load. Exclude `.preview` (native-preview
-                // categories whose default mode is .hex) — hex-loading
-                // them would replace the native viewer (e.g. SQLite
-                // browser) with a hex dump on a plain lazy materialize.
-                // See the matching block in `openResolved`.
+                // categories whose default mode is now `.preview`, Bug B)
+                // — hex-loading them would replace the native viewer (e.g.
+                // SQLite browser) with a hex dump on a plain lazy
+                // materialize. See the matching block in `openResolved`.
                 if viewMode == .hex {
                     switch state {
                     case .binary, .empty, .loading, .hostedView, .preview: break
@@ -3035,6 +3046,18 @@ public final class DocumentModel: ObservableObject {
         case .formatted:
             if let url = t.url, Formatter.SupportedFormat.detect(url) != nil {
                 tabCoordinator.setFormatted(true, forTabID: t.id)
+            }
+        case .preview:
+            // Native-preview lens (image/audio/video/pdf/sqlite). The
+            // content pane is state-driven: `.preview` state renders
+            // MediaPreviewView. Coming back from HEX (state `.binary`) we
+            // must restore the `.preview` state, mirroring the media-restore
+            // arm in `.source/.rendered/...` below. For a fresh open the tab
+            // is already in `.preview` state, so this is a no-op there.
+            tabCoordinator.setFormatted(false, forTabID: t.id)
+            if let url = t.url, case .binary = t.state {
+                let state = controller.open(url: url)
+                t.state = state
             }
         case .source, .rendered, .table, .diff:
             tabCoordinator.setFormatted(false, forTabID: t.id)

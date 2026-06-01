@@ -1029,6 +1029,7 @@ struct ModeBar: View {
         case .formatted: return "Format"
         case .table:     return "Table"
         case .diff:      return "Diff"
+        case .preview:   return "Preview"
         case .hex:       return "HEX"
         }
     }

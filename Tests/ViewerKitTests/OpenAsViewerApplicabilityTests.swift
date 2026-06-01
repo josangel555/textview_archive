@@ -35,18 +35,23 @@ final class OpenAsViewerApplicabilityTests: XCTestCase {
         }
     }
 
-    // MARK: - Preview categories: HEX only
+    // MARK: - Native-preview categories: Preview primary + HEX secondary
 
-    func test_previewCategories_forced_offerHexOnly() {
-        // image/audio/video/pdf/sqlite render via the `.preview` document
-        // state — they have no ViewMode beyond raw HEX, even when forced.
+    func test_previewCategories_forced_offerPreviewThenHex() {
+        // Bug B: image/audio/video/pdf/sqlite render via the `.preview`
+        // document state and now expose a first-class `.preview` ViewMode as
+        // their PRIMARY/default lens; HEX stays available as the raw-bytes
+        // secondary lens. They must NOT default to HEX.
         for cat in [FileCategory.image, .audio, .video, .pdf, .sqlite] {
-            XCTAssertEqual(modes(cat), [.hex], "\(cat) forced ⇒ HEX only")
-            XCTAssertEqual(defaultMode(cat), .hex, "\(cat) default ⇒ HEX")
+            XCTAssertEqual(modes(cat), [.preview, .hex],
+                           "\(cat) forced ⇒ Preview primary, HEX secondary")
+            XCTAssertEqual(defaultMode(cat), .preview, "\(cat) default ⇒ Preview")
         }
     }
 
     func test_binary_forced_offerHexOnly() {
+        // `.binary` has NO native preview (it'd hit UnsupportedPreview), so it
+        // stays HEX-only — it never gets a `.preview` mode.
         XCTAssertEqual(modes(.binary), [.hex])
         XCTAssertEqual(defaultMode(.binary), .hex)
     }
@@ -93,12 +98,13 @@ final class OpenAsViewerApplicabilityTests: XCTestCase {
     }
 
     func test_forcedText_overridesAutoDetectedPreview() {
-        // A real `.png` URL auto-detects to .image (HEX-only). Forcing a
-        // text lens must flip it to the full structured set — proving the
-        // forced category, not the extension, drives the picker.
+        // A real `.png` URL auto-detects to .image (Preview primary, HEX
+        // secondary — Bug B). Forcing a text lens must flip it to the full
+        // structured set — proving the forced category, not the extension,
+        // drives the picker.
         let png = URL(fileURLWithPath: "/tmp/pic.png")
         let auto = ViewModeOptions.availableModes(for: png)
-        XCTAssertEqual(auto, [.hex], "auto-detected .png is HEX-only")
+        XCTAssertEqual(auto, [.preview, .hex], "auto-detected .png is Preview + HEX")
 
         let forced = ViewModeOptions.availableModes(for: png, forcedCategory: .plainText)
         XCTAssertTrue(forced.contains(.source))

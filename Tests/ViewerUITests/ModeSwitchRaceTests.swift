@@ -109,7 +109,10 @@ final class ModeSwitchRaceTests: HeadlessUITestCase {
         }
         // (1) state must reconcile with viewMode.
         switch tab.viewMode {
-        case .source, .rendered, .editor, .table, .diff, .formatted:
+        case .source, .rendered, .editor, .table, .diff, .formatted, .preview:
+            // None of these non-HEX modes should leave the pane on .binary
+            // (HexView). `.preview` in particular must show the native
+            // MediaPreviewView (.preview state), not a stale hex dump.
             if case .binary = tab.state {
                 XCTFail("""
                     \(context): mode=\(tab.viewMode) but state=.binary — content pane shows \
