@@ -13,8 +13,15 @@ import Foundation
 /// `test_tabFlows`, `test_zoomFlows`) and call `runScenarios([...])`
 /// from inside, listing N scenarios that share fixture files written
 /// in `setUp`.
+///
+/// TIER-JUSTIFY: T4 — spawns `dist/TextView.app` via `--script`, so the
+/// observable is the real cross-process AppDelegate↔coordinator launch
+/// wiring + on-disk dump round-trip that only exists in a real process.
+/// Subclasses whose assertions read ONLY `model.*` scalars should move to
+/// `HeadlessHarness` + `HeadlessUITestCase` instead (that's the §3.2
+/// move-down list).
 @MainActor
-class MultiScenarioTestCase: XCTestCase {
+class MultiScenarioTestCase: LiveAppTestCase {
 
     /// Shared harness for the current test method. Re-created in
     /// `setUp` so each method gets a clean tmpdir.

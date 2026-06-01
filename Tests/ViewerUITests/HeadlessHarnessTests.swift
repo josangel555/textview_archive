@@ -9,7 +9,7 @@ import ViewerKit
 /// the EXISTING Page Objects (`Pages(dump:)`) consume it unchanged — no
 /// process spawn, no JSON file, host-headless.
 @MainActor
-final class HeadlessHarnessTests: XCTestCase {
+final class HeadlessHarnessTests: HeadlessUITestCase {
 
     private var harness: HeadlessHarness!
 

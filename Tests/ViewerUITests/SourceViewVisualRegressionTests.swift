@@ -22,7 +22,14 @@ import XCTest
 /// First-time runner: grant Screen Recording to Terminal (or whatever
 /// process drives `swift test`) under System Settings → Privacy &
 /// Security → Screen Recording.
-final class SourceViewVisualRegressionTests: XCTestCase {
+///
+/// TIER-JUSTIFY: T5 — the observable is stage ④ (WindowServer composite)
+/// read via `screencapture(1)`. A T2-px / `cacheDisplay` raster would
+/// render the strips correctly while the live window is blank (false
+/// green), so this CANNOT be demoted. It is the sole irreducibly-real-
+/// screen suite (§3.4); the structural "never attach NSRulerView" rule is
+/// the primary defense, this is belt-and-suspenders.
+final class SourceViewVisualRegressionTests: PixelTestCase {
 
     /// Path to the built .app bundle. We point at the debug build by
     /// default — release is unnecessarily slow to rebuild for this test
