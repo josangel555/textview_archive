@@ -146,6 +146,7 @@ struct GitPanelView: View {
         case .stash:   GitStashTab(model: model, doc: doc)
         case .trees:   GitWorktreesTab(model: model, doc: doc)
         case .remotes: GitRemotesTab(model: model)
+        case .review:  ReviewIndexTab(model: model, doc: doc)
         }
     }
 }

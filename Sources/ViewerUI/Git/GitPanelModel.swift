@@ -21,7 +21,7 @@ import ViewerCore
 public final class GitPanelModel: ObservableObject {
 
     public enum Tab: String, CaseIterable, Identifiable, Sendable {
-        case status, log, stash, trees, remotes
+        case status, log, stash, trees, remotes, review
         public var id: String { rawValue }
         public var title: String {
             switch self {
@@ -30,6 +30,7 @@ public final class GitPanelModel: ObservableObject {
             case .stash:   return "Stash"
             case .trees:   return "Trees"
             case .remotes: return "Remotes"
+            case .review:  return "Review"
             }
         }
         public var keyChord: KeyEquivalent? {
@@ -39,6 +40,7 @@ public final class GitPanelModel: ObservableObject {
             case .stash:   return "h"
             case .trees:   return "t"
             case .remotes: return "r"
+            case .review:  return "v"
             }
         }
     }
@@ -59,6 +61,13 @@ public final class GitPanelModel: ObservableObject {
     @Published public var stashEntries: [GitClient.StashEntry] = []
     @Published public var worktreeEntries: [GitClient.WorktreeEntry] = []
     @Published public var remoteEntries: [GitClient.RemoteEntry] = []
+
+    /// Unresolved-comment count for the active review, surfaced as the
+    /// Review tab's badge (§6.4). `nil` = no active review / nothing to badge.
+    /// Set by the review UI when it loads/mutates a review; the panel's own
+    /// git-driven refresh leaves it untouched (reviews live in `.textview/`,
+    /// not a git command).
+    @Published public var reviewCount: Int?
 
     @Published public var isRefreshing: Bool = false
     @Published public var lastRefreshed: [Tab: Date] = [:]
@@ -198,6 +207,7 @@ public final class GitPanelModel: ObservableObject {
                 case .stash:   p.stash   = client.stashList()
                 case .trees:   p.trees   = client.worktreeList()
                 case .remotes: p.remotes = client.remoteList()
+                case .review:  break  // reviews load from .textview/ (ReviewStore), not a git command
                 }
                 return p
             }.value
@@ -250,6 +260,7 @@ public final class GitPanelModel: ObservableObject {
         case .trees:   return worktreeEntries.isEmpty ? nil : worktreeEntries.count
         case .remotes: return remoteEntries.isEmpty ? nil : remoteEntries.count
         case .log:     return nil  // log count would be misleading (paginated)
+        case .review:  return reviewCount  // unresolved-comment count for the active review, or nil
         }
     }
 }
