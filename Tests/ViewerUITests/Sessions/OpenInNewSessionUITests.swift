@@ -1,9 +1,9 @@
 import XCTest
 import Foundation
 
-/// L4 live-app coverage for "Open in New Session" — exercised both
-/// via the SidebarView file-row context menu and the BookmarksSection
-/// row menu in the live app. Both paths funnel through
+/// T1m coverage for "Open in New Session" — exercised both via the
+/// SidebarView file-row context menu and the BookmarksSection row menu in
+/// the live app. Both paths funnel through
 /// `DocumentModel.openFolderInNewSession`, which the AppDelegate wires
 /// to `SessionsAppCoordinator.openFolder(_, forceNew: true)`.
 ///
@@ -20,11 +20,18 @@ import Foundation
 /// Together they cover both the right-click and keyboard-path
 /// open-in-new-session entry points listed under §1 of
 /// docs/UI_TEST_GAPS_2026-05-22.md.
+///
+/// (History: this spawned `dist/TextView.app`. Every assertion reads
+/// `dump.model.sessions` / `activeSessionID`, the goToPath flags, or the
+/// window title — all pure coordinator/model state — so the migration
+/// (§3.2, same class as `SessionTabBarUITests` / `SessionsKeyboardUITests`)
+/// demoted it to in-process T1m. Keeping it at T4 would have falsified the
+/// §3.4 "real-screen-only set is exactly {SourceViewVisualRegression,
+/// launch-smoke, resize, relaunch-persistence}" claim.)
 @MainActor
-final class OpenInNewSessionUITests: MultiScenarioTestCase {
+final class OpenInNewSessionUITests: HeadlessMultiScenarioTestCase {
 
     override class var harnessLabel: String { "OpenInNewSessionUI" }
-    override class var defaultScenarioTimeout: TimeInterval { 25 }
 
     private func makeFolder(_ name: String) throws -> URL {
         let dir = try harness.makeDir(name)

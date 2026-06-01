@@ -99,6 +99,18 @@ final class HeadlessHarness {
         )
         sessions.bootstrap()
         self.sessions = sessions
+
+        // Mirror the AppDelegate launch wiring (main.swift): the one-way
+        // `openFolderInNewSession` callback the folder context menus + the
+        // GoToPath ⇧⏎ path invoke. `DocumentModel` deliberately doesn't
+        // import `SessionsAppCoordinator`, so without this hook a
+        // `goto-commit-new-session <folder>` verb silently no-ops headless
+        // (the `commitGoToPath(newSession:)` folder branch is gated on the
+        // callback being set). Wiring it here keeps the harness a faithful
+        // mirror of the launched app, not a behaviour change.
+        model.openFolderInNewSession = { [weak sessions] url in
+            sessions?.openFolder(url, forceNew: true)
+        }
     }
 
     /// Remove the scratch directory + throwaway defaults domain.

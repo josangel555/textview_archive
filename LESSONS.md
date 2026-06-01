@@ -54,6 +54,36 @@ future rebuilds preserve the grant indefinitely (cert is good for
 
 ## The SwiftUI / NSTextView compositor bug
 
+### The structural prohibition (PRIMARY defense — read this first)
+
+> **Never attach an `NSRulerView` (or any `NSRulerView` subclass) to the
+> source-view `NSScrollView`, and never subclass `NSLayoutManager` for the
+> source view.** Don't set `verticalRulerView`, don't enable
+> `hasVerticalRuler`. Line numbers come from a separate SwiftUI gutter
+> column (see "What DOES fix it" below), never from a ruler.
+
+This rule — not a test — is the load-bearing defense against the
+compositor bug. The bug is *visible-pixels-only*: it lives at WindowServer
+composition (stage ④), which no headless layer can observe (`xctest` tree
+walks pass, `cacheDisplay` / `dataWithPDF` redraw fresh and lie about
+composition — see "How to test" below). The only automated detector is
+`screencapture(1)` on a live window, which needs the VM + a TCC Screen-
+Recording grant and runs nightly/pre-release, not on the merge gate. So a
+regression that slips past the structural rule could ship behind a green
+host sweep until the next VM run.
+
+The rule is **cheaper and stronger than the test**: it's a code-review
+line anyone can check statically (grep for `NSRulerView` /
+`hasVerticalRuler` / `verticalRulerView` / `: NSLayoutManager` in the
+source-view code), it has no false-greens, and it costs nothing to enforce.
+Treat `SourceViewVisualRegressionTests` (T5) as **belt-and-suspenders**: it
+exists to catch a *violation of this rule* if one ever lands, and its
+meta-test (`MDV_ENABLE_BROKEN_RULER=1`) proves the variance check still has
+teeth — but the rule is what keeps the bug from being introduced in the
+first place. (Testing-pyramid migration §3.4: `SourceViewVisualRegression`
+is the sole irreducibly-real-screen suite; the structural prohibition is
+its primary backstop.)
+
 ### Symptom
 On macOS 14 / 15 / 26, when an `NSTextView` lives inside an SwiftUI
 view hierarchy (via `NSViewRepresentable` or `NSViewControllerRepresentable`),
