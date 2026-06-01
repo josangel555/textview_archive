@@ -243,7 +243,7 @@ over a wire with zero core changes.
 
 | Tier | Transport | Use | Cost |
 |---|---|---|---|
-| **In-proc** | Direct FFI call into the linked `.dylib` (the PoC's path) | The shipping macOS app, the TUI | Lowest latency; one `lipo`'d universal dylib in the bundle. **This is the default.** |
+| **In-proc** | Direct FFI call into the linked `.dylib` (the PoC's path) | The shipping macOS app, the TUI | Lowest latency; one **single-arch arm64** dylib in the bundle (no `lipo`/universal — Apple is arm64-only). **This is the default.** |
 | **UDS** | Length-prefixed MessagePack over a Unix domain socket to a local core process | Multi-window sharing one core; a core that outlives a crashing UI; sandboxing the core | Process boundary, same machine; the framing is the PoC's `u32`-LE + rmp. |
 | **Remote** | Same framing over WebSocket (`tungstenite`+`rustls`) | A thin Mac UI driving a core on another machine; the browser front-end | Network latency + TLS; lives in `textview-remote`. |
 
@@ -272,7 +272,7 @@ deliberately attacked the irreversible-mistake class first. Status per risk:
 | **Handle lifecycle / double-free / leak** | Free-on-wrong-side or missed-free is unrecoverable in a long-lived app | **De-risked.** `Box::into_raw`/`from_raw` + explicit `poc_session_free`; ARC `deinit` frees exactly once; opaque forward-declared handle (Swift can't fabricate one). Tested null-free, double-free, 1000-iter lifecycle loop. |
 | **Threading / single-writer violation** | Concurrent `&mut self` into the core = data race = UB | **De-risked.** `Mutex`-wrapped handle, `try_lock`→`Busy` makes a violation *loud*; justified `unsafe impl Send+Sync`; proven by `concurrent_calls_are_serialized_or_rejected_never_ub` (8 threads × 200 ops). Poisoned-mutex recovery so one panic doesn't wedge the handle. |
 | **Wire format pinning the ABI** | If structs cross by `#[repr(C)]`, every core type change breaks the C ABI | **De-risked by design.** Only the small status enum + handle pointers are ABI-frozen; everything structured crosses as rmp-serde **named maps**, so the core evolves its types freely. The stability line is drawn at the right place. |
-| **Cross-platform packaging** | Single-host arm64 is fine for a PoC; shipping needs universal + iOS | **NOT yet de-risked — known gap.** PoC is arm64-only with a hard-coded `-L`/`-l` link path. The `lipo` universal + `xcframework` `binaryTarget` is *designed but unbuilt* (x86_64 target not installed under the no-install rule). **This is the single biggest PoC→shippable gap** and the gate for the "core is the product / cross-platform" direction. First real migration task. |
+| **Cross-platform packaging** | Two *independent* axes, not one: (1) macOS app packaging — arm64 **only, forever**; (2) Linux portability — a Rust cross-compile/CI concern, orthogonal to anything Apple | **Not a one-way door.** Axis 1: arm64-only means **no `lipo`, no universal, no `x86_64-apple-darwin` slice, ever** — the only work is *packaging hygiene*, wrapping the PoC's hard-coded `-L`/`-l` hack as a single-slice arm64 `.xcframework` `binaryTarget` (low urgency, folds into the workspace stand-up). Axis 2: keep `textview-core`/`textview-proto` Apple-clean (`forbid(unsafe_code)`, sans-IO, zero Apple deps) and stand up `{x86_64,aarch64}-unknown-linux-gnu` CI lanes **early** as a leak detector. Both planned in `docs/RUST_LINUX_AND_PACKAGING_PLAN_2026-06-01.md`. |
 | **LSP async coloring the core** | One async lib drags tokio into the whole binary; function-color is viral | **Deliberately left open** (playbook §10.3). Decide by spiking the sync hand-roll's complexity on a real server (rust-analyzer), not by reading. Feature-gated either way so it can't infect WASM/TUI builds. Soft door. |
 | **mmap vs `forbid(unsafe_code)`** | They're literally incompatible | **Deliberately deferred.** Default to safe `seek`+buffered reads; quarantine mmap into a leaf crate *only if profiling demands it*. No door — purely additive later. |
 
@@ -282,7 +282,7 @@ Once the boundary patterns are set, adding a new core call is mechanical. The
 friction is a one-time tax, not a per-feature tax. Two caveats before banking
 the perf headline (PoC §1): (a) the A/B compared Rust full-pipeline against
 Swift *parse-only*, not parse+filter+project; (b) packaging is single-host
-arm64-only.
+arm64-only — which is the *intended* macOS end-state, not a gap (Apple is arm64-only forever); the open cross-compile axis is **Linux** (`x86_64`+`aarch64` glibc), planned in `docs/RUST_LINUX_AND_PACKAGING_PLAN_2026-06-01.md`.
 
 ---
 
@@ -336,10 +336,13 @@ the migration:
    (the only unsafe crate), pinned `rust-toolchain.toml`, `deny.toml` on commit
    #1, the `[workspace.lints]` block. Start dependency-empty; every `cargo add`
    is a reviewable event (playbook §10.10).
-2. **Close the cross-platform packaging gap** (the one un-de-risked door, §5):
-   `x86_64-apple-darwin` slice + `lipo` universal + `xcframework` `binaryTarget`,
-   switching `Package.swift` off the PoC's `unsafeFlags` link hack. This is the
-   PoC→shippable gate.
+2. **Set up the two build axes** (§5; full plan in
+   `docs/RUST_LINUX_AND_PACKAGING_PLAN_2026-06-01.md`). *Axis 1 (Mac, low
+   urgency):* wrap the arm64 `.a` as a **single-slice arm64** `.xcframework`
+   `binaryTarget`, switching `Package.swift` off the PoC's `unsafeFlags` hack —
+   pure packaging hygiene, **no `lipo`/universal/x86_64-apple-darwin**. *Axis 2
+   (Linux, do early):* keep `textview-core`/`textview-proto` Apple-clean and add
+   `{x86_64,aarch64}-unknown-linux-gnu` build+test CI lanes as a leak detector.
 3. **Port the PoC's CSV beachhead onto the real workspace** and wire the
    FFI-boundary test suite (testing doc §3) as a hard CI gate.
 4. **Phase A** — migrate the pure transforms behind parity tests, retire the

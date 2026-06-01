@@ -619,3 +619,65 @@ Remaining quality follow-ups:
   (now an ancestor of `main`) and `docs/reusable-core` (content on `main`).
   Prune the confirmed-landed; KEEP `poc/{lsp,plugins,sessions}` (per owner).
 
+## 2026-06-01 — post-integration backlog (open items from the merge/feature run)
+
+Landed this run (on `main`, headless-gate-green): testing-pyramid flip
+(#195/#196), Rust-CSV integration behind a flag (#198), HTML rendering
+(#199), CI headless-gating + image viewer (#200), sessions per-session
+independence + types + GLOBAL zoom/wrap/theme (#184). Items still open:
+
+### Open tasks
+- **#191 — Memory peak-bounding for large files.** The real "memory
+  stays high" fix; architectural, touches Core-ish state. Held pending
+  design (and partly gated by the Rust-core migration, which may reframe
+  it).
+- **#194 — #192 true fix.** SwiftUI AttributeGraph teardown so the
+  in-process WKWebView suites can rejoin the bare `swift test` sweep
+  instead of `#192`-gating themselves out. Low priority (VM lane covers
+  them today).
+- **#201 — macOS-26 URL-fragment test.** `MarkdownLinkPolicyTests`
+  `test_decide_sameDocFragment_isAllowed` fails on Darwin 25.x
+  (Foundation URL-fragment parser regressed past the 15.6.1 fix); green
+  on the macOS-15 VM + CI. Fix = a Foundation-version-robust field-by-
+  field same-doc-fragment compare. Pre-existing, not a regression.
+- **#202 — Sessions R1-R3 structural god-object split.** #184 achieved
+  per-session independence BEHAVIORALLY via the shared-DocumentModel
+  façade (detach→snapshot→hydrate + leak-guards). The structural split
+  (extract FindModel/GitPanelModel/per-session DocumentModel off the
+  ~3184-line singleton + re-point observed view sites) is multi-day +
+  view-touching — OWNER DECISION: do it, or is the behavioral façade
+  sufficient? Small companion: wire `SessionKind` to a "New Session ▸
+  Kind" menu (plumbed + tested via `openFolder(kind:)`, no UI entry yet).
+- **#203 — Code-review `.textview/` relocation + UI.** Model/export/git
+  layer already built + tested (`Sources/ViewerCore/Review/`,
+  `docs/CODE_REVIEW_DESIGN.md`). Open: relocate the store from the global
+  Application-Support path to a project-local `.textview/` folder,
+  evaluate JSONL vs the current per-review JSON, and build the missing UI
+  (diff-with-line-comments, comment cards, export-to-Claude). Driven by
+  its own workflow.
+
+### Rust integration review-laters (all behind the flag-off default)
+- **arm64-only vs xcframework** — the CSV integration links the Rust
+  `.a` via `unsafeFlags` (arm64 only), not a cross-platform xcframework
+  `binaryTarget` (the x86_64 slice is blocked by the no-install rule).
+  THE one genuine future fork + the PoC→shippable gate
+  (`RUST_CORE_MIGRATION.md` §5/§7 step 2). Decide before any "core is the
+  product" / cross-platform direction.
+- **Static-link → dylib at Developer-ID.** Self-signed local cert blocks
+  dylib loading under hardened runtime ("different Team IDs"); static
+  `.a` is the workaround. dylib path opens at notarization. (LESSONS
+  candidate.)
+- **`deny.toml` unenforced** + **trace-sink FFI not wired** — PoC
+  carryovers; fold in when the real Rust workspace stands up
+  (`RUST_CORE_MIGRATION.md` §7 step 1).
+- **Size caps bumped** (18→20 / 37→40 MB) surfaced that main's exec was
+  ALREADY over the old 18 MB cap pre-Rust — pre-existing drift worth an
+  independent look.
+
+### VM-owed visual verifications (host-built + headless-verified, NOT VM-verified)
+- Sessions #184: per-session panel rails + tab/selection restore across a
+  session switch; GLOBAL zoom/wrap/theme actually shared on screen.
+- Image viewer: scroll/pinch zoom + drag-direction sign.
+- WAVE 1/2 UI + the session-ui shoulder rails / large-file render +
+  multi-repo git badges (carried from the 2026-05-31 merge campaign).
+
