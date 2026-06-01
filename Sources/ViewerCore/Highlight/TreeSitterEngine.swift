@@ -64,17 +64,22 @@ public final class TreeSitterEngine: @unchecked Sendable {
     public func tokenize(_ text: String, language: HighlightLanguage) -> [HighlightRun] {
         guard language != .plainText else { return [] }
         guard text.utf8.count <= highlightMaxBytes else { return [] }
+        let tokToken = PerfSignpost.begin(.highlight, "TreeSitterEngine.tokenize")
+        defer { PerfSignpost.end(tokToken) }
         guard let bundle = bundle(for: language) else { return [] }
 
         let parser = Parser()
         do { try parser.setLanguage(bundle.language) }
         catch { return [] }
 
-        guard let tree = parser.parse(text) else { return [] }
-        guard let root = tree.rootNode else { return [] }
+        let parseToken = PerfSignpost.begin(.highlight, "ts.parse")
+        guard let tree = parser.parse(text) else { PerfSignpost.end(parseToken); return [] }
+        guard let root = tree.rootNode else { PerfSignpost.end(parseToken); return [] }
+        PerfSignpost.end(parseToken)
 
         var runs: [HighlightRun] = []
         runs.reserveCapacity(256)
+        let iterToken = PerfSignpost.begin(.highlight, "ts.query-iterate")
         let cursor = bundle.query.execute(node: root, in: tree)
         for match in cursor {
             for cap in match.captures {
@@ -85,13 +90,16 @@ public final class TreeSitterEngine: @unchecked Sendable {
                 runs.append(HighlightRun(range: r, kind: kind))
             }
         }
+        PerfSignpost.end(iterToken)
 
         // Sort + resolve overlaps. TreeSitter queries can emit nested
         // captures (e.g. a function-call inside a method body). For
         // single-color highlighting we want the LAST run (in cursor
         // order) covering each position — matches editor intuition
         // that nested-specific captures override their parent.
-        return Self.paintOver(runs: runs, textCount: text.utf16.count)
+        return PerfSignpost.withInterval(.highlight, "ts.paintOver") {
+            Self.paintOver(runs: runs, textCount: text.utf16.count)
+        }
     }
 
     /// Sweep-line resolution of overlapping highlight runs. Later
@@ -207,7 +215,12 @@ public final class TreeSitterEngine: @unchecked Sendable {
 
         do {
             let data = try Data(contentsOf: queryURL)
-            let query = try Query(language: language, data: data)
+            // The one-time per-language Query(language:data:) compile — the
+            // bulk of cold-start tokenize cost. Bracketed so a profiler can
+            // tell a cold (compile-included) tokenize from a warm one.
+            let query = try PerfSignpost.withInterval(.highlight, "ts.query-compile") {
+                try Query(language: language, data: data)
+            }
             let bundle = LangBundle(language: language, query: query)
             lock.lock(); cache[lang] = bundle; lock.unlock()
             return bundle

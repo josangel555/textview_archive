@@ -94,16 +94,21 @@ public struct DocumentController: Sendable {
     ///     a `.db` opened as Source / CSV shows its textual content.
     /// `nil` keeps the historical auto-detection path.
     public func open(url: URL, forcedCategory: FileCategory? = nil) -> DocumentState {
+        let openToken = PerfSignpost.begin(.load, "DocumentController.open")
+        defer { PerfSignpost.end(openToken) }
         // Native-preview fast path: detect by extension/UTI before
         // even attempting the text loader. Skips reading huge media
         // files into Swift memory just to fail-back to a viewer that
         // doesn't need the bytes anyway.
-        let category = forcedCategory ?? FileTypeDetector.category(for: url)
+        let category = PerfSignpost.withInterval(.categorize, "FileTypeDetector.category") {
+            forcedCategory ?? FileTypeDetector.category(for: url)
+        }
         switch category {
         case .image, .audio, .video, .pdf, .sqlite:
             // Only declare a preview if the file actually exists +
             // is readable; otherwise route to the error path.
             if FileManager.default.isReadableFile(atPath: url.path) {
+                PerfSignpost.event(.load, "route:native-preview")
                 return .preview(url, category)
             } else {
                 return .error(.init(url: url, message: "File could not be read."))
@@ -120,6 +125,7 @@ public struct DocumentController: Sendable {
         // When a text-shaped category is forced, decode even binary /
         // undecodable bytes (lossy Latin-1) instead of falling back to HEX.
         let forceText = forcedCategory != nil
+        PerfSignpost.event(.load, "route:text-decode")
         do {
             let file = try loader.load(url: url, forceText: forceText)
             return .loaded(file)

@@ -781,6 +781,8 @@ public final class SourceTextController: NSViewController {
         onSelectionChange: ((SourceSelection) -> Void)?,
         onFindMatchesChange: ((TextDisplayView.FindMatchSet) -> Void)? = nil
     ) {
+        let applyToken = PerfSignpost.begin(.render, "SourceTextController.apply")
+        defer { PerfSignpost.end(applyToken) }
         self.onScrollChange = onScrollChange
         self.onSelectionChange = onSelectionChange
         self.onFindMatchesChange = onFindMatchesChange

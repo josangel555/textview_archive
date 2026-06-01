@@ -12,9 +12,11 @@ public struct HTMLRenderer: Sendable {
     public init() {}
 
     public func render(_ markdown: String) -> String {
-        let document = Document(parsing: markdown)
-        var visitor = HTMLVisitor()
-        return visitor.visit(document)
+        PerfSignpost.withInterval(.render, "HTMLRenderer.render") {
+            let document = Document(parsing: markdown)
+            var visitor = HTMLVisitor()
+            return visitor.visit(document)
+        }
     }
 
     /// Render a full HTML page wrapped in `<html>...</html>` with the bundled

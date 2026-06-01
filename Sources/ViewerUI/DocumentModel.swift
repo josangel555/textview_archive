@@ -2213,6 +2213,8 @@ public final class DocumentModel: ObservableObject {
     }
 
     private func openResolved(_ url: URL, forceNewTab: Bool) {
+        let openToken = PerfSignpost.begin(.open, "DocumentModel.openResolved")
+        defer { PerfSignpost.end(openToken) }
         let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
         // Pick the per-extension default mode: .table for CSV/TSV,
         // .rendered for markdown, .source for everything else. The
@@ -2325,8 +2327,10 @@ public final class DocumentModel: ObservableObject {
         startWatchingCurrentFile()
 
         tabCoordinator.materializeTask(forTabID: tabID)?.cancel()
+        let matToken = PerfSignpost.begin(.materialize, "openLargeFileOffMain")
         let task = Task.detached(priority: .userInitiated) { [controller] in
             let state = controller.open(url: resolved)
+            PerfSignpost.end(matToken)
             if Task.isCancelled { return }
             await MainActor.run { [weak self] in
                 guard let self else { return }
@@ -2925,8 +2929,10 @@ public final class DocumentModel: ObservableObject {
         // WAVE 2b item 6: honor a restored "Open As…" override when the
         // lazy tab finally materializes.
         let override = t.categoryOverride
+        let matToken = PerfSignpost.begin(.materialize, "materializeIfNeeded")
         let task = Task.detached(priority: .userInitiated) { [controller] in
             let state = controller.open(url: url, forcedCategory: override)
+            PerfSignpost.end(matToken)
             if Task.isCancelled { return }
             await MainActor.run { [weak self] in
                 guard let self else { return }
