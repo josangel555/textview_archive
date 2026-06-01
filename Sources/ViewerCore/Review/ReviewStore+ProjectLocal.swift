@@ -4,8 +4,9 @@ import Foundation
 //
 // v2 (CODE_REVIEW_V2_DESIGN_2026-06-01.md §1, §5.1): relocate the review
 // store from the global Application Support dir into a project-local
-// `<repoRoot>/.textview/reviews/` sidecar so reviews travel with the repo
-// (committed by default, handed to Claude alongside the code).
+// `<repoRoot>/.textview/reviews/` sidecar so reviews live alongside the repo
+// (git-ignored by default — opt in per-repo via config.json — and handed to
+// Claude alongside the code when shared).
 //
 // This is an ADDITIVE extension only. `ReviewStore.init(directory:)` is
 // already injectable, so no change to `ReviewStore` proper is required —

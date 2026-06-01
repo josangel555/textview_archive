@@ -69,9 +69,9 @@ final class SidecarSessionTests: XCTestCase {
 
     // MARK: - config.json
 
-    func test_config_defaultsToTracked_noAudit_whenMissing() {
+    func test_config_defaultsToIgnored_noAudit_whenMissing() {
         let cfg = makeStore().loadConfig()
-        XCTAssertTrue(cfg.tracked, "reviews are committed by default (§1.3)")
+        XCTAssertFalse(cfg.tracked, "reviews are git-ignored by default (§1.3; owner decision 2026-06-01)")
         XCTAssertFalse(cfg.auditTrail, "audit sidecar is off by default (§2.4)")
     }
 
@@ -88,9 +88,9 @@ final class SidecarSessionTests: XCTestCase {
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(), withIntermediateDirectories: true
         )
-        try Data(#"{"schemaVersion": 999, "tracked": false}"#.utf8).write(to: url)
-        // Refused → safe default (tracked) rather than honoring a future shape.
-        XCTAssertTrue(store.loadConfig().tracked)
+        try Data(#"{"schemaVersion": 999, "tracked": true}"#.utf8).write(to: url)
+        // Refused → safe default (git-ignored) rather than honoring a future shape.
+        XCTAssertFalse(store.loadConfig().tracked)
     }
 
     // MARK: - git-tracking files (§1.3)

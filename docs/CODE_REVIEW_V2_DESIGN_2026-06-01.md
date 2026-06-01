@@ -97,22 +97,27 @@ gate.
 > `MDV_TEXTVIEW_DIR` override (§1.5) lets them relocate to a non-dotted path.
 > Flag it in `config.json`'s comment, don't engineer around it now.
 
-### 1.3 Committed vs git-ignored — **recommend: committed by default, per-repo opt-out**
+### 1.3 Committed vs git-ignored — **decision: git-ignored by default, per-repo opt-in** (owner, 2026-06-01)
 
 The user's stated motivation ("reviews shareable + handed to Claude alongside
-the code") points directly at **tracking `.textview/reviews/` in git**. Justify
-and bound it:
+the code") could point at tracking `.textview/reviews/` in git — but the owner's
+decision (2026-06-01) is to **git-ignore by default and opt in per-repo**, so a
+review never enters history (and never leaks the verbatim code snippets frozen in
+its hunk context) unless the user explicitly turns tracking on for that repo.
 
-- **Track by default.** Committing makes review feedback travel with the branch,
-  survive clone, and be present for the agent on checkout — no sidecar sync. This
-  is the whole point of moving off the global store.
+- **Ignore by default.** A fresh repo's reviews stay local/private; nothing is
+  committed until the user flips `config.json` `"tracked": true`. Sharing /
+  handing-to-Claude is then an explicit opt-in per repo, not an accident.
+- **Opt in to track.** When turned on, committing makes review feedback travel
+  with the branch, survive clone, and be present for the agent on checkout — the
+  original "reviews live with the repo" benefit, now consent-gated.
 - **The JSON-snapshot format is *not* naturally merge-friendly** (§2.3). That's a
   real cost of "track it" — two branches editing the same review's `<id>.json`
   collide on a whole-file conflict. v2's mitigation: **one file per review, id is
   a ULID**, so independent reviews never collide; only *the same review edited on
   two branches* conflicts, which for a single-author tool is rare.
-- **Per-repo opt-out** via `config.json` (`"tracked": true|false`). When the user
-  flips it to ignored, the app writes a `.textview/.gitignore` of:
+- **Per-repo opt-in** via `config.json` (`"tracked": true|false`, default
+  `false`). By default (ignored), the app writes a `.textview/.gitignore` of:
 
   ```gitignore
   # Ignore everything in this sidecar…
@@ -121,8 +126,9 @@ and bound it:
   !.gitignore
   ```
 
-  When tracked (default), the app writes a narrower `.gitignore` that **always**
-  excludes the derived/transient bits regardless of the tracked choice:
+  When the user opts in (`"tracked": true`), the app writes a narrower
+  `.gitignore` that **always** excludes the derived/transient bits regardless of
+  the tracked choice:
 
   ```gitignore
   reviews/audit/      # optional event sidecar — derived, regenerable

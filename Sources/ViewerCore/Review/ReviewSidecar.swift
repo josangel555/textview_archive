@@ -75,8 +75,8 @@ public struct SidecarConfig: Codable, Equatable, Sendable {
 
     public var schemaVersion: Int
 
-    /// Whether `.textview/reviews/` is committed (default) or git-ignored.
-    /// Drives which `.gitignore` body the app writes (§1.3).
+    /// Whether `.textview/reviews/` is committed (opt-in) or git-ignored
+    /// (the default). Drives which `.gitignore` body the app writes (§1.3).
     public var tracked: Bool
 
     /// Whether the optional append-only audit sidecar is written (§2.4).
@@ -85,7 +85,7 @@ public struct SidecarConfig: Codable, Equatable, Sendable {
 
     public init(
         schemaVersion: Int = SidecarConfig.currentSchema,
-        tracked: Bool = true,
+        tracked: Bool = false,
         auditTrail: Bool = false
     ) {
         self.schemaVersion = schemaVersion
@@ -150,7 +150,7 @@ public final class SidecarStore: Sendable {
 
     // MARK: config.json
 
-    /// Load `config.json`, defaulting to `SidecarConfig()` (tracked, no
+    /// Load `config.json`, defaulting to `SidecarConfig()` (git-ignored, no
     /// audit) when the file is missing — so a fresh repo behaves as the
     /// recommended default without forcing the caller to write config first.
     /// A corrupt / schema-too-new file also falls back to the default.
@@ -173,7 +173,7 @@ public final class SidecarStore: Sendable {
     /// `.gitignore` body for the TRACKED default — reviews are committed,
     /// but the derived/transient bits are always excluded.
     public static let trackedGitignore = """
-    # TextView sidecar — reviews are committed by default (see config.json).
+    # TextView sidecar — reviews committed in this repo (opt-in via config.json).
     # These entries are always excluded regardless of the tracked choice:
     reviews/audit/
     session.json
