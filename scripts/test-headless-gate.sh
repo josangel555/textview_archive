@@ -46,6 +46,11 @@ log() { printf "==> %s\n" "$*"; }
 rm -f "$SENTINEL"
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
+  # The RustCore target static-links libmdvcore_ffi.a; it must exist before
+  # any `swift build` (incl. --build-tests) or the link fails. build-app.sh
+  # does this too; the gate needs it independently for a fresh checkout / CI.
+  log "build Rust core (mdvcore staticlib) — required for the RustCore static link"
+  bash "$SCRIPT_DIR/build-rust-core.sh"
   log "swift build --build-tests (compile the gate sweep)"
   swift build --build-tests
 fi

@@ -41,6 +41,13 @@ jobs:
       - name: Swift version
         run: swift --version
 
+      # The RustCore target static-links libmdvcore_ffi.a (built by cargo);
+      # it must exist before any `swift build`. GitHub macOS runners ship
+      # rustup/cargo pre-installed. (build-app.sh + the gate script also
+      # build it; this covers the standalone compile-check step below.)
+      - name: Build Rust core (mdvcore staticlib)
+        run: bash scripts/build-rust-core.sh
+
       - name: Build
         run: swift build -v
 
