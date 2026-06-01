@@ -188,4 +188,65 @@ final class PanelLayoutRepublishInvariantTests: XCTestCase {
         XCTAssertEqual(reloaded.override(for: .git), .shown,
                        "Toggle must write through to defaults synchronously")
     }
+
+    // MARK: Per-session apply (#184) -----------------------------------
+
+    /// Installing a session's persisted panel layout must NOT republish
+    /// DocumentModel (same narrow-observation discipline as a user toggle).
+    func test_apply_doesNotRepublishDocumentModel() async {
+        let model = makeModel()
+        await Task.yield()
+        let layout = SessionKind.codeReview.defaultPanelLayout
+        let count = await countDocumentRepublishes(of: model) {
+            model.panelLayout.apply(layout)
+        }
+        XCTAssertEqual(count, 0,
+            "apply(session layout) must not republish DocumentModel (#184)")
+    }
+
+    /// `apply` DOES republish the store (the rails/sidebar must re-body to
+    /// reflect the switched-in session's layout). Positive control.
+    func test_apply_doesRepublishPanelLayoutStore() async {
+        let model = makeModel()
+        var count = 0
+        let sub = model.panelLayout.objectWillChange.sink { _ in count += 1 }
+        defer { sub.cancel() }
+        model.panelLayout.apply(SessionKind.metrics.defaultPanelLayout)
+        await Task.yield()
+        XCTAssertGreaterThan(count, 0,
+            "apply must republish the store so the rails/sidebar re-body")
+    }
+
+    /// Crucial: per-session `apply` must NOT write to the GLOBAL defaults.
+    /// Otherwise activating a session would clobber the app-wide default
+    /// layout used for the next brand-new (unseeded) session.
+    func test_apply_doesNotWriteGlobalDefaults() async {
+        let model = makeModel()
+        model.panelLayout.apply(SessionKind.codeReview.defaultPanelLayout)
+        await Task.yield()
+        // The session's git=shown is live...
+        XCTAssertEqual(model.panelLayout.override(for: .git), .shown)
+        // ...but a fresh store on the same defaults suite must NOT see it —
+        // apply didn't touch UserDefaults.
+        let reloaded = PanelLayoutStore(defaults: defaults)
+        XCTAssertEqual(reloaded.override(for: .git), .auto,
+            "apply(session layout) must NOT write the global defaults (#184)")
+    }
+
+    /// `apply` is equality-guarded: applying the layout already in place
+    /// is a no-op (no spurious store republish, which would cascade a
+    /// rail/sidebar re-body on every session reactivation).
+    func test_apply_sameLayout_isNoOpRepublish() async {
+        let model = makeModel()
+        let layout = SessionKind.cicd.defaultPanelLayout
+        model.panelLayout.apply(layout)
+        await Task.yield()
+        var count = 0
+        let sub = model.panelLayout.objectWillChange.sink { _ in count += 1 }
+        defer { sub.cancel() }
+        model.panelLayout.apply(layout)   // identical → must not republish
+        await Task.yield()
+        XCTAssertEqual(count, 0,
+            "re-applying the same layout must be a no-op (equality-guarded)")
+    }
 }
