@@ -183,23 +183,14 @@ private struct TabContextMenu: View {
             // tracked gate.
             Button("File History") { model.openFileHistory(for: url) }
                 .disabled(!model.canShowFileHistory(for: url))
-            // WAVE 2b item 6: universal "Open As…" — re-open this tab as
-            // any applicable viewer (Source, SQLite, HEX, Image, …),
-            // including for binaries. Acts on this tab (selects it first
-            // so the per-tab override lands on the right one).
-            Menu("Open As…") {
-                Button("Auto") {
-                    model.selectTab(at: tabIndex)
-                    model.setCurrentCategoryOverride(nil)
-                }
-                Divider()
-                ForEach(model.openAsCategories(for: url), id: \.self) { cat in
-                    Button(ModeBar.categoryLabel(cat)) {
-                        model.selectTab(at: tabIndex)
-                        model.setCurrentCategoryOverride(cat)
-                    }
-                }
-            }
+            // OPEN-AS FOLD (2026-06-01): the tab-context "Open As…" submenu
+            // was fully redundant with the ModeBar "Open As" chip — both act
+            // on the CURRENT tab via setCurrentCategoryOverride (this one even
+            // called selectTab first to make it current). Folded to the one
+            // chip affordance (ContentView.openAsMenu), which now offers the
+            // full universal viewer list. The sidebar file-tree "Open As…"
+            // (SidebarView) is KEPT — it's a distinct capability (open a
+            // non-current file into a viewer in a new tab), not a duplicate.
             Divider()
             Button("Copy Path") { Pasteboard.copy(url.path) }
             Button("Reveal in Finder") { Finder.reveal(url) }

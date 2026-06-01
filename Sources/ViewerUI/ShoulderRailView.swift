@@ -43,7 +43,11 @@ struct ShoulderRailView: View {
                 hasLSPLanguage: model.currentURL.flatMap {
                     LSPLanguageRegistry.default.language(for: $0)
                 } != nil,
-                claudeHasTranscripts: sidebar.claudeHasTranscripts
+                claudeHasTranscripts: sidebar.claudeHasTranscripts,
+                // RECENTS RAIL FIX (2026-06-01): see ContentView.railDataPresence
+                // — both rail builders omitted hasRecents, leaving the Recents
+                // shoulder toggle permanently "no data". Mirror SidebarView.
+                hasRecents: model.recents.isEmpty == false
             )
         )
     }
@@ -75,32 +79,40 @@ struct ShoulderRailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        // Recessed activity-bar background. The accordion next to us
-        // paints `Palette.textBackground` (pure white in light mode);
-        // `windowBackground` is only a hair off that, so the rail USED
-        // to vanish into the sidebar — the "I can't see the shoulder
-        // buttons" report. `underPageBackground` is the canonical macOS
-        // "behind content" chrome tone (the same recessed grey AppKit
-        // uses for source-list / activity-bar columns), so the rail now
-        // reads as a distinct toggle strip, not sidebar margin. Pure
-        // SwiftUI chrome — no NSView nesting, so the compositor rule
-        // (LESSONS.md) is untouched.
-        .background(Palette.underPageBackground)
-        // Edge separator on the rail's INNER border so the column is
-        // bounded even when the sibling `Divider()` in ContentView reads
-        // faint against the recessed background. Left/right rails get a
-        // vertical hairline on the content-facing edge; the bottom rail
-        // gets a horizontal hairline on its top edge.
+        // WHITE rail (owner decision, 2026-06-01). The rail now paints
+        // `Palette.textBackground` — pure white in light mode, the SAME tone
+        // as the sibling sidebar accordion — so the shoulder reads as a clean
+        // continuation of the sidebar rather than a recessed grey activity
+        // bar (the prior `underPageBackground` from cca666b). Pure SwiftUI
+        // chrome — no NSView nesting, so the compositor rule (LESSONS.md) is
+        // untouched.
+        //
+        // The risk this reintroduces is exactly what cca666b fixed: with a
+        // matching-white background, the rail can visually merge into the
+        // white sidebar and "vanish". We bound it WITHOUT going grey again by:
+        //   (1) a STRONGER inner-edge separator (1.5pt, full separatorColor)
+        //       as the now-primary divider between rail and content/sidebar;
+        //   (2) full-strength `Palette.labelColor` icons (already the case,
+        //       see PanelRailButton) which read crisply on white;
+        //   (3) a faint resting hairline-bounded delineation via the
+        //       separator overlay below.
+        .background(Palette.textBackground)
+        // Edge separator on the rail's INNER border so the column stays
+        // bounded against the white sidebar/content now that the background
+        // no longer contrasts. Bumped to 1.5pt (was 1pt) so it is the clear
+        // primary divider. Left/right rails get a vertical hairline on the
+        // content-facing edge; the bottom rail gets a horizontal hairline on
+        // its top edge.
         .overlay(alignment: railSeparatorAlignment) {
             switch edge {
             case .left, .right:
                 Rectangle()
                     .fill(Palette.separator)
-                    .frame(width: 1)
+                    .frame(width: 1.5)
             case .bottom:
                 Rectangle()
                     .fill(Palette.separator)
-                    .frame(height: 1)
+                    .frame(height: 1.5)
             }
         }
         .accessibilityIdentifier("mdv.rail.\(edge.rawValue)")

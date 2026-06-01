@@ -101,16 +101,26 @@ final class OpenAsSniffAndHostedViewTests: XCTestCase {
 
     // MARK: - openAsCategories (full list, including binaries)
 
+    /// The full universal viewer set offered by Open-As (2026-06-01: widened
+    /// to every real viewer when the context-menu Open-As was folded into the
+    /// one chip). `.unknown` is excluded — it's the not-a-viewer sentinel.
+    private static let universalViewers: Set<FileCategory> = [
+        .code, .plainText, .markdown, .mermaid, .html,
+        .image, .audio, .video, .pdf, .sqlite, .binary,
+    ]
+
     func test_openAsCategories_offersFullViewerList() throws {
         // A plain text file with no recognizable magic: the menu order is
-        // the full default list — no category dropped, including .binary
-        // (HEX) and .sqlite even though this isn't a DB.
+        // the full universal viewer list — no category dropped, including
+        // .binary (HEX), the media lenses, and .sqlite even though this
+        // isn't a DB.
         let url = try write("plain.txt", bytes: Array("just text\n".utf8))
         let cats = DocumentModel().openAsCategories(for: url)
-        XCTAssertEqual(Set(cats),
-                       [.code, .plainText, .markdown, .html, .image, .sqlite, .binary],
+        XCTAssertEqual(Set(cats), Self.universalViewers,
                        "every viewer offered for any file")
         XCTAssertTrue(cats.contains(.binary), "binary (HEX) is always an option")
+        // No .unknown sentinel leaks into the user-facing list.
+        XCTAssertFalse(cats.contains(.unknown))
     }
 
     func test_openAsCategories_floatsSniffedHintToFront() throws {
@@ -121,10 +131,10 @@ final class OpenAsSniffAndHostedViewTests: XCTestCase {
         let url = try write("mislabeled.txt", bytes: header)
         let cats = DocumentModel().openAsCategories(for: url)
         XCTAssertEqual(cats.first, .sqlite, "sniffed category floats to front")
-        // No category lost in the reorder.
-        XCTAssertEqual(Set(cats),
-                       [.code, .plainText, .markdown, .html, .image, .sqlite, .binary])
-        XCTAssertEqual(cats.count, 7, "float must not duplicate the hint")
+        // No category lost or duplicated in the reorder.
+        XCTAssertEqual(Set(cats), Self.universalViewers)
+        XCTAssertEqual(cats.count, Self.universalViewers.count,
+                       "float must not duplicate the hint")
     }
 
     func test_openAsCategories_onBinary_stillFullList() throws {
@@ -132,11 +142,11 @@ final class OpenAsSniffAndHostedViewTests: XCTestCase {
         // not just HEX — the whole point of universal Open-As.
         let url = try write("blob.bin", bytes: [0x00, 0x01, 0x02, 0xFF, 0xFE, 0x00])
         let cats = DocumentModel().openAsCategories(for: url)
+        XCTAssertEqual(Set(cats), Self.universalViewers)
         XCTAssertTrue(cats.contains(.plainText))
         XCTAssertTrue(cats.contains(.markdown))
         XCTAssertTrue(cats.contains(.code))
         XCTAssertTrue(cats.contains(.binary))
-        XCTAssertEqual(cats.count, 7)
     }
 
     // MARK: - openHostedView + registry sweep on close

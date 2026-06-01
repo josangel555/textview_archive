@@ -2102,9 +2102,18 @@ public final class DocumentModel: ObservableObject {
     /// magic-byte sniff promotes a likely-real category to the top (an
     /// auto-hint, not a restriction).
     public func openAsCategories(for url: URL) -> [FileCategory] {
-        // The full menu of viewers. Order = the menu order.
+        // The full UNIVERSAL menu of viewers. Order = the menu order. Now
+        // the complete viewer set (every FileCategory that maps to a real
+        // viewer), so "Open As" is genuinely "open any file as any viewer":
+        // text-shaped lenses (Source / Plain / Markdown / Mermaid / HTML),
+        // native previews (Image / Audio / Video / PDF / SQLite), and HEX
+        // (.binary) for raw bytes. `.unknown` is omitted — it's the
+        // not-a-viewer sentinel, not a lens. (2026-06-01: folded the former
+        // context-menu Open-As capability into this one chip; added the
+        // media + mermaid lenses that were previously unreachable here.)
         var cats: [FileCategory] = [
-            .code, .plainText, .markdown, .html, .image, .sqlite, .binary
+            .code, .plainText, .markdown, .mermaid, .html,
+            .image, .audio, .video, .pdf, .sqlite, .binary
         ]
         // Magic-byte hint: if the bytes look like a known type the
         // extension didn't reveal (e.g. `mydb.db.bak` → SQLite), float

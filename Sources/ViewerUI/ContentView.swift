@@ -65,11 +65,26 @@ public struct ContentView: View {
                 }
                 TabBar(model: model)
                     .accessibilityIdentifier("mdv.tabbar")
+                    // CHROME PIN (2026-06-01): the chrome bars carry their own
+                    // fixed heights (TabBar 30, ModeBar 22, StatusBar 22), but
+                    // a VStack distributes an under-shrink squeeze across ALL
+                    // children — so when the window goes below
+                    // chrome+min-content, the bars got compressed/clipped
+                    // instead of the center band. layoutPriority(1) makes
+                    // SwiftUI satisfy the bars' heights FIRST; the center HStack
+                    // (priority 0, maxHeight:.infinity) then absorbs 100% of any
+                    // shrink. fixedSize(vertical:) pins each bar's reported
+                    // height as a hard floor so it can't be compressed below
+                    // content (and still grows with dynamic-type / zoom).
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
                 Divider()
                 ModeBar(model: model)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .accessibilityIdentifier("mdv.modebar")
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
                 Divider()
                 // MARK: - Shoulder rails + body band
                 //
@@ -124,9 +139,16 @@ public struct ContentView: View {
                         model: model
                     )
                 }
+                // The center band is the one that yields under shrink:
+                // explicit layoutPriority(0) (the default, stated for intent)
+                // + maxHeight:.infinity means it absorbs all the squeeze while
+                // the priority-1 bars keep their heights.
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .layoutPriority(0)
                 if model.currentURL != nil {
                     StatusBar(model: model)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .layoutPriority(1)
                 }
             }
             .frame(minWidth: 600, minHeight: 360)
@@ -266,7 +288,15 @@ public struct ContentView: View {
                 hasLSPLanguage: model.currentURL.flatMap {
                     LSPLanguageRegistry.default.language(for: $0)
                 } != nil,
-                claudeHasTranscripts: sidebar.claudeHasTranscripts
+                claudeHasTranscripts: sidebar.claudeHasTranscripts,
+                // RECENTS RAIL FIX (2026-06-01): the Recents rail button
+                // already exists (`.recentlyOpened` is a registered panel) but
+                // both rail-side presence builders omitted `hasRecents`, so it
+                // defaulted false — the button read permanently "no data" /
+                // off and never reflected history. Mirror SidebarView's
+                // accordion builder so the rail fill + accordion presence
+                // agree.
+                hasRecents: model.recents.isEmpty == false
             )
         )
     }
