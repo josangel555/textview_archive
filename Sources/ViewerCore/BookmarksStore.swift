@@ -143,7 +143,17 @@ public final class BookmarksStore {
     }
 
     private func save() {
-        JSONFileStore.write(entries, to: storeURL)
+        // P2: off-main, coalesced, ordered (see JSONFileStore.enqueueWrite).
+        // A bookmark add/toggle no longer stalls the main thread on a sync
+        // atomic write.
+        JSONFileStore.enqueueWrite(entries, to: storeURL)
+    }
+
+    /// Block until every pending JSON-store write has landed on disk
+    /// (the save path is async/coalesced — P2). For terminate-drain and
+    /// persistence-roundtrip tests.
+    public func flush() {
+        JSONFileStore.flushSync()
     }
 }
 

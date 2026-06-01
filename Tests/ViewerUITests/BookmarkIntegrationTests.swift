@@ -88,6 +88,9 @@ final class BookmarkIntegrationTests: XCTestCase {
             model.open(url: url)
             model.toggleCurrentTabBookmark()
         }
+        // P2: the bookmark `save()` is now async/coalesced (off-main). Drain
+        // it to disk before the second model loads from disk.
+        JSONFileStore.flushSync()
         // Second model: should see the bookmark (loaded from disk).
         let model2 = DocumentModel(
             controller: DocumentController(),

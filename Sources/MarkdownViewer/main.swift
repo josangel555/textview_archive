@@ -414,6 +414,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // is on disk before the process exits.
         sessions.flushForTermination()
 
+        // P2: drain the JSONFileStore write queue (history / bookmarks /
+        // go-to-path). Those `save()`s now enqueue off-main + coalesced, so
+        // the very last mutation before quit might still be in flight; this
+        // blocks until it's on disk. Mirrors the SessionStore flush above.
+        JSONFileStore.flushSync()
+
         // RC-5: shut down every live LSP server before the process exits.
         // Without this, `terminate()` tore the host down while child LSP
         // servers (sourcekit-lsp, etc.) were still running — they'd be

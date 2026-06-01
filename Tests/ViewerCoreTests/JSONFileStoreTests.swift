@@ -194,4 +194,64 @@ final class JSONFileStoreTests: XCTestCase {
             to: url, atomically: true, encoding: .utf8)
         XCTAssertNil(JSONFileStore.read(Sample.self, from: url))
     }
+
+    // MARK: - P2: off-main coalescing write (enqueueWrite / flushSync)
+
+    /// An enqueued write lands on disk after `flushSync` drains the queue —
+    /// the off-main path is durable, not fire-and-forget-and-lose.
+    func test_enqueueWrite_thenFlush_isOnDisk() {
+        let url = dir.appendingPathComponent("enq.json")
+        let value = Sample(name: "queued", when: Date(timeIntervalSince1970: 5), count: 3)
+        JSONFileStore.enqueueWrite(value, to: url)
+        // Before the flush the write may or may not have raced to disk; after
+        // the flush it MUST be there.
+        JSONFileStore.flushSync()
+        XCTAssertEqual(JSONFileStore.read(Sample.self, from: url), value)
+    }
+
+    /// The enqueue does NOT block the caller on the disk write — `enqueueWrite`
+    /// returns essentially immediately (it only dispatches). A loose upper
+    /// bound proves we're not doing the synchronous encode+fsync inline.
+    func test_enqueueWrite_returnsWithoutBlockingOnDisk() {
+        let url = dir.appendingPathComponent("nonblock.json")
+        // A large-ish payload so a *synchronous* encode+write would be
+        // measurable; the enqueue must still return fast.
+        let value = Sample(name: String(repeating: "z", count: 200_000),
+                           when: Date(), count: 1)
+        let start = Date()
+        JSONFileStore.enqueueWrite(value, to: url)
+        let elapsed = Date().timeIntervalSince(start)
+        XCTAssertLessThan(elapsed, 0.05,
+            "enqueueWrite took \(elapsed)s — it appears to be writing " +
+            "synchronously on the calling thread instead of dispatching.")
+        JSONFileStore.flushSync()  // don't leave a pending write for other tests
+    }
+
+    /// A burst of enqueues to the same URL coalesces — only the LATEST value
+    /// is written. We can't observe the intermediate writes directly, but we
+    /// can assert the final on-disk value is the last one enqueued.
+    func test_enqueueWrite_coalesces_lastValueWins() {
+        let url = dir.appendingPathComponent("coalesce.json")
+        for i in 0..<50 {
+            JSONFileStore.enqueueWrite(
+                Sample(name: "v\(i)", when: Date(timeIntervalSince1970: Double(i)), count: i),
+                to: url)
+        }
+        JSONFileStore.flushSync()
+        let read = JSONFileStore.read(Sample.self, from: url)
+        XCTAssertEqual(read?.name, "v49")
+        XCTAssertEqual(read?.count, 49)
+    }
+
+    /// Writes to DIFFERENT URLs are all preserved (coalescing is per-URL,
+    /// not global).
+    func test_enqueueWrite_distinctURLs_allLand() {
+        let a = dir.appendingPathComponent("a.json")
+        let b = dir.appendingPathComponent("b.json")
+        JSONFileStore.enqueueWrite(Sample(name: "A", when: Date(timeIntervalSince1970: 1), count: 1), to: a)
+        JSONFileStore.enqueueWrite(Sample(name: "B", when: Date(timeIntervalSince1970: 2), count: 2), to: b)
+        JSONFileStore.flushSync()
+        XCTAssertEqual(JSONFileStore.read(Sample.self, from: a)?.name, "A")
+        XCTAssertEqual(JSONFileStore.read(Sample.self, from: b)?.name, "B")
+    }
 }

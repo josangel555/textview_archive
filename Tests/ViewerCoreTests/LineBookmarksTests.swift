@@ -19,7 +19,10 @@ final class LineBookmarksTests: XCTestCase {
     }
 
     private func makeStore() -> BookmarksStore {
-        BookmarksStore(storeURL: storeURL, maxEntries: 100)
+        // P2: `save()` is async/coalesced (off-main) — drain pending writes
+        // so a reopen reads the latest bytes from disk.
+        JSONFileStore.flushSync()
+        return BookmarksStore(storeURL: storeURL, maxEntries: 100)
     }
 
     private let fileA = URL(fileURLWithPath: "/tmp/a.swift")
@@ -97,7 +100,8 @@ final class LineBookmarksTests: XCTestCase {
     func test_codable_roundtrip_keeps_line_value() {
         var s = makeStore()
         s.add(url: fileA, line: 23)
-        // Force a fresh load.
+        // Force a fresh load — drain the async/coalesced write first (P2).
+        s.flush()
         s = BookmarksStore(storeURL: storeURL, maxEntries: 100)
         XCTAssertTrue(s.contains(url: fileA, line: 23))
         XCTAssertEqual(s.all().first?.line, 23)

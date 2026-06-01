@@ -114,6 +114,7 @@ final class GoToPathHistoryStoreExtendedTests: XCTestCase {
         s1.record("/b")
         s1.record("/c")
         s1.record("/d")
+        s1.flush()  // P2: drain async/coalesced writes before reopening.
 
         let s2 = GoToPathHistoryStore(storeURL: storeURL, maxEntries: 3)
         XCTAssertEqual(s2.recent(), ["/d", "/c", "/b"])
@@ -124,6 +125,7 @@ final class GoToPathHistoryStoreExtendedTests: XCTestCase {
         let s1 = GoToPathHistoryStore(storeURL: storeURL, maxEntries: 10)
         for i in 0..<8 { s1.record("/p\(i)") }
         XCTAssertEqual(s1.count, 8)
+        s1.flush()  // P2: drain async/coalesced writes before reopening.
 
         let s2 = GoToPathHistoryStore(storeURL: storeURL, maxEntries: 3)
         XCTAssertEqual(s2.count, 3, "load-side cap must trim down")

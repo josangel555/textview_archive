@@ -122,6 +122,18 @@ public final class HistoryStore {
     }
 
     private func save() {
-        JSONFileStore.write(entries, to: storeURL)
+        // P2: off-main, coalesced, ordered. The in-memory `entries`
+        // mutation already happened on the caller's (main) actor; we hand a
+        // value-type snapshot to the write queue so the encode + atomic disk
+        // write never stalls the main thread on a routine file open.
+        JSONFileStore.enqueueWrite(entries, to: storeURL)
+    }
+
+    /// Block until every pending write across all JSON stores has landed on
+    /// disk. The save path is now async/coalesced (P2), so a caller that
+    /// needs the bytes on disk RIGHT NOW (process terminate, or a test
+    /// reopening the store to assert persistence) must drain first.
+    public func flush() {
+        JSONFileStore.flushSync()
     }
 }

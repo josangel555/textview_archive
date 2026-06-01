@@ -30,6 +30,11 @@ final class HistoryStoreTests: XCTestCase {
 
     private func makeStore(now: Date = Date(timeIntervalSince1970: 1_700_000_000),
                           maxEntries: Int = 100) -> HistoryStore {
+        // P2: `save()` is now async/coalesced (off-main). A roundtrip test
+        // that records into one store and reopens another reads from disk —
+        // so drain any pending write from the prior store before this new
+        // one loads. Deterministic + still exercises the real disk path.
+        JSONFileStore.flushSync()
         let clock = TestClock(start: now)
         return HistoryStore(storeURL: storeURL, maxEntries: maxEntries) {
             clock.tick()

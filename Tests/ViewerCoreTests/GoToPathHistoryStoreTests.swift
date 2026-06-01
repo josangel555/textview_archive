@@ -54,6 +54,8 @@ final class GoToPathHistoryStoreTests: XCTestCase {
         let s1 = GoToPathHistoryStore(storeURL: storeURL)
         s1.record("/a")
         s1.record("/b")
+        // P2: `save()` is async/coalesced (off-main) — drain before reopening.
+        s1.flush()
 
         let s2 = GoToPathHistoryStore(storeURL: storeURL)
         XCTAssertEqual(s2.recent(), ["/b", "/a"])

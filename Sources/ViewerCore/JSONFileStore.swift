@@ -90,6 +90,80 @@ public enum JSONFileStore {
         }
     }
 
+    // MARK: - Off-main coalescing write (P2 — main-thread I/O)
+    //
+    // `write` above is synchronous: encode (pretty + sorted, the slow
+    // config) + a stat-ed `createDirectory` + an atomic temp-write + fsync
+    // + rename. Run from a @MainActor store's `save()` on every file open /
+    // bookmark toggle / go-to-path use, that stalls the main thread on disk
+    // I/O for a routine action (P2).
+    //
+    // `enqueueWrite` moves the encode + disk hit OFF the main thread, with
+    // the same guarantees SessionStore established:
+    //   1. Strictly ordered per URL — a serial queue; a later enqueue to the
+    //      same URL always lands after an earlier one.
+    //   2. Coalesced per URL — a burst (e.g. clearing history = N removes)
+    //      collapses to one disk write; only the latest snapshot is written.
+    //   3. Drainable — `flushSync()` blocks until the queue is empty so
+    //      `applicationWillTerminate` can guarantee the last write landed.
+    //
+    // The caller mutates its in-memory model on the main actor (cheap) and
+    // hands a SNAPSHOT to `enqueueWrite`; nothing mutable crosses the queue.
+
+    private static let writeQueue = DispatchQueue(
+        label: "com.markdownviewer.JSONFileStore.writes",
+        qos: .utility
+    )
+
+    /// URL → latest pending write closure. The closure captures the
+    /// already-snapshotted value + its concrete type, so no type erasure is
+    /// needed and the encode happens on the write queue (off-main). Guarded
+    /// by `coalesceLock` — enqueues arrive on the main actor, the queue
+    /// drains on `.utility`.
+    nonisolated(unsafe) private static var pending: [URL: () -> Bool] = [:]
+    nonisolated(unsafe) private static let coalesceLock = NSLock()
+
+    /// Enqueue an off-main, coalesced, ordered write of `value` to `url`.
+    ///
+    /// `value` must be a value-type snapshot (the stores pass their
+    /// `[Entry]` arrays, which are `Sendable` value types) so the captured
+    /// copy can't be mutated out from under the write. The encode runs on
+    /// the write queue, not the caller's thread.
+    public static func enqueueWrite<T: Encodable & Sendable>(_ value: T, to url: URL) {
+        coalesceLock.lock()
+        let alreadyPending = pending[url] != nil
+        // Latest-wins: replace any queued closure for this URL.
+        pending[url] = { Self.write(value, to: url) }
+        coalesceLock.unlock()
+        guard !alreadyPending else {
+            // An enqueued drain block will pick up the newer closure.
+            return
+        }
+        writeQueue.async {
+            coalesceLock.lock()
+            let job = pending.removeValue(forKey: url)
+            coalesceLock.unlock()
+            _ = job?()
+        }
+    }
+
+    /// Block until every queued write has drained. Call from
+    /// `applicationWillTerminate` so the user's last history / bookmark /
+    /// go-to-path mutation is on disk before the process exits.
+    public static func flushSync() {
+        // Snapshot the queued URLs and run their writes synchronously on the
+        // calling thread (drain), THEN sync a barrier to catch any block the
+        // queue is mid-flight on. Draining inline avoids a deadlock if a
+        // write block is itself waiting on the queue.
+        writeQueue.sync {
+            coalesceLock.lock()
+            let jobs = Array(pending.values)
+            pending.removeAll()
+            coalesceLock.unlock()
+            for job in jobs { _ = job() }
+        }
+    }
+
     // MARK: - Shared encoder / decoder
 
     /// ISO-8601 dates + pretty + sorted keys. Matches the surface the

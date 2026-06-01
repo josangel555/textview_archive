@@ -15,7 +15,10 @@ final class BookmarksStoreTests: XCTestCase {
     }
 
     private func makeStore() -> BookmarksStore {
-        BookmarksStore(storeURL: storeURL, maxEntries: 100)
+        // P2: `save()` is async/coalesced (off-main) — drain pending writes
+        // from any prior store so a reopen reads the latest bytes from disk.
+        JSONFileStore.flushSync()
+        return BookmarksStore(storeURL: storeURL, maxEntries: 100)
     }
 
     func test_emptyStore_returnsNoBookmarks() {
