@@ -254,4 +254,139 @@ final class CodeMirrorBundleTests: XCTestCase {
                           "codemirror.css missing Phase 4 marker class: \(needle)")
         }
     }
+
+    // MARK: - Bootstrap symbol-binding contract (regression: WidgetType)
+    //
+    // The CM6 Phase-4 bug (commit 4ab4c56) was a `class IndentGuideWidget
+    // extends WidgetType` at the top level of the bootstrap IIFE while
+    // `WidgetType` was never added to the top-level `const { … } = window.CM`
+    // destructure. A class declaration's `extends` clause is evaluated when
+    // the script runs, so the bootstrap threw `ReferenceError: Can't find
+    // variable: WidgetType` BEFORE `new EditorView(...)`, `window.cmDispatch`,
+    // or the `ready` post — every editor tab was a permanently blank
+    // WKWebView since Phase 4. None of the existing grep tests caught it:
+    // they assert the bundle EXPORTS a symbol and the HTML CONTAINS a
+    // dispatch-case string, but never that an extended base class is
+    // actually BOUND in scope, and they never execute the bootstrap in a
+    // JS engine (the live-WKWebView suites are MDV_RUN_WEBVIEW_TESTS-gated
+    // out of the host sweep — CLAUDE.md).
+    //
+    // These two tests close exactly that gap, headlessly:
+    //   1. Every CM base class used in a top-level `class X extends Y` must
+    //      appear in the top-level `window.CM` destructure (so the bootstrap
+    //      can't throw a ReferenceError before mounting the editor).
+    //   2. Every symbol the bootstrap destructures from `window.CM` AND uses
+    //      as an `extends` base must actually be exported by the JS bundle
+    //      (so the destructure binds a real value, not `undefined`).
+
+    /// Extracts the single top-level `const { … } = window.CM;` destructure
+    /// block (lines 21-37 of codemirror.html) and returns the set of names
+    /// bound by it. Robust to whitespace / line comments inside the braces.
+    private func topLevelCMDestructure(in html: String) throws -> Set<String> {
+        // Grab text between `= {` of the destructure and `} = window.CM`.
+        // The bootstrap's first `const {` opens the block; `} = window.CM`
+        // closes it. (The nested re-destructure inside buildInvisiblesPlugin
+        // is `const { … } = window.CM;` on a SINGLE line, so anchoring on the
+        // multi-line `const {\n` opener selects the top-level one.)
+        guard let openRange = html.range(of: "const {\n") else {
+            XCTFail("codemirror.html: no top-level `const {` destructure found")
+            return []
+        }
+        let after = html[openRange.upperBound...]
+        guard let closeRange = after.range(of: "} = window.CM;") else {
+            XCTFail("codemirror.html: top-level destructure not closed with `} = window.CM;`")
+            return []
+        }
+        let body = after[..<closeRange.lowerBound]
+        // Strip `// …` line comments, split on commas / newlines, keep
+        // identifier-shaped tokens.
+        var names: Set<String> = []
+        for rawLine in body.split(separator: "\n") {
+            let line = rawLine.split(separator: "/").first.map(String.init) ?? String(rawLine)
+            for token in line.split(whereSeparator: { $0 == "," || $0 == " " || $0 == "\t" }) {
+                let t = token.trimmingCharacters(in: .whitespaces)
+                guard !t.isEmpty,
+                      t.first.map({ $0.isLetter }) == true,
+                      t.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" })
+                else { continue }
+                names.insert(t)
+            }
+        }
+        return names
+    }
+
+    /// All `class X extends Y` base classes (`Y`) referenced anywhere in the
+    /// bootstrap, restricted to CapitalCase identifiers (CM exports are
+    /// CapitalCase; `extends` of a lower-case local helper would be a
+    /// different thing).
+    private func extendedBaseClasses(in html: String) -> Set<String> {
+        var bases: Set<String> = []
+        // Simple scan for "extends <Identifier>" — sufficient for the
+        // hand-written bootstrap (no minified soup here).
+        var search = html.startIndex
+        let marker = "extends "
+        while let r = html.range(of: marker, range: search..<html.endIndex) {
+            var idx = r.upperBound
+            var ident = ""
+            while idx < html.endIndex {
+                let c = html[idx]
+                if c.isLetter || c.isNumber || c == "_" { ident.append(c); idx = html.index(after: idx) }
+                else { break }
+            }
+            if let first = ident.first, first.isUppercase { bases.insert(ident) }
+            search = idx
+        }
+        return bases
+    }
+
+    func testBootstrapExtendedBaseClassesAreDestructured() throws {
+        let url = try XCTUnwrap(CodeMirrorResources.hostHTMLURL)
+        let html = try String(contentsOf: url, encoding: .utf8)
+        let destructured = try topLevelCMDestructure(in: html)
+        let bases = extendedBaseClasses(in: html)
+        XCTAssertFalse(bases.isEmpty,
+                       "no `class … extends …` found — parser likely broken")
+        // The exact regression: WidgetType (and GutterMarker) are used as
+        // base classes in the bootstrap; both MUST be in the top-level
+        // window.CM destructure or the IIFE throws ReferenceError before
+        // mounting the editor.
+        for base in bases {
+            XCTAssertTrue(
+                destructured.contains(base),
+                "codemirror.html bootstrap extends `\(base)` but never " +
+                "destructures it from window.CM — the IIFE will throw " +
+                "ReferenceError: Can't find variable: \(base) before " +
+                "new EditorView(...), leaving every editor tab a blank " +
+                "WKWebView. Add `\(base)` to the top-level `const { … } = " +
+                "window.CM;` block (this is the CM6 Phase-4 WidgetType bug, " +
+                "commit 4ab4c56).")
+        }
+        // Belt-and-braces: pin the two we know are load-bearing today so a
+        // future refactor that drops them from the destructure trips here
+        // even if the `extends`-scan misses them.
+        for required in ["WidgetType", "GutterMarker"] {
+            XCTAssertTrue(destructured.contains(required),
+                          "codemirror.html top-level destructure dropped `\(required)`")
+        }
+    }
+
+    func testBundleExportsEveryExtendedBaseClass() throws {
+        let htmlURL = try XCTUnwrap(CodeMirrorResources.hostHTMLURL)
+        let jsURL = try XCTUnwrap(CodeMirrorResources.jsBundleURL)
+        let html = try String(contentsOf: htmlURL, encoding: .utf8)
+        let js = String(data: try Data(contentsOf: jsURL), encoding: .utf8) ?? ""
+        // A destructured-but-undefined symbol binds `undefined`; `extends
+        // undefined` throws at class-eval time. So every extended base must
+        // also be present (as an export) in the bundle. The IIFE bundle
+        // emits `Name:()=>local` for each re-export, so `Name:` survives
+        // minification.
+        for base in extendedBaseClasses(in: html) {
+            XCTAssertTrue(
+                js.contains("\(base):"),
+                "codemirror.js does not export `\(base)` (no `\(base):` " +
+                "re-export found) yet the host bootstrap extends it — the " +
+                "destructure would bind undefined and `extends undefined` " +
+                "throws. Re-run scripts/codemirror-build/npm run build.")
+        }
+    }
 }
