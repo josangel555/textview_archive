@@ -3132,6 +3132,18 @@ public final class DocumentModel: ObservableObject {
                       let idx = self.tabs.tabs.firstIndex(where: { $0.id == id }),
                       self.tabs.tabs[idx].url == url
                 else { return }
+                // Bug C (latest-switch-wins): `setCurrentViewMode` flips
+                // `viewMode` synchronously but kicks THIS load async +
+                // unguarded. A rapid HEX→Source toggle supersedes the HEX
+                // request before this lands; writing `.binary` now would
+                // leave HexView showing under a non-HEX picker (the
+                // "mode switcher acts weird" desync, and — with a real
+                // read landing into a re-materialized `.loading` slot —
+                // the dropped-completion endless spinner). Only commit the
+                // binary view if the tab is STILL in `.hex`; otherwise the
+                // user has moved on and the corresponding text-mode load
+                // owns the state.
+                guard self.tabs.tabs[idx].viewMode == .hex else { return }
                 var tab = self.tabs.tabs[idx]
                 if let bin = loaded {
                     tab.state = .binary(bin)
@@ -3154,6 +3166,13 @@ public final class DocumentModel: ObservableObject {
                       let idx = self.tabs.tabs.firstIndex(where: { $0.id == id }),
                       self.tabs.tabs[idx].url == url
                 else { return }
+                // Bug C (latest-switch-wins): symmetric to loadBinaryAsync.
+                // This load was kicked for a text-shaped mode (coming back
+                // from HEX, or to seed `.editor`). If the user has since
+                // switched the tab BACK to `.hex`, committing `.loaded`
+                // now would drop them out of the byte grid they re-picked.
+                // Drop the superseded load.
+                guard self.tabs.tabs[idx].viewMode != .hex else { return }
                 var tab = self.tabs.tabs[idx]
                 if let text = loaded {
                     tab.state = .loaded(text)
