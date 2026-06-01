@@ -928,6 +928,62 @@ public final class SourceTextController: NSViewController {
         )
         if key == lastAttrKey { return }
         let baseFont = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+
+        // PERF (source-slow, 2026-06-01): in-place recolor on the
+        // plain → highlighted transition.
+        //
+        // A source open paints TWICE: once with empty `runs` (cache cold →
+        // plain text), then ~tokenize-latency later with the highlight runs.
+        // The naive second paint did `setAttributedString(NSMutableAttr…)`
+        // over the WHOLE document, which discards the textStorage AND the
+        // glyph layout the first paint already built — a second full
+        // O(document) layout on the main thread (the dominant "source takes
+        // forever" cost on a few-hundred-KB file, esp. with word-wrap on).
+        //
+        // When ONLY the runs changed (byte-identical text — same content
+        // fingerprint — same font + theme as the previous apply, and the
+        // storage already holds that text), the glyphs are already laid out
+        // correctly; only the foreground colors differ. Re-fix the colors as
+        // addAttribute over the EXISTING storage inside one beginEditing/
+        // endEditing batch. NSTextStorage keeps its layout (no
+        // setAttributedString → no full re-layout); only the attribute-fix
+        // pass runs, which is bounded by run count, not glyph count.
+        if !runs.isEmpty,
+           let prev = lastAttrKey,
+           prev.content == key.content,
+           prev.fontSize == fontSize,
+           prev.theme == theme.name,
+           let storage = textView.textStorage,
+           storage.length == (text as NSString).length {
+            let full = NSRange(location: 0, length: storage.length)
+            storage.beginEditing()
+            // Reset to base before painting runs so colors from a prior
+            // highlighted state (e.g. a theme that left stale spans) don't
+            // bleed through where the new runs don't cover.
+            storage.addAttribute(.font, value: baseFont, range: full)
+            storage.addAttribute(.foregroundColor, value: theme.defaultText, range: full)
+            for run in runs {
+                let lo = max(0, run.range.location)
+                let hi = min(full.length, run.range.location + run.range.length)
+                guard hi > lo else { continue }
+                storage.addAttribute(
+                    .foregroundColor,
+                    value: theme.color(for: run.kind),
+                    range: NSRange(location: lo, length: hi - lo)
+                )
+            }
+            storage.endEditing()
+            lastAttrKey = key
+            // Text content is byte-identical, so the gutter line count and
+            // the newline-offset cache are still valid — do NOT invalidate
+            // them (that would force a needless O(N) rebuild on the next
+            // selection move). The selection-highlight ranges are temporary
+            // layout-manager attributes, untouched by addAttribute on the
+            // storage; the find/selection passes that run right after this
+            // in apply() refresh them anyway.
+            return
+        }
+
         if runs.isEmpty {
             // Fast path for plain text / unsupported language /
             // oversized files: no attributedString allocation.

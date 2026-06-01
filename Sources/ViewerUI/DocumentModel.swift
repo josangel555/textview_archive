@@ -2345,11 +2345,19 @@ public final class DocumentModel: ObservableObject {
                 var t = current
                 t.state = state
                 self.tabCoordinator.replace(at: idx, with: t)
-                // Carry HEX mode (mirrors the sync path).
+                // Carry HEX mode (mirrors the sync path + materializeIfNeeded).
+                // Exclude `.preview`: a native-preview category whose default
+                // (and only) ViewMode is .hex must NOT be auto-hex-loaded, or
+                // the just-mounted native viewer (SQLite browser / image /
+                // PDF) is torn down and replaced with a hex dump. Today
+                // `shouldDeferOpenOffMain` already excludes the preview
+                // categories so `.preview` can't reach here, but keep all
+                // three carry blocks identical so a future change to the
+                // defer-gate can't silently reintroduce the flip.
                 if t.viewMode == .hex {
                     switch state {
-                    case .binary, .empty, .loading, .hostedView: break
-                    case .loaded, .preview, .error:
+                    case .binary, .empty, .loading, .hostedView, .preview: break
+                    case .loaded, .error:
                         self.loadBinaryAsync(url: resolved, intoTabID: tabID)
                     }
                 }
