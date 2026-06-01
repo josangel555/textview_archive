@@ -394,28 +394,44 @@ private struct ImageScrollHost: NSViewRepresentable {
         let viewportSize = scroll.contentView.bounds.size
         let imgSize = img.size
         guard imgSize.width > 0 && imgSize.height > 0 else { return }
-        let fit = min(viewportSize.width / imgSize.width,
-                      viewportSize.height / imgSize.height,
-                      1.0)
-        scroll.magnification = ImageZoomState.clamped(fit)
-        // Center scroll position in the document.
-        let docFrame = imageView.frame
-        let scrollX = max(0, (docFrame.width - viewportSize.width / fit) / 2)
-        let scrollY = max(0, (docFrame.height - viewportSize.height / fit) / 2)
-        scroll.contentView.scroll(to: NSPoint(x: scrollX, y: scrollY))
+        // Scale-to-fit (never upscale a small image past 1:1), via the
+        // pure helper so view + tests agree on the math.
+        let fit = ImageZoomState.fitScale(image: imgSize,
+                                           viewport: viewportSize,
+                                           allowUpscale: false)
+        scroll.magnification = fit
+        // Center scroll position in the document. CenteringClipView
+        // handles the axes where the doc is smaller than the viewport;
+        // this seeds the origin so the larger axis also starts centered.
+        let docFrame = imageView.frame.size
+        let centered = ImageZoomState.clampPan(
+            proposedOrigin: CGPoint(x: (docFrame.width - viewportSize.width / fit) / 2,
+                                    y: (docFrame.height - viewportSize.height / fit) / 2),
+            viewport: viewportSize,
+            docFrame: docFrame,
+            magnification: fit)
+        scroll.contentView.scroll(to: centered)
         scroll.reflectScrolledClipView(scroll.contentView)
     }
 }
 
 /// NSScrollView subclass that adds Cmd+scroll-to-zoom on top of the
-/// built-in trackpad pinch-magnify. Plain scroll (no modifier) is
-/// passed through to the default pan behavior so a zoomed-in image
+/// built-in trackpad pinch-magnify, plus click-and-drag-to-pan when the
+/// magnified image overflows the viewport. Plain scroll (no modifier)
+/// is passed through to the default pan behavior so a zoomed-in image
 /// can still be panned with the wheel.
 ///
 /// Zoom anchoring: we convert the wheel event's `locationInWindow`
 /// into clip-view coordinates and feed that to
 /// `setMagnification(_:centeredAt:)`, which keeps the document point
 /// under the cursor stationary across the zoom.
+///
+/// Pan: a left-button drag scrolls the clip view by the drag delta
+/// (converted from screen points to document units via the current
+/// magnification), with the resulting origin clamped through
+/// `ImageZoomState.clampPan` so the image can't be dragged off-screen.
+/// When the document fits entirely within the viewport there's nothing
+/// to pan, so the drag is ignored and the event falls through.
 ///
 /// Range is enforced by NSScrollView's own
 /// `minMagnification`/`maxMagnification`, which we set to match
@@ -434,6 +450,68 @@ final class ZoomableImageScrollView: NSScrollView {
     /// trackpad scroll events come in many small deltas, so a low gain
     /// here is on purpose.
     private static let wheelZoomGain: CGFloat = 0.0025
+
+    /// Clip-view origin captured at `mouseDown`, in document units. Each
+    /// `mouseDragged` pans relative to this anchor so accumulated
+    /// rounding can't drift.
+    private var panAnchorOrigin: CGPoint?
+
+    // MARK: - Drag-to-pan
+
+    /// True only when the scaled document overflows the viewport on at
+    /// least one axis — i.e. there is somewhere to pan to.
+    private var canPan: Bool {
+        guard magnification > 0, let doc = documentView else { return false }
+        let visible = contentView.bounds.size  // already in document units
+        return doc.frame.width > visible.width + 0.5
+            || doc.frame.height > visible.height + 0.5
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard canPan else { super.mouseDown(with: event); return }
+        panAnchorOrigin = contentView.bounds.origin
+        NSCursor.closedHand.set()
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let anchor = panAnchorOrigin, magnification > 0,
+              let doc = documentView else {
+            super.mouseDragged(with: event)
+            return
+        }
+        // Grab-hand semantics (closed-hand cursor): the document point
+        // under the cursor stays under the cursor, so the viewport
+        // origin moves OPPOSITE to the cursor. Mouse deltas are in
+        // screen points; the clip view's bounds are in document units,
+        // so divide by magnification to convert. AppKit's
+        // `NSEvent.deltaX/deltaY` use the screen-delta convention:
+        // `deltaX` positive-rightward, `deltaY` positive-DOWNWARD. The
+        // clip view is non-flipped (origin bottom-left, Y up).
+        //   - Drag right (dx > 0) → content follows hand right → reveal
+        //     content to the LEFT → origin.x shrinks → anchor.x - dx.
+        //   - Drag down (dy > 0) → content follows hand down → reveal
+        //     content ABOVE → origin.y grows → anchor.y + dy.
+        let dx = event.deltaX / magnification
+        let dy = event.deltaY / magnification
+        let proposed = CGPoint(x: anchor.x - dx, y: anchor.y + dy)
+        let clamped = ImageZoomState.clampPan(
+            proposedOrigin: proposed,
+            viewport: contentView.bounds.size,
+            docFrame: doc.frame.size,
+            magnification: magnification)
+        contentView.scroll(to: clamped)
+        reflectScrolledClipView(contentView)
+        panAnchorOrigin = clamped
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if panAnchorOrigin != nil {
+            panAnchorOrigin = nil
+            NSCursor.arrow.set()
+        } else {
+            super.mouseUp(with: event)
+        }
+    }
 
     override func scrollWheel(with event: NSEvent) {
         // Only intercept when Cmd is held; otherwise leave default
