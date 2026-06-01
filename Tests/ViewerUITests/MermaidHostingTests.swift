@@ -5,23 +5,24 @@ import ViewerKit
 import ViewerCore
 @testable import ViewerUI
 
-/// SwiftUI-integration tests for the Mermaid pipeline.
+/// T2' view-tree test for the Mermaid pipeline's SwiftUI hosting layer.
 ///
 /// The lower-level pieces are already heavily covered:
 ///   - `MermaidSourceParserTests` — front-matter + step parsing
 ///   - `MermaidVendorTests` — bundled runtime integrity + SHA pin
 ///   - `HTMLRendererMermaidTests` — fence → `<div class="mdv-mermaid">`
 ///
-/// What was NOT covered: the SwiftUI layer that actually drives the
-/// browser. Two integration probes:
-///   1. `DocumentModel.renderedHTML(...)` for a markdown file with a
-///      mermaid fence: the cached output must include both the mermaid
-///      host div AND the shim CSS. (Cache hit on second call.)
-///   2. Opening a `.mmd` file in `ContentView` produces a WKWebView in
-///      the hosted tree — i.e. ContentView routes the
-///      `category == .mermaid` branch into the rendered pipeline, not
-///      the source view. Regression guard for the wrapping logic in
-///      ContentView.loadedView around lines 151-162.
+/// After the §3.2 split, what stays here is the one probe that genuinely
+/// needs a realized `NSHostingView` tree + a live `WKWebView`: opening a
+/// `.mmd` file in `ContentView` mints a `WKWebView` (i.e. ContentView
+/// routes the `category == .mermaid` branch into the rendered pipeline,
+/// not the source view). It therefore keeps the `#192`
+/// `MDV_RUN_WEBVIEW_TESTS` gate + `WebViewTestTeardown` graph-quiesce.
+///
+/// The string/cache asserts (`renderedHTML` emits the mermaid host + shim
+/// CSS; cache hit on second call; the `.mmd`→fence synthesis) moved to the
+/// UNGATED T1m `MermaidRenderModelTests` — they are pure `DocumentModel` /
+/// `HTMLRenderer` string output and never host a view.
 @MainActor
 final class MermaidHostingTests: XCTestCase {
 
@@ -91,51 +92,6 @@ final class MermaidHostingTests: XCTestCase {
         return result
     }
 
-    // MARK: - renderedHTML emits mermaid host + shim CSS
-
-    func test_renderedHTML_includesMermaidHostAndShimCSS() throws {
-        let m = makeModel()
-        let url = try writeFile("diagram.md",
-                                "# Hi\n\n```mermaid\nflowchart LR\n  A --> B\n```\n")
-        m.open(url: url)
-
-        guard case .loaded(let file) = m.currentState else {
-            return XCTFail("Expected .loaded, got \(m.currentState)")
-        }
-        guard let tabID = m.tabs.selected?.id else { return XCTFail("no selected tab") }
-        let html = m.renderedHTML(
-            forTabID: tabID,
-            file: file,
-            contents: file.contents,
-            renderer: HTMLRenderer(),
-            stylesheet: ""
-        )
-        XCTAssertTrue(html.contains("<div class=\"mdv-mermaid\""),
-                      "renderedHTML must route mermaid fences to the host div")
-        // Shim CSS is inlined unconditionally by DocumentModel —
-        // check for one of its sentinel selectors. The exact text
-        // depends on the bundled `mermaid-shim.css`; we check for
-        // the class prefix the shim relies on.
-        XCTAssertTrue(html.contains(".mdv-mermaid") || html.contains("mdv-mermaid"),
-                      "shim CSS (or at minimum the host class) must appear in the page")
-    }
-
-    func test_renderedHTML_cacheHitOnSecondCall() throws {
-        // The cache is the production hot path — verify it's wired
-        // up (same input → identical output, not just equivalent).
-        let m = makeModel()
-        let url = try writeFile("diagram.md", "```mermaid\nflowchart LR\nA-->B\n```\n")
-        m.open(url: url)
-        guard case .loaded(let file) = m.currentState else { return XCTFail() }
-        guard let tabID = m.tabs.selected?.id else { return XCTFail("no selected tab") }
-        let renderer = HTMLRenderer()
-        let html1 = m.renderedHTML(forTabID: tabID, file: file, contents: file.contents,
-                                   renderer: renderer, stylesheet: "")
-        let html2 = m.renderedHTML(forTabID: tabID, file: file, contents: file.contents,
-                                   renderer: renderer, stylesheet: "")
-        XCTAssertEqual(html1, html2)
-    }
-
     // MARK: - .mmd file routes to the rendered pipeline
 
     func test_openMmdFile_hostsWKWebView() throws {
@@ -157,17 +113,5 @@ final class MermaidHostingTests: XCTestCase {
         let webViews = descendants.filter { $0.isKind(of: webViewClass) }
         XCTAssertFalse(webViews.isEmpty,
                        ".mmd file should host a WKWebView (rendered path)")
-    }
-
-    func test_mmdFile_synthesizesMermaidFence_viaCategory() throws {
-        // Standalone `.mmd` body is wrapped into a single mermaid
-        // fence so the HTMLRenderer pipeline handles it identically
-        // to an inline ```mermaid block. Verify the wrapper produces
-        // a mermaid host div when fed through the renderer.
-        let body = "flowchart LR\n  A --> B\n"
-        let wrapped = "```mermaid\n\(body)\n```\n"
-        let html = HTMLRenderer().render(wrapped)
-        XCTAssertTrue(html.contains("<div class=\"mdv-mermaid\""),
-                      "wrapped .mmd body must produce a mermaid host")
     }
 }

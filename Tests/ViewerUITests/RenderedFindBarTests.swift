@@ -5,14 +5,22 @@ import ViewerKit
 import ViewerCore
 @testable import ViewerUI
 
-/// Tests for the Cmd+F find bar in markdown rendered view (WKWebView).
+/// T2' view-tree tests for the Cmd+F find bar in markdown rendered view
+/// (WKWebView).
 ///
 /// We don't simulate the menu keystroke or run WKWebView's find() under
 /// test (it requires a real navigation + DOM, and verifying its visible
-/// highlight needs a pixel snapshot). Instead we cover what's
-/// reasonable in-process: model state transitions, the bar's view tree
-/// presence/absence, and that the find params propagate through
-/// `MarkdownRenderedView`'s NSViewRepresentable parameters.
+/// highlight needs a pixel snapshot). What's left here, after the §3.2
+/// split, is the part that genuinely needs a realized `NSHostingView`
+/// tree: the find-bar overlay's presence/absence in the rendered-mode
+/// view tree. These host `ContentView` in rendered mode → mint a live
+/// `WKWebView`, so they keep the `#192` `MDV_RUN_WEBVIEW_TESTS` gate +
+/// `WebViewTestTeardown` graph-quiesce.
+///
+/// The three model-state tests (show/dismiss toggle, dismiss-clears-query,
+/// next/prev counters) moved to the UNGATED T1m `RenderedFindBarModelTests`
+/// — they read `model.*` only and were paying the WebView-gate tax for
+/// nothing.
 @MainActor
 final class RenderedFindBarTests: XCTestCase {
 
@@ -64,37 +72,6 @@ final class RenderedFindBarTests: XCTestCase {
         var out: [NSView] = [view]
         for s in view.subviews { out.append(contentsOf: descendants(of: s)) }
         return out
-    }
-
-    // MARK: Model state
-
-    func test_showAndDismiss_togglesIsPresented() throws {
-        let model = makeModel()
-        XCTAssertFalse(model.isRenderedFindBarPresented)
-        model.showRenderedFindBar()
-        XCTAssertTrue(model.isRenderedFindBarPresented)
-        model.dismissRenderedFindBar()
-        XCTAssertFalse(model.isRenderedFindBarPresented)
-    }
-
-    func test_dismiss_clearsQuery() throws {
-        let model = makeModel()
-        model.showRenderedFindBar()
-        model.renderedFindQuery = "needle"
-        XCTAssertEqual(model.renderedFindQuery, "needle")
-        model.dismissRenderedFindBar()
-        XCTAssertEqual(model.renderedFindQuery, "")
-    }
-
-    func test_nextAndPrev_incrementCounters() throws {
-        let model = makeModel()
-        let n0 = model.renderedFindNextRequest
-        let p0 = model.renderedFindPrevRequest
-        model.renderedFindNext()
-        model.renderedFindNext()
-        model.renderedFindPrev()
-        XCTAssertEqual(model.renderedFindNextRequest, n0 &+ 2)
-        XCTAssertEqual(model.renderedFindPrevRequest, p0 &+ 1)
     }
 
     // MARK: View tree

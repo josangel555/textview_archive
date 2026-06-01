@@ -5,14 +5,24 @@ import ViewerKit
 import ViewerCore
 @testable import ViewerUI
 
-/// L3 in-process visual tests for each component's appearance across
+/// T2' in-process visual tests for each component's appearance across
 /// different states. These DON'T spawn the .app — they host
 /// `ContentView` in an NSHostingView and assert on the realized
 /// NSView tree + DiagnosticDump output. Fast, hermetic, no focus
 /// issues, no TCC issues.
 ///
-/// Covers components that have visible state but minimal interaction:
-/// mode bar, hex view, error state, palette overlay, tab bar layout.
+/// What remains here, after the §3.2 split, is the part that genuinely
+/// reads the realized `NSHostingView` tree (segmented-control / label /
+/// tab-bar strip presence, hex/error/empty/palette/sidebar subtree
+/// growth). Because `ContentView` in rendered mode mints a `WKWebView`,
+/// these keep the `#192` `MDV_RUN_WEBVIEW_TESTS` gate + `WebViewTestTeardown`
+/// graph-quiesce.
+///
+/// The pure model-state checks (mode list for a file type, binary/error
+/// state landing, palette-presented toggle, sidebar default visibility)
+/// moved to the UNGATED T1m `ComponentModelStateTests` — they read `model.*`
+/// only and never called `renderHost`, so they were paying the WebView-gate
+/// tax for nothing.
 @MainActor
 final class ComponentVisualTests: XCTestCase {
 
@@ -97,23 +107,6 @@ final class ComponentVisualTests: XCTestCase {
         }
         XCTAssertFalse(segmenteds.isEmpty,
             "Markdown file should expose a segmented Rendered/Source control")
-    }
-
-    func test_modeBar_xmlFile_showsModesIncludingFormat() throws {
-        // Post mode-normalization: every file gets at least
-        // [Source, HEX]. XML additionally gets Format. So the
-        // segmented picker IS expected. (Prior to that change this
-        // test asserted the opposite — XML was the no-toggle case.
-        // Now it's a positive: XML shows 3 segments.)
-        let model = makeModel()
-        let url = try writeFile("a.xml", "<r/>\n")
-        model.open(url: url)
-        let modes = ViewModeOptions.availableModes(for: url)
-        XCTAssertTrue(modes.contains(.source))
-        XCTAssertTrue(modes.contains(.hex))
-        XCTAssertTrue(modes.contains(.formatted))
-        XCTAssertFalse(modes.contains(.rendered),
-            "Rendered should only appear for markdown")
     }
 
     func test_modeBar_filenameLabel_reflectsCurrentFile() throws {
@@ -215,16 +208,6 @@ final class ComponentVisualTests: XCTestCase {
 
     // MARK: - Hex view
 
-    func test_hexView_binaryFile_landsInBinaryState() throws {
-        let model = makeModel()
-        let url = try writeBinary("img.bin",
-            [0x00, 0x01, 0x02, 0xFF, 0xFE, 0x10, 0x20, 0x30, 0x40, 0x50])
-        model.open(url: url)
-        guard case .binary = model.currentState else {
-            return XCTFail("Binary file should land in .binary state, got \(model.currentState)")
-        }
-    }
-
     func test_hexView_renders_inViewTree() throws {
         let model = makeModel()
         // Binary detection requires NUL bytes, but a pure
@@ -272,15 +255,6 @@ final class ComponentVisualTests: XCTestCase {
 
     // MARK: - Error state
 
-    func test_errorState_missingFile_landsInErrorState() throws {
-        let model = makeModel()
-        let url = tmpDir.appendingPathComponent("does-not-exist.md")
-        model.open(url: url)
-        guard case .error = model.currentState else {
-            return XCTFail("Opening a missing file should land in .error, got \(model.currentState)")
-        }
-    }
-
     func test_errorState_renders_warningIcon() throws {
         let model = makeModel()
         let url = tmpDir.appendingPathComponent("missing.md")
@@ -309,34 +283,7 @@ final class ComponentVisualTests: XCTestCase {
             "Showing palette should add subviews (overlay + content)")
     }
 
-    func test_palette_isPresented_togglesViaModel() throws {
-        let model = makeModel()
-        XCTAssertFalse(model.isPalettePresented)
-        model.showPalette()
-        XCTAssertTrue(model.isPalettePresented)
-        model.dismissPalette()
-        XCTAssertFalse(model.isPalettePresented)
-    }
-
     // MARK: - Sidebar visible/hidden visual state
-
-    func test_sidebar_defaultVisibility_followsPreferences() throws {
-        // The default `sidebarVisible` value is `true` and the model
-        // seeds `sidebar.isVisible` from it on init. We pre-flip the
-        // preference to a known value (`false`) BEFORE constructing
-        // the model, then assert the model adopts it. Previously this
-        // test compared two values constructed seconds apart from the
-        // same defaults store — a tautology that always passed.
-        defaults.set(false, forKey: "MarkdownViewer.sidebarVisible")
-        let model = makeModel()
-        XCTAssertFalse(model.sidebar.isVisible,
-            "sidebar.isVisible must seed from PreferencesStore.sidebarVisible (preset false)")
-        // Now seed `true` and re-init: same shape, opposite branch.
-        defaults.set(true, forKey: "MarkdownViewer.sidebarVisible")
-        let model2 = makeModel()
-        XCTAssertTrue(model2.sidebar.isVisible,
-            "sidebar.isVisible must seed from PreferencesStore.sidebarVisible (preset true)")
-    }
 
     func test_sidebar_visibleAfterToggle_changesViewTree() throws {
         // Real before/after: render with sidebar hidden, snapshot
