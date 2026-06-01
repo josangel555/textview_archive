@@ -132,6 +132,38 @@ final class DocumentModelTests: XCTestCase {
         XCTAssertEqual(model.tabs.tabs[0].url, url.standardizedFileURL.resolvingSymlinksInPath())
     }
 
+    /// Regression: a freshly opened native-preview file whose DEFAULT
+    /// ViewMode is `.hex` (sqlite/image/audio/video/pdf — none have a
+    /// text representation, so `ViewModeOptions.defaultMode` returns
+    /// `.hex`) must STAY in its `.preview` document state. The old
+    /// hex-mode carry block in `openResolved`/`materializeIfNeeded`
+    /// kicked `loadBinaryAsync` for any `.hex` tab whose state was
+    /// `.preview`, flipping it to `.binary` and replacing the native
+    /// viewer (e.g. the SQLite browser) with a hex dump on every open —
+    /// the viewer flashed, then vanished. `controller.open` for a
+    /// preview category only stats the file (no parse), so a readable
+    /// `.db` is enough to exercise the routing.
+    func test_open_sqlite_staysPreview_doesNotFlipToHex() async throws {
+        let model = makeModel()
+        let url = try writeFile("data.db", "SQLite format 3\u{0}")
+        model.open(url: url)
+        // Default mode for sqlite is the byte-grid (no text view), but the
+        // content is rendered via the `.preview` document state regardless.
+        XCTAssertEqual(model.tabs.selected?.viewMode, .hex)
+        if case .preview(_, let cat) = model.currentState {
+            XCTAssertEqual(cat, .sqlite)
+        } else {
+            XCTFail("expected .preview(sqlite) immediately after open, got \(model.currentState)")
+        }
+        // Let any detached loadBinaryAsync hop back to the main actor.
+        try await Task.sleep(nanoseconds: 200_000_000)
+        if case .preview(_, let cat) = model.currentState {
+            XCTAssertEqual(cat, .sqlite, "sqlite preview must not be replaced by a hex dump")
+        } else {
+            XCTFail("expected .preview(sqlite) to persist, got \(model.currentState)")
+        }
+    }
+
     func test_closeCurrentTab_dropsAndShiftsSelection() throws {
         let model = makeModel()
         try [("a.md","a"), ("b.md","b"), ("c.md","c")].forEach {

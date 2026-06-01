@@ -2253,12 +2253,22 @@ public final class DocumentModel: ObservableObject {
         }
         // Carry HEX mode across file switch: if the active tab now
         // shows a different file in HEX, but the underlying state is
-        // text or preview, kick the binary load so the picker doesn't
-        // lie about what's on screen.
+        // text, kick the binary load so the picker doesn't lie about
+        // what's on screen.
+        //
+        // NOT for `.preview`: a `.preview` state is ALWAYS a native-
+        // preview category (image/audio/video/pdf/sqlite) — and `.hex`
+        // is their DEFAULT (and only) ViewMode, not a deliberate user
+        // pick. Hex-loading them here flipped `.preview` → `.binary` on
+        // every fresh open, tearing down the just-mounted native viewer
+        // (e.g. the SQLite browser) and showing a hex dump instead — the
+        // viewer flashed, then vanished. The user reaches HEX for a
+        // preview only via an explicit `setCurrentViewMode(.hex)`, which
+        // still loads the bytes; the default open must keep `.preview`.
         if let t = tabs.selected, t.viewMode == .hex {
             switch t.state {
-            case .binary, .empty, .loading, .hostedView: break
-            case .loaded, .preview, .error:
+            case .binary, .empty, .loading, .hostedView, .preview: break
+            case .loaded, .error:
                 loadBinaryAsync(url: resolved, intoTabID: t.id)
             }
         }
@@ -2938,13 +2948,17 @@ public final class DocumentModel: ObservableObject {
                 var t2 = current
                 t2.state = state
                 self.tabCoordinator.replace(at: idx, with: t2)
-                // Mirror openResolved's HEX-mode carry: if a binary file
+                // Mirror openResolved's HEX-mode carry: if a text file
                 // lands with the tab already set to .hex view, kick the
-                // binary load.
+                // binary load. Exclude `.preview` (native-preview
+                // categories whose default mode is .hex) — hex-loading
+                // them would replace the native viewer (e.g. SQLite
+                // browser) with a hex dump on a plain lazy materialize.
+                // See the matching block in `openResolved`.
                 if viewMode == .hex {
                     switch state {
-                    case .binary, .empty, .loading, .hostedView: break
-                    case .loaded, .preview, .error:
+                    case .binary, .empty, .loading, .hostedView, .preview: break
+                    case .loaded, .error:
                         self.loadBinaryAsync(url: url, intoTabID: tabID)
                     }
                 }
