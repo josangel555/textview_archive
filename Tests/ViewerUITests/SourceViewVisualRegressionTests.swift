@@ -55,6 +55,9 @@ final class SourceViewVisualRegressionTests: PixelTestCase {
     /// THIS test passes (i.e. the broken config is detected as
     /// broken), we know the variance check has teeth.
     func test_meta_brokenRulerIsDetectedAsRegression() throws {
+        if ProcessInfo.processInfo.environment["MDV_HEADLESS_GATE"] == "1" {
+            throw XCTSkip("T5 heavy tier — runs in the VM/nightly lane, not the headless gate.")
+        }
         let fm = FileManager.default
         let appExe = Self.appBundlePath + "/Contents/MacOS/MarkdownViewer"
         guard fm.isExecutableFile(atPath: appExe) else {
@@ -132,6 +135,9 @@ final class SourceViewVisualRegressionTests: PixelTestCase {
 
     func test_allUIStripsCompositeAfterOpeningSourceFile() throws {
         // Bail early under conditions where we can't run.
+        if ProcessInfo.processInfo.environment["MDV_HEADLESS_GATE"] == "1" {
+            throw XCTSkip("T5 heavy tier — runs in the VM/nightly lane, not the headless gate.")
+        }
         let fm = FileManager.default
         let appExe = Self.appBundlePath + "/Contents/MacOS/MarkdownViewer"
         guard fm.isExecutableFile(atPath: appExe) else {

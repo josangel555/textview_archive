@@ -40,7 +40,15 @@ final class LaunchHarness {
     /// this is `false` (the host-vs-VM rule means most developers run
     /// these only inside the VM).
     var isAppBuilt: Bool {
-        FileManager.default.isExecutableFile(atPath: appExecutable.path)
+        // Headless merge gate (MDV_HEADLESS_GATE=1): force "not built" so every
+        // T4 LiveAppTestCase suite skips even on a DEV host that has a built
+        // dist/ bundle. The gate is the headless lane by definition — heavy
+        // tiers run only in the VM/nightly lane. (CI lacks the bundle anyway;
+        // this makes the gate robust on a developer machine too, instead of
+        // tripping the TierGateObserver because the local env happened to
+        // satisfy the run conditions.)
+        if ProcessInfo.processInfo.environment["MDV_HEADLESS_GATE"] == "1" { return false }
+        return FileManager.default.isExecutableFile(atPath: appExecutable.path)
     }
 
     init(label: String, file: StaticString = #filePath) {
