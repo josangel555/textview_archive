@@ -2,23 +2,42 @@
 
 ## Testing rules
 
-- **Do NOT run UI tests on the host Mac.** Anything that launches the
-  `.app` / opens a window / spins up an NSApplication belongs on the
-  UTM macOS15 VM. This includes:
-  - `swift test` with no filter (sweeps L4/L5 live-app + visual tests).
-  - `Tests/ViewerUITests/...` (interaction, scenario, visual, deep).
-  - `scripts/vm-smoke.sh` (already VM-only).
-- **OK on host (no UI):**
+Tier is the **type** (`Tests/ViewerUITests/Harness/TierBaseCases.swift`):
+`HeadlessUITestCase` (T1/T1m/T2', the default) is host-safe; `LiveAppTestCase`
+(T4, spawns `dist/TextView.app`) and `PixelTestCase` (T5, WindowServer pixels)
+are heavy and VM-coupled. The heavy tiers **self-skip** when there's no built
+bundle / no GUI session, so the bare `swift test` sweep now runs to completion
+on the host — it just exercises the headless tiers and skips T4/T5.
+
+- **The merge/PR gate runs the HEADLESS tiers on the host.** Use the gate
+  script — it is what CI runs (`.github/workflows/pr.yml`):
+  - `bash scripts/test-headless-gate.sh` — `MDV_HEADLESS_GATE=1 swift test
+    --parallel`, then fails if any heavy-tier test ran its body (enforced by
+    `TierGateObserver` via a sentinel file). Heavy tiers self-skip; this is
+    host-green and non-disruptive (no window ever opens).
+  - The bare `swift test` / `swift test --parallel` is fine on the host now —
+    it completes (heavy tiers self-skip). Filter sweeps
+    (`swift test --filter ViewerCoreTests.<...>` /
+    `--filter ViewerKitTests.<...>`) remain handy for a fast pure-logic loop.
   - `swift build` for compile checks.
-  - `swift test --filter ViewerCoreTests.<...>` for pure-logic suites
-    (TabsState, CSVFilter, DocumentController, BookmarksStore, etc.).
-  - `swift test --filter ViewerKitTests.<...>` for type/value tests.
+- **Heavy tiers (T4 `LiveAppTestCase` / T5 `PixelTestCase`) run for REAL only
+  on the VM** — they need a GUI login session + Screen-Recording. They are the
+  separate VM / nightly lane (`.github/workflows/nightly-vm.yml`,
+  `scripts/test-in-vm.sh`), NOT the merge gate. Do NOT force them to run on the
+  host (don't build `dist/` and then sweep): a window would open and disrupt
+  your daily work. If you *want* to run them, use the VM.
+- **The in-process live-WKWebView suites** (`ComponentVisualTests`,
+  `ContentViewHostingTests`, `DiagnosticDumpTests`, `MermaidHostingTests`,
+  `RenderedFindBarTests`) `#192`-gate themselves out of the bare sweep; run them
+  with `MDV_RUN_WEBVIEW_TESTS=1 swift test --filter ...` in their own
+  invocation. They are part of the VM / nightly lane, not the merge gate.
 - **VM workflow:**
   - Sync: `rsync -az --delete --exclude='.build/' --exclude='.swiftpm/'
     --exclude='dist/' --exclude='.git/objects/pack/'
     /Users/me/Documents/workspaces/claude/markdown_viewer/
     macOS15:markdown_viewer/`
-  - Run: `ssh macOS15 'cd markdown_viewer && swift test'`
+  - Run: `ssh macOS15 'cd markdown_viewer && swift test'` (or
+    `bash scripts/test-in-vm.sh all` for build + full suite + JUnit).
   - Smoke (build + run + screencap): `bash scripts/vm-smoke.sh`
   - The VM has no git remote — it's an rsync mirror. Do not
     `git pull` on the VM.

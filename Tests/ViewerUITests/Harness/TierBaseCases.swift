@@ -30,15 +30,22 @@ import Foundation
 ///   │ PixelTestCase        T5              WindowServer pixels (VM)  │  ← opt up
 ///   └──────────────────────────────────────────────────────────────┘
 ///
-/// CI gating (TODO, not yet wired): the merge gate should run
-/// `HeadlessUITestCase` descendants as the host-headless sweep, and run
-/// `LiveAppTestCase` / `PixelTestCase` descendants in the separate VM
-/// lane (nightly + pre-release). With tier in the type, that selection is
-/// a class-membership query rather than a hand-maintained `--filter`
-/// list. Wiring options: a custom `XCTestObserver` that asserts the
-/// active sweep only instantiated the expected base, or a build-time
-/// scan. The base classes + the `// TIER-JUSTIFY:` convention are the
-/// deliverable here; the gate plumbing is a follow-up.
+/// CI gating (WIRED — see `.github/workflows/pr.yml`): the merge gate runs
+/// the bare `swift test --parallel` sweep on a host with no `dist/` bundle
+/// and no GUI session, so `HeadlessUITestCase` descendants run while
+/// `LiveAppTestCase` (T4) / `PixelTestCase` (T5) descendants self-skip
+/// (`LaunchHarness.isAppBuilt == false`, no Screen-Recording). The same job
+/// runs the `MDV_RUN_WEBVIEW_TESTS=1` lane for the in-process live-WKWebView
+/// suites that `#192`-gate themselves. The heavy T4/T5 tiers run for real in
+/// the separate VM / nightly lane (`scripts/test-in-vm.sh`).
+///
+/// The "headless" property is made non-regressable by `TierGateObserver`
+/// (the class-membership query this design called for): when the gate sets
+/// `MDV_HEADLESS_GATE=1`, the observer fails the run if any `LiveAppTestCase`
+/// / `PixelTestCase` subclass *runs its body* instead of skipping. So a
+/// heavy test that loses its `isAppBuilt` / screencapture guard — or is
+/// mis-filed under the wrong base — turns the gate red instead of silently
+/// drifting off-headless. Tier is the type, and the type is enforced.
 
 // MARK: - T1 / T1m / T2' — the default, headless tier
 
@@ -60,7 +67,16 @@ import Foundation
 /// any `NSHostingView` work are main-actor-isolated. No `// TIER-JUSTIFY:`
 /// required — this is the floor.
 @MainActor
-class HeadlessUITestCase: XCTestCase {}
+class HeadlessUITestCase: XCTestCase {
+    override class func setUp() {
+        super.setUp()
+        // Arm the headless-gate enforcement observer. Registering from the
+        // *floor* tier — which always runs in the gate — guarantees the
+        // observer is live before any heavy-tier test could start, no matter
+        // the alphabetical class order. Idempotent + process-global.
+        TierGateObserver.register()
+    }
+}
 
 // MARK: - T4 — real .app, spawned process
 
@@ -80,7 +96,15 @@ class HeadlessUITestCase: XCTestCase {}
 /// Not `@MainActor`: the live suites drive an out-of-process app and
 /// manage their own isolation (process spawn, file polling). Forcing
 /// main-actor isolation on the base would be invasive for no benefit.
-class LiveAppTestCase: XCTestCase {}
+class LiveAppTestCase: XCTestCase {
+    override class func setUp() {
+        super.setUp()
+        // Belt-and-suspenders: also arm enforcement from the heavy bases, in
+        // case a future invocation runs a heavy suite in isolation (its own
+        // `--filter`) without any `HeadlessUITestCase` having registered first.
+        TierGateObserver.register()
+    }
+}
 
 // MARK: - T5 — WindowServer pixels (the real screen)
 
@@ -105,4 +129,9 @@ class LiveAppTestCase: XCTestCase {}
 ///
 /// Not `@MainActor`: same reasoning as `LiveAppTestCase` — it spawns the
 /// app and drives `screencapture(1)` out-of-process.
-class PixelTestCase: XCTestCase {}
+class PixelTestCase: XCTestCase {
+    override class func setUp() {
+        super.setUp()
+        TierGateObserver.register()
+    }
+}

@@ -1,0 +1,73 @@
+name: Nightly VM lane (heavy tiers)
+
+# HEAVY tiers — the separate VM / nightly lane, NOT the merge gate.
+#
+# Runs the tiers that need a real app bundle and a real GUI session, which the
+# headless PR gate (pr.yml) deliberately skips:
+#   - LiveAppTestCase (T4): spawns dist/TextView.app via --script, reads JSON
+#     dumps back — verifies the AppDelegate↔coordinator launch wiring + the
+#     cross-process persistence that only exists in a real process.
+#   - PixelTestCase   (T5): SourceViewVisualRegressionTests — reads composited
+#     WindowServer pixels via screencapture(1). The sole irreducibly-real-screen
+#     suite; needs a GUI login session + TCC Screen-Recording grant.
+#   - The in-process live-WKWebView suites, run with MDV_RUN_WEBVIEW_TESTS=1
+#     (process-isolated from the bare sweep — see #192 / WebViewTestTeardown).
+#
+# Environment: these CANNOT run on a GitHub-hosted `macos-15` runner — they need
+# a GUI login session (WindowServer) + Screen-Recording TCC grant. They run on
+# the project's UTM macOS VM, registered as a SELF-HOSTED runner with the
+# `macos-vm` label. Until such a runner is registered, this workflow is a no-op
+# that documents the lane; locally the same lane is driven by
+# `scripts/test-in-vm.sh` over SSH (see CLAUDE.md "VM workflow").
+#
+# Note: this lane is intentionally NOT a required check on PRs — it's nightly +
+# manual. A red nightly is investigated, not a merge blocker.
+
+on:
+  schedule:
+    - cron: "0 8 * * *"   # 08:00 UTC nightly
+  workflow_dispatch: {}
+
+jobs:
+  vm-heavy:
+    name: Heavy tiers (T4/T5 + WebView) — self-hosted macOS VM
+    # Self-hosted UTM macOS VM with a live GUI session. Skips cleanly on forks /
+    # before a runner is registered.
+    runs-on: [self-hosted, macos-vm]
+    if: ${{ github.repository_owner != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Swift version
+        run: swift --version
+
+      # Build the bundle the heavy tiers need, then run the FULL suite
+      # (headless + T4 + T5). test-in-vm.sh builds dist/TextView.app, runs
+      # `swift test`, and emits JUnit XML at /tmp/mdv-test-results.xml.
+      - name: Build + full suite (headless + T4/T5)
+        run: bash scripts/test-in-vm.sh all
+
+      # The in-process live-WKWebView suites — process-isolated from the bare
+      # sweep (#192). Run them in their own invocation with the gate armed so a
+      # heavy-tier regression here is still caught; these suites are NOT
+      # LiveAppTestCase/PixelTestCase subclasses, so the observer leaves them
+      # alone — it only fails on a T4/T5 body running in a *headless* context,
+      # which this isn't.
+      - name: WebView lane (MDV_RUN_WEBVIEW_TESTS)
+        run: |
+          MDV_RUN_WEBVIEW_TESTS=1 swift test --parallel \
+            --filter ViewerUITests.ComponentVisualTests \
+            --filter ViewerUITests.ContentViewHostingTests \
+            --filter ViewerUITests.DiagnosticDumpTests \
+            --filter ViewerUITests.FindBarTests \
+            --filter ViewerUITests.FormatToggleTests \
+            --filter ViewerUITests.MermaidHostingTests \
+            --filter ViewerUITests.RenderedFindBarTests
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vm-test-results
+          path: /tmp/mdv-test-results.xml
+          if-no-files-found: ignore

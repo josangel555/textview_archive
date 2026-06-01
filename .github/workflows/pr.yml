@@ -6,12 +6,28 @@ on:
   pull_request:
     branches: [main]
 
+# Merge/PR gate — HEADLESS tiers only.
+#
+# This job runs the headless test pyramid (T1 / T1m / T2'): ViewerKitTests +
+# ViewerCoreTests + the HeadlessUITestCase-based ViewerUITests, via the bare
+# `swift test` sweep (which now completes — the heavy tiers self-skip with no
+# bundle / no GUI session). It does NOT build or run against `dist/TextView.app`,
+# so the heavy tiers physically cannot run their bodies here:
+#   - LiveAppTestCase (T4) — XCTSkips (LaunchHarness.isAppBuilt == false)
+#   - PixelTestCase   (T5) — XCTSkips (no app + no Screen-Recording)
+# Those run for real in the SEPARATE VM / nightly lane (scripts/test-in-vm.sh),
+# which is local-only (the UTM macOS VM isn't a GitHub-hosted runner).
+#
+# Tier enforcement: scripts/test-headless-gate.sh arms MDV_HEADLESS_GATE=1, and
+# the in-process TierGateObserver fails the gate if any LiveAppTestCase /
+# PixelTestCase subclass RUNS its body instead of skipping — so "headless"
+# can't silently regress (tier is the type, checked at runtime).
 jobs:
-  test:
+  headless-gate:
     # Runner must match the app's deployment target (macOS 15+, see
     # Package.swift `platforms: [.macOS(.v15)]`). macos-14 cannot run a
     # macOS-15-targeted .app and silently masks v15-only API misuse.
-    name: Build & Test (macOS 15)
+    name: Headless gate (macOS 15)
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -28,9 +44,17 @@ jobs:
       - name: Build
         run: swift build -v
 
-      - name: Test
-        run: swift test --parallel
+      # The gate: headless tiers + machine-checked tier enforcement.
+      # The script runs `MDV_HEADLESS_GATE=1 swift test --parallel`, then fails
+      # the build if EITHER a test failed OR a heavy-tier test ran its body
+      # (TierGateObserver sentinel). The heavy T4/T5 tiers self-skip here.
+      - name: Headless gate (swift test + tier enforcement)
+        run: bash scripts/test-headless-gate.sh
 
+      # Bundle assembly is a separate compile/packaging check — NOT used to
+      # run the heavy tiers (those stay in the VM lane). Kept here so a broken
+      # build-app.sh / Info.plist / size-budget regression is still caught at
+      # PR time.
       - name: Assemble .app bundle
         run: bash scripts/build-app.sh debug
 
