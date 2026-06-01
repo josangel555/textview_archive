@@ -13,10 +13,28 @@ struct TabBar: View {
     private static let idealTabWidth: CGFloat = 180
     private static let minShrunkWidth: CGFloat = 54
 
+    /// Available strip width, measured by a NON-layout-driving background
+    /// reader (see `.background`) rather than a wrapping `GeometryReader`.
+    ///
+    /// CHROME RESIZE FIX (Bug A, 2026-06-01): the body used to be wrapped
+    /// in a `GeometryReader` (introduced WAVE 2b `8ddda05`) purely to feed
+    /// `geo.size.width` into `computedTabWidth`. A `GeometryReader` is
+    /// GREEDY on both axes yet reports a TINY (10×10) IDEAL size — so the
+    /// TabBar's intrinsic width collapsed to 10pt and its vertical sizing
+    /// became ambiguous. Sitting inside the chrome VStack's
+    /// `.fixedSize(vertical:)` + `layoutPriority(1)` row, that ambiguous
+    /// intrinsic size is exactly the kind of unstable composition that
+    /// makes the bar mis-lay-out / blank on a live window resize ("top
+    /// tab bar disappears on resize"). Measuring width via a
+    /// `.background(GeometryReader …)` overlay keeps the value available
+    /// to the width budget WITHOUT letting the reader drive the strip's
+    /// own layout: a background never changes its parent's sizing, so the
+    /// HStack reports a firm `(naturalWidth, 30)` intrinsic size again.
+    @State private var availableWidth: CGFloat = 0
+
     var body: some View {
-        GeometryReader { geo in
         let tabWidth = Self.computedTabWidth(
-            available: geo.size.width,
+            available: availableWidth,
             count: model.tabs.tabs.count,
             scale: CGFloat(model.zoom)
         )
@@ -82,9 +100,20 @@ struct TabBar: View {
             .padding(.horizontal, 4)
         }
         .frame(height: 30)
-        .background(Palette.windowBackground)
-        } // GeometryReader
-        .frame(height: 30)
+        // Measure the strip's available width WITHOUT a wrapping
+        // GeometryReader (see `availableWidth` doc): a `.background`
+        // overlay reads geometry but never alters the parent's layout,
+        // so the HStack keeps a firm intrinsic size. The reader fills the
+        // background, reports its width, and we mirror it into state on
+        // change. `Color.clear` keeps the existing window-background fill
+        // behavior unchanged.
+        .background(
+            GeometryReader { geo in
+                Palette.windowBackground
+                    .onAppear { availableWidth = geo.size.width }
+                    .onChange(of: geo.size.width) { _, w in availableWidth = w }
+            }
+        )
     }
 
     /// item12: per-tab width under a width budget. Reserve the trailing
