@@ -339,16 +339,22 @@ public final class ReviewSession: ObservableObject {
     }
 
     /// Drain the queue for a specific review id (flush its pending write).
+    ///
+    /// The drain + final write MUST run *inside* the serial queue, not before
+    /// `writeQueue.sync { }`. If flush wrote the latest value on the caller's
+    /// thread first and only then barrier-synced, an already-queued async
+    /// block carrying a STALE value could execute after flush's write and
+    /// clobber it (the "v0 wins over v50" race). Running the drain as the
+    /// queue's own (necessarily last, since the queue is serial) block makes
+    /// the newest value the final write, deterministically.
     private static func flushSync(store: ReviewStore, id: String) {
-        // First, write any value still sitting in the coalesce map (the GCD
-        // block may not have run yet for the very latest value).
-        coalesceLock.lock()
-        let snapshot = pending.removeValue(forKey: id)
-        coalesceLock.unlock()
-        if let snapshot {
-            _ = snapshot.store.save(snapshot.review)
+        writeQueue.sync {
+            coalesceLock.lock()
+            let snapshot = pending.removeValue(forKey: id)
+            coalesceLock.unlock()
+            if let snapshot {
+                _ = snapshot.store.save(snapshot.review)
+            }
         }
-        // Then barrier-sync the queue so any in-flight earlier write finishes.
-        writeQueue.sync { }
     }
 }
