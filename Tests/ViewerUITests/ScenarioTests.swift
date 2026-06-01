@@ -1,7 +1,7 @@
 import XCTest
 import Foundation
 
-/// L5 scenario tests: longer composed flows that exercise multiple
+/// T1m scenario tests: longer composed flows that exercise multiple
 /// components in sequence. These verify that interactions chain
 /// correctly — that toggling source mode while a search is active
 /// doesn't break, that opening multiple files updates the tabs AND
@@ -11,13 +11,15 @@ import Foundation
 /// invariants that span steps, not just the final state — that's what
 /// a chain test is for.
 ///
-/// Refactored to run multiple scenarios per test method via
-/// `MultiScenarioTestCase`, sharing the fixture tmpdir across
-/// scenarios so we don't re-create `tmpDir` per check.
-final class ScenarioTests: MultiScenarioTestCase {
+/// (History: this spawned `dist/TextView.app` per scenario. The cross-step
+/// invariants assert on `model.currentViewMode`, `model.zoom`, and the
+/// window title — a pure `model.windowTitle` projection — so the migration
+/// (§3.2) demoted it to in-process T1m. The "rendered mode minted a
+/// WKWebView" checks moved to the T2' `ContentViewHostingTests`; here we
+/// assert the model-mode transition that drives it.)
+final class ScenarioTests: HeadlessMultiScenarioTestCase {
 
     override class var harnessLabel: String { "Scenario" }
-    override class var defaultScenarioTimeout: TimeInterval { 30 }
 
     // MARK: - Tab + view-mode scenarios share a fixture
 
@@ -66,8 +68,9 @@ final class ScenarioTests: MultiScenarioTestCase {
                 p[0].modeBar.assertMode("source", file: file, line: line)
                 p[1].modeBar.assertMode("rendered", file: file, line: line)
                 p[2].modeBar.assertMode("source", file: file, line: line)
-                // Middle step is rendered — verify WKWebView present.
-                p[1].modeBar.assertHasWebView(file: file, line: line)
+                // (Middle-step "rendered mode minted a WKWebView" check
+                // moved to T2' ContentViewHostingTests; the model-mode
+                // assertion above is the authoritative T1m signal.)
             }
         ])
     }
@@ -118,13 +121,18 @@ final class ScenarioTests: MultiScenarioTestCase {
                         zoom-reset
                         """) { dumps, file, line in
                 XCTAssertEqual(dumps.count, 3, file: file, line: line)
-                // WKWebView should be present in all three steps (we're
-                // in markdown rendered mode for a.md throughout).
+                // The original assertion ("WKWebView present at every step")
+                // proved folder-open doesn't collapse the rendered content.
+                // The authoritative model signal is that the active document
+                // stays in `.rendered` mode (markdown a.md) across the
+                // open-folder + zoom steps — the WKWebView follows from that,
+                // and its realization is guarded at T2'
+                // (ContentViewHostingTests).
                 for (i, d) in dumps.enumerated() {
-                    let p = Pages(dump: d)
-                    XCTAssertTrue(p.content.hasWebView,
-                        "WKWebView should be present at step \(i + 1) — folder-open should not collapse content",
+                    Pages(dump: d).modeBar.assertMode(
+                        "rendered",
                         file: file, line: line)
+                    _ = i
                 }
             }
         ])

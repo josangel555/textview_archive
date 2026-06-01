@@ -1,11 +1,10 @@
 import XCTest
 import Foundation
 
-/// L4 coverage for session keyboard dispatch (⌃Tab / ⌃1-9 / ⇧⌘W).
-/// The AppLauncher harness can't synthesise keyboard events through
-/// the macOS event loop (the .app is started headless via Process,
-/// no XCUIApplication), so we drive the same SessionsAppCoordinator
-/// methods the key bindings call: `session-next` / `session-prev` /
+/// T1m coverage for session keyboard dispatch (⌃Tab / ⌃1-9 / ⇧⌘W).
+/// The key bindings can't be synthesised through the macOS event loop
+/// from a script, so we drive the same `SessionsAppCoordinator` methods
+/// the key bindings call: `session-next` / `session-prev` /
 /// `session-activate <index>` / `session-close-active`.
 ///
 /// What this gives us:
@@ -16,15 +15,21 @@ import Foundation
 ///     pipeline as a keyboard-driven test would, so when the VM gains
 ///     real key dispatch later, only the verb lines change.
 ///
-/// What this does NOT cover (intentional):
+/// What this does NOT cover (intentional, and the honest gap §3.4 names):
 ///   - The macOS key binding dispatch chain itself (`NSEvent`
 ///     monitor → menu action selector). That's a separate concern
 ///     verified manually until the harness grows real key support.
+///
+/// (History: this spawned `dist/TextView.app`. As the header always
+/// admitted, it never dispatched real keys — it drove the coordinator
+/// methods directly and read `dump.model.sessions` / `activeSessionID`,
+/// pure coordinator state. So the migration (§3.2) demoted it to
+/// in-process T1m against a hermetic `SessionsAppCoordinator`; the verbs,
+/// scenarios, and assertions are byte-for-byte the same.)
 @MainActor
-final class SessionsKeyboardUITests: MultiScenarioTestCase {
+final class SessionsKeyboardUITests: HeadlessMultiScenarioTestCase {
 
     override class var harnessLabel: String { "SessionsKeyboardUI" }
-    override class var defaultScenarioTimeout: TimeInterval { 25 }
 
     private func makeFolder(_ name: String) throws -> URL {
         let dir = try harness.makeDir(name)

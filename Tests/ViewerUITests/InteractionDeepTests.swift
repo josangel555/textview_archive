@@ -1,18 +1,21 @@
 import XCTest
 import Foundation
 
-/// L4 deep interaction tests — exercise tab cycling, sidebar nav,
-/// palette show/dismiss, find invocation, window resize, zoom across
-/// many small interactions. Driven by the `--script` runner so we don't
-/// depend on AppleScript focus stealing.
+/// T1m deep interaction tests — exercise tab cycling, sidebar nav,
+/// palette show/dismiss, zoom across many small interactions, in-process
+/// against a hermetic `DocumentModel`.
 ///
-/// Refactored onto `MultiScenarioTestCase`: related checks now share a
-/// test method and a fixture set instead of each one rebuilding tmpdir
-/// fixtures from scratch.
-final class InteractionDeepTests: MultiScenarioTestCase {
+/// (History: this spawned `dist/TextView.app` via `--script`. The
+/// tab-cycle / palette / sidebar / zoom checks all read `model.*` scalars
+/// — `isPalettePresented`, `zoom`, `sidebar.rootURL`, and the window title
+/// (a pure `model.windowTitle` projection) — so the migration (§3.2)
+/// demoted them to in-process T1m. The ONE genuinely-real-screen check,
+/// `test_resize_changesWindowGeometry`, reads back the OS-clamped
+/// `NSWindow.frame` after `setFrame` — no in-process equivalent — and was
+/// split out to `InteractionDeepResizeTests` (T4, §3.4 residue).)
+final class InteractionDeepTests: HeadlessMultiScenarioTestCase {
 
     override class var harnessLabel: String { "InteractionDeep" }
-    override class var defaultScenarioTimeout: TimeInterval { 30 }
 
     // MARK: - Tab cycling (two scenarios share a/b/c.md)
 
@@ -87,42 +90,6 @@ final class InteractionDeepTests: MultiScenarioTestCase {
                 XCTAssertEqual(flags, [true, false, true],
                     "Expected isPalettePresented to toggle show→dismiss→show; got \(flags)",
                     file: file, line: line)
-            }
-        ])
-    }
-
-    // MARK: - Window resize
-
-    func test_resize_changesWindowGeometry() throws {
-        let md = try harness.writeFile("a.md")
-        try runScenarios([
-            // Resize targets sized to fit even modest displays (the
-            // 1440x900 UTM VM). 1400x900 + titlebar overflowed and
-            // macOS clamped — these targets are well inside any modern
-            // viewport.
-            Scenario(name: "resize-grows-window",
-                     argFile: md,
-                     script: """
-                        resize 800x500
-                        resize 1100x650
-                        """) { dumps, file, line in
-                XCTAssertEqual(dumps.count, 2, file: file, line: line)
-                let p1 = Pages(dump: dumps[0]).generic
-                let p2 = Pages(dump: dumps[1]).generic
-                guard let (w1, h1) = p1.windowSize,
-                      let (w2, h2) = p2.windowSize else {
-                    return XCTFail("could not parse window size",
-                                   file: file, line: line)
-                }
-                XCTAssertEqual(w1, 800, "First resize width should be 800",
-                               file: file, line: line)
-                XCTAssertGreaterThan(h1, 500 - 5, file: file, line: line)
-                XCTAssertEqual(w2, 1100, "Second resize width should be 1100",
-                               file: file, line: line)
-                XCTAssertGreaterThan(w2, w1, "Second resize widened the window",
-                                     file: file, line: line)
-                XCTAssertGreaterThan(h2, h1, "Second resize heightened the window",
-                                     file: file, line: line)
             }
         ])
     }

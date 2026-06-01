@@ -1,23 +1,27 @@
 import XCTest
 import Foundation
 
-/// L4 live-app coverage for the Phase-1 SessionTabBar
+/// T1m coverage for the Phase-1 SessionTabBar
 /// (`Sources/ViewerUI/Sessions/SessionTabBar.swift`).
 ///
-/// Phase-1 session model: the launcher boots with
-/// `MDV_SKIP_WORKSPACE_RESTORE=1`, so the coordinator starts empty;
-/// the script verb `session-open-folder` triggers the same coordinator
-/// path the UI's `+` button hits.
+/// Phase-1 session model: the harness boots a coordinator with no
+/// `initialRoot` (the empty-strip start the launcher gets with
+/// `MDV_SKIP_WORKSPACE_RESTORE=1`); the script verb `session-open-folder`
+/// triggers the same coordinator path the UI's `+` button hits.
 ///
-/// We assert on `dump.model.sessions` + `model.activeSessionID` rather
-/// than chasing SwiftUI a11y identifiers — those surface
-/// inconsistently on the realised NSView (same caveat that
-/// `TabBarPage` documents).
+/// We assert on `dump.model.sessions` + `model.activeSessionID` — pure
+/// coordinator state, authoritative for ordering + active id.
+///
+/// (History: this spawned `dist/TextView.app` and, as the header already
+/// noted, deliberately read the model session list rather than chasing the
+/// SwiftUI a11y identifiers — which never reliably surface on the realised
+/// NSView. Since every assertion is coordinator state, the migration (§3.2)
+/// demoted it to in-process T1m against a hermetic `SessionsAppCoordinator`.
+/// The `+`-button a11y no-op scenario was already deleted in step 3.)
 @MainActor
-final class SessionTabBarUITests: MultiScenarioTestCase {
+final class SessionTabBarUITests: HeadlessMultiScenarioTestCase {
 
     override class var harnessLabel: String { "SessionTabBarUI" }
-    override class var defaultScenarioTimeout: TimeInterval { 20 }
 
     private func makeFolder(_ name: String, fileBody: String = "# Hello\n") throws -> URL {
         let dir = try harness.makeDir(name)

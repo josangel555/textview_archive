@@ -22,9 +22,20 @@ extension DumpPage {
 
     // MARK: - Window helpers
 
-    /// `dump["window"]["title"]`.
+    /// Active window title.
+    ///
+    /// Prefers the live `dump["window"]["title"]` (the real
+    /// `NSWindow.title`, present in spawned-app T4 dumps). Falls back to
+    /// `dump["model"]["windowTitle"]` — the model projection the headless
+    /// harness emits, and the exact value `main.swift` mirrors onto the
+    /// live window — so the title-derived assertions read identically at
+    /// T1m and T4. The window title was never a ④/compositor observable;
+    /// it's a pure projection of `tabs.selected?.title`.
     var windowTitle: String? {
-        (dump["window"] as? [String: Any])?["title"] as? String
+        if let t = (dump["window"] as? [String: Any])?["title"] as? String {
+            return t
+        }
+        return model["windowTitle"] as? String
     }
 
     /// Parsed `(width, height)` from `dump["window"]["frame"]`. Frames

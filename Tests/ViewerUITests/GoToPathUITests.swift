@@ -1,7 +1,7 @@
 import XCTest
 import Foundation
 
-/// L4 live-app coverage for the ⇧⌘G Go-to-path prompt
+/// T1m coverage for the ⇧⌘G Go-to-path prompt
 /// (`Sources/ViewerUI/GoToPathPrompt.swift`).
 ///
 /// The script runner cannot type into the prompt's local `@State`
@@ -10,11 +10,17 @@ import Foundation
 /// call `DocumentModel.commitGoToPath(_:newSession:)` (the headless
 /// mirror of `GoToPathPrompt.submit`). That method populates the
 /// model-side `lastGoToError` field surfaced by `GoToPathPage`.
+///
+/// (History: this spawned `dist/TextView.app`. Every assertion reads
+/// `model.isGoToPathPresented` / `model.lastGoToError` or the window title
+/// — itself a pure `model.windowTitle` projection — so the migration
+/// (§3.2) demoted it to T1m in-process. Nothing was lost: the prompt's
+/// validation contract IS `DocumentModel.commitGoToPath`, which a hermetic
+/// model exercises identically.)
 @MainActor
-final class GoToPathUITests: MultiScenarioTestCase {
+final class GoToPathUITests: HeadlessMultiScenarioTestCase {
 
     override class var harnessLabel: String { "GoToPathUI" }
-    override class var defaultScenarioTimeout: TimeInterval { 20 }
 
     private func writeFixture() throws -> URL {
         try harness.writeFile("seed.md", "# seed\n")

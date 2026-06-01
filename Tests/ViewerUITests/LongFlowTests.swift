@@ -1,22 +1,27 @@
 import XCTest
 import Foundation
 
-/// L5 long user-flow tests. Realistic multi-step user sessions
+/// T1m long user-flow tests. Realistic multi-step user sessions
 /// composed of 10-25 interactions. Each test asserts INVARIANTS that
-/// must hold across the whole session — no crashes, content always
-/// rendered when expected, state coherent.
+/// must hold across the whole session — no crashes, state coherent.
 ///
-/// These take 30s-90s each (each step ~300ms). They're a different
-/// shape of test than the granular L4 ones: they catch interaction
-/// bugs that only show after a stretch of mixed use.
+/// They're a different shape of test than the granular ones: they catch
+/// interaction bugs that only show after a stretch of mixed use.
 ///
-/// Refactored onto `MultiScenarioTestCase`. The day-in-life scenario
-/// stays in its own test method because its invariants span 16 steps
-/// and don't share fixtures with the others.
-final class LongFlowTests: MultiScenarioTestCase {
+/// (History: this spawned `dist/TextView.app` per scenario, ~300ms/step
+/// → 30-90s each. The per-step invariants assert on `model.zoom` and the
+/// window title (a pure `model.windowTitle` projection), so the migration
+/// (§3.2) demoted them to in-process T1m — microseconds, no VM. The ONE
+/// scenario that depended on cross-*process* `PreferencesStore`
+/// persistence across a relaunch (zoom-prime → relaunch → read-back) was
+/// split to `LongFlowRelaunchTests` (T4, §3.4 residue): a fresh hermetic
+/// model can't observe state persisted by a *previous process*. The old
+/// per-step "window has a non-nil frame" smoke check was dropped — there
+/// is no window at T1m, and frame-present is not a `model.*` observable;
+/// the resize/geometry observable lives in `InteractionDeepResizeTests`.)
+final class LongFlowTests: HeadlessMultiScenarioTestCase {
 
     override class var harnessLabel: String { "LongFlow" }
-    override class var defaultScenarioTimeout: TimeInterval { 90 }
 
     // MARK: - Scenario: day-in-the-life
 
@@ -59,15 +64,15 @@ final class LongFlowTests: MultiScenarioTestCase {
                     "Day-in-life flow should execute 16 distinct steps",
                     file: file, line: line)
 
-                // Invariants across all steps:
-                // 1. Every step has a non-empty window frame.
-                // 2. Every step has a non-nil window title.
-                // 3. model.zoom (when present) is in a sane range.
+                // Invariants across all steps (all `model.*` observables;
+                // the dropped "non-nil window frame" check was a T4-only
+                // geometry probe — see InteractionDeepResizeTests):
+                // 1. Every step has a non-empty window title
+                //    (`model.windowTitle` is never empty — defaults to
+                //    "TextView" with no tab).
+                // 2. model.zoom (when present) is in a sane range.
                 for (i, d) in dumps.enumerated() {
                     let p = Pages(dump: d).generic
-                    XCTAssertNotNil(p.windowSize,
-                        "Step \(i+1): no window frame",
-                        file: file, line: line)
                     let title = p.windowTitle ?? ""
                     XCTAssertFalse(title.isEmpty,
                         "Step \(i+1): window title should never be empty mid-flow",
@@ -85,9 +90,13 @@ final class LongFlowTests: MultiScenarioTestCase {
         ])
     }
 
-    // MARK: - Scenarios: heavy tab churn + zoom persistence across launch
+    // MARK: - Scenario: heavy tab churn
+    //
+    // (The zoom-across-relaunch scenarios that used to live here moved to
+    // `LongFlowRelaunchTests` — they assert cross-*process* PreferencesStore
+    // persistence, which a per-scenario hermetic model can't observe.)
 
-    func test_tabChurnAndZoomPersistence() throws {
+    func test_tabChurn() throws {
         // Heavy-tab-churn fixtures.
         var urls: [URL] = []
         for i in 0..<8 {
@@ -100,11 +109,7 @@ final class LongFlowTests: MultiScenarioTestCase {
         let churnScript = lines.joined(separator: "\n")
         let churnExpectedSteps = lines.count
 
-        // Zoom-persistence fixtures.
-        let md = try harness.writeFile("p.md", "# pers\nbody\n")
-
         try runScenarios([
-            // 1. Heavy tab churn.
             Scenario(name: "heavy-tab-churn",
                      argFile: urls[0],
                      script: churnScript) { dumps, file, line in
@@ -125,37 +130,6 @@ final class LongFlowTests: MultiScenarioTestCase {
                 XCTAssertGreaterThanOrEqual(Set(openPhaseTitles).count, 5,
                     "Opening 7 different files should change the title ≥5 times. Titles: \(openPhaseTitles)",
                     file: file, line: line)
-            },
-
-            // 2. Persistence across launch: prime the preferences store.
-            Scenario(name: "zoom-prime-preferences",
-                     argFile: md,
-                     script: """
-                        zoom-reset
-                        zoom-in
-                        zoom-in
-                        """) { dumps, _, _ in
-                _ = dumps  // primer; assertions live in the next scenario.
-            },
-
-            // 3. Persistence across launch: read back model.zoom after a
-            //    fresh launch (PreferencesStore persists across runs).
-            Scenario(name: "zoom-persists-after-relaunch",
-                     argFile: md,
-                     script: "toggle-view\n") { dumps, file, line in
-                XCTAssertEqual(dumps.count, 1, file: file, line: line)
-                let zoom = Pages(dump: dumps[0]).generic.zoom ?? -1
-                XCTAssertGreaterThan(zoom, 1.0,
-                    "After zoom-in × 2 + relaunch, model.zoom should be > 1.0. Got \(zoom)",
-                    file: file, line: line)
-            },
-
-            // 4. Clean up preferences so unrelated tests run from a known
-            //    baseline.
-            Scenario(name: "zoom-cleanup-reset",
-                     argFile: md,
-                     script: "zoom-reset\n") { _, _, _ in
-                // intentionally no assertion — cleanup-only step.
             }
         ])
     }

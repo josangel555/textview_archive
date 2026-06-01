@@ -227,6 +227,15 @@ public enum ScriptVerb {
         return [
             "zoom": model.zoom,
             "currentViewMode": model.currentViewMode.rawValue,
+            // `windowTitle` is a pure model projection (`tabs.selected?.title
+            // ?? "TextView"` — see DocumentModel) that `main.swift` mirrors
+            // onto `NSWindow.title`. Surfacing it here lets the title-based
+            // Page Object accessors (TabBarPage.activeTabTitle, the
+            // title-change-count invariants in Scenario/LongFlow/Deep) read
+            // the same value headless that they read from the live
+            // `window.title` — the title was never a ④/window observable, it
+            // was always model state.
+            "windowTitle": model.windowTitle,
             "tabCount": model.tabs.tabs.count,
             "selectedTabIndex": model.tabs.selectedIndex ?? -1,
             "isCurrentTabFormatted": model.isCurrentTabFormatted,

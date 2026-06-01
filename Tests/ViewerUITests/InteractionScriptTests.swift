@@ -1,29 +1,29 @@
 import XCTest
 import Foundation
 
-/// L4 tests: drive the real `.app` through a sequence of interactions
-/// using the in-app `--script` runner, then assert on the JSON diagnostic
-/// dumps written between each step. Catches:
-///   - state changes that don't propagate to the view layer (e.g. toggle
-///     view mode produces no WKWebView/NSTextView swap)
-///   - tab open/close failing to update the tab list
-///   - sidebar toggle not changing the tree presence
-///   - zoom adjustments not changing font sizes
+/// T1m tests: drive a hermetic `DocumentModel` through a sequence of
+/// `--script` verbs in-process (via `HeadlessHarness` + `ScriptVerb.apply`),
+/// then assert on the per-step `model` dump. Catches:
+///   - tab open/close failing to update the tab count
+///   - view-mode toggle not flipping `model.currentViewMode`
+///   - zoom adjustments not changing `model.zoom`
 ///
-/// We do **not** rely on PNG snapshots for assertions here. Snapshots
-/// taken via `CGWindowListCreateImage` come back blank when the test
-/// harness owns the foreground; the JSON dump is layer-state-independent
-/// and gives us truthful per-step state. PNGs are still written to
-/// `/tmp/mdv-step-NN.png` for human visual review.
+/// (History: this suite spawned `dist/TextView.app` via `--script` and read
+/// per-step JSON dumps off disk — an L4 process round-trip. Every assertion
+/// here reads `model.*` scalars (`currentViewMode`, `zoom`, `tabCount`),
+/// which a hermetic model produces faithfully in-process, so the
+/// testing-pyramid migration (§3.2) demoted it to T1m. The one observable
+/// that genuinely needed a realized view tree — "rendered mode actually
+/// minted a `WKWebView`" — moved to the T2' `ContentViewHostingTests`
+/// (`test_openMarkdown_hostedView_containsWebView`); the old
+/// `assertHasWebView`/`assertNoWebView` calls were dropped here rather than
+/// duplicated.)
 ///
-/// Refactored onto `MultiScenarioTestCase` + Page Objects. Each test
-/// method below either runs one scenario or a batch — the dump-walking
-/// helpers (`nodesOfClass`, tabbar lookup, mode/zoom probes) are now
-/// in `PageObjects/`.
-final class InteractionScriptTests: MultiScenarioTestCase {
+/// Runs on `HeadlessMultiScenarioTestCase`: same `Scenario` list + Page
+/// Objects as before, swapped onto the in-process producer.
+final class InteractionScriptTests: HeadlessMultiScenarioTestCase {
 
     override class var harnessLabel: String { "InteractionScript" }
-    override class var defaultScenarioTimeout: TimeInterval { 20 }
 
     private func writeMarkdown(_ name: String = "doc.md") throws -> URL {
         try harness.writeFile(name, """
@@ -50,10 +50,11 @@ final class InteractionScriptTests: MultiScenarioTestCase {
                                file: file, line: line)
                 let after1 = Pages(dump: dumps[0])
                 let after2 = Pages(dump: dumps[1])
+                // The WKWebView-realization observable (rendered mode mints
+                // a WKWebView) moved to T2' `ContentViewHostingTests`. Here
+                // we assert the authoritative model-mode transition.
                 after1.modeBar.assertMode("source", file: file, line: line)
-                after1.modeBar.assertNoWebView(file: file, line: line)
                 after2.modeBar.assertMode("rendered", file: file, line: line)
-                after2.modeBar.assertHasWebView(file: file, line: line)
             }
         ])
     }
