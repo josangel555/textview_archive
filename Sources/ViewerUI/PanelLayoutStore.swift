@@ -99,4 +99,38 @@ public final class PanelLayoutStore: ObservableObject {
         edges.setEdge(k, edge)
         edges.save(to: defaults)
     }
+
+    // MARK: - Per-session snapshot (#184)
+    //
+    // The shoulder-rail layout moved from the GLOBAL `UserDefaults` to a
+    // per-session blob. `snapshot()` captures the live in-memory state;
+    // `apply(_:)` installs a session's persisted state on mount/hydrate.
+    //
+    // OBSERVATION + PERSISTENCE DISCIPLINE: `apply` mutates the
+    // `@Published` edges/overrides (so the directly-observing rails /
+    // sidebar re-body — the same narrow path a user toggle takes) but
+    // does NOT write through to `UserDefaults`. Otherwise activating a
+    // session would clobber the global default with that one session's
+    // layout, and the GLOBAL key would no longer mean "the app-wide
+    // fallback". The session's authoritative copy lives in its
+    // `SessionSnapshot`; the store's UserDefaults keys remain the
+    // app-wide default used for a brand-new (unseeded) session.
+
+    /// Capture the live layout as a downgrade-safe per-session snapshot.
+    public func snapshot() -> PanelLayoutSnapshot {
+        PanelLayoutSnapshot(edges: edges.encoded(), overrides: overrides.encoded())
+    }
+
+    /// Install a session's persisted layout. Mutates the `@Published`
+    /// edges/overrides (fires `objectWillChange` for the directly-
+    /// observing rails + sidebar) WITHOUT writing to `UserDefaults` —
+    /// per-session layout must not clobber the global default. Idempotent
+    /// and equality-guarded: applying the layout it already holds is a
+    /// no-op (no spurious republish).
+    public func apply(_ snapshot: PanelLayoutSnapshot) {
+        let newEdges = PanelEdgeAssignment.decoded(snapshot.edges)
+        let newOverrides = PanelVisibilityOverrides.decoded(snapshot.overrides)
+        if newEdges != edges { edges = newEdges }
+        if newOverrides != overrides { overrides = newOverrides }
+    }
 }

@@ -45,17 +45,27 @@ public final class SessionState: ObservableObject {
     /// want to gray out an inactive session's strip cell.
     @Published public private(set) var isMounted: Bool = false
 
+    /// What kind of session this is (project / code review / CI-CD /
+    /// metrics). Drives the SEED-ONCE per-kind default panel layout on
+    /// creation — it is NOT a live override (changing it later does not
+    /// re-impose a layout; the user's subsequent layout edits win). `nil`
+    /// = the plain "project" default for legacy / unseeded sessions.
+    /// Persisted additively-optionally as `sessionType` in the snapshot.
+    public var sessionType: SessionKind?
+
     public init(id: UUID = UUID(),
                 rootURL: URL,
                 displayName: String? = nil,
                 createdAt: Date = Date(),
                 lastActiveAt: Date = Date(),
+                sessionType: SessionKind? = nil,
                 model: DocumentModel = DocumentModel()) {
         self.id = id
         self.rootURL = rootURL
         self.displayName = displayName ?? Self.defaultDisplayName(for: rootURL)
         self.createdAt = createdAt
         self.lastActiveAt = lastActiveAt
+        self.sessionType = sessionType
         self.model = model
     }
 
@@ -97,10 +107,23 @@ public final class SessionState: ObservableObject {
     }
 
     /// Serialize the live `DocumentModel` state into a
-    /// `SessionSnapshot`. The coordinator persists the result. New
-    /// session-scoped fields (sidebar expansion, split URL) land
-    /// over Phase 1.5 / Phase 2 as `DocumentModel` exposes the
-    /// underlying state.
+    /// `SessionSnapshot`. The coordinator persists the result.
+    ///
+    /// SESSION-INDEPENDENCE (#184): the per-session surface now includes
+    /// the sidebar expansion set, the include-hidden toggle, the split
+    /// pane URL, and the shoulder-rail panel layout — all of which used
+    /// to be hard-coded `nil` here (and `panelLayout` lived in the GLOBAL
+    /// UserDefaults), so switching/relaunching a session silently reset
+    /// them. They're now captured per-session.
+    ///
+    /// GLOBAL (owner LOCKED, #184): `zoom`, `wordWrap`, `themeOverride`
+    /// are app-wide, NOT per-session. We deliberately write `nil` for
+    /// them so a session switch / relaunch never imposes one project's
+    /// zoom/wrap/theme on the app. `zoom`/`wordWrap` already persist to
+    /// the global `PreferencesStore`; `themeOverride` is an app-wide
+    /// in-memory toggle. The snapshot fields remain in the schema purely
+    /// for downgrade-safe decoding of pre-#184 files (additive-optional,
+    /// never re-written).
     public func makeSnapshot() -> SessionSnapshot {
         // Dedup defensively on the WRITE side too (matches the restore read
         // side). Once `appendLazyTab` is idempotent the live list can't carry
@@ -116,6 +139,12 @@ public final class SessionState: ObservableObject {
             from: model.tabs.tabs,
             selectedIndex: model.tabs.selectedIndex
         )
+        // Sort the expanded paths so the persisted blob is stable across
+        // writes (Set iteration order is unspecified) — otherwise the
+        // autosave equality guard would see a "change" on every tick.
+        let expandedPaths = model.sidebar.expanded
+            .map { $0.path }
+            .sorted()
         return SessionSnapshot(
             schemaVersion: SessionSnapshot.currentSchema,
             savedAt: Date(),
@@ -127,12 +156,15 @@ public final class SessionState: ObservableObject {
                 ?? rootURL.path,
             openTabs: openTabs,
             selectedTabIndex: selectedIndex,
-            sidebarExpandedPaths: nil,
-            sidebarIncludeHidden: nil,
-            splitURL: nil,
-            zoom: model.zoom,
-            wordWrap: model.sourceWordWrap,
-            themeOverride: model.themeOverride?.rawValue
+            sidebarExpandedPaths: expandedPaths.isEmpty ? nil : expandedPaths,
+            sidebarIncludeHidden: model.sidebar.includeHidden ? true : nil,
+            splitURL: model.tabCoordinator.splitURL?.path,
+            sessionType: sessionType?.rawValue,
+            panelLayout: model.panelLayout.snapshot(),
+            // GLOBAL (LOCKED): never persisted per-session — see doc above.
+            zoom: nil,
+            wordWrap: nil,
+            themeOverride: nil
         )
     }
 
@@ -186,9 +218,22 @@ public final class SessionState: ObservableObject {
 
     /// Hydrate the wrapped `DocumentModel` from a `SessionSnapshot`.
     /// Drives sidebar root + the lazy tab restore (so 15 tabs from
-    /// yesterday don't read 15 files at launch — only the focused
-    /// one) + zoom / wrap / theme overrides.
+    /// yesterday don't read 15 files at launch — only the focused one) +
+    /// the per-session sidebar expansion / include-hidden / split-pane /
+    /// shoulder-rail panel layout.
+    ///
+    /// GLOBAL (owner LOCKED, #184): zoom / wordWrap / themeOverride are
+    /// app-wide and are deliberately NOT applied here — restoring a
+    /// session must not yank the app's zoom/wrap/theme to whatever that
+    /// project last had. They live on `PreferencesStore` (zoom/wrap) and
+    /// the app-wide in-memory `themeOverride`.
     public func hydrate(from snapshot: SessionSnapshot) {
+        // Restore the session type first so a seed-once decision (which
+        // only fires on *creation*, not hydrate) is consistent with the
+        // persisted kind.
+        if let raw = snapshot.sessionType {
+            sessionType = SessionKind(rawValue: raw)
+        }
         // Set sidebar root first so any subsequent tab open doesn't
         // implicitly reset it.
         if let rootPath = snapshot.sidebarRootPath {
@@ -196,6 +241,36 @@ public final class SessionState: ObservableObject {
             if FileManager.default.fileExists(atPath: url.path) {
                 model.sidebar.setRoot(url)
             }
+        }
+        // Include-hidden BEFORE expansion so re-loading expanded dirs
+        // picks up dotfiles when the session had hidden files shown.
+        //
+        // FAÇADE LEAK GUARD: set explicitly (not just on `true`) so a
+        // switch from a hidden-shown session to a hidden-off one resets
+        // the shared model's toggle instead of leaking. `includeHidden`'s
+        // didSet is value-blind-safe: Bool assignment of the same value
+        // still fires its cache-clear, but that's cheap and only on
+        // switch. Persisted as `true`-or-nil, so nil ⇒ false.
+        let wantHidden = snapshot.sidebarIncludeHidden ?? false
+        if model.sidebar.includeHidden != wantHidden {
+            model.sidebar.includeHidden = wantHidden
+        }
+        // Restore the per-session shoulder-rail panel layout.
+        //
+        // FAÇADE LEAK GUARD: Phase-1 shares ONE `DocumentModel` (hence one
+        // `PanelLayoutStore`) across all sessions, so switching A→B must
+        // RESET the layout, not merely skip when B has none — otherwise
+        // A's rails leak into B. We therefore ALWAYS apply: a persisted
+        // layout when present, else the kind's default (so an unseeded
+        // session lands on its kind template), else the empty/default
+        // layout (plain `.project` / legacy). `apply` is equality-guarded,
+        // so applying the layout already in place is a no-op republish.
+        if let layout = snapshot.panelLayout {
+            model.panelLayout.apply(layout)
+        } else if let kind = sessionType, kind != .project {
+            model.panelLayout.apply(kind.defaultPanelLayout)
+        } else {
+            model.panelLayout.apply(PanelLayoutSnapshot(edges: "", overrides: ""))
         }
         // PERSIST-01: `selectedTabIndex` indexes into the *persisted*
         // `openTabs` array, but we skip tabs whose file no longer exists
@@ -250,11 +325,36 @@ public final class SessionState: ObservableObject {
                 ?? ViewModeOptions.defaultMode(for: url, forcedCategory: override)
             model.appendLazyTab(url: url, viewMode: mode, categoryOverride: override)
         }
-        if let zoom = snapshot.zoom { model.zoom = zoom }
-        if let wrap = snapshot.wordWrap { model.sourceWordWrap = wrap }
-        if let theme = snapshot.themeOverride {
-            model.themeOverride = SyntaxTheme.Name(rawValue: theme)
+        // Restore the per-session sidebar expansion AFTER `setRoot`
+        // (which wipes `expanded` down to just the root). We expand the
+        // ancestors the user had open last time so the tree comes back to
+        // the same shape. `toggleExpansion` lazily loads each dir's
+        // children, matching the user clicking the disclosure triangle.
+        // Skip any persisted path that no longer exists on disk.
+        if let expandedPaths = snapshot.sidebarExpandedPaths {
+            for p in expandedPaths {
+                let url = URL(fileURLWithPath: p)
+                guard FileManager.default.fileExists(atPath: url.path) else { continue }
+                if !model.sidebar.isExpanded(url) {
+                    model.sidebar.toggleExpansion(url)
+                }
+            }
         }
+        // Restore the split pane (per-session). Only if the file still
+        // exists — a dangling split URL would render an error pane.
+        //
+        // FAÇADE LEAK GUARD: explicitly close the split when this session
+        // has none, so a switch from a split session to a non-split one
+        // doesn't leak the prior split through the shared model.
+        if let splitPath = snapshot.splitURL,
+           FileManager.default.fileExists(atPath: splitPath) {
+            model.openInSplit(URL(fileURLWithPath: splitPath))
+        } else if model.splitURL != nil {
+            model.closeSplit()
+        }
+        // GLOBAL (owner LOCKED, #184): zoom / wordWrap / themeOverride are
+        // app-wide; intentionally NOT applied from the snapshot. See the
+        // `hydrate` doc comment.
         // Distinguish nil (deliberate "no selection persisted") from 0
         // (first tab). Previously nil collapsed to 0 and restoring a
         // session with an explicit empty selection refocused tab 0
@@ -270,6 +370,31 @@ public final class SessionState: ObservableObject {
                where: { $0.url?.path == targetPath }) {
             model.selectTab(at: liveIndex)
         }
+    }
+
+    /// SEED-ONCE (#184 scope item 3): if this session was created with a
+    /// non-`.project` kind and has NOT yet had its panel layout seeded,
+    /// install the kind's default shoulder-rail layout into the live
+    /// model. Returns `true` iff it seeded (so the caller can persist the
+    /// now-non-nil layout, making the seed stick across relaunch).
+    ///
+    /// Caller contract: pass `alreadyHasPersistedLayout = snapshot
+    /// .panelLayout != nil`. A session whose snapshot already carries a
+    /// `panelLayout` was seeded (or hand-edited) on a prior run — we must
+    /// NOT re-seed it (that would clobber the user's edits with the kind
+    /// default, defeating "seed-once, not a live override").
+    ///
+    /// `.project` (or nil kind) seeds nothing — its default layout is the
+    /// identity (empty overrides), so there's nothing to install and we
+    /// keep fresh `.project` snapshots minimal.
+    @discardableResult
+    public func seedPanelLayoutIfNeeded(alreadyHasPersistedLayout: Bool) -> Bool {
+        guard let kind = sessionType, kind != .project,
+              !alreadyHasPersistedLayout else { return false }
+        let layout = kind.defaultPanelLayout
+        guard !layout.isDefault else { return false }
+        model.panelLayout.apply(layout)
+        return true
     }
 
     /// Best-effort display name from a folder URL. The last path

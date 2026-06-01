@@ -175,8 +175,16 @@ public final class SessionsCoordinator: ObservableObject {
     /// existing session for the same physical path, else creates a
     /// new one" rule. `forceNew` bypasses the match for worktrees /
     /// symlink chains the user genuinely wants distinct.
+    ///
+    /// `kind` (#184) records the session type on a NEWLY created session.
+    /// It is a SEED-ONCE template — the UI layer applies the kind's
+    /// default panel layout once on first mount, then never re-imposes
+    /// it. Revealing an *existing* session ignores `kind` (the existing
+    /// session keeps whatever type it was created with).
     @discardableResult
-    public func openFolder(_ url: URL, forceNew: Bool = false) -> SessionSnapshot {
+    public func openFolder(_ url: URL,
+                           forceNew: Bool = false,
+                           kind: SessionKind? = nil) -> SessionSnapshot {
         // Standardize so `/x/proj` and `/x/proj/` collapse; resolve
         // symlinks so two paths pointing at the same realpath
         // (worktree foo → /a/b/main; foo-link → /a/b/main) collapse
@@ -201,7 +209,11 @@ public final class SessionsCoordinator: ObservableObject {
             displayName: displayName,
             createdAt: now,
             lastActiveAt: now,
-            sidebarRootPath: resolvedPath
+            sidebarRootPath: resolvedPath,
+            // Record the kind so the UI seed-once fires for it. Default
+            // `.project` is left as nil (== plain project) to keep a
+            // fresh-session snapshot minimal + byte-identical to today.
+            sessionType: (kind != nil && kind != .project) ? kind?.rawValue : nil
         )
         // Detach the outgoing session before mounting the new one.
         if let prev = active { lifecycle?.detach(prev) }
@@ -323,23 +335,11 @@ public final class SessionsCoordinator: ObservableObject {
     public func replaceSnapshot(id: UUID, with snap: SessionSnapshot) {
         guard let idx = sessions.firstIndex(where: { $0.id == id }) else { return }
         // Defend against id-mismatch (caller bug): keep the session's
-        // own id even if `snap.id` differs.
-        let merged = SessionSnapshot(
-            schemaVersion: snap.schemaVersion,
-            savedAt: snap.savedAt,
+        // own id + createdAt even if `snap` differs; everything else
+        // (incl. the new sessionType / panelLayout) comes from `snap`.
+        let merged = snap.with(
             id: sessions[idx].id,
-            displayName: snap.displayName,
-            createdAt: sessions[idx].createdAt,
-            lastActiveAt: snap.lastActiveAt,
-            sidebarRootPath: snap.sidebarRootPath,
-            openTabs: snap.openTabs,
-            selectedTabIndex: snap.selectedTabIndex,
-            sidebarExpandedPaths: snap.sidebarExpandedPaths,
-            sidebarIncludeHidden: snap.sidebarIncludeHidden,
-            splitURL: snap.splitURL,
-            zoom: snap.zoom,
-            wordWrap: snap.wordWrap,
-            themeOverride: snap.themeOverride
+            createdAt: sessions[idx].createdAt
         )
         sessions[idx] = merged
         persist()
@@ -380,44 +380,11 @@ public final class SessionsCoordinator: ObservableObject {
         for s in sessions {
             // Stamp `savedAt` on the disk copy without disturbing the
             // in-memory value (which uses `lastActiveAt` for LRU).
-            let stamped = SessionSnapshot(
-                schemaVersion: s.schemaVersion,
-                savedAt: saveTime,
-                id: s.id,
-                displayName: s.displayName,
-                createdAt: s.createdAt,
-                lastActiveAt: s.lastActiveAt,
-                sidebarRootPath: s.sidebarRootPath,
-                openTabs: s.openTabs,
-                selectedTabIndex: s.selectedTabIndex,
-                sidebarExpandedPaths: s.sidebarExpandedPaths,
-                sidebarIncludeHidden: s.sidebarIncludeHidden,
-                splitURL: s.splitURL,
-                zoom: s.zoom,
-                wordWrap: s.wordWrap,
-                themeOverride: s.themeOverride
-            )
-            store.enqueueSave(stamped)
+            store.enqueueSave(s.with(savedAt: saveTime))
         }
     }
 
     private func touched(_ s: SessionSnapshot, at when: Date = Date()) -> SessionSnapshot {
-        SessionSnapshot(
-            schemaVersion: s.schemaVersion,
-            savedAt: s.savedAt,
-            id: s.id,
-            displayName: s.displayName,
-            createdAt: s.createdAt,
-            lastActiveAt: when,
-            sidebarRootPath: s.sidebarRootPath,
-            openTabs: s.openTabs,
-            selectedTabIndex: s.selectedTabIndex,
-            sidebarExpandedPaths: s.sidebarExpandedPaths,
-            sidebarIncludeHidden: s.sidebarIncludeHidden,
-            splitURL: s.splitURL,
-            zoom: s.zoom,
-            wordWrap: s.wordWrap,
-            themeOverride: s.themeOverride
-        )
+        s.with(lastActiveAt: when)
     }
 }

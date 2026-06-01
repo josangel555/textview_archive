@@ -59,10 +59,27 @@ public struct SessionSnapshot: Codable, Equatable, Sendable {
     public let sidebarIncludeHidden: Bool?
     public let splitURL: String?
 
-    // Phase-1 carry-over of preferences-style state that used to live
-    // on `WorkspaceSnapshot`. We persist these per-session for
-    // round-trip parity with `_last.json`; Phase 2 will decide which
-    // become truly session-scoped vs. app-global.
+    /// Session kind (`SessionKind.rawValue`) — drives the SEED-ONCE
+    /// per-kind default panel layout at creation (#184 scope item 3).
+    /// Additive-optional: a pre-#184 file has no `sessionType` and
+    /// decodes to `nil` (== `.project`); an unknown future raw value
+    /// also maps back to `nil` on the read side. Never overrides a live
+    /// session — it's a creation-time template, persisted only so the
+    /// kind survives relaunch for display / future per-kind features.
+    public let sessionType: String?
+
+    /// Per-session shoulder-rail panel layout (#184 scope item 2). Moved
+    /// off the GLOBAL `UserDefaults` so each session keeps its own panel
+    /// arrangement. Additive-optional: a pre-#184 file has no
+    /// `panelLayout` and decodes to `nil`, leaving the global-default
+    /// layout untouched on hydrate (downgrade-safe).
+    public let panelLayout: PanelLayoutSnapshot?
+
+    // GLOBAL (owner LOCKED, #184): zoom / wordWrap / themeOverride are
+    // app-wide, NOT per-session. These fields are retained in the schema
+    // ONLY so pre-#184 on-disk files still decode (additive-optional,
+    // downgrade-safe). They are written as `nil` going forward and never
+    // applied on hydrate — see `SessionState.makeSnapshot` / `.hydrate`.
     public let zoom: Double?
     public let wordWrap: Bool?
     public let themeOverride: String?
@@ -80,6 +97,8 @@ public struct SessionSnapshot: Codable, Equatable, Sendable {
         sidebarExpandedPaths: [String]? = nil,
         sidebarIncludeHidden: Bool? = nil,
         splitURL: String? = nil,
+        sessionType: String? = nil,
+        panelLayout: PanelLayoutSnapshot? = nil,
         zoom: Double? = nil,
         wordWrap: Bool? = nil,
         themeOverride: String? = nil
@@ -96,9 +115,46 @@ public struct SessionSnapshot: Codable, Equatable, Sendable {
         self.sidebarExpandedPaths = sidebarExpandedPaths
         self.sidebarIncludeHidden = sidebarIncludeHidden
         self.splitURL = splitURL
+        self.sessionType = sessionType
+        self.panelLayout = panelLayout
         self.zoom = zoom
         self.wordWrap = wordWrap
         self.themeOverride = themeOverride
+    }
+
+    /// Copy-with-overrides. Returns a new snapshot identical to `self`
+    /// except for the supplied fields. Centralising the field list here
+    /// kills the recurring footgun where a hand-written re-construction
+    /// (in `persist` / `touched` / `replaceSnapshot` / `rename`) forgot a
+    /// field and silently dropped it — exactly how `sidebarExpandedPaths`
+    /// / `splitURL` ended up persisted as `nil` (#184). Add a new field
+    /// once, here, and every copy site carries it through automatically.
+    public func with(
+        savedAt: Date? = nil,
+        id: UUID? = nil,
+        displayName: String? = nil,
+        createdAt: Date? = nil,
+        lastActiveAt: Date? = nil
+    ) -> SessionSnapshot {
+        SessionSnapshot(
+            schemaVersion: schemaVersion,
+            savedAt: savedAt ?? self.savedAt,
+            id: id ?? self.id,
+            displayName: displayName ?? self.displayName,
+            createdAt: createdAt ?? self.createdAt,
+            lastActiveAt: lastActiveAt ?? self.lastActiveAt,
+            sidebarRootPath: sidebarRootPath,
+            openTabs: openTabs,
+            selectedTabIndex: selectedTabIndex,
+            sidebarExpandedPaths: sidebarExpandedPaths,
+            sidebarIncludeHidden: sidebarIncludeHidden,
+            splitURL: splitURL,
+            sessionType: sessionType,
+            panelLayout: panelLayout,
+            zoom: zoom,
+            wordWrap: wordWrap,
+            themeOverride: themeOverride
+        )
     }
 
     /// True when two snapshots carry identical *persisted content*, ignoring
@@ -119,6 +175,8 @@ public struct SessionSnapshot: Codable, Equatable, Sendable {
             && sidebarExpandedPaths == other.sidebarExpandedPaths
             && sidebarIncludeHidden == other.sidebarIncludeHidden
             && splitURL == other.splitURL
+            && sessionType == other.sessionType
+            && panelLayout == other.panelLayout
             && zoom == other.zoom
             && wordWrap == other.wordWrap
             && themeOverride == other.themeOverride

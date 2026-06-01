@@ -19,9 +19,10 @@ import ViewerKit
 /// `openTabs`:
 ///   - openTabs + selectedTabIndex
 ///   - sidebarRootPath
-///   - zoom
-///   - sourceWordWrap
-///   - themeOverride
+///
+/// They ALSO pin the inverse (owner LOCKED, #184): zoom / word-wrap /
+/// theme are GLOBAL (app-wide), so a session switch must NOT restore a
+/// per-session value for them.
 ///
 /// Pure-logic tests. No NSApplication / NSWindow. Safe on host.
 /// Filter: `swift test --filter ViewerUITests.SessionTabPersistence`
@@ -158,7 +159,18 @@ final class SessionTabPersistenceTests: XCTestCase {
             "sidebar root must point at session A's folder after switching back")
     }
 
-    func test_switchSessions_preservesZoom() {
+    // MARK: zoom / word-wrap / theme are GLOBAL (owner LOCKED, #184) ----
+    //
+    // These were previously asserted to be PER-SESSION (switch away,
+    // switch back, expect A's value restored). The owner's LOCKED #184
+    // decision reversed that: zoom / word-wrap / theme are APP-WIDE
+    // comfort/appearance settings, NOT project properties. A session
+    // switch must therefore NOT reimpose one project's zoom/wrap/theme.
+    // The snapshot no longer round-trips them (written `nil`, never
+    // applied on hydrate); zoom/wrap persist app-wide via
+    // `PreferencesStore`, theme is an app-wide in-memory toggle.
+
+    func test_switchSessions_zoomIsGlobal_notRestoredPerSession() {
         let coord = makeCoordinator()
         let (folderA, _) = makeWorkspace(named: "A", files: [])
         let (folderB, _) = makeWorkspace(named: "B", files: [])
@@ -169,11 +181,13 @@ final class SessionTabPersistenceTests: XCTestCase {
         coord.openFolder(folderB, forceNew: true)
         coord.model.zoom = 0.85
         coord.activate(id: aID)
-        XCTAssertEqual(coord.model.zoom, 1.35, accuracy: 0.001,
-            "zoom must restore to A's last value (1.35) after switching back")
+        // GLOBAL: switching back to A must NOT pull zoom back to 1.35 —
+        // it stays at the app-wide value last set (0.85).
+        XCTAssertEqual(coord.model.zoom, 0.85, accuracy: 0.001,
+            "zoom is GLOBAL (#184): a session switch must not restore A's per-session zoom")
     }
 
-    func test_switchSessions_preservesWordWrap() {
+    func test_switchSessions_wordWrapIsGlobal_notRestoredPerSession() {
         let coord = makeCoordinator()
         let (folderA, _) = makeWorkspace(named: "A", files: [])
         let (folderB, _) = makeWorkspace(named: "B", files: [])
@@ -184,11 +198,12 @@ final class SessionTabPersistenceTests: XCTestCase {
         coord.openFolder(folderB, forceNew: true)
         coord.model.sourceWordWrap = false
         coord.activate(id: aID)
-        XCTAssertTrue(coord.model.sourceWordWrap,
-            "wordWrap must restore to A's last value (true) after switching back")
+        // GLOBAL: stays at the app-wide value last set (false).
+        XCTAssertFalse(coord.model.sourceWordWrap,
+            "wordWrap is GLOBAL (#184): a session switch must not restore A's per-session value")
     }
 
-    func test_switchSessions_preservesThemeOverride() {
+    func test_switchSessions_themeOverrideIsGlobal_notRestoredPerSession() {
         let coord = makeCoordinator()
         let (folderA, _) = makeWorkspace(named: "A", files: [])
         let (folderB, _) = makeWorkspace(named: "B", files: [])
@@ -199,8 +214,9 @@ final class SessionTabPersistenceTests: XCTestCase {
         coord.openFolder(folderB, forceNew: true)
         coord.model.themeOverride = .xcodeDark
         coord.activate(id: aID)
-        XCTAssertEqual(coord.model.themeOverride, .xcodeLight,
-            "themeOverride must restore to A's last value (.xcodeLight) after switching back")
+        // GLOBAL: stays at the app-wide value last set (.xcodeDark).
+        XCTAssertEqual(coord.model.themeOverride, .xcodeDark,
+            "themeOverride is GLOBAL (#184): a session switch must not restore A's per-session value")
     }
 
     // MARK: View mode on individual tabs --------------------------------

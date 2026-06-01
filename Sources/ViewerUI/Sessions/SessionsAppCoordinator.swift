@@ -149,8 +149,10 @@ public final class SessionsAppCoordinator: ObservableObject {
     /// So arming the first-paint gate on `forceNew` had no legitimate
     /// caller and only produced a spurious GoTo prompt stacked on top of
     /// the just-opened session (bug2). Removed.
-    public func openFolder(_ url: URL, forceNew: Bool = false) {
-        core.openFolder(url, forceNew: forceNew)
+    public func openFolder(_ url: URL,
+                           forceNew: Bool = false,
+                           kind: SessionKind? = nil) {
+        core.openFolder(url, forceNew: forceNew, kind: kind)
     }
 
     public func activate(id: UUID) {
@@ -194,23 +196,7 @@ public final class SessionsAppCoordinator: ObservableObject {
         guard !trimmed.isEmpty else { return }
         core.updateSession(id: id) { snap in
             guard snap.displayName != trimmed else { return }
-            snap = SessionSnapshot(
-                schemaVersion: snap.schemaVersion,
-                savedAt: snap.savedAt,
-                id: snap.id,
-                displayName: trimmed,
-                createdAt: snap.createdAt,
-                lastActiveAt: snap.lastActiveAt,
-                sidebarRootPath: snap.sidebarRootPath,
-                openTabs: snap.openTabs,
-                selectedTabIndex: snap.selectedTabIndex,
-                sidebarExpandedPaths: snap.sidebarExpandedPaths,
-                sidebarIncludeHidden: snap.sidebarIncludeHidden,
-                splitURL: snap.splitURL,
-                zoom: snap.zoom,
-                wordWrap: snap.wordWrap,
-                themeOverride: snap.themeOverride
-            )
+            snap = snap.with(displayName: trimmed)
         }
     }
 
@@ -361,6 +347,7 @@ public final class SessionsAppCoordinator: ObservableObject {
         switch source {
         case .fromSession(let s):
             state.hydrate(from: s)
+            seedSessionType(state, from: s)
         case .skip:
             // No hydration: caller (e.g. openFolder for a fresh
             // folder) will populate the model directly.
@@ -369,6 +356,24 @@ public final class SessionsAppCoordinator: ObservableObject {
         state.mount()
         active = state
         armAutosave(for: state)
+    }
+
+    /// SEED-ONCE (#184): apply the session kind's default panel layout on
+    /// first mount, then persist the now-non-nil layout so the seed
+    /// sticks and never re-fires. Re-seeding is gated on the snapshot
+    /// having no persisted `panelLayout` (see `seedPanelLayoutIfNeeded`),
+    /// so a subsequent mount — which DOES carry a panelLayout — is a
+    /// no-op and the user's later layout edits win.
+    private func seedSessionType(_ state: SessionState, from snap: SessionSnapshot) {
+        guard state.seedPanelLayoutIfNeeded(
+            alreadyHasPersistedLayout: snap.panelLayout != nil
+        ) else { return }
+        // Persist immediately so the seeded layout survives a crash
+        // before the next debounced autosave. The fresh snapshot now
+        // carries the non-nil panelLayout, closing the seed gate.
+        let seeded = state.makeSnapshot()
+        lastPersistedContent[state.id] = seeded
+        core.replaceSnapshot(id: state.id, with: seeded)
     }
 
     /// Switch the active SessionState to point at `snap` without
@@ -406,9 +411,11 @@ public final class SessionsAppCoordinator: ObservableObject {
         )
         // Hydrate BEFORE mount so the file watcher resumes against the
         // restored selected tab. Hydrate handles sidebar root, tab list,
-        // selected index, zoom, word-wrap, theme — all the per-session
-        // surface the user can change.
+        // selected index, sidebar expansion / include-hidden, the split
+        // pane, and the per-session panel layout — all the per-session
+        // surface the user can change. (zoom/wrap/theme are GLOBAL, #184.)
         state.hydrate(from: snap)
+        seedSessionType(state, from: snap)
         state.mount()
         active = state
         armAutosave(for: state)
