@@ -27,6 +27,19 @@ struct SidebarView: View {
     /// header reads as clickable.
     @State private var filesHeaderHovering = false
 
+    /// P1 — TOOL-WINDOW BOUNDING. The sidebar's currently-allotted
+    /// content height, measured via a NON-layout-driving
+    /// `.background(GeometryReader …)` (the same intrinsic-size-safe trick
+    /// `b38ed03` used for TabBar width — a WRAPPING GeometryReader would
+    /// collapse the sidebar's intrinsic size, see
+    /// `TabBarIntrinsicSizeTests`). Threaded into the per-panel body-height
+    /// clamp so each accordion panel is bounded to a fraction of THIS
+    /// height — panels shrink toward the floor as the window shrinks
+    /// instead of over-subscribing the band and pushing the chrome out.
+    /// Zero on the first pass (pre-measurement); the clamp falls back to
+    /// the stored height until the measurement settles one pass later.
+    @State private var sidebarContentHeight: CGFloat = 0
+
     // Folder-stats slide-down visibility lives on `DocumentModel`
     // (`folderStatsExpanded`) so it survives sidebar re-bodies and is
     // scriptable — see the model property doc (WAVE 2b item 3).
@@ -115,33 +128,50 @@ struct SidebarView: View {
             // (`maxHeight: .infinity`) behaviour, so it absorbs
             // any leftover vertical space.
             filesPanel
-            // Divider placement is now driven by `SidebarSectionPlanner`
-            // (ViewerCore) — a hidden panel (no git repo, no Claude
-            // transcripts, non-LSP file) drops both itself AND the
-            // divider that would have sat below it. Previously the
-            // dividers were rendered unconditionally and stacked up
-            // (the "3-4 lines bunched below GIT" bug).
-            accordionStack
-            // Plugin-contributed sidebar sections. Self-managing
-            // collapse state; appears above FILES regardless of
-            // whether a folder is open (a plugin may not need one).
+            // P1 — TOOL-WINDOW BOUNDING. The accordion run + plugin
+            // sections live inside a BOUNDED, scrollable region so their
+            // summed height can NEVER exceed the sidebar band and push the
+            // window chrome (TabBar/ModeBar/StatusBar) out. FILES stays
+            // OUTSIDE as the flex-fill (it shrinks first); the accordion
+            // region is what was overflowing.
             //
-            // bug5: gate on the resolved visibility so the rail's
-            // `.pluginSections` toggle actually works. This panel was
-            // mounted unconditionally, bypassing `panelLayout.isVisible`
-            // entirely — so its rail button's `.hidden` override was
-            // computed but never read, leaving the "ROW COUNTS" window
-            // permanently visible with a dead toggle. `dataPresent` is
-            // always `true` for `.pluginSections` (a plugin section shows
-            // regardless of folder), so only an explicit `.hidden` override
-            // hides it — which is exactly the path the rail button drives.
-            if panelLayout.isVisible(
-                .pluginSections,
-                dataPresent: SidebarDataPresence.isPresent(.pluginSections, presenceInputs)
-            ) {
-                PluginSidebarSections(model: model)
-                    .environment(\.sidebarSectionBodyHeight,
-                                 SidebarPanelHeights.clamp(CGFloat(pluginHeight)))
+            // Two layers of containment, both belt-and-suspenders:
+            //   1. Each panel's body is clamped to a fraction of the
+            //      measured `sidebarContentHeight` (see `panelView`), so
+            //      panels shrink toward the floor as the window shrinks.
+            //   2. `BoundedAccordionScroll` hugs its content up to a
+            //      window-derived ceiling and SCROLLS past it — the hard
+            //      guarantee that N panels at their floor can't overflow.
+            BoundedAccordionScroll(availableHeight: sidebarContentHeight) {
+                // Divider placement is now driven by `SidebarSectionPlanner`
+                // (ViewerCore) — a hidden panel (no git repo, no Claude
+                // transcripts, non-LSP file) drops both itself AND the
+                // divider that would have sat below it. Previously the
+                // dividers were rendered unconditionally and stacked up
+                // (the "3-4 lines bunched below GIT" bug).
+                accordionStack
+                // Plugin-contributed sidebar sections. Self-managing
+                // collapse state; appears above FILES regardless of
+                // whether a folder is open (a plugin may not need one).
+                //
+                // bug5: gate on the resolved visibility so the rail's
+                // `.pluginSections` toggle actually works. This panel was
+                // mounted unconditionally, bypassing `panelLayout.isVisible`
+                // entirely — so its rail button's `.hidden` override was
+                // computed but never read, leaving the "ROW COUNTS" window
+                // permanently visible with a dead toggle. `dataPresent` is
+                // always `true` for `.pluginSections` (a plugin section shows
+                // regardless of folder), so only an explicit `.hidden` override
+                // hides it — which is exactly the path the rail button drives.
+                if panelLayout.isVisible(
+                    .pluginSections,
+                    dataPresent: SidebarDataPresence.isPresent(.pluginSections, presenceInputs)
+                ) {
+                    PluginSidebarSections(model: model)
+                        .environment(\.sidebarSectionBodyHeight,
+                                     SidebarPanelHeights.clamp(CGFloat(pluginHeight),
+                                                               availableHeight: sidebarContentHeight))
+                }
             }
         }
         .frame(minWidth: 180, idealWidth: 240)
@@ -150,6 +180,24 @@ struct SidebarView: View {
         // floating in the middle. maxHeight:.infinity claims all the
         // height; alignment:.top pins content to the top.
         .frame(maxHeight: .infinity, alignment: .top)
+        // P1 — hard envelope: even a transient mis-fit can never PAINT
+        // outside the sidebar's allotted band into the chrome. The
+        // bounded accordion above already keeps layout in-bounds; this is
+        // the defensive backstop the brief's invariant calls for.
+        .clipped()
+        // P1 — measure the sidebar's allotted content height WITHOUT
+        // driving layout (background overlay, not a wrapping
+        // GeometryReader). Threaded into the per-panel clamp + the
+        // bounded accordion ceiling.
+        .background(
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear { sidebarContentHeight = geo.size.height }
+                    .onChange(of: geo.size.height) { _, h in
+                        sidebarContentHeight = h
+                    }
+            }
+        )
         .background(Palette.textBackground)
         .background(
             SidebarKeyMonitor(
@@ -259,11 +307,13 @@ struct SidebarView: View {
         case .bookmarks:
             BookmarksSection(model: model)
                 .environment(\.sidebarSectionBodyHeight,
-                             SidebarPanelHeights.clamp(CGFloat(bookmarksHeight)))
+                             SidebarPanelHeights.clamp(CGFloat(bookmarksHeight),
+                                                       availableHeight: sidebarContentHeight))
         case .searchAnywhere:
             SearchAnywhereSection(model: model, sidebar: sidebar)
                 .environment(\.sidebarSectionBodyHeight,
-                             SidebarPanelHeights.clamp(CGFloat(searchHeight)))
+                             SidebarPanelHeights.clamp(CGFloat(searchHeight),
+                                                       availableHeight: sidebarContentHeight))
         case .git:
             // bug4: pass the forced-`.shown` override so the section renders
             // a "Not a git repository" placeholder (instead of EmptyView)
@@ -271,17 +321,20 @@ struct SidebarView: View {
             GitPanelSection(model: model, sidebar: sidebar, trackedRepos: trackedRepos,
                             forcedShown: panelLayout.override(for: .git) == .shown)
                 .environment(\.sidebarSectionBodyHeight,
-                             SidebarPanelHeights.clamp(CGFloat(gitHeight)))
+                             SidebarPanelHeights.clamp(CGFloat(gitHeight),
+                                                       availableHeight: sidebarContentHeight))
         case .claudeTimeline:
             ClaudeTimelineSection(model: model, sidebar: sidebar,
                                   forcedShown: panelLayout.override(for: .claudeTimeline) == .shown)
                 .environment(\.sidebarSectionBodyHeight,
-                             SidebarPanelHeights.clamp(CGFloat(claudeHeight)))
+                             SidebarPanelHeights.clamp(CGFloat(claudeHeight),
+                                                       availableHeight: sidebarContentHeight))
         case .lspOutline:
             LSPOutlineWrapper(model: model,
                               forcedShown: panelLayout.override(for: .lspOutline) == .shown)
                 .environment(\.sidebarSectionBodyHeight,
-                             SidebarPanelHeights.clamp(CGFloat(lspHeight)))
+                             SidebarPanelHeights.clamp(CGFloat(lspHeight),
+                                                       availableHeight: sidebarContentHeight))
         case .lspNavigation:
             LSPNavigationPanel(
                 store: model.lspNavigation,
@@ -298,7 +351,8 @@ struct SidebarView: View {
                 uiSize: model.uiSize
             )
             .environment(\.sidebarSectionBodyHeight,
-                         SidebarPanelHeights.clamp(CGFloat(lspNavHeight)))
+                         SidebarPanelHeights.clamp(CGFloat(lspNavHeight),
+                                                   availableHeight: sidebarContentHeight))
         case .lspProblems:
             LSPProblemsPanel(
                 store: model.lspDiagnostics,
@@ -311,11 +365,13 @@ struct SidebarView: View {
                 uiSize: model.uiSize
             )
             .environment(\.sidebarSectionBodyHeight,
-                         SidebarPanelHeights.clamp(CGFloat(lspProblemsHeight)))
+                         SidebarPanelHeights.clamp(CGFloat(lspProblemsHeight),
+                                                   availableHeight: sidebarContentHeight))
         case .recentlyOpened:
             RecentlyOpenedSection(model: model)
                 .environment(\.sidebarSectionBodyHeight,
-                             SidebarPanelHeights.clamp(CGFloat(recentsHeight)))
+                             SidebarPanelHeights.clamp(CGFloat(recentsHeight),
+                                                       availableHeight: sidebarContentHeight))
         case .files, .pluginSections:
             // FILES is rendered inline at the top of the sidebar
             // (above this accordion stack). pluginSections is below.
@@ -1189,4 +1245,95 @@ final class WorkspaceSymbolDispatch {
     var current: LSPCancellationToken?
     func cancel() { current?.cancel(); current = nil }
     private init() {}
+}
+
+// MARK: - Bounded accordion scroll region (P1 — tool-window bounding)
+//
+// The shoulder-rail tool panels (Bookmarks, Search, Git, Claude, LSP
+// Outline/References/Problems, Recents, plugin sections) used to render
+// as a bare run of RIGID 220pt panels directly inside the sidebar
+// VStack — no ceiling, no scroll. Once a rich folder (git repo + LSP
+// language + Claude transcripts + recents) resolved ~7-8 panels visible,
+// their summed ~1700pt demand over-subscribed the sidebar band; SwiftUI
+// resolved the impossible fit by overflowing, which shoved the window
+// chrome (TabBar / ModeBar / StatusBar) off-screen — the owner's bug.
+//
+// This view bounds that run to a window-derived ceiling and lets it
+// SCROLL past the ceiling instead of overflowing:
+//
+//   * `available` is the sidebar's measured content height. The accordion
+//     may claim up to `accordionFraction` of it; FILES (the flex-fill,
+//     rendered OUTSIDE this view) keeps the remainder. Past the ceiling
+//     the content scrolls — N panels at their floor can never push the
+//     chrome out, regardless of panel count.
+//   * It HUGS its content when the content is shorter than the ceiling
+//     (measured via a non-layout-driving background reader), so with one
+//     or two small panels the sidebar looks exactly as it did before —
+//     no always-reserved half-height accordion. Appearance is preserved
+//     in the common (fits) case; containment only engages when panels
+//     would otherwise overflow.
+//   * Before the sidebar height is measured (`available <= 0`, the first
+//     body pass) it falls back to hugging content with no ceiling — the
+//     measurement settles one pass later and the ceiling engages.
+private struct BoundedAccordionScroll<Content: View>: View {
+    let availableHeight: CGFloat
+    @ViewBuilder var content: Content
+
+    /// Fraction of the sidebar's content height the accordion run may
+    /// occupy before it scrolls. The remainder is FILES' floor. 0.62
+    /// leaves FILES ~38% — comfortably more than its own ~120pt minimum
+    /// on a normal window while letting the accordion dominate when the
+    /// user has many panels open.
+    private static var accordionFraction: CGFloat { 0.62 }
+
+    /// Measured natural height of the accordion content, so the scroll
+    /// region can hug it when it fits under the ceiling.
+    @State private var contentHeight: CGFloat = 0
+
+    private var ceiling: CGFloat? {
+        guard availableHeight.isFinite, availableHeight > 0 else { return nil }
+        return availableHeight * Self.accordionFraction
+    }
+
+    var body: some View {
+        let cap = ceiling
+        // Hug content up to the ceiling; scroll past it. When unmeasured
+        // (cap == nil) or content fits, the frame is just the content
+        // height (no behavioral change). When content exceeds the cap,
+        // the frame is the cap and the inner ScrollView scrolls.
+        let resolved: CGFloat? = {
+            guard let cap else {
+                return contentHeight > 0 ? contentHeight : nil
+            }
+            guard contentHeight > 0 else { return cap }
+            return min(contentHeight, cap)
+        }()
+
+        ScrollView(.vertical, showsIndicators: true) {
+            VStack(spacing: 0) {
+                content
+            }
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear { contentHeight = geo.size.height }
+                        .onChange(of: geo.size.height) { _, h in
+                            contentHeight = h
+                        }
+                }
+            )
+        }
+        // `frame(height:)` makes the ScrollView hug exactly `resolved`
+        // rather than greedily expand to fill the sidebar. `maxHeight`
+        // alone would let it grow; an explicit height pins it to the
+        // measured content (capped). When `resolved` is nil (very first
+        // pass) the ScrollView falls back to its default flexible sizing.
+        .frame(height: resolved)
+        // Identity for the headless bounding test (`ToolPanelBoundingTests`):
+        // the test walks the realized tree for THIS scroll viewport and
+        // asserts it stays within the sidebar band. Pre-fix this container
+        // did not exist (the panels rendered as a bare VStack run), so the
+        // test's "found AND in-bounds" assertion fails before the fix.
+        .accessibilityIdentifier("mdv.sidebar.accordionScroll")
+    }
 }

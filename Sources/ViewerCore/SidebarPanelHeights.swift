@@ -49,6 +49,36 @@ public enum SidebarPanelHeights {
         max(minExpandedHeight, height)
     }
 
+    /// Window-derived per-panel ceiling (P1 — tool-window bounding).
+    ///
+    /// The accordion panels carry a stored body height (default 220);
+    /// rendered RIGID they over-subscribe the sidebar band and push the
+    /// window chrome out. The fix bounds each panel's body to a fraction
+    /// of the sidebar's currently-allotted height so the panels SHRINK
+    /// toward (but never below) the floor as the window gets smaller —
+    /// "dynamic sizing bounded by a region derived from the window size".
+    ///
+    /// `available` is the sidebar's measured content height (below the
+    /// header). `fraction` is how much of it a *single* expanded panel
+    /// may claim before it has to give way to its siblings (and, past
+    /// the point where even the floors don't all fit, to the accordion's
+    /// own scroll). A non-positive / non-finite `available` (the first
+    /// pre-measurement body pass) disables the ceiling so we fall back to
+    /// the stored height — the measurement settles on the next pass.
+    ///
+    /// The ceiling is itself floored at `minExpandedHeight`: a single
+    /// panel never shrinks below the floor here (multi-panel overflow is
+    /// absorbed by the accordion ScrollView, not by squeezing a panel to
+    /// nothing).
+    public static func clamp(_ height: CGFloat,
+                             availableHeight available: CGFloat,
+                             fraction: CGFloat = 0.5) -> CGFloat {
+        let stored = clamp(height)
+        guard available.isFinite, available > 0 else { return stored }
+        let ceiling = max(minExpandedHeight, available * fraction)
+        return min(stored, ceiling)
+    }
+
     /// Read a persisted height from any defaults-like store. Falls
     /// back to the section's default when the key is missing.
     /// Always returns a clamped value.

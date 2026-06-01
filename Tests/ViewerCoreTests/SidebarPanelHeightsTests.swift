@@ -43,6 +43,67 @@ final class SidebarPanelHeightsTests: XCTestCase {
         XCTAssertEqual(SidebarPanelHeights.clamp(floor), floor)
     }
 
+    // MARK: window-derived ceiling (P1 — tool-window bounding)
+
+    /// With no measured height (the first pre-measurement body pass), the
+    /// ceiling is disabled and the clamp falls back to the floored stored
+    /// height — identical to the plain `clamp`.
+    func test_clampWithCeiling_unmeasured_fallsBackToStored() {
+        XCTAssertEqual(
+            SidebarPanelHeights.clamp(220, availableHeight: 0), 220)
+        XCTAssertEqual(
+            SidebarPanelHeights.clamp(220, availableHeight: -10), 220)
+        XCTAssertEqual(
+            SidebarPanelHeights.clamp(220, availableHeight: .infinity), 220)
+        // Still floors a too-small stored value.
+        XCTAssertEqual(
+            SidebarPanelHeights.clamp(40, availableHeight: 0),
+            SidebarPanelHeights.minExpandedHeight)
+    }
+
+    /// A roomy sidebar (the ceiling exceeds the stored height) leaves the
+    /// stored height untouched — appearance preserved when panels fit.
+    func test_clampWithCeiling_roomy_keepsStoredHeight() {
+        // 1000pt sidebar, fraction 0.5 → ceiling 500 > 220 stored.
+        XCTAssertEqual(
+            SidebarPanelHeights.clamp(220, availableHeight: 1000, fraction: 0.5),
+            220)
+    }
+
+    /// A cramped sidebar (the ceiling is below the stored height) shrinks
+    /// the panel down to the ceiling — the dynamic bounding the owner asked
+    /// for ("derived from window size").
+    func test_clampWithCeiling_cramped_shrinksToCeiling() {
+        // 300pt sidebar, fraction 0.5 → ceiling 150 < 220 stored.
+        XCTAssertEqual(
+            SidebarPanelHeights.clamp(220, availableHeight: 300, fraction: 0.5),
+            150)
+    }
+
+    /// The ceiling itself never drops a single panel below the floor — even
+    /// a tiny sidebar keeps each panel at `minExpandedHeight` (multi-panel
+    /// overflow is absorbed by the accordion scroll, not by squeezing a
+    /// panel to nothing).
+    func test_clampWithCeiling_neverBelowFloor() {
+        // 100pt sidebar, fraction 0.5 → raw ceiling 50, floored to 120.
+        XCTAssertEqual(
+            SidebarPanelHeights.clamp(220, availableHeight: 100, fraction: 0.5),
+            SidebarPanelHeights.minExpandedHeight)
+        // Even with a stored value below the floor + a tiny sidebar.
+        XCTAssertEqual(
+            SidebarPanelHeights.clamp(40, availableHeight: 100, fraction: 0.5),
+            SidebarPanelHeights.minExpandedHeight)
+    }
+
+    /// Monotonic: a taller sidebar never yields a shorter panel ceiling.
+    func test_clampWithCeiling_monotonicInAvailableHeight() {
+        let small = SidebarPanelHeights.clamp(220, availableHeight: 300, fraction: 0.5)
+        let mid = SidebarPanelHeights.clamp(220, availableHeight: 500, fraction: 0.5)
+        let big = SidebarPanelHeights.clamp(220, availableHeight: 1000, fraction: 0.5)
+        XCTAssertLessThanOrEqual(small, mid)
+        XCTAssertLessThanOrEqual(mid, big)
+    }
+
     // MARK: read-back
 
     func test_readClamped_returnsDefault_whenKeyMissing() {
