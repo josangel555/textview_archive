@@ -138,28 +138,62 @@ public final class SidebarModel: ObservableObject {
     /// `FileRowView` re-loads its stripe color (previously frozen because
     /// `FileTreeRecencyCache.invalidate` was never wired to anything).
     private func onFolderChange(_ dirs: [URL]) {
+        // P2 #1: the FSEvents tick fires on any fs change under the watched
+        // tree; a build / `git checkout` is a write STORM. Re-listing each
+        // touched dir (`contentsOfDirectory` + a `realpath` syscall per
+        // child + a sort) ran SYNCHRONOUSLY on the main actor here — a
+        // main-thread stall proportional to (dirs × children) on every
+        // burst. (FolderWatcher already debounces the stream, so this is
+        // one re-list per coalesced tick, but a wide dir still stalls.)
+        //
+        // Fix: do the directory I/O OFF the main actor (`Task.detached`),
+        // then hop back to compare/store/publish. Recency-cache invalidation
+        // is NSLock-guarded (thread-safe) so it can run on the detached side.
+        //
+        // Filtering to visible/cached dirs is a cheap main-actor set/dict
+        // lookup — do it here so we only pay the I/O for dirs that matter.
+        let toRead: [URL] = dirs.map(normalize).filter {
+            expanded.contains($0) || childrenCache[$0] != nil
+        }
+        guard !toRead.isEmpty else { return }
+
+        let service = self.service
+        let includeHidden = self.includeHidden
+        Task.detached(priority: .utility) {
+            // OFF-MAIN: the readdir + per-child stat/realpath + sort, plus
+            // the (thread-safe) recency-cache invalidation.
+            var results: [(dir: URL, kids: [FileNode])] = []
+            for d in toRead {
+                let kids = (try? service.children(of: d, includeHidden: includeHidden)) ?? []
+                FileTreeRecencyCache.invalidate(d)
+                for kid in kids { FileTreeRecencyCache.invalidate(kid.url) }
+                results.append((d, kids))
+            }
+            await self.applyFolderChange(results)
+        }
+    }
+
+    /// Main-actor tail of `onFolderChange`: compare the freshly-listed
+    /// children (read off-main) against the cache, store the changed ones,
+    /// and publish. Kept tiny + main-isolated so the publish path is
+    /// unchanged — only the I/O moved off-main.
+    private func applyFolderChange(_ results: [(dir: URL, kids: [FileNode])]) {
         var touched = false
-        var recencyDirty = false
-        let norm = dirs.map(normalize)
-        for d in norm {
-            // Visible-children test (FW-6): expanded dirs render their
-            // children; cached dirs we keep coherent regardless.
+        for (d, kids) in results {
+            // The dir may have been collapsed / evicted while the I/O ran;
+            // only apply if it's still visible or cached (re-check on main).
             guard expanded.contains(d) || childrenCache[d] != nil else { continue }
-            // Re-read on the spot. Cheap (single readdir).
-            let kids = (try? service.children(of: d, includeHidden: includeHidden)) ?? []
             if kids != childrenCache[d] {
                 storeChildren(kids, for: d)
                 sortedCache = sortedCache.filter { $0.key.url != d }
                 touched = true
             }
-            // A change under `d` can mean a child's mtime/ctime moved
-            // (content edited) or the dir's own mtime moved (add/remove).
-            // Drop the affected recency entries so the next read re-stats.
-            FileTreeRecencyCache.invalidate(d)
-            for kid in kids { FileTreeRecencyCache.invalidate(kid.url) }
-            recencyDirty = true
         }
-        if recencyDirty { recencyVersion &+= 1 }
+        // Recency stripes may have shifted regardless of whether the child
+        // LIST changed (a child's mtime moved on a content edit), and the
+        // off-main invalidation already dropped the affected entries — so
+        // bump the version unconditionally for the dirs we re-read.
+        if !results.isEmpty { recencyVersion &+= 1 }
         guard touched else { return }
         invalidateFlatCache()
         // Force a publish so SwiftUI re-bodies. expanded is the
