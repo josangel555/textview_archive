@@ -822,6 +822,88 @@ public final class GitClient: Sendable {
         return (try? run(args)) ?? ""
     }
 
+    // MARK: - review (code-review v2)
+
+    /// Unified diff for a `ReviewScope`, composing the existing diff
+    /// primitives (CODE_REVIEW_V2_DESIGN_2026-06-01.md §4). One method
+    /// covers all four scope modes; the caller passes the path it wants the
+    /// diff for. Returns `""` on git error or an unsafe revision (matching
+    /// the rest of the diff API's "empty on failure" contract).
+    ///
+    /// Note: `.commit` ignores `path` and returns the full multi-file
+    /// `git show` diff (that's what `commitDiff` produces); the caller
+    /// parses + filters by path via `DiffParser`. The other modes are
+    /// per-path. This asymmetry matches the underlying primitives.
+    public func diff(scope: ReviewScope, path: String) -> String {
+        switch scope {
+        case .workingTree(let base):
+            guard Self.isSafeRevision(base) else { return "" }
+            // Generalize `diff(forPath:)` (which hardcodes HEAD) to the
+            // chosen base. `diff(from:to:path:)` with `to == nil` compares
+            // the base against the working tree — exactly the working-tree
+            // review semantics.
+            return diff(from: base, to: nil, path: path)
+        case .commit(let sha):
+            guard Self.isSafeRevision(sha) else { return "" }
+            return commitDiff(sha: sha)
+        case .range(let from, let to):
+            return diff(from: from, to: to, path: path)
+        case .branch(let branch, let base):
+            guard Self.isSafeRevision(branch) else { return "" }
+            guard let mb = mergeBase(base, branch) else { return "" }
+            return diff(from: mb, to: branch, path: path)
+        }
+    }
+
+    /// `git merge-base <a> <b>` → the common ancestor SHA, or `nil` on
+    /// failure / unsafe revision. Resolved ONCE and frozen into a branch
+    /// review's `baseSha` so the review doesn't silently re-scope when the
+    /// base branch advances (§4).
+    public func mergeBase(_ a: String, _ b: String) -> String? {
+        guard Self.isSafeRevision(a), Self.isSafeRevision(b) else { return nil }
+        guard let out = try? run(["merge-base", a, b]) else { return nil }
+        let sha = out.trimmingCharacters(in: .whitespacesAndNewlines)
+        return sha.isEmpty ? nil : sha
+    }
+
+    /// `git rev-parse <rev>` → the resolved object id, or `nil`. Used to
+    /// freeze a scope's `baseSha`/`headSha` at review-creation time (§4).
+    public func revParse(_ rev: String) -> String? {
+        guard Self.isSafeRevision(rev) else { return nil }
+        guard let out = try? run(["rev-parse", rev]) else { return nil }
+        let sha = out.trimmingCharacters(in: .whitespacesAndNewlines)
+        return sha.isEmpty ? nil : sha
+    }
+
+    /// Blob SHA of `path` at a committed revision: `git rev-parse <rev>:<path>`
+    /// (§3.1). Exact and cheap. Returns `nil` on failure (path absent at that
+    /// rev, unsafe revision, git error) → staleness degrades to `.unknown`.
+    ///
+    /// `path` is repo-relative, forward-slash, no leading `./` (the shape
+    /// `DiffParser` / `ReviewComment.filePath` use). The `<rev>:<path>`
+    /// gitrevision form is a single positional token, so it can't be an
+    /// option-injection vector once `rev` is validated.
+    public func blobSha(rev: String, path: String) -> String? {
+        guard Self.isSafeRevision(rev), !path.isEmpty else { return nil }
+        guard let out = try? run(["rev-parse", "\(rev):\(path)"]) else { return nil }
+        let sha = out.trimmingCharacters(in: .whitespacesAndNewlines)
+        return sha.isEmpty ? nil : sha
+    }
+
+    /// Content hash of `path`'s CURRENT bytes in the working tree:
+    /// `git hash-object -- <path>` (§3.1). Used for the working-tree side,
+    /// which has no commit to resolve a blob against. Returns `nil` on
+    /// failure (file gone, unreadable, git error).
+    ///
+    /// `path` is repo-relative; `--` terminates option parsing so a path
+    /// beginning with `-` can't be read as a flag.
+    public func blobShaForWorktree(path: String) -> String? {
+        guard !path.isEmpty else { return nil }
+        guard let out = try? run(["hash-object", "--", path]) else { return nil }
+        let sha = out.trimmingCharacters(in: .whitespacesAndNewlines)
+        return sha.isEmpty ? nil : sha
+    }
+
     /// A revision token is safe to pass as a positional git arg iff it
     /// is non-empty and does not start with `-` (which git would parse
     /// as an option). We deliberately do NOT whitelist to hex only —
