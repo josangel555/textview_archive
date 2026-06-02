@@ -40,6 +40,25 @@ struct SidebarView: View {
     /// the stored height until the measurement settles one pass later.
     @State private var sidebarContentHeight: CGFloat = 0
 
+    /// Live sidebar content WIDTH, measured by the same non-layout-driving
+    /// background `GeometryReader` that captures the height. Drives the
+    /// FILES-header control-label breakpoint (replacing a `ViewThatFits`
+    /// that double-rendered the control cluster every body pass). Tracks
+    /// the resize-drag width live (the reader sees the real frame, unlike
+    /// `model.sidebarWidth`, which is committed only at drag-end).
+    @State private var sidebarContentWidth: CGFloat = 0
+
+    /// Width (points) below which the FILES-header sort/recency menus
+    /// collapse to icon-only. Picked so the labels ("Name", "Modified")
+    /// + icons + lock + pin fit above it. Hysteresis isn't needed: the
+    /// width @State is epsilon-guarded, so it won't flap at the threshold.
+    private static let headerLabelsBreakpoint: CGFloat = 248
+
+    /// Minimum measure delta (points) that commits a content-size @State
+    /// write — suppresses sub-point jitter re-bodying the sidebar. Mirrors
+    /// `BoundedAccordionScroll.measureEpsilon`.
+    private static let measureEpsilon: CGFloat = 0.5
+
     // Folder-stats slide-down visibility lives on `DocumentModel`
     // (`folderStatsExpanded`) so it survives sidebar re-bodies and is
     // scriptable — see the model property doc (WAVE 2b item 3).
@@ -192,9 +211,28 @@ struct SidebarView: View {
         .background(
             GeometryReader { geo in
                 Color.clear
-                    .onAppear { sidebarContentHeight = geo.size.height }
+                    .onAppear {
+                        sidebarContentHeight = geo.size.height
+                        sidebarContentWidth = geo.size.width
+                    }
                     .onChange(of: geo.size.height) { _, h in
-                        sidebarContentHeight = h
+                        // EPSILON-GUARD (PERF — see BoundedAccordionScroll):
+                        // this height feeds the per-panel clamp + the accordion
+                        // ceiling, then re-bodies the sidebar. Suppress sub-point
+                        // jitter so it doesn't re-body every frame in the live
+                        // run loop. Real height changes are pt-scale.
+                        if abs(h - sidebarContentHeight) > Self.measureEpsilon {
+                            sidebarContentHeight = h
+                        }
+                    }
+                    .onChange(of: geo.size.width) { _, w in
+                        // Same guard for the width (drives the header-control
+                        // label breakpoint). Tracks the LIVE resize-drag width
+                        // (the GeometryReader sees the real frame, unlike
+                        // model.sidebarWidth which is stale mid-drag).
+                        if abs(w - sidebarContentWidth) > Self.measureEpsilon {
+                            sidebarContentWidth = w
+                        }
                     }
             }
         )
@@ -532,16 +570,25 @@ struct SidebarView: View {
                 else { NSCursor.pop() }
             }
             // Trailing controls cluster: sort + recency menus, lock, pin.
-            // Wrapped in `ViewThatFits` so the two menus' VALUE LABELS
-            // ("Name", "Modified") collapse to icon-only when the sidebar
-            // is too narrow to fit them. The lock + pin icon-buttons stay
-            // visible in BOTH variants. Without this the `.fixedSize()`
-            // menus + the WAVE1 pin button overflowed a narrow header —
-            // pushing the "FILES" title and the lock/pin buttons off-screen.
-            ViewThatFits(in: .horizontal) {
-                headerControls(showMenuLabels: true)
-                headerControls(showMenuLabels: false)
-            }
+            // The two menus' VALUE LABELS ("Name", "Modified") collapse to
+            // icon-only when the sidebar is too narrow to fit them; the
+            // lock + pin icon-buttons stay visible either way. Without this
+            // the `.fixedSize()` menus + the WAVE1 pin button overflowed a
+            // narrow header — pushing the "FILES" title and the lock/pin
+            // buttons off-screen.
+            //
+            // PERF: this was a `ViewThatFits`, which BUILDS BOTH variants
+            // (two full control clusters, each with two `.fixedSize()`
+            // Menus) on every body pass just to pick one. Replaced with a
+            // single-build width breakpoint off the measured sidebar width
+            // (`sidebarContentWidth`, captured by the existing background
+            // GeometryReader at zero extra cost). Unmeasured (width 0, first
+            // paint) shows labels — the common wide-sidebar case — so there's
+            // no icon-only flash before the measurement settles.
+            headerControls(
+                showMenuLabels: sidebarContentWidth == 0
+                    || sidebarContentWidth >= Self.headerLabelsBreakpoint
+            )
         }
         .sidebarHeaderRow()
     }
@@ -1287,6 +1334,12 @@ private struct BoundedAccordionScroll<Content: View>: View {
     /// user has many panels open.
     private static var accordionFraction: CGFloat { 0.62 }
 
+    /// Minimum height delta (points) that commits a `contentHeight` write.
+    /// Suppresses sub-point measure jitter from re-bodying the view every
+    /// frame (the measure→frame→measure feedback loop). 0.5pt is well below
+    /// any real panel-size change and above float-rounding noise.
+    private static var measureEpsilon: CGFloat { 0.5 }
+
     /// Measured natural height of the accordion content, so the scroll
     /// region can hug it when it fits under the ceiling.
     @State private var contentHeight: CGFloat = 0
@@ -1319,7 +1372,19 @@ private struct BoundedAccordionScroll<Content: View>: View {
                     Color.clear
                         .onAppear { contentHeight = geo.size.height }
                         .onChange(of: geo.size.height) { _, h in
-                            contentHeight = h
+                            // EPSILON-GUARD (PERF — accordion measure feedback):
+                            // the measured natural height feeds `resolved` →
+                            // `.frame(height:)`, which re-bodies this view, which
+                            // re-measures. Sub-point layout jitter (≈10⁻²pt) would
+                            // otherwise re-body every frame in the live run loop
+                            // (multiplying passes-per-frame). Only commit a write
+                            // when it moves the height by a visible amount; the
+                            // clamp resolution is unaffected (real changes are pt-
+                            // scale, far above the threshold). ToolPanelBounding
+                            // still settles within its 3 passes.
+                            if abs(h - contentHeight) > Self.measureEpsilon {
+                                contentHeight = h
+                            }
                         }
                 }
             )
