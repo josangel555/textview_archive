@@ -475,4 +475,49 @@ final class SidebarModelTests: XCTestCase {
         let model = SidebarModel()
         XCTAssertEqual(model.recencyVersion, 0)
     }
+
+    // MARK: gitRepoRoot memoization (PERF — replaces the per-body-pass
+    //       GitClient.discoverRoot FS-walk in SidebarView)
+
+    func test_gitRepoRoot_nilOutsideRepo() async throws {
+        let model = SidebarModel()
+        try mkdir("plain")
+        model.setRoot(tmpDir.appendingPathComponent("plain"))
+        XCTAssertNil(model.gitRepoRoot,
+            "a folder with no .git ancestor must memoize gitRepoRoot = nil")
+    }
+
+    func test_gitRepoRoot_discoversRepoAtRoot() async throws {
+        let repo = try mkdir("repo")
+        try mkdir("repo/.git")
+        let model = SidebarModel()
+        model.setRoot(repo)
+        XCTAssertEqual(model.gitRepoRoot?.resolvingSymlinksInPath(),
+                       repo.resolvingSymlinksInPath(),
+            "a folder containing .git must memoize itself as the repo root")
+    }
+
+    func test_gitRepoRoot_discoversRepoFromSubdir() async throws {
+        try mkdir("repo/.git")
+        let sub = try mkdir("repo/src/deep")
+        let repo = tmpDir.appendingPathComponent("repo")
+        let model = SidebarModel()
+        model.setRoot(sub)
+        XCTAssertEqual(model.gitRepoRoot?.resolvingSymlinksInPath(),
+                       repo.resolvingSymlinksInPath(),
+            "a subdir of a repo must memoize the nearest .git ancestor as the root")
+    }
+
+    func test_gitRepoRoot_recomputesOnRootChange() async throws {
+        try mkdir("repo/.git")
+        let repo = tmpDir.appendingPathComponent("repo")
+        try mkdir("plain")
+        let plain = tmpDir.appendingPathComponent("plain")
+        let model = SidebarModel()
+        model.setRoot(repo)
+        XCTAssertNotNil(model.gitRepoRoot, "inside repo → non-nil")
+        model.setRoot(plain)
+        XCTAssertNil(model.gitRepoRoot,
+            "switching to a non-repo folder must clear the memoized git root")
+    }
 }

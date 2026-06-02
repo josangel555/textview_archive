@@ -420,7 +420,7 @@ struct SidebarView: View {
     // a bookmarked folder without first opening one.
     @ViewBuilder
     private var filesPanel: some View {
-        if let root = sidebar.rootURL {
+        if sidebar.rootURL != nil {
             VStack(spacing: 0) {
                 filesHeader
                 // Folder-stats slide-down (WAVE 2b item 3). Renders the
@@ -428,7 +428,7 @@ struct SidebarView: View {
                 // the `chart.bar` toggle is on AND the root is inside a
                 // repo. The cache is the long-lived one on DocumentModel
                 // (survives reopens); scope is repo-wide.
-                if model.folderStatsExpanded, let repoRoot = GitClient.discoverRoot(from: root) {
+                if model.folderStatsExpanded, let repoRoot = sidebar.gitRepoRoot {
                     Divider()
                     FolderStatsView(
                         doc: model,
@@ -711,8 +711,9 @@ struct SidebarView: View {
     /// reads repo-wide aggregates, so there's nothing to show outside a
     /// repo.
     private var folderStatsAvailable: Bool {
-        guard let root = sidebar.rootURL else { return false }
-        return GitClient.discoverRoot(from: root) != nil
+        // Memoized on SidebarModel (recomputed on root change / root-dir
+        // `.git` change) — NOT an FS-walk per body pass. See `gitRepoRoot`.
+        sidebar.gitRepoRoot != nil
     }
 
     /// True when the current root has a parent we can navigate to (not `/`).

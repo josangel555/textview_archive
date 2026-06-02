@@ -39,6 +39,22 @@ public final class SidebarModel: ObservableObject {
     /// shallow check — a deep scan would have to move off-main.
     @Published public private(set) var claudeHasTranscripts: Bool = false
 
+    /// Memoized git working-tree root for the current `rootURL` (the
+    /// nearest ancestor containing `.git`), or nil when the root isn't
+    /// inside a repo.
+    ///
+    /// PERF: `GitClient.discoverRoot(from:)` walks up to 32 ancestors
+    /// doing a `fileExists` syscall per step. SidebarView called it from
+    /// TWO body getters (`folderStatsAvailable`, `filesPanel`) on EVERY
+    /// body pass — and the sidebar re-bodies constantly. That was ~64
+    /// syscalls per pass for a value that only changes when the root
+    /// changes (or a `.git` appears/disappears at the root). Cache it
+    /// here: computed once in `setRoot(_:)`, re-discovered in
+    /// `onFolderChange` only when the root directory itself is among the
+    /// changed dirs (covers `git init` / `git clone` / repo removal at the
+    /// root). Views read this published value instead of FS-walking.
+    @Published public private(set) var gitRepoRoot: URL?
+
     /// Keyboard-driven row selection (CRIT-6). Distinct from the currently-
     /// open file (`DocumentModel.currentURL`): you can navigate the sidebar
     /// with arrow keys without opening every file you scroll past.
@@ -98,6 +114,9 @@ public final class SidebarModel: ObservableObject {
         // method is @MainActor) — same place it ran before via the
         // view's `.onChange(of: rootURL)`.
         claudeHasTranscripts = ClaudeLogParser.hasTranscripts(for: rootURL)
+        // Memoize the git-root discovery once per root change (see
+        // `gitRepoRoot`). Same place / cadence as the transcript flag.
+        gitRepoRoot = rootURL.flatMap { GitClient.discoverRoot(from: $0) }
         if let url = rootURL {
             expanded.insert(url)
             ensureLoaded(url: url)
@@ -188,6 +207,15 @@ public final class SidebarModel: ObservableObject {
                 sortedCache = sortedCache.filter { $0.key.url != d }
                 touched = true
             }
+        }
+        // If the ROOT directory itself was among the changed dirs, a `.git`
+        // may have appeared / disappeared (e.g. `git init`, `git clone`,
+        // `rm -rf .git`). Re-discover the memoized git root so the
+        // folder-stats toggle's availability tracks reality. Cheap walk,
+        // gated to the rare root-dir-change case — not every FSEvents tick.
+        if let root = rootURL, results.contains(where: { $0.dir == root }) {
+            let rediscovered = GitClient.discoverRoot(from: root)
+            if rediscovered != gitRepoRoot { gitRepoRoot = rediscovered }
         }
         // Recency stripes may have shifted regardless of whether the child
         // LIST changed (a child's mtime moved on a content edit), and the
