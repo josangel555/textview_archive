@@ -1657,3 +1657,14 @@ overlapping-file branches cheapest-first, or accept the later one grows.
 **Still VM-unverified** (build + host-unit verified only): multi-repo git
 badges/picker, session-ui rails/large-file-render/view-mode-picker. See BACKLOG.
 
+
+## Session 2026-06-02 — perf cascade, the live-app test gap, profiling tooling
+(Full detail: `docs/HANDOFF_2026-06-02.md` §6.)
+- **SwiftUI OVER-OBSERVATION is the dominant perf trap here.** A view holding `@ObservedObject var model: DocumentModel` re-bodies on EVERY model republish; `sourceScrollState`/`sourceSelection` fire per scroll-tick/caret → the always-on-screen `SidebarView` re-bodied on every interaction (caret = 13 ms / 249× baseline). Fix = narrow-channel ObservableObjects (`SourceViewChannel`, like `FindCoordinator`/`PanelLayoutStore`). When "laggy on every interaction," suspect over-broad observation first.
+- **Never do filesystem I/O in a SwiftUI `body` getter** — `GitClient.discoverRoot` walked ~64 `fileExists` toward `/` per sidebar pass. Cache it; recompute only on the triggering event.
+- **TEST GAP that shipped a broken build** (`fd11e61` couldn't load files live): the headless gate (T1/T1m/T2') never launches the app to open a file (that's T4 `LiveAppTestCase`, self-skips on host, VM-only, VM not run) AND `build-app.sh` runs ZERO tests before install. Fix in flight = a host-runnable live-app smoke (open each file type + cycle every view mode + assert content) wired into `build-app.sh` as a PRE-INSTALL gate. **A green headless gate does NOT mean the live app works.**
+- **"IOSurface 70 MB" was a transient compositing peak, not a leak/the cost** — re-measure showed base 36 MB / 2-source 84 MB. Corroborate a single heap-dump moment before acting on it.
+- **A layout-driving GeometryReader that writes `@State` it then re-reads = a per-frame layout-pass MULTIPLIER** (live-only; a one-pass headless harness can't see it). Use a non-layout `.background(GeometryReader)` + epsilon-guard the `@State` height writes.
+- **Editor was broken by a CM6 `WidgetType` bootstrap `ReferenceError`** (`codemirror.html` missing it from the `window.CM` destructure) — latent since CM6 Phase 4; one-line fix.
+- **Recurring hazard:** `Workflow` `isolation:'worktree'` agents leak their named branch into the MAIN checkout + land the real work on a sibling superset branch (`X-work`/`worktree-<runid>`). Harvest the superset (`git log main..<branch>`), ff `main`, `git switch main` in the checkout, reap extra worktrees + delete leaked branches.
+- **Native profiling cheat-sheet:** `footprint` / `vmmap --summary` / `heap <pid>` / `sample`→`scripts/lib/sample_flamegraph.py`. Tools: `scripts/{mem-profile,heap-dump,flamegraph}.sh` + `Tests/ViewerUITests/InteractionProfileHarness.swift` (`MDV_PROFILE=1`). `mem-profile` skill at `.claude/skills/` (gitignored, local-only).

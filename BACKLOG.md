@@ -681,3 +681,12 @@ independence + types + GLOBAL zoom/wrap/theme (#184). Items still open:
 - WAVE 1/2 UI + the session-ui shoulder rails / large-file render +
   multi-repo git badges (carried from the 2026-05-31 merge campaign).
 
+
+## 2026-06-02 — queue (detail: docs/HANDOFF_2026-06-02.md §3)
+- **IN FLIGHT** (wf `w0kz4p4kq`, branch `fix-loadbug`): fix `fd11e61` file-load failure + Editor→HEX mode-scramble + ADD a live-app smoke wired into `build-app.sh` as a pre-install gate. **`main @ fd11e61` is BROKEN (can't load files live) — do NOT ship.** Main checkout leaked onto `fix-loadbug`; reconcile per HANDOFF §0/§5.
+- **BUG #218** HEX mode slow (6 KB → ~1 s) — sync full attributed-dump build on mode-switch; stream/cache.
+- **BUG #219** Editor→HEX flash of Source — mode-routing transition; coordinate with the load-fix.
+- **FEAT #220** sidebar preview-tab / scrub — single-select swaps current tab's content (preview); double-click pins a permanent tab.
+- **#221** remove the "Open As" menu entirely → file-type chip dropdown is the sole affordance (sidebar submenu still present).
+- **#222** holistic testing-improvement investigation (the live-app gap is the case study).
+- **DESIGN AWAITING OWNER:** PM feature v2 (`docs/PROJECT_MANAGEMENT_DESIGN_v2.md`) — agree the WHAT + approve the `rusqlite` dep, then a HOW/build pass. Rust/Linux plan ready (execute when the Mac is free).
