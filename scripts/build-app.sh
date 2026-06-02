@@ -258,10 +258,19 @@ fi
 # Opt-out for the fast inner debug loop: MDV_SKIP_SMOKE_GATE=1. The gate is
 # ALWAYS enforced on `release` (the artifact that gets installed) — the
 # opt-out only applies to debug rebuilds.
+#
+# The runner ALWAYS compiles in debug, regardless of $CONFIG: it spawns the
+# already-assembled (release) dist/ bundle as an external process via
+# --script, so the runner's own optimization level is irrelevant to what
+# ships. Forcing `-c release` here re-broke the build, because the
+# #if-DEBUG test-support hooks (e.g. TreeSitterEngine._jsonLanguagePointer-
+# ForTesting, deliberately kept out of the release symbol table) make the
+# TEST target uncompilable in release. Debug is the config the test target
+# is known-good in; the dist/ under test is still the real release artifact.
 if [[ "$CONFIG" == "release" || "${MDV_SKIP_SMOKE_GATE:-0}" != "1" ]]; then
-  echo "==> Pre-install live-app smoke gate (ViewModeMatrixSmokeTests)"
+  echo "==> Pre-install live-app smoke gate (ViewModeMatrixSmokeTests, debug runner)"
   if ! ( cd "$ROOT_DIR" && env -u MDV_HEADLESS_GATE \
-           swift test -c "$CONFIG" \
+           swift test \
              --filter 'ViewerUITests.ViewModeMatrixSmokeTests' ); then
     echo "ERROR: pre-install smoke gate FAILED — refusing to report a" >&2
     echo "       usable bundle. Bundle left at $APP_DIR for triage." >&2
