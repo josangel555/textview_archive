@@ -145,17 +145,29 @@ public final class DocumentModel: ObservableObject {
     /// `uiScale` defaults is handled in `PreferencesStore.zoom`.
     public func uiSize(_ base: CGFloat) -> CGFloat { base * CGFloat(zoom) }
 
-    /// Latest scroll state from the source view, published by
+    /// High-frequency source-view view-local state (live scroll offset,
+    /// caret/selection, scroll-to-line request). A sibling channel like
+    /// `editor` / `find` — its `objectWillChange` is deliberately NOT
+    /// forwarded into `DocumentModel.objectWillChange`, so a scroll tick or
+    /// caret move re-bodies ONLY the views that observe it directly
+    /// (`SourceModeView`, `StatusBar`) and never the sidebar / content tree.
+    /// See `SourceViewChannel` for the full rationale (the republish cascade).
+    public let sourceView = SourceViewChannel()
+
+    /// Forwarder. Latest scroll state from the source view, published by
     /// `TextDisplayView.onScrollChange`. Drives the SwiftUI gutter
-    /// rendering (`SourceGutterView`). Seeded with empty values so
-    /// the gutter has something to render at first paint before
-    /// `viewDidLoad` fires.
-    @Published public var sourceScrollState: SourceScrollState = SourceScrollState(
-        offsetY: 0, viewportHeight: 0, lineHeight: 16, lineCount: 0, topInset: 10
-    )
-    /// Caret position published by TextDisplayView. Status bar reads
-    /// this to render "Ln 12, Col 4". Reset to .zero on tab switch.
-    @Published public var sourceSelection: SourceSelection = .zero
+    /// (`SourceGutterView`). Lives on `sourceView` (the narrow channel) so it
+    /// doesn't republish DocumentModel; views read `model.sourceView` directly.
+    public var sourceScrollState: SourceScrollState {
+        get { sourceView.sourceScrollState }
+        set { sourceView.sourceScrollState = newValue }
+    }
+    /// Forwarder. Caret position published by TextDisplayView. Status bar
+    /// reads this to render "Ln 12, Col 4". Reset to .zero on tab switch.
+    public var sourceSelection: SourceSelection {
+        get { sourceView.sourceSelection }
+        set { sourceView.sourceSelection = newValue }
+    }
     @Published public var isPalettePresented: Bool = false
     /// "Go to file / folder" (Finder-style ⇧⌘G) prompt visibility.
     /// Owned here (not at ContentView level) so the menu item + script
@@ -1061,15 +1073,21 @@ public final class DocumentModel: ObservableObject {
         set { find.sourceFocusRequest = newValue }
     }
 
-    /// Scroll the active source view to this 1-based line number on
-    /// the next render. The controller debounces by comparing to its
-    /// last-applied target. Pair with a bumped `sourceScrollLineNonce`
-    /// so re-requesting the same line still fires.
-    @Published public var sourceScrollLineTarget: Int? = nil
-    @Published public var sourceScrollLineNonce: Int = 0
+    /// Forwarders. Scroll the active source view to this 1-based line number
+    /// on the next render. The controller debounces by comparing to its
+    /// last-applied target; pair with a bumped `sourceScrollLineNonce` so
+    /// re-requesting the same line still fires. Lives on the `sourceView`
+    /// narrow channel — see `SourceViewChannel`.
+    public var sourceScrollLineTarget: Int? {
+        get { sourceView.sourceScrollLineTarget }
+        set { sourceView.sourceScrollLineTarget = newValue }
+    }
+    public var sourceScrollLineNonce: Int {
+        get { sourceView.sourceScrollLineNonce }
+        set { sourceView.sourceScrollLineNonce = newValue }
+    }
     public func scrollSource(toLine line: Int) {
-        sourceScrollLineTarget = line
-        sourceScrollLineNonce &+= 1
+        sourceView.scrollSource(toLine: line)
     }
 
     // MARK: - Split view (forwarders to TabCoordinator)

@@ -23,6 +23,12 @@ public struct WalkthroughOverlay: View {
 
     @ObservedObject var model: DocumentModel
     @ObservedObject var bridge: WalkthroughBridge
+    /// Source scroll/caret channel. Observed DIRECTLY so the spotlight +
+    /// callouts re-position as the source view scrolls — `sourceScrollState`
+    /// moved off `DocumentModel` onto this narrow channel (see
+    /// `SourceViewChannel`), so the overlay must observe it here or it would
+    /// stop tracking the scroll.
+    @ObservedObject var sourceView: SourceViewChannel
 
     /// Frames published by anchor surfaces (sidebar, gitTab) via the
     /// `.walkthroughAnchor(_:)` modifier. Empty until those surfaces
@@ -42,6 +48,7 @@ public struct WalkthroughOverlay: View {
     public init(model: DocumentModel) {
         self.model = model
         self.bridge = model.walkthroughBridge
+        self.sourceView = model.sourceView
     }
 
     public var body: some View {
@@ -88,7 +95,7 @@ public struct WalkthroughOverlay: View {
     private func highlightStripe(
         for h: WalkthroughBridge.HighlightRange
     ) -> some View {
-        let state = model.sourceScrollState
+        let state = sourceView.sourceScrollState
         let lh = state.lineHeight
         if lh > 0 {
             let inset = state.topInset
@@ -140,7 +147,7 @@ public struct WalkthroughOverlay: View {
     private func flashStripe(
         for f: WalkthroughBridge.FlashRange
     ) -> some View {
-        let state = model.sourceScrollState
+        let state = sourceView.sourceScrollState
         let lh = state.lineHeight
         if lh > 0 {
             let inset = state.topInset
@@ -216,7 +223,7 @@ public struct WalkthroughOverlay: View {
         for p: WalkthroughBridge.PopoverRequest,
         line: Int
     ) -> some View {
-        let state = model.sourceScrollState
+        let state = sourceView.sourceScrollState
         let lh = state.lineHeight
         if lh > 0 {
             let inset = state.topInset

@@ -157,7 +157,7 @@ final class ToolPanelBoundingTests: HeadlessUITestCase {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .layoutPriority(0)
-                StatusBar(model: model)
+                StatusBar(model: model, sourceView: model.sourceView)
                     .fixedSize(horizontal: false, vertical: true)
                     .layoutPriority(1)
             }

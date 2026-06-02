@@ -21,6 +21,11 @@ import ViewerKit
 ///   • Spaces vs tabs — Phase 8.5 polish
 struct StatusBar: View {
     @ObservedObject var model: DocumentModel
+    /// Caret/selection channel. Observed DIRECTLY (not via `model`) so the
+    /// "Ln X, Col Y" readout updates on caret move WITHOUT republishing
+    /// DocumentModel — a caret tick re-bodies only this bar + the source
+    /// subtree, never the sidebar / content tree. See `SourceViewChannel`.
+    @ObservedObject var sourceView: SourceViewChannel
     /// Hover-description sink (0c). Defaults to the process-wide shared sink
     /// that the `.helpInfo(_:)` modifier feeds — `StatusBar(model:)` keeps
     /// working without a new injection at the (out-of-scope) ContentView root.
@@ -93,7 +98,7 @@ struct StatusBar: View {
     private var metricsGroup: some View {
         if let metrics = currentMetrics {
             HStack(spacing: 12) {
-                if metrics.lineCount > 0, model.sourceSelection.line > 0 {
+                if metrics.lineCount > 0, sourceView.sourceSelection.line > 0 {
                     // Ln/Col only meaningful for text files. Hide
                     // for media previews where everything is 0, and
                     // for large read-only files where the source
@@ -101,8 +106,8 @@ struct StatusBar: View {
                     // skips the O(N) newline-index build that would
                     // otherwise resolve precise line:col).
                     metric("Ln",
-                        "\(model.sourceSelection.line)" +
-                        ", Col \(model.sourceSelection.column)")
+                        "\(sourceView.sourceSelection.line)" +
+                        ", Col \(sourceView.sourceSelection.column)")
                 }
                 metric("Lines", "\(metrics.lineCount)")
                 metric("Chars", formatNumber(metrics.charCount))

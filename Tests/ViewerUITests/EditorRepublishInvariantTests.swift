@@ -138,18 +138,16 @@ final class EditorRepublishInvariantTests: XCTestCase {
                 forTabID: id
             )
         }
-        // Note: DocumentModel.recordEditorCursor (the forwarder) sets
-        // `sourceSelection` via the cursor-mirror hook. `sourceSelection`
-        // IS @Published on DocumentModel, so the mirror DOES republish
-        // — but only on a real cursor change, not on every keystroke.
-        // Status bar updating in editor mode is the intended cost; the
-        // win is that pure cursor RECORDING (not mirroring) is free.
-        //
-        // We measure here against the direct `model.editor.recordEditorCursor`
-        // call: it goes through onCursorMirrorToStatusBar which assigns
-        // model.sourceSelection — so one republish per real cursor change.
+        // The cursor-mirror hook (onCursorMirrorToStatusBar) assigns
+        // `model.sourceSelection`, which now lives on the `SourceViewChannel`
+        // narrow channel — NOT @Published on DocumentModel. So the mirror
+        // republishes only that channel (re-bodying StatusBar + the source
+        // subtree, which is the intended status-bar L:C update) and does NOT
+        // touch DocumentModel. Both the pure RECORD and the status-bar mirror
+        // are now free of DocumentModel republishes.
         XCTAssertLessThanOrEqual(count, 1,
-            "cursor mirror is bounded to 1 republish (status bar L:C update)")
+            "cursor mirror must not republish DocumentModel "
+            + "(it republishes the SourceViewChannel instead)")
     }
 
     func test_recordEditorScroll_doesNotRepublishDocumentModel() async throws {

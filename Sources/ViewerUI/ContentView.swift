@@ -146,7 +146,7 @@ public struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .layoutPriority(0)
                 if model.currentURL != nil {
-                    StatusBar(model: model)
+                    StatusBar(model: model, sourceView: model.sourceView)
                         .fixedSize(horizontal: false, vertical: true)
                         .layoutPriority(1)
                 }
@@ -539,6 +539,7 @@ public struct ContentView: View {
                 model: model,
                 highlightCache: model.highlightCacheActor(forTabID: tabID),
                 find: model.find,
+                sourceView: model.sourceView,
                 file: file,
                 tabID: tabID
             )
@@ -611,6 +612,11 @@ struct SourceModeView: View {
     /// without going through DocumentModel republish. The whole
     /// point of the FindCoordinator split (Quality #E, 2026-05-25).
     @ObservedObject var find: FindCoordinator
+    /// High-frequency scroll/caret/scroll-to-line channel. Observed
+    /// DIRECTLY (not via `model`) so a scroll tick or caret move re-bodies
+    /// only this subtree (gutter + text + find-minimap) and the status bar
+    /// — never the sidebar / content tree. See `SourceViewChannel`.
+    @ObservedObject var sourceView: SourceViewChannel
     let file: TextFile
     let tabID: UUID
 
@@ -630,7 +636,7 @@ struct SourceModeView: View {
             }
             HStack(spacing: 0) {
                 SourceGutterView(
-                    state: model.sourceScrollState,
+                    state: sourceView.sourceScrollState,
                     fontSize: 13 * model.zoom,
                     theme: model.activeTheme,
                     diffMarks: model.sourceDiffMarks,
@@ -653,17 +659,17 @@ struct SourceModeView: View {
                     showInvisibles: model.showInvisibleChars,
                     isLargeReadOnly: file.isLargeReadOnly,
                     scrollLineRequest: TextDisplayView.ScrollLineRequest(
-                        line: model.sourceScrollLineTarget,
-                        nonce: model.sourceScrollLineNonce
+                        line: sourceView.sourceScrollLineTarget,
+                        nonce: sourceView.sourceScrollLineNonce
                     ),
                     onFindSummary: { summary in
                         model.setSourceFindMatchSummary(summary)
                     },
                     onScrollChange: { state in
-                        model.sourceScrollState = state
+                        sourceView.sourceScrollState = state
                     },
                     onSelectionChange: { sel in
-                        model.sourceSelection = sel
+                        sourceView.sourceSelection = sel
                     },
                     onFindMatchesChange: { set in
                         model.setSourceFindMatches(
@@ -676,7 +682,7 @@ struct SourceModeView: View {
                    !model.sourceFindMatchLines.isEmpty {
                     FindMatchMinimapView(
                         matchLines: model.sourceFindMatchLines,
-                        totalLines: max(1, model.sourceScrollState.lineCount),
+                        totalLines: max(1, sourceView.sourceScrollState.lineCount),
                         currentMatchIndex: model.sourceFindCurrentMatchIndex,
                         theme: model.activeTheme,
                         onClickLine: { line in
