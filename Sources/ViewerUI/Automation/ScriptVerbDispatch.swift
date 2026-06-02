@@ -65,6 +65,15 @@ public enum ScriptVerb {
         case "zoom-out":       model.zoomOut()
         case "zoom-reset":     model.zoomReset()
         case "open":           model.openPath(URL(fileURLWithPath: arg))
+        case "open-lazy":
+            // Append a file as a LAZY (`.empty`) tab without selecting it —
+            // the exact shape workspace-restore / multi-file-drop produce.
+            // The tab materializes on the next `select-tab`, driving the
+            // `materializeIfNeeded` async path (LOADBUG bug 1's repro).
+            model.appendLazyTab(
+                url: URL(fileURLWithPath: arg),
+                viewMode: ViewModeOptions.defaultMode(
+                    for: URL(fileURLWithPath: arg)))
         case "close-tab":      model.closeCurrentTab()
         case "new-tab":        model.newTab()
         case "next-tab":       model.selectNextTab()
@@ -224,9 +233,21 @@ public enum ScriptVerb {
                 "sidebarRootPath": snap.sidebarRootPath ?? "",
             ]
         }
+        let stateKind: String = {
+            switch model.currentState {
+            case .empty: return "empty"
+            case .loading: return "loading"
+            case .loaded: return "loaded"
+            case .binary: return "binary"
+            case .error: return "error"
+            case .hostedView: return "hostedView"
+            case .preview: return "preview"
+            }
+        }()
         return [
             "zoom": model.zoom,
             "currentViewMode": model.currentViewMode.rawValue,
+            "currentStateKind": stateKind,
             // `windowTitle` is a pure model projection (`tabs.selected?.title
             // ?? "TextView"` — see DocumentModel) that `main.swift` mirrors
             // onto `NSWindow.title`. Surfacing it here lets the title-based

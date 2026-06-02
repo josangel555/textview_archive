@@ -234,6 +234,41 @@ if [[ "$CONFIG" == "release" ]]; then
   bash "$SCRIPT_DIR/check-bundle-size.sh"
 fi
 
+# ---- PRE-INSTALL LIVE-APP SMOKE GATE ----------------------------------
+# Drive the just-assembled (signed, lsregistered) bundle through the
+# (file type x view mode) matrix and assert the RIGHT content rendered in
+# the RIGHT view — the gap that let the fd11e61 "source won't load / Editor
+# shows HEX" regression ship (every other gate asserts on model state,
+# which stays self-consistent; the desync is purely in the realized view
+# tree, and the WKWebView-backed Editor/Rendered modes are #192-excluded
+# from the headless gate). ViewModeMatrixSmokeTests is a T4 LiveAppTestCase
+# that spawns THIS dist/ bundle via --script; the window opens occluded
+# (MDV_BACKGROUND=1, set inside AppLauncher) so it never steals focus.
+#
+# Placement is deliberate: AFTER sign + size check (so the smoke drives the
+# shippable artifact exactly as a user launches it) and BEFORE the "Built"
+# banner (so a failed smoke aborts via `set -e` and we never report a
+# usable bundle for a broken build).
+#
+# `env -u MDV_HEADLESS_GATE` is load-bearing: LaunchHarness.isAppBuilt
+# returns false when MDV_HEADLESS_GATE=1, which would make the T4 suite
+# self-skip — a silent false-green. Unsetting it lets the suite actually
+# run against the freshly built dist/.
+#
+# Opt-out for the fast inner debug loop: MDV_SKIP_SMOKE_GATE=1. The gate is
+# ALWAYS enforced on `release` (the artifact that gets installed) — the
+# opt-out only applies to debug rebuilds.
+if [[ "$CONFIG" == "release" || "${MDV_SKIP_SMOKE_GATE:-0}" != "1" ]]; then
+  echo "==> Pre-install live-app smoke gate (ViewModeMatrixSmokeTests)"
+  if ! ( cd "$ROOT_DIR" && env -u MDV_HEADLESS_GATE \
+           swift test -c "$CONFIG" \
+             --filter 'ViewerUITests.ViewModeMatrixSmokeTests' ); then
+    echo "ERROR: pre-install smoke gate FAILED — refusing to report a" >&2
+    echo "       usable bundle. Bundle left at $APP_DIR for triage." >&2
+    exit 7
+  fi
+fi
+
 echo "==> Built $APP_DIR"
 echo
 echo "Open a file with it (any of these work):"

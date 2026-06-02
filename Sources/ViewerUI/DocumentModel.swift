@@ -3008,6 +3008,18 @@ public final class DocumentModel: ObservableObject {
                 var t2 = current
                 t2.state = state
                 self.tabCoordinator.replace(at: idx, with: t2)
+                // LOADBUG (2026-06-01): PERF #1 severed the
+                // `tabCoordinator.objectWillChange` → `DocumentModel.
+                // objectWillChange` forwarding, so `replace` alone fires the
+                // coordinator's publisher but NOT the model's. ContentView /
+                // ModeBar observe `DocumentModel`, so without this the
+                // just-landed `.loaded`/`.binary`/`.error` state is correct on
+                // the model but the realized view never re-bodies — it stays
+                // frozen on the `.loading` placeholder ("main.swift cannot be
+                // loaded" / blank). Mirror `openLargeFileOffMain`'s completion
+                // (which already calls `updateDerived()`); the synchronous open
+                // / select / close paths all republish this way too.
+                self.updateDerived()
                 // Mirror openResolved's HEX-mode carry: if a text file
                 // lands with the tab already set to .hex view, kick the
                 // binary load. Exclude `.preview` (native-preview
@@ -3203,6 +3215,14 @@ public final class DocumentModel: ObservableObject {
                     tab.state = self.controller.open(url: url)
                 }
                 self.tabCoordinator.replace(at: idx, with: tab)
+                // LOADBUG: republish the model so ContentView re-bodies onto
+                // the freshly-landed `.binary` state. Without it the picker
+                // (synchronously flipped by setCurrentViewMode) says HEX while
+                // the content pane stays on the previous mode's view — and the
+                // later "Editor" pick then re-bodies on the still-`.binary`
+                // state and shows HexView. See the matching note at the
+                // materializeIfNeeded completion.
+                self.updateDerived()
             }
         }
     }
@@ -3232,6 +3252,10 @@ public final class DocumentModel: ObservableObject {
                     tab.state = self.controller.open(url: url)
                 }
                 self.tabCoordinator.replace(at: idx, with: tab)
+                // LOADBUG: republish so ContentView re-bodies onto the
+                // freshly-landed `.loaded` text state (e.g. coming back from
+                // HEX to Source/Editor). Symmetric to loadBinaryAsync above.
+                self.updateDerived()
             }
         }
     }
