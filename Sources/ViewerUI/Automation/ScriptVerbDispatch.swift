@@ -226,7 +226,10 @@ public enum ScriptVerb {
             default:    model.folderStatsExpanded.toggle()
             }
         case "delay":
-            // Handled by caller's sleep; no-op here.
+            // No model effect. The actual pause is the caller's sleep: the
+            // VM `--script` runner parses the arg as seconds (see
+            // `AppDelegate.settleNanos(for:)`); the in-process headless
+            // harness has no wall clock to wait on, so it just no-ops.
             _ = arg
         case "snapshot":
             // Handled by caller after this returns.

@@ -44,11 +44,33 @@ extension AppDelegate {
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             for (step, line) in lines.enumerated() {
                 self.runScriptStep(line)
-                try? await Task.sleep(nanoseconds: 300_000_000)
+                // Settle window per step before snapshotting. A `delay SECS`
+                // verb pauses for its arg (parsed as seconds) so FSEvents /
+                // the accordion / a git re-list can settle past 300 ms; every
+                // other verb keeps the fixed 300 ms inter-step settle that the
+                // model-assertion smokes rely on. Clamp to a sane window so a
+                // malformed arg can neither under-sleep (0) nor hang the run.
+                try? await Task.sleep(nanoseconds: Self.settleNanos(for: line))
                 self.captureStepArtifacts(step: step + 1, label: line)
             }
             exit(0)
         }
+    }
+
+    /// Per-step settle duration, in nanoseconds, before the post-step
+    /// snapshot. For a `delay SECS` verb this is the arg parsed as seconds
+    /// (clamped to `[0.3s, 30s]` so a malformed/negative arg can't drop the
+    /// settle to zero nor hang the run); every other verb keeps the fixed
+    /// 300 ms baseline. An unparseable `delay` arg falls back to the baseline.
+    static func settleNanos(for line: String) -> UInt64 {
+        let baseline: UInt64 = 300_000_000
+        let parts = line.split(separator: " ", maxSplits: 1).map(String.init)
+        guard parts.first == "delay", parts.count > 1,
+              let secs = Double(parts[1].trimmingCharacters(in: .whitespaces)),
+              secs.isFinite
+        else { return baseline }
+        let clamped = min(max(secs, 0.3), 30.0)
+        return UInt64(clamped * 1_000_000_000)
     }
 
     func runScriptStep(_ line: String) {
