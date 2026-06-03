@@ -179,9 +179,22 @@ public final class SessionsAppCoordinator: ObservableObject {
     /// So arming the first-paint gate on `forceNew` had no legitimate
     /// caller and only produced a spurious GoTo prompt stacked on top of
     /// the just-opened session (bug2). Removed.
+    ///
+    /// TCC-protected roots (`~/Documents`, `~/Desktop`, `~/Downloads`,
+    /// `~/Pictures`, iCloud Drive) silently no-op here — matching the
+    /// documented sessions contract (`isUnderTCCProtectedRoot`) that
+    /// nothing under those roots is ever re-rooted or persisted. Touching
+    /// them implicitly would trigger a per-launch TCC prompt; for an
+    /// ad-hoc-signed dev build it repeats on every rebuild. The single
+    /// chokepoint is here (not in `core.openFolder`) because the predicate
+    /// lives on `DocumentModel` in `ViewerUI` and `ViewerCore` can't import
+    /// it — and every session-open path (scripts, sidebar context menu,
+    /// Go-to-path, bootstrap seed) routes through this method or the
+    /// already-guarded `bootstrap()` seed.
     public func openFolder(_ url: URL,
                            forceNew: Bool = false,
                            kind: SessionKind? = nil) {
+        guard !DocumentModel.isUnderTCCProtectedRoot(url) else { return }
         core.openFolder(url, forceNew: forceNew, kind: kind)
     }
 
