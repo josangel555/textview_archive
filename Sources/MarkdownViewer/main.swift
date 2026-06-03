@@ -212,6 +212,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // `Workspaces/_last.json` migration path was retired in
         // decision G (2026-05-25); a downgrade now loses persisted
         // tabs.
+        // SFB-10: wire the session lifecycle bridge UNCONDITIONALLY. The
+        // bridge is what lets a later `session-open-new` / `activate` re-root
+        // the live sidebar (via SessionState.hydrate → sidebar.setRoot). Only
+        // the disk-restore step is gated by MDV_SKIP_WORKSPACE_RESTORE — we
+        // skip rehydrating the user's last session for test/automation
+        // launches, but the machinery for opening new sessions must stay live.
+        sessions.wireLifecycle()
         if ProcessInfo.processInfo.environment["MDV_SKIP_WORKSPACE_RESTORE"] != "1" {
             sessions.bootstrap()
         }

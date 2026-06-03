@@ -97,6 +97,27 @@ public final class SessionsAppCoordinator: ObservableObject {
         self.autosaveDebounce = autosaveDebounce
     }
 
+    /// Wire the lifecycle bridge so the value-level coordinator's
+    /// mount/detach hooks reach our `SessionState` (which is what
+    /// actually re-roots the live sidebar + restores tabs on the shared
+    /// `DocumentModel`). Idempotent: re-arming just replaces the bridge.
+    ///
+    /// Split out of `bootstrap()` (SFB-10) because the bridge is a hard
+    /// prerequisite for ANY later session operation — `openFolder`,
+    /// `activate`, `close` all fan out through `core`'s `lifecycle?`.
+    /// `bootstrap()` itself is gated off under `MDV_SKIP_WORKSPACE_RESTORE=1`
+    /// (we don't want test/automation launches to rehydrate the user's
+    /// last session), but that flag must NOT also disable the bridge —
+    /// otherwise `core.openFolder(forceNew:)`'s `lifecycle?.mount(snap)`
+    /// is a nil no-op and the new session never re-roots the sidebar. The
+    /// app's `applicationDidFinishLaunching` therefore calls this
+    /// unconditionally and only `bootstrap()` behind the flag.
+    public func wireLifecycle() {
+        let bridge = LifecycleBridge(owner: self)
+        lifecycleBridge = bridge
+        core.setLifecycle(bridge)
+    }
+
     /// Boot the coordinator. Call exactly once from
     /// `applicationDidFinishLaunching`, before the SwiftUI hosting
     /// controller is shown.
@@ -113,9 +134,10 @@ public final class SessionsAppCoordinator: ObservableObject {
     /// retired in decision G (2026-05-25) — `SessionStore` is the
     /// only on-disk shape.
     public func bootstrap() {
-        let bridge = LifecycleBridge(owner: self)
-        lifecycleBridge = bridge
-        core.setLifecycle(bridge)
+        // Idempotent: `wireLifecycle()` is already called unconditionally
+        // by the app launch path, but re-wiring here keeps `bootstrap()`
+        // self-contained for any direct caller (tests, future entry points).
+        wireLifecycle()
 
         // P3c: trash GC has ZERO first-frame relevance — a directory
         // enumeration + per-file stat + deletes. Defer it OFF the launch
