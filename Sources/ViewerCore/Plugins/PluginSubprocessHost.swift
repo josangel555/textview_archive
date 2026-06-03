@@ -145,12 +145,16 @@ public struct PluginSubprocessHost: Sendable {
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: executable.path, isDirectory: &isDir),
               !isDir.boolValue else {
-            return finish(.spawnFailed("bin not found: \(executable.path)"),
+            // OBS-6: reference the manifest-relative `bin` only — never
+            // `executable.path` (the absolute plugin path), which would
+            // leak the user's filesystem layout into the path-free log.
+            return finish(.spawnFailed("bin not found: \(bin)"),
                           pluginID: pluginID, bin: bin,
                           startedAt: started, invocationID: request.invocationID)
         }
         guard FileManager.default.isExecutableFile(atPath: executable.path) else {
-            return finish(.spawnFailed("bin not executable: \(executable.path)"),
+            // OBS-6: manifest-relative `bin` only, no absolute path (see above).
+            return finish(.spawnFailed("bin not executable: \(bin)"),
                           pluginID: pluginID, bin: bin,
                           startedAt: started, invocationID: request.invocationID)
         }

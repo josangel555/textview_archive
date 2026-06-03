@@ -373,6 +373,45 @@ final class PluginSubprocessHostTests: XCTestCase {
             with: line.data(using: .utf8)!) as! [String: Any]
         XCTAssertEqual(obj["result"] as? String, "spawn_failed")
         XCTAssertEqual(obj["bin_basename"] as? String, "missing.sh")
+        // OBS-6 (F-PMA-OBS6): the spawn_failed `error` descriptor for a
+        // missing bin must NOT embed the absolute plugin path. Assert it
+        // carries only the manifest-relative bin, never `pluginDir`'s
+        // absolute path nor a leading '/'.
+        let errorMsg = obj["error"] as? String ?? ""
+        XCTAssertEqual(errorMsg, "bin not found: nested/dir/missing.sh",
+                       "spawn_failed error leaked an absolute path: \(errorMsg)")
+        XCTAssertFalse(errorMsg.contains(pluginDir.path),
+                       "error leaked the absolute plugin folder path: \(errorMsg)")
+        XCTAssertFalse(errorMsg.contains(": /"),
+                       "error embedded an absolute filesystem path: \(errorMsg)")
+    }
+
+    /// OBS-6: a present-but-non-executable bin must likewise record a
+    /// path-free `error` descriptor (the second preflight branch).
+    func test_spawnFailed_nonExecutable_audit_is_path_free() throws {
+        // Write a regular, non-executable file inside the plugin folder.
+        let nonExec = pluginDir.appendingPathComponent("not-exec.sh")
+        try "#!/bin/sh\n".write(to: nonExec, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o644], ofItemAtPath: nonExec.path)
+        _ = host.call(
+            pluginID: "test.spawnaudit.nonexec", pluginFolder: pluginDir,
+            bin: "not-exec.sh", args: [], timeoutMs: 3000,
+            request: .init(kind: "listRows")
+        )
+        let log = try String(contentsOf: auditURL, encoding: .utf8)
+        let line = log.split(separator: "\n").first.map(String.init) ?? ""
+        let obj = try JSONSerialization.jsonObject(
+            with: line.data(using: .utf8)!) as! [String: Any]
+        XCTAssertEqual(obj["result"] as? String, "spawn_failed")
+        XCTAssertEqual(obj["bin_basename"] as? String, "not-exec.sh")
+        let errorMsg = obj["error"] as? String ?? ""
+        XCTAssertEqual(errorMsg, "bin not executable: not-exec.sh",
+                       "spawn_failed error leaked an absolute path: \(errorMsg)")
+        XCTAssertFalse(errorMsg.contains(pluginDir.path),
+                       "error leaked the absolute plugin folder path: \(errorMsg)")
+        XCTAssertFalse(errorMsg.contains(": /"),
+                       "error embedded an absolute filesystem path: \(errorMsg)")
     }
 
     func test_env_is_scrubbed_only_HOME_passes() {
