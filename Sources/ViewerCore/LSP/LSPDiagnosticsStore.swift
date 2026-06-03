@@ -84,4 +84,19 @@ public final class LSPDiagnosticsStore: ObservableObject {
     public var warningCount: Int {
         byURL.values.reduce(0) { $0 + $1.filter { $0.severity == .warning }.count }
     }
+
+    public var informationCount: Int {
+        byURL.values.reduce(0) { $0 + $1.filter { $0.severity == .information }.count }
+    }
+
+    public var hintCount: Int {
+        byURL.values.reduce(0) { $0 + $1.filter { $0.severity == .hint }.count }
+    }
+
+    /// Number of files with at least one diagnostic — the "N files with
+    /// problems" the sidebar header summarizes. Equals `byURL.count`
+    /// because empty publishes remove the key (see `replace`).
+    public var fileCount: Int {
+        byURL.count
+    }
 }

@@ -140,6 +140,57 @@ public enum ScriptVerb {
         case "dismiss-find":    model.dismissRenderedFindBar()
         case "find-next":       model.renderedFindNext()
         case "find-prev":       model.renderedFindPrev()
+        // ---- LSP store seeding (headless-gatable UAT, LSP-02/03) ----
+        // A real language server needs a GUI/VM lane to drive; these verbs
+        // push deterministic data straight into the @MainActor LSP stores
+        // via the SAME public mutation methods the server-push / context-
+        // menu paths use, so the Problems + References surfaces become
+        // regression-gatable on the host without spawning anything.
+        case "lsp-seed-diagnostics":
+            // "<errors> <warnings> [info] [hints]" — seed N diagnostics of
+            // each severity, all on a synthetic file URL, so the dump's
+            // per-severity counts can be asserted. Each count maps to one
+            // file URL so `files` reflects how many distinct files carry
+            // problems (one synthetic file per severity bucket present).
+            let counts = arg.split(separator: " ").map { Int($0) ?? 0 }
+            let errs = counts.count > 0 ? counts[0] : 0
+            let warns = counts.count > 1 ? counts[1] : 0
+            let infos = counts.count > 2 ? counts[2] : 0
+            let hints = counts.count > 3 ? counts[3] : 0
+            let seedSpecs: [(LSPDiagnostic.Severity, Int)] = [
+                (.error, errs), (.warning, warns),
+                (.information, infos), (.hint, hints),
+            ]
+            for (severity, n) in seedSpecs where n > 0 {
+                let url = URL(fileURLWithPath: "/tmp/mdv-lsp-seed-\(severity.rawValue).swift")
+                let diags = (0..<n).map { i in
+                    LSPDiagnostic(
+                        range: LSPRange(
+                            start: LSPPosition(line: i, character: 0),
+                            end: LSPPosition(line: i, character: 1)),
+                        severity: severity, code: nil, source: "seed",
+                        message: "seeded \(severity) \(i)")
+                }
+                model.lspDiagnostics.replace(url: url, with: diags)
+            }
+        case "lsp-clear-diagnostics":
+            model.lspDiagnostics.clearAll()
+        case "lsp-seed-references":
+            // "<count>" — seed a references result set with N synthetic
+            // rows so the nav panel's row count + references-mode can be
+            // asserted headless (the right-click "Find References" path).
+            let n = max(0, Int(arg) ?? 0)
+            let locations = (0..<n).map { i in
+                LSPLocation(
+                    uri: "file:///tmp/mdv-lsp-ref-\(i).swift",
+                    range: LSPRange(
+                        start: LSPPosition(line: i, character: 0),
+                        end: LSPPosition(line: i, character: 4)))
+            }
+            model.lspNavigation.setReferences(
+                originLabel: "References to seed", locations: locations)
+        case "lsp-clear-navigation":
+            model.lspNavigation.clear()
         case "sidebar-set-root":
             model.sidebar.setRoot(URL(fileURLWithPath: arg))
         case "sidebar-select-next":
@@ -330,6 +381,39 @@ public enum ScriptVerb {
             "sidebar": [
                 "rootURL": model.sidebar.rootURL?.absoluteString ?? "",
                 "isVisible": model.sidebar.isVisible,
+            ],
+            // LSP surface projection. The diagnostics + navigation stores
+            // are @MainActor and synchronously readable, so they project
+            // directly here — making the Problems (counts by severity) and
+            // References / Workspace-Symbol (nav rows + mode) surfaces
+            // dump-observable for the UAT catalog's LSP-02/03 items, which
+            // were previously MANUAL/VM-only. Driven headless via the
+            // `lsp-seed-*` / `lsp-clear-*` verbs below.
+            //
+            // NOT included here: the per-server pool state (LSPPool is an
+            // `actor`; its `snapshot()` is async and can't be awaited from
+            // this synchronous projection) and the outline symbols (the
+            // LSPOutlineModel is a `@StateObject` owned by SidebarView, not
+            // reachable from this (model, sessions) pair). Surfacing those
+            // would need an async dump path / model-ownership change — out
+            // of scope for a pure value projection.
+            "lsp": [
+                "problems": [
+                    "total": model.lspDiagnostics.totalCount,
+                    "errors": model.lspDiagnostics.errorCount,
+                    "warnings": model.lspDiagnostics.warningCount,
+                    "information": model.lspDiagnostics.informationCount,
+                    "hints": model.lspDiagnostics.hintCount,
+                    "files": model.lspDiagnostics.fileCount,
+                ],
+                "navigation": [
+                    "mode": model.lspNavigation.mode.rawValue,
+                    "rowCount": model.lspNavigation.rows.count,
+                    "isLoading": model.lspNavigation.isLoading,
+                    "query": model.lspNavigation.query,
+                    "errorMessage": model.lspNavigation.errorMessage ?? "",
+                    "contextDescription": model.lspNavigation.contextDescription ?? "",
+                ],
             ],
         ]
     }

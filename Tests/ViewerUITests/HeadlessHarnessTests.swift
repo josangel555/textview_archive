@@ -111,6 +111,75 @@ final class HeadlessHarnessTests: HeadlessUITestCase {
         page.assertRoot(endsWith: "tree/")
     }
 
+    // MARK: - LSP surface is dump-observable + script-driven (LSP-02/03)
+
+    /// The Problems surface: `lsp-seed-diagnostics` pushes diagnostics into
+    /// the @MainActor store via its public `replace`, and the dump's
+    /// `lsp.problems` sub-dict reports counts by severity — making the
+    /// previously-MANUAL LSP-02 problems-filter surface headless-gatable.
+    func test_lspSeedDiagnostics_reflectsCountsBySeverity() throws {
+        let dumps = harness.runScript(
+            """
+            lsp-seed-diagnostics 3 2 1 4
+            lsp-clear-diagnostics
+            """
+        )
+        XCTAssertEqual(dumps.count, 2)
+
+        let seeded = (dumps[0]["model"] as! [String: Any])["lsp"] as! [String: Any]
+        let problems = seeded["problems"] as! [String: Any]
+        XCTAssertEqual(problems["errors"] as? Int, 3)
+        XCTAssertEqual(problems["warnings"] as? Int, 2)
+        XCTAssertEqual(problems["information"] as? Int, 1)
+        XCTAssertEqual(problems["hints"] as? Int, 4)
+        XCTAssertEqual(problems["total"] as? Int, 10)
+        // One synthetic file per severity bucket present.
+        XCTAssertEqual(problems["files"] as? Int, 4)
+
+        let cleared = (dumps[1]["model"] as! [String: Any])["lsp"] as! [String: Any]
+        let clearedProblems = cleared["problems"] as! [String: Any]
+        XCTAssertEqual(clearedProblems["total"] as? Int, 0)
+        XCTAssertEqual(clearedProblems["files"] as? Int, 0)
+    }
+
+    /// The References surface: `lsp-seed-references` drives the navigation
+    /// store's `setReferences` (the right-click "Find References" path), and
+    /// the dump's `lsp.navigation` sub-dict exposes the row count + mode —
+    /// making LSP-03 references regression-gatable headless.
+    func test_lspSeedReferences_reflectsNavRowsAndMode() throws {
+        let dumps = harness.runScript(
+            """
+            lsp-seed-references 5
+            lsp-clear-navigation
+            """
+        )
+        XCTAssertEqual(dumps.count, 2)
+
+        let seeded = (dumps[0]["model"] as! [String: Any])["lsp"] as! [String: Any]
+        let nav = seeded["navigation"] as! [String: Any]
+        XCTAssertEqual(nav["rowCount"] as? Int, 5)
+        XCTAssertEqual(nav["mode"] as? String, "references")
+        XCTAssertEqual(nav["isLoading"] as? Bool, false)
+
+        let cleared = (dumps[1]["model"] as! [String: Any])["lsp"] as! [String: Any]
+        let clearedNav = cleared["navigation"] as! [String: Any]
+        XCTAssertEqual(clearedNav["rowCount"] as? Int, 0)
+    }
+
+    /// A fresh model with no LSP activity still projects a well-formed
+    /// `lsp` sub-dict (zeros, not absent) so Page Objects can read it
+    /// unconditionally.
+    func test_lspDump_presentAndZeroedByDefault() throws {
+        let snap = harness.snapshot()
+        let lsp = (snap["model"] as! [String: Any])["lsp"] as! [String: Any]
+        let problems = lsp["problems"] as! [String: Any]
+        XCTAssertEqual(problems["total"] as? Int, 0)
+        let nav = lsp["navigation"] as! [String: Any]
+        XCTAssertEqual(nav["rowCount"] as? Int, 0)
+        // Default navigation mode is workspaceSymbols (see LSPNavigationStore).
+        XCTAssertEqual(nav["mode"] as? String, "workspaceSymbols")
+    }
+
     // MARK: - Residual window verbs are a no-op headless (false return)
 
     func test_windowCoupledVerb_isUnhandledHeadless() {
