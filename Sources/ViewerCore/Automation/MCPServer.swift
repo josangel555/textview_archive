@@ -23,6 +23,19 @@ public final class MCPServer: @unchecked Sendable {
     private let output: FileHandle
     private let logger: ((String) -> Void)?
 
+    /// Invoked exactly once when the read loop ends — clean stdin EOF,
+    /// a framing error, or an external `stop()` (which closes stdin and
+    /// thus unblocks the read into EOF). Wired by the headless
+    /// `--mcp-stdio` launcher to terminate the process; without it the
+    /// loop returns but `NSApplication.run` keeps the process alive
+    /// forever (orphaned MCP server). Defaults to `nil` for tests, which
+    /// drive the server in-process and don't want a host-process exit.
+    nonisolated(unsafe) private var onExit: (@Sendable () -> Void)?
+    /// Guards `onExit` against a double-fire if both a framing/EOF return
+    /// and a concurrent `stop()` race to wind the loop down.
+    private let exitLock = NSLock()
+    nonisolated(unsafe) private var didExit = false
+
     /// Atomically-flipped flag the read loop checks between requests
     /// so an external `stop()` (or fatal error elsewhere) can wind it
     /// down without waiting on the next stdin byte. `nonisolated(unsafe)`
@@ -42,12 +55,14 @@ public final class MCPServer: @unchecked Sendable {
         host: AutomationHost,
         input: FileHandle = .standardInput,
         output: FileHandle = .standardOutput,
-        logger: ((String) -> Void)? = nil
+        logger: ((String) -> Void)? = nil,
+        onExit: (@Sendable () -> Void)? = nil
     ) {
         self.host = host
         self.input = input
         self.output = output
         self.logger = logger
+        self.onExit = onExit
     }
 
     // MARK: - Public lifecycle
@@ -77,6 +92,11 @@ public final class MCPServer: @unchecked Sendable {
     // MARK: - Loop
 
     private func runLoop() {
+        // Whichever way the loop ends — clean EOF, framing error, or an
+        // external `stop()` that closed stdin — fire `onExit` exactly
+        // once. The headless launcher wires this to `NSApp.terminate`;
+        // without it the loop returns but the process never exits.
+        defer { fireExit() }
         var reader = MCPFraming.FileHandleReader(input)
         while !shouldStop {
             let body: Data?
@@ -93,6 +113,20 @@ public final class MCPServer: @unchecked Sendable {
             }
             handle(requestBody: body)
         }
+    }
+
+    /// Fire the exit callback at most once. Idempotent so a `stop()`
+    /// path and the loop's own `defer` can't double-terminate.
+    private func fireExit() {
+        exitLock.lock()
+        if didExit { exitLock.unlock(); return }
+        didExit = true
+        let cb = onExit
+        // Drop the reference so the closure (and anything it captures)
+        // can't be retained past its single use.
+        onExit = nil
+        exitLock.unlock()
+        cb?()
     }
 
     private func handle(requestBody: Data) {

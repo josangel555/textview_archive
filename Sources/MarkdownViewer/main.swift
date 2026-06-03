@@ -1735,6 +1735,24 @@ extension AppDelegate {
             output: .standardOutput,
             logger: { line in
                 FileHandle.standardError.write(Data("mcp: \(line)\n".utf8))
+            },
+            onExit: {
+                // The read loop ended (stdin EOF, framing error, or a
+                // `shutdown`/`stop()`). In `--mcp-stdio` mode there is no
+                // UI to keep the process around, so terminate `NSApp`;
+                // otherwise the headless server orphans — `NSApp.run`
+                // would block forever with the loop already gone.
+                //
+                // `onExit` fires on the background read thread, so hop to
+                // the main actor for AppKit. `terminate(nil)` runs
+                // `applicationWillTerminate` (session/JSON flush, LSP
+                // teardown) and then calls `exit()` itself — it does not
+                // return when termination proceeds, so we deliberately do
+                // NOT append a manual `exit(0)`: that would race the
+                // async teardown and short-circuit the flush.
+                Task { @MainActor in
+                    NSApp.terminate(nil)
+                }
             }
         )
         server.start()
