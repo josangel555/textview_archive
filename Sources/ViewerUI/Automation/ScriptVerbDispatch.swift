@@ -135,7 +135,14 @@ public enum ScriptVerb {
         case "toggle-bookmark": model.toggleCurrentTabBookmark()
         case "show-cross-search":    model.showCrossSearch()
         case "dismiss-cross-search": model.dismissCrossSearch()
-        case "set-cross-query":      model.crossSearchQuery = arg; model.runCrossSearch()
+        case "set-cross-query":
+            // Catalog contract (PMA-04 step 8): "implies show+run" — present
+            // the panel before populating + running, so a script that omits an
+            // explicit `show-cross-search` still surfaces the overlay rather
+            // than running the grep behind a closed panel.
+            model.showCrossSearch()
+            model.crossSearchQuery = arg
+            model.runCrossSearch()
         case "show-find":       model.showRenderedFindBar()
         case "dismiss-find":    model.dismissRenderedFindBar()
         case "find-next":       model.renderedFindNext()
