@@ -4,6 +4,29 @@ import ViewerCore
 struct TabBar: View {
     @ObservedObject var model: DocumentModel
 
+    /// DIRTYDOT (2026-06-03): TabBar must ALSO observe `tabCoordinator`,
+    /// not just `model`. The open-tab list, selection, and `Tab.isDirty`
+    /// all live on `TabCoordinator.tabs` (`model.tabs` is a forwarder).
+    /// PERF #1 (2026-05-25) deliberately SEVERED the
+    /// `tabCoordinator.objectWillChange` → `DocumentModel.objectWillChange`
+    /// forwarding to stop editor keystrokes / per-tab churn from re-bodying
+    /// the whole content tree — that invariant is pinned by
+    /// `TabRepublishInvariantTests`/`EditorRepublishInvariantTests`. The
+    /// fallout: the editor edit/save/discard paths flip `Tab.isDirty` via
+    /// `tabCoordinator.replace` (fires `tabCoordinator.objectWillChange`
+    /// ONLY), so a TabBar that observed `model` alone never re-rendered the
+    /// accent dirty dot (`mdv.tab.dirtyDot`) on edit and never cleared it on
+    /// save. Observing the coordinator directly is the textbook
+    /// narrow-observation fix (same shape as the views that observe
+    /// `sidebar` directly per the PERF #1 audit) — the strip re-bodies on
+    /// tab/selection/dirty ticks without resurrecting the republish storm.
+    @ObservedObject var tabCoordinator: TabCoordinator
+
+    init(model: DocumentModel) {
+        self.model = model
+        self.tabCoordinator = model.tabCoordinator
+    }
+
     /// item12: tab-strip width budget. Idle width per tab + the floor it
     /// shrinks to under crowding (icon + close glyph, label clipped). The
     /// strip first shrinks every tab toward `minShrunkWidth`; once even
