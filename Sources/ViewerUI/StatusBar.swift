@@ -123,8 +123,15 @@ struct StatusBar: View {
                         "\(sourceView.sourceSelection.line)" +
                         ", Col \(sourceView.sourceSelection.column)")
                 }
-                metric("Lines", "\(metrics.lineCount)")
-                metric("Chars", formatNumber(metrics.charCount))
+                // Lines/Chars only apply to a text-backed document. For
+                // media/binary previews (image/audio/video/PDF/sqlite)
+                // they're a meaningless 0 — hide them rather than render
+                // "Lines 0 / Chars 0", which reads as an empty 0-line doc
+                // (PV-08). Size + category encoding still show.
+                if metrics.hasTextMetrics {
+                    metric("Lines", "\(metrics.lineCount)")
+                    metric("Chars", formatNumber(metrics.charCount))
+                }
                 metric("Size",  formatBytes(metrics.byteCount))
                 if !metrics.indent.isEmpty {
                     metric("Indent", metrics.indent)
@@ -223,6 +230,11 @@ struct StatusBar: View {
         let lineEndings: String  // "LF" / "CRLF" / "—"
         let encodingShort: String
         let indent: String       // "Tabs" / "Spaces (2)" / "—"
+        /// True only for text-backed documents (`.loaded`). Media/binary
+        /// previews leave line/char at 0; this flag drives hiding the
+        /// Lines/Chars chips for them so they don't read as an empty
+        /// 0-line document (PV-08).
+        var hasTextMetrics: Bool = true
     }
 
     /// `body` re-evals every `@Published` mutation (typing, scroll,
@@ -267,7 +279,8 @@ struct StatusBar: View {
                 byteCount: b.totalByteCount,
                 lineEndings: "—",
                 encodingShort: "binary",
-                indent: ""
+                indent: "",
+                hasTextMetrics: false
             )
         case .preview(let url, let cat):
             return Metrics(
@@ -276,7 +289,8 @@ struct StatusBar: View {
                 byteCount: Self.cachedFileSize(for: url),
                 lineEndings: "—",
                 encodingShort: cat.rawValue,
-                indent: ""
+                indent: "",
+                hasTextMetrics: false
             )
         case .empty, .error, .loading, .hostedView:
             return nil
