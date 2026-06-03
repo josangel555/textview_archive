@@ -168,6 +168,38 @@ public extension DocumentModel {
         return bridge
     }
 
+    /// Lazy-attached, model-owned walkthrough player controller — the
+    /// SINGLE source of truth for the transport (`isActive`,
+    /// `currentStepIndex`, …).
+    ///
+    /// Why it lives here and not solely inside ContentView's
+    /// `@StateObject`: the app delegate (`--walkthrough PATH`) needs to
+    /// call `start(_:)` on the SAME instance that ContentView's `body`
+    /// observes. Reading a `@StateObject`'s wrapped value off a not-
+    /// yet-installed `ContentView` struct does NOT reliably hand back
+    /// the instance SwiftUI later realizes and binds into `body` — so
+    /// the delegate was driving a phantom controller: its verbs landed
+    /// on this live model (the engine + bridge are shared), but the
+    /// `isActive` flip published on an object `body` wasn't observing,
+    /// so the docked transport strip never structurally mounted
+    /// (F-WCR-STRIP). Anchoring the instance on the model and seeding
+    /// the `@StateObject` from it makes "what the delegate starts" and
+    /// "what the body observes" the same object by construction. Same
+    /// associated-object pattern as `walkthroughBridge`.
+    var walkthroughController: WalkthroughPlayerController {
+        if let existing = objc_getAssociatedObject(
+            self, &WalkthroughControllerKey.key
+        ) as? WalkthroughPlayerController {
+            return existing
+        }
+        let controller = WalkthroughPlayerController(model: self)
+        objc_setAssociatedObject(
+            self, &WalkthroughControllerKey.key, controller,
+            .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+        )
+        return controller
+    }
+
     /// Switch the focused tab to one already showing `url`, if any.
     /// Returns true when a switch happened. Used by the walkthrough
     /// `openFile` handler so an already-open file becomes the active
@@ -185,5 +217,10 @@ public extension DocumentModel {
 /// the contents are unused. Wrapping in an enum (uninstantiable) keeps
 /// the global namespace clean.
 private enum WalkthroughBridgeKey {
+    nonisolated(unsafe) static var key: UInt8 = 0
+}
+
+/// Associated-object key for the model-owned player controller.
+private enum WalkthroughControllerKey {
     nonisolated(unsafe) static var key: UInt8 = 0
 }

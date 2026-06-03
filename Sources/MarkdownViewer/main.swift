@@ -95,8 +95,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let rootView = ContentView(model: model, sessionsApp: sessions)
         // Stash the walkthrough controller so the --walkthrough flag
         // handler below can call `start(_:)` on it without rebuilding
-        // ContentView's body state.
-        self.walkthroughController = rootView.walkthroughController
+        // ContentView's body state. F-WCR-STRIP: read it off the MODEL,
+        // not `rootView` — `rootView.walkthroughController` would touch a
+        // `@StateObject` on a not-yet-installed view struct, which need
+        // not return the instance SwiftUI later binds into `body`. The
+        // model-owned singleton (which the `@StateObject` is seeded from)
+        // IS that instance, so `start(_:)` flips `isActive` on the object
+        // `body` observes and the docked transport strip mounts.
+        self.walkthroughController = model.walkthroughController
         let hostingController = NSHostingController(rootView: rootView)
 
         let minContentSize = NSSize(width: 600, height: 360)

@@ -45,15 +45,26 @@ public struct ContentView: View {
         // owns the engine, delegate, and auto-advance scheduler — all
         // of which hold weak refs that would dangle if the controller
         // were rebuilt per body call.
+        //
+        // F-WCR-STRIP: seed from the MODEL-OWNED singleton rather than
+        // constructing a fresh controller here. The app delegate drives
+        // playback by reading `model.walkthroughController` directly, so
+        // this guarantees `body` observes the EXACT instance the
+        // delegate's `start(_:)` flips `isActive` on — otherwise the
+        // strip's `if walkthrough.isActive` gate never re-bodies (the
+        // delegate had captured a phantom controller off a not-yet-
+        // installed view struct). See the accessor doc on DocumentModel.
         _walkthrough = StateObject(
-            wrappedValue: WalkthroughPlayerController(model: model)
+            wrappedValue: model.walkthroughController
         )
     }
 
     /// Public accessor for `main.swift` to drive the player from CLI
-    /// args / future external transports.
+    /// args / future external transports. Returns the model-owned
+    /// singleton (identical to `_walkthrough`'s observed instance), so
+    /// reading it off a not-yet-installed `ContentView` is safe.
     public var walkthroughController: WalkthroughPlayerController {
-        walkthrough
+        model.walkthroughController
     }
 
     public var body: some View {
