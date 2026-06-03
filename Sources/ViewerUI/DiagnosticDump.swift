@@ -99,7 +99,15 @@ public enum DiagnosticDump {
         _ view: NSView,
         depth: Int,
         includeRecursive: Bool,
-        redactContent: Bool = false
+        redactContent: Bool = false,
+        // Nearest non-empty `accessibilityIdentifier()` seen on an ancestor
+        // during the walk. SwiftUI's `.accessibilityIdentifier(_:)` lands on
+        // an outer hosting NSView, NOT on the inner `HostingScrollView` /
+        // `DocumentView` that backs a panel's scroll body — so a collapsed
+        // (zero-sized) panel host has no id of its own and is unattributable
+        // in isolation. Carrying the enclosing id down lets the dump name
+        // WHICH panel a zero-sized host belongs to (SFB-05).
+        enclosingAXIdentifier: String? = nil
     ) -> [String: Any] {
         var d: [String: Any] = [
             "class": String(describing: type(of: view)),
@@ -116,6 +124,15 @@ public enum DiagnosticDump {
         let axid = view.accessibilityIdentifier()
         if !axid.isEmpty {
             d["accessibilityIdentifier"] = axid
+        }
+        // The id to hand down to children: this view's own id if it has one,
+        // else whatever ancestor id we inherited. A node without its own id
+        // surfaces the inherited one under a distinct key so a zero-sized
+        // host can still be tied back to its enclosing panel envelope. The
+        // separate key keeps "owns this id" vs "lives under it" unambiguous.
+        let childAXIdentifier = axid.isEmpty ? enclosingAXIdentifier : axid
+        if axid.isEmpty, let enclosing = enclosingAXIdentifier {
+            d["enclosingAccessibilityIdentifier"] = enclosing
         }
         // Zero-size detection — these are the silent killers. A view can
         // be present in the tree, have correct text content, correct
@@ -163,7 +180,8 @@ public enum DiagnosticDump {
         if !view.subviews.isEmpty {
             d["subviews"] = view.subviews.map {
                 describeView($0, depth: depth + 1, includeRecursive: false,
-                             redactContent: redactContent)
+                             redactContent: redactContent,
+                             enclosingAXIdentifier: childAXIdentifier)
             }
         }
         return d
