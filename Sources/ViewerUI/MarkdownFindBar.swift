@@ -12,6 +12,10 @@ struct FindBar: View {
     @Binding var query: String
     @Binding var caseSensitive: Bool
     @Binding var isRegex: Bool
+    /// Whether to render the `.*` regex toggle. The rendered (WKWebView)
+    /// bar omits it: WKWebView find can't do regex, so the toggle would
+    /// be a dead control bound to a constant. Source/editor bars show it.
+    var showsRegexToggle: Bool = true
     @Binding var matchSummary: String  // e.g. "3/12"; empty when unknown
     let noResultsMode: NoResultsMode
     let focusRequest: Int
@@ -77,16 +81,18 @@ struct FindBar: View {
             .accessibilityLabel("Match case")
             .accessibilityValue(caseSensitive ? "On" : "Off")
 
-            Toggle(isOn: $isRegex) {
-                Text(".*")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(isRegex ? .primary : .secondary)
+            if showsRegexToggle {
+                Toggle(isOn: $isRegex) {
+                    Text(".*")
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(isRegex ? .primary : .secondary)
+                }
+                .toggleStyle(.button)
+                .controlSize(.small)
+                .help("Regular expression")
+                .accessibilityLabel("Use regular expression")
+                .accessibilityValue(isRegex ? "On" : "Off")
             }
-            .toggleStyle(.button)
-            .controlSize(.small)
-            .help("Regular expression")
-            .accessibilityLabel("Use regular expression")
-            .accessibilityValue(isRegex ? "On" : "Off")
 
             Button(action: onPrev) {
                 Image(systemName: "chevron.up")
@@ -157,7 +163,8 @@ struct MarkdownFindBar: View {
             placeholder: "Find in rendered markdown…",
             query: $find.renderedQuery,
             caseSensitive: $find.renderedCaseSensitive,
-            isRegex: .constant(false),  // WKWebView find can't regex; toggle is hidden visually but state is unused
+            isRegex: .constant(false),  // WKWebView find can't regex; toggle omitted via showsRegexToggle, state unused
+            showsRegexToggle: false,
             // Rendered now supports proper count via JS injection
             // (Coordinator.findScript). Show n/N just like source.
             matchSummary: $find.renderedMatchSummary,
