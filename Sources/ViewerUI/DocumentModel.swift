@@ -1183,7 +1183,8 @@ public final class DocumentModel: ObservableObject {
     public func openFileHistory(for url: URL) {
         guard let root = GitClient.discoverRoot(from: url),
               let rel = Self.repoRelativePath(of: url, root: root),
-              !rel.isEmpty else { return }
+              !rel.isEmpty,
+              GitClient(repoRoot: root).isTracked(path: rel) else { return }
         let view = FileHistoryView(
             doc: self,
             repoRoot: root,
