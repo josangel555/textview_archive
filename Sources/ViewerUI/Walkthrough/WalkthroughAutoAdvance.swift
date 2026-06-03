@@ -51,6 +51,17 @@ public final class WalkthroughAutoAdvance {
 
     public var isRunning: Bool { task != nil }
 
+    /// Invoked on the main actor immediately after an auto-fired
+    /// `engine.next()` advances a step. The host wires this to its
+    /// "re-arm the dwell timer for the now-current step" logic
+    /// (`scheduleAdvanceIfNeeded`). Without it the scheduler would
+    /// advance exactly once and stall: the in-flight Task calls
+    /// `engine.next()` directly (bypassing the controller's `next()`),
+    /// so nothing re-schedules unless the host's view lifecycle happens
+    /// to fire — which it doesn't when the window is occluded. Making
+    /// the clock re-arm itself here removes that fragile dependency.
+    public var onAdvance: (() -> Void)?
+
     private weak var engine: WalkthroughEngine?
     private var task: Task<Void, Never>?
     /// Snapshot of the dwell that the in-flight schedule was based on,
@@ -103,6 +114,10 @@ public final class WalkthroughAutoAdvance {
         // queue a no-sleep task and pay the actor-hop cost.
         if dwell <= 0 {
             engine.next()
+            // Re-arm for the now-current step. The early-return path
+            // bypasses the Task, so without this a zero-dwell chain
+            // would advance exactly one step and stall (see onAdvance).
+            onAdvance?()
             return
         }
         let nanos = UInt64(dwell * 1_000_000_000)
@@ -117,6 +132,11 @@ public final class WalkthroughAutoAdvance {
             guard let engine, engine.state == .playing else { return }
             self.task = nil
             engine.next()
+            // Re-arm the clock for the step we just landed on. The Task
+            // calls engine.next() directly, bypassing the controller's
+            // next(), so this is the only thing that schedules the
+            // following step (see onAdvance).
+            self.onAdvance?()
         }
     }
 

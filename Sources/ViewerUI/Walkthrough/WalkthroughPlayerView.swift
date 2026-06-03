@@ -251,6 +251,18 @@ public final class WalkthroughPlayerController: ObservableObject {
         self.impl = impl
         self.autoAdvance = WalkthroughAutoAdvance(engine: e)
         self.model = model
+        // The auto-advance Task calls engine.next() directly, bypassing
+        // our next(); without this hook the published mirrors would go
+        // stale and — critically — the dwell timer would never re-arm,
+        // so the tour would advance exactly once and stall (the bug
+        // surfaces whenever the strip's view lifecycle doesn't fire,
+        // e.g. an occluded/background window). Re-sync + re-schedule on
+        // every auto-fired advance instead of relying on view callbacks.
+        self.autoAdvance.onAdvance = { [weak self] in
+            guard let self else { return }
+            self.syncFromEngine()
+            self.scheduleAdvanceIfNeeded()
+        }
     }
 
     // MARK: - Derived state for the view
