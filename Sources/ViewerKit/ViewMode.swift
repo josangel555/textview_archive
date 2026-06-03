@@ -13,6 +13,21 @@ public enum ViewMode: String, Equatable, Sendable, CaseIterable, Codable {
     case diff        // .diff / .patch: per-hunk colored DiffView
     case preview     // image/audio/video/pdf/sqlite: native MediaPreviewView (state-driven)
     case hex         // every file: byte grid
+
+    /// True only for the modes backed by a live text caret (an editable /
+    /// selectable NSTextView): `.source` and `.editor`. Every other lens —
+    /// `.rendered` (WKWebView), `.preview`, `.hex`, `.formatted`, `.table`,
+    /// `.diff` — has no caret, so a "Ln X, Col Y" readout is meaningless
+    /// there and the status bar must hide it. The `SourceSelection` channel
+    /// keeps its last/seed value across a mode toggle (seed is line:1,col:1),
+    /// so the chip can't be gated on the selection alone — it has to be
+    /// gated on the mode.
+    public var hasTextCaret: Bool {
+        switch self {
+        case .source, .editor: return true
+        case .rendered, .formatted, .table, .diff, .preview, .hex: return false
+        }
+    }
 }
 
 /// Computes which view modes are reachable for a given URL. Always

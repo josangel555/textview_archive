@@ -108,13 +108,17 @@ struct StatusBar: View {
     private var metricsGroup: some View {
         if let metrics = currentMetrics {
             HStack(spacing: 12) {
-                if metrics.lineCount > 0, sourceView.sourceSelection.line > 0 {
-                    // Ln/Col only meaningful for text files. Hide
-                    // for media previews where everything is 0, and
-                    // for large read-only files where the source
-                    // view publishes a `line == 0` sentinel (it
-                    // skips the O(N) newline-index build that would
-                    // otherwise resolve precise line:col).
+                if model.currentViewMode.hasTextCaret,
+                   metrics.lineCount > 0, sourceView.sourceSelection.line > 0 {
+                    // Ln/Col only meaningful for the caret-backed text
+                    // lenses (Source / Editor). Hidden in Rendered (no
+                    // caret in the WKWebView — VM-01), Preview / Hex /
+                    // Formatted / Table / Diff (no caret either), for
+                    // media previews where everything is 0, and for
+                    // large read-only files where the source view
+                    // publishes a `line == 0` sentinel (it skips the
+                    // O(N) newline-index build that would otherwise
+                    // resolve precise line:col).
                     metric("Ln",
                         "\(sourceView.sourceSelection.line)" +
                         ", Col \(sourceView.sourceSelection.column)")
