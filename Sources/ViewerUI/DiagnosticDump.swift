@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import PDFKit
 import WebKit
 
 /// Runtime introspection of the realized NSView/CALayer/NSTextView tree.
@@ -289,6 +290,14 @@ public enum DiagnosticDump {
             return false
         }
         content.cacheDisplay(in: bounds, to: rep)
+        // `cacheDisplay` walks the view/CALayer display tree but does NOT
+        // composite PDFKit's layer-hosted / Metal-backed page surface, so a
+        // mounted-and-laid-out `PDFView` comes out blank in the same-process
+        // snapshot (UAT PV-03 — a capture-fidelity limit, not a render bug).
+        // Re-draw any visible PDF pages into the same bitmap via PDFKit's own
+        // CG drawing API so the artifact faithfully shows the page. This only
+        // touches the captured PNG; on-screen rendering is unaffected.
+        overlayPDFViews(in: content, into: rep)
         guard let pngData = rep.representation(using: .png, properties: [:]) else {
             return false
         }
@@ -298,5 +307,72 @@ public enum DiagnosticDump {
         } catch {
             return false
         }
+    }
+
+    /// Re-draw the visible pages of every mounted `PDFView` directly into
+    /// `rep`, on top of the `cacheDisplay` snapshot of `root`. `cacheDisplay`
+    /// captures ordinary `drawRect:`/CALayer content but misses PDFKit's
+    /// layer-hosted page surface, leaving the page area blank. PDFKit exposes
+    /// no public "render to bitmap" entry point for `PDFView` itself, so we
+    /// drop to `PDFPage.draw(with:to:)` per visible page — the same primitive
+    /// `PDFView` uses internally — mapped into the captured coordinate space.
+    private static func overlayPDFViews(
+        in root: NSView, into rep: NSBitmapImageRep
+    ) {
+        let pdfViews = collectPDFViews(in: root)
+        guard !pdfViews.isEmpty,
+              let ctx = NSGraphicsContext(bitmapImageRep: rep) else { return }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = ctx
+        let cg = ctx.cgContext
+        // `NSGraphicsContext(bitmapImageRep:)` is bottom-left origin; `cacheDisplay`
+        // already rendered the snapshot into it matching the view's visual layout.
+        // Our `target` rects come from `NSView.convert(_:to: root)`, i.e. they are
+        // in `root`'s coordinate space. When `root` is flipped (top-left origin —
+        // the SwiftUI hosting case), translate+flip the CG context so those rects
+        // land at the same place the snapshot did.
+        if root.isFlipped {
+            cg.translateBy(x: 0, y: root.bounds.height)
+            cg.scaleBy(x: 1, y: -1)
+        }
+        for pdf in pdfViews {
+            guard let document = pdf.document, document.pageCount > 0 else { continue }
+            // Visible pages only — singlePageContinuous can mount many.
+            for pageIndex in 0..<document.pageCount {
+                guard let page = document.page(at: pageIndex) else { continue }
+                // The page's bounds in PDFView coordinates, then up into the
+                // captured `root` space (rep is in `root.bounds` units).
+                let pageRectInView = pdf.convert(
+                    page.bounds(for: pdf.displayBox), from: page)
+                let target = pdf.convert(pageRectInView, to: root)
+                // Skip pages scrolled fully out of the captured rect.
+                guard target.intersects(root.bounds),
+                      target.width > 1, target.height > 1 else { continue }
+                cg.saveGState()
+                // Map the page's own (PDF) coordinate box onto `target`.
+                let box = page.bounds(for: pdf.displayBox)
+                cg.translateBy(x: target.minX, y: target.minY)
+                if box.width > 0, box.height > 0 {
+                    cg.scaleBy(x: target.width / box.width,
+                               y: target.height / box.height)
+                }
+                cg.translateBy(x: -box.minX, y: -box.minY)
+                // White page backing so transparent PDFs aren't see-through
+                // onto whatever cacheDisplay left underneath.
+                cg.setFillColor(NSColor.white.cgColor)
+                cg.fill(box)
+                page.draw(with: pdf.displayBox, to: cg)
+                cg.restoreGState()
+            }
+        }
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    /// Depth-first collect every `PDFView` in the subtree rooted at `view`.
+    private static func collectPDFViews(in view: NSView) -> [PDFView] {
+        var out: [PDFView] = []
+        if let pdf = view as? PDFView { out.append(pdf) }
+        for sub in view.subviews { out.append(contentsOf: collectPDFViews(in: sub)) }
+        return out
     }
 }
