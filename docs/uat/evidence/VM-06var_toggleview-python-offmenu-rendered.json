@@ -1,0 +1,3055 @@
+{
+  "contentView" : {
+    "alphaValue" : 1,
+    "bounds" : "(0.0,0.0 1100.0x768.0)",
+    "class" : "NSHostingView<ContentView>",
+    "depth" : 0,
+    "frame" : "(0.0,0.0 1100.0x768.0)",
+    "isHidden" : false,
+    "isHiddenOrHasHiddenAncestor" : false,
+    "layer" : {
+      "frame" : "(0.0,0.0 1100.0x768.0)",
+      "hasContents" : false,
+      "isHidden" : false,
+      "masksToBounds" : false,
+      "opacity" : 1
+    },
+    "subviewCount" : 42,
+    "subviews" : [
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 1100.0x768.0)",
+        "class" : "AppKitPlatformViewHost<PlatformViewRepresentableAdaptor<DraggingDestinationView>>",
+        "depth" : 1,
+        "frame" : "(0.0,0.0 1100.0x768.0)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(0.0,0.0 1100.0x768.0)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 1,
+        "subviews" : [
+          {
+            "alphaValue" : 1,
+            "bounds" : "(0.0,0.0 1100.0x768.0)",
+            "class" : "_PlatformDraggingDestinationView",
+            "depth" : 2,
+            "frame" : "(0.0,0.0 1100.0x768.0)",
+            "isHidden" : false,
+            "isHiddenOrHasHiddenAncestor" : false,
+            "layer" : {
+              "frame" : "(0.0,0.0 1100.0x768.0)",
+              "hasContents" : false,
+              "isHidden" : false,
+              "masksToBounds" : false,
+              "opacity" : 1
+            },
+            "subviewCount" : 0,
+            "visibleRect" : "(0.0,-32.0 1100.0x800.0)",
+            "wantsLayer" : true
+          }
+        ],
+        "visibleRect" : "(0.0,0.0 1100.0x800.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 1068.0x0.0)",
+        "class" : "PlatformContainer",
+        "depth" : 1,
+        "frame" : "(0.0,15.0 1068.0x0.0)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(0.0,15.0 1068.0x0.0)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 1,
+        "subviews" : [
+          {
+            "alphaValue" : 1,
+            "bounds" : "(0.0,0.0 1068.0x0.0)",
+            "class" : "HostingScrollView",
+            "depth" : 2,
+            "frame" : "(0.0,0.0 1068.0x0.0)",
+            "isHidden" : false,
+            "isHiddenOrHasHiddenAncestor" : false,
+            "layer" : {
+              "frame" : "(0.0,0.0 1068.0x0.0)",
+              "hasContents" : false,
+              "isHidden" : false,
+              "masksToBounds" : true,
+              "opacity" : 1
+            },
+            "nsScrollView" : {
+              "backgroundColor_description" : "Generic Gray Gamma 2.2 Profile colorspace 0 0",
+              "contentSize" : "1068.0x0.0",
+              "documentView_class" : "DocumentView",
+              "documentView_frame" : "(0.0,0.0 0.0x0.0)",
+              "drawsBackground" : false,
+              "hasVerticalRuler" : false,
+              "rulersVisible" : false
+            },
+            "subviewCount" : 1,
+            "subviews" : [
+              {
+                "alphaValue" : 1,
+                "bounds" : "(0.0,0.0 1068.0x0.0)",
+                "class" : "NSClipView",
+                "depth" : 3,
+                "frame" : "(0.0,0.0 1068.0x0.0)",
+                "isHidden" : false,
+                "isHiddenOrHasHiddenAncestor" : false,
+                "layer" : {
+                  "frame" : "(0.0,0.0 1068.0x0.0)",
+                  "hasContents" : false,
+                  "isHidden" : false,
+                  "masksToBounds" : true,
+                  "opacity" : 1
+                },
+                "subviewCount" : 1,
+                "subviews" : [
+                  {
+                    "alphaValue" : 1,
+                    "bounds" : "(0.0,0.0 0.0x0.0)",
+                    "class" : "DocumentView",
+                    "depth" : 4,
+                    "frame" : "(0.0,0.0 0.0x0.0)",
+                    "isHidden" : false,
+                    "isHiddenOrHasHiddenAncestor" : false,
+                    "layer" : {
+                      "frame" : "(0.0,0.0 0.0x0.0)",
+                      "hasContents" : false,
+                      "isHidden" : false,
+                      "masksToBounds" : false,
+                      "opacity" : 1
+                    },
+                    "subviewCount" : 1,
+                    "subviews" : [
+                      {
+                        "alphaValue" : 1,
+                        "bounds" : "(0.0,0.0 0.0x0.0)",
+                        "class" : "PlatformGroupContainer",
+                        "depth" : 5,
+                        "frame" : "(0.0,0.0 0.0x0.0)",
+                        "isHidden" : false,
+                        "isHiddenOrHasHiddenAncestor" : false,
+                        "layer" : {
+                          "frame" : "(0.0,0.0 0.0x0.0)",
+                          "hasContents" : false,
+                          "isHidden" : false,
+                          "masksToBounds" : false,
+                          "opacity" : 1
+                        },
+                        "subviewCount" : 0,
+                        "visibleRect" : "(0.0,0.0 0.0x0.0)",
+                        "wantsLayer" : true,
+                        "zeroSize" : {
+                          "collapsedDim" : true,
+                          "height0" : true,
+                          "width0" : true
+                        }
+                      }
+                    ],
+                    "visibleRect" : "(0.0,0.0 0.0x0.0)",
+                    "wantsLayer" : false,
+                    "zeroSize" : {
+                      "collapsedDim" : true,
+                      "height0" : true,
+                      "width0" : true
+                    }
+                  }
+                ],
+                "visibleRect" : "(0.0,0.0 0.0x0.0)",
+                "wantsLayer" : false,
+                "zeroSize" : {
+                  "collapsedDim" : true,
+                  "height0" : true,
+                  "width0" : false
+                }
+              }
+            ],
+            "visibleRect" : "(0.0,0.0 0.0x0.0)",
+            "wantsLayer" : false,
+            "zeroSize" : {
+              "collapsedDim" : true,
+              "height0" : true,
+              "width0" : false
+            }
+          }
+        ],
+        "visibleRect" : "(0.0,-753.0 1100.0x800.0)",
+        "wantsLayer" : true,
+        "zeroSize" : {
+          "collapsedDim" : true,
+          "height0" : true,
+          "width0" : false
+        }
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 24.0x24.0)",
+        "class" : "SwiftUIAppKitButton",
+        "depth" : 1,
+        "frame" : "(1072.0,3.0 24.0x24.0)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(1072.0,3.0 24.0x24.0)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 1,
+        "subviews" : [
+          {
+            "alphaValue" : 1,
+            "bounds" : "(0.0,0.0 24.0x24.0)",
+            "class" : "ContentViewHost",
+            "depth" : 2,
+            "frame" : "(0.0,0.0 24.0x24.0)",
+            "isHidden" : false,
+            "isHiddenOrHasHiddenAncestor" : false,
+            "layer" : {
+              "frame" : "(0.0,0.0 24.0x24.0)",
+              "hasContents" : false,
+              "isHidden" : false,
+              "masksToBounds" : false,
+              "opacity" : 1
+            },
+            "subviewCount" : 0,
+            "visibleRect" : "(-1072.0,-35.0 1100.0x800.0)",
+            "wantsLayer" : true
+          }
+        ],
+        "visibleRect" : "(-1072.0,-35.0 1100.0x800.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 1068.0x28.0)",
+        "class" : "PlatformContainer",
+        "depth" : 1,
+        "frame" : "(0.0,32.0 1068.0x28.0)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(0.0,32.0 1068.0x28.0)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 1,
+        "subviews" : [
+          {
+            "alphaValue" : 1,
+            "bounds" : "(0.0,0.0 1068.0x28.0)",
+            "class" : "HostingScrollView",
+            "depth" : 2,
+            "frame" : "(0.0,0.0 1068.0x28.0)",
+            "isHidden" : false,
+            "isHiddenOrHasHiddenAncestor" : false,
+            "layer" : {
+              "frame" : "(0.0,0.0 1068.0x28.0)",
+              "hasContents" : false,
+              "isHidden" : false,
+              "masksToBounds" : true,
+              "opacity" : 1
+            },
+            "nsScrollView" : {
+              "backgroundColor_description" : "Generic Gray Gamma 2.2 Profile colorspace 0 0",
+              "contentSize" : "1068.0x28.0",
+              "documentView_class" : "DocumentView",
+              "documentView_frame" : "(0.0,0.0 198.0x28.0)",
+              "drawsBackground" : false,
+              "hasVerticalRuler" : false,
+              "rulersVisible" : false
+            },
+            "subviewCount" : 1,
+            "subviews" : [
+              {
+                "alphaValue" : 1,
+                "bounds" : "(0.0,0.0 1068.0x28.0)",
+                "class" : "NSClipView",
+                "depth" : 3,
+                "frame" : "(0.0,0.0 1068.0x28.0)",
+                "isHidden" : false,
+                "isHiddenOrHasHiddenAncestor" : false,
+                "layer" : {
+                  "frame" : "(0.0,0.0 1068.0x28.0)",
+                  "hasContents" : false,
+                  "isHidden" : false,
+                  "masksToBounds" : true,
+                  "opacity" : 1
+                },
+                "subviewCount" : 1,
+                "subviews" : [
+                  {
+                    "alphaValue" : 1,
+                    "bounds" : "(0.0,0.0 198.0x28.0)",
+                    "class" : "DocumentView",
+                    "depth" : 4,
+                    "frame" : "(0.0,0.0 198.0x28.0)",
+                    "isHidden" : false,
+                    "isHiddenOrHasHiddenAncestor" : false,
+                    "layer" : {
+                      "frame" : "(0.0,0.0 198.0x28.0)",
+                      "hasContents" : false,
+                      "isHidden" : false,
+                      "masksToBounds" : false,
+                      "opacity" : 1
+                    },
+                    "subviewCount" : 1,
+                    "subviews" : [
+                      {
+                        "alphaValue" : 1,
+                        "bounds" : "(0.0,0.0 198.0x28.0)",
+                        "class" : "PlatformGroupContainer",
+                        "depth" : 5,
+                        "frame" : "(0.0,0.0 198.0x28.0)",
+                        "isHidden" : false,
+                        "isHiddenOrHasHiddenAncestor" : false,
+                        "layer" : {
+                          "frame" : "(0.0,0.0 198.0x28.0)",
+                          "hasContents" : false,
+                          "isHidden" : false,
+                          "masksToBounds" : false,
+                          "opacity" : 1
+                        },
+                        "subviewCount" : 3,
+                        "subviews" : [
+                          {
+                            "alphaValue" : 1,
+                            "bounds" : "(0.0,0.0 198.0x28.0)",
+                            "class" : "AppKitPlatformViewHost<PlatformViewRepresentableAdaptor<DraggingDestinationView>>",
+                            "depth" : 6,
+                            "frame" : "(0.0,0.0 198.0x28.0)",
+                            "isHidden" : false,
+                            "isHiddenOrHasHiddenAncestor" : false,
+                            "layer" : {
+                              "frame" : "(0.0,0.0 198.0x28.0)",
+                              "hasContents" : false,
+                              "isHidden" : false,
+                              "masksToBounds" : false,
+                              "opacity" : 1
+                            },
+                            "subviewCount" : 1,
+                            "subviews" : [
+                              {
+                                "alphaValue" : 1,
+                                "bounds" : "(0.0,0.0 198.0x28.0)",
+                                "class" : "_PlatformDraggingDestinationView",
+                                "depth" : 7,
+                                "frame" : "(0.0,0.0 198.0x28.0)",
+                                "isHidden" : false,
+                                "isHiddenOrHasHiddenAncestor" : false,
+                                "layer" : {
+                                  "frame" : "(0.0,0.0 198.0x28.0)",
+                                  "hasContents" : false,
+                                  "isHidden" : false,
+                                  "masksToBounds" : false,
+                                  "opacity" : 1
+                                },
+                                "subviewCount" : 0,
+                                "visibleRect" : "(0.0,0.0 1068.0x28.0)",
+                                "wantsLayer" : true
+                              }
+                            ],
+                            "visibleRect" : "(0.0,0.0 1068.0x28.0)",
+                            "wantsLayer" : true
+                          },
+                          {
+                            "alphaValue" : 0.60000002384185791,
+                            "bounds" : "(-170.0,-5.0 198.0x28.0)",
+                            "class" : "_NSGraphicsView",
+                            "depth" : 6,
+                            "frame" : "(0.0,0.0 198.0x28.0)",
+                            "isHidden" : false,
+                            "isHiddenOrHasHiddenAncestor" : false,
+                            "layer" : {
+                              "frame" : "(0.0,0.0 198.0x28.0)",
+                              "hasContents" : false,
+                              "isHidden" : false,
+                              "masksToBounds" : true,
+                              "opacity" : 0.60000002384185791
+                            },
+                            "subviewCount" : 1,
+                            "subviews" : [
+                              {
+                                "alphaValue" : 1,
+                                "bounds" : "(0.0,0.0 18.0x18.0)",
+                                "class" : "_FocusRingView",
+                                "depth" : 7,
+                                "frame" : "(0.0,0.0 18.0x18.0)",
+                                "isHidden" : false,
+                                "isHiddenOrHasHiddenAncestor" : false,
+                                "layer" : {
+                                  "frame" : "(0.0,0.0 18.0x18.0)",
+                                  "hasContents" : false,
+                                  "isHidden" : false,
+                                  "masksToBounds" : false,
+                                  "opacity" : 1
+                                },
+                                "subviewCount" : 0,
+                                "visibleRect" : "(-170.0,-5.0 198.0x28.0)",
+                                "wantsLayer" : true
+                              }
+                            ],
+                            "visibleRect" : "(-170.0,-5.0 198.0x28.0)",
+                            "wantsLayer" : true
+                          },
+                          {
+                            "alphaValue" : 1,
+                            "bounds" : "(0.0,0.0 198.0x28.0)",
+                            "class" : "_FocusRingView",
+                            "depth" : 6,
+                            "frame" : "(0.0,0.0 198.0x28.0)",
+                            "isHidden" : false,
+                            "isHiddenOrHasHiddenAncestor" : false,
+                            "layer" : {
+                              "frame" : "(0.0,0.0 198.0x28.0)",
+                              "hasContents" : false,
+                              "isHidden" : false,
+                              "masksToBounds" : false,
+                              "opacity" : 1
+                            },
+                            "subviewCount" : 0,
+                            "visibleRect" : "(0.0,0.0 1068.0x28.0)",
+                            "wantsLayer" : true
+                          }
+                        ],
+                        "visibleRect" : "(0.0,0.0 1068.0x28.0)",
+                        "wantsLayer" : true
+                      }
+                    ],
+                    "visibleRect" : "(0.0,0.0 1068.0x28.0)",
+                    "wantsLayer" : false
+                  }
+                ],
+                "visibleRect" : "(0.0,0.0 1068.0x28.0)",
+                "wantsLayer" : false
+              }
+            ],
+            "visibleRect" : "(0.0,0.0 1068.0x28.0)",
+            "wantsLayer" : false
+          }
+        ],
+        "visibleRect" : "(0.0,-708.0 1100.0x800.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 24.0x24.0)",
+        "class" : "SwiftUIAppKitButton",
+        "depth" : 1,
+        "frame" : "(1072.0,34.0 24.0x24.0)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(1072.0,34.0 24.0x24.0)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 1,
+        "subviews" : [
+          {
+            "alphaValue" : 1,
+            "bounds" : "(0.0,0.0 24.0x24.0)",
+            "class" : "ContentViewHost",
+            "depth" : 2,
+            "frame" : "(0.0,0.0 24.0x24.0)",
+            "isHidden" : false,
+            "isHiddenOrHasHiddenAncestor" : false,
+            "layer" : {
+              "frame" : "(0.0,0.0 24.0x24.0)",
+              "hasContents" : false,
+              "isHidden" : false,
+              "masksToBounds" : false,
+              "opacity" : 1
+            },
+            "subviewCount" : 0,
+            "visibleRect" : "(-1072.0,-66.0 1100.0x800.0)",
+            "wantsLayer" : true
+          }
+        ],
+        "visibleRect" : "(-1072.0,-66.0 1100.0x800.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 189.0x24.0)",
+        "class" : "AppKitPlatformViewHost<PlatformViewRepresentableAdaptor<SystemSegmentedControl>>",
+        "depth" : 1,
+        "frame" : "(10.0,67.0 189.0x24.0)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(10.0,67.0 189.0x24.0)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 1,
+        "subviews" : [
+          {
+            "alphaValue" : 1,
+            "bounds" : "(0.0,0.0 189.0x24.0)",
+            "class" : "SwiftUISegmentedControl",
+            "depth" : 2,
+            "frame" : "(0.0,0.0 189.0x24.0)",
+            "isHidden" : false,
+            "isHiddenOrHasHiddenAncestor" : false,
+            "layer" : {
+              "frame" : "(0.0,0.0 189.0x24.0)",
+              "hasContents" : false,
+              "isHidden" : false,
+              "masksToBounds" : false,
+              "opacity" : 1
+            },
+            "subviewCount" : 1,
+            "subviews" : [
+              {
+                "alphaValue" : 1,
+                "bounds" : "(0.0,0.0 189.0x24.0)",
+                "class" : "_NSCoreHostingView<AppKitSegmentedControl>",
+                "depth" : 3,
+                "frame" : "(0.0,0.0 189.0x24.0)",
+                "isHidden" : false,
+                "isHiddenOrHasHiddenAncestor" : false,
+                "layer" : {
+                  "frame" : "(0.0,0.0 189.0x24.0)",
+                  "hasContents" : false,
+                  "isHidden" : false,
+                  "masksToBounds" : false,
+                  "opacity" : 1
+                },
+                "subviewCount" : 0,
+                "visibleRect" : "(-10.0,-99.0 1100.0x800.0)",
+                "wantsLayer" : true
+              }
+            ],
+            "visibleRect" : "(-10.0,-99.0 1100.0x800.0)",
+            "wantsLayer" : false
+          }
+        ],
+        "visibleRect" : "(-10.0,-677.0 1100.0x800.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 77.5x16.0)",
+        "class" : "AppKitPlatformViewHost<PlatformViewRepresentableAdaptor<PlatformView>>",
+        "depth" : 1,
+        "frame" : "(933.0,71.0 77.5x16.0)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(933.0,71.0 77.5x16.0)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 1,
+        "subviews" : [
+          {
+            "alphaValue" : 1,
+            "bounds" : "(0.0,0.0 82.5x16.0)",
+            "class" : "SwiftUIPopupButton",
+            "depth" : 2,
+            "frame" : "(-5.0,0.0 82.5x16.0)",
+            "isHidden" : false,
+            "isHiddenOrHasHiddenAncestor" : false,
+            "layer" : {
+              "frame" : "(-5.0,0.0 82.5x16.0)",
+              "hasContents" : false,
+              "isHidden" : false,
+              "masksToBounds" : false,
+              "opacity" : 1
+            },
+            "subviewCount" : 2,
+            "subviews" : [
+              {
+                "alphaValue" : 1,
+                "bounds" : "(0.0,0.0 16.0x15.0)",
+                "class" : "NSButtonImageView",
+                "depth" : 3,
+                "frame" : "(8.0,0.5 16.0x15.0)",
+                "isHidden" : false,
+                "isHiddenOrHasHiddenAncestor" : false,
+                "layer" : {
+                  "frame" : "(8.0,0.5 16.0x15.0)",
+                  "hasContents" : true,
+                  "isHidden" : false,
+                  "masksToBounds" : false,
+                  "opacity" : 1
+                },
+                "subviewCount" : 0,
+                "visibleRect" : "(-936.0,-681.5 1100.0x800.0)",
+                "wantsLayer" : false
+              },
+              {
+                "alphaValue" : 1,
+                "bounds" : "(0.0,0.0 56.0x16.0)",
+                "class" : "NSButtonTextField",
+                "depth" : 3,
+                "frame" : "(25.5,0.0 56.0x16.0)",
+                "isHidden" : false,
+                "isHiddenOrHasHiddenAncestor" : false,
+                "layer" : {
+                  "frame" : "(25.5,0.0 56.0x16.0)",
+                  "hasContents" : false,
+                  "isHidden" : false,
+                  "masksToBounds" : false,
+                  "opacity" : 1
+                },
+                "subviewCount" : 1,
+                "subviews" : [
+                  {
+                    "alphaValue" : 1,
+                    "bounds" : "(0.0,0.0 56.0x16.0)",
+                    "class" : "NSTextFieldSimpleLabel",
+                    "depth" : 4,
+                    "frame" : "(0.0,0.0 56.0x16.0)",
+                    "isHidden" : false,
+                    "isHiddenOrHasHiddenAncestor" : false,
+                    "layer" : {
+                      "frame" : "(0.0,0.0 56.0x16.0)",
+                      "hasContents" : true,
+                      "isHidden" : false,
+                      "masksToBounds" : false,
+                      "opacity" : 1
+                    },
+                    "subviewCount" : 0,
+                    "visibleRect" : "(-953.5,-103.0 1100.0x800.0)",
+                    "wantsLayer" : false
+                  }
+                ],
+                "visibleRect" : "(-953.5,-103.0 1100.0x800.0)",
+                "wantsLayer" : false
+              }
+            ],
+            "visibleRect" : "(-928.0,-103.0 1100.0x800.0)",
+            "wantsLayer" : false
+          }
+        ],
+        "visibleRect" : "(-933.0,-681.0 1100.0x800.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 67.5x16.0)",
+        "class" : "AppKitPlatformViewHost<PlatformViewRepresentableAdaptor<PlatformView>>",
+        "depth" : 1,
+        "frame" : "(1022.5,71.0 67.5x16.0)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(1022.5,71.0 67.5x16.0)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 1,
+        "subviews" : [
+          {
+            "alphaValue" : 1,
+            "bounds" : "(0.0,0.0 72.5x16.0)",
+            "class" : "SwiftUIPopupButton",
+            "depth" : 2,
+            "frame" : "(-5.0,0.0 72.5x16.0)",
+            "isHidden" : false,
+            "isHiddenOrHasHiddenAncestor" : false,
+            "layer" : {
+              "frame" : "(-5.0,0.0 72.5x16.0)",
+              "hasContents" : false,
+              "isHidden" : false,
+              "masksToBounds" : false,
+              "opacity" : 1
+            },
+            "subviewCount" : 2,
+            "subviews" : [
+              {
+                "alphaValue" : 1,
+                "bounds" : "(0.0,0.0 15.0x9.0)",
+                "class" : "NSButtonImageView",
+                "depth" : 3,
+                "frame" : "(8.0,3.5 15.0x9.0)",
+                "isHidden" : false,
+                "isHiddenOrHasHiddenAncestor" : false,
+                "layer" : {
+                  "frame" : "(8.0,3.5 15.0x9.0)",
+                  "hasContents" : true,
+                  "isHidden" : false,
+                  "masksToBounds" : false,
+                  "opacity" : 1
+                },
+                "subviewCount" : 0,
+                "visibleRect" : "(-1025.5,-684.5 1100.0x800.0)",
+                "wantsLayer" : false
+              },
+              {
+                "alphaValue" : 1,
+                "bounds" : "(0.0,0.0 47.0x16.0)",
+                "class" : "NSButtonTextField",
+                "depth" : 3,
+                "frame" : "(24.5,0.0 47.0x16.0)",
+                "isHidden" : false,
+                "isHiddenOrHasHiddenAncestor" : false,
+                "layer" : {
+                  "frame" : "(24.5,0.0 47.0x16.0)",
+                  "hasContents" : false,
+                  "isHidden" : false,
+                  "masksToBounds" : false,
+                  "opacity" : 1
+                },
+                "subviewCount" : 1,
+                "subviews" : [
+                  {
+                    "alphaValue" : 1,
+                    "bounds" : "(0.0,0.0 47.0x16.0)",
+                    "class" : "NSTextFieldSimpleLabel",
+                    "depth" : 4,
+                    "frame" : "(0.0,0.0 47.0x16.0)",
+                    "isHidden" : false,
+                    "isHiddenOrHasHiddenAncestor" : false,
+                    "layer" : {
+                      "frame" : "(0.0,0.0 47.0x16.0)",
+                      "hasContents" : true,
+                      "isHidden" : false,
+                      "masksToBounds" : false,
+                      "opacity" : 1
+                    },
+                    "subviewCount" : 0,
+                    "visibleRect" : "(-1042.0,-103.0 1100.0x800.0)",
+                    "wantsLayer" : false
+                  }
+                ],
+                "visibleRect" : "(-1042.0,-103.0 1100.0x800.0)",
+                "wantsLayer" : false
+              }
+            ],
+            "visibleRect" : "(-1017.5,-103.0 1100.0x800.0)",
+            "wantsLayer" : false
+          }
+        ],
+        "visibleRect" : "(-1022.5,-681.0 1100.0x800.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 29.0x28.5)",
+        "class" : "_FocusRingView",
+        "depth" : 1,
+        "frame" : "(2.0,103.0 29.0x28.5)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(2.0,103.0 29.0x28.5)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 0,
+        "visibleRect" : "(-2.0,-135.0 1100.0x800.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 29.0x28.5)",
+        "class" : "_FocusRingView",
+        "depth" : 1,
+        "frame" : "(2.0,133.5 29.0x28.5)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(2.0,133.5 29.0x28.5)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 0,
+        "visibleRect" : "(-2.0,-165.5 1100.0x800.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 29.0x29.0)",
+        "class" : "_FocusRingView",
+        "depth" : 1,
+        "frame" : "(2.0,164.0 29.0x29.0)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(2.0,164.0 29.0x29.0)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 0,
+        "visibleRect" : "(-2.0,-196.0 1100.0x800.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 29.0x28.5)",
+        "class" : "_FocusRingView",
+        "depth" : 1,
+        "frame" : "(2.0,195.0 29.0x28.5)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(2.0,195.0 29.0x28.5)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 0,
+        "visibleRect" : "(-2.0,-227.0 1100.0x800.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 29.0x28.5)",
+        "class" : "_FocusRingView",
+        "depth" : 1,
+        "frame" : "(2.0,225.5 29.0x28.5)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(2.0,225.5 29.0x28.5)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 0,
+        "visibleRect" : "(-2.0,-257.5 1100.0x800.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 29.0x28.5)",
+        "class" : "_FocusRingView",
+        "depth" : 1,
+        "frame" : "(2.0,256.0 29.0x28.5)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(2.0,256.0 29.0x28.5)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 0,
+        "visibleRect" : "(-2.0,-288.0 1100.0x800.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 29.0x28.5)",
+        "class" : "_FocusRingView",
+        "depth" : 1,
+        "frame" : "(2.0,286.5 29.0x28.5)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(2.0,286.5 29.0x28.5)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 0,
+        "visibleRect" : "(-2.0,-318.5 1100.0x800.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 29.0x29.0)",
+        "class" : "_FocusRingView",
+        "depth" : 1,
+        "frame" : "(2.0,317.0 29.0x29.0)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(2.0,317.0 29.0x29.0)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 0,
+        "visibleRect" : "(-2.0,-349.0 1100.0x800.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 29.0x28.5)",
+        "class" : "_FocusRingView",
+        "depth" : 1,
+        "frame" : "(2.0,348.0 29.0x28.5)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(2.0,348.0 29.0x28.5)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 0,
+        "visibleRect" : "(-2.0,-380.0 1100.0x800.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 29.0x28.5)",
+        "class" : "_FocusRingView",
+        "depth" : 1,
+        "frame" : "(2.0,378.5 29.0x28.5)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(2.0,378.5 29.0x28.5)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 0,
+        "visibleRect" : "(-2.0,-410.5 1100.0x800.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 240.5x615.0)",
+        "class" : "AppKitPlatformViewHost<PlatformViewRepresentableAdaptor<SidebarKeyMonitor>>",
+        "depth" : 1,
+        "frame" : "(34.0,97.0 240.5x615.0)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(34.0,97.0 240.5x615.0)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 1,
+        "subviews" : [
+          {
+            "alphaValue" : 1,
+            "bounds" : "(0.0,0.0 240.5x615.0)",
+            "class" : "NSView",
+            "depth" : 2,
+            "frame" : "(0.0,0.0 240.5x615.0)",
+            "isHidden" : false,
+            "isHiddenOrHasHiddenAncestor" : false,
+            "layer" : {
+              "frame" : "(0.0,0.0 240.5x615.0)",
+              "hasContents" : false,
+              "isHidden" : false,
+              "masksToBounds" : false,
+              "opacity" : 1
+            },
+            "subviewCount" : 0,
+            "visibleRect" : "(-34.0,-56.0 1100.0x800.0)",
+            "wantsLayer" : false
+          }
+        ],
+        "visibleRect" : "(-34.0,-56.0 1100.0x800.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 240.5x615.0)",
+        "class" : "_NSGraphicsView",
+        "depth" : 1,
+        "frame" : "(34.0,97.0 240.5x615.0)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(34.0,97.0 240.5x615.0)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : true,
+          "opacity" : 1
+        },
+        "subviewCount" : 1,
+        "subviews" : [
+          {
+            "alphaValue" : 1,
+            "bounds" : "(0.0,0.0 18.0x18.0)",
+            "class" : "SwiftUIAppKitButton",
+            "depth" : 2,
+            "frame" : "(10.0,6.0 18.0x18.0)",
+            "isHidden" : false,
+            "isHiddenOrHasHiddenAncestor" : false,
+            "layer" : {
+              "frame" : "(10.0,6.0 18.0x18.0)",
+              "hasContents" : false,
+              "isHidden" : false,
+              "masksToBounds" : false,
+              "opacity" : 1
+            },
+            "subviewCount" : 1,
+            "subviews" : [
+              {
+                "alphaValue" : 1,
+                "bounds" : "(0.0,0.0 18.0x18.0)",
+                "class" : "ContentViewHost",
+                "depth" : 3,
+                "frame" : "(0.0,0.0 18.0x18.0)",
+                "isHidden" : false,
+                "isHiddenOrHasHiddenAncestor" : false,
+                "layer" : {
+                  "frame" : "(0.0,0.0 18.0x18.0)",
+                  "hasContents" : false,
+                  "isHidden" : false,
+                  "masksToBounds" : false,
+                  "opacity" : 1
+                },
+                "subviewCount" : 0,
+                "visibleRect" : "(-10.0,-6.0 240.5x615.0)",
+                "wantsLayer" : true
+              }
+            ],
+            "visibleRect" : "(-10.0,-6.0 240.5x615.0)",
+            "wantsLayer" : true
+          }
+        ],
+        "visibleRect" : "(0.0,0.0 240.5x615.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 240.5x615.0)",
+        "class" : "_NSGraphicsView",
+        "depth" : 1,
+        "frame" : "(34.0,97.0 240.5x615.0)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(34.0,97.0 240.5x615.0)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : true,
+          "opacity" : 1
+        },
+        "subviewCount" : 1,
+        "subviews" : [
+          {
+            "alphaValue" : 1,
+            "bounds" : "(0.0,0.0 16.0x16.0)",
+            "class" : "AppKitPlatformViewHost<PlatformViewRepresentableAdaptor<Checkbox>>",
+            "depth" : 2,
+            "frame" : "(147.0,7.0 16.0x16.0)",
+            "isHidden" : false,
+            "isHiddenOrHasHiddenAncestor" : false,
+            "layer" : {
+              "frame" : "(147.0,7.0 16.0x16.0)",
+              "hasContents" : false,
+              "isHidden" : false,
+              "masksToBounds" : false,
+              "opacity" : 1
+            },
+            "subviewCount" : 1,
+            "subviews" : [
+              {
+                "alphaValue" : 1,
+                "bounds" : "(0.0,0.0 16.0x16.0)",
+                "class" : "FocusRingNSButton",
+                "depth" : 3,
+                "frame" : "(0.0,0.0 16.0x16.0)",
+                "isHidden" : false,
+                "isHiddenOrHasHiddenAncestor" : false,
+                "layer" : {
+                  "frame" : "(0.0,0.0 16.0x16.0)",
+                  "hasContents" : false,
+                  "isHidden" : false,
+                  "masksToBounds" : false,
+                  "opacity" : 1
+                },
+                "subviewCount" : 1,
+                "subviews" : [
+                  {
+                    "alphaValue" : 1,
+                    "bounds" : "(0.0,0.0 16.0x16.0)",
+                    "class" : "_NSCoreHostingView<AppKitButton>",
+                    "depth" : 4,
+                    "frame" : "(0.0,0.0 16.0x16.0)",
+                    "isHidden" : false,
+                    "isHiddenOrHasHiddenAncestor" : false,
+                    "layer" : {
+                      "frame" : "(0.0,0.0 16.0x16.0)",
+                      "hasContents" : false,
+                      "isHidden" : false,
+                      "masksToBounds" : false,
+                      "opacity" : 1
+                    },
+                    "subviewCount" : 0,
+                    "visibleRect" : "(-147.0,-7.0 240.5x615.0)",
+                    "wantsLayer" : true
+                  }
+                ],
+                "visibleRect" : "(-147.0,-7.0 240.5x615.0)",
+                "wantsLayer" : false
+              }
+            ],
+            "visibleRect" : "(-147.0,-592.0 240.5x615.0)",
+            "wantsLayer" : true
+          }
+        ],
+        "visibleRect" : "(0.0,0.0 240.5x615.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,-31.0 240.5x615.0)",
+        "class" : "_NSGraphicsView",
+        "depth" : 1,
+        "frame" : "(34.0,97.0 240.5x615.0)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(34.0,97.0 240.5x615.0)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : true,
+          "opacity" : 1
+        },
+        "subviewCount" : 1,
+        "subviews" : [
+          {
+            "alphaValue" : 1,
+            "bounds" : "(0.0,0.0 106.0x14.0)",
+            "class" : "_FocusRingView",
+            "depth" : 2,
+            "frame" : "(10.0,4.5 106.0x14.0)",
+            "isHidden" : false,
+            "isHiddenOrHasHiddenAncestor" : false,
+            "layer" : {
+              "frame" : "(10.0,4.5 106.0x14.0)",
+              "hasContents" : false,
+              "isHidden" : false,
+              "masksToBounds" : false,
+              "opacity" : 1
+            },
+            "subviewCount" : 0,
+            "visibleRect" : "(-10.0,-35.5 240.5x615.0)",
+            "wantsLayer" : true
+          }
+        ],
+        "visibleRect" : "(0.0,-31.0 240.5x615.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,-31.0 240.5x615.0)",
+        "class" : "_NSGraphicsView",
+        "depth" : 1,
+        "frame" : "(34.0,97.0 240.5x615.0)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(34.0,97.0 240.5x615.0)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : true,
+          "opacity" : 1
+        },
+        "subviewCount" : 1,
+        "subviews" : [
+          {
+            "alphaValue" : 1,
+            "bounds" : "(0.0,0.0 37.0x15.0)",
+            "class" : "AppKitPlatformViewHost<PlatformViewRepresentableAdaptor<PlatformView>>",
+            "depth" : 2,
+            "frame" : "(120.0,4.0 37.0x15.0)",
+            "isHidden" : false,
+            "isHiddenOrHasHiddenAncestor" : false,
+            "layer" : {
+              "frame" : "(120.0,4.0 37.0x15.0)",
+              "hasContents" : false,
+              "isHidden" : false,
+              "masksToBounds" : false,
+              "opacity" : 1
+            },
+            "subviewCount" : 1,
+            "subviews" : [
+              {
+                "alphaValue" : 1,
+                "bounds" : "(0.0,0.0 42.0x15.0)",
+                "class" : "SwiftUIPopupButton",
+                "depth" : 3,
+                "frame" : "(-5.0,0.0 42.0x15.0)",
+                "isHidden" : false,
+                "isHiddenOrHasHiddenAncestor" : false,
+                "layer" : {
+                  "frame" : "(-5.0,0.0 42.0x15.0)",
+                  "hasContents" : false,
+                  "isHidden" : false,
+                  "masksToBounds" : false,
+                  "opacity" : 1
+                },
+                "subviewCount" : 2,
+                "subviews" : [
+                  {
+                    "alphaValue" : 1,
+                    "bounds" : "(0.0,0.0 18.0x15.0)",
+                    "class" : "NSButtonImageView",
+                    "depth" : 4,
+                    "frame" : "(8.0,0.0 18.0x15.0)",
+                    "isHidden" : false,
+                    "isHiddenOrHasHiddenAncestor" : false,
+                    "layer" : {
+                      "frame" : "(8.0,0.0 18.0x15.0)",
+                      "hasContents" : true,
+                      "isHidden" : false,
+                      "masksToBounds" : false,
+                      "opacity" : 1
+                    },
+                    "subviewCount" : 0,
+                    "visibleRect" : "(-123.0,-565.0 240.5x615.0)",
+                    "wantsLayer" : false
+                  },
+                  {
+                    "alphaValue" : 1,
+                    "bounds" : "(0.0,0.0 7.0x5.0)",
+                    "class" : "NSPopUpIndicatorView",
+                    "depth" : 4,
+                    "frame" : "(29.0,5.0 7.0x5.0)",
+                    "isHidden" : false,
+                    "isHiddenOrHasHiddenAncestor" : false,
+                    "layer" : {
+                      "frame" : "(29.0,5.0 7.0x5.0)",
+                      "hasContents" : true,
+                      "isHidden" : false,
+                      "masksToBounds" : false,
+                      "opacity" : 1
+                    },
+                    "subviewCount" : 0,
+                    "visibleRect" : "(-144.0,-570.0 240.5x615.0)",
+                    "wantsLayer" : false
+                  }
+                ],
+                "visibleRect" : "(-115.0,-35.0 240.5x615.0)",
+                "wantsLayer" : false
+              }
+            ],
+            "visibleRect" : "(-120.0,-565.0 240.5x615.0)",
+            "wantsLayer" : true
+          }
+        ],
+        "visibleRect" : "(0.0,-31.0 240.5x615.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,-31.0 240.5x615.0)",
+        "class" : "_NSGraphicsView",
+        "depth" : 1,
+        "frame" : "(34.0,97.0 240.5x615.0)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(34.0,97.0 240.5x615.0)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : true,
+          "opacity" : 1
+        },
+        "subviewCount" : 1,
+        "subviews" : [
+          {
+            "alphaValue" : 1,
+            "bounds" : "(0.0,0.0 37.0x15.0)",
+            "class" : "AppKitPlatformViewHost<PlatformViewRepresentableAdaptor<PlatformView>>",
+            "depth" : 2,
+            "frame" : "(161.0,4.0 37.0x15.0)",
+            "isHidden" : false,
+            "isHiddenOrHasHiddenAncestor" : false,
+            "layer" : {
+              "frame" : "(161.0,4.0 37.0x15.0)",
+              "hasContents" : false,
+              "isHidden" : false,
+              "masksToBounds" : false,
+              "opacity" : 1
+            },
+            "subviewCount" : 1,
+            "subviews" : [
+              {
+                "alphaValue" : 1,
+                "bounds" : "(0.0,0.0 42.0x15.0)",
+                "class" : "SwiftUIPopupButton",
+                "depth" : 3,
+                "frame" : "(-5.0,0.0 42.0x15.0)",
+                "isHidden" : false,
+                "isHiddenOrHasHiddenAncestor" : false,
+                "layer" : {
+                  "frame" : "(-5.0,0.0 42.0x15.0)",
+                  "hasContents" : false,
+                  "isHidden" : false,
+                  "masksToBounds" : false,
+                  "opacity" : 1
+                },
+                "subviewCount" : 2,
+                "subviews" : [
+                  {
+                    "alphaValue" : 1,
+                    "bounds" : "(0.0,0.0 18.0x15.0)",
+                    "class" : "NSButtonImageView",
+                    "depth" : 4,
+                    "frame" : "(8.0,0.0 18.0x15.0)",
+                    "isHidden" : false,
+                    "isHiddenOrHasHiddenAncestor" : false,
+                    "layer" : {
+                      "frame" : "(8.0,0.0 18.0x15.0)",
+                      "hasContents" : true,
+                      "isHidden" : false,
+                      "masksToBounds" : false,
+                      "opacity" : 1
+                    },
+                    "subviewCount" : 0,
+                    "visibleRect" : "(-164.0,-565.0 240.5x615.0)",
+                    "wantsLayer" : false
+                  },
+                  {
+                    "alphaValue" : 1,
+                    "bounds" : "(0.0,0.0 7.0x5.0)",
+                    "class" : "NSPopUpIndicatorView",
+                    "depth" : 4,
+                    "frame" : "(29.0,5.0 7.0x5.0)",
+                    "isHidden" : false,
+                    "isHiddenOrHasHiddenAncestor" : false,
+                    "layer" : {
+                      "frame" : "(29.0,5.0 7.0x5.0)",
+                      "hasContents" : true,
+                      "isHidden" : false,
+                      "masksToBounds" : false,
+                      "opacity" : 1
+                    },
+                    "subviewCount" : 0,
+                    "visibleRect" : "(-185.0,-570.0 240.5x615.0)",
+                    "wantsLayer" : false
+                  }
+                ],
+                "visibleRect" : "(-156.0,-35.0 240.5x615.0)",
+                "wantsLayer" : false
+              }
+            ],
+            "visibleRect" : "(-161.0,-565.0 240.5x615.0)",
+            "wantsLayer" : true
+          }
+        ],
+        "visibleRect" : "(0.0,-31.0 240.5x615.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,-31.0 240.5x615.0)",
+        "class" : "_NSGraphicsView",
+        "depth" : 1,
+        "frame" : "(34.0,97.0 240.5x615.0)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(34.0,97.0 240.5x615.0)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : true,
+          "opacity" : 1
+        },
+        "subviewCount" : 1,
+        "subviews" : [
+          {
+            "alphaValue" : 1,
+            "bounds" : "(0.0,0.0 12.5x11.0)",
+            "class" : "_FocusRingView",
+            "depth" : 2,
+            "frame" : "(202.0,6.0 12.5x11.0)",
+            "isHidden" : false,
+            "isHiddenOrHasHiddenAncestor" : false,
+            "layer" : {
+              "frame" : "(202.0,6.0 12.5x11.0)",
+              "hasContents" : false,
+              "isHidden" : false,
+              "masksToBounds" : false,
+              "opacity" : 1
+            },
+            "subviewCount" : 0,
+            "visibleRect" : "(-202.0,-37.0 240.5x615.0)",
+            "wantsLayer" : true
+          }
+        ],
+        "visibleRect" : "(0.0,-31.0 240.5x615.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,-31.0 240.5x615.0)",
+        "class" : "_NSGraphicsView",
+        "depth" : 1,
+        "frame" : "(34.0,97.0 240.5x615.0)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(34.0,97.0 240.5x615.0)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : true,
+          "opacity" : 1
+        },
+        "subviewCount" : 1,
+        "subviews" : [
+          {
+            "alphaValue" : 1,
+            "bounds" : "(0.0,0.0 12.0x12.5)",
+            "class" : "_FocusRingView",
+            "depth" : 2,
+            "frame" : "(218.5,5.5 12.0x12.5)",
+            "isHidden" : false,
+            "isHiddenOrHasHiddenAncestor" : false,
+            "layer" : {
+              "frame" : "(218.5,5.5 12.0x12.5)",
+              "hasContents" : false,
+              "isHidden" : false,
+              "masksToBounds" : false,
+              "opacity" : 1
+            },
+            "subviewCount" : 0,
+            "visibleRect" : "(-218.5,-36.5 240.5x615.0)",
+            "wantsLayer" : true
+          }
+        ],
+        "visibleRect" : "(0.0,-31.0 240.5x615.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,-31.0 240.5x615.0)",
+        "class" : "_NSGraphicsView",
+        "depth" : 1,
+        "frame" : "(34.0,97.0 240.5x615.0)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(34.0,97.0 240.5x615.0)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : true,
+          "opacity" : 1
+        },
+        "subviewCount" : 1,
+        "subviews" : [
+          {
+            "alphaValue" : 1,
+            "bounds" : "(0.0,0.0 240.5x179.5)",
+            "class" : "PlatformContainer",
+            "depth" : 2,
+            "frame" : "(0.0,23.0 240.5x179.5)",
+            "isHidden" : false,
+            "isHiddenOrHasHiddenAncestor" : false,
+            "layer" : {
+              "frame" : "(0.0,23.0 240.5x179.5)",
+              "hasContents" : false,
+              "isHidden" : false,
+              "masksToBounds" : false,
+              "opacity" : 1
+            },
+            "subviewCount" : 1,
+            "subviews" : [
+              {
+                "alphaValue" : 1,
+                "bounds" : "(0.0,0.0 240.5x179.5)",
+                "class" : "HostingScrollView",
+                "depth" : 3,
+                "frame" : "(0.0,0.0 240.5x179.5)",
+                "isHidden" : false,
+                "isHiddenOrHasHiddenAncestor" : false,
+                "layer" : {
+                  "frame" : "(0.0,0.0 240.5x179.5)",
+                  "hasContents" : false,
+                  "isHidden" : false,
+                  "masksToBounds" : true,
+                  "opacity" : 1
+                },
+                "nsScrollView" : {
+                  "backgroundColor_description" : "Generic Gray Gamma 2.2 Profile colorspace 0 0",
+                  "contentSize" : "223.5x179.5",
+                  "documentView_class" : "DocumentView",
+                  "documentView_frame" : "(0.0,0.0 223.5x536.0)",
+                  "drawsBackground" : false,
+                  "hasVerticalRuler" : false,
+                  "rulersVisible" : false
+                },
+                "subviewCount" : 2,
+                "subviews" : [
+                  {
+                    "alphaValue" : 1,
+                    "bounds" : "(0.0,0.0 223.5x179.5)",
+                    "class" : "NSClipView",
+                    "depth" : 4,
+                    "frame" : "(0.0,0.0 223.5x179.5)",
+                    "isHidden" : false,
+                    "isHiddenOrHasHiddenAncestor" : false,
+                    "layer" : {
+                      "frame" : "(0.0,0.0 223.5x179.5)",
+                      "hasContents" : false,
+                      "isHidden" : false,
+                      "masksToBounds" : true,
+                      "opacity" : 1
+                    },
+                    "subviewCount" : 1,
+                    "subviews" : [
+                      {
+                        "alphaValue" : 1,
+                        "bounds" : "(0.0,0.0 223.5x536.0)",
+                        "class" : "DocumentView",
+                        "depth" : 5,
+                        "frame" : "(0.0,0.0 223.5x536.0)",
+                        "isHidden" : false,
+                        "isHiddenOrHasHiddenAncestor" : false,
+                        "layer" : {
+                          "frame" : "(0.0,0.0 223.5x536.0)",
+                          "hasContents" : false,
+                          "isHidden" : false,
+                          "masksToBounds" : false,
+                          "opacity" : 1
+                        },
+                        "subviewCount" : 1,
+                        "subviews" : [
+                          {
+                            "alphaValue" : 1,
+                            "bounds" : "(0.0,0.0 223.5x536.0)",
+                            "class" : "PlatformGroupContainer",
+                            "depth" : 6,
+                            "frame" : "(0.0,0.0 223.5x536.0)",
+                            "isHidden" : false,
+                            "isHiddenOrHasHiddenAncestor" : false,
+                            "layer" : {
+                              "frame" : "(0.0,0.0 223.5x536.0)",
+                              "hasContents" : false,
+                              "isHidden" : false,
+                              "masksToBounds" : false,
+                              "opacity" : 1
+                            },
+                            "subviewCount" : 8,
+                            "subviews" : [
+                              {
+                                "alphaValue" : 1,
+                                "bounds" : "(0.0,0.0 223.5x22.0)",
+                                "class" : "_FocusRingView",
+                                "depth" : 7,
+                                "frame" : "(0.0,4.0 223.5x22.0)",
+                                "isHidden" : false,
+                                "isHiddenOrHasHiddenAncestor" : false,
+                                "layer" : {
+                                  "frame" : "(0.0,4.0 223.5x22.0)",
+                                  "hasContents" : false,
+                                  "isHidden" : false,
+                                  "masksToBounds" : false,
+                                  "opacity" : 1
+                                },
+                                "subviewCount" : 0,
+                                "visibleRect" : "(0.0,-4.0 223.5x179.5)",
+                                "wantsLayer" : true
+                              },
+                              {
+                                "alphaValue" : 1,
+                                "bounds" : "(0.0,0.0 223.5x22.0)",
+                                "class" : "_FocusRingView",
+                                "depth" : 7,
+                                "frame" : "(0.0,26.0 223.5x22.0)",
+                                "isHidden" : false,
+                                "isHiddenOrHasHiddenAncestor" : false,
+                                "layer" : {
+                                  "frame" : "(0.0,26.0 223.5x22.0)",
+                                  "hasContents" : false,
+                                  "isHidden" : false,
+                                  "masksToBounds" : false,
+                                  "opacity" : 1
+                                },
+                                "subviewCount" : 0,
+                                "visibleRect" : "(0.0,-26.0 223.5x179.5)",
+                                "wantsLayer" : true
+                              },
+                              {
+                                "alphaValue" : 1,
+                                "bounds" : "(0.0,0.0 223.5x22.0)",
+                                "class" : "_FocusRingView",
+                                "depth" : 7,
+                                "frame" : "(0.0,48.0 223.5x22.0)",
+                                "isHidden" : false,
+                                "isHiddenOrHasHiddenAncestor" : false,
+                                "layer" : {
+                                  "frame" : "(0.0,48.0 223.5x22.0)",
+                                  "hasContents" : false,
+                                  "isHidden" : false,
+                                  "masksToBounds" : false,
+                                  "opacity" : 1
+                                },
+                                "subviewCount" : 0,
+                                "visibleRect" : "(0.0,-48.0 223.5x179.5)",
+                                "wantsLayer" : true
+                              },
+                              {
+                                "alphaValue" : 1,
+                                "bounds" : "(0.0,0.0 223.5x22.0)",
+                                "class" : "_FocusRingView",
+                                "depth" : 7,
+                                "frame" : "(0.0,70.0 223.5x22.0)",
+                                "isHidden" : false,
+                                "isHiddenOrHasHiddenAncestor" : false,
+                                "layer" : {
+                                  "frame" : "(0.0,70.0 223.5x22.0)",
+                                  "hasContents" : false,
+                                  "isHidden" : false,
+                                  "masksToBounds" : false,
+                                  "opacity" : 1
+                                },
+                                "subviewCount" : 0,
+                                "visibleRect" : "(0.0,-70.0 223.5x179.5)",
+                                "wantsLayer" : true
+                              },
+                              {
+                                "alphaValue" : 1,
+                                "bounds" : "(0.0,0.0 223.5x22.0)",
+                                "class" : "_FocusRingView",
+                                "depth" : 7,
+                                "frame" : "(0.0,92.0 223.5x22.0)",
+                                "isHidden" : false,
+                                "isHiddenOrHasHiddenAncestor" : false,
+                                "layer" : {
+                                  "frame" : "(0.0,92.0 223.5x22.0)",
+                                  "hasContents" : false,
+                                  "isHidden" : false,
+                                  "masksToBounds" : false,
+                                  "opacity" : 1
+                                },
+                                "subviewCount" : 0,
+                                "visibleRect" : "(0.0,-92.0 223.5x179.5)",
+                                "wantsLayer" : true
+                              },
+                              {
+                                "alphaValue" : 1,
+                                "bounds" : "(0.0,0.0 223.5x22.0)",
+                                "class" : "_FocusRingView",
+                                "depth" : 7,
+                                "frame" : "(0.0,114.0 223.5x22.0)",
+                                "isHidden" : false,
+                                "isHiddenOrHasHiddenAncestor" : false,
+                                "layer" : {
+                                  "frame" : "(0.0,114.0 223.5x22.0)",
+                                  "hasContents" : false,
+                                  "isHidden" : false,
+                                  "masksToBounds" : false,
+                                  "opacity" : 1
+                                },
+                                "subviewCount" : 0,
+                                "visibleRect" : "(0.0,-114.0 223.5x179.5)",
+                                "wantsLayer" : true
+                              },
+                              {
+                                "alphaValue" : 1,
+                                "bounds" : "(0.0,0.0 223.5x22.0)",
+                                "class" : "_FocusRingView",
+                                "depth" : 7,
+                                "frame" : "(0.0,136.0 223.5x22.0)",
+                                "isHidden" : false,
+                                "isHiddenOrHasHiddenAncestor" : false,
+                                "layer" : {
+                                  "frame" : "(0.0,136.0 223.5x22.0)",
+                                  "hasContents" : false,
+                                  "isHidden" : false,
+                                  "masksToBounds" : false,
+                                  "opacity" : 1
+                                },
+                                "subviewCount" : 0,
+                                "visibleRect" : "(0.0,-136.0 223.5x179.5)",
+                                "wantsLayer" : true
+                              },
+                              {
+                                "alphaValue" : 1,
+                                "bounds" : "(0.0,0.0 223.5x22.0)",
+                                "class" : "_FocusRingView",
+                                "depth" : 7,
+                                "frame" : "(0.0,158.0 223.5x22.0)",
+                                "isHidden" : false,
+                                "isHiddenOrHasHiddenAncestor" : false,
+                                "layer" : {
+                                  "frame" : "(0.0,158.0 223.5x22.0)",
+                                  "hasContents" : false,
+                                  "isHidden" : false,
+                                  "masksToBounds" : false,
+                                  "opacity" : 1
+                                },
+                                "subviewCount" : 0,
+                                "visibleRect" : "(0.0,-158.0 223.5x179.5)",
+                                "wantsLayer" : true
+                              }
+                            ],
+                            "visibleRect" : "(0.0,0.0 223.5x179.5)",
+                            "wantsLayer" : true
+                          }
+                        ],
+                        "visibleRect" : "(0.0,0.0 223.5x179.5)",
+                        "wantsLayer" : false
+                      }
+                    ],
+                    "visibleRect" : "(0.0,0.0 223.5x179.5)",
+                    "wantsLayer" : false
+                  },
+                  {
+                    "alphaValue" : 1,
+                    "bounds" : "(0.0,0.0 17.0x179.5)",
+                    "class" : "NSScroller",
+                    "depth" : 4,
+                    "frame" : "(223.5,0.0 17.0x179.5)",
+                    "isHidden" : false,
+                    "isHiddenOrHasHiddenAncestor" : false,
+                    "layer" : {
+                      "frame" : "(223.5,0.0 17.0x179.5)",
+                      "hasContents" : false,
+                      "isHidden" : false,
+                      "masksToBounds" : true,
+                      "opacity" : 1
+                    },
+                    "subviewCount" : 0,
+                    "visibleRect" : "(0.0,0.0 17.0x179.5)",
+                    "wantsLayer" : false
+                  }
+                ],
+                "visibleRect" : "(0.0,0.0 240.5x179.5)",
+                "wantsLayer" : false
+              }
+            ],
+            "visibleRect" : "(0.0,-381.5 240.5x615.0)",
+            "wantsLayer" : true
+          }
+        ],
+        "visibleRect" : "(0.0,-31.0 240.5x615.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 240.5x615.0)",
+        "class" : "_NSGraphicsView",
+        "depth" : 1,
+        "frame" : "(34.0,97.0 240.5x615.0)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(34.0,97.0 240.5x615.0)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : true,
+          "opacity" : 1
+        },
+        "subviewCount" : 1,
+        "subviews" : [
+          {
+            "alphaValue" : 1,
+            "bounds" : "(0.0,0.0 240.5x381.5)",
+            "class" : "PlatformContainer",
+            "depth" : 2,
+            "frame" : "(0.0,233.5 240.5x381.5)",
+            "isHidden" : false,
+            "isHiddenOrHasHiddenAncestor" : false,
+            "layer" : {
+              "frame" : "(0.0,233.5 240.5x381.5)",
+              "hasContents" : false,
+              "isHidden" : false,
+              "masksToBounds" : false,
+              "opacity" : 1
+            },
+            "subviewCount" : 1,
+            "subviews" : [
+              {
+                "alphaValue" : 1,
+                "bounds" : "(0.0,0.0 240.5x381.5)",
+                "class" : "HostingScrollView",
+                "depth" : 3,
+                "frame" : "(0.0,0.0 240.5x381.5)",
+                "isHidden" : false,
+                "isHiddenOrHasHiddenAncestor" : false,
+                "layer" : {
+                  "frame" : "(0.0,0.0 240.5x381.5)",
+                  "hasContents" : false,
+                  "isHidden" : false,
+                  "masksToBounds" : true,
+                  "opacity" : 1
+                },
+                "nsScrollView" : {
+                  "backgroundColor_description" : "Generic Gray Gamma 2.2 Profile colorspace 0 0",
+                  "contentSize" : "223.5x381.5",
+                  "documentView_class" : "DocumentView",
+                  "documentView_frame" : "(0.0,0.0 223.5x540.0)",
+                  "drawsBackground" : false,
+                  "hasVerticalRuler" : false,
+                  "rulersVisible" : false
+                },
+                "subviewCount" : 2,
+                "subviews" : [
+                  {
+                    "alphaValue" : 1,
+                    "bounds" : "(0.0,0.0 223.5x381.5)",
+                    "class" : "NSClipView",
+                    "depth" : 4,
+                    "frame" : "(0.0,0.0 223.5x381.5)",
+                    "isHidden" : false,
+                    "isHiddenOrHasHiddenAncestor" : false,
+                    "layer" : {
+                      "frame" : "(0.0,0.0 223.5x381.5)",
+                      "hasContents" : false,
+                      "isHidden" : false,
+                      "masksToBounds" : true,
+                      "opacity" : 1
+                    },
+                    "subviewCount" : 4,
+                    "subviews" : [
+                      {
+                        "alphaValue" : 1,
+                        "bounds" : "(0.0,0.0 223.5x540.0)",
+                        "class" : "DocumentView",
+                        "depth" : 5,
+                        "frame" : "(0.0,0.0 223.5x540.0)",
+                        "isHidden" : false,
+                        "isHiddenOrHasHiddenAncestor" : false,
+                        "layer" : {
+                          "frame" : "(0.0,0.0 223.5x540.0)",
+                          "hasContents" : false,
+                          "isHidden" : false,
+                          "masksToBounds" : false,
+                          "opacity" : 1
+                        },
+                        "subviewCount" : 1,
+                        "subviews" : [
+                          {
+                            "alphaValue" : 1,
+                            "bounds" : "(0.0,0.0 223.5x540.0)",
+                            "class" : "PlatformGroupContainer",
+                            "depth" : 6,
+                            "frame" : "(0.0,0.0 223.5x540.0)",
+                            "isHidden" : false,
+                            "isHiddenOrHasHiddenAncestor" : false,
+                            "layer" : {
+                              "frame" : "(0.0,0.0 223.5x540.0)",
+                              "hasContents" : false,
+                              "isHidden" : false,
+                              "masksToBounds" : false,
+                              "opacity" : 1
+                            },
+                            "subviewCount" : 8,
+                            "subviews" : [
+                              {
+                                "alphaValue" : 1,
+                                "bounds" : "(0.0,0.0 203.5x14.0)",
+                                "class" : "_FocusRingView",
+                                "depth" : 7,
+                                "frame" : "(10.0,6.0 203.5x14.0)",
+                                "isHidden" : false,
+                                "isHiddenOrHasHiddenAncestor" : false,
+                                "layer" : {
+                                  "frame" : "(10.0,6.0 203.5x14.0)",
+                                  "hasContents" : false,
+                                  "isHidden" : false,
+                                  "masksToBounds" : false,
+                                  "opacity" : 1
+                                },
+                                "subviewCount" : 0,
+                                "visibleRect" : "(-10.0,-6.0 223.5x381.5)",
+                                "wantsLayer" : true
+                              },
+                              {
+                                "alphaValue" : 1,
+                                "bounds" : "(0.0,0.0 152.5x16.0)",
+                                "class" : "AppKitPlatformViewHost<PlatformViewRepresentableAdaptor<PlatformTextFieldAdaptor>>",
+                                "depth" : 7,
+                                "frame" : "(29.0,28.0 152.5x16.0)",
+                                "isHidden" : false,
+                                "isHiddenOrHasHiddenAncestor" : false,
+                                "layer" : {
+                                  "frame" : "(29.0,28.0 152.5x16.0)",
+                                  "hasContents" : false,
+                                  "isHidden" : false,
+                                  "masksToBounds" : false,
+                                  "opacity" : 1
+                                },
+                                "subviewCount" : 1,
+                                "subviews" : [
+                                  {
+                                    "alphaValue" : 1,
+                                    "bounds" : "(0.0,0.0 156.5x16.0)",
+                                    "class" : "AppKitTextField",
+                                    "depth" : 8,
+                                    "frame" : "(-2.0,0.0 156.5x16.0)",
+                                    "isHidden" : false,
+                                    "isHiddenOrHasHiddenAncestor" : false,
+                                    "layer" : {
+                                      "frame" : "(-2.0,0.0 156.5x16.0)",
+                                      "hasContents" : false,
+                                      "isHidden" : false,
+                                      "masksToBounds" : false,
+                                      "opacity" : 1
+                                    },
+                                    "subviewCount" : 2,
+                                    "subviews" : [
+                                      {
+                                        "alphaValue" : 1,
+                                        "bounds" : "(0.0,0.0 156.5x16.0)",
+                                        "class" : "NSTextFieldSimpleLabel",
+                                        "depth" : 9,
+                                        "frame" : "(0.0,0.0 156.5x16.0)",
+                                        "isHidden" : true,
+                                        "isHiddenOrHasHiddenAncestor" : true,
+                                        "layer" : {
+                                          "frame" : "(0.0,0.0 156.5x16.0)",
+                                          "hasContents" : true,
+                                          "isHidden" : true,
+                                          "masksToBounds" : false,
+                                          "opacity" : 1
+                                        },
+                                        "subviewCount" : 0,
+                                        "visibleRect" : "(0.0,0.0 0.0x0.0)",
+                                        "wantsLayer" : false
+                                      },
+                                      {
+                                        "alphaValue" : 1,
+                                        "bounds" : "(-2.5,-2.0 160.5x22.0)",
+                                        "class" : "_NSKeyboardFocusClipView",
+                                        "depth" : 9,
+                                        "frame" : "(-2.5,-2.0 160.5x22.0)",
+                                        "isHidden" : false,
+                                        "isHiddenOrHasHiddenAncestor" : false,
+                                        "layer" : {
+                                          "frame" : "(-2.5,-2.0 160.5x22.0)",
+                                          "hasContents" : false,
+                                          "isHidden" : false,
+                                          "masksToBounds" : true,
+                                          "opacity" : 1
+                                        },
+                                        "subviewCount" : 1,
+                                        "subviews" : [
+                                          {
+                                            "alphaValue" : 1,
+                                            "bounds" : "(0.0,0.0 156.5x16.0)",
+                                            "class" : "_SystemTextFieldFieldEditor",
+                                            "depth" : 10,
+                                            "frame" : "(0.0,0.0 156.5x16.0)",
+                                            "isHidden" : false,
+                                            "isHiddenOrHasHiddenAncestor" : false,
+                                            "layer" : {
+                                              "frame" : "(0.0,0.0 156.5x16.0)",
+                                              "hasContents" : true,
+                                              "isHidden" : false,
+                                              "masksToBounds" : false,
+                                              "opacity" : 1
+                                            },
+                                            "nsTextView" : {
+                                              "backgroundColor_alpha" : 1,
+                                              "backgroundColor_description" : "Catalog color: System textBackgroundColor",
+                                              "backgroundColor_sRGB" : [
+                                                1,
+                                                1,
+                                                1,
+                                                1
+                                              ],
+                                              "color_distance" : 1.7320508075688772,
+                                              "contrastsWithBackground" : true,
+                                              "drawsBackground" : false,
+                                              "font_description" : "\".SFNS-Regular 13.20 pt. P [] (0x7de4f7c00) fobj=0x7de4f7c00, spc=3.62\"",
+                                              "glyph_boundingRect" : "(2.0,0.0 0.0x16.0)",
+                                              "glyph_range_length" : 0,
+                                              "isEditable" : true,
+                                              "isRichText" : false,
+                                              "isSelectable" : true,
+                                              "numberOfGlyphs" : 0,
+                                              "string_head" : "",
+                                              "string_length" : 0,
+                                              "textColor_alpha" : 0.84705882352941175,
+                                              "textColor_description" : "Catalog color: System controlTextColor",
+                                              "textColor_sRGB" : [
+                                                0,
+                                                0,
+                                                0,
+                                                0.84705882352941175
+                                              ],
+                                              "textContainerInset" : "0.0x0.0"
+                                            },
+                                            "subviewCount" : 0,
+                                            "visibleRect" : "(-2.5,-2.0 160.5x22.0)",
+                                            "wantsLayer" : false
+                                          }
+                                        ],
+                                        "visibleRect" : "(-2.5,-2.0 160.5x22.0)",
+                                        "wantsLayer" : false
+                                      }
+                                    ],
+                                    "visibleRect" : "(-27.0,-28.0 223.5x381.5)",
+                                    "wantsLayer" : false
+                                  }
+                                ],
+                                "visibleRect" : "(-29.0,-337.5 223.5x381.5)",
+                                "wantsLayer" : true
+                              },
+                              {
+                                "alphaValue" : 1,
+                                "bounds" : "(0.0,0.0 28.0x13.0)",
+                                "class" : "_FocusRingView",
+                                "depth" : 7,
+                                "frame" : "(185.5,29.5 28.0x13.0)",
+                                "isHidden" : false,
+                                "isHiddenOrHasHiddenAncestor" : false,
+                                "layer" : {
+                                  "frame" : "(185.5,29.5 28.0x13.0)",
+                                  "hasContents" : false,
+                                  "isHidden" : false,
+                                  "masksToBounds" : false,
+                                  "opacity" : 1
+                                },
+                                "subviewCount" : 0,
+                                "visibleRect" : "(-185.5,-29.5 223.5x381.5)",
+                                "wantsLayer" : true
+                              },
+                              {
+                                "alphaValue" : 1,
+                                "bounds" : "(0.0,0.0 21.0x15.0)",
+                                "class" : "AppKitPlatformViewHost<PlatformViewRepresentableAdaptor<PlatformView>>",
+                                "depth" : 7,
+                                "frame" : "(192.5,48.0 21.0x15.0)",
+                                "isHidden" : false,
+                                "isHiddenOrHasHiddenAncestor" : false,
+                                "layer" : {
+                                  "frame" : "(192.5,48.0 21.0x15.0)",
+                                  "hasContents" : false,
+                                  "isHidden" : false,
+                                  "masksToBounds" : false,
+                                  "opacity" : 1
+                                },
+                                "subviewCount" : 1,
+                                "subviews" : [
+                                  {
+                                    "alphaValue" : 1,
+                                    "bounds" : "(0.0,0.0 26.0x15.0)",
+                                    "class" : "SwiftUIPopupButton",
+                                    "depth" : 8,
+                                    "frame" : "(-5.0,0.0 26.0x15.0)",
+                                    "isHidden" : false,
+                                    "isHiddenOrHasHiddenAncestor" : false,
+                                    "layer" : {
+                                      "frame" : "(-5.0,0.0 26.0x15.0)",
+                                      "hasContents" : false,
+                                      "isHidden" : false,
+                                      "masksToBounds" : false,
+                                      "opacity" : 1
+                                    },
+                                    "subviewCount" : 1,
+                                    "subviews" : [
+                                      {
+                                        "alphaValue" : 1,
+                                        "bounds" : "(0.0,0.0 15.0x15.0)",
+                                        "class" : "NSButtonImageView",
+                                        "depth" : 9,
+                                        "frame" : "(8.0,0.0 15.0x15.0)",
+                                        "isHidden" : false,
+                                        "isHiddenOrHasHiddenAncestor" : false,
+                                        "layer" : {
+                                          "frame" : "(8.0,0.0 15.0x15.0)",
+                                          "hasContents" : true,
+                                          "isHidden" : false,
+                                          "masksToBounds" : false,
+                                          "opacity" : 1
+                                        },
+                                        "subviewCount" : 0,
+                                        "visibleRect" : "(-195.5,-318.5 223.5x381.5)",
+                                        "wantsLayer" : false
+                                      }
+                                    ],
+                                    "visibleRect" : "(-187.5,-48.0 223.5x381.5)",
+                                    "wantsLayer" : false
+                                  }
+                                ],
+                                "visibleRect" : "(-192.5,-318.5 223.5x381.5)",
+                                "wantsLayer" : true
+                              },
+                              {
+                                "alphaValue" : 1,
+                                "bounds" : "(0.0,0.0 223.5x220.0)",
+                                "class" : "PlatformContainer",
+                                "depth" : 7,
+                                "frame" : "(0.0,67.0 223.5x220.0)",
+                                "isHidden" : false,
+                                "isHiddenOrHasHiddenAncestor" : false,
+                                "layer" : {
+                                  "frame" : "(0.0,67.0 223.5x220.0)",
+                                  "hasContents" : false,
+                                  "isHidden" : false,
+                                  "masksToBounds" : false,
+                                  "opacity" : 1
+                                },
+                                "subviewCount" : 1,
+                                "subviews" : [
+                                  {
+                                    "alphaValue" : 1,
+                                    "bounds" : "(0.0,0.0 223.5x220.0)",
+                                    "class" : "HostingScrollView",
+                                    "depth" : 8,
+                                    "frame" : "(0.0,0.0 223.5x220.0)",
+                                    "isHidden" : false,
+                                    "isHiddenOrHasHiddenAncestor" : false,
+                                    "layer" : {
+                                      "frame" : "(0.0,0.0 223.5x220.0)",
+                                      "hasContents" : false,
+                                      "isHidden" : false,
+                                      "masksToBounds" : true,
+                                      "opacity" : 1
+                                    },
+                                    "nsScrollView" : {
+                                      "backgroundColor_description" : "Generic Gray Gamma 2.2 Profile colorspace 0 0",
+                                      "contentSize" : "223.5x220.0",
+                                      "documentView_class" : "DocumentView",
+                                      "documentView_frame" : "(0.0,0.0 223.5x30.0)",
+                                      "drawsBackground" : false,
+                                      "hasVerticalRuler" : false,
+                                      "rulersVisible" : false
+                                    },
+                                    "subviewCount" : 2,
+                                    "subviews" : [
+                                      {
+                                        "alphaValue" : 1,
+                                        "bounds" : "(0.0,0.0 223.5x220.0)",
+                                        "class" : "NSClipView",
+                                        "depth" : 9,
+                                        "frame" : "(0.0,0.0 223.5x220.0)",
+                                        "isHidden" : false,
+                                        "isHiddenOrHasHiddenAncestor" : false,
+                                        "layer" : {
+                                          "frame" : "(0.0,0.0 223.5x220.0)",
+                                          "hasContents" : false,
+                                          "isHidden" : false,
+                                          "masksToBounds" : true,
+                                          "opacity" : 1
+                                        },
+                                        "subviewCount" : 1,
+                                        "subviews" : [
+                                          {
+                                            "alphaValue" : 1,
+                                            "bounds" : "(0.0,0.0 223.5x30.0)",
+                                            "class" : "DocumentView",
+                                            "depth" : 10,
+                                            "frame" : "(0.0,0.0 223.5x30.0)",
+                                            "isHidden" : false,
+                                            "isHiddenOrHasHiddenAncestor" : false,
+                                            "layer" : {
+                                              "frame" : "(0.0,0.0 223.5x30.0)",
+                                              "hasContents" : false,
+                                              "isHidden" : false,
+                                              "masksToBounds" : false,
+                                              "opacity" : 1
+                                            },
+                                            "subviewCount" : 1,
+                                            "subviews" : [
+                                              {
+                                                "alphaValue" : 1,
+                                                "bounds" : "(0.0,0.0 223.5x30.0)",
+                                                "class" : "PlatformGroupContainer",
+                                                "depth" : 11,
+                                                "frame" : "(0.0,0.0 223.5x30.0)",
+                                                "isHidden" : false,
+                                                "isHiddenOrHasHiddenAncestor" : false,
+                                                "layer" : {
+                                                  "frame" : "(0.0,0.0 223.5x30.0)",
+                                                  "hasContents" : false,
+                                                  "isHidden" : false,
+                                                  "masksToBounds" : false,
+                                                  "opacity" : 1
+                                                },
+                                                "subviewCount" : 0,
+                                                "visibleRect" : "(0.0,0.0 223.5x220.0)",
+                                                "wantsLayer" : true
+                                              }
+                                            ],
+                                            "visibleRect" : "(0.0,0.0 223.5x220.0)",
+                                            "wantsLayer" : false
+                                          }
+                                        ],
+                                        "visibleRect" : "(0.0,0.0 223.5x220.0)",
+                                        "wantsLayer" : false
+                                      },
+                                      {
+                                        "alphaValue" : 1,
+                                        "bounds" : "(0.0,0.0 0.0x100.0)",
+                                        "class" : "NSScroller",
+                                        "depth" : 9,
+                                        "frame" : "(0.0,0.0 0.0x100.0)",
+                                        "isHidden" : true,
+                                        "isHiddenOrHasHiddenAncestor" : true,
+                                        "layer" : {
+                                          "frame" : "(0.0,0.0 0.0x100.0)",
+                                          "hasContents" : false,
+                                          "isHidden" : true,
+                                          "masksToBounds" : true,
+                                          "opacity" : 1
+                                        },
+                                        "subviewCount" : 0,
+                                        "visibleRect" : "(0.0,0.0 0.0x0.0)",
+                                        "wantsLayer" : false,
+                                        "zeroSize" : {
+                                          "collapsedDim" : true,
+                                          "height0" : false,
+                                          "width0" : true
+                                        }
+                                      }
+                                    ],
+                                    "visibleRect" : "(0.0,0.0 223.5x220.0)",
+                                    "wantsLayer" : false
+                                  }
+                                ],
+                                "visibleRect" : "(0.0,-94.5 223.5x381.5)",
+                                "wantsLayer" : true
+                              },
+                              {
+                                "alphaValue" : 1,
+                                "bounds" : "(0.0,0.0 76.0x14.0)",
+                                "class" : "_FocusRingView",
+                                "depth" : 7,
+                                "frame" : "(10.0,299.5 76.0x14.0)",
+                                "isHidden" : false,
+                                "isHiddenOrHasHiddenAncestor" : false,
+                                "layer" : {
+                                  "frame" : "(10.0,299.5 76.0x14.0)",
+                                  "hasContents" : false,
+                                  "isHidden" : false,
+                                  "masksToBounds" : false,
+                                  "opacity" : 1
+                                },
+                                "subviewCount" : 0,
+                                "visibleRect" : "(-10.0,-299.5 223.5x381.5)",
+                                "wantsLayer" : true
+                              },
+                              {
+                                "alphaValue" : 1,
+                                "bounds" : "(0.0,0.0 34.0x15.0)",
+                                "class" : "AppKitPlatformViewHost<PlatformViewRepresentableAdaptor<PlatformView>>",
+                                "depth" : 7,
+                                "frame" : "(179.5,299.0 34.0x15.0)",
+                                "isHidden" : false,
+                                "isHiddenOrHasHiddenAncestor" : false,
+                                "layer" : {
+                                  "frame" : "(179.5,299.0 34.0x15.0)",
+                                  "hasContents" : false,
+                                  "isHidden" : false,
+                                  "masksToBounds" : false,
+                                  "opacity" : 1
+                                },
+                                "subviewCount" : 1,
+                                "subviews" : [
+                                  {
+                                    "alphaValue" : 1,
+                                    "bounds" : "(0.0,0.0 39.0x15.0)",
+                                    "class" : "SwiftUIPopupButton",
+                                    "depth" : 8,
+                                    "frame" : "(-5.0,0.0 39.0x15.0)",
+                                    "isHidden" : false,
+                                    "isHiddenOrHasHiddenAncestor" : false,
+                                    "layer" : {
+                                      "frame" : "(-5.0,0.0 39.0x15.0)",
+                                      "hasContents" : false,
+                                      "isHidden" : false,
+                                      "masksToBounds" : false,
+                                      "opacity" : 1
+                                    },
+                                    "subviewCount" : 2,
+                                    "subviews" : [
+                                      {
+                                        "alphaValue" : 1,
+                                        "bounds" : "(0.0,0.0 15.0x15.0)",
+                                        "class" : "NSButtonImageView",
+                                        "depth" : 9,
+                                        "frame" : "(8.0,0.0 15.0x15.0)",
+                                        "isHidden" : false,
+                                        "isHiddenOrHasHiddenAncestor" : false,
+                                        "layer" : {
+                                          "frame" : "(8.0,0.0 15.0x15.0)",
+                                          "hasContents" : true,
+                                          "isHidden" : false,
+                                          "masksToBounds" : false,
+                                          "opacity" : 1
+                                        },
+                                        "subviewCount" : 0,
+                                        "visibleRect" : "(-182.5,-67.5 223.5x381.5)",
+                                        "wantsLayer" : false
+                                      },
+                                      {
+                                        "alphaValue" : 1,
+                                        "bounds" : "(0.0,0.0 7.0x5.0)",
+                                        "class" : "NSPopUpIndicatorView",
+                                        "depth" : 9,
+                                        "frame" : "(26.0,5.0 7.0x5.0)",
+                                        "isHidden" : false,
+                                        "isHiddenOrHasHiddenAncestor" : false,
+                                        "layer" : {
+                                          "frame" : "(26.0,5.0 7.0x5.0)",
+                                          "hasContents" : true,
+                                          "isHidden" : false,
+                                          "masksToBounds" : false,
+                                          "opacity" : 1
+                                        },
+                                        "subviewCount" : 0,
+                                        "visibleRect" : "(-200.5,-72.5 223.5x381.5)",
+                                        "wantsLayer" : false
+                                      }
+                                    ],
+                                    "visibleRect" : "(-174.5,-299.0 223.5x381.5)",
+                                    "wantsLayer" : false
+                                  }
+                                ],
+                                "visibleRect" : "(-179.5,-67.5 223.5x381.5)",
+                                "wantsLayer" : true
+                              },
+                              {
+                                "alphaValue" : 1,
+                                "bounds" : "(0.0,0.0 223.5x220.0)",
+                                "class" : "PlatformContainer",
+                                "depth" : 7,
+                                "frame" : "(0.0,318.0 223.5x220.0)",
+                                "isHidden" : false,
+                                "isHiddenOrHasHiddenAncestor" : false,
+                                "layer" : {
+                                  "frame" : "(0.0,318.0 223.5x220.0)",
+                                  "hasContents" : false,
+                                  "isHidden" : false,
+                                  "masksToBounds" : false,
+                                  "opacity" : 1
+                                },
+                                "subviewCount" : 1,
+                                "subviews" : [
+                                  {
+                                    "alphaValue" : 1,
+                                    "bounds" : "(0.0,0.0 223.5x220.0)",
+                                    "class" : "HostingScrollView",
+                                    "depth" : 8,
+                                    "frame" : "(0.0,0.0 223.5x220.0)",
+                                    "isHidden" : false,
+                                    "isHiddenOrHasHiddenAncestor" : false,
+                                    "layer" : {
+                                      "frame" : "(0.0,0.0 223.5x220.0)",
+                                      "hasContents" : false,
+                                      "isHidden" : false,
+                                      "masksToBounds" : true,
+                                      "opacity" : 1
+                                    },
+                                    "nsScrollView" : {
+                                      "backgroundColor_description" : "Generic Gray Gamma 2.2 Profile colorspace 0 0",
+                                      "contentSize" : "223.5x220.0",
+                                      "documentView_class" : "DocumentView",
+                                      "documentView_frame" : "(0.0,0.0 223.5x30.0)",
+                                      "drawsBackground" : false,
+                                      "hasVerticalRuler" : false,
+                                      "rulersVisible" : false
+                                    },
+                                    "subviewCount" : 2,
+                                    "subviews" : [
+                                      {
+                                        "alphaValue" : 1,
+                                        "bounds" : "(0.0,0.0 223.5x220.0)",
+                                        "class" : "NSClipView",
+                                        "depth" : 9,
+                                        "frame" : "(0.0,0.0 223.5x220.0)",
+                                        "isHidden" : false,
+                                        "isHiddenOrHasHiddenAncestor" : false,
+                                        "layer" : {
+                                          "frame" : "(0.0,0.0 223.5x220.0)",
+                                          "hasContents" : false,
+                                          "isHidden" : false,
+                                          "masksToBounds" : true,
+                                          "opacity" : 1
+                                        },
+                                        "subviewCount" : 1,
+                                        "subviews" : [
+                                          {
+                                            "alphaValue" : 1,
+                                            "bounds" : "(0.0,0.0 223.5x30.0)",
+                                            "class" : "DocumentView",
+                                            "depth" : 10,
+                                            "frame" : "(0.0,0.0 223.5x30.0)",
+                                            "isHidden" : false,
+                                            "isHiddenOrHasHiddenAncestor" : false,
+                                            "layer" : {
+                                              "frame" : "(0.0,0.0 223.5x30.0)",
+                                              "hasContents" : false,
+                                              "isHidden" : false,
+                                              "masksToBounds" : false,
+                                              "opacity" : 1
+                                            },
+                                            "subviewCount" : 1,
+                                            "subviews" : [
+                                              {
+                                                "alphaValue" : 1,
+                                                "bounds" : "(0.0,0.0 223.5x30.0)",
+                                                "class" : "PlatformGroupContainer",
+                                                "depth" : 11,
+                                                "frame" : "(0.0,0.0 223.5x30.0)",
+                                                "isHidden" : false,
+                                                "isHiddenOrHasHiddenAncestor" : false,
+                                                "layer" : {
+                                                  "frame" : "(0.0,0.0 223.5x30.0)",
+                                                  "hasContents" : false,
+                                                  "isHidden" : false,
+                                                  "masksToBounds" : false,
+                                                  "opacity" : 1
+                                                },
+                                                "subviewCount" : 0,
+                                                "visibleRect" : "(0.0,0.0 223.5x63.5)",
+                                                "wantsLayer" : true
+                                              }
+                                            ],
+                                            "visibleRect" : "(0.0,0.0 223.5x63.5)",
+                                            "wantsLayer" : false
+                                          }
+                                        ],
+                                        "visibleRect" : "(0.0,0.0 223.5x63.5)",
+                                        "wantsLayer" : false
+                                      },
+                                      {
+                                        "alphaValue" : 1,
+                                        "bounds" : "(0.0,0.0 0.0x100.0)",
+                                        "class" : "NSScroller",
+                                        "depth" : 9,
+                                        "frame" : "(0.0,0.0 0.0x100.0)",
+                                        "isHidden" : true,
+                                        "isHiddenOrHasHiddenAncestor" : true,
+                                        "layer" : {
+                                          "frame" : "(0.0,0.0 0.0x100.0)",
+                                          "hasContents" : false,
+                                          "isHidden" : true,
+                                          "masksToBounds" : true,
+                                          "opacity" : 1
+                                        },
+                                        "subviewCount" : 0,
+                                        "visibleRect" : "(0.0,0.0 0.0x0.0)",
+                                        "wantsLayer" : false,
+                                        "zeroSize" : {
+                                          "collapsedDim" : true,
+                                          "height0" : false,
+                                          "width0" : true
+                                        }
+                                      }
+                                    ],
+                                    "visibleRect" : "(0.0,0.0 223.5x63.5)",
+                                    "wantsLayer" : false
+                                  }
+                                ],
+                                "visibleRect" : "(0.0,156.5 223.5x381.5)",
+                                "wantsLayer" : true
+                              }
+                            ],
+                            "visibleRect" : "(0.0,0.0 223.5x381.5)",
+                            "wantsLayer" : true
+                          }
+                        ],
+                        "visibleRect" : "(0.0,0.0 223.5x381.5)",
+                        "wantsLayer" : false
+                      },
+                      {
+                        "alphaValue" : 1,
+                        "bounds" : "(0.0,0.0 203.5x14.0)",
+                        "class" : "KeyViewProxy",
+                        "depth" : 5,
+                        "frame" : "(10.0,6.0 203.5x14.0)",
+                        "isHidden" : false,
+                        "isHiddenOrHasHiddenAncestor" : false,
+                        "layer" : {
+                          "frame" : "(10.0,6.0 203.5x14.0)",
+                          "hasContents" : false,
+                          "isHidden" : false,
+                          "masksToBounds" : false,
+                          "opacity" : 1
+                        },
+                        "subviewCount" : 0,
+                        "visibleRect" : "(-10.0,-6.0 223.5x381.5)",
+                        "wantsLayer" : false
+                      },
+                      {
+                        "alphaValue" : 1,
+                        "bounds" : "(0.0,0.0 28.0x13.0)",
+                        "class" : "KeyViewProxy",
+                        "depth" : 5,
+                        "frame" : "(185.5,29.5 28.0x13.0)",
+                        "isHidden" : false,
+                        "isHiddenOrHasHiddenAncestor" : false,
+                        "layer" : {
+                          "frame" : "(185.5,29.5 28.0x13.0)",
+                          "hasContents" : false,
+                          "isHidden" : false,
+                          "masksToBounds" : false,
+                          "opacity" : 1
+                        },
+                        "subviewCount" : 0,
+                        "visibleRect" : "(-185.5,-29.5 223.5x381.5)",
+                        "wantsLayer" : false
+                      },
+                      {
+                        "alphaValue" : 1,
+                        "bounds" : "(0.0,0.0 76.0x14.0)",
+                        "class" : "KeyViewProxy",
+                        "depth" : 5,
+                        "frame" : "(10.0,221.5 76.0x14.0)",
+                        "isHidden" : false,
+                        "isHiddenOrHasHiddenAncestor" : false,
+                        "layer" : {
+                          "frame" : "(10.0,221.5 76.0x14.0)",
+                          "hasContents" : false,
+                          "isHidden" : false,
+                          "masksToBounds" : false,
+                          "opacity" : 1
+                        },
+                        "subviewCount" : 0,
+                        "visibleRect" : "(-10.0,-221.5 223.5x381.5)",
+                        "wantsLayer" : false
+                      }
+                    ],
+                    "visibleRect" : "(0.0,0.0 223.5x381.5)",
+                    "wantsLayer" : false
+                  },
+                  {
+                    "alphaValue" : 1,
+                    "bounds" : "(0.0,0.0 17.0x381.5)",
+                    "class" : "NSScroller",
+                    "depth" : 4,
+                    "frame" : "(223.5,0.0 17.0x381.5)",
+                    "isHidden" : false,
+                    "isHiddenOrHasHiddenAncestor" : false,
+                    "layer" : {
+                      "frame" : "(223.5,0.0 17.0x381.5)",
+                      "hasContents" : false,
+                      "isHidden" : false,
+                      "masksToBounds" : true,
+                      "opacity" : 1
+                    },
+                    "subviewCount" : 0,
+                    "visibleRect" : "(0.0,0.0 17.0x381.5)",
+                    "wantsLayer" : false
+                  }
+                ],
+                "visibleRect" : "(0.0,0.0 240.5x381.5)",
+                "wantsLayer" : false
+              }
+            ],
+            "visibleRect" : "(0.0,0.0 240.5x615.0)",
+            "wantsLayer" : true
+          }
+        ],
+        "visibleRect" : "(0.0,0.0 240.5x615.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 762.5x615.0)",
+        "class" : "AppKitPlatformViewHost<PlatformViewRepresentableAdaptor<TextDisplayView>>",
+        "depth" : 1,
+        "frame" : "(303.5,97.0 762.5x615.0)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(303.5,97.0 762.5x615.0)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 1,
+        "subviews" : [
+          {
+            "alphaValue" : 1,
+            "bounds" : "(0.0,0.0 762.5x615.0)",
+            "class" : "NSScrollView",
+            "depth" : 2,
+            "frame" : "(0.0,0.0 762.5x615.0)",
+            "isHidden" : false,
+            "isHiddenOrHasHiddenAncestor" : false,
+            "layer" : {
+              "backgroundColor_alpha" : 1,
+              "backgroundColor_components" : [
+                1,
+                1,
+                1,
+                1
+              ],
+              "frame" : "(0.0,0.0 762.5x615.0)",
+              "hasContents" : false,
+              "isHidden" : false,
+              "masksToBounds" : false,
+              "opacity" : 1
+            },
+            "nsScrollView" : {
+              "backgroundColor_description" : "sRGB IEC61966-2.1 colorspace 1 1 1 1",
+              "contentSize" : "762.5x615.0",
+              "documentView_class" : "NSTextView",
+              "documentView_frame" : "(0.0,0.0 762.5x615.0)",
+              "drawsBackground" : true,
+              "hasVerticalRuler" : false,
+              "rulersVisible" : false
+            },
+            "subviewCount" : 4,
+            "subviews" : [
+              {
+                "alphaValue" : 1,
+                "bounds" : "(0.0,0.0 762.5x615.0)",
+                "class" : "_NSScrollViewContentBackgroundView",
+                "depth" : 3,
+                "frame" : "(0.0,0.0 762.5x615.0)",
+                "isHidden" : false,
+                "isHiddenOrHasHiddenAncestor" : false,
+                "layer" : {
+                  "backgroundColor_alpha" : 1,
+                  "backgroundColor_components" : [
+                    1,
+                    1,
+                    1,
+                    1
+                  ],
+                  "frame" : "(0.0,0.0 762.5x615.0)",
+                  "hasContents" : false,
+                  "isHidden" : false,
+                  "masksToBounds" : false,
+                  "opacity" : 1
+                },
+                "subviewCount" : 0,
+                "visibleRect" : "(-303.5,-56.0 1100.0x800.0)",
+                "wantsLayer" : false
+              },
+              {
+                "alphaValue" : 1,
+                "bounds" : "(0.0,0.0 762.5x615.0)",
+                "class" : "NSClipView",
+                "depth" : 3,
+                "frame" : "(0.0,0.0 762.5x615.0)",
+                "isHidden" : false,
+                "isHiddenOrHasHiddenAncestor" : false,
+                "layer" : {
+                  "frame" : "(0.0,0.0 762.5x615.0)",
+                  "hasContents" : false,
+                  "isHidden" : false,
+                  "masksToBounds" : true,
+                  "opacity" : 1
+                },
+                "subviewCount" : 1,
+                "subviews" : [
+                  {
+                    "alphaValue" : 1,
+                    "bounds" : "(0.0,0.0 762.5x615.0)",
+                    "class" : "NSTextView",
+                    "depth" : 4,
+                    "frame" : "(0.0,0.0 762.5x615.0)",
+                    "isHidden" : false,
+                    "isHiddenOrHasHiddenAncestor" : false,
+                    "layer" : {
+                      "frame" : "(0.0,0.0 762.5x615.0)",
+                      "hasContents" : true,
+                      "isHidden" : false,
+                      "masksToBounds" : false,
+                      "opacity" : 1
+                    },
+                    "nsTextView" : {
+                      "backgroundColor_alpha" : 1,
+                      "backgroundColor_description" : "sRGB IEC61966-2.1 colorspace 1 1 1 1",
+                      "backgroundColor_sRGB" : [
+                        1,
+                        1,
+                        1,
+                        1
+                      ],
+                      "color_distance" : 1.5357734207883662,
+                      "contrastsWithBackground" : true,
+                      "drawsBackground" : true,
+                      "font_description" : "\".AppleSystemUIFontMonospaced-Regular 14.30 pt. P [] (0x7de7fe580) fobj=0x7de7fe580, spc=8.84\"",
+                      "glyph_boundingRect" : "(0.0,0.0 737.5x48.0)",
+                      "glyph_range_length" : 15,
+                      "isEditable" : false,
+                      "isRichText" : true,
+                      "isSelectable" : true,
+                      "numberOfGlyphs" : 15,
+                      "string_head" : "y = 2\nprint(y)\n",
+                      "string_length" : 15,
+                      "textColor_alpha" : 1,
+                      "textColor_description" : "sRGB IEC61966-2.1 colorspace hdrm(1) 0.11 0.11 0.12 1",
+                      "textColor_sRGB" : [
+                        0.11,
+                        0.11,
+                        0.12,
+                        1
+                      ],
+                      "textContainerInset" : "10.0x10.0"
+                    },
+                    "subviewCount" : 0,
+                    "visibleRect" : "(0.0,0.0 762.5x615.0)",
+                    "wantsLayer" : false
+                  }
+                ],
+                "visibleRect" : "(0.0,0.0 762.5x615.0)",
+                "wantsLayer" : false
+              },
+              {
+                "alphaValue" : 1,
+                "bounds" : "(0.0,0.0 17.0x0.0)",
+                "class" : "NSScroller",
+                "depth" : 3,
+                "frame" : "(-17.0,0.0 17.0x0.0)",
+                "isHidden" : true,
+                "isHiddenOrHasHiddenAncestor" : true,
+                "layer" : {
+                  "frame" : "(-17.0,0.0 17.0x0.0)",
+                  "hasContents" : false,
+                  "isHidden" : true,
+                  "masksToBounds" : true,
+                  "opacity" : 1
+                },
+                "subviewCount" : 0,
+                "visibleRect" : "(0.0,0.0 0.0x0.0)",
+                "wantsLayer" : false,
+                "zeroSize" : {
+                  "collapsedDim" : true,
+                  "height0" : true,
+                  "width0" : false
+                }
+              },
+              {
+                "alphaValue" : 1,
+                "bounds" : "(0.0,0.0 17.0x17.0)",
+                "class" : "NSScroller",
+                "depth" : 3,
+                "frame" : "(-17.0,-17.0 17.0x17.0)",
+                "isHidden" : true,
+                "isHiddenOrHasHiddenAncestor" : true,
+                "layer" : {
+                  "frame" : "(-17.0,-17.0 17.0x17.0)",
+                  "hasContents" : false,
+                  "isHidden" : true,
+                  "masksToBounds" : true,
+                  "opacity" : 1
+                },
+                "subviewCount" : 0,
+                "visibleRect" : "(0.0,0.0 0.0x0.0)",
+                "wantsLayer" : false
+              }
+            ],
+            "visibleRect" : "(-303.5,-129.0 1100.0x800.0)",
+            "wantsLayer" : false
+          }
+        ],
+        "visibleRect" : "(-303.5,-56.0 1100.0x800.0)",
+        "wantsLayer" : true
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 29.0x28.5)",
+        "class" : "KeyViewProxy",
+        "depth" : 1,
+        "frame" : "(2.0,103.0 29.0x28.5)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(2.0,103.0 29.0x28.5)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 0,
+        "visibleRect" : "(-2.0,-135.0 1100.0x800.0)",
+        "wantsLayer" : false
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 29.0x28.5)",
+        "class" : "KeyViewProxy",
+        "depth" : 1,
+        "frame" : "(2.0,133.5 29.0x28.5)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(2.0,133.5 29.0x28.5)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 0,
+        "visibleRect" : "(-2.0,-165.5 1100.0x800.0)",
+        "wantsLayer" : false
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 29.0x29.0)",
+        "class" : "KeyViewProxy",
+        "depth" : 1,
+        "frame" : "(2.0,164.0 29.0x29.0)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(2.0,164.0 29.0x29.0)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 0,
+        "visibleRect" : "(-2.0,-196.0 1100.0x800.0)",
+        "wantsLayer" : false
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 29.0x28.5)",
+        "class" : "KeyViewProxy",
+        "depth" : 1,
+        "frame" : "(2.0,195.0 29.0x28.5)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(2.0,195.0 29.0x28.5)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 0,
+        "visibleRect" : "(-2.0,-227.0 1100.0x800.0)",
+        "wantsLayer" : false
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 29.0x28.5)",
+        "class" : "KeyViewProxy",
+        "depth" : 1,
+        "frame" : "(2.0,225.5 29.0x28.5)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(2.0,225.5 29.0x28.5)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 0,
+        "visibleRect" : "(-2.0,-257.5 1100.0x800.0)",
+        "wantsLayer" : false
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 29.0x28.5)",
+        "class" : "KeyViewProxy",
+        "depth" : 1,
+        "frame" : "(2.0,256.0 29.0x28.5)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(2.0,256.0 29.0x28.5)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 0,
+        "visibleRect" : "(-2.0,-288.0 1100.0x800.0)",
+        "wantsLayer" : false
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 29.0x28.5)",
+        "class" : "KeyViewProxy",
+        "depth" : 1,
+        "frame" : "(2.0,286.5 29.0x28.5)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(2.0,286.5 29.0x28.5)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 0,
+        "visibleRect" : "(-2.0,-318.5 1100.0x800.0)",
+        "wantsLayer" : false
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 29.0x29.0)",
+        "class" : "KeyViewProxy",
+        "depth" : 1,
+        "frame" : "(2.0,317.0 29.0x29.0)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(2.0,317.0 29.0x29.0)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 0,
+        "visibleRect" : "(-2.0,-349.0 1100.0x800.0)",
+        "wantsLayer" : false
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 29.0x28.5)",
+        "class" : "KeyViewProxy",
+        "depth" : 1,
+        "frame" : "(2.0,348.0 29.0x28.5)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(2.0,348.0 29.0x28.5)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 0,
+        "visibleRect" : "(-2.0,-380.0 1100.0x800.0)",
+        "wantsLayer" : false
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 29.0x28.5)",
+        "class" : "KeyViewProxy",
+        "depth" : 1,
+        "frame" : "(2.0,378.5 29.0x28.5)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(2.0,378.5 29.0x28.5)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 0,
+        "visibleRect" : "(-2.0,-410.5 1100.0x800.0)",
+        "wantsLayer" : false
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 83.5x16.0)",
+        "class" : "KeyViewProxy",
+        "depth" : 1,
+        "frame" : "(181.0,103.0 83.5x16.0)",
+        "isHidden" : false,
+        "isHiddenOrHasHiddenAncestor" : false,
+        "layer" : {
+          "frame" : "(181.0,103.0 83.5x16.0)",
+          "hasContents" : false,
+          "isHidden" : false,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 0,
+        "visibleRect" : "(-181.0,-135.0 1100.0x800.0)",
+        "wantsLayer" : false
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 92.0x24.0)",
+        "class" : "KeyViewProxy",
+        "depth" : 1,
+        "frame" : "(564.5,442.5 92.0x24.0)",
+        "isHidden" : true,
+        "isHiddenOrHasHiddenAncestor" : true,
+        "layer" : {
+          "frame" : "(564.5,442.5 92.0x24.0)",
+          "hasContents" : false,
+          "isHidden" : true,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 0,
+        "visibleRect" : "(0.0,0.0 0.0x0.0)",
+        "wantsLayer" : false
+      },
+      {
+        "alphaValue" : 1,
+        "bounds" : "(0.0,0.0 108.5x24.0)",
+        "class" : "KeyViewProxy",
+        "depth" : 1,
+        "frame" : "(668.5,442.5 108.5x24.0)",
+        "isHidden" : true,
+        "isHiddenOrHasHiddenAncestor" : true,
+        "layer" : {
+          "frame" : "(668.5,442.5 108.5x24.0)",
+          "hasContents" : false,
+          "isHidden" : true,
+          "masksToBounds" : false,
+          "opacity" : 1
+        },
+        "subviewCount" : 0,
+        "visibleRect" : "(0.0,0.0 0.0x0.0)",
+        "wantsLayer" : false
+      }
+    ],
+    "visibleRect" : "(0.0,-32.0 1100.0x800.0)",
+    "wantsLayer" : true
+  },
+  "label" : "delay",
+  "model" : {
+    "activeSessionID" : "",
+    "currentStateKind" : "loaded",
+    "currentURL" : "\/tmp\/mdv_vm_probe\/plain.py",
+    "currentViewMode" : "rendered",
+    "isCrossSearchPresented" : false,
+    "isCurrentTabBookmarked" : false,
+    "isCurrentTabFormatted" : false,
+    "isGoToPathPresented" : false,
+    "isPalettePresented" : false,
+    "isRenderedFindBarPresented" : false,
+    "lastGoToError" : "",
+    "selectedTabIndex" : 0,
+    "sessions" : [
+
+    ],
+    "sidebar" : {
+      "isVisible" : true,
+      "rootURL" : "file:\/\/\/tmp\/mdv_vm_probe\/"
+    },
+    "sidebarVisible" : true,
+    "tabCount" : 1,
+    "windowTitle" : "plain.py",
+    "zoom" : 1.1000000000000001
+  },
+  "recursiveDescription" : "[   AF      W   ] h=--- v=--- _TtGC7SwiftUI13NSHostingViewV8ViewerUI11ContentView_ 0x1046f2f80 f=(0,0,1100,768) b=(-) => <NSViewBackingLayer: 0x7dcf719e0>\n  [   A       W   ] h=--- v=--- _TtGC7SwiftUI22AppKitPlatformViewHostGVS_P10$1be51695432PlatformViewRepresentableAdaptorVS_P10$1be5211e423DraggingDestinationView__ 0x7de55ce00 f=(0,0,1100,768) b=(-) => <NSViewBackingLayer: 0x7dc3c5140>\n    [   AF      W   ] h=-&- v=-&- _TtC7SwiftUIP33_9FEAD73C8B0BC1AFBEE663AAA2C9BA4C32_PlatformDraggingDestinationView 0x7dd3ff200 f=(0,0,1100,768) b=(-) => <NSViewBackingLayer: 0x7dc2fbea0>\n  [   A       W   ] h=--- v=--- _TtCC7SwiftUI17HostingScrollView17PlatformContainer 0x7dd3ffc00 f=(0,15,1068,0) b=(-) => <NSViewBackingLayer: 0x7dc3c5290>\n    [   AF      w   ] h=--- v=--- SwiftUI.HostingScrollView 0x7dcf1d000 f=(0,0,1068,0) b=(-) => <NSViewBackingLayer: 0x7dc3c7180>\n      [   AF      w   ] h=-&- v=-&- NSClipView 0x7dc13d200 f=(0,0,1068,0) b=(-) => <NSViewBackingLayer: 0x7dc3c7120>\n        [   AF      w   ] h=--- v=--- _TtC7SwiftUIP33_6B9589E2B2301F373BAB5CF17408C38412DocumentView 0x7dd3ff700 f=(0,0,0,0) b=(-) => <NSViewBackingLayer: 0x7dc3c6fd0>\n          [   AF      W   ] h=--- v=--- _TtCC7SwiftUI17HostingScrollView22PlatformGroupContainer 0x7dd3ff980 f=(0,0,0,0) b=(-) => <NSViewBackingLayer: 0x7dc3c4150>\n  [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_9FEBA96B0BC70E1682E82D239F242E7319SwiftUIAppKitButton 0x7dc13c300 f=(1072,3,24,24) b=(-) => <NSViewBackingLayer: 0x7dc3c5410>\n    [   AF      W   ] h=--- v=--- _TtCC7SwiftUIP33_9FEBA96B0BC70E1682E82D239F242E7319SwiftUIAppKitButton15ContentViewHost 0x7dd3fde00 f=(0,0,24,24) b=(-) => <NSViewBackingLayer: 0x7dc1745a0>\n  [   A       W   ] h=--- v=--- _TtCC7SwiftUI17HostingScrollView17PlatformContainer 0x7de684500 f=(0,32,1068,28) b=(-) => <NSViewBackingLayer: 0x7dc3c5500>\n    [   AF      w   ] h=--- v=--- SwiftUI.HostingScrollView 0x7dcf1d800 f=(0,0,1068,28) b=(-) => <NSViewBackingLayer: 0x7dc3c74e0>\n      [   AF      w   ] h=-&- v=-&- NSClipView 0x7dc13d500 f=(0,0,1068,28) b=(-) => <NSViewBackingLayer: 0x7dc3c7510>\n        [   AF      w   ] h=--- v=--- _TtC7SwiftUIP33_6B9589E2B2301F373BAB5CF17408C38412DocumentView 0x7de684000 f=(0,0,198,28) b=(-) => <NSViewBackingLayer: 0x7dc3c73c0>\n          [   AF      W   ] h=--- v=--- _TtCC7SwiftUI17HostingScrollView22PlatformGroupContainer 0x7de684280 f=(0,0,198,28) b=(-) => <NSViewBackingLayer: 0x7dc3c43f0>\n            [   A       W   ] h=--- v=--- _TtGC7SwiftUI22AppKitPlatformViewHostGVS_P10$1be51695432PlatformViewRepresentableAdaptorVS_P10$1be5211e423DraggingDestinationView__ 0x7de844700 f=(0,0,198,28) b=(-) => <NSViewBackingLayer: 0x7dc2f8180>\n              [   AF      W   ] h=-&- v=-&- _TtC7SwiftUIP33_9FEAD73C8B0BC1AFBEE663AAA2C9BA4C32_PlatformDraggingDestinationView 0x7de6af480 f=(0,0,198,28) b=(-) => <NSViewBackingLayer: 0x7dc176970>\n            [    F      W   ] h=--- v=--- SwiftUI._NSGraphicsView 0x7dd3fcf00 f=(0,0,198,28) b=(-170,-5,-,-) => <NSViewBackingLayer: 0x7dc2f8570>\n              [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de994000 f=(0,0,18,18) b=(-) => <NSViewBackingLayer: 0x7dc2f8420>\n            [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de994280 f=(0,0,198,28) b=(-) => <NSViewBackingLayer: 0x7dc2f8510>\n  [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_9FEBA96B0BC70E1682E82D239F242E7319SwiftUIAppKitButton 0x7dc13c900 f=(1072,34,24,24) b=(-) => <NSViewBackingLayer: 0x7dc3c5680>\n    [   AF      W   ] h=--- v=--- _TtCC7SwiftUIP33_9FEBA96B0BC70E1682E82D239F242E7319SwiftUIAppKitButton15ContentViewHost 0x7dd3fed00 f=(0,0,24,24) b=(-) => <NSViewBackingLayer: 0x7dc176dc0>\n  [   A       W   ] h=--- v=--- _TtGC7SwiftUI22AppKitPlatformViewHostGVS_P10$1be51695432PlatformViewRepresentableAdaptorVS_P10$1be53762022SystemSegmentedControl__ 0x1046f6880 f=(10,67,189,24) b=(-) => <NSViewBackingLayer: 0x7dc3c5770>\n    [   AF      w   ] h=-&- v=-&- SwiftUI.SwiftUISegmentedControl 0x7dd3fe580 f=(0,0,189,24) b=(-) => <NSViewBackingLayer: 0x7dc3c7780>\n      [   AF      W   ] h=--- v=--- _TtGC6AppKit18_NSCoreHostingViewVS_22AppKitSegmentedControl_ 0x7dc13c600 f=(0,0,189,24) b=(-) => <NSViewBackingLayer: 0x7dc175e60>\n  [   A       W   ] h=--- v=--- _TtGC7SwiftUI22AppKitPlatformViewHostGVS_P10$1be51695432PlatformViewRepresentableAdaptorGVVS_P10$1be5684bc18AppKitPopUpAdaptor12PlatformViewVVS_22MenuStyleConfiguration5Label____ 0x7de55f480 f=(933,71,77.5,16) b=(-) => <NSViewBackingLayer: 0x7dc2f8960>\n    [   AF      w   ] h=-&- v=-&- _TtGCVV7SwiftUIP10$1be5684bc18AppKitPopUpAdaptor12PlatformView18SwiftUIPopupButtonVVS_22MenuStyleConfiguration5Label___ 0x7de5ce800 \"Open As\" f=(-5,0,82.5,16) b=(-) => <NSViewBackingLayer: 0x7dc3c7c00>\n      [   A       w   ] h=--- v=--- NSButtonImageView 0x7de9c0280 f=(8,0.5,16,15) b=(-) => <NSViewBackingLayer: 0x7dc3c78a0>\n      [   AF      w   ] h=--- v=--- NSButtonTextField 0x7de844e00 \"Open As\" f=(25.5,0,56,16) b=(-) => <NSViewBackingLayer: 0x7dc3c7ba0>\n        [   AF      w   ] h=--- v=--- _TtC6AppKitP33_72EBFCF981BE77E1C6F26FD717D0893922NSTextFieldSimpleLabel 0x7dc13cf00 f=(0,0,56,16) b=(-) => <NSViewBackingLayer: 0x7dc3c7b10>\n  [   A       W   ] h=--- v=--- _TtGC7SwiftUI22AppKitPlatformViewHostGVS_P10$1be51695432PlatformViewRepresentableAdaptorGVVS_P10$1be5684bc18AppKitPopUpAdaptor12PlatformViewVVS_22MenuStyleConfiguration5Label____ 0x7de55f800 f=(1022.5,71,67.5,16) b=(-) => <NSViewBackingLayer: 0x7dc2f8ae0>\n    [   AF      w   ] h=-&- v=-&- _TtGCVV7SwiftUIP10$1be5684bc18AppKitPopUpAdaptor12PlatformView18SwiftUIPopupButtonVVS_22MenuStyleConfiguration5Label___ 0x7de5cf400 \"Python\" f=(-5,0,72.5,16) b=(-) => <NSViewBackingLayer: 0x7dc3c6820>\n      [   A       w   ] h=--- v=--- NSButtonImageView 0x7de9c0500 f=(8,3.5,15,9) b=(-) => <NSViewBackingLayer: 0x7dc3c7cc0>\n      [   AF      w   ] h=--- v=--- NSButtonTextField 0x7de845180 \"Python\" f=(24.5,0,47,16) b=(-) => <NSViewBackingLayer: 0x7dc3c7e70>\n        [   AF      w   ] h=--- v=--- _TtC6AppKitP33_72EBFCF981BE77E1C6F26FD717D0893922NSTextFieldSimpleLabel 0x7dbefc000 f=(0,0,47,16) b=(-) => <NSViewBackingLayer: 0x7dc3c7de0>\n  [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de685e00 f=(2,103,29,28.5) b=(-) => <NSViewBackingLayer: 0x7dc3c5920>\n  [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de686080 f=(2,133.5,29,28.5) b=(-) => <NSViewBackingLayer: 0x7dc3c59b0>\n  [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de686300 f=(2,164,29,29) b=(-) => <NSViewBackingLayer: 0x7dc3c5a40>\n  [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de686580 f=(2,195,29,28.5) b=(-) => <NSViewBackingLayer: 0x7dc3c5ad0>\n  [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de686800 f=(2,225.5,29,28.5) b=(-) => <NSViewBackingLayer: 0x7dc3c5b30>\n  [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de686a80 f=(2,256,29,28.5) b=(-) => <NSViewBackingLayer: 0x7dc3c5b90>\n  [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de686d00 f=(2,286.5,29,28.5) b=(-) => <NSViewBackingLayer: 0x7dc3c5bf0>\n  [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de686f80 f=(2,317,29,29) b=(-) => <NSViewBackingLayer: 0x7dc3c5c50>\n  [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de687200 f=(2,348,29,28.5) b=(-) => <NSViewBackingLayer: 0x7dc3c5cb0>\n  [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de687480 f=(2,378.5,29,28.5) b=(-) => <NSViewBackingLayer: 0x7dc3c5d40>\n  [   A       W   ] h=--- v=--- _TtGC7SwiftUI22AppKitPlatformViewHostGVS_P10$1be51695432PlatformViewRepresentableAdaptorV8ViewerUI17SidebarKeyMonitor__ 0x7de55d180 f=(34,97,240.5,615) b=(-) => <NSViewBackingLayer: 0x7dc3c5d10>\n    [   A       w   ] h=-&- v=-&- NSView 0x7dd3ff480 f=(0,0,240.5,615) b=(-) => <NSViewBackingLayer: 0x7dc2f81e0>\n  [    F      W   ] h=--- v=--- SwiftUI._NSGraphicsView 0x7de994500 f=(34,97,240.5,615) b=(-) => <NSViewBackingLayer: 0x7dc2f8c00>\n    [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_9FEBA96B0BC70E1682E82D239F242E7319SwiftUIAppKitButton 0x7dbcca100 f=(10,6,18,18) b=(-) => <NSViewBackingLayer: 0x7dc2f8ba0>\n      [   AF      W   ] h=--- v=--- _TtCC7SwiftUIP33_9FEBA96B0BC70E1682E82D239F242E7319SwiftUIAppKitButton15ContentViewHost 0x7de6ade00 f=(0,0,18,18) b=(-) => <NSViewBackingLayer: 0x7dbca3540>\n  [    F      W   ] h=--- v=--- SwiftUI._NSGraphicsView 0x7de687700 f=(34,97,240.5,615) b=(-) => <NSViewBackingLayer: 0x7dc3c5e90>\n    [   A       W   ] h=--- v=--- _TtGC7SwiftUI22AppKitPlatformViewHostGVS_P10$1be51695432PlatformViewRepresentableAdaptorVS_P10$1be533bc88Checkbox__ 0x1046fd300 f=(147,7,16,16) b=(-) => <NSViewBackingLayer: 0x7dc3c5e60>\n      [   AF      w   ] h=-&- v=-&- SwiftUI.FocusRingNSButton 0x7dc13cc00 f=(0,0,16,16) b=(-) => <NSViewBackingLayer: 0x7dc2f9350>\n        [   AF      W   ] h=--- v=--- _TtGC6AppKit18_NSCoreHostingViewVS_12AppKitButton_ 0x1046f6180 f=(0,0,16,16) b=(-) => <NSViewBackingLayer: 0x7dc293c90>\n  [    F      W   ] h=--- v=--- SwiftUI._NSGraphicsView 0x7de994780 f=(34,97,240.5,615) b=(0,-31,-,-) => <NSViewBackingLayer: 0x7dc2f8e10>\n    [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de994a00 f=(10,4.5,106,14) b=(-) => <NSViewBackingLayer: 0x7dc2f8ed0>\n  [    F      W   ] h=--- v=--- SwiftUI._NSGraphicsView 0x7de994c80 f=(34,97,240.5,615) b=(0,-31,-,-) => <NSViewBackingLayer: 0x7dc2f8fc0>\n    [   A       W   ] h=--- v=--- _TtGC7SwiftUI22AppKitPlatformViewHostGVS_P10$1be51695432PlatformViewRepresentableAdaptorGVVS_P10$1be5684bc18AppKitPopUpAdaptor12PlatformViewVVS_22MenuStyleConfiguration5Label____ 0x7de55fb80 f=(120,4,37,15) b=(-) => <NSViewBackingLayer: 0x7dc2f8f90>\n      [   AF      w   ] h=-&- v=-&- _TtGCVV7SwiftUIP10$1be5684bc18AppKitPopUpAdaptor12PlatformView18SwiftUIPopupButtonVVS_22MenuStyleConfiguration5Label___ 0x7de840000 f=(-5,0,42,15) b=(-) => <NSViewBackingLayer: 0x7dc2fa700>\n        [   A       w   ] h=--- v=--- NSButtonImageView 0x7de9c0780 f=(8,0,18,15) b=(-) => <NSViewBackingLayer: 0x7dc2f9c80>\n        [   A       w   ] h=--- v=--- NSPopUpIndicatorView 0x7de9c0a00 f=(29,5,7,5) b=(-) => <NSViewBackingLayer: 0x7dc2fa790>\n  [    F      W   ] h=--- v=--- SwiftUI._NSGraphicsView 0x7de994f00 f=(34,97,240.5,615) b=(0,-31,-,-) => <NSViewBackingLayer: 0x7dc2f9200>\n    [   A       W   ] h=--- v=--- _TtGC7SwiftUI22AppKitPlatformViewHostGVS_P10$1be51695432PlatformViewRepresentableAdaptorGVVS_P10$1be5684bc18AppKitPopUpAdaptor12PlatformViewVVS_22MenuStyleConfiguration5Label____ 0x7de844000 f=(161,4,37,15) b=(-) => <NSViewBackingLayer: 0x7dc2f91d0>\n      [   AF      w   ] h=-&- v=-&- _TtGCVV7SwiftUIP10$1be5684bc18AppKitPopUpAdaptor12PlatformView18SwiftUIPopupButtonVVS_22MenuStyleConfiguration5Label___ 0x7de840c00 f=(-5,0,42,15) b=(-) => <NSViewBackingLayer: 0x7dc2faa00>\n        [   A       w   ] h=--- v=--- NSButtonImageView 0x7de9c0c80 f=(8,0,18,15) b=(-) => <NSViewBackingLayer: 0x7dc2fa880>\n        [   A       w   ] h=--- v=--- NSPopUpIndicatorView 0x7de9c0f00 f=(29,5,7,5) b=(-) => <NSViewBackingLayer: 0x7dc2fa9d0>\n  [    F      W   ] h=--- v=--- SwiftUI._NSGraphicsView 0x7de995180 f=(34,97,240.5,615) b=(0,-31,-,-) => <NSViewBackingLayer: 0x7dc2f9500>\n    [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de995400 f=(202,6,12.5,11) b=(-) => <NSViewBackingLayer: 0x7dc2f95c0>\n  [    F      W   ] h=--- v=--- SwiftUI._NSGraphicsView 0x7de995680 f=(34,97,240.5,615) b=(0,-31,-,-) => <NSViewBackingLayer: 0x7dc2f9770>\n    [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de995900 f=(218.5,5.5,12,12.5) b=(-) => <NSViewBackingLayer: 0x7dc2f98c0>\n  [    F      W   ] h=--- v=--- SwiftUI._NSGraphicsView 0x7de995b80 f=(34,97,240.5,615) b=(0,-31,-,-) => <NSViewBackingLayer: 0x7dc2f9890>\n    [   A       W   ] h=--- v=--- _TtCC7SwiftUI17HostingScrollView17PlatformContainer 0x7de6afc00 f=(0,23,240.5,179.5) b=(-) => <NSViewBackingLayer: 0x7dc2f9950>\n      [   AF      w   ] h=--- v=--- SwiftUI.HostingScrollView 0x7dcf1f800 f=(0,0,240.5,179.5) b=(-) => <NSViewBackingLayer: 0x7dc2fb810>\n        [   AF      w   ] h=-&- v=-&- NSClipView 0x7dbccb900 f=(0,0,223.5,179.5) b=(-) => <NSViewBackingLayer: 0x7dc2fb5d0>\n          [   AF      w   ] h=--- v=--- _TtC7SwiftUIP33_6B9589E2B2301F373BAB5CF17408C38412DocumentView 0x7de6af700 f=(0,0,223.5,536) b=(-) => <NSViewBackingLayer: 0x7dc2fb540>\n            [   AF      W   ] h=--- v=--- _TtCC7SwiftUI17HostingScrollView22PlatformGroupContainer 0x7de6af980 f=(0,0,223.5,536) b=(-) => <NSViewBackingLayer: 0x7dc177a80>\n              [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de995e00 f=(0,4,223.5,22) b=(-) => <NSViewBackingLayer: 0x7dc2f9d10>\n              [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de996080 f=(0,26,223.5,22) b=(-) => <NSViewBackingLayer: 0x7dc2f9e60>\n              [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de996300 f=(0,48,223.5,22) b=(-) => <NSViewBackingLayer: 0x7dc2f9ec0>\n              [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de996580 f=(0,70,223.5,22) b=(-) => <NSViewBackingLayer: 0x7dc2f9f50>\n              [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de996800 f=(0,92,223.5,22) b=(-) => <NSViewBackingLayer: 0x7dc2f9fb0>\n              [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de9c1680 f=(0,114,223.5,22) b=(-) => <NSViewBackingLayer: 0x7dc1758c0>\n              [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de9c1900 f=(0,136,223.5,22) b=(-) => <NSViewBackingLayer: 0x7dc1757d0>\n              [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de9c2300 f=(0,158,223.5,22) b=(-) => <NSViewBackingLayer: 0x7dbca22e0>\n        [   AF      w   ] h=--- v=--- NSScroller 0x7dbccbc00 f=(223.5,0,17,179.5) b=(-) => <NSViewBackingLayer: 0x7dc2fb750>\n  [    F      W   ] h=--- v=--- SwiftUI._NSGraphicsView 0x7de687980 f=(34,97,240.5,615) b=(-) => <NSViewBackingLayer: 0x7dc3c6040>\n    [   A       W   ] h=--- v=--- _TtCC7SwiftUI17HostingScrollView17PlatformContainer 0x7de684c80 f=(0,233.5,240.5,381.5) b=(-) => <NSViewBackingLayer: 0x7dc3c6010>\n      [   AF      w   ] h=--- v=--- SwiftUI.HostingScrollView 0x7dcf1e000 f=(0,0,240.5,381.5) b=(-) => <NSViewBackingLayer: 0x7dc265410>\n        [   AF      w   ] h=-&- v=-&- NSClipView 0x7dc13d800 f=(0,0,223.5,381.5) b=(-) => <NSViewBackingLayer: 0x7dc2651d0>\n          [   AF      w   ] h=--- v=--- _TtC7SwiftUIP33_6B9589E2B2301F373BAB5CF17408C38412DocumentView 0x7de684780 f=(0,0,223.5,540) b=(-) => <NSViewBackingLayer: 0x7dc264f00>\n            [   AF      W   ] h=--- v=--- _TtCC7SwiftUI17HostingScrollView22PlatformGroupContainer 0x7de684a00 f=(0,0,223.5,540) b=(-) => <NSViewBackingLayer: 0x7dc3c4660>\n              [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de687c00 f=(10,6,203.5,14) b=(-) => <NSViewBackingLayer: 0x7dc3c6340>\n              [   A       W   ] h=--- v=--- _TtGC7SwiftUI22AppKitPlatformViewHostGVS_P10$1be51695432PlatformViewRepresentableAdaptorVS_P10$1be55c3c424PlatformTextFieldAdaptor__ 0x7de55c380 f=(29,28,152.5,16) b=(-) => <NSViewBackingLayer: 0x7dc3c63a0>\n                [   AF      w   ] h=-&- v=-&- SwiftUI.AppKitTextField 0x7dd307400 f=(-2,0,156.5,16) b=(-) => <NSViewBackingLayer: 0x7dc2fbe40>\n                  [  HAF      w   ] h=--- v=--- _TtC6AppKitP33_72EBFCF981BE77E1C6F26FD717D0893922NSTextFieldSimpleLabel 0x7dc13ed00 f=(0,0,156.5,16) b=(-) => <NSViewBackingLayer: 0x7dc2fb9c0>\n                  [   AF      w   ] h=--- v=--- _NSKeyboardFocusClipView 0x7de55e680 f=(-2.5,-2,160.5,22) b=(-2.5,-2,-,-) => <NSViewBackingLayer: 0x7dc2fbd80>\n                    [   AF    ! w   ] h=--- v=--- _TtC7SwiftUIP33_C58093E7172B0A541A997680E343D0D527_SystemTextFieldFieldEditor 0x7de5cdc00 f=(0,0,156.5,16) b=(-) => <NSViewBackingLayer: 0x7dc2fbae0>\n              [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de6ac780 f=(185.5,29.5,28,13) b=(-) => <NSViewBackingLayer: 0x7dc3c65e0>\n              [   A       W   ] h=--- v=--- _TtGC7SwiftUI22AppKitPlatformViewHostGVS_P10$1be51695432PlatformViewRepresentableAdaptorGVVS_P10$1be5684bc18AppKitPopUpAdaptor12PlatformViewVVS_22MenuStyleConfiguration5Label____ 0x7de55c700 f=(192.5,48,21,15) b=(-) => <NSViewBackingLayer: 0x7dc3c65b0>\n                [   AF      w   ] h=-&- v=-&- _TtGCVV7SwiftUIP10$1be5684bc18AppKitPopUpAdaptor12PlatformView18SwiftUIPopupButtonVVS_22MenuStyleConfiguration5Label___ 0x7dd307c00 f=(-5,0,26,15) b=(-) => <NSViewBackingLayer: 0x7dc2fbfc0>\n                  [   A       w   ] h=--- v=--- NSButtonImageView 0x7de6ad180 f=(8,0,15,15) b=(-) => <NSViewBackingLayer: 0x7dc2fabb0>\n              [   A       W   ] h=--- v=--- _TtCC7SwiftUI17HostingScrollView17PlatformContainer 0x7de685400 f=(0,67,223.5,220) b=(-) => <NSViewBackingLayer: 0x7dc3c6a00>\n                [   AF      w   ] h=--- v=--- SwiftUI.HostingScrollView 0x7dcf1e800 f=(0,0,223.5,220) b=(-) => <NSViewBackingLayer: 0x7dc2643c0>\n                  [   AF      w   ] h=-&- v=-&- NSClipView 0x7dc13de00 f=(0,0,223.5,220) b=(-) => <NSViewBackingLayer: 0x7dc264240>\n                    [   AF      w   ] h=--- v=--- _TtC7SwiftUIP33_6B9589E2B2301F373BAB5CF17408C38412DocumentView 0x7de684f00 f=(0,0,223.5,30) b=(-) => <NSViewBackingLayer: 0x7dc2640f0>\n                      [   AF      W   ] h=--- v=--- _TtCC7SwiftUI17HostingScrollView22PlatformGroupContainer 0x7de685180 f=(0,0,223.5,30) b=(-) => <NSViewBackingLayer: 0x7dc3c4a20>\n                  [  HAF      w   ] h=--- v=--- NSScroller 0x7dc13e100 f=(0,0,0,100) b=(-) => <NSViewBackingLayer: 0x7dc264450>\n              [   AF      W   ] h=--- v=--- _TtC7SwiftUIP33_B9E8471D77A01696E0731B43A95A934614_FocusRingView 0x7de6aca00 f=(10,299.5,76,14) b=(-) => <NSViewBackingLayer: 0x7dc3c6c40>\n              [   A       W   ] h=--- v=--- _TtGC7SwiftUI22AppKitPlatformViewHostGVS_P10$1be51695432PlatformViewRepresentableAdaptorGVVS_P10$1be5684bc18AppKitPopUpAdaptor12PlatformViewVVS_22MenuStyleConfiguration5Label____ 0x7de55ca80 f=(179.5,299,34,15) b=(-) => <NSViewBackingLayer: 0x7dc3c6c10>\n                [   AF      w   ] h=-&- v=-&- _TtGCVV7SwiftUIP10$1be5684bc18AppKitPopUpAdaptor12PlatformView18SwiftUIPopupButtonVVS_22MenuStyleConfiguration5Label___ 0x7de5cc800 f=(-5,0,39,15) b=(-) => <NSViewBackingLayer: 0x7dc264780>\n                  [   A       w   ] h=--- v=--- NSButtonImageView 0x7de6ad400 f=(8,0,15,15) b=(-) => <NSViewBackingLayer: 0x7dc2646c0>\n                  [   A       w   ] h=--- v=--- NSPopUpIndicatorView 0x7de6ad680 f=(26,5,7,5) b=(-) => <NSViewBackingLayer: 0x7dc2647b0>\n              [   A       W   ] h=--- v=--- _TtCC7SwiftUI17HostingScrollView17PlatformContainer 0x7de685b80 f=(0,318,223.5,220) b=(-) => <NSViewBackingLayer: 0x7dc3c6d30>\n                [   AF      w   ] h=--- v=--- SwiftUI.HostingScrollView 0x7dcf1f000 f=(0,0,223.5,220) b=(-) => <NSViewBackingLayer: 0x7dc264d80>\n                  [   AF      w   ] h=-&- v=-&- NSClipView 0x7dc13e400 f=(0,0,223.5,220) b=(-) => <NSViewBackingLayer: 0x7dc264ae0>\n                    [   AF      w   ] h=--- v=--- _TtC7SwiftUIP33_6B9589E2B2301F373BAB5CF17408C38412DocumentView 0x7de685680 f=(0,0,223.5,30) b=(-) => <NSViewBackingLayer: 0x7dc264900>\n                      [   AF      W   ] h=--- v=--- _TtCC7SwiftUI17HostingScrollView22PlatformGroupContainer 0x7de685900 f=(0,0,223.5,30) b=(-) => <NSViewBackingLayer: 0x7dc3c4de0>\n                  [  HAF      w   ] h=--- v=--- NSScroller 0x7dc13e700 f=(0,0,0,100) b=(-) => <NSViewBackingLayer: 0x7dc264bd0>\n          [   AF      w   ] h=--- v=--- SwiftUI.KeyViewProxy 0x7dbcc9200 f=(10,6,203.5,14) b=(-) => <NSViewBackingLayer: 0x7dc265020>\n          [   AF      w   ] h=--- v=--- SwiftUI.KeyViewProxy 0x7dbcc9500 f=(185.5,29.5,28,13) b=(-) => <NSViewBackingLayer: 0x7dc265050>\n          [   AF      w   ] h=--- v=--- SwiftUI.KeyViewProxy 0x7dbcc9800 f=(10,221.5,76,14) b=(-) => <NSViewBackingLayer: 0x7dc265140>\n        [   AF      w   ] h=--- v=--- NSScroller 0x7dc13db00 f=(223.5,0,17,381.5) b=(-) => <NSViewBackingLayer: 0x7dc2652c0>\n  [   A       W   ] h=--- v=--- _TtGC7SwiftUI22AppKitPlatformViewHostGVS_P10$1be52bd7c32PlatformViewRepresentableAdaptorV8ViewerUI15TextDisplayView__ 0x7de844380 f=(303.5,97,762.5,615) b=(-) => <NSViewBackingLayer: 0x7dc2fa8e0>\n    [   AF O    w   ] h=-&- v=-&- NSScrollView 0x7dcf4a300 f=(0,0,762.5,615) b=(-) => <NSViewBackingLayer: 0x7dc265980>\n      [   A       w   ] h=--- v=--- _NSScrollViewContentBackgroundView 0x7de6af200 f=(0,0,762.5,615) b=(-) => <NSViewBackingLayer: 0x7dc2654d0>\n      [   AF      w   ] h=-&- v=-&- NSClipView 0x7dbccb000 f=(0,0,762.5,615) b=(-) => <NSViewBackingLayer: 0x7dc265680>\n        [   AF O    w   ] h=-&- v=-&- NSTextView 0x7de841800 f=(0,0,762.5,615) b=(-) => <NSViewBackingLayer: 0x7dc265590>\n      [  HAF      w   ] h=--- v=--- NSScroller 0x7dbccb300 f=(-17,0,17,0) b=(-) => <NSViewBackingLayer: 0x7dc265710>\n      [  HAF      w   ] h=--- v=--- NSScroller 0x7dbccb600 f=(-17,-17,17,17) b=(-) => <NSViewBackingLayer: 0x7dc2657d0>\n  [   AF      w   ] h=--- v=--- SwiftUI.KeyViewProxy 0x7dc13f000 f=(2,103,29,28.5) b=(-) => <NSViewBackingLayer: 0x7dc265b00>\n  [   AF      w   ] h=--- v=--- SwiftUI.KeyViewProxy 0x7dc13f300 f=(2,133.5,29,28.5) b=(-) => <NSViewBackingLayer: 0x7dc265dd0>\n  [   AF      w   ] h=--- v=--- SwiftUI.KeyViewProxy 0x7dc13f600 f=(2,164,29,29) b=(-) => <NSViewBackingLayer: 0x7dc265da0>\n  [   AF      w   ] h=--- v=--- SwiftUI.KeyViewProxy 0x7dc13f900 f=(2,195,29,28.5) b=(-) => <NSViewBackingLayer: 0x7dc265f80>\n  [   AF      w   ] h=--- v=--- SwiftUI.KeyViewProxy 0x7dc13fc00 f=(2,225.5,29,28.5) b=(-) => <NSViewBackingLayer: 0x7dc265f20>\n  [   AF      w   ] h=--- v=--- SwiftUI.KeyViewProxy 0x7dbcc8000 f=(2,256,29,28.5) b=(-) => <NSViewBackingLayer: 0x7dc265ef0>\n  [   AF      w   ] h=--- v=--- SwiftUI.KeyViewProxy 0x7dbcc8300 f=(2,286.5,29,28.5) b=(-) => <NSViewBackingLayer: 0x7dc266040>\n  [   AF      w   ] h=--- v=--- SwiftUI.KeyViewProxy 0x7dbcc8600 f=(2,317,29,29) b=(-) => <NSViewBackingLayer: 0x7dc2660a0>\n  [   AF      w   ] h=--- v=--- SwiftUI.KeyViewProxy 0x7dbcc8900 f=(2,348,29,28.5) b=(-) => <NSViewBackingLayer: 0x7dc266100>\n  [   AF      w   ] h=--- v=--- SwiftUI.KeyViewProxy 0x7dbcc8c00 f=(2,378.5,29,28.5) b=(-) => <NSViewBackingLayer: 0x7dc266160>\n  [   AF      w   ] h=--- v=--- SwiftUI.KeyViewProxy 0x7dbcc8f00 f=(181,103,83.5,16) b=(-) => <NSViewBackingLayer: 0x7dc266220>\n  [  HAF      w   ] h=--- v=--- SwiftUI.KeyViewProxy 0x7dbcc9b00 f=(564.5,442.5,92,24) b=(-) => <NSViewBackingLayer: 0x7dc266280>\n  [  HAF      w   ] h=--- v=--- SwiftUI.KeyViewProxy 0x7dbcc9e00 f=(668.5,442.5,108.5,24) b=(-) => <NSViewBackingLayer: 0x7dc266310>\nA=autoresizesSubviews, C=canDrawConcurrently, D=needsDisplay, F=flipped, G=gstate, H=hidden (h=by ancestor), L=needsLayout (l=child needsLayout), U=needsUpdateConstraints (u=child needsUpdateConstraints), O=opaque, P=preservesContentDuringLiveResize, S=scaled\/rotated, W=wantsLayer (w=ancestor wantsLayer), V=needsVibrancy (v=allowsVibrancy), #=has surface\n",
+  "step" : 7,
+  "window" : {
+    "alphaValue" : 1,
+    "backingScaleFactor" : 2,
+    "contentRect" : "(871.0,0.0 1100.0x768.0)",
+    "frame" : "(871.0,0.0 1100.0x800.0)",
+    "isKeyWindow" : false,
+    "isMainWindow" : false,
+    "isVisible" : true,
+    "occlusionState_visible" : false,
+    "screen_frame" : "(0.0,0.0 3200.0x1800.0)",
+    "title" : "plain.py"
+  }
+}
