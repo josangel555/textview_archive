@@ -2271,7 +2271,19 @@ public final class DocumentModel: ObservableObject {
                 // Falling back to the destination's natural default keeps
                 // the carry useful for shared modes (e.g. HEX→HEX,
                 // image→image preview) without smuggling an invalid one.
-                if ViewModeOptions.availableModes(for: resolved).contains(cur.viewMode) {
+                //
+                // SC-CHROME-02: `availableModes` membership alone is NOT
+                // enough for native-preview destinations. Those expose
+                // `[.preview, .hex]`, so a carried `.hex` passes the
+                // membership test — but the loader returns a `.preview`
+                // document state and the HEX-load block below correctly
+                // skips it, so the pane stays the native lens while the
+                // picker reads HEX (picker↔pane desync). A native-preview
+                // file renders ONLY through `.preview`; carrying anything
+                // but `.preview` onto it is a guaranteed desync, so fall
+                // back to its natural default (`.preview`) instead.
+                if ViewModeOptions.availableModes(for: resolved).contains(cur.viewMode),
+                   !(isNativePreviewDestination(resolved) && cur.viewMode != .preview) {
                     return cur.viewMode
                 }
             }
@@ -2345,6 +2357,25 @@ public final class DocumentModel: ObservableObject {
             .attributesOfItem(atPath: resolved.path)[.size]) as? Int
         else { return false }
         return bytes > controller.loader.softWarnBytes
+    }
+
+    /// True when `resolved` is a native-preview category
+    /// (image/audio/video/pdf/sqlite) — i.e. it renders through the
+    /// `.preview` document state, and `.preview` is its only non-HEX
+    /// lens. Carry-mode uses this to refuse carrying a non-`.preview`
+    /// mode (e.g. `.hex`) onto such a destination: `.hex` is in its
+    /// `availableModes` but the loaded state is `.preview`, so the
+    /// picker would contradict the pane (SC-CHROME-02). Mirrors the
+    /// category switch in `shouldDeferOpenOffMain`; kept a local switch
+    /// because `ViewModeOptions.hasNativePreview` is internal to
+    /// ViewerKit and not visible here.
+    private func isNativePreviewDestination(_ resolved: URL) -> Bool {
+        switch FileTypeDetector.category(for: resolved) {
+        case .image, .audio, .video, .pdf, .sqlite:
+            return true
+        default:
+            return false
+        }
     }
 
     /// Open a large text file off the main thread. Mirrors

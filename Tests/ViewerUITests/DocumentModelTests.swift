@@ -714,6 +714,39 @@ final class DocumentModelTests: XCTestCase {
                           "Preview must not be smuggled onto a text file")
     }
 
+    /// SC-CHROME-02 regression: carry-mode must NOT carry `.hex` onto a
+    /// native-preview destination. A preview file's `availableModes` are
+    /// `[.preview, .hex]`, so membership alone would accept a carried
+    /// `.hex` — but the loader returns a `.preview` document state and the
+    /// HEX-load block correctly skips it, leaving the picker reading HEX
+    /// over a native image lens (picker↔pane desync). Carry must fall back
+    /// to the preview file's natural default (`.preview`) so picker == pane.
+    func test_carryMode_doesNotCarryHex_ontoNativePreview() throws {
+        let model = makeModel()
+        // Open a text file and force it into HEX so the active tab carries
+        // a non-default, user-picked `.hex`.
+        let bin = try writeFile("raw.bin", "\u{0}\u{1}\u{2}rawbytes\n")
+        model.open(url: bin)
+        model.setCurrentViewMode(.hex)
+        XCTAssertEqual(model.currentViewMode, .hex)
+
+        // Now open a native-preview file (image) into the SAME tab (no
+        // intervening source tab) — the SC-CHROME-02 repro.
+        let png = tmpDir.appendingPathComponent("after.png")
+        try Self.minimalPNG.write(to: png)
+        model.open(url: png)
+
+        // The picker must track the pane: the file renders via `.preview`,
+        // so the selected mode must be `.preview`, NOT the carried `.hex`.
+        XCTAssertEqual(model.currentViewMode, .preview,
+                       "carried .hex must not leak onto a native-preview file; picker must read Preview")
+        guard case .preview(_, let cat) = model.currentState, cat == .image else {
+            return XCTFail("expected .preview(.image) state, got \(model.currentState)")
+        }
+        XCTAssertTrue(ViewModeOptions.availableModes(for: png).contains(model.currentViewMode),
+                      "selected mode must be in the destination's availableModes")
+    }
+
     /// Smallest valid PNG: 1×1 transparent. Used by the HEX round-trip
     /// tests to give `FileTypeDetector` a real image with bytes that
     /// `BinaryFileLoader` can actually read.
