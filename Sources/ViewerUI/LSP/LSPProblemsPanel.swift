@@ -26,15 +26,27 @@ public struct LSPProblemsPanel: View {
     /// to identity for call sites without a document model. Not
     /// `@Sendable` — the host's `uiSize` is `@MainActor`-isolated.
     let uiSize: (CGFloat) -> CGFloat
+    /// Reports whether the *active* file has a registered LSP language
+    /// but no diagnostics in the store — i.e. it was never analyzed by
+    /// a language server in this view. When true, the empty body must
+    /// NOT read as a green "no problems": Source view never drives the
+    /// `didOpen`/`didChange` that makes the server publish diagnostics
+    /// (only the Editor / Outline paths do), so an empty store for a
+    /// broken `.swift` file is "not analyzed", not "clean". Threaded
+    /// from the host; defaults to `false` (the legacy all-clear copy)
+    /// for call sites without a document model. See UAT LSP-01.
+    let activeFileUnanalyzed: () -> Bool
 
     public init(
         store: LSPDiagnosticsStore,
         onJump: @escaping (URL, Int) -> Void,
-        uiSize: @escaping (CGFloat) -> CGFloat = { $0 }
+        uiSize: @escaping (CGFloat) -> CGFloat = { $0 },
+        activeFileUnanalyzed: @escaping () -> Bool = { false }
     ) {
         self.store = store
         self.onJump = onJump
         self.uiSize = uiSize
+        self.activeFileUnanalyzed = activeFileUnanalyzed
     }
 
     enum SeverityFilter: String, CaseIterable, Identifiable {
@@ -152,6 +164,15 @@ public struct LSPProblemsPanel: View {
 
     private var emptyMessage: String {
         if store.byURL.isEmpty {
+            // LSP-01: don't claim a clean bill of health for a file the
+            // language server was never asked about. Source view never
+            // sends didOpen/didChange, so diagnostics never get computed
+            // — an empty store for an LSP-supported active file means
+            // "not analyzed here", not "no problems". Say so honestly
+            // rather than presenting a falsely-reassuring green all-clear.
+            if activeFileUnanalyzed() {
+                return "Not analyzed. Open in Editor to see problems."
+            }
             return "No problems detected."
         }
         return "No problems match this filter."

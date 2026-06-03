@@ -2102,6 +2102,22 @@ public final class DocumentModel: ObservableObject {
     public var currentURL: URL? { tabs.selected?.url }
     public var currentViewMode: ViewMode { tabs.selected?.viewMode ?? .rendered }
 
+    /// True when the active file has a registered LSP language yet the
+    /// diagnostics store holds no entry for it — i.e. no language server
+    /// has analyzed it in this view. Source view never sends the
+    /// `didOpen`/`didChange` that triggers `publishDiagnostics` (only the
+    /// Editor / Outline paths do), so an empty store for a `.swift` file
+    /// open in Source view is "not analyzed here", not a clean bill of
+    /// health. The PROBLEMS panel reads this to avoid a falsely-
+    /// reassuring "No problems detected." for an un-analyzed file
+    /// (UAT LSP-01). Returns false for files with no LSP language (e.g.
+    /// `.md`, `.txt`), where the all-clear copy is genuinely correct.
+    public var activeFileUnanalyzedByLSP: Bool {
+        guard let url = currentURL else { return false }
+        guard LSPLanguageRegistry.default.language(for: url) != nil else { return false }
+        return lspDiagnostics.byURL[url] == nil
+    }
+
     public var supportsViewModeToggle: Bool {
         guard let url = currentURL else { return false }
         let cat = currentCategory ?? FileTypeDetector.category(for: url)

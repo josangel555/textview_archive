@@ -400,7 +400,8 @@ struct SidebarView: View {
                     }
                     model.scrollSource(toLine: line)
                 },
-                uiSize: model.uiSize
+                uiSize: model.uiSize,
+                activeFileUnanalyzed: { model.activeFileUnanalyzedByLSP }
             )
             .environment(\.sidebarSectionBodyHeight,
                          SidebarPanelHeights.clamp(CGFloat(lspProblemsHeight),
