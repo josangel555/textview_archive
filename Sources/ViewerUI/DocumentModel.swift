@@ -3373,6 +3373,50 @@ public final class DocumentModel: ObservableObject {
         // Idempotent + equality-guarded — a no-op when demand is
         // unchanged.
         repoFocus.recompute()
+        // LSP-01: warm the language server from the MODEL side on the
+        // open/select path, mirroring the repoFocus.recompute() call
+        // above (the F-GIT-1 fix for the same republish-ordering class).
+        // The Outline sidebar section's LSPOutlineWrapper.refresh() is
+        // the only other spawn trigger, but it fires on the section's
+        // .onAppear/.onChange — which an occluded/scripted window does
+        // not reliably realize, making sourcekit-lsp spawn non-
+        // deterministic. Driving ensureOpened here makes the spawn
+        // deterministic on every focus change regardless of view
+        // realization. Self-gating + idempotent (see warmLSPForCurrentFile).
+        warmLSPForCurrentFile()
+    }
+
+    /// URL the LSP pool was last warmed for. Dedupes the
+    /// `warmLSPForCurrentFile()` call so a republish that doesn't change
+    /// the focused file (e.g. a diff-marks refresh, a tab-title change)
+    /// doesn't kick a redundant `ensureOpened` Task. Reset to nil only
+    /// matters for correctness on re-open of the same path after a close,
+    /// which `ensureOpened`'s own per-(key,file) idempotency already makes
+    /// a no-op — so we never need to clear it.
+    private var lastWarmedLSPURL: URL?
+
+    /// Spawn / open the language server for the currently-focused file,
+    /// independent of whether the Outline sidebar section is realized.
+    ///
+    /// Fully self-gating and side-effect-free for non-LSP files:
+    ///   * only acts when the current tab is `.loaded` text,
+    ///   * dedupes against `lastWarmedLSPURL` so it's a no-op on
+    ///     republishes that don't move focus,
+    ///   * `pool.ensureOpened` itself no-ops when the file's extension has
+    ///     no registered LSP language or no discoverable workspace root,
+    ///     so opening a `.md`/`.txt` never spawns anything.
+    /// `ensureOpened` is idempotent per (key, fileURL): re-focusing an
+    /// already-open file makes no new spawn. Errors (missing binary, dead
+    /// cooldown) are swallowed — the Outline/hover UI surfaces them when
+    /// the user actually engages those features.
+    private func warmLSPForCurrentFile() {
+        guard let url = currentURL,
+              case .loaded(let file) = currentState else { return }
+        guard lastWarmedLSPURL != url else { return }
+        lastWarmedLSPURL = url
+        let pool = self.lspPool
+        let text = file.contents
+        Task { try? await pool.ensureOpened(fileURL: url, text: text) }
     }
 }
 
