@@ -637,6 +637,19 @@ public struct MarkdownRenderedView: NSViewRepresentable {
             // mermaid runtime's CSS pull).
             if let url, navigationType == .linkActivated {
                 let s = url.scheme?.lowercased() ?? ""
+                // Same-document #fragment navigation (in-page anchor / TOC) is
+                // safe and MUST be allowed BEFORE the file: block below —
+                // otherwise anchor links in the file://-loaded rendered
+                // markdown are cancelled. This regressed on 2026-05-25
+                // (8da6efbb) when `file` was added to the block list above the
+                // same-doc check at the bottom of decide(). isSameDocumentFragment
+                // requires identical scheme+host+path+query, so a file: link to
+                // a DIFFERENT document still can't slip through here; the
+                // dangerous schemes stay blocked unconditionally just below.
+                if !["javascript", "vbscript", "data"].contains(s),
+                   isSameDocumentFragment(url, currentDocumentURL: currentDocumentURL) {
+                    return .allow
+                }
                 if ["javascript", "vbscript", "data", "file"].contains(s) {
                     return .cancel
                 }
