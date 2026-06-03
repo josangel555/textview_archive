@@ -474,12 +474,14 @@ host UI suite). VM E2E sweep still pending (VM was offline at merge).
 - **No subprocess memory cap** (macOS `RLIMIT_AS` unenforced). If a true
   RSS bound is needed: `sandbox-exec` (deprecated) or private
   `posix_spawnattr_setjetsam_ext_np`. LESSONS.md documents the trap.
-- **Pre-existing host test failure (macOS 26).**
-  `MarkdownRenderedViewTests.test_decide_sameDocFragment_isAllowed`
-  fails on the host (Darwin 25.x) — Foundation URL fragment parser
-  regressed past the 15.6.1 `c0a9092` fix. Fails identically on clean
-  `main`; not a regression. Needs a Foundation-version-robust
-  same-doc-fragment compare. Passes on the macOS 15.6.1 VM.
+- **RESOLVED (ad12a05) — was a REAL regression, NOT Foundation drift.**
+  `test_decide_sameDocFragment_isAllowed` failed because 8da6efbb
+  (2026-05-25) added `file` to the `.linkActivated` block ABOVE the
+  same-doc-fragment allow in `decide()`, so every in-page #anchor/TOC link
+  in the file://-loaded rendered markdown was cancelled. A host-Foundation
+  probe showed the field compare returns true fine on macOS 26 — the
+  "Foundation drift" label was wrong; it failed on every OS. Fixed by
+  moving the same-doc allow before the file: block. 27/27 link tests pass.
 - **VM E2E sweep for this batch** still owed (VM offline at merge time) —
   CM6 gutter render, mermaid evict in a live WebView, HexView streaming
   responsiveness, sidebar deep-tree virtualization visual.
@@ -635,11 +637,14 @@ independence + types + GLOBAL zoom/wrap/theme (#184). Items still open:
   in-process WKWebView suites can rejoin the bare `swift test` sweep
   instead of `#192`-gating themselves out. Low priority (VM lane covers
   them today).
-- **#201 — macOS-26 URL-fragment test.** `MarkdownLinkPolicyTests`
-  `test_decide_sameDocFragment_isAllowed` fails on Darwin 25.x
-  (Foundation URL-fragment parser regressed past the 15.6.1 fix); green
-  on the macOS-15 VM + CI. Fix = a Foundation-version-robust field-by-
-  field same-doc-fragment compare. Pre-existing, not a regression.
+- **#201 — RESOLVED (ad12a05).** NOT a Foundation/macOS-26 issue (a
+  host-Foundation probe showed the field compare returns true). Real cause
+  = code ordering: 8da6efbb put `file` in the `.linkActivated` block above
+  the same-doc-fragment allow, cancelling ALL in-page #anchor/TOC links in
+  rendered markdown — a real ~9-day regression mislabeled as the
+  "acceptable macOS-26 gate red." Fixed: same-doc allow now precedes the
+  file: block; cross-doc file: + dangerous schemes still blocked. The
+  gate's deterministic red is gone.
 - **#202 — Sessions R1-R3 structural god-object split.** #184 achieved
   per-session independence BEHAVIORALLY via the shared-DocumentModel
   façade (detach→snapshot→hydrate + leak-guards). The structural split

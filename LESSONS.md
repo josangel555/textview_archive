@@ -1456,19 +1456,25 @@ still points at the real child and the SIGTERM watchdog still lands.
 must pass the binary as `$0` and use `exec "$0" "$@"`, or the child
 exits 127. Caught by the env-propagation test.
 
-## macOS 26 URL fragment parser regresses *further* than 15.6.1
+## A "host-only env-drift" test failure was actually a real regression (CORRECTED 2026-06-03)
 
-`LESSONS.md` already notes Foundation's `about:`-URL fragment drift on
-macOS 15.6.1. On macOS 26 (Darwin 25.x) it's worse: even the
-same-document-fragment navigation-policy compare that `c0a9092`
-"fixed for 15.6.1+" now fails on the host —
-`MarkdownRenderedViewTests.test_decide_sameDocFragment_isAllowed`
-returns `cancel` where it expects `allow`. This is a **host-only,
-pre-existing** failure (fails identically on a clean `main`), not a
-regression, but it means the host (macOS 26) and the VM (macOS 15.6.1)
-disagree on URL-policy tests. Treat URL fragment/scheme comparisons as
-Foundation-version-fragile and pin them with field-by-field compares,
-not parser round-trips. Tracked in `BACKLOG.md` for a real fix.
+For ~9 days `test_decide_sameDocFragment_isAllowed` (returns `cancel`,
+expects `allow`) was written off as a macOS-26 Foundation URL-fragment
+drift and waved through the merge gate as "the one acceptable host-only
+red." It was NOT. A host-Foundation probe (`swift` one-liner on macOS 26)
+showed the same-doc field compare (scheme+host+path+query) returns `true`
+fine. The real cause: 8da6efbb (2026-05-25) added `file` to the
+`.linkActivated` dangerous-scheme block ABOVE the same-doc-fragment allow
+in `decide()`, so EVERY in-page #anchor/TOC link in the file://-loaded
+rendered markdown was being cancelled. Fixed in ad12a05 (same-doc allow
+moved before the file: block; cross-doc file: + js/vbscript/data still
+blocked).
+
+**Lesson: a *deterministic* test failure dismissed as "environment drift"
+deserves a 5-minute probe before it's normalized into the gate.** Here the
+dismissal masked a real product bug (broken anchor navigation) for 9 days
+AND turned the test into permanent gate-noise that masked other reds.
+Verify env-drift claims with a direct probe; never inherit them.
 
 ## Multi-agent fix workflows: worktree leak + commit-discipline drift
 
