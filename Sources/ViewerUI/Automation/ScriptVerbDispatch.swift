@@ -196,17 +196,26 @@ public enum ScriptVerb {
             // WAVE 2b item 6: "<category> <path>" — open a file forced to
             // a viewer category (sqlite/code/plainText/markdown/image/
             // binary/...). Verifies opening a binary as another viewer.
+            // NOTE: the byte-grid (HEX) lens is the `binary` category, not a
+            // `hex` category — `hex` is a *view mode*, not a `FileCategory`.
             let bits = arg.split(separator: " ", maxSplits: 1).map(String.init)
             if bits.count == 2, let cat = FileCategory(rawValue: bits[0]) {
                 model.openAs(url: URL(fileURLWithPath: bits[1]), category: cat)
+            } else if bits.count == 2 {
+                Self.emitUnknownCategory(verb: "open-as", raw: bits[0])
             }
         case "set-open-as":
             // Override the CURRENT tab's viewer category. "<category>" or
-            // "auto" to clear.
+            // "auto" to clear. The byte-grid (HEX) lens is the `binary`
+            // category — `hex` is a *view mode*, not a `FileCategory`, so
+            // `set-open-as hex` is rejected (use `binary`, or
+            // `editor-set-mode hex` to switch the active tab's view mode).
             if arg == "auto" {
                 model.setCurrentCategoryOverride(nil)
             } else if let cat = FileCategory(rawValue: arg) {
                 model.setCurrentCategoryOverride(cat)
+            } else {
+                Self.emitUnknownCategory(verb: "set-open-as", raw: arg)
             }
         case "folder-stats":
             // Toggle the folder-stats slide-down under the FILES header.
@@ -229,6 +238,24 @@ public enum ScriptVerb {
             return false
         }
         return true
+    }
+
+    /// Surface an explicit error when an `open-as` / `set-open-as` verb is
+    /// handed a category arg that is not a `FileCategory` raw value — the
+    /// old behaviour silently no-op'd (e.g. `set-open-as hex`, where the
+    /// byte-grid lens is actually the `binary` category). Emitting through
+    /// `Obs` makes the bad arg visible in the Logs view / stderr instead
+    /// of vanishing, and lists the accepted values to self-document.
+    private static func emitUnknownCategory(verb: String, raw: String) {
+        let valid = FileCategory.allCases
+            .map(\.rawValue)
+            .sorted()
+            .joined(separator: ", ")
+        Obs.shared.emit(ObsEvent(
+            level: .error,
+            subsystem: "automation",
+            message: "\(verb): unknown FileCategory '\(raw)' — ignored",
+            fields: ["verb": verb, "arg": raw, "valid": valid]))
     }
 
     /// The `model` sub-dictionary embedded in every per-step diagnostic
