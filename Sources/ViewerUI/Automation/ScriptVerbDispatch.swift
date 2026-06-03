@@ -74,6 +74,28 @@ public enum ScriptVerb {
                 url: URL(fileURLWithPath: arg),
                 viewMode: ViewModeOptions.defaultMode(
                     for: URL(fileURLWithPath: arg)))
+        case "confirm-dirty-close":
+            // Pre-arm the dirty-close NSAlert with a scripted choice so a
+            // following `close-tab` (or close-others/-to-right) on a dirty
+            // tab is automatable headlessly instead of blocking the main
+            // thread on `NSAlert.runModal()` forever. Routes through the
+            // existing `dirtyClosePromptOverride` test seam. One-shot: the
+            // override clears itself the first time it fires, so it maps to
+            // a single user click and doesn't leak into a later close.
+            let choice: EditorCoordinator.DirtyClosePrompt?
+            switch arg {
+            case "save":    choice = .save
+            case "discard": choice = .discard
+            case "cancel":  choice = .cancel
+            default:        choice = nil
+            }
+            if let choice {
+                let editor = model.editor
+                editor.dirtyClosePromptOverride = { [weak editor] _ in
+                    editor?.dirtyClosePromptOverride = nil
+                    return choice
+                }
+            }
         case "close-tab":      model.closeCurrentTab()
         case "new-tab":        model.newTab()
         case "next-tab":       model.selectNextTab()

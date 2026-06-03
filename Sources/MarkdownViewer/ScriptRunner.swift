@@ -22,6 +22,8 @@ extension AppDelegate {
     ///   toggle-sidebar
     ///   zoom-in / zoom-out / zoom-reset
     ///   open PATH               open a file or folder
+    ///   confirm-dirty-close save|discard|cancel
+    ///                           pre-arm the next dirty-close prompt (one-shot)
     ///   close-tab
     ///   new-tab
     ///   next-tab / prev-tab

@@ -125,4 +125,51 @@ final class HeadlessHarnessTests: HeadlessUITestCase {
         XCTAssertTrue(ScriptVerb.apply(
             verb: "zoom-in", to: harness.model, sessions: harness.sessions))
     }
+
+    // MARK: - confirm-dirty-close arms the close prompt (SC-CHROME-01 step 6)
+
+    /// `confirm-dirty-close <choice>` must pre-arm the dirty-close prompt
+    /// so a following `close-tab` on a dirty tab is automatable instead of
+    /// blocking the main thread on `NSAlert.runModal()`. If the verb were
+    /// not wired, this in-process test would deadlock on the modal — the
+    /// very bug it guards.
+    func test_confirmDirtyClose_discard_closesDirtyTabWithoutModal() throws {
+        let url = try harness.writeFile("dirty.txt", "v1")
+        let model = harness.model
+        model.open(url: url)
+        let id = model.tabs.tabs[0].id
+        _ = model.editorBuffer(forTabID: id)
+        model.updateEditorText("edited-content-marker", forTabID: id)
+        XCTAssertTrue(model.tabs.tabs[0].isDirty, "precondition: tab is dirty")
+
+        XCTAssertTrue(ScriptVerb.apply(
+            verb: "confirm-dirty-close discard", to: model, sessions: harness.sessions),
+            "the new verb must be recognised + handled in-process")
+        XCTAssertNotNil(model.editor.dirtyClosePromptOverride,
+            "verb must install the override seam so close() doesn't hit runModal()")
+
+        ScriptVerb.apply(verb: "close-tab", to: model, sessions: harness.sessions)
+
+        XCTAssertTrue(model.tabs.isEmpty, "discard must close the dirty tab")
+        XCTAssertEqual(try? String(contentsOf: url, encoding: .utf8), "v1",
+            "discard (Don't Save) must NOT write the buffer to disk")
+        XCTAssertNil(model.editor.dirtyClosePromptOverride,
+            "one-shot: override must clear itself after the close consumes it")
+    }
+
+    /// `cancel` aborts the close and leaves the dirty tab intact.
+    func test_confirmDirtyClose_cancel_abortsClose() throws {
+        let url = try harness.writeFile("cancel.txt", "v1")
+        let model = harness.model
+        model.open(url: url)
+        let id = model.tabs.tabs[0].id
+        _ = model.editorBuffer(forTabID: id)
+        model.updateEditorText("edited", forTabID: id)
+
+        ScriptVerb.apply(verb: "confirm-dirty-close cancel", to: model, sessions: harness.sessions)
+        ScriptVerb.apply(verb: "close-tab", to: model, sessions: harness.sessions)
+
+        XCTAssertEqual(model.tabs.tabs.count, 1, "cancel must keep the tab open")
+        XCTAssertTrue(model.tabs.tabs[0].isDirty, "cancel must preserve the dirty edit")
+    }
 }
