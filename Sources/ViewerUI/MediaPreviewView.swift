@@ -97,6 +97,19 @@ struct ImagePreview: View {
                                 // stays in sync and subsequent
                                 // updateNSView calls don't snap back.
                                 magnification = newMag
+                            },
+                            onFit: { fitMag in
+                                // Mirror the computed fit-to-window
+                                // magnification back into SwiftUI state.
+                                // `fitToWindow()` sets magnification = 0
+                                // (the "compute fit" sentinel); without
+                                // writing the real fit value back, the
+                                // state stays at the sentinel and the
+                                // next updateNSView pass would snap the
+                                // scroll view back, leaving the image at
+                                // 100% / overflowing. This also keeps the
+                                // % HUD (binds to `magnification`) honest.
+                                magnification = fitMag
                             })
             VStack {
                 Spacer()
@@ -272,6 +285,11 @@ private struct ImageScrollHost: NSViewRepresentable {
     /// new magnification into `@State`. Without this, the next
     /// `updateNSView` would snap back to the stale SwiftUI value.
     let onUserZoom: (CGFloat) -> Void
+    /// Called after a fit-to-window pass computes and applies the fit
+    /// magnification, so the SwiftUI side can replace the `0` "compute
+    /// fit" sentinel with the real value. Without this the state stays
+    /// at the sentinel and the next pass snaps the scroll view back.
+    let onFit: (CGFloat) -> Void
 
     /// Coordinator tracks the loaded URL so we know whether
     /// `updateNSView` actually needs to swap the image. Was using
@@ -365,7 +383,13 @@ private struct ImageScrollHost: NSViewRepresentable {
         loadIfNeeded(into: iv, url: url, coord: context.coordinator)
         // SwiftUI side wants magnification = 0 to mean "fit to window".
         if magnification == 0 {
-            applyFit(scroll: scroll, imageView: iv)
+            if let fit = applyFit(scroll: scroll, imageView: iv) {
+                // Mirror the computed fit back into SwiftUI state so the
+                // 0 sentinel is replaced and the next pass doesn't snap
+                // the scroll view back. Defer to avoid mutating state
+                // during the view-update pass.
+                DispatchQueue.main.async { onFit(fit) }
+            }
         } else if abs(scroll.magnification - magnification) > 0.001 {
             // Center the magnification at the viewport midpoint so
             // zoom-in feels anchored.
@@ -389,11 +413,19 @@ private struct ImageScrollHost: NSViewRepresentable {
         }
     }
 
-    private func applyFit(scroll: NSScrollView, imageView: CenteredImageView) {
-        guard let img = imageView.image else { return }
+    /// Computes and applies the fit-to-window magnification, returning
+    /// the value applied so the caller can mirror it into SwiftUI state.
+    /// Returns `nil` when there's nothing to fit (no image / degenerate
+    /// size) so the caller leaves the `0` sentinel untouched and retries
+    /// on a later pass once the image/bounds are available.
+    @discardableResult
+    private func applyFit(scroll: NSScrollView,
+                          imageView: CenteredImageView) -> CGFloat? {
+        guard let img = imageView.image else { return nil }
         let viewportSize = scroll.contentView.bounds.size
         let imgSize = img.size
-        guard imgSize.width > 0 && imgSize.height > 0 else { return }
+        guard imgSize.width > 0 && imgSize.height > 0,
+              viewportSize.width > 0 && viewportSize.height > 0 else { return nil }
         // Scale-to-fit (never upscale a small image past 1:1), via the
         // pure helper so view + tests agree on the math.
         let fit = ImageZoomState.fitScale(image: imgSize,
@@ -412,6 +444,7 @@ private struct ImageScrollHost: NSViewRepresentable {
             magnification: fit)
         scroll.contentView.scroll(to: centered)
         scroll.reflectScrolledClipView(scroll.contentView)
+        return fit
     }
 }
 
