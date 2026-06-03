@@ -3052,6 +3052,16 @@ public final class DocumentModel: ObservableObject {
     }
 
     public func toggleViewMode() {
+        // ⇧⌘R / toggle-view is scoped to markdown & mermaid (the only
+        // types with a Rendered↔Source pairing). On every other type the
+        // live menu greys the item out via validateMenuItem, but the model
+        // action is reachable programmatically (--script toggle-view, MCP
+        // set_view_mode, walkthrough); make it a true no-op there so a
+        // single invoke can't leave the picker showing "Rendered" over a
+        // Source pane (SC-MENU-01). `setCurrentViewMode` also rejects an
+        // unavailable `.rendered`; this guard additionally avoids a no-op
+        // republish.
+        guard supportsViewModeToggle else { return }
         let new: ViewMode = currentViewMode == .rendered ? .source : .rendered
         setCurrentViewMode(new)
     }
@@ -3059,6 +3069,34 @@ public final class DocumentModel: ObservableObject {
     public func setCurrentViewMode(_ mode: ViewMode) {
         guard let i = tabs.selectedIndex, tabs.tabs.indices.contains(i) else { return }
         var t = tabs.tabs[i]
+        // Reject `.rendered` on a TEXT tab that doesn't offer it.
+        // `.rendered` is markdown/mermaid/html-only (see ViewModeOptions);
+        // flipping it onto a plainText / source / JSON tab leaves the
+        // picker selecting "Rendered" while the state-driven content pane
+        // keeps drawing the Source NSTextView — a picker↔pane desync
+        // (SC-MENU-01: toggle-view / ⇧⌘R, MCP set_view_mode, and any
+        // programmatic caller route through here unguarded; the live menu
+        // greys ⇧⌘R via validateMenuItem, but the model action itself was
+        // not guarded). Scoped to `.rendered` on text categories rather
+        // than a blanket availableModes gate on purpose: the
+        // `.source`/`.rendered` arm below intentionally maps `.rendered`
+        // onto MEDIA tabs (image/audio/video/pdf/sqlite — picker shows
+        // only [.preview, .hex]) to RESTORE `.preview` when leaving HEX,
+        // a documented round-trip a blanket gate would break.
+        if mode == .rendered, let url = t.url {
+            let cat = t.categoryOverride ?? FileTypeDetector.category(for: url)
+            switch cat {
+            case .markdown, .mermaid, .plainText, .code, .html:
+                // Text-representation category: trust availableModes.
+                if !ViewModeOptions.availableModes(
+                    for: url, forcedCategory: t.categoryOverride
+                ).contains(.rendered) { return }
+            case .image, .audio, .video, .pdf, .sqlite, .binary, .unknown:
+                // Media / binary: `.rendered` is the leave-HEX escape
+                // hatch handled below — leave it to the preview-restore arm.
+                break
+            }
+        }
         // Side effects per mode:
         //   - .hex: state-swap is async (binary load can be slow on big
         //     files; main-thread blocking → beachball). View mode is
