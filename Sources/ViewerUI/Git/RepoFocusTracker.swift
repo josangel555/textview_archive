@@ -233,27 +233,41 @@ public final class RepoFocusTracker {
     }
 
     private func updateFocusedRoot() {
-        // Priority: repo enclosing the selected tab → sidebar folder's
-        // repo → single tracked root → most-recently-touched.
+        let resolved = resolveFocusedRoot()
+        guard resolved != focusedRoot else { return }
+        focusedRoot = resolved
+        // `focusedRoot` is the Git panel's gate-#2 input (read by
+        // `GitPanelSection.syncRepo` → `followFocus`), but it is NOT an
+        // observed surface — the section only re-syncs on a
+        // `channel.version` tick. A recompute can resolve focus (nil →
+        // root) on the churn-guard-#1 path, where no mirror handoff
+        // bumps the version; the panel would then stay empty with no
+        // later tick to re-trigger (the occluded-launch repro). Bump the
+        // version so the already-mounted section re-runs `syncRepo`.
+        channel.notifyFocusChanged()
+    }
+
+    /// Pure resolution of which tracked root the Git panel should follow.
+    /// Priority: repo enclosing the selected tab → sidebar folder's repo
+    /// → single tracked root → most-recently-touched. nil iff nothing is
+    /// tracked.
+    private func resolveFocusedRoot() -> URL? {
         let tracked = channel.trackedRoots
         if let selected = tabCoordinator?.selected?.url,
            let root = TrackedReposReducer.resolveRoot(for: selected, isDirectory: false),
            tracked.contains(root) {
-            focusedRoot = root
-            return
+            return root
         }
         if let sidebarFolder = sidebar?.selectedURL ?? sidebar?.rootURL,
            let root = TrackedReposReducer.resolveRoot(for: sidebarFolder, isDirectory: true),
            tracked.contains(root) {
-            focusedRoot = root
-            return
+            return root
         }
         if tracked.count == 1 {
-            focusedRoot = tracked.first
-            return
+            return tracked.first
         }
         // Most-recently-touched = last in LRU order.
-        focusedRoot = tracked.last
+        return tracked.last
     }
 
     // MARK: - FSEvents handling

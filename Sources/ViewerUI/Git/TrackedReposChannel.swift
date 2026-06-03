@@ -150,6 +150,18 @@ public final class TrackedReposChannel: ObservableObject {
         }
     }
 
+    /// Tick the version WITHOUT changing the snapshot mirror — used when
+    /// the registry's *focused root* changes but the tracked-root set /
+    /// statuses did not (e.g. the churn-guard-#1 recompute path resolves
+    /// focus nil → root with no mirror handoff). `GitPanelSection` reads
+    /// `focusedRoot` (a non-observed property) only on a version tick, so
+    /// without this the panel would stay empty with no later tick to
+    /// re-trigger. Cheap and equality-free: focus only flips on a real
+    /// change (the caller guards `resolved != focusedRoot`).
+    func notifyFocusChanged() {
+        version &+= 1
+    }
+
     /// Invalidate the cheap `.git`-existence cache for a directory (an
     /// FSEvents `.git` create/delete flipped its repo-root status).
     func invalidateRootIconCache(for dir: URL) {

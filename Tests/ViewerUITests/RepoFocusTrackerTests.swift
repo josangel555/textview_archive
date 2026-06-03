@@ -150,6 +150,55 @@ final class RepoFocusTrackerTests: XCTestCase {
         XCTAssertEqual(model.repoFocus.focusedRoot, TrackedReposReducer.normalize(repoB))
     }
 
+    // MARK: - focus change on the churn-guard path ticks the channel version
+
+    /// Regression for the GP-01 occluded-launch bug: `GitPanelSection`
+    /// reads `focusedRoot` (a NON-observed property) only on a
+    /// `channel.version` tick. When `recompute()` resolves a NEW focus on
+    /// the churn-guard-#1 path — identical demand, so `handoffMirror()`
+    /// (the usual version-bump source) is SKIPPED — the focus flip would
+    /// otherwise land silently and the mounted section would never re-run
+    /// `syncRepo`. `updateFocusedRoot()` must call
+    /// `channel.notifyFocusChanged()` to wake it.
+    ///
+    /// Scenario: two repos both tracked (so the tracked set is stable and
+    /// a re-`recompute()` hits the churn guard). Switch the selected tab
+    /// from B to A, then `recompute()` — demand is unchanged, so only the
+    /// focus flips. The version MUST tick on that recompute.
+    func test_focusFlipOnChurnGuardPath_ticksChannelVersion() async throws {
+        let repoA = try makeRepo("A")
+        let repoB = try makeRepo("B")
+        let fileA = repoA.appendingPathComponent("a.txt")
+        let fileB = repoB.appendingPathComponent("b.txt")
+        try "1".write(to: fileA, atomically: true, encoding: .utf8)
+        try "2".write(to: fileB, atomically: true, encoding: .utf8)
+
+        let model = makeModel()
+        await openAndSettle(model, fileA)
+        await openAndSettle(model, fileB)
+        // fileB is the selected tab → focus is B.
+        XCTAssertEqual(model.repoFocus.focusedRoot, TrackedReposReducer.normalize(repoB))
+
+        // Switch the selected tab back to A WITHOUT changing the tracked
+        // set or any auto-recompute demand source. The pending desired set
+        // is now identical to the previous one → the next recompute takes
+        // the churn-guard-#1 branch (no mirror handoff, no version bump
+        // from `applyMirror`). Focus must still flip B → A and tick the
+        // version via `notifyFocusChanged`.
+        let aIndex = model.tabs.tabs.firstIndex { $0.url == fileA }!
+        model.selectTab(at: aIndex)
+        let vBefore = model.trackedRepos.version
+        model.repoFocus.recompute()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        await Task.yield()
+
+        XCTAssertEqual(model.repoFocus.focusedRoot, TrackedReposReducer.normalize(repoA),
+            "focus follows the now-selected tab into repo A")
+        XCTAssertGreaterThan(model.trackedRepos.version, vBefore,
+            "a nil-less focus flip on the churn-guard path must still tick "
+            + "channel.version to wake the mounted GitPanelSection")
+    }
+
     // MARK: - pin keeps a repo tracked with no open tab
 
     func test_pin_keepsRepoTrackedWithNoOpenTab() async throws {
