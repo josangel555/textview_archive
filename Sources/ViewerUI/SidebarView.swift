@@ -1269,6 +1269,17 @@ struct LSPOutlineWrapper: View {
         }
         .onAppear { refresh() }
         .onChange(of: model.currentURL) { _, _ in refresh() }
+        // F-LSP-1: also re-resolve `isSupported`/symbols when the document
+        // STATE transitions (e.g. `.loading → .loaded`), not just when the
+        // URL changes. A `.swift` file opens with `currentURL` set
+        // immediately but `currentState == .loading` while the async read is
+        // in flight; the `.onAppear`/`currentURL` `refresh()` then runs
+        // against `.loading`, `setFile(nil,…)` clears `isSupported`, and the
+        // OUTLINE section renders nothing. The load completing flips
+        // `currentState` to `.loaded` (and republishes — see commit
+        // `61c1aef`) but leaves `currentURL` unchanged, so without this the
+        // section stayed permanently absent for a supported language.
+        .onChange(of: model.currentState) { _, _ in refresh() }
     }
 
     private var currentFileURL: URL? { model.currentURL }
