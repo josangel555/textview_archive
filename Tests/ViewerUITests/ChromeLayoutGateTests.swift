@@ -91,7 +91,7 @@ final class ChromeLayoutGateTests: HeadlessUITestCase {
                 Color.clear
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .layoutPriority(0)
-                StatusBar(model: model, sourceView: model.sourceView)
+                StatusBar(model: model, tabCoordinator: model.tabCoordinator, sourceView: model.sourceView)
                     .fixedSize(horizontal: false, vertical: true)
                     .layoutPriority(1)
             }

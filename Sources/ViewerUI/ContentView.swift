@@ -146,7 +146,7 @@ public struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .layoutPriority(0)
                 if model.currentURL != nil {
-                    StatusBar(model: model, sourceView: model.sourceView)
+                    StatusBar(model: model, tabCoordinator: model.tabCoordinator, sourceView: model.sourceView)
                         .fixedSize(horizontal: false, vertical: true)
                         .layoutPriority(1)
                 }

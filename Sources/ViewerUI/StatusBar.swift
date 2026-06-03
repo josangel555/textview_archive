@@ -21,6 +21,16 @@ import ViewerKit
 ///   • Spaces vs tabs — Phase 8.5 polish
 struct StatusBar: View {
     @ObservedObject var model: DocumentModel
+    /// Tabs + per-tab caches (incl. live editor buffers). Observed
+    /// DIRECTLY — same severed path as the TabBar's dirty-dot — because
+    /// an editor save rewrites `tab.state` via `tabCoordinator.replace`,
+    /// which fires `tabCoordinator.objectWillChange`, NOT
+    /// `DocumentModel`'s; and every editor keystroke mutates
+    /// `editorBuffers`. Without this observation the editor-mode metrics
+    /// never re-body — they'd stay pinned to the on-disk-at-open values
+    /// while the buffer is dirty AND after save. See `currentMetrics` for
+    /// the editor-buffer-vs-loaded-TextFile choice.
+    @ObservedObject var tabCoordinator: TabCoordinator
     /// Caret/selection channel. Observed DIRECTLY (not via `model`) so the
     /// "Ln X, Col Y" readout updates on caret move WITHOUT republishing
     /// DocumentModel — a caret tick re-bodies only this bar + the source
@@ -221,6 +231,30 @@ struct StatusBar: View {
         guard let tab = model.tabs.selected else { return nil }
         switch tab.state {
         case .loaded(let f):
+            // In editor mode the on-disk-at-open `TextFile` is stale the
+            // moment the user types — the live edits live in the editor
+            // buffer, and the post-save bytes land there too (`markSaved`
+            // sets `originalText = text`). Read metrics off the buffer so
+            // Lines/Chars/Size track the buffer live AND reflect the saved
+            // content after a save, instead of freezing at the load-time
+            // values. `byteCount` is recomputed from the buffer text in
+            // the buffer's own encoding so it matches what a save writes.
+            // Falls back to the loaded TextFile in non-editor modes (where
+            // the on-disk copy IS the source of truth) and whenever no
+            // buffer has been materialized yet.
+            if tab.viewMode == .editor,
+               let buf = tabCoordinator.editorBuffer(forTabID: tab.id) {
+                let bytes = buf.text.data(using: buf.encoding)?.count
+                    ?? f.byteCount
+                let bufferFile = TextFile(
+                    url: buf.url,
+                    contents: buf.text,
+                    encoding: buf.encoding,
+                    byteCount: bytes,
+                    modifiedTime: f.modifiedTime
+                )
+                return Self.metrics(for: bufferFile)
+            }
             return Self.metrics(for: f)
         case .binary(let b):
             return Metrics(
