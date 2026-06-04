@@ -101,6 +101,20 @@ build it, else hold.
 
 ## DECISIONS NEEDED (owner — non-blocking; I proceed on best-judgment defaults meanwhile)
 - **WebView/memory lever** — parked on the board as TSK-113 (default: trim compositing layers + measure).
+- **Rust slice #6 (FuzzyMatcher) — grapheme dep?** Its `matchedIndices` index into
+  Swift's `[Character]` (grapheme clusters); Rust `str` only iterates Unicode
+  scalars in std. For ASCII / single-scalar targets (≈ all palette/file-nav
+  inputs) a scalar port is byte-identical, but combining-mark / ZWJ-emoji targets
+  would diverge. **Options:** (a) approve `unicode-segmentation` (~1 small, widely
+  used crate) for a fully-faithful port; (b) ship a scalar-domain port with a
+  documented "ASCII/BMP-single-scalar only" limitation + a gate-OFF default; (c)
+  leave FuzzyMatcher in Swift (it's cheap; the migration value is "one core" reuse,
+  not speed). **My default if unanswered: (c) leave in Swift** — lowest risk, no
+  dep, and fuzzy scoring is not a hot path. Deferred, not blocking.
+- **Rust slices #9/#10/#11 deps** — `regex` (FindEngine), `serde_json` (Claude log,
+  or hand-decode via the existing rmp path), `comrak`+`tree-sitter` (markdown→HTML,
+  size-cap-gated). Each first link is a real build/size event; see the migration
+  plan's "Owner approvals required".
 - **Perf Fix#1 (per-tab content-view retention)** — this is the dominant ~1s fix BUT it's a
   load-bearing refactor: `loadedView` renders only the ACTIVE tab via `model.currentViewMode`/
   `currentState`; retaining N tabs needs per-tab view-state plumbing (#202 territory). I will build
@@ -162,8 +176,24 @@ build it, else hold.
 - **Remaining slice #3/#4 sub-items (lower value, deferred):** `DiffHunkParser`
   (diff→gutter-marks flattener), `HexCaretMap` + `HexLayout` caret/click mapping,
   `HexSearchEngine.offsets(ofByte:)` (single-byte click-highlight).
-- **NEXT Type-1 slices (no deps):** #6 FuzzyMatcher, #7 IndentDetector,
-  #8 FileIconClassifier — all on the proven template.
+- **Slice #7 (IndentDetector) COMPLETE** (`17de8e3`): `indent::detect`; FFI
+  `mdvcore_indent_detect` (text by pointer, result raw UTF-8); `RustIndentAdapter`
+  behind `.indent`; 13-case A/B vs `IndentDetector.detect`.
+- **No-dep Phase-A wave COMPLETE** for the clean slices (diff, hex render, hex
+  search, indent). The two remaining no-dep slices are BLOCKED on real reasons,
+  NOT skipped lightly (see DECISIONS NEEDED):
+  - **#6 FuzzyMatcher** — its `matchedIndices` are **grapheme** (Swift
+    `Character`) indices; Rust `str` iterates **scalars**. Byte-exact parity on
+    combining-mark / ZWJ-emoji targets needs a grapheme-segmentation crate
+    (`unicode-segmentation`, owner-gated). A scalar-domain port would silently
+    diverge there — incompatible with the honest byte-for-byte A/B discipline
+    every shipped slice has held. Deferred to an owner dep decision.
+  - **#8 FileIconClassifier** — output is ViewerKit's `FileIconKind` (enum with
+    associated values); RustCore can't import ViewerKit, so a port needs a
+    parallel Rust enum + Swift remap, **doubling** a 290-line drift-prone mapping
+    table, for "low value." Not worth the maintenance surface vs the payoff.
+- **NEXT (owner-gated deps):** #9 FindEngine (`regex`), #10 Claude log
+  (`serde_json`), #11 markdown (`comrak`+`tree-sitter`) — size-cap-gated.
 - **OWNER-GATED (deps):** `regex` (FindEngine #9), `comrak`+`tree-sitter`
   (markdown #11), `serde_json` (Claude log #10) — size-cap-gated, see plan.
 

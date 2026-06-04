@@ -195,9 +195,20 @@ chain event, size-checked against the **16 MB exec / 37 MB bundle caps**
     search` + `hex_search_frame`; FFI `mdvcore_hex_search` returns a
     `{offsets:[u32]}` frame; `RustHexSearchAdapter` behind `.hexSearch`; 13-case
     A/B vs `HexSearchEngine.search`.
-  - **NEXT: slice #6 (FuzzyMatcher), #7 (IndentDetector), #8 (FileIconClassifier)**
-    on the same Type-1 template. Deferred lower-value sub-items: `DiffHunkParser`,
-    `HexCaretMap`/`HexLayout` caret-mapping, `HexSearchEngine.offsets(ofByte:)`.
+  - **Slice #7 (IndentDetector) COMPLETE** (`17de8e3`): `indent::detect`; FFI
+    `mdvcore_indent_detect` (text by pointer, result raw UTF-8); `RustIndentAdapter`
+    behind `.indent`; 13-case A/B vs `IndentDetector.detect`.
+  - **No-dep Phase-A clean wave COMPLETE** (CSV, CMEdit, diff, hex render, hex
+    search, indent). Two no-dep slices are BLOCKED on real reasons (see the plan's
+    DECISIONS NEEDED + `docs/AUTONOMOUS_PROGRESS.md`): **#6 FuzzyMatcher** needs a
+    grapheme-segmentation crate for byte-exact `matchedIndices` parity (Swift
+    grapheme vs Rust scalar index domains) — default is leave-in-Swift; **#8
+    FileIconClassifier** is low value with a 290-line drift-prone table + a
+    ViewerKit `FileIconKind` type RustCore can't import.
+  - **NEXT (owner dep approvals): #9 FindEngine (`regex`), #10 Claude log
+    (`serde_json`), #11 markdown (`comrak`+`tree-sitter`).** Deferred lower-value
+    sub-items: `DiffHunkParser`, `HexCaretMap`/`HexLayout` caret-mapping,
+    `HexSearchEngine.offsets(ofByte:)`.
 - **Owner-gated:** approve (or decline) `regex` / `comrak`+`tree-sitter` /
   `serde_json` per the size budget → unlocks slices 9–11.
 - **Supervised/eyes-on:** the `TabsReducer` extraction, then the DocumentModel→
