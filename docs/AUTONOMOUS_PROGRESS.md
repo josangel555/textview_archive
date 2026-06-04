@@ -179,9 +179,19 @@ build it, else hold.
 - **Slice #7 (IndentDetector) COMPLETE** (`17de8e3`): `indent::detect`; FFI
   `mdvcore_indent_detect` (text by pointer, result raw UTF-8); `RustIndentAdapter`
   behind `.indent`; 13-case A/B vs `IndentDetector.detect`.
-- **No-dep Phase-A wave COMPLETE** for the clean slices (diff, hex render, hex
-  search, indent). The two remaining no-dep slices are BLOCKED on real reasons,
-  NOT skipped lightly (see DECISIONS NEEDED):
+- **DiffHunkParser (slice #3 gutter half) COMPLETE** (`dad890d`): `diff::DiffMark`
+  + `hunk_marks` + `hunk_marks_wire`; FFI `mdvcore_diff_hunk_marks`;
+  `RustDiffAdapter.hunkMarks` reuses the `.diff` gate; 9-case A/B vs
+  `DiffHunkParser.parse`. **Slice #3 (diff) is now fully ported.**
+- **No-dep Phase-A wave COMPLETE** for the clean slices (diff incl. gutter marks,
+  hex render, hex search, indent). The remaining no-dep candidates are either
+  BLOCKED (see DECISIONS NEEDED) or **deliberately not worth an FFI round-trip**:
+  - `HexCaretMap` / `HexLayout` caret↔offset mapping and
+    `HexSearchEngine.offsets(ofByte:)` are **tiny pure arithmetic** (`offset /
+    width`, single-byte scan). The FFI marshalling cost exceeds any benefit and
+    a TUI/web front-end would trivially reimplement them — porting these would be
+    manufacturing marginal work (which this doc explicitly warns against). Left
+    in Swift by design, not by omission.
   - **#6 FuzzyMatcher** — its `matchedIndices` are **grapheme** (Swift
     `Character`) indices; Rust `str` iterates **scalars**. Byte-exact parity on
     combining-mark / ZWJ-emoji targets needs a grapheme-segmentation crate
