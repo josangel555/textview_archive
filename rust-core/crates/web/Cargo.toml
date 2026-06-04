@@ -1,0 +1,21 @@
+[package]
+name = "mdvcore-web"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish = false
+license.workspace = true
+
+# A web front-end over `mdvcore-core` — the third of the "one core, three
+# front-ends" (SwiftUI app via FFI; ratatui TUI; this web tier). A hand-rolled,
+# std-only HTTP server (zero deps — the project's minimal-deps posture) that
+# server-renders HTML and uses the core for hex / CSV / indent. Localhost-only.
+[[bin]]
+name = "mdv-web"
+path = "src/main.rs"
+
+[dependencies]
+mdvcore-core = { path = "../core" }
+
+# NOTE: deliberately NOT `lints.workspace = true` — the workspace no-panic /
+# no-indexing deny-set is for the sans-IO core, not an IO-bound server binary.
