@@ -5,6 +5,7 @@
 //! punch a hole in `forbid` within one crate — that's the point of the split).
 //!
 //! Modules:
+//!   - [`cm_edit`] — CodeMirror incremental-edit reducer (UTF-16, sans-IO).
 //!   - [`csv`]     — hand-rolled CSV parser (no `csv` crate).
 //!   - [`filter`]  — pure row-filtering.
 //!   - [`session`] — the stateful, level-triggered [`session::CsvSession`].
@@ -20,6 +21,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod cm_edit;
 pub mod csv;
 pub mod filter;
 pub mod session;
