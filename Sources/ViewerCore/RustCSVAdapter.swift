@@ -37,17 +37,15 @@ public enum RustCSVAdapter {
     /// Exposed for the A/B harness and any diagnostics that want to know
     /// whether the Rust path actually ran.
     public static func parseDetailed(_ text: String) -> Outcome {
-        guard RustCSVGate.isEnabled() else {
-            return Outcome(result: CSVParser.parse(text), usedRust: false)
-        }
-        do {
-            let table = try rustParse(text)
-            return Outcome(result: table, usedRust: true)
-        } catch {
-            // Bridge fault → fall back to the proven Swift path. A CSV view
-            // should never go blank because the experimental engine hiccuped.
-            return Outcome(result: CSVParser.parse(text), usedRust: false)
-        }
+        // Delegates to the generalized try-Rust / fall-back-to-Swift seam.
+        // Same behaviour as before: gate off → Swift; Rust ok → Rust; Rust
+        // throws → Swift. A bridge fault never blanks the CSV view.
+        let outcome = RustCoreFallback.run(
+            .csv,
+            rust: { try rustParse(text) },
+            swift: { CSVParser.parse(text) }
+        )
+        return Outcome(result: outcome.value, usedRust: outcome.usedRust)
     }
 
     /// Drive the Rust core to parse `text` and map its `Table` onto a

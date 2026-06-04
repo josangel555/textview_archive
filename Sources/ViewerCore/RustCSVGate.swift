@@ -16,28 +16,21 @@ import Foundation
 /// pure CSV-routing code can gate without importing the UI layer.
 public enum RustCSVGate {
 
-    /// Persisted UserDefaults key for the Settings toggle.
-    public static let defaultsKey = "MarkdownViewer.experimental.rustCSV"
+    /// Persisted UserDefaults key for the Settings toggle. Sourced from the
+    /// `.csv` capability so the (legacy) key has a single source of truth.
+    public static let defaultsKey = RustCoreCapability.csv.defaultsKey
 
     /// Per-run env override (A/B / CI). `MDV_RUST_CSV=1` forces ON.
-    public static let envVar = "MDV_RUST_CSV"
+    public static let envVar = RustCoreCapability.csv.envVar
 
-    /// Is CSV parsing routed through the Rust core for this run?
-    ///
-    /// The env var is checked first as a hard override so an A/B run can force
-    /// the Rust path regardless of the persisted pref. Absent the env var, the
-    /// persisted UserDefaults toggle decides; absent both, the answer is `false`
-    /// (the safe Swift default).
+    /// Is CSV parsing routed through the Rust core for this run? Thin shim over
+    /// the generalized `RustCoreGates` (identical precedence: env override →
+    /// persisted toggle → false). Kept as the named entry point the existing
+    /// CSV call sites / Settings view use.
     public static func isEnabled(
         defaults: UserDefaults = .standard,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> Bool {
-        if let raw = environment[envVar] {
-            // Explicit env override: "1"/"true" → ON, anything else (incl. "0")
-            // → OFF. An env var set to "0" deliberately forces the Swift path
-            // even if the persisted toggle is on (useful to pin the A-side).
-            return raw == "1" || raw.lowercased() == "true"
-        }
-        return defaults.bool(forKey: defaultsKey)
+        RustCoreGates.isEnabled(.csv, defaults: defaults, environment: environment)
     }
 }
