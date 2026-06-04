@@ -24,6 +24,13 @@ public struct ContentView: View {
     /// second observation the predicate would go stale (the latent
     /// derived-state trap; pinned by `PanelLayoutResolutionTests`).
     @ObservedObject var panelLayout: PanelLayoutStore
+    /// Bottom terminal pane (#226). Observed DIRECTLY (narrow pattern,
+    /// same as `panelLayout`) so the center column re-evaluates when the
+    /// pane opens/closes or is drag-resized — without republishing the
+    /// whole content tree. The live per-frame terminal output rides a
+    /// SEPARATE `ObservableObject` (`terminalPane.terminal`) observed only
+    /// inside the terminal view.
+    @ObservedObject var terminalPane: TerminalPaneStore
     @StateObject var walkthrough: WalkthroughPlayerController
     /// App-level sessions coordinator. Optional so SwiftUI previews
     /// and host-side unit tests that construct a bare `ContentView`
@@ -39,6 +46,7 @@ public struct ContentView: View {
         self.sidebar = model.sidebar
         self.find = model.find
         self.panelLayout = model.panelLayout
+        self.terminalPane = model.terminalPane
         self.sessionsApp = sessionsApp
         self.stylesheet = MarkdownStylesheet.load()
         // Persist the controller across body re-evals. The controller
@@ -121,13 +129,31 @@ public struct ContentView: View {
                             edge: .left,
                             panelLayout: panelLayout,
                             sidebar: sidebar,
-                            model: model
+                            model: model,
+                            terminalPane: terminalPane
                         )
                         Divider()
                     }
-                    // Center column: body row over the bottom rail.
+                    // Center column: body row over the optional terminal
+                    // pane over the bottom rail.
                     VStack(spacing: 0) {
                         bodyRow
+                        // BOTTOM terminal pane (#226). When open, a
+                        // drag-resizable, fixed-height shell pane sits below
+                        // the content. The body row above keeps
+                        // maxHeight:.infinity so IT absorbs the squeeze; the
+                        // terminal claims a pinned height (not the flex axis)
+                        // so the WKWebView/NSScrollView pane can't collapse
+                        // (COMPOSITOR RULE, LESSONS).
+                        if terminalPane.isOpen, let terminal = terminalPane.terminal {
+                            TerminalResizeHandle(store: terminalPane)
+                            TerminalPaneView(
+                                model: terminal,
+                                fontSize: model.uiSize(12),
+                                onClose: { terminalPane.setOpen(false) }
+                            )
+                            .frame(height: terminalPane.height)
+                        }
                         Divider()
                         // BOTTOM rail: independent of the master switch;
                         // empty strip today (frame for future bottom-
@@ -136,7 +162,8 @@ public struct ContentView: View {
                             edge: .bottom,
                             panelLayout: panelLayout,
                             sidebar: sidebar,
-                            model: model
+                            model: model,
+                            terminalPane: terminalPane
                         )
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -147,7 +174,8 @@ public struct ContentView: View {
                         edge: .right,
                         panelLayout: panelLayout,
                         sidebar: sidebar,
-                        model: model
+                        model: model,
+                        terminalPane: terminalPane
                     )
                 }
                 // The center band is the one that yields under shrink:

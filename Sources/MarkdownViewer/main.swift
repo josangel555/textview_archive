@@ -442,6 +442,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // blocks until it's on disk. Mirrors the SessionStore flush above.
         JSONFileStore.flushSync()
 
+        // #226: hang up + reap the terminal shell so it doesn't get
+        // reparented to launchd on quit. No-op if a terminal was never
+        // opened (the shell spawns lazily on first open).
+        model.terminalPane.shutdown()
+
         // RC-5: shut down every live LSP server before the process exits.
         // Without this, `terminate()` tore the host down while child LSP
         // servers (sourcekit-lsp, etc.) were still running — they'd be
@@ -519,6 +524,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     @objc func toggleSidebar(_ sender: Any?) {
         model.sidebar.toggleVisibility()
+    }
+
+    @objc func toggleTerminal(_ sender: Any?) {
+        model.terminalPane.toggle()
     }
 
     @objc func showPalette(_ sender: Any?) {
@@ -976,6 +985,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         sidebarItem.target = self
         applyShortcut("view.toggleSidebar", to: sidebarItem)
         viewMenu.addItem(sidebarItem)
+
+        // #226 (UX-D): the bottom terminal pane. Also reachable from the
+        // left-shoulder bottom-aligned toggle button; the menu item gives
+        // a keyboard path that works even when the sidebar (and thus the
+        // left rail) is collapsed. ⌃` mirrors the common editor binding.
+        let terminalItem = NSMenuItem(
+            title: "Toggle Terminal",
+            action: #selector(toggleTerminal(_:)),
+            keyEquivalent: "`"
+        )
+        terminalItem.keyEquivalentModifierMask = [.control]
+        terminalItem.target = self
+        viewMenu.addItem(terminalItem)
 
         let wrapItem = NSMenuItem(
             title: "Wrap Long Lines",

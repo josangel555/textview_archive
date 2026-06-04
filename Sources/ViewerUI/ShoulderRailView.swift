@@ -28,6 +28,10 @@ struct ShoulderRailView: View {
     @ObservedObject var sidebar: SidebarModel
     /// `uiSize` (zoom) + `currentURL` (LSP-language predicate).
     @ObservedObject var model: DocumentModel
+    /// Terminal pane open/closed state (#226). Observed directly so the
+    /// left-rail bottom-aligned terminal toggle reflects + drives it
+    /// without republishing the content tree.
+    @ObservedObject var terminalPane: TerminalPaneStore
 
     /// Cross-axis thickness of the rail (width for left/right, height
     /// for bottom). Honors zoom; lands in the 28–32pt activity-bar band.
@@ -63,6 +67,19 @@ struct ShoulderRailView: View {
                         button(for: kind, present: pres[kind] ?? false)
                     }
                     Spacer(minLength: 0)
+                    // BOTTOM-ALIGNED terminal toggle (#226 / UX-D). Lives
+                    // on the LEFT shoulder, pushed to the bottom by the
+                    // Spacer above — a dedicated control separate from the
+                    // panel-accordion buttons (it toggles the bottom shell
+                    // pane, not a sidebar panel). Only the left rail carries
+                    // it; the right rail leaves the slot empty.
+                    if edge == .left {
+                        TerminalToggleButton(
+                            isOn: terminalPane.isOpen,
+                            uiSize: model.uiSize,
+                            action: { terminalPane.toggle() }
+                        )
+                    }
                 }
                 .padding(.vertical, 6)
                 .frame(width: thickness)
@@ -183,5 +200,40 @@ struct PanelRailButton: View {
         .accessibilityLabel(kind.displayName)
         .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
         .accessibilityIdentifier("mdv.rail.\(edge.rawValue).\(kind.rawValue)")
+    }
+}
+
+/// The bottom-aligned terminal toggle on the left shoulder (#226). Same
+/// visual language as `PanelRailButton` (SF Symbol, accent fill when on,
+/// hover affordance) but it drives `TerminalPaneStore.toggle()` rather
+/// than a sidebar panel's visibility.
+struct TerminalToggleButton: View {
+    let isOn: Bool
+    let uiSize: (CGFloat) -> CGFloat
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "apple.terminal")
+                .font(.system(size: uiSize(13), weight: .medium))
+                .foregroundStyle(isOn ? Color.accentColor : Palette.labelColor)
+                .frame(width: uiSize(26), height: uiSize(26))
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(isOn
+                              ? Color.accentColor.opacity(0.18)
+                              : (hovering
+                                 ? Palette.labelColor.opacity(0.10)
+                                 : Color.clear))
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("Terminal")
+        .accessibilityLabel("Terminal")
+        .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
+        .accessibilityIdentifier("mdv.rail.terminalToggle")
     }
 }

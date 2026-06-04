@@ -191,6 +191,14 @@ public final class DocumentModel: ObservableObject {
     /// `DocumentModel.objectWillChange`.
     public let panelLayout: PanelLayoutStore
 
+    /// Bottom terminal pane (UX-D / #226). Owns open/closed + height +
+    /// the lazily-spawned shell. Observed DIRECTLY by `ContentView` + the
+    /// left-rail terminal toggle (same narrow pattern as `panelLayout`);
+    /// NOT forwarded into `DocumentModel.objectWillChange`, so toggling
+    /// the terminal or its per-frame output never republishes the content
+    /// tree (PERF #1).
+    public let terminalPane: TerminalPaneStore
+
     private let controller: DocumentController
     public let history: HistoryStore
     /// Persisted history for the Go-to-path prompt. Small (cap 10),
@@ -271,6 +279,10 @@ public final class DocumentModel: ObservableObject {
         // fresh install ⇒ all panels on .left, all overrides .auto ⇒
         // visibility === data-presence, today's behavior unchanged.
         self.panelLayout = PanelLayoutStore(defaults: preferences.defaults)
+        // Bottom terminal pane (#226). Same value-type-backed persistence
+        // (its own UserDefaults keys via TerminalPaneLayout). Lazily
+        // spawns the shell only when first opened.
+        self.terminalPane = TerminalPaneStore(defaults: preferences.defaults)
         self.recents = history.recent()
         self.bookmarks = bookmarks.all()
         self.sidebarWidth = preferences.sidebarWidth
