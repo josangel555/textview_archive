@@ -596,6 +596,97 @@ public final class DocumentModel: ObservableObject {
     public func showPalette() { isPalettePresented = true }
     public func dismissPalette() { isPalettePresented = false }
 
+    // MARK: - Command registry (UX-M / #232)
+
+    /// The effective command catalog: the built-in `CommandRegistry`
+    /// with the user's `~/.textview/keybinding.json` overrides folded in.
+    /// Loaded lazily on first access and cached. The palette's command
+    /// list and the menu's shortcut resolution both read this so there's
+    /// ONE source of truth for the action surface + its key bindings.
+    ///
+    /// Lazy (not loaded in `init`) so hermetic unit tests that build a
+    /// bare `DocumentModel` don't touch `~/.textview`; the live app warms
+    /// it once at launch via `loadKeybindings()`.
+    public private(set) lazy var commandRegistry: CommandRegistry = {
+        let result = KeybindingConfig.load()
+        logKeybindingResult(result)
+        return CommandRegistry.builtIn.applying(overrides: result.config.bindings)
+    }()
+
+    /// Reload the keybinding config from disk (e.g. after the user edits
+    /// the file or a settings UI rewrites it). Re-validates ids, re-folds
+    /// overrides, re-logs partial failures. Triggers an objectWillChange
+    /// so palette / menu observers refresh.
+    public func loadKeybindings(directory: URL = KeybindingConfig.defaultDirectory) {
+        let result = KeybindingConfig.load(directory: directory)
+        logKeybindingResult(result)
+        objectWillChange.send()
+        commandRegistry = CommandRegistry.builtIn.applying(
+            overrides: result.config.bindings)
+    }
+
+    /// Emit the partial-failure diagnostics from a keybinding parse to the
+    /// observability sink (unknown ids, malformed values, bad file) so a
+    /// user mis-edit is visible in the Logs view / stderr instead of
+    /// silently dropped.
+    private func logKeybindingResult(_ result: KeybindingConfig.ParseResult) {
+        if result.malformedFile {
+            Obs.shared.emit(.warn, "keybinding",
+                "keybinding.json is not a JSON object of strings — ignored")
+        }
+        for (id, raw) in result.invalidValues {
+            Obs.shared.emit(.warn, "keybinding",
+                "unparseable shortcut '\(raw)' for '\(id)' — ignored",
+                fields: ["id": id, "value": raw])
+        }
+        for id in result.unknownIDs {
+            Obs.shared.emit(.warn, "keybinding",
+                "unknown command id '\(id)' in keybinding.json — ignored",
+                fields: ["id": id])
+        }
+        // Surface effective-shortcut collisions (built-in or user-caused)
+        // so a rebind that shadows another command is noticed.
+        _ = CommandRegistry.builtIn
+            .applying(overrides: result.config.bindings)
+            .shortcutMap { shortcut, losing, winning in
+                Obs.shared.emit(.info, "keybinding",
+                    "shortcut '\(shortcut.displayString)' bound to both '\(losing)' and '\(winning)' — last wins (\(winning))",
+                    fields: ["shortcut": shortcut.displayString,
+                             "losing": losing, "winning": winning])
+            }
+    }
+
+    /// Weak handle to the sessions coordinator so palette-invoked
+    /// commands can dispatch the session/sidebar verbs through
+    /// `ScriptVerb.apply(verb:to:sessions:)` — the SAME pure dispatch
+    /// surface the `--script` runner + headless harness use. Set by the
+    /// app delegate at launch; `weak` to avoid a retain cycle (the
+    /// coordinator owns the model). One-way dependency, same shape as
+    /// `openFolderInNewSession`.
+    public weak var sessionsCoordinator: SessionsAppCoordinator?
+
+    /// Invoke a registered command by id from the palette.
+    ///
+    /// Routes through `ScriptVerb.apply` when the command has a
+    /// `scriptVerb` (the pure, headless-tested dispatch path). Commands
+    /// without a verb (window/`NSApp`-coupled — see the GAP list) are
+    /// no-ops here and remain menu-only; the palette greys them out.
+    /// Returns `true` if a verb was dispatched.
+    @discardableResult
+    public func invokeCommand(id: String) -> Bool {
+        guard let cmd = commandRegistry.command(id: id),
+              let verb = cmd.scriptVerb else { return false }
+        guard let sessions = sessionsCoordinator else {
+            // No coordinator wired (previews / some tests). The model-only
+            // verbs would still apply, but ScriptVerb.apply needs the pair;
+            // without it we can't dispatch safely.
+            Obs.shared.emit(.warn, "command",
+                "invokeCommand('\(id)') skipped: no sessions coordinator wired")
+            return false
+        }
+        return ScriptVerb.apply(verb: verb, to: self, sessions: sessions)
+    }
+
     public func showGoToPath() {
         isGoToPathPresented = true
         // Clear stale error state from a previous attempt so the dump

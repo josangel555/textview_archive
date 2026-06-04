@@ -6,7 +6,19 @@ struct CommandPaletteView: View {
     @State private var query: String = ""
     @State private var selectedIndex: Int = 0
     @State private var filtered: [(item: HistoryEntry, match: FuzzyMatcher.Match)] = []
+    /// Command-mode results (UX-M / #232). Populated only when the query
+    /// is prefixed with `>` — the VS Code convention for "run a command"
+    /// vs "open a file". Keeps the default file/bookmark finder behaviour
+    /// untouched when the user is just typing a filename.
+    @State private var filteredCommands: [(item: CommandDescriptor, match: FuzzyMatcher.Match)] = []
     @FocusState private var fieldFocused: Bool
+
+    /// `true` when the user is in command mode (query starts with `>`).
+    private var isCommandMode: Bool { query.hasPrefix(">") }
+    /// The query with the leading `>` (and a following space) stripped.
+    private var commandQuery: String {
+        String(query.dropFirst()).trimmingCharacters(in: .whitespaces)
+    }
     /// A11Y-06: honor the system Reduce Motion setting. When set, the
     /// scroll-to-selection animation is suppressed (instant jump).
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -14,13 +26,13 @@ struct CommandPaletteView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
+                Image(systemName: isCommandMode ? "command" : "magnifyingglass")
                     .foregroundStyle(.secondary)
-                TextField("Search recent files…", text: $query)
+                TextField("Search recent files… (› for commands)", text: $query)
                     .textFieldStyle(.plain)
                     .font(.system(size: 16))
                     .focused($fieldFocused)
-                    .onSubmit { openSelected() }
+                    .onSubmit { isCommandMode ? runSelectedCommand() : openSelected() }
                     .onChange(of: query) { _, _ in
                         recomputeFiltered()
                         selectedIndex = 0
@@ -37,7 +49,9 @@ struct CommandPaletteView: View {
 
             Divider()
 
-            if filtered.isEmpty {
+            if isCommandMode {
+                commandList
+            } else if filtered.isEmpty {
                 emptyState
             } else {
                 ScrollViewReader { proxy in
@@ -79,11 +93,12 @@ struct CommandPaletteView: View {
                 }
             }
             // Keyboard-shortcut hint footer (U-tier).
-            if !filtered.isEmpty {
+            if isCommandMode ? !filteredCommands.isEmpty : !filtered.isEmpty {
                 Divider()
                 HStack(spacing: 12) {
                     Text("↑↓ navigate").font(.caption2).foregroundStyle(.secondary)
-                    Text("↵ open").font(.caption2).foregroundStyle(.secondary)
+                    Text(isCommandMode ? "↵ run" : "↵ open")
+                        .font(.caption2).foregroundStyle(.secondary)
                     Text("esc cancel").font(.caption2).foregroundStyle(.secondary)
                     Spacer()
                 }
@@ -137,9 +152,72 @@ struct CommandPaletteView: View {
     }
 
     private func recomputeFiltered() {
-        filtered = FuzzyMatcher.filterWithMatches(merged(), query: query) {
-            $0.displayName
+        if isCommandMode {
+            // Command mode (UX-M / #232): list EVERY registered command,
+            // fuzzy-filtered on the post-`>` query. Empty query lists all.
+            filteredCommands = FuzzyMatcher.filterWithMatches(
+                model.commandRegistry.commands, query: commandQuery
+            ) { $0.title }
+            filtered = []
+        } else {
+            filtered = FuzzyMatcher.filterWithMatches(merged(), query: query) {
+                $0.displayName
+            }
+            filteredCommands = []
         }
+    }
+
+    // MARK: - Command mode list
+
+    @ViewBuilder private var commandList: some View {
+        if filteredCommands.isEmpty {
+            VStack {
+                Spacer().frame(height: 30)
+                Text("No matching commands")
+                    .foregroundStyle(.secondary).font(.callout)
+                Spacer().frame(height: 30)
+            }
+        } else {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(filteredCommands.enumerated()), id: \.element.item.id) { index, hit in
+                            CommandRow(
+                                command: hit.item,
+                                matchedIndices: hit.match.matchedIndices,
+                                isSelected: index == selectedIndex,
+                                onHoverChanged: { hovering in
+                                    if hovering { selectedIndex = index }
+                                }
+                            ) {
+                                selectedIndex = index
+                                runSelectedCommand()
+                            }
+                            .id(index)
+                        }
+                    }
+                }
+                .frame(maxHeight: 360)
+                .onChange(of: selectedIndex) { _, new in
+                    withAnimation(MotionGate.animation(.linear(duration: 0.05),
+                                                       reduceMotion: reduceMotion)) {
+                        proxy.scrollTo(new, anchor: .center)
+                    }
+                }
+            }
+        }
+    }
+
+    private func runSelectedCommand() {
+        guard filteredCommands.indices.contains(selectedIndex) else { return }
+        let cmd = filteredCommands[selectedIndex].item
+        // Dismiss FIRST so a command that itself presents an overlay
+        // (e.g. show-cross-search, show-goto) isn't immediately hidden
+        // behind the palette's own dismissal.
+        model.dismissPalette()
+        query = ""
+        selectedIndex = 0
+        model.invokeCommand(id: cmd.id)
     }
 
     // Invisible buttons that catch ↑ / ↓ globally inside the palette without
@@ -157,8 +235,8 @@ struct CommandPaletteView: View {
     }
 
     private func moveSelection(_ delta: Int) {
-        guard !filtered.isEmpty else { return }
-        let count = filtered.count
+        let count = isCommandMode ? filteredCommands.count : filtered.count
+        guard count > 0 else { return }
         selectedIndex = (selectedIndex + delta + count) % count
     }
 
@@ -280,5 +358,105 @@ private struct PaletteRow: View {
             charIndex += 1
         }
         return out
+    }
+}
+
+/// One row in the palette's command mode (UX-M / #232). Shows the
+/// command title (with fuzzy-match highlighting), its category, and its
+/// effective keyboard shortcut as macOS glyphs. Commands with no script
+/// verb (window/NSApp-coupled — see the GAP list) render dimmed and
+/// non-actionable.
+private struct CommandRow: View {
+    let command: CommandDescriptor
+    let matchedIndices: [Int]
+    let isSelected: Bool
+    var onHoverChanged: (Bool) -> Void = { _ in }
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: "command")
+                    .foregroundStyle(isSelected ? .white
+                        : (command.isPaletteInvokable ? Color.accentColor : .secondary))
+                    .frame(width: 16)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(attributedTitle)
+                        .font(.system(size: 13))
+                        .lineLimit(1)
+                    Text(command.category.title)
+                        .font(.system(size: 11))
+                        .foregroundStyle(isSelected ? Color.white.opacity(0.85) : .secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                if let glyphs = command.defaultShortcut?.glyphString {
+                    Text(glyphs)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(isSelected ? Color.white.opacity(0.9) : .secondary)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(isSelected ? Color.accentColor : Color.clear)
+            .contentShape(Rectangle())
+            .opacity(command.isPaletteInvokable ? 1.0 : 0.55)
+        }
+        .buttonStyle(RowHoverButtonStyle(cornerRadius: 0, suppressesHoverFill: isSelected))
+        .disabled(!command.isPaletteInvokable)
+        .help(command.isPaletteInvokable ? command.title
+            : "\(command.title) — available from the menu only")
+        .onHover { onHoverChanged($0) }
+    }
+
+    private var attributedTitle: AttributedString {
+        var out = AttributedString(command.title)
+        let regular: Color = isSelected ? .white : .primary
+        let highlight: Color = isSelected ? .white : .accentColor
+        out.foregroundColor = regular
+        let matchedSet = Set(matchedIndices)
+        var charIndex = 0
+        var cur = out.startIndex
+        while cur < out.endIndex {
+            let next = out.characters.index(after: cur)
+            if matchedSet.contains(charIndex) {
+                out[cur..<next].foregroundColor = highlight
+                out[cur..<next].font = .system(size: 13, weight: .semibold)
+            }
+            cur = next
+            charIndex += 1
+        }
+        return out
+    }
+}
+
+extension Shortcut {
+    /// macOS menu-glyph rendering of the shortcut (e.g. `⌘⇧F`, `⌥⌘[`).
+    /// Modifier order matches the platform convention (⌃⌥⇧⌘). Symbolic
+    /// keys map to their arrow / whitespace glyphs.
+    var glyphString: String {
+        var s = ""
+        if modifiers.contains(.control) { s += "⌃" }
+        if modifiers.contains(.option)  { s += "⌥" }
+        if modifiers.contains(.shift)   { s += "⇧" }
+        if modifiers.contains(.command) { s += "⌘" }
+        s += Self.keyGlyph(key)
+        return s
+    }
+
+    private static func keyGlyph(_ key: String) -> String {
+        switch key {
+        case "left":   return "←"
+        case "right":  return "→"
+        case "up":     return "↑"
+        case "down":   return "↓"
+        case "tab":    return "⇥"
+        case "space":  return "␣"
+        case "escape": return "⎋"
+        case "return": return "↩"
+        case "delete": return "⌫"
+        case "backslash": return "\\"
+        default:       return key.uppercased()
+        }
     }
 }

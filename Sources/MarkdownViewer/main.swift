@@ -234,6 +234,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.openFolderInNewSession = { [weak self] url in
             self?.sessions.openFolder(url, forceNew: true)
         }
+        // UX-M (#232): give the model a weak handle to the sessions
+        // coordinator so palette-invoked commands can dispatch the
+        // session/sidebar verbs through `ScriptVerb.apply(verb:to:sessions:)`
+        // — the same pure dispatch surface the --script runner uses. weak,
+        // so no retain cycle (the coordinator owns the model). Warming
+        // `commandRegistry` here also forces the one-time
+        // `~/.textview/keybinding.json` load at launch (off the test path).
+        model.sessionsCoordinator = sessions
+        _ = model.commandRegistry
 
         // Open file from argv if provided. Detects folder vs file.
         // B19: resolve relative to the process's cwd (which is the user's
@@ -772,6 +781,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
     }
 
+    /// Apply the effective shortcut for command `id` (built-in default ∪
+    /// user `~/.textview/keybinding.json` override) from the registry onto
+    /// a menu item. UX-M (#232): the registry is the single source of
+    /// truth for shortcuts. If the command has no shortcut (or the id is
+    /// unknown — shouldn't happen for built-ins), the item keeps whatever
+    /// key equivalent it was constructed with. Returns the item for
+    /// chaining.
+    @discardableResult
+    private func applyShortcut(_ id: String, to item: NSMenuItem) -> NSMenuItem {
+        guard let cmd = model.commandRegistry.command(id: id),
+              let sc = cmd.defaultShortcut else { return item }
+        item.keyEquivalent = AppDelegate.appKitKeyEquivalent(for: sc.key)
+        item.keyEquivalentModifierMask = AppDelegate.appKitModifiers(for: sc.modifiers)
+        return item
+    }
+
+    /// Translate a `Shortcut.key` (single char or symbolic name) into the
+    /// `NSMenuItem.keyEquivalent` string AppKit expects. Symbolic names
+    /// map to the AppKit unicode constants; ordinary keys pass through.
+    static func appKitKeyEquivalent(for key: String) -> String {
+        switch key {
+        case "left":      return "\u{2190}"  // NSLeftArrowFunctionKey glyph
+        case "right":     return "\u{2192}"
+        case "up":        return "\u{2191}"
+        case "down":      return "\u{2193}"
+        case "tab":       return "\t"
+        case "space":     return " "
+        case "escape":    return "\u{1b}"
+        case "return":    return "\r"
+        case "delete":    return "\u{8}"
+        case "backslash": return "\\"
+        default:          return key
+        }
+    }
+
+    /// Translate `KeyModifiers` into `NSEvent.ModifierFlags`.
+    static func appKitModifiers(for mods: KeyModifiers) -> NSEvent.ModifierFlags {
+        var flags: NSEvent.ModifierFlags = []
+        if mods.contains(.command) { flags.insert(.command) }
+        if mods.contains(.shift)   { flags.insert(.shift) }
+        if mods.contains(.option)  { flags.insert(.option) }
+        if mods.contains(.control) { flags.insert(.control) }
+        return flags
+    }
+
     private func buildMenu() {
         let mainMenu = NSMenu()
 
@@ -829,6 +883,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             keyEquivalent: "t"
         )
         newTabItem.target = self
+        applyShortcut("file.newTab", to: newTabItem)
         fileMenu.addItem(newTabItem)
 
         let openItem = NSMenuItem(
@@ -857,8 +912,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(showGoToPath(_:)),
             keyEquivalent: "g"
         )
-        goToPathItem.keyEquivalentModifierMask = [.command, .shift]
         goToPathItem.target = self
+        applyShortcut("file.goToPath", to: goToPathItem)
         fileMenu.addItem(goToPathItem)
 
         let recentItem = NSMenuItem(
@@ -879,6 +934,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             keyEquivalent: "w"
         )
         closeTabItem.target = self
+        applyShortcut("file.closeTab", to: closeTabItem)
         fileMenu.addItem(closeTabItem)
 
         // Save (⌘S). Only active when the focused tab is in `.editor`
@@ -892,18 +948,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             keyEquivalent: "s"
         )
         saveItem.target = self
+        applyShortcut("file.save", to: saveItem)
         fileMenu.addItem(saveItem)
         fileMenuItem.submenu = fileMenu
 
         let viewMenuItem = NSMenuItem()
         let viewMenu = NSMenu(title: "View")
+        // UX-M (#232): shortcuts for these items are resolved from the
+        // CommandRegistry (built-in default ∪ user keybinding override)
+        // via `applyShortcut(_:to:)`. The `keyEquivalent:` passed to the
+        // initializer is the fallback used only if the registry has no
+        // shortcut for the id.
         let toggleItem = NSMenuItem(
             title: "Toggle Rendered / Source",
             action: #selector(toggleViewMode(_:)),
             keyEquivalent: "r"
         )
-        toggleItem.keyEquivalentModifierMask = [.command, .shift]
         toggleItem.target = self
+        applyShortcut("view.toggleRenderedSource", to: toggleItem)
         viewMenu.addItem(toggleItem)
 
         let sidebarItem = NSMenuItem(
@@ -911,8 +973,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(toggleSidebar(_:)),
             keyEquivalent: "s"
         )
-        sidebarItem.keyEquivalentModifierMask = [.command, .control]
         sidebarItem.target = self
+        applyShortcut("view.toggleSidebar", to: sidebarItem)
         viewMenu.addItem(sidebarItem)
 
         let wrapItem = NSMenuItem(
@@ -920,8 +982,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(toggleSourceWordWrap(_:)),
             keyEquivalent: "w"
         )
-        wrapItem.keyEquivalentModifierMask = [.command, .option]
         wrapItem.target = self
+        applyShortcut("view.toggleWordWrap", to: wrapItem)
         viewMenu.addItem(wrapItem)
 
         // Show Invisibles — applies to source view AND CM6 editor.
@@ -930,8 +992,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(toggleShowInvisibleChars(_:)),
             keyEquivalent: "i"
         )
-        invisItem.keyEquivalentModifierMask = [.command, .option]
         invisItem.target = self
+        applyShortcut("view.toggleInvisibles", to: invisItem)
         viewMenu.addItem(invisItem)
 
         // Editor (CM6) — code folding + go to line. Validated to
@@ -941,8 +1003,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(cmFoldAll(_:)),
             keyEquivalent: "["
         )
-        foldAllItem.keyEquivalentModifierMask = [.command, .option]
         foldAllItem.target = self
+        applyShortcut("view.foldAll", to: foldAllItem)
         viewMenu.addItem(foldAllItem)
 
         let unfoldAllItem = NSMenuItem(
@@ -950,8 +1012,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(cmUnfoldAll(_:)),
             keyEquivalent: "]"
         )
-        unfoldAllItem.keyEquivalentModifierMask = [.command, .option]
         unfoldAllItem.target = self
+        applyShortcut("view.unfoldAll", to: unfoldAllItem)
         viewMenu.addItem(unfoldAllItem)
 
         let gotoLineItem = NSMenuItem(
@@ -959,8 +1021,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(cmGotoLine(_:)),
             keyEquivalent: "l"
         )
-        gotoLineItem.keyEquivalentModifierMask = [.command]
         gotoLineItem.target = self
+        applyShortcut("view.goToLine", to: gotoLineItem)
         viewMenu.addItem(gotoLineItem)
 
         viewMenu.addItem(.separator())
@@ -978,6 +1040,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             keyEquivalent: "k"
         )
         paletteItem.target = self
+        applyShortcut("view.quickOpen", to: paletteItem)
         viewMenu.addItem(paletteItem)
 
         // U7 — Zoom items for the rendered view.
@@ -996,16 +1059,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                                 action: #selector(zoomIn(_:)),
                                 keyEquivalent: "=")
         zoomIn.target = self
+        applyShortcut("view.zoomIn", to: zoomIn)
         viewMenu.addItem(zoomIn)
         let zoomOut = NSMenuItem(title: "Zoom Out",
                                  action: #selector(zoomOut(_:)),
                                  keyEquivalent: "-")
         zoomOut.target = self
+        applyShortcut("view.zoomOut", to: zoomOut)
         viewMenu.addItem(zoomOut)
         let zoomReset = NSMenuItem(title: "Actual Size",
                                    action: #selector(zoomReset(_:)),
                                    keyEquivalent: "0")
         zoomReset.target = self
+        applyShortcut("view.actualSize", to: zoomReset)
         viewMenu.addItem(zoomReset)
 
         viewMenu.addItem(.separator())
@@ -1014,8 +1080,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(toggleFormat(_:)),
             keyEquivalent: "f"
         )
-        formatItem.keyEquivalentModifierMask = [.command, .option]
         formatItem.target = self
+        applyShortcut("view.prettyPrint", to: formatItem)
         viewMenu.addItem(formatItem)
 
         let jqItem = NSMenuItem(
@@ -1023,8 +1089,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(applyJQFilter(_:)),
             keyEquivalent: "j"
         )
-        jqItem.keyEquivalentModifierMask = [.command, .option]
         jqItem.target = self
+        applyShortcut("view.applyJQ", to: jqItem)
         viewMenu.addItem(jqItem)
 
         let bookmarkItem = NSMenuItem(
@@ -1033,6 +1099,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             keyEquivalent: "d"
         )
         bookmarkItem.target = self
+        applyShortcut("view.toggleBookmark", to: bookmarkItem)
         viewMenu.addItem(bookmarkItem)
 
         let bookmarkLineItem = NSMenuItem(
@@ -1040,8 +1107,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(toggleLineBookmark(_:)),
             keyEquivalent: "d"
         )
-        bookmarkLineItem.keyEquivalentModifierMask = [.command, .option]
         bookmarkLineItem.target = self
+        applyShortcut("view.toggleLineBookmark", to: bookmarkLineItem)
         viewMenu.addItem(bookmarkLineItem)
 
         // Split view (Phase 2.5).
@@ -1052,6 +1119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             keyEquivalent: "\\"
         )
         splitItem.target = self
+        applyShortcut("view.toggleSplit", to: splitItem)
         viewMenu.addItem(splitItem)
 
         let swapItem = NSMenuItem(
@@ -1059,8 +1127,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(swapSplit(_:)),
             keyEquivalent: "\\"
         )
-        swapItem.keyEquivalentModifierMask = [.command, .shift]
         swapItem.target = self
+        applyShortcut("view.swapSplit", to: swapItem)
         viewMenu.addItem(swapItem)
 
         viewMenu.addItem(.separator())
@@ -1073,6 +1141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         )
         showGitPanelItem.keyEquivalentModifierMask = [.command, .option]
         showGitPanelItem.target = self
+        applyShortcut("git.showPanel", to: showGitPanelItem)
         viewMenu.addItem(showGitPanelItem)
 
         let historyItem = NSMenuItem(
