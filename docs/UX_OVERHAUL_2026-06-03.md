@@ -21,11 +21,15 @@ L/R shoulder space):
 - **A3. OpenAs persistence** — remember the "pretend to be this type" per file. [M]
 - **A4. Unify OpenAs and the file-type dropdown — one control, not two.** [M]
 
-> **DECISION A:** confirm the view-mode model. Today: Source(raw text) / Editor
-> (CM6) / Rendered / HEX / Preview / Formatted. Proposed: `Render | Editor | HEX`
-> × `ViewOnly`. Where do Source(=Editor+ViewOnly?), Preview (images/pdf/sqlite),
-> and Formatted (pretty-print) land? Need the full mode×type matrix nailed down.
-> HEX-edit is a real new capability (byte editing + write-back).
+> **DECISION A — RESOLVED (owner):** model is `Render | Editor | HEX` × `ViewOnly`.
+> - **Source = Editor + ViewOnly** (read-only text). ✅
+> - **Render** (ViewOnly default-ON) = the rich/native view: md→rendered,
+>   image/pdf/sqlite/media→preview.
+> - **HEX** gains byte-edit (write-back) when ViewOnly is OFF.
+> - **A5. "Format" is a SEPARATE conditional button** — appears only for types we
+>   know how to format (JSON, XML, …) and shows the pretty-printed view. It is NOT
+>   folded into Render; it's its own toggle/mode-button that only surfaces when
+>   formatting is available for the current type.
 
 ## B. Tabs & sessions [M]
 - **B1.** Session-tab row: taller, show more info (is-git-root, …). [M]
