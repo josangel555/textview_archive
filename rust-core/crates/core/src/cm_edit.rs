@@ -16,6 +16,8 @@
 //! edit that split a surrogate pair into a lone surrogate) instead of
 //! substituting U+FFFD and permanently diverging the buffer.
 
+use serde::{Deserialize, Serialize};
+
 /// One CodeMirror change: replace the UTF-16 range `[from, to)` with `insert`.
 /// `from`/`to` are signed to faithfully reject a negative offset from a buggy
 /// encoder (mirrors the Swift `e.from < 0` guard).
@@ -85,6 +87,52 @@ pub fn apply(base: &str, edits: &[CmEdit]) -> Option<String> {
     // does NOT substitute U+FFFD), so a split-surrogate edit returns None and
     // the caller can resync rather than corrupt the buffer silently.
     String::from_utf16(&out).ok()
+}
+
+// MARK: - Wire seam (stateless FFI request/response)
+
+/// Request payload: the base doc + the edit batch. Deserialized from the
+/// MessagePack named-map frame the Swift side builds (matching `to_vec_named`).
+#[derive(Serialize, Deserialize)]
+struct ApplyRequest {
+    base: String,
+    edits: Vec<EditWire>,
+}
+
+/// One edit as it crosses the wire (named fields, mirrors Swift `CMEdit`).
+#[derive(Serialize, Deserialize)]
+struct EditWire {
+    from: i64,
+    to: i64,
+    insert: String,
+}
+
+/// Response payload: the applied text, or `null` when the batch was rejected
+/// (out-of-bounds / overlap / ill-formed) — the caller's cue to full-resync.
+#[derive(Serialize, Deserialize)]
+struct ApplyResponse {
+    text: Option<String>,
+}
+
+/// Stateless wire seam for the FFI shim `mdvcore_cm_apply`: decode a
+/// length-prefixed MessagePack request frame `{base, edits:[{from,to,insert}]}`,
+/// apply the batch, and encode a response frame `{text: Option<String>}`. Pure +
+/// sans-IO, so it is fully cargo-testable without the C edge; the FFI layer adds
+/// only the pointer/`MdvBuf`/panic-guard plumbing.
+///
+/// # Errors
+/// [`crate::wire::WireFault`] on a malformed/oversized request frame or an
+/// encode failure. (A *rejected edit batch* is NOT an error — it returns Ok with
+/// `text: None`.)
+pub fn apply_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault> {
+    let req: ApplyRequest = crate::wire::decode_frame(req_frame)?;
+    let edits: Vec<CmEdit> = req
+        .edits
+        .into_iter()
+        .map(|e| CmEdit { from: e.from, to: e.to, insert: e.insert })
+        .collect();
+    let text = apply(&req.base, &edits);
+    crate::wire::encode_frame(&ApplyResponse { text })
 }
 
 #[cfg(test)]
@@ -167,5 +215,44 @@ mod tests {
     #[test]
     fn insert_only_at_end() {
         assert_eq!(apply("abc", &[CmEdit::new(3, 3, "Z")]).as_deref(), Some("abcZ"));
+    }
+
+    // --- wire seam (what the FFI shim drives) ---
+
+    fn req_frame(base: &str, edits: &[(i64, i64, &str)]) -> Vec<u8> {
+        let r = ApplyRequest {
+            base: base.to_string(),
+            edits: edits.iter().map(|&(f, t, i)| EditWire { from: f, to: t, insert: i.to_string() }).collect(),
+        };
+        crate::wire::encode_frame(&r).unwrap()
+    }
+    fn resp_text(frame: &[u8]) -> Option<String> {
+        let r: ApplyResponse = crate::wire::decode_frame(frame).unwrap();
+        r.text
+    }
+
+    #[test]
+    fn wire_round_trip_applies() {
+        let out = apply_wire(&req_frame("hello", &[(2, 2, "X")])).unwrap();
+        assert_eq!(resp_text(&out).as_deref(), Some("heXllo"));
+    }
+
+    #[test]
+    fn wire_round_trip_astral() {
+        let out = apply_wire(&req_frame("🧠x", &[(2, 2, "!")])).unwrap();
+        assert_eq!(resp_text(&out).as_deref(), Some("🧠!x"));
+    }
+
+    #[test]
+    fn wire_rejected_batch_is_ok_with_null_text() {
+        // Overlap → apply returns None → response carries text:null (NOT a wire error).
+        let out = apply_wire(&req_frame("abcdef", &[(1, 3, "x"), (2, 4, "y")])).unwrap();
+        assert_eq!(resp_text(&out), None);
+    }
+
+    #[test]
+    fn wire_malformed_frame_errors() {
+        assert!(apply_wire(&[0x00, 0x01]).is_err());        // too short for prefix
+        assert!(apply_wire(&[]).is_err());
     }
 }
