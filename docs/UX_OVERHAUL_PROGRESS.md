@@ -57,7 +57,13 @@
 - [ ] **#232 UX-M** — action catalog → `~/.textview/keybinding.json` + Omni invokability.
 - [ ] **#226 UX-D** — embedded terminal (dep-free PTY) + shoulder toggle.
 - [x] **#234 UX-A HEX byte-edit** ✅ — editable HEX byte grid, gated by `Render|Editor|HEX × ViewOnly` (ViewOnly OFF + non-truncated). Pure `HexEditBuffer` (overwrite-only edits, dirty diff, undo/redo, save-baseline) + `HexCaretMap` (char↔byte/nibble, host-tested) in ViewerCore; `HexBinaryWriter` (atomic temp+rename, symlink-refusal, mode/owner/xattr preserve). `HexView` keyDown interception keeps NSTextView non-editable (overwrite, not insert); dirty dot + close-confirm "Save" route to the binary writer. Tests: `HexCaretMapTests` + `HexEditBufferTests` (T1m). Gate-green @ b22cc3d base. **Limits (carry):** overwrite-only (no insert/delete), >4 MB truncated files stay read-only, no blinking-caret glyph, single live hexSavedNotifier (multi-pane hex-edit edge).
-- [ ] **L1 (memory)** — ~200MB-after-close investigation (folds into #190/#191/#210). #190 (the ~2GB→reasonable fix) DONE; #191 architectural peak-bounding is OWNER-deferred + Rust-core-gated. Tractable scope: investigate retained-after-close, fix reclaimable, add a regression guard.
+- [x] **L1 (memory)** ✅ — retained-after-close audit DONE. Swift-heap per-tab/per-URL
+  caches verified bounded/purged (TabCoordinator `cleanupAfterClose`, `purgeCaches`,
+  per-tab highlight actors, LRU-capped sidebar/recency). **Real gap fixed:**
+  `LSPDiagnosticsStore.byURL` accumulated one entry per file touched — now cleared on
+  close (guarded on "no surviving tab shows this URL"). Guard: `MemoryReclaimOnCloseTests`
+  (T1m, 4 tests). Residual ≈ WebKit-XPC (rendered-MD/CM6/Mermaid WebContent) = **#191**,
+  owner-deferred (teardown-on-close vs re-render latency) — see BACKLOG. Gate-green.
 
 ## Notes / log
 (append per-item: commit sha + what shipped + tests added)

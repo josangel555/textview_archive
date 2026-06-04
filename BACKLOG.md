@@ -665,6 +665,25 @@ independence + types + GLOBAL zoom/wrap/theme (#184). Items still open:
   stays high" fix; architectural, touches Core-ish state. Held pending
   design (and partly gated by the Rust-core migration, which may reframe
   it).
+  - **L1 (UX-overhaul "~200MB-after-close") — AUDIT DONE + tractable fixes
+    landed.** A full retained-state sweep (per-tab/per-URL/per-session caches)
+    found the Swift-heap caches are bounded/purged on close — `editorBuffers`,
+    `csvFilterStates`, `hexBytesPerRow`, `languageOverrides`, `formattedTextCache`
+    (TabCoordinator `cleanupAfterClose`), `renderedHTMLCache` + `htmlJavaScriptOptIn`
+    (`DocumentModel.purgeCaches`), `highlightCaches` (per-tab actor dropped),
+    `FileTreeRecency.cache` (LRU-capped), `SidebarModel.childrenCache` (LRU-pruned).
+    **One real gap fixed:** `LSPDiagnosticsStore.byURL` accumulated one entry per
+    file touched — `clear(url:)` existed but `purgeCaches` never called it; now
+    wired (guarded on "no surviving tab still shows this URL"). Regression guard:
+    `MemoryReclaimOnCloseTests` (T1m). **Residual ≈ WebKit-XPC** (rendered-MD +
+    CM6-editor + Mermaid WebContent processes + ~35 MB persistent helper floor) —
+    that's #191 proper. **OWNER DECISION needed:** tear the WKWebView down on tab
+    close/switch (reclaims ~30–80 MB but pays re-render latency on reopen) vs.
+    keep-alive (current; the BACKLOG "Tear down WKWebView on tab switch — not
+    pursued" trade-off). LSPPool per-file `fileVersions`/`fileHashes` (~100 B/file)
+    intentionally NOT cleared on close — doing so without a real
+    `textDocument/didClose` would desync the server; that's a lifecycle feature,
+    a separate follow-up, not a leak-plug.
 - **#194 — #192 true fix.** SwiftUI AttributeGraph teardown so the
   in-process WKWebView suites can rejoin the bare `swift test` sweep
   instead of `#192`-gating themselves out. Low priority (VM lane covers

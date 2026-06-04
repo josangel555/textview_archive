@@ -3437,7 +3437,7 @@ public final class DocumentModel: ObservableObject {
     /// caches stay on DocumentModel (not TabCoordinator) because
     /// they're conceptually subsystems (highlighting, markdown
     /// rendering), and only their *eviction* is tab-id-keyed.
-    private func purgeCaches(forURL _: URL?, tabID: UUID? = nil) {
+    private func purgeCaches(forURL closedURL: URL?, tabID: UUID? = nil) {
         if let tabID {
             // PERF #5: drop the per-tab highlight cache actor.
             // GC happens automatically once the last observer (the
@@ -3468,6 +3468,19 @@ public final class DocumentModel: ObservableObject {
                 if case .hostedView(let hid, _) = t.state { live.insert(hid) }
             }
             hostedViews = hostedViews.filter { live.contains($0.key) }
+        }
+        // L1 (memory): drop the closed file's LSP diagnostics so the
+        // `byURL` map doesn't accumulate one entry per file touched over a
+        // session (each can carry KBs of squiggle ranges). Guard on "no
+        // surviving tab still shows this URL" so closing one of two tabs on
+        // the same file keeps the diagnostics the other tab still renders.
+        // `purgeCaches` runs AFTER the coordinator mutated `tabs`, so the
+        // survivor scan is accurate. LSPPool's per-file version/hash
+        // bookkeeping is intentionally left (clearing it without sending a
+        // real `textDocument/didClose` would desync the server — a separate
+        // lifecycle feature, not a leak-plug; see BACKLOG).
+        if let closedURL, !tabs.tabs.contains(where: { $0.url == closedURL }) {
+            lspDiagnostics.clear(url: closedURL)
         }
     }
 
