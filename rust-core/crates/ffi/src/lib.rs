@@ -51,6 +51,7 @@ pub mod handle;
 pub mod status;
 
 use mdvcore_core::cm_edit;
+use mdvcore_core::diff;
 use mdvcore_core::filter::{Query, Scope};
 use mdvcore_core::session::CsvSession;
 use mdvcore_core::wire;
@@ -127,6 +128,52 @@ pub unsafe extern "C" fn mdvcore_cm_apply(
             unsafe { core::slice::from_raw_parts(req, req_len) }
         };
         match cm_edit::apply_wire(bytes) {
+            Ok(frame) => {
+                // SAFETY: out_buf validated non-null above.
+                unsafe { *out_buf = MdvBuf::from_vec(frame) };
+                MdvStatus::Ok
+            }
+            Err(_) => MdvStatus::WireError,
+        }
+    })
+}
+
+/// Parse a unified diff (stateless). `req`/`req_len` is a length-prefixed
+/// MessagePack request frame `{text}`; the result is written to `out_buf` as a
+/// `{files:[…]}` response frame (the full structured diff: per-file metadata +
+/// hunks + per-line kind/line-numbers). Caller MUST call [`mdvcore_buf_free`]
+/// on `out_buf`.
+///
+/// # Returns
+/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::WireError`] (malformed
+/// request frame / encode failure), or [`MdvStatus::Panic`].
+///
+/// # Safety
+/// `req` must point to `req_len` valid bytes (or be null with `req_len == 0`).
+/// `out_buf` must be a valid, writable pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_diff_parse(
+    req: *const u8,
+    req_len: usize,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_guard!({
+        if out_buf.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_buf validated; empty default so error paths stay safe-to-free.
+        unsafe { *out_buf = MdvBuf::empty() };
+
+        if req.is_null() && req_len != 0 {
+            return MdvStatus::NullArg;
+        }
+        let bytes: &[u8] = if req_len == 0 {
+            &[]
+        } else {
+            // SAFETY: caller guarantees req/req_len describe valid bytes (len != 0).
+            unsafe { core::slice::from_raw_parts(req, req_len) }
+        };
+        match diff::parse_wire(bytes) {
             Ok(frame) => {
                 // SAFETY: out_buf validated non-null above.
                 unsafe { *out_buf = MdvBuf::from_vec(frame) };

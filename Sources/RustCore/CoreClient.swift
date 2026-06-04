@@ -292,3 +292,118 @@ public func mdvCoreApplyCMEdits(
         throw CoreError.decode("\(e)")
     }
 }
+
+// MARK: - Unified-diff parsing (migration slice #3)
+
+/// One file's parsed diff. Mirrors the Rust `diff::File` wire type; ViewerCore's
+/// `RustDiffAdapter` maps it to the `UnifiedDiff.File` model the diff viewer uses
+/// (RustCore can't depend on ViewerCore, so the bridge returns its own values).
+public struct DiffFile: Equatable, Sendable {
+    public let oldPath: String
+    public let newPath: String
+    public let isNew: Bool
+    public let isDeleted: Bool
+    public let isBinary: Bool
+    public let isRename: Bool
+    public let hunks: [DiffHunk]
+}
+
+/// One hunk of a parsed diff. Mirrors the Rust `diff::Hunk`.
+public struct DiffHunk: Equatable, Sendable {
+    public let oldStart: Int
+    public let oldCount: Int
+    public let newStart: Int
+    public let newCount: Int
+    public let header: String
+    public let lines: [DiffLine]
+}
+
+/// One line of a parsed diff. Mirrors the Rust `diff::Line`.
+public struct DiffLine: Equatable, Sendable {
+    public enum Kind: String, Sendable {
+        case context, added, removed
+        /// The Rust `LineKind::NoNewline` serializes lowercased-without-separator.
+        case noNewline = "nonewline"
+    }
+    public let kind: Kind
+    public let oldLineNo: Int?
+    public let newLineNo: Int?
+    public let content: String
+}
+
+/// Parse a unified diff through the Rust core (migration slice #3 — STATELESS,
+/// like `mdvCoreApplyCMEdits`: a `{text}` request frame in, a `{files:[…]}`
+/// response frame out). Throws `CoreError` only on a bridge FAULT (null/wire/
+/// panic) so the adapter can fall back to the Swift `DiffParser`. A diff that
+/// parses to zero files is `[]`, not a throw.
+public func mdvCoreParseDiff(text: String) throws -> [DiffFile] {
+    let request = MsgPackValue.map([(.string("text"), .string(text))])
+    let reqBytes = request.frame()
+
+    var buf = MdvBuf(data: nil, len: 0, cap: 0)
+    let status = reqBytes.withUnsafeBufferPointer { p in
+        mdvcore_diff_parse(p.baseAddress, UInt(p.count), &buf)
+    }
+    defer { mdvcore_buf_free(&buf) }
+    guard status == MDV_STATUS_OK else { throw CoreError(status: status) }
+    guard let data = buf.data, buf.len > 0 else {
+        throw CoreError.decode("empty diff_parse response frame")
+    }
+    let frame = Array(UnsafeBufferPointer(start: data, count: Int(buf.len)))
+    let body = try CsvSession.unframe(frame)
+    var reader = MsgPackReader(body)
+    do {
+        let map = try reader.decode().mapValue()
+        guard let filesVal = map["files"] else { throw CoreError.decode("missing 'files'") }
+        return try filesVal.arrayValue().map(decodeDiffFile)
+    } catch let e as MsgPackError {
+        throw CoreError.decode("\(e)")
+    }
+}
+
+private func decodeDiffFile(_ v: MsgPackValue) throws -> DiffFile {
+    let m = try v.mapValue()
+    return DiffFile(
+        oldPath: try m.require("old_path").stringValue(),
+        newPath: try m.require("new_path").stringValue(),
+        isNew: try m.require("is_new").boolValue(),
+        isDeleted: try m.require("is_deleted").boolValue(),
+        isBinary: try m.require("is_binary").boolValue(),
+        isRename: try m.require("is_rename").boolValue(),
+        hunks: try m.require("hunks").arrayValue().map(decodeDiffHunk)
+    )
+}
+
+private func decodeDiffHunk(_ v: MsgPackValue) throws -> DiffHunk {
+    let m = try v.mapValue()
+    return DiffHunk(
+        oldStart: Int(try m.require("old_start").u64Value()),
+        oldCount: Int(try m.require("old_count").u64Value()),
+        newStart: Int(try m.require("new_start").u64Value()),
+        newCount: Int(try m.require("new_count").u64Value()),
+        header: try m.require("header").stringValue(),
+        lines: try m.require("lines").arrayValue().map(decodeDiffLine)
+    )
+}
+
+private func decodeDiffLine(_ v: MsgPackValue) throws -> DiffLine {
+    let m = try v.mapValue()
+    let kindStr = try m.require("kind").stringValue()
+    guard let kind = DiffLine.Kind(rawValue: kindStr) else {
+        throw CoreError.decode("unknown diff line kind '\(kindStr)'")
+    }
+    return DiffLine(
+        kind: kind,
+        oldLineNo: try decodeOptInt(m.require("old_line_no")),
+        newLineNo: try decodeOptInt(m.require("new_line_no")),
+        content: try m.require("content").stringValue()
+    )
+}
+
+/// A diff coordinate is non-negative (the Rust parser clamps to `0…1e9`), so a
+/// present value decodes via `u64Value`; `null` (an added line's old number, or
+/// vice-versa) decodes to `nil`.
+private func decodeOptInt(_ v: MsgPackValue) throws -> Int? {
+    if case .nilValue = v { return nil }
+    return Int(try v.u64Value())
+}

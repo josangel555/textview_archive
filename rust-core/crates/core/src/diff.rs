@@ -387,6 +387,38 @@ impl PartialHunk {
     }
 }
 
+// MARK: - Wire seam (stateless FFI request/response)
+
+/// Request payload: the raw unified-diff text. Deserialized from the MessagePack
+/// named-map frame the Swift side builds (matching `to_vec_named`).
+#[derive(Serialize, Deserialize)]
+struct ParseRequest {
+    text: String,
+}
+
+/// Response payload: the parsed files (the full structured diff). `File`/`Hunk`/
+/// `Line` already derive `Serialize`, so they ride the wire as named maps.
+#[derive(Serialize, Deserialize)]
+struct ParseResponse {
+    files: Vec<File>,
+}
+
+/// Stateless wire seam for the FFI shim `mdvcore_diff_parse`: decode a
+/// length-prefixed MessagePack request frame `{text}`, parse the unified diff,
+/// and encode a `{files:[…]}` response frame. Pure + sans-IO, so it is fully
+/// cargo-testable without the C edge; the FFI layer adds only the pointer/
+/// `MdvBuf`/panic-guard plumbing.
+///
+/// # Errors
+/// [`crate::wire::WireFault`] on a malformed/oversized request frame or an
+/// encode failure. (A diff that parses to zero files is NOT an error — it
+/// returns Ok with `files: []`.)
+pub fn parse_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault> {
+    let req: ParseRequest = crate::wire::decode_frame(req_frame)?;
+    let files = parse(&req.text);
+    crate::wire::encode_frame(&ParseResponse { files })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -517,5 +549,15 @@ mod tests {
         let d = "diff --git a/f b/f\n@@ -1,2 +1,2 @@\n a\n\n";
         let lines = &parse(d)[0].hunks[0].lines;
         assert_eq!(lines[1], Line { kind: LineKind::Context, old_line_no: Some(2), new_line_no: Some(2), content: "".into() });
+    }
+
+    #[test]
+    fn wire_round_trip_matches_direct_parse() {
+        // parse_wire(encode {text}) must decode to the same files as parse().
+        let d = "diff --git a/foo.txt b/foo.txt\n@@ -1,2 +1,3 @@ ctx\n a\n-b\n+c\n+d\n";
+        let req = crate::wire::encode_frame(&ParseRequest { text: d.to_string() }).unwrap();
+        let resp_frame = parse_wire(&req).unwrap();
+        let resp: ParseResponse = crate::wire::decode_frame(&resp_frame).unwrap();
+        assert_eq!(resp.files, parse(d));
     }
 }
