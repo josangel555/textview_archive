@@ -165,6 +165,14 @@ public enum Renderer {
     /// flips/rotations below are expressed in that frame.
     static func orient(_ image: CGImage, orientation: EXIFOrientation) throws -> CGImage {
         guard orientation != .up else { return image }
+        // `.leftMirrored` (main-diagonal transpose) is expressed as two
+        // already-correct primitives — `.rightMirrored` (anti-diagonal) then
+        // `.down` (180°) compose to the main-diagonal reflection. The direct
+        // chained transform here previously drew off-canvas (all-black); reusing
+        // verified primitives is bulletproof. Pinned by ImageOrientationTests.
+        if orientation == .leftMirrored {
+            return try orient(orient(image, orientation: .rightMirrored), orientation: .down)
+        }
         let w = image.width
         let h = image.height
         guard w > 0, h > 0 else { throw ImageEditError.degenerateGeometry }
@@ -193,10 +201,12 @@ public enum Renderer {
             // Vertical flip.
             t = CGAffineTransform(translationX: 0, y: CGFloat(h)).scaledBy(x: 1, y: -1)
         case .leftMirrored:
-            // Transpose (flip across main diagonal): rotate -90° then v-flip.
-            t = CGAffineTransform(translationX: CGFloat(h), y: CGFloat(w))
-                .rotated(by: .pi / 2)
-                .scaledBy(x: 1, y: -1)
+            // Transpose across the MAIN diagonal: (x, y) → (y, x). The previous
+            // chained form was a mis-translated copy of `.rightMirrored`'s
+            // anti-diagonal map and drew entirely off-canvas (all-black output);
+            // the explicit swap matrix maps the w×h source draw rect cleanly
+            // into the h×w destination. Pinned by ImageOrientationTests.
+            t = CGAffineTransform(a: 0, b: 1, c: 1, d: 0, tx: 0, ty: 0)
         case .right90:
             // 90° clockwise as displayed → rotate the stored raster +90° here.
             t = CGAffineTransform(translationX: CGFloat(h), y: 0).rotated(by: .pi / 2)
