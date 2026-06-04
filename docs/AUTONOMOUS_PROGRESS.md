@@ -107,6 +107,12 @@ Owner: `.build/debug/MarkdownViewer --claude-monitor` to eyeball the monitor PoC
   bug**: Renderer.leftMirrored (from 8420b29) drew off-canvas (all-black) — no test had
   exercised its pixels. Found via an exhaustive 8×8 render-equivalence property test;
   fixed by composing two verified primitives. All-8 corner-permutation pin test added. Gate-green.
+- 2026-06-04 `7fac492` **adversarial-review fixes** (8 confirmed of 24 raw; workflow
+  wf_511ce2c0). monitor-log.sh: drop full-payload persistence (secrets→sizes+200-char
+  preview), atomic mkdir-lock + small flat lines (closes >PIPE_BUF concurrent-append
+  interleave → silent loss), malformed→<log>.errors. NewFileCreator: reject traversal
+  baseName + O_NOFOLLOW. +concurrency proof, +traversal-rejection, +privacy-regression
+  + jq-via-`which` test fixes. Gate-green. (Rejected 16 raw incl. a minor formatter dup.)
 
 ### KEY FINDINGS (this headless wave, 2026-06-04 morning)
 - **Tab-op republish is NOT the bottleneck.** RepublishCountTests measured: warm
