@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 # Bundle size guardrail. Fails the build when dist/TextView.app
 # crosses a budget. Two checks:
-#   - total .app size (default 40 MB)
-#   - main executable size (default 20 MB)
+#   - total .app size (default 48 MB)
+#   - main executable size (default 26 MB)
 #
-# Caps bumped 37->40 / 18->20 (2026-05-31) for the Rust-core CSV integration.
+# Caps bumped 40->48 / 20->26 (2026-06-03) for the UX-overhaul features
+# (embedded terminal + ANSI parser, command registry/keybindings,
+# content-toolbar + breadcrumb, find/replace rebuild, footer git) — ~2.4 MB of
+# legitimate Swift growth (exec 19->21.4 MB), no TreeSitter grammar static-linked
+# (all new code is pure Swift; grammars remain dylibs in Contents/Frameworks/).
+# Earlier: caps bumped 37->40 / 18->20 (2026-05-31) for the Rust-core CSV integration.
 # Two facts justified the bump, MEASURED this run:
 #   1. The `main` release exec (NO Rust), stripped exactly like build-app.sh
 #      (`strip -S`), was ALREADY 18.60 MB — the old 18 MB exec cap was stale
@@ -40,7 +45,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 ROOT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 APP_DIR="$ROOT_DIR/dist/TextView.app"
 
-BUDGET_MB="${BUDGET_MB:-${1:-40}}"
+BUDGET_MB="${BUDGET_MB:-${1:-48}}"
 # Per-exec check defaults to 16 MB. The eager keeplist (JSON, Swift,
 # Markdown) + everything-else-Swift-and-resources fits in ~11 MB
 # release. The CodeMirror 6 editor (Swift wrapper + JS bridge code)
@@ -55,7 +60,7 @@ BUDGET_MB="${BUDGET_MB:-${1:-40}}"
 # Contents/Frameworks/, so this is real code growth, not a
 # static-link regression. Override via env to opt out:
 #   EXEC_BUDGET_MB=0 bash scripts/check-bundle-size.sh
-EXEC_BUDGET_MB="${EXEC_BUDGET_MB:-20}"
+EXEC_BUDGET_MB="${EXEC_BUDGET_MB:-26}"
 BUDGET_BYTES=$(( BUDGET_MB * 1024 * 1024 ))
 EXEC_BUDGET_BYTES=$(( EXEC_BUDGET_MB * 1024 * 1024 ))
 
