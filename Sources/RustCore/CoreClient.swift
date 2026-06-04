@@ -386,6 +386,52 @@ private func decodeDiffHunk(_ v: MsgPackValue) throws -> DiffHunk {
     )
 }
 
+/// Per-working-tree-line diff mark (mirrors the Rust `diff::DiffMark`; raw
+/// values match the wire `mark` strings). ViewerCore's `RustDiffAdapter` maps it
+/// to its own `DiffMark` (RustCore can't depend on ViewerCore).
+public enum DiffHunkMark: String, Sendable {
+    case added
+    case modified
+    case deleted
+}
+
+/// Flatten a unified diff to per-line gutter marks through the Rust core
+/// (migration slice #3, gutter half — STATELESS, `{text}` frame in,
+/// `{marks:[{line,mark}]}` frame out). Throws `CoreError` only on a bridge FAULT
+/// so the adapter can fall back to the Swift `DiffHunkParser`.
+public func mdvCoreDiffHunkMarks(text: String) throws -> [Int: DiffHunkMark] {
+    let request = MsgPackValue.map([(.string("text"), .string(text))])
+    let reqBytes = request.frame()
+
+    var buf = MdvBuf(data: nil, len: 0, cap: 0)
+    let status = reqBytes.withUnsafeBufferPointer { p in
+        mdvcore_diff_hunk_marks(p.baseAddress, UInt(p.count), &buf)
+    }
+    defer { mdvcore_buf_free(&buf) }
+    guard status == MDV_STATUS_OK else { throw CoreError(status: status) }
+    guard let data = buf.data, buf.len > 0 else { return [:] }
+    let frame = Array(UnsafeBufferPointer(start: data, count: Int(buf.len)))
+    let body = try CsvSession.unframe(frame)
+    var reader = MsgPackReader(body)
+    do {
+        let map = try reader.decode().mapValue()
+        guard let marksVal = map["marks"] else { throw CoreError.decode("missing 'marks'") }
+        var result: [Int: DiffHunkMark] = [:]
+        for el in try marksVal.arrayValue() {
+            let m = try el.mapValue()
+            let line = Int(try m.require("line").u64Value())
+            let kindStr = try m.require("mark").stringValue()
+            guard let mark = DiffHunkMark(rawValue: kindStr) else {
+                throw CoreError.decode("unknown diff hunk mark '\(kindStr)'")
+            }
+            result[line] = mark
+        }
+        return result
+    } catch let e as MsgPackError {
+        throw CoreError.decode("\(e)")
+    }
+}
+
 private func decodeDiffLine(_ v: MsgPackValue) throws -> DiffLine {
     let m = try v.mapValue()
     let kindStr = try m.require("kind").stringValue()

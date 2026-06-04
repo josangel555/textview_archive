@@ -59,4 +59,30 @@ public enum RustDiffAdapter {
         case .noNewline: return .noNewline
         }
     }
+
+    // MARK: - Gutter marks (the DiffHunkParser half of the slice)
+
+    /// Flatten `diff` to a per-working-tree-line gutter-mark map, routing per the
+    /// `.diff` gate (the gutter is the same "diff parsing in Rust" capability as
+    /// the structured `parse`).
+    public static func hunkMarks(_ diff: String) -> [Int: DiffMark] {
+        hunkMarksOutcome(diff).value
+    }
+
+    /// Same, but also reporting which engine produced the result (A/B / diag).
+    public static func hunkMarksOutcome(_ diff: String) -> CoreOutcome<[Int: DiffMark]> {
+        RustCoreFallback.run(
+            .diff,
+            rust: { try mdvCoreDiffHunkMarks(text: diff).mapValues(mark) },
+            swift: { DiffHunkParser.parse(diff) }
+        )
+    }
+
+    private static func mark(_ m: RustCore.DiffHunkMark) -> DiffMark {
+        switch m {
+        case .added: return .added
+        case .modified: return .modified
+        case .deleted: return .deleted
+        }
+    }
 }

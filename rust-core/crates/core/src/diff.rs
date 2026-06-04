@@ -8,6 +8,7 @@
 //! last ` b/` → first-space), and hunk-coordinate clamping to a sane ceiling.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// A diff line's kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -419,6 +420,124 @@ pub fn parse_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault> {
     crate::wire::encode_frame(&ParseResponse { files })
 }
 
+// MARK: - Per-line gutter marks (port of Swift DiffHunkParser)
+
+/// Per-working-tree-line diff status (mirrors Swift `DiffMark`). Unlike the
+/// structured [`parse`], this flattens a diff to a `line → mark` map the
+/// source-view gutter renders against; keys are 1-based line numbers in the file
+/// *as it stands on disk* (the new side).
+#[derive(Serialize, Deserialize, PartialEq, Eq, Clone, Copy, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum DiffMark {
+    /// New line in the working tree (didn't exist at HEAD).
+    Added,
+    /// Line existed at HEAD but its content changed (a `-` immediately followed
+    /// by a `+` at the same new-side position).
+    Modified,
+    /// The working-tree line just after a deletion — the gutter tick that signals
+    /// lines were removed above (the deleted line itself isn't on disk).
+    Deleted,
+}
+
+/// Flatten a unified diff to a `new-side-line → mark` map (mirrors
+/// `DiffHunkParser.parse`). Multi-file diffs accumulate across every hunk.
+#[must_use]
+pub fn hunk_marks(diff: &str) -> BTreeMap<i64, DiffMark> {
+    let mut marks: BTreeMap<i64, DiffMark> = BTreeMap::new();
+    let mut line_in_new: i64 = 0;
+    let mut pending_deletion = false;
+
+    for line in diff.split('\n') {
+        if line.starts_with("@@") {
+            // "@@ -old,len +new,len @@" — read the new-side start after the '+',
+            // up to the first space or comma (matches Swift exactly: a header
+            // without that terminator leaves line_in_new unchanged).
+            if let Some(plus) = line.find('+') {
+                let rest = &line[plus + 1..];
+                if let Some(end) = rest.find([' ', ',']) {
+                    if let Ok(n) = rest[..end].parse::<i64>() {
+                        line_in_new = n - 1; // bumped before each consumed line
+                    }
+                }
+            }
+            pending_deletion = false;
+            continue;
+        }
+        // Non-hunk metadata (note "+++ " is caught here, before the '+' arm).
+        if line.starts_with("diff ")
+            || line.starts_with("index ")
+            || line.starts_with("--- ")
+            || line.starts_with("+++ ")
+            || line.starts_with("Binary ")
+            || line.starts_with("new file")
+            || line.starts_with("deleted file")
+            || line.starts_with("similarity ")
+            || line.starts_with("rename ")
+            || line.starts_with("copy ")
+        {
+            continue;
+        }
+        let Some(first) = line.chars().next() else {
+            // Blank in-hunk line is a context line in the new file.
+            line_in_new += 1;
+            continue;
+        };
+        match first {
+            ' ' => {
+                line_in_new += 1;
+                pending_deletion = false;
+            }
+            '+' => {
+                line_in_new += 1;
+                marks.insert(
+                    line_in_new,
+                    if pending_deletion { DiffMark::Modified } else { DiffMark::Added },
+                );
+                pending_deletion = false;
+            }
+            '-' => {
+                pending_deletion = true;
+                // Land the tick on the successor line; don't clobber an existing
+                // mark (a later '+' upgrades to Modified via the insert above).
+                marks.entry(line_in_new + 1).or_insert(DiffMark::Deleted);
+            }
+            // "\ No newline…" and any unknown marker: skip silently.
+            _ => {}
+        }
+    }
+    marks
+}
+
+/// One `line → mark` pair as it crosses the wire (a list, not a map: the Swift
+/// `MsgPackReader` decodes only string-keyed maps, and these keys are ints).
+#[derive(Serialize, Deserialize)]
+struct MarkWire {
+    line: i64,
+    mark: DiffMark,
+}
+
+/// Response payload: the gutter marks as a deterministic (line-sorted) list.
+#[derive(Serialize, Deserialize)]
+struct HunkMarksResponse {
+    marks: Vec<MarkWire>,
+}
+
+/// Stateless wire seam for the FFI shim `mdvcore_diff_hunk_marks`: decode a
+/// `{text}` request frame, flatten to gutter marks, encode a `{marks:[{line,
+/// mark}]}` response frame. Pure + sans-IO (cargo-testable).
+///
+/// # Errors
+/// [`crate::wire::WireFault`] on a malformed/oversized request frame or an
+/// encode failure.
+pub fn hunk_marks_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault> {
+    let req: ParseRequest = crate::wire::decode_frame(req_frame)?;
+    let marks: Vec<MarkWire> = hunk_marks(&req.text)
+        .into_iter()
+        .map(|(line, mark)| MarkWire { line, mark })
+        .collect();
+    crate::wire::encode_frame(&HunkMarksResponse { marks })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -559,5 +678,38 @@ mod tests {
         let resp_frame = parse_wire(&req).unwrap();
         let resp: ParseResponse = crate::wire::decode_frame(&resp_frame).unwrap();
         assert_eq!(resp.files, parse(d));
+    }
+
+    #[test]
+    fn hunk_marks_added_modified_deleted() {
+        // @@ -1,3 +1,4 @@ : context, modify (remove+add), pure add, delete-at-end.
+        let d = "diff --git a/f b/f\n@@ -1,3 +1,4 @@\n ctx\n-old\n+new\n+fresh\n-gone\n";
+        let m = hunk_marks(d);
+        // line 1 = context (no mark); line 2 = modified (-old then +new);
+        // line 3 = added (+fresh); then -gone marks line 4 as deleted.
+        assert_eq!(m.get(&2), Some(&DiffMark::Modified));
+        assert_eq!(m.get(&3), Some(&DiffMark::Added));
+        assert_eq!(m.get(&4), Some(&DiffMark::Deleted));
+        assert_eq!(m.get(&1), None);
+    }
+
+    #[test]
+    fn hunk_marks_skips_metadata_and_pluspluplus() {
+        // "+++ b/f" must NOT be read as an added content line.
+        let d = "diff --git a/f b/f\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n";
+        let m = hunk_marks(d);
+        assert_eq!(m.get(&1), Some(&DiffMark::Modified));
+        assert_eq!(m.len(), 1);
+    }
+
+    #[test]
+    fn hunk_marks_wire_round_trips() {
+        let d = "diff --git a/f b/f\n@@ -1 +1,2 @@\n ctx\n+added\n";
+        let req = crate::wire::encode_frame(&ParseRequest { text: d.to_string() }).unwrap();
+        let frame = hunk_marks_wire(&req).unwrap();
+        let resp: HunkMarksResponse = crate::wire::decode_frame(&frame).unwrap();
+        assert_eq!(resp.marks.len(), 1);
+        assert_eq!(resp.marks[0].line, 2);
+        assert_eq!(resp.marks[0].mark, DiffMark::Added);
     }
 }

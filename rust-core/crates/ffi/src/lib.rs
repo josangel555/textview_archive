@@ -186,6 +186,51 @@ pub unsafe extern "C" fn mdvcore_diff_parse(
     })
 }
 
+/// Flatten a unified diff to per-line gutter marks (stateless). `req`/`req_len`
+/// is a `{text}` MessagePack request frame; the result is written to `out_buf`
+/// as a `{marks:[{line,mark}]}` response frame (`mark` ∈ added/modified/deleted,
+/// `line` is the 1-based working-tree line). Caller MUST call [`mdvcore_buf_free`].
+///
+/// # Returns
+/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::WireError`], or
+/// [`MdvStatus::Panic`].
+///
+/// # Safety
+/// `req` must point to `req_len` valid bytes (or be null with `req_len == 0`).
+/// `out_buf` must be a valid, writable pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_diff_hunk_marks(
+    req: *const u8,
+    req_len: usize,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_guard!({
+        if out_buf.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_buf validated; empty default so error paths stay safe-to-free.
+        unsafe { *out_buf = MdvBuf::empty() };
+
+        if req.is_null() && req_len != 0 {
+            return MdvStatus::NullArg;
+        }
+        let bytes: &[u8] = if req_len == 0 {
+            &[]
+        } else {
+            // SAFETY: caller guarantees req/req_len describe valid bytes (len != 0).
+            unsafe { core::slice::from_raw_parts(req, req_len) }
+        };
+        match diff::hunk_marks_wire(bytes) {
+            Ok(frame) => {
+                // SAFETY: out_buf validated non-null above.
+                unsafe { *out_buf = MdvBuf::from_vec(frame) };
+                MdvStatus::Ok
+            }
+            Err(_) => MdvStatus::WireError,
+        }
+    })
+}
+
 /// Render a HEX dump (stateless). `bytes`/`len` is the raw byte buffer to dump;
 /// the rendered dump is written to `out_buf` as **raw UTF-8** (NOT a MessagePack
 /// frame — a 4 MB file renders to ~18 MB of text, so wrapping it in a frame just
