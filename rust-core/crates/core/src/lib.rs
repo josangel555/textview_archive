@@ -29,4 +29,5 @@ pub mod hex;
 pub mod indent;
 pub mod session;
 pub mod trace;
+pub mod view;
 pub mod wire;
