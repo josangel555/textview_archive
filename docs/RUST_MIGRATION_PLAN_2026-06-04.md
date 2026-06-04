@@ -164,15 +164,21 @@ chain event, size-checked against the **16 MB exec / 37 MB bundle caps**
       port (`Vec<u16>` + validating `from_utf16`), 11 cargo tests incl.
       astral/split-surrogate/overlap/OOB/CRLF. Core only; not FFI-exposed; Swift
       gate untouched.
-    - ⬜ **Stage 2 (next):** add the FIRST *stateless* FFI fn
-      `mdvcore_cm_apply(req_ptr,len,out**) -> MdvStatus` (request = a MessagePack
-      frame `{base, edits:[{from,to,insert}]}` via the new Swift→Rust encoder;
-      response = `{text: String?}` frame). Wire it: core serde request/response
-      types (+ cargo round-trip), the ffi shim (guard macro + buf alloc, mirrors
-      the session fns), cbindgen header regen (via `build.rs`), a `CoreClient`
-      method, `RustCMEditAdapter` behind `RustCoreFallback(.cmEdit)`, and an A/B
-      parity test in `RustCoreTests` vs Swift `CMEditApplier` over its corpus
-      (incl. the UTF-16 cases). All headless (cargo + swift test); default-OFF.
+    - ✅ **Stage 2a (done, `0419c72`):** core `apply_wire` (serde request/response
+      + MessagePack frame in/out), 15 cm_edit cargo tests.
+    - ✅ **Stage 2b (done, `568ce40`):** the FIRST *stateless* FFI fn
+      `mdvcore_cm_apply` (cbindgen-exported) + `CoreClient.mdvCoreApplyCMEdits`
+      (builds the request via the Swift→Rust encoder — its first end-to-end use)
+      + `RustCMEditAdapter` behind `RustCoreFallback(.cmEdit)` (default-OFF,
+      fail-safe) + an 18-case A/B parity test (Rust == Swift byte-for-byte incl.
+      astral/split-surrogate/overlap/OOB). Full headless gate green.
+    - **Slice #2 COMPLETE** — and it established the reusable **Type-1 stateless
+      template** (bytes-in/frame-out, no handle) for slices #3 (diff), #4–5
+      (hex), #6 (fuzzy), #7 (indent).
+  - **NEXT: slice #3 (Diff parsers)** on the same Type-1 template — DiffParser
+    + DiffHunkParser core port (`BTreeMap` for deterministic wire) → `apply_wire`
+    → `mdvcore_diff_*` FFI → adapter behind `.diff` → A/B vs `DiffParserTests`.
+    Only the parsing moves; the git subprocess stays Swift. No new deps.
 - **Owner-gated:** approve (or decline) `regex` / `comrak`+`tree-sitter` /
   `serde_json` per the size budget → unlocks slices 9–11.
 - **Supervised/eyes-on:** the `TabsReducer` extraction, then the DocumentModel→
