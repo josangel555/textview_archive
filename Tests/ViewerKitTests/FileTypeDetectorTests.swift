@@ -30,7 +30,11 @@ final class FileTypeDetectorTests: XCTestCase {
 
     func test_extensionlessFilesAreTreatedAsText() {
         XCTAssertEqual(category("/tmp/LICENSE"), .plainText)
-        XCTAssertEqual(category("/tmp/Makefile"), .plainText)
+        // Build files are now upgraded to .code (known-basename map, 2026-06-04)
+        // — still a cheap text-shaped category, just syntax-highlightable.
+        XCTAssertEqual(category("/tmp/Makefile"), .code)
+        // A generic extensionless file still falls through to plain text.
+        XCTAssertEqual(category("/tmp/scratchfile"), .plainText)
     }
 
     func test_caseInsensitive() {

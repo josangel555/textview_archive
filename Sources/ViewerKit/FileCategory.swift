@@ -55,13 +55,51 @@ public enum FileTypeDetector {
     private static let sqliteExtensions: Set<String> = [
         "sqlite", "sqlite3", "db", "db3"
     ]
+    /// Conventional project files identified by their WHOLE name (they have
+    /// no useful extension): build files → `.code` (worth highlighting),
+    /// dotfiles / docs → `.plainText`. Keyed on the lowercased
+    /// `lastPathComponent`, checked BEFORE extension rules so e.g. `Makefile`
+    /// (ext "") upgrades from plain text to code. A file like `README.md`
+    /// (lastPathComponent "readme.md") doesn't match "readme" → still markdown.
+    private static let knownBasenames: [String: FileCategory] = [
+        "dockerfile": .code, "containerfile": .code, "makefile": .code,
+        "cmakelists.txt": .code, "rakefile": .code, "gemfile": .code,
+        "podfile": .code, "brewfile": .code, "vagrantfile": .code,
+        "justfile": .code, "procfile": .plainText, "caddyfile": .code,
+        ".gitignore": .plainText, ".gitattributes": .plainText,
+        ".dockerignore": .plainText, ".editorconfig": .plainText,
+        ".env": .plainText, ".npmrc": .plainText, ".nvmrc": .plainText,
+        ".gitconfig": .plainText, ".prettierrc": .code, ".eslintrc": .code,
+        ".babelrc": .code, ".bashrc": .code, ".zshrc": .code,
+        ".bash_profile": .code, ".zprofile": .code, ".profile": .code,
+        ".inputrc": .plainText, ".curlrc": .plainText, ".wgetrc": .plainText,
+        "license": .plainText, "licence": .plainText, "readme": .plainText,
+        "changelog": .plainText, "authors": .plainText, "notice": .plainText,
+        "copying": .plainText, "todo": .plainText, "contributors": .plainText,
+        "codeowners": .plainText, "version": .plainText,
+    ]
+    /// Plain-text-ish config/lock extensions not worth a code grammar — keep
+    /// them out of the WKWebView/CM6 editor path; they render in the cheap
+    /// NSTextView source view. (Owner ask: allow-list known plain-text formats.)
+    private static let configExtensions: Set<String> = [
+        "conf", "config", "ini", "cfg", "properties", "prefs", "env",
+        "lock", "list", "dockerignore", "gitignore", "gitattributes",
+        "editorconfig", "npmrc", "nvmrc", "terraformrc", "dist", "sample",
+        "example", "tmpl", "template", "resolved", "sum", "pem", "crt", "csr",
+    ]
 
     public static func category(for url: URL) -> FileCategory {
+        // Whole-name match first (catches extension-less project files +
+        // dotfiles, and upgrades Makefile/Dockerfile to code).
+        if let byName = knownBasenames[url.lastPathComponent.lowercased()] {
+            return byName
+        }
         let ext = url.pathExtension.lowercased()
 
         if mermaidExtensions.contains(ext) { return .mermaid }
         if markdownExtensions.contains(ext) { return .markdown }
         if plainTextExtensions.contains(ext) { return .plainText }
+        if configExtensions.contains(ext) { return .plainText }
         if htmlExtensions.contains(ext) { return .html }
         if codeExtensions.contains(ext) { return .code }
         if imageExtensions.contains(ext) { return .image }
