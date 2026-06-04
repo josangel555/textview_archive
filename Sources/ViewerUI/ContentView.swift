@@ -140,14 +140,23 @@ public struct ContentView: View {
                     // Center column: body row over the optional terminal
                     // pane over the bottom dock + bottom rail.
                     VStack(spacing: 0) {
+                        // The content/body MUST win the vertical flex: pin it
+                        // greedy + high layout priority so a runtime terminal
+                        // TOGGLE (vs. open-at-launch) can't let the terminal's
+                        // own `maxHeight:.infinity` interior steal the column
+                        // and paint over the document (the reported "terminal
+                        // takes the whole page" bug — only repro'd on toggle,
+                        // not launch). The terminal stays a PINNED height.
                         bodyRow
-                        // BOTTOM terminal pane (#226). When open, a
-                        // drag-resizable, fixed-height shell pane sits below
-                        // the content. The body row above keeps
-                        // maxHeight:.infinity so IT absorbs the squeeze; the
-                        // terminal claims a pinned height (not the flex axis)
-                        // so the WKWebView/NSScrollView pane can't collapse
-                        // (COMPOSITOR RULE, LESSONS).
+                            .frame(maxHeight: .infinity, alignment: .top)
+                            .layoutPriority(1)
+                        // BOTTOM terminal pane (#226). Fixed-height shell pane
+                        // below the content. `.clipped()` is load-bearing: the
+                        // terminal surface is an opaque, layer-backed NSView; if
+                        // SwiftUI ever proposes it more than `height` mid-relayout
+                        // it must NOT paint past its band onto the document /
+                        // its own header (the "no header / covers the file"
+                        // half of the bug).
                         if terminalPane.isOpen, let terminal = terminalPane.terminal {
                             TerminalResizeHandle(store: terminalPane)
                             TerminalPaneView(
@@ -156,6 +165,8 @@ public struct ContentView: View {
                                 onClose: { terminalPane.setOpen(false) }
                             )
                             .frame(height: terminalPane.height)
+                            .clipped()
+                            .layoutPriority(0)
                         }
                         // BOTTOM dock (UX-E / #227): free-standing,
                         // fixed-height tool windows for panels the user has

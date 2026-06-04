@@ -32,6 +32,15 @@ struct TerminalRepresentable: NSViewRepresentable {
         view.onResize = { rows, cols in coord.model.resize(rows: rows, cols: cols) }
         // Spawn the shell on first appearance (idempotent).
         coord.model.start()
+        // Grab keyboard focus once the view is in a window. Without this the
+        // shell prompt renders but keystrokes go nowhere until the user happens
+        // to click exactly on the grid (the reported "shows a prompt but won't
+        // type" bug) — mouseDown-to-focus alone is too easy to miss. Deferred a
+        // tick so the window/responder chain is wired.
+        DispatchQueue.main.async { [weak view] in
+            guard let view, let window = view.window else { return }
+            window.makeFirstResponder(view)
+        }
         return view
     }
 
