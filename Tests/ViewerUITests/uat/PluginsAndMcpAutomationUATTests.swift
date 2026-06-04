@@ -671,6 +671,14 @@ final class PluginsAndMcpAutomationUATTests: MultiScenarioTestCase {
     // PMA-05/06/07. The grant prompt + sidebar pixels need the VM (logged).
 
     func test_PMA06_subprocessFailureTaxonomy() throws {
+        // Heavy-tier (T4) suite: self-skip on the headless merge gate. Unlike
+        // its siblings this scenario drives `PluginSubprocessHost` directly and
+        // never calls `runScenarios()` (which is the implicit skip path), so it
+        // needs the explicit guard or it runs its body in the gate and trips
+        // TierGateObserver. It also spawns deliberately slow fixtures
+        // (`sleep 30`, a 2 MB stdout overflow) unsuited to the fast gate — it
+        // belongs in the VM / nightly lane with the rest of the suite.
+        try skipIfNotBuilt()
         let folder = try harness.makeDir("plugin-fixture")
         let auditLog = harness.tmpDir.appendingPathComponent("plugins-audit.log")
         let host = PluginSubprocessHost(auditURLOverride: auditLog)

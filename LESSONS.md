@@ -1723,3 +1723,17 @@ usually superseded (pre-rename test files, refactored-away `GitService`/
 `WorkspaceStore`, throwaway `poc/` dirs, old dated docs). Confirm with
 `comm -23 <(git ls-tree -r --name-only $b|sort) <(git ls-tree -r --name-only main|sort)`
 to see files-unique-to-branch before deciding land-vs-delete.
+
+**7. `swift test … | tail -N` HIDES the gate verdict — a heavy-tier sentinel red
+read as green for 13 commits.** The Giga UAT commit `98ded71` added a T4 scenario
+(`PMA06`) that drives `PluginSubprocessHost` *directly* — so it calls neither
+`skipIfNotBuilt()` nor `runScenarios()` (the two skip paths) and runs its body in
+the headless gate, tripping `TierGateObserver`. The 3394-test SUITE was always
+green; only the **tier-policy sentinel** failed — and `MDV_HEADLESS_GATE=1 swift
+test | tail -60` clips the `HEADLESS GATE FAILED` banner (it prints AFTER the last
+per-test line), so every per-item "gate-green" check on top of it missed it.
+Lessons: (a) trust the gate's **own exit code**, not piped/tailed stdout —
+`bash scripts/test-headless-gate.sh; echo $?` or grep for `HEADLESS GATE FAILED`;
+(b) any new T4 test that bypasses `runScenarios()` needs an explicit
+`try skipIfNotBuilt()` or it silently runs in the gate; (c) the suite passing ≠
+the gate passing — the sentinel is a separate signal. (Fixed: PMA06 guard added.)

@@ -15,6 +15,12 @@ dist/
 # (Resources/AppIcon.icns) so daily builds don't re-render the iconset.
 scripts/AppIcon.iconset/
 
+# Project-local app data: the in-app Code Review feature (#203) writes
+# review JSONL under `.textview/reviews/` at runtime. Per-project scratch,
+# never committed. (The user-editable keybinding config lives in the HOME
+# dotfile `~/.textview/keybinding.json`, not here.)
+.textview/
+
 # Claude Code working state. `.claude/worktrees/` holds ephemeral git
 # worktrees spawned for parallel agent runs and must never be committed.
 # Ignore the whole `.claude/` tree by default; re-include any config we
