@@ -119,7 +119,8 @@ struct FindBar: View {
                 }
                 .toggleStyle(.button)
                 .controlSize(.small)
-                .help("Match case")
+                .helpInfo(title: "Match case",
+                          description: "Find only exact-case matches of the query")
                 // The "Aa" glyph carries no meaning to VoiceOver; give it
                 // an explicit role + on/off value so the toggle reads as
                 // "Match case, on/off" rather than just "Aa, button".
@@ -134,7 +135,8 @@ struct FindBar: View {
                     }
                     .toggleStyle(.button)
                     .controlSize(.small)
-                    .help("Regular expression")
+                    .helpInfo(title: "Regular expression",
+                              description: "Treat the query as a regex pattern")
                     .accessibilityLabel("Use regular expression")
                     .accessibilityValue(isRegex ? "On" : "Off")
                 }
@@ -149,7 +151,7 @@ struct FindBar: View {
             }
             .controlSize(.small)
             .keyboardShortcut(.escape, modifiers: [])
-            .help("Close find bar (Esc)")
+            .helpInfo(title: "Done", description: "Close the find bar (Esc)")
             .accessibilityLabel("Close find bar")
         }
     }
@@ -178,8 +180,8 @@ struct FindBar: View {
                         .font(.system(size: uiSize(11)))
                         .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
-                .help("Clear search")
+                .buttonStyle(IconHoverButtonStyle(cornerRadius: uiSize(8)))
+                .helpInfo(title: "Clear", description: "Clear the search field")
                 .accessibilityLabel("Clear search")
             }
         }
@@ -231,7 +233,7 @@ struct FindBar: View {
                     .font(.system(size: uiSize(11), weight: .semibold))
                     .frame(minWidth: uiSize(22))
             }
-            .help("Previous match (Shift+Return)")
+            .helpInfo(title: "Previous match", description: "Jump to the previous match (Shift+Return)")
             .keyboardShortcut(.return, modifiers: [.shift])
             .accessibilityLabel("Previous match")
 
@@ -242,7 +244,7 @@ struct FindBar: View {
                     .font(.system(size: uiSize(11), weight: .semibold))
                     .frame(minWidth: uiSize(22))
             }
-            .help("Next match (Return)")
+            .helpInfo(title: "Next match", description: "Jump to the next match (Return)")
             .accessibilityLabel("Next match")
         }
         .buttonStyle(.bordered)
@@ -263,8 +265,9 @@ struct FindBar: View {
                 .foregroundStyle(.secondary)
                 .frame(width: uiSize(14))
         }
-        .buttonStyle(.plain)
-        .help(expanded ? "Hide replace" : "Show replace")
+        .buttonStyle(IconHoverButtonStyle(cornerRadius: uiSize(4)))
+        .helpInfo(title: expanded ? "Hide replace" : "Show replace",
+                  description: "Toggle the replace row")
         .accessibilityLabel("Toggle replace row")
         .accessibilityValue(expanded ? "Expanded" : "Collapsed")
         .accessibilityIdentifier("\(accessibilityID).replaceDisclosure")
@@ -286,7 +289,7 @@ struct FindBar: View {
             }
             .controlSize(.small)
             .disabled(query.isEmpty)
-            .help("Replace the current match")
+            .helpInfo(title: "Replace", description: "Replace the current match")
             .accessibilityLabel("Replace")
             .accessibilityIdentifier("\(accessibilityID).replaceButton")
 
@@ -298,7 +301,7 @@ struct FindBar: View {
             }
             .controlSize(.small)
             .disabled(query.isEmpty)
-            .help("Replace all matches")
+            .helpInfo(title: "Replace all", description: "Replace every match")
             .accessibilityLabel("Replace all")
             .accessibilityIdentifier("\(accessibilityID).replaceAllButton")
 

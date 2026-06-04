@@ -132,7 +132,7 @@ struct HexView: View {
             .disabled(matches.isEmpty)
             .accessibilityIdentifier("mdv.hex.search.prev")
             .accessibilityLabel("Previous match")
-            .help("Previous match (⇧⌘G)")
+            .helpInfo(title: "Previous match", description: "Jump to the previous byte match (⇧⌘G)")
             .keyboardShortcut("g", modifiers: [.command, .shift])
 
             Button(action: { stepMatch(by: 1) }) {
@@ -142,7 +142,7 @@ struct HexView: View {
             .disabled(matches.isEmpty)
             .accessibilityIdentifier("mdv.hex.search.next")
             .accessibilityLabel("Next match")
-            .help("Next match (⌘G)")
+            .helpInfo(title: "Next match", description: "Jump to the next byte match (⌘G)")
             .keyboardShortcut("g", modifiers: [.command])
 
             Spacer()

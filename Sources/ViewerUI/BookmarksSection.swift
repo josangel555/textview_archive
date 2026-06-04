@@ -102,7 +102,7 @@ struct BookmarksSection: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .help("Sort by \(sortMode.rawValue)")
+            .helpInfo(title: "Sort", description: "Sort by \(sortMode.rawValue)")
             .accessibilityIdentifier("mdv.bookmarks.sort")
         }
         .sidebarHeaderRow(uiSize: model.uiSize)
@@ -123,7 +123,7 @@ struct BookmarksSection: View {
                 .clipShape(RoundedRectangle(cornerRadius: 3))
         }
         .buttonStyle(.plain)
-        .help(help)
+        .helpInfo(title: label, description: help)
         .accessibilityIdentifier("mdv.bookmarks.chip.\(label)")
     }
 

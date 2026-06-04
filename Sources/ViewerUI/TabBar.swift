@@ -127,7 +127,8 @@ struct TabBar: View {
                     .font(.system(size: model.uiSize(11), weight: .medium))
                     .frame(width: model.uiSize(24), height: model.uiSize(24))
             }
-            .buttonStyle(.borderless)
+            // UX-H (#230): shared icon style for hover/press feedback.
+            .buttonStyle(IconHoverButtonStyle())
             // 0c: migrated to the uniform HelpInfo model — native tooltip
             // shows the title, the status bar shows the longer description
             // on hover, and a11y label/hint are set from the same source.
@@ -311,7 +312,8 @@ struct TabBarItem: View {
                         Circle()
                             .fill(Color.accentColor)
                             .frame(width: 7 * scale, height: 7 * scale)
-                            .help("Unsaved changes")
+                            .helpInfo(title: "Unsaved changes",
+                                      description: "This tab has edits that haven't been saved")
                             .accessibilityLabel("Unsaved changes")
                             .accessibilityIdentifier("mdv.tab.dirtyDot")
                     }
@@ -319,7 +321,8 @@ struct TabBarItem: View {
                         Image(systemName: "star.fill")
                             .font(.system(size: 8 * scale))
                             .foregroundStyle(.yellow)
-                            .help("Bookmarked")
+                            .helpInfo(title: "Bookmarked",
+                                      description: "This file is bookmarked")
                             .accessibilityLabel("Bookmarked")
                     }
                     Button(action: onClose) {
@@ -368,7 +371,7 @@ struct TabBarItem: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
-        .help(tabHelpText)
+        .helpInfo(title: tab.title, description: tabHelpText)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)

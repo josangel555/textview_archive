@@ -151,7 +151,7 @@ struct ImagePreview: View {
                     Image(systemName: "chevron.left")
                 }
                 .buttonStyle(.borderless)
-                .help("Previous image (←)")
+                .helpInfo(title: "Previous image", description: "Show the previous image (←)")
                 .disabled(prevURL == nil)
                 Text("\(currentIndex + 1) / \(siblings.count)")
                     .font(.system(size: 11, design: .monospaced))
@@ -160,7 +160,7 @@ struct ImagePreview: View {
                     Image(systemName: "chevron.right")
                 }
                 .buttonStyle(.borderless)
-                .help("Next image (→)")
+                .helpInfo(title: "Next image", description: "Show the next image (→)")
                 .disabled(nextURL == nil)
                 Divider().frame(height: 14)
             }
@@ -168,7 +168,7 @@ struct ImagePreview: View {
                 Image(systemName: "minus.magnifyingglass")
             }
             .buttonStyle(.borderless)
-            .help("Zoom out (↓ or ⌘-)")
+            .helpInfo(title: "Zoom out", description: "Zoom out (↓ or ⌘-)")
             Text(String(format: "%.0f%%", magnification * 100))
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(.secondary)
@@ -177,14 +177,14 @@ struct ImagePreview: View {
                 Image(systemName: "plus.magnifyingglass")
             }
             .buttonStyle(.borderless)
-            .help("Zoom in (↑ or ⌘+)")
+            .helpInfo(title: "Zoom in", description: "Zoom in (↑ or ⌘+)")
             Divider().frame(height: 14)
             Button("Fit") { fitToWindow() }
                 .buttonStyle(.borderless)
-                .help("Fit to window (0 or ⌘0)")
+                .helpInfo(title: "Fit", description: "Fit the image to the window (0 or ⌘0)")
             Button("1:1") { magnification = 1.0 }
                 .buttonStyle(.borderless)
-                .help("Actual size (1)")
+                .helpInfo(title: "Actual size", description: "Show the image at 100% (1)")
             if pixelSize.width > 0 {
                 Divider().frame(height: 14)
                 Text("\(Int(pixelSize.width)) × \(Int(pixelSize.height))")

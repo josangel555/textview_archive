@@ -272,7 +272,24 @@ public struct ContentView: View {
                     .padding(.top, 80)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
+
+            // UX-H (#230): the custom floating tooltip overlay. Mounted
+            // LAST so it sits at the top of the Z-order (above every
+            // chrome bar + panel). It observes only the small, dedicated
+            // `TooltipPresenter` (NOT DocumentModel), so a hover re-bodies
+            // just this overlay. `allowsHitTesting(false)` inside the
+            // overlay keeps it from stealing events from the panes beneath
+            // (compositor-safe). Scales with `model.uiSize`/`zoom`.
+            FloatingTooltipOverlay(
+                presenter: .shared,
+                uiScale: CGFloat(model.zoom)
+            )
         }
+        // Window-root coordinate space the `.helpInfo` modifier reports
+        // its anchor frame in and the overlay positions the bubble
+        // against. Both sides reference `.tooltipRoot` (same `name:`
+        // overload the WalkthroughOverlay uses), so they agree.
+        .coordinateSpace(name: TooltipCoordinateSpace.name)
         // First-paint GoTo: when a brand-new session is requested
         // (SessionTabBar `+`, or openFolder(forceNew:)), the
         // SessionsAppCoordinator bumps `firstPaintGoToToken`. We

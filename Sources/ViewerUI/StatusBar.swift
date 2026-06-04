@@ -138,7 +138,8 @@ struct StatusBar: View {
             // The chip is informative but droppable under extreme width
             // pressure — still higher priority than the bare path.
             .layoutPriority(0)
-            .help("Git: \(label) — click to switch branch or open a worktree")
+            .helpInfo(title: "Git: \(label)",
+                      description: "Click to switch branch or open a worktree")
             .accessibilityIdentifier("mdv.statusBar.git")
             .accessibilityLabel("Git \(label)")
         }
@@ -290,8 +291,8 @@ struct StatusBar: View {
         // Render whole or not at all — never a half-truncated "Mod… 6:12…".
         // The whole date block is dropped by `ViewThatFits` when too narrow.
         .fixedSize()
-        .help(stale ? "Modified: \(value) — the file changed on disk since it was loaded"
-                    : "Modified: \(value)")
+        .helpInfo(title: "Modified \(value)",
+                  description: stale ? "The file changed on disk since it was loaded" : "")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(stale ? "Modified \(value), changed on disk" : "Modified: \(value)")
         .accessibilityIdentifier("mdv.statusBar.modified")
@@ -328,9 +329,9 @@ struct StatusBar: View {
                     .foregroundStyle(.primary)
             }
             .fixedSize()
-            .help("Zoom: \(Int((model.zoom * 100).rounded()))% — window UI and "
-                + "document content share one zoom level today; a separate "
-                + "document zoom is planned (#228).")
+            .helpInfo(title: "Zoom \(Int((model.zoom * 100).rounded()))%",
+                      description: "Window UI and document content share one zoom "
+                + "level today; a separate document zoom is planned (#228).")
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Zoom \(Int((model.zoom * 100).rounded())) percent, "
                 + "window and document")

@@ -71,8 +71,8 @@ struct ClaudeTimelineSection: View {
                         .font(.system(size: model.uiSize(9)))
                         .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
-                .help("Refresh")
+                .buttonStyle(IconHoverButtonStyle(cornerRadius: 4))
+                .helpInfo(title: "Refresh", description: "Re-scan the Claude transcript timeline")
             }
             .contentShape(Rectangle())
         }

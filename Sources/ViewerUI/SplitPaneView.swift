@@ -81,8 +81,8 @@ struct SplitPaneView: View {
                     .frame(width: 18, height: 18)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .help("Close split (⌘⇧\\)")
+            .buttonStyle(IconHoverButtonStyle())
+            .helpInfo(title: "Close split", description: "Close the split pane (⌘⇧\\)")
             .accessibilityLabel("Close split pane")
         }
         .padding(.horizontal, 8)

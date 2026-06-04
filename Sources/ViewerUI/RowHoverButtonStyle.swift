@@ -109,6 +109,127 @@ private struct RowHoverEffect: ViewModifier {
     }
 }
 
+// MARK: - Shared icon-button hover/press affordance (UX-H / #230)
+//
+// A single `ButtonStyle` for the many small ICON / CHIP controls in the
+// chrome (toolbar lens buttons, sidebar header toggles, find-bar icons,
+// status-bar chips, shoulder-rail buttons). Before this, each used
+// `.buttonStyle(.plain)` and was visually inert on hover, and the few
+// that DID light up open-coded their own `@State private var hovering`
+// + background switch (PanelRailButton, TerminalToggleButton).
+//
+// This style adds, additively + uniformly, a subtle resting → hover →
+// pressed progression:
+//   * hover  : faint primary tint fill + a barely-perceptible scale-up,
+//   * pressed : a touch stronger fill + slight scale-DOWN + opacity drop,
+//   * an `NSCursor.pointingHand` push on hover (balanced pop on exit /
+//     disappear — same global-cursor-stack discipline as
+//     `RowHoverButtonStyle`, see that header).
+//
+// Subtle + tasteful, NOT bouncy: scale deltas are ≤2% and the animation
+// is a short ease. Hover state is LOCAL `@State` inside the effect view
+// — it never touches DocumentModel (UX-H constraint / over-observation).
+//
+// Compositor-safe: pure SwiftUI chrome, no NSView nesting; the scale is a
+// SwiftUI `.scaleEffect` on the button label only.
+
+/// Icon/chip button style with subtle hover + press feedback.
+///
+/// Apply with `.buttonStyle(IconHoverButtonStyle())`. The `isSelected`
+/// flag lets a toggle-style control (lens button "on", panel rail
+/// "visible") show an accent-tinted resting fill that hover/press
+/// deepen rather than replace.
+struct IconHoverButtonStyle: ButtonStyle {
+    /// Corner radius of the hover/press background fill.
+    var cornerRadius: CGFloat = 5
+    /// When true, paint an accent-tinted resting fill (the control is in
+    /// its "on" / selected state). Hover/press then deepen it.
+    var isSelected: Bool = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .contentShape(Rectangle())
+            .modifier(IconHoverEffect(
+                isPressed: configuration.isPressed,
+                cornerRadius: cornerRadius,
+                isSelected: isSelected
+            ))
+    }
+}
+
+/// Hover-tracking + cursor + background + scale layer. Split from the
+/// `ButtonStyle` so it can own `@State` (hover flag + push-balance guard)
+/// — `makeBody` can't hold view state directly.
+private struct IconHoverEffect: ViewModifier {
+    let isPressed: Bool
+    let cornerRadius: CGFloat
+    let isSelected: Bool
+
+    @State private var isHovering = false
+    @State private var pushedCursor = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(fillColor)
+            )
+            .scaleEffect(scale)
+            .opacity(isPressed ? 0.9 : 1.0)
+            .animation(
+                MotionGate.animation(.easeOut(duration: 0.10),
+                                     reduceMotion: reduceMotion),
+                value: isHovering
+            )
+            .animation(
+                MotionGate.animation(.easeOut(duration: 0.08),
+                                     reduceMotion: reduceMotion),
+                value: isPressed
+            )
+            .onHover { hovering in
+                isHovering = hovering
+                if hovering {
+                    if !pushedCursor {
+                        NSCursor.pointingHand.push()
+                        pushedCursor = true
+                    }
+                } else if pushedCursor {
+                    NSCursor.pop()
+                    pushedCursor = false
+                }
+            }
+            .onDisappear {
+                if pushedCursor {
+                    NSCursor.pop()
+                    pushedCursor = false
+                }
+            }
+    }
+
+    /// ≤2% scale deltas: a hair up on hover, a hair down on press. Reduce
+    /// Motion pins it to 1.0 (no scale) — the fill still conveys state.
+    private var scale: CGFloat {
+        if reduceMotion { return 1.0 }
+        if isPressed { return 0.98 }
+        if isHovering { return 1.02 }
+        return 1.0
+    }
+
+    private var fillColor: Color {
+        let accent = Color.accentColor
+        if isSelected {
+            // Accent-tinted resting fill; hover/press deepen it.
+            if isPressed { return accent.opacity(0.30) }
+            if isHovering { return accent.opacity(0.24) }
+            return accent.opacity(0.18)
+        }
+        if isPressed { return Color.primary.opacity(0.14) }
+        if isHovering { return Color.primary.opacity(0.08) }
+        return Color.clear
+    }
+}
+
 // MARK: - Reduce Motion helper (A11Y-06 support)
 //
 // Pure decision function so the "should this animation run?" rule is

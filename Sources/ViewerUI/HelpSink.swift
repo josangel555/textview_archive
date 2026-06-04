@@ -57,35 +57,8 @@ public extension EnvironmentValues {
     }
 }
 
-private struct HelpInfoModifier: ViewModifier {
-    let info: HelpInfo
-    @Environment(\.helpSink) private var sink: HelpSink
-
-    func body(content: Content) -> some View {
-        content
-            // Native tooltip bubble shows the short TITLE.
-            .help(info.title)
-            // Feed the longer DESCRIPTION to the status-bar slot on hover.
-            .onHover { hovering in
-                sink.set(hovering ? info : nil)
-            }
-            // Accessibility: title as label, description as hint.
-            .accessibilityLabel(Text(info.title))
-            .accessibilityHint(Text(info.description))
-    }
-}
-
-public extension View {
-    /// Attach a uniform `HelpInfo` to an interactive element: sets the native
-    /// `.help(title)` tooltip, feeds the `description` to the `HelpSink` on
-    /// hover (for the status-bar slot), and sets the a11y label/hint. Reads
-    /// the `\.helpSink` environment value (defaults to `HelpSink.shared`).
-    func helpInfo(_ info: HelpInfo) -> some View {
-        modifier(HelpInfoModifier(info: info))
-    }
-
-    /// Convenience overload taking the two strings inline.
-    func helpInfo(title: String, description: String) -> some View {
-        helpInfo(HelpInfo(title: title, description: description))
-    }
-}
+// NOTE (UX-H, #230): the `.helpInfo(...)` View modifier now lives in
+// `FloatingTooltip.swift`. It still feeds this `HelpSink` (the status-bar
+// description slot) and sets the native `.help` + a11y label/hint, but it
+// ALSO drives the custom floating tooltip overlay. `HelpSink` itself is
+// unchanged — it remains the narrow observable for the status-bar feed.

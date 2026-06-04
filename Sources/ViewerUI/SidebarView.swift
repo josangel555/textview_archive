@@ -665,8 +665,10 @@ struct SidebarView: View {
                     Image(systemName: "chart.bar")
                         .font(.system(size: model.uiSize(10)))
                         .foregroundStyle(model.folderStatsExpanded ? Color.accentColor : .secondary)
+                        .frame(width: model.uiSize(18), height: model.uiSize(18))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(IconHoverButtonStyle(cornerRadius: model.uiSize(4),
+                                                  isSelected: model.folderStatsExpanded))
                 .helpInfo(title: model.folderStatsExpanded ? "Hide folder statistics" : "Folder statistics",
                           description: "Show repo commit / author / file-type stats")
                 .accessibilityIdentifier("mdv.sidebar.folderStats")
@@ -681,8 +683,10 @@ struct SidebarView: View {
                     .foregroundStyle(model.isSidebarLocked
                                      ? Color.accentColor
                                      : .secondary)
+                    .frame(width: model.uiSize(18), height: model.uiSize(18))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(IconHoverButtonStyle(cornerRadius: model.uiSize(4),
+                                              isSelected: model.isSidebarLocked))
             .helpInfo(title: model.isSidebarLocked ? "Unlock sidebar" : "Lock sidebar",
                       description: model.isSidebarLocked
                         ? "Sidebar root locked — click to unlock"
@@ -696,8 +700,10 @@ struct SidebarView: View {
                     .foregroundStyle(model.sidebarFollowsActiveTab
                                      ? Color.accentColor
                                      : .secondary)
+                    .frame(width: model.uiSize(18), height: model.uiSize(18))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(IconHoverButtonStyle(cornerRadius: model.uiSize(4),
+                                              isSelected: model.sidebarFollowsActiveTab))
             .helpInfo(title: model.sidebarFollowsActiveTab ? "Following active tab" : "Follow active tab",
                       description: model.sidebarFollowsActiveTab
                         ? "Sidebar follows the active tab — click to stop"
@@ -712,8 +718,10 @@ struct SidebarView: View {
                     .foregroundStyle(sidebar.includeHidden
                                      ? Color.accentColor
                                      : .secondary)
+                    .frame(width: model.uiSize(18), height: model.uiSize(18))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(IconHoverButtonStyle(cornerRadius: model.uiSize(4),
+                                              isSelected: sidebar.includeHidden))
             .helpInfo(title: sidebar.includeHidden ? "Hiding nothing" : "Show hidden files",
                       description: sidebar.includeHidden
                         ? "Hidden files (starting with '.') are shown — click to hide"
@@ -751,7 +759,8 @@ struct SidebarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Open parent folder")
+        .helpInfo(title: "Open parent folder",
+                  description: "Re-root the sidebar one level up")
         .accessibilityLabel("Open parent folder")
         .accessibilityIdentifier("mdv.sidebar.parentNav")
     }
@@ -934,7 +943,7 @@ struct GitStatusBadge: View {
             .font(.system(size: uiSize(9), weight: .bold))
             .foregroundStyle(color)
             .frame(width: uiSize(12), height: uiSize(12))
-            .help(label)
+            .helpInfo(title: "Git status", description: label)
     }
 
     private var color: Color {
@@ -1065,7 +1074,7 @@ private struct FileRowView: View {
                         Image(systemName: "star.fill")
                             .font(.system(size: model.uiSize(8)))
                             .foregroundStyle(.yellow)
-                            .help("Bookmarked")
+                            .helpInfo(title: "Bookmarked", description: "This file is bookmarked")
                             .accessibilityLabel("Bookmarked")
                     }
                     Spacer(minLength: 0)

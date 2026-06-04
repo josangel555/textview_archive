@@ -181,10 +181,6 @@ struct PanelRailButton: View {
     /// Redock callback (UX-E). nil ⇒ no redock context menu.
     var onMove: ((PanelEdge) -> Void)? = nil
 
-    /// Pointer-hover state — drives a faint fill + the pointing-hand
-    /// cursor so each icon reads as a clickable control, not decoration.
-    @State private var hovering = false
-
     var body: some View {
         Button(action: action) {
             Image(systemName: kind.systemImage)
@@ -196,19 +192,15 @@ struct PanelRailButton: View {
                 // clearly legible; on icons stay accent-tinted.
                 .foregroundStyle(isOn ? Color.accentColor : Palette.labelColor)
                 .frame(width: uiSize(26), height: uiSize(26))
-                .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(isOn
-                              ? Color.accentColor.opacity(0.18)
-                              : (hovering
-                                 ? Palette.labelColor.opacity(0.10)
-                                 : Color.clear))
-                )
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .help(kind.displayName)
+        // UX-H (#230): shared icon style supplies the resting/hover/press
+        // fill (accent-tinted when `isOn`), the subtle scale, and the
+        // pointing-hand cursor — replacing the open-coded `@State hovering`
+        // + background switch this button used to carry.
+        .buttonStyle(IconHoverButtonStyle(isSelected: isOn))
+        .helpInfo(title: kind.displayName,
+                  description: railHelpDescription(kind))
         .accessibilityLabel(kind.displayName)
         .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
         .accessibilityIdentifier("mdv.rail.\(edge.rawValue).\(kind.rawValue)")
@@ -230,6 +222,13 @@ struct PanelRailButton: View {
             }
         }
     }
+
+    /// Longer hover-description (status-bar feed + floating tooltip body)
+    /// per panel kind. Title stays the short `displayName`.
+    private func railHelpDescription(_ kind: SidebarPanelKind) -> String {
+        let verb = isOn ? "Hide" : "Show"
+        return "\(verb) the \(kind.displayName) panel"
+    }
 }
 
 /// The bottom-aligned terminal toggle on the left shoulder (#226). Same
@@ -240,7 +239,6 @@ struct TerminalToggleButton: View {
     let isOn: Bool
     let uiSize: (CGFloat) -> CGFloat
     let action: () -> Void
-    @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
@@ -248,19 +246,13 @@ struct TerminalToggleButton: View {
                 .font(.system(size: uiSize(13), weight: .medium))
                 .foregroundStyle(isOn ? Color.accentColor : Palette.labelColor)
                 .frame(width: uiSize(26), height: uiSize(26))
-                .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(isOn
-                              ? Color.accentColor.opacity(0.18)
-                              : (hovering
-                                 ? Palette.labelColor.opacity(0.10)
-                                 : Color.clear))
-                )
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .help("Terminal")
+        .buttonStyle(IconHoverButtonStyle(isSelected: isOn))
+        .helpInfo(title: "Terminal",
+                  description: isOn
+                    ? "Hide the bottom terminal pane"
+                    : "Show an integrated terminal at the bottom")
         .accessibilityLabel("Terminal")
         .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
         .accessibilityIdentifier("mdv.rail.terminalToggle")

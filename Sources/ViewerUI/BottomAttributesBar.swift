@@ -30,13 +30,15 @@ struct BottomAttributesBar: View {
                     .toggleStyle(.checkbox)
                     .controlSize(.mini)
                     .font(.system(size: model.uiSize(11)))
-                    .help("Soft-wrap long lines at the viewport edge")
+                    .helpInfo(title: "Wrap",
+                              description: "Soft-wrap long lines at the viewport edge")
                     .accessibilityIdentifier("mdv.wrapToggle")
                 Toggle("Special chars", isOn: $model.showInvisibleChars)
                     .toggleStyle(.checkbox)
                     .controlSize(.mini)
                     .font(.system(size: model.uiSize(11)))
-                    .help("Show invisible characters (spaces · tabs → returns ¶)")
+                    .helpInfo(title: "Special characters",
+                              description: "Show invisible characters (spaces · tabs → returns ¶)")
                     .accessibilityIdentifier("mdv.invisiblesToggle")
             }
 
@@ -54,10 +56,11 @@ struct BottomAttributesBar: View {
                 .toggleStyle(.checkbox)
                 .controlSize(.mini)
                 .font(.system(size: model.uiSize(11)))
-                .help("Run this HTML file's JavaScript (per-tab; off by "
-                      + "default — untrusted HTML runs no scripts). Page "
-                      + "scripts are still subject to the strict CSP and "
-                      + "sanitizer; remote and file:// loads stay blocked.")
+                .helpInfo(title: "Enable JavaScript",
+                          description: "Run this HTML file's JavaScript (per-tab; off by "
+                          + "default — untrusted HTML runs no scripts). Page "
+                          + "scripts are still subject to the strict CSP and "
+                          + "sanitizer; remote and file:// loads stay blocked.")
                 .accessibilityIdentifier("mdv.htmlJSToggle")
             }
 
@@ -121,8 +124,9 @@ private struct TypeControlMenu: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("Open this file as a different viewer, or override its "
-              + "syntax language.")
+        .helpInfo(title: "File type",
+                  description: "Open this file as a different viewer, or override its "
+                  + "syntax language.")
         .accessibilityIdentifier("mdv.typeControl")
     }
 

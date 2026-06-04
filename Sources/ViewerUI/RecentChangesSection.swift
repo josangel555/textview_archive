@@ -61,8 +61,8 @@ struct RecentChangesSection: View {
                             .font(.system(size: 9))
                             .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
-                    .help("Refresh")
+                    .buttonStyle(IconHoverButtonStyle(cornerRadius: 4))
+                    .helpInfo(title: "Refresh", description: "Re-scan recent git changes")
                 }
                 .contentShape(Rectangle())
             }
@@ -267,8 +267,8 @@ private struct RecentChangeRow: View {
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
-                .help("Show diff")
+                .buttonStyle(IconHoverButtonStyle(cornerRadius: 4))
+                .helpInfo(title: "Show diff", description: "Open the diff for this change")
                 .opacity(isHovering ? 1 : 0)
                 .accessibilityHidden(!isHovering)
                 .accessibilityLabel("Show diff for \(entry.path)")

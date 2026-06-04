@@ -239,7 +239,8 @@ struct CSVTableView: View {
                 .font(.system(size: cellFontSize))
             }
             .buttonStyle(.borderless)
-            .help("Show per-column filter row (supports >, <, >=, <=, =, !=)")
+            .helpInfo(title: "Per-column filter",
+                      description: "Show the per-column filter row (supports >, <, >=, <=, =, !=)")
 
             Spacer()
 
@@ -251,7 +252,7 @@ struct CSVTableView: View {
                     Image(systemName: "xmark.circle.fill")
                 }
                 .buttonStyle(.borderless)
-                .help("Clear all filters")
+                .helpInfo(title: "Clear filters", description: "Remove all column filters")
                 .accessibilityIdentifier("mdv.csvFilter.clear")
             }
 

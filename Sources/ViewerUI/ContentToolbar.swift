@@ -95,10 +95,11 @@ private struct PathBreadcrumbView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
-        .buttonStyle(.plain)
-        .help(seg.isFile
-              ? "Reveal \(seg.name) in the sidebar"
-              : "Reveal folder \(seg.name) in the sidebar")
+        .buttonStyle(IconHoverButtonStyle(cornerRadius: model.uiSize(3)))
+        .helpInfo(title: seg.name,
+                  description: seg.isFile
+                    ? "Reveal \(seg.name) in the sidebar"
+                    : "Reveal folder \(seg.name) in the sidebar")
         .accessibilityIdentifier("mdv.breadcrumb.segment")
     }
 
@@ -125,7 +126,8 @@ private struct PathBreadcrumbView: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("Earlier path segments")
+        .helpInfo(title: "Earlier path segments",
+                  description: "Folders above this point in the file's path")
         .accessibilityIdentifier("mdv.breadcrumb.overflow")
     }
 }
@@ -173,8 +175,9 @@ private struct ViewModeControlView: View {
                 // something for Editor/HEX. Disable it under Render so the
                 // user isn't offered a no-op.
                 .disabled(p.primary == .render)
-                .help("View Only: show the file read-only. Turn off to edit "
-                      + "(Editor → editable text; HEX byte-edit is planned).")
+                .helpInfo(title: "View Only",
+                          description: "Show the file read-only. Turn off to edit "
+                          + "(Editor → editable text; HEX byte-edit is planned).")
                 .accessibilityIdentifier("mdv.viewOnlyToggle")
             }
 
@@ -202,16 +205,14 @@ private struct ViewModeControlView: View {
                               weight: selected ? .semibold : .regular))
                 .padding(.horizontal, model.uiSize(8))
                 .padding(.vertical, model.uiSize(2))
-                .background(
-                    RoundedRectangle(cornerRadius: model.uiSize(4))
-                        .fill(selected
-                              ? Color.accentColor.opacity(0.20)
-                              : Color.secondary.opacity(0.10))
-                )
                 .foregroundStyle(selected ? Color.accentColor : .secondary)
         }
-        .buttonStyle(.plain)
-        .help(helpText(primary))
+        // UX-H (#230): the shared icon style owns the resting (accent when
+        // `selected`) + hover + press fill and the subtle scale — replacing
+        // the hand-rolled `.background` switch this lens button carried.
+        .buttonStyle(IconHoverButtonStyle(cornerRadius: model.uiSize(4),
+                                          isSelected: selected))
+        .helpInfo(title: "\(primary.label) view", description: helpText(primary))
         .accessibilityIdentifier("mdv.viewMode.\(primary.rawValue)")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
@@ -229,17 +230,13 @@ private struct ViewModeControlView: View {
                               weight: active ? .semibold : .regular))
                 .padding(.horizontal, model.uiSize(8))
                 .padding(.vertical, model.uiSize(2))
-                .background(
-                    RoundedRectangle(cornerRadius: model.uiSize(4))
-                        .fill(active
-                              ? Color.accentColor.opacity(0.20)
-                              : Color.secondary.opacity(0.10))
-                )
                 .foregroundStyle(active ? Color.accentColor : .secondary)
         }
-        .buttonStyle(.plain)
-        .help("Pretty-print this file (JSON / XML / SVG / plist / HTML). "
-              + "Click again to return to the raw source.")
+        .buttonStyle(IconHoverButtonStyle(cornerRadius: model.uiSize(4),
+                                          isSelected: active))
+        .helpInfo(title: "Format",
+                  description: "Pretty-print this file (JSON / XML / SVG / plist / "
+                  + "HTML). Click again to return to the raw source.")
         .accessibilityIdentifier("mdv.viewMode.format")
         .accessibilityAddTraits(active ? .isSelected : [])
     }

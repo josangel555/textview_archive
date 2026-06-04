@@ -82,8 +82,9 @@ struct SessionTabBar: View {
                     .font(.system(size: model.uiSize(11), weight: .medium))
                     .frame(width: model.uiSize(24), height: model.uiSize(24))
             }
-            .buttonStyle(.borderless)
-            .help("Open Folder in New Session…")
+            .buttonStyle(IconHoverButtonStyle())
+            .helpInfo(title: "New Session",
+                      description: "Open a folder in a new session")
             .padding(.horizontal, 4)
             .accessibilityIdentifier("mdv.sessionTab.new")
             .accessibilityLabel("Open Folder in New Session")
@@ -169,7 +170,8 @@ struct SessionTabBarItem: View {
                     }
                     .buttonStyle(.plain)
                     .opacity(isHovering || isSelected ? 0.6 : 0)
-                    .help("Close Session")
+                    .helpInfo(title: "Close Session",
+                              description: "Close \(snapshot.displayName)")
                     .accessibilityLabel("Close \(snapshot.displayName)")
                     .accessibilityIdentifier("mdv.sessionTab.close.\(snapshot.id.uuidString)")
                 }
@@ -181,7 +183,7 @@ struct SessionTabBarItem: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
-        .help(helpText)
+        .helpInfo(title: snapshot.displayName, description: sessionTooltipDescription)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityLabel(badge))
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
@@ -245,6 +247,13 @@ struct SessionTabBarItem: View {
             return "\(snapshot.displayName) — \(path)"
         }
         return snapshot.displayName
+    }
+
+    /// UX-H: tooltip body — the session's folder path (the title already
+    /// carries the display name, so the description need not repeat it).
+    private var sessionTooltipDescription: String {
+        if let path = snapshot.sidebarRootPath, !path.isEmpty { return path }
+        return ""
     }
 
     private func accessibilityLabel(_ badge: SessionGitInfo.Badge) -> String {
