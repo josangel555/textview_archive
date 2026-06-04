@@ -18,6 +18,7 @@ public enum NewFileCreator {
         case notADirectory(String)
         case exhausted          // couldn't find a free name within the cap
         case writeFailed(String)
+        case invalidName(String) // baseName carried a path separator / traversal
     }
 
     /// Create an empty file in `directory`, deriving a non-colliding name from
@@ -37,16 +38,32 @@ public enum NewFileCreator {
               isDir.boolValue else {
             throw CreateError.notADirectory(directory.path)
         }
+        // Reject a base name that carries a path separator or `.`/`..`: a
+        // `../x` or `a/b` base would let `appendingPathComponent` + `open`
+        // create the file OUTSIDE `directory` (path traversal). The name must
+        // be a single in-directory component.
+        guard !baseName.isEmpty, !baseName.contains("/"),
+              baseName != ".", baseName != ".." else {
+            throw CreateError.invalidName(baseName)
+        }
         let (stem, ext) = splitName(baseName)
         for n in 1...maxAttempts {
             let candidate = directory.appendingPathComponent(name(stem: stem, ext: ext, index: n))
             // O_EXCL: fail if it already exists — race-free "claim this name".
-            let fd = candidate.path.withCString { open($0, O_CREAT | O_EXCL | O_WRONLY, 0o644) }
+            // O_NOFOLLOW: if the (final) name is a pre-planted symlink, fail
+            // rather than create at the link target. (The directory-component
+            // symlink race is out of scope — this is a user creating a file in
+            // their OWN folder, not a privileged path.)
+            let fd = candidate.path.withCString {
+                open($0, O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW, 0o644)
+            }
             if fd >= 0 {
                 close(fd)
                 return candidate
             }
-            if errno == EEXIST { continue }        // taken — try the next index
+            // EEXIST: name taken. ELOOP: name is a symlink (O_NOFOLLOW). Either
+            // way the candidate is occupied — skip to the next index.
+            if errno == EEXIST || errno == ELOOP { continue }
             throw CreateError.writeFailed(String(cString: strerror(errno)))
         }
         throw CreateError.exhausted

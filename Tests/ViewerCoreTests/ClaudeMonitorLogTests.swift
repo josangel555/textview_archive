@@ -24,8 +24,8 @@ final class ClaudeMonitorLogTests: XCTestCase {
 
     // MARK: - Parsing
 
-    func test_parseLine_postToolUse_extractsEnvelopeAndRaw() {
-        let line = #"{"ts":"2026-06-04T07:15:09Z","host":"mac","pid":40231,"event":"PostToolUse","tool":"Edit","cwd":"/repo","raw":{"hook_event_name":"PostToolUse","tool_name":"Edit","session_id":"sess-1","tool_input":{"file_path":"/repo/x.swift"},"tool_response":{"success":true}}}"#
+    func test_parseLine_postToolUse_extractsFlatEnvelope() {
+        let line = #"{"ts":"2026-06-04T07:15:09Z","host":"mac","pid":40231,"event":"PostToolUse","tool":"Edit","cwd":"/repo","session_id":"sess-1","tool_input_bytes":81,"tool_succeeded":true}"#
         let ev = reader.parseLine(Data(line.utf8), sequence: 3)
         XCTAssertNotNil(ev)
         XCTAssertEqual(ev?.sequence, 3)
@@ -36,13 +36,12 @@ final class ClaudeMonitorLogTests: XCTestCase {
         XCTAssertEqual(ev?.cwd, "/repo")
         XCTAssertEqual(ev?.sessionId, "sess-1")
         XCTAssertEqual(ev?.toolSucceeded, true)
-        XCTAssertNotNil(ev?.toolInputBytes)
-        XCTAssertGreaterThan(ev?.toolInputBytes ?? 0, 0)
+        XCTAssertEqual(ev?.toolInputBytes, 81)
         XCTAssertNotNil(ev?.timestamp)
     }
 
     func test_parseLine_userPromptSubmit_carriesPrompt() {
-        let line = #"{"ts":"2026-06-04T07:15:02Z","event":"UserPromptSubmit","raw":{"hook_event_name":"UserPromptSubmit","prompt":"refactor the sidebar","session_id":"s"}}"#
+        let line = #"{"ts":"2026-06-04T07:15:02Z","event":"UserPromptSubmit","session_id":"s","prompt":"refactor the sidebar","prompt_len":20}"#
         let ev = reader.parseLine(Data(line.utf8), sequence: 0)
         XCTAssertEqual(ev?.event, "UserPromptSubmit")
         XCTAssertEqual(ev?.prompt, "refactor the sidebar")
@@ -50,18 +49,21 @@ final class ClaudeMonitorLogTests: XCTestCase {
     }
 
     func test_parseLine_failure_carriesError() {
-        let line = #"{"event":"PostToolUseFailure","tool":"Bash","raw":{"hook_event_name":"PostToolUseFailure","tool_name":"Bash","error":"command not found"}}"#
+        let line = #"{"event":"PostToolUseFailure","tool":"Bash","error":"command not found"}"#
         let ev = reader.parseLine(Data(line.utf8), sequence: 0)
         XCTAssertEqual(ev?.errorMessage, "command not found")
         XCTAssertEqual(ev?.tool, "Bash")
     }
 
-    func test_parseLine_fallsBackToRawFields_whenEnvelopeMissing() {
-        // No top-level `event`/`tool`/`cwd` — must fall back to raw.*.
-        let line = #"{"ts":"2026-06-04T07:15:09Z","raw":{"hook_event_name":"Stop","tool_name":null,"cwd":"/x","session_id":"s"}}"#
-        let ev = reader.parseLine(Data(line.utf8), sequence: 0)
+    func test_parseLine_missingOptionalFields_areNil() {
+        // Minimal record: only event present; all other fields nil.
+        let ev = reader.parseLine(Data(#"{"event":"Stop"}"#.utf8), sequence: 0)
         XCTAssertEqual(ev?.event, "Stop")
-        XCTAssertEqual(ev?.cwd, "/x")
+        XCTAssertNil(ev?.tool)
+        XCTAssertNil(ev?.cwd)
+        XCTAssertNil(ev?.sessionId)
+        XCTAssertNil(ev?.toolInputBytes)
+        XCTAssertNil(ev?.toolSucceeded)
     }
 
     func test_parseLine_blankOrGarbage_isNil() {
@@ -72,9 +74,9 @@ final class ClaudeMonitorLogTests: XCTestCase {
 
     func test_parse_skipsBlankLines_butAdvancesSequence() {
         let blob = Data((
-            #"{"event":"SessionStart","raw":{"hook_event_name":"SessionStart"}}"# + "\n"
+            #"{"event":"SessionStart"}"# + "\n"
             + "\n"   // blank line in the middle
-            + #"{"event":"Stop","raw":{"hook_event_name":"Stop"}}"# + "\n"
+            + #"{"event":"Stop"}"# + "\n"
         ).utf8)
         let events = reader.parse(blob)
         XCTAssertEqual(events.map(\.event), ["SessionStart", "Stop"])
@@ -84,8 +86,8 @@ final class ClaudeMonitorLogTests: XCTestCase {
 
     func test_eventsInFile_readsBackWhatWasWritten() throws {
         let url = write("s.jsonl", [
-            #"{"event":"SessionStart","raw":{"hook_event_name":"SessionStart"}}"#,
-            #"{"event":"PostToolUse","tool":"Read","raw":{"hook_event_name":"PostToolUse","tool_name":"Read"}}"#,
+            #"{"event":"SessionStart"}"#,
+            #"{"event":"PostToolUse","tool":"Read"}"#,
         ])
         let events = try reader.events(inFile: url)
         XCTAssertEqual(events.count, 2)
@@ -97,8 +99,8 @@ final class ClaudeMonitorLogTests: XCTestCase {
     }
 
     func test_sessionsInDir_groupsByStem_sorted() throws {
-        _ = write("b-sess.jsonl", [#"{"event":"Stop","raw":{"hook_event_name":"Stop"}}"#])
-        _ = write("a-sess.jsonl", [#"{"event":"SessionStart","raw":{"hook_event_name":"SessionStart"}}"#])
+        _ = write("b-sess.jsonl", [#"{"event":"Stop"}"#])
+        _ = write("a-sess.jsonl", [#"{"event":"SessionStart"}"#])
         _ = write("notes.txt", ["ignored"])
         let sessions = reader.sessions(inDir: dir)
         XCTAssertEqual(sessions.map(\.key), ["a-sess", "b-sess"], "stems, sorted, .txt ignored")
@@ -161,21 +163,22 @@ final class ClaudeMonitorLogTests: XCTestCase {
     /// Runs the real `monitor-log.sh` against a temp `MDV_MONITOR_LOG_DIR`,
     /// feeds it a hook payload on stdin, then parses the file it wrote back
     /// with `ClaudeMonitorLog`. Skips when `jq`/`bash` are unavailable so the
-    /// host gate never reds on environment shape.
+    /// host gate never reds on environment shape. jq is located via `which`
+    /// (PATH), not a hardcoded path, so it isn't silently skipped on MacPorts /
+    /// custom installs.
     func test_scriptWriter_roundTripsThroughReader() throws {
         let bash = "/bin/bash"
-        guard FileManager.default.isExecutableFile(atPath: bash),
-              FileManager.default.isExecutableFile(atPath: "/usr/bin/jq")
-                || FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/jq")
-        else { throw XCTSkip("jq/bash not available") }
+        guard FileManager.default.isExecutableFile(atPath: bash), jqIsAvailable()
+        else { throw XCTSkip("jq/bash not available on PATH") }
 
-        // Locate the script relative to this source file's package root.
         let script = packageRoot().appendingPathComponent("scripts/hooks/monitor-log.sh")
         guard FileManager.default.fileExists(atPath: script.path) else {
             throw XCTSkip("monitor-log.sh not found at \(script.path)")
         }
 
-        let payload = #"{"hook_event_name":"PostToolUse","session_id":"sess-rt","tool_name":"Write","cwd":"/repo","tool_input":{"file_path":"/repo/y.swift","contents":"abc"},"tool_response":{"success":true}}"#
+        // Payload carries a secret in tool_input.contents — it must NOT reach disk.
+        let secret = "SECRET_TOKEN_dead_beef_must_not_persist"
+        let payload = #"{"hook_event_name":"PostToolUse","session_id":"sess-rt","tool_name":"Write","cwd":"/repo","tool_input":{"file_path":"/repo/y.swift","contents":"\#(secret)"},"tool_response":{"success":true}}"#
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: bash)
@@ -202,7 +205,26 @@ final class ClaudeMonitorLogTests: XCTestCase {
         XCTAssertEqual(e.sessionId, "sess-rt")
         XCTAssertEqual(e.cwd, "/repo")
         XCTAssertEqual(e.toolSucceeded, true)
+        XCTAssertNotNil(e.toolInputBytes, "tool_input reduced to a byte count")
         XCTAssertNotNil(e.timestamp, "script stamps an ISO-8601 ts the reader parses")
+
+        // Privacy regression guard: the raw secret must never be persisted.
+        let onDisk = (try? String(contentsOf: logFile, encoding: .utf8)) ?? ""
+        XCTAssertFalse(onDisk.contains(secret),
+                       "monitor log leaked tool_input contents to disk")
+    }
+
+    /// True if `jq` is resolvable on PATH (via `which`), independent of where
+    /// it's installed (/usr/bin, Homebrew, MacPorts, …).
+    private func jqIsAvailable() -> Bool {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+        p.arguments = ["jq"]
+        p.standardOutput = Pipe()
+        p.standardError = Pipe()
+        do { try p.run() } catch { return false }
+        p.waitUntilExit()
+        return p.terminationStatus == 0
     }
 
     /// Walk up from this test file to the package root (the dir holding

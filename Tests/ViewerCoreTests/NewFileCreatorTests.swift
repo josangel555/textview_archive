@@ -85,4 +85,44 @@ final class NewFileCreatorTests: XCTestCase {
         XCTAssertEqual(NewFileCreator.name(stem: "Untitled", ext: "txt", index: 2), "Untitled 2.txt")
         XCTAssertEqual(NewFileCreator.name(stem: "x", ext: "", index: 3), "x 3")
     }
+
+    // The documented safety guarantee: concurrent calls can't stomp each other.
+    // This is what the O_CREAT|O_EXCL atomic claim buys — a fileExists-then-
+    // create refactor would fail this (duplicate names / lost files).
+    func test_create_concurrent_allDistinct_noClobber() {
+        let n = 12
+        let lock = NSLock()
+        var urls: [URL] = []
+        var errors: [Error] = []
+        DispatchQueue.concurrentPerform(iterations: n) { _ in
+            do {
+                let u = try NewFileCreator.create(in: dir, baseName: "race.txt")
+                lock.lock(); urls.append(u); lock.unlock()
+            } catch {
+                lock.lock(); errors.append(error); lock.unlock()
+            }
+        }
+        XCTAssertTrue(errors.isEmpty, "no concurrent create should error: \(errors)")
+        XCTAssertEqual(urls.count, n)
+        XCTAssertEqual(Set(urls.map { $0.lastPathComponent }).count, n,
+                       "every concurrent create must get a distinct name")
+        let onDisk = ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [])
+            .filter { $0.hasPrefix("race") }
+        XCTAssertEqual(onDisk.count, n, "exactly \(n) files created, none clobbered")
+    }
+
+    // Path-traversal guard: a base name with a separator (or `.`/`..`) must be
+    // rejected so creation can't escape `directory`.
+    func test_create_rejectsPathSeparatorInBaseName() {
+        for bad in ["../evil.txt", "a/b.txt", "/etc/x", "..", "."] {
+            XCTAssertThrowsError(try NewFileCreator.create(in: dir, baseName: bad)) { err in
+                guard case NewFileCreator.CreateError.invalidName = err else {
+                    return XCTFail("expected .invalidName for \(bad), got \(err)")
+                }
+            }
+        }
+        let escaped = dir.deletingLastPathComponent().appendingPathComponent("evil.txt")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: escaped.path),
+                       "traversal must not have created a file outside the dir")
+    }
 }

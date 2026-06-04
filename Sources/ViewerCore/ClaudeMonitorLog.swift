@@ -6,12 +6,15 @@ import Foundation
 //
 // The companion shell hook `scripts/hooks/monitor-log.sh` — registered by the
 // owner in `~/.claude/settings.json` (see that script's header for the opt-in
-// block) — appends one enriched JSON-Lines record per Claude Code lifecycle
-// event to `~/.claude/monitor/<session_id>.jsonl`. Each line looks like:
+// block) — appends one compact, privacy-conscious JSON-Lines record per Claude
+// Code lifecycle event to `~/.claude/monitor/<session_id>.jsonl`. The envelope
+// is FLAT and bounded — it deliberately does NOT persist the full hook payload
+// (tool_input/tool_response/prompt can carry secrets); instead it keeps sizes
+// and a short prompt preview. Each line looks like:
 //
-//   {"ts":"2026-06-04T07:15:09Z","host":"mac","pid":40231,
-//    "event":"PostToolUse","tool":"Edit","cwd":"/repo",
-//    "raw":{ ...the full hook payload... }}
+//   {"ts":"2026-06-04T07:15:09Z","host":"mac","pid":40231,"event":"PostToolUse",
+//    "session_id":"abc","tool":"Edit","cwd":"/repo","prompt":null,"prompt_len":0,
+//    "tool_input_bytes":81,"tool_succeeded":true, ...}
 //
 // This type turns those lines into typed `ClaudeMonitorEvent`s and offers a few
 // pure aggregations (tool-call frequency, failures, per-turn latency) the UI
@@ -107,47 +110,33 @@ public struct ClaudeMonitorLog: Sendable {
 
     // MARK: Parsing
 
-    /// Parse a single JSONL line into an event. Returns `nil` for blank lines
-    /// or lines that don't decode to a JSON object — a partially-written
-    /// trailing line (the writer appends concurrently) is simply skipped, not
-    /// fatal.
+    /// Parse a single JSONL line into an event. The writer emits a FLAT,
+    /// privacy-conscious envelope (no nested `raw` payload — tool_input/response
+    /// are reduced to sizes, the prompt to a 200-char preview), so every field
+    /// is read from the top level. Returns `nil` for blank lines or lines that
+    /// don't decode to a JSON object — a partially-written trailing line is
+    /// simply skipped, not fatal.
     public func parseLine(_ line: Data, sequence: Int) -> ClaudeMonitorEvent? {
         guard !line.isEmpty,
               let obj = try? JSONSerialization.jsonObject(with: line) as? [String: Any]
         else { return nil }
-
-        let raw = obj["raw"] as? [String: Any] ?? [:]
-        let event = (obj["event"] as? String)
-            ?? (raw["hook_event_name"] as? String)
-            ?? "unknown"
-
-        var toolInputBytes: Int?
-        if let ti = raw["tool_input"],
-           let data = try? JSONSerialization.data(withJSONObject: ti) {
-            toolInputBytes = data.count
-        }
-        var toolSucceeded: Bool?
-        if let resp = raw["tool_response"] as? [String: Any],
-           let ok = resp["success"] as? Bool {
-            toolSucceeded = ok
-        }
 
         return ClaudeMonitorEvent(
             sequence: sequence,
             timestamp: Self.parseTimestamp(obj["ts"]),
             host: obj["host"] as? String,
             pid: (obj["pid"] as? NSNumber)?.intValue,
-            event: event,
-            tool: (obj["tool"] as? String) ?? (raw["tool_name"] as? String),
-            cwd: (obj["cwd"] as? String) ?? (raw["cwd"] as? String),
-            sessionId: raw["session_id"] as? String,
-            prompt: raw["prompt"] as? String,
-            errorMessage: raw["error"] as? String,
-            reason: raw["reason"] as? String,
-            source: raw["source"] as? String,
-            notificationType: raw["notification_type"] as? String,
-            toolInputBytes: toolInputBytes,
-            toolSucceeded: toolSucceeded
+            event: (obj["event"] as? String) ?? "unknown",
+            tool: obj["tool"] as? String,
+            cwd: obj["cwd"] as? String,
+            sessionId: obj["session_id"] as? String,
+            prompt: obj["prompt"] as? String,
+            errorMessage: obj["error"] as? String,
+            reason: obj["reason"] as? String,
+            source: obj["source"] as? String,
+            notificationType: obj["notification_type"] as? String,
+            toolInputBytes: (obj["tool_input_bytes"] as? NSNumber)?.intValue,
+            toolSucceeded: obj["tool_succeeded"] as? Bool
         )
     }
 
