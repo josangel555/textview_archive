@@ -48,6 +48,13 @@ jobs:
       - name: Build Rust core (mdvcore staticlib)
         run: bash scripts/build-rust-core.sh
 
+      # Enforce the core's no-panic lint policy (clippy denies indexing_slicing /
+      # panic / unwrap_used / expect_used) and run the pure cargo tests. Nothing
+      # was invoking clippy/test on the workspace before, so those denies were
+      # dead letters.
+      - name: Rust-core gate (clippy deny + cargo test)
+        run: bash scripts/rust-core-gate.sh
+
       - name: Build
         run: swift build -v
 
