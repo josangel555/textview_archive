@@ -75,10 +75,32 @@ parse error; (2) no `task_delete` tool (stray test TSK-107 can't be removed);
 image-edit approach · blank-slate explorer → synthesis. Persist results to
 docs/research/autorun-2026-06-04/ when it returns; act on the synthesis.
 
+## Locked plan (from research synthesis wf_44d60a03 → docs/research/autorun-2026-06-04/PLAN.md)
+**Perf (TSK-108), ranked:** Fix#1 per-tab content-view RETENTION (bounded LRU ~4,
+keep inactive panes mounted via ZStack opacity keyed by tab.id) — kills the ~1s
+close + A→B→A WebView reload, THE dominant fix. Fix#2 narrow ContentView
+observation off DocumentModel (observe tabCoordinator directly; the documented
+pattern at ContentView.swift:7-33) — AFTER #1 (dead-toggle regression history).
+Fix#3 collapse double-republish on lazy materialize (DocumentModel.swift:3699).
+Fix#4 move refreshDiskStateForActiveTab stats off-main (only matters on network
+vols). DO NOT touch git-diff/repoFocus/LSP (already async — confirmed).
+**Validation:** existing `InteractionProfileHarness` (MDV_PROFILE-gated, hosts real
+ContentView offscreen, has tab.switch/openClose interactions) for timing; ADD a
+makeNSView/dismantleNSView mount-count probe (headless-gate: A→B→A ⇒ 0 remounts)
++ a DocumentModel.objectWillChange republish-count test (selectTab on warm
+same-mode tab ⇒ 0 god-object republishes).
+**Image PoC (TSK-110):** engine spine in ViewerCore (ImageDocument+EditOp ops-list,
+Renderer crop-before-resize+orient, Exporter ImageIO); quality is export-only.
+**Agent-monitor PoC (TSK-111):** extend existing ClaudeLogParser.swift; ClaudeSessionIndex
+streams ~/.claude/projects/*/*.jsonl top-level, key=filename-stem, redaction gate.
+**Hooks (TSK-112):** passive JSONL logger feeding the monitor; FLAG FOR OWNER: your
+~/.claude/settings.json has NO hooks key — backup-on-write.sh / block-edit-fullfile-
+rewrite.sh are on disk but DORMANT/unregistered (you may think they're active).
+
 ## STATUS
-Wave 0 DONE (cron + doc + reinstalled fixed build + tasked integrated). Wave 1
-IN PROGRESS: TSK-108 claimed, selectTab/updateDerived hot path traced (synchronous
-git-diff + LSP-warm + full god-object republish per switch are the suspects),
-research workflow running. NEXT: act on workflow synthesis — implement top perf
-fix with an automated validation, then Wave 2 quick-wins + Wave 3 PoCs. main @
-49647fb (gate-green) + reinstalled.
+Wave 1 plan LOCKED + research persisted (d0c87da). Two PoC-build agents dispatched
+(image engine + ~/.claude index; write-only, disjoint files; I build+gate centrally
+to avoid concurrent-build races). NEXT (on agent completion): build+gate their PoCs,
+then measure tab-switch view cost via InteractionProfileHarness, then implement perf
+Fix#1 (view retention) behind the mount-count guard. CANNOT run `swift test` until
+the writing agents finish (compile race). main @ d0c87da gate-green + reinstalled.
