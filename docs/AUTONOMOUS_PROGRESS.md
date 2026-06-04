@@ -126,6 +126,17 @@ build it, else hold.
   interleave → silent loss), malformed→<log>.errors. NewFileCreator: reject traversal
   baseName + O_NOFOLLOW. +concurrency proof, +traversal-rejection, +privacy-regression
   + jq-via-`which` test fixes. Gate-green. (Rejected 16 raw incl. a minor formatter dup.)
+- 2026-06-04 `ead4b12` ClaudeTranscriptSearch (substring/regex over ~/.claude, 13 tests).
+- 2026-06-04 `8e23540` MountedPanesLRU — Fix#1 model core (12 tests).
+- 2026-06-04 `38f40a7` Fix#1 view-retention design doc (Approach A; opacity:0-not-.hidden gotcha).
+- 2026-06-04 `067a40a` **wave-2 review fixes** (workflow wf_fe28208a, 17 confirmed of 30;
+  fixed the real subset, skipped over-confirmed/out-of-scope). ClaudeTranscriptSearch:
+  reuse RegexComplexityGuard.reject (ReDoS) + clamp Options≥0 + cap-0 correctness.
+  monitor-log.sh: trap INT/TERM, input 256KB cap (disk-DoS), session_id 128-char cap,
+  lock-or-drop (no torn append) + stale-lock steal. NewFileCreator: reject NUL baseName.
+  +5 tests. Gate-green. SKIPPED (judged not worth it): dir-symlink TOCTOU (documented
+  out-of-scope — user's own folder, not privileged), S3 test-path fragility.
+  **Unsupervised code now reviewed TWICE; further re-review is diminishing returns.**
 
 ### KEY FINDINGS (this headless wave, 2026-06-04 morning)
 - **Tab-op republish is NOT the bottleneck.** RepublishCountTests measured: warm
