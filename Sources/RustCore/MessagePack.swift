@@ -197,3 +197,102 @@ extension [String: MsgPackValue] {
         return v
     }
 }
+
+// MARK: - Encoder (Swift → Rust, the write path)
+
+/// MessagePack ENCODER — the inverse of `MsgPackReader.decode()` over the same
+/// value subset, so `MsgPackReader(v.encode()).decode() == v` round-trips. The
+/// read path was all the CSV beachhead needed (Swift only decoded the core's
+/// responses); Phase B of the migration (`docs/RUST_MIGRATION_PLAN_2026-06-04.md`)
+/// dispatches structured COMMANDS to the core, which needs Swift→Rust encoding.
+/// Hand-rolled, no dependency — mirrors the Rust side's "hand-roll the wire"
+/// rule and keeps the Swift bridge dependency-free.
+///
+/// Tag choice is smallest-fits. `.int` always encodes to a signed tag (incl.
+/// non-negative values) and `.uint` to an unsigned one, so the value's case
+/// survives the round-trip exactly (the reader maps positive fixint → `.uint`,
+/// `0xd0..` → `.int`). Big-endian payloads, matching the reader.
+extension MsgPackValue {
+
+    func encode() -> [UInt8] {
+        var out: [UInt8] = []
+        encode(into: &out)
+        return out
+    }
+
+    /// The core's wire framing: a `u32`-LE length prefix + the encoded body
+    /// (decision #6: DIY `u32`-LE length prefix). Matches `wire::encode_frame`.
+    func frame() -> [UInt8] {
+        let body = encode()
+        let n = UInt32(truncatingIfNeeded: body.count)
+        var out: [UInt8] = [
+            UInt8(n & 0xff), UInt8((n >> 8) & 0xff),
+            UInt8((n >> 16) & 0xff), UInt8((n >> 24) & 0xff),
+        ]
+        out.append(contentsOf: body)
+        return out
+    }
+
+    private func encode(into out: inout [UInt8]) {
+        switch self {
+        case .nilValue: out.append(0xc0)
+        case .bool(let b): out.append(b ? 0xc3 : 0xc2)
+        case .uint(let u): Self.encodeUInt(u, into: &out)
+        case .int(let i): Self.encodeInt(i, into: &out)
+        case .string(let s): Self.encodeString(s, into: &out)
+        case .array(let a):
+            Self.encodeLength(a.count, fix: 0x90, tag16: 0xdc, tag32: 0xdd, into: &out)
+            for e in a { e.encode(into: &out) }
+        case .map(let pairs):
+            Self.encodeLength(pairs.count, fix: 0x80, tag16: 0xde, tag32: 0xdf, into: &out)
+            for (k, v) in pairs { k.encode(into: &out); v.encode(into: &out) }
+        }
+    }
+
+    private static func encodeUInt(_ u: UInt64, into out: inout [UInt8]) {
+        if u < 0x80 { out.append(UInt8(u)) }                       // positive fixint
+        else if u <= 0xff { out.append(0xcc); out.append(UInt8(u)) }
+        else if u <= 0xffff { out.append(0xcd); appendBE(u, 2, &out) }
+        else if u <= 0xffff_ffff { out.append(0xce); appendBE(u, 4, &out) }
+        else { out.append(0xcf); appendBE(u, 8, &out) }
+    }
+
+    private static func encodeInt(_ i: Int64, into out: inout [UInt8]) {
+        if i >= -32 && i < 0 {
+            out.append(UInt8(bitPattern: Int8(truncatingIfNeeded: i)))  // negative fixint
+        } else if i >= -128 && i <= 127 {
+            out.append(0xd0); out.append(UInt8(bitPattern: Int8(truncatingIfNeeded: i)))
+        } else if i >= -32768 && i <= 32767 {
+            out.append(0xd1); appendBE(UInt64(bitPattern: i), 2, &out)
+        } else if i >= -2_147_483_648 && i <= 2_147_483_647 {
+            out.append(0xd2); appendBE(UInt64(bitPattern: i), 4, &out)
+        } else {
+            out.append(0xd3); appendBE(UInt64(bitPattern: i), 8, &out)
+        }
+    }
+
+    private static func encodeString(_ s: String, into out: inout [UInt8]) {
+        let bytes = Array(s.utf8)
+        let n = bytes.count
+        if n < 32 { out.append(0xa0 | UInt8(n)) }                  // fixstr
+        else if n <= 0xff { out.append(0xd9); out.append(UInt8(n)) }
+        else if n <= 0xffff { out.append(0xda); appendBE(UInt64(n), 2, &out) }
+        else { out.append(0xdb); appendBE(UInt64(n), 4, &out) }
+        out.append(contentsOf: bytes)
+    }
+
+    private static func encodeLength(_ n: Int, fix: UInt8, tag16: UInt8, tag32: UInt8,
+                                     into out: inout [UInt8]) {
+        if n < 16 { out.append(fix | UInt8(n)) }
+        else if n <= 0xffff { out.append(tag16); appendBE(UInt64(n), 2, &out) }
+        else { out.append(tag32); appendBE(UInt64(n), 4, &out) }
+    }
+
+    /// Append the low `width` bytes of `v`, big-endian (matches the reader's
+    /// `uintN`).
+    private static func appendBE(_ v: UInt64, _ width: Int, _ out: inout [UInt8]) {
+        for shift in stride(from: (width - 1) * 8, through: 0, by: -8) {
+            out.append(UInt8(truncatingIfNeeded: v >> UInt64(shift)))
+        }
+    }
+}
