@@ -13,7 +13,12 @@
 
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/ffi"]
+members = ["crates/core", "crates/ffi", "crates/tui"]
+# The CI gate (scripts/rust-core-gate.sh) and the Swift staticlib build operate
+# on the DEFAULT members only — core + ffi. The `tui` bin (a ratatui front-end
+# over the core) is built explicitly (`cargo run -p mdvcore-tui`) so its
+# ratatui/crossterm dep tree never enters the merge gate or the macOS app build.
+default-members = ["crates/core", "crates/ffi"]
 
 [workspace.package]
 edition = "2024"

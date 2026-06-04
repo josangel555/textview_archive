@@ -1,0 +1,24 @@
+[package]
+name = "mdvcore-tui"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish = false
+license.workspace = true
+
+# A terminal front-end (ratatui) over `mdvcore-core` — the second of the
+# "one core, three front-ends" (SwiftUI app via FFI; this TUI; a future web
+# tier). It links the core as a normal Rust crate (no FFI needed in-process).
+[[bin]]
+name = "mdv-tui"
+path = "src/main.rs"
+
+[dependencies]
+mdvcore-core = { path = "../core" }
+# Pinned exactly (minimal-deps posture). ratatui re-exports crossterm, so we
+# don't add a second terminal-backend crate. Cross-platform (macOS + Linux).
+ratatui = "=0.29.0"
+
+# NOTE: deliberately NOT `lints.workspace = true`. The workspace deny-set
+# (no panic / unwrap / indexing — right for the sans-IO core) is wrong for an
+# IO-bound TUI binary; this crate keeps default rustc/clippy levels.
