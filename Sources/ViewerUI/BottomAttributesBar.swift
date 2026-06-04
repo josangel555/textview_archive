@@ -21,7 +21,7 @@ struct BottomAttributesBar: View {
     @ObservedObject var model: DocumentModel
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: model.uiSize(12)) {
             // Text-rendering toggles. These control the NSTextView source /
             // editor rendering, so they're only meaningful for the text
             // lenses — hidden in rendered / preview / hex.
@@ -69,9 +69,9 @@ struct BottomAttributesBar: View {
                 TypeControlMenu(model: model, url: url)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 3)
-        .frame(height: 22)
+        .padding(.horizontal, model.uiSize(10))
+        .padding(.vertical, model.uiSize(3))
+        .frame(height: model.uiSize(22))
         .background(Palette.windowBackground.opacity(0.45))
         .overlay(alignment: .top) { Divider() }
         .accessibilityIdentifier("mdv.bottomAttributesBar")
@@ -131,7 +131,7 @@ private struct TypeControlMenu: View {
     @ViewBuilder
     private var chipLabel: some View {
         let overridden = model.hasCategoryOverride || model.hasLanguageOverride
-        HStack(spacing: 2) {
+        HStack(spacing: model.uiSize(2)) {
             Image(systemName: "doc.viewfinder")
                 .font(.system(size: model.uiSize(8)))
             Text(labelText)
@@ -140,10 +140,10 @@ private struct TypeControlMenu: View {
                 .font(.system(size: model.uiSize(7), weight: .bold))
         }
         .font(.system(size: model.uiSize(10), weight: .semibold))
-        .padding(.horizontal, 6)
-        .padding(.vertical, 1)
+        .padding(.horizontal, model.uiSize(6))
+        .padding(.vertical, model.uiSize(1))
         .background(
-            RoundedRectangle(cornerRadius: 3)
+            RoundedRectangle(cornerRadius: model.uiSize(3))
                 .fill(overridden
                       ? Color.accentColor.opacity(0.20)
                       : Color.secondary.opacity(0.15))

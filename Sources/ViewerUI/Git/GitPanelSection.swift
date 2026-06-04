@@ -100,7 +100,7 @@ struct GitPanelSection: View {
                 }
             }
             .contentShape(Rectangle())
-            .sidebarHeaderRow()
+            .sidebarHeaderRow(uiSize: model.uiSize)
         }
         .buttonStyle(.plain)
     }

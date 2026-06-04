@@ -68,7 +68,7 @@ struct ClaudeTimelineSection: View {
                     .foregroundStyle(.tertiary)
                 Button(action: { refresh() }) {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 9))
+                        .font(.system(size: model.uiSize(9)))
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
@@ -77,7 +77,7 @@ struct ClaudeTimelineSection: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .sidebarHeaderRow()
+        .sidebarHeaderRow(uiSize: model.uiSize)
     }
 
     private var eventList: some View {
@@ -100,9 +100,9 @@ struct ClaudeTimelineSection: View {
             // and matches the iconography used in the rest of the
             // sidebar (FileIconView, etc.).
             Image(systemName: kindGlyph(event.kind))
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: model.uiSize(10), weight: .medium))
                 .foregroundStyle(kindColor(event.kind))
-                .frame(width: 18, alignment: .center)
+                .frame(width: model.uiSize(18), alignment: .center)
                 .help(kindLabel(event.kind))
                 // .help only sets tooltip; VoiceOver still reads the
                 // raw SF Symbol name ("person fill image") without an
@@ -116,8 +116,8 @@ struct ClaudeTimelineSection: View {
                 .foregroundStyle(.primary)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 2)
+        .padding(.horizontal, model.uiSize(10))
+        .padding(.vertical, model.uiSize(2))
         .help(event.summary)
     }
 

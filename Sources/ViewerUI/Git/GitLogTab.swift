@@ -69,7 +69,7 @@ struct GitLogTab: View {
             HStack(alignment: .top, spacing: 8) {
                 if let r = layoutRow {
                     GitGraphColumn(row: r, maxLane: maxLane, isHead: isHead(c))
-                        .frame(minHeight: 38)
+                        .frame(minHeight: doc.uiSize(38))
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
@@ -100,8 +100,8 @@ struct GitLogTab: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
+            .padding(.horizontal, doc.uiSize(10))
+            .padding(.vertical, doc.uiSize(4))
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }

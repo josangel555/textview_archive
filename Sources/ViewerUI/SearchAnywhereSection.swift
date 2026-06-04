@@ -88,7 +88,7 @@ struct SearchAnywhereSection: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .sidebarHeaderRow()
+        .sidebarHeaderRow(uiSize: model.uiSize)
     }
 
     private var searchField: some View {
@@ -113,7 +113,7 @@ struct SearchAnywhereSection: View {
             }
             Toggle(isOn: $caseSensitive) {
                 Text("Aa")
-                    .font(.system(size: 9, weight: .medium))
+                    .font(.system(size: model.uiSize(9), weight: .medium))
                     .foregroundStyle(caseSensitive ? .primary : .secondary)
             }
             .toggleStyle(.button)
@@ -271,7 +271,7 @@ struct SearchAnywhereSection: View {
                     Text("\(m.lineNumber)")
                         .font(.system(size: model.uiSize(10), design: .monospaced))
                         .foregroundStyle(.tertiary)
-                        .frame(width: 32, alignment: .trailing)
+                        .frame(width: model.uiSize(32), alignment: .trailing)
                     Text(highlighted(
                         m.line.trimmingCharacters(in: .whitespaces),
                         baseColor: .secondary

@@ -48,13 +48,13 @@ struct PluginSidebarSections: View {
                     )
                     if let icon = entry.icon {
                         Image(systemName: icon)
-                            .font(.system(size: 10))
+                            .font(.system(size: model.uiSize(10)))
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
                 }
                 .contentShape(Rectangle())
-                .sidebarHeaderRow()
+                .sidebarHeaderRow(uiSize: model.uiSize)
             }
             .buttonStyle(.plain)
             if isExpanded {
@@ -83,8 +83,8 @@ struct PluginSidebarSections: View {
                                         .foregroundStyle(.secondary)
                                 }
                             }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 2)
+                            .padding(.horizontal, model.uiSize(14))
+                            .padding(.vertical, model.uiSize(2))
                         }
                     }
                 }

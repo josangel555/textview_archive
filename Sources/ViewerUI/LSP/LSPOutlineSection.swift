@@ -151,7 +151,7 @@ public struct LSPOutlineSection: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .sidebarHeaderRow()
+        .sidebarHeaderRow(uiSize: uiSize)
     }
 
     @ViewBuilder
@@ -165,7 +165,7 @@ public struct LSPOutlineSection: View {
         } else {
             LazyVStack(alignment: .leading, spacing: 0) {
                 OutlineGroup(model.symbols, id: \.self, children: \.maybeChildren) { sym in
-                    SymbolRow(symbol: sym)
+                    SymbolRow(symbol: sym, uiSize: uiSize)
                         .onTapGesture(count: 1) {
                             onJump(sym)
                         }
@@ -177,23 +177,29 @@ public struct LSPOutlineSection: View {
 
 private struct SymbolRow: View {
     let symbol: LSPDocumentSymbol
+    /// UX-F (#228): zoom-scale helper threaded from `LSPOutlineSection`
+    /// (`DocumentModel.uiSize`). Defaults to identity for previews.
+    var uiSize: (CGFloat) -> CGFloat = { $0 }
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: uiSize(6)) {
             Image(systemName: iconName(for: symbol.kind))
                 .foregroundStyle(.secondary)
-                .frame(width: 14)
+                .font(.system(size: uiSize(11)))
+                .frame(width: uiSize(14))
             Text(symbol.name)
+                .font(.system(size: uiSize(12)))
                 .lineLimit(1)
                 .truncationMode(.middle)
             if let detail = symbol.detail, !detail.isEmpty {
                 Text(detail)
                     .lineLimit(1)
                     .foregroundStyle(.tertiary)
-                    .font(.caption)
+                    .font(.system(size: uiSize(10)))
             }
             Spacer()
         }
+        .padding(.vertical, uiSize(1))
         .contentShape(Rectangle())
     }
 

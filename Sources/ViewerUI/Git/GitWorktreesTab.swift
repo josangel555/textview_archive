@@ -30,7 +30,7 @@ struct GitWorktreesTab: View {
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
                     Image(systemName: "square.grid.2x2")
-                        .font(.system(size: 10))
+                        .font(.system(size: doc.uiSize(10)))
                         .foregroundStyle(.tertiary)
                     Text(displayPath(w.path))
                         .font(.system(size: doc.uiSize(12), design: .monospaced))
@@ -52,8 +52,8 @@ struct GitWorktreesTab: View {
                         .padding(.leading, 18)
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
+            .padding(.horizontal, doc.uiSize(10))
+            .padding(.vertical, doc.uiSize(4))
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(w.state == .current ? Color.accentColor.opacity(0.10) : .clear)
             .contentShape(Rectangle())

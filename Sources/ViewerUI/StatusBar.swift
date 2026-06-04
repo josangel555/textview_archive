@@ -99,9 +99,9 @@ struct StatusBar: View {
                 metricsGroup
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .frame(height: 22)
+        .padding(.horizontal, model.uiSize(10))
+        .padding(.vertical, model.uiSize(4))
+        .frame(height: model.uiSize(22))
         .background(Palette.windowBackground.opacity(0.65))
         .overlay(alignment: .top) { Divider() }
         .accessibilityIdentifier("mdv.statusBar")

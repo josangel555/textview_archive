@@ -106,12 +106,15 @@ struct SidebarSectionHeaderLabel: View {
 
     var body: some View {
         HStack(spacing: 4) {
+            // UX-F (#228): chevron glyph + its reserved frame scale with the
+            // same `uiSize` closure as the label, so the whole header row
+            // grows uniformly under UI zoom (was fixed at 9pt / 10pt).
             Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                 .font(.system(
-                    size: SidebarSectionHeaderMetrics.chevronFontSize,
+                    size: uiSize(SidebarSectionHeaderMetrics.chevronFontSize),
                     weight: .semibold
                 ))
-                .frame(width: SidebarSectionHeaderMetrics.chevronFrameWidth)
+                .frame(width: uiSize(SidebarSectionHeaderMetrics.chevronFrameWidth))
             Text(title.uppercased())
                 .font(.system(
                     size: uiSize(SidebarSectionHeaderMetrics.labelFontSize),
@@ -123,15 +126,18 @@ struct SidebarSectionHeaderLabel: View {
 }
 
 private struct SidebarHeaderRowModifier: ViewModifier {
+    /// UX-F (#228): zoom-scale helper. Defaults to identity so the legacy
+    /// parameterless `.sidebarHeaderRow()` renders at the base padding.
+    var uiSize: (CGFloat) -> CGFloat = { $0 }
     func body(content: Content) -> some View {
         content
             .padding(
                 .horizontal,
-                SidebarSectionHeaderMetrics.horizontalPadding
+                uiSize(SidebarSectionHeaderMetrics.horizontalPadding)
             )
             .padding(
                 .vertical,
-                SidebarSectionHeaderMetrics.verticalPadding
+                uiSize(SidebarSectionHeaderMetrics.verticalPadding)
             )
     }
 }
@@ -143,6 +149,13 @@ extension View {
     /// same outer geometry.
     func sidebarHeaderRow() -> some View {
         modifier(SidebarHeaderRowModifier())
+    }
+
+    /// UX-F (#228) zoom-aware variant: the header-row padding scales with
+    /// the unified UI zoom so the section header grows uniformly with its
+    /// label/chevron. Pass `model.uiSize`.
+    func sidebarHeaderRow(uiSize: @escaping (CGFloat) -> CGFloat) -> some View {
+        modifier(SidebarHeaderRowModifier(uiSize: uiSize))
     }
 }
 

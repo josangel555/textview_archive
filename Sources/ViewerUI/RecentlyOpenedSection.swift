@@ -54,7 +54,7 @@ struct RecentlyOpenedSection: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .sidebarHeaderRow()
+        .sidebarHeaderRow(uiSize: model.uiSize)
     }
 }
 
@@ -64,11 +64,13 @@ private struct RecentRow: View {
 
     var body: some View {
         Button(action: { model.openPath(entry.url) }) {
-            HStack(spacing: 6) {
+            HStack(spacing: model.uiSize(6)) {
                 FileIconView(url: entry.url,
                              isDirectory: entry.kind == .folder,
-                             size: .tree)
-                    .frame(width: 14, height: 14)
+                             size: .tree,
+                             scale: CGFloat(model.zoom))
+                    .frame(width: FileIconView.side(for: .tree, scale: CGFloat(model.zoom)),
+                           height: FileIconView.side(for: .tree, scale: CGFloat(model.zoom)))
                 Text(entry.displayName)
                     .font(.system(size: model.uiSize(11)))
                     .lineLimit(1)
@@ -76,8 +78,8 @@ private struct RecentRow: View {
                     .foregroundStyle(.primary)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 3)
+            .padding(.horizontal, model.uiSize(10))
+            .padding(.vertical, model.uiSize(3))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

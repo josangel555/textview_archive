@@ -30,13 +30,13 @@ struct ContentToolbar: View {
     @ObservedObject var model: DocumentModel
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: model.uiSize(10)) {
             PathBreadcrumbView(model: model)
                 .layoutPriority(-1)   // breadcrumb yields width first
             Spacer(minLength: 8)
             ViewModeControlView(model: model)
         }
-        .frame(height: 22)
+        .frame(height: model.uiSize(22))
         .accessibilityIdentifier("mdv.contentToolbar")
     }
 }
@@ -62,7 +62,7 @@ private struct PathBreadcrumbView: View {
             // control right-aligned).
             EmptyView()
         } else {
-            HStack(spacing: 3) {
+            HStack(spacing: model.uiSize(3)) {
                 let overflow = segments.count > maxInlineSegments
                 let inline = overflow
                     ? Array(segments.suffix(maxInlineSegments))
@@ -140,11 +140,11 @@ private struct ViewModeControlView: View {
 
     var body: some View {
         let p = model.viewModePresentation
-        HStack(spacing: 8) {
+        HStack(spacing: model.uiSize(8)) {
             // Primary lens buttons. Media/PDF/binary hide Editor; a plain
             // .txt hides Render — so the row only shows lenses the file
             // actually offers.
-            HStack(spacing: 2) {
+            HStack(spacing: model.uiSize(2)) {
                 if model.showsRenderPrimary {
                     primaryButton(.render, selected: p.primary == .render && !p.isFormatted)
                 }
@@ -200,10 +200,10 @@ private struct ViewModeControlView: View {
             Text(primary.label)
                 .font(.system(size: model.uiSize(11),
                               weight: selected ? .semibold : .regular))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 2)
+                .padding(.horizontal, model.uiSize(8))
+                .padding(.vertical, model.uiSize(2))
                 .background(
-                    RoundedRectangle(cornerRadius: 4)
+                    RoundedRectangle(cornerRadius: model.uiSize(4))
                         .fill(selected
                               ? Color.accentColor.opacity(0.20)
                               : Color.secondary.opacity(0.10))
@@ -227,10 +227,10 @@ private struct ViewModeControlView: View {
             Text("Format")
                 .font(.system(size: model.uiSize(11),
                               weight: active ? .semibold : .regular))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 2)
+                .padding(.horizontal, model.uiSize(8))
+                .padding(.vertical, model.uiSize(2))
                 .background(
-                    RoundedRectangle(cornerRadius: 4)
+                    RoundedRectangle(cornerRadius: model.uiSize(4))
                         .fill(active
                               ? Color.accentColor.opacity(0.20)
                               : Color.secondary.opacity(0.10))

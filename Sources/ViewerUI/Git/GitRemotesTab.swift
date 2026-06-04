@@ -7,6 +7,10 @@ import ViewerCore
 /// to https for the URL open).
 struct GitRemotesTab: View {
     @ObservedObject var model: GitPanelModel
+    /// UX-F (#228): zoom-scale helper threaded from the host
+    /// (`DocumentModel.uiSize`). Defaults to identity so call sites
+    /// without a document model render at the base size.
+    var uiSize: (CGFloat) -> CGFloat = { $0 }
     @Environment(\.sidebarSectionBodyHeight) private var bodyHeight
 
     var body: some View {
@@ -30,25 +34,25 @@ struct GitRemotesTab: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 9))
+                        .font(.system(size: uiSize(9)))
                         .foregroundStyle(.tertiary)
                     Text(r.name)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .font(.system(size: uiSize(12), weight: .semibold, design: .monospaced))
                         .foregroundStyle(Color.accentColor)
                     Spacer(minLength: 4)
                     Text(lastFetchedLabel(r.lastFetchedAt))
-                        .font(.system(size: 9))
+                        .font(.system(size: uiSize(9)))
                         .foregroundStyle(.tertiary)
                 }
                 Text(r.url)
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(.system(size: uiSize(10), design: .monospaced))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .padding(.leading, 16)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, uiSize(10))
+            .padding(.vertical, uiSize(6))
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }

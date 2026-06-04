@@ -54,8 +54,8 @@ struct GitPanelView: View {
             }
             refreshButton
         }
-        .frame(height: 26)
-        .padding(.horizontal, 6)
+        .frame(height: doc.uiSize(26))
+        .padding(.horizontal, doc.uiSize(6))
     }
 
     private var repoPicker: some View {
@@ -79,7 +79,7 @@ struct GitPanelView: View {
         } label: {
             HStack(spacing: 3) {
                 Image(systemName: "shippingbox")
-                    .font(.system(size: 10))
+                    .font(.system(size: doc.uiSize(10)))
                 Text(model.repoRoot?.lastPathComponent ?? "Repo")
                     .font(.system(size: doc.uiSize(10), weight: .medium))
                     .lineLimit(1)
@@ -109,7 +109,7 @@ struct GitPanelView: View {
                 }
             }
             .foregroundStyle(isActive ? Color.accentColor : .secondary)
-            .padding(.horizontal, 6)
+            .padding(.horizontal, doc.uiSize(6))
             .frame(maxHeight: .infinity)
             .overlay(alignment: .bottom) {
                 Rectangle()
@@ -127,7 +127,7 @@ struct GitPanelView: View {
             Image(systemName: model.isRefreshing
                   ? "arrow.triangle.2.circlepath"
                   : "arrow.clockwise")
-                .font(.system(size: 11))
+                .font(.system(size: doc.uiSize(11)))
                 .foregroundStyle(.secondary)
                 .symbolEffect(.rotate, options: .repeating, isActive: model.isRefreshing)
         }
@@ -145,7 +145,7 @@ struct GitPanelView: View {
         case .log:     GitLogTab(model: model, doc: doc)
         case .stash:   GitStashTab(model: model, doc: doc)
         case .trees:   GitWorktreesTab(model: model, doc: doc)
-        case .remotes: GitRemotesTab(model: model)
+        case .remotes: GitRemotesTab(model: model, uiSize: doc.uiSize)
         case .review:  ReviewIndexTab(model: model, doc: doc)
         }
     }

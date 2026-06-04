@@ -61,8 +61,8 @@ struct GitStashTab: View {
             }
             .padding(.top, 2)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, doc.uiSize(10))
+        .padding(.vertical, doc.uiSize(6))
     }
 
     private func actionChip(_ label: String, danger: Bool = false,

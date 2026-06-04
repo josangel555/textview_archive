@@ -72,7 +72,7 @@ public struct LSPNavigationPanel: View {
                                 placeholder(emptyMessage)
                             } else {
                                 ForEach(store.rows) { row in
-                                    NavigationRow(row: row)
+                                    NavigationRow(row: row, uiSize: uiSize)
                                         .onTapGesture { onJump(row.location) }
                                         .accessibilityIdentifier("mdv.lspNav.row.\(row.id)")
                                 }
@@ -116,7 +116,7 @@ public struct LSPNavigationPanel: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .sidebarHeaderRow()
+        .sidebarHeaderRow(uiSize: uiSize)
     }
 
     private var modePicker: some View {
@@ -135,7 +135,7 @@ public struct LSPNavigationPanel: View {
             .disabled(true)
         } label: {
             Text(store.mode == .references ? "Refs" : "Symbols")
-                .font(.system(size: 10))
+                .font(.system(size: uiSize(10)))
                 .foregroundStyle(.secondary)
         }
         .menuStyle(.borderlessButton)
@@ -146,11 +146,11 @@ public struct LSPNavigationPanel: View {
     private var searchField: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 10))
+                .font(.system(size: uiSize(10)))
                 .foregroundStyle(.secondary)
             TextField("Workspace symbol query", text: $symbolQuery)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12))
+                .font(.system(size: uiSize(12)))
                 .onSubmit {
                     onSearchWorkspaceSymbols(symbolQuery)
                 }
@@ -161,7 +161,7 @@ public struct LSPNavigationPanel: View {
                     store.clear()
                 }) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 10))
+                        .font(.system(size: uiSize(10)))
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
@@ -194,7 +194,7 @@ public struct LSPNavigationPanel: View {
 
     private func placeholder(_ message: String) -> some View {
         Text(message)
-            .font(.system(size: 11))
+            .font(.system(size: uiSize(11)))
             .foregroundStyle(.tertiary)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
@@ -203,22 +203,25 @@ public struct LSPNavigationPanel: View {
 
 private struct NavigationRow: View {
     let row: LSPNavigationStore.Row
+    /// UX-F (#228): zoom-scale helper threaded from `LSPNavigationPanel`
+    /// (`DocumentModel.uiSize`). Defaults to identity for previews.
+    var uiSize: (CGFloat) -> CGFloat = { $0 }
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: uiSize(6)) {
             Image(systemName: row.kindIconName ?? "arrow.right.circle")
-                .font(.system(size: 11))
+                .font(.system(size: uiSize(11)))
                 .foregroundStyle(.secondary)
-                .frame(width: 14)
+                .frame(width: uiSize(14))
             VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 4) {
+                HStack(spacing: uiSize(4)) {
                     Text(row.displayName)
-                        .font(.system(size: 12))
+                        .font(.system(size: uiSize(12)))
                         .lineLimit(1)
                         .truncationMode(.middle)
                     if let c = row.containerName, !c.isEmpty {
                         Text(c)
-                            .font(.system(size: 10))
+                            .font(.system(size: uiSize(10)))
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
                             .truncationMode(.head)
@@ -226,7 +229,7 @@ private struct NavigationRow: View {
                 }
                 if let preview = row.preview, !preview.isEmpty {
                     Text(preview)
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(.system(size: uiSize(10), design: .monospaced))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -234,8 +237,8 @@ private struct NavigationRow: View {
             }
             Spacer(minLength: 4)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
+        .padding(.horizontal, uiSize(10))
+        .padding(.vertical, uiSize(4))
         .contentShape(Rectangle())
     }
 }

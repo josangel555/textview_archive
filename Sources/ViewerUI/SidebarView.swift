@@ -573,7 +573,7 @@ struct SidebarView: View {
                     || sidebarContentWidth >= Self.headerLabelsBreakpoint
             )
         }
-        .sidebarHeaderRow()
+        .sidebarHeaderRow(uiSize: model.uiSize)
     }
 
     /// The FILES-header trailing controls (sort menu, recency menu, lock,
@@ -601,7 +601,7 @@ struct SidebarView: View {
             } label: {
                 HStack(spacing: 2) {
                     Image(systemName: "arrow.up.arrow.down")
-                        .font(.system(size: 9))
+                        .font(.system(size: model.uiSize(9)))
                     if showMenuLabels {
                         Text(sidebar.sortMode.rawValue)
                             .font(.system(size: model.uiSize(10)))
@@ -638,7 +638,7 @@ struct SidebarView: View {
             } label: {
                 HStack(spacing: 2) {
                     Image(systemName: "paintpalette")
-                        .font(.system(size: 9))
+                        .font(.system(size: model.uiSize(9)))
                     if showMenuLabels {
                         Text(recencyMode.rawValue)
                             .font(.system(size: model.uiSize(10)))
@@ -663,7 +663,7 @@ struct SidebarView: View {
                     }
                 }) {
                     Image(systemName: "chart.bar")
-                        .font(.system(size: 10))
+                        .font(.system(size: model.uiSize(10)))
                         .foregroundStyle(model.folderStatsExpanded ? Color.accentColor : .secondary)
                 }
                 .buttonStyle(.plain)
@@ -677,7 +677,7 @@ struct SidebarView: View {
             Button(action: { model.toggleSidebarLock() }) {
                 Image(systemName: model.isSidebarLocked
                       ? "lock.fill" : "lock.open")
-                    .font(.system(size: 10))
+                    .font(.system(size: model.uiSize(10)))
                     .foregroundStyle(model.isSidebarLocked
                                      ? Color.accentColor
                                      : .secondary)
@@ -692,7 +692,7 @@ struct SidebarView: View {
             Button(action: { model.toggleSidebarFollowsActiveTab() }) {
                 Image(systemName: model.sidebarFollowsActiveTab
                       ? "pin.fill" : "pin")
-                    .font(.system(size: 10))
+                    .font(.system(size: model.uiSize(10)))
                     .foregroundStyle(model.sidebarFollowsActiveTab
                                      ? Color.accentColor
                                      : .secondary)
@@ -732,22 +732,22 @@ struct SidebarView: View {
     /// expanding. Only shown when `canGoUp`.
     private var parentNavRow: some View {
         Button(action: goUp) {
-            HStack(spacing: 4) {
+            HStack(spacing: model.uiSize(4)) {
                 // Disclosure-chevron-width spacer so the icon aligns with
                 // sibling folder rows (which reserve 12 pt for the chevron).
-                Spacer().frame(width: 12)
+                Spacer().frame(width: model.uiSize(12))
                 Image(systemName: "arrow.up.left")
                     .font(.system(size: model.uiSize(11)))
-                    .frame(width: 16, height: 16)
+                    .frame(width: model.uiSize(16), height: model.uiSize(16))
                     .foregroundStyle(.secondary)
                 Text("..")
                     .font(.system(size: model.uiSize(12)))
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
-            .padding(.leading, 8)   // depth 0 → 0*14 + 8
-            .padding(.vertical, 3)
-            .padding(.trailing, 8)
+            .padding(.leading, model.uiSize(8))   // depth 0 → 0*14 + 8
+            .padding(.vertical, model.uiSize(3))
+            .padding(.trailing, model.uiSize(8))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -759,7 +759,7 @@ struct SidebarView: View {
     private var header: some View {
         HStack(spacing: 6) {
             Text(sidebar.rootURL?.lastPathComponent ?? "Files")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: model.uiSize(11), weight: .semibold))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -924,12 +924,16 @@ private struct FileRowContextMenu: View {
 
 struct GitStatusBadge: View {
     let status: GitStatusEntry.Status
+    /// UX-F (#228): zoom-scale helper threaded from the host
+    /// (`DocumentModel.uiSize`). Defaults to identity so call sites
+    /// without a model render at the base size.
+    var uiSize: (CGFloat) -> CGFloat = { $0 }
 
     var body: some View {
         Text(status.rawValue)
-            .font(.system(size: 9, weight: .bold))
+            .font(.system(size: uiSize(9), weight: .bold))
             .foregroundStyle(color)
-            .frame(width: 12, height: 12)
+            .frame(width: uiSize(12), height: uiSize(12))
             .help(label)
     }
 
@@ -1008,21 +1012,21 @@ private struct FileRowView: View {
                 // the stripe so it always touches the row's left
                 // edge regardless of depth.
                 recencyStripe
-                HStack(spacing: 4) {
+                HStack(spacing: model.uiSize(4)) {
                     if node.isDirectory {
                         // UIRESP: animate the disclosure chevron via a
                         // rotation on a single glyph (collapsed = 0°,
                         // expanded = 90°) instead of swapping two SF
                         // symbols — gives a smooth spin on expand/collapse.
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
-                            .frame(width: 12)
+                            .font(.system(size: model.uiSize(9), weight: .semibold))
+                            .frame(width: model.uiSize(12))
                             .foregroundStyle(.secondary)
                             .rotationEffect(.degrees(sidebar.isExpanded(node.url) ? 90 : 0))
                             .animation(.easeInOut(duration: 0.15),
                                        value: sidebar.isExpanded(node.url))
                     } else {
-                        Spacer().frame(width: 12)
+                        Spacer().frame(width: model.uiSize(12))
                     }
                     FileIconView(
                         url: node.url,
@@ -1030,9 +1034,11 @@ private struct FileRowView: View {
                         isExpanded: sidebar.isExpanded(node.url),
                         isGitRoot: repoRootKind == .repo,
                         isNestedRoot: repoRootKind == .nested,
-                        size: .tree
+                        size: .tree,
+                        scale: CGFloat(model.zoom)
                     )
-                    .frame(width: 16, height: 16)
+                    .frame(width: FileIconView.side(for: .tree, scale: CGFloat(model.zoom)),
+                           height: FileIconView.side(for: .tree, scale: CGFloat(model.zoom)))
                     // Active-repo treatment: a filled dot when this repo
                     // root is LIVE in the tracked set (cheap stat said
                     // it's a repo; the tracked-set membership says it's
@@ -1042,7 +1048,7 @@ private struct FileRowView: View {
                         if repoRootKind != .none && trackedRepos.isTrackedRoot(node.url) {
                             Circle()
                                 .fill(Color.accentColor)
-                                .frame(width: 4, height: 4)
+                                .frame(width: model.uiSize(4), height: model.uiSize(4))
                                 .offset(x: 1, y: 1)
                                 .accessibilityHidden(true)
                         }
@@ -1064,12 +1070,12 @@ private struct FileRowView: View {
                     }
                     Spacer(minLength: 0)
                     if let status = trackedRepos.status(for: node.url) {
-                        GitStatusBadge(status: status)
+                        GitStatusBadge(status: status, uiSize: model.uiSize)
                     }
                 }  // inner HStack(spacing: 4)
-                .padding(.leading, CGFloat(depth) * 14 + 8)
-                .padding(.vertical, 3)
-                .padding(.trailing, 8)
+                .padding(.leading, CGFloat(depth) * model.uiSize(14) + model.uiSize(8))
+                .padding(.vertical, model.uiSize(3))
+                .padding(.trailing, model.uiSize(8))
             }  // outer HStack(spacing: 0) — stripe + content
             .contentShape(Rectangle())
             .background(rowBackground)
@@ -1128,7 +1134,7 @@ private struct FileRowView: View {
         let tier = currentRecencyTier
         Rectangle()
             .fill(Color(nsColor: FileTreeRecency.color(for: tier)))
-            .frame(width: 3)
+            .frame(width: model.uiSize(3))
             // Fill the row's vertical extent — the parent HStack stretches
             // this to match the tallest sibling.
             .frame(maxHeight: .infinity)
@@ -1243,17 +1249,21 @@ struct LSPOutlineWrapper: View {
     var body: some View {
         Group {
             if outline.isSupported {
-                LSPOutlineSection(model: outline) { symbol in
-                    // Jump callback: scroll the source view to the
-                    // symbol's start line + select that tab if it
-                    // isn't already the active one.
-                    if let url = currentFileURL,
-                       !model.selectTab(forURL: url) {
-                        model.openPath(url)
-                    }
-                    let line = symbol.selectionRange.start.line + 1
-                    model.scrollSource(toLine: line)
-                }
+                LSPOutlineSection(
+                    model: outline,
+                    onJump: { symbol in
+                        // Jump callback: scroll the source view to the
+                        // symbol's start line + select that tab if it
+                        // isn't already the active one.
+                        if let url = currentFileURL,
+                           !model.selectTab(forURL: url) {
+                            model.openPath(url)
+                        }
+                        let line = symbol.selectionRange.start.line + 1
+                        model.scrollSource(toLine: line)
+                    },
+                    uiSize: model.uiSize
+                )
             } else if forcedShown {
                 SidebarEmptyPlaceholder(message: "No language server for this file.")
                     .sidebarSectionContainer()

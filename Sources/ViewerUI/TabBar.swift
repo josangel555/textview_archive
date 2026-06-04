@@ -107,7 +107,7 @@ struct TabBar: View {
                                 // active.
                                 Rectangle()
                                     .fill(Palette.separator)
-                                    .frame(width: 1, height: 28)
+                                    .frame(width: 1, height: model.uiSize(28))
                                     .accessibilityIdentifier("mdv.tab.divider")
                             }
                         }
@@ -124,8 +124,8 @@ struct TabBar: View {
             }
             Button(action: { model.newTab() }) {
                 Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .medium))
-                    .frame(width: 24, height: 24)
+                    .font(.system(size: model.uiSize(11), weight: .medium))
+                    .frame(width: model.uiSize(24), height: model.uiSize(24))
             }
             .buttonStyle(.borderless)
             // 0c: migrated to the uniform HelpInfo model — native tooltip
@@ -133,9 +133,9 @@ struct TabBar: View {
             // on hover, and a11y label/hint are set from the same source.
             .helpInfo(title: "New Tab (⌘T)",
                       description: "Open a new empty tab in the current session")
-            .padding(.horizontal, 4)
+            .padding(.horizontal, model.uiSize(4))
         }
-        .frame(height: 30)
+        .frame(height: model.uiSize(30))
         // Measure the strip's available width WITHOUT a wrapping
         // GeometryReader (see `availableWidth` doc): a `.background`
         // overlay reads geometry but never alters the parent's layout,
@@ -290,10 +290,10 @@ struct TabBarItem: View {
             ZStack {
                 Rectangle()
                     .fill(background)
-                HStack(spacing: 6) {
+                HStack(spacing: 6 * scale) {
                     if let url = tab.url {
-                        FileIconView(url: url, isDirectory: false, size: .tree)
-                            .frame(width: 14, height: 14)
+                        FileIconView(url: url, isDirectory: false, size: .tree, scale: scale)
+                            .frame(width: 14 * scale, height: 14 * scale)
                     }
                     Text(tab.title)
                         .lineLimit(1)
@@ -357,12 +357,12 @@ struct TabBarItem: View {
                     .helpInfo(title: "Close Tab (⌘W)",
                               description: "Close \(tab.title)")
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 10 * scale)
             }
             // item12: fixed width from the strip's budget (shrinks under
             // crowding). `clipped()` so the label cleanly truncates rather
             // than overflowing its neighbor when the tab is at the floor.
-            .frame(width: width, height: 28)
+            .frame(width: width, height: 28 * scale)
             .clipped()
             .contentShape(Rectangle())
         }

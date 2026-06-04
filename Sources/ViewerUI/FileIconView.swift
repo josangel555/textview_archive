@@ -15,22 +15,48 @@ public struct FileIconView: View {
 
     let kind: FileIconKind
     let size: Size
+    /// UX-F (#228): zoom multiplier applied to the icon's container +
+    /// glyph/chip metrics so tree-row / tab / bookmark icons grow with
+    /// the unified UI zoom (`DocumentModel.zoom`, the same factor
+    /// `model.uiSize(_:)` multiplies by). Defaults to 1 so existing
+    /// non-zoom-aware call sites and previews render unchanged. Callers
+    /// that pass a scale must ALSO scale the `.frame(width:height:)` they
+    /// wrap this view in (the frame clips otherwise) — see `iconSide`.
+    let scale: CGFloat
 
-    public init(kind: FileIconKind, size: Size = .tree) {
+    public init(kind: FileIconKind, size: Size = .tree, scale: CGFloat = 1) {
         self.kind = kind
         self.size = size
+        self.scale = scale
     }
 
     /// Convenience: derive the icon from a URL without the caller
     /// importing the classifier.
     public init(url: URL, isDirectory: Bool, isExpanded: Bool = false,
                 isGitRoot: Bool = false, isNestedRoot: Bool = false,
-                isSymlink: Bool = false, size: Size = .tree) {
+                isSymlink: Bool = false, size: Size = .tree, scale: CGFloat = 1) {
         self.kind = FileIconClassifier.icon(
             for: url, isDirectory: isDirectory, isExpanded: isExpanded,
             isGitRoot: isGitRoot, isNestedRoot: isNestedRoot, isSymlink: isSymlink
         )
         self.size = size
+        self.scale = scale
+    }
+
+    /// The square side length this icon occupies at the current size +
+    /// scale. Call sites use it to size the enclosing `.frame(...)` so the
+    /// scaled icon isn't clipped: `.frame(width: side, height: side)` where
+    /// `side = FileIconView.side(for: .tree, scale: model.zoom)`.
+    public static func side(for size: Size, scale: CGFloat = 1) -> CGFloat {
+        baseContainer(for: size) * scale
+    }
+
+    private static func baseContainer(for size: Size) -> CGFloat {
+        switch size {
+        case .tree:    return 16
+        case .row:     return 20
+        case .gallery: return 38
+        }
     }
 
     public var body: some View {
@@ -102,12 +128,15 @@ public struct FileIconView: View {
         case .row:     base = 9.0
         case .gallery: base = 13.0
         }
+        let unscaled: CGFloat
         switch text.count {
-        case 1:  return base + 1.0
-        case 2:  return base + 0.5
-        case 3:  return base
-        default: return base - 1.0
+        case 1:  unscaled = base + 1.0
+        case 2:  unscaled = base + 0.5
+        case 3:  unscaled = base
+        default: unscaled = base - 1.0
         }
+        // Scale the chip text with the container (UX-F #228).
+        return unscaled * scale
     }
 
     // MARK: - Glyph
@@ -162,10 +191,12 @@ public struct FileIconView: View {
     }
 
     private var metrics: Metrics {
+        // UX-F (#228): every dimension scales with the unified UI zoom so
+        // the icon grows in lock-step with the row text around it.
         switch size {
-        case .tree:    return Metrics(container: 16, corner: 3,  glyphSize: 10)
-        case .row:     return Metrics(container: 20, corner: 4,  glyphSize: 12)
-        case .gallery: return Metrics(container: 38, corner: 8,  glyphSize: 20)
+        case .tree:    return Metrics(container: 16 * scale, corner: 3 * scale,  glyphSize: 10 * scale)
+        case .row:     return Metrics(container: 20 * scale, corner: 4 * scale,  glyphSize: 12 * scale)
+        case .gallery: return Metrics(container: 38 * scale, corner: 8 * scale,  glyphSize: 20 * scale)
         }
     }
 }

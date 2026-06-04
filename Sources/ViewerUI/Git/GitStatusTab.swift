@@ -67,23 +67,23 @@ struct GitStatusTab: View {
                 .foregroundStyle(.tertiary)
             Spacer()
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
+        .padding(.horizontal, doc.uiSize(10))
+        .padding(.vertical, doc.uiSize(4))
         .background(.background.secondary)
     }
 
     private func row(_ entry: GitClient.StatusEntry) -> some View {
         Button(action: { open(entry) }) {
-            HStack(spacing: 6) {
+            HStack(spacing: doc.uiSize(6)) {
                 Text(badge(entry))
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .font(.system(size: doc.uiSize(9), weight: .bold, design: .monospaced))
                     .foregroundStyle(color(entry))
-                    .frame(width: 16, alignment: .center)
+                    .frame(width: doc.uiSize(16), alignment: .center)
                 pathView(entry.path)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 10)
-            .frame(height: 20)
+            .padding(.horizontal, doc.uiSize(10))
+            .frame(height: doc.uiSize(20))
             .contentShape(Rectangle())
         }
         // UIRESP-05: hover background + pointing-hand cursor so each

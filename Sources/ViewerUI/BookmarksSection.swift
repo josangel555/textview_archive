@@ -79,7 +79,7 @@ struct BookmarksSection: View {
             filterChip("D", isOn: $showFolders, help: "Show directory bookmarks")
             filterChip("L", isOn: $showLines, help: "Show line bookmarks")
             Text("\(filtered.count)/\(model.bookmarks.count)")
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .font(.system(size: model.uiSize(10), weight: .medium, design: .monospaced))
                 .foregroundStyle(.tertiary)
                 .padding(.leading, 4)
             Menu {
@@ -97,7 +97,7 @@ struct BookmarksSection: View {
                 }
             } label: {
                 Image(systemName: "arrow.up.arrow.down")
-                    .font(.system(size: 9))
+                    .font(.system(size: model.uiSize(9)))
                     .foregroundStyle(.secondary)
             }
             .menuStyle(.borderlessButton)
@@ -105,7 +105,7 @@ struct BookmarksSection: View {
             .help("Sort by \(sortMode.rawValue)")
             .accessibilityIdentifier("mdv.bookmarks.sort")
         }
-        .sidebarHeaderRow()
+        .sidebarHeaderRow(uiSize: model.uiSize)
     }
 
     private func filterChip(_ label: String,
@@ -115,7 +115,7 @@ struct BookmarksSection: View {
             Text(label)
                 .font(.system(size: model.uiSize(10), weight: .bold,
                               design: .monospaced))
-                .frame(width: 18, height: 16)
+                .frame(width: model.uiSize(18), height: model.uiSize(16))
                 .background(isOn.wrappedValue
                             ? Color.accentColor.opacity(0.25)
                             : Color.secondary.opacity(0.08))
@@ -193,14 +193,16 @@ private struct BookmarkRow: View {
 
     var body: some View {
         Button(action: { model.openBookmark(entry) }) {
-            HStack(spacing: 6) {
+            HStack(spacing: model.uiSize(6)) {
                 FileIconView(
                     url: entry.url,
                     isDirectory: isFolder,
                     isExpanded: isFolder,
-                    size: .tree
+                    size: .tree,
+                    scale: CGFloat(model.zoom)
                 )
-                .frame(width: 16, height: 16)
+                .frame(width: FileIconView.side(for: .tree, scale: CGFloat(model.zoom)),
+                       height: FileIconView.side(for: .tree, scale: CGFloat(model.zoom)))
                 Text(entry.displayName)
                     .font(.system(size: model.uiSize(12),
                                   weight: isCurrent ? .semibold : .regular))
@@ -226,8 +228,8 @@ private struct BookmarkRow: View {
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
             }
-            .padding(.horizontal, 10)
-            .frame(height: 22)
+            .padding(.horizontal, model.uiSize(10))
+            .frame(height: model.uiSize(22))
             .contentShape(Rectangle())
             .background(isCurrent ? Color.accentColor.opacity(0.18) : Color.clear)
         }

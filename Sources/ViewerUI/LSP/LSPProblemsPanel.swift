@@ -64,7 +64,7 @@ public struct LSPProblemsPanel: View {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         if rows.isEmpty {
                             Text(emptyMessage)
-                                .font(.system(size: 11))
+                                .font(.system(size: uiSize(11)))
                                 .foregroundStyle(.tertiary)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 8)
@@ -77,7 +77,8 @@ public struct LSPProblemsPanel: View {
                                 Button {
                                     onJump(row.url, row.diagnostic.range.start.line + 1)
                                 } label: {
-                                    ProblemRow(url: row.url, diagnostic: row.diagnostic)
+                                    ProblemRow(url: row.url, diagnostic: row.diagnostic,
+                                               uiSize: uiSize)
                                 }
                                 .buttonStyle(RowHoverButtonStyle(cornerRadius: 0))
                                 .accessibilityLabel(accessibilityLabel(for: row))
@@ -133,7 +134,7 @@ public struct LSPProblemsPanel: View {
                 }
             } label: {
                 Image(systemName: "line.3.horizontal.decrease.circle")
-                    .font(.system(size: 10))
+                    .font(.system(size: uiSize(10)))
                     .foregroundStyle(.secondary)
             }
             .menuStyle(.borderlessButton)
@@ -141,15 +142,15 @@ public struct LSPProblemsPanel: View {
             .help("Filter by severity")
             .accessibilityIdentifier("mdv.problems.filter")
         }
-        .sidebarHeaderRow()
+        .sidebarHeaderRow(uiSize: uiSize)
     }
 
     private func pill(_ text: String, color: Color) -> some View {
         Text(text)
-            .font(.system(size: 9, weight: .bold, design: .monospaced))
+            .font(.system(size: uiSize(9), weight: .bold, design: .monospaced))
             .foregroundStyle(color)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1)
+            .padding(.horizontal, uiSize(5))
+            .padding(.vertical, uiSize(1))
             .background(color.opacity(0.15))
             .clipShape(Capsule())
     }
@@ -197,38 +198,41 @@ public struct LSPProblemsPanel: View {
 private struct ProblemRow: View {
     let url: URL
     let diagnostic: LSPDiagnostic
+    /// UX-F (#228): zoom-scale helper threaded from `LSPProblemsPanel`
+    /// (`DocumentModel.uiSize`). Defaults to identity for previews.
+    var uiSize: (CGFloat) -> CGFloat = { $0 }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
+        HStack(alignment: .firstTextBaseline, spacing: uiSize(6)) {
             Image(systemName: iconName)
                 .foregroundStyle(iconColor)
-                .font(.system(size: 11))
-                .frame(width: 14)
+                .font(.system(size: uiSize(11)))
+                .frame(width: uiSize(14))
             VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 4) {
+                HStack(spacing: uiSize(4)) {
                     Text(url.lastPathComponent)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: uiSize(12), weight: .medium))
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Text(":\(diagnostic.range.start.line + 1)")
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(.system(size: uiSize(10), design: .monospaced))
                         .foregroundStyle(.secondary)
                     if let source = diagnostic.source {
                         Text("[\(source)]")
-                            .font(.system(size: 9))
+                            .font(.system(size: uiSize(9)))
                             .foregroundStyle(.tertiary)
                     }
                 }
                 Text(diagnostic.message)
-                    .font(.system(size: 11))
+                    .font(.system(size: uiSize(11)))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .truncationMode(.tail)
             }
             Spacer(minLength: 4)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
+        .padding(.horizontal, uiSize(10))
+        .padding(.vertical, uiSize(4))
         .contentShape(Rectangle())
     }
 
