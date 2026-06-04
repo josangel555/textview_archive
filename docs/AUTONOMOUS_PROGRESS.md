@@ -89,11 +89,12 @@ Owner: `.build/debug/MarkdownViewer --claude-monitor` to eyeball the monitor PoC
 **Headless queue status (2026-06-04 ~09:40): the original queue is DRAINED** — perf
 republish-guard, File-New core, hooks logger+reader, image rotate/flip+leftMirrored fix
 all landed, then an adversarial review (wf_511ce2c0) caught+fixed 8 real issues (7fac492).
-**NEXT HEADLESS (for the next cron tick):** transcript SEARCH over ClaudeSessionIndex /
-ClaudeMonitorLog — the agent-monitor the owner asked for needs "search transcripts"; a
-pure `search(query:)` (substring/regex over redacted records, byte-offset hits) is
-headless + testable and feeds the monitor UI. After that, headless work is genuinely
-thin until unlock → switch to research prepping the live perf Fix#1 turn.
+**Transcript search DONE** (`ead4b12` ClaudeTranscriptSearch: substring/regex over
+~/.claude transcripts, bounded snippets, 13 tests). Headless BUILD queue is now fully
+drained. **NEXT:** research prepping the live perf Fix#1 turn (de-risk the dominant
+view-retention fix) → `docs/research/perf-fix1-view-retention.md`. Then HEADLESS WORK
+IS EXHAUSTED until screen-unlock; the cron should idle-tick or do further research, not
+manufacture marginal code.
 
 ## DECISIONS NEEDED (owner — non-blocking; I proceed on best-judgment defaults meanwhile)
 - **WebView/memory lever** — parked on the board as TSK-113 (default: trim compositing layers + measure).
