@@ -48,8 +48,11 @@ Hypothesis: same root as the 108 MB baseline — DocumentModel god-object republ
 - [ ] Regression guard (headless timing assertion where possible).
 
 ### Wave 2 — quick wins (low risk, visible)
-- [ ] File ▸ New + right-click folder ▸ New [File].
-- [ ] Bookmark remove via Delete key + undo.
+- [~] File ▸ New + right-click folder ▸ New [File] — **model core done** (`5026518`
+  NewFileCreator, collision-safe O_CREAT|O_EXCL, 9 tests). UI wiring (menu +
+  sidebar context menu + in-place rename) needs the view layer → screen-unlock turn.
+- [~] Bookmark remove via Delete key + undo — **model core done** (`217f92d`
+  removal-undo stack). UI wiring (Delete key + Cmd-Z in the bookmarks list) → unlock.
 - [x] **Default plain-text / allowlist known plain-text formats** ✅ — FileTypeDetector
   known-basename map + config-extension allowlist (commit 3206cf1, headless tests, gate-green).
 - [ ] Can't-see-right-border-of-last-tab. (view-layer — needs --diagnose/visual)
@@ -59,6 +62,12 @@ Hypothesis: same root as the 108 MB baseline — DocumentModel god-object republ
 - [x] **Image editing PoC engine spine** ✅ — ViewerCore ImageDocument/Renderer/Exporter (op-list history, lossless revert, ImageIO export). 16 headless tests. Commit 8420b29. (UI not built; engine only.)
 - [x] **Agent-monitoring index PoC** ✅ — ViewerCore ClaudeSessionIndex over ~/.claude transcripts (streamed, redaction gate, byte-offset index) + ClaudeLogParser+SystemRecords. 21 headless tests. Commit ab4f583. (UI not built; index only.)
 - [x] **Claude Code hooks research** ✅ — docs/research/autorun-2026-06-04/hooks.md; recommendation = passive JSONL logger feeding the monitor. (Owner flag: ~/.claude/settings.json has no hooks key → existing scripts dormant.)
+- [x] **Claude hooks logger + reader** ✅ — `814c470` scripts/hooks/monitor-log.sh
+  (passive per-session JSONL, env-overridable, exits 0, NOT auto-wired) +
+  ViewerCore/ClaudeMonitorLog (typed events + tool-freq/failures/turn-latency
+  aggregations). 14 tests incl. script→reader round-trip. **OWNER OPT-IN:** to
+  activate, register the hooks block (documented in the script header) in
+  ~/.claude/settings.json + restart claude. I did NOT modify that shared file.
 - [ ] NEXT for these: build the SwiftUI surfaces on top of the engines (image editor view; agent-monitor sidebar/panel) — separate wave, needs view-layer + live validation.
 
 ### Wave 4+ — bigger rocks (from BACKLOG 2026-06-04 dump)
@@ -88,6 +97,26 @@ Owner: `.build/debug/MarkdownViewer --claude-monitor` to eyeball the monitor PoC
 - 2026-06-04 `6153c9b` terminal runtime-toggle fix (body greedy + clip + focus) — --diagnose verified, gate-green.
 - 2026-06-04 `1625563` L1 LSP-diagnostics reclaim on close + MemoryReclaimOnCloseTests — gate-green.
 - 2026-06-04 `49647fb` GitLogTab OOB crash fix + roadmap capture — gate-green.
+- 2026-06-04 `5026518` NewFileCreator (collision-safe File-New model core, O_CREAT|O_EXCL) + 9 tests — gate-green. UI wiring deferred to unlock.
+- 2026-06-04 `096246f` republish-count guard (TSK-108 infra) — gate-green. **FINDING below.**
+- 2026-06-04 `814c470` Claude hook logger (scripts/hooks/monitor-log.sh) + ClaudeMonitorLog reader + 14 tests — gate-green. NOT auto-wired (owner opt-in documented).
+
+### KEY FINDINGS (this headless wave, 2026-06-04 morning)
+- **Tab-op republish is NOT the bottleneck.** RepublishCountTests measured: warm
+  same-mode `selectTab` fires EXACTLY 1 `DocumentModel.objectWillChange`
+  (mean=1.0, worst=1); `closeTab` worst=2. The model side is already minimal →
+  the live tab freeze is **entirely view-side** (cost of reacting to that 1
+  republish: full ContentView re-eval + WebView reload). **Implication for the
+  live perf turn:** Fix#1 (per-tab view RETENTION) is the only lever that
+  matters; Fix#2/#3 (model-side republish trimming) are marginal (1→0). Don't
+  spend the live turn on them. Guard bounds (switch≤4/close≤6) catch a fan-out
+  regression now; tighten to 0 only after Fix#2 ships.
+- **#218 (HEX 6KB ~1s) is view-side, not model-side.** HexDumpBuilder is a clean
+  single-pass build; a 6KB file is ONE chunk (defaultRowsPerChunk=4096). The
+  existing `test_microbench_4MB_firstChunk_isFast` already proves even a 4MB
+  first-chunk build is <500ms. So #218's ~1s is the mode-switch view remount /
+  Task.detached→main.sync scheduling vs a busy main thread — SAME cluster as
+  #219. Fold #218 into the live perf turn; no headless fix exists.
 
 ## Project tracking — `tasked` board (http://localhost:8787, owner's app)
 Integrated (owner asked to dogfood it). MCP server registered at user scope
