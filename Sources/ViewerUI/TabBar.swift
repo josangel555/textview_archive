@@ -95,7 +95,20 @@ struct TabBar: View {
                                 delegate: TabDropDelegate(model: model, targetID: tab.id)
                             )
                             if index < model.tabs.tabs.count - 1 {
-                                Divider().frame(height: 16)
+                                // B4: full-height vertical rule between tabs.
+                                // The old `Divider().frame(height: 16)` only
+                                // spanned the middle 16pt of the 28pt-tall tab
+                                // row, so the seam looked partial and read
+                                // asymmetrically when one neighbor was the
+                                // tinted-active tab and the other was clear. A
+                                // fixed-width separator rectangle pinned to the
+                                // tab height draws a clean top-to-bottom line
+                                // that is identical regardless of which side is
+                                // active.
+                                Rectangle()
+                                    .fill(Palette.separator)
+                                    .frame(width: 1, height: 28)
+                                    .accessibilityIdentifier("mdv.tab.divider")
                             }
                         }
                     }
@@ -266,6 +279,11 @@ struct TabBarItem: View {
     let onClose: () -> Void
 
     @State private var isHovering = false
+    // H4: separate hover tracking for the close control so the circular
+    // backdrop only lights up when the pointer is over the close glyph
+    // itself, not anywhere on the tab. Standard `.onHover` per-control
+    // pattern.
+    @State private var isHoveringClose = false
 
     var body: some View {
         Button(action: onSelect) {
@@ -305,18 +323,35 @@ struct TabBarItem: View {
                             .accessibilityLabel("Bookmarked")
                     }
                     Button(action: onClose) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 9, weight: .bold))
-                            .frame(width: 18, height: 18)  // U2: HIG hit target ≥ ~24pt with padding
-                            .contentShape(Rectangle())
+                        // H4: centered `xmark` glyph over a circular
+                        // backdrop that fades in only while the pointer
+                        // is over the close control. Scales with `scale`
+                        // (the zoom factor — same value `model.uiSize`
+                        // multiplies by) so the control grows with its
+                        // neighbors. The circle is `controlBackground` at
+                        // a low opacity so it reads as a subtle hover
+                        // chip rather than a hard button.
+                        ZStack {
+                            Circle()
+                                .fill(Palette.controlBackground)
+                                .opacity(isHoveringClose ? 0.9 : 0)
+                            Image(systemName: "xmark")
+                                .font(.system(size: 8 * scale, weight: .bold))
+                                .foregroundStyle(isHoveringClose ? Color.primary : Color.secondary)
+                        }
+                        .frame(width: 16 * scale, height: 16 * scale)
+                        .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
-                    .opacity(isHovering || isSelected ? 0.6 : 0)
+                    .opacity(isHovering || isSelected ? 1 : 0)
                     // Fade the close button in/out rather than popping
                     // it. Driven by the hover/selection state so the
                     // glyph eases to visible on hover and back out on
                     // leave instead of snapping.
                     .animation(.easeInOut(duration: 0.12), value: isHovering || isSelected)
+                    .animation(.easeInOut(duration: 0.12), value: isHoveringClose)
+                    .onHover { isHoveringClose = $0 }
+                    .accessibilityIdentifier("mdv.tab.closeButton")
                     // 0c: uniform HelpInfo — title for the bubble, longer
                     // description fed to the status bar on hover.
                     .helpInfo(title: "Close Tab (⌘W)",

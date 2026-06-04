@@ -498,6 +498,13 @@ struct SidebarView: View {
                             // IO either way.
                             let rows = sidebar.flatVisibleRows()
                             LazyVStack(alignment: .leading, spacing: 0) {
+                                // J1: ".." parent-nav row, rendered as the
+                                // FIRST row of the tree (replaces the former
+                                // header up-arrow button). Re-roots to the
+                                // parent on click via the existing `goUp`.
+                                if canGoUp {
+                                    parentNavRow
+                                }
                                 ForEach(rows) { row in
                                     FileRowView(
                                         node: row.node,
@@ -721,34 +728,67 @@ struct SidebarView: View {
                         ? "Sidebar follows the active tab — click to stop"
                         : "Reveal the active tab's file in the sidebar on every tab switch")
             .accessibilityIdentifier("mdv.sidebar.followActiveTab")
+            // Show-hidden toggle (J2). Replaces the former "Show hidden"
+            // checkbox in the header; mirrors the lock/pin icon-button
+            // styling. eye = hidden files visible, eye.slash = filtered out.
+            Button(action: { sidebar.includeHidden.toggle() }) {
+                Image(systemName: sidebar.includeHidden ? "eye" : "eye.slash")
+                    .font(.system(size: model.uiSize(10)))
+                    .foregroundStyle(sidebar.includeHidden
+                                     ? Color.accentColor
+                                     : .secondary)
+            }
+            .buttonStyle(.plain)
+            .helpInfo(title: sidebar.includeHidden ? "Hiding nothing" : "Show hidden files",
+                      description: sidebar.includeHidden
+                        ? "Hidden files (starting with '.') are shown — click to hide"
+                        : "Show files starting with '.'")
+            .accessibilityIdentifier("mdv.sidebar.showHidden")
         }
         // Cluster hugs its content so the `ViewThatFits` measurement is the
         // cluster's intrinsic width (not a stretched one).
         .fixedSize()
     }
 
+    /// J1: ".." parent-folder navigation row at the top of the file
+    /// tree. Styled like a depth-0 folder row in `FileRowView` (chevron-
+    /// width spacer + folder glyph + name, matching the `depth*14 + 8`
+    /// leading inset), but it re-roots the sidebar via `goUp` instead of
+    /// expanding. Only shown when `canGoUp`.
+    private var parentNavRow: some View {
+        Button(action: goUp) {
+            HStack(spacing: 4) {
+                // Disclosure-chevron-width spacer so the icon aligns with
+                // sibling folder rows (which reserve 12 pt for the chevron).
+                Spacer().frame(width: 12)
+                Image(systemName: "arrow.up.left")
+                    .font(.system(size: model.uiSize(11)))
+                    .frame(width: 16, height: 16)
+                    .foregroundStyle(.secondary)
+                Text("..")
+                    .font(.system(size: model.uiSize(12)))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, 8)   // depth 0 → 0*14 + 8
+            .padding(.vertical, 3)
+            .padding(.trailing, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Open parent folder")
+        .accessibilityLabel("Open parent folder")
+        .accessibilityIdentifier("mdv.sidebar.parentNav")
+    }
+
     private var header: some View {
         HStack(spacing: 6) {
-            if canGoUp {
-                Button(action: goUp) {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: model.uiSize(10), weight: .semibold))
-                        .frame(width: 18, height: 18)
-                }
-                .buttonStyle(.borderless)
-                .help("Open parent folder")
-                .accessibilityLabel("Open parent folder")
-            }
             Text(sidebar.rootURL?.lastPathComponent ?? "Files")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer()
-            Toggle("Show hidden", isOn: $sidebar.includeHidden)
-                .toggleStyle(.checkbox)
-                .font(.system(size: 10))
-                .help("Show files starting with '.'")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)

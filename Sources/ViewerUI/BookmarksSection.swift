@@ -278,24 +278,10 @@ private struct BookmarkRow: View {
         if secs < 3600 { return "\(Int(secs / 60))m ago" }
         if secs < 86400 { return "\(Int(secs / 3600))h ago" }
         if secs < 604800 { return "\(Int(secs / 86400))d ago" }
-        return shortDateFormatter.string(from: date)
+        return DisplayDateFormatter.string(from: date)
     }
 
     private static func fullDate(_ date: Date) -> String {
-        fullDateFormatter.string(from: date)
+        DisplayDateFormatter.string(from: date)
     }
-
-    private static let shortDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        f.timeStyle = .none
-        return f
-    }()
-
-    private static let fullDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        f.timeStyle = .short
-        return f
-    }()
 }

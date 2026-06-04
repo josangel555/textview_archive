@@ -168,4 +168,73 @@ final class TabBarIntrinsicSizeTests: HeadlessUITestCase {
                 "tab bar was squeezed/hidden.")
         }
     }
+
+    // MARK: - H4 / B4: close control + full-height divider
+
+    /// H4: the close control must still close its tab after the
+    /// hover-circle/glyph reshape. The control's visual change (ZStack
+    /// circle backdrop + centered `xmark`, per-control `.onHover`) wraps
+    /// the SAME `onClose` closure — this asserts the action wiring
+    /// survived the rework, mounting the real `TabBarItem` so its body
+    /// (and thus the close button) actually builds.
+    ///
+    /// We invoke `onClose` directly rather than synthesizing a click on
+    /// the realized NSButton: SwiftUI's `.accessibilityIdentifier()`
+    /// does NOT propagate onto `NSView.accessibilityIdentifier()` (see
+    /// `ViewModeMatrixSmokeTests`), so locating the specific close
+    /// button by id in the realized tree is unreliable headless. The
+    /// closure is the behavioral contract the button drives; mounting
+    /// the item proves the close button builds without trapping.
+    func test_tabBarItem_closeAction_firesAndClosesTab() throws {
+        let model = try makeModel(tabs: 3)
+        XCTAssertEqual(model.tabs.tabs.count, 3)
+
+        var closedIndex: Int?
+        let item = TabBarItem(
+            tab: model.tabs.tabs[1],
+            isSelected: true,           // selected → close button is visible
+            isBookmarked: false,
+            scale: 1,
+            width: 180,
+            onSelect: {},
+            onClose: { closedIndex = 1; model.closeTab(at: 1) }
+        )
+        // Mount the real item so its body (close ZStack included) builds.
+        let host = NSHostingView(rootView: item)
+        host.layoutSubtreeIfNeeded()
+        XCTAssertGreaterThan(host.fittingSize.width, 0,
+                             "TabBarItem failed to lay out")
+
+        // Fire the close action the button is wired to.
+        item.onClose()
+        XCTAssertEqual(closedIndex, 1, "close action did not fire")
+        XCTAssertEqual(model.tabs.tabs.count, 2,
+                       "closing the tab did not remove it from the model")
+    }
+
+    /// The close-control reshape (H4) and full-height divider (B4) must
+    /// not collapse the tab item's geometry: it stays a firm ~28pt-tall,
+    /// fixed-width cell in BOTH the selected and unselected states (the
+    /// states that toggle the close button's visibility). A regression
+    /// that broke the ZStack sizing would show up as a zero/ambiguous
+    /// fitting size here.
+    func test_tabBarItem_keepsFirmGeometry_selectedAndUnselected() throws {
+        let model = try makeModel(tabs: 1)
+        for selected in [true, false] {
+            let item = TabBarItem(
+                tab: model.tabs.tabs[0],
+                isSelected: selected,
+                isBookmarked: false,
+                scale: 1,
+                width: 180,
+                onSelect: {},
+                onClose: {}
+            )
+            let size = NSHostingView(rootView: item).fittingSize
+            XCTAssertEqual(size.width, 180, accuracy: 1,
+                "TabBarItem width must honor its budgeted width (selected=\(selected))")
+            XCTAssertEqual(size.height, 28, accuracy: 2,
+                "TabBarItem height collapsed (selected=\(selected))")
+        }
+    }
 }

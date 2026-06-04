@@ -24,6 +24,10 @@ import ViewerKit
 struct SessionTabBar: View {
     @ObservedObject var sessionsApp: SessionsAppCoordinator
     @ObservedObject var core: SessionsCoordinator
+    /// Observed so the strip re-bodies on a zoom change — the row height +
+    /// every font/glyph below scales through `model.uiSize(...)`, matching
+    /// the rest of the chrome (TabBar / ModeBar / StatusBar).
+    @ObservedObject var model: DocumentModel
 
     /// id of the session currently being inline-renamed (nil = none).
     @State private var renamingID: UUID?
@@ -31,7 +35,13 @@ struct SessionTabBar: View {
     init(sessionsApp: SessionsAppCoordinator) {
         self.sessionsApp = sessionsApp
         self.core = sessionsApp.core
+        self.model = sessionsApp.model
     }
+
+    /// B1: the row is now TWO lines (name + git/branch sub-line), so it needs
+    /// more height than the old single-line 30pt strip. Scales with zoom like
+    /// the rest of the chrome.
+    private var rowHeight: CGFloat { model.uiSize(46) }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -42,6 +52,7 @@ struct SessionTabBar: View {
                             snapshot: snap,
                             isSelected: core.activeID == snap.id,
                             isRenaming: renamingID == snap.id,
+                            uiSize: model.uiSize,
                             onSelect: { sessionsApp.activate(id: snap.id) },
                             onClose: { sessionsApp.close(id: snap.id) },
                             onCommitRename: { newName in
@@ -57,16 +68,19 @@ struct SessionTabBar: View {
                                 onRequestRename: { renamingID = snap.id }
                             )
                         }
+                        // B4-adjacent: a full top-to-bottom divider reads
+                        // cleaner between a taller two-line cell than the old
+                        // 16pt stub did. (B4 proper is a separate item.)
                         if index < core.sessions.count - 1 {
-                            Divider().frame(height: 16)
+                            Divider().frame(height: rowHeight - model.uiSize(12))
                         }
                     }
                 }
             }
             Button(action: openNewSession) {
                 Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .medium))
-                    .frame(width: 24, height: 24)
+                    .font(.system(size: model.uiSize(11), weight: .medium))
+                    .frame(width: model.uiSize(24), height: model.uiSize(24))
             }
             .buttonStyle(.borderless)
             .help("Open Folder in New Session…")
@@ -74,7 +88,7 @@ struct SessionTabBar: View {
             .accessibilityIdentifier("mdv.sessionTab.new")
             .accessibilityLabel("Open Folder in New Session")
         }
-        .frame(height: 30)
+        .frame(height: rowHeight)
         .background(Palette.windowBackground)
         .accessibilityIdentifier("mdv.sessionTabBar")
     }
@@ -96,6 +110,9 @@ struct SessionTabBarItem: View {
     let snapshot: SessionSnapshot
     let isSelected: Bool
     let isRenaming: Bool
+    /// Zoom-aware sizing helper threaded from `SessionTabBar` (== `DocumentModel
+    /// .uiSize`). Every font / glyph / pill dimension scales through it.
+    let uiSize: (CGFloat) -> CGFloat
     let onSelect: () -> Void
     let onClose: () -> Void
     let onCommitRename: (String) -> Void
@@ -105,29 +122,49 @@ struct SessionTabBarItem: View {
     @State private var draftName = ""
     @FocusState private var isEditorFocused: Bool
 
+    /// B1: git-root + branch for this session's folder, read subprocess-free
+    /// from `.git/HEAD`. Computed once per body pass — `SessionGitInfo` is a
+    /// couple of small filesystem reads (or a single `fileExists` for the
+    /// common non-repo case), cheap enough for a row body. NOT cached in
+    /// `@State`: the snapshot's `sidebarRootPath` is the only input and it
+    /// changes only on a real session edit, which already re-bodies the strip.
+    private var gitBadge: SessionGitInfo.Badge {
+        SessionGitInfo.badge(forRootPath: snapshot.sidebarRootPath)
+    }
+
     var body: some View {
-        Button(action: onSelect) {
+        let badge = gitBadge
+        return Button(action: onSelect) {
             ZStack {
                 Rectangle().fill(background)
-                HStack(spacing: 6) {
+                HStack(spacing: uiSize(6)) {
                     Image(systemName: "folder")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: uiSize(11), weight: .medium))
                         .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-                        .frame(width: 14, height: 14)
-                    if isRenaming {
-                        renameField
-                    } else {
-                        Text(SessionTabLabel.truncated(snapshot.displayName))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-                            .foregroundStyle(isSelected ? Color.primary : Color.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(width: uiSize(15), height: uiSize(15))
+                    // Two-line cell: session name on top, git/branch sub-line
+                    // below. The sub-line is omitted (and the name re-centers)
+                    // when the folder isn't a repo, so a non-repo session
+                    // doesn't carry an empty second row.
+                    VStack(alignment: .leading, spacing: uiSize(2)) {
+                        if isRenaming {
+                            renameField
+                        } else {
+                            Text(SessionTabLabel.truncated(snapshot.displayName))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .font(.system(size: uiSize(12), weight: isSelected ? .semibold : .regular))
+                                .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        if badge.isRepoRoot {
+                            gitSubLine(badge)
+                        }
                     }
                     Button(action: onClose) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 9, weight: .bold))
-                            .frame(width: 18, height: 18)
+                            .font(.system(size: uiSize(9), weight: .bold))
+                            .frame(width: uiSize(18), height: uiSize(18))
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -136,17 +173,17 @@ struct SessionTabBarItem: View {
                     .accessibilityLabel("Close \(snapshot.displayName)")
                     .accessibilityIdentifier("mdv.sessionTab.close.\(snapshot.id.uuidString)")
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, uiSize(10))
             }
-            .frame(minWidth: 110, idealWidth: 180, maxWidth: 240)
-            .frame(height: 28)
+            .frame(minWidth: uiSize(120), idealWidth: uiSize(190), maxWidth: uiSize(260))
+            .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .help(helpText)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(accessibilityLabel)
+        .accessibilityLabel(accessibilityLabel(badge))
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
         .accessibilityIdentifier("mdv.sessionTab.\(snapshot.id.uuidString)")
         // Pre-fill the editor on every rename activation. Using
@@ -161,10 +198,31 @@ struct SessionTabBarItem: View {
         }
     }
 
+    /// B1 sub-line: a git-root glyph plus the branch name (or "git" when the
+    /// branch is unresolvable — detached HEAD / unreadable ref). The whole
+    /// sub-line is `.secondary`, smaller than the name, so the session name
+    /// stays the primary read.
+    private func gitSubLine(_ badge: SessionGitInfo.Badge) -> some View {
+        HStack(spacing: uiSize(3)) {
+            Image(systemName: "arrow.triangle.branch")
+                .font(.system(size: uiSize(9), weight: .medium))
+                .foregroundStyle(.secondary)
+            Text(badge.branch ?? "git")
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .font(.system(size: uiSize(10), weight: .regular))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(badge.branch.map { "Git branch \($0)" } ?? "Git repository")
+        .accessibilityIdentifier("mdv.sessionTab.git.\(snapshot.id.uuidString)")
+    }
+
     private var renameField: some View {
         TextField("", text: $draftName)
             .textFieldStyle(.plain)
-            .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+            .font(.system(size: uiSize(12), weight: isSelected ? .semibold : .regular))
             .focused($isEditorFocused)
             .frame(maxWidth: .infinity, alignment: .leading)
             .onSubmit { onCommitRename(draftName) }
@@ -189,8 +247,11 @@ struct SessionTabBarItem: View {
         return snapshot.displayName
     }
 
-    private var accessibilityLabel: String {
-        let base = "Session: \(snapshot.displayName)"
+    private func accessibilityLabel(_ badge: SessionGitInfo.Badge) -> String {
+        var base = "Session: \(snapshot.displayName)"
+        if badge.isRepoRoot {
+            base += badge.branch.map { ", git branch \($0)" } ?? ", git repository"
+        }
         return isSelected ? base + ", selected" : base
     }
 }

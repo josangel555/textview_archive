@@ -800,10 +800,19 @@ public final class SourceTextController: NSViewController {
             applyWrap(wordWrap)
             lastWordWrap = wordWrap
         }
-        // NSLayoutManager renders dots / arrows / pilcrows when this
-        // is on. We tone the marker color down via the layout
-        // manager's textStorage so the visualization doesn't fight
-        // the text — Word's pilcrow is too loud for code-reading.
+        // NSLayoutManager renders dots / arrows / pilcrows when this is
+        // on, in its built-in faint grey (`tertiaryLabelColor`). There is
+        // NO public API to override the marker color or substitute glyphs
+        // here — doing so requires subclassing `NSLayoutManager` and
+        // overriding `drawGlyphs(forGlyphRange:at:)`, which has
+        // historically triggered the SwiftUI compositor bug in this
+        // codebase (see LESSONS.md "Things to NOT do" + the compositor
+        // section). So the read-only source view keeps the OS default
+        // tone. The IntelliJ-style subtle-but-readable rendering (item I2)
+        // lives in the editable path instead — CodeMirror 6's
+        // show-invisibles ViewPlugin, styled via `.cm-invisible` in
+        // `Resources/codemirror/codemirror.css`, which is fully
+        // controllable and compositor-safe (WKWebView, no NSLayoutManager).
         textView.layoutManager?.showsInvisibleCharacters = showInvisibles
 
         applyAttributedString(
@@ -1099,9 +1108,12 @@ public final class SourceTextController: NSViewController {
             }
         }
         for (i, r) in findMatches.enumerated() {
+            // G2: tuned bright-blue wash (Palette) for both states —
+            // legible on light + dark, current match at higher alpha.
+            // Previously systemPurple/systemPink.
             let color = (i == currentMatchIndex)
-                ? NSColor.systemPurple.withAlphaComponent(0.55)
-                : NSColor.systemPink.withAlphaComponent(0.30)
+                ? Palette.findHighlightCurrent
+                : Palette.findHighlightInactive
             layoutManager.addTemporaryAttribute(
                 .backgroundColor, value: color, forCharacterRange: r
             )

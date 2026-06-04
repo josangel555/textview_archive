@@ -97,13 +97,68 @@ final class SidebarModelTests: XCTestCase {
         try touch(".hidden")
         model.setRoot(tmpDir)
         let root = model.rootURL!
-        XCTAssertEqual(model.children(of: root).map { $0.name }, ["a.md"])
+        // Default is now ON (J3) — hidden entries are visible from the start.
+        XCTAssertEqual(Set(model.children(of: root).map { $0.name }), [".hidden", "a.md"])
 
+        // didSet repopulates the previously-expanded root in BOTH directions,
+        // no manual refresh: turning hidden OFF drops the dotfile…
+        model.includeHidden = false
+        XCTAssertEqual(model.children(of: root).map { $0.name }, ["a.md"])
+        // …and back ON restores it.
         model.includeHidden = true
-        // After toggling, the previously-expanded root is reloaded with
-        // hidden entries included (no manual refresh needed).
-        let names = Set(model.children(of: root).map { $0.name })
-        XCTAssertEqual(names, [".hidden", "a.md"])
+        XCTAssertEqual(Set(model.children(of: root).map { $0.name }), [".hidden", "a.md"])
+    }
+
+    // J3: hidden files are shown by default — the sidebar's
+    // `includeHidden` flag now initializes to `true`.
+    func test_includeHidden_defaultsToTrue() async throws {
+        let model = SidebarModel()
+        XCTAssertTrue(model.includeHidden,
+            "Show-hidden must default ON (J3): includeHidden should init true")
+        // And a fresh root reflects it: a dotfile is enumerated without
+        // any manual toggle.
+        try touch("a.md")
+        try touch(".hidden")
+        model.setRoot(tmpDir)
+        let names = Set(model.children(of: model.rootURL!).map { $0.name })
+        XCTAssertEqual(names, [".hidden", "a.md"],
+            "default includeHidden=true must enumerate dotfiles at the root")
+    }
+
+    // J1: the ".." parent-nav row invokes `goUp`, which re-roots the
+    // sidebar to the parent via `DocumentModel.openFolder`. Assert the
+    // re-root path the row triggers actually moves the root up one level.
+    func test_parentNav_reRootsToParent() async throws {
+        let parent = try mkdir("proj")
+        let child = try mkdir("proj/src")
+        try touch("proj/top.md")
+        try touch("proj/src/inner.md")
+        let model = DocumentModel(
+            controller: DocumentController(),
+            history: HistoryStore(
+                storeURL: tmpDir.appendingPathComponent("h.json")),
+            sidebar: SidebarModel(),
+            preferences: PreferencesStore(
+                defaults: UserDefaults(
+                    suiteName: "SidebarParentNav-\(UUID().uuidString)")!)
+        )
+        model.sidebar.setRoot(child)
+        XCTAssertEqual(model.sidebar.rootURL?.resolvingSymlinksInPath(),
+                       child.resolvingSymlinksInPath())
+
+        // What the ".." row's `goUp` action does: re-root to the parent.
+        let up = model.sidebar.rootURL!.deletingLastPathComponent()
+        model.openFolder(up)
+
+        XCTAssertEqual(model.sidebar.rootURL?.resolvingSymlinksInPath(),
+                       parent.resolvingSymlinksInPath(),
+            "parent-nav must re-root the sidebar to the parent folder")
+        // The new root's children are loaded (re-root expands the new root).
+        XCTAssertTrue(model.sidebar.isExpanded(model.sidebar.rootURL!))
+        XCTAssertTrue(
+            model.sidebar.children(of: model.sidebar.rootURL!)
+                .contains { $0.name == "src" },
+            "re-rooted parent must enumerate the former root as a child")
     }
 
     // MARK: Root rotation

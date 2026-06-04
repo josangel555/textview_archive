@@ -1,6 +1,7 @@
 import XCTest
 import Combine
 import ViewerKit
+import ViewerCore
 @testable import ViewerUI
 
 /// Tests for `HelpSink` (0c) and the status-bar `formatDate` helper.
@@ -38,14 +39,16 @@ final class HelpSinkTests: XCTestCase {
         XCTAssertNil(sink.hovered)
     }
 
-    // formatDate: time-only when the date is today, medium date otherwise.
-    func test_formatDate_todayIsTimeOnly() {
+    // formatDate now always renders the standardized `yyyy-MM-dd HH:mm`
+    // (24h) form via DisplayDateFormatter — no today-relative branch.
+    func test_formatDate_todayIncludesFullDate() {
         let cal = Calendar.current
         let now = Date()
         let formatted = StatusBar.formatDate(now, now: now, calendar: cal)
-        // Time-only output never contains a 4-digit year.
-        XCTAssertFalse(formatted.contains(String(cal.component(.year, from: now))),
-            "a today date should format time-only (no year): \(formatted)")
+        // Standardized output always carries the 4-digit year.
+        XCTAssertTrue(formatted.contains(String(cal.component(.year, from: now))),
+            "standardized format must always include the year: \(formatted)")
+        XCTAssertEqual(formatted, DisplayDateFormatter.string(from: now))
     }
 
     func test_formatDate_pastIncludesDate() {

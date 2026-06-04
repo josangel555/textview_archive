@@ -136,7 +136,16 @@ struct CrossSearchPanel: View {
             }
         }
         .frame(maxWidth: 760, maxHeight: 520)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        // G5: previously `.thinMaterial`, which renders as a translucent
+        // grey fill — the panel read as a muddy grey card rather than a
+        // clean search surface. Use the standard text-background swatch
+        // (pure white in light mode, the elevated dark tone in dark
+        // mode) clipped to the same rounded rect so the panel reads
+        // white/opaque like the command palette and editor surfaces.
+        .background(
+            Palette.textBackground,
+            in: RoundedRectangle(cornerRadius: 10)
+        )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
                 .stroke(Palette.separator, lineWidth: 1)

@@ -187,11 +187,8 @@ struct FolderStatsView: View {
         guard let first = stats.firstCommitDate, let last = stats.lastCommitDate else {
             return nil
         }
-        let fmt = DateFormatter()
-        fmt.dateStyle = .medium
-        fmt.timeStyle = .none
-        let a = fmt.string(from: first)
-        let b = fmt.string(from: last)
+        let a = DisplayDateFormatter.string(from: first)
+        let b = DisplayDateFormatter.string(from: last)
         return a == b ? a : "\(a) – \(b)"
     }
 }

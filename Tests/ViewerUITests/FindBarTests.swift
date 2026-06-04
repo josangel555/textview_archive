@@ -64,4 +64,63 @@ final class FindBarTests: HeadlessUITestCase {
         XCTAssertFalse(model.isRenderedFindBarPresented)
         XCTAssertEqual(model.renderedFindQuery, "")
     }
+
+    // MARK: - G3: match-count / current-position summary ("n of N")
+
+    /// The find bar shows "current/total" so the user knows which of N
+    /// matches they're on. `summarize` is the pure-logic source of that
+    /// string (consumed by `FindBar`'s `.countOnly` mode). 1-based.
+    func test_summarize_currentPositionAndTotal() {
+        // First of three.
+        XCTAssertEqual(TextDisplayView.summarize(matchCount: 3, current: 0), "1/3")
+        // Third of twelve — the "3 of 12" UAT example.
+        XCTAssertEqual(TextDisplayView.summarize(matchCount: 12, current: 2), "3/12")
+        // Last of N.
+        XCTAssertEqual(TextDisplayView.summarize(matchCount: 5, current: 4), "5/5")
+    }
+
+    /// Empty string when there are no matches or no current index, so
+    /// the bar falls through to its "No results"/blank rendering rather
+    /// than printing a nonsensical "0/0" or "1/0".
+    func test_summarize_emptyWhenNoMatches() {
+        XCTAssertEqual(TextDisplayView.summarize(matchCount: 0, current: nil), "")
+        XCTAssertEqual(TextDisplayView.summarize(matchCount: 0, current: 0), "")
+        XCTAssertEqual(TextDisplayView.summarize(matchCount: 4, current: nil), "")
+    }
+
+    // MARK: - G2: find-match highlight color is a tuned bright blue
+
+    /// The find highlight must be a tuned bright blue (≈ #1E6FFF),
+    /// NOT pure blue (#0000FF) which is too dark/saturated to read text
+    /// through. Pin the sRGB components so a regression back to pure
+    /// blue (or the old pink/purple) is caught headlessly.
+    func test_findHighlightColor_isTunedBrightBlue_notPureBlue() throws {
+        let base = try XCTUnwrap(
+            Palette.findHighlightBlueColor.usingColorSpace(.sRGB)
+        )
+        // Blue channel is fully on; red is low-but-nonzero and green is
+        // a clear mid value — this is the #1E6FFF tone, distinct from
+        // pure blue (r==0, g==0).
+        XCTAssertEqual(base.blueComponent, 1.0, accuracy: 0.001)
+        XCTAssertEqual(base.redComponent, 0.118, accuracy: 0.01)
+        XCTAssertEqual(base.greenComponent, 0.435, accuracy: 0.01)
+        // Guard against a pure-blue regression explicitly.
+        XCTAssertGreaterThan(base.greenComponent, 0.2,
+            "green channel collapsed — find highlight regressed toward pure blue")
+        XCTAssertGreaterThan(base.redComponent, 0.05,
+            "red channel collapsed — find highlight regressed toward pure blue")
+    }
+
+    /// The current match must read stronger than a non-current match so
+    /// the active hit pops against the field of other matches.
+    func test_findHighlightColor_currentIsStrongerThanInactive() throws {
+        let current = try XCTUnwrap(
+            Palette.findHighlightCurrent.usingColorSpace(.sRGB))
+        let inactive = try XCTUnwrap(
+            Palette.findHighlightInactive.usingColorSpace(.sRGB))
+        XCTAssertGreaterThan(current.alphaComponent, inactive.alphaComponent)
+        // Both are washes (translucent) so text reads through them.
+        XCTAssertLessThan(current.alphaComponent, 1.0)
+        XCTAssertGreaterThan(inactive.alphaComponent, 0.0)
+    }
 }

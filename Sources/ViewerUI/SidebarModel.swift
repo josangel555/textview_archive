@@ -8,7 +8,7 @@ import ViewerCore
 public final class SidebarModel: ObservableObject {
     @Published public private(set) var rootURL: URL?
     @Published public private(set) var expanded: Set<URL> = []
-    @Published public var includeHidden: Bool = false {
+    @Published public var includeHidden: Bool = true {
         didSet {
             clearCache()
             invalidateFlatCache()

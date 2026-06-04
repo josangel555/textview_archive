@@ -389,23 +389,12 @@ struct StatusBar: View {
         return (created, modified)
     }
 
-    /// Today-relative formatting: time-only ("3:42 PM") when the date is
-    /// today, otherwise medium date + short time (reuses MetadataPanel's
-    /// `dateFmt`). Keeps the status-bar chip narrow for the common
-    /// "edited today" case.
-    private static let timeOnlyFmt: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .none
-        f.timeStyle = .short
-        return f
-    }()
-
+    /// File created/modified chip: standardized `yyyy-MM-dd HH:mm` (24h)
+    /// via the shared ``DisplayDateFormatter``. `now` / `calendar` are kept
+    /// for call-site/test compatibility but no longer branch the format.
     static func formatDate(_ date: Date, now: Date = Date(),
                            calendar: Calendar = .current) -> String {
-        if calendar.isDate(date, inSameDayAs: now) {
-            return timeOnlyFmt.string(from: date)
-        }
-        return MetadataPanel.dateFmt.string(from: date)
+        DisplayDateFormatter.string(from: date)
     }
 
     private static func lineCount(in s: String) -> Int {

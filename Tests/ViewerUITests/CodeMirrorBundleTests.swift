@@ -255,6 +255,47 @@ final class CodeMirrorBundleTests: XCTestCase {
         }
     }
 
+    // MARK: - Invisibles rendering contract (item I2)
+    //
+    // The show-invisibles cue is IntelliJ-style: middle-dot for space,
+    // arrow for tab, pilcrow for line break — rendered in a subtle-but-
+    // readable *secondary* tone (was a washed-out flat mid-grey, "too
+    // grey"). Both halves live in the bundle (glyphs in the HTML plugin,
+    // color in the CSS), so we pin them headlessly here. Behaviour is
+    // exercised live by the MDV_RUN_WEBVIEW_TESTS / VM lane; this guards
+    // a silent bundle-rebuild regression.
+
+    func testInvisiblesPluginUsesIntelliJStyleGlyphs() throws {
+        let url = try XCTUnwrap(CodeMirrorResources.hostHTMLURL)
+        let html = try String(contentsOf: url, encoding: .utf8)
+        // The exact glyphs the show-invisibles ViewPlugin substitutes.
+        // Asserting the source literals so a future glyph swap is a
+        // deliberate, test-visible change.
+        XCTAssertTrue(html.contains("InvWidget(\"·\")"),
+                      "show-invisibles plugin no longer uses middle-dot (·) for space")
+        XCTAssertTrue(html.contains("InvWidget(\"→\")"),
+                      "show-invisibles plugin no longer uses arrow (→) for tab")
+        XCTAssertTrue(html.contains("InvWidget(\"¶\")"),
+                      "show-invisibles plugin no longer uses pilcrow (¶) for line break")
+    }
+
+    func testInvisiblesColorIsReadableSecondaryNotFlatGrey() throws {
+        let url = try XCTUnwrap(CodeMirrorResources.hostCSSURL)
+        let css = try String(contentsOf: url, encoding: .utf8)
+        // The `.cm-invisible` rule must exist and be theme-scoped: a
+        // light-mode default plus a `body.dark` override (the old flat
+        // `rgba(127, 127, 127, 0.5)` applied to both themes and washed
+        // out against each background).
+        XCTAssertTrue(css.contains(".cm-invisible"),
+                      "codemirror.css dropped the .cm-invisible rule")
+        XCTAssertTrue(css.contains("body.dark .cm-invisible"),
+                      "codemirror.css missing the dark-theme .cm-invisible override — " +
+                      "invisibles would be illegible on the dark background")
+        XCTAssertFalse(css.contains("rgba(127, 127, 127, 0.5)"),
+                       "codemirror.css still uses the washed-out flat mid-grey for " +
+                       "invisibles (item I2: should be a subtle-but-readable secondary)")
+    }
+
     // MARK: - Bootstrap symbol-binding contract (regression: WidgetType)
     //
     // The CM6 Phase-4 bug (commit 4ab4c56) was a `class IndentGuideWidget

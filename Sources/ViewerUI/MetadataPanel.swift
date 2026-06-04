@@ -3,6 +3,7 @@ import AVFoundation
 import PDFKit
 import SwiftUI
 import UniformTypeIdentifiers
+import ViewerCore
 import ViewerKit
 
 /// Right-rail metadata panel shown for files that don't have a Source
@@ -68,23 +69,16 @@ struct MetadataPanel: View {
                                                               countStyle: .file)))
         }
         if let modified = attrs[.modificationDate] as? Date {
-            out.append(Row("Modified", dateFmt.string(from: modified)))
+            out.append(Row("Modified", DisplayDateFormatter.string(from: modified)))
         }
         if let created = attrs[.creationDate] as? Date {
-            out.append(Row("Created", dateFmt.string(from: created)))
+            out.append(Row("Created", DisplayDateFormatter.string(from: created)))
         }
         if let utType = UTType(filenameExtension: url.pathExtension) {
             out.append(Row("UTI", utType.identifier))
         }
         return out
     }
-
-    internal static let dateFmt: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        f.timeStyle = .short
-        return f
-    }()
 
     // MARK: - Type-specific (lazy)
 

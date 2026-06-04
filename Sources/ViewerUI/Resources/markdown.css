@@ -114,16 +114,19 @@ img { max-width: 100%; height: auto; }
 
 del { text-decoration: line-through; color: var(--mdv-fg-secondary); }
 
-/* Find matches injected by Coordinator.findScript. Match the source
-   view scheme: pink for non-current, purple for current. */
+/* Find matches injected by Coordinator.findScript. G2: tuned bright
+   blue (#1E6FFF == sRGB 30,111,255, matching Palette.findHighlightBlue
+   on the native source side) — readable on light + dark, NOT a pure
+   #00F/#0000FF which is too dark/saturated to read text through. The
+   current match uses a higher alpha so it pops against sibling hits. */
 mark.mdv-find {
-    background: rgba(255, 105, 180, 0.45);
+    background: rgba(30, 111, 255, 0.30);
     color: inherit;
     border-radius: 2px;
     padding: 0 1px;
 }
 mark.mdv-find-current {
-    background: rgba(160, 90, 220, 0.65);
+    background: rgba(30, 111, 255, 0.58);
     color: inherit;
     border-radius: 2px;
     padding: 0 1px;

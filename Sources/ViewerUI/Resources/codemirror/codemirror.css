@@ -29,11 +29,26 @@ html, body {
 /* Dark host background (paired with oneDark theme inside CM). */
 body.dark { background: #282c34; color: #abb2bf; }
 body.light { background: #ffffff; color: #1f2328; }
-/* Invisible-character glyphs rendered by the show-invisibles ViewPlugin.
- * Quiet color so they don't overpower the content. */
+/* Invisible-character glyphs rendered by the show-invisibles ViewPlugin
+ * (IntelliJ-style: middle-dot for space, arrow for tab, pilcrow for line
+ * break). Tuned to a subtle-but-readable *secondary* tone — the prior
+ * flat 50%-alpha mid-grey washed out against both backgrounds ("too
+ * grey"). The channel values track macOS `secondaryLabelColor`
+ * (light: rgba(60,60,67,..), dark: rgba(235,235,245,..)) so the markers
+ * stay legible without competing with the code. Theme-scoped via the
+ * `body.dark` / `body.light` class set in `applySetTheme`.
+ *
+ * `font-weight: 600` thickens the hairline `·` / `→` strokes so they
+ * register at small font sizes without raising the alpha (which would
+ * make them shout). The pilcrow keeps the same tone for a quiet
+ * line-ending cue. */
 .cm-invisible {
-  color: rgba(127, 127, 127, 0.5);
+  color: rgba(60, 60, 67, 0.55);
+  font-weight: 600;
   pointer-events: none;
+}
+body.dark .cm-invisible {
+  color: rgba(235, 235, 245, 0.50);
 }
 /* LSP hover popover. Anchored by CM6's hoverTooltip; we just style the
  * inner content node we ourselves create. Padding + scroll cap so big

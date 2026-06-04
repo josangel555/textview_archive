@@ -39,4 +39,28 @@ enum Palette {
             ? NSColor(white: 0.13, alpha: 1.0)
             : NSColor(white: 0.96, alpha: 1.0)
     })
+
+    // MARK: - Find-match highlight (G2)
+
+    /// Base bright-blue swatch for find-match highlights, opaque.
+    /// A tuned system-blue (sRGB ≈ #1E6FFF) rather than `NSColor.blue`
+    /// / pure `#0000FF`: the latter is too dark/saturated to read text
+    /// through and looks muddy in dark mode. This tone stays legible —
+    /// readable text on top — in both light and dark appearances. The
+    /// per-state alphas below keep the highlight as a translucent wash
+    /// over the underlying glyphs rather than painting them out.
+    static let findHighlightBlueColor = NSColor(
+        srgbRed: 0.118, green: 0.435, blue: 1.0, alpha: 1.0
+    )
+
+    /// Background wash for a NON-current find match (NSTextView
+    /// temporary attribute). Lower alpha so the active match stands
+    /// out against the field of other hits.
+    static let findHighlightInactive =
+        findHighlightBlueColor.withAlphaComponent(0.28)
+
+    /// Background wash for the CURRENT find match. Stronger alpha so
+    /// the active hit pops against the dimmer sibling matches.
+    static let findHighlightCurrent =
+        findHighlightBlueColor.withAlphaComponent(0.55)
 }

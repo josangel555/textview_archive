@@ -38,13 +38,27 @@ is rough priority — most-asked-for first.
   (commit `f12ee43` — `lastScrolledMatchIndex`).
 - ~~**Rendered-MD find: highlights persist after dismiss.**~~ DONE
   (commit `f12ee43` — `window.__mdvFindClear` on empty query).
-- **Invisible characters appear too grey.** NSLayoutManager renders
-  invisibles in `tertiaryLabelColor` (very faint). No public API to
-  override. Fix needs an `NSLayoutManager` subclass that overrides
-  `drawGlyphs(forGlyphRange:at:)` to substitute our own color +
-  glyphs. Deferred because NSLayoutManager subclassing has
-  historically triggered the SwiftUI compositor bug (LESSONS.md).
-  → `Sources/ViewerUI/TextDisplayView.swift` SourceTextController.
+- **Invisible characters appear too grey.** PARTIALLY DONE (item I2).
+  Split by render path:
+  - **Editable path (CodeMirror 6 / WKWebView) — FIXED.** Invisibles
+    are an IntelliJ-style show-invisibles ViewPlugin (middle-dot `·`
+    for space, arrow `→` for tab, pilcrow `¶` for line break), styled
+    via `.cm-invisible` in `Resources/codemirror/codemirror.css`.
+    Retuned from the washed-out flat `rgba(127,127,127,0.5)` to a
+    subtle-but-readable theme-scoped *secondary* tone (light:
+    `rgba(60,60,67,0.55)`, dark: `rgba(235,235,245,0.50)`, `font-weight:
+    600` to thicken the hairline strokes). Pinned by
+    `CodeMirrorBundleTests.testInvisibles*`. Fully compositor-safe (no
+    NSLayoutManager).
+  - **Read-only source path (NSTextView) — STILL BOUNDED.** Uses the
+    built-in `layoutManager.showsInvisibleCharacters` flag, which renders
+    in `tertiaryLabelColor` with no public color/glyph override. The only
+    fix needs an `NSLayoutManager` subclass overriding
+    `drawGlyphs(forGlyphRange:at:)` — deferred, that subclass has
+    historically triggered the SwiftUI compositor bug (LESSONS.md
+    "Things to NOT do"). Kept the OS default tone here on purpose.
+  → `Sources/ViewerUI/TextDisplayView.swift` SourceTextController;
+    `Sources/ViewerUI/Resources/codemirror/{codemirror.css,codemirror.html}`.
 
 ## Sidebar / folder UX
 
