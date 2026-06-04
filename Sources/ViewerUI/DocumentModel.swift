@@ -2037,6 +2037,121 @@ public final class DocumentModel: ObservableObject {
         editor.confirmCloseIfDirty(at: index)
     }
 
+    // MARK: - Editable HEX (#234)
+
+    /// Latest dirty byte buffer per HEX tab. Stashed here (not just in the
+    /// HexView controller) so the close-confirm "Save" branch can write it
+    /// back even after the view is torn down, and so a tab switch doesn't
+    /// lose the pending edits. Keyed by tab id; cleared on save / discard /
+    /// tab close. Bounded by the 4 MB read cap.
+    private var hexDirtyBytes: [UUID: Data] = [:]
+
+    /// Mirror the HEX edit buffer's dirty state onto `Tab.isDirty` (the
+    /// TabBar dot + the close-confirm gate, both reused unchanged from the
+    /// editor path). Called by `HexView` on every dirty transition.
+    public func setHexDirty(_ dirty: Bool, forTabID id: UUID) {
+        guard let idx = tabs.tabs.firstIndex(where: { $0.id == id }) else { return }
+        if !dirty { hexDirtyBytes.removeValue(forKey: id) }
+        if tabs.tabs[idx].isDirty != dirty {
+            var t = tabs.tabs[idx]
+            t.isDirty = dirty
+            tabCoordinator.replace(at: idx, with: t)
+        }
+    }
+
+    /// Stash the latest dirty bytes for a HEX tab so the model-side close
+    /// save can reach them. Called by `HexView` alongside `setHexDirty`.
+    public func stashHexBytes(_ data: Data, forTabID id: UUID) {
+        hexDirtyBytes[id] = data
+    }
+
+    /// Write the edited HEX bytes back to disk (⌘S). Mirrors the editor
+    /// save: pause the watcher around the write, refresh the loaded
+    /// `BinaryFile` so a later re-render shows the saved bytes, clear the
+    /// dirty dot. Surfaces I/O / symlink failures via NSAlert and stays
+    /// dirty so the next ⌘S retries.
+    @discardableResult
+    public func saveHexEdits(_ data: Data, forTabID id: UUID) -> Bool {
+        guard let idx = tabs.tabs.firstIndex(where: { $0.id == id }),
+              let url = tabs.tabs[idx].url else { return false }
+        let wasWatchingURL = watchedURL
+        pauseFileWatcher()
+        defer { if wasWatchingURL == currentURL { startWatchingCurrentFile() } }
+        do {
+            try HexBinaryWriter.write(data, to: url)
+        } catch let HexWriteError.targetIsSymlink(resolved) {
+            let proceed = presentHexSymlinkPrompt(url: url, resolvedTarget: resolved)
+            guard proceed else { return false }
+            do {
+                try HexBinaryWriter.write(data, to: url, allowSymlink: true)
+            } catch {
+                presentHexSaveFailure(url: url, error: error)
+                return false
+            }
+        } catch {
+            presentHexSaveFailure(url: url, error: error)
+            return false
+        }
+        // Refresh the tab's loaded BinaryFile to the saved bytes so the
+        // dump re-renders against the new baseline if re-entered, and the
+        // edit buffer's "original" matches disk.
+        var t = tabs.tabs[idx]
+        let newFile = BinaryFile(url: url, data: data,
+                                 totalByteCount: data.count, isTruncated: false)
+        t.state = .binary(newFile)
+        t.isDirty = false
+        tabCoordinator.replace(at: idx, with: t)
+        hexDirtyBytes.removeValue(forKey: id)
+        // Tell the live controller (if mounted) to mark its buffer saved.
+        hexSavedNotifier?(id)
+        if let url = tabs.tabs.first(where: { $0.id == id })?.url {
+            repoFocus.refreshRepo(enclosing: url)
+        }
+        return true
+    }
+
+    /// Save a HEX tab's stashed dirty bytes (close-confirm "Save" branch).
+    /// Returns false when there's nothing stashed (clean / not a hex edit).
+    @discardableResult
+    public func saveHexEdits(forTabID id: UUID) -> Bool {
+        guard let data = hexDirtyBytes[id] else { return false }
+        return saveHexEdits(data, forTabID: id)
+    }
+
+    /// True when the tab at `index` is a HEX tab with pending dirty bytes
+    /// (vs. a text-editor dirty tab). Lets the close paths route "Save" to
+    /// the binary writer instead of the text editor writer.
+    public func isHexDirtyTab(at index: Int) -> Bool {
+        guard tabs.tabs.indices.contains(index) else { return false }
+        return hexDirtyBytes[tabs.tabs[index].id] != nil
+    }
+
+    /// Set by `HexView` so a model-side save (close-confirm path) can tell
+    /// the live controller to mark its buffer clean. Weak-by-closure; nil
+    /// when no hex view is mounted.
+    public var hexSavedNotifier: ((UUID) -> Void)?
+
+    private func presentHexSaveFailure(url: URL, error: Error) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Couldn't save \(url.lastPathComponent)"
+        alert.informativeText = "\(error)"
+        alert.runModal()
+    }
+
+    /// Symlink refusal prompt — same posture as the editor writer. Returns
+    /// true if the user opts to write through the link (de-symlinking).
+    private func presentHexSymlinkPrompt(url: URL, resolvedTarget: String) -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "\(url.lastPathComponent) is a symbolic link"
+        alert.informativeText = "Saving will replace the link with a regular file "
+            + "(target: \(resolvedTarget)). Continue?"
+        alert.addButton(withTitle: "Replace Link")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
     /// The displayed source text plus its utf8 byte length, computed
     /// once per body re-eval. The length is carried so callers (the
     /// syntax-highlight path) can form a cache key without re-walking
@@ -3197,10 +3312,17 @@ public final class DocumentModel: ObservableObject {
         // `closeTab`, `closeOtherTabs`, `closeTabsToRight`, and the
         // app delegate's "close window" handler.
         switch confirmCloseIfDirty(at: index) {
-        case .none, .discard:
+        case .none:
             break
+        case .discard:
+            // Drop any stashed HEX edits so a later same-tab-id reuse
+            // doesn't resurrect them. Text-editor buffers are dropped by
+            // the coordinator's close fan-out.
+            hexDirtyBytes.removeValue(forKey: tabs.tabs[index].id)
         case .save:
-            if !saveEditor(forTabID: tabs.tabs[index].id) { return }
+            if isHexDirtyTab(at: index) {
+                if !saveHexEdits(forTabID: tabs.tabs[index].id) { return }
+            } else if !saveEditor(forTabID: tabs.tabs[index].id) { return }
         case .cancel:
             return
         }
@@ -3243,9 +3365,12 @@ public final class DocumentModel: ObservableObject {
             .sorted(by: >)
         for i in doomed {
             switch confirmCloseIfDirty(at: i) {
-            case .none, .discard: break
+            case .none: break
+            case .discard: hexDirtyBytes.removeValue(forKey: tabs.tabs[i].id)
             case .save:
-                if !saveEditor(forTabID: tabs.tabs[i].id) { return }
+                if isHexDirtyTab(at: i) {
+                    if !saveHexEdits(forTabID: tabs.tabs[i].id) { return }
+                } else if !saveEditor(forTabID: tabs.tabs[i].id) { return }
             case .cancel:
                 return
             }
@@ -3280,9 +3405,12 @@ public final class DocumentModel: ObservableObject {
         let doomedDirty = toClose.reversed().filter { tabs.tabs[$0].isDirty }
         for i in doomedDirty {
             switch confirmCloseIfDirty(at: i) {
-            case .none, .discard: break
+            case .none: break
+            case .discard: hexDirtyBytes.removeValue(forKey: tabs.tabs[i].id)
             case .save:
-                if !saveEditor(forTabID: tabs.tabs[i].id) { return }
+                if isHexDirtyTab(at: i) {
+                    if !saveHexEdits(forTabID: tabs.tabs[i].id) { return }
+                } else if !saveEditor(forTabID: tabs.tabs[i].id) { return }
             case .cancel:
                 return
             }

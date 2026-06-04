@@ -60,6 +60,17 @@ struct HexView: View {
 
     private var width: Int { model.hexWidth(forTabID: tabID) }
 
+    /// HEX is editable when the file's tab is in `.hex` mode AND the
+    /// ViewOnly toggle is OFF (#234). A *truncated* file (we only loaded
+    /// the first 4 MB) is never editable — saving would drop the unread
+    /// tail. The read-only path is byte-identical to before when this is
+    /// false.
+    private var isEditable: Bool {
+        guard !file.isTruncated else { return false }
+        let p = model.viewModePresentation
+        return p.primary == .hex && p.viewOnly == false
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             toolbar
@@ -68,13 +79,31 @@ struct HexView: View {
                 file: file,
                 fontSize: fontSize,
                 width: width,
+                editable: isEditable,
                 matches: matches,
                 matchPatternLength: searchPattern.count,
                 currentMatch: matches.isEmpty ? nil : currentMatch,
                 clickOffsets: clickOffsets,
                 clickPatternLength: clickPattern.count,
                 onClickPattern: handleClickPattern(_:),
-                onClearClickPattern: clearClickHighlight
+                onClearClickPattern: clearClickHighlight,
+                onDirtyChange: { dirty, data in
+                    if dirty, let data { model.stashHexBytes(data, forTabID: tabID) }
+                    model.setHexDirty(dirty, forTabID: tabID)
+                },
+                onRequestSave: { data in _ = model.saveHexEdits(data, forTabID: tabID) },
+                onControllerReady: { controller in
+                    // Let a model-side save (the close-confirm "Save"
+                    // branch, which runs without going through the live
+                    // ⌘S handler) tell THIS controller to mark its buffer
+                    // clean. Captured weakly; matched by tab id so a stale
+                    // controller from another tab is ignored.
+                    let boundTab = tabID
+                    model.hexSavedNotifier = { [weak controller] savedTab in
+                        guard savedTab == boundTab else { return }
+                        controller?.markHexSaved()
+                    }
+                }
             )
         }
         .accessibilityIdentifier("mdv.hexView")
@@ -253,6 +282,7 @@ private struct HexTextRepresentable: NSViewControllerRepresentable {
     let file: BinaryFile
     let fontSize: CGFloat
     let width: Int
+    let editable: Bool
     let matches: [Int]
     let matchPatternLength: Int
     let currentMatch: Int?
@@ -260,21 +290,30 @@ private struct HexTextRepresentable: NSViewControllerRepresentable {
     let clickPatternLength: Int
     let onClickPattern: ([UInt8]) -> Void
     let onClearClickPattern: () -> Void
+    let onDirtyChange: (Bool, Data?) -> Void
+    let onRequestSave: (Data) -> Void
+    let onControllerReady: (HexTextController) -> Void
 
     func makeNSViewController(context: Context) -> HexTextController {
         let c = HexTextController()
         c.onClickPattern = onClickPattern
         c.onClearClickPattern = onClearClickPattern
+        c.onDirtyChange = onDirtyChange
+        c.onRequestSave = onRequestSave
+        onControllerReady(c)
         return c
     }
 
     func updateNSViewController(_ controller: HexTextController, context: Context) {
         controller.onClickPattern = onClickPattern
         controller.onClearClickPattern = onClearClickPattern
+        controller.onDirtyChange = onDirtyChange
+        controller.onRequestSave = onRequestSave
         controller.apply(
             file: file,
             fontSize: fontSize,
             width: width,
+            editable: editable,
             matches: matches,
             matchPatternLength: matchPatternLength,
             currentMatch: currentMatch,
@@ -319,6 +358,35 @@ private final class HexTextController: NSViewController {
 
     var onClickPattern: (([UInt8]) -> Void)?
     var onClearClickPattern: (() -> Void)?
+    /// Mirror the edit buffer's dirty state up to the model (TabBar dot +
+    /// close-confirm gate). Carries the current bytes when dirty so the
+    /// model can stash them for a close-confirm save. Called on every
+    /// transition, deduped by `lastReportedDirty`.
+    var onDirtyChange: ((Bool, Data?) -> Void)?
+    /// Request a binary write-back of the edited bytes (⌘S). The model
+    /// owns the write path (`DocumentModel.saveHexEdits`) so it can run
+    /// the symlink-refusal NSAlert + refresh the loaded `BinaryFile`.
+    var onRequestSave: ((Data) -> Void)?
+
+    // MARK: Edit state (#234)
+
+    /// True when the byte grid is editable (ViewOnly off, non-truncated).
+    /// `false` ⇒ the original read-only path, untouched.
+    private var editable: Bool = false
+    /// The dirty byte buffer over the loaded bytes. Seeded on the first
+    /// `apply` for a given file; preserved across non-file `apply` calls
+    /// (highlight / width changes keep edits) and reset when the file
+    /// identity changes. `nil` until the file is known.
+    private var editBuffer: HexEditBuffer?
+    /// Last dirty value pushed via `onDirtyChange`, to dedupe.
+    private var lastReportedDirty: Bool = false
+    /// Where the edit caret sits, for nibble-granular hex typing and
+    /// arrow/tab navigation. `nil` ⇒ no edit caret placed yet.
+    private enum EditCaret: Equatable {
+        case hex(byte: Int, nibble: Int)
+        case ascii(byte: Int)
+    }
+    private var editCaret: EditCaret?
 
     private struct DumpKey: Equatable {
         let url: URL
@@ -397,6 +465,7 @@ private final class HexTextController: NSViewController {
     func apply(file: BinaryFile,
                fontSize: CGFloat,
                width: Int,
+               editable: Bool,
                matches: [Int],
                matchPatternLength: Int,
                currentMatch: Int?,
@@ -406,19 +475,49 @@ private final class HexTextController: NSViewController {
                               byteCount: file.byteCount,
                               fontSize: fontSize,
                               width: width)
+        // File-identity change resets the edit buffer (new bytes ⇒ new
+        // baseline). Keyed on URL + byteCount only — a width / font change
+        // keeps the same file's edits (it re-renders, not reloads).
+        let fileIdentity = HexFileIdentity(url: file.url, byteCount: file.byteCount)
+        if fileIdentity != lastFileIdentity {
+            lastFileIdentity = fileIdentity
+            // Seed the buffer from the loaded bytes. If a dirty buffer for
+            // a DIFFERENT file was live, its dirt is dropped here — the
+            // close/switch confirm gate runs before we ever get a new file.
+            editBuffer = HexEditBuffer(data: file.data)
+            editCaret = nil
+            reportDirty(false)
+        }
+
         if dumpKey != lastDumpKey {
             lastDumpKey = dumpKey
             currentWidth = width
             byteCount = file.byteCount
-            fileData = file.data
+            // Render the EDITED bytes when we have a buffer (so a width
+            // change after edits redraws the edited values, not the
+            // originals); fall back to the file's bytes pre-seed.
+            fileData = editBuffer?.data ?? file.data
             rowLength = HexLayout.renderedRowLength(width: width)
             textView.setAccessibilityLabel(
                 Self.accessibilityLabel(for: file))
-            startChunkedBuild(file: file,
+            startChunkedBuild(file: BinaryFile(url: file.url,
+                                               data: fileData,
+                                               totalByteCount: file.totalByteCount,
+                                               isTruncated: file.isTruncated),
                               fontSize: fontSize,
                               width: width)
             lastHighlightKey = nil // force re-apply
         }
+
+        // Toggle editability. The byte grid stays SELECTABLE either way
+        // (so click-to-highlight + copy keep working read-only); only the
+        // typing path is gated. `isEditable` on the NSTextView would route
+        // keystrokes through TextKit's own insert/delete — we DON'T want
+        // that (it'd insert, not overwrite, and desync the byte buffer),
+        // so we keep `textView.isEditable = false` and intercept keyDown
+        // ourselves. This flag just arms that interception.
+        self.editable = editable
+        textView.isEditingArmed = editable
 
         applyHighlights(matches: matches,
                         matchPatternLength: matchPatternLength,
@@ -426,6 +525,12 @@ private final class HexTextController: NSViewController {
                         clickOffsets: clickOffsets,
                         clickPatternLength: clickPatternLength)
     }
+
+    private struct HexFileIdentity: Equatable {
+        let url: URL
+        let byteCount: Int
+    }
+    private var lastFileIdentity: HexFileIdentity?
 
     // MARK: Chunked build
 
@@ -561,6 +666,13 @@ private final class HexTextController: NSViewController {
                             clickOffsets: pending.clickOffsets,
                             clickPatternLength: pending.clickPatternLength)
         }
+        // Re-apply "modified byte" tints after a fresh build (e.g. a
+        // width change with pending edits rebuilds the whole dump and
+        // would otherwise lose the tints on changed bytes).
+        if editable, let buf = editBuffer, buf.isDirty {
+            for idx in buf.dirtyByteIndices { repaintByte(idx, in: buf) }
+            syncSelectionToCaret()
+        }
     }
 
     private func applyHighlights(matches: [Int],
@@ -653,6 +765,221 @@ private final class HexTextController: NSViewController {
         textView.scrollRangeToVisible(NSRange(location: charIdx, length: 2))
     }
 
+    // MARK: - Editing (#234)
+
+    private static let hexDigits: [Character] = Array("0123456789abcdef")
+
+    /// Push the dirty state up to the model. When dirty we ALWAYS fire (to
+    /// refresh the model's stashed bytes for a close-confirm save, since a
+    /// second edit keeps `isDirty == true` but changes the bytes); when
+    /// clean we fire only on the dirty→clean transition. The model dedups
+    /// the actual `Tab.isDirty` write itself.
+    private func reportDirty(_ dirty: Bool) {
+        if dirty {
+            lastReportedDirty = true
+            onDirtyChange?(true, editBuffer?.data)
+        } else if lastReportedDirty {
+            lastReportedDirty = false
+            onDirtyChange?(false, nil)
+        }
+    }
+
+    /// Place the edit caret from a click character index. Returns true if
+    /// the click landed on an editable hex/ascii cell.
+    @discardableResult
+    fileprivate func placeEditCaret(fromCharIndex idx: Int) -> Bool {
+        guard editable, !isStreaming else { return false }
+        guard let hit = HexCaretMap.hit(charIndex: idx,
+                                        width: currentWidth,
+                                        byteCount: byteCount,
+                                        headerCharCount: headerCharCount)
+        else { return false }
+        switch hit {
+        case .hex(let b, let n): editCaret = .hex(byte: b, nibble: n)
+        case .ascii(let b):      editCaret = .ascii(byte: b)
+        }
+        syncSelectionToCaret()
+        return true
+    }
+
+    /// Handle a single typed character in edit mode. Returns true if it
+    /// was consumed (so `keyDown` doesn't fall through to TextKit).
+    fileprivate func handleEditCharacter(_ scalar: Unicode.Scalar) -> Bool {
+        guard editable, !isStreaming, byteCount > 0,
+              var buf = editBuffer, let caret = editCaret else { return false }
+        switch caret {
+        case .hex(let byte, let nibble):
+            guard let v = HexNibble.value(of: scalar) else { return false }
+            let changed = buf.setNibble(byte: byte, nibble: nibble, value: v)
+            editBuffer = buf
+            if changed { repaintByte(byte, in: buf) }
+            // Advance one nibble regardless (typing flows left→right even
+            // when re-typing the same value).
+            if let next = HexCaretMap.advanceHex(byte: byte, nibble: nibble,
+                                                 by: 1, byteCount: byteCount) {
+                editCaret = .hex(byte: next.byte, nibble: next.nibble)
+            }
+            reportDirty(buf.isDirty)
+            syncSelectionToCaret()
+            return true
+        case .ascii(let byte):
+            guard HexNibble.isPrintableASCII(scalar) else { return false }
+            let changed = buf.setByte(byte: byte, value: UInt8(scalar.value))
+            editBuffer = buf
+            if changed { repaintByte(byte, in: buf) }
+            if let next = HexCaretMap.advanceAscii(byte: byte, by: 1,
+                                                   byteCount: byteCount) {
+                editCaret = .ascii(byte: next)
+            }
+            reportDirty(buf.isDirty)
+            syncSelectionToCaret()
+            return true
+        }
+    }
+
+    /// Move the edit caret by one cell (arrow / tab). `delta` is in
+    /// nibbles for a hex caret, bytes for an ascii caret. Returns true if
+    /// consumed.
+    fileprivate func moveEditCaret(by delta: Int) -> Bool {
+        guard editable, !isStreaming, byteCount > 0,
+              let caret = editCaret else { return false }
+        switch caret {
+        case .hex(let b, let n):
+            guard let next = HexCaretMap.advanceHex(byte: b, nibble: n,
+                                                    by: delta, byteCount: byteCount)
+            else { return false }
+            editCaret = .hex(byte: next.byte, nibble: next.nibble)
+        case .ascii(let b):
+            let step = delta == 0 ? 0 : (delta > 0 ? 1 : -1)
+            guard let next = HexCaretMap.advanceAscii(byte: b, by: step,
+                                                      byteCount: byteCount)
+            else { return false }
+            editCaret = .ascii(byte: next)
+        }
+        syncSelectionToCaret()
+        return true
+    }
+
+    /// Undo / redo a byte edit. Repaints the affected byte and moves the
+    /// caret there. Returns true if anything happened.
+    @discardableResult
+    fileprivate func undoEdit() -> Bool {
+        guard editable, var buf = editBuffer, let idx = buf.undo() else { return false }
+        editBuffer = buf
+        repaintByte(idx, in: buf)
+        editCaret = .hex(byte: idx, nibble: 0)
+        reportDirty(buf.isDirty)
+        syncSelectionToCaret()
+        return true
+    }
+
+    @discardableResult
+    fileprivate func redoEdit() -> Bool {
+        guard editable, var buf = editBuffer, let idx = buf.redo() else { return false }
+        editBuffer = buf
+        repaintByte(idx, in: buf)
+        editCaret = .hex(byte: idx, nibble: 0)
+        reportDirty(buf.isDirty)
+        syncSelectionToCaret()
+        return true
+    }
+
+    /// Write the edited bytes back to disk via the model's save path.
+    /// No-op when clean.
+    fileprivate func requestSave() {
+        guard editable, let buf = editBuffer, buf.isDirty else { return }
+        onRequestSave?(buf.data)
+    }
+
+    /// Whether the buffer is currently dirty — used by the controller's
+    /// save validation.
+    var isHexDirty: Bool { editBuffer?.isDirty ?? false }
+
+    /// Mark the buffer clean after a successful save (caller: model). Keeps
+    /// the edited bytes as the new baseline; clears the dirty dot and the
+    /// "modified" tints (those bytes are now saved, not pending).
+    func markHexSaved() {
+        guard var buf = editBuffer else { return }
+        let wasModified = buf.dirtyByteIndices
+        buf.markSaved()
+        editBuffer = buf
+        // Repaint formerly-modified bytes so their orange tint clears now
+        // that original == edited.
+        for idx in wasModified { repaintByte(idx, in: buf) }
+        reportDirty(false)
+    }
+
+    /// Re-render the two hex digits + the ASCII glyph for `byte` in place,
+    /// preserving the monospace attributes. O(1) — addresses the exact
+    /// ranges the highlight painter uses, so it stays in lock-step with
+    /// the dump layout. A modified byte is tinted so the user sees what
+    /// they've changed.
+    private func repaintByte(_ byte: Int, in buf: HexEditBuffer) {
+        guard let storage = textView.textStorage,
+              byte >= 0, byte < byteCount,
+              let value = buf.byte(at: byte) else { return }
+        let row = HexLayout.row(forOffset: byte, width: currentWidth)
+        let col = HexLayout.column(forOffset: byte, width: currentWidth)
+        let rowStart = headerCharCount + row * rowLength
+        let hexLoc = rowStart + HexLayout.hexCharOffset(inRowColumn: col)
+        let asciiLoc = rowStart + HexLayout.asciiCharOffset(inRowColumn: col,
+                                                            width: currentWidth)
+        let hexRange = NSRange(location: hexLoc, length: 2)
+        let asciiRange = NSRange(location: asciiLoc, length: 1)
+        guard NSMaxRange(hexRange) <= storage.length,
+              NSMaxRange(asciiRange) <= storage.length else { return }
+
+        let hexStr = String([Self.hexDigits[Int(value >> 4)],
+                             Self.hexDigits[Int(value & 0x0F)]])
+        let asciiChar: Character = (32...126).contains(value)
+            ? Character(UnicodeScalar(value)) : "."
+        let modified = buf.byte(at: byte) != buf.original(at: byte)
+        let tint: NSColor? = modified
+            ? NSColor.systemOrange.withAlphaComponent(0.28) : nil
+
+        storage.beginEditing()
+        replaceGlyphs(hexStr, at: hexRange, tint: tint, in: storage)
+        replaceGlyphs(String(asciiChar), at: asciiRange, tint: tint, in: storage)
+        storage.endEditing()
+        fileData = buf.data
+    }
+
+    /// Replace `range` with `text` keeping the existing font; optionally
+    /// paint a background tint (for modified bytes).
+    private func replaceGlyphs(_ text: String, at range: NSRange,
+                               tint: NSColor?, in storage: NSTextStorage) {
+        let font = (storage.length > range.location
+            ? storage.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont
+            : nil) ?? NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        var attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor.labelColor,
+        ]
+        if let tint { attrs[.backgroundColor] = tint }
+        storage.replaceCharacters(in: range,
+                                  with: NSAttributedString(string: text, attributes: attrs))
+    }
+
+    /// Reflect the edit caret onto the NSTextView's selection so the
+    /// blinking insertion point is visible at the edit cell.
+    private func syncSelectionToCaret() {
+        guard let caret = editCaret else { return }
+        let loc: Int
+        switch caret {
+        case .hex(let b, let n):
+            loc = HexCaretMap.hexCharIndex(byte: b, nibble: n,
+                                           width: currentWidth,
+                                           headerCharCount: headerCharCount)
+        case .ascii(let b):
+            loc = HexCaretMap.asciiCharIndex(byte: b,
+                                             width: currentWidth,
+                                             headerCharCount: headerCharCount)
+        }
+        guard loc <= (textView.textStorage?.length ?? 0) else { return }
+        textView.setSelectedRange(NSRange(location: loc, length: 0))
+        textView.scrollRangeToVisible(NSRange(location: loc, length: 0))
+    }
+
     // MARK: Click-pattern derivation
 
     func charIndexToByteOffset(_ idx: Int) -> Int? {
@@ -726,12 +1053,22 @@ enum HexAccessibility {
 private final class HexNSTextView: NSTextView {
     weak var controller: HexTextController?
     private var dragStartOffset: Int?
+    /// Set by the controller when ViewOnly is off (#234). Arms keystroke
+    /// interception for overwrite editing + click-to-place-caret. When
+    /// false, every path below is byte-identical to the read-only viewer.
+    var isEditingArmed: Bool = false
 
     override var acceptsFirstResponder: Bool { true }
 
     override func mouseDown(with event: NSEvent) {
         let pt = convert(event.locationInWindow, from: nil)
         let idx = characterIndex(forPoint: pt)
+        // Edit mode: a click places the edit caret on the cell. We still
+        // call super so the system insertion point / selection draws.
+        if isEditingArmed, let idx, controller?.placeEditCaret(fromCharIndex: idx) == true {
+            super.mouseDown(with: event)
+            return
+        }
         if let idx, let off = controller?.charIndexToByteOffset(idx) {
             dragStartOffset = off
         } else {
@@ -743,6 +1080,9 @@ private final class HexNSTextView: NSTextView {
 
     override func mouseUp(with event: NSEvent) {
         defer { super.mouseUp(with: event) }
+        // In edit mode the click-pattern highlight is suppressed (a click
+        // is "place caret", not "highlight all equal bytes").
+        if isEditingArmed { dragStartOffset = nil; return }
         guard let start = dragStartOffset else { return }
         let pt = convert(event.locationInWindow, from: nil)
         let idx = characterIndex(forPoint: pt)
@@ -769,6 +1109,45 @@ private final class HexNSTextView: NSTextView {
             controller?.reportClickClear()
             return
         }
+        if isEditingArmed, handleEditKeyDown(event) { return }
         super.keyDown(with: event)
+    }
+
+    /// Edit-mode key routing. Returns true if the event was consumed.
+    /// Handles ⌘S (save), ⌘Z / ⇧⌘Z (undo/redo), arrows + tab (navigation),
+    /// and printable hex/ascii characters (overwrite). Anything else falls
+    /// through to the system (selection, copy, scroll).
+    private func handleEditKeyDown(_ event: NSEvent) -> Bool {
+        guard let controller else { return false }
+        let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
+        if mods.contains(.command) {
+            switch event.charactersIgnoringModifiers?.lowercased() {
+            case "s":
+                controller.requestSave()
+                return true
+            case "z":
+                if mods.contains(.shift) { return controller.redoEdit() }
+                return controller.undoEdit()
+            default:
+                return false  // ⌘C / ⌘A / etc. → system
+            }
+        }
+
+        // Bare navigation keys.
+        switch event.keyCode {
+        case 123: return controller.moveEditCaret(by: -1) // ←
+        case 124: return controller.moveEditCaret(by: 1)  // →
+        case 48:  // tab — step a whole byte (2 nibbles) forward, or back
+            return controller.moveEditCaret(by: mods.contains(.shift) ? -2 : 2)
+        default:
+            break
+        }
+
+        // Printable character → overwrite. One scalar at a time; ignore
+        // multi-scalar / control input.
+        guard let chars = event.characters, chars.unicodeScalars.count == 1,
+              let scalar = chars.unicodeScalars.first else { return false }
+        return controller.handleEditCharacter(scalar)
     }
 }

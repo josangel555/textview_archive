@@ -56,10 +56,14 @@
   per directive.
 - [ ] **#232 UX-M** — action catalog → `~/.textview/keybinding.json` + Omni invokability.
 - [ ] **#226 UX-D** — embedded terminal (dep-free PTY) + shoulder toggle.
-- [ ] **L (memory)** — ~200MB-after-close investigation (folds into #190/#191/#210).
+- [x] **#234 UX-A HEX byte-edit** ✅ — editable HEX byte grid, gated by `Render|Editor|HEX × ViewOnly` (ViewOnly OFF + non-truncated). Pure `HexEditBuffer` (overwrite-only edits, dirty diff, undo/redo, save-baseline) + `HexCaretMap` (char↔byte/nibble, host-tested) in ViewerCore; `HexBinaryWriter` (atomic temp+rename, symlink-refusal, mode/owner/xattr preserve). `HexView` keyDown interception keeps NSTextView non-editable (overwrite, not insert); dirty dot + close-confirm "Save" route to the binary writer. Tests: `HexCaretMapTests` + `HexEditBufferTests` (T1m). Gate-green @ b22cc3d base. **Limits (carry):** overwrite-only (no insert/delete), >4 MB truncated files stay read-only, no blinking-caret glyph, single live hexSavedNotifier (multi-pane hex-edit edge).
+- [ ] **L1 (memory)** — ~200MB-after-close investigation (folds into #190/#191/#210). #190 (the ~2GB→reasonable fix) DONE; #191 architectural peak-bounding is OWNER-deferred + Rust-core-gated. Tractable scope: investigate retained-after-close, fix reclaimable, add a regression guard.
 
 ## Notes / log
 (append per-item: commit sha + what shipped + tests added)
 
-## STATUS 
-DONE+gate-green: #233 quick-wins, #231 persistence, #229 find-rebuild, #232 action-catalog/keybindings, #225 footer-git, #226 terminal. NEXT: #224 toolbar (presentation-layer mapping, NOT enum rewrite) → #227 dockable → #228 zoom → #230 tooltips → L memory. main @ 4890178.
+## STATUS
+ALL UX items #224–#233 + D + #234 DONE + headless-gate-green. Also fixed a
+pre-existing gate red (PMA06 heavy-tier sentinel, since 98ded71 — see LESSONS #7).
+Only **L1 (memory)** remains: tractable investigation + reclaim + guard (the
+architectural #191 peak-bound is owner-deferred). main @ HEAD (post-#234).

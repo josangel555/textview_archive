@@ -542,11 +542,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.reloadCurrentFile()
     }
 
-    /// File → Save (⌘S). Active only when the focused tab is in
-    /// `.editor` view mode (gated by `validateMenuItem`). The model
-    /// surfaces any I/O failure via its own NSAlert; we just relay
-    /// the call.
+    /// File → Save (⌘S). Active when the focused tab is in `.editor` view
+    /// mode OR is a dirty editable HEX tab (gated by `validateMenuItem`).
+    /// The model surfaces any I/O failure via its own NSAlert; we just
+    /// relay the call. HEX takes precedence when its buffer is dirty.
     @objc func saveActiveEditor(_ sender: Any?) {
+        if let i = model.tabs.selectedIndex, model.isHexDirtyTab(at: i) {
+            _ = model.saveHexEdits(forTabID: model.tabs.tabs[i].id)
+            return
+        }
         _ = model.saveActiveEditor()
     }
 
@@ -1586,8 +1590,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(saveActiveEditor(_:)):
             // Save only enables when the focused tab is editing AND
             // has unsaved edits. Greys the menu (and disables the ⌘S
-            // accelerator) otherwise — matches Xcode / VS Code.
-            guard hasTab, model.currentViewMode == .editor else { return false }
+            // accelerator) otherwise — matches Xcode / VS Code. #234: a
+            // dirty editable HEX tab also enables Save (binary write-back).
+            guard hasTab else { return false }
+            if let i = model.tabs.selectedIndex, model.isHexDirtyTab(at: i) { return true }
+            guard model.currentViewMode == .editor else { return false }
             return model.tabs.selected?.isDirty == true
         case #selector(editorUndo(_:)), #selector(editorRedo(_:)):
             // Only intercept ⌘Z / ⇧⌘Z when an editor is on screen.
