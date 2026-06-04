@@ -244,3 +244,51 @@ public func mdvCoreAdd(_ a: Int32, _ b: Int32) -> Int32 {
 public func mdvCoreForcePanic() -> CoreError {
     CoreError(status: mdvcore_force_panic())
 }
+
+/// Apply a CodeMirror edit batch through the Rust core (migration slice #2 —
+/// the first STATELESS call: no handle, a MessagePack request frame in, a
+/// response frame out). Returns the applied text, or `nil` when the core
+/// **rejected** the batch (out-of-bounds / overlap / ill-formed UTF-16) — the
+/// caller's cue to full-resync, exactly matching the Swift `CMEditApplier`
+/// contract. Throws `CoreError` only on a bridge FAULT (null/wire/panic) so the
+/// adapter can fall back to the Swift path; a rejected batch is `nil`, not a throw.
+public func mdvCoreApplyCMEdits(
+    base: String,
+    edits: [(from: Int, to: Int, insert: String)]
+) throws -> String? {
+    // Build the request frame {base, edits:[{from,to,insert}]} via the
+    // hand-rolled Swift→Rust MessagePack encoder (named maps → rmp-serde structs).
+    let editVals: [MsgPackValue] = edits.map { e in
+        .map([
+            (.string("from"), .int(Int64(e.from))),
+            (.string("to"), .int(Int64(e.to))),
+            (.string("insert"), .string(e.insert)),
+        ])
+    }
+    let request = MsgPackValue.map([
+        (.string("base"), .string(base)),
+        (.string("edits"), .array(editVals)),
+    ])
+    let reqBytes = request.frame()
+
+    var buf = MdvBuf(data: nil, len: 0, cap: 0)
+    let status = reqBytes.withUnsafeBufferPointer { p in
+        mdvcore_cm_apply(p.baseAddress, UInt(p.count), &buf)
+    }
+    defer { mdvcore_buf_free(&buf) }
+    guard status == MDV_STATUS_OK else { throw CoreError(status: status) }
+    guard let data = buf.data, buf.len > 0 else {
+        throw CoreError.decode("empty cm_apply response frame")
+    }
+    let frame = Array(UnsafeBufferPointer(start: data, count: Int(buf.len)))
+    let body = try CsvSession.unframe(frame)
+    var reader = MsgPackReader(body)
+    do {
+        let map = try reader.decode().mapValue()
+        guard let v = map["text"] else { throw CoreError.decode("missing 'text'") }
+        if case .nilValue = v { return nil }   // rejected batch
+        return try v.stringValue()
+    } catch let e as MsgPackError {
+        throw CoreError.decode("\(e)")
+    }
+}

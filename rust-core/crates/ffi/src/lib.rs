@@ -50,6 +50,7 @@ pub mod guard;
 pub mod handle;
 pub mod status;
 
+use mdvcore_core::cm_edit;
 use mdvcore_core::filter::{Query, Scope};
 use mdvcore_core::session::CsvSession;
 use mdvcore_core::wire;
@@ -81,6 +82,58 @@ pub extern "C" fn mdvcore_add(a: i32, b: i32) -> i32 {
 pub extern "C" fn mdvcore_force_panic() -> MdvStatus {
     ffi_guard!({
         panic!("forced panic for FFI boundary test");
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Stateless slice (Type-1): bytes IN (a request frame) → bytes OUT (a response
+// frame). No handle, no session lifetime. The CMEditApplier slice (#2) is the
+// first; future pure transforms (diff, hex, fuzzy) follow this exact shape.
+// ---------------------------------------------------------------------------
+
+/// Apply a CodeMirror edit batch (stateless). `req`/`req_len` is a
+/// length-prefixed MessagePack request frame `{base, edits:[{from,to,insert}]}`;
+/// the result is written to `out_buf` as a `{text: Option<String>}` response
+/// frame (a `null` text means the batch was rejected — the caller full-resyncs).
+/// Caller MUST call [`mdvcore_buf_free`] on `out_buf`.
+///
+/// # Returns
+/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::WireError`] (malformed
+/// request frame / encode failure), or [`MdvStatus::Panic`].
+///
+/// # Safety
+/// `req` must point to `req_len` valid bytes (or be null with `req_len == 0`).
+/// `out_buf` must be a valid, writable pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_cm_apply(
+    req: *const u8,
+    req_len: usize,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_guard!({
+        if out_buf.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_buf validated; empty default so error paths stay safe-to-free.
+        unsafe { *out_buf = MdvBuf::empty() };
+
+        if req.is_null() && req_len != 0 {
+            return MdvStatus::NullArg;
+        }
+        let bytes: &[u8] = if req_len == 0 {
+            &[]
+        } else {
+            // SAFETY: caller guarantees req/req_len describe valid bytes (len != 0).
+            unsafe { core::slice::from_raw_parts(req, req_len) }
+        };
+        match cm_edit::apply_wire(bytes) {
+            Ok(frame) => {
+                // SAFETY: out_buf validated non-null above.
+                unsafe { *out_buf = MdvBuf::from_vec(frame) };
+                MdvStatus::Ok
+            }
+            Err(_) => MdvStatus::WireError,
+        }
     })
 }
 
