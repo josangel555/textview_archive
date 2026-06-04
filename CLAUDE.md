@@ -61,6 +61,35 @@ on the host — it just exercises the headless tiers and skips T4/T5.
 - Workspace state lives under `~/Library/Application Support/
   com.markdownviewer.MarkdownViewer/Workspaces/_last.json`.
 
+## Task tracking (use it — don't just do work silently)
+
+From now on, **track work as tasks** instead of doing it ad-hoc. File
+generously and keep the board honest:
+
+- **One task per unit of work** — every finding, bug, feature, sub-task,
+  refactor, decision. When in doubt, file it. A task is cheaper than a lost
+  thread.
+- **Status discipline.** Mark a task `in_progress` BEFORE starting it and
+  `completed` only when it's *fully* done **and validated** (headless gate green
+  / tests pass). Never mark done on a partial or failing change. If blocked,
+  keep it open and file a new task for the blocker.
+- **Hesitancy / confidence tagging** — every task carries `metadata`:
+  - `confidence`: `high` | `medium` | `low` (how sure I am of scope/approach).
+  - `blocker`: `none` | `owner-decision` | `owner-dep-approval` |
+    `live-validation` | `supervised` | `deliberately-deferred`.
+  - `area`: `rust-core` | `monitor` | `perf` | `security` | `ci` | `poc` | …
+  - and a subject prefix for at-a-glance scanning: `[DONE]`, `[BLOCKED:<why>]`,
+    `[WONT-DO]`, `[SECURITY]`, etc.
+- **Owner-gated items don't block the loop.** Anything needing the owner's
+  decision (a dep approval, a risky supervised refactor) is filed as a
+  `pending` task with `blocker` set AND appended to the `DECISIONS NEEDED`
+  section of `docs/AUTONOMOUS_PROGRESS.md` — then move on to other work.
+- **Check `TaskList` before creating** to avoid duplicates; **read the latest
+  with `TaskGet` before updating** (staleness).
+- This complements the durable docs (`AUTONOMOUS_PROGRESS.md` for the autonomous
+  run log, `BACKLOG.md` for the standing queue) — the task board is the live
+  per-item state; the docs are the narrative that survives compaction.
+
 ## Quick references
 
 - `BACKLOG.md` — pending work, decisions, and audit follow-ups.
