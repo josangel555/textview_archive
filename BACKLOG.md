@@ -695,3 +695,40 @@ independence + types + GLOBAL zoom/wrap/theme (#184). Items still open:
 - **#221** remove the "Open As" menu entirely → file-type chip dropdown is the sole affordance (sidebar submenu still present).
 - **#222** holistic testing-improvement investigation (the live-app gap is the case study).
 - **DESIGN AWAITING OWNER:** PM feature v2 (`docs/PROJECT_MANAGEMENT_DESIGN_v2.md`) — agree the WHAT + approve the `rusqlite` dep, then a HOW/build pass. Rust/Linux plan ready (execute when the Mac is free).
+
+## 2026-06-03 — post-UAT + reconciliation queue
+
+**Giga UAT outcome (run wf_7f6adec6-3ab):** 33 issues / 32 fixed / 1 non-bug.
+**27 landed on main + gate-green + installed.** Catalog: `docs/uat/` (87 smokes,
+12 T4 suites, UAT_REPORT/UAT_BUGS/STAGED_FIXES). Re-run: `giga-uat mode=run-only`.
+
+**Pending fixes (2 branches kept; also in bundle + UAT_BUGS.md):**
+- `worktree-wf_7f6adec6-3ab-54` — **BUG-010** off-menu view-mode clamp (S3).
+  Conflicts with the landed BUG-007/019 view-mode guards; likely partly
+  redundant — reconcile or drop. **DECISION owed.**
+- `worktree-wf_7f6adec6-3ab-64` — **BUG-027** sessions-store pollution under the
+  clean-room flag (S4, real-footgun-adjacent). Conflicts with `-62`'s landed TCC
+  guard at `SessionsAppCoordinator`. Reconcile or drop. **DECISION owed.**
+- Dropped (trivial/redundant, bundle only): -50 BUG-023, -63 BUG-013 (dup of
+  landed -51), -79 BUG-031 (comment-only).
+
+**Gate reliability:** `FoldBenchTests`/`CrossFileSearchBenchTests` are
+parallel-contention perf FLAKES (pass in isolation, trip under `swift test
+--parallel`). They didn't trip the final gate but are non-deterministic — de-flake
+(serialize, or relax the budget under load, or move off the gate lane). **DECISION owed: approach.**
+
+**giga-uat workflow polish:** `args.date` didn't propagate (deliverables came out
+`*_undated.md`; the watchdog's date-keyed filename check would've mis-fired).
+Fix arg threading before the next run.
+
+**Backup to retire:** full-ref bundle at
+`/Users/me/Documents/workspaces/claude/mdv-recon-backup-2026-06-03/` — delete
+once confident nothing from the 51 deleted branches is wanted. 12-entry stash
+stack (`RECOVERED-*`) still present + bundled; clear after eyeballing.
+
+**Carried-forward queue:** #218 HEX-slow · #219 Editor→HEX flash · #220 sidebar
+preview-tab · #221 remove Open-As · #222 holistic testing-improvement · #223
+action-vocabulary catalog · #216 PM feature (needs `rusqlite` approval + WHAT→HOW)
+· #202 sessions god-object split · #204/#205 code-review · #191/#194 memory ·
+#208/#210 perf+memory accounting. UnifiedSearchPanel rework sits unlanded in the
+bundle (main kept CrossSearchPanel) — resurrect or abandon. **DECISION owed.**

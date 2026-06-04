@@ -1674,3 +1674,52 @@ badges/picker, session-ui rails/large-file-render/view-mode-picker. See BACKLOG.
 - **Editor was broken by a CM6 `WidgetType` bootstrap `ReferenceError`** (`codemirror.html` missing it from the `window.CM` destructure) — latent since CM6 Phase 4; one-line fix.
 - **Recurring hazard:** `Workflow` `isolation:'worktree'` agents leak their named branch into the MAIN checkout + land the real work on a sibling superset branch (`X-work`/`worktree-<runid>`). Harvest the superset (`git log main..<branch>`), ff `main`, `git switch main` in the checkout, reap extra worktrees + delete leaked branches.
 - **Native profiling cheat-sheet:** `footprint` / `vmmap --summary` / `heap <pid>` / `sample`→`scripts/lib/sample_flamegraph.py`. Tools: `scripts/{mem-profile,heap-dump,flamegraph}.sh` + `Tests/ViewerUITests/InteractionProfileHarness.swift` (`MDV_PROFILE=1`). `mem-profile` skill at `.claude/skills/` (gitignored, local-only).
+
+## Session 2026-06-03 — Giga UAT, workflow recovery, repo reconciliation
+
+**1. Workflow/agent self-reports lie — reconcile against git/disk ground truth.**
+The Giga UAT's report claimed "0 fixes landed on main" (git showed **2** real
+commits) and "32 fixed, staged on branches" (in fact **~27 were UNCOMMITTED in
+their worktree dirs**, not committed to branches). Never act on a workflow
+agent's summary for landing/reaping — check `git log main..`, `git status` per
+worktree, and tree-diffs yourself first.
+
+**2. A schema-bound `agent()` awaited *bare* aborts the whole workflow.**
+A heavy live-app subagent that ends without calling `StructuredOutput` (after 2
+nudges) throws; a bare `await agent(...)` in a loop propagates that into a total
+run failure (lost ~90 min / 37 agents once). Fix pattern: wrap each schema
+agent in `try/catch` (record a sentinel + continue), and in the prompt mandate
+"your LAST action MUST be StructuredOutput, even for empty results" + a scope
+guard ("compile the suite ONCE; run a representative subset rather than
+exhausting context"). The hardened resume then completed.
+
+**3. The pre-install smoke RUNNER must compile in DEBUG, never `-c $CONFIG`.**
+`build-app.sh`'s gate ran `swift test -c release`, but the test target is
+**uncompilable in release**: `#if DEBUG` test-support hooks (e.g.
+`TreeSitterEngine._jsonLanguagePointerForTesting`) vanish, and `GrammarLoaderTests`
+references them unguarded. The runner only spawns the *already-release-built*
+`dist/` app as an external process, so its own optimization level is irrelevant.
+Run it debug. (Fixed: 798b7ee.)
+
+**4. Multi-agent fix fleets leave fixes UNCOMMITTED in worktree dirs + tangle one
+shared stash stack.** 33 fixer worktrees (= 55 GB) shared a single object DB →
+cross-worktree `git stash` mis-pops left `RECOVERED-*-belongs-to-sibling`
+entries, and most fixes sat uncommitted in the worktree (not on the branch).
+Harvest procedure: `git add -A && commit` each worktree to its branch FIRST
+(verify `commits>0, dirty=0`), THEN `git worktree remove`. `remove --force` can
+fail on a transient lock yet `prune` still clears the admin record — leaving an
+orphaned dir to `rm -rf` (safe once committed).
+
+**5. Before any mass branch/worktree cleanup: bundle EVERYTHING first.**
+`git bundle create bk.bundle --all` (capture stashes as temp `zzstash/N`
+branches beforehand so they're included), then `git bundle verify`. One file =
+total recoverability → every subsequent delete is zero-risk. Restore via
+`git fetch bk.bundle 'refs/heads/*:refs/heads/restored/*'`.
+
+**6. `ahead=N` (rev-list main..branch), not tree-diff, is the merged signal.**
+Once main moves far ahead, *every* stale branch's tree differs from main (pure
+noise). Only `ahead>0` branches carry unique commits — and even those are
+usually superseded (pre-rename test files, refactored-away `GitService`/
+`WorkspaceStore`, throwaway `poc/` dirs, old dated docs). Confirm with
+`comm -23 <(git ls-tree -r --name-only $b|sort) <(git ls-tree -r --name-only main|sort)`
+to see files-unique-to-branch before deciding land-vs-delete.
