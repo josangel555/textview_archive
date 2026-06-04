@@ -37,9 +37,10 @@ Hypothesis: same root as the 108 MB baseline — DocumentModel god-object republ
 ### Wave 2 — quick wins (low risk, visible)
 - [ ] File ▸ New + right-click folder ▸ New [File].
 - [ ] Bookmark remove via Delete key + undo.
-- [ ] Default to plain text for renderable-ASCII + plain-text allowlist.
-- [ ] Can't-see-right-border-of-last-tab.
-- [ ] PNG/media file-info respect zoom.
+- [x] **Default plain-text / allowlist known plain-text formats** ✅ — FileTypeDetector
+  known-basename map + config-extension allowlist (commit 3206cf1, headless tests, gate-green).
+- [ ] Can't-see-right-border-of-last-tab. (view-layer — needs --diagnose/visual)
+- [ ] PNG/media file-info respect zoom. (view-layer)
 
 ### Wave 3 — PoCs (research + build, validate automatically)
 - [x] **Image editing PoC engine spine** ✅ — ViewerCore ImageDocument/Renderer/Exporter (op-list history, lossless revert, ImageIO export). 16 headless tests. Commit 8420b29. (UI not built; engine only.)
