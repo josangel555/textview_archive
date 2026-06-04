@@ -235,6 +235,70 @@ pub unsafe extern "C" fn mdvcore_hex_render(
     })
 }
 
+/// Search a byte buffer for a query (stateless). `data`/`data_len` is the buffer
+/// to search; `query`/`query_len` is the UTF-8 query string; `mode` is `0` for
+/// hex-byte-pair parsing or `1` for raw ASCII/UTF-8 bytes. Match offsets are
+/// written to `out_buf` as a `{offsets:[u32]}` MessagePack frame (non-overlapping,
+/// Sublime/VSCode convention). An invalid/empty query yields an empty offset
+/// list, not an error. Caller MUST call [`mdvcore_buf_free`] on `out_buf`.
+///
+/// # Returns
+/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::BadUtf8`] (query not
+/// UTF-8), [`MdvStatus::WireError`] (encode failure), or [`MdvStatus::Panic`].
+///
+/// # Safety
+/// `data`/`query` must point to their respective `*_len` valid bytes (or be null
+/// with a zero length). `out_buf` must be a valid, writable pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_hex_search(
+    data: *const u8,
+    data_len: usize,
+    query: *const u8,
+    query_len: usize,
+    mode: u32,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_guard!({
+        if out_buf.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_buf validated; empty default so error paths stay safe-to-free.
+        unsafe { *out_buf = MdvBuf::empty() };
+
+        if (data.is_null() && data_len != 0) || (query.is_null() && query_len != 0) {
+            return MdvStatus::NullArg;
+        }
+        let data_slice: &[u8] = if data_len == 0 {
+            &[]
+        } else {
+            // SAFETY: caller guarantees data/data_len describe valid bytes.
+            unsafe { core::slice::from_raw_parts(data, data_len) }
+        };
+        let query_slice: &[u8] = if query_len == 0 {
+            &[]
+        } else {
+            // SAFETY: caller guarantees query/query_len describe valid bytes.
+            unsafe { core::slice::from_raw_parts(query, query_len) }
+        };
+        let Ok(query_str) = core::str::from_utf8(query_slice) else {
+            return MdvStatus::BadUtf8;
+        };
+        let kind = if mode == 1 {
+            hex::HexSearchMode::Ascii
+        } else {
+            hex::HexSearchMode::Hex
+        };
+        match hex::hex_search_frame(data_slice, query_str, kind) {
+            Ok(frame) => {
+                // SAFETY: out_buf validated non-null above.
+                unsafe { *out_buf = MdvBuf::from_vec(frame) };
+                MdvStatus::Ok
+            }
+            Err(_) => MdvStatus::WireError,
+        }
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Stage 1/2 feature surface: open → parse → setFilter → snapshot → free.
 //

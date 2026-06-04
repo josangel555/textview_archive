@@ -442,3 +442,46 @@ public func mdvCoreHexRender(
     return String(decoding: UnsafeBufferPointer(start: data, count: Int(buf.len)),
                   as: UTF8.self)
 }
+
+// MARK: - HEX search (migration slice #5)
+
+/// Query interpretation for `mdvCoreHexSearch` (mirrors the Rust
+/// `hex::HexSearchMode`; raw values match the FFI `mode` arg).
+public enum HexSearchKind: UInt32, Sendable {
+    case hex = 0
+    case ascii = 1
+}
+
+/// Search `data` for `query` through the Rust core (migration slice #5 —
+/// STATELESS: data + query in by raw pointer, the non-overlapping match offsets
+/// out as a `{offsets:[u32]}` frame). Throws `CoreError` only on a bridge FAULT
+/// so the adapter can fall back to the Swift `HexSearchEngine`. An invalid or
+/// empty query yields `[]` (not a throw) — matching the Swift contract.
+public func mdvCoreHexSearch(data: Data, query: String, mode: HexSearchKind) throws -> [Int] {
+    let qbytes = [UInt8](query.utf8)
+    var buf = MdvBuf(data: nil, len: 0, cap: 0)
+    let status = data.withUnsafeBytes { (rawData: UnsafeRawBufferPointer) -> MdvStatus in
+        qbytes.withUnsafeBufferPointer { qp in
+            mdvcore_hex_search(
+                rawData.bindMemory(to: UInt8.self).baseAddress,
+                UInt(data.count),
+                qp.baseAddress,
+                UInt(qp.count),
+                mode.rawValue,
+                &buf)
+        }
+    }
+    defer { mdvcore_buf_free(&buf) }
+    guard status == MDV_STATUS_OK else { throw CoreError(status: status) }
+    guard let bytes = buf.data, buf.len > 0 else { return [] }
+    let frame = Array(UnsafeBufferPointer(start: bytes, count: Int(buf.len)))
+    let body = try CsvSession.unframe(frame)
+    var reader = MsgPackReader(body)
+    do {
+        let map = try reader.decode().mapValue()
+        guard let v = map["offsets"] else { throw CoreError.decode("missing 'offsets'") }
+        return try v.u32Array().map(Int.init)
+    } catch let e as MsgPackError {
+        throw CoreError.decode("\(e)")
+    }
+}

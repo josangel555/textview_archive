@@ -114,6 +114,115 @@ pub fn render_all(
     String::from_utf8(buf).unwrap_or_default()
 }
 
+// MARK: - HEX search (migration plan slice #5 — port of HexSearchEngine)
+
+/// Query interpretation for [`hex_search`] (mirrors Swift `HexSearchMode`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum HexSearchMode {
+    /// Whitespace-separated hex byte pairs (`"de ad be ef"` / `"DEADBEEF"`).
+    Hex,
+    /// A plain string; its UTF-8 bytes are the pattern.
+    Ascii,
+}
+
+/// Parse a user query into a byte pattern (mirrors `HexSearchEngine.parse`).
+/// `None` = invalid for the mode (caller shows a disabled/error state); an
+/// empty `Vec` = the user hasn't typed a usable pattern yet.
+#[must_use]
+pub fn hex_search_parse(query: &str, mode: HexSearchMode) -> Option<Vec<u8>> {
+    match mode {
+        HexSearchMode::Ascii => Some(query.as_bytes().to_vec()),
+        HexSearchMode::Hex => {
+            let mut bytes = Vec::new();
+            for token in query.split_whitespace() {
+                // Each token must be an even number of hex digits.
+                if token.len() % 2 != 0 {
+                    return None;
+                }
+                let raw = token.as_bytes();
+                let mut i = 0;
+                while i < raw.len() {
+                    // i+1 < len guaranteed by the even-length check above.
+                    let (hi, lo) = (raw.get(i)?, raw.get(i + 1)?);
+                    let byte = (hex_nibble(*hi)? << 4) | hex_nibble(*lo)?;
+                    bytes.push(byte);
+                    i += 2;
+                }
+            }
+            Some(bytes)
+        }
+    }
+}
+
+/// Value of a single hex digit (`0-9a-fA-F`), or `None` if not a hex char.
+fn hex_nibble(c: u8) -> Option<u8> {
+    match c {
+        b'0'..=b'9' => Some(c - b'0'),
+        b'a'..=b'f' => Some(c - b'a' + 10),
+        b'A'..=b'F' => Some(c - b'A' + 10),
+        _ => None,
+    }
+}
+
+/// Non-overlapping byte-sequence search (mirrors `HexSearchEngine.find`). An
+/// empty pattern, or one longer than `data`, yields `[]`. On a match the cursor
+/// advances by the full pattern length (Sublime/VSCode convention).
+#[must_use]
+pub fn hex_search_find(pattern: &[u8], data: &[u8]) -> Vec<usize> {
+    if pattern.is_empty() || pattern.len() > data.len() {
+        return Vec::new();
+    }
+    let mut hits = Vec::new();
+    let m = pattern.len();
+    let limit = data.len() - m;
+    let mut i = 0;
+    while i <= limit {
+        // `data[i..i+m] == pattern` without indexing (no-panic policy).
+        if data.get(i..i + m) == Some(pattern) {
+            hits.push(i);
+            i += m; // non-overlapping
+        } else {
+            i += 1;
+        }
+    }
+    hits
+}
+
+/// Convenience: parse + find. Returns `[]` on an invalid or empty query
+/// (mirrors `HexSearchEngine.search`).
+#[must_use]
+pub fn hex_search(query: &str, mode: HexSearchMode, data: &[u8]) -> Vec<usize> {
+    match hex_search_parse(query, mode) {
+        Some(pattern) if !pattern.is_empty() => hex_search_find(&pattern, data),
+        _ => Vec::new(),
+    }
+}
+
+/// Response payload for the FFI search shim: the match offsets.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SearchResponse {
+    offsets: Vec<u32>,
+}
+
+/// Search `data` for `query` and encode the match offsets as a length-prefixed
+/// MessagePack `{offsets:[u32]}` frame. Pure + sans-IO (cargo-testable); the FFI
+/// shim adds only the pointer/`MdvBuf`/guard plumbing. Offsets are byte
+/// positions in a buffer capped well under `u32::MAX`.
+///
+/// # Errors
+/// [`crate::wire::WireFault`] on an encode failure.
+pub fn hex_search_frame(
+    data: &[u8],
+    query: &str,
+    mode: HexSearchMode,
+) -> Result<Vec<u8>, crate::wire::WireFault> {
+    let offsets: Vec<u32> = hex_search(query, mode, data)
+        .into_iter()
+        .map(|o| u32::try_from(o).unwrap_or(u32::MAX))
+        .collect();
+    crate::wire::encode_frame(&SearchResponse { offsets })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,5 +274,54 @@ mod tests {
         assert_eq!(lines.len(), 2);
         assert!(lines[0].starts_with("00000000  "));
         assert!(lines[1].starts_with("00000004  "));
+    }
+
+    #[test]
+    fn parse_hex_forms() {
+        assert_eq!(hex_search_parse("de ad be ef", HexSearchMode::Hex), Some(vec![0xde, 0xad, 0xbe, 0xef]));
+        assert_eq!(hex_search_parse("DEADBEEF", HexSearchMode::Hex), Some(vec![0xde, 0xad, 0xbe, 0xef]));
+        assert_eq!(hex_search_parse("de adbe ef", HexSearchMode::Hex), Some(vec![0xde, 0xad, 0xbe, 0xef]));
+        assert_eq!(hex_search_parse("", HexSearchMode::Hex), Some(vec![]));
+    }
+
+    #[test]
+    fn parse_hex_rejects_invalid() {
+        assert_eq!(hex_search_parse("de a", HexSearchMode::Hex), None); // odd-length token
+        assert_eq!(hex_search_parse("zz", HexSearchMode::Hex), None);   // non-hex
+        assert_eq!(hex_search_parse("dez0", HexSearchMode::Hex), None); // non-hex within
+    }
+
+    #[test]
+    fn parse_ascii_is_utf8_bytes() {
+        assert_eq!(hex_search_parse("AB", HexSearchMode::Ascii), Some(vec![0x41, 0x42]));
+        assert_eq!(hex_search_parse("", HexSearchMode::Ascii), Some(vec![]));
+    }
+
+    #[test]
+    fn find_is_non_overlapping() {
+        assert_eq!(hex_search_find(&[0xAA, 0xAA], &[0xAA, 0xAA, 0xAA]), vec![0]);
+        assert_eq!(hex_search_find(&[0xAA], &[0xAA, 0xAA, 0xAA]), vec![0, 1, 2]);
+        assert_eq!(hex_search_find(&[0x01, 0x02], &[0x00, 0x01, 0x02, 0x01, 0x02]), vec![1, 3]);
+    }
+
+    #[test]
+    fn find_edge_cases() {
+        assert_eq!(hex_search_find(&[], &[1, 2, 3]), Vec::<usize>::new());
+        assert_eq!(hex_search_find(&[1, 2, 3, 4], &[1, 2]), Vec::<usize>::new()); // pattern > data
+        assert_eq!(hex_search_find(&[9], &[1, 2, 3]), Vec::<usize>::new());       // no match
+    }
+
+    #[test]
+    fn search_invalid_query_is_empty() {
+        assert_eq!(hex_search("de a", HexSearchMode::Hex, &[0xde, 0xad]), Vec::<usize>::new());
+        assert_eq!(hex_search("", HexSearchMode::Hex, &[0xde, 0xad]), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn search_frame_round_trips() {
+        let data = [0x00, 0xde, 0xad, 0xde, 0xad];
+        let frame = hex_search_frame(&data, "dead", HexSearchMode::Hex).unwrap();
+        let resp: SearchResponse = crate::wire::decode_frame(&frame).unwrap();
+        assert_eq!(resp.offsets, vec![1, 3]);
     }
 }
