@@ -157,8 +157,22 @@ chain event, size-checked against the **16 MB exec / 37 MB bundle caps**
   gate/adapter delegate-refactor (zero behaviour change). Plus this doc.
 - **Next headless turns (no new deps):** slices 2 → 8 each end-to-end on the CSV
   template (core module + wire + ffi + Swift adapter/gate + cargo + Swift A/B).
-  CMEditApplier first (highest value). Author golden corpora for HTMLRenderer /
-  FileIconClassifier. Write the FindEngine ReDoS-placement decision.
+  Author golden corpora for HTMLRenderer / FileIconClassifier. Write the
+  FindEngine ReDoS-placement decision.
+  - **Slice #2 (CMEditApplier) — IN PROGRESS:**
+    - ✅ **Stage 1 (done, `0cead3c`):** `rust-core/.../cm_edit.rs` — UTF-16-correct
+      port (`Vec<u16>` + validating `from_utf16`), 11 cargo tests incl.
+      astral/split-surrogate/overlap/OOB/CRLF. Core only; not FFI-exposed; Swift
+      gate untouched.
+    - ⬜ **Stage 2 (next):** add the FIRST *stateless* FFI fn
+      `mdvcore_cm_apply(req_ptr,len,out**) -> MdvStatus` (request = a MessagePack
+      frame `{base, edits:[{from,to,insert}]}` via the new Swift→Rust encoder;
+      response = `{text: String?}` frame). Wire it: core serde request/response
+      types (+ cargo round-trip), the ffi shim (guard macro + buf alloc, mirrors
+      the session fns), cbindgen header regen (via `build.rs`), a `CoreClient`
+      method, `RustCMEditAdapter` behind `RustCoreFallback(.cmEdit)`, and an A/B
+      parity test in `RustCoreTests` vs Swift `CMEditApplier` over its corpus
+      (incl. the UTF-16 cases). All headless (cargo + swift test); default-OFF.
 - **Owner-gated:** approve (or decline) `regex` / `comrak`+`tree-sitter` /
   `serde_json` per the size budget → unlocks slices 9–11.
 - **Supervised/eyes-on:** the `TabsReducer` extraction, then the DocumentModel→
