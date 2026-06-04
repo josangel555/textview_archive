@@ -37,12 +37,21 @@ public final class PanelLayoutStore: ObservableObject {
     /// sidebar (accordion presence).
     @Published public private(set) var overrides: PanelVisibilityOverrides
 
+    /// Per-panel docked-tool-window SIZE (UX-E / #227). Mutating fires
+    /// `objectWillChange` for the docked-panel containers (the right /
+    /// bottom tool windows) so a resize-drag re-bodies them — same narrow
+    /// channel as `edges` / `overrides`, never forwarded into
+    /// `DocumentModel`. `.left` panels live in the accordion and ignore
+    /// this entirely; only `.right` / `.bottom` docks consume it.
+    @Published public private(set) var dockSizes: PanelDockLayout
+
     private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         self.edges = PanelEdgeAssignment.load(from: defaults)
         self.overrides = PanelVisibilityOverrides.load(from: defaults)
+        self.dockSizes = PanelDockLayout.load(from: defaults)
     }
 
     // MARK: reads
@@ -72,6 +81,13 @@ public final class PanelLayoutStore: ObservableObject {
         edges.panels(on: edge)
     }
 
+    /// Fixed tool-window size for `kind` docked at `edge` (UX-E / #227).
+    /// Width for a `.right` dock, height for a `.bottom` dock. Absent ⇒
+    /// the per-edge default; never tiny, never content-driven.
+    public func dockSize(_ kind: SidebarPanelKind, on edge: PanelEdge) -> CGFloat {
+        dockSizes.size(kind, on: edge)
+    }
+
     // MARK: writes (write-through persistence)
 
     /// Rail-button click. Flips the panel's resolved visibility:
@@ -98,6 +114,46 @@ public final class PanelLayoutStore: ObservableObject {
     public func setEdge(_ k: SidebarPanelKind, _ edge: PanelEdge) {
         edges.setEdge(k, edge)
         edges.save(to: defaults)
+    }
+
+    /// Drag-to-redock entry point (UX-E / #227). Move a tool window's
+    /// panel to a different dock and, when the user lands it on a
+    /// brand-new edge it has never been sized on, force it `.shown` so it
+    /// actually appears in the destination dock (a panel dragged out of
+    /// the accordion onto an empty right rail must materialize there, not
+    /// silently vanish behind an `.auto`-resolves-hidden heuristic).
+    ///
+    /// Equality-guarded: a no-op redrop (dropped back on the same edge)
+    /// doesn't republish. Persists synchronously.
+    ///
+    /// `forceShown` defaults true (the drag-drop contract); pass false for
+    /// a programmatic reassignment that should leave the visibility
+    /// override untouched.
+    public func move(_ k: SidebarPanelKind, to edge: PanelEdge, forceShown: Bool = true) {
+        guard edges.edge(k) != edge else { return }
+        edges.setEdge(k, edge)
+        edges.save(to: defaults)
+        // Moving OFF the left accordion onto a free-standing dock: ensure
+        // the panel is actually shown there. We only flip an `.auto` (the
+        // never-touched default) to `.shown`; an explicit user `.hidden`
+        // is left alone so a redock doesn't override an intentional hide.
+        if forceShown, edge != .left, overrides.state(k) == .auto {
+            overrides.set(k, .shown)
+            overrides.save(to: defaults)
+        }
+    }
+
+    /// Resize a docked tool window (UX-E / #227). Sets the panel's fixed
+    /// size on `edge` (width for `.right`, height for `.bottom`), clamped
+    /// to the floor + the corruption ceiling (NO UX maximum — the live
+    /// window edge is the only practical bound). Equality-guarded so a
+    /// no-op drag frame doesn't republish. Persists synchronously
+    /// (user-paced; no debounce needed).
+    public func setDockSize(_ size: CGFloat, for k: SidebarPanelKind, on edge: PanelEdge) {
+        let clamped = PanelDockLayout.clamp(size)
+        guard clamped != dockSizes.size(k, on: edge) else { return }
+        dockSizes.setSize(clamped, for: k, on: edge)
+        dockSizes.save(to: defaults)
     }
 
     // MARK: - Per-session snapshot (#184)

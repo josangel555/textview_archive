@@ -132,10 +132,13 @@ public struct ContentView: View {
                             model: model,
                             terminalPane: terminalPane
                         )
+                        // SNAP ZONE (UX-E): dropping a dragged tool window on
+                        // the left rail redocks it back to the accordion.
+                        .panelDropZone(.left, panelLayout: panelLayout)
                         Divider()
                     }
                     // Center column: body row over the optional terminal
-                    // pane over the bottom rail.
+                    // pane over the bottom dock + bottom rail.
                     VStack(spacing: 0) {
                         bodyRow
                         // BOTTOM terminal pane (#226). When open, a
@@ -154,10 +157,22 @@ public struct ContentView: View {
                             )
                             .frame(height: terminalPane.height)
                         }
+                        // BOTTOM dock (UX-E / #227): free-standing,
+                        // fixed-height tool windows for panels the user has
+                        // dragged onto the bottom rail. Renders nothing (no
+                        // border) when no panel is bottom-docked, so the
+                        // default layout is unchanged. Its own resize handle
+                        // pins the band height; the body row above keeps
+                        // maxHeight:.infinity so IT absorbs the squeeze.
+                        BottomDockContainer(
+                            model: model, sidebar: sidebar,
+                            trackedRepos: model.trackedRepos,
+                            panelLayout: panelLayout
+                        )
                         Divider()
-                        // BOTTOM rail: independent of the master switch;
-                        // empty strip today (frame for future bottom-
-                        // docked panels).
+                        // BOTTOM rail: independent of the master switch.
+                        // Thin icon strip; the bottom-docked panel BODIES
+                        // render in the BottomDockContainer above.
                         ShoulderRailView(
                             edge: .bottom,
                             panelLayout: panelLayout,
@@ -165,11 +180,25 @@ public struct ContentView: View {
                             model: model,
                             terminalPane: terminalPane
                         )
+                        // SNAP ZONE (UX-E): drop a dragged tool window here
+                        // to redock it to the bottom.
+                        .panelDropZone(.bottom, panelLayout: panelLayout)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // RIGHT dock (UX-E / #227): free-standing, fixed-WIDTH
+                    // tool windows for panels dragged onto the right rail.
+                    // Sits between the center column and the right shoulder
+                    // rail. Renders nothing when no panel is right-docked, so
+                    // the default layout is byte-for-byte unchanged.
+                    RightDockContainer(
+                        model: model, sidebar: sidebar,
+                        trackedRepos: model.trackedRepos,
+                        panelLayout: panelLayout
+                    )
                     Divider()
-                    // RIGHT rail: independent of the master switch;
-                    // empty strip today.
+                    // RIGHT rail: independent of the master switch. Thin
+                    // icon strip; the right-docked panel BODIES render in
+                    // the RightDockContainer to its left.
                     ShoulderRailView(
                         edge: .right,
                         panelLayout: panelLayout,
@@ -177,6 +206,9 @@ public struct ContentView: View {
                         model: model,
                         terminalPane: terminalPane
                     )
+                    // SNAP ZONE (UX-E): drop a dragged tool window here to
+                    // redock it to the right.
+                    .panelDropZone(.right, panelLayout: panelLayout)
                 }
                 // The center band is the one that yields under shrink:
                 // explicit layoutPriority(0) (the default, stated for intent)

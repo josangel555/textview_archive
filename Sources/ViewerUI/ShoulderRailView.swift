@@ -154,7 +154,13 @@ struct ShoulderRailView: View {
             kind: kind,
             isOn: panelLayout.isVisible(kind, dataPresent: present),
             uiSize: model.uiSize,
-            action: { panelLayout.toggle(kind, dataPresent: present) }
+            action: { panelLayout.toggle(kind, dataPresent: present) },
+            // UX-E: every rail button is a redock entry point — right-click
+            // → "Move to Left / Right / Bottom". This makes the dock-move
+            // discoverable even for a panel still in the left accordion (it
+            // has a rail button but no draggable tool-window header yet).
+            currentEdge: panelLayout.edge(of: kind),
+            onMove: { dest in panelLayout.move(kind, to: dest) }
         )
     }
 }
@@ -168,6 +174,12 @@ struct PanelRailButton: View {
     let isOn: Bool
     let uiSize: (CGFloat) -> CGFloat
     let action: () -> Void
+    /// The panel's current dock (UX-E). Drives the "Move to…" context
+    /// menu's checkmark / disabled-current state. Defaults to `.left` so
+    /// existing call sites compile unchanged.
+    var currentEdge: PanelEdge = .left
+    /// Redock callback (UX-E). nil ⇒ no redock context menu.
+    var onMove: ((PanelEdge) -> Void)? = nil
 
     /// Pointer-hover state — drives a faint fill + the pointing-hand
     /// cursor so each icon reads as a clickable control, not decoration.
@@ -200,6 +212,23 @@ struct PanelRailButton: View {
         .accessibilityLabel(kind.displayName)
         .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
         .accessibilityIdentifier("mdv.rail.\(edge.rawValue).\(kind.rawValue)")
+        // UX-E: right-click to redock. FILES is never a free-standing tool
+        // window, so it gets no move menu.
+        .contextMenu {
+            if let onMove, kind != .files {
+                ForEach(PanelEdge.allCases, id: \.self) { dest in
+                    Button {
+                        onMove(dest)
+                    } label: {
+                        Label(
+                            dest == .left ? "Dock in Sidebar" : "Move to \(dest.displayName)",
+                            systemImage: dest.systemImage
+                        )
+                    }
+                    .disabled(dest == currentEdge)
+                }
+            }
+        }
     }
 }
 

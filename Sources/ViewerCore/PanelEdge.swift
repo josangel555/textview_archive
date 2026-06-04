@@ -16,6 +16,26 @@ public enum PanelEdge: String, CaseIterable, Sendable, Codable {
 
     /// Every panel starts on `.left` in v1.
     public static let `default`: PanelEdge = .left
+
+    /// Human-readable dock name for the drag-to-redock menu / snap-zone
+    /// affordances (UX-E / #227).
+    public var displayName: String {
+        switch self {
+        case .left:   return "Left"
+        case .right:  return "Right"
+        case .bottom: return "Bottom"
+        }
+    }
+
+    /// SF Symbol cue for the dock in the redock menu — matches the
+    /// macOS "sidebar"/"inspector"/"bottom pane" iconography.
+    public var systemImage: String {
+        switch self {
+        case .left:   return "sidebar.left"
+        case .right:  return "sidebar.right"
+        case .bottom: return "rectangle.bottomthird.inset.filled"
+        }
+    }
 }
 
 /// Sparse per-panel edge assignment.

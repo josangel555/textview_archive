@@ -41,7 +41,19 @@
 - [ ] **#229 UX-G** — find/replace native rebuild (count/pos, sizing, colors).
 - [ ] **#228 UX-F** — thorough zoom audit + fix all scaling/height artifacts.
 - [ ] **#230 UX-H** — custom tooltip widget + full coverage + hover/click life.
-- [ ] **#227 UX-E** — dockable tool windows (drag/snap, fixed height, resize, flicker).
+- [~] **#227 UX-E** — dockable tool windows. P1 DONE: E3 fixed-height (not
+  content-driven, remembered, non-tiny defaults), E4 resizable + NO right-edge
+  max, E5 flicker fix — all via `PanelDockLayout` (ViewerCore value type) +
+  free-standing `DockedToolWindow` / Right+Bottom dock containers (ViewerUI),
+  live-@State drag + epsilon-guarded non-layout-driving measure. P2 DONE for
+  **Left↔Right↔Bottom** redocking: `panelLayout.move(_:to:)` (persisted,
+  no-DocumentModel-republish), native `Transferable` drag-to-snap (header
+  `.draggable` → rail `.dropDestination` snap zones with accent highlight) +
+  rail-button right-click "Move to…" menu + per-tool-window redock menu.
+  DEFERRED: **E2 Main-tab dock** (panel-as-editor-tab — needs the hosted-view
+  tab plumbing; reported, not shipped half-broken). Tests: `PanelDockLayoutTests`
+  (T1, ViewerCore) + `DockLayoutStoreTests` (T1m, ViewerUI). Build/gate not run
+  per directive.
 - [ ] **#232 UX-M** — action catalog → `~/.textview/keybinding.json` + Omni invokability.
 - [ ] **#226 UX-D** — embedded terminal (dep-free PTY) + shoulder toggle.
 - [ ] **L (memory)** — ~200MB-after-close investigation (folds into #190/#191/#210).

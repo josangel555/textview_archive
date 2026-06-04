@@ -182,7 +182,8 @@ struct SidebarView: View {
                 // always `true` for `.pluginSections` (a plugin section shows
                 // regardless of folder), so only an explicit `.hidden` override
                 // hides it — which is exactly the path the rail button drives.
-                if panelLayout.isVisible(
+                if panelLayout.edge(of: .pluginSections) == .left,
+                   panelLayout.isVisible(
                     .pluginSections,
                     dataPresent: SidebarDataPresence.isPresent(.pluginSections, presenceInputs)
                 ) {
@@ -319,7 +320,15 @@ struct SidebarView: View {
             .lspOutline, .lspNavigation, .lspProblems, .recentlyOpened,
         ]
         return accordionOrder.map { kind in
-            (kind, panelLayout.isVisible(kind, dataPresent: presence[kind] ?? false))
+            // UX-E: a panel moved off the LEFT rail (docked to the right /
+            // bottom tool-window area) must NOT also render in the accordion
+            // — otherwise it appears twice. Gate accordion visibility on the
+            // panel still being left-docked; the docked container renders the
+            // moved ones.
+            let leftDocked = panelLayout.edge(of: kind) == .left
+            let visible = leftDocked
+                && panelLayout.isVisible(kind, dataPresent: presence[kind] ?? false)
+            return (kind, visible)
         }
     }
 
@@ -341,80 +350,46 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func panelView(for kind: SidebarPanelKind) -> some View {
+        // UX-E: the per-kind body construction now lives in the shared
+        // `SidebarPanelBody` factory so the accordion + the docked tool
+        // windows render identical content (one source of truth for e.g.
+        // the Git `forcedShown` flag + the LSP jump callbacks). The
+        // accordion injects the resizable-section clamp as the body height;
+        // `.files`/`.pluginSections` resolve to `EmptyView` here (FILES is
+        // inline above; pluginSections is rendered below the accordion).
         switch kind {
-        case .bookmarks:
-            BookmarksSection(model: model)
-                .environment(\.sidebarSectionBodyHeight,
-                             SidebarPanelHeights.clamp(CGFloat(bookmarksHeight),
-                                                       availableHeight: sidebarContentHeight))
-        case .searchAnywhere:
-            SearchAnywhereSection(model: model, sidebar: sidebar)
-                .environment(\.sidebarSectionBodyHeight,
-                             SidebarPanelHeights.clamp(CGFloat(searchHeight),
-                                                       availableHeight: sidebarContentHeight))
-        case .git:
-            // bug4: pass the forced-`.shown` override so the section renders
-            // a "Not a git repository" placeholder (instead of EmptyView)
-            // when the rail button forces it on in a non-repo folder.
-            GitPanelSection(model: model, sidebar: sidebar, trackedRepos: trackedRepos,
-                            forcedShown: panelLayout.override(for: .git) == .shown)
-                .environment(\.sidebarSectionBodyHeight,
-                             SidebarPanelHeights.clamp(CGFloat(gitHeight),
-                                                       availableHeight: sidebarContentHeight))
-        case .claudeTimeline:
-            ClaudeTimelineSection(model: model, sidebar: sidebar,
-                                  forcedShown: panelLayout.override(for: .claudeTimeline) == .shown)
-                .environment(\.sidebarSectionBodyHeight,
-                             SidebarPanelHeights.clamp(CGFloat(claudeHeight),
-                                                       availableHeight: sidebarContentHeight))
-        case .lspOutline:
-            LSPOutlineWrapper(model: model,
-                              forcedShown: panelLayout.override(for: .lspOutline) == .shown)
-                .environment(\.sidebarSectionBodyHeight,
-                             SidebarPanelHeights.clamp(CGFloat(lspHeight),
-                                                       availableHeight: sidebarContentHeight))
-        case .lspNavigation:
-            LSPNavigationPanel(
-                store: model.lspNavigation,
-                onJump: { loc in
-                    guard let url = URL(string: loc.uri) else { return }
-                    if !model.selectTab(forURL: url) {
-                        model.openPath(url)
-                    }
-                    model.scrollSource(toLine: loc.range.start.line + 1)
-                },
-                onSearchWorkspaceSymbols: { query in
-                    runWorkspaceSymbolQuery(query)
-                },
-                uiSize: model.uiSize
-            )
-            .environment(\.sidebarSectionBodyHeight,
-                         SidebarPanelHeights.clamp(CGFloat(lspNavHeight),
-                                                   availableHeight: sidebarContentHeight))
-        case .lspProblems:
-            LSPProblemsPanel(
-                store: model.lspDiagnostics,
-                onJump: { url, line in
-                    if !model.selectTab(forURL: url) {
-                        model.openPath(url)
-                    }
-                    model.scrollSource(toLine: line)
-                },
-                uiSize: model.uiSize,
-                activeFileUnanalyzed: { model.activeFileUnanalyzedByLSP }
-            )
-            .environment(\.sidebarSectionBodyHeight,
-                         SidebarPanelHeights.clamp(CGFloat(lspProblemsHeight),
-                                                   availableHeight: sidebarContentHeight))
-        case .recentlyOpened:
-            RecentlyOpenedSection(model: model)
-                .environment(\.sidebarSectionBodyHeight,
-                             SidebarPanelHeights.clamp(CGFloat(recentsHeight),
-                                                       availableHeight: sidebarContentHeight))
         case .files, .pluginSections:
-            // FILES is rendered inline at the top of the sidebar
-            // (above this accordion stack). pluginSections is below.
             EmptyView()
+        default:
+            SidebarPanelBody.make(
+                for: kind,
+                model: model,
+                sidebar: sidebar,
+                trackedRepos: trackedRepos,
+                panelLayout: panelLayout,
+                bodyHeight: SidebarPanelHeights.clamp(
+                    CGFloat(accordionHeight(for: kind)),
+                    availableHeight: sidebarContentHeight
+                )
+            )
+        }
+    }
+
+    /// The stored accordion body height (points) for a resizable section.
+    /// Mirrors the per-section `@AppStorage` bindings; centralised so the
+    /// shared `SidebarPanelBody` factory gets the right clamp input.
+    private func accordionHeight(for kind: SidebarPanelKind) -> Double {
+        switch kind {
+        case .bookmarks:      return bookmarksHeight
+        case .searchAnywhere: return searchHeight
+        case .git:            return gitHeight
+        case .claudeTimeline: return claudeHeight
+        case .lspOutline:     return lspHeight
+        case .lspNavigation:  return lspNavHeight
+        case .lspProblems:    return lspProblemsHeight
+        case .recentlyOpened: return recentsHeight
+        case .files, .pluginSections:
+            return Double(SidebarPanelKind.recentlyOpened.defaultHeight)
         }
     }
 
@@ -819,29 +794,6 @@ struct SidebarView: View {
         }
     }
 
-    /// Fire a `workspace/symbol` query against the live LSP clients.
-    /// Sequenced via a small in-flight token so a fast typer doesn't
-    /// pile up requests (each new query cancels the previous).
-    private func runWorkspaceSymbolQuery(_ query: String) {
-        // Cancel prior query.
-        WorkspaceSymbolDispatch.shared.cancel()
-        let token = LSPCancellationToken()
-        WorkspaceSymbolDispatch.shared.current = token
-        let store = model.lspNavigation
-        store.startLoading(mode: .workspaceSymbols, query: query)
-        let pool = model.lspPool
-        Task { @MainActor in
-            do {
-                let syms = try await pool.workspaceSymbol(query: query, token: token)
-                guard !Task.isCancelled else { return }
-                store.setWorkspaceSymbols(query: query, symbols: syms)
-            } catch is CancellationError {
-                // Newer query — leave the store alone.
-            } catch {
-                store.setError("\(error)")
-            }
-        }
-    }
 }
 
 private struct FileRowContextMenu: View {
