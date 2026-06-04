@@ -57,5 +57,28 @@ HEX 1 MB slow (#218), tab overflow/shrink (#183/#209), `+`-beside-last-tab (B2),
 - 2026-06-04 `1625563` L1 LSP-diagnostics reclaim on close + MemoryReclaimOnCloseTests — gate-green.
 - 2026-06-04 `49647fb` GitLogTab OOB crash fix + roadmap capture — gate-green.
 
+## Project tracking — `tasked` board (http://localhost:8787, owner's app)
+Integrated (owner asked to dogfood it). MCP server registered at user scope
+(`claude mcp add --transport http tasked http://localhost:8787/mcp`) → native
+`mcp__tasked__task_*` tools in fresh/cron sessions. THIS session uses curl helper
+`/tmp/tk.sh <tool> '<json>'`. Tools: task_create/claim/restate/record/park/
+comment/triage/next/list/get. Use `task_park(id,agent,kind,question,options)` to
+surface owner decisions (sets waiting:"human"). Active tasks: TSK-108 perf
+(claimed), TSK-109 quick-wins, TSK-110 image-PoC, TSK-111 agent-monitor-PoC,
+TSK-112 hooks-research, **TSK-113 parked decision (WebView/memory lever)**.
+Dogfood feedback: (1) helper needed `--data-binary @-` not `-d` to avoid a brace
+parse error; (2) no `task_delete` tool (stray test TSK-107 can't be removed);
+(3) mid-session `claude mcp add` doesn't hot-load tools — needs reconnect.
+
+## Wave-1 research workflow
+`wf_44d60a03-41e` (background): perf hot-path · ~/.claude schema · CC hooks ·
+image-edit approach · blank-slate explorer → synthesis. Persist results to
+docs/research/autorun-2026-06-04/ when it returns; act on the synthesis.
+
 ## STATUS
-Wave 0 in progress. NEXT: reinstall fixed build, then Wave 1 perf profiling. main @ 49647fb, gate-green.
+Wave 0 DONE (cron + doc + reinstalled fixed build + tasked integrated). Wave 1
+IN PROGRESS: TSK-108 claimed, selectTab/updateDerived hot path traced (synchronous
+git-diff + LSP-warm + full god-object republish per switch are the suspects),
+research workflow running. NEXT: act on workflow synthesis — implement top perf
+fix with an automated validation, then Wave 2 quick-wins + Wave 3 PoCs. main @
+49647fb (gate-green) + reinstalled.
