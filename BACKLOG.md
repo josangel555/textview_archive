@@ -1,5 +1,48 @@
 # Backlog
 
+## 2026-06-04 — owner roadmap dump (triaged)
+
+Captured verbatim from the owner, with triage tags. **CRASH fixed this pass:**
+`GitLogTab` `lay.rows[idx]` out-of-bounds trap (EXC_BREAKPOINT, the 2026-06-04
+03:04 `.ips`) — cached graph layout lagged `logEntries` on append; guarded the
+subscript. Committed.
+
+### Next — bugs (likely ONE shared root cause: the eager/over-observation baseline, see #210/#215)
+- **Closing a tab takes ~1s** — must be instant. [perf]
+- **Switching tabs is very slow.** [perf] — same cluster as tab-close.
+- **Delay in opening files.** [perf] — same cluster.
+- **1 MB HEX view extremely slow** — extends **#218** (6 KB already ~1s).
+- **Random crashes** (Jun-04 03:04) — **FIXED** (GitLogTab OOB). Watch for others.
+- **Can't see right border of last tab.** [QW layout] — relates to **#209** chrome-pin.
+- **`+` icon should sit beside the last tab, not at the strip end** — dup of **B2** (docs/UX_OVERHAUL) ; partially attempted.
+- **Tab bar must SHRINK to fit, never overflow.** [layout] — relates to **#183** tab-overflow.
+- **PNG / media file-info don't respect zoom.** [QW] — extends **#228** zoom audit (native-preview metadata missed).
+- **Up/Down in file-nav should change current tab content** — = **#220** (preview-tab/scrub); confirm commit-vs-click race.
+
+### Next — features / behaviour
+- **Sessions optional** (don't force the sessions layer). [D]
+- **Multi-window session support.** [L]
+- **Natural keybindings** (⌘⇧[ / ⌘⇧] next/prev tab, etc.) — extends **#232** keybinding config.
+- **File ▸ New; right-click folder ▸ New [File].**
+- **Undo audit** (every mutating action undoable; bookmark remove + undo below).
+- **Drag-and-drop tabs INTO sessions.**
+- **Render-FPS meter; flag jank when <60 fps.** [perf-observability] — pairs with **#208**.
+- **Footer menus / buttons / drop-UPs.** [C follow-up]
+- **Default to plain text when content is renderable ASCII** (+ allow-list known plain-text formats → plain text). [QW-ish]
+- **Remove bookmark via Delete key + undo remove.**
+- **Right-click folder ▸ Stats → a webpack-bundle-analyzer-style treemap of the repo.** [L]
+
+### Wishlist (not scheduled)
+- **Debugger:** Java, Chrome.
+- **Claude:** session search, hook integration.
+- **LSP:** LSP-MCP, LSP manager, custom LSP, dependency graph, click-through / find-usage / find-declaration. (extends **#144**)
+- **Merges:** plugins, MCP, walkthroughs into the mainline UX.
+- **Terminal:** tabs, persistence. (extends **#226**)
+- **Syntax-highlighting expansion; Code Review** (extends **#142/#203/#204/#205**).
+- **Image editor:** P0 resize/crop/quality → P0.1 history/revert → P1 raster paint (picker/brush/fill/selection) → P1.1 layers + own/GIMP format → P2 vector (shapes, arrows, connectivity, hierarchy, history, layers).
+- **Extra:** vector store, project management (**#216**), GitHub + code review, walkthrough, AWS console/profiles/CLI-SDK.
+
+
 > **Update 2026-05-18:** UTM CI mirror is fully wired. Xcode 16.4
 > installed on macOS15 VM. VM baseline: **726 tests, 3 XCTSkip, 0 fail**
 > in ~95s. `ssh macOS15 'cd markdown_viewer && swift test'` is the

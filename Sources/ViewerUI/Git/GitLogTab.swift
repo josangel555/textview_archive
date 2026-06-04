@@ -35,7 +35,15 @@ struct GitLogTab: View {
                             .padding(.top, 4)
                     }
                     ForEach(Array(model.logEntries.enumerated()), id: \.offset) { idx, c in
-                        row(c, layoutRow: lay?.rows[idx], maxLane: lay?.maxLane ?? -1)
+                        // `lay` is a cached @State layout that can momentarily
+                        // lag `model.logEntries` on append/refresh: SwiftUI
+                        // evaluates this body (with the NEW entries) BEFORE the
+                        // `.onChange` recompute fires, so `lay.rows[idx]` can be
+                        // out of range and hard-trap (EXC_BREAKPOINT — the
+                        // 2026-06-04 03:04 crash). Guard the subscript; a stale
+                        // row renders flat (nil) until the layout catches up.
+                        let layoutRow = lay.flatMap { idx < $0.rows.count ? $0.rows[idx] : nil }
+                        row(c, layoutRow: layoutRow, maxLane: lay?.maxLane ?? -1)
                             .onAppear {
                                 if c.sha == model.logEntries.last?.sha {
                                     model.loadMoreLog()
