@@ -41,24 +41,28 @@ genuinely large *real* docs from retention.
 
 ## Recommended code shape
 
-```swift
-// --- DocumentModel: MRU-ordered, capped; @Published so ContentView sees it.
-//     (Keep it ON DocumentModel, not a narrow store — see RISK #1.) ---
-private let maxMountedPanes = 4
-@Published private(set) var mountedTabIDs: [UUID] = []
+> **The LRU model core is already built + tested headlessly:**
+> `ViewerCore/MountedPanesLRU.swift` (commit `8e23540`, `MountedPanesLRUTests`,
+> 12 tests) — MRU-ordered, capacity-bounded, with `activate`/`remove`/
+> `retainOnly`/`trim(to:)` and deterministic eviction (always-retain-active,
+> LRU-not-FIFO, prune-on-close, memory-pressure trim-to-1). The live turn just
+> holds one on `DocumentModel`, drives it from `selectTab`/`closeTab`, and reads
+> `.ids` into the ForEach. The sketch below is now mostly wiring.
 
-func noteTabActivated(_ id: UUID) {
-    mountedTabIDs.removeAll { $0 == id }
-    mountedTabIDs.insert(id, at: 0)            // move-to-front (MRU)
-    if mountedTabIDs.count > maxMountedPanes {
-        mountedTabIDs.removeLast()             // tail eviction → ForEach drops it → dismantleNSView
-    }
-}
+```swift
+// --- DocumentModel: hold the tested LRU; @Published so ContentView sees it.
+//     (Keep it ON DocumentModel, not a narrow store — see RISK #1.) ---
+@Published private(set) var mountedPanes = MountedPanesLRU(capacity: 4)
+
+// In selectTab(at:) (DocumentModel.swift:3505), after tabCoordinator.select /
+// materializeIfNeeded:   mountedPanes.activate(tabs.selected!.id)
+// In closeTab:           mountedPanes.remove(closedID)
+// On session switch / bulk close: mountedPanes.retainOnly(Set(openTabIDs))
+// On memory pressure:    mountedPanes.trim(to: 1)
+
 var mountedTabs: [Tab] {                       // MRU-first, active included
-    mountedTabIDs.compactMap { id in tabs.tabs.first { $0.id == id } }
+    mountedPanes.ids.compactMap { id in tabs.tabs.first { $0.id == id } }
 }
-// Hook into selectTab(at:) (DocumentModel.swift:3505), after
-// tabCoordinator.select / materializeIfNeeded: noteTabActivated(tabs.selected!.id)
 
 // --- ContentView.bodyRow: replace the bare `content` (≈line 344) ---
 ZStack {

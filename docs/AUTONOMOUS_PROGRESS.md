@@ -89,12 +89,15 @@ Owner: `.build/debug/MarkdownViewer --claude-monitor` to eyeball the monitor PoC
 **Headless queue status (2026-06-04 ~09:40): the original queue is DRAINED** — perf
 republish-guard, File-New core, hooks logger+reader, image rotate/flip+leftMirrored fix
 all landed, then an adversarial review (wf_511ce2c0) caught+fixed 8 real issues (7fac492).
-**Transcript search DONE** (`ead4b12` ClaudeTranscriptSearch: substring/regex over
-~/.claude transcripts, bounded snippets, 13 tests). Headless BUILD queue is now fully
-drained. **NEXT:** research prepping the live perf Fix#1 turn (de-risk the dominant
-view-retention fix) → `docs/research/perf-fix1-view-retention.md`. Then HEADLESS WORK
-IS EXHAUSTED until screen-unlock; the cron should idle-tick or do further research, not
-manufacture marginal code.
+**Transcript search DONE** (`ead4b12`). **Fix#1 DESIGN-LOCKED** (`38f40a7`
+docs/research/perf-fix1-view-retention.md). **Fix#1 LRU MODEL CORE DONE** (`8e23540`
+MountedPanesLRU + 12 tests) — the live turn now just WIRES it into DocumentModel +
+the ZStack ForEach (per the design doc's code shape) and adds the mount-count probe.
+**Headless work is now genuinely exhausted** (build queue drained, dominant fix's
+design + model core both done). Remaining = screen-gated (Fix#1 view wiring + all UI)
+or owner-gated (TSK-113). The cron should idle-tick until screen-unlock, not
+manufacture marginal code; if it finds a NEW clean model-core-extractable item it may
+build it, else hold.
 
 ## DECISIONS NEEDED (owner — non-blocking; I proceed on best-judgment defaults meanwhile)
 - **WebView/memory lever** — parked on the board as TSK-113 (default: trim compositing layers + measure).
