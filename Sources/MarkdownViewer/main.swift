@@ -1160,6 +1160,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         findItem.target = self
         findSubmenu.addItem(findItem)
 
+        // Cmd+Option+F: Find & Replace (the macOS-standard shortcut for
+        // the find-bar's replace row). Only the editor (CM6) surface is
+        // editable, so the action no-ops elsewhere — see `replaceInPage`.
+        let replaceItem = NSMenuItem(
+            title: "Find and Replace…",
+            action: #selector(replaceInPage(_:)),
+            keyEquivalent: "f"
+        )
+        replaceItem.keyEquivalentModifierMask = [.command, .option]
+        replaceItem.target = self
+        findSubmenu.addItem(replaceItem)
+
         // Cmd+Shift+F: cross-file search across the open folder.
         let findInFolderItem = NSMenuItem(
             title: "Find in Folder…",
@@ -1635,6 +1647,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // Otherwise the user is on the source/text side: open the
         // source find bar (works for source view, plaintext, code, etc.).
         model.showSourceFindBar()
+    }
+
+    /// Cmd+Option+F router — Find & Replace. Replace is only meaningful
+    /// on the editable CM6 editor surface; the rendered and source views
+    /// are read-only, so there we fall back to plain Find rather than
+    /// showing an inert replace row.
+    @objc func replaceInPage(_ sender: Any?) {
+        if model.currentViewMode == .editor {
+            model.showEditorReplaceBar()
+            return
+        }
+        findInPage(sender)
     }
 
     // MARK: - Editor-mode menu items (CM6 Phase 2)

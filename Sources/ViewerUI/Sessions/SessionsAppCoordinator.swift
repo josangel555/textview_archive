@@ -262,6 +262,9 @@ public final class SessionsAppCoordinator: ObservableObject {
         autosaveToken &+= 1
         autosavePending = false
         if let active {
+            // UX-K (#231): final scroll capture before the authoritative quit
+            // write so the user's last position is on disk.
+            active.model.captureScrollForActiveTab()
             let snap = active.makeSnapshot()
             lastPersistedContent[active.id] = snap
             core.replaceSnapshot(id: active.id, with: snap)
@@ -339,6 +342,11 @@ public final class SessionsAppCoordinator: ObservableObject {
     private func fireAutosave() {
         guard let id = autosaveBoundSessionID,
               let active, active.id == id else { return }
+        // UX-K (#231): sample the active tab's live scroll position into its
+        // `Tab` before snapshotting. This runs on the DEBOUNCED autosave fire
+        // (and termination / detach below) — never per scroll tick — so the
+        // hot path stays clean while a crash still recovers the last position.
+        active.model.captureScrollForActiveTab()
         let snap = active.makeSnapshot()
         if let prev = lastPersistedContent[id],
            prev.hasSamePersistedContent(as: snap) {
@@ -507,6 +515,10 @@ public final class SessionsAppCoordinator: ObservableObject {
             // write after we've handed off. The explicit snapshot below is
             // the authoritative final write for this session.
             owner.disarmAutosave()
+            // UX-K (#231): capture the active tab's scroll before the outgoing
+            // session's authoritative detach-time snapshot, so switching back
+            // restores where the user left off.
+            active.model.captureScrollForActiveTab()
             let snap = active.makeSnapshot()
             owner.lastPersistedContent[active.id] = snap
             owner.core.replaceSnapshot(id: active.id, with: snap)

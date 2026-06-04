@@ -422,7 +422,7 @@ public struct ContentView: View {
             }
             VStack(spacing: 0) {
                 if model.isEditorFindBarPresented {
-                    EditorFindBar(find: model.find)
+                    EditorFindBar(find: model.find, uiSize: model.uiSize)
                 }
                 CodeMirrorEditorView(
                     text: buf?.text ?? file.contents,
@@ -441,6 +441,9 @@ public struct ContentView: View {
                     findRegex: model.editorFindIsRegex,
                     findNextRequest: model.editorFindNextRequest,
                     findPrevRequest: model.editorFindPrevRequest,
+                    findReplacement: model.editorFindReplacement,
+                    replaceNextRequest: model.editorReplaceNextRequest,
+                    replaceAllRequest: model.editorReplaceAllRequest,
                     initialSelection: seed,
                     onTextChange: { newText in
                         model.updateEditorText(newText, forTabID: tid)
@@ -578,7 +581,7 @@ public struct ContentView: View {
         let tabID = model.tabs.selected?.id ?? UUID(uuid: (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
         VStack(spacing: 0) {
             if model.isRenderedFindBarPresented {
-                MarkdownFindBar(find: model.find)
+                MarkdownFindBar(find: model.find, uiSize: model.uiSize)
             }
             MarkdownRenderedView(
                 html: model.renderedHTML(
@@ -643,7 +646,7 @@ struct SourceModeView: View {
         )
         VStack(spacing: 0) {
             if model.isSourceFindBarPresented {
-                SourceFindBar(find: model.find)
+                SourceFindBar(find: model.find, uiSize: model.uiSize)
             }
             HStack(spacing: 0) {
                 SourceGutterView(

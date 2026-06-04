@@ -232,6 +232,27 @@ public struct SourceScrollState: Equatable, Sendable {
     /// Top inset the textContainerInset adds above the first line of
     /// text. Callers need this to align their first row to glyph row 1.
     public let topInset: CGFloat
+
+    /// 1-based source line currently at the top of the viewport (UX-K, #231),
+    /// or `nil` when the geometry isn't usable yet (zero line height /
+    /// zero-line document, e.g. the first-paint seed before `viewDidLoad`).
+    ///
+    /// `line = round((offsetY - topInset) / lineHeight) + 1`, clamped to
+    /// `[1, lineCount]`. `round` (not `floor`) so a viewport sitting
+    /// fractionally past a line's top maps back to that same line rather than
+    /// drifting up by one each save/restore cycle.
+    ///
+    /// NB: restore reuses `scrollSource(toLine:)`, which *centers* the target
+    /// line in the viewport (it has no top-align mode). So a reopened file
+    /// lands with the previously-top line centered, not pinned to the top —
+    /// an acceptable "near where you left off" approximation that avoids a
+    /// parallel top-align scroll path. The captured value here is the true
+    /// top-of-viewport line; the centering is purely a restore-side artifact.
+    public var topVisibleLine: Int? {
+        guard lineHeight > 0, lineCount > 0 else { return nil }
+        let raw = Int(((offsetY - topInset) / lineHeight).rounded()) + 1
+        return min(max(raw, 1), lineCount)
+    }
 }
 
 /// Controller-shape host for the source view. Owns the

@@ -204,7 +204,12 @@ public struct TabsState: Equatable, Sendable {
                 url: url,
                 state: state,
                 viewMode: modeToUse,
-                isDirty: tabs[existing].isDirty
+                isDirty: tabs[existing].isDirty,
+                // UX-K (#231): preserve the persisted per-file scroll on a
+                // reveal so e.g. clicking a restored lazy tab in the sidebar
+                // (which routes through here) doesn't drop the scroll line
+                // before `restoreScroll` can re-apply it.
+                scrollTopLine: tabs[existing].scrollTopLine
             )
             selectedIndex = existing
             return existing

@@ -65,6 +65,73 @@ final class FindBarTests: HeadlessUITestCase {
         XCTAssertEqual(model.renderedFindQuery, "")
     }
 
+    // MARK: - UX-G: editor find-and-replace state
+
+    /// The editor find bar is the only editable surface, so it owns the
+    /// replace row state. Cmd+Option+F opens it pre-expanded; Cmd+F
+    /// opens it find-only.
+    func test_editorReplaceBar_opensExpanded() {
+        let model = makeModel()
+        XCTAssertFalse(model.isEditorFindBarPresented)
+        XCTAssertFalse(model.find.editorReplaceVisible)
+
+        // Plain find: bar visible, replace row collapsed.
+        model.showEditorFindBar()
+        XCTAssertTrue(model.isEditorFindBarPresented)
+        XCTAssertFalse(model.find.editorReplaceVisible)
+
+        // Find & Replace: bar visible AND replace row expanded.
+        model.showEditorReplaceBar()
+        XCTAssertTrue(model.isEditorFindBarPresented)
+        XCTAssertTrue(model.find.editorReplaceVisible)
+    }
+
+    /// Replace next/all are command nonces (bump-counter), so a repeated
+    /// action always re-fires even with unchanged strings — the same
+    /// pattern as find-next/prev.
+    func test_editorReplace_requestsAreNonces() {
+        let model = makeModel()
+        let next0 = model.editorReplaceNextRequest
+        let all0 = model.editorReplaceAllRequest
+
+        model.editorReplaceNext()
+        model.editorReplaceNext()
+        model.editorReplaceAll()
+
+        XCTAssertEqual(model.editorReplaceNextRequest, next0 + 2)
+        XCTAssertEqual(model.editorReplaceAllRequest, all0 + 1)
+    }
+
+    /// Dismissing the editor bar must clear the replacement string and
+    /// collapse the replace row, so a fresh Cmd+F doesn't resurrect a
+    /// stale replacement.
+    func test_editorReplace_dismissClearsState() {
+        let model = makeModel()
+        model.showEditorReplaceBar()
+        model.editorFindQuery = "foo"
+        model.editorFindReplacement = "bar"
+        XCTAssertEqual(model.editorFindReplacement, "bar")
+
+        model.dismissEditorFindBar()
+        XCTAssertFalse(model.isEditorFindBarPresented)
+        XCTAssertEqual(model.editorFindQuery, "")
+        XCTAssertEqual(model.editorFindReplacement, "")
+        XCTAssertFalse(model.find.editorReplaceVisible)
+    }
+
+    /// Read-only surfaces (rendered / source) have no replace state —
+    /// guard that no replace plumbing accidentally got wired onto them.
+    /// (Compile-time guarantee really; this documents the intent.)
+    func test_replace_isEditorOnly() {
+        let model = makeModel()
+        // The editor coordinator carries replace state.
+        model.find.editorReplacement = "x"
+        XCTAssertEqual(model.find.editorReplacement, "x")
+        // No equivalent exists on the rendered/source bags — verified by
+        // the absence of `find.renderedReplacement` / `sourceReplacement`
+        // symbols (would fail to compile if referenced).
+    }
+
     // MARK: - G3: match-count / current-position summary ("n of N")
 
     /// The find bar shows "current/total" so the user knows which of N

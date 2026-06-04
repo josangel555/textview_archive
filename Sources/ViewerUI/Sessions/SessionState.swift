@@ -200,7 +200,11 @@ public final class SessionState: ObservableObject {
                 // WAVE 2b item 6: persist the per-tab "Open As…" override
                 // so the chosen viewer survives a restart. nil → key
                 // omitted by the encoder (additive-optional).
-                categoryOverride: t.categoryOverride?.rawValue))
+                categoryOverride: t.categoryOverride?.rawValue,
+                // UX-K (#231): persist the per-file scroll position. Stamped
+                // onto the live tab by `DocumentModel.captureScroll` at
+                // focus-loss / close boundaries. nil → key omitted.
+                scrollTopLine: t.scrollTopLine))
         }
         let remapped: Int? = selectedIndex.flatMap { liveToOut[$0] }
         return (out, remapped)
@@ -315,6 +319,16 @@ public final class SessionState: ObservableObject {
             },
             uniquingKeysWith: { first, _ in first }
         )
+        // UX-K (#231): path → persisted scroll position. Same shape as the
+        // override map above. A non-positive / absent value is dropped here
+        // (→ nil on append = "restore to top of file").
+        let scrollByPath: [String: Int] = Dictionary(
+            snapshot.openTabs.compactMap { snap -> (String, Int)? in
+                guard let line = snap.scrollTopLine, line > 0 else { return nil }
+                return (snap.path, line)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
         for t in restoreTabs {
             let url = URL(fileURLWithPath: t.path)
             guard FileManager.default.fileExists(atPath: url.path) else {
@@ -323,7 +337,9 @@ public final class SessionState: ObservableObject {
             let override = overrideByPath[t.path]
             let mode = ViewMode(rawValue: t.viewMode)
                 ?? ViewModeOptions.defaultMode(for: url, forcedCategory: override)
-            model.appendLazyTab(url: url, viewMode: mode, categoryOverride: override)
+            model.appendLazyTab(url: url, viewMode: mode,
+                                categoryOverride: override,
+                                scrollTopLine: scrollByPath[t.path])
         }
         // Restore the per-session sidebar expansion AFTER `setRoot`
         // (which wipes `expanded` down to just the root). We expand the

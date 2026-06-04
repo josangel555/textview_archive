@@ -1037,6 +1037,11 @@
     const query = String(msg.query || "");
     const q = new SearchQuery({
       search: query,
+      // `replace` seeds the find-and-replace string; `replaceNext` /
+      // `replaceAll` read it off the active SearchQuery. When literal
+      // (non-regex), CM substitutes the string verbatim; when regexp,
+      // `$1` / `$&` capture-group refs are honored.
+      replace: String(msg.replace || ""),
       caseSensitive: !!msg.caseSensitive,
       regexp: !!msg.regex,
       literal: !msg.regex,

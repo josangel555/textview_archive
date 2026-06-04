@@ -51,6 +51,11 @@ final class CodeMirrorBundleTests: XCTestCase {
             "case \"setDiagnostics\"",
             "case \"setShowInvisibles\"",
             "case \"setSearchQuery\"",
+            // UX-G find-and-replace: the dispatch cases + the replace
+            // field seeded into the SearchQuery must survive the build.
+            "case \"replaceNext\"",
+            "case \"replaceAll\"",
+            "replace: String(msg.replace",
             "findResultChanged",
             "applySetDiagnostics",
             "applySetShowInvisibles",
@@ -68,7 +73,7 @@ final class CodeMirrorBundleTests: XCTestCase {
         // The IIFE bundle attaches every re-exported symbol off `window.CM`.
         // Just confirm string presence — the bundle is minified so name-
         // mangling on locals is fine but the export names survive.
-        for needle in ["lintGutter", "setDiagnostics", "setSearchQuery", "SearchQuery"] {
+        for needle in ["lintGutter", "setDiagnostics", "setSearchQuery", "SearchQuery", "replaceNext", "replaceAll"] {
             XCTAssertTrue(js.contains(needle),
                           "codemirror.js missing expected export: \(needle)")
         }

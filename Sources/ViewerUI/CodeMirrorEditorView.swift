@@ -59,6 +59,12 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
     public let findRegex: Bool
     public let findNextRequest: Int
     public let findPrevRequest: Int
+    /// Replacement string for find-and-replace. Carried into CM's
+    /// `SearchQuery.replace` via `setSearchQuery`; consumed by the
+    /// `replaceNext` / `replaceAll` request nonces below.
+    public let findReplacement: String
+    public let replaceNextRequest: Int
+    public let replaceAllRequest: Int
     /// Initial caret position to seed on first mount (restore-on-tab-
     /// switch). nil = leave at start. Bumped via `setSelection` so
     /// gotoLine and selection-restore use the same path.
@@ -105,6 +111,9 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         findRegex: Bool = false,
         findNextRequest: Int = 0,
         findPrevRequest: Int = 0,
+        findReplacement: String = "",
+        replaceNextRequest: Int = 0,
+        replaceAllRequest: Int = 0,
         initialSelection: CMSelectionSeed? = nil,
         onTextChange: @escaping (String) -> Void,
         onSaveRequested: @escaping () -> Void = {},
@@ -135,6 +144,9 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         self.findRegex = findRegex
         self.findNextRequest = findNextRequest
         self.findPrevRequest = findPrevRequest
+        self.findReplacement = findReplacement
+        self.replaceNextRequest = replaceNextRequest
+        self.replaceAllRequest = replaceAllRequest
         self.initialSelection = initialSelection
         self.onTextChange = onTextChange
         self.onSaveRequested = onSaveRequested
@@ -238,6 +250,9 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         private var pendingFindRegex: Bool = false
         private var pendingFindNextRequest: Int = 0
         private var pendingFindPrevRequest: Int = 0
+        private var pendingFindReplacement: String = ""
+        private var pendingReplaceNextRequest: Int = 0
+        private var pendingReplaceAllRequest: Int = 0
         private var pendingInitialSelection: CMSelectionSeed?
         private var didApplyInitialSelection: Bool = false
         private var isReady = false
@@ -261,9 +276,11 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         /// (query, case, regex) tuple last shipped — comparing skips
         /// the bridge call when the user clears + re-shows the same
         /// query.
-        private var lastSentFindQuery: (String, Bool, Bool)?
+        private var lastSentFindQuery: (String, Bool, Bool, String)?
         private var lastSentFindNextRequest: Int = 0
         private var lastSentFindPrevRequest: Int = 0
+        private var lastSentReplaceNextRequest: Int = 0
+        private var lastSentReplaceAllRequest: Int = 0
 
         private static let log = Logger(
             subsystem: "com.markdownviewer.MarkdownViewer",
@@ -302,6 +319,9 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             self.pendingFindRegex = view.findRegex
             self.pendingFindNextRequest = view.findNextRequest
             self.pendingFindPrevRequest = view.findPrevRequest
+            self.pendingFindReplacement = view.findReplacement
+            self.pendingReplaceNextRequest = view.replaceNextRequest
+            self.pendingReplaceAllRequest = view.replaceAllRequest
             self.pendingInitialSelection = view.initialSelection
         }
 
@@ -423,16 +443,19 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             // or any of the next/prev request nonces. We send the
             // setSearchQuery first so the subsequent findNext picks
             // up the new query.
-            let curQuery = (pendingFindQuery ?? "", pendingFindCaseSensitive, pendingFindRegex)
+            let curQuery = (pendingFindQuery ?? "", pendingFindCaseSensitive,
+                            pendingFindRegex, pendingFindReplacement)
             if curQuery.0 != (lastSentFindQuery?.0 ?? "")
                 || curQuery.1 != (lastSentFindQuery?.1 ?? false)
-                || curQuery.2 != (lastSentFindQuery?.2 ?? false) {
+                || curQuery.2 != (lastSentFindQuery?.2 ?? false)
+                || curQuery.3 != (lastSentFindQuery?.3 ?? "") {
                 lastSentFindQuery = curQuery
                 dispatch(
                     .setSearchQuery(
                         query: curQuery.0,
                         caseSensitive: curQuery.1,
-                        regex: curQuery.2
+                        regex: curQuery.2,
+                        replace: curQuery.3
                     ),
                     webView: webView
                 )
@@ -447,6 +470,22 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
                 lastSentFindPrevRequest = pendingFindPrevRequest
                 if !(pendingFindQuery ?? "").isEmpty {
                     dispatch(.findPrev, webView: webView)
+                }
+            }
+            // Replace commands. CM's `replaceNext` / `replaceAll` read the
+            // active SearchQuery's `replace` field (kept current by the
+            // setSearchQuery dispatch above), so we only need to fire the
+            // command on a request-nonce bump.
+            if pendingReplaceNextRequest != lastSentReplaceNextRequest {
+                lastSentReplaceNextRequest = pendingReplaceNextRequest
+                if !(pendingFindQuery ?? "").isEmpty {
+                    dispatch(.replaceNext, webView: webView)
+                }
+            }
+            if pendingReplaceAllRequest != lastSentReplaceAllRequest {
+                lastSentReplaceAllRequest = pendingReplaceAllRequest
+                if !(pendingFindQuery ?? "").isEmpty {
+                    dispatch(.replaceAll, webView: webView)
                 }
             }
         }

@@ -170,8 +170,10 @@ public enum CMOutboundMessage: Equatable, Sendable {
     /// Set the active find-bar query. Re-issued after every keystroke
     /// in the SwiftUI find bar (debounced upstream) so CM's
     /// `SearchQuery` matches what the user typed. `caseSensitive` /
-    /// `isRegex` are passed through to CM's matcher.
-    case setSearchQuery(query: String, caseSensitive: Bool, regex: Bool)
+    /// `isRegex` are passed through to CM's matcher. `replace` seeds the
+    /// `SearchQuery.replace` field that `replaceNext` / `replaceAll`
+    /// consume — empty when the find bar is in find-only mode.
+    case setSearchQuery(query: String, caseSensitive: Bool, regex: Bool, replace: String = "")
     case findNext
     case findPrev
     case replaceNext
@@ -527,11 +529,12 @@ public enum CMBridgeCodec {
             if let query = query { dict["query"] = query }
             dict["replace"] = replace
         case .closeSearch:    dict["type"] = "closeSearch"
-        case .setSearchQuery(let query, let caseSensitive, let regex):
+        case .setSearchQuery(let query, let caseSensitive, let regex, let replace):
             dict["type"] = "setSearchQuery"
             dict["query"] = query
             dict["caseSensitive"] = caseSensitive
             dict["regex"] = regex
+            dict["replace"] = replace
         case .findNext:       dict["type"] = "findNext"
         case .findPrev:       dict["type"] = "findPrev"
         case .replaceNext:    dict["type"] = "replaceNext"

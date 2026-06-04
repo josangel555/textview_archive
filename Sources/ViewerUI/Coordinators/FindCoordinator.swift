@@ -105,9 +105,29 @@ public final class FindCoordinator: ObservableObject {
     @Published public var editorIsRegex: Bool = false
     @Published public var editorMatchSummary: String = ""
 
+    /// Replacement string for the editor find-and-replace row. The
+    /// editor (CM6) is the only editable surface — the rendered
+    /// (WKWebView) and source (read-only NSTextView) bars have no
+    /// replace affordance — so replace state lives only on the editor
+    /// bag. Carried into CM's `SearchQuery.replace` via the
+    /// `setSearchQuery` bridge call; `replaceNext` / `replaceAll`
+    /// consume it.
+    @Published public var editorReplacement: String = ""
+    /// Whether the editor find bar is expanded to show the replace row.
+    /// Cmd+F opens find-only; Cmd+Option+F (or the disclosure) expands
+    /// to find-and-replace. Persisting it on the coordinator keeps the
+    /// row state stable across re-bodies of the find bar.
+    @Published public var editorReplaceVisible: Bool = false
+
     @Published public var editorNextRequest: Int = 0
     @Published public var editorPrevRequest: Int = 0
     @Published public var editorFocusRequest: Int = 0
+    /// Command nonces for the two replace actions. Bump-counter shape
+    /// (same as next/prev) because "replace the current match" and
+    /// "replace every match" are commands, not values — a repeated
+    /// click must always re-fire even when the strings are unchanged.
+    @Published public var editorReplaceNextRequest: Int = 0
+    @Published public var editorReplaceAllRequest: Int = 0
 
     public func setEditorMatchSummary(_ s: String) {
         guard s != editorMatchSummary else { return }
@@ -122,9 +142,25 @@ public final class FindCoordinator: ObservableObject {
     public func dismissEditorBar() {
         isEditorBarPresented = false
         editorQuery = ""
+        editorReplacement = ""
+        editorReplaceVisible = false
         editorMatchSummary = ""
     }
 
     public func editorNext() { editorNextRequest &+= 1 }
     public func editorPrev() { editorPrevRequest &+= 1 }
+
+    /// Show the editor bar already expanded to its find-and-replace
+    /// shape (Cmd+Option+F entry point).
+    public func showEditorReplaceBar() {
+        editorReplaceVisible = true
+        showEditorBar()
+    }
+
+    public func toggleEditorReplaceVisible() {
+        editorReplaceVisible.toggle()
+    }
+
+    public func editorReplaceNext() { editorReplaceNextRequest &+= 1 }
+    public func editorReplaceAll() { editorReplaceAllRequest &+= 1 }
 }

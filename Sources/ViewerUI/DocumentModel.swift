@@ -1090,6 +1090,59 @@ public final class DocumentModel: ObservableObject {
         sourceView.scrollSource(toLine: line)
     }
 
+    // MARK: - Per-file scroll persistence (UX-K, #231)
+    //
+    // Scroll offset is HIGH-FREQUENCY view-local state on the narrow
+    // `SourceViewChannel.sourceScrollState` — it ticks on every wheel event
+    // and deliberately does NOT republish `DocumentModel`. We must persist a
+    // per-file scroll position without putting that on the hot path, so we
+    // SAMPLE it lazily at the boundaries that actually matter:
+    //
+    //   - a tab loses focus (`selectTab` switches away),
+    //   - the VISIBLE tab closes (`closeTab`); bulk closes
+    //     (`closeOtherTabs` / `closeTabsToRight`) either keep the active tab
+    //     or are mass-discard gestures where a stale scroll doesn't matter,
+    //     so they aren't separately captured,
+    //   - the active tab at a snapshot boundary (autosave fire / detach /
+    //     quit) via `captureScrollForActiveTab`, read by
+    //     `SessionState.makeSnapshot` off the live `Tab.scrollTopLine`.
+    //
+    // On capture we read the current top-of-viewport line off the channel and
+    // stamp it into the tab via `tabCoordinator.replace`. `Tab.scrollTopLine`
+    // is excluded from `Tab`'s Equatable, so this write can't churn the
+    // SwiftUI tab-strip diff.
+
+    /// Sample the live source-view scroll offset and stamp the resulting
+    /// 1-based top line into the tab at `index`. No-op when the geometry isn't
+    /// usable (zero-line doc / pre-first-paint) or the value is unchanged.
+    /// Call at focus-loss / close boundaries — NEVER per scroll tick.
+    func captureScroll(forTabAt index: Int) {
+        guard tabs.tabs.indices.contains(index) else { return }
+        guard let line = sourceView.sourceScrollState.topVisibleLine else { return }
+        var t = tabs.tabs[index]
+        guard t.scrollTopLine != line else { return }
+        t.scrollTopLine = line
+        tabCoordinator.replace(at: index, with: t)
+    }
+
+    /// Convenience: capture the currently-selected tab's scroll position.
+    /// Used by the autosave / termination snapshot path so the live tab
+    /// carries an up-to-date `scrollTopLine` before serialization.
+    public func captureScrollForActiveTab() {
+        guard let i = tabs.selectedIndex else { return }
+        captureScroll(forTabAt: i)
+    }
+
+    /// Restore a tab's persisted scroll position by routing through the
+    /// existing `scrollSource(toLine:)` request (honored by `.source` /
+    /// `.editor`). `nil` / non-positive ⇒ no-op (top of file). Called after a
+    /// tab materializes / becomes active so the content is laid out first.
+    func restoreScroll(forTabAt index: Int) {
+        guard tabs.tabs.indices.contains(index),
+              let line = tabs.tabs[index].scrollTopLine, line > 0 else { return }
+        scrollSource(toLine: line)
+    }
+
     // MARK: - Split view (forwarders to TabCoordinator)
     //
     // The split pane lives on `tabCoordinator` because it shares the
@@ -1341,11 +1394,26 @@ public final class DocumentModel: ObservableObject {
         get { find.editorMatchSummary }
         set { find.editorMatchSummary = newValue }
     }
+    public var editorFindReplacement: String {
+        get { find.editorReplacement }
+        set { find.editorReplacement = newValue }
+    }
+    public var editorReplaceNextRequest: Int {
+        get { find.editorReplaceNextRequest }
+        set { find.editorReplaceNextRequest = newValue }
+    }
+    public var editorReplaceAllRequest: Int {
+        get { find.editorReplaceAllRequest }
+        set { find.editorReplaceAllRequest = newValue }
+    }
 
     public func showEditorFindBar() { find.showEditorBar() }
+    public func showEditorReplaceBar() { find.showEditorReplaceBar() }
     public func dismissEditorFindBar() { find.dismissEditorBar() }
     public func editorFindNext() { find.editorNext() }
     public func editorFindPrev() { find.editorPrev() }
+    public func editorReplaceNext() { find.editorReplaceNext() }
+    public func editorReplaceAll() { find.editorReplaceAll() }
     public func setEditorFindMatchSummary(_ s: String) {
         find.setEditorMatchSummary(s)
     }
@@ -2752,6 +2820,14 @@ public final class DocumentModel: ObservableObject {
             return
         }
         guard tabs.tabs.indices.contains(index) else { return }
+        // UX-K (#231): if we're closing the currently-VISIBLE tab, sample its
+        // scroll position first so a snapshot taken right after close (e.g.
+        // detach-time `makeSnapshot`) still carries the last position. The
+        // source channel only reflects the active tab, so capturing a
+        // background tab here would be meaningless — gate on selection.
+        if tabs.selectedIndex == index {
+            captureScroll(forTabAt: index)
+        }
         let closedURL = tabs.tabs[index].url
         // Coordinator handles the tabs mutation + all six per-tab dict
         // cleanups in lock-step (folded into `cleanupAfterClose`).
@@ -2901,6 +2977,12 @@ public final class DocumentModel: ObservableObject {
 
 
     public func selectTab(at index: Int) {
+        // UX-K (#231): capture the OUTGOING tab's scroll position before we
+        // switch away — this is the focus-loss boundary. No-op if we're
+        // re-selecting the same tab (the channel still shows its own offset).
+        if let cur = tabs.selectedIndex, cur != index {
+            captureScroll(forTabAt: cur)
+        }
         tabCoordinator.select(at: index)
         materializeIfNeeded(at: index)
         updateDerived()
@@ -2912,6 +2994,11 @@ public final class DocumentModel: ObservableObject {
         // item9: if "pin"/follow is on, reveal the now-active file in the
         // sidebar (select + expand only, never re-root).
         followActiveTabIfNeeded()
+        // UX-K (#231): restore the now-active tab's persisted scroll. If the
+        // tab was already materialized this scrolls immediately; if it just
+        // started a lazy materialize, `materializeIfNeeded`'s completion
+        // re-fires the restore once the content is laid out.
+        restoreScroll(forTabAt: index)
     }
 
     /// Append a tab pointing at `url` without loading its contents.
@@ -2919,7 +3006,9 @@ public final class DocumentModel: ObservableObject {
     /// `materializeIfNeeded(at:)` actually read the file. Workspace
     /// restore and multi-file drops use this so a 15-file session
     /// doesn't read 15 files at launch — only the focused one.
-    public func appendLazyTab(url: URL, viewMode: ViewMode, categoryOverride: FileCategory? = nil) {
+    public func appendLazyTab(url: URL, viewMode: ViewMode,
+                              categoryOverride: FileCategory? = nil,
+                              scrollTopLine: Int? = nil) {
         let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
         // Dedup invariant (matches `TabsState.openOrReveal`): never create a
         // SECOND tab for a file that's already open. `appendLazyTab` was the
@@ -2952,7 +3041,11 @@ public final class DocumentModel: ObservableObject {
             : ViewModeOptions.defaultMode(for: resolved, forcedCategory: categoryOverride)
         tabCoordinator.append(Tab(
             url: resolved, state: .empty, viewMode: safeMode,
-            categoryOverride: categoryOverride))
+            categoryOverride: categoryOverride,
+            // UX-K (#231): carry the persisted per-file scroll position onto
+            // the lazy tab so `restoreScroll` can re-apply it once the tab
+            // materializes into focus.
+            scrollTopLine: scrollTopLine))
     }
 
     /// Open many URLs at once. Files are appended as lazy tabs (state
@@ -3056,6 +3149,16 @@ public final class DocumentModel: ObservableObject {
                 var t2 = current
                 t2.state = state
                 self.tabCoordinator.replace(at: idx, with: t2)
+                // UX-K (#231): the lazy tab's content is now laid out — restore
+                // its persisted scroll position. The `selectTab` immediate
+                // `restoreScroll` fired before this content existed (the source
+                // view had no glyphs to scroll to), so re-fire here for the
+                // tab that just materialized into focus. Only when it's still
+                // the selected tab (a background materialize must not yank the
+                // viewport of whatever the user is now looking at).
+                if self.tabs.selectedIndex == idx {
+                    self.restoreScroll(forTabAt: idx)
+                }
                 // LOADBUG (2026-06-01): PERF #1 severed the
                 // `tabCoordinator.objectWillChange` → `DocumentModel.
                 // objectWillChange` forwarding, so `replace` alone fires the

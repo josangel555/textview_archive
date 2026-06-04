@@ -17,10 +17,29 @@ public struct TabSnapshot: Codable, Equatable, Sendable {
     /// to `nil` rather than crashing.
     public let categoryOverride: String?
 
-    public init(path: String, viewMode: String, categoryOverride: String? = nil) {
+    /// Per-file scroll position (UX-K, #231): the 1-based source line that
+    /// was at the top of the source/editor viewport when this tab last lost
+    /// focus / was closed. Restored on reopen via `scrollSource(toLine:)`.
+    ///
+    /// **Why a LINE, not a pixel offset.** A line survives a font-size /
+    /// zoom / word-wrap change between sessions (the same content reflows to
+    /// a different pixel offset, but "line 412" is stable); a raw `offsetY`
+    /// would land on the wrong content. It also rides the existing
+    /// `scrollSource(toLine:)` plumbing (honored by `.source` / `.editor`),
+    /// so no new view-side machinery is needed.
+    ///
+    /// **Additive-optional** (downgrade-safe): an older reader without the
+    /// key decodes to `nil` (no restore — top of file); a newer file with no
+    /// key likewise decodes to `nil`. `nil` / `<= 0` ⇒ "don't restore".
+    public let scrollTopLine: Int?
+
+    public init(path: String, viewMode: String,
+                categoryOverride: String? = nil,
+                scrollTopLine: Int? = nil) {
         self.path = path
         self.viewMode = viewMode
         self.categoryOverride = categoryOverride
+        self.scrollTopLine = scrollTopLine
     }
 }
 
@@ -166,6 +185,12 @@ public struct SessionSnapshot: Codable, Equatable, Sendable {
     /// re-publish, a transient highlight-ready) must NOT schedule a disk write.
     /// `displayName` IS compared (a rename is a real content change), but the
     /// LRU/identity timestamps are not.
+    ///
+    /// UX-K (#231): the per-file scroll position rides inside `openTabs`
+    /// (`TabSnapshot.scrollTopLine`), so a captured scroll change IS treated as
+    /// a real content change here — the autosave fires to persist it. Capture
+    /// happens at focus-loss / close / detach / quit boundaries (never per
+    /// scroll tick), so this can't spam the write queue on a scroll storm.
     public func hasSamePersistedContent(as other: SessionSnapshot) -> Bool {
         id == other.id
             && displayName == other.displayName

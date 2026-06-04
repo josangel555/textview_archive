@@ -194,6 +194,25 @@ final class CMOutboundEncodingTests: XCTestCase {
         XCTAssertEqual(d["regex"] as? Bool, true)
     }
 
+    /// UX-G: find-and-replace seeds `SearchQuery.replace` through the
+    /// same `setSearchQuery` envelope. The JS side reads `msg.replace`,
+    /// so the field must always be present (default "" when find-only).
+    func testEncodeSetSearchQueryCarriesReplace() {
+        let d = encodeAndParse(.setSearchQuery(
+            query: "foo", caseSensitive: false, regex: false, replace: "bar"
+        ))
+        XCTAssertEqual(d["query"] as? String, "foo")
+        XCTAssertEqual(d["replace"] as? String, "bar")
+    }
+
+    func testEncodeSetSearchQueryReplaceDefaultsEmpty() {
+        let d = encodeAndParse(.setSearchQuery(
+            query: "foo", caseSensitive: false, regex: false
+        ))
+        XCTAssertEqual(d["replace"] as? String, "",
+                       "replace must be present (empty) even in find-only mode")
+    }
+
     func testEncodeSetShowInvisibles() {
         let d = encodeAndParse(.setShowInvisibles(true))
         XCTAssertEqual(d["type"] as? String, "setShowInvisibles")

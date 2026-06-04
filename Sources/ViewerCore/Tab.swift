@@ -46,6 +46,19 @@ public struct Tab: Sendable, Identifiable {
     /// `TabSnapshot.categoryOverride` with a downgrade guard.
     public var categoryOverride: FileCategory?
 
+    /// Last-known 1-based top visible source line for this tab (UX-K, #231).
+    /// Persisted per-file as `TabSnapshot.scrollTopLine` so reopening a file
+    /// restores the user's scroll position.
+    ///
+    /// HOT-PATH NOTE: captured LAZILY at focus-loss / close / snapshot
+    /// boundaries (`DocumentModel.captureScrollForActiveTab`), NEVER on the
+    /// per-scroll-tick path — the live offset lives on the narrow
+    /// `SourceViewChannel.sourceScrollState`, which deliberately does not
+    /// republish `DocumentModel`. EXCLUDED from `Tab`'s Equatable so writing
+    /// it can't churn the SwiftUI tab-strip diff: it's persistence-only
+    /// metadata, not display state.
+    public var scrollTopLine: Int?
+
     public init(
         id: UUID = UUID(),
         url: URL? = nil,
@@ -53,7 +66,8 @@ public struct Tab: Sendable, Identifiable {
         viewMode: ViewMode = .rendered,
         isDirty: Bool = false,
         diskState: DiskState = .fresh,
-        categoryOverride: FileCategory? = nil
+        categoryOverride: FileCategory? = nil,
+        scrollTopLine: Int? = nil
     ) {
         self.id = id
         self.url = url
@@ -62,6 +76,7 @@ public struct Tab: Sendable, Identifiable {
         self.isDirty = isDirty
         self.diskState = diskState
         self.categoryOverride = categoryOverride
+        self.scrollTopLine = scrollTopLine
     }
 
     /// Pure staleness classification, reusing the same mtime-OR-size
@@ -116,6 +131,10 @@ extension Tab: Equatable {
         guard lhs.isDirty == rhs.isDirty else { return false }
         guard lhs.diskState == rhs.diskState else { return false }
         guard lhs.categoryOverride == rhs.categoryOverride else { return false }
+        // `scrollTopLine` is intentionally NOT compared (UX-K, #231): it's
+        // persistence-only scroll metadata captured at focus-loss/close
+        // boundaries. Comparing it would make a scroll capture re-trigger
+        // tab-strip diffs — the exact hot-path republish we avoid.
         // Compare state by case-only, not by payload. Payload changes
         // are reflected by other model state (e.g. loadState, watcher
         // reload nonce); state-payload-equality isn't a property
