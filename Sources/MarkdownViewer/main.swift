@@ -58,6 +58,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             return
         }
 
+        // `--claude-monitor`: open ONLY the standalone read-only Claude
+        // session monitor PoC, hosted in its own window. Deliberately
+        // bypasses the entire document UI (no ContentView, no menu wiring,
+        // no sessions bootstrap) so the PoC is independently launchable and
+        // screenshot-validatable, and so it can never perturb the main app
+        // surface. Read-only over `~/.claude/projects/*/*.jsonl`.
+        if claudeMonitorMode {
+            openClaudeMonitorWindow()
+            return
+        }
+
         // Opt out of macOS's automatic window tabbing — we ship our own in-app
         // tab bar; the system "Show Tab Bar" menu item is confusing here.
         NSWindow.allowsAutomaticWindowTabbing = false
@@ -1890,6 +1901,36 @@ extension AppDelegate {
         // until a framed response.
         FileHandle.standardError.write(Data("mcp: server ready on stdio\n".utf8))
     }
+
+    /// Open the standalone Claude session monitor window (the
+    /// `--claude-monitor` PoC). No menu, no document model wiring — just a
+    /// single `NSHostingController(rootView: ClaudeMonitorView())`. Retained
+    /// on the delegate so a second invocation could re-focus it; today the
+    /// flag opens exactly one window at launch.
+    @MainActor
+    fileprivate func openClaudeMonitorWindow() {
+        NSWindow.allowsAutomaticWindowTabbing = false
+        let host = NSHostingController(rootView: ClaudeMonitorView())
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 960, height: 620),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Claude Session Monitor"
+        window.contentViewController = host
+        window.isReleasedWhenClosed = false
+        window.tabbingMode = .disallowed
+        window.contentMinSize = NSSize(width: 760, height: 460)
+        let autosaveName = "ClaudeMonitorWindow"
+        _ = window.setFrameAutosaveName(autosaveName)
+        if UserDefaults.standard.string(forKey: "NSWindow Frame \(autosaveName)") == nil {
+            window.center()
+        }
+        showWindow(window)
+        self.window = window
+        activateIfForeground()
+    }
 }
 
 /// Bring `window` to the front. In normal mode, also takes key/focus.
@@ -1921,6 +1962,11 @@ let app = NSApplication.shared
 /// `@MainActor`-isolated DocumentModel state can only be mutated from
 /// the main thread's run loop, which `NSApp.run` services.
 let mcpStdioMode = CommandLine.arguments.contains("--mcp-stdio")
+
+/// `--claude-monitor` opens ONLY the standalone read-only Claude session
+/// monitor PoC window (no document UI). Stays `.regular` so the window is
+/// interactive and screenshot-validatable.
+let claudeMonitorMode = CommandLine.arguments.contains("--claude-monitor")
 
 /// Run-scoped artifact directory for the L4/L5 script runner's per-step
 /// dumps (`mdv-step-NN.{json,png}`) and the WindowServer `.windowid`
