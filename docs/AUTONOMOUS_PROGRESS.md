@@ -60,6 +60,9 @@ Hypothesis: same root as the 108 MB baseline — DocumentModel god-object republ
 
 ### Wave 3 — PoCs (research + build, validate automatically)
 - [x] **Image editing PoC engine spine** ✅ — ViewerCore ImageDocument/Renderer/Exporter (op-list history, lossless revert, ImageIO export). 16 headless tests. Commit 8420b29. (UI not built; engine only.)
+- [x] **Image engine: rotate/flip verbs + orientation algebra** ✅ — `065d482` ImageDocument
+  rotate/flip verb API + D4 `.then()` compose + gesture coalescing; FIXED a shipped
+  leftMirrored render bug (off-canvas); 8×8 render-equivalence + all-8 corner-pin tests.
 - [x] **Agent-monitoring index PoC** ✅ — ViewerCore ClaudeSessionIndex over ~/.claude transcripts (streamed, redaction gate, byte-offset index) + ClaudeLogParser+SystemRecords. 21 headless tests. Commit ab4f583. (UI not built; index only.)
 - [x] **Claude Code hooks research** ✅ — docs/research/autorun-2026-06-04/hooks.md; recommendation = passive JSONL logger feeding the monitor. (Owner flag: ~/.claude/settings.json has no hooks key → existing scripts dormant.)
 - [x] **Claude hooks logger + reader** ✅ — `814c470` scripts/hooks/monitor-log.sh
@@ -100,6 +103,10 @@ Owner: `.build/debug/MarkdownViewer --claude-monitor` to eyeball the monitor PoC
 - 2026-06-04 `5026518` NewFileCreator (collision-safe File-New model core, O_CREAT|O_EXCL) + 9 tests — gate-green. UI wiring deferred to unlock.
 - 2026-06-04 `096246f` republish-count guard (TSK-108 infra) — gate-green. **FINDING below.**
 - 2026-06-04 `814c470` Claude hook logger (scripts/hooks/monitor-log.sh) + ClaudeMonitorLog reader + 14 tests — gate-green. NOT auto-wired (owner opt-in documented).
+- 2026-06-04 `065d482` image rotate/flip verb API + D4 compose/coalesce + **FIXED a shipped
+  bug**: Renderer.leftMirrored (from 8420b29) drew off-canvas (all-black) — no test had
+  exercised its pixels. Found via an exhaustive 8×8 render-equivalence property test;
+  fixed by composing two verified primitives. All-8 corner-permutation pin test added. Gate-green.
 
 ### KEY FINDINGS (this headless wave, 2026-06-04 morning)
 - **Tab-op republish is NOT the bottleneck.** RepublishCountTests measured: warm
