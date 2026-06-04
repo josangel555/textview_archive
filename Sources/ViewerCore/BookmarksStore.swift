@@ -20,6 +20,13 @@ public final class BookmarksStore {
     /// hot path. Rebuilt on load / add / remove / clear.
     private var urlIndex: Set<URL> = []
 
+    /// Undo stack for removals (owner ask: Delete-to-remove + undo). Each
+    /// entry remembers the removed bookmark and the index it sat at, so undo
+    /// re-inserts it in place. Bounded; cleared by `clear()` (a deliberate
+    /// wipe shouldn't be partially resurrectable).
+    private var removalUndoStack: [(entry: BookmarkEntry, index: Int)] = []
+    private let maxUndoDepth = 20
+
     public init(
         storeURL: URL,
         maxEntries: Int = 200,
@@ -88,12 +95,35 @@ public final class BookmarksStore {
     /// bookmark doesn't sweep them away.
     public func remove(url: URL, line: Int? = nil) {
         let n = url.standardizedFileURL.resolvingSymlinksInPath()
-        let before = entries.count
-        entries.removeAll { $0.url == n && $0.line == line }
-        if entries.count != before {
-            rebuildIndex()
-            save()
+        // `(url, line)` identity is unique (add dedups), so at most one match;
+        // capture it + its index for undo before removing.
+        guard let idx = entries.firstIndex(where: { $0.url == n && $0.line == line }) else {
+            return
         }
+        let removed = entries.remove(at: idx)
+        removalUndoStack.append((removed, idx))
+        if removalUndoStack.count > maxUndoDepth { removalUndoStack.removeFirst() }
+        rebuildIndex()
+        save()
+    }
+
+    /// True when there's a removal that `undoLastRemoval()` can restore.
+    public var canUndoRemoval: Bool { !removalUndoStack.isEmpty }
+
+    /// Restore the most recently removed bookmark at its original index
+    /// (clamped). No-op if the stack is empty or the same `(url, line)` was
+    /// re-added meanwhile (avoids a duplicate). Returns the restored entry.
+    @discardableResult
+    public func undoLastRemoval() -> BookmarkEntry? {
+        guard let last = removalUndoStack.popLast() else { return nil }
+        if entries.contains(where: { $0.url == last.entry.url && $0.line == last.entry.line }) {
+            return nil
+        }
+        entries.insert(last.entry, at: max(0, min(last.index, entries.count)))
+        if entries.count > maxEntries { entries = Array(entries.prefix(maxEntries)) }
+        rebuildIndex()
+        save()
+        return last.entry
     }
 
     @discardableResult
@@ -111,6 +141,7 @@ public final class BookmarksStore {
     public func clear() {
         entries = []
         urlIndex.removeAll(keepingCapacity: false)
+        removalUndoStack.removeAll(keepingCapacity: false)
         save()
     }
 
