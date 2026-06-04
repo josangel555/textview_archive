@@ -82,7 +82,11 @@ Hypothesis: same root as the 108 MB baseline — DocumentModel god-object republ
   NOT yet wired into the monitor — a real additive enhancement for a live turn.
 - [ ] NEXT for these: image-editor view on `ImageDocument`; wire transcript
   content-search into the monitor. Both view-layer → live validation (screenshot
-  self-read), additive (no central-ContentView risk).
+  self-read), additive (no central-ContentView risk). **Content-search is now
+  redaction-safe by construction** (`a91a063`): `ClaudeTranscriptSearch` matches
+  over `redactedEvents` only, so wiring it into the monitor can't leak a
+  `headers`/`signature` value the detail view already hides. Leak was LATENT
+  (engine had no live UI consumer yet) — fixed pre-emptively.
 
 ### Wave 4+ — bigger rocks (from BACKLOG 2026-06-04 dump)
 HEX 1 MB slow (#218), tab overflow/shrink (#183/#209), `+`-beside-last-tab (B2), up/down nav (#220), natural keybindings (#232), multi-window, sessions-optional, god-object split (#202), FPS meter (#208), drag tabs→sessions, footer drop-ups, repo-stats treemap, undo audit.
@@ -135,6 +139,8 @@ build it, else hold.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-04 `39f46c1` + `6f4275a` agent-monitor PoC was built-but-untested + doc said "not built" (stale); added headless `ClaudeMonitorModelTests` (read→redact→parse pipeline, cap, filter/sort) + corrected the doc. Gate-green.
+- 2026-06-04 `a91a063` **security (latent)**: `ClaudeTranscriptSearch` matched RAW events (`parser.events`), so the monitor's planned content-search would surface `headers`/`signature`/image-blob content the detail view redacts. Split `ClaudeLogParser.parse` → `parseCore(redacting:)` + `parseRedacted`/`redactedEvents`; routed search through redacted events; test proves a `headers` secret is unfindable + `[REDACTED]` in the snippet. No live UI consumer yet (latent). Gate-green.
 - 2026-06-04 `6153c9b` terminal runtime-toggle fix (body greedy + clip + focus) — --diagnose verified, gate-green.
 - 2026-06-04 `1625563` L1 LSP-diagnostics reclaim on close + MemoryReclaimOnCloseTests — gate-green.
 - 2026-06-04 `49647fb` GitLogTab OOB crash fix + roadmap capture — gate-green.
