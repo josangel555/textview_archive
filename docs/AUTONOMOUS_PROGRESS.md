@@ -138,6 +138,27 @@ build it, else hold.
   out-of-scope — user's own folder, not privileged), S3 test-path fragility.
   **Unsupervised code now reviewed TWICE; further re-review is diminishing returns.**
 
+### Rust-core migration (headless, no new deps) — `docs/RUST_MIGRATION_PLAN_2026-06-04.md`
+- **Slice #2 (CMEditApplier) COMPLETE** — established the Type-1 stateless template
+  (`0cead3c`/`0419c72`/`568ce40`).
+- **Slice #3 (DiffParser) COMPLETE** (this wave):
+  - `02fa9a2` Stage 1 — `diff::parse` Rust port (File/Hunk/Line + 4-strategy path
+    split + coord clamp), 13 cargo tests. Also cleared the workspace's deny-level
+    `clippy::indexing_slicing` panics — incl. **two pre-existing slices in
+    `cm_edit.rs`** that shipped in `0cead3c` because nothing ran clippy.
+  - `057f220` **CI hygiene** — `scripts/rust-core-gate.sh` (clippy deny-enforce +
+    cargo test) wired into `pr.yml`. The no-panic lints were dead letters before;
+    the 65+ pure cargo tests never gated a merge either.
+  - `0b292a5` Stage 2 — `mdvcore_diff_parse` FFI + `mdvCoreParseDiff` (nested
+    MessagePack decode) + `RustDiffAdapter` behind `RustCoreFallback(.diff)`
+    (default-OFF) + 14-case A/B parity vs `DiffParser`. Headless gate green (3539).
+- **Remaining slice #3 sub-item:** `DiffHunkParser` (the simpler diff→gutter-marks
+  flattener) is NOT yet ported — lower value; queued behind slice #4 (hex).
+- **NEXT Type-1 slices (no deps):** #4 HexDumpBuilder/Layout/CaretMap, #5
+  HexSearchEngine, #6 FuzzyMatcher, #7 IndentDetector — all on the proven template.
+- **OWNER-GATED (deps):** `regex` (FindEngine #9), `comrak`+`tree-sitter`
+  (markdown #11), `serde_json` (Claude log #10) — size-cap-gated, see plan.
+
 ### KEY FINDINGS (this headless wave, 2026-06-04 morning)
 - **Tab-op republish is NOT the bottleneck.** RepublishCountTests measured: warm
   same-mode `selectTab` fires EXACTLY 1 `DocumentModel.objectWillChange`

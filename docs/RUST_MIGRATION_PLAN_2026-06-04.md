@@ -175,10 +175,20 @@ chain event, size-checked against the **16 MB exec / 37 MB bundle caps**
     - **Slice #2 COMPLETE** — and it established the reusable **Type-1 stateless
       template** (bytes-in/frame-out, no handle) for slices #3 (diff), #4–5
       (hex), #6 (fuzzy), #7 (indent).
-  - **NEXT: slice #3 (Diff parsers)** on the same Type-1 template — DiffParser
-    + DiffHunkParser core port (`BTreeMap` for deterministic wire) → `apply_wire`
-    → `mdvcore_diff_*` FFI → adapter behind `.diff` → A/B vs `DiffParserTests`.
-    Only the parsing moves; the git subprocess stays Swift. No new deps.
+  - **Slice #3 (Diff parsers) — DiffParser COMPLETE** (`02fa9a2`/`057f220`/`0b292a5`):
+    - ✅ Stage 1: `diff::parse` Rust port (File/Hunk/Line, 4-strategy path split,
+      coord clamp), 13 cargo tests. Cleared deny-level `clippy::indexing_slicing`
+      panics incl. two pre-existing in `cm_edit.rs`.
+    - ✅ CI: `scripts/rust-core-gate.sh` (clippy deny-enforce + cargo test) wired
+      into `pr.yml` — the no-panic lints + 65+ cargo tests now gate a merge.
+    - ✅ Stage 2: `mdvcore_diff_parse` FFI + `mdvCoreParseDiff` (nested MessagePack
+      decode) + `RustDiffAdapter` behind `RustCoreFallback(.diff)` + 14-case A/B
+      parity vs `DiffParserTests`. Only parsing moves; git subprocess stays Swift.
+    - ⏳ `DiffHunkParser` (diff→gutter-mark flattener) NOT yet ported — lower value,
+      queued behind slice #4.
+  - **NEXT: slice #4 (HexDumpBuilder + HexLayout + HexCaretMap)** on the same
+    Type-1 template. Then #5 (HexSearchEngine), #6 (FuzzyMatcher), #7
+    (IndentDetector). All pure, no new deps.
 - **Owner-gated:** approve (or decline) `regex` / `comrak`+`tree-sitter` /
   `serde_json` per the size budget → unlocks slices 9–11.
 - **Supervised/eyes-on:** the `TabsReducer` extraction, then the DocumentModel→
