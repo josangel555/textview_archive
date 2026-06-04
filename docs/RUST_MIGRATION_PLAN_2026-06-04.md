@@ -186,9 +186,18 @@ chain event, size-checked against the **16 MB exec / 37 MB bundle caps**
       parity vs `DiffParserTests`. Only parsing moves; git subprocess stays Swift.
     - ⏳ `DiffHunkParser` (diff→gutter-mark flattener) NOT yet ported — lower value,
       queued behind slice #4.
-  - **NEXT: slice #4 (HexDumpBuilder + HexLayout + HexCaretMap)** on the same
-    Type-1 template. Then #5 (HexSearchEngine), #6 (FuzzyMatcher), #7
-    (IndentDetector). All pure, no new deps.
+  - **Slice #4 (HEX dump render) COMPLETE** (`75fb1d7`): `hex::render_all` +
+    row math (`HexLayout` `rowCount`/`renderedRowLength`); FFI `mdvcore_hex_render`
+    passes bytes by raw pointer and returns the dump as RAW UTF-8 (a 4 MB file
+    renders to ~18 MB, so no MessagePack wrapping); `RustHexAdapter` behind `.hex`;
+    12-case A/B vs `HexDumpBuilder.buildAll`. The chunked streaming fill stays Swift.
+  - **Slice #5 (HEX search) COMPLETE** (`24f1796`): `hex::hex_search_parse/find/
+    search` + `hex_search_frame`; FFI `mdvcore_hex_search` returns a
+    `{offsets:[u32]}` frame; `RustHexSearchAdapter` behind `.hexSearch`; 13-case
+    A/B vs `HexSearchEngine.search`.
+  - **NEXT: slice #6 (FuzzyMatcher), #7 (IndentDetector), #8 (FileIconClassifier)**
+    on the same Type-1 template. Deferred lower-value sub-items: `DiffHunkParser`,
+    `HexCaretMap`/`HexLayout` caret-mapping, `HexSearchEngine.offsets(ofByte:)`.
 - **Owner-gated:** approve (or decline) `regex` / `comrak`+`tree-sitter` /
   `serde_json` per the size budget → unlocks slices 9–11.
 - **Supervised/eyes-on:** the `TabsReducer` extraction, then the DocumentModel→

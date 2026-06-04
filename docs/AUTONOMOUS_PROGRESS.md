@@ -152,10 +152,18 @@ build it, else hold.
   - `0b292a5` Stage 2 — `mdvcore_diff_parse` FFI + `mdvCoreParseDiff` (nested
     MessagePack decode) + `RustDiffAdapter` behind `RustCoreFallback(.diff)`
     (default-OFF) + 14-case A/B parity vs `DiffParser`. Headless gate green (3539).
-- **Remaining slice #3 sub-item:** `DiffHunkParser` (the simpler diff→gutter-marks
-  flattener) is NOT yet ported — lower value; queued behind slice #4 (hex).
-- **NEXT Type-1 slices (no deps):** #4 HexDumpBuilder/Layout/CaretMap, #5
-  HexSearchEngine, #6 FuzzyMatcher, #7 IndentDetector — all on the proven template.
+- **Slice #4 (HEX dump render) COMPLETE** (`75fb1d7`): `hex::render_all` +
+  row math; FFI `mdvcore_hex_render` (bytes by pointer, dump out as RAW UTF-8 —
+  no MessagePack, a 4 MB file → ~18 MB string); `RustHexAdapter` behind `.hex`;
+  12-case A/B vs `HexDumpBuilder.buildAll` (all-256-bytes/widths/trunc/empty).
+- **Slice #5 (HEX search) COMPLETE** (`24f1796`): `hex::hex_search_parse/find/
+  search` + `hex_search_frame`; FFI `mdvcore_hex_search` ({offsets:[u32]} frame);
+  `RustHexSearchAdapter` behind `.hexSearch`; 13-case A/B vs `HexSearchEngine.search`.
+- **Remaining slice #3/#4 sub-items (lower value, deferred):** `DiffHunkParser`
+  (diff→gutter-marks flattener), `HexCaretMap` + `HexLayout` caret/click mapping,
+  `HexSearchEngine.offsets(ofByte:)` (single-byte click-highlight).
+- **NEXT Type-1 slices (no deps):** #6 FuzzyMatcher, #7 IndentDetector,
+  #8 FileIconClassifier — all on the proven template.
 - **OWNER-GATED (deps):** `regex` (FindEngine #9), `comrak`+`tree-sitter`
   (markdown #11), `serde_json` (Claude log #10) — size-cap-gated, see plan.
 
