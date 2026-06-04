@@ -26,6 +26,7 @@ pub mod csv;
 pub mod diff;
 pub mod filter;
 pub mod hex;
+pub mod indent;
 pub mod session;
 pub mod trace;
 pub mod wire;

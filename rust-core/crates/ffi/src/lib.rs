@@ -54,6 +54,7 @@ use mdvcore_core::cm_edit;
 use mdvcore_core::diff;
 use mdvcore_core::filter::{Query, Scope};
 use mdvcore_core::hex;
+use mdvcore_core::indent;
 use mdvcore_core::session::CsvSession;
 use mdvcore_core::wire;
 
@@ -296,6 +297,52 @@ pub unsafe extern "C" fn mdvcore_hex_search(
             }
             Err(_) => MdvStatus::WireError,
         }
+    })
+}
+
+/// Detect indentation style (stateless). `text`/`text_len` is the UTF-8 source;
+/// `sample_lines` bounds how many indented lines are sampled. The result string
+/// (`"Tabs"`, `"Spaces (N)"`, `"Mixed"`, `"—"`, …) is written to `out_buf` as
+/// **raw UTF-8** (it's tiny — no framing). Caller MUST call [`mdvcore_buf_free`].
+///
+/// # Returns
+/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::BadUtf8`] (text not
+/// UTF-8), or [`MdvStatus::Panic`].
+///
+/// # Safety
+/// `text` must point to `text_len` valid bytes (or be null with `text_len == 0`).
+/// `out_buf` must be a valid, writable pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_indent_detect(
+    text: *const u8,
+    text_len: usize,
+    sample_lines: u32,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_guard!({
+        if out_buf.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_buf validated; empty default so error paths stay safe-to-free.
+        unsafe { *out_buf = MdvBuf::empty() };
+
+        if text.is_null() && text_len != 0 {
+            return MdvStatus::NullArg;
+        }
+        let slice: &[u8] = if text_len == 0 {
+            &[]
+        } else {
+            // SAFETY: caller guarantees text/text_len describe valid bytes.
+            unsafe { core::slice::from_raw_parts(text, text_len) }
+        };
+        let Ok(text_str) = core::str::from_utf8(slice) else {
+            return MdvStatus::BadUtf8;
+        };
+        let sample = usize::try_from(sample_lines).unwrap_or(usize::MAX);
+        let result = indent::detect(text_str, sample);
+        // SAFETY: out_buf validated non-null above.
+        unsafe { *out_buf = MdvBuf::from_vec(result.into_bytes()) };
+        MdvStatus::Ok
     })
 }
 

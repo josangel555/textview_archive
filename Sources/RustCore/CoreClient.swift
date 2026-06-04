@@ -485,3 +485,26 @@ public func mdvCoreHexSearch(data: Data, query: String, mode: HexSearchKind) thr
         throw CoreError.decode("\(e)")
     }
 }
+
+// MARK: - Indent detection (migration slice #7)
+
+/// Detect indentation style through the Rust core (migration slice #7 —
+/// STATELESS: text in by raw pointer, the tiny result string out as raw UTF-8).
+/// Throws `CoreError` only on a bridge FAULT so the adapter can fall back to the
+/// Swift `IndentDetector`.
+public func mdvCoreIndentDetect(text: String, sampleLines: Int = 50) throws -> String {
+    let bytes = [UInt8](text.utf8)
+    var buf = MdvBuf(data: nil, len: 0, cap: 0)
+    let status = bytes.withUnsafeBufferPointer { p in
+        mdvcore_indent_detect(
+            p.baseAddress,
+            UInt(p.count),
+            UInt32(truncatingIfNeeded: sampleLines),
+            &buf)
+    }
+    defer { mdvcore_buf_free(&buf) }
+    guard status == MDV_STATUS_OK else { throw CoreError(status: status) }
+    guard let data = buf.data, buf.len > 0 else { return "—" }  // unreachable: detect is never empty
+    return String(decoding: UnsafeBufferPointer(start: data, count: Int(buf.len)),
+                  as: UTF8.self)
+}
