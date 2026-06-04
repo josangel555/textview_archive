@@ -71,7 +71,18 @@ Hypothesis: same root as the 108 MB baseline — DocumentModel god-object republ
   aggregations). 14 tests incl. script→reader round-trip. **OWNER OPT-IN:** to
   activate, register the hooks block (documented in the script header) in
   ~/.claude/settings.json + restart claude. I did NOT modify that shared file.
-- [ ] NEXT for these: build the SwiftUI surfaces on top of the engines (image editor view; agent-monitor sidebar/panel) — separate wave, needs view-layer + live validation.
+- [x] **Agent-monitor PoC UI BUILT** (prior session, was undocumented here) —
+  `Sources/ViewerUI/ClaudeMonitor/ClaudeMonitorView.swift`: master-detail browser
+  (session list + redacted transcript), off-main load w/ stale-completion guard,
+  metadata filter, launched via `--claude-monitor` (`openClaudeMonitorWindow` in
+  main.swift, its own window — zero main-UI regression risk). **Now tested**
+  (`39f46c1`, headless `ClaudeMonitorModelTests`: read→redact→parse pipeline + cap
+  + filter/sort). GAP: the search field filters the session LIST by metadata only;
+  transcript CONTENT search (the built+tested `ClaudeTranscriptSearch` engine) is
+  NOT yet wired into the monitor — a real additive enhancement for a live turn.
+- [ ] NEXT for these: image-editor view on `ImageDocument`; wire transcript
+  content-search into the monitor. Both view-layer → live validation (screenshot
+  self-read), additive (no central-ContentView risk).
 
 ### Wave 4+ — bigger rocks (from BACKLOG 2026-06-04 dump)
 HEX 1 MB slow (#218), tab overflow/shrink (#183/#209), `+`-beside-last-tab (B2), up/down nav (#220), natural keybindings (#232), multi-window, sessions-optional, god-object split (#202), FPS meter (#208), drag tabs→sessions, footer drop-ups, repo-stats treemap, undo audit.
