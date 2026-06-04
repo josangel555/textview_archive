@@ -25,12 +25,11 @@ use ratatui::widgets::{Block, Cell, List, ListItem, ListState, Paragraph, Row, T
 use ratatui::{Frame, Terminal};
 use ratatui::backend::TestBackend;
 
+use mdvcore_core::view::{self, View, ViewBody, ViewMode};
+
 /// Max bytes read into a preview (keeps the TUI snappy; larger files truncate).
+/// The per-mode shaping (text/hex/table caps) lives in `mdvcore_core::view`.
 const PREVIEW_CAP: usize = 1024 * 1024;
-/// Cap on text lines kept for display (pathological one-line files).
-const MAX_TEXT_LINES: usize = 200_000;
-/// Bytes per HEX row (matches the core / Swift default).
-const HEX_WIDTH: usize = 16;
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -72,64 +71,30 @@ fn buffer_to_string(terminal: &Terminal<TestBackend>) -> String {
     s
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Mode {
-    Text,
-    Hex,
-    /// CSV/TSV parsed into a table by `mdvcore_core::csv::parse`.
-    Table,
-}
-
 struct Entry {
     name: String,
     is_dir: bool,
     is_parent: bool,
 }
 
-/// A parsed CSV/TSV table (from the core), for the Table view mode.
-struct CsvTable {
-    header: Vec<String>,
-    rows: Vec<Vec<String>>,
-}
-
+/// A loaded file: the raw bytes + metadata, plus the current shaped `View` from
+/// the shared `mdvcore_core::view` (the same shaping the web front-end uses).
 struct Preview {
     name: String,
     total: usize,
     truncated: bool,
     raw: Vec<u8>,
-    mode: Mode,
-    is_csv: bool,
-    text_lines: Vec<String>,
-    hex_lines: Vec<String>,
-    table: Option<CsvTable>,
-    indent: String,
+    is_tabular: bool,
+    view: View,
     scroll: usize,
 }
 
 impl Preview {
-    fn lines(&self) -> &[String] {
-        match self.mode {
-            Mode::Text => &self.text_lines,
-            Mode::Hex => &self.hex_lines,
-            Mode::Table => &[],
-        }
-    }
-
     /// Scrollable item count for the current mode (lines, or table rows).
     fn content_len(&self) -> usize {
-        match self.mode {
-            Mode::Text => self.text_lines.len(),
-            Mode::Hex => self.hex_lines.len(),
-            Mode::Table => self.table.as_ref().map_or(0, |t| t.rows.len()),
-        }
-    }
-
-    /// Modes the user can cycle through for this file (Table only for CSV/TSV).
-    fn modes(&self) -> &'static [Mode] {
-        if self.is_csv {
-            &[Mode::Table, Mode::Text, Mode::Hex]
-        } else {
-            &[Mode::Text, Mode::Hex]
+        match &self.view.body {
+            ViewBody::Text(l) | ViewBody::Hex(l) => l.len(),
+            ViewBody::Table { rows, .. } => rows.len(),
         }
     }
 }
@@ -232,75 +197,28 @@ impl App {
     fn open_file(&mut self, path: &Path) {
         match read_capped(path, PREVIEW_CAP) {
             Ok((raw, truncated, total)) => {
-                let text = String::from_utf8_lossy(&raw);
-                let text_lines: Vec<String> = text
-                    .split('\n')
-                    .take(MAX_TEXT_LINES)
-                    .map(|l| l.replace('\t', "    ").replace('\r', ""))
-                    .collect();
-                // Core usage #1: detect indentation style for the status badge.
-                let indent = mdvcore_core::indent::detect(&text, 50);
                 let name = path
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_else(|| path.display().to_string());
-                let is_csv = matches!(
-                    path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).as_deref(),
-                    Some("csv" | "tsv")
-                );
-                self.preview = Some(Preview {
-                    name,
-                    total,
-                    truncated,
-                    raw,
-                    mode: if is_csv { Mode::Table } else { Mode::Text },
-                    is_csv,
-                    text_lines,
-                    hex_lines: Vec::new(),
-                    table: None,
-                    indent,
-                    scroll: 0,
-                });
-                if let Some(p) = &mut self.preview {
-                    Self::ensure_mode_built(p); // build the default mode (table for CSV)
-                }
+                // The shared core view-model does ALL the shaping (file-type
+                // detect, mode set, text/hex/table build, indent badge) — the
+                // same path the web front-end uses.
+                let is_tabular = view::looks_tabular(&name);
+                let v = view::build(&raw, &name, total, truncated, view::default_mode(is_tabular));
+                self.preview = Some(Preview { name, total, truncated, raw, is_tabular, view: v, scroll: 0 });
                 self.status = format!("opened {}", path.display());
             }
             Err(e) => self.status = format!("open failed: {e}"),
         }
     }
 
-    /// Cycle to the next available view mode for the current file, building the
-    /// HEX dump / CSV table lazily (both via `mdvcore_core`).
+    /// Cycle to the next available view mode, re-shaping via the shared core.
     fn cycle_mode(&mut self) {
         if let Some(p) = &mut self.preview {
-            let modes = p.modes();
-            let idx = modes.iter().position(|&m| m == p.mode).unwrap_or(0);
-            p.mode = modes[(idx + 1) % modes.len()];
-            Self::ensure_mode_built(p);
+            let next = view::cycle(p.view.mode, p.is_tabular);
+            p.view = view::build(&p.raw, &p.name, p.total, p.truncated, next);
             p.scroll = 0;
-        }
-    }
-
-    /// Materialize the current mode's content if it hasn't been yet.
-    fn ensure_mode_built(p: &mut Preview) {
-        match p.mode {
-            // Core usage #2: HEX dump rendered in the Rust core (lazy + cached).
-            Mode::Hex if p.hex_lines.is_empty() => {
-                let dump = mdvcore_core::hex::render_all(&p.raw, HEX_WIDTH, p.total, p.truncated);
-                let mut lines: Vec<String> = dump.split('\n').map(str::to_string).collect();
-                if lines.last().is_some_and(String::is_empty) {
-                    lines.pop(); // render_all ends with a trailing '\n'
-                }
-                p.hex_lines = lines;
-            }
-            // Core usage #3: CSV/TSV parsed in the Rust core (delimiter auto-detected).
-            Mode::Table if p.table.is_none() => {
-                let text = String::from_utf8_lossy(&p.raw);
-                let t = mdvcore_core::csv::parse(&text);
-                p.table = Some(CsvTable { header: t.header, rows: t.rows });
-            }
-            _ => {}
         }
     }
 
@@ -403,60 +321,58 @@ impl App {
         };
 
         let trunc = if p.truncated { " · TRUNCATED" } else { "" };
-        // Table mode renders a real ratatui Table from the core-parsed CSV.
-        if p.mode == Mode::Table {
-            if let Some(t) = &p.table {
+        match &p.view.body {
+            // Table mode renders a real ratatui Table from the core-parsed CSV.
+            ViewBody::Table { header, rows } => {
                 let title = format!(
                     " {} · table · {}×{} · {}{trunc} ",
                     p.name,
-                    t.rows.len(),
-                    t.header.len(),
+                    rows.len(),
+                    header.len(),
                     human_size(p.total),
                 );
-                let widths = column_widths(&t.header, &t.rows);
-                let header = Row::new(t.header.iter().map(|h| Cell::from(h.clone())))
+                let widths = column_widths(header, rows);
+                let header_row = Row::new(header.iter().map(|h| Cell::from(h.clone())))
                     .style(Style::new().fg(Color::Cyan).bold());
-                let start = p.scroll.min(t.rows.len().saturating_sub(1));
-                let body: Vec<Row> = t
-                    .rows
+                let start = p.scroll.min(rows.len().saturating_sub(1));
+                let body: Vec<Row> = rows
                     .iter()
                     .skip(start)
                     .take(inner_h.saturating_sub(1).max(1))
                     .map(|r| Row::new(r.iter().map(|c| Cell::from(c.clone())).collect::<Vec<_>>()))
                     .collect();
                 let table = Table::new(body, widths)
-                    .header(header)
+                    .header(header_row)
                     .column_spacing(1)
                     .block(Block::bordered().title(title));
                 frame.render_widget(table, area);
-                return;
+            }
+            // Text / HEX: a scrolled paragraph of the visible lines.
+            ViewBody::Text(lines) | ViewBody::Hex(lines) => {
+                let mode = match p.view.mode {
+                    ViewMode::Text => "text",
+                    ViewMode::Hex => "hex",
+                    ViewMode::Table => "table",
+                };
+                let title = format!(
+                    " {} · {mode} · indent: {} · {}{trunc} ",
+                    p.name,
+                    p.view.indent,
+                    human_size(p.total),
+                );
+                let start = p.scroll.min(lines.len().saturating_sub(1));
+                let visible: Vec<Line> = lines
+                    .iter()
+                    .skip(start)
+                    .take(inner_h)
+                    .map(|s| Line::raw(s.clone()))
+                    .collect();
+                let para = Paragraph::new(visible)
+                    .block(Block::bordered().title(title))
+                    .wrap(Wrap { trim: false });
+                frame.render_widget(para, area);
             }
         }
-
-        // Text / HEX: a scrolled paragraph of the visible lines.
-        let mode = match p.mode {
-            Mode::Text => "text",
-            Mode::Hex => "hex",
-            Mode::Table => "table",
-        };
-        let title = format!(
-            " {} · {mode} · indent: {} · {}{trunc} ",
-            p.name,
-            p.indent,
-            human_size(p.total),
-        );
-        let lines = p.lines();
-        let start = p.scroll.min(lines.len().saturating_sub(1));
-        let visible: Vec<Line> = lines
-            .iter()
-            .skip(start)
-            .take(inner_h)
-            .map(|s| Line::raw(s.clone()))
-            .collect();
-        let para = Paragraph::new(visible)
-            .block(Block::bordered().title(title))
-            .wrap(Wrap { trim: false });
-        frame.render_widget(para, area);
     }
 
     fn draw_status(&self, frame: &mut Frame, area: Rect) {
