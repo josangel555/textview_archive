@@ -28,7 +28,20 @@
 - [x] This progress doc.
 - [ ] Reinstall the fixed build to /Applications (terminal `6153c9b` + crash `49647fb` + L1 `1625563`) so the owner tests current code. Needs one live smoke (authorized).
 
-### Wave 1 — perf cluster (tab close/switch/open slow)  [NOT STARTED]
+### Wave 1 — perf cluster  [DIAGNOSED; fixes need LIVE validation]
+**Finding (2026-06-04):** model-side ops are fast (~4ms, TabOpPerfTests); the freeze is
+view-side. AND all three fixes touch view-observation TIMING, so none is headless-safe:
+- Fix#3 (skip immediate updateDerived for lazy tabs): the immediate `updateDerived()`
+  is what republishes DocumentModel so the view switches to the loading tab promptly
+  (ContentView observes DocumentModel, NOT tabCoordinator selection — LOADBUG note
+  DocumentModel.swift:3688). Skipping it risks a delayed/wrong-content switch.
+- Fix#1 (per-tab view retention) + Fix#2 (narrow observation): load-bearing view refactors.
+→ **DECISION/PLAN:** do the perf cluster as ONE focused LIVE-validated effort (build →
+`--diagnose` frame dump + screenshot self-read + InteractionProfileHarness timing), not
+piecemeal-headless. The mount-count/republish-count guards still apply. Parked from the
+piecemeal quick-win flow; pick up when doing a dedicated perf turn with the screen.
+
+### Wave 1 (orig) — perf cluster (tab close/switch/open slow)  [superseded by the block above]
 Hypothesis: same root as the 108 MB baseline — DocumentModel god-object republishes the whole content tree + touches every always-on subsystem per tab op (#210/#215 lineage). Plan: live-profile a tab switch/close with wall-clock signposts → find the synchronous hot path → fix → validate with a headless timing test + live footprint/timing.
 - [ ] Instrument tab switch + close + open with timing.
 - [ ] Identify + fix the synchronous hot path(s).
