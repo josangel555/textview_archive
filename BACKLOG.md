@@ -70,6 +70,13 @@ is rough priority — most-asked-for first.
 
 - ~~**UI scaling audit.**~~ MOSTLY DONE. Remaining: ModeBar mode-picker
   text doesn't scale with `uiScale`.
+- **Dual-zoom split (#228).** The footer (UX-C, #225) now shows a single
+  "Zoom" readout because window-UI zoom and document zoom share one
+  `model.zoom` value (the old `uiScale` knob was collapsed onto it). The
+  full UI-vs-document zoom split belongs to the #228 zoom pass; when it
+  lands, replace the single `StatusBar.zoomReadout` with two labeled
+  readouts (Window-UI zoom + Document zoom) reading the two model values.
+  See the TODO(#228) in `Sources/ViewerUI/StatusBar.swift`.
 - ~~**Left sidebar resize feels janky.**~~ DONE (commit `f12ee43` —
   `@State liveWidth` during drag).
 

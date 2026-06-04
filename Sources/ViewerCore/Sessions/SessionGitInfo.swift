@@ -64,6 +64,37 @@ public enum SessionGitInfo {
         return Badge(isRepoRoot: true, branch: branch)
     }
 
+    // MARK: - footer chip formatting (UX-C, #225)
+
+    /// Format the footer git chip label as `repo · branch` (or just `repo`
+    /// when HEAD is detached / unreadable). Returns `nil` when `folder`
+    /// isn't a repo root — the caller hides the chip entirely.
+    ///
+    /// `folder` is the current file's discovered repo root; its last path
+    /// component is the repo-folder name. Pure over the resolved badge so
+    /// it's T1m-testable without touching the filesystem twice — pass an
+    /// explicit `badge` to test the formatting in isolation.
+    public static func footerLabel(
+        for folder: URL,
+        badge resolved: Badge? = nil
+    ) -> String? {
+        let badge = resolved ?? badge(for: folder)
+        guard badge.isRepoRoot else { return nil }
+        return footerLabel(repoName: folder.lastPathComponent, branch: badge.branch)
+    }
+
+    /// Pure label composer: `repo · branch`, or just `repo` when `branch`
+    /// is nil/empty (detached HEAD). Split out so the exact `·` separator
+    /// and detached-HEAD fallback are pinned by unit tests independent of
+    /// any `.git` fixture.
+    public static func footerLabel(repoName: String, branch: String?) -> String {
+        let name = repoName.isEmpty ? "(repo)" : repoName
+        if let branch, !branch.isEmpty {
+            return "\(name) · \(branch)"
+        }
+        return name
+    }
+
     // MARK: - private
 
     /// Resolve the real `.git` directory. For a normal checkout `.git` IS the

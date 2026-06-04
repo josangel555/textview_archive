@@ -476,6 +476,78 @@ public final class GitClient: Sendable {
         return entries
     }
 
+    // MARK: - branch switch (UX-C, #225)
+
+    /// Local branch names (`git for-each-ref --format=%(refname:short)
+    /// refs/heads/`). Newest-committed first so the footer menu surfaces
+    /// the most-recently-touched branches at the top. Returns `[]` on any
+    /// failure (matching the rest of the read API's non-throwing contract).
+    public func localBranches() -> [String] {
+        let args = [
+            "for-each-ref",
+            "--sort=-committerdate",
+            "--format=%(refname:short)",
+            "refs/heads/",
+        ]
+        guard let out = try? run(args) else { return [] }
+        return out
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
+    /// `git checkout <branch>`. The CALLER must have already cleared the
+    /// `GitBranchSwitch.decide(...)` dirty-gate — this method does NOT
+    /// re-check the working tree (it deliberately omits `--force`, so git
+    /// is still the last line of defense: a checkout that *would* clobber
+    /// a tracked file exits non-zero and we surface that as a failure
+    /// rather than discarding). Returns `(ok, message)`: on failure
+    /// `message` is git's stderr (trimmed) so the UI can show it.
+    ///
+    /// `branch` is validated not to begin with `-` (option-injection
+    /// guard); `--` terminates option parsing before it as belt-and-braces.
+    @discardableResult
+    public func checkout(branch: String) -> (ok: Bool, message: String) {
+        let name = branch.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, !name.hasPrefix("-") else {
+            return (false, "Invalid branch name.")
+        }
+        do {
+            _ = try run(["checkout", name, "--"])
+            return (true, "")
+        } catch let e as Error {
+            if case let .processFailed(_, msg) = e {
+                return (false, msg.isEmpty ? "git checkout failed." : msg)
+            }
+            return (false, e.description)
+        } catch {
+            return (false, "git checkout failed.")
+        }
+    }
+
+    /// `git stash push` (including untracked via `-u`) so a dirty tree can
+    /// be parked before a branch switch — the non-destructive escape hatch
+    /// the footer offers when `GitBranchSwitch.decide` refuses. Returns
+    /// `(ok, message)`; on "nothing to stash" git exits 0 with a notice,
+    /// which we still treat as `ok`. `message` argument is the stash label.
+    @discardableResult
+    public func stashPushAll(message: String) -> (ok: Bool, message: String) {
+        let label = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        var args = ["stash", "push", "-u"]
+        if !label.isEmpty { args.append(contentsOf: ["-m", label]) }
+        do {
+            _ = try run(args)
+            return (true, "")
+        } catch let e as Error {
+            if case let .processFailed(_, msg) = e {
+                return (false, msg.isEmpty ? "git stash failed." : msg)
+            }
+            return (false, e.description)
+        } catch {
+            return (false, "git stash failed.")
+        }
+    }
+
     // MARK: - remote
 
     public struct RemoteEntry: Equatable, Sendable {

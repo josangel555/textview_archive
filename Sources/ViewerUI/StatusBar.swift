@@ -43,6 +43,13 @@ struct StatusBar: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            // UX-C (#225): git chip on the LEFT — `repo · branch` for the
+            // focused file's repo. Label is built from `SessionGitInfo`
+            // (reads `.git/HEAD` directly — NO subprocess on the body hot
+            // path). Branch/worktree enumeration + checkout DO spawn git,
+            // but only on click (cold path, inside the Menu content).
+            gitChip
+
             Text(model.currentFilePath ?? "—")
                 .font(.system(size: model.uiSize(11)))
                 .foregroundStyle(.secondary)
@@ -100,6 +107,88 @@ struct StatusBar: View {
         .accessibilityIdentifier("mdv.statusBar")
     }
 
+    // MARK: - Git chip (UX-C, #225)
+
+    /// `[repo · branch]` chip for the focused file's repo, rendered as a
+    /// `Menu` whose click surface offers branch switch (guarded) +
+    /// worktree-open-in-new-window. Hidden entirely when the focused file
+    /// isn't inside a git repo. The LABEL costs only `.git/HEAD` filesystem
+    /// reads (`SessionGitInfo`) — no `git` subprocess on the body path; the
+    /// expensive enumeration is deferred into the lazily-evaluated menu.
+    @ViewBuilder
+    private var gitChip: some View {
+        if let root = model.gitChipRepoRoot,
+           let label = SessionGitInfo.footerLabel(for: root) {
+            Menu {
+                gitChipMenu(root: root)
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(.system(size: model.uiSize(9)))
+                    Text(label)
+                        .font(.system(size: model.uiSize(10), design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .foregroundStyle(.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            // The chip is informative but droppable under extreme width
+            // pressure — still higher priority than the bare path.
+            .layoutPriority(0)
+            .help("Git: \(label) — click to switch branch or open a worktree")
+            .accessibilityIdentifier("mdv.statusBar.git")
+            .accessibilityLabel("Git \(label)")
+        }
+    }
+
+    /// Lazily-built menu content. Evaluated only when the user opens the
+    /// menu, so the `git` calls (`localBranches`, `worktreeList`) stay off
+    /// the render hot path. Branch rows run the guarded switch; worktree
+    /// rows open in a new window (non-destructive).
+    @ViewBuilder
+    private func gitChipMenu(root: URL) -> some View {
+        let client = GitClient(repoRoot: root, statusTimeout: 5)
+        let current = SessionGitInfo.badge(for: root).branch
+        let branches = client.localBranches()
+        let worktrees = client.worktreeList()
+
+        Section("Branches") {
+            if branches.isEmpty {
+                Text("No local branches").disabled(true)
+            }
+            ForEach(branches, id: \.self) { branch in
+                Button {
+                    model.switchBranch(to: branch)
+                } label: {
+                    if branch == current {
+                        Label(branch, systemImage: "checkmark")
+                    } else {
+                        Text(branch)
+                    }
+                }
+                // Switching to the current branch is a no-op; disable it.
+                .disabled(branch == current)
+            }
+        }
+
+        // Worktrees other than the current checkout — open in a NEW window.
+        let others = worktrees.filter { $0.state != .current && $0.state != .prunable }
+        if !others.isEmpty {
+            Section("Worktrees (open in new window)") {
+                ForEach(others, id: \.path) { wt in
+                    Button {
+                        model.openWorktreeInNewWindow(wt.path)
+                    } label: {
+                        Text(wt.branch.map { "⎇ \($0)" } ?? wt.path.lastPathComponent)
+                    }
+                }
+            }
+        }
+    }
+
     /// Live document metrics (line/cursor, lines, chars, size, indent,
     /// EOL, encoding). These are the HIGH-priority chips — never dropped,
     /// each `.fixedSize()` so it renders whole. The trailing date chips
@@ -122,6 +211,14 @@ struct StatusBar: View {
                     metric("Ln",
                         "\(sourceView.sourceSelection.line)" +
                         ", Col \(sourceView.sourceSelection.column)")
+                    // UX-C (#225) edit stats: when there's a non-empty
+                    // selection, surface its length (UTF-16 units, matching
+                    // `SourceSelection.length`). Caret-only (length 0) hides
+                    // the chip so it doesn't read as "Sel 0".
+                    if sourceView.sourceSelection.length > 0 {
+                        metric("Sel",
+                            "\(formatNumber(sourceView.sourceSelection.length)) ch")
+                    }
                 }
                 // Lines/Chars only apply to a text-backed document. For
                 // media/binary previews (image/audio/video/PDF/sqlite)
@@ -138,6 +235,7 @@ struct StatusBar: View {
                 }
                 metric("EOL",   metrics.lineEndings)
                 metric("Enc",   metrics.encodingShort)
+                zoomReadout
             }
             // A11Y-16: collapse the per-metric label/value pairs into
             // a single VoiceOver element so the rotor surfaces one
@@ -197,6 +295,47 @@ struct StatusBar: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(stale ? "Modified \(value), changed on disk" : "Modified: \(value)")
         .accessibilityIdentifier("mdv.statusBar.modified")
+    }
+
+    /// UX-C (#225) dual-zoom readout.
+    ///
+    /// DESIGN NOTE — labeled-merged, NOT a true split. The app currently
+    /// drives BOTH the window chrome (`model.uiSize`) and the rendered /
+    /// source document content (`fontSize` / `WKWebView.pageZoom`) from a
+    /// single `model.zoom` value — the historical separate `uiScale` knob
+    /// was collapsed onto it (see `DocumentModel.uiSize`). So there is no
+    /// independent document-zoom value to read today. Rather than fabricate
+    /// a second readout that would just mirror the first (misleading), we
+    /// surface the ONE value under an explicit "Zoom (UI+Doc)" label whose
+    /// tooltip says they're unified. A genuine UI-vs-document zoom split is
+    /// out of scope here and belongs to the #228 zoom pass — see TODO.
+    ///
+    /// TODO(#228): when the zoom pass splits chrome zoom from document
+    /// zoom, replace this single readout with two (Window-UI zoom +
+    /// Document zoom) reading the two separate model values.
+    @ViewBuilder
+    private var zoomReadout: some View {
+        // Only show when zoom isn't the 1.0 default — at 100% the readout
+        // is noise. `uiSize`/document share the value so a single check is
+        // exact.
+        if abs(model.zoom - 1.0) > 0.001 {
+            HStack(spacing: 3) {
+                Text("Zoom")
+                    .font(.system(size: model.uiSize(10), weight: .medium))
+                    .foregroundStyle(.secondary)
+                Text("\(Int((model.zoom * 100).rounded()))%")
+                    .font(.system(size: model.uiSize(10), design: .monospaced))
+                    .foregroundStyle(.primary)
+            }
+            .fixedSize()
+            .help("Zoom: \(Int((model.zoom * 100).rounded()))% — window UI and "
+                + "document content share one zoom level today; a separate "
+                + "document zoom is planned (#228).")
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Zoom \(Int((model.zoom * 100).rounded())) percent, "
+                + "window and document")
+            .accessibilityIdentifier("mdv.statusBar.zoom")
+        }
     }
 
     @ViewBuilder

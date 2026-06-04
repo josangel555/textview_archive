@@ -120,4 +120,65 @@ final class SessionGitInfoTests: XCTestCase {
         XCTAssertEqual(SessionGitInfo.badge(forRootPath: repo.path),
                        SessionGitInfo.badge(for: repo))
     }
+
+    // MARK: - footer chip label formatting (UX-C, #225)
+
+    /// Pure composer — `repo · branch` with the literal middle-dot.
+    func test_footerLabel_pure_branchPresent() {
+        XCTAssertEqual(
+            SessionGitInfo.footerLabel(repoName: "markdown_viewer", branch: "main"),
+            "markdown_viewer · main")
+    }
+
+    /// Detached HEAD / nil branch → repo name alone (no trailing separator).
+    func test_footerLabel_pure_nilBranch_repoNameOnly() {
+        XCTAssertEqual(
+            SessionGitInfo.footerLabel(repoName: "repo", branch: nil), "repo")
+    }
+
+    func test_footerLabel_pure_emptyBranch_repoNameOnly() {
+        XCTAssertEqual(
+            SessionGitInfo.footerLabel(repoName: "repo", branch: ""), "repo")
+    }
+
+    func test_footerLabel_pure_nestedBranchKept() {
+        XCTAssertEqual(
+            SessionGitInfo.footerLabel(repoName: "r", branch: "feature/login-v2"),
+            "r · feature/login-v2")
+    }
+
+    func test_footerLabel_pure_emptyRepoName_fallsBack() {
+        XCTAssertEqual(
+            SessionGitInfo.footerLabel(repoName: "", branch: "main"),
+            "(repo) · main")
+    }
+
+    /// FS entry point: a real `.git` fixture composes `folderName · branch`.
+    func test_footerLabel_forFolder_repoWithBranch() throws {
+        let repo = try makeRepo(headContents: "ref: refs/heads/main\n", named: "myproj")
+        XCTAssertEqual(SessionGitInfo.footerLabel(for: repo), "myproj · main")
+    }
+
+    /// FS entry point: a non-repo folder returns nil (chip hidden).
+    func test_footerLabel_forFolder_nonRepo_isNil() throws {
+        let plain = scratch.appendingPathComponent("plain", isDirectory: true)
+        try FileManager.default.createDirectory(at: plain, withIntermediateDirectories: true)
+        XCTAssertNil(SessionGitInfo.footerLabel(for: plain))
+    }
+
+    /// FS entry point: detached HEAD → folder name alone.
+    func test_footerLabel_forFolder_detachedHead_nameOnly() throws {
+        let repo = try makeRepo(
+            headContents: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678\n", named: "det")
+        XCTAssertEqual(SessionGitInfo.footerLabel(for: repo), "det")
+    }
+
+    /// The explicit-badge overload lets tests pin formatting without a
+    /// second `.git` read — must match the FS-resolving path.
+    func test_footerLabel_explicitBadge_matchesComposer() {
+        let badge = SessionGitInfo.Badge(isRepoRoot: true, branch: "dev")
+        let url = URL(fileURLWithPath: "/tmp/somerepo", isDirectory: true)
+        XCTAssertEqual(SessionGitInfo.footerLabel(for: url, badge: badge),
+                       "somerepo · dev")
+    }
 }
