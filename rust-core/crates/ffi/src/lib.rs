@@ -53,6 +53,7 @@ pub mod status;
 use mdvcore_core::cm_edit;
 use mdvcore_core::diff;
 use mdvcore_core::filter::{Query, Scope};
+use mdvcore_core::hex;
 use mdvcore_core::session::CsvSession;
 use mdvcore_core::wire;
 
@@ -181,6 +182,56 @@ pub unsafe extern "C" fn mdvcore_diff_parse(
             }
             Err(_) => MdvStatus::WireError,
         }
+    })
+}
+
+/// Render a HEX dump (stateless). `bytes`/`len` is the raw byte buffer to dump;
+/// the rendered dump is written to `out_buf` as **raw UTF-8** (NOT a MessagePack
+/// frame — a 4 MB file renders to ~18 MB of text, so wrapping it in a frame just
+/// to immediately re-decode it on the Swift side would double the cost for no
+/// benefit; the result is one opaque string). Caller MUST call
+/// [`mdvcore_buf_free`] on `out_buf`.
+///
+/// `width` is bytes-per-row; `total_byte_count` / `is_truncated` drive the
+/// "Showing first N of M bytes" header.
+///
+/// # Returns
+/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], or [`MdvStatus::Panic`].
+///
+/// # Safety
+/// `bytes` must point to `len` valid bytes (or be null with `len == 0`).
+/// `out_buf` must be a valid, writable pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_hex_render(
+    bytes: *const u8,
+    len: usize,
+    width: u32,
+    total_byte_count: u64,
+    is_truncated: bool,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_guard!({
+        if out_buf.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_buf validated; empty default so error paths stay safe-to-free.
+        unsafe { *out_buf = MdvBuf::empty() };
+
+        if bytes.is_null() && len != 0 {
+            return MdvStatus::NullArg;
+        }
+        let slice: &[u8] = if len == 0 {
+            &[]
+        } else {
+            // SAFETY: caller guarantees bytes/len describe valid bytes (len != 0).
+            unsafe { core::slice::from_raw_parts(bytes, len) }
+        };
+        let width = usize::try_from(width).unwrap_or(usize::MAX);
+        let total = usize::try_from(total_byte_count).unwrap_or(usize::MAX);
+        let dump = hex::render_all(slice, width, total, is_truncated);
+        // SAFETY: out_buf validated non-null above.
+        unsafe { *out_buf = MdvBuf::from_vec(dump.into_bytes()) };
+        MdvStatus::Ok
     })
 }
 

@@ -407,3 +407,38 @@ private func decodeOptInt(_ v: MsgPackValue) throws -> Int? {
     if case .nilValue = v { return nil }
     return Int(try v.u64Value())
 }
+
+// MARK: - HEX dump rendering (migration slice #4)
+
+/// Render a HEX dump through the Rust core (migration slice #4 — STATELESS:
+/// raw bytes in via a pointer, the rendered dump out as **raw UTF-8** rather
+/// than a MessagePack frame, because a 4 MB file renders to ~18 MB of text and
+/// double-encoding/decoding it would be pure waste). Throws `CoreError` only on
+/// a bridge FAULT (null/panic) so the adapter can fall back to the Swift
+/// `HexDumpBuilder`. An empty dump is `""`, not a throw.
+public func mdvCoreHexRender(
+    bytes: Data,
+    width: Int,
+    totalByteCount: Int,
+    isTruncated: Bool
+) throws -> String {
+    var buf = MdvBuf(data: nil, len: 0, cap: 0)
+    let status = bytes.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> MdvStatus in
+        // baseAddress is nil for an empty buffer; the FFI tolerates (null, 0).
+        let base = raw.bindMemory(to: UInt8.self).baseAddress
+        return mdvcore_hex_render(
+            base,
+            UInt(bytes.count),
+            UInt32(truncatingIfNeeded: width),
+            UInt64(truncatingIfNeeded: totalByteCount),
+            isTruncated,
+            &buf)
+    }
+    defer { mdvcore_buf_free(&buf) }
+    guard status == MDV_STATUS_OK else { throw CoreError(status: status) }
+    guard let data = buf.data, buf.len > 0 else {
+        return ""   // empty file, non-truncated → empty dump (valid)
+    }
+    return String(decoding: UnsafeBufferPointer(start: data, count: Int(buf.len)),
+                  as: UTF8.self)
+}
