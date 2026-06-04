@@ -85,9 +85,9 @@ public struct ContentView: View {
                 TabBar(model: model)
                     .accessibilityIdentifier("mdv.tabbar")
                     // CHROME PIN (2026-06-01): the chrome bars carry their own
-                    // fixed heights (TabBar 30, ModeBar 22, StatusBar 22), but
-                    // a VStack distributes an under-shrink squeeze across ALL
-                    // children — so when the window goes below
+                    // fixed heights (TabBar 30, content-toolbar 22, StatusBar
+                    // 22), but a VStack distributes an under-shrink squeeze
+                    // across ALL children — so when the window goes below
                     // chrome+min-content, the bars got compressed/clipped
                     // instead of the center band. layoutPriority(1) makes
                     // SwiftUI satisfy the bars' heights FIRST; the center HStack
@@ -95,13 +95,13 @@ public struct ContentView: View {
                     // shrink. fixedSize(vertical:) pins each bar's reported
                     // height as a hard floor so it can't be compressed below
                     // content (and still grows with dynamic-type / zoom).
-                    .fixedSize(horizontal: false, vertical: true)
-                    .layoutPriority(1)
-                Divider()
-                ModeBar(model: model)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .accessibilityIdentifier("mdv.modebar")
+                    //
+                    // UX-A (#224): the old ModeBar (wrap / special-char /
+                    // Source·Raw·Hex picker) that lived here was removed. The
+                    // view-mode control + breadcrumb moved into `ContentToolbar`
+                    // (directly above the content pane, inside `bodyRow`), and
+                    // the text-attribute controls moved into
+                    // `BottomAttributesBar` (above the StatusBar).
                     .fixedSize(horizontal: false, vertical: true)
                     .layoutPriority(1)
                 Divider()
@@ -185,6 +185,12 @@ public struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .layoutPriority(0)
                 if model.currentURL != nil {
+                    // UX-A (#224): bottom toggle-button group (Wrap / Special
+                    // chars / Enable-JS / unified type control). Sits between
+                    // the body band and the StatusBar.
+                    BottomAttributesBar(model: model)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .layoutPriority(1)
                     StatusBar(model: model, tabCoordinator: model.tabCoordinator, sourceView: model.sourceView)
                         .fixedSize(horizontal: false, vertical: true)
                         .layoutPriority(1)
@@ -262,6 +268,19 @@ public struct ContentView: View {
                 Divider()
             }
             VStack(spacing: 0) {
+                // UX-A (#224): content-toolbar sits DIRECTLY ABOVE the content
+                // pane (inside the center column, NOT spanning the sidebar /
+                // shoulder rails). Breadcrumb on the left, view-mode control on
+                // the right. Shown only when a file is open. Pinned height +
+                // layoutPriority so the content pane (priority 0) absorbs shrink.
+                if model.currentURL != nil {
+                    ContentToolbar(model: model)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .layoutPriority(1)
+                    Divider()
+                }
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityIdentifier("mdv.content")

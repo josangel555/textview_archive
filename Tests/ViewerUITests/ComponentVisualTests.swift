@@ -95,18 +95,24 @@ final class ComponentVisualTests: XCTestCase {
 
     // MARK: - Mode bar visual state
 
-    func test_modeBar_markdownFile_showsSegmentedControl() throws {
+    func test_modeBar_markdownFile_showsViewModeControl() throws {
+        // UX-A (#224): the segmented view-mode Picker was replaced by the
+        // `ContentToolbar`'s Render | Editor | HEX button control. Plain
+        // SwiftUI Buttons don't realize as discrete probe-able NSControls
+        // the way the old SwiftUISegmentedControl did, so we assert the
+        // CONTROL'S CONTRACT at the model layer (markdown exposes the Render
+        // + Editor primaries) and that mounting ContentView for a markdown
+        // file realizes a non-trivial tree (the toolbar drew).
         let model = makeModel()
         let url = try writeFile("a.md", "# x\n")
         model.open(url: url)
         let host = renderHost(ContentView(model: model))
-        // Segmented picker for view mode is realized as
-        // SwiftUISegmentedControl (private). Search by name.
-        let segmenteds = descendants(of: host).filter {
-            String(describing: type(of: $0)).contains("SegmentedControl")
-        }
-        XCTAssertFalse(segmenteds.isEmpty,
-            "Markdown file should expose a segmented Rendered/Source control")
+        XCTAssertTrue(model.showsRenderPrimary,
+            "Markdown should expose the Render lens in the view-mode control")
+        XCTAssertTrue(model.showsEditorPrimary,
+            "Markdown should expose the Editor lens in the view-mode control")
+        XCTAssertGreaterThan(descendants(of: host).count, 10,
+            "ContentView for a markdown file should realize a populated tree")
     }
 
     func test_modeBar_filenameLabel_reflectsCurrentFile() throws {

@@ -77,6 +77,17 @@ is rough priority — most-asked-for first.
   lands, replace the single `StatusBar.zoomReadout` with two labeled
   readouts (Window-UI zoom + Document zoom) reading the two model values.
   See the TODO(#228) in `Sources/ViewerUI/StatusBar.swift`.
+- **HEX byte-editing (#224 UX-A deferral).** The content-toolbar's
+  `View Only` toggle exists for the HEX lens, but the byte grid is still
+  RENDERED READ-ONLY — turning View Only off does nothing for HEX today.
+  The grid is a pre-built `NSAttributedString` in a non-editable
+  `NSTextView` (`HexView` / `HexTextRepresentable`), so editing needs:
+  (1) a caret→byte-offset map over the hex+ASCII columns, (2) nibble-level
+  hex entry + ASCII-column entry that stay in sync, (3) a dirty
+  byte-buffer + write-back through a binary save path (the loader is
+  read-only today), and (4) undo. `ViewModeControl.present(.hex)` returns
+  `viewOnly: true` and the toolbar disables nothing for HEX — when the
+  edit path lands, flip those. Sizable; not blocking UX-A.
 - ~~**Left sidebar resize feels janky.**~~ DONE (commit `f12ee43` —
   `@State liveWidth` during drag).
 

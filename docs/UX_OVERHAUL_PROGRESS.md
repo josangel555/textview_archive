@@ -19,13 +19,24 @@
   `forkpty`/PTY + minimal ANSI). No new SPM deps without explicit approval.
 
 ## Progress (check off as landed + gate-green)
-- [ ] **#233 quick-wins** — tab dividers (B4) · show-hidden ON+button (J2/J3) ·
-  `..` tree entry (J1) · 24h dates (N1) · subtle IntelliJ special-chars (I2) ·
-  close-button hover+glyph (H4) · find good-blue (G2) · Cmd+Shift+F white (G5) ·
-  one-shoulder-opens-file bug (E1) · taller session row + git-root (B1).
-- [ ] **#224 UX-A** — content-toolbar + breadcrumb + Render|Editor|HEX×ViewOnly +
-  Format button + HEX-edit + bottom attr group + unify OpenAs/type + persist type.
-- [ ] **#231 UX-K** — per-file scroll + open-tabs + OpenAs-type persistence.
+- [x] **#233 quick-wins** ✅ — tab dividers (B4) · show-hidden ON+button (J2/J3) ·
+  `..` tree entry (J1) · 24h dates (N1) · subtle IntelliJ special-chars (I2, CM6
+  path; NSTextView path hit the documented compositor boundary — left default) ·
+  close-button hover+glyph (H4) · find blue `#1E6FFF`+white+count (G2/G3/G5; the
+  "00F" was actually pink/purple) · taller session row + git badge (B1) · E1
+  pinned by invariant test (no bad code in current main). Gate-green.
+- [x] **#224 UX-A** ✅ — content-toolbar + breadcrumb + Render|Editor|HEX×ViewOnly +
+  Format button + bottom attr group + unified OpenAs/type. PRESENTATION layer
+  (`ViewModeControl` in ViewerKit) maps onto the EXISTING `ViewMode` set — the
+  enum + DocumentModel load/routing are UNTOUCHED (LOADBUG-safe); the control
+  routes through the unchanged `setCurrentViewMode`, so `editor-set-mode` +
+  `ViewModeMatrixSmokeTests` keep working. **HEX byte-edit DEFERRED** (TODO):
+  the View Only toggle exists for HEX but the byte grid stays read-only —
+  write-back into the attributed-string renderer (caret→byte-offset map, nibble
+  edit, ASCII sync, disk write) is a large follow-up; tracked below. Tests:
+  `ViewModeControlTests` (T1m pure mapping) + `ContentToolbarMappingTests`
+  (T2' model-level control↔mode per type + breadcrumb navigation).
+- [x] **#231 UX-K** ✅ — per-file scroll (line-based, off-hot-path); open-tabs + OpenAs-type already persisted (verified). Gate-green `8…`.
 - [ ] **#225 UX-C** — footer git/branch/worktree + edit stats + dual zoom.
 - [ ] **#229 UX-G** — find/replace native rebuild (count/pos, sizing, colors).
 - [ ] **#228 UX-F** — thorough zoom audit + fix all scaling/height artifacts.
@@ -37,3 +48,6 @@
 
 ## Notes / log
 (append per-item: commit sha + what shipped + tests added)
+
+## STATUS 
+DONE+gate-green: #233 quick-wins, #231 persistence, #229 find-rebuild, #232 action-catalog/keybindings, #225 footer-git, #226 terminal. NEXT: #224 toolbar (presentation-layer mapping, NOT enum rewrite) → #227 dockable → #228 zoom → #230 tooltips → L memory. main @ 4890178.
