@@ -49,6 +49,27 @@ final class ClaudeTranscriptSearchTests: XCTestCase {
         XCTAssertEqual(try searcher.search("refactor", in: url).count, 1)
     }
 
+    /// Security barrier: search runs over REDACTED events, so a secret carried
+    /// in a redacted key (`headers`/`signature`) of a tool-call input must NOT
+    /// be findable or appear in a surfaced snippet — while the tool call itself
+    /// stays searchable by its benign fields. Guards against the monitor's
+    /// content-search leaking what its transcript-detail view already redacts.
+    func test_redactsSecretsBeforeSurfacing() throws {
+        let toolWithSecret = #"{"type":"assistant","uuid":"a","timestamp":"2026-06-04T07:01:00Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"WebFetch","input":{"url":"http://example.com","headers":"SECRETTOKEN123"}}]}}"#
+        let url = writeTranscript("s1", [toolWithSecret])
+
+        // The secret is gone — redacted to [REDACTED] before the parser saw it.
+        XCTAssertEqual(try searcher.search("SECRETTOKEN123", in: url).count, 0,
+                       "a redacted-key secret must never surface in search results")
+        // The tool call is still findable by its benign fields.
+        let hits = try searcher.search("example.com", in: url)
+        XCTAssertEqual(hits.count, 1)
+        XCTAssertFalse(hits[0].snippet.contains("SECRETTOKEN123"),
+                       "snippet must not contain the redacted secret")
+        XCTAssertTrue(hits[0].snippet.contains("[REDACTED]"),
+                      "the redacted key should show the token in the snippet")
+    }
+
     func test_caseSensitive_option_respectsCase() throws {
         let url = writeTranscript("s1", [userMsg("Refactor the Sidebar")])
         let opts = ClaudeTranscriptSearch.Options(caseSensitive: true)

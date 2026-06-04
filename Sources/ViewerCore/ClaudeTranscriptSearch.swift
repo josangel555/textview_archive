@@ -111,7 +111,11 @@ public struct ClaudeTranscriptSearch: Sendable {
 
     private func matches(_ query: String, in url: URL,
                          matcher: Matcher, options: Options) -> [Match] {
-        let events = (try? parser.events(from: url)) ?? []
+        // REDACTED events only — a surfaced snippet must never carry a
+        // `signature`/`headers` value or a raw inline image blob (the same
+        // barrier the monitor's transcript detail applies). See
+        // `ClaudeLogParser.parseRedacted`.
+        let events = (try? parser.redactedEvents(from: url)) ?? []
         let key = url.deletingPathExtension().lastPathComponent
         var out: [Match] = []
         for (i, event) in events.enumerated() {

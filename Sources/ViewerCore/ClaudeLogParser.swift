@@ -85,7 +85,34 @@ public struct ClaudeLogParser: Sendable {
         return parse(data)
     }
 
+    /// Redacting counterpart to `events(from:)` — reads the transcript and
+    /// parses it through the redaction barrier (`parseRedacted`). Surfacing
+    /// consumers must use this, not `events(from:)`.
+    public func redactedEvents(from url: URL) throws -> [ClaudeEvent] {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw ClaudeLogError.fileNotFound
+        }
+        let data: Data
+        do { data = try Data(contentsOf: url) }
+        catch { throw ClaudeLogError.unreadable }
+        return parseRedacted(data)
+    }
+
     public func parse(_ rawData: Data) -> [ClaudeEvent] {
+        parseCore(rawData, redacting: false)
+    }
+
+    /// Like `parse`, but every decoded record passes through `redact(_:)`
+    /// BEFORE `parseRecord` — the security barrier any *surfacing* consumer
+    /// (the `--claude-monitor` view, `ClaudeTranscriptSearch`) must use so no
+    /// emitted event text can carry a `signature` / `headers` value or a raw
+    /// inline image blob. `parse` stays un-redacted for callers that redact
+    /// separately or only count (e.g. `ClaudeSessionIndex`).
+    public func parseRedacted(_ rawData: Data) -> [ClaudeEvent] {
+        parseCore(rawData, redacting: true)
+    }
+
+    private func parseCore(_ rawData: Data, redacting: Bool) -> [ClaudeEvent] {
         // Re-base via `Data(_:)` so the per-line slicing and 0-based
         // `withUnsafeBytes` newline scan below behave the same whether
         // the caller hands us a freshly-loaded `Data` or a slice carved
@@ -147,7 +174,8 @@ public struct ClaudeLogParser: Sendable {
             // Zero-copy slice over the rebased (0-based) buffer.
             let slice = data[range]
             if let obj = try? JSONSerialization.jsonObject(with: slice, options: []) as? [String: Any] {
-                events.append(contentsOf: Self.parseRecord(obj))
+                let record = redacting ? Self.redact(obj) : obj
+                events.append(contentsOf: Self.parseRecord(record))
                 if events.count >= maxEvents { break }
             }
         }
