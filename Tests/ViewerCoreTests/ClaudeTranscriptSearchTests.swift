@@ -81,6 +81,28 @@ final class ClaudeTranscriptSearchTests: XCTestCase {
         }
     }
 
+    func test_redosRegex_rejected_notRun() {
+        // Catastrophic-backtracking shapes must be rejected at compile (reusing
+        // RegexComplexityGuard) rather than handed to NSRegularExpression.
+        let url = writeTranscript("s1", [userMsg(String(repeating: "a", count: 60))])
+        let opts = ClaudeTranscriptSearch.Options(regex: true)
+        for evil in ["(a+)+$", "(a|a)+$", "(.*)*x"] {
+            XCTAssertThrowsError(try searcher.search(evil, in: url, options: opts),
+                                 "ReDoS pattern \(evil) must be rejected") { err in
+                XCTAssertEqual(err as? ClaudeTranscriptSearch.SearchError, .invalidRegex)
+            }
+        }
+    }
+
+    func test_negativeOptions_clamped_noCrash() throws {
+        // A negative cap would trip prefix()'s precondition (fatalError). Options
+        // clamps to ≥0, so search degrades to "find nothing" rather than crash.
+        let url = writeTranscript("s1", [userMsg("match me")])
+        let opts = ClaudeTranscriptSearch.Options(maxMatchesPerFile: -5, maxTotalMatches: -1, snippetContext: -3)
+        XCTAssertEqual(try searcher.search("match", in: url, options: opts).count, 0)
+        XCTAssertEqual(try searcher.search("match", root: root, options: opts).count, 0)
+    }
+
     func test_emptyQuery_returnsNothing() throws {
         let url = writeTranscript("s1", [userMsg("content here")])
         XCTAssertEqual(try searcher.search("", in: url).count, 0)

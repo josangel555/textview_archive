@@ -34,9 +34,11 @@ public struct ClaudeTranscriptSearch: Sendable {
                     snippetContext: Int = 48) {
             self.caseSensitive = caseSensitive
             self.regex = regex
-            self.maxMatchesPerFile = maxMatchesPerFile
-            self.maxTotalMatches = maxTotalMatches
-            self.snippetContext = snippetContext
+            // Clamp non-negative — a negative cap would trip `prefix()`'s
+            // precondition (fatalError) downstream. 0 is a valid "find nothing".
+            self.maxMatchesPerFile = max(0, maxMatchesPerFile)
+            self.maxTotalMatches = max(0, maxTotalMatches)
+            self.snippetContext = max(0, snippetContext)
         }
     }
 
@@ -90,13 +92,16 @@ public struct ClaudeTranscriptSearch: Sendable {
     /// Search every top-level transcript under `root` (e.g. `~/.claude`).
     /// Validates the regex once up front. Stops at `options.maxTotalMatches`.
     public func search(_ query: String, root: URL, options: Options = .init()) throws -> [Match] {
-        guard !query.isEmpty else { return [] }
+        guard !query.isEmpty, options.maxTotalMatches > 0 else { return [] }
         let matcher = try Matcher(query: query, options: options)
         var out: [Match] = []
         for url in index.transcriptURLs(root: root) {
-            out.append(contentsOf: matches(query, in: url, matcher: matcher, options: options))
-            if out.count >= options.maxTotalMatches {
-                return Array(out.prefix(options.maxTotalMatches))
+            // Append eagerly with an in-loop cap so we never hold more than
+            // `maxTotalMatches` Match structs at once (no per-file overshoot
+            // before trimming), and never call prefix() with a stale total.
+            for m in matches(query, in: url, matcher: matcher, options: options) {
+                out.append(m)
+                if out.count >= options.maxTotalMatches { return out }
             }
         }
         return out
@@ -110,13 +115,15 @@ public struct ClaudeTranscriptSearch: Sendable {
         let key = url.deletingPathExtension().lastPathComponent
         var out: [Match] = []
         for (i, event) in events.enumerated() {
+            // Check the cap BEFORE matching/appending so a cap of 0 yields 0
+            // (an append-then-check would always emit the first match).
+            if out.count >= options.maxMatchesPerFile { break }
             let (text, role) = Self.searchable(event)
             guard !text.isEmpty, let range = matcher.firstMatch(in: text) else { continue }
             out.append(Match(
                 sessionKey: key, path: url.path, eventIndex: i, role: role,
                 snippet: Self.snippet(text, around: range, context: options.snippetContext),
                 timestamp: event.timestamp))
-            if out.count >= options.maxMatchesPerFile { break }
         }
         return out
     }
@@ -164,6 +171,14 @@ public struct ClaudeTranscriptSearch: Sendable {
             self.query = query
             self.caseSensitive = options.caseSensitive
             if options.regex {
+                // Reject known-ReDoS shapes (nested quantifiers, overlapping
+                // alternation under a quantifier) BEFORE NSRegularExpression
+                // sees them — reusing the same guard FindEngine/CrossFileSearch
+                // use. Per-event text is already bounded (one message), which
+                // covers the polynomial case `reject` deliberately doesn't model.
+                if RegexComplexityGuard.reject(query) != nil {
+                    throw SearchError.invalidRegex
+                }
                 var opts: NSRegularExpression.Options = []
                 if !options.caseSensitive { opts.insert(.caseInsensitive) }
                 guard let re = try? NSRegularExpression(pattern: query, options: opts) else {

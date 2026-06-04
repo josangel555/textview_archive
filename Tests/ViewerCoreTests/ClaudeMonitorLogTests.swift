@@ -214,6 +214,61 @@ final class ClaudeMonitorLogTests: XCTestCase {
                        "monitor log leaked tool_input contents to disk")
     }
 
+    /// The malformed-payload path: a payload that fails jq must (a) still exit 0,
+    /// (b) NOT create the main .jsonl, (c) keep the raw secret out of plaintext —
+    /// it goes to <log>.errors as base64 (opaque to a grep), never verbatim. Also
+    /// asserts a VALID payload creates no .errors file (the happy path is clean).
+    func test_scriptWriter_malformedPayload_noPlaintextLeak() throws {
+        let bash = "/bin/bash"
+        guard FileManager.default.isExecutableFile(atPath: bash), jqIsAvailable()
+        else { throw XCTSkip("jq/bash not available on PATH") }
+        let script = packageRoot().appendingPathComponent("scripts/hooks/monitor-log.sh")
+        guard FileManager.default.fileExists(atPath: script.path) else {
+            throw XCTSkip("monitor-log.sh not found")
+        }
+
+        func run(_ payload: String) throws -> Int32 {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: bash)
+            p.arguments = [script.path]
+            var env = ProcessInfo.processInfo.environment
+            env["MDV_MONITOR_LOG_DIR"] = dir.path
+            p.environment = env
+            let stdin = Pipe(); p.standardInput = stdin
+            p.standardOutput = Pipe(); p.standardError = Pipe()
+            try p.run()
+            stdin.fileHandleForWriting.write(Data(payload.utf8))
+            try stdin.fileHandleForWriting.close()
+            p.waitUntilExit()
+            return p.terminationStatus
+        }
+
+        // Valid payload → no .errors file anywhere.
+        _ = try run(#"{"hook_event_name":"Stop","session_id":"ok"}"#)
+        let errsAfterValid = (try? FileManager.default.contentsOfDirectory(atPath: dir.path))?
+            .filter { $0.hasSuffix(".errors") } ?? []
+        XCTAssertTrue(errsAfterValid.isEmpty, "valid payload must not create an .errors file")
+
+        // Malformed JSON carrying a secret → exit 0, no plaintext secret on disk.
+        let secret = "SECRET_TOKEN_malformed_must_not_leak_plaintext"
+        let status = try run(#"{"session_id":"bad","tool_input":{"k":"\#(secret)"} TRUNCATED"#)
+        XCTAssertEqual(status, 0, "monitor must exit 0 even on malformed input")
+
+        let allFiles = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+        for name in allFiles {
+            let body = (try? String(contentsOf: dir.appendingPathComponent(name), encoding: .utf8)) ?? ""
+            XCTAssertFalse(body.contains(secret),
+                           "secret leaked verbatim into \(name) on the malformed path")
+        }
+        // If an .errors file was produced, it must be valid base64 (opaque).
+        if let errs = allFiles.first(where: { $0.hasSuffix(".errors") }) {
+            let raw = (try? String(contentsOf: dir.appendingPathComponent(errs), encoding: .utf8)) ?? ""
+            let firstLine = raw.split(separator: "\n").first.map(String.init) ?? ""
+            XCTAssertNotNil(Data(base64Encoded: firstLine.trimmingCharacters(in: .whitespaces)),
+                            ".errors content must be base64, not plaintext")
+        }
+    }
+
     /// True if `jq` is resolvable on PATH (via `which`), independent of where
     /// it's installed (/usr/bin, Homebrew, MacPorts, …).
     private func jqIsAvailable() -> Bool {

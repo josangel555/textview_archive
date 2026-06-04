@@ -9,8 +9,8 @@ import Foundation
 // block) — appends one compact, privacy-conscious JSON-Lines record per Claude
 // Code lifecycle event to `~/.claude/monitor/<session_id>.jsonl`. The envelope
 // is FLAT and bounded — it deliberately does NOT persist the full hook payload
-// (tool_input/tool_response/prompt can carry secrets); instead it keeps sizes
-// and a short prompt preview. Each line looks like:
+// (tool_input/tool_response/prompt can carry secrets); instead it keeps sizes,
+// a 200-char prompt preview, and a 500-char error preview. Each line looks like:
 //
 //   {"ts":"2026-06-04T07:15:09Z","host":"mac","pid":40231,"event":"PostToolUse",
 //    "session_id":"abc","tool":"Edit","cwd":"/repo","prompt":null,"prompt_len":0,

@@ -114,10 +114,10 @@ final class NewFileCreatorTests: XCTestCase {
     // Path-traversal guard: a base name with a separator (or `.`/`..`) must be
     // rejected so creation can't escape `directory`.
     func test_create_rejectsPathSeparatorInBaseName() {
-        for bad in ["../evil.txt", "a/b.txt", "/etc/x", "..", "."] {
+        for bad in ["../evil.txt", "a/b.txt", "/etc/x", "..", ".", "foo\u{0}.txt"] {
             XCTAssertThrowsError(try NewFileCreator.create(in: dir, baseName: bad)) { err in
                 guard case NewFileCreator.CreateError.invalidName = err else {
-                    return XCTFail("expected .invalidName for \(bad), got \(err)")
+                    return XCTFail("expected .invalidName for \(bad.debugDescription), got \(err)")
                 }
             }
         }

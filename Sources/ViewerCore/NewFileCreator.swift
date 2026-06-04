@@ -42,7 +42,9 @@ public enum NewFileCreator {
         // `../x` or `a/b` base would let `appendingPathComponent` + `open`
         // create the file OUTSIDE `directory` (path traversal). The name must
         // be a single in-directory component.
-        guard !baseName.isEmpty, !baseName.contains("/"),
+        // Also reject an embedded NUL: `withCString` truncates at it, so
+        // "foo\0.txt" would silently create "foo" — a confusing corruption.
+        guard !baseName.isEmpty, !baseName.contains("/"), !baseName.contains("\0"),
               baseName != ".", baseName != ".." else {
             throw CreateError.invalidName(baseName)
         }

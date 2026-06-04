@@ -9,8 +9,9 @@
 # • PRIVACY: we do NOT persist the full hook payload. tool_input/tool_response
 #   (file contents, code, command output) and the full prompt can carry secrets;
 #   storing them indefinitely in a grep-able local log is a leak. Instead we log
-#   a bounded envelope: event/tool/cwd/timing, a 200-char prompt PREVIEW, and the
-#   *sizes* of tool_input/tool_response — enough to monitor, not enough to leak.
+#   a bounded envelope: event/tool/cwd/timing, a 200-char prompt PREVIEW, a
+#   500-char error preview, and the *sizes* of tool_input/tool_response —
+#   enough to monitor, not enough to leak.
 # • ATOMICITY: POSIX only guarantees atomic O_APPEND for writes ≤ PIPE_BUF
 #   (512 B on macOS). Concurrent hooks (parallel subagents sharing a session id)
 #   could interleave a larger line and corrupt JSONL. We (a) keep lines small via
@@ -42,10 +43,22 @@ mkdir -p "$LOG_DIR" 2>/dev/null || exit 0
 
 input=$(cat)
 
+# Cap the payload before doing anything with it. A truncated/pathological/huge
+# payload must not be able to grow the logs without bound (a local DoS via the
+# .errors base64 path). 256 KB is far above any real hook envelope.
+if [ "${#input}" -gt 262144 ]; then
+  printf '%s oversized=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${#input}" \
+    >> "$LOG_DIR/oversized.log" 2>/dev/null
+  exit 0
+fi
+
 sid=$(printf '%s' "$input" | jq -r '.session_id // "unknown"' 2>/dev/null)
 [ -z "$sid" ] && sid="unknown"
-# Sanitize to filename-safe chars (also blocks path traversal via session_id).
-sid_safe=$(printf '%s' "$sid" | tr -c 'A-Za-z0-9_.-' '_')
+# Sanitize to filename-safe chars (blocks path traversal via session_id) and cap
+# the length — an over-long session_id would push the filename past the 255-byte
+# limit, making mkdir/append fail silently and drop the whole session's records.
+sid_safe=$(printf '%s' "$sid" | tr -c 'A-Za-z0-9_.-' '_' | cut -c1-128)
+[ -z "$sid_safe" ] && sid_safe="unknown"
 logfile="$LOG_DIR/${sid_safe}.jsonl"
 
 ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -80,16 +93,25 @@ if [ -z "$record" ]; then
 fi
 
 # Serialize concurrent writers with an atomic mkdir lock (no flock on stock
-# macOS). Bounded ~1s spin; trap-released so a crash frees the lock. If the lock
-# can't be acquired (heavy contention / stale after SIGKILL), fall through to a
-# best-effort append — the record is small, so the append is very likely atomic.
+# macOS). Bounded ~1s spin; the trap fires on INT/TERM too (a hook runs under a
+# `timeout`, which sends SIGTERM) so an interrupted run still frees the lock. A
+# SIGKILL can't be trapped and would orphan the lock, so on spin-exhaustion we
+# steal the presumed-stale lock ONCE and retry. We only ever append while
+# holding the lock — if we can't get it, we DROP this record (a passive monitor
+# missing one event is cheaper than a torn JSONL line). (Residual: two writers
+# both stealing the same stale lock in the same microsecond can both proceed —
+# rare and doubly-conditional; acceptable for an opt-in local monitor.)
 lock="$logfile.lock"
+acquired=
 for _ in $(seq 1 100); do
   if mkdir "$lock" 2>/dev/null; then
-    trap 'rmdir "$lock" 2>/dev/null' EXIT
-    break
+    acquired=1; trap 'rmdir "$lock" 2>/dev/null' EXIT INT TERM; break
   fi
   sleep 0.01
 done
+if [ -z "$acquired" ] && rmdir "$lock" 2>/dev/null && mkdir "$lock" 2>/dev/null; then
+  acquired=1; trap 'rmdir "$lock" 2>/dev/null' EXIT INT TERM
+fi
+[ -z "$acquired" ] && exit 0
 printf '%s\n' "$record" >> "$logfile" 2>/dev/null
 exit 0
