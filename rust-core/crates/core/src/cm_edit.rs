@@ -74,13 +74,17 @@ pub fn apply(base: &str, edits: &[CmEdit]) -> Option<String> {
     let mut cursor: i64 = 0;
     for e in &sorted {
         if e.from > cursor {
-            out.extend_from_slice(&base_units[cursor as usize..e.from as usize]);
+            if let Some(slice) = base_units.get(cursor as usize..e.from as usize) {
+                out.extend_from_slice(slice);
+            }
         }
         out.extend(e.insert.encode_utf16());
         cursor = e.to;
     }
     if cursor < base_len {
-        out.extend_from_slice(&base_units[cursor as usize..base_len as usize]);
+        if let Some(slice) = base_units.get(cursor as usize..base_len as usize) {
+            out.extend_from_slice(slice);
+        }
     }
 
     // Validating decode: `String::from_utf16` errors on a lone surrogate (it
