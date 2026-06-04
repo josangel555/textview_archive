@@ -42,9 +42,10 @@ Hypothesis: same root as the 108 MB baseline — DocumentModel god-object republ
 - [ ] PNG/media file-info respect zoom.
 
 ### Wave 3 — PoCs (research + build, validate automatically)
-- [ ] **Image editing PoC** — P0 resize/crop/quality + history/revert. Validate via headless image-pipeline tests (load→op→assert pixels/dims) before any UI.
-- [ ] **Agent-monitoring view PoC** — read `~/.claude` (sessions, transcripts), list + search + detailed per-session view. Validate via headless parser tests over fixture transcripts.
-- [ ] **Claude Code hooks research** — how to add hooks to gain richer info; write findings doc.
+- [x] **Image editing PoC engine spine** ✅ — ViewerCore ImageDocument/Renderer/Exporter (op-list history, lossless revert, ImageIO export). 16 headless tests. Commit 8420b29. (UI not built; engine only.)
+- [x] **Agent-monitoring index PoC** ✅ — ViewerCore ClaudeSessionIndex over ~/.claude transcripts (streamed, redaction gate, byte-offset index) + ClaudeLogParser+SystemRecords. 21 headless tests. Commit ab4f583. (UI not built; index only.)
+- [x] **Claude Code hooks research** ✅ — docs/research/autorun-2026-06-04/hooks.md; recommendation = passive JSONL logger feeding the monitor. (Owner flag: ~/.claude/settings.json has no hooks key → existing scripts dormant.)
+- [ ] NEXT for these: build the SwiftUI surfaces on top of the engines (image editor view; agent-monitor sidebar/panel) — separate wave, needs view-layer + live validation.
 
 ### Wave 4+ — bigger rocks (from BACKLOG 2026-06-04 dump)
 HEX 1 MB slow (#218), tab overflow/shrink (#183/#209), `+`-beside-last-tab (B2), up/down nav (#220), natural keybindings (#232), multi-window, sessions-optional, god-object split (#202), FPS meter (#208), drag tabs→sessions, footer drop-ups, repo-stats treemap, undo audit.
