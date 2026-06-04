@@ -50,7 +50,14 @@ Hypothesis: same root as the 108 MB baseline — DocumentModel god-object republ
 HEX 1 MB slow (#218), tab overflow/shrink (#183/#209), `+`-beside-last-tab (B2), up/down nav (#220), natural keybindings (#232), multi-window, sessions-optional, god-object split (#202), FPS meter (#208), drag tabs→sessions, footer drop-ups, repo-stats treemap, undo audit.
 
 ## DECISIONS NEEDED (owner — non-blocking; I proceed on best-judgment defaults meanwhile)
-- _(none yet — append here as they arise, with the default I chose so work continues)_
+- **WebView/memory lever** — parked on the board as TSK-113 (default: trim compositing layers + measure).
+- **Perf Fix#1 (per-tab content-view retention)** — this is the dominant ~1s fix BUT it's a
+  load-bearing refactor: `loadedView` renders only the ACTIVE tab via `model.currentViewMode`/
+  `currentState`; retaining N tabs needs per-tab view-state plumbing (#202 territory). I will build
+  the mount-count + republish-count headless guards and attempt it behind them; **if headless
+  validation can't confidently prove visual correctness, I'll PARK it for your review** with the
+  design + measurements rather than ship a risky half-validated refactor to the central view.
+  Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
 - 2026-06-04 `6153c9b` terminal runtime-toggle fix (body greedy + clip + focus) — --diagnose verified, gate-green.
