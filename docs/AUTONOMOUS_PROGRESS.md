@@ -64,6 +64,16 @@ Hypothesis: same root as the 108 MB baseline — DocumentModel god-object republ
 ### Wave 4+ — bigger rocks (from BACKLOG 2026-06-04 dump)
 HEX 1 MB slow (#218), tab overflow/shrink (#183/#209), `+`-beside-last-tab (B2), up/down nav (#220), natural keybindings (#232), multi-window, sessions-optional, god-object split (#202), FPS meter (#208), drag tabs→sessions, footer drop-ups, repo-stats treemap, undo audit.
 
+## BLOCKER (2026-06-04 ~07:46): SCREEN LOCKED → live validation unavailable
+The Mac auto-locked, so screenshots / live-profiling / build-app smoke / install are all
+blocked until the owner unlocks. **While locked, do HEADLESS-ONLY work** (swift test,
+pure-logic engines). Queued headless items: perf republish-count + mount-count GUARD infra
+(reusable for the live perf turn); File-New model core (create-file + open, FS logic);
+expand image engine (rotate/flip/flop ops + tests); Claude Code hooks logging script + test.
+View-layer / live-validation items (perf Fix#1/#2/#3, monitor + image-editor UI polish,
+bookmark-undo UI wiring, last-tab border, PNG zoom, reinstall) WAIT for unlock.
+Owner: `.build/debug/MarkdownViewer --claude-monitor` to eyeball the monitor PoC when back.
+
 ## DECISIONS NEEDED (owner — non-blocking; I proceed on best-judgment defaults meanwhile)
 - **WebView/memory lever** — parked on the board as TSK-113 (default: trim compositing layers + measure).
 - **Perf Fix#1 (per-tab content-view retention)** — this is the dominant ~1s fix BUT it's a
