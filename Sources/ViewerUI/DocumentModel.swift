@@ -289,6 +289,9 @@ public final class DocumentModel: ObservableObject {
         self.zoom = preferences.zoom
         self.sourceWordWrap = preferences.sourceWordWrap
         self.showInvisibleChars = preferences.showInvisibleChars
+        // Restore the persisted theme override (TSK-101). An unknown/stale raw
+        // (e.g. a renamed theme) maps to nil = Follow System, never a crash.
+        self.themeOverride = preferences.themeOverrideRaw.flatMap(SyntaxTheme.Name.init(rawValue:))
         // Construct the editor coordinator BEFORE wiring its side-
         // effect closures so the closures can capture `self` weakly.
         // EditorCoordinator registers a close-hook on TabCoordinator
@@ -2305,9 +2308,15 @@ public final class DocumentModel: ObservableObject {
     }
 
     /// Currently-active syntax theme. Computed from system appearance;
-    /// re-publishes when the user flips Light/Dark. Override field is
-    /// for a future "Settings → Appearance" picker.
-    @Published public var themeOverride: SyntaxTheme.Name? = nil
+    /// re-publishes when the user flips Light/Dark. The override is driven by
+    /// Settings → Appearance → Theme (Follow System / Xcode Light / Xcode Dark)
+    /// and persists across relaunch via `PreferencesStore` (app-wide global,
+    /// owner-locked #184). Without the `didSet`, a chosen Light/Dark reverted to
+    /// Follow System on every reload (TSK-101); restored in `init` alongside
+    /// `zoom`/`sourceWordWrap`.
+    @Published public var themeOverride: SyntaxTheme.Name? = nil {
+        didSet { preferences.themeOverrideRaw = themeOverride?.rawValue }
+    }
     public var activeTheme: SyntaxTheme {
         if let o = themeOverride { return SyntaxTheme.named(o) }
         return SyntaxTheme.resolved(forAppearance: NSApp?.effectiveAppearance)

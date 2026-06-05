@@ -18,6 +18,7 @@ public final class PreferencesStore: @unchecked Sendable {
         static let zoom = "MarkdownViewer.zoom"
         static let sourceWordWrap = "MarkdownViewer.sourceWordWrap"
         static let showInvisibleChars = "MarkdownViewer.showInvisibleChars"
+        static let themeOverride = "MarkdownViewer.themeOverride"
         /// Legacy chrome-scale preference, retired when `uiScale` and
         /// `zoom` were unified onto `zoom`. Still read once for
         /// one-shot migration; never written.
@@ -78,6 +79,24 @@ public final class PreferencesStore: @unchecked Sendable {
     public var showInvisibleChars: Bool {
         get { defaults.object(forKey: Key.showInvisibleChars) as? Bool ?? false }
         set { defaults.set(newValue, forKey: Key.showInvisibleChars) }
+    }
+
+    /// Persisted syntax-theme override (Settings → Appearance → Theme). `nil` =
+    /// Follow System; otherwise the `SyntaxTheme.Name` raw value. Stored as a
+    /// raw string to keep this a primitives-only store — and so a stale/unknown
+    /// value degrades to Follow System (`SyntaxTheme.Name(rawValue:)` returns
+    /// nil) rather than crashing. App-wide global (owner-locked #184), persisted
+    /// like `zoom`/`sourceWordWrap` (previously it lived only in memory, so the
+    /// picker forgot the choice on relaunch — TSK-101).
+    public var themeOverrideRaw: String? {
+        get { defaults.string(forKey: Key.themeOverride) }
+        set {
+            if let raw = newValue {
+                defaults.set(raw, forKey: Key.themeOverride)
+            } else {
+                defaults.removeObject(forKey: Key.themeOverride)
+            }
+        }
     }
 
     // MARK: Zoom

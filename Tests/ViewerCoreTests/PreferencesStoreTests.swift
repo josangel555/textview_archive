@@ -103,6 +103,28 @@ final class PreferencesStoreTests: XCTestCase {
         XCTAssertTrue(other.sourceWordWrap)
     }
 
+    // MARK: Theme override (TSK-101 — persist Settings → Appearance → Theme)
+
+    func test_themeOverride_defaultsToNil() {
+        let store = PreferencesStore(defaults: defaults)
+        XCTAssertNil(store.themeOverrideRaw, "no override persisted = Follow System")
+    }
+
+    func test_themeOverride_roundTrips() {
+        let store = PreferencesStore(defaults: defaults)
+        store.themeOverrideRaw = "xcodeLight"
+        let other = PreferencesStore(defaults: defaults)
+        XCTAssertEqual(other.themeOverrideRaw, "xcodeLight", "chosen theme survives a fresh store (relaunch)")
+    }
+
+    func test_themeOverride_nilClearsBackToFollowSystem() {
+        let store = PreferencesStore(defaults: defaults)
+        store.themeOverrideRaw = "xcodeDark"
+        store.themeOverrideRaw = nil
+        let other = PreferencesStore(defaults: defaults)
+        XCTAssertNil(other.themeOverrideRaw, "clearing the override reverts to Follow System")
+    }
+
     // MARK: Show invisible chars (Batch A)
 
     func test_showInvisibleChars_defaultsToFalse() {
