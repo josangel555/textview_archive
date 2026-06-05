@@ -173,14 +173,21 @@ public final class PTYProcess: @unchecked Sendable {
             }
         }
         source.setCancelHandler { [weak self] in
-            // Close the master fd exactly once, when the source is fully
-            // cancelled (avoids closing an fd the event handler is mid-read on).
-            guard let self else { return }
-            self.lock.lock()
-            let m = self.masterFD
-            self.masterFD = -1
-            self.lock.unlock()
-            if m >= 0 { close(m) }
+            // Close THIS source's master fd exactly once, when the source is
+            // fully cancelled (avoids closing an fd the event handler is
+            // mid-read on). Close the captured `fd` by value rather than
+            // re-reading `self.masterFD`: on the restart path a fresh
+            // `start()` may already have installed a NEW master fd into
+            // `masterFD`, and clearing it here (the old behaviour) would
+            // clobber the live fd of the respawned shell. Only clear the
+            // stored field if it still points at the fd we own.
+            guard fd >= 0 else { return }
+            if let self {
+                self.lock.lock()
+                if self.masterFD == fd { self.masterFD = -1 }
+                self.lock.unlock()
+            }
+            close(fd)
         }
         lock.lock()
         readSource = source
@@ -193,16 +200,50 @@ public final class PTYProcess: @unchecked Sendable {
         if didExit { lock.unlock(); return }
         didExit = true
         let pid = childPID
+        // Reset the pid sentinel so a subsequent `start()` passes the
+        // line-62 guard and `forkpty` re-runs (restart after self-exit).
+        childPID = -1
         let source = readSource
         readSource = nil
         lock.unlock()
 
-        // Reap the child (no zombie).
-        var status: Int32 = 0
-        if pid > 0 { waitpid(pid, &status, WNOHANG) }
+        // Reap the child (no zombie). We're already on `readQueue` here and
+        // EOF means the slave side closed, so the child is at (or about to
+        // reach) zombie — a single non-blocking reap is the common case, but
+        // poll briefly to cover the read-EOF-before-exit window.
+        let status = Self.reapChild(pid)
 
         source?.cancel()
         onExit?(status)
+    }
+
+    /// Bounded, blocking reap of `pid` so the child never lingers as a
+    /// zombie. SIGHUP delivery + the shell's exit are asynchronous, so a
+    /// single `WNOHANG` immediately after the signal reliably misses;
+    /// instead poll `waitpid(WNOHANG)` on a short cadence, escalate to
+    /// SIGKILL if the shell ignores the hangup, then do a final blocking
+    /// reap. Mirrors `LSPClient.shutdown()`'s teardown ladder; MUST be
+    /// called off the main thread (it can block up to ~200ms) — both
+    /// callers run it on `readQueue`. Returns the child's exit status (0
+    /// if `pid <= 0` or the reap could not collect it).
+    ///
+    /// `static` so the `readQueue.async` dispatch in `terminate()` captures
+    /// nothing of `self` (only the `pid` value) — safe to fire from `deinit`.
+    @discardableResult
+    private static func reapChild(_ pid: pid_t) -> Int32 {
+        guard pid > 0 else { return 0 }
+        var status: Int32 = 0
+        // Poll for a clean exit: ~10 x 20ms = ~200ms.
+        for _ in 0..<10 {
+            let r = waitpid(pid, &status, WNOHANG)
+            if r == pid { return status }   // reaped
+            if r < 0 { return status }      // ECHILD: already reaped elsewhere
+            usleep(20_000)                  // r == 0: still alive, wait a beat
+        }
+        // Still alive after the hangup grace — escalate and block once.
+        kill(pid, SIGKILL)
+        waitpid(pid, &status, 0)
+        return status
     }
 
     // MARK: - Write
@@ -261,21 +302,36 @@ public final class PTYProcess: @unchecked Sendable {
         let source = readSource
         readSource = nil
         didExit = true
+        // Reset the pid sentinel so a subsequent `start()` passes the
+        // line-62 guard and `forkpty` re-runs (the "Restart shell" path).
+        childPID = -1
         lock.unlock()
 
         if pid > 0 {
+            // SIGHUP is the controlling-terminal hangup the shell expects.
             kill(pid, SIGHUP)
-            var status: Int32 = 0
-            // Best-effort reap. The shell may take a beat to die after
-            // SIGHUP; WNOHANG avoids blocking the caller (often main).
-            waitpid(pid, &status, WNOHANG)
+            // Reap off the main thread: the bounded poll + final blocking
+            // wait can take up to ~200ms, and `terminate()` is reached from
+            // the main actor (restart button, applicationWillTerminate).
+            // The closure captures only `pid` (a value) — no `self` — so it
+            // is safe to fire from `deinit`.
+            readQueue.async { PTYProcess.reapChild(pid) }
         }
-        source?.cancel()   // cancel handler closes the master fd.
-        // If there was no source (start never ran), close any open fd.
-        lock.lock()
-        let m = masterFD
-        masterFD = -1
-        lock.unlock()
-        if m >= 0 { close(m) }
+        if let source {
+            // The source's cancel handler owns the fd close (it closes the
+            // captured fd exactly once and clears `masterFD` only if it still
+            // points at that fd). Don't also close `masterFD` here — that
+            // would double-close, and on the restart path it could close the
+            // freshly-spawned shell's fd.
+            source.cancel()
+        } else {
+            // No source (start never completed / already torn down). Close any
+            // open fd ourselves.
+            lock.lock()
+            let m = masterFD
+            masterFD = -1
+            lock.unlock()
+            if m >= 0 { close(m) }
+        }
     }
 }

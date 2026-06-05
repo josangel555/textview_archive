@@ -91,9 +91,15 @@ extension DocumentModel: AutomationHost {
                 viewMode: t.viewMode.rawValue
             )
         }
+        // Emit `selectedTabIndex` 1-based to match the `select_tab` tool,
+        // which consumes a 1-based `byIndex` (`let zero = index - 1`). The
+        // internal `tabs.selectedIndex` is 0-based, so we add 1 here; this
+        // makes the `current_state` -> `select_tab` round-trip an identity
+        // (read the index, feed it straight back) instead of off-by-one.
+        // `nil` (no selection) is preserved as `nil`.
         return AutomationState(
             tabs: descriptors,
-            selectedTabIndex: tabs.selectedIndex,
+            selectedTabIndex: tabs.selectedIndex.map { $0 + 1 },
             viewMode: currentViewMode.rawValue,
             zoom: zoom,
             sidebarRoot: sidebar.rootURL?.path,

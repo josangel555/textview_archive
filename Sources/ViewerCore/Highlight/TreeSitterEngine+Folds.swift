@@ -277,7 +277,31 @@ extension TreeSitterEngine {
     /// `languageHandle(for:)` for the C symbol. Cached & failure-memoed
     /// inside `TreeSitterEngine` via the shared `foldBundles` storage
     /// in the main type's stored properties (see end of this file).
+    ///
+    /// Mirrors `TreeSitterEngine.bundle(for:)`'s compile-serialization:
+    /// a per-language `NSLock` is held across the slow
+    /// `Data(contentsOf:)` + `Query(language:data:)` compile so two
+    /// concurrent first-touchers for the same language (e.g. two JSON
+    /// tabs whose `Task.detached` fold computations land together) don't
+    /// both run the expensive compile and race to overwrite
+    /// `foldBundles[lang]` with distinct `Query` objects whose ARC fate
+    /// is then non-deterministic. After acquiring the per-language lock
+    /// we re-check `foldBundles`/`foldFailed`: a peer that won the race
+    /// has already stored the result, so the loser returns it instead of
+    /// recompiling. Different languages still parallelise — the per-
+    /// language lock only serializes same-language first-touch.
     fileprivate func foldBundle(for lang: HighlightLanguage) -> FoldBundle? {
+        foldLock.lock()
+        if let hit = foldBundles[lang] { foldLock.unlock(); return hit }
+        if foldFailed.contains(lang)   { foldLock.unlock(); return nil }
+        foldLock.unlock()
+
+        let perLangLock = Self.foldCompileLock(for: lang)
+        perLangLock.lock()
+        defer { perLangLock.unlock() }
+
+        // Re-check after acquiring the per-language lock: a peer thread
+        // that won the race has now stored the bundle (or the failure).
         foldLock.lock()
         if let hit = foldBundles[lang] { foldLock.unlock(); return hit }
         if foldFailed.contains(lang)   { foldLock.unlock(); return nil }
@@ -298,6 +322,28 @@ extension TreeSitterEngine {
             foldLock.lock(); foldFailed.insert(lang); foldLock.unlock()
             return nil
         }
+    }
+
+    /// Per-language compile lock, lazily allocated so we don't pay for
+    /// languages the user never touches. Parallel to
+    /// `TreeSitterEngine.compileLock(for:)` on the highlight path.
+    ///
+    /// Stored file-locally rather than as an instance property because
+    /// Swift can't add a stored property to `TreeSitterEngine` from this
+    /// extension (the type lives in another file). The map is keyed
+    /// purely by `HighlightLanguage` and all fold computation runs
+    /// through the single `TreeSitterEngine.shared` instance, so a
+    /// process-global map is equivalent to a per-instance one here. Its
+    /// own lazy-allocation is guarded by a dedicated lock (independent
+    /// of any engine instance's `foldLock`) so the map stays internally
+    /// consistent regardless of which instance calls in.
+    private static func foldCompileLock(for lang: HighlightLanguage) -> NSLock {
+        foldCompileLocksGuard.lock()
+        defer { foldCompileLocksGuard.unlock() }
+        if let l = foldCompileLocks[lang] { return l }
+        let l = NSLock()
+        foldCompileLocks[lang] = l
+        return l
     }
 
     private func foldQueryURL(for lang: HighlightLanguage) -> URL? {
@@ -366,6 +412,28 @@ extension TreeSitterEngine {
         foldLock.lock(); defer { foldLock.unlock() }
         return foldCache[language]?.slotCount ?? 0
     }
+}
+
+// MARK: - Fold-compile serialization storage
+//
+// File-local backing for the per-language compile locks used by
+// `foldBundle(for:)`. Held in a `private extension` (which permits
+// `static` stored properties) because Swift can't add an instance
+// stored property to `TreeSitterEngine` from an extension declared in a
+// separate file. See `foldBundle(for:)` for the invariant these uphold.
+private extension TreeSitterEngine {
+    /// Per-language compile lock, mirroring `compileLocks` on the
+    /// highlight path. Lazily populated; allocation guarded by
+    /// `foldCompileLocksGuard`.
+    ///
+    /// `nonisolated(unsafe)`: every access (lines 343/345) is bracketed by
+    /// `foldCompileLocksGuard.lock()`/`unlock()`, so the static mutable
+    /// dictionary is manually serialized — same pattern as
+    /// `GrammarLoader`'s `nonisolated(unsafe) static var cache`.
+    nonisolated(unsafe) static var foldCompileLocks: [HighlightLanguage: NSLock] = [:]
+
+    /// Guards lazy allocation/lookup of `foldCompileLocks` itself.
+    static let foldCompileLocksGuard = NSLock()
 }
 
 /// Per-language compiled fold query, parallel to the highlight bundle.

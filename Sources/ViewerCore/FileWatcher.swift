@@ -149,6 +149,19 @@ public final class FileWatcher: @unchecked Sendable {
         src.setCancelHandler { [fd] in close(fd) }
         src.resume()
         lock.lock()
+        // FW-S3: a stop() racing this reattach may have already cancelled
+        // the old source, nil'd _source, and set _stopped — and returned.
+        // Storing this freshly-resumed source now would leak it (and its
+        // fd) into an already-stopped watcher that nothing will ever
+        // cancel. Re-check _stopped under the same lock window before
+        // committing; if stopped, cancel this source (its cancel handler
+        // closes the fd) and bail without storing. Harmless to init(),
+        // where _stopped is always false.
+        if _stopped {
+            lock.unlock()
+            src.cancel()
+            return
+        }
         _source = src
         failures = 0  // a successful attach clears the failure counter
         lock.unlock()

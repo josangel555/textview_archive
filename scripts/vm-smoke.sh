@@ -64,15 +64,28 @@ if [[ ! -f "$FILE_ARG_HOST" ]]; then
   echo "Error: file not found on host: $FILE_ARG_HOST" >&2
   exit 1
 fi
-# Translate the host path to the corresponding path inside the VM
-# checkout. Anything under the project root rsyncs to
-# ~/markdown_viewer/<relpath>; anything else gets copied via scp.
+# Translate the host path to the corresponding VM-ABSOLUTE path. Anything
+# under the project root rsyncs to ~/markdown_viewer/<relpath>; anything
+# else gets copied via scp. Both branches yield an absolute VM path so the
+# launch site can use it verbatim (no prefix prepend).
 if [[ "$FILE_ARG_HOST" == "$ROOT_DIR"* ]]; then
   RELPATH="${FILE_ARG_HOST#$ROOT_DIR/}"
-  FILE_ARG_VM="markdown_viewer/$RELPATH"
+  FILE_ARG_VM="/Users/vm-tester/markdown_viewer/$RELPATH"
 else
   FILE_ARG_VM="/tmp/vm-smoke-input"
   scp -q "$FILE_ARG_HOST" "macOS15:$FILE_ARG_VM"
+fi
+
+# Defense-in-depth: the VM path is handed to a privileged remote shell
+# (`sudo -S launchctl`), so reject anything outside a strict allowlist
+# before it ever leaves the host. The path is passed to the remote as a
+# positional arg (not interpolated into the command body), but we still
+# refuse shell metacharacters / quotes / whitespace so a hostile filename
+# can never reach the sudo'd context even if the transport changes.
+if [[ ! "$FILE_ARG_VM" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+  echo "Error: refusing VM path with unsafe characters: $FILE_ARG_VM" >&2
+  echo "       (allowed: A-Z a-z 0-9 . _ / -)" >&2
+  exit 1
 fi
 
 OUT_PNG="${TMPDIR:-/tmp}/vm-smoke.png"
@@ -89,8 +102,11 @@ ssh macOS15 'cd markdown_viewer && bash scripts/build-app.sh debug 2>&1 | tail -
 echo "==> Reset window position + workspace state on VM"
 ssh macOS15 "
   pkill MarkdownViewer 2>/dev/null || true
-  # Workspace JSON (tab list, sidebar root, etc.)
-  rm -rf '/Users/vm-tester/Library/Application Support/MarkdownViewer/Workspaces' 2>/dev/null || true
+  # Persisted session state (tab list, sidebar root, etc.). This is the
+  # dir SessionStore.defaultDirectory() actually writes (the old
+  # MarkdownViewer/Workspaces shape was retired). The launch also sets
+  # MDV_SKIP_WORKSPACE_RESTORE=1, so this reset is belt-and-suspenders.
+  rm -rf '/Users/vm-tester/Library/Application Support/MarkdownViewer/Sessions' 2>/dev/null || true
   # AppKit autosaved window frame — keyed in CFPrefs by autosave name.
   # Without clearing, a prior off-screen frame would override center().
   defaults delete com.markdownviewer.MarkdownViewer 'NSWindow Frame MainWindow' 2>/dev/null || true
@@ -98,24 +114,33 @@ ssh macOS15 "
 "
 
 echo "==> Launch + screencap (via launchctl asuser; sh -c is the env-propagation trick)"
-ssh macOS15 "
+# The remote body is a QUOTED heredoc — nothing from the host is expanded
+# into it. PASSWORD, GUI_UID and the (already-allowlisted) VM path are sent
+# as positional args ($1/$2/$3) so an untrusted filename can never break out
+# of the remote sudo'd `sh -c` context.
+ssh macOS15 'bash -s' -- "$PASSWORD" "$GUI_UID" "$FILE_ARG_VM" <<'REMOTE'
   set -e
+  PASSWORD="$1"
+  GUI_UID="$2"
+  FILE_ARG_VM="$3"
   # launchctl asuser drops env vars passed via /usr/bin/env, but
   # propagates env set INSIDE the shell it spawns. So we ask asuser
   # to run sh -c '...env=val cmd...'. The 'sh' is the user shell;
-  # the env stays in scope through the exec.
-  echo '$PASSWORD' | sudo -S launchctl asuser $GUI_UID /bin/sh -c '
+  # the env stays in scope through the exec. The path is passed to that
+  # inner sh as ITS positional $0-shifted arg ("$1"), keeping it out of
+  # the command string entirely.
+  echo "$PASSWORD" | sudo -S launchctl asuser "$GUI_UID" /bin/sh -c '
     MDV_SKIP_WORKSPACE_RESTORE=1 \
     /Users/vm-tester/markdown_viewer/dist/TextView.app/Contents/MacOS/MarkdownViewer \
-    /Users/vm-tester/$FILE_ARG_VM &
-  '
+    "$1" &
+  ' _ "$FILE_ARG_VM"
   # AppKit needs a few hundred ms to lay out + paint the window.
-  # Bumped from 3s → 6s; some VM swaps push it.
+  # Bumped from 3s -> 6s; some VM swaps push it.
   sleep 6
-  echo '$PASSWORD' | sudo -S launchctl asuser $GUI_UID \
+  echo "$PASSWORD" | sudo -S launchctl asuser "$GUI_UID" \
     /usr/sbin/screencapture -x /tmp/vm-smoke.png
   ls -lh /tmp/vm-smoke.png
-"
+REMOTE
 
 echo "==> Pull screenshot back to host"
 scp -q macOS15:/tmp/vm-smoke.png "$OUT_PNG"

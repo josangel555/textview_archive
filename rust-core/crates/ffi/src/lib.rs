@@ -478,8 +478,7 @@ pub unsafe extern "C" fn mdvcore_session_table(
             return MdvStatus::NullArg;
         };
         h.with(|session| {
-            let table = session.table().clone();
-            match wire::encode_frame(&table) {
+            match wire::encode_frame(session.table()) {
                 Ok(frame) => {
                     // SAFETY: out_buf validated non-null above.
                     unsafe { *out_buf = MdvBuf::from_vec(frame) };

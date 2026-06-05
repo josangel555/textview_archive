@@ -93,13 +93,39 @@ extension EditOp {
     /// Example from the spec: 1000x500 fit into 400x400 ⇒ scale 0.4 ⇒
     /// 400x200. Returned as exact dimensions to feed `.resize(width:height:)`.
     public static func aspectFit(source: CGSize, into box: CGSize) -> (width: Int, height: Int) {
-        guard source.width > 0, source.height > 0, box.width > 0, box.height > 0 else {
-            return (max(1, Int(box.width)), max(1, Int(box.height)))
+        // Sanitize first: a NaN/Inf CGFloat fed to `Int()` is a hard runtime
+        // trap (LLVM fptosi overflow), not a recoverable error — and every
+        // `> 0` comparison against NaN is silently false, so a degenerate box
+        // would otherwise fall straight into the else branch and crash on the
+        // very `Int()` advertised as the graceful fallback. Reject any
+        // non-finite or non-positive input up front with the (1,1) sentinel.
+        guard source.width.isFinite, source.height.isFinite,
+              box.width.isFinite, box.height.isFinite,
+              source.width > 0, source.height > 0, box.width > 0, box.height > 0
+        else {
+            return (1, 1)
         }
         let scale = min(box.width / source.width, box.height / source.height)
-        let w = max(1, Int((source.width * scale).rounded()))
-        let h = max(1, Int((source.height * scale).rounded()))
+        // `scale` is finite here (finite, positive operands), but guard the
+        // products before `Int()` to be defensive against overflow to ±Inf.
+        let w = Self.clampToInt(source.width * scale)
+        let h = Self.clampToInt(source.height * scale)
         return (w, h)
+    }
+
+    /// Round a CGFloat to the nearest pixel and convert to `Int` with a floor
+    /// of 1, never trapping: a non-finite or out-of-`Int`-range value collapses
+    /// to the `1` floor instead of a `fptosi` runtime trap. The sole `Int()`
+    /// chokepoint for the fit math so no caller can reintroduce a NaN/Inf trap.
+    private static func clampToInt(_ value: CGFloat) -> Int {
+        let rounded = value.rounded()
+        // Strict `<` against `2^63`: `CGFloat(Int.max)` rounds up to exactly
+        // `2^63`, which is one past the largest `Int`, so admitting it would let
+        // `Int(_)` trap. `2^63` is itself exactly representable as a CGFloat.
+        guard rounded.isFinite, rounded >= 1, rounded < 0x1p63 else {
+            return 1
+        }
+        return Int(rounded)
     }
 }
 

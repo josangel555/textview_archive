@@ -270,6 +270,32 @@ public enum EditorWriter {
                 }
                 return statFingerprint(targetPath)
             }
+            if err == EACCES {
+                // The file EXISTS but we can't open it for reading
+                // (0200/0600-but-ACL-denied secret, root-owned file
+                // writable via group/ACL, a read-restricting ACL). This
+                // is NOT a new file — treating it as one would let the
+                // temp file's umask mode (0644) + the writer's owner ride
+                // over the rename, silently downgrading a 0600 secret to
+                // world-readable and dropping owner/group. Recover the
+                // security-critical mode + owner via lstat (no read access
+                // needed, and — like our O_NOFOLLOW classify — it does not
+                // follow symlinks) so `replay` still re-applies them.
+                //
+                // Xattrs (quarantine / ACL-as-xattr) genuinely can't be
+                // read without an fd we were denied, so they are NOT
+                // preserved on this path — but mode/owner, the bits whose
+                // loss is a privilege downgrade, are. If even lstat fails
+                // (e.g. the file vanished, or directory perms changed
+                // under us), refuse the save rather than silently
+                // downgrade: a recoverable error beats a permission leak.
+                guard let meta = ExistingFileMeta(eaccesAtPath: targetPath) else {
+                    throw EditorWriteError.writeFailed(
+                        "cannot preserve permissions of unreadable file (EACCES): \(targetPath)"
+                    )
+                }
+                existingMeta = meta
+            }
             // ENOENT (new file) or any other error: no existing metadata
             // to preserve. Fall through to the temp-write path; a
             // genuine permission problem surfaces on the rename below.
@@ -337,6 +363,24 @@ private struct ExistingFileMeta {
             mode = 0; uid = 0; gid = 0
         }
         xattrs = ExistingFileMeta.readXattrs(fd: fd)
+    }
+
+    /// Recover mode/owner for an existing file we were DENIED read access
+    /// to (open(O_RDONLY) returned EACCES). `lstat` needs only directory
+    /// traversal/search permission — not read permission on the file — and
+    /// does not follow symlinks (consistent with the writer's O_NOFOLLOW
+    /// classify; the symlink case is handled earlier via ELOOP, so a
+    /// regular file is expected here). Returns nil if even lstat fails
+    /// (file vanished / dir perms changed), so the caller can refuse the
+    /// save rather than silently downgrade permissions. Xattrs are
+    /// unreadable without an fd, so they are left empty on this path.
+    init?(eaccesAtPath path: String) {
+        var st = stat()
+        guard lstat(path, &st) == 0 else { return nil }
+        mode = st.st_mode & 0o7777
+        uid = st.st_uid
+        gid = st.st_gid
+        xattrs = []
     }
 
     /// Best-effort replay onto `path`. Each step is independent — a

@@ -344,7 +344,44 @@ public final class MCPServer: @unchecked Sendable {
             defer { writeLock.unlock() }
             try output.write(contentsOf: framed)
         } catch {
-            log("send error: \(error)")
+            // A failed write means the response never reached the client.
+            // Encoding errors (a non-Encodable `MCP.Response` is unreachable
+            // here) we just log, but a *transport* write failure means stdout
+            // is gone: in the half-closed case the client closed the read end
+            // of our stdout while keeping our stdin open, so every subsequent
+            // response would silently fail and the read loop would keep
+            // dispatching requests it can never answer — the orphaned
+            // headless-server hang the `onExit` wiring exists to prevent.
+            //
+            // Treat a dead-transport write error as fatal: `stop()` flips
+            // `stopFlag` and closes stdin, which unblocks the read loop into
+            // EOF → `fireExit()` → terminate. EPIPE/EBADF/ENOTCONN/ECONNRESET
+            // are unambiguously a dead pipe; for anything else we still tear
+            // down (a write that fails for a non-transient reason can't be
+            // retried in-order on a serial stream), but we log the distinction.
+            if Self.isDeadTransport(error) {
+                log("send error (dead transport): \(error); stopping")
+            } else {
+                log("send error: \(error); stopping")
+            }
+            stop()
+        }
+    }
+
+    /// Classify a `FileHandle.write` error as an unrecoverable transport
+    /// failure (the peer is gone). `FileHandle` surfaces the underlying
+    /// `write(2)` failure as an `NSError` in `NSPOSIXErrorDomain` whose
+    /// `code` is the raw `errno`. EPIPE (peer closed read end), EBADF (fd
+    /// closed under us), ENOTCONN and ECONNRESET all mean the channel is
+    /// dead and no retry can succeed.
+    private static func isDeadTransport(_ error: Error) -> Bool {
+        let ns = error as NSError
+        guard ns.domain == NSPOSIXErrorDomain else { return false }
+        switch Int32(ns.code) {
+        case EPIPE, EBADF, ENOTCONN, ECONNRESET:
+            return true
+        default:
+            return false
         }
     }
 

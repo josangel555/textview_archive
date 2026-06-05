@@ -315,6 +315,51 @@ public actor LSPPool {
         entries[key] = fresh
     }
 
+    /// Forget all per-file state the pool tracks for `fileURL`: removes
+    /// it from the live entry's `openedFiles` set and prunes the
+    /// `fileVersions` / `fileHashes` dictionaries. Idempotent and a
+    /// no-op when the file isn't tracked, the language has no LSP, or no
+    /// live entry exists.
+    ///
+    /// S3/leak: without this, `openedFiles` / `fileVersions` /
+    /// `fileHashes` grow unbounded for the life of a warm pool entry —
+    /// every distinct file ever opened in a workspace leaks three map
+    /// entries, since `ensureOpened` only inserts and `didChange` only
+    /// updates. Callers wire this into the tab-close path, guarded by the
+    /// existing "no surviving tab uses this URL" check, so a file shared
+    /// by multiple tabs isn't forgotten while still displayed.
+    ///
+    /// We deliberately do NOT send `textDocument/didClose` to the server:
+    /// `LSPClient` exposes no `didClose`, and the viewer's open/close
+    /// lifecycle is decoupled from tab visibility (`DocumentModel`'s
+    /// tab-close path intentionally avoids `didClose` to keep the
+    /// server's view of the document in sync with the buffer it last
+    /// saw). The accepted trade-off is a bounded server-side document
+    /// leak (reclaimed on idle-reap / server restart / app teardown)
+    /// while the Swift-side maps — the unbounded-growth hazard this
+    /// addresses — are pruned promptly. A subsequent `ensureOpened`
+    /// re-`didOpen`s the file and re-seeds version 1, so re-opening a
+    /// previously-closed file is correct.
+    public func closeFile(fileURL: URL) {
+        guard let entry = registry.language(for: fileURL) else { return }
+        guard let root = entry.rootFinder(fileURL) else { return }
+        let key = Key(language: entry.language, workspaceRoot: root)
+        guard var e = entries[key] else { return }
+        var mutated = false
+        if e.fileVersions.removeValue(forKey: fileURL) != nil { mutated = true }
+        if e.fileHashes.removeValue(forKey: fileURL) != nil { mutated = true }
+        if case .live(let client, var opened) = e.state,
+           opened.remove(fileURL) != nil {
+            e.state = .live(client, openedFiles: opened)
+            mutated = true
+        }
+        guard mutated else { return }
+        // Don't touch `lastUsed`: forgetting a file is bookkeeping, not
+        // server traffic — it must not keep an otherwise-idle entry alive
+        // past the reaper cutoff.
+        entries[key] = e
+    }
+
     /// Stable 64-bit content hash for the PERF-01 didChange gate. We use
     /// the UTF-8 bytes through `Hasher` rather than `String.hashValue`
     /// because the latter is seeded per-process-run (randomized) — fine

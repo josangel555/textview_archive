@@ -333,7 +333,15 @@ private final class HexTextController: NSViewController {
     fileprivate var fileData: Data = Data()
 
     private var lastDumpKey: DumpKey?
-    private var lastHighlightKey: HighlightKey?
+    private var lastHighlightFingerprint: HighlightFingerprint?
+    /// The `matches` array that produced the currently-painted highlights,
+    /// and which entry in it is painted as the active (orange) match.
+    /// Retained so the "only currentMatch changed" fast path knows which
+    /// previously-active range to revert to base-yellow without a full
+    /// re-paint (audit S2). `nil` ⇒ no full paint has run since the last
+    /// dump rebuild, so the fast path is not eligible.
+    private var lastPaintedMatches: [Int]?
+    private var lastActiveMatchIndex: Int?
     private var rowLength: Int = 0
     private var headerCharCount: Int = 0
     private var currentWidth: Int = HexLayout.defaultWidth
@@ -394,13 +402,63 @@ private final class HexTextController: NSViewController {
         let fontSize: CGFloat
         let width: Int
     }
-    private struct HighlightKey: Equatable {
-        let matches: [Int]
+    /// Cheap O(1) fingerprint of a highlight request, replacing a full
+    /// element-by-element `[Int]` compare of the (up to 50k) `matches` /
+    /// `clickOffsets` arrays on every no-op `updateNSViewController`
+    /// (audit S3). `count + first + last` is a near-collision-free proxy
+    /// for "the match set changed" given the offsets are produced by the
+    /// same deterministic search over an immutable buffer; an actual
+    /// repaint never depends on this for correctness (the painter reads
+    /// the real arrays), only the dedupe short-circuit does.
+    ///
+    /// `matchesExceptActiveMatch` is the same fingerprint with
+    /// `currentMatch` zeroed out, used to detect the common "only the
+    /// active match index moved" case (⌘G / arrow step) so we can take
+    /// the O(2) repaint fast path instead of a full re-paint (audit S2).
+    private struct HighlightFingerprint: Equatable {
+        let matchCount: Int
+        let matchFirst: Int?
+        let matchLast: Int?
         let matchPatternLength: Int
         let currentMatch: Int?
-        let clickOffsets: [Int]
+        let clickCount: Int
+        let clickFirst: Int?
+        let clickLast: Int?
         let clickPatternLength: Int
         let width: Int
+
+        init(matches: [Int],
+             matchPatternLength: Int,
+             currentMatch: Int?,
+             clickOffsets: [Int],
+             clickPatternLength: Int,
+             width: Int) {
+            self.matchCount = matches.count
+            self.matchFirst = matches.first
+            self.matchLast = matches.last
+            self.matchPatternLength = matchPatternLength
+            self.currentMatch = currentMatch
+            self.clickCount = clickOffsets.count
+            self.clickFirst = clickOffsets.first
+            self.clickLast = clickOffsets.last
+            self.clickPatternLength = clickPatternLength
+            self.width = width
+        }
+
+        /// True when only `currentMatch` differs (everything that affects
+        /// which ranges exist / how they're laid out is identical).
+        func differsOnlyByActiveMatch(from other: HighlightFingerprint) -> Bool {
+            currentMatch != other.currentMatch
+                && matchCount == other.matchCount
+                && matchFirst == other.matchFirst
+                && matchLast == other.matchLast
+                && matchPatternLength == other.matchPatternLength
+                && clickCount == other.clickCount
+                && clickFirst == other.clickFirst
+                && clickLast == other.clickLast
+                && clickPatternLength == other.clickPatternLength
+                && width == other.width
+        }
     }
     private struct PendingHighlightKey {
         let matches: [Int]
@@ -506,7 +564,12 @@ private final class HexTextController: NSViewController {
                                                isTruncated: file.isTruncated),
                               fontSize: fontSize,
                               width: width)
-            lastHighlightKey = nil // force re-apply
+            // Force a full re-apply against the freshly-built storage; the
+            // fast path can't run until a full paint re-establishes the
+            // painted-match bookkeeping.
+            lastHighlightFingerprint = nil
+            lastPaintedMatches = nil
+            lastActiveMatchIndex = nil
         }
 
         // Toggle editability. The byte grid stays SELECTABLE either way
@@ -692,14 +755,37 @@ private final class HexTextController: NSViewController {
                 clickPatternLength: clickPatternLength)
             return
         }
-        let key = HighlightKey(matches: matches,
-                               matchPatternLength: matchPatternLength,
-                               currentMatch: currentMatch,
-                               clickOffsets: clickOffsets,
-                               clickPatternLength: clickPatternLength,
-                               width: currentWidth)
-        if key == lastHighlightKey { return }
-        lastHighlightKey = key
+        let key = HighlightFingerprint(matches: matches,
+                                       matchPatternLength: matchPatternLength,
+                                       currentMatch: currentMatch,
+                                       clickOffsets: clickOffsets,
+                                       clickPatternLength: clickPatternLength,
+                                       width: currentWidth)
+        if key == lastHighlightFingerprint { return }
+
+        // Fast path: only the active match index moved (⌘G / arrow step).
+        // The match set, click set, pattern lengths and width are all
+        // unchanged, so the only visual delta is which single match is
+        // orange (active) vs yellow (base). Repaint just the two affected
+        // ranges (old-active → base, new-active → orange) instead of an
+        // O(matches) removeAttribute + full re-paint (audit S2).
+        if let prev = lastHighlightFingerprint,
+           key.differsOnlyByActiveMatch(from: prev),
+           let painted = lastPaintedMatches,
+           matchPatternLength > 0 {
+            stepActiveMatch(in: painted,
+                            patternLength: matchPatternLength,
+                            from: lastActiveMatchIndex,
+                            to: currentMatch)
+            lastHighlightFingerprint = key
+            lastActiveMatchIndex = currentMatch
+            if let idx = currentMatch, matches.indices.contains(idx) {
+                scrollByteIntoView(offset: matches[idx])
+            }
+            return
+        }
+
+        lastHighlightFingerprint = key
 
         guard let storage = textView.textStorage else { return }
         storage.beginEditing()
@@ -716,20 +802,53 @@ private final class HexTextController: NSViewController {
         }
 
         if !matches.isEmpty, matchPatternLength > 0 {
-            let base = NSColor.systemYellow.withAlphaComponent(0.45)
-            let active = NSColor.systemOrange.withAlphaComponent(0.60)
             for (i, off) in matches.enumerated() {
-                let c = (i == currentMatch) ? active : base
                 paint(offset: off, length: matchPatternLength,
-                      color: c, in: storage)
+                      color: Self.matchColor(active: i == currentMatch),
+                      in: storage)
             }
         }
 
         storage.endEditing()
 
+        // Record what we painted so the next step can take the fast path.
+        lastPaintedMatches = (matchPatternLength > 0) ? matches : nil
+        lastActiveMatchIndex = currentMatch
+
         if let idx = currentMatch, matches.indices.contains(idx) {
             scrollByteIntoView(offset: matches[idx])
         }
+    }
+
+    /// Search-match tint colors. Factored so the full paint and the
+    /// `stepActiveMatch` fast path can never drift on which color marks
+    /// the active vs base match.
+    private static func matchColor(active: Bool) -> NSColor {
+        active
+            ? NSColor.systemOrange.withAlphaComponent(0.60)
+            : NSColor.systemYellow.withAlphaComponent(0.45)
+    }
+
+    /// Repaint only the previously-active match back to base-yellow and
+    /// the newly-active match to orange. Used by the `applyHighlights`
+    /// fast path when only `currentMatch` changed (audit S2). `painted`
+    /// is the match-offset array that produced the current highlights;
+    /// both indices are bounds-checked against it.
+    private func stepActiveMatch(in painted: [Int],
+                                 patternLength: Int,
+                                 from oldIndex: Int?,
+                                 to newIndex: Int?) {
+        guard patternLength > 0, let storage = textView.textStorage else { return }
+        storage.beginEditing()
+        if let old = oldIndex, painted.indices.contains(old) {
+            paint(offset: painted[old], length: patternLength,
+                  color: Self.matchColor(active: false), in: storage)
+        }
+        if let new = newIndex, painted.indices.contains(new) {
+            paint(offset: painted[new], length: patternLength,
+                  color: Self.matchColor(active: true), in: storage)
+        }
+        storage.endEditing()
     }
 
     private func paint(offset: Int, length: Int,

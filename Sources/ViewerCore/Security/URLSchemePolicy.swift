@@ -44,11 +44,26 @@ public enum URLSchemePolicy {
         // against the current working dir (usually `/` for GUI apps),
         // which is *not* what the caller meant.
         guard expanded.hasPrefix("/") else { return nil }
-        let url = URL(fileURLWithPath: expanded).standardizedFileURL
+        // Resolve symlinks BEFORE the containment comparison — on the
+        // candidate AND on both jail roots — so the prefix check sees the
+        // physical path. `standardizedFileURL` only collapses `..`/`.`
+        // *lexically*; an in-home symlink (e.g. a dotfile-managed
+        // `~/link -> /etc`) would otherwise pass `hasPrefix(home + "/")`
+        // and `model.openPath` would read the out-of-home target — the
+        // one-click "read anything" primitive this policy exists to close
+        // (AUDIT S3). Resolving both operands keeps the comparison
+        // physical-to-physical, matching the home rooting elsewhere
+        // (`DocumentModel.setRoot`). `resolvingSymlinksInPath()` on a
+        // non-existent path resolves the existing leading components and
+        // leaves the rest verbatim, so the existence-agnostic contract
+        // (see docstring) is preserved.
+        let url = URL(fileURLWithPath: expanded)
+            .standardizedFileURL.resolvingSymlinksInPath()
         let fm = FileManager.default
         let home = URL(fileURLWithPath: NSHomeDirectory())
-            .standardizedFileURL.path
-        let temp = fm.temporaryDirectory.standardizedFileURL.path
+            .standardizedFileURL.resolvingSymlinksInPath().path
+        let temp = fm.temporaryDirectory
+            .standardizedFileURL.resolvingSymlinksInPath().path
         let p = url.path
         if p == home { return url }
         if p.hasPrefix(home + "/") { return url }

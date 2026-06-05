@@ -144,8 +144,12 @@ final class EditorRepublishInvariantTests: XCTestCase {
         // republishes only that channel (re-bodying StatusBar + the source
         // subtree, which is the intended status-bar L:C update) and does NOT
         // touch DocumentModel. Both the pure RECORD and the status-bar mirror
-        // are now free of DocumentModel republishes.
-        XCTAssertLessThanOrEqual(count, 1,
+        // are provably free of DocumentModel republishes, so the count is
+        // ZERO — same as the scroll/diagnostics/gutter siblings. Asserting
+        // == 0 (not <= 1) catches a future regression that re-routes the
+        // mirror back onto DocumentModel.objectWillChange (one republish per
+        // cursor move = the per-tick storm this test is named to forbid).
+        XCTAssertEqual(count, 0,
             "cursor mirror must not republish DocumentModel "
             + "(it republishes the SourceViewChannel instead)")
     }

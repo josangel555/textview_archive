@@ -160,4 +160,118 @@ final class HighlightedTextTests: XCTestCase {
         let big = String(repeating: "a", count: 2048)
         XCTAssertTrue(HighlightedText.isLikelyCatastrophicRegex(big))
     }
+
+    // MARK: - SEC-004/SEC-006: ReDoS shapes the SHAPE-GUARD misses
+    //
+    // `testCatastrophicRegexDoesNotHang` above only feeds `(a+)+$`, which
+    // `isLikelyCatastrophicRegex` already classifies as catastrophic and
+    // short-circuits to literal — so it passes for a reason orthogonal to
+    // what it claims (that catastrophic INPUT can't hang the match path).
+    //
+    // The non-capturing `(?:a+)+`, doubly-nested `((a+))+`, and
+    // alternation `(a|aa)+` forms are equally exponential, but if the
+    // cheap shape-guard fails to flag them they slip through to
+    // `NSRegularExpression.enumerateMatches`, where the in-block 250ms
+    // `stop.pointee` flag is NOT a real timeout: `enumerateMatches` only
+    // calls the block on a *completed* match, so a single match that
+    // backtracks for 20s never re-enters the block to observe the budget.
+    //
+    // The contract each pattern must satisfy is a disjunction: EITHER the
+    // shape-guard rejects it up front, OR the full `ranges()` call returns
+    // under a hard wall-clock deadline. We evaluate `ranges()` on a
+    // background queue and bound it with `wait(for:timeout:)` so a hang
+    // surfaces as a CLEAN test failure at the deadline instead of wedging
+    // the whole test process. (The orphaned worker may keep spinning if it
+    // truly hangs — that is the bug these tests exist to catch.)
+
+    /// Runs `HighlightedText.ranges(...)` off the test thread and returns
+    /// the match count, or `nil` if it did not finish within `deadline`.
+    /// Using a background queue + `XCTestExpectation` means a catastrophic
+    /// backtrack fails the assertion at the deadline rather than hanging
+    /// the runner forever (the in-block 250ms cap cannot interrupt a
+    /// single still-backtracking `enumerateMatches` call).
+    private func rangeCountWithinDeadline(
+        haystack: String,
+        pattern: String,
+        deadline: TimeInterval
+    ) -> Int? {
+        // Standalone (untracked) expectation + standalone XCTWaiter: a
+        // timeout returns `.timedOut` without auto-failing and without
+        // tripping XCTest's "waited-on tracked expectation" bookkeeping,
+        // so we own the failure message and the never-fulfilled case is
+        // clean rather than an API-misuse error.
+        let done = XCTestExpectation(description: "ranges(\(pattern)) returns")
+        let box = ResultBox()
+        DispatchQueue.global(qos: .userInitiated).async {
+            let r = HighlightedText.ranges(
+                in: haystack, query: pattern, mode: .regex(caseSensitive: false))
+            box.set(r.count)
+            done.fulfill()
+        }
+        let outcome = XCTWaiter().wait(for: [done], timeout: deadline)
+        guard outcome == .completed else { return nil }
+        return box.value
+    }
+
+    /// Asserts the audited disjunction for a known exponential pattern:
+    /// the shape-guard rejects it OR `ranges()` returns within `deadline`.
+    /// A hang is therefore a deterministic failure, not a frozen process.
+    private func assertCatastrophicPatternIsBounded(
+        _ pattern: String,
+        deadline: TimeInterval = 2.0,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        if HighlightedText.isLikelyCatastrophicRegex(pattern) {
+            // Guard caught it — the match path is never reached. The
+            // sibling `testCatastrophicRegexFallsBackToLiteral` already
+            // covers the literal-fallback semantics; nothing more to do.
+            return
+        }
+        // Guard missed it: the only thing standing between us and a hang
+        // is the match-time cap, which must hold off-thread.
+        let count = rangeCountWithinDeadline(
+            haystack: Self.longNonMatchingHaystack,
+            pattern: pattern, deadline: deadline)
+        XCTAssertNotNil(
+            count,
+            "ReDoS: `\(pattern)` neither rejected by isLikelyCatastrophicRegex "
+                + "nor bounded by the match-time cap — ranges() did not return "
+                + "within \(deadline)s on a non-matching haystack (catastrophic "
+                + "backtracking). The 250ms in-block flag is not a real timeout.",
+            file: file, line: line)
+        // It returned in time: no match expected (haystack is all 'a' then
+        // a non-'a' tail that defeats the trailing `$` anchor).
+        if let count { XCTAssertEqual(count, 0, file: file, line: line) }
+    }
+
+    /// A long all-`a` run with a non-`a` tail: the worst case for the
+    /// `...+$` family because every prefix matches and the final anchor
+    /// fails, forcing maximal backtracking on a vulnerable engine.
+    private static let longNonMatchingHaystack =
+        String(repeating: "a", count: 40) + "X"
+
+    func testNonCapturingNestedQuantifierIsBounded() {
+        // `(?:a+)+$` — non-capturing twin of `(a+)+$`.
+        assertCatastrophicPatternIsBounded("(?:a+)+$")
+    }
+
+    func testDoublyNestedQuantifierIsBounded() {
+        // `((a+))+$` — extra capturing layer around the inner `a+`.
+        assertCatastrophicPatternIsBounded("((a+))+$")
+    }
+
+    func testOverlappingAlternationQuantifierIsBounded() {
+        // `(a|aa)+$` — alternation arms with a shared prefix under `+`.
+        assertCatastrophicPatternIsBounded("(a|aa)+$")
+    }
+}
+
+/// Thread-safe one-shot holder so the background `ranges()` worker can
+/// publish its result to the test thread without a data race.
+private final class ResultBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Int?
+    func set(_ v: Int) { lock.lock(); stored = v; lock.unlock() }
+    var value: Int? { lock.lock(); defer { lock.unlock() }; return stored }
 }

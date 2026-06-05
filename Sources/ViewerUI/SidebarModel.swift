@@ -10,8 +10,7 @@ public final class SidebarModel: ObservableObject {
     @Published public private(set) var expanded: Set<URL> = []
     @Published public var includeHidden: Bool = true {
         didSet {
-            clearCache()
-            invalidateFlatCache()
+            clearCache()   // also drops the flat-row memo
             for url in expanded { ensureLoaded(url: url) }
         }
     }
@@ -105,8 +104,7 @@ public final class SidebarModel: ObservableObject {
         }
         rootURL = normalized
         expanded.removeAll()
-        clearCache()
-        invalidateFlatCache()
+        clearCache()   // also drops the flat-row memo
         folderWatcher?.stop()
         folderWatcher = nil
         // Refresh the Claude-transcript flag on every root change. Cheap
@@ -545,9 +543,18 @@ public final class SidebarModel: ObservableObject {
         cachedFlatRows = nil
     }
 
+    /// Drops every derived cache in one shot. The flat-row memo
+    /// (`cachedFlatRows`) is invalidated HERE rather than left to each
+    /// caller: it is derived from `childrenCache`, so clearing the
+    /// children cache without dropping the memo leaves a stale flattened
+    /// tree (the exact desync hit by `DocumentModel`'s git-checkout
+    /// `clearCache()` call, which has no access to the private
+    /// `invalidateFlatCache()`). Folding it in makes the two impossible
+    /// to drift.
     public func clearCache() {
         childrenCache.removeAll()
         childrenCacheOrder.removeAll()
         sortedCache.removeAll()
+        cachedFlatRows = nil
     }
 }

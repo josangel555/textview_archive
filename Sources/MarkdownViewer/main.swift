@@ -464,17 +464,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // reparented to launchd and linger until their own idle/exit
         // logic fired. `closeAll()` is async on the actor; we bridge it
         // to this synchronous AppKit callback with a bounded semaphore
-        // wait so a wedged server can't block quit indefinitely. 2s is
-        // generous for the sequential, short-timeout shutdowns the pool
-        // performs; on timeout we proceed and let the OS reap the
-        // children at process exit.
+        // wait so a wedged server can't block quit indefinitely.
+        //
+        // [S3] The previous fixed 2s deadline was a leak: `closeAll()`
+        // shuts clients down SEQUENTIALLY and each `LSPClient.shutdown()`
+        // costs up to ~2.4s (2s "shutdown" request timeout + 200ms grace
+        // + 200ms SIGTERM poll). With ≥2 live servers (e.g. sourcekit-lsp
+        // + a TS server) the 2s wait expired mid-teardown, we returned,
+        // and `exit()` ran while later clients were still un-shutdown —
+        // reparenting them to launchd, the exact leak RC-5 was added to
+        // prevent. The sequential cost scales with server count, so the
+        // total deadline must too; a single fixed value can't fit both
+        // "one server" and "five servers".
+        //
+        // The wait is an UPPER BOUND, not a fixed sleep — `done.wait`
+        // returns the instant `closeAll()` signals, so a fast teardown
+        // (the common 0–1 server case) still quits promptly. We therefore
+        // simply give the wait a generous ceiling sized for a realistic
+        // worst case (several live servers shut down sequentially at
+        // ~2.4s each), rather than the old 2s that couldn't even cover
+        // two. We can't parallelize `closeAll()` or shorten the per-client
+        // request timeout from here (both live in ViewerCore — see
+        // needsCoordination), so widening the bound is the in-file fix.
+        // The ceiling still caps quit latency so a pathologically wedged
+        // pool can't block forever; on timeout we proceed and let the OS
+        // reap the children at process exit.
         let pool = model.lspPool
+        // ~6 sequential servers at ~2.4s each, comfortably above any
+        // realistic live-server count for a single workspace while still
+        // bounding worst-case quit latency.
+        let shutdownDeadline = 15.0
         let done = DispatchSemaphore(value: 0)
         Task.detached {
             await pool.closeAll()
             done.signal()
         }
-        _ = done.wait(timeout: .now() + 2.0)
+        _ = done.wait(timeout: .now() + shutdownDeadline)
     }
 
     @objc func openDocument(_ sender: Any?) {

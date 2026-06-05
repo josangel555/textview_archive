@@ -49,7 +49,7 @@ fn main() -> io::Result<()> {
             app.list.select(Some(i));
             app.enter();
         }
-        print!("{}", app.snapshot(100, 30));
+        print!("{}", app.snapshot(100, 30)?);
         return Ok(());
     }
     let mut terminal = ratatui::init();
@@ -77,6 +77,17 @@ struct Entry {
     is_parent: bool,
 }
 
+/// A directory entry pre-formatted for the file list, built once per directory
+/// reload and reused on every frame. `draw_files` runs on every keypress (incl.
+/// content-pane-only scroll keys); rebuilding the label `String`s per frame
+/// would scale per-frame work with directory size, not the visible viewport.
+struct ListRow {
+    /// Display label (`name` or `name/` for directories) — the expensive part
+    /// (`format!`/`clone`) we cache so frames only borrow it into a `Span`.
+    label: String,
+    is_dir: bool,
+}
+
 /// A loaded file: the raw bytes + metadata, plus the current shaped `View` from
 /// the shared `mdvcore_core::view` (the same shaping the web front-end uses).
 struct Preview {
@@ -102,6 +113,10 @@ impl Preview {
 struct App {
     cwd: PathBuf,
     entries: Vec<Entry>,
+    /// Pre-formatted file-list rows, rebuilt in `reload_dir` (1:1 with
+    /// `entries`) and reused by `draw_files` so per-frame work is viewport-
+    /// bounded rather than scaling with directory size.
+    list_rows: Vec<ListRow>,
     list: ListState,
     preview: Option<Preview>,
     status: String,
@@ -115,6 +130,7 @@ impl App {
         let mut app = App {
             cwd,
             entries: Vec::new(),
+            list_rows: Vec::new(),
             list: ListState::default(),
             preview: None,
             status: String::new(),
@@ -151,6 +167,15 @@ impl App {
             }
             Err(e) => self.status = format!("cannot read dir: {e}"),
         }
+        // Rebuild the cached display rows once per directory change (the only
+        // point `entries` mutates) so `draw_files` never reallocates per frame.
+        self.list_rows = entries
+            .iter()
+            .map(|e| ListRow {
+                label: if e.is_dir { format!("{}/", e.name) } else { e.name.clone() },
+                is_dir: e.is_dir,
+            })
+            .collect();
         self.entries = entries;
         self.list.select(if self.entries.is_empty() { None } else { Some(0) });
     }
@@ -269,11 +294,15 @@ impl App {
     }
 
     /// Render one frame to an in-memory buffer and return it as text (for
-    /// `--snapshot` and tests — no real terminal involved).
-    fn snapshot(&mut self, w: u16, h: u16) -> String {
-        let mut terminal = Terminal::new(TestBackend::new(w, h)).expect("test backend");
-        terminal.draw(|f| self.draw(f)).expect("draw");
-        buffer_to_string(&terminal)
+    /// `--snapshot` and tests — no real terminal involved). Reachable from the
+    /// user-facing `--snapshot` CLI flag, so errors propagate as `io::Result`
+    /// (matching `main`'s discipline) instead of panicking — the release
+    /// profile is `panic = "abort"`, which would otherwise turn a failure into
+    /// a bare process abort with no message.
+    fn snapshot(&mut self, w: u16, h: u16) -> io::Result<String> {
+        let mut terminal = Terminal::new(TestBackend::new(w, h))?;
+        terminal.draw(|f| self.draw(f))?;
+        Ok(buffer_to_string(&terminal))
     }
 
     // MARK: - Rendering
@@ -289,17 +318,20 @@ impl App {
 
     fn draw_files(&mut self, frame: &mut Frame, area: Rect) {
         let title = format!(" {} ", short_path(&self.cwd));
+        // Reuse the labels formatted once in `reload_dir`; per frame we only
+        // borrow them into a `Span` (zero string allocs). `List::new` still
+        // collects its own thin item vec, but the costly per-entry `format!`/
+        // `clone` no longer runs on every keystroke.
         let items: Vec<ListItem> = self
-            .entries
+            .list_rows
             .iter()
-            .map(|e| {
-                let label = if e.is_dir { format!("{}/", e.name) } else { e.name.clone() };
-                let style = if e.is_dir {
+            .map(|r| {
+                let style = if r.is_dir {
                     Style::new().fg(Color::Cyan).bold()
                 } else {
                     Style::new()
                 };
-                ListItem::new(Line::from(Span::styled(label, style)))
+                ListItem::new(Line::from(Span::styled(r.label.as_str(), style)))
             })
             .collect();
         let list = List::new(items)
@@ -468,7 +500,7 @@ mod tests {
     }
 
     fn render(app: &mut App) -> String {
-        app.snapshot(100, 24)
+        app.snapshot(100, 24).expect("snapshot render")
     }
 
     fn select_name(app: &mut App, name: &str) {

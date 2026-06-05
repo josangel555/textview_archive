@@ -78,8 +78,19 @@ public final class GitPanelModel: ObservableObject {
     public let logIncrementSize: Int = 200
     public let logHardCap: Int = 5000
 
+    /// Monotonic generation for the log list. Bumped every time the log is
+    /// reset or wholesale-replaced (repo switch, initial-page refresh) so an
+    /// in-flight `loadMoreLog` page that lost a race against a reset/refresh
+    /// can detect it and discard its (now stale / cross-repo) result instead
+    /// of appending it onto a different list.
+    private var logGen: Int = 0
+
     private var timer: Timer?
     private var refreshTask: Task<Void, Never>?
+    /// In-flight `loadMoreLog` pagination task — tracked so it can be cancelled
+    /// when the log is reset/refreshed under it (the generation guard is the
+    /// correctness backstop; cancellation just avoids the wasted shell-out).
+    private var loadMoreTask: Task<Void, Never>?
     /// Cache freshness threshold — anything older than this on tab-switch
     /// triggers an immediate refresh. Matches the user-stated 60 s cadence.
     private let cacheTTL: TimeInterval = 60
@@ -102,6 +113,8 @@ public final class GitPanelModel: ObservableObject {
         timer = nil
         refreshTask?.cancel()
         refreshTask = nil
+        loadMoreTask?.cancel()
+        loadMoreTask = nil
     }
 
     /// Hook from `NSWindow.didBecomeKeyNotification` (wired by the view).
@@ -120,6 +133,9 @@ public final class GitPanelModel: ObservableObject {
         remoteEntries = []
         head = nil
         logLoadedCount = 0
+        logGen &+= 1
+        loadMoreTask?.cancel()
+        loadMoreTask = nil
         lastRefreshed = [:]
         refreshCurrent()
     }
@@ -192,6 +208,12 @@ public final class GitPanelModel: ObservableObject {
         let tab = selectedTab
         let page = logPageSize
         refreshTask?.cancel()
+        // A refresh that re-fetches the initial log page wholesale-replaces the
+        // list; cancel any in-flight pagination so it can't append onto it. The
+        // generation guard (`apply` bumps `logGen` on the initial page) is the
+        // correctness backstop if the page already passed its suspension point.
+        loadMoreTask?.cancel()
+        loadMoreTask = nil
         isRefreshing = true
         // Outer Task is @MainActor so capturing self is fine. The
         // blocking shell-out work lives on a detached task whose return
@@ -224,11 +246,23 @@ public final class GitPanelModel: ObservableObject {
               logLoadedCount < logHardCap else { return }
         let skip = logLoadedCount
         let take = min(logIncrementSize, logHardCap - logLoadedCount)
-        Task { @MainActor [weak self] in
+        // Snapshot the list's identity. If a refresh / repo switch resets or
+        // wholesale-replaces the log across the suspension below, `logGen`
+        // (and `repoRoot` / `logLoadedCount`) move out from under us, and we
+        // must discard `more` rather than append a stale or cross-repo page.
+        let gen = logGen
+        loadMoreTask?.cancel()
+        loadMoreTask = Task { @MainActor [weak self] in
             let more = await Task.detached(priority: .utility) {
                 GitClient(repoRoot: root).graphLog(maxEntries: take, skip: skip)
             }.value
-            guard let self else { return }
+            guard let self, !Task.isCancelled else { return }
+            // The list must still be the exact one we paged off of: same repo,
+            // same generation, and `skip` still the tail (no refresh inserted a
+            // fresh initial page underneath). Otherwise drop the result.
+            guard self.repoRoot == root,
+                  gen == self.logGen,
+                  self.logLoadedCount == skip else { return }
             self.logEntries.append(contentsOf: more)
             self.logLoadedCount += more.count
         }
@@ -242,7 +276,13 @@ public final class GitPanelModel: ObservableObject {
         if let s = p.status, statusEntries != s { statusEntries = s }
         if let l = p.log {
             if logEntries != l { logEntries = l }
-            if isInitialLogPage, logLoadedCount != l.count { logLoadedCount = l.count }
+            if isInitialLogPage {
+                // The initial page replaces the list wholesale; bump the
+                // generation so any in-flight `loadMoreLog` page that raced
+                // this refresh discards its result instead of appending it.
+                logGen &+= 1
+                if logLoadedCount != l.count { logLoadedCount = l.count }
+            }
         }
         if let s = p.stash, stashEntries != s { stashEntries = s }
         if let t = p.trees, worktreeEntries != t { worktreeEntries = t }

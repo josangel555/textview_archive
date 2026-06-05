@@ -115,6 +115,20 @@ extension AppDelegate {
     /// caller terminal), then dump JSON + PNG of our own window to
     /// /var/folders/.../mdv-auto.{json,png}, then exit. Avoids the
     /// AppleScript / terminal-focus problems of SIGUSR1-driven snapshots.
+    ///
+    /// CONTRACT (S4, 2026-06-03): the `exit()` calls below intentionally
+    /// bypass `applicationWillTerminate`'s teardown — `sessions
+    /// .flushForTermination()`, `JSONFileStore.flushSync()`,
+    /// `terminalPane.shutdown()`, bounded LSP `pool.closeAll()`. That is
+    /// SAFE here only because `--auto-snapshot` is a dev/test harness flag
+    /// that never opens a real workspace, never spawns an LSP server, and
+    /// never mutates the Sessions index, so there is no durable state to
+    /// flush. If this path is ever made to operate on a real folder, route
+    /// the exit through `NSApp.terminate(nil)` (as the MCP `onExit` path
+    /// does) — or call the flush trio first — instead of raw `exit()`,
+    /// otherwise it leaks the Sessions index unflushed and orphans the
+    /// spawned LSP server until launchd reaps it. DO NOT copy a raw
+    /// `exit()` from here into any state-bearing code path.
     func scheduleAutoSnapshot(after delay: Double, forceSource: Bool) {
         if forceSource, model.supportsViewModeToggle, model.currentViewMode != .source {
             DispatchQueue.main.async { self.model.toggleViewMode() }
@@ -155,6 +169,15 @@ extension AppDelegate {
     /// chance to lay out and the WKWebView (if any) has had a beat to
     /// start loading. Then dumps the realized NSView tree as JSON to
     /// stdout and exits cleanly with code 0 (or 1 on failure).
+    ///
+    /// CONTRACT (S4, 2026-06-03): same deliberate flush skip as
+    /// `scheduleAutoSnapshot` — the `exit()` calls below bypass
+    /// `applicationWillTerminate`'s teardown (Sessions flush, JSON store
+    /// sync, terminal shutdown, LSP `pool.closeAll()`). SAFE because
+    /// `--diagnose` is a headless launch probe with no durable state. If
+    /// this ever drives a real workspace, route through
+    /// `NSApp.terminate(nil)` or call the flush trio first. DO NOT copy a
+    /// raw `exit()` from here into a state-bearing path.
     func runDiagnoseAndExit(forceSource: Bool) {
         guard let win = window else {
             FileHandle.standardError.write(Data("diagnose: no window\n".utf8))

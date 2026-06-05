@@ -216,6 +216,17 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
     @MainActor
     public final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         weak var webView: WKWebView?
+        /// Becomes `true` the first time the bundled host HTML finishes
+        /// loading. Gates the navigation policy: the lone legitimate
+        /// `file:` load is the one-shot `loadFileURL(codemirror.html)` (and
+        /// its bootstrap subresources, `codemirror.css`/`codemirror.js`),
+        /// which all arrive BEFORE `didFinish`. Any post-bootstrap
+        /// top-level `.other` navigation to `file:`/`data:` can only be an
+        /// in-page script escape (`window.location = 'file:///etc/passwd'`)
+        /// and is cancelled — see `decide(..., didFinishFirstLoad:)`. The
+        /// editor never reloads its host page, so unlike `MarkdownRenderedView`
+        /// it needs no `expectingProgrammaticLoad` distinction.
+        var didFinishFirstLoad: Bool = false
         var onTextChange: ((String) -> Void)?
         var onSaveRequested: (() -> Void)?
         var onCursorChange: ((CMCursorPosition) -> Void)?
@@ -612,19 +623,118 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
 
         public func webView(
             _ webView: WKWebView,
+            didFinish navigation: WKNavigation!
+        ) {
+            // From here on the host page is up. Any further top-level
+            // `.other` navigation to file:/data: is an in-page script
+            // escape, not the bootstrap load — see
+            // `decide(..., didFinishFirstLoad:)`.
+            didFinishFirstLoad = true
+        }
+
+        public func webView(
+            _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
             decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
         ) {
-            // Only allow the initial file:// load of the bundle.
-            // Reject everything else (link clicks inside the editor
-            // would try to navigate the WebView away from the host
-            // HTML).
-            if navigationAction.navigationType == .other {
+            let decision = Coordinator.decide(
+                url: navigationAction.request.url,
+                navigationType: navigationAction.navigationType,
+                currentDocumentURL: webView.url,
+                didFinishFirstLoad: didFinishFirstLoad
+            )
+            switch decision {
+            case .allow:
                 decisionHandler(.allow)
-            } else {
+            case .cancel:
                 decisionHandler(.cancel)
             }
         }
+
+        /// Decide what to do with an editor navigation. Pure function so it
+        /// can be unit-tested without a live `WKWebView` (mirrors
+        /// `MarkdownRenderedView.Coordinator.decide`). The editor is NOT a
+        /// browser: the only navigation it ever legitimately performs is the
+        /// one-shot `loadFileURL` of the bundled `codemirror.html` plus that
+        /// page's relative `file:` subresources (`codemirror.css` /
+        /// `codemirror.js`), all of which arrive as `.other` BEFORE the page
+        /// reports `didFinish`. Policy:
+        ///
+        /// - `javascript:` / `vbscript:` are **cancelled for ANY navigation
+        ///   type** — blocks `window.location = 'javascript:…'` style escapes
+        ///   regardless of how they surface.
+        /// - `data:` is **cancelled for ANY navigation type** — the editor
+        ///   never loads `data:` (it bootstraps via `loadFileURL`, not
+        ///   `loadHTMLString`), so any `data:` navigation is an injection
+        ///   attempt.
+        /// - Same-document `#fragment` navigation is allowed (in-page anchors
+        ///   inside the host HTML).
+        /// - `file:` is allowed ONLY during the bootstrap window
+        ///   (`didFinishFirstLoad == false`). Once the first load completes,
+        ///   a top-level `.other` to `file:` can only be in-page script
+        ///   (`window.location = 'file:///etc/passwd'`) — cancel it.
+        /// - Every other navigation (user-clicked links, any non-bootstrap
+        ///   scheme) is cancelled: clicking a link inside the editor must not
+        ///   navigate the WebView away from the host HTML.
+        ///
+        /// - Parameter didFinishFirstLoad: `false` until the bundled host
+        ///   page has reported `didFinish`. Defaults to `false` so the
+        ///   bootstrap `loadFileURL` + its subresources render; a `true`
+        ///   value locks the editor down to same-document fragments only.
+        public static func decide(
+            url: URL?,
+            navigationType: WKNavigationType,
+            currentDocumentURL: URL?,
+            didFinishFirstLoad: Bool = false
+        ) -> LinkDecision {
+            let scheme = url?.scheme?.lowercased() ?? ""
+            // Defense-in-depth: dangerous schemes blocked for ANY nav type.
+            // `data:` is unconditionally blocked here (unlike the markdown
+            // renderer) because the editor bootstraps via `loadFileURL`, so
+            // it never has a legitimate `data:` load to whitelist.
+            if ["javascript", "vbscript", "data"].contains(scheme) {
+                return .cancel
+            }
+            // Same-document #fragment navigation (in-page anchor) is safe.
+            if let url, isSameDocumentFragment(url, currentDocumentURL: currentDocumentURL) {
+                return .allow
+            }
+            // The bootstrap `loadFileURL` (and its relative file: subresources)
+            // surface as `.other` BEFORE first load completes — allow them.
+            // After first load, no top-level file: navigation is legitimate.
+            if navigationType == .other, !didFinishFirstLoad, scheme == "file" {
+                return .allow
+            }
+            // Anything else — user-clicked links, post-bootstrap file:, any
+            // other scheme — is cancelled. The editor is not a browser.
+            return .cancel
+        }
+
+        private static func isSameDocumentFragment(_ url: URL, currentDocumentURL: URL?) -> Bool {
+            guard let fragment = url.fragment, !fragment.isEmpty else { return false }
+            guard let cur = currentDocumentURL else {
+                // No current page yet — treat as a stand-alone fragment OK
+                // (rare; happens before first load completes).
+                return url.scheme == nil
+            }
+            // Field-by-field comparison (scheme+host+path+query) is robust
+            // across Foundation versions — see the same helper in
+            // `MarkdownRenderedView.Coordinator`.
+            return url.scheme == cur.scheme
+                && url.host == cur.host
+                && url.path == cur.path
+                && url.query == cur.query
+        }
+    }
+
+    /// Resolution of an editor navigation decision. Pure value so the
+    /// `Coordinator.decide(...)` policy can be unit-tested without a live
+    /// `WKWebView`. The editor never opens links externally (it is not a
+    /// browser), so unlike `MarkdownRenderedView.LinkDecision` there is no
+    /// `.openExternally` case — every off-host navigation is cancelled.
+    public enum LinkDecision: Equatable, Sendable {
+        case allow
+        case cancel
     }
 }
 

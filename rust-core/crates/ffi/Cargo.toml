@@ -26,6 +26,19 @@ unsafe_op_in_unsafe_fn = "deny"
 all = { level = "deny", priority = -1 }
 undocumented_unsafe_blocks = "deny"
 multiple_unsafe_ops_per_block = "deny"
+# No-panic enforcement on the C ABI edge. These four are clippy RESTRICTION
+# lints (NOT in the `all`/pedantic/correctness groups) so they fire only where
+# opted in — they are NOT covered by `all = deny` above. This crate opts OUT of
+# workspace lint inheritance (cargo #13157), so unlike `mdvcore-core` it does
+# not get them for free; they must be re-declared here. A panic unwinding across
+# the `extern "C"` boundary (outside `ffi_guard!`/`catch_unwind` — e.g. in a
+# `Drop`) is UB, so the only unsafe crate is exactly where the no-panic policy
+# matters most. Test-only allows are handled centrally in `../../clippy.toml`
+# (`allow-{unwrap,expect,indexing-slicing}-in-tests = true`).
+unwrap_used = "deny"
+expect_used = "deny"
+indexing_slicing = "deny"
+panic = "deny"
 
 [dependencies]
 mdvcore-core = { path = "../core" }

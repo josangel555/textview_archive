@@ -89,7 +89,15 @@ public enum MCP {
             }
             switch v {
             case .int(let i): return i
-            case .double(let d) where d.rounded() == d: return Int(d)
+            // `Int(d)` is a runtime TRAP for out-of-range doubles (e.g.
+            // `1e19`), which would crash the host from untrusted input.
+            // `Int(exactly:)` is the non-trapping conversion: it returns
+            // nil for any value outside Int's range or with a fraction.
+            case .double(let d):
+                guard let i = Int(exactly: d) else {
+                    throw MCPError.invalidParams("'\(key)' is not an integer")
+                }
+                return i
             default:
                 throw MCPError.invalidParams("'\(key)' is not an integer")
             }
@@ -102,7 +110,11 @@ public enum MCP {
             guard case .object(let o) = self, let v = o[key] else { return nil }
             switch v {
             case .int(let i): return i
-            case .double(let d) where d.rounded() == d: return Int(d)
+            // Non-trapping conversion — see `int(_:)`. `Int(exactly:)`
+            // returns nil for out-of-range / fractional doubles, which
+            // is exactly the "absent / unusable" semantics this accessor
+            // already signals with nil.
+            case .double(let d): return Int(exactly: d)
             default: return nil
             }
         }

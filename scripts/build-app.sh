@@ -194,9 +194,17 @@ if [[ "$HAS_LOCAL_IDENTITY" == "1" ]]; then
   # bundle's own no-detritus check under `--options runtime`. `--deep`
   # is on the long-term deprecation path but remains the supported
   # way to sign SwiftPM resource-bundle trees today.
+  #
+  # Deliberately NO `--identifier`: with `--deep`, codesign reuses one
+  # signing-options set for every nested Mach-O, so an explicit
+  # `--identifier` would stamp the SAME id (com.markdownviewer.MarkdownViewer)
+  # onto each grammar dylib instead of a per-file id — malformed signing
+  # that notarization / stricter library validation rejects at the
+  # ship-public / Developer ID transition. Omitting it lets codesign
+  # derive the main exec id from `Info.plist` CFBundleIdentifier and a
+  # per-file id (from the filename) for each nested dylib/.bundle.
   codesign --force --deep \
     --sign "$SIGN_IDENTITY" \
-    --identifier "com.markdownviewer.MarkdownViewer" \
     --options runtime \
     --timestamp=none \
     "$APP_DIR" >/dev/null

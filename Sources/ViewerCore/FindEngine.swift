@@ -55,23 +55,50 @@ public struct FindEngine: Sendable {
         in text: String,
         query: FindQuery
     ) throws -> [FindMatch] {
-        guard !query.isEmpty else { return [] }
+        try searchBounded(in: text, query: query).matches
+    }
+
+    /// Same as `search`, but also reports whether match-time enumeration
+    /// was cut short by the `RegexComplexityGuard.boundedMatches`
+    /// (SEC-006) wall-clock deadline. A regex passing the compile-time
+    /// `reject` guard can still backtrack polynomially (the guard models
+    /// only *exponential* shapes — see its docstring), so the
+    /// highest-risk channel, the MCP `find` tool with `regex:true`
+    /// against a multi-MB document, must be wall-clock-bounded too.
+    /// `timedOut == true` means the returned matches are a *prefix* of
+    /// the full set: callers (e.g. the MCP find result) should surface
+    /// that distinctly from a genuine end-of-matches so a consumer
+    /// doesn't treat a truncated result as exhaustive.
+    public func searchBounded(
+        in text: String,
+        query: FindQuery,
+        deadline: TimeInterval = RegexComplexityGuard.defaultMatchDeadline
+    ) throws -> (matches: [FindMatch], timedOut: Bool) {
+        guard !query.isEmpty else { return ([], false) }
 
         let regex = try makeRegex(for: query)
         let nsText = text as NSString
         let fullRange = NSRange(location: 0, length: nsText.length)
+
+        // SEC-006: route enumeration through the shared wall-clock-bounded
+        // matcher instead of calling `enumerateMatches` directly. The
+        // compile-time `reject` guard in `makeRegex` only catches the
+        // exponential ReDoS shapes; polynomial backtracking slips past it
+        // and would otherwise peg a core on the MCP `find` path. The
+        // closure caps inter-match time and stops once the budget is spent.
+        let (results, timedOut) = RegexComplexityGuard.boundedMatches(
+            regex, in: text, range: fullRange, deadline: deadline
+        )
 
         // P11: compute line/col in a single sweep across matches instead of
         // walking from 0 to each match's location independently. That was
         // O(M·N) for M matches in an N-char text (catastrophic for a regex
         // with thousands of hits in a megabyte log). Now O(N): we advance a
         // cursor monotonically alongside the (already-sorted) match list.
-        var matches: [FindMatch] = []
-        regex.enumerateMatches(in: text, options: [], range: fullRange) { result, _, _ in
-            guard let r = result, r.range.location != NSNotFound else { return }
-            matches.append(FindMatch(range: r.range, line: 0, column: 0))  // line/col filled below
+        var matches: [FindMatch] = results.map { r in
+            FindMatch(range: r.range, line: 0, column: 0)  // line/col filled below
         }
-        guard !matches.isEmpty else { return matches }
+        guard !matches.isEmpty else { return (matches, timedOut) }
 
         // Line/column accounting handles LF, CR, and CRLF consistently
         // (S2-E). Previously only `\n` advanced the line counter, so:
@@ -118,7 +145,7 @@ public struct FindEngine: Sendable {
                 column: max(1, target - lineStart + 1)
             )
         }
-        return matches
+        return (matches, timedOut)
     }
 
     /// Indexes `matches` so that the next match at-or-after `cursor` is returned

@@ -16,9 +16,10 @@
 #      and `main` itself breached it (pre-existing drift, not this change).
 #   2. Static-linking libmdvcore_ffi.a adds only ~0.36 MB to the exec
 #      (18.60 -> ~18.96 MB) and ~0.3 MB to the bundle (measured 39 MB total).
-# The 20 MB exec / 40 MB total caps cover the real baseline + the Rust core +
-# modest headroom. The exec sub-cap still catches a TreeSitter grammar silently
-# regressing to static linkage. NOTE: the Rust core is purely ADDITIVE at this
+# (At that 2026-05-31 bump the 20 MB exec / 40 MB total caps covered the real
+# baseline + the Rust core + modest headroom; the live caps are now 26 / 48 —
+# see the header above.) The exec sub-cap still catches a TreeSitter grammar
+# silently regressing to static linkage. NOTE: the Rust core is purely ADDITIVE at this
 # beachhead (both Swift CSVParser AND the Rust core ship); the size recovers
 # when Swift duplicates are deleted in a later migration phase.
 # These two defaults are the single source of truth for the cap; the
@@ -46,19 +47,25 @@ ROOT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 APP_DIR="$ROOT_DIR/dist/TextView.app"
 
 BUDGET_MB="${BUDGET_MB:-${1:-48}}"
-# Per-exec check defaults to 16 MB. The eager keeplist (JSON, Swift,
+# Per-exec check defaults to 26 MB. The eager keeplist (JSON, Swift,
 # Markdown) + everything-else-Swift-and-resources fits in ~11 MB
 # release. The CodeMirror 6 editor (Swift wrapper + JS bridge code)
 # bumped the executable by ~200 KB; CM6 itself is a JS resource
 # (~570 KB) under Resources/codemirror/, not in the executable. The
-# Headroom over the post-CM6 baseline catches a TreeSitter grammar
+# Headroom over the current baseline catches a TreeSitter grammar
 # silently regressing to static linkage (look for an unintended
-# `import TreeSitter<X>` in ViewerCore). Bumped 16 -> 18 (2026-05-30):
-# the shoulder-rails + large-file read-only + picker-fix work added
-# ~140 KB of legitimate Swift to the exec (15.91 -> 16.05 MB),
-# tipping the old 16 MB line; grammars remain dylibs in
-# Contents/Frameworks/, so this is real code growth, not a
-# static-link regression. Override via env to opt out:
+# `import TreeSitter<X>` in ViewerCore). History: bumped 16 -> 18
+# (2026-05-30) for the shoulder-rails + large-file read-only +
+# picker-fix work (~140 KB Swift, 15.91 -> 16.05 MB); 18 -> 20
+# (2026-05-31) for the Rust-core CSV integration (static-linking
+# libmdvcore_ffi.a adds ~0.36 MB, 18.60 -> ~18.96 MB, and `main`
+# itself was already 18.60 MB, breaching the stale 18 MB cap); 20 -> 26
+# (2026-06-03) for the UX-overhaul features (embedded terminal + ANSI
+# parser, command registry/keybindings, content-toolbar + breadcrumb,
+# find/replace rebuild, footer git — ~2.4 MB of legitimate Swift,
+# exec 19 -> 21.4 MB). Grammars remain dylibs in Contents/Frameworks/,
+# so each bump is real code growth, not a static-link regression.
+# Override via env to opt out:
 #   EXEC_BUDGET_MB=0 bash scripts/check-bundle-size.sh
 EXEC_BUDGET_MB="${EXEC_BUDGET_MB:-26}"
 BUDGET_BYTES=$(( BUDGET_MB * 1024 * 1024 ))

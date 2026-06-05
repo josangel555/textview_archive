@@ -56,15 +56,11 @@ struct MsgPackReader {
         return bytes[pos]
     }
 
-    private mutating func take(_ n: Int) throws -> [UInt8] {
-        guard pos + n <= bytes.count else { throw MsgPackError.truncated }
-        defer { pos += n }
-        return Array(bytes[pos..<pos + n])
-    }
-
     private mutating func uintN(_ n: Int) throws -> UInt64 {
+        guard n >= 0, pos <= bytes.count - n else { throw MsgPackError.truncated }
         var v: UInt64 = 0
-        for b in try take(n) { v = (v << 8) | UInt64(b) }
+        for i in 0..<n { v = (v << 8) | UInt64(bytes[pos + i]) }
+        pos += n
         return v
     }
 
@@ -108,24 +104,53 @@ struct MsgPackReader {
         }
     }
 
-    private mutating func str(_ n: Int) throws -> String {
-        let raw = try take(n)
-        guard let s = String(bytes: raw, encoding: .utf8) else {
-            throw MsgPackError.typeMismatch("invalid utf-8 string")
+    /// Assert the whole body was consumed by the preceding `decode()`. The
+    /// frame's length prefix promises the body is fully accounted for; a body
+    /// that is one valid value FOLLOWED by extra bytes otherwise decodes
+    /// successfully and silently drops the trailing bytes, masking a class of
+    /// framing / version-skew bugs. Consumers should call this after the
+    /// top-level `decode()` (see `CsvSession` decode sites) so trailing garbage
+    /// surfaces as a `typeMismatch` rather than passing unnoticed.
+    mutating func finish() throws {
+        guard pos == bytes.count else {
+            throw MsgPackError.typeMismatch("trailing bytes")
         }
+    }
+
+    private mutating func str(_ n: Int) throws -> String {
+        guard n >= 0, pos <= bytes.count - n else { throw MsgPackError.truncated }
+        // `String(decoding:as:)` is non-failing (it substitutes U+FFFD for
+        // invalid sequences) and decodes the slice in place — no transient
+        // `[UInt8]` copy. The Rust core only ever emits valid UTF-8, so the
+        // replacement-char path is unreachable in practice; we trade the old
+        // strict `typeMismatch` reject for zero per-cell allocation, matching
+        // the reader's role as a trusted-producer decoder.
+        let s = String(decoding: bytes[pos..<pos + n], as: UTF8.self)
+        pos += n
         return s
     }
 
     private mutating func array(_ n: Int) throws -> MsgPackValue {
         var out: [MsgPackValue] = []
-        out.reserveCapacity(n)
+        // Clamp the reserve to the bytes actually remaining: every MessagePack
+        // element is >= 1 byte (its tag), so `remaining` is a lossless upper
+        // bound on the real element count. Reserving the raw declared `n`
+        // (up to ~4.29e9 from `array16/32`) before reading a single element is
+        // an OOM-abort vector — a 9-byte body claiming 4.29e9 elements would
+        // drive a ~34 GB allocation that no `catch` can recover (abort, not
+        // throw). The `for` loop still fails with `.truncated` once the body
+        // runs out, so a short-but-large-count frame errors cleanly.
+        out.reserveCapacity(min(n, max(0, bytes.count - pos)))
         for _ in 0..<n { out.append(try decode()) }
         return .array(out)
     }
 
     private mutating func map(_ n: Int) throws -> MsgPackValue {
         var out: [(MsgPackValue, MsgPackValue)] = []
-        out.reserveCapacity(n)
+        // Same OOM-abort guard as `array`: a map pair is >= 2 bytes, so the
+        // remaining byte count bounds the pair count too (clamp is conservative
+        // but always >= the real count). See `array` for the rationale.
+        out.reserveCapacity(min(n, max(0, bytes.count - pos)))
         for _ in 0..<n {
             let k = try decode()
             let v = try decode()

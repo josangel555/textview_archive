@@ -50,6 +50,19 @@ public final class SessionStore: @unchecked Sendable {
     nonisolated(unsafe) private static var pending: [URL: Any] = [:]
     nonisolated(unsafe) private static let coalesceLock = NSLock()
 
+    /// Hard ceilings on the on-disk JSON we'll inflate into memory.
+    /// `JSONFileStore.read` no-ops its size guard when `maxSize == .max`
+    /// (the default), so a tampered / runaway file could otherwise be
+    /// read whole into RAM before the decode even runs. Passing an
+    /// explicit cap routes an oversized file down the existing
+    /// nil/`.corrupt`/start-empty path instead. Sized generously so a
+    /// legitimate file is never rejected: the index scales with the
+    /// open-session count, a snapshot holds one workspace's reconstructible
+    /// state (path list, scroll/selection positions). Mirrors the
+    /// `maxSize:` discipline in `BookmarksStore` / `PluginGrantStore`.
+    public static let maxIndexFileSize = 4 * 1024 * 1024
+    public static let maxSnapshotFileSize = 8 * 1024 * 1024
+
     public static func defaultDirectory() -> URL {
         let fm = FileManager.default
         let support = (try? fm.url(
@@ -110,7 +123,8 @@ public final class SessionStore: @unchecked Sendable {
     public func loadIndexResult() -> IndexLoadResult {
         let url = indexURL
         // Fast path: a clean, compatible decode.
-        if let idx = JSONFileStore.read(SessionIndex.self, from: url) {
+        if let idx = JSONFileStore.read(SessionIndex.self, from: url,
+                                        maxSize: Self.maxIndexFileSize) {
             if idx.version > SessionIndex.currentSchema {
                 return .newerSchema(foundVersion: idx.version)
             }
@@ -124,7 +138,8 @@ public final class SessionStore: @unchecked Sendable {
         // newer schema whose *required* fields drifted (so the full
         // decode failed) yet still carries a readable `version`. Probe
         // for that before declaring it corrupt.
-        if let probe = JSONFileStore.read(SchemaProbe.self, from: url),
+        if let probe = JSONFileStore.read(SchemaProbe.self, from: url,
+                                          maxSize: Self.maxIndexFileSize),
            probe.version > SessionIndex.currentSchema {
             return .newerSchema(foundVersion: probe.version)
         }
@@ -142,7 +157,7 @@ public final class SessionStore: @unchecked Sendable {
     /// MainActor.
     @discardableResult
     public func saveIndexSync(_ idx: SessionIndex) -> Bool {
-        JSONFileStore.write(idx, to: indexURL)
+        Self.syncWrite(idx, to: indexURL)
     }
 
     /// Enqueue an index write on the serial write queue. If another
@@ -156,7 +171,8 @@ public final class SessionStore: @unchecked Sendable {
 
     public func load(id: UUID) -> SessionSnapshot? {
         guard let snap = JSONFileStore.read(SessionSnapshot.self,
-                                            from: fileURL(for: id)) else {
+                                            from: fileURL(for: id),
+                                            maxSize: Self.maxSnapshotFileSize) else {
             return nil
         }
         if snap.schemaVersion > SessionSnapshot.currentSchema { return nil }
@@ -165,7 +181,7 @@ public final class SessionStore: @unchecked Sendable {
 
     @discardableResult
     public func saveSync(_ snap: SessionSnapshot) -> Bool {
-        JSONFileStore.write(snap, to: fileURL(for: snap.id))
+        Self.syncWrite(snap, to: fileURL(for: snap.id))
     }
 
     /// Enqueue a snapshot write on the serial write queue. Coalesces
@@ -268,6 +284,27 @@ public final class SessionStore: @unchecked Sendable {
             // same type), so encode by dispatching on the concrete
             // value via `_encodeAndWrite`.
             Self._encodeAndWrite(snapshot, to: url)
+        }
+    }
+
+    /// Synchronous write that stays coherent with the coalescing queue
+    /// (PERSIST race fix). A naive `JSONFileStore.write` here would bypass
+    /// the serial `writeQueue` entirely, so it could (a) land *before* an
+    /// already-dispatched async block for the same URL — letting a stale
+    /// coalesced value overwrite this fresh one — or (b) race a concurrent
+    /// enqueue's drain. Mirroring `flushSync`'s drain discipline, we run
+    /// the write *inside* `writeQueue.sync`: the serial queue guarantees
+    /// every earlier async block for any URL has completed first, and we
+    /// evict any pending coalesced value for this URL inside the same block
+    /// so no straggler can resurrect after we write. Returns the write's
+    /// success bool.
+    @discardableResult
+    private static func syncWrite<T: Encodable>(_ value: T, to url: URL) -> Bool {
+        Self.writeQueue.sync {
+            Self.coalesceLock.lock()
+            Self.pending.removeValue(forKey: url)
+            Self.coalesceLock.unlock()
+            return JSONFileStore.write(value, to: url)
         }
     }
 

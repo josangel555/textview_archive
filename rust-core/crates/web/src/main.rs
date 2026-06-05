@@ -17,9 +17,12 @@
 //! printed `http://127.0.0.1:<port>/`.
 
 use std::collections::HashMap;
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 use std::{fs, thread};
 
 use mdvcore_core::view::{self, ViewBody, ViewMode};
@@ -27,6 +30,21 @@ use mdvcore_core::view::{self, ViewBody, ViewMode};
 /// Max bytes read into a view (parity with the TUI's preview cap). Per-mode
 /// shaping (text/hex/table) lives in the shared `mdvcore_core::view`.
 const PREVIEW_CAP: usize = 1024 * 1024;
+
+/// Hard ceiling on the bytes consumed parsing the request line + all headers.
+/// A client that streams without a terminating blank line (or a multi-GB header
+/// line) is cut off here and answered 400 instead of growing a `String` to OOM.
+const MAX_HEADER_BYTES: u64 = 16 * 1024;
+
+/// Per-socket read/write timeout. A stalled read (slow-loris, hung tab) returns
+/// `WouldBlock`/`TimedOut` instead of parking the worker thread forever, so the
+/// thread exits and drops both FDs (the stream and its `try_clone`).
+const SOCKET_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// Cap on concurrently-served connections. Past this the listener answers 503
+/// and drops the socket rather than spawning an unbounded number of threads /
+/// holding unbounded FDs — bounds the blast radius of a runaway local client.
+const MAX_INFLIGHT: usize = 128;
 
 fn main() -> io::Result<()> {
     let mut port: u16 = 8765;
@@ -51,38 +69,62 @@ fn main() -> io::Result<()> {
         "mdv-web → http://127.0.0.1:{port}/   (serving {}, Ctrl-C to stop)",
         root.display()
     );
+    let root = Arc::new(root);
+    let inflight = Arc::new(AtomicUsize::new(0));
     for stream in listener.incoming().flatten() {
-        let root = root.clone();
+        // Reserve a slot; if we're already at the cap, answer 503 and drop the
+        // socket instead of spawning an unbounded thread / leaking FDs.
+        if inflight.fetch_add(1, Ordering::AcqRel) >= MAX_INFLIGHT {
+            inflight.fetch_sub(1, Ordering::AcqRel);
+            let _ = refuse_overloaded(stream);
+            continue;
+        }
+        let root = Arc::clone(&root);
+        let inflight = Arc::clone(&inflight);
         thread::spawn(move || {
             let _ = handle_conn(stream, &root);
+            inflight.fetch_sub(1, Ordering::AcqRel);
         });
     }
     Ok(())
 }
 
+/// Best-effort 503 for a connection refused at the concurrency cap. Failures to
+/// write are ignored — the socket is dropped either way.
+fn refuse_overloaded(mut stream: TcpStream) -> io::Result<()> {
+    let _ = stream.set_write_timeout(Some(SOCKET_TIMEOUT));
+    const BODY: &str = "server busy: too many in-flight connections";
+    let head = format!(
+        "HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        BODY.len()
+    );
+    stream.write_all(head.as_bytes())?;
+    stream.write_all(BODY.as_bytes())?;
+    stream.flush()
+}
+
 fn handle_conn(mut stream: TcpStream, root: &Path) -> io::Result<()> {
-    let mut reader = BufReader::new(stream.try_clone()?);
-    let mut req_line = String::new();
-    reader.read_line(&mut req_line)?;
-    // Read headers; capture Host for the anti-DNS-rebinding check (AUDIT S1).
-    let mut host = String::new();
-    loop {
-        let mut h = String::new();
-        let n = reader.read_line(&mut h)?;
-        if n == 0 || h == "\r\n" || h == "\n" {
-            break;
+    // Bound stalled reads/writes so a slow-loris / hung client can't park this
+    // worker thread (and its two FDs) indefinitely — the read returns an error,
+    // the thread unwinds, and both FDs drop (AUDIT S3 DoS hardening).
+    stream.set_read_timeout(Some(SOCKET_TIMEOUT))?;
+    stream.set_write_timeout(Some(SOCKET_TIMEOUT))?;
+    // Cap the bytes consumed parsing the request line + headers so an endless
+    // (or giant) header stream is cut off here instead of growing to OOM.
+    let mut reader = BufReader::new(stream.try_clone()?.take(MAX_HEADER_BYTES));
+    let (status, ctype, body) = match read_request_head(&mut reader) {
+        Ok((req_line, host)) if host_allowed(&host) => route(&req_line, root),
+        Ok(_) => {
+            // A browser ALWAYS sends Host; a non-loopback Host is a cross-origin
+            // / DNS-rebind attempt — refuse so a malicious page can't reach the
+            // FS.
+            ("403 Forbidden", "text/plain; charset=utf-8",
+             "refused: Host must be localhost / 127.0.0.1 (anti DNS-rebinding)".to_string())
         }
-        if let Some(v) = h.to_ascii_lowercase().strip_prefix("host:") {
-            host = v.trim().to_string();
-        }
-    }
-    let (status, ctype, body) = if host_allowed(&host) {
-        route(&req_line, root)
-    } else {
-        // A browser ALWAYS sends Host; a non-loopback Host is a cross-origin /
-        // DNS-rebind attempt — refuse so a malicious page can't reach the FS.
-        ("403 Forbidden", "text/plain; charset=utf-8",
-         "refused: Host must be localhost / 127.0.0.1 (anti DNS-rebinding)".to_string())
+        // Header section exceeded MAX_HEADER_BYTES (or the socket errored/timed
+        // out before a blank-line terminator) — refuse rather than block.
+        Err(_) => ("400 Bad Request", "text/plain; charset=utf-8",
+                   "request head too large or malformed".to_string()),
     };
     let head = format!(
         "HTTP/1.1 {status}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -91,6 +133,41 @@ fn handle_conn(mut stream: TcpStream, root: &Path) -> io::Result<()> {
     stream.write_all(head.as_bytes())?;
     stream.write_all(body.as_bytes())?;
     stream.flush()
+}
+
+/// Read the request line and drain headers from a `MAX_HEADER_BYTES`-capped
+/// reader, returning `(request_line, host)`. The reader is a `Take`, so once the
+/// cap is hit `read_line` yields `Ok(0)` (EOF) before the blank-line terminator
+/// — we surface that as `InvalidData` so the caller answers 400 instead of
+/// silently treating a truncated head as complete. `host` is captured for the
+/// anti-DNS-rebinding check (AUDIT S1).
+fn read_request_head<R: BufRead>(reader: &mut R) -> io::Result<(String, String)> {
+    let mut req_line = String::new();
+    if reader.read_line(&mut req_line)? == 0 {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "empty request"));
+    }
+    // A complete request line is newline-terminated; its absence means the cap
+    // truncated it mid-line.
+    if !req_line.ends_with('\n') {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "request line too large"));
+    }
+    let mut host = String::new();
+    loop {
+        let mut h = String::new();
+        let n = reader.read_line(&mut h)?;
+        if n == 0 {
+            // EOF before the blank-line terminator: the header section was cut
+            // off by the byte cap (or the peer hung up mid-headers).
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "headers too large"));
+        }
+        if h == "\r\n" || h == "\n" {
+            break;
+        }
+        if let Some(v) = h.to_ascii_lowercase().strip_prefix("host:") {
+            host = v.trim().to_string();
+        }
+    }
+    Ok((req_line, host))
 }
 
 /// Pure routing: request line → (status, content-type, body). Separated from the
@@ -334,7 +411,6 @@ fn parse_query(query: &str) -> HashMap<String, String> {
 }
 
 fn read_capped(path: &Path, cap: usize) -> io::Result<(Vec<u8>, bool, usize)> {
-    use std::io::Read;
     let file = fs::File::open(path)?;
     let mut buf = Vec::new();
     file.take(cap as u64 + 1).read_to_end(&mut buf)?;
@@ -582,5 +658,78 @@ mod tests {
         let (ok, _, _) = route(&inside, &root);
         assert!(ok.starts_with("200"), "in-root path served, got {ok}");
         let _ = fs::remove_dir_all(&root);
+    }
+
+    // --- AUDIT S3: router-contract + reflected-XSS coverage gaps ---
+    // (token: Audit_rust_core_crates_web_src_main_rs)
+
+    #[test]
+    fn route_unknown_path_is_404() {
+        let dir = fixture();
+        let (status, _, body) = route("GET /does-not-exist HTTP/1.1", &dir);
+        assert!(status.starts_with("404"), "unknown route → 404, got {status}");
+        assert!(body.contains("not found"), "404 body: {body}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn route_browse_subdir_lists_it() {
+        let root = fixture().canonicalize().unwrap();
+        // /browse?path=<subdir> must resolve the query dir and 200 with a
+        // listing — the positive arm the prior tests never exercised.
+        let target = format!(
+            "GET /browse?path={} HTTP/1.1",
+            pct_encode(&root.join("sub").to_string_lossy())
+        );
+        let (status, ctype, body) = route(&target, &root);
+        assert!(status.starts_with("200"), "subdir browse → 200, got {status}");
+        assert!(ctype.starts_with("text/html"), "html content-type: {ctype}");
+        // The page renders the nav frame (an empty subdir still produces the
+        // "../" up-link), confirming we listed `sub`, not the root.
+        assert!(body.contains("/browse?path="), "browse page rendered:\n{body}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn render_view_does_not_reflect_raw_mode() {
+        // A hostile/unknown `?mode=` value must never reach the page unescaped —
+        // the mode match falls through to the core default, and nothing reflects
+        // the raw param, so no `<script>` survives in the output.
+        let dir = fixture();
+        let html = render_view(&dir.join("hello.txt"), Some("<script>alert(1)</script>"));
+        assert!(!html.contains("<script>"), "raw <script> reflected:\n{html}");
+        assert!(!html.contains("alert(1)"), "raw mode payload reflected:\n{html}");
+        // Sanity: it still rendered the file as a normal text view.
+        assert!(html.contains("hello &lt;world&gt;"), "fell back to a text view:\n{html}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // --- AUDIT S3: DoS hardening — oversized request head is refused 400 ---
+
+    #[test]
+    fn oversized_request_head_is_rejected_400() {
+        let dir = fixture();
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let root = dir.clone();
+        let h = thread::spawn(move || {
+            if let Ok((stream, _)) = listener.accept() {
+                let _ = handle_conn(stream, &root);
+            }
+        });
+        let mut conn = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        conn.write_all(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n").unwrap();
+        // A giant header value with no terminating blank line: the take() cap
+        // cuts the read off, so handle_conn answers 400 and closes instead of
+        // buffering unbounded bytes.
+        let big = format!("X-Pad: {}\r\n", "A".repeat((MAX_HEADER_BYTES as usize) * 2));
+        // Writes may short-circuit once the server closes the socket after 400;
+        // ignore a broken-pipe so the assertion below is what's tested.
+        let _ = conn.write_all(big.as_bytes());
+        let mut resp = String::new();
+        let _ = conn.read_to_string(&mut resp);
+        h.join().unwrap();
+        assert!(resp.starts_with("HTTP/1.1 400"), "oversized head → 400:\n{resp}");
+        let _ = fs::remove_dir_all(&dir);
     }
 }

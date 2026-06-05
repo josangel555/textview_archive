@@ -15,26 +15,66 @@ public enum IndentDetector {
         var seenTabs = 0
         var spaceWidths: [Int: Int] = [:]   // width → count
         var checked = 0
-        var pos = text.startIndex
-        while pos < text.endIndex, checked < sampleLines {
-            let lineEnd = text[pos...].firstIndex(of: "\n") ?? text.endIndex
-            let line = text[pos..<lineEnd]
-            if !line.allSatisfy({ $0 == " " || $0 == "\t" }) {
-                // First-char test only — indent is a prefix.
-                if line.first == "\t" {
-                    seenTabs += 1
-                    checked += 1
-                } else if line.first == " " {
-                    var n = 0
-                    for ch in line {
-                        if ch == " " { n += 1 } else { break }
-                    }
-                    spaceWidths[n, default: 0] += 1
-                    checked += 1
-                }
+
+        // Iterate the unicode-scalar view and split on the LF scalar
+        // rather than the grapheme view: in Swift `"\r\n"` is a SINGLE
+        // grapheme cluster, so a `Character`-view `firstIndex(of: "\n")`
+        // never matches the LF inside a CRLF pair and collapses the
+        // whole CRLF-authored file into one line. Per line we strip a
+        // trailing CR before the first-char / whitespace tests so the
+        // result matches the Rust port on Windows line endings.
+        let lf: Unicode.Scalar = "\n"
+        let cr: Unicode.Scalar = "\r"
+        let space: Unicode.Scalar = " "
+        let tab: Unicode.Scalar = "\t"
+
+        // Per-line accumulators, reset at each LF boundary.
+        var leadingSpaces = 0       // count of leading ' ' scalars
+        var firstScalar: Unicode.Scalar? = nil
+        var sawNonIndentContent = false   // a non-(space/tab/CR) scalar this line
+
+        func finishLine() {
+            // `sawNonIndentContent` already excludes lines that are blank or
+            // pure whitespace once a trailing CR is treated as terminator
+            // noise (see below) — so an all-whitespace CRLF line is correctly
+            // skipped rather than miscounted as indented.
+            guard sawNonIndentContent else { return }
+            if firstScalar == tab {
+                seenTabs += 1
+                checked += 1
+            } else if firstScalar == space {
+                spaceWidths[leadingSpaces, default: 0] += 1
+                checked += 1
             }
-            if lineEnd == text.endIndex { break }
-            pos = text.index(after: lineEnd)
+        }
+
+        var iter = text.unicodeScalars.makeIterator()
+        var inLeadingRun = true   // still consuming the leading-space prefix
+        while checked < sampleLines, let scalar = iter.next() {
+            if scalar == lf {
+                finishLine()
+                // Reset per-line state.
+                leadingSpaces = 0
+                firstScalar = nil
+                sawNonIndentContent = false
+                inLeadingRun = true
+                continue
+            }
+            if firstScalar == nil { firstScalar = scalar }
+            if inLeadingRun, scalar == space {
+                leadingSpaces += 1
+            } else {
+                inLeadingRun = false
+            }
+            // A trailing CR is line-terminator noise, not content: only a
+            // non-(space/tab/CR) scalar makes the line "have content".
+            if scalar != space, scalar != tab, scalar != cr {
+                sawNonIndentContent = true
+            }
+        }
+        // Final line without a trailing LF.
+        if checked < sampleLines, firstScalar != nil {
+            finishLine()
         }
 
         let totalSpaceLines = spaceWidths.values.reduce(0, +)

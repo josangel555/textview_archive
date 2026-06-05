@@ -107,7 +107,7 @@ final class LSPPoolFakeServerTests: XCTestCase {
 
         let pool = LSPPool(
             registry: makeRegistry(binary: binary), config: tightConfig())
-        defer { Task { await pool.closeAll() } }
+        self.addTeardownBlock { await pool.closeAll() }
 
         let canHandle = await pool.canHandle(file)
         XCTAssertTrue(canHandle,
@@ -164,7 +164,7 @@ final class LSPPoolFakeServerTests: XCTestCase {
         let pool = LSPPool(
             registry: makeRegistry(binary: binary, scenario: "fail_initialize"),
             config: tightConfig(deadCooldown: .seconds(60), maxRestartAttempts: 3))
-        defer { Task { await pool.closeAll() } }
+        self.addTeardownBlock { await pool.closeAll() }
 
         // 1st & 2nd attempts: rethrow the server error after backoff;
         // 3rd attempt crosses `maxRestartAttempts` and marks the entry
@@ -212,7 +212,7 @@ final class LSPPoolFakeServerTests: XCTestCase {
         let pool = LSPPool(
             registry: makeRegistry(binary: binary, scenario: "fail_initialize"),
             config: tightConfig(deadCooldown: .milliseconds(30), maxRestartAttempts: 2))
-        defer { Task { await pool.closeAll() } }
+        self.addTeardownBlock { await pool.closeAll() }
 
         // Exhaust attempts → entry becomes dead.
         for _ in 0..<2 {
@@ -272,7 +272,7 @@ final class LSPPoolFakeServerTests: XCTestCase {
         let pool = LSPPool(
             registry: makeRegistry(binary: binary),
             config: tightConfig())
-        defer { Task { await pool.closeAll() } }
+        self.addTeardownBlock { await pool.closeAll() }
 
         let c1 = try await pool.client(for: file)
         guard let key = await pool.key(for: file) else {
@@ -310,7 +310,7 @@ final class LSPPoolFakeServerTests: XCTestCase {
         let pool = LSPPool(
             registry: makeRegistry(binary: binary, scenario: "crash_after_init"),
             config: tightConfig(deadCooldown: .seconds(60), maxRestartAttempts: 5))
-        defer { Task { await pool.closeAll() } }
+        self.addTeardownBlock { await pool.closeAll() }
 
         _ = try await pool.client(for: file)
 
@@ -348,7 +348,7 @@ final class LSPPoolFakeServerTests: XCTestCase {
             // Aggressive idle timeout — the live entry becomes reapable
             // after 20 ms with no traffic.
             config: tightConfig(idleTimeout: .milliseconds(20)))
-        defer { Task { await pool.closeAll() } }
+        self.addTeardownBlock { await pool.closeAll() }
 
         _ = try await pool.client(for: file)
         let preReapCount = await pool.snapshot().count
@@ -374,7 +374,7 @@ final class LSPPoolFakeServerTests: XCTestCase {
             // Long enough that a single acquire stays within the window
             // even on a slow CI box.
             config: tightConfig(idleTimeout: .seconds(60)))
-        defer { Task { await pool.closeAll() } }
+        self.addTeardownBlock { await pool.closeAll() }
 
         _ = try await pool.client(for: file)
         await pool.reapIdle()
@@ -393,7 +393,7 @@ final class LSPPoolFakeServerTests: XCTestCase {
         let pool = LSPPool(
             registry: makeRegistry(binary: binary),
             config: tightConfig())
-        defer { Task { await pool.closeAll() } }
+        self.addTeardownBlock { await pool.closeAll() }
 
         // N parallel acquires. The pool's state machine intentionally
         // permits two near-simultaneous spawns (the second falls
@@ -440,7 +440,7 @@ final class LSPPoolFakeServerTests: XCTestCase {
         let pool = LSPPool(
             registry: makeRegistry(binary: binary),
             config: tightConfig())
-        defer { Task { await pool.closeAll() } }
+        self.addTeardownBlock { await pool.closeAll() }
 
         _ = try await pool.client(for: fileA)
         _ = try await pool.client(for: fileB)
@@ -461,7 +461,7 @@ final class LSPPoolFakeServerTests: XCTestCase {
         let pool = LSPPool(
             registry: makeRegistry(binary: binary),
             config: tightConfig())
-        defer { Task { await pool.closeAll() } }
+        self.addTeardownBlock { await pool.closeAll() }
 
         let result = try await pool.workspaceSymbol(query: "anything")
         XCTAssertTrue(result.isEmpty,
@@ -478,7 +478,7 @@ final class LSPPoolFakeServerTests: XCTestCase {
         let pool = LSPPool(
             registry: makeRegistry(binary: binary),
             config: tightConfig())
-        defer { Task { await pool.closeAll() } }
+        self.addTeardownBlock { await pool.closeAll() }
 
         try await pool.ensureOpened(fileURL: file, text: "// v1")
         try await pool.didChange(fileURL: file, text: "// v2")
@@ -498,7 +498,7 @@ final class LSPPoolFakeServerTests: XCTestCase {
         let pool = LSPPool(
             registry: makeRegistry(binary: binary),
             config: tightConfig())
-        defer { Task { await pool.closeAll() } }
+        self.addTeardownBlock { await pool.closeAll() }
 
         // No prior `ensureOpened` — `didChange` must short-circuit
         // before ever touching the LSPClient.
@@ -518,7 +518,7 @@ final class LSPPoolFakeServerTests: XCTestCase {
         let pool = LSPPool(
             registry: makeRegistry(binary: binary),
             config: tightConfig())
-        defer { Task { await pool.closeAll() } }
+        self.addTeardownBlock { await pool.closeAll() }
 
         // didOpen sets version = 1, hash = H("v1").
         try await pool.ensureOpened(fileURL: file, text: "let a = 1")
@@ -567,7 +567,7 @@ final class LSPPoolFakeServerTests: XCTestCase {
         let pool = LSPPool(
             registry: makeRegistry(binary: binary, scenario: "crash_after_init"),
             config: tightConfig(deadCooldown: .seconds(60), maxRestartAttempts: 5))
-        defer { Task { await pool.closeAll() } }
+        self.addTeardownBlock { await pool.closeAll() }
 
         _ = try await pool.client(for: file)
 
@@ -598,7 +598,7 @@ final class LSPPoolFakeServerTests: XCTestCase {
         let pool = LSPPool(
             registry: makeRegistry(binary: binary),
             config: tightConfig())
-        defer { Task { await pool.closeAll() } }
+        self.addTeardownBlock { await pool.closeAll() }
 
         let c1 = try await pool.client(for: file)
         let pid1 = await c1.debugProcessIdentifier
@@ -637,7 +637,7 @@ final class LSPPoolFakeServerTests: XCTestCase {
         let pool = LSPPool(
             registry: makeRegistry(binary: binary),
             config: tightConfig())
-        defer { Task { await pool.closeAll() } }
+        self.addTeardownBlock { await pool.closeAll() }
 
         try await pool.ensureOpened(fileURL: file, text: "// x")
         _ = try await pool.hover(fileURL: file, line: 1, character: 2)

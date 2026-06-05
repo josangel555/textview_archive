@@ -90,6 +90,14 @@ public struct ClaudeSessionIndex: Sendable {
     /// many-line file. Real transcripts are < 30k lines.
     public let maxRecords: Int
 
+    /// Upper bound on the characters retained for any resolved title
+    /// candidate (first user prompt, custom-title, ai-title). A first prompt
+    /// can be arbitrarily large (up to `maxLineBytes`); the summary is a
+    /// one-line list field, so capping at capture keeps a multi-MB prompt from
+    /// being held in (and serialized into) the index. Generous relative to the
+    /// 80-char event `summary` discipline because a title is the whole label.
+    public static let maxTitleChars = 200
+
     public init(
         maxLineBytes: Int = 4 * 1024 * 1024,
         readChunkBytes: Int = 256 * 1024,
@@ -347,25 +355,62 @@ public struct ClaudeSessionIndex: Sendable {
             scan.recordSessionId = sid
         }
 
-        // Title sidecar records (last-wins).
+        // Title sidecar records (last-wins). Capped at capture so an oversized
+        // title doesn't ride along in the summary / on-disk index.
         if let (isCustom, title) = ClaudeLogParser.titleRecord(obj) {
-            if isCustom { scan.lastCustomTitle = title }
-            else { scan.lastAITitle = title }
+            if isCustom { scan.lastCustomTitle = Self.cappedTitle(title) }
+            else { scan.lastAITitle = Self.cappedTitle(title) }
         }
 
-        // First user prompt (fallback title), only the first one.
+        // First user prompt (fallback title), only the first one. Capped at
+        // capture: a first prompt can be up to `maxLineBytes`.
         if scan.firstUserPrompt == nil, let prompt = ClaudeLogParser.userPromptText(obj) {
-            scan.firstUserPrompt = prompt
+            scan.firstUserPrompt = Self.cappedTitle(prompt)
         }
 
-        // Message vs event counts. Redact BEFORE surfacing events so the
-        // counted/serialized representation never carries secrets.
+        // Message vs event counts. Count blocks directly: only `.count` is
+        // consumed, so building (and redacting) a throwaway event array is pure
+        // waste. Redaction never adds/removes blocks, so the count is identical
+        // to `parseRecord(redact(obj)).count` and no secret is ever surfaced
+        // (nothing is serialized here — only the integer count).
         let type = ClaudeLogParser.recordType(obj)
         if type == "user" || type == "assistant" {
             scan.messageCount += 1
         }
-        let redacted = ClaudeLogParser.redact(obj)
-        scan.eventCount += ClaudeLogParser.parseRecord(redacted).count
+        scan.eventCount += Self.eventCount(of: obj)
+    }
+
+    /// Trim a title candidate to `maxTitleChars`. Returns the input unchanged
+    /// when already within the cap (the common case) to avoid an allocation.
+    private static func cappedTitle(_ s: String) -> String {
+        s.count <= maxTitleChars ? s : String(s.prefix(maxTitleChars))
+    }
+
+    /// Number of events `ClaudeLogParser.parseRecord` would emit for `obj`,
+    /// computed WITHOUT materializing the event array (or a redacted copy).
+    /// Must stay in lockstep with `parseRecord`'s block-emission rules.
+    private static func eventCount(of obj: [String: Any]) -> Int {
+        guard let message = obj["message"] as? [String: Any] else { return 0 }
+        let type = obj["type"] as? String ?? ""
+        let role = message["role"] as? String ?? type
+
+        // Plain-string content: one event iff the role is user/assistant.
+        if message["content"] is String {
+            return (role == "user" || role == "assistant") ? 1 : 0
+        }
+
+        // Block-array content: one event per surfaced block kind.
+        guard let blocks = message["content"] as? [[String: Any]] else { return 0 }
+        var count = 0
+        for block in blocks {
+            switch block["type"] as? String {
+            case "text", "thinking", "tool_use", "tool_result":
+                count += 1
+            default:
+                continue
+            }
+        }
+        return count
     }
 
     // MARK: Timestamp (mirrors ClaudeLogParser's private parser)

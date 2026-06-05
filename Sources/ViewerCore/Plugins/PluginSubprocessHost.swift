@@ -213,6 +213,29 @@ public struct PluginSubprocessHost: Sendable {
                           startedAt: started, invocationID: request.invocationID)
         }
 
+        // F-PMA-LEAK-1: isolate the child in its OWN process group so a
+        // timeout kill can take down the WHOLE tree, not just the direct
+        // pid. If the plugin forks a grandchild that inherits our
+        // stdout/stderr pipe write-ends (the documented v1 wrapper-script
+        // usage), killing only the direct pid leaves the grandchild alive
+        // holding the write-ends, so our reader threads never see EOF.
+        // `Foundation.Process` exposes no spawn-time `setsid`/`setpgid`
+        // hook, so we set the group from the parent right after spawn.
+        //
+        // The race window (the child may already have `execve`'d, after
+        // which `setpgid` returns EACCES) is benign: on success the child
+        // leads its own group `== pid` and we can `killpg` the tree; on
+        // failure we record `childPGID = nil` and fall back to the
+        // single-pid kill + the force-close of the read handles below,
+        // which is the load-bearing unwind regardless. We deliberately
+        // never `killpg` a group we don't own a fresh leader for — that
+        // could signal the host's own process group.
+        let childPID = process.processIdentifier
+        var childPGID: pid_t? = nil
+        if childPID > 0, setpgid(childPID, childPID) == 0 {
+            childPGID = childPID
+        }
+
         // Write stdin off-thread. Plugins are expected to consume the
         // whole envelope, so a blocking write would deadlock if the
         // plugin doesn't drain. We close on completion to signal EOF.
@@ -262,11 +285,29 @@ public struct PluginSubprocessHost: Sendable {
         while process.isRunning {
             if Date() >= deadline {
                 didTimeOut = true
-                process.terminate()
-                // Give it 200ms to handle SIGTERM cleanly, then SIGKILL.
+                // SIGTERM the whole group (if we isolated one) so a
+                // grandchild that inherited our pipe write-ends gets the
+                // signal too; otherwise just the direct child. `killpg`
+                // on a group whose leader is gone returns ESRCH — benign.
+                if let pgid = childPGID {
+                    killpg(pgid, SIGTERM)
+                } else {
+                    process.terminate()
+                }
+                // Give it 200ms to handle SIGTERM cleanly, then SIGKILL
+                // the group (closing any grandchild-held pipe write-ends),
+                // falling back to the single pid when we have no group.
                 Thread.sleep(forTimeInterval: 0.2)
                 if process.isRunning {
-                    kill(process.processIdentifier, SIGKILL)
+                    if let pgid = childPGID {
+                        killpg(pgid, SIGKILL)
+                    } else {
+                        kill(process.processIdentifier, SIGKILL)
+                    }
+                } else if let pgid = childPGID {
+                    // Direct child is gone but a grandchild may still hold
+                    // the pipe write-ends — SIGKILL the rest of the group.
+                    killpg(pgid, SIGKILL)
                 }
                 break
             }
@@ -275,10 +316,35 @@ public struct PluginSubprocessHost: Sendable {
         process.waitUntilExit()
 
         // Make sure the reader threads drain whatever's left in the
-        // pipes before we read the buffers. With the process exited
-        // the handles will hit EOF and the threads will signal.
-        _ = stdoutDone.wait(timeout: .now() + .milliseconds(500))
-        _ = stderrDone.wait(timeout: .now() + .milliseconds(500))
+        // pipes before we read the buffers. Normally, with the process
+        // exited, the handles hit EOF and the threads signal on their own.
+        //
+        // F-PMA-LEAK-1: but EOF only arrives once EVERY write-end of the
+        // pipe is closed. A grandchild we couldn't reach (the group kill
+        // missed it, e.g. it had already re-parented or escaped the
+        // group) keeps a write-end open, so `availableData` blocks
+        // forever and the reader threads — plus the global-queue workers
+        // they're parked on and the pipe fds they captured — leak per
+        // call. `PluginRegistry`'s sidebar provider re-invokes us on every
+        // refresh, so this compounds toward `RLIMIT_NOFILE` exhaustion and
+        // libdispatch thread starvation. If the bounded join times out we
+        // force-close the read/write handles ourselves: the blocked
+        // `read(2)` then returns, the reader closures fall out of their
+        // loops, signal their semaphores, and release the `Pipe` objects
+        // (and their fds). `try?` because a handle already at EOF/closed
+        // throws on a redundant close.
+        let stdoutDrained = stdoutDone.wait(timeout: .now() + .milliseconds(500)) == .success
+        let stderrDrained = stderrDone.wait(timeout: .now() + .milliseconds(500)) == .success
+        if !stdoutDrained || !stderrDrained {
+            try? stdoutHandle.close()
+            try? stderrHandle.close()
+            try? stdinPipe.fileHandleForWriting.close()
+            // After force-closing, give the now-unblocked readers a brief
+            // moment to fall out of their loops and signal so we read a
+            // complete-as-possible buffer below.
+            _ = stdoutDone.wait(timeout: .now() + .milliseconds(200))
+            _ = stderrDone.wait(timeout: .now() + .milliseconds(200))
+        }
 
         let outcome: CallResult.Outcome
         if didTimeOut {

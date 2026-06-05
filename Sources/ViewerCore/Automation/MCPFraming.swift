@@ -211,31 +211,58 @@ extension MCPFraming {
         /// "Data.subdata(in:) after removeFirst slice-offset bug").
         /// LSPFraming.decode applies the same rebase defensively.
         private var buffer: Data = Data()
+        /// Read cursor into `buffer`, measured from `buffer.startIndex`.
+        /// Bytes in `buffer[startIndex ..< startIndex+cursor]` are
+        /// already consumed; the live region is
+        /// `buffer[startIndex+cursor ..< endIndex]`.
+        ///
+        /// Why a cursor instead of `removeFirst()`: `availableData`
+        /// typically returns a whole frame (header + body, up to 16 MiB)
+        /// in one read, and the header is then scanned byte-by-byte.
+        /// `removeFirst()` + `Data(buffer)` each copy the *entire*
+        /// remaining buffer per byte, so a ~40-byte header drained
+        /// against a megabyte body was O(header_len × body_len). A
+        /// cursor makes `readByte()` O(1); we only rebase via `Data(_:)`
+        /// when the buffer is fully drained (cursor at end) — preserving
+        /// the macOS-26 0-based-storage invariant above, since every
+        /// refilled buffer is freshly `Data(_:)`-copied and the cursor
+        /// resets to 0.
+        private var cursor: Int = 0
 
         public init(_ handle: FileHandle) { self.handle = handle }
 
         public mutating func readByte() throws -> UInt8? {
-            if buffer.isEmpty {
+            if cursor >= buffer.count {
+                // Buffer drained — refill. Rebase via `Data(_:)` so the
+                // refilled buffer has a 0-based `startIndex` (macOS-26
+                // slice-offset invariant) and reset the cursor.
                 let chunk = handle.availableData
                 if chunk.isEmpty { return nil }   // EOF
-                buffer = chunk
+                buffer = Data(chunk)
+                cursor = 0
             }
-            let b = buffer.removeFirst()
-            // Re-base after `removeFirst` so the next `prefix` /
-            // subscript / `subdata` against `buffer` is 0-based.
-            buffer = Data(buffer)
+            // O(1): index the live region without copying or shifting.
+            let b = buffer[buffer.startIndex + cursor]
+            cursor += 1
             return b
         }
 
         public mutating func read(exactly count: Int) throws -> Data? {
             var out = Data()
             out.reserveCapacity(count)
-            // Drain any buffered bytes first.
-            if !buffer.isEmpty {
-                let take = min(buffer.count, count)
-                out.append(buffer.prefix(take))
-                buffer.removeFirst(take)
-                buffer = Data(buffer)
+            // Drain any buffered (not-yet-consumed) bytes first.
+            let buffered = buffer.count - cursor
+            if buffered > 0 {
+                let take = min(buffered, count)
+                let base = buffer.startIndex + cursor
+                out.append(buffer.subdata(in: base ..< (base + take)))
+                cursor += take
+            }
+            // Once the buffered region is consumed, clear it so the
+            // cursor stays small and `buffer` doesn't pin a large frame.
+            if cursor >= buffer.count {
+                buffer = Data()
+                cursor = 0
             }
             while out.count < count {
                 let chunk = handle.availableData
@@ -250,8 +277,10 @@ extension MCPFraming {
                 } else {
                     out.append(chunk.prefix(needed))
                     // `suffix(from:)` returns a slice with non-zero
-                    // startIndex; rebase to a canonical 0-based view.
+                    // startIndex; rebase to a canonical 0-based view and
+                    // reset the cursor — the stashed leftover is unread.
                     buffer = Data(chunk.suffix(from: chunk.startIndex.advanced(by: needed)))
+                    cursor = 0
                 }
             }
             return out

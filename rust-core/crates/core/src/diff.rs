@@ -220,9 +220,21 @@ fn parse_diff_git_paths(rest: &str) -> (String, String) {
         let b = &rest[idx + 3..];
         return (strip_path_prefix(a), b.to_string());
     }
-    // (4) Last resort: split at first space.
-    if let Some(sp) = rest.find(' ') {
-        return (strip_path_prefix(&rest[..sp]), strip_path_prefix(&rest[sp + 1..]));
+    // (4) Last resort: split at first space. Mirror Swift's
+    // `rest.split(separator: " ", maxSplits: 1)`, whose default
+    // `omittingEmptySubsequences: true` drops leading/empty space tokens — so
+    // trim leading spaces before the first-space split (Swift collapses the
+    // leading empties without spending the single split), then drop any
+    // residual empty token. Only when fewer than two tokens remain do we fall
+    // back to `(rest, rest)`, using the ORIGINAL `rest` (Swift returns the
+    // untrimmed input on that path).
+    let tokens: Vec<&str> = rest
+        .trim_start_matches(' ')
+        .splitn(2, ' ')
+        .filter(|t| !t.is_empty())
+        .collect();
+    if let [a, b] = tokens.as_slice() {
+        return (strip_path_prefix(a), strip_path_prefix(b));
     }
     (rest.to_string(), rest.to_string())
 }
@@ -261,7 +273,10 @@ fn parse_hunk_header(raw: &str) -> Option<PartialHunk> {
 }
 
 fn parse_coord(s: &str) -> (i64, i64) {
-    let mut parts = s.split(',');
+    // Mirror Swift `s.split(separator: ",")`, whose default
+    // `omittingEmptySubsequences: true` drops leading/empty pieces — so an
+    // absent or empty start and an absent count both fall back identically.
+    let mut parts = s.split(',').filter(|p| !p.is_empty());
     let raw_start: i64 = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
     // A present-but-unparsable count defaults to 1 (matches the Swift parser);
     // an absent count (no comma) also defaults to 1.

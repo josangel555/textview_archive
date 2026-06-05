@@ -166,6 +166,48 @@ public final class CsvSession {
         throw CoreError(status: status)
     }
 
+    #if DEBUG
+    /// The C `MdvStatus` outcomes a handle-taking session call can yield that the
+    /// dead-flag state machine cares about. Test-only mirror so the regression
+    /// test never has to import the raw `CMdvCore` C module.
+    enum SimulatedSessionOutcome {
+        /// Maps to `MDV_STATUS_PANIC`: the core panicked mid-call (fatal — latches
+        /// the dead-flag).
+        case panic
+        /// Maps to `MDV_STATUS_BUSY`: the single-writer lock was contended
+        /// (retryable — must NOT latch the dead-flag).
+        case busy
+        /// Maps to `MDV_STATUS_OK`: a clean call (used to probe a dead handle).
+        case ok
+
+        fileprivate var status: MdvStatus {
+            switch self {
+            case .panic: return MDV_STATUS_PANIC
+            case .busy: return MDV_STATUS_BUSY
+            case .ok: return MDV_STATUS_OK
+            }
+        }
+    }
+
+    /// Test-only hook: simulate a handle-taking session call with `outcome`,
+    /// driving the REAL `liveHandle()` + `check()` state machine on this live
+    /// session (no Rust shim needed — the FFI crate stays untouched). Lets a test
+    /// prove the dead-flag contract end-to-end: a `.panic` outcome must throw
+    /// `.panic` AND latch `dead`, so a subsequent real call (`table()` /
+    /// `snapshot()`) throws `.handleDead`; a `.busy` outcome must throw `.busy`
+    /// WITHOUT latching `dead` (contention is retryable, not fatal). This
+    /// exercises the same `liveHandle`/`check` path every production session call
+    /// flows through, so it is a faithful proxy for a panicking session shim.
+    func _simulateSessionCall(_ outcome: SimulatedSessionOutcome) throws {
+        _ = try liveHandle()      // throws .handleDead once a prior panic latched
+        try check(outcome.status) // maps status → CoreError; latches dead on .panic
+    }
+
+    /// Test-only accessor for the dead-flag, so a test can assert the latch
+    /// transition directly rather than only inferring it from the next throw.
+    var _isDead: Bool { dead }
+    #endif
+
     /// Run an out-buf C call, copy the framed bytes out, and free the MdvBuf.
     private func callBuf(
         _ fn: (OpaquePointer?, UnsafeMutablePointer<MdvBuf>?) -> MdvStatus

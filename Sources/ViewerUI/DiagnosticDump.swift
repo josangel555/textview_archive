@@ -193,7 +193,10 @@ public enum DiagnosticDump {
         redactContent: Bool = false
     ) -> [String: Any] {
         var t: [String: Any] = [
-            "string_length": tv.string.count,
+            // O(1) UTF-16 length (matches the NSRange-based metrics below);
+            // `tv.string.count` would force a full grapheme walk over the
+            // entire backing store on every dump (PERF: per-step/SIGUSR1).
+            "string_length": (tv.string as NSString).length,
             // `string_head` echoes the first 120 chars of the document.
             // Redact it in persisted (release/SIGUSR1) dumps so a forensic
             // file never embeds a slice of the user's content (OBS-1).

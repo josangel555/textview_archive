@@ -426,4 +426,52 @@ mod tests {
         let t = parse("name,emoji\nJosé,🎉\n");
         assert_eq!(t.rows, vec![vec!["José", "🎉"]]);
     }
+
+    // --- PARSE-04 degenerate / quote-state-machine edge cases ---
+    // The four shapes below pin the detect-vs-parse contract the hardening was
+    // built for; they are deliberately the cases the now-deleted exploratory
+    // probe only *looked* at without asserting.
+
+    #[test]
+    fn unterminated_quote_caps_with_marker() {
+        // A quote that never closes turns the rest of input into one field —
+        // exactly the "whole file becomes one giant cell" shape the per-cell
+        // cap exists to bound. The cap must fire (truncated flips) and the cell
+        // must end in the `…` marker after `max_cell_chars` real chars.
+        let limits = Limits {
+            max_cell_chars: 5,
+            ..Limits::default()
+        };
+        let t = parse_with("h\n\"abcdefghij\n", ',', limits);
+        assert!(t.truncated);
+        // 5 chars then the marker; the embedded newline is swallowed by the
+        // still-open quote, so it does NOT terminate the record.
+        assert_eq!(t.rows[0][0], "abcde…");
+    }
+
+    #[test]
+    fn mid_field_quote_does_not_open_quoting() {
+        // A `"` in the MIDDLE of a non-empty field (`field.is_empty()` gate is
+        // false) is a literal char, NOT a quote-open — so the following comma
+        // STILL splits the row. This is the branch that makes `detect_delimiter`
+        // and `parse` agree on field boundaries here.
+        let t = parse("h1,h2\na\"b,c\n");
+        assert_eq!(t.rows, vec![vec!["a\"b", "c"]]);
+    }
+
+    #[test]
+    fn closing_quote_then_text_appends_literally() {
+        // `"ab"cd` — the closing quote drops out of quoting, then `cd` appends
+        // outside quotes; the trailing comma splits normally.
+        let t = parse("h1,h2\n\"ab\"cd,e\n");
+        assert_eq!(t.rows, vec![vec!["abcd", "e"]]);
+    }
+
+    #[test]
+    fn escaped_only_field_then_split() {
+        // `"""",x` — `""` is one escaped literal quote, the next `"` closes the
+        // field, and the comma splits. The cell is a single `"`.
+        let t = parse("h1,h2\n\"\"\"\",x\n");
+        assert_eq!(t.rows, vec![vec!["\"", "x"]]);
+    }
 }

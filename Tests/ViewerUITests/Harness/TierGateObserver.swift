@@ -129,18 +129,24 @@ final class TierGateObserver: NSObject, XCTestObservation {
         defer { writeLock.unlock() }
         let line = name + "\n"
         let url = sentinelURL
-        let fm = FileManager.default
-        if let handle = try? FileHandle(forWritingTo: url) {
-            defer { try? handle.close() }
-            _ = try? handle.seekToEnd()
-            handle.write(Data(line.utf8))
-        } else {
-            // File doesn't exist yet — create it (with this first line).
-            try? fm.createDirectory(
-                at: url.deletingLastPathComponent(),
-                withIntermediateDirectories: true)
-            try? line.data(using: .utf8)?.write(to: url, options: .atomic)
-        }
+
+        // Ensure the parent dir exists, then open the sentinel for atomic,
+        // cross-process append in a SINGLE syscall: `O_WRONLY|O_APPEND|O_CREAT`
+        // both creates-if-missing and forces every write to seek-to-end under
+        // the kernel's file lock. There is no create-vs-append fork to race:
+        // a sub-`PIPE_BUF` write (a single short test name + "\n") is atomic
+        // across the concurrent `xctest` workers, so no worker's first
+        // violation can clobber another's via a temp-file rename. The
+        // instance `writeLock` only orders writers *within* one worker; the
+        // `O_APPEND` open is what makes it safe *across* workers.
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true)
+        let fd = open(url.path, O_WRONLY | O_APPEND | O_CREAT, 0o644)
+        guard fd >= 0 else { return }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        defer { try? handle.close() }
+        try? handle.write(contentsOf: Data(line.utf8))
     }
 
     // MARK: - tier membership

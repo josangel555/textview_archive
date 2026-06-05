@@ -190,6 +190,14 @@ public final class ReviewStore: Sendable {
     }
 
     private func loadIndex() -> [ReviewSummary]? {
-        JSONFileStore.read([ReviewSummary].self, from: indexURL)
+        // Cap the index read at the same per-file ceiling the review
+        // files use: a tampered/runaway `_index.json` (user-writable
+        // dir) would otherwise inflate unbounded into memory. On reject
+        // `read` returns nil, which falls through to the rebuild-by-scan
+        // path in `list()` — the index is only a cache, so this is a
+        // recoverable degrade, not data loss.
+        JSONFileStore.read(
+            [ReviewSummary].self, from: indexURL, maxSize: Self.maxReviewFileSize
+        )
     }
 }

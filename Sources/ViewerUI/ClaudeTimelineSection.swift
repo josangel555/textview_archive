@@ -173,7 +173,12 @@ struct ClaudeTimelineSection: View {
             var parsed: [ClaudeEvent] = []
             if let latest = jsonls.first {
                 let parser = ClaudeLogParser()
-                parsed = (try? parser.events(from: latest)) ?? []
+                // Surface only through the redaction barrier — this sidebar
+                // renders event.summary / event.detail directly (rows + .help),
+                // so it must honor the same redaction contract as the monitor
+                // window and transcript search. `events(from:)` is the
+                // non-redacting path and must NOT feed a surfacing consumer.
+                parsed = (try? parser.redactedEvents(from: latest)) ?? []
                 // Reverse-chrono: most recent first.
                 parsed.reverse()
                 if parsed.count > 200 { parsed = Array(parsed.prefix(200)) }

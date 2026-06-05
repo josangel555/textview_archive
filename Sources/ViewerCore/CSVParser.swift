@@ -158,6 +158,12 @@ public enum CSVParser {
 
         var rows: [[String]] = []
         var field = ""
+        // Track the current field's scalar length explicitly: Swift's
+        // `UnicodeScalarView` is not random-access and caches no length,
+        // so `field.unicodeScalars.count` walks the whole UTF-8 buffer
+        // each call — checking it per appended scalar made building an
+        // N-scalar field O(N²). Mirrors the Rust port's `field_chars`.
+        var fieldScalarCount = 0
         var row: [String] = []
         var inQuotes = false
 
@@ -180,7 +186,7 @@ public enum CSVParser {
         /// Append `c` to the current field, honoring the per-cell char
         /// cap (appends a single "…" marker once when first exceeded).
         @inline(__always) func appendToField(_ c: Unicode.Scalar) {
-            if field.unicodeScalars.count >= limits.maxCellChars {
+            if fieldScalarCount >= limits.maxCellChars {
                 if !fieldCapped {
                     field.append("…")
                     fieldCapped = true
@@ -189,6 +195,7 @@ public enum CSVParser {
                 return
             }
             field.unicodeScalars.append(c)
+            fieldScalarCount += 1
         }
 
         /// Push the current field into `row`, honoring the per-row cell
@@ -200,6 +207,7 @@ public enum CSVParser {
                 truncated = true
             }
             field = ""
+            fieldScalarCount = 0
             fieldCapped = false
         }
 

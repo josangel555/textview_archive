@@ -8,34 +8,55 @@ import Foundation
 /// only thing standing between a malicious script and the verb dispatch
 /// — keep them strict. Specifically:
 ///
-///   - `..` traversal: any step path that resolves outside `rootHint`
-///     is rejected. Without this, `openFile` could read `/etc/passwd`.
+///   - `..` traversal: any step path that resolves outside the
+///     effective fence is rejected. Without this, `openFile` could read
+///     `/etc/passwd`.
 ///   - Duplicate step ids: the engine indexes by id (`jumpTo`); a dup
 ///     would make the index ambiguous.
 ///   - Schema discriminator: enforced by `Codable` on the type already,
 ///     but surfaced as a structured error here.
+///
+/// **Trusted-root vs self-declared `rootHint` (S3 hardening).** The
+/// script's own `rootHint` is attacker-controlled — it travels inside
+/// the same untrusted JSON. Validating step paths against `rootHint`
+/// alone is no containment at all: a malicious script just declares
+/// `rootHint: "/"` and every absolute path passes. The untrusted
+/// boundary (file-drop transport) must therefore inject a `trustedRoot`
+/// it derived itself (frontmost window's working dir / configured
+/// drop dir). When `trustedRoot` is supplied it is the authoritative
+/// fence: every step path is validated against it, and the script's
+/// `rootHint` is additionally required to resolve *inside* it
+/// (intersection — a script may narrow to a subdir, never widen out).
 ///
 /// The loader returns a `Result`, never throws. Rationale: every call
 /// site needs to branch on success/failure to write to `accepted/` or
 /// `rejected/` (design §4.1), so a structured error is the right shape.
 public enum WalkthroughLoader {
 
-    /// Decode + validate. Path-escape checks use `rootHint` if present;
-    /// when nil, paths are accepted as-is (the file-drop transport can
-    /// fill in `rootHint` from the frontmost window's working dir
-    /// before calling `load`).
+    /// Decode + validate.
     ///
-    /// **Important boundary distinction (S1.4):** this overload defaults
-    /// to `requireRootHint: false` because internal callers (engine
-    /// reload after edit, tests, scripts authored against a known dev
-    /// root) may legitimately accept absolute-only paths. The file-drop
-    /// transport — the *untrusted* boundary — must call with
-    /// `requireRootHint: true` so a script without `rootHint` cannot
-    /// land verbs that openFile / addBookmark arbitrary absolute paths.
+    /// Containment fence precedence:
+    ///   1. `trustedRoot` (caller-injected, NOT from the script) when
+    ///      non-nil — the authoritative fence. Step paths are validated
+    ///      against it, and `script.rootHint` must resolve inside it.
+    ///   2. Otherwise `script.rootHint` if present — legacy/internal
+    ///      callers (engine reload after edit, tests, scripts authored
+    ///      against a known dev root) that trust the script's own root.
+    ///   3. Otherwise no path-escape check (absolute paths accepted).
+    ///
+    /// **Important boundary distinction (S1.4 / S3):** this overload
+    /// defaults to `requireRootHint: false` and `trustedRoot: nil`
+    /// because internal callers may legitimately accept absolute-only
+    /// paths against the script's own root. The file-drop transport —
+    /// the *untrusted* boundary — must call with `requireRootHint: true`
+    /// AND a non-nil `trustedRoot` so a script can neither omit
+    /// `rootHint` nor self-declare an over-broad one (`"/"`, `/Users`)
+    /// to land `openFile` / `addBookmark` on arbitrary absolute paths.
     public static func load(
         data: Data,
         decoder: JSONDecoder? = nil,
-        requireRootHint: Bool = false
+        requireRootHint: Bool = false,
+        trustedRoot: String? = nil
     ) -> Result<WalkthroughScript, WalkthroughLoadError> {
         let d = decoder ?? Self.defaultDecoder()
         let script: WalkthroughScript
@@ -57,7 +78,7 @@ public enum WalkthroughLoader {
         if requireRootHint && script.rootHint == nil {
             return .failure(.missingRootHint)
         }
-        if let err = validate(script) {
+        if let err = validate(script, trustedRoot: trustedRoot) {
             return .failure(err)
         }
         return .success(script)
@@ -66,7 +87,8 @@ public enum WalkthroughLoader {
     public static func load(
         fileAt url: URL,
         decoder: JSONDecoder? = nil,
-        requireRootHint: Bool = false
+        requireRootHint: Bool = false,
+        trustedRoot: String? = nil
     ) -> Result<WalkthroughScript, WalkthroughLoadError> {
         let data: Data
         do {
@@ -74,7 +96,12 @@ public enum WalkthroughLoader {
         } catch {
             return .failure(.ioFailed(error.localizedDescription))
         }
-        return load(data: data, decoder: decoder, requireRootHint: requireRootHint)
+        return load(
+            data: data,
+            decoder: decoder,
+            requireRootHint: requireRootHint,
+            trustedRoot: trustedRoot
+        )
     }
 
     // MARK: - Validation
@@ -83,7 +110,14 @@ public enum WalkthroughLoader {
     /// clean. Single-error-per-load is deliberate: the file-drop
     /// transport surfaces the rejection in a sibling `.error.txt`, and
     /// stacking errors confuses authors more than one focused message.
-    static func validate(_ script: WalkthroughScript) -> WalkthroughLoadError? {
+    ///
+    /// `trustedRoot`, when supplied, is the caller-derived fence (NOT
+    /// from the script) and takes precedence over the script's own
+    /// `rootHint` per the type docstring.
+    static func validate(
+        _ script: WalkthroughScript,
+        trustedRoot: String? = nil
+    ) -> WalkthroughLoadError? {
 
         // 1. Step ids must be unique. The engine indexes by id for
         //    jumpTo + guardOn resolution; a dup makes the resolution
@@ -97,38 +131,75 @@ public enum WalkthroughLoader {
             }
         }
 
-        // 2. Path-escape check. Every action payload that carries a
-        //    `path` field (string, optional or not) must resolve inside
-        //    `rootHint`. When `rootHint` is nil we skip — paths are
-        //    assumed absolute and the caller has chosen to accept them.
-        if let rootHint = script.rootHint {
-            // `isDirectory: true` keeps a trailing slash on the URL so
-            // `URL(fileURLWithPath: relative, relativeTo: root)`
-            // resolves against `root` as a base **directory** rather
-            // than its parent. Without this, rootHint `/tmp/repo`
-            // would resolve `src/A.swift` to `/tmp/src/A.swift` (one
-            // level up) and legit scripts would falsely fail.
-            // `resolvingSymlinksInPath` handles macOS's `/tmp` →
-            // `/private/tmp` indirection so the comparison doesn't
-            // false-positive when the resolved file path is canonical.
-            let root = URL(fileURLWithPath: rootHint, isDirectory: true)
-                .standardizedFileURL
-                .resolvingSymlinksInPath()
-            let rootPath = root.path
-            for step in script.steps {
-                for action in step.actions {
-                    for path in pathsIn(action) {
-                        if let bad = pathEscape(path, root: root, rootPath: rootPath) {
-                            return .pathEscape(
-                                stepID: step.id, path: bad
-                            )
-                        }
+        // 2. Establish the authoritative containment fence.
+        //
+        //    `trustedRoot` (caller-injected, derived OUTSIDE the script)
+        //    wins when present: the script's own `rootHint` is part of
+        //    the untrusted JSON, so trusting it for the fence is no
+        //    containment at all (an attacker sets `rootHint: "/"` and
+        //    every absolute path passes). When `trustedRoot` is nil we
+        //    fall back to `rootHint` for legacy/internal callers that
+        //    deliberately trust the script's own root; when both are nil
+        //    the check is skipped (absolute paths accepted by choice).
+        let fence: URL
+        let fencePath: String
+        if let trustedRoot {
+            let t = canonicalRoot(trustedRoot)
+            fence = t.url
+            fencePath = t.path
+
+            // Intersect: the script may NARROW to a subdirectory of the
+            // trusted root, but never widen out of it. Reject a
+            // `rootHint` that resolves outside the trusted fence so a
+            // script can't claim a broader root than the caller granted.
+            if let rootHint = script.rootHint {
+                let r = canonicalRoot(rootHint)
+                if r.path != fencePath && !r.path.hasPrefix(fencePath + "/") {
+                    return .rootHintOutsideTrustedRoot(
+                        rootHint: rootHint, trustedRoot: trustedRoot
+                    )
+                }
+            }
+        } else if let rootHint = script.rootHint {
+            let r = canonicalRoot(rootHint)
+            fence = r.url
+            fencePath = r.path
+        } else {
+            return nil
+        }
+
+        // 3. Path-escape check against the established fence. Every
+        //    action payload that carries a `path` field (string,
+        //    optional or not) must resolve inside it.
+        for step in script.steps {
+            for action in step.actions {
+                for path in pathsIn(action) {
+                    if let bad = pathEscape(path, root: fence, rootPath: fencePath) {
+                        return .pathEscape(stepID: step.id, path: bad)
                     }
                 }
             }
         }
 
         return nil
+    }
+
+    /// Canonicalize a root directory path into the (URL, path) pair the
+    /// escape check compares against.
+    ///
+    /// `isDirectory: true` keeps a trailing slash on the URL so
+    /// `URL(fileURLWithPath: relative, relativeTo: root)` resolves
+    /// against `root` as a base **directory** rather than its parent.
+    /// Without this, root `/tmp/repo` would resolve `src/A.swift` to
+    /// `/tmp/src/A.swift` (one level up) and legit scripts would falsely
+    /// fail. `resolvingSymlinksInPath` handles macOS's `/tmp` →
+    /// `/private/tmp` indirection so the comparison doesn't
+    /// false-positive when the resolved file path is canonical.
+    private static func canonicalRoot(_ path: String) -> (url: URL, path: String) {
+        let url = URL(fileURLWithPath: path, isDirectory: true)
+            .standardizedFileURL
+            .resolvingSymlinksInPath()
+        return (url, url.path)
     }
 
     /// Extract every `path` string an action references. We collect on
@@ -235,4 +306,10 @@ public enum WalkthroughLoadError: Error, Equatable, Sendable {
     /// a rootHint the path-escape check is a no-op and `openFile` can
     /// reach arbitrary absolute paths — refuse outright.
     case missingRootHint
+    /// A `trustedRoot` was injected by the caller (the untrusted
+    /// file-drop boundary) but the script's self-declared `rootHint`
+    /// resolves OUTSIDE it. The script may narrow to a subdirectory of
+    /// the trusted root, never widen beyond it — otherwise a malicious
+    /// script could claim `rootHint: "/"` and defeat containment.
+    case rootHintOutsideTrustedRoot(rootHint: String, trustedRoot: String)
 }

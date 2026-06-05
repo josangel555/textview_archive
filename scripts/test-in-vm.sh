@@ -45,6 +45,10 @@ cd "$ROOT_DIR"
 # regardless of mode.
 RESULTS_TXT="/tmp/mdv-test-output.txt"
 RESULTS_XML="/tmp/mdv-test-results.xml"
+# Separate result files for the env-gated WebView lane so it never clobbers the
+# primary artifact (/tmp/mdv-test-results.xml) that CI uploads.
+WEBVIEW_TXT="/tmp/mdv-webview-output.txt"
+WEBVIEW_XML="/tmp/mdv-webview-results.xml"
 SECONDS=0
 
 log() { printf "==> %s\n" "$*"; }
@@ -65,6 +69,9 @@ build_all() {
   log "swift build -c debug"
   swift build -c debug
 
+  # build-app.sh runs the pre-install smoke gate (ViewModeMatrixSmokeTests)
+  # unless MDV_SKIP_SMOKE_GATE=1. Callers that immediately run the full sweep
+  # next (which re-covers that suite) export it to avoid the duplicate T4 run.
   log "bash scripts/build-app.sh debug (assembles dist/MarkdownViewer.app)"
   bash "$SCRIPT_DIR/build-app.sh" debug
 
@@ -81,27 +88,57 @@ input_path, output_path = sys.argv[1], sys.argv[2]
 text = open(input_path).read()
 # Find test cases of the form:
 #   Test Case '-[Module.Class methodName]' passed (X.X seconds).
+# Include `skipped` so XCTSkip self-skips (heavy-tier gating, the WebView
+# #192 gate) are represented as <skipped/> rather than silently dropped.
 case_re = re.compile(
-    r"Test Case '-\[([^.\]]+)\.([^ \]]+) (\w+)\]' (passed|failed)\s*\(([0-9.]+) seconds\)"
+    r"Test Case '-\[([^.\]]+)\.([^ \]]+) (\w+)\]' (passed|failed|skipped)\s*\(([0-9.]+) seconds\)"
 )
 cases = case_re.findall(text)
 suites = {}
 for module, cls, method, result, secs in cases:
     suites.setdefault(cls, []).append((method, result, float(secs)))
+
+# Cross-check the per-case count against xctest's own "Executed N tests"
+# summary. A test that CRASHES the worker (SIGABRT / hang→timeout) emits no
+# terminating passed/failed/skipped line, so it never produces a <testcase>
+# and the JUnit would falsely read green. xctest prints one summary per suite
+# plus a grand total; the grand total is the largest N seen.
+summary_re = re.compile(r"Executed (\d+) test")
+summary_counts = [int(n) for n in summary_re.findall(text)]
+expected = max(summary_counts) if summary_counts else 0
+parsed = len(cases)
+
 with open(output_path, "w") as f:
     f.write('<?xml version="1.0" encoding="UTF-8"?>\n<testsuites>\n')
     for cls, cs in suites.items():
         fails = sum(1 for _, r, _ in cs if r == "failed")
+        skips = sum(1 for _, r, _ in cs if r == "skipped")
         total_time = sum(s for _, _, s in cs)
-        f.write(f'  <testsuite name="{html.escape(cls)}" tests="{len(cs)}" failures="{fails}" time="{total_time:.3f}">\n')
+        f.write(f'  <testsuite name="{html.escape(cls)}" tests="{len(cs)}" failures="{fails}" skipped="{skips}" time="{total_time:.3f}">\n')
         for method, result, secs in cs:
             f.write(f'    <testcase classname="{html.escape(cls)}" name="{html.escape(method)}" time="{secs:.3f}">')
             if result == "failed":
                 f.write('<failure type="failure" message="see swift test output"/>')
+            elif result == "skipped":
+                f.write('<skipped/>')
             f.write('</testcase>\n')
+        f.write('  </testsuite>\n')
+    # Synthetic failure when the parsed cases disagree with the summary total,
+    # so a crashed/missing case turns the artifact RED instead of silent-green.
+    if expected > parsed:
+        msg = (f"count mismatch: xctest reported {expected} executed, "
+               f"but only {parsed} terminating test-case lines were parsed "
+               f"({expected - parsed} crashed/missing — likely a SIGABRT or timeout)")
+        f.write('  <testsuite name="JUnitConverter" tests="1" failures="1" skipped="0" time="0.000">\n')
+        f.write('    <testcase classname="JUnitConverter" name="caseCountMatchesSummary" time="0.000">')
+        f.write(f'<failure type="count-mismatch" message="{html.escape(msg)}"/>')
+        f.write('</testcase>\n')
         f.write('  </testsuite>\n')
     f.write('</testsuites>\n')
 print(f"JUnit XML → {output_path}")
+if expected > parsed:
+    print(f"WARNING: parsed {parsed} test cases but summary reported {expected} "
+          f"executed — {expected - parsed} crashed/missing", file=sys.stderr)
 PY
 }
 
@@ -121,6 +158,30 @@ run_tests() {
     set -e
   fi
   write_junit "$RESULTS_TXT" "$RESULTS_XML"
+  return $rc
+}
+
+# The in-process live-WKWebView suites are process-isolated out of the bare
+# `swift test` sweep (#192) AND self-skip via XCTSkip unless
+# MDV_RUN_WEBVIEW_TESTS=1. They therefore need their own invocation with the
+# gate armed, exactly as nightly-vm.yml's "WebView lane" step does — otherwise
+# naming them in a filter list silently skips 100% of them (false-green render
+# coverage). Results go to a separate file so the primary artifact is untouched.
+run_webview_tests() {
+  log "MDV_RUN_WEBVIEW_TESTS=1 swift test (WebView lane)"
+  set +e
+  MDV_RUN_WEBVIEW_TESTS=1 swift test --parallel \
+    --filter ViewerUITests.ComponentVisualTests \
+    --filter ViewerUITests.ContentViewHostingTests \
+    --filter ViewerUITests.DiagnosticDumpTests \
+    --filter ViewerUITests.FindBarTests \
+    --filter ViewerUITests.FormatToggleTests \
+    --filter ViewerUITests.MermaidHostingTests \
+    --filter ViewerUITests.RenderedFindBarTests \
+    2>&1 | tee "$WEBVIEW_TXT"
+  local rc=${PIPESTATUS[0]}
+  set -e
+  write_junit "$WEBVIEW_TXT" "$WEBVIEW_XML"
   return $rc
 }
 
@@ -146,19 +207,33 @@ case "$MODE" in
   quick)
     ensure_tools
     build_all
-    # Everything except L4/L5 (which spawn the app + are slower).
+    # Everything except L4/L5 (which spawn the app + are slower). The WebView
+    # suites (ContentViewHostingTests/DiagnosticDumpTests/…) are NOT named here:
+    # they self-skip without MDV_RUN_WEBVIEW_TESTS=1, so listing them in the
+    # bare sweep would run zero of them (false-green). They run in the dedicated
+    # gated lane below instead, so quick actually exercises the render/host path.
+    rc=0
     run_tests \
       --filter ViewerCoreTests --filter ViewerKitTests \
       --filter DocumentModelTests --filter SidebarModelTests \
-      --filter MarkdownRenderedViewTests \
-      --filter ContentViewHostingTests --filter DiagnosticDumpTests
+      --filter MarkdownRenderedViewTests || rc=$?
+    run_webview_tests || rc=$?
     log "quick done in ${SECONDS}s"
+    exit $rc
     ;;
   all|*)
     ensure_tools
-    build_all
-    # Full suite. L4+L5 take ~50s of the total ~75s.
-    run_tests
+    # The full sweep below re-covers ViewModeMatrixSmokeTests, so skip the
+    # pre-install smoke gate that build-app.sh would otherwise run (avoids the
+    # T4 live-app matrix executing twice in the slowest lane).
+    MDV_SKIP_SMOKE_GATE=1 build_all
+    # Full suite. L4+L5 take ~50s of the total ~75s. The bare sweep process-
+    # isolates the WebView suites out (#192), so run them in their own gated
+    # lane afterward for parity with nightly-vm.yml.
+    rc=0
+    run_tests || rc=$?
+    run_webview_tests || rc=$?
     log "all done in ${SECONDS}s"
+    exit $rc
     ;;
 esac

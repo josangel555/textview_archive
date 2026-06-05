@@ -209,17 +209,26 @@ public enum MCPToolCatalog {
         let byteCount = text.utf8.count
         if byteCount > AutomationLimits.visibleTextMaxBytes {
             let cap = AutomationLimits.visibleTextMaxBytes
-            // Cut on a UTF-8 boundary by taking a prefix view on
-            // String, which is grapheme-aware (so we never emit a
-            // half code-point even if the byte cap falls mid-rune).
-            let prefix = text.prefix { _ in true }  // placeholder
-            _ = prefix
-            // Simple approach: take Substring prefix by characters until
-            // utf8.count ≤ cap. We do binary search style: chop by
-            // halves until we're under the cap. For 10 MB caps the
-            // String.prefix loop is fine.
-            var truncated = String(text.prefix(cap))
-            while truncated.utf8.count > cap { truncated.removeLast() }
+            // Byte-exact, code-point-boundary-correct truncation. We keep the
+            // longest prefix of at most `cap` bytes that ends on a UTF-8 scalar
+            // boundary. The boundary test is the byte AT the cut point (the
+            // first EXCLUDED byte): a UTF-8 continuation byte is 0b10xxxxxx
+            // (0x80...0xBF), so if `head[cap]` is a continuation byte the scalar
+            // it belongs to straddles the cap and we must back the cut up past
+            // its (≤3) continuation bytes to the scalar's lead. A complete
+            // scalar ending exactly at the cap is therefore KEPT (its cut byte
+            // is the next scalar's lead, not a continuation byte). Testing
+            // `head[boundary - 1]` instead would wrongly chop a complete
+            // trailing rune (its final byte is itself a continuation byte) and,
+            // for a straddler, stop one byte late — overshooting the cap and
+            // emitting U+FFFD. Take `cap + 1` bytes so the cut byte is in hand
+            // without materializing the whole (multi-MB) string.
+            let head = Array(text.utf8.prefix(cap + 1))
+            var boundary = cap
+            while boundary > 0, head[boundary] & 0b1100_0000 == 0b1000_0000 {
+                boundary -= 1
+            }
+            let truncated = String(decoding: head[..<boundary], as: UTF8.self)
             return .object([
                 "text": .string(truncated),
                 "truncated": .bool(true),

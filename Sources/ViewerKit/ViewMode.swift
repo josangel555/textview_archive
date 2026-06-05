@@ -164,8 +164,17 @@ public enum ViewModeOptions {
         }
     }
 
+    // NOTE: `.svg` is deliberately NOT here. `FileTypeDetector.category`
+    // classifies `.svg` as `.image`, so `availableModes` returns early on
+    // the `!hasTextRepresentation` path (`[.preview, .hex]`) and never
+    // reaches `supportsFormatting()`. Listing "svg" here was dead config
+    // for the normal path while leaking a contradictory third identity for
+    // SVG (image vs. xml-source vs. xml-formatter). SVG commits to
+    // image/preview. An explicit "Open As… text" override still surfaces
+    // the structured modes via `isTextOverride`, and source highlighting on
+    // that path correctly resolves to XML via `HighlightLanguage`.
     private static let formatterExtensions: Set<String> = [
-        "json", "jsonl", "xml", "plist", "xib", "storyboard", "svg",
+        "json", "jsonl", "xml", "plist", "xib", "storyboard",
         "html", "htm", "xhtml"
     ]
 

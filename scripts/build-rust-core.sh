@@ -28,6 +28,28 @@ LINK_DIR="$RUST_DIR/link"
 CMOD_DIR="$ROOT_DIR/Sources/CMdvCore"
 
 PROFILE="${MDV_RUST_PROFILE:-dist}"
+
+# Guard the app-link path against a panic=abort profile (Architecture invariant
+# #4). The staged .a is linked into the GUI host, so it MUST be built with
+# `panic = "unwind"` — otherwise the FFI `catch_unwind` shims are no-ops and a
+# core panic SIGABRTs the whole app instead of becoming MdvStatus::Panic.
+#   * `dist`  — release size ladder + panic=unwind (the shipping GUI profile).
+#   * `dev` / `test` — no `panic` override → cargo's default `unwind`.
+#   * `release` — panic=abort (size-figure only); linking it ships a bundle
+#     whose panic path silently aborts. REJECT it (and any other custom profile,
+#     which inherits release/panic=abort unless it explicitly opts back in).
+case "$PROFILE" in
+  dist|dev|test) ;;
+  *)
+    echo "Error: MDV_RUST_PROFILE='$PROFILE' is not allowed for the app-link path." >&2
+    echo "       Only 'dist', 'dev', or 'test' build with panic=unwind, which the" >&2
+    echo "       FFI catch_unwind shims require to convert a core panic into an" >&2
+    echo "       error instead of aborting the GUI host (Architecture invariant #4)." >&2
+    echo "       The 'release' profile uses panic=abort and MUST NOT be linked." >&2
+    exit 1
+    ;;
+esac
+
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/private/tmp/claude-$(id -u)/mdv-rust-csv-target}"
 
 if ! command -v cargo >/dev/null 2>&1; then

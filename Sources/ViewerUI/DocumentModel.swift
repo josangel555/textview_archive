@@ -2046,6 +2046,12 @@ public final class DocumentModel: ObservableObject {
     /// tab close. Bounded by the 4 MB read cap.
     private var hexDirtyBytes: [UUID: Data] = [:]
 
+    /// Test-only read seam for the per-tab HEX dirty stash. Lets the
+    /// headless HEX suite assert leak-freedom (every close path empties
+    /// the entry) and Discard/Cancel byte behavior without exposing the
+    /// mutable dict. `internal` — reachable only via `@testable import`.
+    func peekHexDirtyBytesForTest(_ id: UUID) -> Data? { hexDirtyBytes[id] }
+
     /// Mirror the HEX edit buffer's dirty state onto `Tab.isDirty` (the
     /// TabBar dot + the close-confirm gate, both reused unchanged from the
     /// editor path). Called by `HexView` on every dirty transition.
@@ -3262,16 +3268,66 @@ public final class DocumentModel: ObservableObject {
         fileWatcher?.stop()
         fileWatcher = nil
         watchedURL = url
+        // Switching watch targets clears any prior failure cue; the
+        // (re)construction below re-establishes it if this target fails.
+        // A nil URL or a not-yet-existent file is "nothing to watch", not
+        // a watcher failure, so it leaves the cue cleared.
+        liveReloadUnavailable = false
         guard let url, FileManager.default.fileExists(atPath: url.path) else { return }
         // CRIT-4: capture the URL the watcher is bound to so the handler
         // can verify the user is still viewing it before reloading.
         let boundURL = url
-        fileWatcher = try? FileWatcher(url: url, queue: .main) { [weak self] in
-            Task { @MainActor in
-                self?.reloadCurrentFile(matching: boundURL)
-            }
+        // S4: surface watcher construction/loss instead of swallowing it.
+        // A dead watcher means external-edit detection (and the FW-7
+        // save-time conflict reconcile it feeds) is silently off for this
+        // file's whole session — the one watcher/load/save path that
+        // would otherwise degrade with no signal. Emit to the
+        // observability sink (Logs view / os_log) on both the
+        // construction throw and the reattach-exhaustion `onLost`.
+        do {
+            fileWatcher = try FileWatcher(
+                url: url,
+                queue: .main,
+                onLost: { [weak self] in
+                    // Fires on the watcher's queue (.main) after reattach
+                    // attempts are exhausted (e.g. the file was deleted and
+                    // never recreated). Mark live reload as down so a later
+                    // start re-probes, and emit a diagnostic.
+                    Task { @MainActor in
+                        guard let self, self.watchedURL == boundURL else { return }
+                        self.liveReloadUnavailable = true
+                        Obs.shared.emit(.warn, "filewatcher",
+                            "live reload lost for \(boundURL.lastPathComponent): watcher gave up after repeated reattach failures",
+                            fields: ["path": boundURL.path])
+                    }
+                },
+                handler: { [weak self] in
+                    Task { @MainActor in
+                        self?.reloadCurrentFile(matching: boundURL)
+                    }
+                }
+            )
+            liveReloadUnavailable = false
+        } catch {
+            // O_EVTONLY open failed (descriptor exhaustion, kqueue/FSEvents
+            // resource pressure, a race deleting the file). Leave
+            // `fileWatcher` nil but record it so the dead watcher is
+            // detectable rather than an invisible no-op.
+            liveReloadUnavailable = true
+            Obs.shared.emit(.error, "filewatcher",
+                "could not start live reload for \(boundURL.lastPathComponent): \(error)",
+                fields: ["path": boundURL.path, "error": "\(error)"])
         }
     }
+
+    /// True when external-edit detection (live reload) is NOT active for
+    /// the currently-watched file — the watcher either failed to construct
+    /// or was lost after exhausting reattach attempts. Cleared on a
+    /// successful (re)start. Surfaced so the UI can show a one-time,
+    /// non-modal "live reload unavailable" cue and so the diagnostic dump
+    /// can report a dead watcher; the authoritative signal is also emitted
+    /// to `Obs.shared`.
+    @Published public private(set) var liveReloadUnavailable: Bool = false
 
     // MARK: Session lifecycle hooks (Phase 1)
 
@@ -3287,6 +3343,9 @@ public final class DocumentModel: ObservableObject {
         fileWatcher?.stop()
         fileWatcher = nil
         watchedURL = nil
+        // A deliberate pause is not a failure — don't leave a stale
+        // "unavailable" cue showing while the session is backgrounded.
+        liveReloadUnavailable = false
     }
 
     /// Resume file watching against the current tab's URL. Called by

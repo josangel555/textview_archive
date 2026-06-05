@@ -19,7 +19,8 @@
 
 use crate::filter::{self, Query};
 use crate::trace::{self, Level};
-use crate::wire::{Snapshot, Table};
+use crate::wire::{self, Snapshot, Table, WireFault};
+use serde::Serialize;
 
 /// A parsed CSV table plus its active filter. Owns all state for one open CSV.
 #[derive(Debug)]
@@ -35,8 +36,12 @@ pub struct CsvSession {
 #[derive(Debug)]
 struct CachedView {
     for_version: u64,
+    // Only the surviving original row indices are cached. The visible rows are
+    // projected on demand from `self.table.rows` via these indices, so the
+    // session never holds a second full copy of the (possibly multi-MB) body —
+    // the unfiltered fast path in particular previously duplicated `table.rows`
+    // verbatim for the whole session lifetime.
     indices: Vec<u32>,
-    rows: Vec<Vec<String>>,
 }
 
 impl CsvSession {
@@ -116,14 +121,21 @@ impl CsvSession {
     /// Produce a level-triggered snapshot of the current visible rows. Pure
     /// w.r.t. state (modulo the internal cache fill), so repeated calls
     /// without a mutation return identical values.
+    ///
+    /// This builds an OWNED [`Snapshot`] (cloning the visible rows). When the
+    /// caller only needs the serialized wire frame (the FFI path), prefer
+    /// [`CsvSession::snapshot_frame`], which encodes from borrows and skips the
+    /// per-pull row clone entirely.
     pub fn snapshot(&mut self) -> Snapshot {
         let _span = trace::Span::enter("session.snapshot");
         self.ensure_cached();
         // ensure_cached guarantees `cached` is Some for the current version.
-        let (indices, rows) = match self.cached.as_ref() {
-            Some(view) => (view.indices.clone(), view.rows.clone()),
-            None => (Vec::new(), Vec::new()),
-        };
+        let indices = self
+            .cached
+            .as_ref()
+            .map(|view| view.indices.clone())
+            .unwrap_or_default();
+        let rows = self.project_rows(&indices);
         Snapshot {
             header: self.table.header.clone(),
             indices,
@@ -135,20 +147,97 @@ impl CsvSession {
         }
     }
 
+    /// Encode a level-triggered snapshot directly to a length-prefixed
+    /// MessagePack frame, WITHOUT materializing an owned [`Snapshot`] (so the
+    /// visible rows are never cloned — they are serialized straight from
+    /// borrows of `self.table.rows`). Byte-for-byte identical to
+    /// `wire::encode_frame(&self.snapshot())`.
+    ///
+    /// This is the allocation-light path for the FFI pull, which only ever
+    /// needs the frame bytes.
+    ///
+    /// # Errors
+    /// Returns [`WireFault::Encode`] on serialization failure or
+    /// [`WireFault::Framing`] if the encoded frame exceeds the wire cap.
+    pub fn snapshot_frame(&mut self) -> Result<Vec<u8>, WireFault> {
+        let _span = trace::Span::enter("session.snapshot_frame");
+        self.ensure_cached();
+        // ensure_cached guarantees `cached` is Some for the current version; an
+        // empty index slice (no surviving rows) is the safe fallback.
+        let indices: &[u32] = self.cached.as_ref().map_or(&[], |view| view.indices.as_slice());
+        // Project rows as BORROWS — `&Vec<String>` serializes identically to
+        // `Vec<String>`, so the frame matches the owned `Snapshot` exactly.
+        let rows: Vec<&Vec<String>> = indices
+            .iter()
+            .filter_map(|&i| self.table.rows.get(i as usize))
+            .collect();
+        let view = SnapshotView {
+            header: &self.table.header,
+            indices,
+            rows: &rows,
+            total_rows: u32::try_from(self.table.rows.len()).unwrap_or(u32::MAX),
+            query: &self.query.text,
+            version: self.version,
+            truncated: self.table.truncated,
+        };
+        wire::encode_frame(&view)
+    }
+
+    /// Project the visible rows for `indices` by borrowing from
+    /// `self.table.rows`. Out-of-range indices (which cannot occur for a cache
+    /// computed against the current table) are skipped rather than panicking.
+    fn project_rows(&self, indices: &[u32]) -> Vec<Vec<String>> {
+        indices
+            .iter()
+            .filter_map(|&i| self.table.rows.get(i as usize).cloned())
+            .collect()
+    }
+
     fn ensure_cached(&mut self) {
         let needs_recompute = self
             .cached
             .as_ref()
             .is_none_or(|c| c.for_version != self.version);
         if needs_recompute {
-            let (indices, rows) = filter::apply(&self.table, &self.query);
+            // Cache the surviving indices only; rows are projected on demand.
+            // Empty-query fast path is computed here so we never trigger
+            // `filter::apply`'s full-table `rows.clone()` for the (default)
+            // unfiltered view — we discard those rows anyway. Non-empty queries
+            // still go through `filter::apply` so the match semantics stay in
+            // one place; its cloned rows are discarded (the surviving subset is
+            // typically a small fraction of the table).
+            let indices = if self.query.is_empty() {
+                (0..self.table.rows.len())
+                    .map(|i| u32::try_from(i).unwrap_or(u32::MAX))
+                    .collect()
+            } else {
+                let (indices, _rows) = filter::apply(&self.table, &self.query);
+                indices
+            };
             self.cached = Some(CachedView {
                 for_version: self.version,
                 indices,
-                rows,
             });
         }
     }
+}
+
+/// Borrow-based serialization mirror of [`Snapshot`]. Field names and types
+/// match `Snapshot` exactly so `to_vec_named` produces a byte-identical frame,
+/// but every field is a borrow — encoding does not clone the visible rows.
+///
+/// Kept private: this is purely an internal serialize-only helper for
+/// [`CsvSession::snapshot_frame`]; callers that need an owned value use
+/// [`Snapshot`].
+#[derive(Serialize)]
+struct SnapshotView<'a> {
+    header: &'a [String],
+    indices: &'a [u32],
+    rows: &'a [&'a Vec<String>],
+    total_rows: u32,
+    query: &'a str,
+    version: u64,
+    truncated: bool,
 }
 
 /// Errors from [`CsvSession::open`].

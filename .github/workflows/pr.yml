@@ -29,8 +29,50 @@ jobs:
     # macOS-15-targeted .app and silently masks v15-only API misuse.
     name: Headless gate (macOS 15)
     runs-on: macos-15
+    env:
+      # Pin CARGO_TARGET_DIR to a workspace-relative, already-gitignored path
+      # (`.build/` is in .gitignore) so the actions/cache step below can capture
+      # the Rust build dir. build-rust-core.sh uses `${CARGO_TARGET_DIR:-...}`,
+      # so this override wins over its ephemeral /private/tmp default — that
+      # default lives outside the workspace and is invisible to actions/cache.
+      CARGO_TARGET_DIR: ${{ github.workspace }}/.build/rust-target
     steps:
       - uses: actions/checkout@v4
+
+      # Build caches — the merge gate otherwise cold-compiles the entire SwiftPM
+      # dependency graph (swift-markdown, swift-cmark, SwiftTreeSitter, the
+      # tree-sitter runtime + grammar packages) AND the full Rust dependency
+      # tree on every run, including no-op doc commits. Each cache is keyed on
+      # its lockfile so it invalidates only when dependencies actually change.
+      - name: Cache SwiftPM build (.build)
+        uses: actions/cache@v4
+        with:
+          # Exclude the Rust target dir (cached separately below, keyed on
+          # Cargo.lock) so the two caches stay disjoint — otherwise the Rust
+          # tree, which lives under .build/, would be double-archived into this
+          # SwiftPM cache under the wrong key.
+          path: |
+            .build
+            !.build/rust-target
+          key: ${{ runner.os }}-swiftpm-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-swiftpm-
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('rust-core/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      - name: Cache Rust target dir
+        uses: actions/cache@v4
+        with:
+          path: .build/rust-target
+          key: ${{ runner.os }}-cargo-target-${{ hashFiles('rust-core/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-target-
 
       # macos-15 ships Xcode 16.x as the default toolchain (Swift 6).
       # Pin explicitly so a runner-image bump can't silently swap the

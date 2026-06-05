@@ -11,12 +11,102 @@ import ViewerKit
 public struct HTMLRenderer: Sendable {
     public init() {}
 
+    /// Pre-parse leading block-nesting ceilings (PARSE-03, input side).
+    ///
+    /// `HTMLVisitor.maxDepth` bounds *our* visitor recursion, but it sits
+    /// downstream of `Document(parsing:)`. cmark-gfm itself parses
+    /// adversarial input into its tree via a native-C recursive descent
+    /// with no effective bound for our reachable input sizes: ~6000 leading
+    /// `>` (or equivalent list indentation — ~8–12 KB, three orders of
+    /// magnitude below `markdownRenderMaxBytes`) overflows the C stack
+    /// inside `Document(parsing:)` and SIGSEGVs the process *before* the
+    /// visitor (and its guard) ever runs. That crash is in native C and is
+    /// uncatchable from Swift, so the only reliable defense is to refuse
+    /// the input before handing it to cmark.
+    ///
+    /// Two distinct crash arms, two distinct per-line ceilings:
+    ///  - `>` blockquote opens. Empirically OK at 5000 `>`, SIGSEGV at
+    ///    6000+ (the host G5 corpus exercises the 5000 case live), so we
+    ///    cap the per-line `>` run at `maxLeadingBlockquoteRun` (5500) —
+    ///    above the proven-safe 5000, comfortably below the 6000 floor.
+    ///  - leading whitespace (space / tab) drives nested list/continuation
+    ///    depth, which cmark traps on at *lower* indentation than `>`.
+    ///    Legitimate prose never has a multi-hundred-character leading
+    ///    indent, so we cap the per-line whitespace run far tighter at
+    ///    `maxLeadingIndentRun` (1024 = 2× the visitor's `maxDepth`).
+    ///
+    /// Both keep wide margin below cmark's crash floor, covering the
+    /// smaller stack of the off-main render hop (G1). Note the runs are
+    /// counted independently — a `> > > …` document spends most of its
+    /// leading bytes as `>`, governed by the blockquote ceiling.
+    static let maxLeadingBlockquoteRun = 5500
+    static let maxLeadingIndentRun = 1024
+
     public func render(_ markdown: String) -> String {
         PerfSignpost.withInterval(.render, "HTMLRenderer.render") {
+            // PARSE-03 input-side guard: reject pathologically deep block
+            // nesting BEFORE cmark's native recursive descent can blow the
+            // C stack. Emit the same truncation marker the visitor uses so
+            // callers (and tests) get a graceful, non-empty result instead
+            // of a crash. The UI layer's `markdownRenderMaxBytes` cap
+            // (LargeMarkdownPlaceholderView) is the coarse byte gate; this
+            // is the fine nesting gate cmark needs that bytes alone miss.
+            if Self.exceedsLeadingBlockNesting(markdown) {
+                return HTMLVisitor.truncationMarker
+            }
             let document = Document(parsing: markdown)
             var visitor = HTMLVisitor()
             return visitor.visit(document)
         }
+    }
+
+    /// Single-pass O(n) scan: returns `true` once any line's leading `>`
+    /// count exceeds `maxLeadingBlockquoteRun`, or its longest *contiguous*
+    /// leading whitespace run exceeds `maxLeadingIndentRun`.
+    ///
+    /// "Leading" = the prefix of the line cmark consumes to open nested
+    /// containers, before any other content. The two arms are measured
+    /// differently on purpose:
+    ///  - `>` accumulates across the whole leading prefix (`> > > …` opens
+    ///    one blockquote level per `>`, regardless of the single padding
+    ///    space cmark allows after each marker).
+    ///  - whitespace is measured as the longest *contiguous* run, reset by
+    ///    `>` — so the lone space after each `>` in `> > > …` never climbs
+    ///    past 1, while a genuine multi-thousand-space list indent trips
+    ///    it. This keeps the two crash arms independent and avoids the
+    ///    false-reject where blockquote padding spaces masquerade as deep
+    ///    indentation.
+    ///
+    /// A multi-thousand-character leading run is the adversarial shape;
+    /// legitimate prose nests in single digits. We scan UTF-8 bytes (a
+    /// contiguous view, no grapheme segmentation), reset state at every
+    /// line break, and bail early on the first offending line.
+    static func exceedsLeadingBlockNesting(_ markdown: String) -> Bool {
+        var bqCount = 0          // total leading `>` on this line
+        var wsRun = 0            // current contiguous leading-whitespace run
+        var atLineStart = true   // still inside the line's leading prefix
+        for b in markdown.utf8 {
+            switch b {
+            case 0x0A, 0x0D:           // \n, \r — line break resets state
+                bqCount = 0
+                wsRun = 0
+                atLineStart = true
+            case 0x3E:                 // '>'  blockquote open
+                if atLineStart {
+                    wsRun = 0           // `>` breaks any contiguous indent run
+                    bqCount += 1
+                    if bqCount > maxLeadingBlockquoteRun { return true }
+                }
+            case 0x20, 0x09:           // ' ' / '\t' indent
+                if atLineStart {
+                    wsRun += 1
+                    if wsRun > maxLeadingIndentRun { return true }
+                }
+            default:                   // any other byte ends the leading prefix
+                atLineStart = false
+            }
+        }
+        return false
     }
 
     /// Render a full HTML page wrapped in `<html>...</html>` with the bundled

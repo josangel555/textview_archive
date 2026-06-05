@@ -11,11 +11,12 @@ import ViewerCore
 // Discipline mirrors the rest of the app:
 //   - The session list comes from `ClaudeSessionIndex.summaries(root:)`,
 //     a streaming, never-slurp scan; we run it off-main in a detached Task.
-//   - The detail transcript is parsed off-main too, using the index's
-//     lazy line-offset reader + `ClaudeLogParser`, with the engine's
-//     REDACTION applied to every record BEFORE it is surfaced (signatures,
-//     HTTP headers, inline image blobs). We never read `.credentials.json`
-//     or any stats cache — only `projects/*/*.jsonl`, read-only.
+//   - The detail transcript is parsed off-main too, in a single streaming
+//     pass over one held read-only `FileHandle` + `ClaudeLogParser`, with the
+//     engine's REDACTION applied to every record BEFORE it is surfaced
+//     (signatures, HTTP headers, inline image blobs). We never read
+//     `.credentials.json` or any stats cache — only `projects/*/*.jsonl`,
+//     read-only.
 
 // MARK: - Model
 
@@ -126,39 +127,98 @@ final class ClaudeMonitorModel: ObservableObject {
         }
     }
 
-    /// Read the transcript line-by-line via the index's lazy offset reader,
-    /// REDACT every decoded record (engine redaction), re-serialize the
-    /// redacted records into a JSONL buffer, and hand that to
-    /// `ClaudeLogParser.parse`. This keeps redaction strictly in front of
-    /// the parser — exactly as `ClaudeSessionIndex` does internally — using
-    /// only the engine's public surface, and never surfaces secrets.
+    /// Read buffer size for the single streaming pass over a transcript.
+    /// Matches `ClaudeSessionIndex.readChunkBytes`'s default so the detail
+    /// load consumes the file in the same fixed chunks the summary scan does.
+    nonisolated private static let detailReadChunkBytes = 256 * 1024
+
+    /// Largest single JSONL line we'll attempt to decode. Mirrors
+    /// `ClaudeSessionIndex.maxLineBytes` / `ClaudeLogParser.maxLineBytes`:
+    /// over-long lines have their bytes dropped (not decoded) so a
+    /// pathological line can't feed a multi-MB buffer to JSONSerialization.
+    nonisolated private static let detailMaxLineBytes = 4 * 1024 * 1024
+
+    /// Read the transcript in ONE streaming pass over a single held
+    /// `FileHandle`, REDACT every decoded record (engine redaction), and
+    /// re-serialize the redacted records into a JSONL buffer that
+    /// `ClaudeLogParser.parse` consumes. This keeps redaction strictly in
+    /// front of the parser — exactly as `ClaudeSessionIndex` does internally —
+    /// using only the engine's public surface, and never surfaces secrets.
+    ///
+    /// Replaces the previous offset-table approach, which re-opened the file
+    /// (`open`+`seek`+`read`+`close`) once PER physical line — ~29k syscall
+    /// round-trips for a real 29k-line transcript, on top of a full streaming
+    /// scan for the offsets. Now it is a single open and a single sequential
+    /// pass; memory stays bounded by the chunk size plus one in-flight line.
     ///
     /// `nonisolated static` so it can run inside `Task.detached` without
     /// capturing the `@MainActor` model.
     nonisolated static func loadRedactedEvents(
         url: URL, cap: Int
     ) -> (events: [ClaudeEvent], truncated: Bool) {
-        let index = ClaudeSessionIndex()
-        guard let offsets = try? index.lineOffsets(for: url) else {
+        // Open read-only ONCE. `FileHandle(forReadingFrom:)` opens `O_RDONLY`,
+        // so the monitor can never mutate the user's transcripts.
+        guard let handle = try? FileHandle(forReadingFrom: url) else {
             return ([], false)
         }
+        defer { try? handle.close() }
+
         // Re-serialize redacted records into one JSONL buffer; one
         // `JSONSerialization.data` per line keeps the redaction barrier
         // intact while reusing the parser's own block extraction.
         var redactedJSONL = Data()
-        let newline = Data([0x0A])
-        for i in offsets.indices {
-            guard let lineData = try? index.line(at: i, offsets: offsets, in: url),
-                  !lineData.isEmpty,
-                  let obj = try? JSONSerialization.jsonObject(with: lineData, options: []) as? [String: Any]
-            else { continue }
+        let newline: UInt8 = 0x0A
+
+        // Bytes of the current (not-yet-terminated) line. Bounded by the
+        // line cap; once a line overflows we drop its bytes (mirrors
+        // `ClaudeSessionIndex`'s overflow handling) and resync on the next
+        // newline so memory can't grow without limit.
+        var pending = Data()
+        var pendingOverflowed = false
+
+        func appendSegment(_ segment: Data.SubSequence) {
+            if pendingOverflowed { return }
+            if pending.count + segment.count > detailMaxLineBytes {
+                pendingOverflowed = true
+                return
+            }
+            pending.append(contentsOf: segment)
+        }
+
+        func finalizeLine() {
+            defer {
+                pending.removeAll(keepingCapacity: true)
+                pendingOverflowed = false
+            }
+            if pendingOverflowed || pending.isEmpty { return }
+            guard let obj = try? JSONSerialization.jsonObject(
+                    with: pending, options: []) as? [String: Any]
+            else { return }
             let redacted = ClaudeLogParser.redact(obj)
             guard JSONSerialization.isValidJSONObject(redacted),
-                  let out = try? JSONSerialization.data(withJSONObject: redacted, options: [])
-            else { continue }
+                  let out = try? JSONSerialization.data(
+                    withJSONObject: redacted, options: [])
+            else { return }
             redactedJSONL.append(out)
             redactedJSONL.append(newline)
         }
+
+        while let chunk = try? handle.read(upToCount: detailReadChunkBytes),
+              !chunk.isEmpty {
+            var searchStart = chunk.startIndex
+            while let nlIndex = chunk[searchStart...].firstIndex(of: newline) {
+                appendSegment(chunk[searchStart..<nlIndex])
+                finalizeLine()
+                searchStart = chunk.index(after: nlIndex)
+            }
+            // Tail of the chunk (no newline yet) joins the pending line.
+            if searchStart < chunk.endIndex {
+                appendSegment(chunk[searchStart...])
+            }
+        }
+        // Trailing line without a final newline.
+        finalizeLine()
+
         let parser = ClaudeLogParser(maxEvents: cap)
         let parsed = parser.parse(redactedJSONL)
         return (parsed, parsed.count >= cap)

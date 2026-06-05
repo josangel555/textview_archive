@@ -1,4 +1,5 @@
 import Foundation
+import RustCore
 
 /// Which engine produced a routed result — for A/B diagnostics and tests.
 public enum CoreResultSource: Sendable, Equatable {
@@ -51,6 +52,18 @@ public enum RustCoreFallback {
         do {
             return CoreOutcome(value: try rust(), source: .rust)
         } catch {
+            // Fail-safe degradation to the proven Swift path — but make the
+            // bridge fault observable. A `.panic` dead-flags the handle and
+            // smells of FFI corruption/UB, so escalate it to `.error`; every
+            // other fault (decode/protocol skew, busy, etc.) is a `.warn`.
+            // The previous silent catch let a gate flipped ON in the field
+            // mask an always-failing or repeatedly-panicking core.
+            let level: ObsLevel = (error as? CoreError) == .panic ? .error : .warn
+            Obs.shared.emit(
+                level,
+                "rust-core",
+                "\(capability.rawValue) fell back: \(error)",
+                fields: ["capability": capability.rawValue])
             return CoreOutcome(value: swift(), source: .swiftFallback)
         }
     }
