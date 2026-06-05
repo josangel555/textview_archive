@@ -166,6 +166,18 @@ build it, else hold.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-05 **`[PORT][W1]` diff/patch view mode shipped to BOTH front-ends** (`63f5e5f`, TSK-201/202 →
+  `fixed`). One vertical slice through the shared `mdvcore_core::view`: added `ViewMode::Diff` +
+  `ViewBody::Diff(Vec<DiffLine>)` classified by a leading-char `classify_diff_line` (NOT the
+  git-structured `diff::parse`, which requires a `diff --git` header and is pinned to the Swift A/B
+  contract → would render nothing for a plain unified diff). Replaced the threaded `is_tabular` bool
+  with `FileKind{Plain,Tabular,Diff}` (avoids parameter sprawl; aligns with backlog TSK-260). TUI
+  colors lines (+green/−red/header-cyan/hunk-magenta) with gutter; web emits `diff-*` spans + CSS,
+  honors `?mode=diff`. No FFI/Swift change (`ViewBody` isn't FFI-exposed). **Validated:** `cargo
+  clippy --workspace` clean + `cargo test --workspace` 262 pass (incl. new core + web diff tests) +
+  `scripts/rust-core-gate.sh` GATE_EXIT=0. Remaining fuzzy `[W1]` ports still genuinely-open
+  (impl needed, not stale): in-file find 197/198, CSV filter 203/204, hex search 205/206, image
+  preview 225/226; open-as 219/220 (web done via `?mode=`, TUI has cycle).
 - 2026-06-05 **DEEP-AUDIT BOARD FULLY RECONCILED — only 1 cosmetic finding left.** Reconciled the
   `[S4]` tier (subagent + hand spot-checks): 11/12 already-fixed → `fixed` (TSK-182/183/184/185/186/
   187/189/191/192/193/196), plus closed 2 stale `[S1]` duplicates (TSK-116/117 — mdv-web DNS-rebind
