@@ -27,7 +27,7 @@ use std::{fs, thread};
 
 use mdvcore_core::nav::{self, SortKey};
 use mdvcore_core::outline::{self, Heading};
-use mdvcore_core::view::{self, ViewBody, ViewMode};
+use mdvcore_core::view::{self, DiffLine, DiffLineKind, FileKind, ViewBody, ViewMode};
 
 /// Max bytes read into a view (parity with the TUI's preview cap). Per-mode
 /// shaping (text/hex/table) lives in the shared `mdvcore_core::view`.
@@ -446,8 +446,8 @@ fn content_html(file: &Path, mode_param: Option<&str>, line: Option<usize>) -> S
         Err(e) => return format!("<p class=\"hint\">cannot read: {}</p>", esc(&e.to_string())),
     };
     let name = file_name(file);
-    let is_tabular = view::looks_tabular(&name);
-    let mode = parse_mode(mode_param, is_tabular);
+    let kind = view::classify(&name);
+    let mode = parse_mode(mode_param, kind);
     // The shared core view-model does ALL the shaping (file-type detect, mode
     // set, text/hex/table build, indent badge) — the SAME path the TUI uses.
     let v = view::build(&raw, &name, total, truncated, mode);
@@ -502,6 +502,7 @@ fn content_html(file: &Path, mode_param: Option<&str>, line: Option<usize>) -> S
             format!("{}{}", goto, gutter_html(lines, target, &anchors))
         }
         ViewBody::Table { header, rows, truncated } => table_html(header, rows, *truncated),
+        ViewBody::Diff(lines) => diff_html(lines),
     };
     format!("{modes}{bar}{outline_nav}{content}")
 }
@@ -533,12 +534,13 @@ fn goto_box(href: &str, mode: &str, target: Option<usize>) -> String {
 
 /// Map the `?mode=` query value to a `ViewMode`, defaulting via the core (and
 /// refusing Table for a non-tabular file even if hand-typed in the URL).
-fn parse_mode(param: Option<&str>, is_tabular: bool) -> ViewMode {
+fn parse_mode(param: Option<&str>, kind: FileKind) -> ViewMode {
     match param {
         Some("hex") => ViewMode::Hex,
         Some("text") => ViewMode::Text,
-        Some("table") if is_tabular => ViewMode::Table,
-        _ => view::default_mode(is_tabular),
+        Some("table") if kind == FileKind::Tabular => ViewMode::Table,
+        Some("diff") if kind == FileKind::Diff => ViewMode::Diff,
+        _ => view::default_mode(kind),
     }
 }
 
@@ -547,6 +549,7 @@ fn mode_str(m: ViewMode) -> &'static str {
         ViewMode::Text => "text",
         ViewMode::Hex => "hex",
         ViewMode::Table => "table",
+        ViewMode::Diff => "diff",
     }
 }
 
@@ -655,6 +658,26 @@ fn table_html(header: &[String], rows: &[Vec<String>], truncated: bool) -> Strin
     s
 }
 
+/// Render a unified diff as a `<pre>` where each line carries a `diff-*` class
+/// (per the shared core's [`view::classify_diff_line`]) so added/removed/header/
+/// hunk lines are colored. Works for git-format and plain unified diffs alike
+/// (the core classifies by leading char, not by `diff --git` structure).
+fn diff_html(lines: &[DiffLine]) -> String {
+    let mut s = String::from("<pre class=\"diff\">");
+    for dl in lines {
+        let cls = match dl.kind {
+            DiffLineKind::FileHeader => "diff-file",
+            DiffLineKind::Hunk => "diff-hunk",
+            DiffLineKind::Added => "diff-add",
+            DiffLineKind::Removed => "diff-del",
+            DiffLineKind::Context => "diff-ctx",
+        };
+        s.push_str(&format!("<span class=\"{cls}\">{}</span>\n", esc(&dl.text)));
+    }
+    s.push_str("</pre>");
+    s
+}
+
 fn page(title: &str, nav: &str, main_html: &str) -> String {
     format!(
         "<!doctype html><html><head><meta charset=\"utf-8\"><title>{t} · mdv-web</title>\
@@ -702,6 +725,13 @@ table{{border-collapse:collapse;font:12px ui-monospace,Menlo,monospace}}\
 th,td{{border:1px solid #ddd;padding:2px 6px;text-align:left;max-width:320px;overflow:hidden;text-overflow:ellipsis}}\
 th{{background:#eef;position:sticky;top:0}}\
 .hint{{color:#999}}\
+pre.diff{{line-height:1.4}}\
+pre.diff span{{display:block}}\
+.diff-file{{color:#1a5fb4;font-weight:600}}\
+.diff-hunk{{color:#7a3fb4;background:#f3eefb}}\
+.diff-add{{color:#0a7d28;background:#e9f7ec}}\
+.diff-del{{color:#c01c28;background:#fbecec}}\
+.diff-ctx{{color:#444}}\
 </style></head><body><div class=\"app\"><nav>{nav}</nav><main>{main_html}</main></div></body></html>",
         t = esc(title)
     )
@@ -864,6 +894,13 @@ mod tests {
         .unwrap();
         // A dotfile, hidden by default (revealed via `?hidden=1`).
         fs::write(dir.join(".secret"), b"hidden\n").unwrap();
+        // A plain unified diff (NO `diff --git` header) — exercises the
+        // leading-char classifier, not the git-structured parser.
+        fs::write(
+            dir.join("change.diff"),
+            b"--- a/x.rs\n+++ b/x.rs\n@@ -1,2 +1,2 @@\n-old line\n+new line\n unchanged\n",
+        )
+        .unwrap();
         dir
     }
 
@@ -1134,6 +1171,34 @@ mod tests {
         assert!(html.contains("<table>"), "table rendered:\n{html}");
         assert!(html.contains("<th>name</th>"), "header cell");
         assert!(html.contains("<td>Alice</td>"), "body cell");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn diff_defaults_to_colored_diff_via_core() {
+        let dir = fixture();
+        // No `?mode=` → a `.diff` file opens in Diff mode by default.
+        let html = render_view(&dir.join("change.diff"), None, SortKey::Name, false, None);
+        assert!(html.contains("<pre class=\"diff\">"), "diff body rendered:\n{html}");
+        assert!(
+            html.contains("class=\"diff-add\">+new line</span>"),
+            "added line colored:\n{html}"
+        );
+        assert!(
+            html.contains("class=\"diff-del\">-old line</span>"),
+            "removed line colored:\n{html}"
+        );
+        assert!(
+            html.contains("class=\"diff-hunk\">@@ -1,2 +1,2 @@</span>"),
+            "hunk header colored:\n{html}"
+        );
+        assert!(
+            html.contains("class=\"diff-file\">+++ b/x.rs</span>"),
+            "file header colored:\n{html}"
+        );
+        // The mode switcher offers diff (default/bold) plus text & hex fallbacks.
+        assert!(html.contains("<b>diff</b>"), "diff is the active mode:\n{html}");
+        assert!(html.contains("mode=text"), "text fallback offered:\n{html}");
         let _ = fs::remove_dir_all(&dir);
     }
 

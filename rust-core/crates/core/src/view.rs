@@ -27,6 +27,51 @@ pub enum ViewMode {
     Hex,
     /// A parsed CSV/TSV table.
     Table,
+    /// A unified diff, lines classified for +/- coloring.
+    Diff,
+}
+
+/// What a file is, by name — drives the default mode and the mode set offered.
+/// A single classification (rather than a pile of `is_*` bools threaded through
+/// every function) keeps the front-ends' mode plumbing honest and extensible.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FileKind {
+    /// Anything not recognized as tabular or a diff (the `Text`/`Hex` default).
+    Plain,
+    /// CSV/TSV — leads with the `Table` mode.
+    Tabular,
+    /// `.diff`/`.patch` — leads with the `Diff` mode.
+    Diff,
+}
+
+/// How a single diff display line should be colored. Derived purely from the
+/// line's leading characters, so it works for git-format diffs, plain unified
+/// diffs (no `diff --git` header), and `git show` output alike — unlike the
+/// git-structured [`crate::diff::parse`], which requires a `diff --git` line and
+/// is pinned byte-for-byte to the Swift A/B contract (so it must not change).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DiffLineKind {
+    /// `diff --git`, `index `, `--- `, `+++ `, `new/deleted file`, `rename`,
+    /// `Binary files …` — file-level metadata.
+    FileHeader,
+    /// `@@ … @@` hunk header.
+    Hunk,
+    /// An added line (`+`, but not the `+++` file header).
+    Added,
+    /// A removed line (`-`, but not the `--- ` file header).
+    Removed,
+    /// A context line (leading space) or anything unclassified.
+    Context,
+}
+
+/// One classified diff display line: its `kind` (for coloring) + the verbatim
+/// text (prefix char included, so the renderer can show the raw diff faithfully).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct DiffLine {
+    /// Coloring class.
+    pub kind: DiffLineKind,
+    /// The line's full text, leading `+`/`-`/`@`/space included.
+    pub text: String,
 }
 
 /// The shaped content for the chosen [`ViewMode`] — a renderer consumes exactly
@@ -52,6 +97,9 @@ pub enum ViewBody {
         /// mistaken for the complete data. Mirrors `csv::Table::truncated`.
         truncated: bool,
     },
+    /// A unified diff: display lines pre-classified for +/- coloring, capped at
+    /// `MAX_TEXT_LINES` (a pathological diff can't blow memory).
+    Diff(Vec<DiffLine>),
 }
 
 /// A fully-shaped view: the active mode, its content, the detected indentation
@@ -64,8 +112,9 @@ pub struct View {
     pub body: ViewBody,
     /// Indent badge (e.g. `"Spaces (4)"`, `"Tabs"`, `"—"`).
     pub indent: String,
-    /// Whether the file is CSV/TSV (drives whether `Table` is offered).
-    pub is_tabular: bool,
+    /// What the file is (drives the mode set + default). `Tabular` ⇒ `Table` is
+    /// offered; `Diff` ⇒ `Diff` is offered.
+    pub kind: FileKind,
     /// Modes the user may switch between for this file, in cycle order.
     pub available_modes: Vec<ViewMode>,
 }
@@ -99,34 +148,54 @@ pub fn clamp_line(target: usize, line_count: usize) -> usize {
     target.clamp(1, line_count.max(1))
 }
 
-/// Whether `name` looks like a delimited table (drives the `Table` mode).
+/// Classify a file by name (extension). Diff/patch wins over tabular wins over
+/// plain; the extension sets are disjoint so the order is only a tie-break
+/// formality. This is the single source of truth the front-ends use to pick the
+/// default mode and the mode switcher.
 #[must_use]
-pub fn looks_tabular(name: &str) -> bool {
+pub fn classify(name: &str) -> FileKind {
     let lower = name.to_ascii_lowercase();
-    lower.ends_with(".csv") || lower.ends_with(".tsv")
-}
-
-/// The modes available for a (tabular?) file, in cycle order. `Table` leads for
-/// tabular files since it's the most useful default there.
-#[must_use]
-pub fn available_modes(is_tabular: bool) -> Vec<ViewMode> {
-    if is_tabular {
-        vec![ViewMode::Table, ViewMode::Text, ViewMode::Hex]
+    if lower.ends_with(".diff") || lower.ends_with(".patch") {
+        FileKind::Diff
+    } else if lower.ends_with(".csv") || lower.ends_with(".tsv") {
+        FileKind::Tabular
     } else {
-        vec![ViewMode::Text, ViewMode::Hex]
+        FileKind::Plain
     }
 }
 
-/// The default mode a file opens in.
+/// Whether `name` looks like a delimited table (drives the `Table` mode).
 #[must_use]
-pub fn default_mode(is_tabular: bool) -> ViewMode {
-    if is_tabular { ViewMode::Table } else { ViewMode::Text }
+pub fn looks_tabular(name: &str) -> bool {
+    classify(name) == FileKind::Tabular
+}
+
+/// The modes available for a file, in cycle order. The kind-specific mode leads
+/// (it's the most useful default there); `Text`/`Hex` always follow as the
+/// universal fallbacks.
+#[must_use]
+pub fn available_modes(kind: FileKind) -> Vec<ViewMode> {
+    match kind {
+        FileKind::Diff => vec![ViewMode::Diff, ViewMode::Text, ViewMode::Hex],
+        FileKind::Tabular => vec![ViewMode::Table, ViewMode::Text, ViewMode::Hex],
+        FileKind::Plain => vec![ViewMode::Text, ViewMode::Hex],
+    }
+}
+
+/// The default mode a file opens in (the head of its [`available_modes`]).
+#[must_use]
+pub fn default_mode(kind: FileKind) -> ViewMode {
+    match kind {
+        FileKind::Diff => ViewMode::Diff,
+        FileKind::Tabular => ViewMode::Table,
+        FileKind::Plain => ViewMode::Text,
+    }
 }
 
 /// The next mode after `mode` in the file's cycle (wraps around).
 #[must_use]
-pub fn cycle(mode: ViewMode, is_tabular: bool) -> ViewMode {
-    let modes = available_modes(is_tabular);
+pub fn cycle(mode: ViewMode, kind: FileKind) -> ViewMode {
+    let modes = available_modes(kind);
     let idx = modes.iter().position(|&m| m == mode).unwrap_or(0);
     let next = (idx + 1) % modes.len().max(1);
     modes.get(next).copied().unwrap_or(mode)
@@ -142,7 +211,7 @@ pub fn build(
     truncated: bool,
     mode: ViewMode,
 ) -> View {
-    let is_tabular = looks_tabular(name);
+    let kind = classify(name);
     let text = String::from_utf8_lossy(bytes);
     let indent = indent::detect(&text, INDENT_SAMPLE);
     let body = match mode {
@@ -152,8 +221,50 @@ pub fn build(
             let t = csv::parse(&text);
             ViewBody::Table { header: t.header, rows: t.rows, truncated: t.truncated }
         }
+        ViewMode::Diff => ViewBody::Diff(diff_lines(&text)),
     };
-    View { mode, body, indent, is_tabular, available_modes: available_modes(is_tabular) }
+    View { mode, body, indent, kind, available_modes: available_modes(kind) }
+}
+
+/// Classify a unified-diff line by its leading characters (see [`DiffLineKind`]).
+/// File-header checks precede the bare `+`/`-` checks so `+++`/`--- ` headers
+/// aren't mistaken for added/removed lines.
+#[must_use]
+pub fn classify_diff_line(line: &str) -> DiffLineKind {
+    if line.starts_with("@@") {
+        DiffLineKind::Hunk
+    } else if line.starts_with("+++")
+        || line.starts_with("--- ")
+        || line.starts_with("diff ")
+        || line.starts_with("index ")
+        || line.starts_with("new file")
+        || line.starts_with("deleted file")
+        || line.starts_with("rename ")
+        || line.starts_with("copy ")
+        || line.starts_with("similarity ")
+        || line.starts_with("dissimilarity ")
+        || line.starts_with("old mode ")
+        || line.starts_with("new mode ")
+        || line.starts_with("Binary files ")
+    {
+        DiffLineKind::FileHeader
+    } else if line.starts_with('+') {
+        DiffLineKind::Added
+    } else if line.starts_with('-') {
+        DiffLineKind::Removed
+    } else {
+        DiffLineKind::Context
+    }
+}
+
+fn diff_lines(text: &str) -> Vec<DiffLine> {
+    text.split('\n')
+        .take(MAX_TEXT_LINES)
+        .map(|l| {
+            let text = l.replace('\r', "");
+            DiffLine { kind: classify_diff_line(&text), text }
+        })
+        .collect()
 }
 
 fn text_lines(text: &str) -> Vec<String> {
@@ -178,16 +289,73 @@ mod tests {
 
     #[test]
     fn modes_and_cycle() {
-        assert_eq!(default_mode(false), ViewMode::Text);
-        assert_eq!(default_mode(true), ViewMode::Table);
-        assert_eq!(available_modes(false), vec![ViewMode::Text, ViewMode::Hex]);
-        // non-tabular cycle: Text → Hex → Text
-        assert_eq!(cycle(ViewMode::Text, false), ViewMode::Hex);
-        assert_eq!(cycle(ViewMode::Hex, false), ViewMode::Text);
+        assert_eq!(default_mode(FileKind::Plain), ViewMode::Text);
+        assert_eq!(default_mode(FileKind::Tabular), ViewMode::Table);
+        assert_eq!(default_mode(FileKind::Diff), ViewMode::Diff);
+        assert_eq!(available_modes(FileKind::Plain), vec![ViewMode::Text, ViewMode::Hex]);
+        // plain cycle: Text → Hex → Text
+        assert_eq!(cycle(ViewMode::Text, FileKind::Plain), ViewMode::Hex);
+        assert_eq!(cycle(ViewMode::Hex, FileKind::Plain), ViewMode::Text);
         // tabular cycle: Table → Text → Hex → Table
-        assert_eq!(cycle(ViewMode::Table, true), ViewMode::Text);
-        assert_eq!(cycle(ViewMode::Text, true), ViewMode::Hex);
-        assert_eq!(cycle(ViewMode::Hex, true), ViewMode::Table);
+        assert_eq!(cycle(ViewMode::Table, FileKind::Tabular), ViewMode::Text);
+        assert_eq!(cycle(ViewMode::Text, FileKind::Tabular), ViewMode::Hex);
+        assert_eq!(cycle(ViewMode::Hex, FileKind::Tabular), ViewMode::Table);
+        // diff cycle: Diff → Text → Hex → Diff
+        assert_eq!(cycle(ViewMode::Diff, FileKind::Diff), ViewMode::Text);
+        assert_eq!(cycle(ViewMode::Text, FileKind::Diff), ViewMode::Hex);
+        assert_eq!(cycle(ViewMode::Hex, FileKind::Diff), ViewMode::Diff);
+    }
+
+    #[test]
+    fn classify_by_extension() {
+        assert_eq!(classify("a.diff"), FileKind::Diff);
+        assert_eq!(classify("a.PATCH"), FileKind::Diff);
+        assert_eq!(classify("a.csv"), FileKind::Tabular);
+        assert_eq!(classify("a.tsv"), FileKind::Tabular);
+        assert_eq!(classify("a.txt"), FileKind::Plain);
+        assert_eq!(classify("patch"), FileKind::Plain);
+    }
+
+    #[test]
+    fn classify_diff_line_by_leading_chars() {
+        use DiffLineKind::{Added, Context, FileHeader, Hunk, Removed};
+        // Header forms must win over the bare +/- checks.
+        assert_eq!(classify_diff_line("+++ b/file.rs"), FileHeader);
+        assert_eq!(classify_diff_line("--- a/file.rs"), FileHeader);
+        assert_eq!(classify_diff_line("diff --git a/x b/x"), FileHeader);
+        assert_eq!(classify_diff_line("index e69de29..0000000"), FileHeader);
+        assert_eq!(classify_diff_line("new file mode 100644"), FileHeader);
+        assert_eq!(classify_diff_line("Binary files a and b differ"), FileHeader);
+        assert_eq!(classify_diff_line("@@ -1,3 +1,4 @@ fn main()"), Hunk);
+        assert_eq!(classify_diff_line("+added line"), Added);
+        assert_eq!(classify_diff_line("-removed line"), Removed);
+        assert_eq!(classify_diff_line(" context line"), Context);
+        assert_eq!(classify_diff_line(""), Context);
+    }
+
+    #[test]
+    fn build_diff_classifies_plain_unified_diff() {
+        // A PLAIN unified diff (no `diff --git` header) — the git-structured
+        // `diff::parse` would yield zero files here, so the view classifies by
+        // leading char instead. `.diff` opens in Diff mode by default.
+        let raw = "--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n-old\n+new\n unchanged\n";
+        let v = build(raw.as_bytes(), "p.diff", raw.len(), false, default_mode(classify("p.diff")));
+        assert_eq!(v.kind, FileKind::Diff);
+        assert_eq!(v.mode, ViewMode::Diff);
+        assert_eq!(v.available_modes.first(), Some(&ViewMode::Diff));
+        match v.body {
+            ViewBody::Diff(lines) => {
+                use DiffLineKind::{Added, Context, FileHeader, Hunk, Removed};
+                let kinds: Vec<_> = lines.iter().map(|l| l.kind).collect();
+                assert_eq!(
+                    &kinds[..6],
+                    &[FileHeader, FileHeader, Hunk, Removed, Added, Context]
+                );
+                assert_eq!(lines[3].text, "-old");
+                assert_eq!(lines[4].text, "+new");
+            }
+            _ => unreachable!("expected Diff body"),
+        }
     }
 
     #[test]
@@ -250,7 +418,7 @@ mod tests {
     fn build_text_expands_tabs_strips_cr() {
         let v = build(b"a\tb\r\nc\n", "f.txt", 6, false, ViewMode::Text);
         assert_eq!(v.mode, ViewMode::Text);
-        assert!(!v.is_tabular);
+        assert_eq!(v.kind, FileKind::Plain);
         match v.body {
             ViewBody::Text(lines) => {
                 assert_eq!(lines.first().map(String::as_str), Some("a    b"));
@@ -275,7 +443,7 @@ mod tests {
     #[test]
     fn build_table_parses_csv() {
         let v = build(b"name,age\nAlice,30\n", "p.csv", 18, false, ViewMode::Table);
-        assert!(v.is_tabular);
+        assert_eq!(v.kind, FileKind::Tabular);
         assert_eq!(v.available_modes.first(), Some(&ViewMode::Table));
         match v.body {
             ViewBody::Table { header, rows, truncated } => {

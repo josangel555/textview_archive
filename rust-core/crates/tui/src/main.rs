@@ -33,7 +33,7 @@ use ratatui::backend::TestBackend;
 
 use mdvcore_core::nav::{self, SortKey};
 use mdvcore_core::outline::{self, Heading};
-use mdvcore_core::view::{self, View, ViewBody, ViewMode};
+use mdvcore_core::view::{self, DiffLineKind, FileKind, View, ViewBody, ViewMode};
 
 /// Max bytes read into a preview (keeps the TUI snappy; larger files truncate).
 /// The per-mode shaping (text/hex/table caps) lives in `mdvcore_core::view`.
@@ -108,7 +108,7 @@ struct Preview {
     total: usize,
     truncated: bool,
     raw: Vec<u8>,
-    is_tabular: bool,
+    kind: FileKind,
     view: View,
     scroll: usize,
 }
@@ -119,6 +119,7 @@ impl Preview {
         match &self.view.body {
             ViewBody::Text(l) | ViewBody::Hex(l) => l.len(),
             ViewBody::Table { rows, .. } => rows.len(),
+            ViewBody::Diff(lines) => lines.len(),
         }
     }
 }
@@ -440,9 +441,9 @@ impl App {
                 // The shared core view-model does ALL the shaping (file-type
                 // detect, mode set, text/hex/table build, indent badge) — the
                 // same path the web front-end uses.
-                let is_tabular = view::looks_tabular(&name);
-                let v = view::build(&raw, &name, total, truncated, view::default_mode(is_tabular));
-                self.preview = Some(Preview { name, total, truncated, raw, is_tabular, view: v, scroll: 0 });
+                let kind = view::classify(&name);
+                let v = view::build(&raw, &name, total, truncated, view::default_mode(kind));
+                self.preview = Some(Preview { name, total, truncated, raw, kind, view: v, scroll: 0 });
                 self.flash = None;
                 self.outline = None; // a stale outline belongs to the old file
                 self.status = format!("opened {}", path.display());
@@ -454,7 +455,7 @@ impl App {
     /// Cycle to the next available view mode, re-shaping via the shared core.
     fn cycle_mode(&mut self) {
         if let Some(p) = &mut self.preview {
-            let next = view::cycle(p.view.mode, p.is_tabular);
+            let next = view::cycle(p.view.mode, p.kind);
             p.view = view::build(&p.raw, &p.name, p.total, p.truncated, next);
             p.scroll = 0;
         }
@@ -837,12 +838,58 @@ impl App {
                     .block(Block::bordered().title(title));
                 frame.render_widget(table, area);
             }
+            // Diff: a scrolled paragraph with each line colored by its kind
+            // (added/removed/header/hunk), classified by the shared core.
+            ViewBody::Diff(lines) => {
+                let title = format!(
+                    " {} · diff · {} lines · {}{trunc} ",
+                    p.name,
+                    lines.len(),
+                    human_size(p.total),
+                );
+                let start = p.scroll.min(lines.len().saturating_sub(1));
+                let gw = view::gutter_width(lines.len());
+                let gutter = self.show_gutter;
+                let visible: Vec<Line> = lines
+                    .iter()
+                    .skip(start)
+                    .take(inner_h)
+                    .enumerate()
+                    .map(|(offset, dl)| {
+                        let idx = start + offset; // 0-based line index
+                        let color = match dl.kind {
+                            DiffLineKind::FileHeader => Color::Cyan,
+                            DiffLineKind::Hunk => Color::Magenta,
+                            DiffLineKind::Added => Color::Green,
+                            DiffLineKind::Removed => Color::Red,
+                            DiffLineKind::Context => Color::Gray,
+                        };
+                        let content = Span::styled(dl.text.clone(), Style::new().fg(color));
+                        if gutter {
+                            let n = idx + 1;
+                            let label = format!("{n:>gw$} ");
+                            Line::from(vec![
+                                Span::styled(label, Style::new().fg(Color::DarkGray)),
+                                Span::styled("│ ", Style::new().fg(Color::DarkGray)),
+                                content,
+                            ])
+                        } else {
+                            Line::from(content)
+                        }
+                    })
+                    .collect();
+                let para = Paragraph::new(visible)
+                    .block(Block::bordered().title(title))
+                    .wrap(Wrap { trim: false });
+                frame.render_widget(para, area);
+            }
             // Text / HEX: a scrolled paragraph of the visible lines.
             ViewBody::Text(lines) | ViewBody::Hex(lines) => {
                 let mode = match p.view.mode {
                     ViewMode::Text => "text",
                     ViewMode::Hex => "hex",
                     ViewMode::Table => "table",
+                    ViewMode::Diff => "diff",
                 };
                 // While the go-to-line prompt is open the title becomes the live
                 // "goto: N" input so the user sees the number they're typing.
