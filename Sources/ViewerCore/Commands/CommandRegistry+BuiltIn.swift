@@ -182,11 +182,15 @@ extension CommandRegistry {
         // MARK: Tabs
         CommandDescriptor(
             id: "tabs.next", title: "Next Tab", category: .tabs,
-            defaultShortcut: Shortcut(key: "right", modifiers: [.command, .option]),
+            // Natural macOS tab-switch default (Safari/Terminal/Notes): ⌘⇧].
+            // Mirrored in the AppKit Window menu (main.swift) which actually
+            // intercepts the keystroke; ⌘⌥arrow is no longer the default but
+            // remains user-rebindable via keybinding.json (TSK-328).
+            defaultShortcut: Shortcut(key: "]", modifiers: [.command, .shift]),
             scriptVerb: "next-tab"),
         CommandDescriptor(
             id: "tabs.previous", title: "Previous Tab", category: .tabs,
-            defaultShortcut: Shortcut(key: "left", modifiers: [.command, .option]),
+            defaultShortcut: Shortcut(key: "[", modifiers: [.command, .shift]),
             scriptVerb: "prev-tab"),
         CommandDescriptor(
             id: "tabs.moveLeft", title: "Move Tab Left", category: .tabs,

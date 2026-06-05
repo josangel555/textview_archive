@@ -769,21 +769,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         menu.addItem(bringAll)
         menu.addItem(.separator())
 
+        // Natural macOS tab-switch shortcuts (⌘⇧] / ⌘⇧[) — matches Safari,
+        // Terminal, Notes (TSK-328). Kept in sync with the registry defaults
+        // for tabs.next / tabs.previous. The bracket combos differ from the
+        // ⌘⌥[ / ⌘⌥] Move-Tab items below (shift vs option), so AppKit routes
+        // each unambiguously.
         let nextItem = NSMenuItem(
             title: "Next Tab",
             action: #selector(nextTab(_:)),
-            keyEquivalent: "\u{2192}"
+            keyEquivalent: "]"
         )
-        nextItem.keyEquivalentModifierMask = [.command, .option]
+        nextItem.keyEquivalentModifierMask = [.command, .shift]
         nextItem.target = self
         menu.addItem(nextItem)
 
         let prevItem = NSMenuItem(
             title: "Previous Tab",
             action: #selector(previousTab(_:)),
-            keyEquivalent: "\u{2190}"
+            keyEquivalent: "["
         )
-        prevItem.keyEquivalentModifierMask = [.command, .option]
+        prevItem.keyEquivalentModifierMask = [.command, .shift]
         prevItem.target = self
         menu.addItem(prevItem)
 

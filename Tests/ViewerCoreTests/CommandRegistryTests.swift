@@ -289,6 +289,24 @@ final class CommandRegistryTests: XCTestCase {
         }
     }
 
+    // MARK: - Natural tab-switch keybindings (TSK-328)
+
+    /// Next/Previous Tab default to the natural macOS combos (⌘⇧] / ⌘⇧[),
+    /// matching Safari/Terminal, and each routes to its own command without
+    /// colliding with the ⌘⌥[ / ⌘⌥] Move-Tab bindings (shift vs option).
+    func test_tabSwitch_naturalDefaults_routeWithoutCollision() {
+        let map = CommandRegistry.builtIn.shortcutMap()
+        let next = Shortcut(key: "]", modifiers: [.command, .shift])
+        let prev = Shortcut(key: "[", modifiers: [.command, .shift])
+        XCTAssertEqual(CommandRegistry.builtIn.command(id: "tabs.next")?.defaultShortcut, next)
+        XCTAssertEqual(CommandRegistry.builtIn.command(id: "tabs.previous")?.defaultShortcut, prev)
+        XCTAssertEqual(map[next], "tabs.next", "⌘⇧] must route to Next Tab")
+        XCTAssertEqual(map[prev], "tabs.previous", "⌘⇧[ must route to Previous Tab")
+        // The Move-Tab combos stay distinct (different modifier set).
+        XCTAssertEqual(map[Shortcut(key: "[", modifiers: [.command, .option])], "tabs.moveLeft")
+        XCTAssertEqual(map[Shortcut(key: "]", modifiers: [.command, .option])], "tabs.moveRight")
+    }
+
     // MARK: - Helpers
 
     private func duplicates(_ ids: [String]) -> [String] {
