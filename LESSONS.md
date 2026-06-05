@@ -1737,3 +1737,114 @@ Lessons: (a) trust the gate's **own exit code**, not piped/tailed stdout —
 (b) any new T4 test that bypasses `runScenarios()` needs an explicit
 `try skipIfNotBuilt()` or it silently runs in the gate; (c) the suite passing ≠
 the gate passing — the sentinel is a separate signal. (Fixed: PMA06 guard added.)
+
+## Session 2026-06-04 — Rust-core migration, three front-ends, security audit
+
+Big session: drove the Rust-core migration deep, built two new front-ends, ran a
+516-agent audit. Durable learnings:
+
+### The Type-1 stateless FFI slice — the repeatable migration template
+Every pure ViewerCore unit ported to Rust this session (diff parse + gutter
+marks, hex render, hex search, indent detect) followed ONE shape, and it's the
+template for the rest:
+1. **core fn** in `rust-core/crates/core/src/<slice>.rs` — pure, sans-IO, faithful
+   port; `cargo test` parity cases incl. the hazards (UTF-16/astral, CRLF, OOB).
+2. **wire seam** (when the result is structured): a `*_wire(frame) -> frame` fn
+   using `wire::{decode_frame, encode_frame}` (u32-LE prefix + rmp `to_vec_named`).
+3. **FFI shim** in `crates/ffi` — mirror `mdvcore_cm_apply`: `ffi_guard!`, out-`MdvBuf`,
+   `MdvStatus`. cbindgen regenerates the header on `scripts/build-rust-core.sh`.
+4. **Swift bridge** in `RustCore/CoreClient.swift` — build the request via the
+   hand-rolled `MsgPackValue` encoder, call, decode via `MsgPackReader`.
+5. **ViewerCore adapter** behind `RustCoreFallback.run(.<cap>, rust:, swift:)` —
+   default-OFF gate, falls back to Swift on any bridge fault. Never delete the
+   Swift path until the slice has soaked ON.
+6. **A/B parity test** in `RustCoreTests` (imports RustCore + ViewerCore): force
+   the rust path, assert byte-equal to the Swift incumbent over a hazard corpus.
+
+**Wire vs raw-bytes-out:** structured results (diff files, search offsets) ride a
+MessagePack frame. But a BIG single string (hex dump: 4 MB file → ~18 MB text)
+goes back as **raw UTF-8 in the MdvBuf**, not a frame — wrapping+re-decoding it
+would double the cost for nothing. Inputs that are large (hex bytes) cross as a
+raw pointer+len (like `mdvcore_session_open`), not embedded in a frame.
+
+### A configured lint that nothing runs is NOT enforced
+The workspace `[workspace.lints]` *denied* `indexing_slicing`/`panic`/`unwrap_used`
+(the sans-panic core policy) — but CI only ran `cargo build` on the core, never
+`cargo clippy` or `cargo test`. So the denies were **dead letters**: two
+`indexing_slicing` panic sites shipped in `cm_edit.rs` (`0cead3c`) and the 80+
+pure cargo tests never gated a merge. Fix: `scripts/rust-core-gate.sh` (clippy
+deny-enforce + cargo test) wired into `pr.yml`. **Lesson:** verify the lint/test
+config is actually *invoked* by a gate, not just present in the manifest.
+
+### "One core, three front-ends" + structural parity
+`mdvcore-core` now backs the SwiftUI app (FFI), a ratatui TUI (`crates/tui`,
+`mdv-tui`), and a std-only HTTP web server (`crates/web`, `mdv-web`). The
+front-ends were kept at parity MANUALLY at first, then made parity STRUCTURAL via
+`core::view` — a render-agnostic view-model (`build(bytes,name,mode) -> {Text|Hex|
+Table} + indent + modes`). Both front-ends are thin renderers over it, so they
+can't drift. **`default-members = ["crates/core","crates/ffi"]`** in the workspace
+keeps the front-end bins (ratatui/crossterm dep tree) OUT of the merge gate and
+the macOS app's 16 MB exec budget — they build only via `cargo run -p`.
+**Headless validation patterns that work with no GUI:** ratatui `TestBackend`
+(render a frame to an in-memory buffer + substring-assert) and a `--snapshot`
+flag that prints one rendered frame; for the web server, pure render-fn unit
+tests + a `127.0.0.1:0` socket round-trip + a `curl` smoke.
+
+### Grapheme (Swift) vs scalar (Rust) index domains — a porting hazard
+Swift `String` indexes **grapheme clusters** (`Array(Character)`); Rust `str`
+iterates **Unicode scalars** (`char`). Any code whose OUTPUT is character indices
+into the string (e.g. `FuzzyMatcher.matchedIndices`, used to bold matched glyphs)
+will DIVERGE between Swift and Rust on combining-mark / ZWJ-emoji input — and
+Rust std has no grapheme segmentation (needs the `unicode-segmentation` crate).
+**Lesson:** don't port index-emitting string code claiming byte-exact parity
+without a grapheme dep; for ASCII/single-scalar inputs it matches, but the A/B
+test can't honestly cover the hazard. (FuzzyMatcher #6 was deferred for this.)
+
+### Filesystem-containment security patterns (from the audit)
+- **Anchor temp-dir prefix checks.** `FileManager.temporaryDirectory.path` is
+  `/var/folders/<rand>/T` with **no trailing slash**. A bare `path.hasPrefix(temp)`
+  therefore admits a user-writable SIBLING like `/var/folders/<rand>/T-attacker/`,
+  escaping the jail. Always `== temp || hasPrefix(temp + "/")`. (Bit BOTH
+  `URLSchemePolicy` and `MCPToolCatalog` — the same flaw, drift between two
+  copies of a boundary; factor a shared `isContained(_:in:)`.)
+- **Check containment BEFORE existence.** Throwing `notFound` before
+  `permissionDenied` leaks an existence oracle for out-of-jail paths.
+- **Binding 127.0.0.1 does NOT make a local HTTP server safe.** A browser the
+  user is already running can **DNS-rebind** an attacker hostname to 127.0.0.1
+  and issue same-origin requests. A loopback file-browser needs: a **Host-header
+  allowlist** (refuse any Host that isn't localhost/127.0.0.1 — browsers always
+  send Host, so a foreign one is the attack), reject non-GET, and a real
+  **path jail** (canonicalize + `starts_with(root)` on every served path).
+  `mdv-web` shipped with all three missing → arbitrary file read; fixed `c0bc6dc`.
+
+### Redaction must sit in front of the *surfacing* path, not just the detail view
+`ClaudeLogParser.parse` does NOT redact. The monitor's transcript detail redacts
+manually before display, but `ClaudeTranscriptSearch` matched + snippeted RAW
+events — so its (planned) use in the monitor would have leaked `signature`/
+`headers`/image-blob content the detail view hides. Added `parseRedacted` /
+`redactedEvents(from:)` and routed search through them. **Lesson:** put the
+redaction barrier on EVERY consumer that surfaces content, not just the obvious
+one; a shared "redacted events" entry point prevents the gap.
+
+### Parallel test fixtures keyed only by PID race each other
+Temp fixtures named `…-{process::id()}` are shared by ALL tests in the binary;
+parallel tests then `remove_dir_all` each other's dir mid-run → flaky failures
+that look like logic bugs. Key by **pid + an `AtomicU64` counter** so each call
+is unique. (Bit both the tui and web test fixtures.)
+
+### Multi-agent audit (deep-audit) + the spend ceiling
+The `deep-audit` workflow (`.claude/workflows/deep-audit.js`) — subsystem ×
+dimension reviewers → adversarial perspective-diverse verification (default-refute,
+majority-confirm) → completeness critic → ranked report — found 80 verified
+findings incl. a real S1 in code written the same session. The adversarial-verify
+stage is what makes the output high-signal (it kills the false positives that
+plague mega-reviews). **Operational fact:** one `deep` run = ~516 agents / ~26M
+subagent tokens and **tripped the account monthly spend limit**. Large fan-out
+workflows are not free — gate them; solo work continues fine.
+
+### Trust fresh state over the tracker docs
+`AUTONOMOUS_PROGRESS.md` said the agent-monitor PoC "UI not built" — it had been
+built (a 460-line view) in a prior session and the doc was stale. Checking the
+actual files first (per the "fetch fresh state" rule) avoided rebuilding it.
+**Lesson:** when a tracker/doc claims something is missing, verify against the
+code before acting — docs drift, code is ground truth.
