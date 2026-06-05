@@ -64,15 +64,26 @@ fn handle_conn(mut stream: TcpStream, root: &Path) -> io::Result<()> {
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut req_line = String::new();
     reader.read_line(&mut req_line)?;
-    // Drain (ignore) the remaining request headers.
+    // Read headers; capture Host for the anti-DNS-rebinding check (AUDIT S1).
+    let mut host = String::new();
     loop {
         let mut h = String::new();
         let n = reader.read_line(&mut h)?;
         if n == 0 || h == "\r\n" || h == "\n" {
             break;
         }
+        if let Some(v) = h.to_ascii_lowercase().strip_prefix("host:") {
+            host = v.trim().to_string();
+        }
     }
-    let (status, ctype, body) = route(&req_line, root);
+    let (status, ctype, body) = if host_allowed(&host) {
+        route(&req_line, root)
+    } else {
+        // A browser ALWAYS sends Host; a non-loopback Host is a cross-origin /
+        // DNS-rebind attempt — refuse so a malicious page can't reach the FS.
+        ("403 Forbidden", "text/plain; charset=utf-8",
+         "refused: Host must be localhost / 127.0.0.1 (anti DNS-rebinding)".to_string())
+    };
     let head = format!(
         "HTTP/1.1 {status}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         body.len()
@@ -86,28 +97,51 @@ fn handle_conn(mut stream: TcpStream, root: &Path) -> io::Result<()> {
 /// socket so it's unit-testable.
 fn route(req_line: &str, root: &Path) -> (&'static str, &'static str, String) {
     let mut parts = req_line.split_whitespace();
-    let _method = parts.next().unwrap_or("");
+    let method = parts.next().unwrap_or("");
     let target = parts.next().unwrap_or("/");
-    let (path, query) = target.split_once('?').unwrap_or((target, ""));
-    let q = parse_query(query);
     const HTML: &str = "text/html; charset=utf-8";
     const TEXT: &str = "text/plain; charset=utf-8";
+    if method != "GET" {
+        return ("405 Method Not Allowed", TEXT, "only GET is supported".into());
+    }
+    let (path, query) = target.split_once('?').unwrap_or((target, ""));
+    let q = parse_query(query);
     match path {
         "/" => ("200 OK", HTML, render_browse(root)),
+        // Both /browse and /view confine the requested path UNDER root (AUDIT S2):
+        // canonicalize + starts_with closes arbitrary-read / `..` / symlink escape.
         "/browse" => {
             let dir = q.get("path").map_or_else(|| root.to_path_buf(), PathBuf::from);
-            ("200 OK", HTML, render_browse(&dir))
+            match confined(root, &dir) {
+                Some(d) => ("200 OK", HTML, render_browse(&d)),
+                None => ("404 Not Found", TEXT, "path is outside the served root".into()),
+            }
         }
-        "/view" => match q.get("path") {
-            Some(p) => (
-                "200 OK",
-                HTML,
-                render_view(Path::new(p), q.get("mode").map(String::as_str)),
-            ),
-            None => ("400 Bad Request", TEXT, "missing ?path".into()),
+        "/view" => match q.get("path").and_then(|p| confined(root, Path::new(p))) {
+            Some(f) => ("200 OK", HTML, render_view(&f, q.get("mode").map(String::as_str))),
+            None => ("404 Not Found", TEXT, "path is outside the served root (or missing)".into()),
         },
         _ => ("404 Not Found", TEXT, "not found".into()),
     }
+}
+
+/// Reject a present Host header whose host-part isn't loopback. An ABSENT Host is
+/// allowed (raw non-browser clients) — browsers always send one, so a missing
+/// Host can't be the cross-origin DNS-rebinding vector this guards against.
+fn host_allowed(host: &str) -> bool {
+    if host.is_empty() {
+        return true;
+    }
+    let hostpart = host.rsplit_once(':').map_or(host, |(h, _)| h);
+    hostpart == "127.0.0.1" || hostpart == "localhost" || hostpart == "[::1]" || hostpart == "::1"
+}
+
+/// Resolve `candidate` and confine it to `root` (already canonical). Returns the
+/// canonical path iff it IS root or strictly under it — the single chokepoint
+/// that closes arbitrary file-read, `..` traversal, and symlink-escape.
+fn confined(root: &Path, candidate: &Path) -> Option<PathBuf> {
+    let c = candidate.canonicalize().ok()?;
+    if c == *root || c.starts_with(root) { Some(c) } else { None }
 }
 
 // MARK: - Page rendering
@@ -489,12 +523,64 @@ mod tests {
             }
         });
         let mut conn = TcpStream::connect(("127.0.0.1", port)).unwrap();
-        conn.write_all(b"GET / HTTP/1.1\r\nHost: x\r\n\r\n").unwrap();
+        conn.write_all(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").unwrap();
         let mut resp = String::new();
         conn.read_to_string(&mut resp).unwrap();
         h.join().unwrap();
         assert!(resp.starts_with("HTTP/1.1 200 OK"), "status line:\n{resp}");
         assert!(resp.contains("hello.txt"), "served the browse page");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    // --- AUDIT S1/S2: filesystem containment boundary regression tests ---
+
+    #[test]
+    fn host_allowed_only_loopback() {
+        assert!(host_allowed(""));               // absent Host → not a browser cross-origin req
+        assert!(host_allowed("127.0.0.1:8765"));
+        assert!(host_allowed("localhost"));
+        assert!(!host_allowed("evil.example.com"));
+        assert!(!host_allowed("attacker.test:8765"));
+    }
+
+    #[test]
+    fn rejects_foreign_host_over_socket() {
+        let dir = fixture();
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let root = dir.clone();
+        let h = thread::spawn(move || {
+            if let Ok((stream, _)) = listener.accept() { let _ = handle_conn(stream, &root); }
+        });
+        let mut conn = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        conn.write_all(b"GET / HTTP/1.1\r\nHost: rebind.evil.com\r\n\r\n").unwrap();
+        let mut resp = String::new();
+        conn.read_to_string(&mut resp).unwrap();
+        h.join().unwrap();
+        assert!(resp.starts_with("HTTP/1.1 403"), "foreign Host refused:\n{resp}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn route_rejects_non_get() {
+        let dir = fixture();
+        let (status, _, _) = route("POST / HTTP/1.1", &dir);
+        assert!(status.starts_with("405"), "non-GET rejected, got {status}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn route_confines_path_to_root() {
+        let root = fixture().canonicalize().unwrap();
+        // A path OUTSIDE the served root is refused (arbitrary-read closed).
+        let (out, _, _) = route("GET /view?path=%2Fetc%2Fhosts HTTP/1.1", &root);
+        assert!(out.starts_with("404"), "out-of-root path refused, got {out}");
+        let (br, _, _) = route("GET /browse?path=%2F HTTP/1.1", &root);
+        assert!(br.starts_with("404"), "out-of-root browse refused, got {br}");
+        // A path INSIDE the root still works.
+        let inside = format!("GET /view?path={} HTTP/1.1", pct_encode(&root.join("hello.txt").to_string_lossy()));
+        let (ok, _, _) = route(&inside, &root);
+        assert!(ok.starts_with("200"), "in-root path served, got {ok}");
+        let _ = fs::remove_dir_all(&root);
     }
 }
