@@ -106,10 +106,31 @@ pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>, WireFault> {
 
 /// Decode a MessagePack payload (named-field map) back to a value.
 ///
+/// Enforces an **end-of-stream check**: `rmp_serde::from_slice` stops at the end
+/// of the first MessagePack value and silently ignores any trailing bytes, so a
+/// padded or malformed payload would decode as if clean. We deserialize through a
+/// cursor and require it to land exactly at end-of-input, rejecting any trailing
+/// garbage — the body of a frame is one value and nothing more.
+///
 /// # Errors
-/// Returns [`WireFault::Decode`] if deserialization fails.
+/// Returns [`WireFault::Decode`] if deserialization fails or if any bytes remain
+/// after the first value.
 pub fn decode<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> Result<T, WireFault> {
-    rmp_serde::from_slice(bytes).map_err(|e| WireFault::Decode(e.to_string()))
+    let mut cursor = std::io::Cursor::new(bytes);
+    let value = {
+        let mut de = rmp_serde::Deserializer::new(&mut cursor);
+        T::deserialize(&mut de).map_err(|e| WireFault::Decode(e.to_string()))?
+    };
+    // `Cursor::position` is the count of bytes the deserializer consumed; rmp reads
+    // exactly the value's bytes (MessagePack is self-delimiting, no read-ahead).
+    let consumed = usize::try_from(cursor.position()).unwrap_or(usize::MAX);
+    if consumed != bytes.len() {
+        return Err(WireFault::Decode(format!(
+            "trailing bytes after MessagePack value: consumed {consumed} of {} bytes",
+            bytes.len()
+        )));
+    }
+    Ok(value)
 }
 
 /// Encode a value to a single length-prefixed frame: `u32` LE length + body.
@@ -278,6 +299,43 @@ mod tests {
         assert!(frame.len() > 4);
         let decoded: Table = decode_frame(&frame).unwrap();
         assert_eq!(t, decoded);
+    }
+
+    #[test]
+    fn decode_rejects_trailing_garbage() {
+        // A valid value followed by a stray byte must NOT decode as clean —
+        // `from_slice` used to swallow the tail; the end-of-stream check rejects it.
+        let mut bytes = encode(&sample_table()).unwrap();
+        bytes.push(0xc0); // a lone MessagePack `nil`
+        let r: Result<Table, _> = decode(&bytes);
+        assert!(
+            matches!(r, Err(WireFault::Decode(_))),
+            "trailing byte after value must be rejected, got {r:?}"
+        );
+    }
+
+    #[test]
+    fn decode_frame_rejects_trailing_garbage_in_body() {
+        // Frame whose declared length includes a stray byte after a valid value:
+        // the framing length check passes (declared == body len) but the body
+        // decode must now reject the trailing byte.
+        let mut body = encode(&sample_table()).unwrap();
+        body.push(0xc0);
+        let len = u32::try_from(body.len()).unwrap();
+        let mut frame = len.to_le_bytes().to_vec();
+        frame.extend_from_slice(&body);
+        let r: Result<Table, _> = decode_frame(&frame);
+        assert!(
+            matches!(r, Err(WireFault::Decode(_))),
+            "frame body trailing byte must be rejected, got {r:?}"
+        );
+    }
+
+    #[test]
+    fn decode_clean_value_still_round_trips() {
+        let t = sample_table();
+        let back: Table = decode(&encode(&t).unwrap()).unwrap();
+        assert_eq!(t, back);
     }
 
     #[test]
