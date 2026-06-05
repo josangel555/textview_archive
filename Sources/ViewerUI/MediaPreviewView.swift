@@ -296,6 +296,12 @@ private struct ImageScrollHost: NSViewRepresentable {
     /// `NSImage.setName(url.path)` as a cache key — but that name
     /// registers globally in `NSImage.imageNamed(_:)`, collides across
     /// tabs viewing different images, and never frees.
+    // @MainActor: the @objc handlers below touch main-actor AppKit state
+    // (`NSScrollView.magnification`) and only ever fire from main-thread
+    // AppKit notifications. Explicit here so the file compiles on Swift 6.1.x
+    // (where the enclosing context is nonisolated by default) as well as on
+    // newer toolchains that default this context to the main actor.
+    @MainActor
     final class Coordinator: NSObject {
         var lastURL: URL?
         /// Captured reference to the SwiftUI callback. Updated on each
