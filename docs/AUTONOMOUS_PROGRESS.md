@@ -166,6 +166,19 @@ build it, else hold.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-05 **`[PORT][W1]` image preview shipped to BOTH front-ends** (`c5700a0`, TSK-225/226 →
+  `fixed`). New dependency-free, panic-free `mdvcore_core::image` module (PNG/JPEG/GIF/BMP/WEBP
+  header parse → pixel dimensions, every byte access bounds-checked). `view.rs` gains
+  `FileKind::Image` + `ViewMode::Image` + `ViewBody::Image(Option<ImageInfo>)`; images open in
+  Image mode with Hex as the only fallback (Text = binary garbage). **Web** inlines the bytes as a
+  base64 `data:` URI inside the already path-confined `/view` HTML — deliberately avoided a binary
+  `/raw` route (which would force a `String`→`Vec<u8>` refactor of the whole response path + a new
+  security surface); a file past the 1 MiB read cap shows the card + a notice, not a broken `<img>`.
+  Hand-rolled RFC-4648 base64 keeps the web tier dep-free. **TUI** shows a format/dimensions card
+  (terminals can't draw pixels). **Validated:** `cargo clippy --workspace` clean + `cargo test
+  --workspace` 264 pass (incl. `image.rs` 7 tests + web image/base64 tests) + `rust-core-gate.sh`
+  GATE_EXIT=0. Remaining fuzzy `[W1]` ports still open: in-file find 197/198, CSV filter 203/204,
+  hex search 205/206; open-as 219/220 (web done via `?mode=`, TUI cycle-only).
 - 2026-06-05 **`[PORT][W1]` diff/patch view mode shipped to BOTH front-ends** (`63f5e5f`, TSK-201/202 →
   `fixed`). One vertical slice through the shared `mdvcore_core::view`: added `ViewMode::Diff` +
   `ViewBody::Diff(Vec<DiffLine>)` classified by a leading-char `classify_diff_line` (NOT the
