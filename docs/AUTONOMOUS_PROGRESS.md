@@ -176,6 +176,17 @@ build it, else hold.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-05 **SwiftUI: tooltip coverage on the two flagged views (TSK-324 → `fixed`, `01b4faf`).**
+  Re-audited both views the backlog flagged. **ShoulderRailView** is already fully covered — every rail
+  button routes through `PanelRailButton`/`TerminalToggleButton`, both of which carry `.helpInfo` (title +
+  status-bar description); the cited "2/4" predates the UX-H (#230) tooltip pass. **SidebarView**: the one
+  remaining uncovered chrome button was the FILES-section collapse/expand chevron — added `.helpInfo`
+  (Collapse/Expand Files + "Show or hide the file tree") and an `accessibilityIdentifier`. Every other
+  header control (sort, recency, folder-stats, lock, follow-active-tab, show-hidden, parent-nav, git-status,
+  bookmark indicator) already had helpInfo; context-menu / Menu items are self-labeling; the file row keeps
+  its native `.help(path)`. **Validated:** `swift build` clean + `scripts/test-headless-gate.sh` **PASSED**.
+  helpInfo is a view modifier (not headlessly introspectable), so hover = owner live spot-check; a literal
+  every-element sweep across all ~40 views is a broader follow-up, but both NAMED views are now complete.
 - 2026-06-05 **SwiftUI: default keyboard shortcuts for git-history + folder-stats commands (TSK-325 → `fixed`, `4c931b8`).**
   The command catalog makes every descriptor bindable/rebindable, but three user-facing actions shipped
   `defaultShortcut: nil` so they were keyboard-unreachable out of the box. Assigned conflict-free defaults:
