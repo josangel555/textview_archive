@@ -63,6 +63,35 @@ pub struct View {
     pub available_modes: Vec<ViewMode>,
 }
 
+/// Width (in decimal digits) of the line-number gutter for a body of
+/// `line_count` lines — i.e. the number of digits in the largest line number.
+/// A front-end right-pads each line number to this width so the gutter column
+/// is flush. Always ≥ 1 (an empty body still gets a 1-wide gutter so the
+/// separator has a column to sit against): `0|1 → 1`, `10 → 2`, `1000 → 4`.
+#[must_use]
+pub fn gutter_width(line_count: usize) -> usize {
+    let mut digits = 1;
+    let mut n = line_count;
+    while n >= 10 {
+        n /= 10;
+        digits += 1;
+    }
+    digits
+}
+
+/// Clamp a 1-based `target` line number into the valid range for a body of
+/// `line_count` lines — the shared "go to line" rule both renderers apply, so a
+/// hand-typed or URL-supplied line number lands on the same row in the TUI and
+/// the web tier by construction. The result is always 1-based and in
+/// `1..=max(line_count, 1)`: `0` (or any under-shoot) clamps up to the first
+/// line, an over-shoot clamps down to the last, and an empty body still yields
+/// `1` (there's a notional first row to sit on). Convert to a 0-based scroll
+/// offset at the call site with `clamp_line(..) - 1`.
+#[must_use]
+pub fn clamp_line(target: usize, line_count: usize) -> usize {
+    target.clamp(1, line_count.max(1))
+}
+
 /// Whether `name` looks like a delimited table (drives the `Table` mode).
 #[must_use]
 pub fn looks_tabular(name: &str) -> bool {
@@ -152,6 +181,54 @@ mod tests {
         assert_eq!(cycle(ViewMode::Table, true), ViewMode::Text);
         assert_eq!(cycle(ViewMode::Text, true), ViewMode::Hex);
         assert_eq!(cycle(ViewMode::Hex, true), ViewMode::Table);
+    }
+
+    #[test]
+    fn gutter_width_counts_decimal_digits() {
+        // Boundary cases from the port plan: 1→1, 10→2, 1000→4.
+        assert_eq!(gutter_width(1), 1);
+        assert_eq!(gutter_width(10), 2);
+        assert_eq!(gutter_width(1000), 4);
+        // An empty body still gets a 1-wide gutter (never 0).
+        assert_eq!(gutter_width(0), 1);
+        // Just-below / just-at each power-of-ten boundary.
+        assert_eq!(gutter_width(9), 1);
+        assert_eq!(gutter_width(99), 2);
+        assert_eq!(gutter_width(100), 3);
+        assert_eq!(gutter_width(999), 3);
+        assert_eq!(gutter_width(10_000), 5);
+        // Matches the decimal-string length for a spread of values.
+        for n in [1usize, 2, 7, 42, 128, 4096, 200_000] {
+            assert_eq!(gutter_width(n), n.to_string().len(), "n={n}");
+        }
+    }
+
+    #[test]
+    fn clamp_line_is_1_based_and_bounded() {
+        // Boundary cases from the port plan: under-shoot clamps to the first
+        // line, over-shoot to the last.
+        assert_eq!(clamp_line(0, 10), 1);
+        assert_eq!(clamp_line(99, 10), 10);
+        // In-range values pass through unchanged.
+        assert_eq!(clamp_line(1, 10), 1);
+        assert_eq!(clamp_line(5, 10), 5);
+        assert_eq!(clamp_line(10, 10), 10);
+        // An empty body still has a notional first row (never 0).
+        assert_eq!(clamp_line(0, 0), 1);
+        assert_eq!(clamp_line(1, 0), 1);
+        assert_eq!(clamp_line(42, 0), 1);
+        // A single-line body pins everything to line 1.
+        assert_eq!(clamp_line(0, 1), 1);
+        assert_eq!(clamp_line(7, 1), 1);
+        // The result is always a valid 1-based index into a `line_count` body
+        // (i.e. `clamp_line(..) - 1` is a safe 0-based scroll offset).
+        for line_count in [0usize, 1, 2, 10, 1000] {
+            for target in [0usize, 1, 2, 9, 10, 11, 1001, usize::MAX] {
+                let r = clamp_line(target, line_count);
+                assert!(r >= 1, "always 1-based: target={target} len={line_count}");
+                assert!(r <= line_count.max(1), "never past last: target={target} len={line_count}");
+            }
+        }
     }
 
     #[test]

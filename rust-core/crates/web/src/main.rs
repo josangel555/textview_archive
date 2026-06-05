@@ -22,9 +22,11 @@ use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, UNIX_EPOCH};
 use std::{fs, thread};
 
+use mdvcore_core::nav::{self, SortKey};
+use mdvcore_core::outline::{self, Heading};
 use mdvcore_core::view::{self, ViewBody, ViewMode};
 
 /// Max bytes read into a view (parity with the TUI's preview cap). Per-mode
@@ -183,19 +185,40 @@ fn route(req_line: &str, root: &Path) -> (&'static str, &'static str, String) {
     }
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
     let q = parse_query(query);
+    // Active file-list sort key (default: name), shared by /, /browse and the
+    // nav pane of /view — the same dirs-first ordering the TUI applies.
+    let sort = q.get("sort").map_or(SortKey::Name, |s| SortKey::from_str_or_name(s));
+    // Dotfile visibility (default: hidden). `?hidden=1` reveals dotfiles; the
+    // same leading-`.` rule the TUI's `.` toggle applies (`nav::should_show`).
+    let show_hidden = q.get("hidden").is_some_and(|h| h == "1");
+    // Type-to-narrow quick file find (default: none). `?filter=<needle>` narrows
+    // AND ranks the directory listing via the shared `nav::filter_entries`
+    // scorer — the same subsequence+prefix ranking the TUI's `f` prompt uses.
+    let filter = q.get("filter").map(String::as_str).unwrap_or("");
     match path {
-        "/" => ("200 OK", HTML, render_browse(root)),
+        "/" => ("200 OK", HTML, render_browse(root, sort, show_hidden, filter)),
         // Both /browse and /view confine the requested path UNDER root (AUDIT S2):
         // canonicalize + starts_with closes arbitrary-read / `..` / symlink escape.
         "/browse" => {
             let dir = q.get("path").map_or_else(|| root.to_path_buf(), PathBuf::from);
             match confined(root, &dir) {
-                Some(d) => ("200 OK", HTML, render_browse(&d)),
+                Some(d) => ("200 OK", HTML, render_browse(&d, sort, show_hidden, filter)),
                 None => ("404 Not Found", TEXT, "path is outside the served root".into()),
             }
         }
         "/view" => match q.get("path").and_then(|p| confined(root, Path::new(p))) {
-            Some(f) => ("200 OK", HTML, render_view(&f, q.get("mode").map(String::as_str))),
+            Some(f) => {
+                // `?line=<n>` (1-based) jumps to a line: the target row gets an
+                // `id="L<n>"` anchor and the page sets a native `#L<n>` fragment
+                // so the browser scrolls to it. Parsed leniently — a non-numeric
+                // value just means "no jump".
+                let line = q.get("line").and_then(|s| s.parse::<usize>().ok());
+                (
+                    "200 OK",
+                    HTML,
+                    render_view(&f, q.get("mode").map(String::as_str), sort, show_hidden, line),
+                )
+            }
             None => ("404 Not Found", TEXT, "path is outside the served root (or missing)".into()),
         },
         _ => ("404 Not Found", TEXT, "not found".into()),
@@ -223,70 +246,192 @@ fn confined(root: &Path, candidate: &Path) -> Option<PathBuf> {
 
 // MARK: - Page rendering
 
-fn render_browse(dir: &Path) -> String {
+fn render_browse(dir: &Path, sort: SortKey, show_hidden: bool, filter: &str) -> String {
     page(
         &short(dir),
-        &nav_html(dir, None),
+        &nav_html(dir, None, sort, show_hidden, filter),
         "<p class=\"hint\">Select a file to view its contents.</p>",
     )
 }
 
-fn render_view(file: &Path, mode: Option<&str>) -> String {
+fn render_view(
+    file: &Path,
+    mode: Option<&str>,
+    sort: SortKey,
+    show_hidden: bool,
+    line: Option<usize>,
+) -> String {
     let parent = file.parent().unwrap_or(file);
     let name = file_name(file);
+    // The file view's nav column lists the parent directory unfiltered — the
+    // quick-find needle is a /browse-only narrowing, not carried onto a viewed
+    // file (the user has already picked a file).
     page(
         &name,
-        &nav_html(parent, Some(&name)),
-        &content_html(file, mode),
+        &nav_html(parent, Some(&name), sort, show_hidden, ""),
+        &content_html(file, mode, line),
     )
 }
 
-struct DirEntry {
-    name: String,
-    is_dir: bool,
-}
-
-fn read_entries(dir: &Path) -> Vec<DirEntry> {
+/// List `dir`'s entries: dotfile-filtered, dirs-first sorted, and — when
+/// `filter` is non-empty — narrowed AND re-ranked best-first by the shared
+/// `nav::filter_entries` subsequence+prefix scorer (the same logic behind the
+/// TUI's `f` prompt). An empty `filter` is the no-narrowing fast path: the
+/// listing is returned in pure sort order.
+fn read_entries(dir: &Path, sort: SortKey, show_hidden: bool, filter: &str) -> Vec<nav::Entry> {
     let Ok(rd) = fs::read_dir(dir) else {
         return Vec::new();
     };
-    let mut items: Vec<DirEntry> = rd
+    let mut items: Vec<nav::Entry> = rd
         .filter_map(Result::ok)
-        .map(|e| DirEntry {
-            name: e.file_name().to_string_lossy().into_owned(),
-            is_dir: e.file_type().map(|t| t.is_dir()).unwrap_or(false),
+        .map(|e| {
+            let meta = e.metadata().ok();
+            let is_dir = meta.as_ref().map(fs::Metadata::is_dir).unwrap_or(false);
+            let size = meta.as_ref().map(fs::Metadata::len).unwrap_or(0);
+            let mtime = meta.as_ref().and_then(mtime_secs);
+            nav::Entry { name: e.file_name().to_string_lossy().into_owned(), is_dir, mtime, size }
         })
+        // Drop dotfiles unless `?hidden=1` — the shared core rule, so web and TUI
+        // suppress the same names by construction.
+        .filter(|e| nav::should_show(&e.name, show_hidden))
         .collect();
-    items.sort_by(|a, b| {
-        b.is_dir
-            .cmp(&a.is_dir)
-            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-    });
-    items
+    // Shared core sorter (dirs-first, active key) — the SAME ordering the TUI
+    // applies, so the two front-ends list a directory identically.
+    nav::sort_entries(&mut items, sort, true);
+    if filter.is_empty() {
+        return items;
+    }
+    // Narrow + rank via the shared scorer. We rank against the sorted set so a
+    // tie in score falls back to the dirs-first sort order (deterministic).
+    let names: Vec<&str> = items.iter().map(|e| e.name.as_str()).collect();
+    // Case-insensitive, matching the TUI prompt and the rest of nav's name handling.
+    let ranked = nav::filter_entries(&names, filter, false);
+    ranked.into_iter().filter_map(|(i, _)| items.get(i).cloned()).collect()
 }
 
-fn nav_html(dir: &Path, selected: Option<&str>) -> String {
-    let mut s = format!("<div class=\"bar\">{}</div><ul>", esc(&short(dir)));
-    if let Some(parent) = dir.parent() {
+/// The `&hidden=1` query suffix to append to a nav/sort link, or `""` when
+/// dotfiles are hidden (the default). Threading this onto every link keeps the
+/// toggle "sticky" — descending a dir or re-sorting preserves the current state.
+fn hidden_q(show_hidden: bool) -> &'static str {
+    if show_hidden { "&hidden=1" } else { "" }
+}
+
+/// The `&filter=<needle>` query suffix to append to sort/toggle links so the
+/// active quick-find narrowing is "sticky" across a re-sort or a dotfile toggle
+/// — `""` when no filter is active. The needle is percent-encoded for the URL.
+/// (Entry links deliberately do NOT carry this: clicking a file opens it, and
+/// descending a directory should start that directory's listing un-narrowed.)
+fn filter_q(filter: &str) -> String {
+    if filter.is_empty() {
+        String::new()
+    } else {
+        format!("&filter={}", pct_encode(filter))
+    }
+}
+
+/// Sort-mode link bar: one link per [`SortKey`], the active one bold. Each link
+/// re-browses the SAME directory with `?sort=`, so the choice round-trips. The
+/// current dotfile state (`&hidden=1`) and quick-find needle (`&filter=`) ride
+/// along so re-sorting resets neither.
+fn sort_links(dir: &Path, active: SortKey, show_hidden: bool, filter: &str) -> String {
+    let dir_q = pct_encode(&dir.to_string_lossy());
+    let hq = hidden_q(show_hidden);
+    let fq = filter_q(filter);
+    let mut s = String::from("<div class=\"sort\">sort: ");
+    for k in [SortKey::Name, SortKey::Modified, SortKey::Size] {
+        let label = k.as_str();
+        if k == active {
+            s.push_str(&format!("<b>{label}</b> "));
+        } else {
+            s.push_str(&format!("<a href=\"/browse?path={dir_q}&sort={label}{hq}{fq}\">{label}</a> "));
+        }
+    }
+    s.push_str("</div>");
+    s
+}
+
+/// The dotfile-toggle link: re-browses the SAME directory flipping `hidden`,
+/// preserving the active sort key and quick-find needle. Label reflects the
+/// action it performs.
+fn hidden_toggle_link(dir: &Path, sort: SortKey, show_hidden: bool, filter: &str) -> String {
+    let dir_q = pct_encode(&dir.to_string_lossy());
+    let label = if show_hidden { "hide hidden" } else { "show hidden" };
+    // Flip the state: when currently showing, the link drops `hidden`; when
+    // hiding, it sets `hidden=1`.
+    let next = hidden_q(!show_hidden);
+    let fq = filter_q(filter);
+    format!(
+        "<div class=\"hidden-toggle\"><a href=\"/browse?path={dir_q}&sort={}{next}{fq}\">{label}</a></div>",
+        sort.as_str()
+    )
+}
+
+/// The quick-find box: a JS-free GET form that re-browses the SAME directory
+/// with `?filter=<needle>`, carrying the active sort + dotfile state as hidden
+/// inputs so submitting the box preserves them. Empty needle = no narrowing.
+/// A "clear" link appears when a filter is active. Server-side narrowing means
+/// no client JS — the form submit round-trips through `read_entries`.
+fn filter_box(dir: &Path, sort: SortKey, show_hidden: bool, filter: &str) -> String {
+    let dir_q = pct_encode(&dir.to_string_lossy());
+    let hq = hidden_q(show_hidden);
+    let mut s = String::from("<form class=\"find\" method=\"get\" action=\"/browse\">");
+    // Preserve the directory + sort + dotfile state across the GET submit.
+    s.push_str(&format!("<input type=\"hidden\" name=\"path\" value=\"{}\">", esc(&dir.to_string_lossy())));
+    s.push_str(&format!("<input type=\"hidden\" name=\"sort\" value=\"{}\">", sort.as_str()));
+    if show_hidden {
+        s.push_str("<input type=\"hidden\" name=\"hidden\" value=\"1\">");
+    }
+    s.push_str(&format!(
+        "<input type=\"text\" name=\"filter\" value=\"{}\" placeholder=\"find file…\" autofocus>",
+        esc(filter)
+    ));
+    s.push_str("<button type=\"submit\">find</button>");
+    if !filter.is_empty() {
+        // Clear = re-browse the same dir/sort/hidden with no filter.
         s.push_str(&format!(
-            "<li class=\"dir\"><a href=\"/browse?path={}\">../</a></li>",
-            pct_encode(&parent.to_string_lossy())
+            "<a class=\"clear\" href=\"/browse?path={dir_q}&sort={}{hq}\">clear</a>",
+            sort.as_str()
         ));
     }
-    for e in read_entries(dir) {
+    s.push_str("</form>");
+    s
+}
+
+fn nav_html(dir: &Path, selected: Option<&str>, sort: SortKey, show_hidden: bool, filter: &str) -> String {
+    let hq = hidden_q(show_hidden);
+    let mut s = format!(
+        "<div class=\"bar\">{}</div>{}{}{}<ul>",
+        esc(&short(dir)),
+        filter_box(dir, sort, show_hidden, filter),
+        sort_links(dir, sort, show_hidden, filter),
+        hidden_toggle_link(dir, sort, show_hidden, filter)
+    );
+    if let Some(parent) = dir.parent() {
+        s.push_str(&format!(
+            "<li class=\"dir\"><a href=\"/browse?path={}&sort={}{hq}\">../</a></li>",
+            pct_encode(&parent.to_string_lossy()),
+            sort.as_str()
+        ));
+    }
+    // Entry links deliberately omit the `&filter=` needle: clicking a file
+    // opens it, and descending into a sub-dir should list it un-narrowed (the
+    // needle was about THIS directory). The sticky carriers are sort + hidden.
+    for e in read_entries(dir, sort, show_hidden, filter) {
         let href = pct_encode(&dir.join(&e.name).to_string_lossy());
         if e.is_dir {
             s.push_str(&format!(
-                "<li class=\"dir\"><a href=\"/browse?path={}\">{}/</a></li>",
+                "<li class=\"dir\"><a href=\"/browse?path={}&sort={}{hq}\">{}/</a></li>",
                 href,
+                sort.as_str(),
                 esc(&e.name)
             ));
         } else {
             let cls = if selected == Some(e.name.as_str()) { " class=\"sel\"" } else { "" };
             s.push_str(&format!(
-                "<li{}><a href=\"/view?path={}\">{}</a></li>",
+                "<li{}><a href=\"/view?path={}&sort={}{hq}\">{}</a></li>",
                 cls,
                 href,
+                sort.as_str(),
                 esc(&e.name)
             ));
         }
@@ -295,7 +440,7 @@ fn nav_html(dir: &Path, selected: Option<&str>) -> String {
     s
 }
 
-fn content_html(file: &Path, mode_param: Option<&str>) -> String {
+fn content_html(file: &Path, mode_param: Option<&str>, line: Option<usize>) -> String {
     let (raw, truncated, total) = match read_capped(file, PREVIEW_CAP) {
         Ok(x) => x,
         Err(e) => return format!("<p class=\"hint\">cannot read: {}</p>", esc(&e.to_string())),
@@ -330,11 +475,60 @@ fn content_html(file: &Path, mode_param: Option<&str>) -> String {
         trunc
     );
 
+    // Markdown outline: for a `.md` file rendered as text, scan the RAW bytes
+    // for headings (shared `outline::headings`) and offer a clickable TOC. Each
+    // entry is a native `#L<line>` fragment link; the matching source rows carry
+    // `id="L<line>"` anchors (added to the gutter below) so the jump needs no JS.
+    // The outline is text-mode only — a hex/table view has no source lines to
+    // anchor against.
+    let headings = if v.mode == ViewMode::Text && outline::is_markdown(&name) {
+        outline::headings(&String::from_utf8_lossy(&raw), &name)
+    } else {
+        Vec::new()
+    };
+    let outline_nav = outline_html(&headings);
+
     let content = match &v.body {
-        ViewBody::Hex(lines) | ViewBody::Text(lines) => format!("<pre>{}</pre>", esc(&lines.join("\n"))),
+        ViewBody::Hex(lines) | ViewBody::Text(lines) => {
+            // Resolve the requested 1-based line against the shared core clamp so
+            // an out-of-range `?line=` lands on a real row (and the TUI / web
+            // agree on the target). Table mode has no line gutter, so the goto
+            // box only shows for text/hex bodies.
+            let target = line.map(|n| view::clamp_line(n, lines.len()));
+            let goto = goto_box(&href, mode_str(v.mode), target);
+            // Anchor every heading line (not just the goto target) so the outline
+            // links resolve; the set is empty for non-markdown / non-text views.
+            let anchors: Vec<usize> = headings.iter().map(|h| h.line).collect();
+            format!("{}{}", goto, gutter_html(lines, target, &anchors))
+        }
         ViewBody::Table { header, rows } => table_html(header, rows),
     };
-    format!("{modes}{bar}{content}")
+    format!("{modes}{bar}{outline_nav}{content}")
+}
+
+/// The go-to-line box: a JS-free GET form that reloads `/view` with `?line=<n>`.
+/// On reload the server clamps the line, tags that row `id="L<n>"`, and — because
+/// the form's submit lands on a page whose target row carries the id — a "scroll
+/// to line" anchor link beside the form jumps there natively via the `#L<n>`
+/// fragment (no client JS). When a line is already targeted the box echoes it and
+/// renders the live `#L<n>` jump link so a reload re-centers without retyping.
+fn goto_box(href: &str, mode: &str, target: Option<usize>) -> String {
+    let mut s = String::from("<form class=\"goto\" method=\"get\" action=\"/view\">");
+    // Preserve the file path + active mode across the GET submit.
+    s.push_str(&format!("<input type=\"hidden\" name=\"path\" value=\"{}\">", esc(&pct_decode(href))));
+    s.push_str(&format!("<input type=\"hidden\" name=\"mode\" value=\"{}\">", esc(mode)));
+    let val = target.map_or(String::new(), |n| n.to_string());
+    s.push_str(&format!(
+        "<input type=\"number\" name=\"line\" min=\"1\" value=\"{val}\" placeholder=\"line #\">"
+    ));
+    s.push_str("<button type=\"submit\">go to line</button>");
+    if let Some(n) = target {
+        // A native fragment link to the tagged row — clicking it (or following
+        // it after the reload) scrolls the browser to line n with no JS.
+        s.push_str(&format!("<a class=\"jump\" href=\"#L{n}\">jump to {n}</a>"));
+    }
+    s.push_str("</form>");
+    s
 }
 
 /// Map the `?mode=` query value to a `ViewMode`, defaulting via the core (and
@@ -354,6 +548,84 @@ fn mode_str(m: ViewMode) -> &'static str {
         ViewMode::Hex => "hex",
         ViewMode::Table => "table",
     }
+}
+
+/// Render text/HEX lines as a two-column layout: a non-selectable gutter of
+/// right-aligned 1-based line numbers beside the content `<pre>`. The gutter is
+/// `user-select:none` (CSS) so copying the content never drags the line numbers
+/// in. Numbers track each line's original index; the gutter is right-padded to
+/// the shared `view::gutter_width` so the column is flush. Both panes share the
+/// same monospace line-height, so row N lines up with line N.
+///
+/// `target` (1-based, already `clamp_line`-bounded) is the go-to-line row: its
+/// gutter number is wrapped in `<span id="L<n>" class="cur">` so a `#L<n>` URL
+/// fragment scrolls the browser there natively (no JS), and the matching source
+/// line is wrapped in a `<span class="cur">` so the row is visibly highlighted.
+/// `None` renders a plain gutter (the un-targeted case).
+///
+/// `anchors` is the set of additional 1-based lines that get an `id="L<n>"`
+/// anchor *without* the highlight — the markdown-outline heading rows, so a
+/// `#L<line>` fragment from the outline TOC scrolls to the heading natively (no
+/// JS). The goto `target`, when set, already anchors+highlights its own row;
+/// an anchor that coincides with the target is subsumed by it (no duplicate id).
+fn gutter_html(lines: &[String], target: Option<usize>, anchors: &[usize]) -> String {
+    let gw = view::gutter_width(lines.len());
+    // Build the gutter column (numbers, newline-joined) and the content column
+    // (the lines, newline-joined + escaped) as two parallel `<pre>` blocks. Both
+    // are pre-escaped per-segment; the only raw markup injected is the static
+    // `<span>` wrappers around the (escaped) target / anchored rows.
+    let mut nums = String::new();
+    let mut src = String::new();
+    for (i, raw_line) in lines.iter().enumerate() {
+        if i > 0 {
+            nums.push('\n');
+            src.push('\n');
+        }
+        // 1-based, right-aligned to the gutter width (decimal digits).
+        let n = i + 1;
+        let label = esc(&format!("{n:>gw$}"));
+        let line = esc(raw_line);
+        if target == Some(n) {
+            // Anchor + highlight the target row. The id lives in the gutter so a
+            // `#L<n>` fragment scrolls here; both panes get the `.cur` highlight.
+            nums.push_str(&format!("<span id=\"L{n}\" class=\"cur\">{label}</span>"));
+            src.push_str(&format!("<span class=\"cur\">{line}</span>"));
+        } else if anchors.contains(&n) {
+            // A heading row from the outline: anchor (so the TOC `#L<n>` link
+            // scrolls here) but no highlight — it isn't the active goto target.
+            nums.push_str(&format!("<span id=\"L{n}\">{label}</span>"));
+            src.push_str(&line);
+        } else {
+            nums.push_str(&label);
+            src.push_str(&line);
+        }
+    }
+    format!(
+        "<div class=\"code\"><pre class=\"gutter\" aria-hidden=\"true\">{nums}</pre><pre class=\"src\">{src}</pre></div>"
+    )
+}
+
+/// Render the markdown outline as a collapsible `<nav>` table-of-contents: one
+/// `<a href="#L<line>">` per heading, indented by level via a `data-lvl` class
+/// (`lvl1`..`lvl6`). The fragment links resolve against the `id="L<line>"`
+/// anchors `gutter_html` tags on the heading rows, so clicking an entry scrolls
+/// to the heading natively (no JS). Returns `""` for an empty heading list (a
+/// non-markdown file, or one with no headings) so nothing renders.
+fn outline_html(headings: &[Heading]) -> String {
+    if headings.is_empty() {
+        return String::new();
+    }
+    let mut s = String::from("<details class=\"outline\" open><summary>outline</summary><ul>");
+    for h in headings {
+        let lvl = h.level.clamp(1, 6);
+        s.push_str(&format!(
+            "<li class=\"lvl{lvl}\"><a href=\"#L{}\">{}</a></li>",
+            h.line,
+            esc(&h.title)
+        ));
+    }
+    s.push_str("</ul></details>");
+    s
 }
 
 fn table_html(header: &[String], rows: &[Vec<String>]) -> String {
@@ -388,8 +660,34 @@ nav .dir a{{color:#0a7;font-weight:600}}\
 nav .sel{{background:#1a5fb4;border-radius:4px}} nav .sel a{{color:#fff}}\
 main{{flex:1;overflow:auto;padding:12px}}\
 .bar{{font:12px ui-monospace,Menlo,monospace;color:#666;margin:6px 0}}\
+.find{{display:flex;gap:4px;align-items:center;margin:0 0 6px;flex-wrap:wrap}}\
+.find input[type=text]{{flex:1;min-width:80px;font:12px -apple-system,Segoe UI,sans-serif;padding:3px 6px;border:1px solid #ccc;border-radius:4px}}\
+.find button{{font:11px -apple-system,Segoe UI,sans-serif;padding:3px 8px;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer}}\
+.find .clear{{font:11px -apple-system,Segoe UI,sans-serif;color:#1a5fb4;text-decoration:none}}\
+.sort{{font:11px -apple-system,Segoe UI,sans-serif;color:#888;margin:0 0 4px}}\
+.sort a{{color:#1a5fb4;margin-right:6px}} .sort b{{margin-right:6px;color:#333}}\
+.hidden-toggle{{font:11px -apple-system,Segoe UI,sans-serif;margin:0 0 8px}}\
+.hidden-toggle a{{color:#1a5fb4}}\
 .modes a,.modes b{{margin-right:10px}}\
+.outline{{margin:0 0 10px;border:1px solid #e3e3e3;border-radius:6px;padding:4px 10px;background:#fafafa}}\
+.outline summary{{cursor:pointer;font:11px -apple-system,Segoe UI,sans-serif;color:#666;user-select:none}}\
+.outline ul{{list-style:none;margin:4px 0 2px;padding:0}}\
+.outline li{{padding:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}\
+.outline a{{text-decoration:none;color:#1a5fb4}}\
+.outline .lvl1{{padding-left:0;font-weight:600}}\
+.outline .lvl2{{padding-left:14px}} .outline .lvl3{{padding-left:28px}}\
+.outline .lvl4{{padding-left:42px}} .outline .lvl5{{padding-left:56px}}\
+.outline .lvl6{{padding-left:70px}}\
+.goto{{display:flex;gap:4px;align-items:center;margin:0 0 6px;flex-wrap:wrap}}\
+.goto input[type=number]{{width:90px;font:12px -apple-system,Segoe UI,sans-serif;padding:3px 6px;border:1px solid #ccc;border-radius:4px}}\
+.goto button{{font:11px -apple-system,Segoe UI,sans-serif;padding:3px 8px;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer}}\
+.goto .jump{{font:11px -apple-system,Segoe UI,sans-serif;color:#1a5fb4;text-decoration:none}}\
 pre{{font:12px ui-monospace,Menlo,monospace;white-space:pre;overflow:auto;margin:0}}\
+.code{{display:flex;align-items:flex-start}}\
+.code pre{{line-height:1.4}}\
+.gutter{{-webkit-user-select:none;user-select:none;text-align:right;color:#999;padding-right:10px;border-right:1px solid #eee;margin-right:10px;overflow:visible;flex:none}}\
+.src{{flex:1}}\
+.code .cur{{background:#fff3b0;scroll-margin-top:12px}}\
 table{{border-collapse:collapse;font:12px ui-monospace,Menlo,monospace}}\
 th,td{{border:1px solid #ddd;padding:2px 6px;text-align:left;max-width:320px;overflow:hidden;text-overflow:ellipsis}}\
 th{{background:#eef;position:sticky;top:0}}\
@@ -426,6 +724,16 @@ fn file_name(path: &Path) -> String {
     path.file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.display().to_string())
+}
+
+/// Modification time of `meta` as whole seconds since the Unix epoch, or `None`
+/// when unavailable (platform without mtime / pre-epoch time) — fed to the
+/// shared `nav::Entry` for the `modified` sort key.
+fn mtime_secs(meta: &fs::Metadata) -> Option<u64> {
+    meta.modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
 }
 
 fn human_size(bytes: usize) -> String {
@@ -538,13 +846,21 @@ mod tests {
         fs::write(dir.join("hello.txt"), b"hello <world>\nsecond line\n").unwrap();
         fs::write(dir.join("people.csv"), b"name,age\nAlice,30\nBob,25\n").unwrap();
         fs::write(dir.join("data.bin"), [0x00u8, 0x41, 0xff]).unwrap();
+        // A markdown file with ATX headings + a fenced `#` decoy, for the outline.
+        fs::write(
+            dir.join("doc.md"),
+            b"# Title\nintro\n\n## Section A\n```\n# fenced decoy\n```\n\n## Section B\n",
+        )
+        .unwrap();
+        // A dotfile, hidden by default (revealed via `?hidden=1`).
+        fs::write(dir.join(".secret"), b"hidden\n").unwrap();
         dir
     }
 
     #[test]
     fn browse_lists_entries_with_links() {
         let dir = fixture();
-        let html = render_browse(&dir);
+        let html = render_browse(&dir, SortKey::Name, false, "");
         assert!(html.contains("hello.txt"), "{html}");
         assert!(html.contains("/browse?path="), "dir link present");
         assert!(html.contains("/view?path="), "file link present");
@@ -553,9 +869,156 @@ mod tests {
     }
 
     #[test]
+    fn browse_renders_sort_links_with_active_bold() {
+        let dir = fixture();
+        let html = render_browse(&dir, SortKey::Size, false, "");
+        // The sort bar offers all three keys; entry links carry the active key.
+        assert!(html.contains("class=\"sort\""), "sort bar present:\n{html}");
+        assert!(html.contains("<b>size</b>"), "active key is bold");
+        assert!(html.contains("&sort=name"), "name link present");
+        assert!(html.contains("&sort=modified"), "modified link present");
+        assert!(html.contains("&sort=size"), "entry links carry active sort");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn browse_sort_param_is_honored_through_route() {
+        let root = fixture().canonicalize().unwrap();
+        // ?sort=size must bold the size key (proving route → render_browse threads
+        // the param), not the default name.
+        let target = format!(
+            "GET /browse?path={}&sort=size HTTP/1.1",
+            pct_encode(&root.to_string_lossy())
+        );
+        let (status, _, body) = route(&target, &root);
+        assert!(status.starts_with("200"), "browse ok, got {status}");
+        assert!(body.contains("<b>size</b>"), "size key active via ?sort=:\n{body}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn browse_hides_dotfiles_by_default_and_offers_toggle() {
+        let dir = fixture();
+        let html = render_browse(&dir, SortKey::Name, false, "");
+        // Dotfiles suppressed; ordinary files shown; a "show hidden" link offered.
+        assert!(!html.contains(".secret"), "dotfile suppressed by default:\n{html}");
+        assert!(html.contains("hello.txt"), "ordinary file still listed");
+        assert!(html.contains("class=\"hidden-toggle\""), "toggle bar present");
+        assert!(html.contains(">show hidden</a>"), "offers to reveal dotfiles");
+        // The reveal link sets ?hidden=1.
+        assert!(html.contains("&hidden=1"), "toggle link sets hidden=1:\n{html}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn browse_with_hidden_shows_dotfiles_and_sticks_to_links() {
+        let dir = fixture();
+        let html = render_browse(&dir, SortKey::Name, true, "");
+        // Dotfile now listed; toggle flips to "hide hidden".
+        assert!(html.contains(".secret"), "dotfile revealed with show_hidden:\n{html}");
+        assert!(html.contains(">hide hidden</a>"), "toggle offers to re-hide");
+        // The entry links (e.g. the file view) thread hidden=1 so the state is
+        // sticky — clicking a file or sub-dir won't silently drop the toggle.
+        assert!(
+            html.contains("/view?path=") && html.contains("&hidden=1"),
+            "entry links carry hidden=1 so the toggle survives navigation:\n{html}"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn browse_hidden_param_is_honored_through_route() {
+        let root = fixture().canonicalize().unwrap();
+        let base = pct_encode(&root.to_string_lossy());
+        // Default route hides the dotfile.
+        let (status, _, body) = route(&format!("GET /browse?path={base} HTTP/1.1"), &root);
+        assert!(status.starts_with("200"), "browse ok, got {status}");
+        assert!(!body.contains(".secret"), "default route hides dotfiles:\n{body}");
+        // ?hidden=1 reveals it (proves route → render_browse threads the flag).
+        let (status, _, body) =
+            route(&format!("GET /browse?path={base}&hidden=1 HTTP/1.1"), &root);
+        assert!(status.starts_with("200"), "browse ok, got {status}");
+        assert!(body.contains(".secret"), "?hidden=1 reveals dotfiles:\n{body}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn browse_renders_the_quick_find_box() {
+        let dir = fixture();
+        let html = render_browse(&dir, SortKey::Name, false, "");
+        // A JS-free GET form pointed at /browse, preserving path + sort as hidden
+        // inputs, with a `filter` text field.
+        assert!(html.contains("class=\"find\""), "filter box present:\n{html}");
+        assert!(html.contains("method=\"get\"") && html.contains("action=\"/browse\""), "GET form to /browse");
+        assert!(html.contains("name=\"filter\""), "filter text input present");
+        assert!(html.contains("name=\"path\""), "path preserved as a hidden input");
+        assert!(html.contains("name=\"sort\""), "sort preserved as a hidden input");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn browse_filter_narrows_and_ranks_via_core() {
+        let dir = fixture();
+        // "hel" → only hello.txt survives (people.csv / data.bin / sub all drop).
+        let html = render_browse(&dir, SortKey::Name, false, "hel");
+        assert!(html.contains("hello.txt"), "match listed:\n{html}");
+        assert!(!html.contains("people.csv"), "non-match dropped:\n{html}");
+        assert!(!html.contains("data.bin"), "non-match dropped:\n{html}");
+        // The box shows the active needle, and a "clear" affordance appears.
+        assert!(html.contains("value=\"hel\""), "needle echoed into the box:\n{html}");
+        assert!(html.contains(">clear</a>"), "clear link offered when filtering");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn browse_filter_matches_subsequence_not_substring() {
+        let dir = fixture();
+        // "dt" is a subsequence of "data.bin" (d…t) but NOT a substring — proving
+        // the listing routes through nav::filter_entries, not a substring contains.
+        let html = render_browse(&dir, SortKey::Name, false, "dt");
+        assert!(html.contains("data.bin"), "subsequence match listed:\n{html}");
+        assert!(!html.contains("hello.txt"), "non-subsequence dropped:\n{html}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn browse_filter_param_is_honored_through_route() {
+        let root = fixture().canonicalize().unwrap();
+        let base = pct_encode(&root.to_string_lossy());
+        // ?filter=hel must narrow to hello.txt (proves route → render_browse threads
+        // the needle into read_entries' nav::filter_entries narrowing).
+        let (status, _, body) =
+            route(&format!("GET /browse?path={base}&filter=hel HTTP/1.1"), &root);
+        assert!(status.starts_with("200"), "browse ok, got {status}");
+        assert!(body.contains("hello.txt"), "?filter=hel matches hello.txt:\n{body}");
+        assert!(!body.contains("people.csv"), "?filter=hel drops people.csv:\n{body}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn browse_filter_sticks_to_sort_links() {
+        let dir = fixture();
+        let html = render_browse(&dir, SortKey::Name, false, "hel");
+        // The sort links must carry &filter=hel so re-sorting keeps the narrowing.
+        assert!(html.contains("&filter=hel"), "sort/toggle links carry the active needle:\n{html}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn browse_filter_value_is_html_escaped() {
+        let dir = fixture();
+        // A hostile needle must be escaped where it's reflected into the box value
+        // (no raw <script> survives) — the box echoes the needle via esc().
+        let html = render_browse(&dir, SortKey::Name, false, "<script>x</script>");
+        assert!(!html.contains("<script>x</script>"), "raw needle reflected:\n{html}");
+        assert!(html.contains("&lt;script&gt;"), "needle HTML-escaped in the box:\n{html}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn view_text_is_escaped() {
         let dir = fixture();
-        let html = render_view(&dir.join("hello.txt"), Some("text"));
+        let html = render_view(&dir.join("hello.txt"), Some("text"), SortKey::Name, false, None);
         assert!(html.contains("hello &lt;world&gt;"), "content HTML-escaped:\n{html}");
         assert!(html.contains("indent:"), "indent badge present");
         let _ = fs::remove_dir_all(&dir);
@@ -564,16 +1027,100 @@ mod tests {
     #[test]
     fn view_hex_uses_core() {
         let dir = fixture();
-        let html = render_view(&dir.join("data.bin"), Some("hex"));
+        let html = render_view(&dir.join("data.bin"), Some("hex"), SortKey::Name, false, None);
         assert!(html.contains("00000000"), "hex offset from core:\n{html}");
         assert!(html.contains("00 41 ff"), "hex bytes from core");
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
+    fn view_text_renders_non_selectable_line_number_gutter() {
+        let dir = fixture();
+        let html = render_view(&dir.join("hello.txt"), Some("text"), SortKey::Name, false, None);
+        // Two-column layout: a user-select:none gutter <pre> beside the content.
+        assert!(html.contains("class=\"code\""), "two-column wrapper present:\n{html}");
+        assert!(html.contains("class=\"gutter\""), "gutter column present:\n{html}");
+        assert!(html.contains("class=\"src\""), "source column present:\n{html}");
+        // Gutter carries 1-based line numbers (hello.txt has 2 content lines + a
+        // trailing empty line from the final newline → numbers 1,2,3 present).
+        assert!(html.contains(">1\n2"), "gutter numbers lines from 1:\n{html}");
+        // The content still lands in the .src pane, HTML-escaped.
+        assert!(html.contains("hello &lt;world&gt;"), "content escaped in src pane:\n{html}");
+        // The gutter is marked non-selectable in CSS (so copy skips the numbers).
+        assert!(html.contains("user-select:none"), "gutter is user-select:none:\n{html}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn gutter_width_pads_numbers_to_decimal_digits() {
+        // 12 lines → 2-digit gutter: line 1 is right-padded (" 1"), line 12 is "12".
+        let lines: Vec<String> = (1..=12).map(|i| format!("line {i}")).collect();
+        let html = gutter_html(&lines, None, &[]);
+        assert!(html.contains(" 1\n 2"), "single-digit numbers right-padded to width 2:\n{html}");
+        assert!(html.contains("12"), "two-digit number present:\n{html}");
+        let _ = lines;
+    }
+
+    #[test]
+    fn view_renders_goto_line_box_for_text() {
+        let dir = fixture();
+        let html = render_view(&dir.join("hello.txt"), Some("text"), SortKey::Name, false, None);
+        // A JS-free GET form to /view with a numeric `line` input and the path +
+        // mode preserved as hidden inputs.
+        assert!(html.contains("class=\"goto\""), "goto box present:\n{html}");
+        assert!(html.contains("action=\"/view\""), "form targets /view");
+        assert!(html.contains("name=\"line\""), "line number input present");
+        assert!(html.contains("name=\"path\""), "path preserved as hidden input");
+        assert!(html.contains("name=\"mode\""), "mode preserved as hidden input");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn view_line_param_anchors_and_highlights_target_row() {
+        let dir = fixture();
+        // hello.txt has 2 content lines + a trailing empty line. `?line=2` tags
+        // line 2 with id="L2" (the native #L2 fragment scroll target) and wraps
+        // both the gutter number and the source line in a .cur highlight span.
+        let html = render_view(&dir.join("hello.txt"), Some("text"), SortKey::Name, false, Some(2));
+        assert!(html.contains("id=\"L2\""), "target row carries the L<n> anchor:\n{html}");
+        assert!(html.contains("class=\"cur\""), "target row highlighted:\n{html}");
+        // A native fragment jump link is offered beside the box.
+        assert!(html.contains("href=\"#L2\""), "native #L2 fragment jump link:\n{html}");
+        // The box echoes the resolved line number.
+        assert!(html.contains("value=\"2\""), "line input echoes the target:\n{html}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn view_line_param_clamps_overshoot_via_core() {
+        let dir = fixture();
+        // hello.txt is 3 lines (2 + trailing empty). `?line=999` over-shoots →
+        // clamp_line pins it to line 3, so the anchor is L3 (never L999).
+        let html = render_view(&dir.join("hello.txt"), Some("text"), SortKey::Name, false, Some(999));
+        assert!(html.contains("id=\"L3\""), "over-shoot clamped to the last line:\n{html}");
+        assert!(!html.contains("id=\"L999\""), "no anchor past the last line:\n{html}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn route_line_param_is_honored_and_parsed_leniently() {
+        let root = fixture().canonicalize().unwrap();
+        let file = pct_encode(&root.join("hello.txt").to_string_lossy());
+        // ?line=2 threads through route → render_view → gutter_html as the anchor.
+        let (status, _, body) = route(&format!("GET /view?path={file}&line=2 HTTP/1.1"), &root);
+        assert!(status.starts_with("200"), "view ok, got {status}");
+        assert!(body.contains("id=\"L2\""), "?line=2 anchors line 2:\n{body}");
+        // A non-numeric line is ignored (no anchor, no panic) — lenient parse.
+        let (status, _, body) = route(&format!("GET /view?path={file}&line=abc HTTP/1.1"), &root);
+        assert!(status.starts_with("200"), "non-numeric line still 200, got {status}");
+        assert!(!body.contains("class=\"cur\""), "garbage line = no jump:\n{body}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn csv_defaults_to_table_via_core() {
         let dir = fixture();
-        let html = render_view(&dir.join("people.csv"), None);
+        let html = render_view(&dir.join("people.csv"), None, SortKey::Name, false, None);
         assert!(html.contains("<table>"), "table rendered:\n{html}");
         assert!(html.contains("<th>name</th>"), "header cell");
         assert!(html.contains("<td>Alice</td>"), "body cell");
@@ -605,6 +1152,68 @@ mod tests {
         h.join().unwrap();
         assert!(resp.starts_with("HTTP/1.1 200 OK"), "status line:\n{resp}");
         assert!(resp.contains("hello.txt"), "served the browse page");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // --- Markdown outline / TOC ---
+
+    #[test]
+    fn markdown_view_renders_outline_nav_with_fragment_links() {
+        let dir = fixture();
+        let html = render_view(&dir.join("doc.md"), Some("text"), SortKey::Name, false, None);
+        // The outline <nav> lists the three real headings as #L<line> links.
+        assert!(html.contains("class=\"outline\""), "outline block present:\n{html}");
+        assert!(html.contains(">Title</a>"), "H1 title linked:\n{html}");
+        assert!(html.contains(">Section A</a>"), "H2 title linked:\n{html}");
+        assert!(html.contains(">Section B</a>"), "second H2 linked:\n{html}");
+        // Each entry is a native fragment link to its heading line.
+        assert!(html.contains("href=\"#L1\""), "H1 → line 1 fragment link:\n{html}");
+        assert!(html.contains("href=\"#L4\""), "Section A → line 4 fragment link:\n{html}");
+        assert!(html.contains("href=\"#L9\""), "Section B → line 9 fragment link:\n{html}");
+        // The fenced `# fenced decoy` is excluded from the outline.
+        assert!(!html.contains("fenced decoy</a>"), "fenced decoy not in outline:\n{html}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn markdown_outline_anchors_heading_rows_in_the_gutter() {
+        let dir = fixture();
+        let html = render_view(&dir.join("doc.md"), Some("text"), SortKey::Name, false, None);
+        // The heading lines carry id="L<n>" anchors so the TOC fragment links
+        // resolve (the #L4 / #L9 targets exist on the page).
+        assert!(html.contains("id=\"L1\""), "line 1 anchored:\n{html}");
+        assert!(html.contains("id=\"L4\""), "line 4 anchored:\n{html}");
+        assert!(html.contains("id=\"L9\""), "line 9 anchored:\n{html}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn non_markdown_file_has_no_outline() {
+        let dir = fixture();
+        let html = render_view(&dir.join("hello.txt"), Some("text"), SortKey::Name, false, None);
+        assert!(!html.contains("class=\"outline\""), "no outline for a .txt file:\n{html}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn markdown_hex_view_has_no_outline() {
+        let dir = fixture();
+        // The outline is text-mode only — viewing the .md as hex has no source
+        // lines to anchor against, so no TOC is rendered.
+        let html = render_view(&dir.join("doc.md"), Some("hex"), SortKey::Name, false, None);
+        assert!(!html.contains("class=\"outline\""), "no outline in hex mode:\n{html}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn markdown_outline_title_is_html_escaped() {
+        let dir = fixture();
+        let path = dir.join("xss.md");
+        fs::write(&path, b"# <script>alert(1)</script>\n").unwrap();
+        let html = render_view(&path, Some("text"), SortKey::Name, false, None);
+        // A hostile heading title must be escaped where reflected into the TOC.
+        assert!(!html.contains("<script>alert(1)</script>"), "raw title reflected:\n{html}");
+        assert!(html.contains("&lt;script&gt;"), "title HTML-escaped in the outline:\n{html}");
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -696,7 +1305,8 @@ mod tests {
         // the mode match falls through to the core default, and nothing reflects
         // the raw param, so no `<script>` survives in the output.
         let dir = fixture();
-        let html = render_view(&dir.join("hello.txt"), Some("<script>alert(1)</script>"));
+        let html =
+            render_view(&dir.join("hello.txt"), Some("<script>alert(1)</script>"), SortKey::Name, false, None);
         assert!(!html.contains("<script>"), "raw <script> reflected:\n{html}");
         assert!(!html.contains("alert(1)"), "raw mode payload reflected:\n{html}");
         // Sanity: it still rendered the file as a normal text view.

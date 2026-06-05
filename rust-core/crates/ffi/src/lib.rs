@@ -84,7 +84,15 @@ pub extern "C" fn mdvcore_add(a: i32, b: i32) -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn mdvcore_force_panic() -> MdvStatus {
     ffi_guard!({
-        panic!("forced panic for FFI boundary test");
+        // The panic IS the test surface: this hook exists solely to force a
+        // panic inside `ffi_guard!` so `catch_unwind`'s panic→MdvStatus::Panic
+        // mapping can be proven (from Rust and the Swift harness). Allowed
+        // explicitly — the no-panic deny lint can't tell this apart from a real
+        // one.
+        #[allow(clippy::panic)]
+        {
+            panic!("forced panic for FFI boundary test");
+        }
     })
 }
 

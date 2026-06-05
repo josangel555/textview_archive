@@ -14,6 +14,10 @@
     clippy::multiple_unsafe_ops_per_block,
     reason = "test convenience; library surface still enforces one-op-per-block"
 )]
+#![allow(
+    clippy::panic,
+    reason = "test assertions: a contention status outside {Ok,Busy} is a genuine test failure"
+)]
 
 use super::*;
 use mdvcore_core::wire::{Snapshot, Table};

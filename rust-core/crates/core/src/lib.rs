@@ -27,6 +27,8 @@ pub mod diff;
 pub mod filter;
 pub mod hex;
 pub mod indent;
+pub mod nav;
+pub mod outline;
 pub mod session;
 pub mod trace;
 pub mod view;

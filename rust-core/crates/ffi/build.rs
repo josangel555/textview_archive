@@ -16,8 +16,17 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
-    let crate_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR set"));
-    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR set"));
+    // `CARGO_MANIFEST_DIR` / `OUT_DIR` are set by cargo for every build-script
+    // invocation, so a miss is effectively unreachable — but we degrade
+    // gracefully (warn + skip header gen, which is non-essential per the module
+    // doc) rather than `expect()`-panic, satisfying the workspace no-panic lint
+    // policy that `cargo clippy --all-targets` now enforces on build scripts too.
+    let (Ok(crate_dir), Ok(out_dir)) = (env::var("CARGO_MANIFEST_DIR"), env::var("OUT_DIR")) else {
+        println!("cargo:warning=cbindgen skipped: CARGO_MANIFEST_DIR / OUT_DIR not set");
+        return;
+    };
+    let crate_dir = PathBuf::from(crate_dir);
+    let out_dir = PathBuf::from(out_dir);
 
     // Re-run if the FFI surface or config changes.
     println!("cargo:rerun-if-changed=src/lib.rs");
