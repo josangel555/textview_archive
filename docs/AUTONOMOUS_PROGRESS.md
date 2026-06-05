@@ -146,6 +146,13 @@ build it, else hold.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-04 `ebfefe1` **institutional-knowledge docs**: LESSONS.md +111 ("Session
+  2026-06-04" — FFI template, lint-enforcement gap, one-core-three-front-ends,
+  grapheme-vs-scalar, containment patterns, redaction-before-surface, fixture
+  pid-race, deep-audit+spend, trust-fresh-state) + `docs/HANDOFF_2026-06-04.md`
+  (supersedes 06-03) + `docs/TASK_TRACKER_FEEDBACK.md` (experiential companion to
+  TASK_TRACKER_GAPS — top ask = native confidence/blocker fields; the prefix-
+  encoding tell). Doc-only, no gate impact.
 - 2026-06-04 **deep-audit shipped + top findings fixed**: workflow run
   `wf_d702368e-244` (516 agents, 74 cells) → 80 verified findings (S1:1 S2:17
   S3:47 S4:15), committed to `AUDIT_BUGS.md` + `docs/audit/AUDIT_REPORT_undated.md`.
