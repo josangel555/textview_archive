@@ -810,9 +810,12 @@ impl App {
         let trunc = if p.truncated { " · TRUNCATED" } else { "" };
         match &p.view.body {
             // Table mode renders a real ratatui Table from the core-parsed CSV.
-            ViewBody::Table { header, rows } => {
+            ViewBody::Table { header, rows, truncated } => {
+                // `trunc` = file byte-cap; `clamp` = CSV parse-level column clamp
+                // (PARSE-04) — distinct signals, surface both (TSK-155).
+                let clamp = if *truncated { " · CLAMPED" } else { "" };
                 let title = format!(
-                    " {} · table · {}×{} · {}{trunc} ",
+                    " {} · table · {}×{} · {}{trunc}{clamp} ",
                     p.name,
                     rows.len(),
                     header.len(),

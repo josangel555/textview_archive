@@ -501,7 +501,7 @@ fn content_html(file: &Path, mode_param: Option<&str>, line: Option<usize>) -> S
             let anchors: Vec<usize> = headings.iter().map(|h| h.line).collect();
             format!("{}{}", goto, gutter_html(lines, target, &anchors))
         }
-        ViewBody::Table { header, rows } => table_html(header, rows),
+        ViewBody::Table { header, rows, truncated } => table_html(header, rows, *truncated),
     };
     format!("{modes}{bar}{outline_nav}{content}")
 }
@@ -628,8 +628,18 @@ fn outline_html(headings: &[Heading]) -> String {
     s
 }
 
-fn table_html(header: &[String], rows: &[Vec<String>]) -> String {
-    let mut s = String::from("<table><thead><tr>");
+fn table_html(header: &[String], rows: &[Vec<String>], truncated: bool) -> String {
+    // PARSE-04: a clamped table (a row had more columns than the header, or the
+    // row/col caps fired) must be flagged so it isn't read as the complete data
+    // (TSK-155). Distinct from any byte-cap banner the caller may add.
+    let mut s = if truncated {
+        String::from("<div class=\"hint\">\u{26a0} Table truncated at parse time \
+            (a row exceeded the header width or the size cap fired) \u{2014} \
+            some cells were clamped.</div>")
+    } else {
+        String::new()
+    };
+    s.push_str("<table><thead><tr>");
     for h in header {
         s.push_str(&format!("<th>{}</th>", esc(h)));
     }

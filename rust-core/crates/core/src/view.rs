@@ -44,6 +44,13 @@ pub enum ViewBody {
         header: Vec<String>,
         /// Body rows.
         rows: Vec<Vec<String>>,
+        /// Parse-level truncation (PARSE-04): a CSV size cap fired during parse —
+        /// a cell exceeded `max_cell_chars`, a row exceeded `max_cells_per_row`,
+        /// or the total-cell cap was hit — so some data was dropped/clamped.
+        /// Distinct from the file byte-cap truncation the caller tracks
+        /// separately — front-ends should surface this so a clamped table is not
+        /// mistaken for the complete data. Mirrors `csv::Table::truncated`.
+        truncated: bool,
     },
 }
 
@@ -143,7 +150,7 @@ pub fn build(
         ViewMode::Hex => ViewBody::Hex(hex_lines(bytes, total_byte_count, truncated)),
         ViewMode::Table => {
             let t = csv::parse(&text);
-            ViewBody::Table { header: t.header, rows: t.rows }
+            ViewBody::Table { header: t.header, rows: t.rows, truncated: t.truncated }
         }
     };
     View { mode, body, indent, is_tabular, available_modes: available_modes(is_tabular) }
@@ -271,9 +278,27 @@ mod tests {
         assert!(v.is_tabular);
         assert_eq!(v.available_modes.first(), Some(&ViewMode::Table));
         match v.body {
-            ViewBody::Table { header, rows } => {
+            ViewBody::Table { header, rows, truncated } => {
                 assert_eq!(header, vec!["name", "age"]);
                 assert_eq!(rows, vec![vec!["Alice", "30"]]);
+                assert!(!truncated, "well-formed CSV must not report parse truncation");
+            }
+            _ => unreachable!("expected Table body"),
+        }
+    }
+
+    #[test]
+    fn build_table_propagates_parse_truncation() {
+        // A row exceeding the per-row cell cap (default 4096) makes the CSV parser
+        // flag `truncated` (PARSE-04 data loss). The view body must carry that
+        // through so front-ends can banner it (was dropped before — TSK-155).
+        let mut csv = String::from("h\n");
+        csv.push_str(&"x,".repeat(5000)); // 5000 cells > max_cells_per_row
+        csv.push('\n');
+        let v = build(csv.as_bytes(), "p.csv", csv.len(), false, ViewMode::Table);
+        match v.body {
+            ViewBody::Table { truncated, .. } => {
+                assert!(truncated, "row past the per-row cell cap must surface as parse truncation");
             }
             _ => unreachable!("expected Table body"),
         }
