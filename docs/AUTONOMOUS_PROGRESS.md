@@ -166,6 +166,17 @@ build it, else hold.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-05 **board reconciliation — `[S2]` cluster** (TSK-402 chore, heartbeat). A read-only
+  subagent reconciled all 16 still-`reported` `[S2]` audit findings against current code; I
+  hand-spot-verified the 4 highest-stakes (web `confined(root)` path-confinement, ffi Cargo.toml
+  4 no-panic denies, `FindEngine.searchBounded`→`boundedMatches(deadline)`, CSV `fieldScalarCount`).
+  **All 16 were already fixed** by the `1dbf1ca` deep-audit wave (each with an audit-referencing
+  fix + usually a regression test) but sat stale in `reported` — drove them all to `fixed` with
+  per-task evidence. Plus TSK-119 (dup of done TSK-268, URLSchemePolicy temp anchor) and TSK-177
+  (aspectFit NaN guard, already tested). **18 board tasks → `fixed` this pass; 0 `[S2]` remain
+  reported.** No code change (all pre-fixed). Confirms the staleness signal: the audit board
+  overstated remaining work; the `[S3]/[S4]` tail likely similar — next reconciliation batches
+  should sweep those (genuinely-open ones are mostly perf: HexView/MsgPackReader/CsvSession).
 - 2026-06-05 **perf wave LANDED → `main @ e83408d`** (workflow `welby3hxf`, 5 sequential
   edit-only agents in the `mdv-perf` worktree). Shipped all 5 no-dep rust-core perf wins from
   the research doc: TSK-394 dist `opt-level z→3`; TSK-395 QW-1 FFI→`snapshot_frame()` (drop
