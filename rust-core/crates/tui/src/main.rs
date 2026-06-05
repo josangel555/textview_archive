@@ -498,6 +498,23 @@ impl App {
         self.flash = None;
     }
 
+    /// Open-as: directly force the `idx`-th available view mode (0-based; the
+    /// number keys map `1`→0, `2`→1, …). A deliberate forced override versus the
+    /// `x` cycle — the web tier's `?mode=` equivalent. Out-of-range indices and a
+    /// no-op re-select of the current mode are ignored. The applied table filter
+    /// (on the Preview) survives the rebuild, so table→text→table keeps it.
+    fn set_mode(&mut self, idx: usize) {
+        if let Some(p) = &mut self.preview {
+            if let Some(&mode) = p.view.available_modes.get(idx) {
+                if mode != p.view.mode {
+                    p.view = view::build(&p.raw, &p.name, p.total, p.truncated, mode);
+                    p.scroll = 0;
+                }
+            }
+        }
+        self.flash = None;
+    }
+
     fn scroll_by(&mut self, delta: isize) {
         if let Some(p) = &mut self.preview {
             let max = p.content_len().saturating_sub(1);
@@ -769,6 +786,8 @@ impl App {
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.enter(),
             KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') => self.go_parent(),
             KeyCode::Char('x') => self.cycle_mode(),
+            // Open-as: 1-9 force the file's Nth available mode directly.
+            KeyCode::Char(c @ '1'..='9') => self.set_mode(c as usize - '1' as usize),
             KeyCode::Char('n') => self.show_gutter = !self.show_gutter,
             KeyCode::Char('s') => self.cycle_sort(),
             KeyCode::Char('.') => self.toggle_hidden(),
@@ -1175,7 +1194,7 @@ impl App {
         } else if self.outline_active() {
             "↑/↓ pick heading · ↵ jump to it · ESC / o close outline"
         } else {
-            "↑/↓ move · ↵ open · ⌫ up · x mode · n nums · s sort · . hidden · f find · / table-filter · : goto · o outline · q quit"
+            "↑/↓ move · ↵ open · ⌫ up · x cycle mode · 1-9 open-as · n nums · s sort · . hidden · f find · / table-filter · : goto · o outline · q quit"
         };
         let line = Line::from(vec![
             Span::styled(" mdv-tui ", Style::new().fg(Color::Black).bg(Color::Cyan).bold()),
@@ -1398,6 +1417,26 @@ mod tests {
         app.cycle_mode();
         let text = render(&mut app);
         assert!(text.contains("· text ·"), "cycled to text:\n{text}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn open_as_number_keys_force_view_mode() {
+        let dir = fixture_dir();
+        let mut app = App::new(dir.clone());
+        select_name(&mut app, "people.csv");
+        app.enter(); // Table mode; available_modes = [Table, Text, Hex]
+        assert!(render(&mut app).contains("· table ·"), "opens as table");
+        // Number keys force the file's Nth available mode directly (open-as).
+        app.on_key(KeyCode::Char('2'));
+        assert!(render(&mut app).contains("· text ·"), "2 forces text");
+        app.on_key(KeyCode::Char('3'));
+        assert!(render(&mut app).contains("· hex ·"), "3 forces hex");
+        app.on_key(KeyCode::Char('1'));
+        assert!(render(&mut app).contains("· table ·"), "1 forces table");
+        // Out-of-range (only 3 modes) is a no-op, not a crash.
+        app.on_key(KeyCode::Char('9'));
+        assert!(render(&mut app).contains("· table ·"), "out-of-range 9 ignored");
         let _ = fs::remove_dir_all(&dir);
     }
 

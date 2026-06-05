@@ -1355,6 +1355,21 @@ mod tests {
     }
 
     #[test]
+    fn mode_param_forces_view_mode_over_default() {
+        let dir = fixture();
+        let csv = dir.join("people.csv"); // defaults to Table
+        // `?mode=text` forces the text body (no <table>) — open-as override.
+        let t = render_view(&csv, Some("text"), SortKey::Name, false, None);
+        assert!(!t.contains("<table>"), "text override suppresses the table:\n{t}");
+        assert!(t.contains("<b>text</b>"), "text is the active mode:\n{t}");
+        // `?mode=hex` forces the hex dump.
+        let h = render_view(&csv, Some("hex"), SortKey::Name, false, None);
+        assert!(h.contains("<b>hex</b>"), "hex override active:\n{h}");
+        assert!(!h.contains("<table>"), "hex override suppresses the table:\n{h}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn csv_table_filter_global_and_per_column_scoping() {
         let dir = fixture(); // people.csv = name,age / Alice,30 / Bob,25
         let csv = dir.join("people.csv");
