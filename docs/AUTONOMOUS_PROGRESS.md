@@ -166,6 +166,17 @@ build it, else hold.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-05 **DEEP-AUDIT BOARD FULLY RECONCILED — only 1 cosmetic finding left.** Reconciled the
+  `[S4]` tier (subagent + hand spot-checks): 11/12 already-fixed → `fixed` (TSK-182/183/184/185/186/
+  187/189/191/192/193/196), plus closed 2 stale `[S1]` duplicates (TSK-116/117 — mdv-web DNS-rebind
+  Host guard, dup of completed TSK-266, verified live). The ONE genuinely-open item is **TSK-195**
+  (`[S4]` .tsx native-highlight grammar — the **4th half-landed fix**: `tree_sitter_tsx` exported +
+  keepalive in wrapper.c, but no `.tsx` case in `GrammarLoader.Grammar`/`HighlightLanguage`, so the
+  symbol is unreachable). Left `reported` with a precise wiring plan — DEFERRED as lowest-severity
+  cosmetic (tsx ⊃ ts) needing grammar-resource bundling, not worth a rushed runtime-risky edit.
+  **Net across the audit: S1/S2/S3 = 0 reported, S4 = 1 reported (cosmetic).** The reconciliation's
+  signature catch: **4 "half-landed" fixes** (TSK-136 MCP symlink, TSK-137 walkthrough root, TSK-148
+  LSP closeFile, TSK-195 tsx) — mechanism added, call site never wired; 3/4 now fully fixed.
 - 2026-06-05 **`[S3]` tier CLEARED → S1/S2/S3 audit findings all done** (heartbeat reconciliation +
   fixes). Reconciled 37 already-fixed `[S3]` findings to `fixed` (evidence-gated), then fixed the
   4 genuinely-open + the 3 "half-landed" gaps the sweep surfaced — where the audit-fix wave added
