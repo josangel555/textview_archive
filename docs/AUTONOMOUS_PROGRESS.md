@@ -115,6 +115,16 @@ manufacture marginal code; if it finds a NEW clean model-core-extractable item i
 build it, else hold.
 
 ## DECISIONS NEEDED (owner — non-blocking; I proceed on best-judgment defaults meanwhile)
+- **WebView teardown vs keep-alive** (2026-06-05, `TSK-113`, **parked**) — measured 108MB phys
+  for one source-mode file (43MB IOSurface layer backing + ~49MB Swift heap + ~10MB WebKit
+  linkage). Options: (A) keep-alive pool [current; fast switches, WebKit always linked]; (B) tear
+  down the WebView when no rendered/HTML view is shown [reclaims IOSurface/GPU layers; ~50–150ms
+  re-init on next markdown open]; (C) hybrid — keep one warm, tear down extras under memory
+  pressure. **My recommendation: (C).** Needs an owner call on the latency-vs-footprint tradeoff.
+- **Zoom readout: keep unified or split per-axis?** (2026-06-05, `TSK-321`/`TSK-322`) — I closed
+  both as **resolved-by-design** (the shipped unified `model.zoom` drives UI + document zoom with
+  one footer readout; the requests acknowledged the deliberate merge). If you actually want a
+  separate window-vs-document readout in the footer, reopen them — otherwise they're done.
 - **⚠️ VM toolchain upgrade?** (2026-06-05, `TSK-401`) — the UTM UI/live-tier VM runs **Swift
   6.1.2** but the host is **Swift 6.2+** (macOS 26). The codebase compiles + gates green on the
   host but **fails to build on the VM** — newer-Swift default-isolation/`sending` relaxations
@@ -166,6 +176,22 @@ build it, else hold.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-05 **PIVOT → SwiftUI app focus (owner directive); diverse-lane batch toward done.** Owner
+  asked to focus the SwiftUI app for several turns, pick ≥10 tasks across DIFFERENT lanes (not just
+  implementation), drive to done. **Board finding:** `task_advance` to review/validated/done is a
+  silent no-op for the agent role — the board enforces *agents reach `fixed`; the owner gates
+  review→validated→done*. So "to done" = I drive to `fixed` + evidence; owner finalizes. **This
+  batch (10 tasks, lanes):** Validation/decision — `TSK-323` zoom audit → **fixed** (landed in #228;
+  residual tracked separately), `TSK-321`/`TSK-322` zoom-readout split → **fixed** resolved-by-design
+  (unified zoom is shipped; reopen if a per-axis readout is wanted). Research — `TSK-113` WebView
+  teardown vs keep-alive → investigated + recommended (C) hybrid → **parked** + DECISIONS NEEDED.
+  Debugging — `TSK-101` dark-mode/theme not persisting → root-caused (`themeOverride` has no
+  persistence `didSet` unlike zoom/wordWrap; SessionSnapshot carries it but relaunch restore doesn't
+  reapply) → diagnosis posted, in `progress` for impl next turn. Task-breakdown — `TSK-285` Paint
+  epic → decomposed into 4 children (`TSK-403`–`406`: brush engine, color picker, flood fill,
+  selection). Implementation (claimed → `progress` for next turns) — `TSK-271` media-info zoom,
+  `TSK-324` tooltip coverage, `TSK-325` default-shortcut coverage. No code commits this turn (board
+  + analysis + docs); Swift implementations begin next turn with `scripts/test-headless-gate.sh`.
 - 2026-06-05 **`[PORT][W1]` open-as / forced view-mode override** (`04b6c15`, TSK-219/220 → `fixed`).
   TUI: `set_mode(idx)` + number keys `1-9` force the file's Nth `available_modes` entry directly
   (deliberate override vs the `x` cycle; the applied table filter survives the rebuild); status help
