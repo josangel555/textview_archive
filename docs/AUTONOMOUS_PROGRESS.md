@@ -176,6 +176,17 @@ build it, else hold.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-05 **SwiftUI: default keyboard shortcuts for git-history + folder-stats commands (TSK-325 → `fixed`, `4c931b8`).**
+  The command catalog makes every descriptor bindable/rebindable, but three user-facing actions shipped
+  `defaultShortcut: nil` so they were keyboard-unreachable out of the box. Assigned conflict-free defaults:
+  `view.folderStats` ⌘⌃I, `git.fileHistory` ⌘⌥⇧H, `git.repoHistory` ⌘⌥⇧L — each keystroke verified free
+  against the full used-combo set, and `shortcutMap()` routes each to its own id (the map is last-wins with
+  intentional collisions, so a strict no-conflict test would be wrong — the new test asserts only that these
+  three *route to themselves*). The remaining nil descriptors were left intentionally default-less
+  (`file.clearRecents`/`find.renderedShow`/`nav.*` duplicate existing bindings; `sidebar.*` are contextual
+  tree-nav; `debug.*` are gated; `window.zoom` is an AppKit standard) but stay user-bindable via the editor.
+  **Validated:** new `test_addedDefaultShortcuts_arePresentAndConflictFree` + `scripts/test-headless-gate.sh`
+  **PASSED** (GATE_EXIT=0, tier-enforcement OK) on the committed commit.
 - 2026-06-05 **SwiftUI: image/media file-info respects document zoom (TSK-271 → `fixed`, `0f5d33d`).**
   The native-preview file-info chrome was hard-wired at fixed point sizes, ignoring the unified zoom:
   image overlay (dimensions / sibling counter / zoom %), the unsupported-file card, AND the dedicated
