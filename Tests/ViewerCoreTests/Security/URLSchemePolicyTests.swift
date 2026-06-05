@@ -79,4 +79,13 @@ final class URLSchemePolicyTests: XCTestCase {
         let sibling = home + "_evilsuffix/file"
         XCTAssertNil(URLSchemePolicy.containedPath(sibling))
     }
+
+    func test_tempSiblingDirectoryPrefix_rejected() {
+        // `<temp>_evil/...` shares a string-prefix with the per-user temp dir
+        // but is NOT inside it. The unanchored `hasPrefix(temp)` arm used to
+        // admit it (AUDIT S2 — temp does not end in `/`); the anchored
+        // `== temp || hasPrefix(temp + "/")` rejects it.
+        let temp = FileManager.default.temporaryDirectory.standardizedFileURL.path
+        XCTAssertNil(URLSchemePolicy.containedPath(temp + "_evil/loot.md"))
+    }
 }

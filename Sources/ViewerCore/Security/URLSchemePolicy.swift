@@ -52,9 +52,12 @@ public enum URLSchemePolicy {
         let p = url.path
         if p == home { return url }
         if p.hasPrefix(home + "/") { return url }
-        if p == temp || p.hasPrefix(temp + "/") || p.hasPrefix(temp) {
-            // `temp` already ends in `/` on macOS; the `hasPrefix(temp)`
-            // arm covers that case without forcing a separator dance.
+        // ANCHORED prefix only. `temp` does NOT end in `/`
+        // (`temporaryDirectory.path` = `/var/folders/<rand>/T`), so a bare
+        // `hasPrefix(temp)` would also admit a user-writable SIBLING like
+        // `/var/folders/<rand>/T-attacker/loot` — outside the intended jail
+        // (AUDIT S2). `== temp || hasPrefix(temp + "/")` is exhaustive + safe.
+        if p == temp || p.hasPrefix(temp + "/") {
             return url
         }
         return nil

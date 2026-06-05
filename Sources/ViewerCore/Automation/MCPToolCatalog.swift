@@ -324,18 +324,24 @@ public enum MCPToolCatalog {
         let expanded = (path as NSString).expandingTildeInPath
         let url = URL(fileURLWithPath: expanded).standardizedFileURL
         let fm = FileManager.default
-        guard fm.fileExists(atPath: url.path) else {
-            throw MCPError.notFound("path does not exist: \(url.path)")
-        }
         let home = URL(fileURLWithPath: NSHomeDirectory()).standardizedFileURL.path
-        // Allow paths under the user's home, plus the per-user temp
-        // dir (also under /var/folders, owned by user) which is where
-        // `mdv -` stashes stdin and where tests stage scratch files.
+        // Allow paths under the user's home, plus the per-user temp dir (also
+        // under /var/folders, owned by user) which is where `mdv -` stashes
+        // stdin and where tests stage scratch files. ANCHORED prefixes only:
+        // `temp` does NOT end in `/`, so a bare `hasPrefix(temp)` would admit a
+        // user-writable SIBLING like `/var/folders/<rand>/T-attacker/loot`
+        // (AUDIT S3). Containment is checked BEFORE existence so an out-of-jail
+        // path can't be probed via the differential notFound/permissionDenied
+        // error (existence oracle).
         let temp = fm.temporaryDirectory.standardizedFileURL.path
-        if !url.path.hasPrefix(home + "/") && url.path != home
-            && !url.path.hasPrefix(temp) {
+        let underHome = url.path == home || url.path.hasPrefix(home + "/")
+        let underTemp = url.path == temp || url.path.hasPrefix(temp + "/")
+        guard underHome || underTemp else {
             throw MCPError.permissionDenied(
                 "path is outside the user's home directory: \(url.path)")
+        }
+        guard fm.fileExists(atPath: url.path) else {
+            throw MCPError.notFound("path does not exist: \(url.path)")
         }
         return url
     }
