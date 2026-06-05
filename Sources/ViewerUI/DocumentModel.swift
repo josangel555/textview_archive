@@ -4072,6 +4072,10 @@ public final class DocumentModel: ObservableObject {
         // deterministic on every focus change regardless of view
         // realization. Self-gating + idempotent (see warmLSPForCurrentFile).
         warmLSPForCurrentFile()
+        // LSP-S3 (TSK-148): symmetric to warmLSPForCurrentFile — drop LSP
+        // per-file state for files no longer open in any tab, so the pool's
+        // Swift-side maps don't grow unbounded across a long session.
+        reapClosedLSPFiles()
     }
 
     /// URL the LSP pool was last warmed for. Dedupes the
@@ -4082,6 +4086,12 @@ public final class DocumentModel: ObservableObject {
     /// which `ensureOpened`'s own per-(key,file) idempotency already makes
     /// a no-op — so we never need to clear it.
     private var lastWarmedLSPURL: URL?
+
+    /// URLs we've driven `ensureOpened` for and not yet closed. The reap
+    /// diff (`reapClosedLSPFiles`) subtracts the live open-tab set from this
+    /// to find files to `closeFile`, and removes them here — so this set
+    /// stays bounded by the open tabs, never the lifetime file count.
+    private var lspWarmedURLs: Set<URL> = []
 
     /// Spawn / open the language server for the currently-focused file,
     /// independent of whether the Outline sidebar section is realized.
@@ -4102,9 +4112,27 @@ public final class DocumentModel: ObservableObject {
               case .loaded(let file) = currentState else { return }
         guard lastWarmedLSPURL != url else { return }
         lastWarmedLSPURL = url
+        lspWarmedURLs.insert(url)
         let pool = self.lspPool
         let text = file.contents
         Task { try? await pool.ensureOpened(fileURL: url, text: text) }
+    }
+
+    /// Symmetric counterpart to `warmLSPForCurrentFile` (LSP-S3 / TSK-148):
+    /// drop the pool's per-file maps for files no longer open in any tab.
+    /// Level-triggered — diffs the warmed set against the authoritative
+    /// `tabCoordinator.openTabURLs`, so it covers every close path (single,
+    /// close-others, close-to-right) uniformly and is robust to call timing.
+    /// `closeFile` is safe and idempotent: a later re-open re-`didOpen`s the
+    /// file (see `LSPPool.closeFile` docs), so over-eager reaping only costs a
+    /// re-open, never correctness. Bounds `lspWarmedURLs` to the open tabs.
+    private func reapClosedLSPFiles() {
+        let stillOpen = tabCoordinator.openTabURLs
+        let closed = lspWarmedURLs.subtracting(stillOpen)
+        guard !closed.isEmpty else { return }
+        lspWarmedURLs.subtract(closed)
+        let pool = self.lspPool
+        Task { for url in closed { await pool.closeFile(fileURL: url) } }
     }
 }
 
