@@ -176,6 +176,15 @@ build it, else hold.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-05 **SwiftUI: theme override now persists (TSK-101 → `fixed`, `40c7b5b`).** First Swift-app
+  *implementation* of the focus wave. Settings → Appearance → Theme (Follow System / Xcode Light /
+  Xcode Dark) bound to `DocumentModel.themeOverride`, which was in-memory only → reverted to Follow
+  System (dark) on reload. Fix mirrors the `zoom`/`sourceWordWrap` globals: new
+  `PreferencesStore.themeOverrideRaw` (String? raw; unknown/stale → nil = Follow System), a `didSet`
+  write-through, and an init restore alongside `zoom`. Sessions restore deliberately leaves
+  `themeOverride` untouched (owner-locked #184) so PreferencesStore is authoritative. **Validated:**
+  3 new PreferencesStore round-trip tests + `scripts/test-headless-gate.sh` **PASSED** (GATE_EXIT=0,
+  3753 tests, tier-enforcement OK) on the committed commit. (Live relaunch = owner spot-check.)
 - 2026-06-05 **PIVOT → SwiftUI app focus (owner directive); diverse-lane batch toward done.** Owner
   asked to focus the SwiftUI app for several turns, pick ≥10 tasks across DIFFERENT lanes (not just
   implementation), drive to done. **Board finding:** `task_advance` to review/validated/done is a
