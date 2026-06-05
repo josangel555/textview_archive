@@ -552,6 +552,9 @@ struct SidebarView: View {
                 if hovering { NSCursor.pointingHand.push() }
                 else { NSCursor.pop() }
             }
+            .helpInfo(title: filesExpanded ? "Collapse Files" : "Expand Files",
+                      description: "Show or hide the file tree")
+            .accessibilityIdentifier("mdv.sidebar.filesHeader")
             // Trailing controls cluster: sort + recency menus, lock, pin.
             // The two menus' VALUE LABELS ("Name", "Modified") collapse to
             // icon-only when the sidebar is too narrow to fit them; the
