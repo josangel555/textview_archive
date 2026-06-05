@@ -200,20 +200,12 @@ impl CsvSession {
             .is_none_or(|c| c.for_version != self.version);
         if needs_recompute {
             // Cache the surviving indices only; rows are projected on demand.
-            // Empty-query fast path is computed here so we never trigger
-            // `filter::apply`'s full-table `rows.clone()` for the (default)
-            // unfiltered view — we discard those rows anyway. Non-empty queries
-            // still go through `filter::apply` so the match semantics stay in
-            // one place; its cloned rows are discarded (the surviving subset is
-            // typically a small fraction of the table).
-            let indices = if self.query.is_empty() {
-                (0..self.table.rows.len())
-                    .map(|i| u32::try_from(i).unwrap_or(u32::MAX))
-                    .collect()
-            } else {
-                let (indices, _rows) = filter::apply(&self.table, &self.query);
-                indices
-            };
+            // `filter::matching_indices` runs the match loop WITHOUT cloning any
+            // row — both the (default) empty-query identity path and the
+            // non-empty filter path go through it, so the match semantics live
+            // in one place and the session never materializes a row clone it
+            // would immediately discard.
+            let indices = filter::matching_indices(&self.table, &self.query);
             self.cached = Some(CachedView {
                 for_version: self.version,
                 indices,

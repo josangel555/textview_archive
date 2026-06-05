@@ -573,8 +573,12 @@ pub unsafe extern "C" fn mdvcore_session_snapshot(
             return MdvStatus::NullArg;
         };
         h.with(|session| {
-            let snap = session.snapshot();
-            match wire::encode_frame(&snap) {
+            // Borrow-based, already-framed path: serializes the visible rows
+            // straight from borrows of the table (no per-pull owned-row clone).
+            // Byte-identical to `wire::encode_frame(&session.snapshot())` — the
+            // owned `snapshot()` is retained for non-FFI callers/tests; parity
+            // is pinned by `crates/core/tests/…_snapshot_frame.rs`.
+            match session.snapshot_frame() {
                 Ok(frame) => {
                     // SAFETY: out_buf validated non-null above.
                     unsafe { *out_buf = MdvBuf::from_vec(frame) };

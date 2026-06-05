@@ -97,4 +97,5 @@ strip = true
 # package links THIS profile so the panic→error path is exercised end-to-end.
 [profile.dist]
 inherits = "release"
+opt-level = 3        # speed; measured ~0 net exec-size cost after dead-strip (overrides release's "z")
 panic = "unwind"

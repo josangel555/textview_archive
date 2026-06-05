@@ -114,24 +114,46 @@ pub fn decode<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> Result<T, WireFault
 
 /// Encode a value to a single length-prefixed frame: `u32` LE length + body.
 ///
+/// Serializes the MessagePack body **directly into one buffer** behind a 4-byte
+/// length placeholder, then backfills the `u32` LE prefix in place — avoiding
+/// the encode-then-copy of a separate body `Vec`. The body bytes are produced
+/// by the same `Serializer` config as [`encode`] / `to_vec_named`
+/// (`Serializer::new(..).with_struct_map()` is the exact equivalent of
+/// `to_vec_named`'s `RuntimeConfig::new(StructMapConfig::new(..))`), so the
+/// output is byte-identical to the previous encode-and-prefix path.
+///
 /// # Errors
 /// Returns [`WireFault::Encode`] on serialization failure, or
 /// [`WireFault::Framing`] if the encoded body exceeds [`MAX_FRAME_LEN`].
 pub fn encode_frame<T: Serialize>(value: &T) -> Result<Vec<u8>, WireFault> {
-    let body = encode(value)?;
-    if body.len() > MAX_FRAME_LEN {
+    // Reserve a 4-byte placeholder for the length prefix; the body is appended
+    // after it by the serializer (`Vec<u8>: io::Write` appends).
+    let mut buf: Vec<u8> = vec![0u8; 4];
+    value
+        .serialize(&mut rmp_serde::Serializer::new(&mut buf).with_struct_map())
+        .map_err(|e| WireFault::Encode(e.to_string()))?;
+
+    // Body length is the buffer minus the 4-byte prefix. `checked_sub` keeps the
+    // no-panic policy intact even though the prefix is always present.
+    let body_len = buf
+        .len()
+        .checked_sub(4)
+        .ok_or_else(|| WireFault::Framing("frame buffer shorter than length prefix".to_string()))?;
+    if body_len > MAX_FRAME_LEN {
         return Err(WireFault::Framing(format!(
-            "frame body {} exceeds max {MAX_FRAME_LEN}",
-            body.len()
+            "frame body {body_len} exceeds max {MAX_FRAME_LEN}"
         )));
     }
     // u32 cast is safe: bounded by MAX_FRAME_LEN above.
-    let len = u32::try_from(body.len())
+    let len = u32::try_from(body_len)
         .map_err(|_| WireFault::Framing("frame length overflow".to_string()))?;
-    let mut out = Vec::with_capacity(4 + body.len());
-    out.extend_from_slice(&len.to_le_bytes());
-    out.extend_from_slice(&body);
-    Ok(out)
+
+    // Backfill the prefix via a CHECKED slice write — no indexing/slicing panic.
+    let prefix = buf
+        .get_mut(..4)
+        .ok_or_else(|| WireFault::Framing("frame buffer missing length prefix slot".to_string()))?;
+    prefix.copy_from_slice(&len.to_le_bytes());
+    Ok(buf)
 }
 
 /// Decode a single length-prefixed frame produced by [`encode_frame`].
@@ -177,6 +199,75 @@ mod tests {
             rows: vec![vec!["1".into(), "2".into()], vec!["3".into(), "4".into()]],
             truncated: false,
         }
+    }
+
+    /// The OLD encode_frame implementation: encode body via `to_vec_named`,
+    /// then build a second `Vec` of `[u32 LE len][body]`. Kept here as the
+    /// byte-identity oracle for the single-allocation rewrite.
+    fn legacy_encode_frame<T: Serialize>(value: &T) -> Vec<u8> {
+        let body = rmp_serde::to_vec_named(value).unwrap();
+        assert!(body.len() <= MAX_FRAME_LEN);
+        let len = u32::try_from(body.len()).unwrap();
+        let mut out = Vec::with_capacity(4 + body.len());
+        out.extend_from_slice(&len.to_le_bytes());
+        out.extend_from_slice(&body);
+        out
+    }
+
+    #[test]
+    fn single_alloc_frame_is_byte_identical_to_legacy() {
+        // Pin byte-for-byte equality with the old encode-then-prefix path across
+        // every wire type so the perf rewrite is provably semantics-preserving.
+        let table = sample_table();
+        assert_eq!(
+            encode_frame(&table).unwrap(),
+            legacy_encode_frame(&table),
+            "Table frame diverged from legacy bytes"
+        );
+
+        let snapshot = Snapshot {
+            header: vec!["a".into(), "b".into()],
+            indices: vec![0, 2, 5],
+            rows: vec![vec!["x".into(), "y".into()], vec!["z".into(), "w".into()]],
+            total_rows: 9,
+            query: "q".into(),
+            version: 42,
+            truncated: true,
+        };
+        assert_eq!(
+            encode_frame(&snapshot).unwrap(),
+            legacy_encode_frame(&snapshot),
+            "Snapshot frame diverged from legacy bytes"
+        );
+
+        let err = WireError {
+            code: -7,
+            message: "boom".into(),
+            data: vec![("k".into(), "v".into())],
+        };
+        assert_eq!(
+            encode_frame(&err).unwrap(),
+            legacy_encode_frame(&err),
+            "WireError frame diverged from legacy bytes"
+        );
+
+        // Empty + scalar shapes also exercised.
+        let empty = Table {
+            delimiter: ",".into(),
+            header: vec![],
+            rows: vec![],
+            truncated: false,
+        };
+        assert_eq!(encode_frame(&empty).unwrap(), legacy_encode_frame(&empty));
+    }
+
+    #[test]
+    fn frame_prefix_matches_body_length() {
+        let frame = encode_frame(&sample_table()).unwrap();
+        let mut len_bytes = [0u8; 4];
+        len_bytes.copy_from_slice(&frame[..4]);
+        let declared = u32::from_le_bytes(len_bytes) as usize;
+        assert_eq!(declared, frame.len() - 4);
     }
 
     #[test]
