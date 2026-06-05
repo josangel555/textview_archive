@@ -146,6 +146,17 @@ build it, else hold.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-05 **backlog audit + tasked bulk-file**: backlog-audit workflow (wf_332394c9,
+  40 agents, resumed after a null-stitch crash) classified all **373** braindump items
+  vs `main @ 1dbf1ca` — implemented 211 · partial 62 · not-impl 62 · ambiguous 21 ·
+  contradicting 6 · duplicate 6 · not-needed 4 · not-possible 1. Wrote
+  `docs/FEATURE_BACKLOG_AUDIT_2026-06-05.md` (the four owner-requested buckets +
+  duplicates, each with a one-line why). **Filed the whole backlog onto the `tasked`
+  board** (HTTP/curl+jq, TSK-### ids — NOT Claude Code's built-in tasks, per the owner
+  correction): 80 audit findings + 62 SwiftUI→TUI/Web port + 62 not-implemented + 62
+  partial = 266 new tasks (TSK-117..). Board 15→281. `task_create_many` not yet deployed,
+  so looped `task_create`. (The ~204 mis-filed Claude-Code tasks #266-#423 are now a
+  redundant mirror — can be purged.)
 - 2026-06-04 `1dbf1ca` **deep-audit fixes LANDED on main** (verify-and-fix workflow
   wf_1ccf773f-919, 133 agents): fixed the S2/S3/S4 findings still present at HEAD
   across ViewerCore/ViewerUI/ViewerKit/RustCore + rust-core + scripts (85 files,
