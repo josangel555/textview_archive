@@ -115,6 +115,13 @@ manufacture marginal code; if it finds a NEW clean model-core-extractable item i
 build it, else hold.
 
 ## DECISIONS NEEDED (owner — non-blocking; I proceed on best-judgment defaults meanwhile)
+- **⚠️ Monthly spend limit hit (2026-06-04)** — the `deep-audit` workflow consumed
+  ~26M subagent tokens (516 agents) and tripped the account's monthly spend limit
+  (surfaced in the final report agent's output). Further LARGE multi-agent
+  workflows (deep-audit/giga-uat/deep-research) should wait until the limit
+  resets or the cap is raised at claude.ai/settings/usage. Solo heartbeat work is
+  unaffected. Default meanwhile: keep doing bounded single-agent items; don't
+  launch another fan-out workflow.
 - **WebView/memory lever** — parked on the board as TSK-113 (default: trim compositing layers + measure).
 - **Rust slice #6 (FuzzyMatcher) — grapheme dep?** Its `matchedIndices` index into
   Swift's `[Character]` (grapheme clusters); Rust `str` only iterates Unicode
@@ -139,6 +146,15 @@ build it, else hold.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-04 **deep-audit shipped + top findings fixed**: workflow run
+  `wf_d702368e-244` (516 agents, 74 cells) → 80 verified findings (S1:1 S2:17
+  S3:47 S4:15), committed to `AUDIT_BUGS.md` + `docs/audit/AUDIT_REPORT_undated.md`.
+  Fixed the filesystem-containment cluster: `c0bc6dc` mdv-web S1 (Host-allowlist
+  anti-rebinding + non-GET 405 + `confined()` path jail; the audit caught a real
+  arbitrary-file-read in code from this same session) + `40fa688` URLSchemePolicy
+  (S2) & MCPToolCatalog (S3) temp-sibling-prefix bypass (anchored prefix +
+  containment-before-existence). +regression tests, headless gate green.
+  Remaining ~76 findings → triage task #265. **Spend limit hit — see DECISIONS NEEDED.**
 - 2026-06-04 **Rust-core front-ends ("one core, three front-ends")**: ratatui TUI
   `mdv-tui` (`01ac648` MVP + `1cd0887` CSV table) and std-only HTTP web `mdv-web`
   (`d042c67`) — file nav + text/HEX/CSV-table via the core, both validated
