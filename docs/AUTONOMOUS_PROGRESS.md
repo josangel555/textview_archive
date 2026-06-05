@@ -115,6 +115,14 @@ manufacture marginal code; if it finds a NEW clean model-core-extractable item i
 build it, else hold.
 
 ## DECISIONS NEEDED (owner — non-blocking; I proceed on best-judgment defaults meanwhile)
+- **Rust perf: `memchr` dep?** (2026-06-05 research, `docs/research/rust-perf-2026-06-05/`)
+  The one dep worth approving — SIMD substring search (NEON on arm64) serving TWO hot paths
+  (`filter` scan + `hex::hex_search`), likely several× on large buffers. Tiny, ubiquitous
+  (BurntSushi), maintained; unsafe is internal+audited so core stays `#![forbid(unsafe_code)]`.
+  **My default if unanswered: hold** (the no-dep quick wins already get filter sub-frame).
+  NOTE: the **no-dep** headline win — `dist` profile `opt-level = "z"`→`3` (measured 1.6–4×
+  across all hot paths, ~0 exec-size cost after dead-strip) — needs NO approval; it's queued
+  as the top perf task to apply right after the W1 port wave lands.
 - **⚠️ Monthly spend limit hit (2026-06-04)** — the `deep-audit` workflow consumed
   ~26M subagent tokens (516 agents) and tripped the account's monthly spend limit
   (surfaced in the final report agent's output). Further LARGE multi-agent
@@ -146,6 +154,15 @@ build it, else hold.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-05 **rust-perf research** (background agent, measured A/B benches on rustc 1.92/arm64)
+  → `docs/research/rust-perf-2026-06-05/README.md`. Headline: `dist` ships `opt-level="z"`
+  (size) but should be `3` (speed) — **1.6–4× across every hot path** (hex-render 4.0×,
+  wire-encode 3.4×, diff 2.9×, CSV 1.6×) at **~0 exec-size cost** after dead-strip (measured:
+  322,152→318,536 B linked+stripped). No-dep quick wins: wire FFI snapshot to `snapshot_frame()`
+  (borrow, not the cloning `snapshot()`); kill the discarded full-table clone in `session::ensure_cached`;
+  no-alloc ASCII filter match (3.4×); single-alloc `wire::encode_frame`. One dep ask (`memchr`)
+  in DECISIONS NEEDED. **Deferred — apply as a perf wave right after W1 lands** (W1 is editing
+  rust-core concurrently). Filed on the tasked board.
 - 2026-06-05 **backlog audit + tasked bulk-file**: backlog-audit workflow (wf_332394c9,
   40 agents, resumed after a null-stitch crash) classified all **373** braindump items
   vs `main @ 1dbf1ca` — implemented 211 · partial 62 · not-impl 62 · ambiguous 21 ·
