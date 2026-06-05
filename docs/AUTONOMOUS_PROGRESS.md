@@ -166,6 +166,17 @@ build it, else hold.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-05 **`[S3]` tier CLEARED → S1/S2/S3 audit findings all done** (heartbeat reconciliation +
+  fixes). Reconciled 37 already-fixed `[S3]` findings to `fixed` (evidence-gated), then fixed the
+  4 genuinely-open + the 3 "half-landed" gaps the sweep surfaced — where the audit-fix wave added
+  the *mechanism* but never wired the load-bearing call site, so the vuln/leak stayed live while
+  reading as fixed: **TSK-136** (`e2b94a7`, MCP `validatedExistingURL` resolves symlinks — HOME/temp
+  jail escape), **TSK-137** (`07240ad`, walkthrough drop boundary injects `trustedRoot`),
+  **TSK-155** (`24c544f`, `ViewBody::Table.truncated` propagated to tui/web banners),
+  **TSK-148** (`dd0f27f`, `LSPPool.closeFile` wired into the tab-close path via a level-triggered
+  `openTabURLs` diff). Each swift/rust-gated on the committed commit. **0 `[S2]`/`[S3]` reported
+  remain.** LESSON: a "half-landed fix" (API/param/helper added, call site not wired) reads as done
+  at title level — only evidence-based reconciliation catches it. `[S4]` tier next.
 - 2026-06-05 **board reconciliation — `[S2]` cluster** (TSK-402 chore, heartbeat). A read-only
   subagent reconciled all 16 still-`reported` `[S2]` audit findings against current code; I
   hand-spot-verified the 4 highest-stakes (web `confined(root)` path-confinement, ffi Cargo.toml
