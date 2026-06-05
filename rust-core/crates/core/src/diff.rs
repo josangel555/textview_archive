@@ -658,6 +658,23 @@ mod tests {
     }
 
     #[test]
+    fn coord_comma_led_and_empty_start_omit_empty() {
+        // Comma-led / empty-start / empty-middle coordinates. The parser mirrors
+        // Swift `split(separator: ",")` (omittingEmptySubsequences: true): empty
+        // pieces are dropped, so the first NON-empty piece is the start and the
+        // next is the count. The Swift diff parser was removed in the rust-core
+        // migration (slice #3), so this impl is now the single source of truth —
+        // these assertions lock the degenerate shapes the audit flagged (TSK-154)
+        // so the behavior can't silently drift.
+        assert_eq!(parse_coord(",3"), (3, 1)); // leading empty dropped → "3" is the start
+        assert_eq!(parse_coord(",5"), (5, 1)); // same: empty start, "5" becomes start
+        assert_eq!(parse_coord("5,"), (5, 1)); // trailing empty dropped → count defaults to 1
+        assert_eq!(parse_coord(","), (0, 1)); // all empty → start 0, count 1
+        assert_eq!(parse_coord(""), (0, 1)); // empty input → both default
+        assert_eq!(parse_coord("3,,5"), (3, 5)); // empty middle dropped → start 3, count 5
+    }
+
+    #[test]
     fn no_newline_marker() {
         // No trailing '\n' so the marker is the last line (a trailing newline
         // would split into an extra empty context line — faithful to Swift's
