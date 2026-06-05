@@ -176,6 +176,23 @@ build it, else hold.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-05 **SwiftUI: default-plain-text-for-readable-ASCII — pure layer (TSK-332 → still `progress`, `427fe3c`).**
+  Investigated: `controller.open` ALREADY returns `.loaded(text)` for unknown-extension readable-ASCII files
+  (the text loader only rejects on NUL bytes), so the content loads fine — the HEX default is purely a
+  view-mode-resolution gap. `defaultMode` already carried an `isRenderableText` hint (prior turn) but
+  `availableModes` did NOT and no call site feeds the hint. **Shipped the SAFE half:** added
+  `isRenderableText` to `availableModes` so it upgrades the unknown/binary no-native-preview set from
+  `[.hex]` to `[.source, .hex]` in lockstep with `defaultMode` — closing a latent picker↔pane desync (a
+  hinted `.source` default with `.source` absent from the available set). Additive (nil default → behavior
+  unchanged), 3 new headless tests, gate **PASSED** (3760 tests). **Deferred half (live-needed):** thread a
+  real "current doc loaded as text despite a non-text category" signal from `DocumentModel` into the open
+  path + the `ContentView` picker. That edit sits in the carry-mode/picker desync zone (#212/#217/#219 were
+  live-only bugs), so it must land on a screen-unlocked / live-smoke turn, not headless-only. Tracked on
+  the board (TSK-332, left `progress` with a comment spelling out the remaining wiring) — not owner-gated,
+  just self-deferred to a live turn. (Build gotcha: adding a defaulted param to a public func changed its
+  mangled symbol; SwiftPM
+  didn't auto-recompile callers that omit the new arg → stale-symbol link error. Fix: `touch` all
+  `availableModes(` callers to force recompile. Worth remembering for any defaulted-param API change.)
 - 2026-06-05 **SwiftUI: natural next/prev-tab keybindings (TSK-328 → `fixed`, `5a3e184`).**
   The Next/Prev Tab commands existed but shipped non-natural defaults (⌘⌥arrow). Changed the SHIPPED
   DEFAULTS to the natural macOS combos — **Next Tab = ⌘⇧]**, **Previous Tab = ⌘⇧[** (Safari/Terminal/Notes
