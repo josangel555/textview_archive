@@ -166,6 +166,19 @@ build it, else hold.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-05 **`[PORT][W1]` CSV table filtering shipped to BOTH front-ends** (`1acd42c`, TSK-203/204 →
+  `fixed`). Global + per-column (`col:term`). Reused the EXISTING `mdvcore_core::filter` module
+  (case-insensitive, Unicode-correct, no-panic) instead of re-implementing — added rows-based
+  `matching_indices_in`/`apply_rows` (the `wire::Table` entry points now delegate) + a shared
+  `view::table_query` that parses `col:term` (header-name match → column scope) vs a global any-cell
+  substring. **TUI**: filter state lives on the per-file `Preview` (so `content_len`/scroll stay
+  correct and reset per file) — `/` opens a live-narrowing prompt, ↵ applies, ESC cancels; title
+  shows needle + N/M count. **Web**: sticky `?tfilter=` GET box + count; `render_view_filtered`
+  threads the needle (kept `render_view` as a no-filter wrapper → zero churn to the 13 existing test
+  call sites). **Validated:** `cargo clippy --workspace` clean + `cargo test --workspace` 275 pass
+  (new TUI snapshot test + web global/col-scoping test) + `rust-core-gate.sh` GATE_EXIT=0. Remaining
+  fuzzy `[W1]` ports: in-file find 197/198, hex search 205/206; open-as 219/220 (web done via
+  `?mode=`, TUI cycle-only).
 - 2026-06-05 **`[PORT][W1]` image preview shipped to BOTH front-ends** (`c5700a0`, TSK-225/226 →
   `fixed`). New dependency-free, panic-free `mdvcore_core::image` module (PNG/JPEG/GIF/BMP/WEBP
   header parse → pixel dimensions, every byte access bounds-checked). `view.rs` gains
