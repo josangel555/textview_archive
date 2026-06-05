@@ -9,7 +9,7 @@
 //! shaping lives here, composing [`crate::csv`], [`crate::hex`], and
 //! [`crate::indent`]. A front-end becomes a thin renderer over [`View`].
 
-use crate::{csv, hex, image, indent};
+use crate::{csv, filter, hex, image, indent};
 
 /// Bytes per HEX row (the project-wide default).
 const HEX_WIDTH: usize = 16;
@@ -243,6 +243,26 @@ pub fn build(
     View { mode, body, indent, kind, available_modes: available_modes(kind) }
 }
 
+/// Build a [`filter::Query`] from a user filter string against `header`. A
+/// `col:term` form (where `col` matches a header name, case-insensitively)
+/// scopes the match to that column; otherwise the whole (trimmed) string is a
+/// global any-cell substring. Empty/blank → matches everything. Shared by both
+/// front-ends so the TUI prompt and the web `?tfilter=` box behave identically.
+#[must_use]
+pub fn table_query(header: &[String], raw: &str) -> filter::Query {
+    let q = raw.trim();
+    if q.is_empty() {
+        return filter::Query::empty();
+    }
+    if let Some((col, term)) = q.split_once(':') {
+        let col_lc = col.trim().to_ascii_lowercase();
+        if let Some(idx) = header.iter().position(|h| h.trim().to_ascii_lowercase() == col_lc) {
+            return filter::Query { text: term.trim().to_string(), scope: filter::Scope::Column(idx) };
+        }
+    }
+    filter::Query { text: q.to_string(), scope: filter::Scope::All }
+}
+
 /// Classify a unified-diff line by its leading characters (see [`DiffLineKind`]).
 /// File-header checks precede the bare `+`/`-` checks so `+++`/`--- ` headers
 /// aren't mistaken for added/removed lines.
@@ -338,6 +358,26 @@ mod tests {
         assert_eq!(classify("a.jpeg"), FileKind::Image);
         assert_eq!(classify("a.txt"), FileKind::Plain);
         assert_eq!(classify("patch"), FileKind::Plain);
+    }
+
+    #[test]
+    fn table_query_parses_global_and_per_column() {
+        let header = vec!["name".to_string(), "city".to_string()];
+        // Empty → match-all.
+        assert!(table_query(&header, "  ").is_empty());
+        // Plain string → global (any-cell) substring.
+        let g = table_query(&header, "par");
+        assert_eq!(g.text, "par");
+        assert_eq!(g.scope, filter::Scope::All);
+        // `col:term` with a known header (case-insensitive) → column-scoped.
+        let c = table_query(&header, "City: paris");
+        assert_eq!(c.text, "paris");
+        assert_eq!(c.scope, filter::Scope::Column(1));
+        // `col:term` where `col` is NOT a header → treated as a global substring
+        // (the literal "foo:bar"), not a broken column filter.
+        let u = table_query(&header, "foo:bar");
+        assert_eq!(u.text, "foo:bar");
+        assert_eq!(u.scope, filter::Scope::All);
     }
 
     #[test]

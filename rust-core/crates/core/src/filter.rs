@@ -58,8 +58,17 @@ impl Query {
 /// match loop never duplicates the (possibly multi-MB) body.
 #[must_use]
 pub fn matching_indices(table: &Table, query: &Query) -> Vec<u32> {
+    matching_indices_in(&table.rows, query)
+}
+
+/// Like [`matching_indices`] but over a bare row set — for callers (the
+/// front-end view-model) that hold `header`/`rows` directly without a wire
+/// [`Table`]. [`matching_indices`] delegates here so the match semantics live in
+/// exactly one place.
+#[must_use]
+pub fn matching_indices_in(rows: &[Vec<String>], query: &Query) -> Vec<u32> {
     if query.is_empty() {
-        return (0..table.rows.len())
+        return (0..rows.len())
             .map(|i| u32::try_from(i).unwrap_or(u32::MAX))
             .collect();
     }
@@ -88,7 +97,7 @@ pub fn matching_indices(table: &Table, query: &Query) -> Vec<u32> {
         }
     };
 
-    for (i, row) in table.rows.iter().enumerate() {
+    for (i, row) in rows.iter().enumerate() {
         let matched = match &query.scope {
             Scope::All => row.iter().any(|cell| cell_matches(cell)),
             Scope::Column(c) => row.get(*c).is_some_and(|cell| cell_matches(cell)),
@@ -129,12 +138,18 @@ fn ascii_contains_ignore_case(haystack: &[u8], needle: &[u8]) -> bool {
 /// [`matching_indices`] directly to skip the row clones.
 #[must_use]
 pub fn apply(table: &Table, query: &Query) -> (Vec<u32>, Vec<Vec<String>>) {
-    let indices = matching_indices(table, query);
-    let rows = indices
-        .iter()
-        .filter_map(|&i| table.rows.get(i as usize).cloned())
-        .collect();
-    (indices, rows)
+    apply_rows(&table.rows, query)
+}
+
+/// Like [`apply`] but over a bare row set — for the front-end view-model, which
+/// holds `header`/`rows` directly without a wire [`Table`]. Returns the surviving
+/// `(indices, rows)`; `indices` are the original body-row indices (parallel to
+/// the returned rows).
+#[must_use]
+pub fn apply_rows(rows: &[Vec<String>], query: &Query) -> (Vec<u32>, Vec<Vec<String>>) {
+    let indices = matching_indices_in(rows, query);
+    let out = indices.iter().filter_map(|&i| rows.get(i as usize).cloned()).collect();
+    (indices, out)
 }
 
 #[cfg(test)]

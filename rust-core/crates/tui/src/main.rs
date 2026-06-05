@@ -33,6 +33,7 @@ use ratatui::backend::TestBackend;
 
 use mdvcore_core::nav::{self, SortKey};
 use mdvcore_core::outline::{self, Heading};
+use mdvcore_core::filter;
 use mdvcore_core::view::{self, DiffLineKind, FileKind, View, ViewBody, ViewMode};
 
 /// Max bytes read into a preview (keeps the TUI snappy; larger files truncate).
@@ -111,18 +112,41 @@ struct Preview {
     kind: FileKind,
     view: View,
     scroll: usize,
+    /// Applied CSV table-filter needle (`""` = no filter). A `col:term` form
+    /// scopes to a column; otherwise it's a global any-cell substring (shared
+    /// `view::table_query`). Only meaningful in `Table` mode. Lives on the
+    /// Preview so it resets per file and so `content_len`/scroll stay correct.
+    table_filter: String,
+    /// `Some` while the table-filter prompt is open and capturing keys; holds
+    /// the live (uncommitted) needle so results update as you type. `None` = the
+    /// prompt is closed and `table_filter` (the committed needle) is in effect.
+    table_filter_editing: Option<String>,
 }
 
 impl Preview {
-    /// Scrollable item count for the current mode (lines, or table rows).
+    /// Scrollable item count for the current mode (lines, table rows, or the
+    /// FILTERED table-row count when a CSV filter is active).
     fn content_len(&self) -> usize {
         match &self.view.body {
             ViewBody::Text(l) | ViewBody::Hex(l) => l.len(),
-            ViewBody::Table { rows, .. } => rows.len(),
+            ViewBody::Table { header, rows, .. } => self.filtered_table_indices(header, rows).len(),
             ViewBody::Diff(lines) => lines.len(),
             // The image card is a fixed panel, not a scrollable list.
             ViewBody::Image(_) => 0,
         }
+    }
+
+    /// The effective table-filter needle: the live prompt text while editing,
+    /// else the committed `table_filter`.
+    fn table_needle(&self) -> &str {
+        self.table_filter_editing.as_deref().unwrap_or(&self.table_filter)
+    }
+
+    /// Original-row indices that survive the active filter (no row cloning), via
+    /// the shared `view::table_query` + `filter::matching_indices_in`.
+    fn filtered_table_indices(&self, header: &[String], rows: &[Vec<String>]) -> Vec<u32> {
+        let query = view::table_query(header, self.table_needle());
+        filter::matching_indices_in(rows, &query)
     }
 }
 
@@ -445,7 +469,17 @@ impl App {
                 // same path the web front-end uses.
                 let kind = view::classify(&name);
                 let v = view::build(&raw, &name, total, truncated, view::default_mode(kind));
-                self.preview = Some(Preview { name, total, truncated, raw, kind, view: v, scroll: 0 });
+                self.preview = Some(Preview {
+                    name,
+                    total,
+                    truncated,
+                    raw,
+                    kind,
+                    view: v,
+                    scroll: 0,
+                    table_filter: String::new(),
+                    table_filter_editing: None,
+                });
                 self.flash = None;
                 self.outline = None; // a stale outline belongs to the old file
                 self.status = format!("opened {}", path.display());
@@ -538,6 +572,69 @@ impl App {
         let max_scroll = len.saturating_sub(1);
         p.scroll = line0.saturating_sub(half).min(max_scroll);
         self.flash = Some(line0);
+    }
+
+    // MARK: - CSV table filter (shared `view::table_query` + `filter`)
+
+    /// Whether the table-filter prompt is open (capturing keys).
+    fn table_filtering(&self) -> bool {
+        self.preview.as_ref().is_some_and(|p| p.table_filter_editing.is_some())
+    }
+
+    /// Open the table-filter prompt (Table mode only), seeding it with the
+    /// currently-applied needle so re-opening lets you edit it. A no-op with a
+    /// status hint when the current view isn't a table.
+    fn open_table_filter(&mut self) {
+        let is_table = self.preview.as_ref().is_some_and(|p| p.view.mode == ViewMode::Table);
+        if !is_table {
+            self.status = "filter: switch to table view first (x)".into();
+            return;
+        }
+        if let Some(p) = &mut self.preview {
+            if p.table_filter_editing.is_none() {
+                p.table_filter_editing = Some(p.table_filter.clone());
+            }
+        }
+    }
+
+    /// Commit the prompt: the live needle becomes the applied filter; scroll
+    /// resets to the top of the narrowed rows.
+    fn commit_table_filter(&mut self) {
+        if let Some(p) = &mut self.preview {
+            if let Some(needle) = p.table_filter_editing.take() {
+                p.table_filter = needle;
+                p.scroll = 0;
+            }
+        }
+    }
+
+    /// Cancel the prompt, reverting to the previously-applied filter (live edits
+    /// discarded).
+    fn cancel_table_filter(&mut self) {
+        if let Some(p) = &mut self.preview {
+            p.table_filter_editing = None;
+            p.scroll = 0;
+        }
+    }
+
+    /// Append a character to the live needle (results re-filter as you type).
+    fn table_filter_push(&mut self, c: char) {
+        if let Some(p) = &mut self.preview {
+            if let Some(n) = &mut p.table_filter_editing {
+                n.push(c);
+                p.scroll = 0;
+            }
+        }
+    }
+
+    /// Delete the last character of the live needle.
+    fn table_filter_backspace(&mut self) {
+        if let Some(p) = &mut self.preview {
+            if let Some(n) = &mut p.table_filter_editing {
+                n.pop();
+                p.scroll = 0;
+            }
+        }
     }
 
     // MARK: - Markdown outline overlay (shared `outline::headings`)
@@ -659,6 +756,11 @@ impl App {
         if self.outline_active() {
             return self.on_key_outline(code);
         }
+        // The table-filter prompt captures text the same way — runs before the
+        // normal keymap so typed needle chars don't fire command keys.
+        if self.table_filtering() {
+            return self.on_key_table_filter(code);
+        }
         let page = self.content_height.max(1) as isize;
         match code {
             KeyCode::Char('q') | KeyCode::Esc => return true,
@@ -672,6 +774,7 @@ impl App {
             KeyCode::Char('.') => self.toggle_hidden(),
             KeyCode::Char('f') => self.open_filter(),
             KeyCode::Char(':') => self.open_goto(),
+            KeyCode::Char('/') => self.open_table_filter(),
             KeyCode::Char('o') => self.toggle_outline(),
             KeyCode::Char('g') => self.scroll_to(true),
             KeyCode::Char('G') => self.scroll_to(false),
@@ -692,6 +795,20 @@ impl App {
             KeyCode::Enter => self.commit_goto(),
             KeyCode::Backspace => self.goto_backspace(),
             KeyCode::Char(c) => self.goto_push(c),
+            _ => {}
+        }
+        false
+    }
+
+    /// Key handling while the table-filter prompt is open. Never quits (`q`/`Esc`
+    /// close/cancel the prompt rather than the app). Printable chars extend the
+    /// needle (live re-filter); Backspace trims; Enter commits; ESC cancels.
+    fn on_key_table_filter(&mut self, code: KeyCode) -> bool {
+        match code {
+            KeyCode::Esc => self.cancel_table_filter(),
+            KeyCode::Enter => self.commit_table_filter(),
+            KeyCode::Backspace => self.table_filter_backspace(),
+            KeyCode::Char(c) => self.table_filter_push(c),
             _ => {}
         }
         false
@@ -817,18 +934,42 @@ impl App {
                 // `trunc` = file byte-cap; `clamp` = CSV parse-level column clamp
                 // (PARSE-04) — distinct signals, surface both (TSK-155).
                 let clamp = if *truncated { " · CLAMPED" } else { "" };
-                let title = format!(
-                    " {} · table · {}×{} · {}{trunc}{clamp} ",
-                    p.name,
-                    rows.len(),
-                    header.len(),
-                    human_size(p.total),
-                );
+                // Apply the active CSV filter (shared core); project the surviving
+                // rows without cloning the full body. `column_widths` uses the FULL
+                // rows so columns don't jitter as the filter narrows the set.
+                let shown_idx = p.filtered_table_indices(header, rows);
+                let shown: Vec<&Vec<String>> =
+                    shown_idx.iter().filter_map(|&i| rows.get(i as usize)).collect();
+                let needle = p.table_needle();
+                let title = if p.table_filter_editing.is_some() {
+                    format!(
+                        " {} · table · filter: {needle}▏ · {}/{} rows (↵ apply · ESC cancel) ",
+                        p.name,
+                        shown.len(),
+                        rows.len(),
+                    )
+                } else if !needle.is_empty() {
+                    format!(
+                        " {} · table · filter \"{needle}\" · {}/{} rows · {}{trunc}{clamp} ",
+                        p.name,
+                        shown.len(),
+                        rows.len(),
+                        human_size(p.total),
+                    )
+                } else {
+                    format!(
+                        " {} · table · {}×{} · {}{trunc}{clamp} ",
+                        p.name,
+                        rows.len(),
+                        header.len(),
+                        human_size(p.total),
+                    )
+                };
                 let widths = column_widths(header, rows);
                 let header_row = Row::new(header.iter().map(|h| Cell::from(h.clone())))
                     .style(Style::new().fg(Color::Cyan).bold());
-                let start = p.scroll.min(rows.len().saturating_sub(1));
-                let body: Vec<Row> = rows
+                let start = p.scroll.min(shown.len().saturating_sub(1));
+                let body: Vec<Row> = shown
                     .iter()
                     .skip(start)
                     .take(inner_h.saturating_sub(1).max(1))
@@ -1027,12 +1168,14 @@ impl App {
         // needle text — show the prompt-specific bindings so the help isn't a lie.
         let help = if self.filtering() {
             "type to filter · ↑/↓ move · ↵ open top hit · ⌫ delete · ESC clear"
+        } else if self.table_filtering() {
+            "type to filter rows (col:term scopes a column) · ↵ apply · ⌫ delete · ESC cancel"
         } else if self.goto_active() {
             "type a line number · ↵ jump · ⌫ delete · ESC cancel"
         } else if self.outline_active() {
             "↑/↓ pick heading · ↵ jump to it · ESC / o close outline"
         } else {
-            "↑/↓ move · ↵ open · ⌫ up · x hex · n nums · s sort · . hidden · f find · : goto · o outline · g/G top/bot · q quit"
+            "↑/↓ move · ↵ open · ⌫ up · x mode · n nums · s sort · . hidden · f find · / table-filter · : goto · o outline · q quit"
         };
         let line = Line::from(vec![
             Span::styled(" mdv-tui ", Style::new().fg(Color::Black).bg(Color::Cyan).bold()),
@@ -1255,6 +1398,51 @@ mod tests {
         app.cycle_mode();
         let text = render(&mut app);
         assert!(text.contains("· text ·"), "cycled to text:\n{text}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn table_filter_narrows_rows_and_scopes_columns() {
+        let dir = fixture_dir();
+        let mut app = App::new(dir.clone());
+        select_name(&mut app, "people.csv");
+        app.enter(); // Table mode: Alice,30,NYC / Bob,25,LA
+        // Render wide so the long content-pane title (filter + count) never clips.
+        let wide = |a: &mut App| a.snapshot(200, 24).expect("snapshot render");
+        // `/` opens the prompt; typing a global needle narrows live.
+        app.on_key(KeyCode::Char('/'));
+        assert!(app.table_filtering(), "filter prompt open");
+        for c in "Alice".chars() {
+            app.on_key(KeyCode::Char(c));
+        }
+        // Assert on the city-column cells (NYC/LA) — they only appear in body
+        // rows, never in the filter-prompt title echo, so they're unambiguous.
+        let out = wide(&mut app);
+        assert!(out.contains("NYC"), "Alice's row (NYC) kept:\n{out}");
+        assert!(!out.contains("LA"), "Bob's row (LA) filtered out:\n{out}");
+        assert!(out.contains("filter:"), "title shows the live filter prompt:\n{out}");
+        // Enter commits; the prompt closes but the filter persists.
+        app.on_key(KeyCode::Enter);
+        assert!(!app.table_filtering(), "prompt closed after Enter");
+        let committed = wide(&mut app);
+        assert!(committed.contains("NYC") && !committed.contains("LA"), "applied filter persists:\n{committed}");
+        // Re-open, delete to empty, commit → the full table returns.
+        app.on_key(KeyCode::Char('/'));
+        for _ in 0..10 {
+            app.on_key(KeyCode::Backspace);
+        }
+        app.on_key(KeyCode::Enter);
+        let full = wide(&mut app);
+        assert!(full.contains("NYC") && full.contains("LA"), "empty needle restores all rows:\n{full}");
+        // Column-scoped `city:Alice` matches nothing — "Alice" is in the name
+        // column, not city — so no body rows survive (NYC/LA both gone).
+        app.on_key(KeyCode::Char('/'));
+        for c in "city:Alice".chars() {
+            app.on_key(KeyCode::Char(c));
+        }
+        let scoped = wide(&mut app);
+        assert!(!scoped.contains("NYC") && !scoped.contains("LA"), "city-scoped Alice matches no rows:\n{scoped}");
+        assert!(scoped.contains("0/2 rows"), "count shows zero matches:\n{scoped}");
         let _ = fs::remove_dir_all(&dir);
     }
 

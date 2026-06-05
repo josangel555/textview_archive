@@ -25,6 +25,7 @@ use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 use std::{fs, thread};
 
+use mdvcore_core::filter;
 use mdvcore_core::image::{self, ImageInfo};
 use mdvcore_core::nav::{self, SortKey};
 use mdvcore_core::outline::{self, Heading};
@@ -214,10 +215,21 @@ fn route(req_line: &str, root: &Path) -> (&'static str, &'static str, String) {
                 // so the browser scrolls to it. Parsed leniently — a non-numeric
                 // value just means "no jump".
                 let line = q.get("line").and_then(|s| s.parse::<usize>().ok());
+                // `?tfilter=<needle>` filters CSV table rows (global, or `col:term`
+                // for a single column) via the shared `view::table_query` + core
+                // `filter`. Ignored for non-table bodies.
+                let tfilter = q.get("tfilter").map(String::as_str).unwrap_or("");
                 (
                     "200 OK",
                     HTML,
-                    render_view(&f, q.get("mode").map(String::as_str), sort, show_hidden, line),
+                    render_view_filtered(
+                        &f,
+                        q.get("mode").map(String::as_str),
+                        sort,
+                        show_hidden,
+                        line,
+                        tfilter,
+                    ),
                 )
             }
             None => ("404 Not Found", TEXT, "path is outside the served root (or missing)".into()),
@@ -262,6 +274,20 @@ fn render_view(
     show_hidden: bool,
     line: Option<usize>,
 ) -> String {
+    render_view_filtered(file, mode, sort, show_hidden, line, "")
+}
+
+/// `render_view` plus the active CSV table-filter needle (`?tfilter=`), threaded
+/// to `content_html`. The no-filter case is the common one, so `render_view`
+/// wraps this with an empty needle.
+fn render_view_filtered(
+    file: &Path,
+    mode: Option<&str>,
+    sort: SortKey,
+    show_hidden: bool,
+    line: Option<usize>,
+    tfilter: &str,
+) -> String {
     let parent = file.parent().unwrap_or(file);
     let name = file_name(file);
     // The file view's nav column lists the parent directory unfiltered — the
@@ -270,7 +296,7 @@ fn render_view(
     page(
         &name,
         &nav_html(parent, Some(&name), sort, show_hidden, ""),
-        &content_html(file, mode, line),
+        &content_html(file, mode, line, tfilter),
     )
 }
 
@@ -441,7 +467,7 @@ fn nav_html(dir: &Path, selected: Option<&str>, sort: SortKey, show_hidden: bool
     s
 }
 
-fn content_html(file: &Path, mode_param: Option<&str>, line: Option<usize>) -> String {
+fn content_html(file: &Path, mode_param: Option<&str>, line: Option<usize>, tfilter: &str) -> String {
     let (raw, truncated, total) = match read_capped(file, PREVIEW_CAP) {
         Ok(x) => x,
         Err(e) => return format!("<p class=\"hint\">cannot read: {}</p>", esc(&e.to_string())),
@@ -502,7 +528,15 @@ fn content_html(file: &Path, mode_param: Option<&str>, line: Option<usize>) -> S
             let anchors: Vec<usize> = headings.iter().map(|h| h.line).collect();
             format!("{}{}", goto, gutter_html(lines, target, &anchors))
         }
-        ViewBody::Table { header, rows, truncated } => table_html(header, rows, *truncated),
+        ViewBody::Table { header, rows, truncated } => {
+            // Apply the active CSV filter (shared `view::table_query` + core
+            // `filter`); a `col:term` needle scopes to a column, else global. The
+            // filter box rides above the table and is "sticky" via `?tfilter=`.
+            let query = view::table_query(header, tfilter);
+            let (_, shown) = filter::apply_rows(rows, &query);
+            let box_html = table_filter_box(&href, mode_str(v.mode), tfilter, shown.len(), rows.len());
+            format!("{}{}", box_html, table_html(header, &shown, *truncated))
+        }
         ViewBody::Diff(lines) => diff_html(lines),
         ViewBody::Image(info) => image_html(&name, &raw, *info, truncated),
     };
@@ -635,6 +669,29 @@ fn outline_html(headings: &[Heading]) -> String {
     s
 }
 
+/// The CSV table-filter box: a JS-free GET form that reloads `/view` with
+/// `?tfilter=<needle>`, carrying the active path + mode as hidden fields so the
+/// filter is "sticky". Shows the surviving/total row count and a clear link when
+/// a filter is active. `href` is the percent-encoded path (as used by `goto_box`).
+fn table_filter_box(href: &str, mode: &str, tfilter: &str, shown: usize, total: usize) -> String {
+    let mut s = String::from("<form class=\"find\" method=\"get\" action=\"/view\">");
+    s.push_str(&format!("<input type=\"hidden\" name=\"path\" value=\"{}\">", esc(&pct_decode(href))));
+    s.push_str(&format!("<input type=\"hidden\" name=\"mode\" value=\"{mode}\">"));
+    s.push_str(&format!(
+        "<input type=\"text\" name=\"tfilter\" value=\"{}\" placeholder=\"filter rows (col:term)\u{2026}\">",
+        esc(tfilter)
+    ));
+    s.push_str("<button type=\"submit\">filter</button>");
+    if !tfilter.is_empty() {
+        s.push_str(&format!(
+            "<a class=\"clear\" href=\"/view?path={href}&mode={mode}\">clear</a>\
+             <span class=\"count\">{shown}/{total} rows</span>"
+        ));
+    }
+    s.push_str("</form>");
+    s
+}
+
 fn table_html(header: &[String], rows: &[Vec<String>], truncated: bool) -> String {
     // PARSE-04: a clamped table (a row had more columns than the header, or the
     // row/col caps fired) must be flagged so it isn't read as the complete data
@@ -754,6 +811,7 @@ main{{flex:1;overflow:auto;padding:12px}}\
 .find input[type=text]{{flex:1;min-width:80px;font:12px -apple-system,Segoe UI,sans-serif;padding:3px 6px;border:1px solid #ccc;border-radius:4px}}\
 .find button{{font:11px -apple-system,Segoe UI,sans-serif;padding:3px 8px;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer}}\
 .find .clear{{font:11px -apple-system,Segoe UI,sans-serif;color:#1a5fb4;text-decoration:none}}\
+.find .count{{font:11px ui-monospace,Menlo,monospace;color:#888;margin-left:4px}}\
 .sort{{font:11px -apple-system,Segoe UI,sans-serif;color:#888;margin:0 0 4px}}\
 .sort a{{color:#1a5fb4;margin-right:6px}} .sort b{{margin-right:6px;color:#333}}\
 .hidden-toggle{{font:11px -apple-system,Segoe UI,sans-serif;margin:0 0 8px}}\
@@ -1294,6 +1352,25 @@ mod tests {
         assert_eq!(base64_encode(b"foob"), "Zm9vYg==");
         assert_eq!(base64_encode(b"fooba"), "Zm9vYmE=");
         assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
+    }
+
+    #[test]
+    fn csv_table_filter_global_and_per_column_scoping() {
+        let dir = fixture(); // people.csv = name,age / Alice,30 / Bob,25
+        let csv = dir.join("people.csv");
+        // Global substring: any cell containing "Alice".
+        let g = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "Alice");
+        assert!(g.contains("class=\"find\""), "filter box present:\n{g}");
+        assert!(g.contains("<td>Alice</td>"), "Alice row kept:\n{g}");
+        assert!(!g.contains("<td>Bob</td>"), "Bob filtered out:\n{g}");
+        assert!(g.contains("1/2 rows"), "match count shown:\n{g}");
+        // Column-scoped `age:Alice` matches NOTHING — "Alice" is in the name
+        // column, not age — proving the scope restricts the search (global did
+        // match it above).
+        let c = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "age:Alice");
+        assert!(!c.contains("<td>Alice</td>"), "age-scoped search excludes the name col:\n{c}");
+        assert!(c.contains("0/2 rows"), "no rows match age:Alice:\n{c}");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
