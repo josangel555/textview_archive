@@ -1597,6 +1597,20 @@ already done. Web-research agents need `agentType: 'general-purpose'`
 together without much contention. Each Workflow has its own concurrency
 cap (~min(16, cores-2)).
 
+**Gotcha — don't gate a TORN tree (2026-06-05 perf wave).** A worktree
+mid-run is a moving target: sequential edit-only agents write
+incrementally, so `git diff`/`git status` taken before the workflow's
+completion notification can show only a *prefix* of the final change. The
+perf wave bit this — I inspected `mdv-perf` (4 files, `filter.rs` +120, no
+`wire.rs`), ran all three gates on that snapshot, then `git add -A`
+committed a tree that had since grown (`wire.rs` +109, `filter.rs` +250
+after two more agents finished). The gate never saw the committed code; I
+only noticed because the `git merge --ff-only` diff-stat listed `wire.rs`.
+**Rule: gate the COMMITTED commit, not a live worktree snapshot.** Either
+wait for the `<task-notification … completed>` before gating, or — safest —
+commit first and re-run the full gate against that exact tree. Re-gating a
+committed artifact is cheap insurance; a half-gated commit on `main` is not.
+
 **Scale note.** The audit was ~6.5M output tokens. Justified for a real
 pre-launch audit; do NOT reach for a 47-agent fan-out for routine work.
 

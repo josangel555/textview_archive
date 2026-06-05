@@ -154,6 +154,20 @@ build it, else hold.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-05 **perf wave LANDED → `main @ e83408d`** (workflow `welby3hxf`, 5 sequential
+  edit-only agents in the `mdv-perf` worktree). Shipped all 5 no-dep rust-core perf wins from
+  the research doc: TSK-394 dist `opt-level z→3`; TSK-395 QW-1 FFI→`snapshot_frame()` (drop
+  owned per-pull row clone); TSK-396 QW-2 `filter::matching_indices` (no discarded clone in
+  `session::ensure_cached`); TSK-397 QW-3 no-alloc ASCII filter (+ Unicode-parity tests);
+  TSK-398 QW-4 single-alloc `wire::encode_frame`. **Validated:** `rust-core-gate.sh` (181
+  tests, clippy no-panic) + `build-rust-core.sh` (dist staticlib) + `test-headless-gate.sh`
+  (3750 tests, no heavy tier) all green on committed `main`. All 5 board tasks driven
+  `reported→fixed`. **GOTCHA caught:** my first gate ran on a TORN tree — I inspected the
+  worktree (`git diff`: 4 files, `filter.rs` +120, no `wire.rs`) while agents were still
+  writing; by commit the tree had grown (`wire.rs` +109, `filter.rs` +250). Spotted it in the
+  ff-merge diff-stat and **re-gated the committed artifact**. Lesson → LESSONS.md + memory:
+  don't gate a workflow's worktree until its completion notification arrives; always re-gate
+  the committed commit, not a mid-run snapshot. Worktree reaped, branch deleted.
 - 2026-06-05 **rust-perf research** (background agent, measured A/B benches on rustc 1.92/arm64)
   → `docs/research/rust-perf-2026-06-05/README.md`. Headline: `dist` ships `opt-level="z"`
   (size) but should be `3` (speed) — **1.6–4× across every hot path** (hex-render 4.0×,
