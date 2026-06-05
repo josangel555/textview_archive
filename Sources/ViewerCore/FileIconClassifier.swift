@@ -202,10 +202,9 @@ public enum FileIconClassifier {
 
         // Data (amber)
         "ini": ("INI", .data), "conf": ("INI", .data), "cfg": ("INI", .data),
-        "csv": ("CSV", .data), "tsv": ("CSV", .data),
+        "csv": ("CSV", .data), "tsv": ("TSV", .data),
         "log": ("LOG", .data), "out": ("LOG", .data),
         "parquet": ("PRQT", .data), "arrow": ("PRQT", .data), "feather": ("PRQT", .data),
-        "tsv2": ("TSV", .data),
 
         // Doc (purple)
         "md": ("MD", .doc), "mdx": ("MDX", .doc), "markdown": ("MD", .doc),

@@ -79,14 +79,44 @@ final class FormatterTests: XCTestCase {
     func test_detect_json_extensions() {
         XCTAssertEqual(Formatter.SupportedFormat.detect(URL(fileURLWithPath: "a.json")), .json)
         XCTAssertEqual(Formatter.SupportedFormat.detect(URL(fileURLWithPath: "/tmp/b.JSON")), .json)
-        XCTAssertEqual(Formatter.SupportedFormat.detect(URL(fileURLWithPath: "log.jsonl")), .json)
     }
 
     func test_detect_xml_extensions() {
         XCTAssertEqual(Formatter.SupportedFormat.detect(URL(fileURLWithPath: "a.xml")), .xml)
         XCTAssertEqual(Formatter.SupportedFormat.detect(URL(fileURLWithPath: "info.plist")), .xml)
         XCTAssertEqual(Formatter.SupportedFormat.detect(URL(fileURLWithPath: "page.html")), .xml)
-        XCTAssertEqual(Formatter.SupportedFormat.detect(URL(fileURLWithPath: "icon.svg")), .xml)
+    }
+
+    // MARK: - Dead-affordance regressions
+
+    /// JSON-Lines is one JSON value per line, not a single document.
+    /// `detect` must NOT map `.jsonl` to `.json` — otherwise the Format
+    /// affordance is offered but `prettyPrintJSON` fails on the multi-line
+    /// body and silently returns the content unchanged (didFormat:false).
+    func test_detect_jsonl_isNotFormattable() {
+        XCTAssertNil(Formatter.SupportedFormat.detect(URL(fileURLWithPath: "log.jsonl")),
+            ".jsonl is JSON-Lines, not a single JSON doc — must not be formattable")
+
+        // A representative JSON-Lines body: each line is valid JSON, but the
+        // whole is not. The convenience entry point must report no format.
+        let jsonlText = """
+        {"event":"start","ts":1}
+        {"event":"stop","ts":2}
+        """
+        let (out, didFormat) = Formatter.prettyPrintIfFormattable(
+            jsonlText, url: URL(fileURLWithPath: "log.jsonl"))
+        XCTAssertFalse(didFormat,
+            ".jsonl must not claim a successful format")
+        XCTAssertEqual(out, jsonlText,
+            "content returned unchanged when not formattable")
+    }
+
+    /// `.svg` is classified as `.image` (preview/HEX only) by
+    /// `FileTypeDetector` and never reaches a Formatter. Mapping it to
+    /// `.xml` here was dead config; `detect` must return nil for it.
+    func test_detect_svg_isNotFormattable() {
+        XCTAssertNil(Formatter.SupportedFormat.detect(URL(fileURLWithPath: "icon.svg")),
+            ".svg commits to image/preview — must not be offered as an XML format")
     }
 
     func test_detect_unsupported() {

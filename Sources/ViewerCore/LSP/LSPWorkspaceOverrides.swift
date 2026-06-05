@@ -19,6 +19,7 @@ import Foundation
 ///       "args": [],
 ///       "env": { "SOURCEKIT_LOGGING": "1" }
 ///     },
+///     // key may also be "javascript" — maps to the same TS server
 ///     "typescript": {
 ///       "command": "/opt/homebrew/bin/typescript-language-server",
 ///       "args": ["--stdio"]
@@ -29,7 +30,8 @@ import Foundation
 ///
 /// Language keys recognised (case-insensitive):
 ///   - `swift` / `sourcekitlsp`
-///   - `typescript` / `typescriptlanguageserver`
+///   - `typescript` / `typescriptlanguageserver` / `javascript`
+///     (JS overrides the same TS server entry)
 ///   - `python` / `pyright`
 ///   - `java` / `jdtls`
 ///

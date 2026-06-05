@@ -109,15 +109,28 @@ public enum ViewModeOptions {
     /// front of the picker. `forcedCategory` (WAVE 2b item 6) overrides
     /// detection so an "Open As…" tab opens straight into the chosen
     /// viewer's natural default mode.
+    ///
+    /// `isRenderableText` is an optional content-sniff hint (TSK-332): when
+    /// the extension/UTI gives no text identity (a binary/`.unknown`
+    /// HEX-default) but the loader has sniffed the bytes and found them to be
+    /// renderable text, passing `true` resolves the default to `.source`
+    /// instead of `.hex` — so an unknown-extension text file opens into a
+    /// usable source view rather than the byte grid. The hint is strictly
+    /// additive: it only ever upgrades the HEX default, never overrides a
+    /// native-preview (`.preview`) or an extension-driven text default. When
+    /// the hint is absent (`nil`) or `false`, behavior is unchanged, so true
+    /// binary / unknown-non-text files still default to HEX.
     public static func defaultMode(
-        for url: URL?, forcedCategory: FileCategory? = nil
+        for url: URL?, forcedCategory: FileCategory? = nil,
+        isRenderableText: Bool? = nil
     ) -> ViewMode {
         guard let url else { return .source }
         if let forced = forcedCategory {
             // Native-preview categories render through `.preview` and default
             // to the first-class Preview lens; binary/unknown default to HEX.
             if !hasTextRepresentation(forced) {
-                return hasNativePreview(forced) ? .preview : .hex
+                if hasNativePreview(forced) { return .preview }
+                return isRenderableText == true ? .source : .hex
             }
             if forced == .markdown || forced == .mermaid { return .rendered }
             return .source
@@ -129,9 +142,12 @@ public enum ViewModeOptions {
         // Native-preview categories default to the Preview lens (native
         // MediaPreviewView). Binary / unknown have no native preview, so they
         // default straight into HEX (bug3) — opening into a usable view rather
-        // than a now-unavailable Source.
+        // than a now-unavailable Source — UNLESS the content-sniff hint
+        // (TSK-332) says the bytes are renderable text, in which case the
+        // unknown-extension-but-text file resolves to `.source`.
         if !hasTextRepresentation(cat) {
-            return hasNativePreview(cat) ? .preview : .hex
+            if hasNativePreview(cat) { return .preview }
+            return isRenderableText == true ? .source : .hex
         }
         return .source
     }

@@ -8,7 +8,7 @@ public final class PreferencesStore: @unchecked Sendable {
     /// their own comma-joined keys can persist into the SAME defaults
     /// instance the app + tests inject here, rather than reaching for a
     /// second `.standard` handle. Read-only on purpose — callers route
-    /// preference writes through the typed accessors above.
+    /// preference writes through the typed accessors below.
     public let defaults: UserDefaults
 
     private enum Key {
@@ -35,17 +35,24 @@ public final class PreferencesStore: @unchecked Sendable {
 
     // MARK: Sidebar width
 
+    /// Clamped to `[minSidebarWidth, maxSidebarWidth]` on BOTH read and
+    /// write (mirrors `hexBytesPerRow`) so a tampered/legacy `_last.json`
+    /// or a direct write that bypasses `setSidebarWidth(_:)` can't persist
+    /// or read back an out-of-range value.
     public var sidebarWidth: Double {
-        get { defaults.object(forKey: Key.sidebarWidth) as? Double ?? 240 }
-        set { defaults.set(newValue, forKey: Key.sidebarWidth) }
+        get { Self.clampSidebarWidth(defaults.object(forKey: Key.sidebarWidth) as? Double ?? 240) }
+        set { defaults.set(Self.clampSidebarWidth(newValue), forKey: Key.sidebarWidth) }
     }
 
     public static let minSidebarWidth: Double = 160
     public static let maxSidebarWidth: Double = 480
 
+    private static func clampSidebarWidth(_ width: Double) -> Double {
+        min(max(width, minSidebarWidth), maxSidebarWidth)
+    }
+
     public func setSidebarWidth(_ width: Double) {
-        let clamped = min(max(width, Self.minSidebarWidth), Self.maxSidebarWidth)
-        sidebarWidth = clamped
+        sidebarWidth = width
     }
 
     /// Whether the sidebar is currently visible. Default true — first

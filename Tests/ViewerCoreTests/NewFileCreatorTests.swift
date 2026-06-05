@@ -125,4 +125,45 @@ final class NewFileCreatorTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: escaped.path),
                        "traversal must not have created a file outside the dir")
     }
+
+    // Empty base name hits the same `invalidName` guard (no separator, but the
+    // `!baseName.isEmpty` clause). Pins that branch of the contract.
+    func test_create_rejectsEmptyBaseName() {
+        XCTAssertThrowsError(try NewFileCreator.create(in: dir, baseName: "")) { err in
+            guard case NewFileCreator.CreateError.invalidName = err else {
+                return XCTFail("expected .invalidName for empty base, got \(err)")
+            }
+        }
+    }
+
+    // Leading-dot baseName end-to-end through `create()` (not just `splitName`):
+    // the whole name is stem, so the collision suffix lands at the END
+    // (`.gitignore 2`), never before a non-existent extension (`.gitignore .2`).
+    func test_create_leadingDotBase_numbersAtEnd() throws {
+        let a = try NewFileCreator.create(in: dir, baseName: ".gitignore")
+        let b = try NewFileCreator.create(in: dir, baseName: ".gitignore")
+        XCTAssertEqual(a.lastPathComponent, ".gitignore")
+        XCTAssertEqual(b.lastPathComponent, ".gitignore 2")
+    }
+
+    // Collision-suffix overflow: when every candidate up to the cap is taken,
+    // `create()` must surface `.exhausted` rather than spin, return a clobbering
+    // name, or silently fail. Drive the cap to 1 with the base already present.
+    func test_create_exhaustsFreeNameCap_throwsExhausted() throws {
+        // Pre-occupy the only candidate `maxAttempts: 1` will try (n==1 → base).
+        try Data().write(to: dir.appendingPathComponent("Untitled.txt"))
+        XCTAssertThrowsError(try NewFileCreator.create(in: dir, maxAttempts: 1)) { err in
+            guard case NewFileCreator.CreateError.exhausted = err else {
+                return XCTFail("expected .exhausted at the free-name cap, got \(err)")
+            }
+        }
+    }
+
+    // The cap counts attempts, not a fixed range: with the base free, a cap of 1
+    // succeeds immediately (n==1 wins) — proves `exhausted` fires only when the
+    // whole attempt budget is consumed, not as an off-by-one on the first try.
+    func test_create_capOfOne_succeedsWhenBaseFree() throws {
+        let url = try NewFileCreator.create(in: dir, maxAttempts: 1)
+        XCTAssertEqual(url.lastPathComponent, "Untitled.txt")
+    }
 }

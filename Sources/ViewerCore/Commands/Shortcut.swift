@@ -35,9 +35,13 @@ public struct KeyModifiers: OptionSet, Sendable, Hashable {
 /// The `key` is normalised to a single lowercased character for ordinary
 /// letters/digits/punctuation, or a lowercase symbolic name for special
 /// keys (`"left"`, `"right"`, `"up"`, `"down"`, `"tab"`, `"space"`,
-/// `"escape"`, `"return"`, `"delete"`, `"backslash"`). This mirrors the
-/// `keyEquivalent` strings AppKit's `NSMenuItem` consumes (the menu
-/// builder maps the symbolic names onto the AppKit unicode constants).
+/// `"escape"`, `"return"`, `"delete"`, `"backslash"`, `"home"`, `"end"`,
+/// `"pageup"`, `"pagedown"`). The aliases `"esc"`, `"enter"`, and
+/// `"backspace"` are also accepted on input and canonicalise (via
+/// `canonicalSymbol`) onto `"escape"`, `"return"`, and `"delete"`
+/// respectively. This mirrors the `keyEquivalent` strings AppKit's
+/// `NSMenuItem` consumes (the menu builder maps the symbolic names onto
+/// the AppKit unicode constants).
 ///
 /// Pure value type — no AppKit. The UI layer translates a `Shortcut`
 /// into `(NSMenuItem.keyEquivalent, NSEvent.ModifierFlags)` at the

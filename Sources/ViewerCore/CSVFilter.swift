@@ -1,7 +1,7 @@
 import Foundation
 
 /// Row-filtering for `CSVParser.Result`. Pure value logic; testable
-/// without UI. Three orthogonal criteria, applied conjunctively:
+/// without UI. Two orthogonal criteria, applied conjunctively:
 ///
 ///   1. `globalQuery` — case-insensitive substring match.
 ///        - When `globalScope == .all`, matches against any column.

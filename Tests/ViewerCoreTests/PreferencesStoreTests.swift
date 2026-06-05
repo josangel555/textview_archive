@@ -40,6 +40,32 @@ final class PreferencesStoreTests: XCTestCase {
         XCTAssertEqual(store.sidebarWidth, PreferencesStore.maxSidebarWidth)
     }
 
+    /// A direct write through the `sidebarWidth` set accessor (the path
+    /// that bypasses `setSidebarWidth(_:)`) must still clamp, so an
+    /// out-of-range value can't persist.
+    func test_sidebarWidth_directSetClamps() {
+        let store = PreferencesStore(defaults: defaults)
+        store.sidebarWidth = 5000
+        XCTAssertEqual(store.sidebarWidth, PreferencesStore.maxSidebarWidth)
+        store.sidebarWidth = 10
+        XCTAssertEqual(store.sidebarWidth, PreferencesStore.minSidebarWidth)
+    }
+
+    /// A tampered/legacy `_last.json` could carry a stored width outside
+    /// `[160, 480]`. The getter must clamp it on read so the picker /
+    /// layout never sees an out-of-range width.
+    func test_sidebarWidth_clampsStaleStoredValueOnRead() {
+        defaults.set(5000.0, forKey: "MarkdownViewer.sidebarWidth")
+        XCTAssertEqual(
+            PreferencesStore(defaults: defaults).sidebarWidth,
+            PreferencesStore.maxSidebarWidth)
+
+        defaults.set(10.0, forKey: "MarkdownViewer.sidebarWidth")
+        XCTAssertEqual(
+            PreferencesStore(defaults: defaults).sidebarWidth,
+            PreferencesStore.minSidebarWidth)
+    }
+
     // MARK: Last folder
 
     func test_lastFolder_defaultsToNil() {

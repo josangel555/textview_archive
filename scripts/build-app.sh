@@ -228,11 +228,13 @@ fi
 
 # Final size guardrail. Fails the build when the bundle goes past
 # the budget — keeps us honest about TreeSitter / icon bloat.
-# Defaults (in check-bundle-size.sh): 37 MB total bundle, 16 MB main
+# Defaults (in check-bundle-size.sh): 48 MB total bundle, 26 MB main
 # executable. Both caps active post-lazy-grammar migration: the exec
-# cap separately catches silent static-linkage regressions. Caps were
-# bumped 35→37 / 15→16 when the CodeMirror 6 editor landed (~570 KB
-# JS resource + ~200 KB Swift wrapper code).
+# cap separately catches silent static-linkage regressions. The exec
+# cap was bumped to 26 MB (2026-06-03) for the UX-overhaul features
+# (embedded terminal/ANSI, command registry, content toolbar, find/
+# replace rebuild, footer git); see check-bundle-size.sh for the full
+# per-bump history.
 #
 # Skip on debug builds — debug binaries carry Swift reflection +
 # unstripped symbols and run ~3× the release size; the cap targets

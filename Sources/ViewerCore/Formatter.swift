@@ -14,11 +14,20 @@ public enum Formatter {
         case xml
 
         /// Detect a supported format from a URL's path extension.
+        ///
+        /// NB: `.jsonl` is deliberately absent — JSON-Lines is one JSON
+        /// value *per line*, not a single document, so `JSONSerialization`
+        /// would fail and `prettyPrintJSON` would return the content
+        /// unchanged. Mapping it here offered a Format affordance that
+        /// could never format (didFormat:false). `.svg` is likewise absent:
+        /// `FileTypeDetector` classifies it as `.image` (preview/HEX only),
+        /// so it never reaches a Formatter — listing it as `.xml` was dead
+        /// config that leaked a contradictory third identity for SVG.
         public static func detect(_ url: URL) -> SupportedFormat? {
             switch url.pathExtension.lowercased() {
-            case "json", "jsonl":
+            case "json":
                 return .json
-            case "xml", "plist", "xib", "storyboard", "html", "htm", "xhtml", "svg":
+            case "xml", "plist", "xib", "storyboard", "html", "htm", "xhtml":
                 // XMLDocument handles these as XML; HTML strictness is
                 // looser via the .documentTidyHTML option (we pass that).
                 return .xml

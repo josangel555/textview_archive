@@ -111,14 +111,12 @@ final class InteractionDeepTests: HeadlessMultiScenarioTestCase {
                         zoom-in
                         open \(b.path)
                         """) { dumps, file, line in
-                // Regression observed post mode-normalization (commit
-                // 169a4de): sometimes only 1 dump comes back instead of
-                // 5. Bail safely so a crash doesn't mask other results.
-                guard dumps.count == 5 else {
-                    return XCTFail(
-                        "expected 5 step dumps, got \(dumps.count) — script-runner regression?",
-                        file: file, line: line)
-                }
+                // Post mode-normalization flake (commit 169a4de) resolved
+                // 2026-05-18 — see BACKLOG.md. A step-dump count mismatch is
+                // now a real regression, so assert it precisely; early-return
+                // so the p[3]/p[4] indexing below can't trap on a short array.
+                XCTAssertEqual(dumps.count, 5, file: file, line: line)
+                guard dumps.count == 5 else { return }
                 let p = dumps.map { Pages(dump: $0).generic }
                 guard let zoomedA = p[3].zoom,
                       let zoomedB = p[4].zoom else {

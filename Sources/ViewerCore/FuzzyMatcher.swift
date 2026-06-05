@@ -6,8 +6,8 @@ import Foundation
 /// Rules:
 /// - Empty query matches everything with score 0.
 /// - All query characters must appear in `target` in order (case-insensitive).
-/// - Consecutive matches and matches at word boundaries (after `/_- ` or at
-///   start) score higher.
+/// - Consecutive matches and matches at word boundaries (after one of
+///   `/ _ - . ` or at start) score higher.
 /// - Earlier matches in the string score slightly higher.
 public enum FuzzyMatcher {
 

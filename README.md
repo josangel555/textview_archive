@@ -119,7 +119,7 @@ See `MANUAL_TESTING.md` for the full list. Quick reference:
 - `MDV_SKIP_WORKSPACE_RESTORE=1` — clean-room launch
 - `MDV_NO_RULER=1` — disable line-number gutter
 - `MDV_SKIP_VISUAL=1` — skip visual regression tests locally
-- `BUDGET_MB=<N>` / `EXEC_BUDGET_MB=<N>` — override the 37 MB total / 16 MB exec bundle caps
+- `BUDGET_MB=<N>` / `EXEC_BUDGET_MB=<N>` — override the 48 MB total / 26 MB exec bundle caps
 
 ## Distribution & signing
 

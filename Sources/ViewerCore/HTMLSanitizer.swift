@@ -20,7 +20,8 @@ import Foundation
 ///    elements (including their contents).
 ///  * Remove `on*=` event-handler attributes from any surviving tag.
 ///  * Rewrite `href` / `src` / `xlink:href` attributes whose value
-///    starts with `javascript:` or `vbscript:` to `about:blank`.
+///    starts with `javascript:`, `vbscript:`, or `data:text/html`
+///    to `about:blank`.
 ///  * Leave all other tags + attributes as-is. CommonMark authors
 ///    legitimately use `<div class=…>`, `<aside>`, `<figure>`, table
 ///    markup, MathJax-style `<span>`s — sanitizing those would break

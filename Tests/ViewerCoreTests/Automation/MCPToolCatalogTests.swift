@@ -212,6 +212,68 @@ final class MCPToolCatalogTests: XCTestCase {
         XCTAssertEqual(o["truncated"], .bool(false))
     }
 
+    func test_find_invalidRegex_throwsInvalidParams_notZeroMatches() {
+        // An unbalanced group is a syntax error. Without pre-validation
+        // the host's FindEngine throws, automationFind swallows it to
+        // `[]`, and the tool would report `total:0` — indistinguishable
+        // from a genuine no-match. We must surface an MCP error instead.
+        let args: MCP.Value = .object([
+            "query": .string("(unterminated"),
+            "regex": .bool(true),
+        ])
+        XCTAssertThrowsError(
+            try MCPToolCatalog.dispatch(name: "find", args: args, host: host)
+        ) { error in
+            guard case .invalidParams = error as? MCPError else {
+                XCTFail("expected .invalidParams, got \(error)"); return
+            }
+        }
+        // The bad pattern must never reach the host.
+        XCTAssertNil(host.findQuery)
+    }
+
+    func test_find_unsafeRegex_throwsInvalidParams() {
+        // A classic ReDoS shape — rejected by RegexComplexityGuard
+        // before it can be handed to the engine. Same observable
+        // contract: an MCP error, not a silent `total:0`.
+        let args: MCP.Value = .object([
+            "query": .string("(a+)+$"),
+            "regex": .bool(true),
+        ])
+        XCTAssertThrowsError(
+            try MCPToolCatalog.dispatch(name: "find", args: args, host: host)
+        ) { error in
+            guard case .invalidParams = error as? MCPError else {
+                XCTFail("expected .invalidParams, got \(error)"); return
+            }
+        }
+        XCTAssertNil(host.findQuery)
+    }
+
+    func test_find_validRegex_dispatchesNormally() throws {
+        // A well-formed regex must pass pre-validation untouched.
+        let args: MCP.Value = .object([
+            "query": .string("h.llo"),
+            "regex": .bool(true),
+        ])
+        _ = try MCPToolCatalog.dispatch(name: "find", args: args, host: host)
+        XCTAssertEqual(host.findQuery?.pattern, "h.llo")
+        XCTAssertEqual(host.findQuery?.kind, .regex)
+    }
+
+    func test_find_literalPattern_skipsRegexValidation() throws {
+        // The same `(unterminated` string is a perfectly valid LITERAL
+        // query — pre-validation only applies when regex:true, so this
+        // must dispatch, not throw.
+        let args: MCP.Value = .object([
+            "query": .string("(unterminated"),
+            "regex": .bool(false),
+        ])
+        _ = try MCPToolCatalog.dispatch(name: "find", args: args, host: host)
+        XCTAssertEqual(host.findQuery?.pattern, "(unterminated")
+        XCTAssertEqual(host.findQuery?.kind, .literal)
+    }
+
     // MARK: - goto_line
 
     func test_gotoLine_dispatches() throws {

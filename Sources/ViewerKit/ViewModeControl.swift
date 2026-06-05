@@ -26,7 +26,7 @@ import Foundation
 /// |              |           | `.source` for a plain text file.            |
 /// | **Editor**   | ON        | `.source`  — read-only highlighted text.    |
 /// | **Editor**   | OFF       | `.editor`  — editable CM6 buffer.           |
-/// | **HEX**      | ON / OFF  | `.hex`     — byte grid (edit = TODO).       |
+/// | **HEX**      | ON / OFF  | `.hex`     — editable byte grid.            |
 /// | **Format**   | n/a       | `.formatted` — pretty-printed source.       |
 ///
 /// So **Source = Editor + View Only**, exactly as the owner specified.

@@ -49,7 +49,7 @@ on the host — it just exercises the headless tiers and skips T4/T5.
 - Bundle id stays `com.markdownviewer.MarkdownViewer` (TCC-stable).
 - Local signing only (cert `MarkdownViewer Local Dev`); no Developer
   ID until shipping public.
-- Bundle size cap: 37 MB total + 16 MB main-executable sub-cap (the
+- Bundle size cap: 48 MB total + 26 MB main-executable sub-cap (the
   lazy-grammar split moves parsers into `Contents/Frameworks/`, so the
   two caps are tracked separately). Enforced by
   `scripts/check-bundle-size.sh` (override via `BUDGET_MB` /

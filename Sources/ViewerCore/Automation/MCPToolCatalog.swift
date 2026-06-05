@@ -149,6 +149,27 @@ public enum MCPToolCatalog {
         let regex = (try? args.bool("regex")) ?? false
         let cs = (try? args.bool("caseSensitive")) ?? false
         let ww = (try? args.bool("wholeWord")) ?? false
+        if regex {
+            // Pre-validate the pattern HERE, before handing it to
+            // `automationFind`. The host's `FindEngine` throws on a bad
+            // (or ReDoS-unsafe) pattern, but `automationFind` maps that
+            // throw to `[]` — so without this guard a syntactically
+            // invalid regex is indistinguishable from a genuine no-match
+            // (`total:0`). Mirror `FindEngine.makeRegex`'s two-stage
+            // check so the JSON-RPC error path fires instead: first the
+            // ReDoS complexity guard, then the actual compile. The
+            // whole-word `\b…\b` wrap the engine adds is always valid
+            // around a compilable pattern, so compiling the raw pattern
+            // is sufficient to detect a syntax error.
+            if let reason = RegexComplexityGuard.reject(q) {
+                throw MCPError.invalidParams("unsafe regex: \(reason)")
+            }
+            do {
+                _ = try NSRegularExpression(pattern: q)
+            } catch {
+                throw MCPError.invalidParams("invalid regex: \(q)")
+            }
+        }
         let query = FindQuery(
             pattern: q,
             kind: regex ? .regex : .literal,

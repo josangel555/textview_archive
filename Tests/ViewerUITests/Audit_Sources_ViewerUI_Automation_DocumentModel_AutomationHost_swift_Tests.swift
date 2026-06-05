@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 import ViewerKit
 import ViewerCore
 @testable import ViewerUI
@@ -114,5 +115,74 @@ final class Audit_Sources_ViewerUI_Automation_DocumentModel_AutomationHost_swift
         XCTAssertNil(model.tabs.selectedIndex, "precondition: no tabs => nil")
         XCTAssertNil(model.automationCurrentState().selectedTabIndex,
                      "no selection must remain nil after 1-based remap")
+    }
+
+    // MARK: - automationFind negative paths (TSK-164)
+
+    /// [TSK-164] The Swift automation seam (`automationFind`) had zero
+    /// negative-path coverage. These two tests pin the current behaviour of
+    /// the two early-return / swallow branches in
+    /// `Sources/ViewerUI/Automation/DocumentModel+AutomationHost.swift`:
+    ///
+    ///  1. a non-text selected tab (binary / preview / error / empty /
+    ///     loading / `hostedView`) returns `[]` without ever touching
+    ///     `FindEngine`, and
+    ///  2. a syntactically-invalid regex query has its `FindEngine` throw
+    ///     swallowed by the `try? … ?? []` on the search line, also yielding
+    ///     `[]`.
+    ///
+    /// (2) documents *today's* behaviour — a hostile/invalid query is
+    /// reduced to an empty result rather than surfaced as a tool error.
+    /// When TSK-153 lands (round-tripping a `find` tool error instead of
+    /// swallowing it) this assertion is expected to flip; the test then
+    /// becomes the tripwire that forces it to be updated deliberately.
+
+    /// A `.hostedView` tab is the simplest fully-synchronous non-text tab:
+    /// `openHostedView` appends it and selection lands on it immediately
+    /// (no async file load, no window, no WKWebView). `automationFind` must
+    /// short-circuit to `[]` for any non-`.loaded` state.
+    func test_automationFind_nonTextSelectedTab_returnsEmpty() throws {
+        let model = makeModel()
+        _ = model.openHostedView(title: "History", rootView: EmptyView())
+
+        // Precondition: the selected tab is a non-text (hostedView) state.
+        guard let tab = model.tabs.selected else {
+            return XCTFail("openHostedView should leave a selected tab")
+        }
+        guard case .hostedView = tab.state else {
+            return XCTFail("selected tab should be in .hostedView state, got \(tab.state)")
+        }
+
+        // A query that WOULD match if there were searchable text — proving
+        // the empty result is the non-text guard firing, not an empty corpus.
+        let q = FindQuery(pattern: "History", kind: .literal)
+        XCTAssertEqual(model.automationFind(q), [],
+                       "non-text selected tab must yield [] without searching")
+    }
+
+    /// An invalid-regex query against a loaded text tab. `FindEngine`
+    /// throws `FindError.invalidRegex`; the `try? … ?? []` on the
+    /// `automationFind` search line swallows it. `(` is an unbalanced
+    /// group: it passes the ReDoS `RegexComplexityGuard.reject` (no nested
+    /// quantifier, no alternation-under-quantifier) and fails only at
+    /// `NSRegularExpression` compile — i.e. it exercises the `invalidRegex`
+    /// throw, not the `unsafeRegex` guard.
+    func test_automationFind_invalidRegex_swallowsThrowAsEmpty_today() throws {
+        let model = makeModel()
+        let a = try writeFile("a.md", "alpha (beta) gamma\n")
+        _ = model.automationOpenPath(a, newTab: false)
+
+        // Sanity: a literal substring search over the same loaded text DOES
+        // find a hit, so the tab really is searchable and the [] below is
+        // attributable to the swallowed regex throw, not an empty corpus.
+        XCTAssertFalse(model.automationFind(FindQuery(pattern: "beta", kind: .literal)).isEmpty,
+                       "precondition: the loaded text tab is searchable")
+
+        // Today: the invalid-regex throw is reduced to []. When TSK-153
+        // round-trips the find-tool error instead of swallowing it, this
+        // assertion is expected to change.
+        let bad = FindQuery(pattern: "(", kind: .regex)
+        XCTAssertEqual(model.automationFind(bad), [],
+                       "invalid regex is swallowed to [] today (pin until TSK-153)")
     }
 }

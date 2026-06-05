@@ -165,8 +165,16 @@ final class FileIconClassifierTests: XCTestCase {
 
     func test_data_chips() {
         assertChip(icon("/x/a.csv"), "CSV", .data)
+        assertChip(icon("/x/a.tsv"), "TSV", .data)
         assertChip(icon("/x/a.log"), "LOG", .data)
         assertChip(icon("/x/a.ini"), "INI", .data)
+    }
+
+    // `.tsv2` is not a real extension — the bogus `"tsv2"` chip entry was
+    // removed, so it must fall through to the generic-ext path (ext
+    // uppercased, truncated to 4 chars) rather than yielding a data chip.
+    func test_tsv2_is_not_a_known_chip() {
+        assertChip(icon("/x/a.tsv2"), "TSV2", .generic)
     }
 
     func test_secrets() {

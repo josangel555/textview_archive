@@ -13,9 +13,10 @@ public enum HexLayout {
     /// Default for new tabs.
     public static let defaultWidth: Int = 16
 
-    /// Clamps an arbitrary integer to the nearest allowed width, biased
-    /// toward the smaller option on ties. Defensive — UI should never
-    /// hand us junk, but persisted prefs from a future build might.
+    /// Clamps an arbitrary integer to the nearest allowed width at-or-above
+    /// the input (rounds up to the next of 16/32/64), saturating at 64.
+    /// Defensive — UI should never hand us junk, but persisted prefs from a
+    /// future build might.
     public static func clampWidth(_ raw: Int) -> Int {
         if raw <= 16 { return 16 }
         if raw <= 32 { return 32 }

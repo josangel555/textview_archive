@@ -43,7 +43,7 @@ APP_NAME="MarkdownViewer"
 
 # Stdin → temp file → open. Useful for piping rendered docs.
 if [[ "${1:-}" == "-" || ( -z "${1:-}" && ! -t 0 ) ]]; then
-  TMP="$(mktemp -t mdv-stdin).md"
+  TMP="$(mktemp -d)/stdin.md"
   cat > "$TMP"
   exec /usr/bin/open -a "$APP_NAME" "$TMP"
 fi
