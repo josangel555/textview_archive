@@ -176,6 +176,15 @@ build it, else hold.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-05 **SwiftUI: image/media file-info respects document zoom (TSK-271 → `fixed`, `0f5d33d`).**
+  The native-preview file-info chrome was hard-wired at fixed point sizes, ignoring the unified zoom:
+  image overlay (dimensions / sibling counter / zoom %), the unsupported-file card, AND the dedicated
+  `MetadataPanel` side panel. Threaded `DocumentModel.zoom` (already passed to `MediaPreviewView` as
+  `uiScale`) into `ImagePreview`/`UnsupportedPreview` and into `MetadataPanel` from ContentView; the
+  image overlay + card route through one `MediaPreviewView.infoFontSize(uiScale:)` helper (base 11pt ×
+  zoom). **Validated:** new `MediaPreviewInfoZoomTests` (scaling contract) + `test-headless-gate.sh`
+  **PASSED** (GATE_EXIT=0) on the committed commit. (Live visual zoom = owner spot-check.) Closes the
+  residual logged under the TSK-323 zoom audit.
 - 2026-06-05 **SwiftUI: theme override now persists (TSK-101 → `fixed`, `40c7b5b`).** First Swift-app
   *implementation* of the focus wave. Settings → Appearance → Theme (Follow System / Xcode Light /
   Xcode Dark) bound to `DocumentModel.themeOverride`, which was in-memory only → reverted to Follow
