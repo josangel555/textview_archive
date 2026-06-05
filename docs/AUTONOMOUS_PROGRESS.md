@@ -166,6 +166,14 @@ build it, else hold.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-05 **`[PORT][W1]` open-as / forced view-mode override** (`04b6c15`, TSK-219/220 → `fixed`).
+  TUI: `set_mode(idx)` + number keys `1-9` force the file's Nth `available_modes` entry directly
+  (deliberate override vs the `x` cycle; the applied table filter survives the rebuild); status help
+  updated. Web: the `?mode=` param already forced a mode over the default — locked it with an explicit
+  test (CSV `?mode=text`/`?mode=hex` suppresses the table + bolds the active mode). **Validated:**
+  `cargo clippy --workspace` clean + `cargo test --workspace` 277 pass (new TUI open-as snapshot test
+  + web mode-override test) + `rust-core-gate.sh` GATE_EXIT=0. **W1 port tally now: 18 fixed, 4
+  reported, 2 review.** Remaining `[W1]` reported = in-file find (197/198) + hex search (205/206).
 - 2026-06-05 **`[PORT][W1]` CSV table filtering shipped to BOTH front-ends** (`1acd42c`, TSK-203/204 →
   `fixed`). Global + per-column (`col:term`). Reused the EXISTING `mdvcore_core::filter` module
   (case-insensitive, Unicode-correct, no-panic) instead of re-implementing — added rows-based
