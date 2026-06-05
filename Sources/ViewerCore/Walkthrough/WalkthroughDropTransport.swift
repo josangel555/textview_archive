@@ -257,10 +257,15 @@ public final class WalkthroughDropTransport: @unchecked Sendable {
             if alreadyDelivered { continue }
 
             // S1.4 — at the untrusted boundary, refuse scripts that
-            // omit `rootHint`. Without it, the loader's path-escape
-            // check is a no-op and `openFile` / `addBookmark` could
-            // target any absolute path the app has TCC access to.
-            let result = WalkthroughLoader.load(fileAt: url, requireRootHint: true)
+            // omit `rootHint` AND inject a CALLER-controlled `trustedRoot`
+            // (the drop directory). Without `trustedRoot` the loader's only
+            // fence is the script-supplied `rootHint` — attacker-controlled,
+            // so `openFile` / `addBookmark` could target any absolute path the
+            // app has TCC access to. `trustedRoot` is authoritative in the
+            // loader, so the dropped script is confined to the drop dir (AUDIT
+            // S3 — the load-bearing call site the trustedRoot param exists for).
+            let result = WalkthroughLoader.load(
+                fileAt: url, requireRootHint: true, trustedRoot: dropDirectory.path)
             switch result {
             case .success(let script):
                 delegate?.walkthroughDropTransport(self, didReceive: script, from: url)
