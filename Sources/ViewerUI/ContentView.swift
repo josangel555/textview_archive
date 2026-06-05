@@ -481,7 +481,7 @@ public struct ContentView: View {
                     uiScale: CGFloat(model.zoom)
                 )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                MetadataPanel(url: url, category: cat)
+                MetadataPanel(url: url, category: cat, uiScale: CGFloat(model.zoom))
             }
         }
     }

@@ -35,6 +35,12 @@ public struct MediaPreviewView: View {
         self.uiScale = uiScale
     }
 
+    /// Point size for preview info chrome (image dimensions, sibling counter,
+    /// zoom %, unsupported-file metadata) at a given unified UI zoom. Base 11pt
+    /// scales linearly so the metadata tracks the rest of the app chrome —
+    /// previously these were hard-wired at 11pt and ignored zoom (TSK-271).
+    public static func infoFontSize(uiScale: CGFloat) -> CGFloat { 11 * uiScale }
+
     public var body: some View {
         // All non-text previews want centered (both axes) content
         // inside the content pane. Each child is an `NSViewRepresentable`
@@ -47,14 +53,14 @@ public struct MediaPreviewView: View {
         // intrinsic size and end up bottom-left in the parent HStack.
         Group {
             switch category {
-            case .image: ImagePreview(url: url, onOpenSibling: onOpenSibling)
+            case .image: ImagePreview(url: url, onOpenSibling: onOpenSibling, uiScale: uiScale)
             case .audio: AudioPreview(url: url)
             case .video: VideoPreview(url: url)
             case .pdf:   PDFPreview(url: url)
             case .sqlite:
                 SQLiteBrowserView(url: url, uiScale: uiScale)
             default:
-                UnsupportedPreview(url: url, category: category)
+                UnsupportedPreview(url: url, category: category, uiScale: uiScale)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -71,6 +77,9 @@ public struct MediaPreviewView: View {
 struct ImagePreview: View {
     let url: URL
     let onOpenSibling: ((URL) -> Void)?
+    /// Unified UI zoom (`DocumentModel.zoom`); scales the overlay info chrome
+    /// (counter / zoom % / dimensions) so it tracks the rest of the app (TSK-271).
+    var uiScale: CGFloat = 1.0
 
     @State private var magnification: CGFloat = 1.0
     @State private var pixelSize: NSSize = .zero
@@ -154,7 +163,7 @@ struct ImagePreview: View {
                 .helpInfo(title: "Previous image", description: "Show the previous image (←)")
                 .disabled(prevURL == nil)
                 Text("\(currentIndex + 1) / \(siblings.count)")
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: MediaPreviewView.infoFontSize(uiScale: uiScale), design: .monospaced))
                     .foregroundStyle(.secondary)
                 Button(action: { navigate(by: +1) }) {
                     Image(systemName: "chevron.right")
@@ -170,7 +179,7 @@ struct ImagePreview: View {
             .buttonStyle(.borderless)
             .helpInfo(title: "Zoom out", description: "Zoom out (↓ or ⌘-)")
             Text(String(format: "%.0f%%", magnification * 100))
-                .font(.system(size: 11, design: .monospaced))
+                .font(.system(size: MediaPreviewView.infoFontSize(uiScale: uiScale), design: .monospaced))
                 .foregroundStyle(.secondary)
                 .frame(minWidth: 48)
             Button(action: { zoom(by: 1.25) }) {
@@ -188,7 +197,7 @@ struct ImagePreview: View {
             if pixelSize.width > 0 {
                 Divider().frame(height: 14)
                 Text("\(Int(pixelSize.width)) × \(Int(pixelSize.height))")
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: MediaPreviewView.infoFontSize(uiScale: uiScale), design: .monospaced))
                     .foregroundStyle(.tertiary)
             }
         }
@@ -688,15 +697,19 @@ private struct PDFPreview: NSViewRepresentable {
 private struct UnsupportedPreview: View {
     let url: URL
     let category: FileCategory
+    /// Unified UI zoom (`DocumentModel.zoom`) — scales the metadata card so the
+    /// file info tracks the rest of the app chrome (TSK-271).
+    var uiScale: CGFloat = 1.0
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 10 * uiScale) {
             Image(systemName: "doc.questionmark")
                 .resizable().scaledToFit()
-                .frame(width: 48, height: 48)
+                .frame(width: 48 * uiScale, height: 48 * uiScale)
                 .foregroundStyle(.secondary)
             Text("Preview not available for \(category.rawValue)")
+                .font(.system(size: MediaPreviewView.infoFontSize(uiScale: uiScale)))
             Text(url.lastPathComponent)
-                .font(.caption.monospaced())
+                .font(.system(size: MediaPreviewView.infoFontSize(uiScale: uiScale), design: .monospaced))
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

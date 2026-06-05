@@ -12,6 +12,9 @@ import ViewerKit
 struct MetadataPanel: View {
     let url: URL
     let category: FileCategory
+    /// Unified UI zoom (`DocumentModel.zoom`) — scales the metadata text + label
+    /// column so the file info tracks the rest of the app chrome (TSK-271).
+    var uiScale: CGFloat = 1.0
 
     @State private var rows: [Row] = []
     @State private var loadTask: Task<Void, Never>?
@@ -223,7 +226,7 @@ struct MetadataPanel: View {
     private func section<C: View>(_ title: String, @ViewBuilder _ body: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title.uppercased())
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(size: 9 * uiScale, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .tracking(0.6)
             body()
@@ -234,11 +237,11 @@ struct MetadataPanel: View {
     private func row(_ r: Row) -> some View {
         HStack(alignment: .top, spacing: 6) {
             Text(r.label)
-                .font(.system(size: 10))
+                .font(.system(size: 10 * uiScale))
                 .foregroundStyle(.secondary)
-                .frame(width: 80, alignment: .leading)
+                .frame(width: 80 * uiScale, alignment: .leading)
             Text(r.value)
-                .font(.system(size: 10, design: .monospaced))
+                .font(.system(size: 10 * uiScale, design: .monospaced))
                 .foregroundStyle(.primary)
                 .lineLimit(3)
                 .truncationMode(.middle)
