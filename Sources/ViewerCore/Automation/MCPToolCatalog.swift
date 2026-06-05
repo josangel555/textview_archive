@@ -352,9 +352,19 @@ public enum MCPToolCatalog {
     ///     current user's files only).
     private static func validatedExistingURL(from path: String) throws -> URL {
         let expanded = (path as NSString).expandingTildeInPath
-        let url = URL(fileURLWithPath: expanded).standardizedFileURL
+        // Resolve symlinks so the containment check is physical-to-physical.
+        // `standardizedFileURL` only collapses `..`/`.` LEXICALLY; an in-jail
+        // symlink (e.g. `~/link -> /etc`) would otherwise pass `hasPrefix(home)`
+        // and let MCP `read_file`/`open` reach the out-of-jail target — the same
+        // symlink-escape the URLSchemePolicy fence closes. Resolving both operands
+        // keeps it honest (AUDIT S3 — this is the MCP-validator prong of that
+        // finding). `resolvingSymlinksInPath()` on a path whose leaf doesn't yet
+        // exist resolves the existing leading components and leaves the rest
+        // verbatim, and we require existence below anyway.
+        let url = URL(fileURLWithPath: expanded).standardizedFileURL.resolvingSymlinksInPath()
         let fm = FileManager.default
-        let home = URL(fileURLWithPath: NSHomeDirectory()).standardizedFileURL.path
+        let home = URL(fileURLWithPath: NSHomeDirectory())
+            .standardizedFileURL.resolvingSymlinksInPath().path
         // Allow paths under the user's home, plus the per-user temp dir (also
         // under /var/folders, owned by user) which is where `mdv -` stashes
         // stdin and where tests stage scratch files. ANCHORED prefixes only:
@@ -363,7 +373,7 @@ public enum MCPToolCatalog {
         // (AUDIT S3). Containment is checked BEFORE existence so an out-of-jail
         // path can't be probed via the differential notFound/permissionDenied
         // error (existence oracle).
-        let temp = fm.temporaryDirectory.standardizedFileURL.path
+        let temp = fm.temporaryDirectory.standardizedFileURL.resolvingSymlinksInPath().path
         let underHome = url.path == home || url.path.hasPrefix(home + "/")
         let underTemp = url.path == temp || url.path.hasPrefix(temp + "/")
         guard underHome || underTemp else {
