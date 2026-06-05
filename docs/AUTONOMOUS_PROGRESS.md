@@ -115,6 +115,18 @@ manufacture marginal code; if it finds a NEW clean model-core-extractable item i
 build it, else hold.
 
 ## DECISIONS NEEDED (owner — non-blocking; I proceed on best-judgment defaults meanwhile)
+- **⚠️ VM toolchain upgrade?** (2026-06-05, `TSK-401`) — the UTM UI/live-tier VM runs **Swift
+  6.1.2** but the host is **Swift 6.2+** (macOS 26). The codebase compiles + gates green on the
+  host but **fails to build on the VM** — newer-Swift default-isolation/`sending` relaxations
+  (MediaPreviewView [fixed], HexView `coalesceLock`, ReviewSession `sending self`, likely more).
+  So the VM heavy-tier lane is currently dead. **My recommendation: upgrade the VM's Xcode to a
+  Swift 6.2+ toolchain** (faithful test env) rather than porting the codebase backward. Interim:
+  live-smoke on the host Mac (done 2026-06-05 — 3 T4 ViewModeMatrix live tests PASSED on host).
+- **Remote core hosting** (2026-06-05, `TSK-400`, `docs/REMOTE_CORE_HOSTING_2026-06-05.md`) —
+  PROVEN: `mdv-web` hosted on the VM + SSH tunnel from the Mac (no security regression). Open
+  decisions: (1) LAN-bind `mdv-web` behind a flag+token (relaxes the S1 localhost-only posture)?
+  (2) green-light `mdvcore-rpcd` (compact-binary-RPC server) so SwiftUI/TUI can run on a separate
+  host — the only path for the *native* front-ends (they're in-process FFI today). Default: hold.
 - **Rust perf: `memchr` dep?** (2026-06-05 research, `docs/research/rust-perf-2026-06-05/`)
   The one dep worth approving — SIMD substring search (NEON on arm64) serving TWO hot paths
   (`filter` scan + `hex::hex_search`), likely several× on large buffers. Tiny, ubiquitous
