@@ -273,6 +273,22 @@ final class CommandRegistryTests: XCTestCase {
         XCTAssertEqual(winner, forKey.first?.2)
     }
 
+    // MARK: - Default shortcut coverage (TSK-325)
+
+    /// The user-facing git/view actions that previously shipped no default
+    /// shortcut now carry one, and each routes to its own command (no later
+    /// command stole the keystroke via the last-wins shortcutMap).
+    func test_addedDefaultShortcuts_arePresentAndConflictFree() {
+        let map = CommandRegistry.builtIn.shortcutMap()
+        for id in ["git.fileHistory", "git.repoHistory", "view.folderStats"] {
+            let cmd = CommandRegistry.builtIn.command(id: id)
+            XCTAssertNotNil(cmd?.defaultShortcut, "\(id) should have a default shortcut")
+            if let sc = cmd?.defaultShortcut {
+                XCTAssertEqual(map[sc], id, "\(id)'s shortcut must route to it (no collision stole it)")
+            }
+        }
+    }
+
     // MARK: - Helpers
 
     private func duplicates(_ ids: [String]) -> [String] {

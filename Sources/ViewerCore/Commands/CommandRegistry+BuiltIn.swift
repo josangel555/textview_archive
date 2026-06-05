@@ -138,6 +138,7 @@ extension CommandRegistry {
             scriptVerb: nil),
         CommandDescriptor(
             id: "view.folderStats", title: "Toggle Folder Stats", category: .view,
+            defaultShortcut: Shortcut(key: "i", modifiers: [.command, .control]),
             scriptVerb: "folder-stats"),
 
         // MARK: Edit
@@ -214,9 +215,11 @@ extension CommandRegistry {
             scriptVerb: nil),
         CommandDescriptor(
             id: "git.fileHistory", title: "Show File History", category: .git,
+            defaultShortcut: Shortcut(key: "h", modifiers: [.command, .option, .shift]),
             scriptVerb: nil),
         CommandDescriptor(
             id: "git.repoHistory", title: "Show Repository History", category: .git,
+            defaultShortcut: Shortcut(key: "l", modifiers: [.command, .option, .shift]),
             scriptVerb: nil),
 
         // MARK: Sessions
