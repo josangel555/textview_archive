@@ -146,6 +146,29 @@ build it, else hold.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-04 `1dbf1ca` **deep-audit fixes LANDED on main** (verify-and-fix workflow
+  wf_1ccf773f-919, 133 agents): fixed the S2/S3/S4 findings still present at HEAD
+  across ViewerCore/ViewerUI/ViewerKit/RustCore + rust-core + scripts (85 files,
+  +6493/-414, 26 new regression test files). Branch `audit-fixes-2026-06-04` →
+  squashed → ff main → branch deleted. **Central validation caught + fixed 6 real
+  defects the per-file agents left** (each compiled in isolation, failed the gate):
+  foldCompileLocks static-mutable concurrency (`nonisolated(unsafe)`), ClaudeMonitorView
+  off-main constants (`nonisolated`), 3 test-file compile errors (CGFloat `.nan`,
+  await-in-XCTAssert-autoclosure, captured-var→locked-flag), and a UTF-8 boundary bug
+  in the `visible_text` truncation (split a scalar at the byte cap → overshoot + U+FFFD).
+  Headless gate + rust gate GREEN. **Lesson: workflow fix-agents' "applied" self-reports
+  ≠ gate-green; per-file partitioning compiles in isolation but the test+impl interplay
+  needs a central gate.** Remaining audit long-tail = the unfixed/deferred subset (verdicts
+  in the workflow result); the fixed findings' tasks belong in the `tasked` board.
+- 2026-06-04 **feature-port discovery** (wf_a57d04eb-8b8, 10 agents): 31 SwiftUI→TUI/Web
+  port candidates (29 no-dep + 2 dep-gated) ranked with per-feature core/FFI/TUI/Web plans
+  → `docs/FEATURE_PORT_PLAN_2026-06-04.md`. 12-item no-dep first wave identified.
+- 2026-06-04 **TASKED CORRECTION (owner)**: "file task" = create on the `tasked` MCP board
+  (http://localhost:8787, TSK-### ids), NOT Claude Code's built-in TaskCreate. Root cause:
+  the `mcp__tasked__*` tools aren't loaded this session (GAPS#5 — mid-session add needs a
+  reconnect), so "create a task" silently hit the built-in tool. Fix: hit the board over
+  HTTP. Holding the bulk re-file (80 audit + 62 port) until the owner deploys a `tasked`
+  backend with `task_create_many` + native blocker/ready-set fields (offered; ~2s restart).
 - 2026-06-04 `ebfefe1` **institutional-knowledge docs**: LESSONS.md +111 ("Session
   2026-06-04" — FFI template, lint-enforcement gap, one-core-three-front-ends,
   grapheme-vs-scalar, containment patterns, redaction-before-surface, fixture
