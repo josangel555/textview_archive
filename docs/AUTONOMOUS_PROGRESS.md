@@ -139,6 +139,18 @@ build it, else hold.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-04 **Rust-core front-ends ("one core, three front-ends")**: ratatui TUI
+  `mdv-tui` (`01ac648` MVP + `1cd0887` CSV table) and std-only HTTP web `mdv-web`
+  (`d042c67`) — file nav + text/HEX/CSV-table via the core, both validated
+  headlessly (TestBackend / socket+curl). Then `core::view` shared view-model
+  (`694a9aa`) + rewired TUI (`f9e9b64`) + web (`3482d14`) onto it → structural
+  parity (#259). Both bins isolated from CI via `default-members = core+ffi`.
+  Backlog: `docs/RUST_FRONTENDS_BACKLOG.md` + tracker #257/#260-#263.
+- 2026-06-04 **deep-audit workflow** created (`.claude/workflows/deep-audit.js`,
+  local — .claude is gitignored) + launched (`wf_d702368e-244`): read-only
+  multi-agent audit (subsystem×dimension reviewers → adversarial verify →
+  critic → ranked report). Findings land in `docs/audit/AUDIT_REPORT_2026-06-04.md`
+  + `AUDIT_BUGS.md`; triage them when it completes (tracker #264).
 - 2026-06-04 `39f46c1` + `6f4275a` agent-monitor PoC was built-but-untested + doc said "not built" (stale); added headless `ClaudeMonitorModelTests` (read→redact→parse pipeline, cap, filter/sort) + corrected the doc. Gate-green.
 - 2026-06-04 `a91a063` **security (latent)**: `ClaudeTranscriptSearch` matched RAW events (`parser.events`), so the monitor's planned content-search would surface `headers`/`signature`/image-blob content the detail view redacts. Split `ClaudeLogParser.parse` → `parseCore(redacting:)` + `parseRedacted`/`redactedEvents`; routed search through redacted events; test proves a `headers` secret is unfindable + `[REDACTED]` in the snippet. No live UI consumer yet (latent). Gate-green.
 - 2026-06-04 `6153c9b` terminal runtime-toggle fix (body greedy + clip + focus) — --diagnose verified, gate-green.
