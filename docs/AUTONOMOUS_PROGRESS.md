@@ -176,6 +176,16 @@ build it, else hold.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-05 **SwiftUI: natural next/prev-tab keybindings (TSK-328 → `fixed`, `5a3e184`).**
+  The Next/Prev Tab commands existed but shipped non-natural defaults (⌘⌥arrow). Changed the SHIPPED
+  DEFAULTS to the natural macOS combos — **Next Tab = ⌘⇧]**, **Previous Tab = ⌘⇧[** (Safari/Terminal/Notes
+  convention). Updated BOTH layers: the registry descriptors (`tabs.next`/`tabs.previous` — feeds the
+  catalog, Omni, keybinding editor) and the AppKit Window-menu key equivalents in `main.swift` (which
+  intercept the keystroke first). The bracket combos differ from the existing Move-Tab bindings (⌘⌥[ / ⌘⌥])
+  by modifier set, so AppKit + `shortcutMap` route each unambiguously; ⌘⇧[ / ⌘⇧] were previously unused.
+  Old ⌘⌥arrow stays user-rebindable via keybinding.json. **Validated:** new headless test
+  `test_tabSwitch_naturalDefaults_routeWithoutCollision` (defaults + routing + no Move-Tab collision),
+  `swift build` clean (incl. executable target), `scripts/test-headless-gate.sh` **PASSED**.
 - 2026-06-05 **SwiftUI: tooltip coverage on the two flagged views (TSK-324 → `fixed`, `01b4faf`).**
   Re-audited both views the backlog flagged. **ShoulderRailView** is already fully covered — every rail
   button routes through `PanelRailButton`/`TerminalToggleButton`, both of which carry `.helpInfo` (title +
