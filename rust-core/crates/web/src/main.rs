@@ -22,9 +22,11 @@ use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::{fs, thread};
 
-/// Max bytes read into a view (parity with the TUI's preview cap).
+use mdvcore_core::view::{self, ViewBody, ViewMode};
+
+/// Max bytes read into a view (parity with the TUI's preview cap). Per-mode
+/// shaping (text/hex/table) lives in the shared `mdvcore_core::view`.
 const PREVIEW_CAP: usize = 1024 * 1024;
-const HEX_WIDTH: usize = 16;
 
 fn main() -> io::Result<()> {
     let mut port: u16 = 8765;
@@ -187,21 +189,22 @@ fn content_html(file: &Path, mode_param: Option<&str>) -> String {
         Ok(x) => x,
         Err(e) => return format!("<p class=\"hint\">cannot read: {}</p>", esc(&e.to_string())),
     };
-    let text = String::from_utf8_lossy(&raw);
-    let is_csv = is_csv(file);
-    let mode = mode_param.unwrap_or(if is_csv { "table" } else { "text" });
-    // Core usage: indent badge.
-    let indent = mdvcore_core::indent::detect(&text, 50);
+    let name = file_name(file);
+    let is_tabular = view::looks_tabular(&name);
+    let mode = parse_mode(mode_param, is_tabular);
+    // The shared core view-model does ALL the shaping (file-type detect, mode
+    // set, text/hex/table build, indent badge) — the SAME path the TUI uses.
+    let v = view::build(&raw, &name, total, truncated, mode);
     let href = pct_encode(&file.to_string_lossy());
 
-    // Mode switcher (Table only for CSV/TSV — parity with the TUI's cycle).
-    let avail: &[&str] = if is_csv { &["table", "text", "hex"] } else { &["text", "hex"] };
+    // Mode switcher from the view's available modes.
     let mut modes = String::from("<div class=\"modes\">");
-    for m in avail {
-        if *m == mode {
-            modes.push_str(&format!("<b>{m}</b> "));
+    for m in &v.available_modes {
+        let s = mode_str(*m);
+        if *m == v.mode {
+            modes.push_str(&format!("<b>{s}</b> "));
         } else {
-            modes.push_str(&format!("<a href=\"/view?path={href}&mode={m}\">{m}</a> "));
+            modes.push_str(&format!("<a href=\"/view?path={href}&mode={s}\">{s}</a> "));
         }
     }
     modes.push_str("</div>");
@@ -209,31 +212,46 @@ fn content_html(file: &Path, mode_param: Option<&str>) -> String {
     let trunc = if truncated { " · TRUNCATED" } else { "" };
     let bar = format!(
         "<div class=\"bar\">{} · {} · indent: {} · {}{}</div>",
-        esc(&file_name(file)),
-        mode,
-        esc(&indent),
+        esc(&name),
+        mode_str(v.mode),
+        esc(&v.indent),
         human_size(total),
         trunc
     );
 
-    let content = match mode {
-        // Core usage: HEX dump rendered in the Rust core.
-        "hex" => format!("<pre>{}</pre>", esc(&mdvcore_core::hex::render_all(&raw, HEX_WIDTH, total, truncated))),
-        // Core usage: CSV/TSV parsed in the Rust core.
-        "table" => csv_table_html(&text),
-        _ => format!("<pre>{}</pre>", esc(&text)),
+    let content = match &v.body {
+        ViewBody::Hex(lines) | ViewBody::Text(lines) => format!("<pre>{}</pre>", esc(&lines.join("\n"))),
+        ViewBody::Table { header, rows } => table_html(header, rows),
     };
     format!("{modes}{bar}{content}")
 }
 
-fn csv_table_html(text: &str) -> String {
-    let t = mdvcore_core::csv::parse(text);
+/// Map the `?mode=` query value to a `ViewMode`, defaulting via the core (and
+/// refusing Table for a non-tabular file even if hand-typed in the URL).
+fn parse_mode(param: Option<&str>, is_tabular: bool) -> ViewMode {
+    match param {
+        Some("hex") => ViewMode::Hex,
+        Some("text") => ViewMode::Text,
+        Some("table") if is_tabular => ViewMode::Table,
+        _ => view::default_mode(is_tabular),
+    }
+}
+
+fn mode_str(m: ViewMode) -> &'static str {
+    match m {
+        ViewMode::Text => "text",
+        ViewMode::Hex => "hex",
+        ViewMode::Table => "table",
+    }
+}
+
+fn table_html(header: &[String], rows: &[Vec<String>]) -> String {
     let mut s = String::from("<table><thead><tr>");
-    for h in &t.header {
+    for h in header {
         s.push_str(&format!("<th>{}</th>", esc(h)));
     }
     s.push_str("</tr></thead><tbody>");
-    for row in t.rows.iter().take(5000) {
+    for row in rows.iter().take(5000) {
         s.push_str("<tr>");
         for c in row {
             s.push_str(&format!("<td>{}</td>", esc(c)));
@@ -292,13 +310,6 @@ fn read_capped(path: &Path, cap: usize) -> io::Result<(Vec<u8>, bool, usize)> {
     }
     let total = fs::metadata(path).map(|m| m.len() as usize).unwrap_or(buf.len());
     Ok((buf, truncated, total))
-}
-
-fn is_csv(path: &Path) -> bool {
-    matches!(
-        path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).as_deref(),
-        Some("csv" | "tsv")
-    )
 }
 
 fn file_name(path: &Path) -> String {
