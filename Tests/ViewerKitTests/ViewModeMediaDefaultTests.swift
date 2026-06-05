@@ -123,6 +123,38 @@ final class ViewModeMediaDefaultTests: XCTestCase {
             "forced unknown category without hint stays HEX")
     }
 
+    // TSK-332 — `availableModes` must accept the SAME hint as `defaultMode`,
+    // or the picker would offer only [.hex] while the default resolved to
+    // `.source` (a mode absent from the list → picker↔pane desync). These pin
+    // the two functions in lockstep.
+    func test_unknownExtButText_withRenderableHint_offersSourceAndHex() {
+        let url = URL(fileURLWithPath: "/tmp/blob.xyzzy")  // .unknown category
+        XCTAssertEqual(
+            ViewModeOptions.availableModes(for: url, isRenderableText: true),
+            [.source, .hex],
+            "unknown-ext-but-text must offer [Source, HEX] so the Source default lands")
+        // And the default it resolves to is a member of that set.
+        let modes = ViewModeOptions.availableModes(for: url, isRenderableText: true)
+        XCTAssertTrue(modes.contains(ViewModeOptions.defaultMode(for: url, isRenderableText: true)),
+                      "defaultMode + availableModes must agree under the hint")
+    }
+
+    func test_unknownExt_availableModes_hintAbsentOrFalse_staysHexOnly() {
+        let url = URL(fileURLWithPath: "/tmp/blob.xyzzy")
+        XCTAssertEqual(ViewModeOptions.availableModes(for: url), [.hex],
+                       "no hint preserves HEX-only for unknown bytes")
+        XCTAssertEqual(ViewModeOptions.availableModes(for: url, isRenderableText: false),
+                       [.hex],
+                       "isRenderableText:false keeps HEX-only")
+    }
+
+    func test_availableModes_renderableHint_neverOverridesNativePreview() {
+        let png = URL(fileURLWithPath: "/tmp/pic.png")
+        XCTAssertEqual(ViewModeOptions.availableModes(for: png, isRenderableText: true),
+                       [.preview, .hex],
+                       "native preview must win over the text hint in availableModes too")
+    }
+
     func test_hasNativePreview_partition() {
         let nativePreview: Set<FileCategory> = [.image, .audio, .video, .pdf, .sqlite]
         for cat in FileCategory.allCases {

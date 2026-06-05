@@ -40,20 +40,30 @@ public enum ViewModeOptions {
     /// one (e.g. a `.db` opened as Source gets Source + HEX; opened as
     /// CSV gets Table + Source + HEX).
     public static func availableModes(
-        for url: URL?, forcedCategory: FileCategory? = nil
+        for url: URL?, forcedCategory: FileCategory? = nil,
+        isRenderableText: Bool? = nil
     ) -> [ViewMode] {
         guard let url else { return [.source, .hex] }
         // Native-preview categories (image/audio/video/pdf/sqlite) render via
         // the `.preview` document state. Their PRIMARY mode is the first-class
         // `.preview` lens (native MediaPreviewView); HEX stays available as the
         // raw-bytes secondary lens. `.binary` / `.unknown` have no native
-        // preview (they'd hit UnsupportedPreview), so they stay HEX-only.
+        // preview (they'd hit UnsupportedPreview), so they stay HEX-only —
+        // UNLESS the content-sniff hint (TSK-332) reports the bytes decoded as
+        // renderable text, in which case the no-native-preview HEX-only set is
+        // upgraded to `[.source, .hex]` so the unknown-extension text file is
+        // actually inspectable as Source (and `defaultMode`'s matching `.source`
+        // upgrade has a mode to land on — they MUST stay in sync or the picker
+        // selects a mode absent from `availableModes`). A native preview always
+        // wins over the hint (an image is never "renderable text").
         if let forced = forcedCategory, !hasTextRepresentation(forced) {
-            return hasNativePreview(forced) ? [.preview, .hex] : [.hex]
+            if hasNativePreview(forced) { return [.preview, .hex] }
+            return isRenderableText == true ? [.source, .hex] : [.hex]
         }
         let cat = forcedCategory ?? FileTypeDetector.category(for: url)
         if !hasTextRepresentation(cat) {
-            return hasNativePreview(cat) ? [.preview, .hex] : [.hex]
+            if hasNativePreview(cat) { return [.preview, .hex] }
+            return isRenderableText == true ? [.source, .hex] : [.hex]
         }
         // Past the early returns above, `cat` always has a text
         // representation (binary/unknown/native-preview already returned).
