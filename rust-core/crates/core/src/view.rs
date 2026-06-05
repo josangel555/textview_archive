@@ -9,7 +9,7 @@
 //! shaping lives here, composing [`crate::csv`], [`crate::hex`], and
 //! [`crate::indent`]. A front-end becomes a thin renderer over [`View`].
 
-use crate::{csv, hex, indent};
+use crate::{csv, hex, image, indent};
 
 /// Bytes per HEX row (the project-wide default).
 const HEX_WIDTH: usize = 16;
@@ -29,6 +29,9 @@ pub enum ViewMode {
     Table,
     /// A unified diff, lines classified for +/- coloring.
     Diff,
+    /// A raster image (shown inline by the web tier, as a metadata card by the
+    /// terminal tier).
+    Image,
 }
 
 /// What a file is, by name — drives the default mode and the mode set offered.
@@ -42,6 +45,8 @@ pub enum FileKind {
     Tabular,
     /// `.diff`/`.patch` — leads with the `Diff` mode.
     Diff,
+    /// A raster image (PNG/JPEG/GIF/BMP/WEBP) — leads with the `Image` mode.
+    Image,
 }
 
 /// How a single diff display line should be colored. Derived purely from the
@@ -100,6 +105,11 @@ pub enum ViewBody {
     /// A unified diff: display lines pre-classified for +/- coloring, capped at
     /// `MAX_TEXT_LINES` (a pathological diff can't blow memory).
     Diff(Vec<DiffLine>),
+    /// A raster image: parsed header info (`None` if the dimensions couldn't be
+    /// read). The front-end still renders the image itself (web inlines the
+    /// bytes; the TUI shows a metadata card) — this carries only what's needed
+    /// for the dimensions/format card.
+    Image(Option<image::ImageInfo>),
 }
 
 /// A fully-shaped view: the active mode, its content, the detected indentation
@@ -155,7 +165,9 @@ pub fn clamp_line(target: usize, line_count: usize) -> usize {
 #[must_use]
 pub fn classify(name: &str) -> FileKind {
     let lower = name.to_ascii_lowercase();
-    if lower.ends_with(".diff") || lower.ends_with(".patch") {
+    if image::looks_image(&lower) {
+        FileKind::Image
+    } else if lower.ends_with(".diff") || lower.ends_with(".patch") {
         FileKind::Diff
     } else if lower.ends_with(".csv") || lower.ends_with(".tsv") {
         FileKind::Tabular
@@ -178,6 +190,9 @@ pub fn available_modes(kind: FileKind) -> Vec<ViewMode> {
     match kind {
         FileKind::Diff => vec![ViewMode::Diff, ViewMode::Text, ViewMode::Hex],
         FileKind::Tabular => vec![ViewMode::Table, ViewMode::Text, ViewMode::Hex],
+        // An image's bytes are binary — `Text` would be garbage, so only the
+        // `Image` card/preview and the `Hex` byte dump are offered.
+        FileKind::Image => vec![ViewMode::Image, ViewMode::Hex],
         FileKind::Plain => vec![ViewMode::Text, ViewMode::Hex],
     }
 }
@@ -188,6 +203,7 @@ pub fn default_mode(kind: FileKind) -> ViewMode {
     match kind {
         FileKind::Diff => ViewMode::Diff,
         FileKind::Tabular => ViewMode::Table,
+        FileKind::Image => ViewMode::Image,
         FileKind::Plain => ViewMode::Text,
     }
 }
@@ -222,6 +238,7 @@ pub fn build(
             ViewBody::Table { header: t.header, rows: t.rows, truncated: t.truncated }
         }
         ViewMode::Diff => ViewBody::Diff(diff_lines(&text)),
+        ViewMode::Image => ViewBody::Image(image::identify(bytes)),
     };
     View { mode, body, indent, kind, available_modes: available_modes(kind) }
 }
@@ -304,6 +321,11 @@ mod tests {
         assert_eq!(cycle(ViewMode::Diff, FileKind::Diff), ViewMode::Text);
         assert_eq!(cycle(ViewMode::Text, FileKind::Diff), ViewMode::Hex);
         assert_eq!(cycle(ViewMode::Hex, FileKind::Diff), ViewMode::Diff);
+        // image: only Image + Hex (no Text — binary), default Image, cycle wraps.
+        assert_eq!(default_mode(FileKind::Image), ViewMode::Image);
+        assert_eq!(available_modes(FileKind::Image), vec![ViewMode::Image, ViewMode::Hex]);
+        assert_eq!(cycle(ViewMode::Image, FileKind::Image), ViewMode::Hex);
+        assert_eq!(cycle(ViewMode::Hex, FileKind::Image), ViewMode::Image);
     }
 
     #[test]
@@ -312,8 +334,32 @@ mod tests {
         assert_eq!(classify("a.PATCH"), FileKind::Diff);
         assert_eq!(classify("a.csv"), FileKind::Tabular);
         assert_eq!(classify("a.tsv"), FileKind::Tabular);
+        assert_eq!(classify("a.PNG"), FileKind::Image);
+        assert_eq!(classify("a.jpeg"), FileKind::Image);
         assert_eq!(classify("a.txt"), FileKind::Plain);
         assert_eq!(classify("patch"), FileKind::Plain);
+    }
+
+    #[test]
+    fn build_image_reads_dimensions() {
+        // A minimal PNG header (signature + IHDR width/height) → Image body with
+        // parsed dimensions; `.png` opens in Image mode by default.
+        let mut png = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+        png.extend_from_slice(&[0, 0, 0, 13]);
+        png.extend_from_slice(b"IHDR");
+        png.extend_from_slice(&64u32.to_be_bytes());
+        png.extend_from_slice(&48u32.to_be_bytes());
+        let v = build(&png, "logo.png", png.len(), false, default_mode(classify("logo.png")));
+        assert_eq!(v.kind, FileKind::Image);
+        assert_eq!(v.mode, ViewMode::Image);
+        assert_eq!(v.available_modes, vec![ViewMode::Image, ViewMode::Hex]);
+        match v.body {
+            ViewBody::Image(Some(info)) => {
+                assert_eq!(info.width, 64);
+                assert_eq!(info.height, 48);
+            }
+            other => unreachable!("expected Image body with dimensions, got {other:?}"),
+        }
     }
 
     #[test]

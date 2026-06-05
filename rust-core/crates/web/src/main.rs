@@ -25,6 +25,7 @@ use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 use std::{fs, thread};
 
+use mdvcore_core::image::{self, ImageInfo};
 use mdvcore_core::nav::{self, SortKey};
 use mdvcore_core::outline::{self, Heading};
 use mdvcore_core::view::{self, DiffLine, DiffLineKind, FileKind, ViewBody, ViewMode};
@@ -503,6 +504,7 @@ fn content_html(file: &Path, mode_param: Option<&str>, line: Option<usize>) -> S
         }
         ViewBody::Table { header, rows, truncated } => table_html(header, rows, *truncated),
         ViewBody::Diff(lines) => diff_html(lines),
+        ViewBody::Image(info) => image_html(&name, &raw, *info, truncated),
     };
     format!("{modes}{bar}{outline_nav}{content}")
 }
@@ -540,6 +542,7 @@ fn parse_mode(param: Option<&str>, kind: FileKind) -> ViewMode {
         Some("text") => ViewMode::Text,
         Some("table") if kind == FileKind::Tabular => ViewMode::Table,
         Some("diff") if kind == FileKind::Diff => ViewMode::Diff,
+        Some("image") if kind == FileKind::Image => ViewMode::Image,
         _ => view::default_mode(kind),
     }
 }
@@ -550,6 +553,7 @@ fn mode_str(m: ViewMode) -> &'static str {
         ViewMode::Hex => "hex",
         ViewMode::Table => "table",
         ViewMode::Diff => "diff",
+        ViewMode::Image => "image",
     }
 }
 
@@ -678,6 +682,59 @@ fn diff_html(lines: &[DiffLine]) -> String {
     s
 }
 
+/// Render a raster image: a dimensions/format card plus the image itself,
+/// inlined as a base64 `data:` URI so it displays without a separate binary
+/// route (the bytes already rode through the path-confined `/view` request). A
+/// file truncated at the read cap can't be inlined (the bytes are incomplete),
+/// so it shows the card + a notice instead of a broken `<img>`.
+fn image_html(name: &str, raw: &[u8], info: Option<ImageInfo>, truncated: bool) -> String {
+    let mut s = String::from("<div class=\"imgcard\">");
+    if let Some(i) = info {
+        s.push_str(&format!(
+            "<b>{} image</b> · {} × {} px · {}",
+            i.kind.label(),
+            i.width,
+            i.height,
+            human_size(raw.len())
+        ));
+    } else {
+        s.push_str(&format!("<b>image</b> · dimensions unavailable · {}", human_size(raw.len())));
+    }
+    s.push_str("</div>");
+    if truncated {
+        s.push_str(
+            "<p class=\"hint\">\u{26a0} file exceeds the preview cap — too large to display inline.</p>",
+        );
+        return s;
+    }
+    let mime = image::mime_from_name(name).unwrap_or("application/octet-stream");
+    s.push_str(&format!(
+        "<img class=\"imgview\" alt=\"{}\" src=\"data:{};base64,{}\">",
+        esc(name),
+        mime,
+        base64_encode(raw)
+    ));
+    s
+}
+
+/// Standard base64 (RFC 4648) with `=` padding. Hand-rolled to keep the web tier
+/// dependency-free; only used to inline a capped (≤1 MiB) image as a data URI.
+fn base64_encode(data: &[u8]) -> String {
+    const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let b0 = u32::from(chunk.first().copied().unwrap_or(0));
+        let b1 = u32::from(chunk.get(1).copied().unwrap_or(0));
+        let b2 = u32::from(chunk.get(2).copied().unwrap_or(0));
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+        out.push(A[((triple >> 18) & 0x3F) as usize] as char);
+        out.push(A[((triple >> 12) & 0x3F) as usize] as char);
+        out.push(if chunk.len() > 1 { A[((triple >> 6) & 0x3F) as usize] as char } else { '=' });
+        out.push(if chunk.len() > 2 { A[(triple & 0x3F) as usize] as char } else { '=' });
+    }
+    out
+}
+
 fn page(title: &str, nav: &str, main_html: &str) -> String {
     format!(
         "<!doctype html><html><head><meta charset=\"utf-8\"><title>{t} · mdv-web</title>\
@@ -732,6 +789,8 @@ pre.diff span{{display:block}}\
 .diff-add{{color:#0a7d28;background:#e9f7ec}}\
 .diff-del{{color:#c01c28;background:#fbecec}}\
 .diff-ctx{{color:#444}}\
+.imgcard{{font:12px ui-monospace,Menlo,monospace;color:#444;margin:0 0 10px;padding:6px 10px;border:1px solid #e3e3e3;border-radius:6px;background:#fafafa}}\
+.imgview{{max-width:100%;height:auto;border:1px solid #ddd;border-radius:4px;background:repeating-conic-gradient(#eee 0% 25%,#fff 0% 50%) 50%/16px 16px}}\
 </style></head><body><div class=\"app\"><nav>{nav}</nav><main>{main_html}</main></div></body></html>",
         t = esc(title)
     )
@@ -901,6 +960,14 @@ mod tests {
             b"--- a/x.rs\n+++ b/x.rs\n@@ -1,2 +1,2 @@\n-old line\n+new line\n unchanged\n",
         )
         .unwrap();
+        // A minimal PNG (signature + IHDR with width/height) — enough for the
+        // image card + data-URI inlining; the bytes need not be a decodable image.
+        let mut png = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+        png.extend_from_slice(&[0, 0, 0, 13]);
+        png.extend_from_slice(b"IHDR");
+        png.extend_from_slice(&16u32.to_be_bytes());
+        png.extend_from_slice(&8u32.to_be_bytes());
+        fs::write(dir.join("pixel.png"), &png).unwrap();
         dir
     }
 
@@ -1200,6 +1267,33 @@ mod tests {
         assert!(html.contains("<b>diff</b>"), "diff is the active mode:\n{html}");
         assert!(html.contains("mode=text"), "text fallback offered:\n{html}");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn image_defaults_to_card_and_inline_data_uri() {
+        let dir = fixture();
+        let html = render_view(&dir.join("pixel.png"), None, SortKey::Name, false, None);
+        assert!(html.contains("class=\"imgcard\""), "image card present:\n{html}");
+        assert!(html.contains("PNG image"), "format label shown:\n{html}");
+        assert!(html.contains("16 \u{00d7} 8 px"), "dimensions shown:\n{html}");
+        assert!(html.contains("src=\"data:image/png;base64,"), "inline data URI:\n{html}");
+        // Image is the default (bold) mode; Hex is the only fallback (no Text for
+        // binary image bytes).
+        assert!(html.contains("<b>image</b>"), "image is the active mode:\n{html}");
+        assert!(html.contains("mode=hex"), "hex fallback offered:\n{html}");
+        assert!(!html.contains("mode=text"), "text not offered for an image:\n{html}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn base64_matches_rfc4648_vectors() {
+        assert_eq!(base64_encode(b""), "");
+        assert_eq!(base64_encode(b"f"), "Zg==");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+        assert_eq!(base64_encode(b"foob"), "Zm9vYg==");
+        assert_eq!(base64_encode(b"fooba"), "Zm9vYmE=");
+        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
     }
 
     #[test]

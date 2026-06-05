@@ -120,6 +120,8 @@ impl Preview {
             ViewBody::Text(l) | ViewBody::Hex(l) => l.len(),
             ViewBody::Table { rows, .. } => rows.len(),
             ViewBody::Diff(lines) => lines.len(),
+            // The image card is a fixed panel, not a scrollable list.
+            ViewBody::Image(_) => 0,
         }
     }
 }
@@ -838,6 +840,44 @@ impl App {
                     .block(Block::bordered().title(title));
                 frame.render_widget(table, area);
             }
+            // Image: a metadata card (a terminal can't draw pixels). Shows the
+            // format + dimensions parsed by the shared core, plus the byte size.
+            ViewBody::Image(info) => {
+                let title = format!(" {} · image ", p.name);
+                let mut lines: Vec<Line> = Vec::new();
+                if let Some(i) = info {
+                    lines.push(Line::from(Span::styled(
+                        format!("{} image", i.kind.label()),
+                        Style::new().fg(Color::Cyan).bold(),
+                    )));
+                    lines.push(Line::from(format!("{} × {} px", i.width, i.height)));
+                } else {
+                    lines.push(Line::from(Span::styled(
+                        "image (dimensions unavailable)",
+                        Style::new().fg(Color::Cyan).bold(),
+                    )));
+                }
+                lines.push(Line::from(human_size(p.total)));
+                if p.truncated {
+                    lines.push(Line::from(Span::styled(
+                        "· file truncated at the preview cap",
+                        Style::new().fg(Color::Yellow),
+                    )));
+                }
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    "the terminal can't render pixels — open in the web tier or a GUI viewer",
+                    Style::new().fg(Color::DarkGray),
+                )));
+                lines.push(Line::from(Span::styled(
+                    "press x to inspect the raw bytes as HEX",
+                    Style::new().fg(Color::DarkGray),
+                )));
+                let para = Paragraph::new(lines)
+                    .block(Block::bordered().title(title))
+                    .wrap(Wrap { trim: false });
+                frame.render_widget(para, area);
+            }
             // Diff: a scrolled paragraph with each line colored by its kind
             // (added/removed/header/hunk), classified by the shared core.
             ViewBody::Diff(lines) => {
@@ -890,6 +930,7 @@ impl App {
                     ViewMode::Hex => "hex",
                     ViewMode::Table => "table",
                     ViewMode::Diff => "diff",
+                    ViewMode::Image => "image",
                 };
                 // While the go-to-line prompt is open the title becomes the live
                 // "goto: N" input so the user sees the number they're typing.
