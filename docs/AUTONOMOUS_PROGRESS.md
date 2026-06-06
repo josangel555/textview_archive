@@ -22,6 +22,19 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 — adversarial self-audit of TSK-410 found + fixed a silent Rust regression
+- **`ef05840` fix(highlight): repair rust @constant query typo** (TSK-410 follow-up). Audited every
+  grammar query's `#match?` regex for NSRegularExpression mis-evaluation now that predicates are
+  honored (TSK-410). Found ONE latent typo it activated: `rust-highlights.scm` matched
+  SCREAMING_CASE with `^[A-Z][A-Z\d_]+$'` — the stray trailing quote = end-anchor + literal quote,
+  which never matches. Harmless while predicates were ignored; once evaluated, Rust constants
+  silently lost `.constant` coloring (no golden covered it). Dropped the quote + added `testRust`
+  (MAX_SIZE → .constant). Other 13 grammars' `#match` regexes verified NSRegularExpression-safe;
+  a rescan for `$<char>` never-match patterns found no others. Gate green (3764).
+  **Lesson:** enabling query-predicate evaluation can activate latent broken-regex typos that were
+  dead while predicates were ignored — audit all `#match` patterns when flipping that on.
+- Also extended TSK-410 regression coverage to JavaScript (`2cc59e9`, prior heartbeat).
+
 ## LOG 2026-06-05 (latest+2) — board lanes swept; SwiftUI clean-defect pool confirmed empty
 Swept the non-`reported` lanes for actionable SwiftUI work (mandate: any SDLC type):
 - **`regressed` (TSK-104 "CSV export drops last row on large files") + `triaged` (TSK-106 "SSE
