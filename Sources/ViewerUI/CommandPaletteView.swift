@@ -5,6 +5,12 @@ struct CommandPaletteView: View {
     @ObservedObject var model: DocumentModel
     @State private var query: String = ""
     @State private var selectedIndex: Int = 0
+    /// True only when selection moved via the keyboard (↑/↓). Hovering a row
+    /// also moves `selectedIndex` (so Return opens what the pointer is over),
+    /// but must NOT auto-scroll the list — otherwise moving the mouse over rows
+    /// re-centers the list under the pointer ("scrolls on mouse-over"). The
+    /// scroll-to-selection `onChange` honors this flag and clears it.
+    @State private var scrollOnSelectionChange = false
     @State private var filtered: [(item: HistoryEntry, match: FuzzyMatcher.Match)] = []
     /// Command-mode results (UX-M / #232). Populated only when the query
     /// is prefixed with `>` — the VS Code convention for "run a command"
@@ -84,6 +90,10 @@ struct CommandPaletteView: View {
                     }
                     .frame(maxHeight: 360)
                     .onChange(of: selectedIndex) { _, new in
+                        // Only auto-scroll for keyboard nav, not hover — else the
+                        // list re-centers under the pointer on mouse-over.
+                        guard scrollOnSelectionChange else { return }
+                        scrollOnSelectionChange = false
                         // Reduce Motion → nil animation → instant jump.
                         withAnimation(MotionGate.animation(.linear(duration: 0.05),
                                                            reduceMotion: reduceMotion)) {
@@ -199,6 +209,8 @@ struct CommandPaletteView: View {
                 }
                 .frame(maxHeight: 360)
                 .onChange(of: selectedIndex) { _, new in
+                    guard scrollOnSelectionChange else { return }
+                    scrollOnSelectionChange = false
                     withAnimation(MotionGate.animation(.linear(duration: 0.05),
                                                        reduceMotion: reduceMotion)) {
                         proxy.scrollTo(new, anchor: .center)
@@ -237,6 +249,7 @@ struct CommandPaletteView: View {
     private func moveSelection(_ delta: Int) {
         let count = isCommandMode ? filteredCommands.count : filtered.count
         guard count > 0 else { return }
+        scrollOnSelectionChange = true   // keyboard nav scrolls; hover does not
         selectedIndex = (selectedIndex + delta + count) % count
     }
 
