@@ -1965,3 +1965,65 @@ type_arguments ...)`, tsx → `(jsx_element ...)`. That instantly separated "wro
 "right grammar, wrong query/precedence" (it was the latter). **Lesson:** for highlighter bugs,
 get the parse tree's s-expr first; token *colors* are three layers downstream (grammar → query →
 captures → paintOver) and conflate independent failures.
+
+## Session 2026-06-06 — perf Fix#1 (pane retention), tab-strip UX cluster, VM build, the killall footgun
+
+### The test harness was killing the developer's OWN running app (`killall` by shared exec name)
+The owner asked, mid-session: *"why would a headless test run kill my running instance of /Applications?"*
+Root cause: several test/harness paths called **`killall MarkdownViewer`** to reap a leaked prior
+test spawn — but the installed app and the test-spawned app **share the executable name**
+`MarkdownViewer`, so `killall` SIGTERMed whatever the user had open. The most frequent trigger was
+`scripts/build-app.sh debug` → the pre-install `ViewModeMatrixSmokeTests` T4 gate → `AppLauncher`.
+**Fix (committed `ca67005`):** mark every test spawn with `env["MDV_TEST_INSTANCE"] = "1"` and
+replace the blanket `killall` with `AppLauncher.killTestInstances(named:)` — it `pgrep -x`'s
+candidate PIDs, reads each one's environment via `ps eww -p <pid>`, and SIGTERMs **only** the PIDs
+whose env contains the `MDV_TEST_INSTANCE=1` marker. The Finder/LaunchServices-launched app (no
+marker) is never touched. **Remaining bare-`killall` sites to migrate the same way** (follow-up):
+`SourceViewVisualRegressionTests`, `WalkthroughAndCodeReviewUATTests`, and `LaunchHarness` (~:104).
+**Lesson:** never `killall` by a name your shipping app also uses. Tag test-spawned processes and
+reap by tag (env marker via `ps eww`), or track the `Process` PID you launched and kill only that.
+
+### The UTM test VM CAN build now (TSK-401) — Swift 6.1.2 is stricter than the host on actor isolation
+Stale memory said the VM couldn't build (no Rust toolchain etc.). Reality at this session: the VM
+(`macOS15` / `vm-tester`, **Swift 6.1.2**) builds fine once 4 strict-concurrency sites that the host
+toolchain waved through were fixed. The host and VM differ on **default-actor-isolation** strictness
+("skew"), so code that compiles on the host can fail on the VM. Fix patterns that worked:
+- `nonisolated(unsafe) private static let coalesceLock = NSLock()` for a global lock that's logically
+  thread-safe but trips isolation inference (`ReviewSession`).
+- For a `Task.detached` / `DispatchQueue.main.sync` body that the VM flags as "sending `self`":
+  capture **`nonisolated(unsafe) let strongSelf = self`** (NOT `[weak self]` — the weak capture is
+  *also* flagged), then run the main-thread body inside **`MainActor.assumeIsolated { strongSelf.… }`**
+  / `MainActor.run { strongSelf.… }` (`HexView`). `MainActor.assumeIsolated` **alone** did not clear
+  "sending self"; the `nonisolated(unsafe) let` capture is the part that does. Rebinding
+  `let self = strongSelf` inside is rejected — use `strongSelf` directly.
+**Lesson:** the VM is a *stricter* compiler, not a broken one — treat its errors as real
+forward-compatibility signals. Update memory `reference_vm_no_rust_toolchain`: VM builds are no
+longer blocked (host still ships the Rust staticlib; VM compiles the Swift tree).
+
+### perf Fix#1: keep inactive tab panes mounted at `opacity:0`, never `.hidden()`
+The dominant tab-switch freeze is view-side — switching tabs tore down and reloaded the inactive
+pane's `WKWebView`. Fix (TSK-108): retain inactive panes mounted via a `MountedPanesLRU` (cap 4) in a
+`ZStack`, the inactive ones at **`.opacity(0)` + `.allowsHitTesting(false)` + `accessibilityHidden`**
+— **not** `.hidden()`. `.hidden()` removes the view from the hierarchy enough that WebKit fires a
+`visibilitychange` and self-reloads the page (the cmux #1228 pathology), which defeats the whole
+retention. Validate the *absence of remount* with a `#if DEBUG` `MountProbe` that counts
+`makeNSView`/`dismantleNSView` on the web views: A→B→A must be **0** new mounts; evicting past the LRU
+cap is exactly **1** dismantle. **Lesson:** "hide a WebView but keep it alive" = opacity/offscreen,
+never `.hidden()`/removal — and assert the no-remount invariant with a make/dismantle probe, because
+it regresses silently (you just get the slow path back).
+
+### A flaky parallel headless-gate failure looks like a real failure — re-run before chasing it
+`scripts/test-headless-gate.sh` failed once with exit 1, **no assertion text**, and "tier enforcement
+OK" — i.e. a test body errored under `--parallel` with no diagnostic. A direct
+`swift test --parallel` then exited 0 and the gate re-run passed on the same commit. **Lesson:** a
+gate failure with no assertion message + a clean tier-enforcement line is the signature of a flaky
+parallel test, not the change under test. Re-run once (and/or a `--filter` of the suspect suite)
+before assuming the diff broke something.
+
+### Board-id `TSK-NNN` ≠ audit `#N` (the Claude-TaskList numbers) — they collide and mislead
+The `tasked` board's `TSK-401` (the VM-build fix) is a *different* item from Claude-TaskList `#401`
+(`[PORT][WEB] Persistent front-end session state`). The two numbering spaces overlap numerically but
+are unrelated systems; the Claude TaskList is a stale redundant mirror — the **board is the system of
+record**. **Lesson:** always say/track `TSK-` ids for board work; never reconcile a board task against
+a same-numbered Claude-TaskList entry. And per the shared-board caveat, grep this repo before acting
+on any board task (TSK-101..106 are a *different* project's `agent:forge` tasks).
