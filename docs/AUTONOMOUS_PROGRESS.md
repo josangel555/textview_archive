@@ -176,6 +176,18 @@ build it, else hold.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-05 **Web: in-file content find — reuses the shared core module → TUI/web parity (TSK-198 → `fixed`, `d82eb30`).**
+  Second consumer of `crates/core/src/find.rs` (built in TSK-197). Stateless query-param design on `/view`:
+  `?find=<query>` runs `find::find_matches` over the raw bytes; `?fmatch=<i>` (clamped) selects the current
+  match. New `find_box` renders the query input, an `i of n` count, and wrapping prev/next links that bump
+  `fmatch` and carry the matching row's `#L<n>` fragment. The key safety move: an active find **steers the
+  existing line-jump machinery** — the current match's line becomes the goto `target`, getting the same
+  `id="L<n>"` anchor + `.cur` highlight go-to-line already uses — so there's ZERO mid-line HTML-escaping
+  surgery (correct by construction). Minimal-churn threading (`render_view` stays a thin wrapper; only
+  `render_view_filtered`/`content_html` gained the 2 params). **Validated on the committed commit:**
+  `scripts/rust-core-gate.sh` GREEN + `cargo test --workspace` all-green (web 41→44, +3 find tests:
+  count+anchor, fmatch-selects-second, no-match+query-escaped). (Pre-existing `render_view` dead_code warning
+  noted — test-only since `handle` calls `render_view_filtered`; unrelated, not gate-gated.)
 - 2026-06-05 **Front-ends: in-file content find — shared core module + TUI wiring (TSK-197 → `fixed`, `f6108a5`).**
   New lane (Rust front-ends, all headless via cargo). Built the missing shared primitive
   **`crates/core/src/find.rs`** — `find_matches(text, query, Case)` → byte-accurate, non-overlapping
