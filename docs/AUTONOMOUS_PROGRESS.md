@@ -22,6 +22,22 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+13) — Hold (deliberate): board re-verified, no new headless work
+- Re-checked the `tasked` board fresh (anti-staleness): no new SwiftUI-actionable tasks since TSK-419;
+  the only recent reported items (TSK-408/409 "Command palette — TUI/Web") are the **deprioritized**
+  Rust front-end lane. My deferred items unchanged (TSK-300 progress, TSK-282/266/267 triaged — all
+  `live-validation`; TSK-293/299 reported — owner UX decisions). No owner response yet.
+- Probed the sanctioned fallback (owner rule: fall back to other lanes only if no SwiftUI actionable).
+  The PORT lane is headless but (a) explicitly deprioritized and (b) its candidate W1 item **go-to-line
+  is already implemented** in the TUI (`open_goto`/`commit_goto`/`:`), i.e. the PORT board tasks are
+  partly stale too — finding a genuine gap needs a deep ramp into an unfamiliar 2190-line ratatui file
+  for low-priority work.
+- **Decision: deliberate hold this firing.** Forcing a ratatui widget (already done) or low-value tests
+  for already-covered code would be activity-theater against the quality discipline + SwiftUI-first
+  priority. The genuine bottleneck is owner input — see the consolidated **DECISIONS NEEDED** list in
+  the `latest+12` entry above (live window / UX call / one close-out). Next heartbeat re-checks the
+  board; it will resume the moment anything actionable appears or the owner responds.
+
 ## LOG 2026-06-06 (latest+12) — HEX-perf spike (TSK-267 → triaged); headless lanes exhausted
 - **Perf-debug spike on the HEX slowness** (TSK-267 "1MB extreme" / #218 "6KB ~1s"). Ruled out the
   model layer: `HexDumpBuilder.renderRows` is algorithmically clean (raw-pointer `withUnsafeBytes`,
