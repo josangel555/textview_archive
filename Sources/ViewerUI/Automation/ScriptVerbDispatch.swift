@@ -132,6 +132,23 @@ public enum ScriptVerb {
         case "editor-save":
             // ⌘S equivalent: write the active tab's buffer to disk.
             _ = model.saveActiveEditor()
+        case "save-copy":
+            // Write a COPY of the active tab's current content to `arg` (an
+            // absolute path), leaving the open tab untouched (TSK-300). This
+            // is the headless/automation entry; the menu + NSSavePanel that
+            // pick the path are a thin live follow-up. Errors go to Obs (the
+            // harness has no window for an alert).
+            do {
+                _ = try model.saveCopyOfCurrentTab(to: URL(fileURLWithPath: arg))
+                Obs.shared.emit(ObsEvent(
+                    level: .info, subsystem: "save",
+                    message: "save-copy: wrote copy to \(arg)"))
+            } catch {
+                Obs.shared.emit(ObsEvent(
+                    level: .error, subsystem: "save",
+                    message: "save-copy failed: \(error)",
+                    fields: ["target": arg, "error": "\(error)"]))
+            }
         case "toggle-bookmark": model.toggleCurrentTabBookmark()
         case "show-cross-search":    model.showCrossSearch()
         case "dismiss-cross-search": model.dismissCrossSearch()
