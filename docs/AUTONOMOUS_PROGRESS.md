@@ -22,6 +22,14 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-05 (latest+1) — live-smoke validation of the session's highlighting fixes
+- **`bash scripts/build-app.sh debug` PASSED** at `ab735b5`: `dist/TextView.app` built + signed;
+  pre-install T4 `ViewModeMatrixSmokeTests` 3/3 green (default-mode render, lazy-tab content-not-
+  blank, single mode-switch). Confirms TSK-195 (.tsx grammar) + TSK-410 (predicate eval) don't
+  break the live app's build/launch/file-load across view modes. Session work now headless + live
+  validated. (Note: live smoke validates load/render, not highlight *colors* — those are pinned by
+  TreeSitterEngineGoldenTests.)
+
 ## LOG 2026-06-05 (latest) — TSK-410 predicate evaluation FIXED
 - **`5e840b3` fix(highlight): evaluate tree-sitter query predicates** (TSK-410 → `fixed`).
   `TreeSitterEngine.tokenize` now routes the query cursor through SwiftTreeSitter's
