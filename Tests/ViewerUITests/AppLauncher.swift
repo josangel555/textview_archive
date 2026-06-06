@@ -72,8 +72,10 @@ enum AppLauncher {
             to: URL(fileURLWithPath: scriptPath),
             atomically: true, encoding: .utf8
         )
-        // Kill any prior instance.
-        _ = runShell(["/usr/bin/killall", existingProcessName], wait: 0.5)
+        // Reap any leaked PRIOR TEST instance — never the developer's
+        // normally-launched app (it shares this exec name; a blanket
+        // `killall` used to kill it, making the gate/live-smoke destructive).
+        killTestInstances(named: existingProcessName)
         Thread.sleep(forTimeInterval: 0.3)
 
         // Direct spawn — argv is preserved exactly.
@@ -88,6 +90,10 @@ enum AppLauncher {
         var env = ProcessInfo.processInfo.environment
         env["MDV_BACKGROUND"] = "1"
         env["MDV_SKIP_WORKSPACE_RESTORE"] = "1"
+        // Mark this as a TEST-spawned instance so `killTestInstances` can
+        // reap leaked test runs WITHOUT touching the developer's normally-
+        // launched app (which shares this executable name). See the helper.
+        env["MDV_TEST_INSTANCE"] = "1"
         // #193: tell the app to write its per-step dumps + `.windowid`
         // into this run's private directory rather than the shared
         // per-user tmpdir.
@@ -126,6 +132,30 @@ enum AppLauncher {
               let pid = Int32(stdout)
         else { return nil }
         return pid
+    }
+
+    /// Reap leaked TEST-spawned instances of `name` — and ONLY those.
+    ///
+    /// A blanket `killall <name>` also killed the developer's normally-
+    /// launched app, which shares this executable name, making the headless
+    /// gate / live smoke destructive (it terminated whatever the user had
+    /// open). Test spawns carry `MDV_TEST_INSTANCE=1` in their environment
+    /// (set in `runScript`); we list candidate PIDs with `pgrep -x` and
+    /// SIGTERM only the ones whose `ps eww` environment shows that marker.
+    /// The user's app (launched via Finder/LaunchServices, no marker) is
+    /// never touched.
+    static func killTestInstances(named name: String) {
+        let listing = runShell(["/usr/bin/pgrep", "-x", name], capture: true)
+        let pids = (listing.stdout ?? "")
+            .split(whereSeparator: \.isNewline)
+            .compactMap { Int32($0.trimmingCharacters(in: .whitespaces)) }
+        for pid in pids {
+            // `ps eww` appends the process environment after the command.
+            let env = runShell(["/bin/ps", "eww", "-p", "\(pid)"], capture: true)
+                .stdout ?? ""
+            guard env.contains("MDV_TEST_INSTANCE=1") else { continue }
+            kill(pid, SIGTERM)
+        }
     }
 
     /// Per-user tmpdir (`/var/folders/.../T/`). The app writes its step
