@@ -178,14 +178,58 @@ public final class SessionStore: @unchecked Sendable {
     /// MainActor.
     @discardableResult
     public func saveIndexSync(_ idx: SessionIndex) -> Bool {
-        Self.syncWrite(idx, to: indexURL)
+        if wouldClobberLiveSnapshots(idx) {
+            noteRefusedClobber(liveSnapshotIDs().count)
+            return false
+        }
+        return Self.syncWrite(idx, to: indexURL)
     }
 
     /// Enqueue an index write on the serial write queue. If another
     /// index write is already pending, this value supersedes it
     /// (coalescing). Returns immediately.
     public func enqueueSaveIndex(_ idx: SessionIndex) {
+        if wouldClobberLiveSnapshots(idx) {
+            noteRefusedClobber(liveSnapshotIDs().count)
+            return
+        }
         enqueue(idx, to: indexURL)
+    }
+
+    /// IDs of live (non-trashed) per-session snapshot files in `directory`.
+    /// `index.json` and the `trash/` subdir are excluded. A genuinely-closed
+    /// session has its snapshot `moveToTrash`'d first, so a live snapshot whose
+    /// id is missing from an about-to-be-written index signals the race that
+    /// emptied `index.json` while the user's sessions still existed on disk.
+    public func liveSnapshotIDs() -> [UUID] {
+        let fm = FileManager.default
+        guard let urls = try? fm.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]) else { return [] }
+        return urls.compactMap { url -> UUID? in
+            guard url.pathExtension == "json",
+                  url.lastPathComponent != "index.json" else { return nil }
+            return UUID(uuidString: url.deletingPathExtension().lastPathComponent)
+        }
+    }
+
+    /// The exact session-tab-clobber signature (TSK-438): persisting an EMPTY
+    /// session list while snapshot files still live on disk. Refusing such a
+    /// write — keeping the prior, non-empty index — is what stops the whole
+    /// session-tab strip from vanishing on next launch even though the user's
+    /// sessions still exist. A legitimate "closed the last session" write has
+    /// already trashed that snapshot, so `liveSnapshotIDs()` is empty and the
+    /// write proceeds normally.
+    private func wouldClobberLiveSnapshots(_ idx: SessionIndex) -> Bool {
+        guard idx.sessions.isEmpty else { return false }
+        return !liveSnapshotIDs().isEmpty
+    }
+
+    private func noteRefusedClobber(_ count: Int) {
+        FileHandle.standardError.write(Data(
+            ("[SessionStore] refused to persist an empty session index while "
+             + "\(count) snapshot file(s) still exist on disk (clobber guard, "
+             + "TSK-438) — keeping the prior index.\n").utf8))
     }
 
     // MARK: Per-session snapshots ------------------------------------
