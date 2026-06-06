@@ -22,6 +22,31 @@ public struct Tab: Sendable, Identifiable {
         case staleVsDisk
         /// The on-disk file no longer exists (deleted / moved away).
         case deleted
+
+        /// Whether the tab strip should surface a red disk-change dot for
+        /// this state (TSK-371). `.fresh` shows nothing; both change states
+        /// do. Pure so the TabBar reads it off the cheap `Tab` snapshot and
+        /// it stays unit-testable without a view.
+        public var showsTabDot: Bool { self != .fresh }
+
+        /// HelpInfo bubble title for the tab dot (`nil` when no dot).
+        public var tabDotHelpTitle: String? {
+            switch self {
+            case .fresh:       return nil
+            case .staleVsDisk: return "Changed on disk"
+            case .deleted:     return "Deleted on disk"
+            }
+        }
+
+        /// Longer HelpInfo / status-bar description for the tab dot
+        /// (`nil` when no dot).
+        public var tabDotHelpDescription: String? {
+            switch self {
+            case .fresh:       return nil
+            case .staleVsDisk: return "The file changed in the filesystem since it was loaded"
+            case .deleted:     return "The file no longer exists in the filesystem"
+            }
+        }
     }
 
     public let id: UUID

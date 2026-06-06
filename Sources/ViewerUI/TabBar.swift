@@ -367,6 +367,20 @@ struct TabBarItem: View {
                             .accessibilityLabel("Unsaved changes")
                             .accessibilityIdentifier("mdv.tab.dirtyDot")
                     }
+                    if tab.diskState.showsTabDot {
+                        // TSK-371: red disk-change dot — the on-disk file
+                        // changed (or was deleted) since we loaded it.
+                        // Orthogonal to the accent dirty dot (a tab can be
+                        // both edited-by-you AND changed-on-disk), so both
+                        // can show at once. Same sizing as the dirty dot.
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 7 * scale, height: 7 * scale)
+                            .helpInfo(title: tab.diskState.tabDotHelpTitle ?? "Changed on disk",
+                                      description: tab.diskState.tabDotHelpDescription ?? "")
+                            .accessibilityLabel(tab.diskState.tabDotHelpTitle ?? "Changed on disk")
+                            .accessibilityIdentifier("mdv.tab.diskDot")
+                    }
                     if isBookmarked {
                         Image(systemName: "star.fill")
                             .font(.system(size: 8 * scale))
