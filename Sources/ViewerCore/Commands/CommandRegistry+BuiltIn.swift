@@ -220,7 +220,7 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "git.fileHistory", title: "Show File History", category: .git,
             defaultShortcut: Shortcut(key: "h", modifiers: [.command, .option, .shift]),
-            scriptVerb: nil),
+            scriptVerb: "git-file-history"),
         CommandDescriptor(
             id: "git.repoHistory", title: "Show Repository History", category: .git,
             defaultShortcut: Shortcut(key: "l", modifiers: [.command, .option, .shift]),

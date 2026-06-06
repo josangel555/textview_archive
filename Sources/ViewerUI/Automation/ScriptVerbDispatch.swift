@@ -170,6 +170,12 @@ public enum ScriptVerb {
         // had no script verb). Both wire to existing @MainActor model methods.
         case "show-git-panel":  model.showGitPanel()
         case "toggle-line-bookmark": model.toggleCurrentLineBookmark()
+        case "git-file-history":
+            // Omni-invokable "Show File History" for the CURRENT file (the
+            // palette can't supply a path; the existing `file-history <path>`
+            // verb stays for explicit-path automation). No-op off-repo /
+            // untracked, exactly like the menu action.
+            if let u = model.currentURL { model.openFileHistory(for: u) }
         case "show-cross-search":    model.showCrossSearch()
         case "dismiss-cross-search": model.dismissCrossSearch()
         case "set-cross-query":
