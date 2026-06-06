@@ -1,16 +1,26 @@
 #!/usr/bin/env bash
 # Assemble dist/MarkdownViewer.app from the swift-built executable + Info.plist.
-# Usage: bash scripts/build-app.sh [debug|release]   (default: debug)
+# Usage: bash scripts/build-app.sh [debug|release] [--install]   (default: debug)
+#
+# `--install` chains scripts/install-app.sh after a successful build so the
+# fresh bundle replaces /Applications/TextView.app (the copy you actually
+# launch). Without it the build lands in dist/ only — a common gotcha where a
+# rebuild "doesn't show" a new feature because the running app is the stale
+# /Applications copy.
 set -euo pipefail
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 ROOT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 
-CONFIG="${1:-debug}"
-case "$CONFIG" in
-  debug|release) ;;
-  *) echo "Error: config must be 'debug' or 'release', got '$CONFIG'" >&2; exit 2 ;;
-esac
+CONFIG="debug"
+DO_INSTALL=0
+for arg in "$@"; do
+  case "$arg" in
+    debug|release) CONFIG="$arg" ;;
+    --install)     DO_INSTALL=1 ;;
+    *) echo "Error: unknown arg '$arg' (expected debug|release|--install)" >&2; exit 2 ;;
+  esac
+done
 
 # The on-disk bundle is named TextView.app — Finder/Dock/Spotlight
 # show this filename, ignoring CFBundleName. The executable inside
@@ -296,3 +306,13 @@ echo "  open -a \"$APP_DIR\" DESIGN.md"
 echo "  open DESIGN.md -a \"$APP_DIR\""
 echo
 echo "Right-click a .md file in Finder → Open With → TextView"
+
+# --install: push the fresh bundle to /Applications/TextView.app (the copy the
+# user launches). install-app.sh replaces the running instance so the new build
+# takes effect on next open. Without this, `build-app.sh` only updates dist/ and
+# the installed app stays stale (the "rebuild didn't show my change" gotcha).
+if [[ "$DO_INSTALL" == "1" ]]; then
+  echo
+  echo "==> --install: bash scripts/install-app.sh"
+  bash "$SCRIPT_DIR/install-app.sh"
+fi

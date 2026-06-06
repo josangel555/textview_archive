@@ -138,9 +138,12 @@ continue", document blockers and move on):
   (rust-core). New deps need explicit owner approval.
 - **Validation ladder:** (1) `swift build` compile; (2) targeted
   `swift test --filter …` for the changed logic; (3) host headless gate
-  (window-free); (4) `bash scripts/build-app.sh debug` for a T4 live-smoke when
-  the change is view/live-tier; (5) **run the suite on the VM** (`ssh macOS15`,
-  Swift 6.1.2 — see Testing rules) for the stricter forward-compat check.
+  (window-free); (4) `bash scripts/build-app.sh debug --install` for a T4
+  live-smoke when the change is view/live-tier — `--install` pushes the fresh
+  bundle to `/Applications/TextView.app` (the copy the owner launches), avoiding
+  the "rebuild didn't show my change" gotcha where only `dist/` updated;
+  (5) **run the suite on the VM** (`ssh macOS15`, Swift 6.1.2 — see Testing
+  rules) for the stricter forward-compat check.
 - **Log every landed item** to `docs/AUTONOMOUS_PROGRESS.md` (the narrative that
   survives compaction) and advance the board task to `fixed` with the commit SHA.
 - A perf-bench-only gate failure (e.g. `FoldBench`/`CrossFileSearchBench`
