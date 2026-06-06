@@ -13,9 +13,11 @@
 //! parent · x toggle text/hex · n toggle line-number gutter · s cycle sort · .
 //! toggle hidden/dotfiles · f quick-find (type to narrow, ↵ opens the top hit,
 //! ESC clears) · : go-to-line (type a number, ↵ jumps + centers + flashes the
-//! row, ESC cancels) · o markdown outline (open a `.md` file, ↑/↓ pick a
-//! heading, ↵ jumps to it, ESC/o closes) · g/G top/bottom · PgUp/PgDn scroll ·
-//! q quit.
+//! row, ESC cancels) · / in-file find (type a query, ↵ jumps to the first match
+//! + centers + flashes; then n/N step next/prev, ESC clears the find; in Table
+//! mode `/` opens the column filter instead) · o markdown outline (open a `.md`
+//! file, ↑/↓ pick a heading, ↵ jumps to it, ESC/o closes) · g/G top/bottom ·
+//! PgUp/PgDn scroll · q quit.
 
 use std::fs;
 use std::io;
@@ -34,6 +36,7 @@ use ratatui::backend::TestBackend;
 use mdvcore_core::nav::{self, SortKey};
 use mdvcore_core::outline::{self, Heading};
 use mdvcore_core::filter;
+use mdvcore_core::find;
 use mdvcore_core::view::{self, DiffLineKind, FileKind, View, ViewBody, ViewMode};
 
 /// Max bytes read into a preview (keeps the TUI snappy; larger files truncate).
@@ -205,6 +208,23 @@ struct App {
     /// Selected row in the outline overlay (index into `outline`), kept in range
     /// as the user moves with ↑/↓. Meaningless while `outline` is `None`.
     outline_sel: usize,
+    /// In-file find prompt state. `Some(query)` means the `/` find box is open
+    /// (in text/hex modes; `/` opens the table filter in Table mode) and
+    /// capturing the literal query; the content-pane title shows the live input.
+    /// On Enter the query is run through `find::find_matches` over the raw text;
+    /// `None` means the prompt is closed. ASCII-case-insensitive.
+    find: Option<String>,
+    /// The committed query that produced `find_matches`, kept for the status
+    /// readout ("find: i of n") and shown verbatim. Empty when no find is active.
+    find_query: String,
+    /// Matches of `find_query` across the open file, in document order (from the
+    /// shared `find::find_matches`). Non-empty ⇒ a find is active: `n`/`N`
+    /// navigate it (and `n` no longer toggles the gutter), `Esc` dismisses it.
+    /// Cleared when the open file changes.
+    find_matches: Vec<find::Match>,
+    /// Index into `find_matches` of the current match (the one centered+flashed).
+    /// Stepped by `n`/`N`; meaningless when `find_matches` is empty.
+    find_sel: usize,
 }
 
 impl App {
@@ -227,6 +247,10 @@ impl App {
             flash: None,
             outline: None,
             outline_sel: 0,
+            find: None,
+            find_query: String::new(),
+            find_matches: Vec::new(),
+            find_sel: 0,
         };
         app.reload_dir();
         app
@@ -482,6 +506,7 @@ impl App {
                 });
                 self.flash = None;
                 self.outline = None; // a stale outline belongs to the old file
+                self.clear_find(); // matches/needle belong to the old file
                 self.status = format!("opened {}", path.display());
             }
             Err(e) => self.status = format!("open failed: {e}"),
@@ -738,6 +763,126 @@ impl App {
         self.flash = Some(line0);
     }
 
+    // MARK: - In-file content find (shared `find::find_matches`)
+
+    /// Whether the find prompt is open and capturing the query.
+    fn find_prompt_open(&self) -> bool {
+        self.find.is_some()
+    }
+
+    /// Open the in-file find prompt (text/hex modes; `/` opens the table filter
+    /// in Table mode — see `on_key`). Seeds the box with the last committed query
+    /// so re-pressing `/` lets you refine it. A no-op when no file is open or the
+    /// prompt is already up.
+    fn open_find(&mut self) {
+        if self.preview.is_some() && self.find.is_none() {
+            self.find = Some(self.find_query.clone());
+        }
+    }
+
+    /// Close the find prompt, leaving any already-applied matches in place (so
+    /// `Esc` out of the prompt keeps the current highlight + `n`/`N` nav).
+    fn cancel_find(&mut self) {
+        self.find = None;
+    }
+
+    /// Drop the find prompt AND its applied matches (used on file open, and on
+    /// `Esc` from browse mode to dismiss the find highlight).
+    fn clear_find(&mut self) {
+        self.find = None;
+        self.find_query.clear();
+        self.find_matches.clear();
+        self.find_sel = 0;
+    }
+
+    /// Append any character to the live query (printable keys), so the find box
+    /// accepts the full text — unlike go-to-line, which only takes digits.
+    fn find_push(&mut self, c: char) {
+        if let Some(q) = &mut self.find {
+            q.push(c);
+        }
+    }
+
+    /// Delete the last character of the live query.
+    fn find_backspace(&mut self) {
+        if let Some(q) = &mut self.find {
+            q.pop();
+        }
+    }
+
+    /// Commit the find: run the typed query through the shared
+    /// `find::find_matches` over the file's RAW bytes (mode-independent, like the
+    /// outline), select the first match at or after the current scroll position,
+    /// and jump to it. An empty query clears any active find. A query with no
+    /// matches leaves the prompt closed with a "no matches" status (and no
+    /// stale highlight).
+    fn commit_find(&mut self) {
+        let Some(query) = self.find.take() else { return };
+        if query.is_empty() {
+            self.clear_find();
+            return;
+        }
+        let Some(p) = &self.preview else { return };
+        let text = String::from_utf8_lossy(&p.raw);
+        let matches = find::find_matches(&text, &query, find::Case::Insensitive);
+        if matches.is_empty() {
+            self.find_query.clear();
+            self.find_matches.clear();
+            self.status = format!("find: no matches for \"{query}\"");
+            return;
+        }
+        // Pick the first match at/after where the user is currently looking, so a
+        // find jumps forward from the viewport rather than always to the top.
+        let from_line = p.scroll;
+        self.find_sel = find::first_from(&matches, from_line, 0).unwrap_or(0);
+        self.find_query = query;
+        self.find_matches = matches;
+        self.jump_to_current_match();
+    }
+
+    /// Step to the next (`forward`) or previous match, wrapping, and jump to it.
+    /// A no-op when no find is active.
+    fn find_step(&mut self, forward: bool) {
+        if self.find_matches.is_empty() {
+            return;
+        }
+        let stepped = if forward {
+            find::next_index(&self.find_matches, self.find_sel)
+        } else {
+            find::prev_index(&self.find_matches, self.find_sel)
+        };
+        if let Some(i) = stepped {
+            self.find_sel = i;
+            self.jump_to_current_match();
+        }
+    }
+
+    /// Center the content pane on the current match's line (forcing Text mode
+    /// first so the line index maps to a real row — the same clamp+center+flash
+    /// path as go-to-line / outline) and update the "find: i of n" status.
+    fn jump_to_current_match(&mut self) {
+        let Some(target) = self.find_matches.get(self.find_sel).map(|m| m.line) else { return };
+        // Matches index the SOURCE lines — ensure Text mode so the jump lands on
+        // a real line (hex/table rows don't map to source line numbers).
+        if let Some(p) = &mut self.preview {
+            if p.view.mode != ViewMode::Text {
+                p.view = view::build(&p.raw, &p.name, p.total, p.truncated, ViewMode::Text);
+                p.scroll = 0;
+            }
+        }
+        let i = self.find_sel + 1;
+        let n = self.find_matches.len();
+        let q = self.find_query.clone();
+        let Some(p) = &mut self.preview else { return };
+        let len = p.content_len();
+        let line0 = view::clamp_line(target + 1, len).saturating_sub(1); // 0-based → 1-based → clamp → 0-based
+        let half = self.content_height / 2;
+        let max_scroll = len.saturating_sub(1);
+        p.scroll = line0.saturating_sub(half).min(max_scroll);
+        self.flash = Some(line0);
+        self.status = format!("find: {i} of {n} · \"{q}\"");
+    }
+
     // MARK: - Event loop
 
     fn run(&mut self, terminal: &mut ratatui::DefaultTerminal) -> io::Result<()> {
@@ -778,9 +923,22 @@ impl App {
         if self.table_filtering() {
             return self.on_key_table_filter(code);
         }
+        // The in-file find prompt captures the typed query before the normal
+        // keymap (so `q`/`x`/etc. become literal query chars, not commands).
+        if self.find_prompt_open() {
+            return self.on_key_find(code);
+        }
         let page = self.content_height.max(1) as isize;
         match code {
-            KeyCode::Char('q') | KeyCode::Esc => return true,
+            KeyCode::Char('q') => return true,
+            // ESC dismisses an active find's highlight first; with no find up it
+            // quits (preserving the historical ESC-to-quit for the common case).
+            KeyCode::Esc => {
+                if self.find_matches.is_empty() {
+                    return true;
+                }
+                self.clear_find();
+            }
             KeyCode::Down | KeyCode::Char('j') => self.move_selection(1),
             KeyCode::Up | KeyCode::Char('k') => self.move_selection(-1),
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.enter(),
@@ -788,12 +946,30 @@ impl App {
             KeyCode::Char('x') => self.cycle_mode(),
             // Open-as: 1-9 force the file's Nth available mode directly.
             KeyCode::Char(c @ '1'..='9') => self.set_mode(c as usize - '1' as usize),
-            KeyCode::Char('n') => self.show_gutter = !self.show_gutter,
+            // `n`/`N` step the find matches WHILE a find is active; with no
+            // active find, `n` keeps its line-number-gutter toggle.
+            KeyCode::Char('n') => {
+                if self.find_matches.is_empty() {
+                    self.show_gutter = !self.show_gutter;
+                } else {
+                    self.find_step(true);
+                }
+            }
+            KeyCode::Char('N') => self.find_step(false),
             KeyCode::Char('s') => self.cycle_sort(),
             KeyCode::Char('.') => self.toggle_hidden(),
             KeyCode::Char('f') => self.open_filter(),
             KeyCode::Char(':') => self.open_goto(),
-            KeyCode::Char('/') => self.open_table_filter(),
+            // `/` searches: the table filter in Table mode, in-file find otherwise.
+            KeyCode::Char('/') => {
+                let is_table =
+                    self.preview.as_ref().is_some_and(|p| p.view.mode == ViewMode::Table);
+                if is_table {
+                    self.open_table_filter();
+                } else {
+                    self.open_find();
+                }
+            }
             KeyCode::Char('o') => self.toggle_outline(),
             KeyCode::Char('g') => self.scroll_to(true),
             KeyCode::Char('G') => self.scroll_to(false),
@@ -814,6 +990,21 @@ impl App {
             KeyCode::Enter => self.commit_goto(),
             KeyCode::Backspace => self.goto_backspace(),
             KeyCode::Char(c) => self.goto_push(c),
+            _ => {}
+        }
+        false
+    }
+
+    /// Key handling while the in-file find prompt is open. Never quits (`q`
+    /// becomes a literal query char; ESC cancels the prompt). Any printable char
+    /// extends the query; Backspace trims; Enter runs the search and jumps to the
+    /// first match; ESC closes the prompt (keeping any previously-applied find).
+    fn on_key_find(&mut self, code: KeyCode) -> bool {
+        match code {
+            KeyCode::Esc => self.cancel_find(),
+            KeyCode::Enter => self.commit_find(),
+            KeyCode::Backspace => self.find_backspace(),
+            KeyCode::Char(c) => self.find_push(c),
             _ => {}
         }
         false
@@ -1094,7 +1285,9 @@ impl App {
                 };
                 // While the go-to-line prompt is open the title becomes the live
                 // "goto: N" input so the user sees the number they're typing.
-                let title = if let Some(g) = &self.goto {
+                let title = if let Some(f) = &self.find {
+                    format!(" {} · find: {f}▏ (↵ search · ESC cancel) ", p.name)
+                } else if let Some(g) = &self.goto {
                     format!(" {} · goto line: {g}▏ (↵ jump · ESC cancel) ", p.name)
                 } else {
                     format!(
@@ -1185,16 +1378,27 @@ impl App {
     fn draw_status(&self, frame: &mut Frame, area: Rect) {
         // While the quick-find prompt is open, the command keys are captured as
         // needle text — show the prompt-specific bindings so the help isn't a lie.
-        let help = if self.filtering() {
-            "type to filter · ↑/↓ move · ↵ open top hit · ⌫ delete · ESC clear"
+        let help: String = if self.filtering() {
+            "type to filter · ↑/↓ move · ↵ open top hit · ⌫ delete · ESC clear".into()
         } else if self.table_filtering() {
-            "type to filter rows (col:term scopes a column) · ↵ apply · ⌫ delete · ESC cancel"
+            "type to filter rows (col:term scopes a column) · ↵ apply · ⌫ delete · ESC cancel".into()
         } else if self.goto_active() {
-            "type a line number · ↵ jump · ⌫ delete · ESC cancel"
+            "type a line number · ↵ jump · ⌫ delete · ESC cancel".into()
         } else if self.outline_active() {
-            "↑/↓ pick heading · ↵ jump to it · ESC / o close outline"
+            "↑/↓ pick heading · ↵ jump to it · ESC / o close outline".into()
+        } else if self.find_prompt_open() {
+            "type to search this file · ↵ find + jump · ⌫ delete · ESC cancel".into()
+        } else if !self.find_matches.is_empty() {
+            // Show the live match position so the count is visible (the `status`
+            // line field is not rendered) — "find: i of n · …".
+            format!(
+                "find: {} of {} \"{}\" · n/N next/prev · / new · ESC clear",
+                self.find_sel + 1,
+                self.find_matches.len(),
+                self.find_query,
+            )
         } else {
-            "↑/↓ move · ↵ open · ⌫ up · x cycle mode · 1-9 open-as · n nums · s sort · . hidden · f find · / table-filter · : goto · o outline · q quit"
+            "↑/↓ move · ↵ open · ⌫ up · x mode · 1-9 open-as · n nums · s sort · . hidden · f file-find · / find · : goto · o outline · q quit".into()
         };
         let line = Line::from(vec![
             Span::styled(" mdv-tui ", Style::new().fg(Color::Black).bg(Color::Cyan).bold()),
@@ -1482,6 +1686,67 @@ mod tests {
         let scoped = wide(&mut app);
         assert!(!scoped.contains("NYC") && !scoped.contains("LA"), "city-scoped Alice matches no rows:\n{scoped}");
         assert!(scoped.contains("0/2 rows"), "count shows zero matches:\n{scoped}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn in_file_find_jumps_to_first_match_and_n_steps() {
+        let dir = fixture_dir();
+        let mut app = App::new(dir.clone());
+        select_name(&mut app, "hello.txt");
+        app.enter(); // Text mode: "line one" / "line two"
+        let _ = render(&mut app); // populate content_height (centering needs it)
+        // `/` opens the IN-FILE find prompt in text mode (table filter only in
+        // table mode); the live query shows in the content-pane title.
+        app.on_key(KeyCode::Char('/'));
+        assert!(app.find_prompt_open(), "/ opens the in-file find prompt");
+        for c in "line".chars() {
+            app.on_key(KeyCode::Char(c));
+        }
+        assert!(render(&mut app).contains("find: line"), "title shows the live query");
+        // Enter runs the search across the file's raw text via `find::find_matches`.
+        app.on_key(KeyCode::Enter);
+        assert!(!app.find_prompt_open(), "Enter closes the prompt");
+        assert_eq!(app.find_matches.len(), 2, "'line' matches both lines");
+        assert_eq!(app.find_sel, 0, "first match selected on commit");
+        assert!(render(&mut app).contains("find: 1 of 2"), "status shows match position");
+        // n steps forward (wrapping); N steps back.
+        app.on_key(KeyCode::Char('n'));
+        assert_eq!(app.find_sel, 1, "n → next match");
+        app.on_key(KeyCode::Char('n'));
+        assert_eq!(app.find_sel, 0, "n wraps past the end");
+        app.on_key(KeyCode::Char('N'));
+        assert_eq!(app.find_sel, 1, "N wraps back to the last");
+        // ESC dismisses the active find; `n` then resumes toggling the gutter.
+        app.on_key(KeyCode::Esc);
+        assert!(app.find_matches.is_empty(), "ESC clears the active find");
+        let gutter = app.show_gutter;
+        app.on_key(KeyCode::Char('n'));
+        assert_ne!(app.show_gutter, gutter, "with no find, n toggles the gutter again");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn in_file_find_no_match_reports_and_leaves_no_highlight() {
+        let dir = fixture_dir();
+        let mut app = App::new(dir.clone());
+        select_name(&mut app, "hello.txt");
+        app.enter();
+        let _ = render(&mut app);
+        app.on_key(KeyCode::Char('/'));
+        for c in "zebra".chars() {
+            app.on_key(KeyCode::Char(c));
+        }
+        app.on_key(KeyCode::Enter);
+        assert!(app.find_matches.is_empty(), "no matches for 'zebra'");
+        assert!(!app.find_prompt_open(), "prompt closed after a no-match search");
+        // With no active find the status bar falls back to the browse help (it
+        // never enters the find-active "n/N next/prev" branch).
+        let out = render(&mut app);
+        // "x mode" sits early in the browse help (the long help truncates at the
+        // status-bar width, so assert on an early token, not a trailing one).
+        assert!(out.contains("x mode"), "browse help shown (no find-active bar):\n{out}");
+        assert!(!out.contains("n/N next/prev"), "no find-active bar after a miss:\n{out}");
         let _ = fs::remove_dir_all(&dir);
     }
 
