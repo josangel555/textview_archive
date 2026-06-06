@@ -65,4 +65,40 @@ final class TabBarWidthTests: XCTestCase {
         // Lower clamp scales linearly.
         XCTAssertEqual(w(1, 100_000, 2), 2 * w(1, 100_000, 1), accuracy: 0.001)
     }
+
+    // MARK: - tabsAreCrowded (TSK-304 overflow-dropdown trigger)
+
+    private func crowded(_ available: CGFloat, _ count: Int, _ scale: CGFloat = 1) -> Bool {
+        TabBar.tabsAreCrowded(available: available, count: count, scale: scale)
+    }
+
+    func test_crowded_falseForFewTabsInWideStrip() {
+        XCTAssertFalse(crowded(2000, 3), "3 tabs in a 2000pt strip are not crowded")
+        XCTAssertFalse(crowded(2000, 1), "a single tab is never crowded")
+    }
+
+    func test_crowded_trueWhenTabsPinnedAtFloor() {
+        // Many tabs in a narrow strip → per-tab width hits the floor → crowded.
+        XCTAssertTrue(crowded(400, 40))
+        XCTAssertTrue(crowded(300, 100))
+    }
+
+    func test_crowded_guards_countLeOne_andNonPositiveAvailable() {
+        XCTAssertFalse(crowded(2000, 1))
+        XCTAssertFalse(crowded(2000, 0))
+        XCTAssertFalse(crowded(0, 50))
+        XCTAssertFalse(crowded(-5, 50))
+    }
+
+    func test_crowded_isMonotonicInCount() {
+        // Once crowded at some count, it stays crowded as more tabs are added.
+        let available: CGFloat = 600
+        var sawCrowded = false
+        for count in [2, 5, 10, 20, 50, 100] {
+            let c = crowded(available, count)
+            if sawCrowded { XCTAssertTrue(c, "crowding must not turn off as tabs grow (count=\(count))") }
+            if c { sawCrowded = true }
+        }
+        XCTAssertTrue(sawCrowded, "a 600pt strip must become crowded somewhere up to 100 tabs")
+    }
 }

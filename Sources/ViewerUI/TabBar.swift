@@ -34,7 +34,11 @@ struct TabBar: View {
     /// the strip overflows / scrolls (scroll-to-selected already shipped
     /// in WAVE 1). Scaled by zoom so high-zoom tabs stay legible.
     private static let idealTabWidth: CGFloat = 180
-    private static let minShrunkWidth: CGFloat = 54
+    /// TSK-331: shrink floor lowered 54→40 so the strip packs more tabs before
+    /// it has to scroll (40pt still fits the file-type icon + the hover close
+    /// glyph; the title clips). Past this floor the overflow dropdown (TSK-304)
+    /// + ScrollView take over.
+    private static let minShrunkWidth: CGFloat = 40
 
     /// Available strip width, measured by a NON-layout-driving background
     /// reader (see `.background`) rather than a wrapping `GeometryReader`.
@@ -143,6 +147,34 @@ struct TabBar: View {
                 }
                 .onAppear { scrollToSelected(proxy, animated: false) }
             }
+            // TSK-304: when the strip is crowded (tabs pinned at the shrink
+            // floor → more tabs than fit), a pinned overflow dropdown lists
+            // every open tab so any one is reachable without scrolling. Hidden
+            // when the tabs fit, so it doesn't clutter the common case.
+            if TabBar.tabsAreCrowded(available: availableWidth,
+                                     count: model.tabs.tabs.count,
+                                     scale: CGFloat(model.zoom)) {
+                Menu {
+                    ForEach(Array(model.tabs.tabs.enumerated()), id: \.element.id) { index, tab in
+                        Button {
+                            model.selectTab(at: index)
+                        } label: {
+                            Text((index == model.tabs.selectedIndex ? "✓ " : "")
+                                 + (tab.isDirty ? "• " : "") + tab.title)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: model.uiSize(11), weight: .medium))
+                        .frame(width: model.uiSize(24), height: model.uiSize(24))
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("All tabs (\(model.tabs.tabs.count)) — jump to any")
+                .accessibilityIdentifier("mdv.tab.overflowMenu")
+                .padding(.trailing, model.uiSize(4))
+            }
         }
         .frame(height: model.uiSize(30))
         // Measure the strip's available width WITHOUT a wrapping
@@ -177,6 +209,16 @@ struct TabBar: View {
         let usable = max(available - 32, lower)  // reserve the "+" button
         let per = usable / CGFloat(count)
         return min(max(per, lower), upper)
+    }
+
+    /// TSK-304: true when the strip is crowded — tabs have shrunk to the
+    /// `minShrunkWidth` floor, i.e. there are more tabs than fit at the floor
+    /// so the strip is (or is about to be) overflowing/scrolling. Drives the
+    /// overflow dropdown's visibility. Pure → unit-tested in `TabBarWidthTests`.
+    static func tabsAreCrowded(available: CGFloat, count: Int, scale: CGFloat) -> Bool {
+        guard count > 1, available > 0 else { return false }
+        let lower = minShrunkWidth * scale
+        return computedTabWidth(available: available, count: count, scale: scale) <= lower + 0.5
     }
 
     /// Bring the currently-selected tab into view. Centers it so a tab near
