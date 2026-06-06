@@ -317,6 +317,18 @@ SwiftUI-first progress, the next wave needs ONE of:
     CommandRegistry catalog test + `build-app.sh debug` smoke. ~1 focused session; the transforms +
     `TextToolVerb` dispatcher it builds on are already committed + tested.
 
+## LOG 2026-06-06 — LSPRequestID Codable coverage (uncovered-pure-logic lane)
+- **`85d8b04` test(viewercore): LSPRequestID was untested** (board TSK-423). The JSON-RPC id union
+  (`number(Int64)|string`, hand-rolled Codable) had zero tests. 8 cases: number/string decode, the
+  load-bearing numeric-string-stays-`.string` disambiguation (the `try?` Int64 probe must not coerce
+  a quoted `"5"`), large Int64, both round-trips, encode wire-shape (unquoted number vs quoted
+  string), Hashable distinctness. Gate green.
+- Acted on the prior firing's takeaway: skipped the audit list, used the **uncovered-pure-logic
+  scan** (287 ViewerCore types → ~34 zero-test-ref → filtered to ones with real branching logic).
+  One more audit finding (#318 EditorRepublishInvariant) spot-checked en route = already fixed
+  (asserts `==0`, comment documents the `<=1`→`==0` tightening). See memory
+  `project_audit_pending_list_stale`.
+
 ## LOG 2026-06-06 — ByteFormat coverage + 5 audit findings confirmed already-fixed (pending-list is stale)
 - **`b48935a` test(viewerui): ByteFormat was untested** (board TSK-422). `ByteFormat.human/.mib`
   (memory + logs byte readouts, 5 `MemoryView` call sites) had zero tests. 6 cases pinning the
