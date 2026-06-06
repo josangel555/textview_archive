@@ -29,6 +29,37 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+14) — 🚀 PERF FIX#1 LANDED (TSK-108 → fixed): per-tab pane retention, instant tab switch
+- **This is the loudest real pain killed** — the perf cluster's dominant view-side fix, NOT a paper cut.
+  Switching tabs tore down + reloaded the WKWebView-backed panes (rendered-markdown / CM6 editor) ~1s;
+  A→B→A reloaded twice. Root cause was view-side (model already minimal: 1 republish/switch).
+- **Implementation (commit `39925fd`, landed on main via ff):** `ContentView.content` now renders a
+  `ZStack` of ALL **mounted** tab panes (the `MountedPanesLRU`, cap 4, held `@Published` on
+  `DocumentModel`), not just the active one. Inactive panes stay mounted (gated `opacity:0` /
+  `allowsHitTesting(false)` / `accessibilityHidden`) → switch-back is a pure visibility flip, **zero
+  WKWebView teardown+reload**. `dismantleNSView` fires only on LRU tail eviction.
+  - Single driver: the LRU is reconciled entirely from the universal `updateDerived()` hook
+    (`retainOnly(open)` + `activate(selected)`), change-guarded so a non-selection republish adds no
+    `objectWillChange`. No per-callsite wiring in selectTab/closeTab/session-switch.
+  - `tabContent(for:isActive:)` reads each pane's OWN `state`/`viewMode`/`id` (not the active tab's);
+    find bar + find query gated on `isActive` so only the visible pane shows/drives find (no
+    first-responder fight). `opacity:0` (not `.hidden()`) avoids WebKit `visibilitychange`→self-reload
+    (cmux #1228).
+- **Validation (all green, no owner staring):**
+  1. Headless merge gate — `scripts/test-headless-gate.sh`: **3975 tests pass, tier-clean**.
+  2. NEW `MountedPanesWiringTests` (bare gate, WKWebView-free retention-set teeth) — **mutation-checked**
+     (broke retention → test fails → restored).
+  3. NEW `PaneRetentionMountProbeTests` (`MDV_RUN_WEBVIEW_TESTS` lane) — on the REAL view tree:
+     **A→B→A = 0 WKWebView makes/dismantles**; LRU overflow = exactly **1** dismantle. (DEBUG-only
+     `MountProbe` counters in both representables.)
+  4. Live T4 `ViewModeMatrixSmokeTests` on the assembled `dist/TextView.app` (`scripts/build-app.sh
+     debug`) — **3/3 green**: every (file type × view mode) renders correctly, lazy-materialize intact.
+- **Board:** TSK-108 → `fixed` (agent terminal lane). Remaining is the human `review→validated→done`
+  supervised visual/interaction pass (the *feel* of instant switch, no flicker on heavy docs) — that's
+  the only thing the automated gates can't assert. Branch reaped; main single-threaded + gate-green.
+- **Next:** the rest of the perf cluster (TSK-266/267 HEX, TSK-270/271 CSV/HexView O(n²)) and Fix#2/#3
+  (model-side republish trimming, now marginal). Re-query the board next firing per TASK_WORKFLOW.md.
+
 ## LOG 2026-06-06 (latest+13) — Hold (deliberate): board re-verified, no new headless work
 - Re-checked the `tasked` board fresh (anti-staleness): no new SwiftUI-actionable tasks since TSK-419;
   the only recent reported items (TSK-408/409 "Command palette — TUI/Web") are the **deprioritized**
