@@ -317,6 +317,17 @@ SwiftUI-first progress, the next wave needs ONE of:
     CommandRegistry catalog test + `build-app.sh debug` smoke. ~1 focused session; the transforms +
     `TextToolVerb` dispatcher it builds on are already committed + tested.
 
+## LOG 2026-06-06 — CommandCategory coverage (uncovered-pure-logic lane)
+- **`2f4e960` test(viewercore): CommandCategory was untested** (board TSK-424). 6 cases pinning the
+  `title` header labels (incl non-obvious `.lsp`→"Language") and the custom `Comparable` that orders
+  by `allCases` **declaration order, not alphabetical** (load-bearing for palette section order).
+  Discriminator tests (`view<edit`, `git<find`, `tabs<sessions`) have teeth — a rawValue-derived
+  `Comparable` would flip them. Gate green.
+- Checked `KeyModifiers`/`Shortcut` first (last firing's candidate) → already thoroughly covered (21
+  assertions: aliases, `cmd++`, rejections, round-trip) = false positive. The uncovered-pure-logic
+  scan continues to surface real gaps; remaining flagged candidates: `LSPSymbolKind` mapping,
+  `ObsMetricKind`, plus an unscanned ViewerUI pass.
+
 ## LOG 2026-06-06 — LSPRequestID Codable coverage (uncovered-pure-logic lane)
 - **`85d8b04` test(viewercore): LSPRequestID was untested** (board TSK-423). The JSON-RPC id union
   (`number(Int64)|string`, hand-rolled Codable) had zero tests. 8 cases: number/string decode, the
