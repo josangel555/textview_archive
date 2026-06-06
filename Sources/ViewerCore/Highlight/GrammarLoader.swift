@@ -38,6 +38,14 @@ public enum GrammarLoader {
         case python
         case javascript
         case typescript
+        /// JSX-aware TypeScript. Ships in the SAME dylib as `.typescript`
+        /// (`tree-sitter-typescript` bundles both `typescript/parser.c`
+        /// and `tsx/parser.c`), so `dylibBasename` points at the shared
+        /// `libTreeSitterTypeScriptLazy`; only the `cSymbol` differs.
+        /// The wrapper keeps an explicit `tree_sitter_tsx` keepalive so
+        /// `-dead_strip` can't prune the symbol — see the lazy wrapper's
+        /// `wrapper.c`.
+        case tsx
         case bash
         case java
         case c
@@ -57,6 +65,7 @@ public enum GrammarLoader {
             case .python:     return "tree_sitter_python"
             case .javascript: return "tree_sitter_javascript"
             case .typescript: return "tree_sitter_typescript"
+            case .tsx:        return "tree_sitter_tsx"
             case .bash:       return "tree_sitter_bash"
             case .java:       return "tree_sitter_java"
             case .c:          return "tree_sitter_c"
@@ -78,6 +87,8 @@ public enum GrammarLoader {
             case .python:     return "libTreeSitterPythonLazy"
             case .javascript: return "libTreeSitterJavaScriptLazy"
             case .typescript: return "libTreeSitterTypeScriptLazy"
+            // tsx ships in the typescript dylib — same file, both symbols.
+            case .tsx:        return "libTreeSitterTypeScriptLazy"
             case .bash:       return "libTreeSitterBashLazy"
             case .java:       return "libTreeSitterJavaLazy"
             case .c:          return "libTreeSitterCLazy"

@@ -354,6 +354,9 @@ extension TreeSitterEngine {
         case .swift:      stem = "swift-folds"
         case .javascript: stem = "javascript-folds"
         case .typescript: stem = "typescript-folds"
+        // TSX shares TypeScript's foldable container node types; the
+        // JSX additions don't add new ones we fold on. Reuse the query.
+        case .tsx:        stem = "typescript-folds"
         case .markdown:   stem = "markdown-folds"
         default:          return nil
         }

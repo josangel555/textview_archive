@@ -115,6 +115,25 @@ final class TreeSitterEngineGoldenTests: XCTestCase {
         assertContains(runs, in: src, substring: "42",       kind: .number)
     }
 
+    func testTSX() {
+        // `.tsx` routes to the JSX-aware `tree_sitter_tsx` grammar
+        // (TSK-195). The plain TypeScript grammar can't parse JSX — it
+        // litters the tree with ERROR nodes, wrecking highlighting for
+        // the whole expression — so the grammar swap is the fix.
+        let src = #"""
+        interface Props { count: number; }
+        const App = ({ count }: Props) => <div className="root">{count}</div>;
+        """#
+        let runs = TreeSitterEngine.shared.tokenize(src, language: .tsx)
+        XCTAssertFalse(runs.isEmpty, "tsx produced no runs — grammar or query failed to load")
+        assertContains(runs, in: src, substring: "interface", kind: .keyword)
+        assertContains(runs, in: src, substring: "const",     kind: .keyword)
+        // Regression guard: `.tsx` must resolve a grammar + query and emit
+        // runs over JSX-bearing source (the string literal lives inside the
+        // JSX element). If `.tsx` ever fell back to no grammar this is empty.
+        assertContains(runs, in: src, substring: "\"root\"",  kind: .string)
+    }
+
     func testMarkdown() {
         let src = "# Title\n\nBody **bold** and `code`."
         let runs = TreeSitterEngine.shared.tokenize(src, language: .markdown)

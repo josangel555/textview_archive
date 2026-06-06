@@ -262,6 +262,7 @@ public final class TreeSitterEngine: @unchecked Sendable {
         case .python:     return GrammarLoader.load(.python)
         case .javascript: return GrammarLoader.load(.javascript)
         case .typescript: return GrammarLoader.load(.typescript)
+        case .tsx:        return GrammarLoader.load(.tsx)
         case .shell:      return GrammarLoader.load(.bash)
 
         // Phase 5 grammars — all loaded via dlopen out of
@@ -291,6 +292,15 @@ public final class TreeSitterEngine: @unchecked Sendable {
         case .python:     stem = "python-highlights"
         case .javascript: stem = "javascript-highlights"
         case .typescript: stem = "typescript-highlights"
+        // TSX reuses the TypeScript highlights query: every node type it
+        // references exists in the (superset) TSX grammar, so it compiles
+        // and colors the TS portions correctly. JSX-tag/attribute-specific
+        // coloring needs query *predicate* evaluation, which the engine
+        // does not yet do (see board task on predicate eval) — so a
+        // dedicated JSX query would not currently win over the generic
+        // identifier captures. The grammar swap alone is the real fix:
+        // `.tsx` now parses JSX instead of producing ERROR nodes.
+        case .tsx:        stem = "typescript-highlights"
         case .markdown:   stem = "markdown-highlights"
         case .shell:      stem = "bash-highlights"
         case .java:       stem = "java-highlights"

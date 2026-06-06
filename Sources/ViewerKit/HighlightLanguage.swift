@@ -11,6 +11,7 @@ public enum HighlightLanguage: String, Sendable, CaseIterable {
     case python
     case javascript
     case typescript
+    case tsx
     case markdown
     case shell
     case yaml
@@ -38,7 +39,11 @@ public enum HighlightLanguage: String, Sendable, CaseIterable {
              "svg":                                    return .xml
         case "py", "pyw", "pyi":                       return .python
         case "js", "mjs", "cjs", "jsx":                return .javascript
-        case "ts", "tsx":                              return .typescript
+        case "ts":                                     return .typescript
+        // `.tsx` needs the JSX-aware grammar — the plain TS grammar
+        // cannot parse JSX and litters the tree with ERROR nodes,
+        // wrecking highlighting for the whole file. See `Grammar.tsx`.
+        case "tsx":                                    return .tsx
         case "md", "markdown", "mdown", "mkd", "mkdn": return .markdown
         case "sh", "bash", "zsh", "fish":              return .shell
         case "yaml", "yml":                            return .yaml
@@ -72,6 +77,7 @@ public enum HighlightLanguage: String, Sendable, CaseIterable {
         case "py", "python", "python3":            return .python
         case "js", "javascript", "node":           return .javascript
         case "ts", "typescript":                   return .typescript
+        case "tsx":                                return .tsx
         case "md", "markdown":                     return .markdown
         case "sh", "bash", "zsh", "shell":         return .shell
         case "yaml", "yml":                        return .yaml
@@ -100,6 +106,7 @@ public enum HighlightLanguage: String, Sendable, CaseIterable {
         case .python:      return "Python"
         case .javascript:  return "JavaScript"
         case .typescript:  return "TypeScript"
+        case .tsx:         return "TSX"
         case .markdown:    return "Markdown"
         case .shell:       return "Shell"
         case .yaml:        return "YAML"
