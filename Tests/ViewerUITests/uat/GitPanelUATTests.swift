@@ -203,13 +203,15 @@ final class GitPanelUATTests: MultiScenarioTestCase {
         ])
     }
 
-    /// GP-10 observation — untracked-but-inside-repo file: `openFileHistory`
-    /// is MORE permissive than its doc-comment implies. It DOES open a
-    /// hosted-view tab (the `isTracked` gate is menu-only), and the
-    /// FileHistoryView renders the "No history for this file." empty state.
-    /// We assert the hosted tab opened + master-detail mounted + no error
-    /// (graceful empty), and the run log records the gate-layer nuance.
-    func test_GP_10_untrackedInRepoOpensEmptyHistory() throws {
+    /// GP-10 (BUG-026 fixed) — untracked-but-inside-repo file: `openFileHistory`
+    /// NO-OPS. BUG-026 was filed because the verb opened a hosted (empty)
+    /// history tab for an untracked in-repo file — the `isTracked` gate had
+    /// lived only at the MENU layer. The fix (`c944ba1c`) moved the gate INTO
+    /// `openFileHistory` itself (`GitClient.isTracked(path:)`), so firing
+    /// `file-history` on an untracked in-repo file is now a no-op: no hosted
+    /// tab, the original loaded markdown stays put. (Mirrors the outside-repo
+    /// no-op above, but the cause is untracked-ness rather than no-repo.)
+    func test_GP_10_untrackedInRepoFileHistoryNoOps() throws {
         let repo = try makeGitRepoFixture()
         // `untracked.txt` is created by the fixture but never `git add`ed.
         let untracked = repo.appendingPathComponent("untracked.txt")
@@ -224,24 +226,25 @@ final class GitPanelUATTests: MultiScenarioTestCase {
         """
         try runScenarios([
             Scenario(
-                name: "file-history-untracked-empty",
+                name: "file-history-untracked-noop",
                 argFile: hist,
                 script: script,
                 assert: { [self] dumps, file, line in
                     guard let last = dumps.last else {
                         XCTFail("no dumps", file: file, line: line); return
                     }
-                    // It opens a hosted history tab (menu gate bypassed).
-                    XCTAssertEqual(modelString(last, "currentStateKind"), "hostedView",
-                        "[untracked-history] expected a hosted history view (verb bypasses the menu gate)",
+                    // BUG-026: untracked in-repo file-history is a no-op — the
+                    // isTracked gate now lives in openFileHistory, not just the
+                    // menu. Still 1 tab, still the loaded markdown, NOT a hosted
+                    // view.
+                    XCTAssertEqual(intModel(last, "tabCount"), 1,
+                        "[untracked-noop] file-history on an untracked file should NOT spawn a tab",
                         file: file, line: line)
-                    XCTAssertEqual(modelString(last, "windowTitle"), "History: untracked.txt",
-                        "[untracked-history] hosted tab title mismatch", file: file, line: line)
-                    // The view still mounts its master-detail chrome even with
-                    // empty history (the "No history for this file." state).
-                    XCTAssertTrue(hasViewClass(last, containing: "NSSplitView"),
-                        "[untracked-history] master-detail did not mount for the empty-history case",
+                    XCTAssertNotEqual(modelString(last, "currentStateKind"), "hostedView",
+                        "[untracked-noop] file-history on an untracked file should NOT open a hosted view",
                         file: file, line: line)
+                    assertModel(last, "currentURL", endsWith: "hist.md",
+                                label: "untracked-noop", file: file, line: line)
                     for (i, d) in dumps.enumerated() {
                         assertNotError(d, label: "gp10b/step\(i + 1)", file: file, line: line)
                     }
