@@ -33,12 +33,13 @@ if [[ ! -d "$SRC_APP" ]]; then
 fi
 
 echo "==> Installing $SRC_APP → $DEST_APP"
-# Kill any running instance so we can replace its on-disk bundle.
-# The executable inside the bundle is still named MarkdownViewer (the
-# SwiftPM target name) regardless of the .app filename — killall hits
-# it by process name.
-/usr/bin/killall MarkdownViewer 2>/dev/null || true
-sleep 0.3
+# Do NOT kill a running instance. The installed app and this bundle share the
+# executable name `MarkdownViewer` (the SwiftPM target name), so a blanket
+# `killall MarkdownViewer` terminates the user's OWN running app on EVERY
+# install — the footgun that kept closing the owner's /Applications app on each
+# `build-app.sh --install`. macOS lets us replace the bundle while it runs (the
+# live process holds the old inode); the new code is picked up on the user's
+# next manual relaunch. No killall, no surprise quits.
 rm -rf "$DEST_APP"
 # `ditto --noextattr` (not `cp -R`) so any com.apple.FinderInfo /
 # com.apple.fileprovider.fpfs#P the iCloud file provider stamped onto dist/
