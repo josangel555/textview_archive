@@ -29,6 +29,21 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+16) — TSK-261 "+" beside last tab FIXED (file + session bars); TSK-269 dup closed
+- Heartbeat firing. Board-driven SwiftUI work (continuing the tab-strip UX cluster after TSK-268).
+- **TSK-261 (LANDED `c72ed38`):** both `TabBar` (file tabs) and `SessionTabBar` pinned the `+` button
+  OUTSIDE the horizontal `ScrollView`, so it always sat at the strip's far-right edge. Moved it INSIDE
+  the scroll content after the `ForEach` in both, so the `+` sits immediately beside the last tab (owner
+  ask). `computedTabWidth` still reserves ~32pt so it stays visible beside the last tab until the strip
+  genuinely overflows. **TSK-269 (closed, dup)** — same ask, resolved by the same commit.
+- **Validated:** headless gate green + live T4 ViewModeMatrix 3/3 on assembled bundle. NOTE: the first
+  `test-headless-gate.sh` run exited 1 with NO assertion text and `tier enforcement: OK`; an immediate
+  `swift test --parallel` exited 0 and a gate re-run PASSED → it was a **flaky parallel test**, not the
+  change. (Discipline: re-ran rather than assuming flake; two clean runs before landing.)
+- **Next:** `TSK-262` (add Settings/File-search/Omni icon group right of the session tab — a small
+  feature; wires existing actions), `TSK-263` (source/editor line hover-highlight — bigger view feature),
+  `TSK-270` (file-open delay — needs profiling). Heartbeat re-queries per TASK_WORKFLOW.md.
+
 ## LOG 2026-06-06 (latest+15) — TSK-268 last-tab right border FIXED; TSK-260 closed out (verified resolved)
 - Heartbeat firing after Fix#1. Re-queried the board fresh. **Lesson re-confirmed (memory):** the
   deep-audit "#N" numbers are NOT board TSK ids — board `TSK-270`="[BACKLOG] Delay in opening files",
