@@ -44,3 +44,46 @@ public enum TextTools {
             .joined()
     }
 }
+
+/// Command-ready, surface-agnostic catalog of the Tools verbs. A future
+/// command/clipboard/editor surface iterates `allCases` to register each as
+/// a palette action, then calls `TextTools.apply(_:to:)` with the input it
+/// has on hand (clipboard string or editor selection) — so this layer does
+/// NOT commit to a particular UX. `rawValue` doubles as the canonical
+/// `scriptVerb` for `CommandDescriptor`.
+public enum TextToolVerb: String, CaseIterable, Sendable {
+    case generateUUID = "tools.uuid"
+    case sha256       = "tools.sha256"
+    case base64Encode = "tools.base64Encode"
+    case base64Decode = "tools.base64Decode"
+
+    /// Human-readable command title (palette / menu label).
+    public var title: String {
+        switch self {
+        case .generateUUID: return "Generate UUID"
+        case .sha256:       return "SHA-256 (hex)"
+        case .base64Encode: return "Base64 Encode"
+        case .base64Decode: return "Base64 Decode"
+        }
+    }
+
+    /// `false` for generators (`.generateUUID` ignores input); `true` for
+    /// transforms that consume the current selection/clipboard text.
+    public var transformsInput: Bool { self != .generateUUID }
+}
+
+public extension TextTools {
+    /// Apply a `TextToolVerb` to optional input text (an editor selection or
+    /// the clipboard). Returns the result, or `nil` when a transform fails
+    /// (e.g. `.base64Decode` on non-Base64 input). `.generateUUID` ignores
+    /// `input`. The whole Tools surface bottoms out here, so the actual
+    /// transforms stay in one tested place regardless of how they're invoked.
+    static func apply(_ verb: TextToolVerb, to input: String?) -> String? {
+        switch verb {
+        case .generateUUID: return uuid()
+        case .sha256:       return sha256Hex(input ?? "")
+        case .base64Encode: return base64Encode(input ?? "")
+        case .base64Decode: return input.flatMap(base64Decode)
+        }
+    }
+}
