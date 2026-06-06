@@ -35,6 +35,16 @@
   CM6 editor (matches "Date enter like Notepad" TSK-299 intent) — more natural but editor-coupled +
   live-validated. Pick one and I'll wire it + live-smoke. (Encryption TSK-293 intentionally NOT
   built — needs a key-management design.)
+  - **Execute-ready plan (from 2026-06-06 dispatch investigation):** the verb hook is
+    `ScriptVerb.apply(verb:to:sessions:)` (`Sources/ViewerUI/Automation/ScriptVerbDispatch.swift`),
+    a clean `@MainActor` switch the HeadlessHarness already drives in-process. For **(a)**: add a
+    small `protocol PasteboardIO { var string: String? { get set } }` + an `NSPasteboard` adapter,
+    a `TextToolRunner.run(verb:pasteboard:) -> status` (HEADLESS-tested with a FAKE pasteboard —
+    must NOT touch `NSPasteboard.general` in tests or it clobbers the dev's real clipboard), then 4
+    `ScriptVerb` cases + 4 `CommandDescriptor`s (scriptVerb == `TextToolVerb.rawValue`) + a status
+    surface (toast or `model.lastToolStatus`). Validation: runner unit tests (fake board) +
+    CommandRegistry catalog test + `build-app.sh debug` smoke. ~1 focused session; the transforms +
+    `TextToolVerb` dispatcher it builds on are already committed + tested.
 
 ## LOG 2026-06-06 — adversarial self-audit of TSK-410 found + fixed a silent Rust regression
 - **`ef05840` fix(highlight): repair rust @constant query typo** (TSK-410 follow-up). Audited every
