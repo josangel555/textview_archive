@@ -29,6 +29,31 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+18) — TSK-263 line HOVER highlight FIXED (Source + Editor) — larger feature
+- Owner asked for bigger 20–30min tasks (keep the session busy). Took the line-hover-highlight cross-view
+  feature end-to-end.
+- **TSK-263 (LANDED `848050b`):** a mouse-over line backdrop, distinct from + fainter than the
+  caret/selection current-line highlight.
+  - **Source view (NSTextView):** new `SourceHoverHighlight` SwiftUI overlay drawn as a *non-interactive*
+    sibling in a `ZStack`; `.onContinuousHover` on the container maps pointer→line via
+    `SourceHoverGeometry` (the exact inverse of `SourceGutterView`'s coordinate math), painting a
+    theme-aware backdrop, suppressed on the caret line + clipped to the viewport.
+  - **Design choice (why this over alternatives):** the current-line + find highlights use NSLayoutManager
+    temporary `.backgroundColor` attributes → a hover via the same mechanism would *collide* (wiped on
+    caret move / find update). A `drawBackground` subclass would mean rebuilding the delicate
+    `scrollableTextView()` setup (non-contiguous layout, gutter reentrancy). The SwiftUI-overlay path
+    (mirroring the existing gutter sibling) is conflict-free, doesn't intercept clicks/selection, and
+    needs zero NSTextView changes.
+  - **Editor (CM6):** theme-aware `.cm-line:hover` CSS rule (`body.dark`/`body.light`).
+- **Validation:** pure pointer→line kernel unit-tested headlessly (`SourceHoverGeometryTests`, 6 cases:
+  scroll offset, top-inset, past-last-line boundary, degenerate geometry, viewport-y round-trip) — found
+  + fixed my own off-by-a-row test-boundary bug (kernel was correct). Headless gate green (tier-clean) +
+  live T4 ViewModeMatrix 3/3. The hover *interaction* is mouse-driven (not gate-exercisable) → human
+  review is the visual confirm.
+- **Next:** `TSK-270` (file-open delay — needs profiling/signposts + a headless timing guard),
+  `TSK-259/264/265` (front picker / sessions options — vaguer, likely need owner UX input → triage),
+  `TSK-218/219` (HEX-mode perf / Editor→HEX flash). Heartbeat re-queries per TASK_WORKFLOW.md.
+
 ## LOG 2026-06-06 (latest+17) — TSK-262 session-tab action icons FIXED (Settings/Search/Omni)
 - Heartbeat firing — finishing the session/tab-strip UX cluster.
 - **TSK-262 (LANDED `3105935`):** the session-tab row ended at the `+` with no trailing action icons.
