@@ -81,7 +81,23 @@ public final class TreeSitterEngine: @unchecked Sendable {
         runs.reserveCapacity(256)
         let iterToken = PerfSignpost.begin(.highlight, "ts.query-iterate")
         let cursor = bundle.query.execute(node: root, in: tree)
-        for match in cursor {
+        // Evaluate query predicates so gated captures don't fire
+        // unconditionally. Without this, `((identifier) @type
+        // (#match? @type "^[A-Z]"))` matched EVERY identifier, so a
+        // lowercase `myThing` resolved to `.type` (the last-emitted
+        // capture wins in paintOver). `resolve(with:)` keeps only matches
+        // whose `#match?`/`#eq?`/`#any-of?` predicates hold. The default
+        // group-membership provider returns false, so `#is-not? local`
+        // (which would need a locals query we don't run) is treated as
+        // satisfied — i.e. NO capture that renders today is dropped, only
+        // wrongly-firing regex/eq-gated ones are filtered out.
+        let ns = text as NSString
+        let predicateContext = Predicate.Context(textProvider: { range, _ in
+            guard range.location != NSNotFound, range.location >= 0,
+                  range.location + range.length <= ns.length else { return nil }
+            return ns.substring(with: range)
+        })
+        for match in cursor.resolve(with: predicateContext) {
             for cap in match.captures {
                 guard let name = cap.name,
                       let kind = CaptureMap.kind(forCapture: name) else { continue }

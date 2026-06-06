@@ -20,7 +20,12 @@ final class TreeSitterEngineSmokeTests: XCTestCase {
             // Phase 5 grammars.
             (.java,       "class C { int x = 42; }"),
             (.c,          "int main(void) { return 0; }"),
-            (.cpp,        "#include <vector>\nstd::vector<int> v;"),
+            // C++-specific constructs the cpp query actually captures
+            // (class/auto/nullptr). The old `std::vector<int> v;` only ever
+            // produced a run via a BUG: `std` (a lowercase namespace_identifier)
+            // wrongly matched `(#match? @type "^[A-Z]")` while predicates were
+            // ignored; with predicate evaluation that capture is correctly dropped.
+            (.cpp,        "class C { auto x = nullptr; };"),
             (.csharp,     "class C { int X { get; set; } }"),
             (.rust,       "fn main() { let x: i32 = 42; }"),
             (.lua,        "local x = 42\nfunction f() return x end"),

@@ -115,6 +115,21 @@ final class TreeSitterEngineGoldenTests: XCTestCase {
         assertContains(runs, in: src, substring: "42",       kind: .number)
     }
 
+    func testPredicatesAreEvaluated() {
+        // TSK-410: predicate-gated captures must not fire for non-matching
+        // text. Pre-fix, `myThing` resolved to `.type` (purple) because the
+        // engine ignored `#match?` and `((identifier) @type (#match? @type
+        // "^[A-Z]"))` matched every identifier; `@type` then won paintOver.
+        let src = "const myThing: Widget = makeThing();"
+        let runs = TreeSitterEngine.shared.tokenize(src, language: .typescript)
+        // lowercase identifier → the "^[A-Z]" @type/@constructor predicates
+        // must reject it, leaving the plain `@variable` capture.
+        assertContains(runs, in: src, substring: "myThing", kind: .variable)
+        // a real type annotation still colors as a type (no predicate gate).
+        assertContains(runs, in: src, substring: "Widget",  kind: .type)
+        assertContains(runs, in: src, substring: "const",   kind: .keyword)
+    }
+
     func testTSX() {
         // `.tsx` routes to the JSX-aware `tree_sitter_tsx` grammar
         // (TSK-195). The plain TypeScript grammar can't parse JSX — it
