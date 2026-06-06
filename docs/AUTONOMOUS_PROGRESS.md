@@ -1132,6 +1132,21 @@ build it, else hold.
 > is baked into the cron prompt so every firing leads with `Sources/` work.
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-06 **Terminal: mouse selection + copy/paste + right-click menu + real 256/truecolor (TSK-456 → `fixed`, `531a5f0`; lessons `dfce312`).**
+  Owner asked for terminal copy/paste, text selection, right-click menu, and "support color." Root cause of the
+  monochrome terminal: `TERM=xterm-256color` was advertised but the ANSI parser *parsed-then-DROPPED* 256-color
+  (`38;5;n`) and truecolor (`38;2;r;g;b`) — the dominant colour path for modern tools — so they rendered with no
+  colour. Fix: `TerminalColor` 16-case enum → `.default/.ansi/.indexed/.rgb`; parser applies them; `TerminalPalette`
+  resolves the xterm 6×6×6 cube + greyscale ramp + rgb. Selection: new pure `ViewerCore/TerminalSelection`
+  (geometry + extraction + word/line/all) drives drag-select / double-click word / triple-click line / translucent
+  highlight; `copy:`/`paste:`/`selectAll:`/`clearSelection:` selectors (Edit menu already routes ⌘C/⌘V/⌘A to the
+  first responder) + right-click `menu(for:)` + `validateMenuItem`. Ctrl-C (SIGINT) untouched. Validated: 17 new
+  headless `TerminalSelectionTests` + extended ANSI colour tests; host headless gate GREEN (4023); built+installed
+  to /Applications. Shell = `$SHELL || /bin/zsh`. Filed follow-up **TSK-457** (terminal scrollback — the next real gap).
+- 2026-06-06 **Board hygiene: verify-closed 3 more already-fixed deep-audit items (no code change).** TSK-298
+  (`SidebarModel.clearCache()` already nils `cachedFlatRows`, swift:554 + comment), TSK-269 + TSK-287 (PTYProcess
+  already resets `childPID=-1` AND reaps via `reapChild`). 9/9 deep-audit samples now confirmed already-fixed →
+  the `[S*]` list is stale; do NOT mine it finding-by-finding (memory `project_audit_pending_list_stale` updated).
 - 2026-06-05 **Board reconciliation: closed 8 already-implemented W1 port tasks (no code change).**
   Verified against code + closed to `fixed` with file-cited evidence (TSK-402 reconcile): line-number
   gutter (TSK-364 TUI / TSK-365 web), sort modes name/modified/size + dirs-first (TSK-372/373), hidden
