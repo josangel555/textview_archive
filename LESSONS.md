@@ -2165,3 +2165,29 @@ data source tracks the selected file — PASSES. So model+wiring are provably co
 `currentMetrics` nil) was fixed to show Size + "loading…". **Lesson:** a "live-only" UI bug usually has a
 headless-testable data/wiring layer underneath — prove that first + fix any headless-visible cause, narrowing
 the live surface to the genuine re-render rather than guessing.
+
+## Session 2026-06-06 (terminal copy/paste/select/color — TSK-456)
+
+- **`TERM=xterm-256color` makes 256/truecolor the DOMINANT colour path, not an edge case.** The terminal
+  advertised `xterm-256color` but `TerminalColor` was a flat 16-case enum and the ANSI parser
+  *parsed-then-DROPPED* `38;5;n` (256) and `38;2;r;g;b` (truecolor) — so modern tools (ls --color, git,
+  starship/p10k prompts, eza, bat) which emit those forms rendered **monochrome** despite "16-colour
+  support." Owner's "support color" was really "the dominant colour path is silently discarded." Fix:
+  `TerminalColor` → `.default/.ansi(0...15)/.indexed(0...255)/.rgb`; parser applies them; `TerminalPalette`
+  resolves the xterm 6×6×6 cube + 24-step greyscale ramp + rgb. Lesson: if you advertise a terminal
+  capability via `TERM`, you must actually render it — advertising 256-colour then dropping it is worse
+  than advertising `xterm` (16).
+- **Keep the named colours as `static let` aliases onto the new associated-value cases** (`.red = .ansi(1)`)
+  so every existing call site + test vector (`XCTAssertEqual(..., .brightGreen)`) keeps compiling through an
+  enum-shape change. Only the two places that *pattern-matched* named cases (bold→bright promotion;
+  palette switch) needed rewriting (`if case let .ansi(n) = base, n < 8`).
+- **AppKit selector gotchas when adding Edit-menu actions to a custom NSView:** `selectAll(_:)` IS declared
+  on `NSResponder` → needs `override`; `copy(_:)`/`paste(_:)` are NOT → plain `@objc func`;
+  `validateMenuItem(_:)` is from `NSMenuItemValidation` (conform to it) and is NOT on NSView → no `override`,
+  no `super` call. The app's Edit menu uses nil-target `copy:`/`paste:`/`selectAll:`, so implementing those
+  selectors on the focused view wires ⌘C/⌘V/⌘A for free — no `performKeyEquivalent` hijack needed. Ctrl-C
+  (SIGINT) is the `.control` chord in `keyDown`, untouched by ⌘C.
+- **Pure selection model belongs in ViewerCore.** `TerminalSelection` (anchor/head, ordered, columnRange,
+  selectedText, word/line/all) is AppKit-free → 17 headless tests cover geometry + extraction + word/line.
+  The NSView only does mouse→cell mapping + drag tracking + the translucent highlight draw. Same
+  prove-it-headlessly discipline as the status-bar work.
