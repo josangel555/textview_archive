@@ -2027,3 +2027,60 @@ are unrelated systems; the Claude TaskList is a stale redundant mirror — the *
 record**. **Lesson:** always say/track `TSK-` ids for board work; never reconcile a board task against
 a same-numbered Claude-TaskList entry. And per the shared-board caveat, grep this repo before acting
 on any board task (TSK-101..106 are a *different* project's `agent:forge` tasks).
+
+## Session 2026-06-06 (PM) — session-tab clobber, File→Reset, no-host-UI-tests, VM 6.3 toolchain
+
+### Session tabs vanished = `index.json` clobbered to empty while snapshots survived
+Owner's session tabs disappeared. Root cause: `~/Library/Application Support/MarkdownViewer/Sessions/index.json`
+was `{"sessions":[]}` next to ~40 intact `<uuid>.json` snapshots — the coordinator persisted an empty
+index (the saveSync-races-enqueueSave clobber, #330) and restore read it as "no sessions." **Fixes
+(both shipped):** (1) `SessionStore` now REFUSES to persist an empty index while `liveSnapshotIDs()` is
+non-empty (a genuinely-closed session has its snapshot `moveToTrash`'d first, so an empty index is only
+legit when no snapshots remain); (2) `SessionsCoordinator.restore()` self-heals — empty/absent/corrupt
+index + substantial live snapshots (root exists + ≥1 open tab, deduped by root) → rebuild the index from
+them. **Lesson:** treat a derived index as reconstructible from its source-of-truth files; guard against
+writing an empty aggregate over surviving members, and self-heal on read. Persisted state lives under
+`Application Support/MarkdownViewer/` (NO bundle-id prefix); the bundle-id dir holds Plugins/Walkthroughs/
+jdtls-data only — the CLAUDE.md path was wrong and cost a detour.
+
+### `build-app.sh` writes `dist/` but the user runs `/Applications/` — "rebuild didn't show my change"
+A rebuilt feature (File→Reset) "didn't appear" because the running app was `/Applications/TextView.app`
+(installed Jun-4) while `build-app.sh debug` only updates `dist/TextView.app`. **Lesson:** after
+`build-app.sh`, run `scripts/install-app.sh` (now chainable via the new `build-app.sh … --install` flag)
+to push the bundle to `/Applications`. Confirm which bundle is running with
+`ps -axo pid,command | grep TextView` + `strings <exe> | grep <new-feature-string>` before assuming a
+build is stale.
+
+### Owner directive: NO UI tests on the Mac — UTM only
+T4/T5/WebView suites + the `build-app.sh` pre-install ViewModeMatrix smoke all spawn the app / open a
+window on the host. Owner forbids that on their machine. **The pre-install smoke is now opt-in
+(`MDV_RUN_SMOKE_GATE=1`)** so the default build/install never opens a window. Host validation = `swift
+build` + `test-headless-gate.sh` (window-free) only; UI/live validation goes to the UTM VM. See memory
+`feedback-no-ui-tests-on-mac`.
+
+### The UTM VM already had a Swift 6.3 toolchain installed — just not selected
+The VM's default `swift` is 6.1.2 (Xcode 16.4), which is STRICTER than the host on region-isolation
+(`try await super.setUp()` in `@MainActor` test classes = "sending non-Sendable self" → the whole test
+target fails to compile, blocking `swift test` entirely — TSK-439). But
+`/Library/Developer/Toolchains/` already contained `swift-6.3-RELEASE.xctoolchain` +
+`swift-latest.xctoolchain`. **Lesson:** before downloading/installing a toolchain, `ls
+/Library/Developer/Toolchains/` — a newer one may already be there; select it with
+`TOOLCHAINS=$(plutil -extract CFBundleIdentifier raw <tc>/Info.plist) swift build` (or
+`TOOLCHAINS=swift` for swift-latest). **Compiling on the VM is NOT a UI test** — it's allowed under the
+no-host-UI-tests rule; only spawning the app/window is forbidden.
+
+### Settings sub-pages: detached NSWindows give no "back" — use a NavigationStack
+Settings opened Plugins/LSP as separate `NSWindow`s (only a red close button, no back). Wrapping Settings
+in a `NavigationStack` and making those `NavigationLink`s pushes them in-place with a native back button.
+Also: an `NSHostingController`-hosted Settings window needs `.resizable` in its `styleMask` AND a flexible
+`.frame(min/ideal/max…)` (not a hard fixed frame) or content clips with no way to grow.
+
+### Sidebar tool-window resize model (root cause for the "can't resize / non-uniform" reports)
+FILES is a SPECIAL flex-fill panel (tier 1, `maxHeight:.infinity`) ABOVE the accordion (tier 2). Accordion
+tool-windows have ABSOLUTE `@AppStorage` heights; `SidebarSectionPlanner` draws a divider only BETWEEN
+adjacent visible tool-windows (none below the last, none between FILES and the first); each
+`ResizableSectionDivider` resizes only the panel ABOVE it (FILES absorbs slack). So: 1 tool-window → 0
+dividers (can't drag); 2 → divider only between the two tools, above-only resize (erratic); lone FILES can
+leave a gap. **A "uniform/proportional resize incl. FILES" rework (TSK-440) is a layout-model change in a
+regression-prone zone (#100/#133/#211/#215/ChromeLayoutGate) — needs the live/VM verify loop, not a blind
+edit.**
