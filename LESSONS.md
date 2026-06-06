@@ -2118,3 +2118,50 @@ re-stamped there and the signature holds. **Proper fix (filed):** make `build-ap
 a `TMPDIR` outside iCloud, then move the signed bundle into `dist/`. **Lesson:** a codesign "detritus" failure
 that is *intermittent* on an unchanged tree = something is re-adding xattrs out of band; on an iCloud/Dropbox-
 synced working copy that's the file provider. Sign outside the synced tree.
+
+## Session 2026-06-06 (evening) — owner UI-bug batch (terminal Enter real cause, killall, Settings back, palette hover, status bar)
+
+### An app-wide `NSEvent` local key monitor pre-empts BOTH the responder chain AND performKeyEquivalent
+Owner: "Terminal — Enter does nothing; the file nav is eating the keystroke" (typing echoed, only Return dead).
+The terminal's `keyDown`/`performKeyEquivalent` were correct — but `SidebarKeyMonitor` installs
+`NSEvent.addLocalMonitorForEvents(matching: .keyDown)` that consumes Return/arrows app-wide and only yielded
+when `NSApp.keyWindow?.firstResponder is NSText`. The terminal is a custom `NSView` (not `NSText`), so the
+monitor swallowed Return and returned `nil` (consumed) BEFORE it reached the terminal — a local monitor runs
+ahead of key-equivalent + responder dispatch entirely. **Fix (`8b8a547`):** a `SidebarKeyMonitorExempt` marker
+protocol; the monitor yields to any first responder conforming to it; `TerminalNSView` conforms. **Lesson:**
+when a custom focusable NSView "doesn't get keys," look for app-wide local `NSEvent` monitors FIRST (they win
+over the responder chain). Two layers had to be fixed for the terminal: the monitor (this) AND
+`performKeyEquivalent` for the window default-button (`c3a7b83`) — both pre-empt `keyDown` for Return.
+
+### `killall MarkdownViewer` in install-app.sh killed the owner's running app on every `--install`
+The owner's `/Applications` app "kept getting closed." `scripts/install-app.sh` ran `killall MarkdownViewer`
+before copying — and the installed app + freshly-built bundle share the exec name `MarkdownViewer`, so every
+`build-app.sh --install` (which the autonomous loop runs) SIGTERMed the owner's running app. Same killall-footgun
+class as the earlier `AppLauncher` fix; install-app.sh was the remaining LIVE site on the normal dev loop. **Fix
+(`e5ffa08`):** removed it — macOS replaces a running `.app` fine (live process holds the old inode; new code on
+next manual relaunch). **Lesson:** NEVER `killall <shipping-exec-name>` in any script/test; when the owner says
+"something keeps closing my app," grep `killall` across scripts/ + Tests/ first. The headless gate never killed
+it (heavy tiers self-skip) — only the install path did.
+
+### macOS `NavigationStack` back chevron needs a window toolbar — a hosted Settings window has none
+Settings → Plugins/LSP pushed via `NavigationStack`+`NavigationLink` but showed NO back button (user stuck): on
+macOS the automatic chevron renders in the window TOOLBAR, and the `NSHostingController`-hosted Settings window
+has none. **Fix (`e3cd4a2`):** wrap sub-pages in a `SettingsSubPage` with an explicit "‹ Settings" Button
+calling `@Environment(\.dismiss)`. **Lesson:** don't rely on NavigationStack's auto back button in a
+toolbar-less hosted window — provide an explicit dismiss control.
+
+### SwiftUI list "scrolls on mouse-over": hover-set selection + scroll-on-selection-change
+Command palette re-centered as the pointer moved over rows: `onHoverChanged → selectedIndex`, and
+`.onChange(of: selectedIndex){ proxy.scrollTo(.center) }` fired for hover too. **Fix (`65b2b32`):** a
+`scrollOnSelectionChange` flag set ONLY by keyboard `moveSelection`; the `onChange` scrolls only when set.
+Hover still moves selection (Return opens the hovered row) but never scrolls.
+
+### Verifying a "live-only" UI bug headlessly: prove the data source + wiring, isolate the re-render
+Owner pushed: "can't you verify [status-bar-on-tab-change] headlessly?" Yes — the bar reads `currentState`/
+`currentURL` (computed from `tabs.selected`) + observes `model.tabCoordinator`. Headless test
+`test_selectTab_statusBarDataSourceTracksSelectedFile` (`1615b98`) opens 2 files, switches tabs, asserts the
+data source tracks the selected file — PASSES. So model+wiring are provably correct; only the SwiftUI re-body
+(AttributeGraph) is live-only. The one headless-identifiable blank (selecting a `.empty→.loading` tab →
+`currentMetrics` nil) was fixed to show Size + "loading…". **Lesson:** a "live-only" UI bug usually has a
+headless-testable data/wiring layer underneath — prove that first + fix any headless-visible cause, narrowing
+the live surface to the genuine re-render rather than guessing.

@@ -90,6 +90,20 @@ on the host — it just exercises the headless tiers and skips T4/T5.
 - Never write to `~/Documents`, `~/Desktop`, `~/Downloads` from
   automated paths. Use `FileManager.default.temporaryDirectory` (per-
   user `/var/folders/...`) for test scratch.
+- **NEVER `killall MarkdownViewer` (or by any shipping exec name) in a
+  script or test.** The installed `/Applications` app and every built/
+  test-spawned bundle share the exec name `MarkdownViewer`, so a blanket
+  `killall` SIGTERMs the owner's *running* app. `install-app.sh` no longer
+  kills (macOS replaces a running bundle fine; new code on next relaunch);
+  test spawns must be tagged (`MDV_TEST_INSTANCE=1`) and reaped by tag via
+  `AppLauncher.killTestInstances`. If the owner says "something keeps
+  closing my app," grep `killall` across `scripts/` + `Tests/` first.
+- **The repo lives under iCloud-synced `~/Documents`** → the file provider
+  re-stamps `com.apple.FinderInfo`/`fpfs#P` xattrs in real time, which trips
+  `codesign --options runtime`. `build-app.sh` signs in a non-synced TMPDIR
+  then swaps into `dist/`; `install-app.sh` `ditto --noextattr` + `xattr -cr`
+  the installed bundle. Do codesign/xattr-sensitive work outside the synced
+  tree, not in `dist/`.
 - **Persisted state lives under TWO Application Support subdirs** (verified
   2026-06-06): `~/Library/Application Support/MarkdownViewer/` (NO bundle-id
   prefix) holds `Sessions/` (index.json + per-session snapshots + trash),

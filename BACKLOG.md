@@ -826,3 +826,22 @@ action-vocabulary catalog · #216 PM feature (needs `rusqlite` approval + WHAT�
 · #202 sessions god-object split · #204/#205 code-review · #191/#194 memory ·
 #208/#210 perf+memory accounting. UnifiedSearchPanel rework sits unlanded in the
 bundle (main kept CrossSearchPanel) — resurrect or abandon. **DECISION owed.**
+
+## 2026-06-06 (evening) — deferred / blocked after the owner UI-bug + VM-lane session
+
+- **Status-bar live re-render (TSK-452)** — data source + wiring proven correct headlessly; loading-blank
+  fixed. IF stats still go blank/stale switching between ALREADY-LOADED tabs, it's a SwiftUI re-body issue
+  (live-only). Next: owner says which (blank/frozen/fine) → if frozen, audit StatusBar's `@ObservedObject`
+  observation vs the publish that fires on `select` (PERF #1 severed tabCoordinator→model forwarding; StatusBar
+  observes tabCoordinator directly so it *should* re-body). Live/VM repro needed.
+- **VM full-suite hang (TSK-451)** — `bash scripts/test-in-vm.sh all` hangs after `TabBarWidthTests` (a T4/live
+  suite never returns). Bisect which suite; add a per-suite timeout or move it to the gated WebView lane so the
+  full VM lane can run unattended. Workaround today: targeted `--filter` runs. Orphan VM PIDs 28912/29140 need
+  an owner `ssh macOS15 'kill ...'`.
+- **GP_10 stale test (TSK-447)** — fix committed (`541b3df`), host-compiles; live VM validation pending a clean
+  VM (blocked by TSK-451). Run `GitPanelUATTests` filter on the VM (6.3) to confirm → fixed.
+- **Sidebar tool-window resize rework (TSK-440)** — lone-Files fill + every-adjacent-pair divider + uniform
+  resize. Regression-prone layout zone; needs the VM live-verify loop (now possible once TSK-451 cleared).
+- **Build flake follow-up:** `build-app.sh` now signs in a non-iCloud TMPDIR + `install-app.sh` `xattr -cr`s
+  the install — closed. The repo living under iCloud `~/Documents` is the root environmental cause; if more
+  iCloud-detritus issues appear, the fix pattern is "operate outside the synced tree."
