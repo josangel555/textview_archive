@@ -317,6 +317,29 @@ SwiftUI-first progress, the next wave needs ONE of:
     CommandRegistry catalog test + `build-app.sh debug` smoke. ~1 focused session; the transforms +
     `TextToolVerb` dispatcher it builds on are already committed + tested.
 
+## LOG 2026-06-06 — ViewerUI headless coverage: LSPMarkdownRenderer + #298 stale-tree pin
+Two items, SwiftUI lane, both committed + central-gate-green (3883 headless) + board-recorded.
+- **`c207318` test(viewerui): LSPMarkdownRenderer was untested** (board TSK-420). Scanned
+  `Sources/ViewerUI` for untested non-View model/logic types; triaged the 3 top hits —
+  `TrackedReposChannel`/`RepoRootKind` was a FALSE POSITIVE (its `repoRootKind`/`isRepoRoot`
+  methods are already covered in `TrackedReposChannelReadTests` under a different type name),
+  `LSPHoverAttachment` is live-only (needs a laid-out NSTextView). `LSPMarkdownRenderer`
+  (hover-popover `String→NSAttributedString`) was the genuine uncovered+pure target. 11 cases:
+  plain-vs-markdown branch, fenced-code fence-stripping + monospaced/background styling, inline
+  bold/italic/code trait bridging (confirms the `NSInlinePresentationIntent` decode holds on
+  macOS 15), trailing-newline trim, empties.
+- **`95b6c34` test(sidebar): pin deep-audit #298** (board TSK-421). Verified #298
+  (SidebarModel.clearCache() leaves flatVisibleRows memo stale → stale tree on git branch switch)
+  is **already fixed in code** — but the fix was UNPINNED (the existing memo test only covers
+  expansion-toggle invalidation). Added `test_clearCache_dropsFlatMemo_withoutReload` (mirrors the
+  exact `DocumentModel` git-checkout path: `sidebar.clearCache()` with no explicit reload) +
+  `test_includeHiddenToggle_reflattensRows`. **Mutation-tested for teeth**: removing
+  `cachedFlatRows = nil` from `clearCache()` makes the no-reload test fail; the reload-driven paths
+  do NOT catch it (`ensureLoaded` drops the memo itself) — which is exactly why the gap existed.
+  **Note:** the deep-audit "#N" numbering is the *Claude TaskList* numbering and does NOT align
+  with the `tasked` board's TSK ids (board TSK-298 is "[BACKLOG] Java", unrelated). #298 needs no
+  code change — it's verified-fixed + now regression-pinned.
+
 ## LOG 2026-06-06 — adversarial self-audit of TSK-410 found + fixed a silent Rust regression
 - **`ef05840` fix(highlight): repair rust @constant query typo** (TSK-410 follow-up). Audited every
   grammar query's `#match?` regex for NSRegularExpression mis-evaluation now that predicates are
