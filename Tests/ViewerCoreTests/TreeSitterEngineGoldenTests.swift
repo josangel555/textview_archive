@@ -169,6 +169,24 @@ final class TreeSitterEngineGoldenTests: XCTestCase {
         assertContains(runs, in: src, substring: "MAX_SIZE", kind: .constant)
     }
 
+    func testPredicateGatedConstants_acrossLanguages() {
+        // TSK-410 made predicate evaluation global, so the `#match?`-gated
+        // @constant patterns now fire only when the regex matches. Pin the
+        // SCREAMING_CASE → .constant behavior for the other affected grammars
+        // (rust covered by testRust) so a future query typo like the rust
+        // `$'` one can't silently drop constant coloring again.
+        let cases: [(HighlightLanguage, String, String)] = [
+            (.java,   "class C { static final int MAX_LEN = 5; }", "MAX_LEN"),
+            (.c,      "int MAX_N = 5;",                            "MAX_N"),
+            (.python, "MAX_SIZE = 10",                            "MAX_SIZE"),
+            (.lua,    "MAXV = 10",                                 "MAXV"),
+        ]
+        for (lang, src, name) in cases {
+            let runs = TreeSitterEngine.shared.tokenize(src, language: lang)
+            assertContains(runs, in: src, substring: name, kind: .constant)
+        }
+    }
+
     func testMarkdown() {
         let src = "# Title\n\nBody **bold** and `code`."
         let runs = TreeSitterEngine.shared.tokenize(src, language: .markdown)
