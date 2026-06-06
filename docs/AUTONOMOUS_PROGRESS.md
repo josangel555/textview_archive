@@ -29,6 +29,28 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+15) — TSK-268 last-tab right border FIXED; TSK-260 closed out (verified resolved)
+- Heartbeat firing after Fix#1. Re-queried the board fresh. **Lesson re-confirmed (memory):** the
+  deep-audit "#N" numbers are NOT board TSK ids — board `TSK-270`="[BACKLOG] Delay in opening files",
+  `TSK-271`="PNG/Media info ignore zoom" (already `fixed`), unrelated to audit-list #270/#271. So I
+  worked the board's actual reported SwiftUI queue (the `[PORT]` items stay deprioritized).
+- **TSK-268 (LANDED `4246ec9`):** "Can't see right border of last tab." `TabBar.swift` drew the
+  inter-tab separator only `if index < count-1`, so the last/only tab had no trailing right edge before
+  the `+` button. Now drawn after EVERY tab. Verified fresh vs current code (report was from old
+  `1dbf1ca`). Validated: headless gate green (3975, tier-clean) + live T4 ViewModeMatrix 3/3 on the
+  assembled bundle. Cosmetic view-only change (no clean headless sub-view-count assertion) → human
+  review is the visual confirm.
+- **TSK-260 (closed → `fixed`, verified-resolved, not a new commit):** "picking one shoulder button
+  always opens Files." Confirmed in code the exclusivity is GONE — `PanelVisibilityResolver`
+  (auto/shown/hidden) resolves each panel independently; Files shows only on `hasRoot`; no
+  `forceFiles`/exclusive flag anywhere in `Sources/`. Stale reported item reconciled per board hygiene.
+- **Also verified already-fixed (no action needed):** CSV `appendToField` O(n²) — current
+  `CSVParser.swift` maintains `fieldScalarCount` (no per-scalar rescan); `MetadataPanel` already scales
+  fonts+label-column by `uiScale`. Audit-list perf findings are largely landed-but-unreconciled, as the
+  memory warns — don't mine them finding-by-finding.
+- **Next:** more board SwiftUI items (TSK-261/262/263 tab-strip + hover-highlight; TSK-270 file-open
+  delay needs profiling). Heartbeat re-queries per TASK_WORKFLOW.md.
+
 ## LOG 2026-06-06 (latest+14) — 🚀 PERF FIX#1 LANDED (TSK-108 → fixed): per-tab pane retention, instant tab switch
 - **This is the loudest real pain killed** — the perf cluster's dominant view-side fix, NOT a paper cut.
   Switching tabs tore down + reloaded the WKWebView-backed panes (rendered-markdown / CM6 editor) ~1s;
