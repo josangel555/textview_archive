@@ -31,6 +31,12 @@ on the host — it just exercises the headless tiers and skips T4/T5.
   `RenderedFindBarTests`) `#192`-gate themselves out of the bare sweep; run them
   with `MDV_RUN_WEBVIEW_TESTS=1 swift test --filter ...` in their own
   invocation. They are part of the VM / nightly lane, not the merge gate.
+- **Run the suite on the VM as a validation step (owner standing ask,
+  2026-06-06).** For substantive Swift changes, after the host gate is green,
+  also run the suite on the UTM VM — it's Apple **Swift 6.1.2**, stricter than
+  the host on default-actor-isolation, so it catches forward-compat breaks the
+  host waves through (this is how the TSK-401 skew was found). The VM **can**
+  `swift build`/`swift test` now (TSK-401 fixed the strict-concurrency sites).
 - **VM workflow:**
   - Sync: `rsync -az --delete --exclude='.build/' --exclude='.swiftpm/'
     --exclude='dist/' --exclude='.git/objects/pack/'
@@ -39,6 +45,10 @@ on the host — it just exercises the headless tiers and skips T4/T5.
   - Run: `ssh macOS15 'cd markdown_viewer && swift test'` (or
     `bash scripts/test-in-vm.sh all` for build + full suite + JUnit).
   - Smoke (build + run + screencap): `bash scripts/vm-smoke.sh`
+  - The VM has **no Rust toolchain**: it links the host-built
+    `rust-core/link/libmdvcore_ffi.a` (build it on the host first if Rust
+    changed; the rsync ships it since `rust-core/` isn't excluded). Never
+    `cargo build` on the VM.
   - The VM has no git remote — it's an rsync mirror. Do not
     `git pull` on the VM.
 - **VM credentials**: host `macOS15`, user `vm-tester@<vm-ip>`,
@@ -58,8 +68,14 @@ on the host — it just exercises the headless tiers and skips T4/T5.
 - Never write to `~/Documents`, `~/Desktop`, `~/Downloads` from
   automated paths. Use `FileManager.default.temporaryDirectory` (per-
   user `/var/folders/...`) for test scratch.
-- Workspace state lives under `~/Library/Application Support/
-  com.markdownviewer.MarkdownViewer/Workspaces/_last.json`.
+- **Persisted state lives under TWO Application Support subdirs** (verified
+  2026-06-06): `~/Library/Application Support/MarkdownViewer/` (NO bundle-id
+  prefix) holds `Sessions/` (index.json + per-session snapshots + trash),
+  `Workspaces/_last.json`, `bookmarks.json`, `history.json`, `recent-paths.json`;
+  the bundle-id dir `~/Library/Application Support/com.markdownviewer.MarkdownViewer/`
+  holds `Plugins/`, `Walkthroughs/`, `jdtls-data/`. Prefs (zoom/theme/wrap/window)
+  are UserDefaults. `File → Reset` (`AppCacheReset`) clears these to a recoverable
+  `_reset-backups/` backup.
 
 ## Task tracking (use it — don't just do work silently)
 
@@ -89,6 +105,47 @@ generously and keep the board honest:
 - This complements the durable docs (`AUTONOMOUS_PROGRESS.md` for the autonomous
   run log, `BACKLOG.md` for the standing queue) — the task board is the live
   per-item state; the docs are the narrative that survives compaction.
+
+## Automated / autonomous runs (SOP)
+
+Standing operating procedure for autonomous/heartbeat runs (the screen is the
+agent's until the owner says stop; work in waves, don't stop to ask "should I
+continue", document blockers and move on):
+
+- **Each firing:** read `docs/AUTONOMOUS_PROGRESS.md` (current wave + first
+  unchecked item). If substantive work is already in flight this turn, treat the
+  nudge as a no-op. A fresh/compacted session reads the latest
+  `docs/HANDOFF_<date>.md` first.
+- **Pick work from the `tasked` board** (`http://localhost:8787/mcp` JSON-RPC —
+  the SYSTEM OF RECORD, NOT the built-in Claude Code TaskList). Helper:
+  `python3 /tmp/board.py <tool> '<json>'`; agent `claude-mdv`; ids `TSK-###`.
+  The board is **shared across projects** — grep this repo before acting on a
+  task; skip foreign `agent:forge`/`sess-forge-*` tasks.
+- **Priority:** SwiftUI app (`Sources/`) features/fixes FIRST each firing; fall
+  back to the Rust TUI/web `[PORT]` lane only if no SwiftUI task is actionable.
+  Prefer real features/bugs/perf over paper-cut test backfill (owner flagged that
+  drift) — but DON'T ship a risky blind change; if it needs the screen/owner,
+  file it and move on.
+- **Lifecycle lanes:** `reported → ack → triaged → progress → fixed → review →
+  validated → done`. **Agents only reach `fixed`** (via `task_advance`/
+  `task_record`); the human gates `review`/`validated`/`done`. Owner-gated items
+  (dep approval, risky supervised refactor) → set `blocker` + append to the
+  `DECISIONS NEEDED` section of `docs/AUTONOMOUS_PROGRESS.md`; don't block the loop.
+- **Discipline:** keep `main` headless-gate-green; **commit per item**; land via
+  rebase + fast-forward (no merge bubbles). Re-verify with the CENTRAL gate on the
+  **committed** commit, not a torn worktree:
+  `bash scripts/test-headless-gate.sh` (Swift) / `bash scripts/rust-core-gate.sh`
+  (rust-core). New deps need explicit owner approval.
+- **Validation ladder:** (1) `swift build` compile; (2) targeted
+  `swift test --filter …` for the changed logic; (3) host headless gate
+  (window-free); (4) `bash scripts/build-app.sh debug` for a T4 live-smoke when
+  the change is view/live-tier; (5) **run the suite on the VM** (`ssh macOS15`,
+  Swift 6.1.2 — see Testing rules) for the stricter forward-compat check.
+- **Log every landed item** to `docs/AUTONOMOUS_PROGRESS.md` (the narrative that
+  survives compaction) and advance the board task to `fixed` with the commit SHA.
+- A perf-bench-only gate failure (e.g. `FoldBench`/`CrossFileSearchBench`
+  wall-clock asserts) under machine load is flaky — re-run / confirm no
+  non-bench failures before chasing it.
 
 ## Quick references
 
