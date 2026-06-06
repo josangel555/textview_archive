@@ -22,6 +22,27 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-05 (late) — TSK-195 .tsx grammar landed + defect-pool exhausted
+- **`71586a5` feat(highlight): route `.tsx` through `tree_sitter_tsx`** (TSK-195 → `fixed`).
+  Pure wiring — the tsx grammar already ships in `libTreeSitterTypeScriptLazy` (keepalive +
+  `TreeSitterTSX` bundle already in `dist/`); no new dep/dylib/product. Added
+  `HighlightLanguage.tsx` + `GrammarLoader.Grammar.tsx`, reused TS highlights/folds queries,
+  golden `testTSX`. Headless gate green (3761). Verified via s-expr probe: `.tsx` now parses
+  `(jsx_element …)` instead of the typescript grammar's `(ERROR … type_arguments …)`.
+- **Discovered + filed TSK-410** `[S3][bug]`: `TreeSitterEngine` never evaluates query
+  predicates (`#match?`/`#eq?`/`#is-not?`) → lowercase TS/JS identifiers mis-color as `.type`
+  (repro: `const myThing = 5` → `myThing` is `.type`). Broad highlight change + needs live
+  smoke (`#is-not? local` needs a locals query) → deferred as supervised, NOT headless-only.
+  This is also why JSX tag/attribute coloring can't win yet (grammar swap is the real .tsx fix).
+- **Defect pool is exhausted.** Of the 166 `reported` board tasks, the only ready SwiftUI
+  *defect* was TSK-195 (now fixed); the rest are `[PORT]` (TUI/Web, deprioritized per SwiftUI-
+  first) or `[BACKLOG]` feature-requests/epics (many vague or live-only). Sampled audit findings
+  left `reported` are already implemented (e.g. `aspectFit` NaN/Inf guard exists) — the S2/S3/S4
+  cluster was fixed in prior waves. "20 bugs" as ready board items no longer exists; remaining
+  SwiftUI work is BACKLOG features (live-validation-heavy) or the TSK-410 highlighter fix.
+- **Stream C (review→validated):** confirmed NOT agent-actionable — board has 30 `review`, 1
+  `validated`; `task_advance`/`task_record` refuse `validated` for agents (human/check-gated).
+
 ## Waves
 ### Wave 0 — infra + land pending fixes  [IN PROGRESS]
 - [x] Hourly safety-net cron (`1c077a77`).

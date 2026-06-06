@@ -1927,3 +1927,41 @@ genuinely-missing; salvage only the genuinely-missing, non-contradictory pieces 
 fully implemented in code but left `reported`. Closing them to `fixed` with file-cited evidence
 (the TSK-402 reconcile chore) is legitimate Validation-lane progress, no code change. **Lesson:**
 before building a "missing" feature, grep the code — it may already exist and just need closing.
+
+## Session 2026-06-05 (later) — .tsx grammar (TSK-195) + a buried highlighter bug
+
+### `.tsx` already had everything but the wiring — and the tsx grammar ships in the TS dylib
+`tree-sitter-typescript` exports BOTH `tree_sitter_typescript` and `tree_sitter_tsx` from one
+package/product. The lazy wrapper (`TreeSitterLazyWrappers/TreeSitterTypeScriptLazy/wrapper.c`)
+already kept a `tree_sitter_tsx` keepalive and the `TreeSitterTypeScript_TreeSitterTSX.bundle`
+already shipped in `dist/`. So TSK-195 was *pure wiring*, no new dependency / dylib / product:
+add `HighlightLanguage.tsx` + `GrammarLoader.Grammar.tsx` (cSymbol `tree_sitter_tsx`,
+**dylibBasename = the SAME `libTreeSitterTypeScriptLazy`** — both grammars live in one dylib),
+route `.tsx` extension → `.tsx`, reuse the TS highlights/folds queries (every TS node type exists
+in the superset TSX grammar). **Lesson:** before treating "add a grammar" as a heavy dep task,
+check whether the grammar's C symbol is already exported by an existing dylib (`nm -gU`).
+
+### THE engine doesn't evaluate tree-sitter query predicates — identifiers mis-color (TSK-410)
+Landing `.tsx` surfaced a real, broad bug. `TreeSitterEngine.tokenize` iterates
+`bundle.query.execute(...)` matches directly and **never evaluates `#match?` / `#eq?` /
+`#is-not?` predicates**. So predicate-gated captures fire unconditionally. Concrete repro:
+`tokenize("const myThing = 5;", language: .typescript)` → `myThing` is `.type` (purple), because
+`((identifier) @type (#match? @type "^[A-Z]"))` fires for the lowercase name and `@type` is the
+last-emitted capture. **Resolution model:** `paintOver` = *last input index wins*; the cursor
+yields matches ordered by the pattern root node's start byte (a `jsx_opening_element`-rooted
+`@tag` capture emits BEFORE the inner identifier's captures, so it LOSES). That's why a dedicated
+tsx-highlights `@tag`/`@attribute` query did NOT win — so I dropped it and `.tsx` reuses
+`typescript-highlights`; the grammar swap alone is the real fix (JSX now parses instead of
+ERROR-polluting the tree). **Filed TSK-410** (predicate eval). It's risky to fix headless-only:
+changes highlighting across all languages, and `#is-not? local` needs a locals query the engine
+lacks — so it needs a live source-view smoke, not just the headless gate. **Lesson:** the
+syntax highlighter is predicate-blind; capture file-order + last-wins is the *only* disambiguator
+today. Tuning a query = ordering captures so the desired one is emitted last for each node.
+
+### Diagnosing "is the grammar actually being used?" — dump the s-expression, don't infer from colors
+When tsx highlighting looked like TypeScript output, the decisive probe was
+`Parser().parse(src)?.rootNode?.sExpressionString` for each grammar: typescript → `(ERROR ...
+type_arguments ...)`, tsx → `(jsx_element ...)`. That instantly separated "wrong grammar" from
+"right grammar, wrong query/precedence" (it was the latter). **Lesson:** for highlighter bugs,
+get the parse tree's s-expr first; token *colors* are three layers downstream (grammar → query →
+captures → paintOver) and conflate independent failures.
