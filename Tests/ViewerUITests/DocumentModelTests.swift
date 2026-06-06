@@ -76,6 +76,43 @@ final class DocumentModelTests: XCTestCase {
         XCTAssertEqual(model.recents.count, 1)
     }
 
+    /// Status-bar data source (TSK-452): switching tabs must surface the
+    /// SELECTED tab's loaded file, never a stale or blank one. `StatusBar`
+    /// reads `currentState` / `currentURL` (both computed from `tabs.selected`)
+    /// and re-bodies on the `@Published tabs` the coordinator fires on select.
+    /// This pins the model contract headlessly; the SwiftUI re-body itself is
+    /// the only part that needs a live tier.
+    func test_selectTab_statusBarDataSourceTracksSelectedFile() throws {
+        let model = makeModel()
+        let a = try writeFile("three.txt", "l1\nl2\nl3\n")
+        let b = try writeFile("one.txt", "single\n")
+        model.open(url: a)
+        model.open(url: b)
+
+        model.selectTab(at: 0)
+        XCTAssertEqual(model.currentURL?.lastPathComponent, "three.txt")
+        guard case .loaded(let fa) = model.currentState else {
+            return XCTFail("tab 0 should be loaded — status bar would blank otherwise")
+        }
+        XCTAssertEqual(fa.contents, "l1\nl2\nl3\n")
+
+        model.selectTab(at: 1)
+        XCTAssertEqual(model.currentURL?.lastPathComponent, "one.txt")
+        guard case .loaded(let fb) = model.currentState else {
+            return XCTFail("tab 1 should be loaded — status bar would blank otherwise")
+        }
+        XCTAssertEqual(fb.contents, "single\n")
+
+        // Switch back — must track the selected file, not stick on the previous.
+        model.selectTab(at: 0)
+        XCTAssertEqual(model.currentURL?.lastPathComponent, "three.txt")
+        if case .loaded(let fa2) = model.currentState {
+            XCTAssertEqual(fa2.contents, "l1\nl2\nl3\n")
+        } else {
+            XCTFail("tab 0 should be loaded again after switching back")
+        }
+    }
+
     func test_open_sameURLTwice_doesNotCreateDuplicateTab() throws {
         let model = makeModel()
         let a = try writeFile("a.md")

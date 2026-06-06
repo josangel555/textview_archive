@@ -432,7 +432,25 @@ struct StatusBar: View {
                 indent: "",
                 hasTextMetrics: false
             )
-        case .empty, .error, .loading, .hostedView:
+        case .loading:
+            // Don't blank the bar while a lazily-selected tab reads from disk.
+            // Show at least Size (the path shows separately) so a tab switch
+            // never flashes empty; Lines/Chars/EOL/Enc fill in when `.loaded`
+            // lands and the coordinator republishes. (TSK-452: the one
+            // headless-identifiable "stats blank on tab change" window.)
+            if let url = tab.url {
+                return Metrics(
+                    lineCount: 0,
+                    charCount: 0,
+                    byteCount: Self.cachedFileSize(for: url),
+                    lineEndings: "—",
+                    encodingShort: "loading…",
+                    indent: "",
+                    hasTextMetrics: false
+                )
+            }
+            return nil
+        case .empty, .error, .hostedView:
             return nil
         }
     }
