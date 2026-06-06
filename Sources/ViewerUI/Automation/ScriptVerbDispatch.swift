@@ -166,6 +166,10 @@ public enum ScriptVerb {
             // buffer), so this never silently clobbers unsaved edits.
             model.reloadCurrentFile()
         case "toggle-bookmark": model.toggleCurrentTabBookmark()
+        // Omni-invokability (git.showPanel / view.toggleLineBookmark previously
+        // had no script verb). Both wire to existing @MainActor model methods.
+        case "show-git-panel":  model.showGitPanel()
+        case "toggle-line-bookmark": model.toggleCurrentLineBookmark()
         case "show-cross-search":    model.showCrossSearch()
         case "dismiss-cross-search": model.dismissCrossSearch()
         case "set-cross-query":

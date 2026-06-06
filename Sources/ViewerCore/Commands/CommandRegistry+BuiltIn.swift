@@ -127,7 +127,7 @@ extension CommandRegistry {
             id: "view.toggleLineBookmark",
             title: "Bookmark / Unbookmark Current Line", category: .view,
             defaultShortcut: Shortcut(key: "d", modifiers: [.command, .option]),
-            scriptVerb: nil),
+            scriptVerb: "toggle-line-bookmark"),
         CommandDescriptor(
             id: "view.toggleSplit", title: "Toggle Split", category: .view,
             defaultShortcut: Shortcut(key: "backslash", modifiers: [.command]),
@@ -216,7 +216,7 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "git.showPanel", title: "Show Git Panel", category: .git,
             defaultShortcut: Shortcut(key: "b", modifiers: [.command, .option, .shift]),
-            scriptVerb: nil),
+            scriptVerb: "show-git-panel"),
         CommandDescriptor(
             id: "git.fileHistory", title: "Show File History", category: .git,
             defaultShortcut: Shortcut(key: "h", modifiers: [.command, .option, .shift]),
