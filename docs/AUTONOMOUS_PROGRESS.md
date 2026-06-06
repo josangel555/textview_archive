@@ -1,5 +1,12 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+> 🧭 **EVERY FIRING, READ `docs/TASK_WORKFLOW.md` FIRST AND FOLLOW IT.** The project tracker is the
+> **`tasked` board** (`http://localhost:8787/mcp`) — the system of record, not this file or
+> `BACKLOG.md`. Each firing: query the board → pick the highest-value REAL task (features/bugs/perf
+> over paper-cut test backfill; SwiftUI app first; skip foreign + `[PORT]` tasks) → work it to
+> `fixed` → gate-green → log here. **Do NOT default to test backfill** (the owner flagged that drift
+> on 2026-06-06). This file is the run *narrative*; `TASK_WORKFLOW.md` is the *procedure*.
+
 > **STANDING DIRECTIVE (owner, 2026-06-04):** "Tackle as much as you can, do it
 > methodically and progressively, but **don't stop**. If you need my input,
 > document it [in DECISIONS NEEDED below] and share later — don't block. No time
