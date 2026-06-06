@@ -22,6 +22,30 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+11) — Test-backfill #5: RustCoreFallback (TSK-419 → fixed); pool drained
+- **`ed3e24e` test(rust-core)** covers `RustCoreFallback.run` (the gate-OFF/Rust-ok/Rust-throws
+  fail-safe router every Rust slice ships behind — the migration safety net) — was untested. 6 headless
+  cases via injected env/defaults gate state. **Incidental finding:** the audit's `#301` ("RustCoreFallback
+  swallows the bridge fault, no observability") is **already fixed in the shipped code** — the catch
+  escalates `.panic`→`.error` else `.warn` and emits to `Obs`; this test pins that path. The board's
+  `#301`/`TSK-301`-equivalent finding is therefore **stale (fix already landed)** — flag for the owner to
+  close, not redo.
+- **The genuinely-uncovered pure-component backfill pool is now DRAINED.** A smarter scan (primary type
+  → 0 test refs, false-positives filtered: HistoryStore/ClaudeSessionIndex/CommandRegistry/Shortcut are
+  all tested under other names; SystemPasteboard is intentionally untestable) leaves nothing meaty. This
+  run added **+67 tests** across TSK-415→419 (TerminalScreen, TerminalCell, ReviewSidecar,
+  ClaudeLogParser accessors, RustCoreFallback) — all `fixed`, no bug surfaced (code was correct;
+  coverage was the gap).
+- **NEXT FIRING — pivot is now mandatory** (don't manufacture low-value tests for covered code):
+  1. **Perf-debug spike** on an owner-reported bug — TSK-218 (HEX 6KB ~1s) or TSK-266/270/273 — *read*
+     the path for an algorithmic culprit; fix headlessly only if it's model-layer (else document +
+     flag live, like the TSK-266 spike).
+  2. **Hold for the supervised live window** that unblocks the real queued features (TSK-300 SavePanel,
+     TSK-282 sidebar filter) + perf validation — these are the highest-value items and have been
+     DECISIONS-NEEDED for the whole owner-away run.
+  Prefer (1) if a tractable model-layer culprit looks likely; otherwise the run has reached the point
+  where owner input is the bottleneck.
+
 ## LOG 2026-06-06 (latest+10) — Test-backfill #4: ClaudeLogParser system-record accessors (TSK-418 → fixed)
 - **`f0354af` test(claude)** covers the `recordType`/`recordCwd`/`recordSessionId`/`titleRecord`/
   `userPromptText` accessors (0 prior test refs; the security-critical `redact()` sibling is covered in
