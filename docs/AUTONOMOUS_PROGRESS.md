@@ -29,6 +29,26 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+21) — SHIPPED: red disk-change tab dot (TSK-371), gate-green
+- Heartbeat firing. Surveyed the SwiftUI lane: most remaining backlog items are live/visual or
+  owner-design-gated (TSK-272 needs preview-tab semantics ↔ TSK-220; TSK-359 needs a risky custom
+  NSLayoutManager; TSK-267 HEX is live-blocked). Picked **TSK-371** — the one with a clean,
+  headless-validatable core and the lowest blast radius.
+- **TSK-371 SHIPPED (`8767b5e`, fixed):** red disk-change dot on tabs. `Tab.diskState` already
+  carried the FSEvents/stat staleness signal (surfaced as the StatusBar "Modified" chip) and
+  `Tab.swift` literally pre-declared a tab red-dot as the planned consumer. Added pure
+  `DiskState.showsTabDot`/`tabDotHelpTitle`/`tabDotHelpDescription` helpers (3 ViewerCore unit tests,
+  headless-green) + a 7pt red `Circle` in `TabBarItem` next to the accent dirty dot (orthogonal —
+  a tab can be both edited AND changed-on-disk). a11y id `mdv.tab.diskDot`.
+- **Validation:** `swift build` + `swift test --filter TabDiskStateDotTests` (3/3) +
+  `scripts/test-headless-gate.sh` = exit 0, "tier enforcement OK", PASSED — on the committed commit.
+  Visual placement mirrors the proven dirty-dot render; a pixel check is a trivial live/VM follow-up.
+- **Structural finding (for DECISIONS NEEDED):** the headless-shippable + non-design-gated SwiftUI
+  pool is largely drained. Remaining lanes to unblock more SwiftUI work: (a) a supervised LIVE turn
+  for visual fixes (TSK-359 invisibles color, etc.); (b) owner DESIGN decisions (preview-tab model
+  for TSK-220/272/306, Open-As consolidation TSK-221); (c) lean on `scripts/vm-smoke.sh` (VM builds
+  now, TSK-401) to auto-validate visual changes. `main` @ disk-dot commit, single linear trunk.
+
 ## LOG 2026-06-06 (latest+20) — HEX-perf implementation+validation plan (TSK-267, live-blocked)
 - Heartbeat firing; prior work committed (not in flight). Picked the SwiftUI/perf lane (owner-reported
   HEX slowness, TSK-267/#218). The real fix is genuinely live-validation-blocked: it hinges on TextKit
