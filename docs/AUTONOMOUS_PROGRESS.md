@@ -317,6 +317,28 @@ SwiftUI-first progress, the next wave needs ONE of:
     CommandRegistry catalog test + `build-app.sh debug` smoke. ~1 focused session; the transforms +
     `TextToolVerb` dispatcher it builds on are already committed + tested.
 
+## LOG 2026-06-06 — shortDate coverage (static-func scan 4/4) → SCAN AXES EXHAUSTED
+- **`5aeb7f8` test(viewerui): FileHistoryView.shortDate was untested** (board TSK-430). git `%ai`
+  timestamp → `YYYY-MM-DD HH:MM` compaction. 6 cases: drops seconds+tz, no-tz, already-minute,
+  repeated-space collapse, colonless-time kept, malformed/empty/date-only pass-through. Gate green.
+- **Both ViewerUI uncovered-pure-logic scan axes are now exhausted of GENUINE targets.** Over this
+  session's run, 10 real suites landed (TSK-420…430): LSPMarkdownRenderer, ByteFormat, LSPRequestID,
+  CommandCategory, LogTimestamp, CMIndentation, jsEscape, computedTabWidth, repoRelativePath,
+  shortDate — plus the #298 regression pin. The type-scan is bare-enum/DTO territory now; the
+  func-scan's last logic-bearing candidates are done (`ContentView.categoryLabel` is a plain
+  exhaustive mapping = theater, deliberately skipped).
+
+### DECISIONS NEEDED (owner) — non-gated headless SwiftUI work is genuinely drained
+For ~10 firings the only actionable SwiftUI-lane work has been pure-logic test backfill (now also
+exhausted) because every substantive item is gated. To keep producing real value, unblock ONE of:
+1. **A supervised live-smoke window** (`bash scripts/build-app.sh debug`, T4 ViewModeMatrix) → frees
+   the perf reworks (TSK-266/267/270/273), Save-a-Copy menu glue (TSK-300), sidebar fuzzy filter
+   (TSK-282), and the #218/#219 HEX/Editor view-mode bugs.
+2. **A UX/algorithm call** → TSK-293 (encryption cipher/key), TSK-299 (insert-timestamp format).
+3. **Explicit OK to work the deprioritized PORT lane** (Rust TUI/web front-ends) headlessly.
+Until one lands, heartbeats will **deliberately HOLD** (documented no-op) rather than manufacture
+ever-more-marginal tests — per the standing honesty rule. `main` is gate-green.
+
 ## LOG 2026-06-06 — repoRelativePath coverage (static-func scan, 3/4)
 - **`3c42a22` test(viewerui): DocumentModel.repoRelativePath was untested** (board TSK-429). Pure
   `nonisolated` path helper (file→relative-to-repo-root, or nil if outside). 7 cases incl the
