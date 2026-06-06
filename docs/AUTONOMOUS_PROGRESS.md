@@ -29,6 +29,21 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+24) — session SELF-HEAL recovery (TSK-438 follow-up done)
+- Completed the optional half of TSK-438: the app now self-heals lost session tabs on launch.
+- **`38cf3e6`:** `SessionsCoordinator.restore()` — when the index is empty/absent/corrupt but
+  substantial snapshots survive (the clobber outcome), rebuild the live list + index from them and
+  mount the newest. New `SessionStore.recoverableSnapshots()` keeps only LIVE (non-trash) snapshots
+  with an existing root AND ≥1 open tab, deduped by root (newest wins), capped 24. Intentionally-closed
+  sessions (close() trashes the snapshot) + empty stubs (the owner's ~40) are never resurrected; the
+  `.newerSchema` downgrade guard is respected (no recovery there).
+- **Validation:** 4 ViewerCore tests (`SessionRecoveryTests`: recover-on-absent / skip-stubs+dead-root /
+  empty-stays-empty / dedupe-by-root) + `swift build` + headless gate **PASSED (exit 0)** on the
+  committed commit — no session-suite regressions.
+- **TSK-438 fully closed:** guard (`bf395f9`) prevents the clobber, recovery (`38cf3e6`) heals existing
+  damage. Owner's lost tabs will now come back automatically on next launch (after a debug rebuild),
+  filtered to real working sessions. `main` @ recovery commit, single linear trunk, gate-green.
+
 ## LOG 2026-06-06 (latest+23) — ROOT-CAUSE FIX: session-index clobber guard (TSK-438 fixed)
 - Continued from the session-tab diagnosis. Shipped the durable fix the owner actually wants (the Reset
   menu was only the escape hatch).
