@@ -128,6 +128,14 @@ final class TreeSitterEngineGoldenTests: XCTestCase {
         // a real type annotation still colors as a type (no predicate gate).
         assertContains(runs, in: src, substring: "Widget",  kind: .type)
         assertContains(runs, in: src, substring: "const",   kind: .keyword)
+
+        // JavaScript shares the same gated patterns (@constructor /
+        // @variable.builtin / @function.builtin). Pre-fix a lowercase
+        // identifier resolved to .builtin (the unconditional @function.builtin
+        // #eq? require capture won); it must now be .variable.
+        let jsSrc = "const myThing = makeThing();"
+        let jsRuns = TreeSitterEngine.shared.tokenize(jsSrc, language: .javascript)
+        assertContains(jsRuns, in: jsSrc, substring: "myThing", kind: .variable)
     }
 
     func testTSX() {
