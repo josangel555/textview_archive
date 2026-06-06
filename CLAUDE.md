@@ -8,8 +8,9 @@
 > host (they open a window / spawn the app). The pre-install smoke is now opt-in
 > (`MDV_RUN_SMOKE_GATE=1`); the headless gate (`test-headless-gate.sh`) is
 > window-free and stays the host merge gate. UI validation → `ssh macOS15` +
-> `swift test` / `bash scripts/vm-smoke.sh`. (VM test-target compile is blocked
-> on TSK-439 until the VM toolchain is upgraded — track that.)
+> `bash scripts/test-in-vm.sh` / `bash scripts/vm-smoke.sh`. (The VM's *default*
+> `swift` is 6.1.2, which CANNOT compile the test target — `scripts/test-in-vm.sh`
+> auto-selects the installed Swift 6.3 toolchain via `TOOLCHAINS`; TSK-439 fixed.)
 
 Tier is the **type** (`Tests/ViewerUITests/Harness/TierBaseCases.swift`):
 `HeadlessUITestCase` (T1/T1m/T2', the default) is host-safe; `LiveAppTestCase`
@@ -42,17 +43,29 @@ on the host — it just exercises the headless tiers and skips T4/T5.
   invocation. They are part of the VM / nightly lane, not the merge gate.
 - **Run the suite on the VM as a validation step (owner standing ask,
   2026-06-06).** For substantive Swift changes, after the host gate is green,
-  also run the suite on the UTM VM — it's Apple **Swift 6.1.2**, stricter than
-  the host on default-actor-isolation, so it catches forward-compat breaks the
-  host waves through (this is how the TSK-401 skew was found). The VM **can**
-  `swift build`/`swift test` now (TSK-401 fixed the strict-concurrency sites).
+  also run the suite on the UTM VM via `bash scripts/test-in-vm.sh` (it
+  auto-selects the toolchain — see below). Two distinct VM signals:
+  - **App-code forward-compat (Swift 6.1.2, the default):** a bare
+    `ssh macOS15 'cd markdown_viewer && swift build'` uses 6.1.2, which is
+    stricter than the host on default-actor-isolation — it caught the TSK-401
+    skew. Good for compiling `Sources/`.
+  - **Test target (needs Swift 6.3):** 6.1.2 REJECTS the test target's
+    `try await super.setUp()` in `@MainActor` classes ("sending non-Sendable
+    self") so the whole bundle fails to compile (TSK-439). `scripts/test-in-vm.sh`
+    `select_toolchain()` picks the newest installed `swift-6.*-RELEASE`
+    toolchain (currently **6.3**) and exports `TOOLCHAINS`, so `swift test`
+    compiles + runs. A *bare* `ssh … swift test` does NOT (it uses 6.1.2) —
+    use the script, or prepend `TOOLCHAINS=$(plutil -extract CFBundleIdentifier
+    raw /Library/Developer/Toolchains/swift-6.3-RELEASE.xctoolchain/Info.plist)`.
 - **VM workflow:**
   - Sync: `rsync -az --delete --exclude='.build/' --exclude='.swiftpm/'
     --exclude='dist/' --exclude='.git/objects/pack/'
     /Users/me/Documents/workspaces/claude/markdown_viewer/
     macOS15:markdown_viewer/`
-  - Run: `ssh macOS15 'cd markdown_viewer && swift test'` (or
-    `bash scripts/test-in-vm.sh all` for build + full suite + JUnit).
+  - Run: `ssh macOS15 'cd markdown_viewer && bash scripts/test-in-vm.sh test'`
+    (auto-selects the 6.3 toolchain; `all` = build + full suite + JUnit). A bare
+    `swift test` uses the default 6.1.2 and will NOT compile the test target —
+    prefer the script (see the toolchain note above).
   - Smoke (build + run + screencap): `bash scripts/vm-smoke.sh`
   - The VM has **no Rust toolchain**: it links the host-built
     `rust-core/link/libmdvcore_ffi.a` (build it on the host first if Rust

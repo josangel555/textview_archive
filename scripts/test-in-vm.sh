@@ -62,7 +62,26 @@ ensure_tools() {
     echo "ERROR: xcrun not found. Install Xcode CLI tools." >&2
     exit 1
   fi
+  select_toolchain
   log "swift: $(swift --version | head -1)"
+}
+
+# TSK-439: the VM's default Xcode `swift` (6.1.2) is STRICTER than the host on
+# region-isolation and FAILS to compile the test target (`try await
+# super.setUp()` in @MainActor test classes = "sending non-Sendable self").
+# Owner approved upgrading the VM toolchain to 6.2+. Rather than hardcode a
+# build-specific id, pick the NEWEST installed `swift-6.x-RELEASE` toolchain and
+# export TOOLCHAINS so every swift/xcrun call uses it. No-op if none beyond the
+# bundled Xcode toolchain is present (e.g. CI on a clean host).
+select_toolchain() {
+  local newest tcid
+  newest=$(ls -d /Library/Developer/Toolchains/swift-6.*-RELEASE.xctoolchain 2>/dev/null \
+             | sort -V | tail -1)
+  [[ -n "$newest" && -f "$newest/Info.plist" ]] || return 0
+  tcid=$(plutil -extract CFBundleIdentifier raw "$newest/Info.plist" 2>/dev/null) || return 0
+  [[ -n "$tcid" ]] || return 0
+  export TOOLCHAINS="$tcid"
+  log "toolchain: $(basename "$newest") ($tcid)"
 }
 
 build_all() {
