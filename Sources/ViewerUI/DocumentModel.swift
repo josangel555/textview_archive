@@ -107,6 +107,28 @@ public final class DocumentModel: ObservableObject {
     /// Keeps that call site valid without churning view code.
     public typealias CSVFilterState = TabCoordinator.CSVFilterState
     @Published public private(set) var windowTitle: String = "TextView"
+
+    /// Perf Fix#1 (TSK-108): the bounded set of tab ids whose content panes
+    /// stay MOUNTED in the content `ZStack` even while inactive — so
+    /// switching back to a tab does NOT tear down + reload its `WKWebView`
+    /// (rendered-markdown / CM6 editor), the dominant tab-switch freeze.
+    /// MRU-ordered, capacity-bounded; the active tab is always index 0.
+    /// Driven SOLELY from `updateDerived()` (the universal post-selection /
+    /// -close / -session hook) via `noteActiveTabForRetention()`, so every
+    /// open / select / close / session-switch path keeps it correct without
+    /// per-callsite wiring. `@Published` (not a narrow store) so `ContentView`
+    /// observes it directly — avoids the dead-toggle observation-timing bug
+    /// (design: `docs/research/perf-fix1-view-retention.md`, RISK #1).
+    @Published public private(set) var mountedPanes = MountedPanesLRU(capacity: 4)
+
+    /// The tabs whose panes are currently mounted, MRU-first (active first).
+    /// Compact-maps `mountedPanes.ids` against the live tab list so an id for
+    /// a tab closed out-of-band is simply not rendered (its pane unmounts).
+    /// `ContentView.content` renders one `ZStack` pane per entry.
+    public var mountedTabs: [ViewerCore.Tab] {
+        mountedPanes.ids.compactMap { id in tabs.tabs.first { $0.id == id } }
+    }
+
     @Published public private(set) var recents: [HistoryEntry] = []
     @Published public private(set) var bookmarks: [BookmarkEntry] = []
     /// Width of the sidebar in points. Mutated frequently during a drag —
@@ -4154,6 +4176,26 @@ public final class DocumentModel: ObservableObject {
         // per-file state for files no longer open in any tab, so the pool's
         // Swift-side maps don't grow unbounded across a long session.
         reapClosedLSPFiles()
+        // Perf Fix#1 (TSK-108): keep the mounted-pane retention set current.
+        // Runs LAST so it sees the post-mutation tab list / selection.
+        noteActiveTabForRetention()
+    }
+
+    /// Reconcile `mountedPanes` with the current tab list + selection, in ONE
+    /// place driven by `updateDerived()` — so every open / select / close /
+    /// session-switch path keeps it correct without per-callsite wiring:
+    ///   • `retainOnly` drops ids whose tab was closed via ANY path (close,
+    ///     close-others, session switch — they're simply gone from `tabs`);
+    ///   • `activate` moves the now-selected tab to the front (MRU) and evicts
+    ///     the least-recently-active tail beyond capacity.
+    /// Change-guarded so a republish-without-selection-change (content reload,
+    /// diff-marks refresh) does NOT fire an extra `objectWillChange`.
+    private func noteActiveTabForRetention() {
+        let openIDs = Set(tabs.tabs.map(\.id))
+        var next = mountedPanes
+        next.retainOnly(openIDs)
+        if let id = tabs.selected?.id { next.activate(id) }
+        if next != mountedPanes { mountedPanes = next }
     }
 
     /// URL the LSP pool was last warmed for. Dedupes the

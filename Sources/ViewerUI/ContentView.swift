@@ -445,20 +445,59 @@ public struct ContentView: View {
 
     @ViewBuilder
     private var content: some View {
-        switch model.currentState {
+        // Perf Fix#1 (TSK-108): render a ZStack of every MOUNTED tab pane
+        // (the MRU-bounded `MountedPanesLRU`), not just the active one.
+        // Inactive panes stay MOUNTED (gated opacity 0 / hit-testing off) so
+        // switching back is a pure visibility flip — no WKWebView teardown +
+        // reload (the ~1s tab-switch freeze). `dismantleNSView` fires only on
+        // LRU tail eviction. `ForEach` keyed on the stable `Tab.id` preserves
+        // each pane's SwiftUI identity — the load-bearing invariant.
+        // Design: docs/research/perf-fix1-view-retention.md (Approach A).
+        let mounted = model.mountedTabs
+        if mounted.isEmpty {
+            // No open/retained tab yet (cold launch, all tabs closed): render
+            // the active state directly so the pane is never blank.
+            tabContent(for: model.tabs.selected ?? ViewerCore.Tab(), isActive: true)
+        } else {
+            ZStack {
+                ForEach(mounted) { tab in
+                    let isActive = (tab.id == model.tabs.selected?.id)
+                    tabContent(for: tab, isActive: isActive)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        // opacity:0 (NOT `.hidden()`): keeps the inactive
+                        // WKWebView "visible" to WebKit so it never fires
+                        // `visibilitychange` → no page self-reload (cmux #1228).
+                        // Background-throttled only.
+                        .opacity(isActive ? 1 : 0)
+                        .allowsHitTesting(isActive)
+                        .accessibilityHidden(!isActive)
+                        .zIndex(isActive ? 1 : 0)
+                }
+            }
+        }
+    }
+
+    /// Render ONE tab's content for its OWN `state` / `viewMode` / id — NOT
+    /// the globally-active tab's. This is what lets inactive retained panes
+    /// keep showing their own document while invisible. `isActive` gates the
+    /// find bar + find query so only the visible pane shows/drives find
+    /// (otherwise N hidden find bars fight for first-responder focus).
+    @ViewBuilder
+    private func tabContent(for tab: ViewerCore.Tab, isActive: Bool) -> some View {
+        switch tab.state {
         case .empty:
             EmptyStateView()
         case .loading(let url):
             LoadingStateView(url: url)
         case .loaded(let file):
-            loadedView(for: file)
+            loadedView(for: file, tab: tab, isActive: isActive)
         case .binary(let binary):
             // For binaries (HEX mode) we always show the byte grid;
             // the metadata panel pairs naturally with .preview state
             // below.
             HexView(file: binary,
                     fontSize: 12 * model.zoom,
-                    tabID: model.tabs.selected?.id ?? UUID(),
+                    tabID: tab.id,
                     model: model)
         case .error(let failure):
             ErrorView(failure: failure, model: model)
@@ -487,19 +526,17 @@ public struct ContentView: View {
     }
 
     @ViewBuilder
-    private func loadedView(for file: TextFile) -> some View {
+    private func loadedView(for file: TextFile, tab: ViewerCore.Tab, isActive: Bool) -> some View {
         // WAVE 2b item 6: a per-tab "Open As…" override wins over
         // extension/UTI detection so e.g. a `.db` opened as Markdown
         // renders through the markdown pipeline.
-        let category = model.tabs.selected?.categoryOverride
+        let category = tab.categoryOverride
             ?? FileTypeDetector.category(for: file.url)
-        if model.currentViewMode == .table {
-            // Per-tab CSV filter state lives on DocumentModel keyed by
-            // tab id; pass the active tab id so state persists across
-            // tab switches.
-            let tid = model.tabs.selected?.id ?? UUID()
-            CSVTableView(text: file.contents, model: model, tabID: tid)
-        } else if model.currentViewMode == .editor {
+        if tab.viewMode == .table {
+            // Per-tab CSV filter state lives on DocumentModel keyed by tab id;
+            // pass THIS pane's id so each retained pane keeps its own filter.
+            CSVTableView(text: file.contents, model: model, tabID: tab.id)
+        } else if tab.viewMode == .editor {
             // Hard cap. Above ~50 MB the WKWebView path becomes a
             // liability (JS-heap pressure + LSP diagnostics push cost);
             // route the user to source view instead. See
@@ -518,7 +555,7 @@ public struct ContentView: View {
             // `CodeMirrorEditorView` header for why. The Swift-side
             // data flow (EditorBuffer / isDirty / saveActiveEditor)
             // is unchanged from the prior NSTextView PoC.
-            let tid = model.tabs.selected?.id ?? UUID()
+            let tid = tab.id
             let _ = { model.ensureEditorBuffer(for: file, tabID: tid) }()
             let buf = model.editorBuffer(forTabID: tid)
             let lang = model.effectiveLanguage(forTabID: tid, url: file.url)
@@ -528,7 +565,7 @@ public struct ContentView: View {
                 CMSelectionSeed(anchor: $0.head, head: $0.head, scroll: true)
             }
             VStack(spacing: 0) {
-                if model.isEditorFindBarPresented {
+                if isActive && model.isEditorFindBarPresented {
                     EditorFindBar(find: model.find, uiSize: model.uiSize)
                 }
                 CodeMirrorEditorView(
@@ -543,7 +580,7 @@ public struct ContentView: View {
                     showInvisibles: model.showInvisibleChars,
                     gutterMarkers: gutter,
                     diagnostics: diags,
-                    findQuery: model.isEditorFindBarPresented ? model.editorFindQuery : "",
+                    findQuery: (isActive && model.isEditorFindBarPresented) ? model.editorFindQuery : "",
                     findCaseSensitive: model.editorFindCaseSensitive,
                     findRegex: model.editorFindIsRegex,
                     findNextRequest: model.editorFindNextRequest,
@@ -611,10 +648,10 @@ public struct ContentView: View {
                 }
             }
             } // end size-cap else
-        } else if model.currentViewMode == .diff {
+        } else if tab.viewMode == .diff {
             DiffView(text: file.contents, doc: model)
-        } else if (category == .markdown && model.currentViewMode == .rendered)
-                    || (category == .mermaid && model.currentViewMode == .rendered) {
+        } else if (category == .markdown && tab.viewMode == .rendered)
+                    || (category == .mermaid && tab.viewMode == .rendered) {
             // Soft cap on rendered-markdown size. The parser → HTML →
             // WKWebView pipeline transiently allocates a few multiples
             // of input size (AST + emitted HTML + DOM in the WebContent
@@ -624,9 +661,10 @@ public struct ContentView: View {
             if file.byteCount > markdownRenderMaxBytes {
                 LargeMarkdownPlaceholderView(file: file, model: model)
             } else {
-                renderedMarkdownView(for: file, category: category)
+                renderedMarkdownView(for: file, category: category,
+                                     tab: tab, isActive: isActive)
             }
-        } else if category == .html && model.currentViewMode == .rendered {
+        } else if category == .html && tab.viewMode == .rendered {
             // Raw-HTML rendered mode — the SEPARATE, sanitized +
             // JS-default-deny path (HTMLRenderedView), NOT the markdown
             // WebView. L0 size cap: above HTMLDocumentPolicy.renderMaxBytes
@@ -635,15 +673,13 @@ public struct ContentView: View {
             if file.byteCount > HTMLDocumentPolicy.renderMaxBytes {
                 LargeHTMLPlaceholderView(file: file, model: model)
             } else {
-                let tid = model.tabs.selected?.id
-                    ?? UUID(uuid: (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
                 HTMLRenderedView(
                     rawHTML: file.contents,
                     documentURL: file.url,
                     zoom: model.zoom,
                     // L2: per-tab JS opt-in. Default-OFF lives in the
                     // model (absence of the tab id ⇒ false).
-                    javaScriptEnabled: model.htmlJavaScriptEnabled(forTabID: tid)
+                    javaScriptEnabled: model.htmlJavaScriptEnabled(forTabID: tab.id)
                 )
                 .accessibilityIdentifier("mdv.htmlRendered")
             }
@@ -654,15 +690,14 @@ public struct ContentView: View {
             // bumps its `version` when a tokenize completes, which
             // re-evals only this subtree (not ContentView and not
             // every sibling).
-            let tabID = model.tabs.selected?.id
-                ?? UUID(uuid: (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
             SourceModeView(
                 model: model,
-                highlightCache: model.highlightCacheActor(forTabID: tabID),
+                highlightCache: model.highlightCacheActor(forTabID: tab.id),
                 find: model.find,
                 sourceView: model.sourceView,
                 file: file,
-                tabID: tabID
+                tabID: tab.id,
+                isActive: isActive
             )
         }
     }
@@ -672,7 +707,7 @@ public struct ContentView: View {
     /// markdown document, then ride the same WebView path.
     @ViewBuilder
     private func renderedMarkdownView(
-        for file: TextFile, category: FileCategory
+        for file: TextFile, category: FileCategory, tab: ViewerCore.Tab, isActive: Bool
     ) -> some View {
         let renderedContents: String = {
             if category == .mermaid {
@@ -680,14 +715,11 @@ public struct ContentView: View {
             }
             return file.contents
         }()
-        // tabID is the cache identity. We're inside the loaded-tab
-        // branch so `tabs.selected` is non-nil in practice; fall back
-        // to a zero UUID for the theoretical case where the body
-        // re-evals between a selectTab and an updateDerived (the
-        // cache entry would then be orphaned, evicted by LRU).
-        let tabID = model.tabs.selected?.id ?? UUID(uuid: (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
+        // tabID is BOTH the rendered-HTML cache identity and this pane's id —
+        // each retained pane caches + renders its OWN document.
+        let tabID = tab.id
         VStack(spacing: 0) {
-            if model.isRenderedFindBarPresented {
+            if isActive && model.isRenderedFindBarPresented {
                 MarkdownFindBar(find: model.find, uiSize: model.uiSize)
             }
             MarkdownRenderedView(
@@ -700,7 +732,7 @@ public struct ContentView: View {
                 ),
                 baseURL: file.url.deletingLastPathComponent(),
                 zoom: model.zoom,
-                findQuery: model.renderedFindQuery,
+                findQuery: isActive ? model.renderedFindQuery : "",
                 findCaseSensitive: model.renderedFindCaseSensitive,
                 findNextNonce: model.renderedFindNextRequest,
                 findPrevNonce: model.renderedFindPrevRequest,
@@ -740,6 +772,9 @@ struct SourceModeView: View {
     @ObservedObject var sourceView: SourceViewChannel
     let file: TextFile
     let tabID: UUID
+    /// Perf Fix#1 (TSK-108): false for retained-but-inactive panes. Gates the
+    /// find bar so only the visible pane shows it (no first-responder fight).
+    let isActive: Bool
 
     var body: some View {
         let displayedInfo = model.displayedText(for: file)
@@ -752,7 +787,7 @@ struct SourceModeView: View {
             language: lang
         )
         VStack(spacing: 0) {
-            if model.isSourceFindBarPresented {
+            if isActive && model.isSourceFindBarPresented {
                 SourceFindBar(find: model.find, uiSize: model.uiSize)
             }
             HStack(spacing: 0) {
@@ -770,7 +805,7 @@ struct SourceModeView: View {
                     runs: runs,
                     theme: model.activeTheme,
                     findState: TextDisplayView.FindState(
-                        query: model.isSourceFindBarPresented ? model.sourceFindQuery : "",
+                        query: (isActive && model.isSourceFindBarPresented) ? model.sourceFindQuery : "",
                         caseSensitive: model.sourceFindCaseSensitive,
                         isRegex: model.sourceFindIsRegex,
                         nextNonce: model.sourceFindNextRequest,

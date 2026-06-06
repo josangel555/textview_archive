@@ -78,6 +78,9 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         // WKWebView eats file-URL drags by default; releasing those so the
         // SwiftUI .onDrop on the parent receives them instead.
         webView.unregisterDraggedTypes()
+        #if DEBUG
+        MountProbe.webViewMakes += 1   // Fix#1 mount-count probe (TSK-108)
+        #endif
         return webView
     }
 
@@ -249,6 +252,9 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         webView.configuration.userContentController.removeAllUserScripts()
         coordinator.mermaidInjected = false
         coordinator.pendingFindWebView = nil
+        #if DEBUG
+        MountProbe.webViewDismantles += 1   // Fix#1 mount-count probe (TSK-108)
+        #endif
     }
 
     /// Outcome of a single navigation policy decision. Exposed as a pure value

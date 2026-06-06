@@ -185,6 +185,9 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         // Register so the AppDelegate's Undo/Redo menu items can find
         // the active CM6 webview without walking the view hierarchy.
         CodeMirrorEditorRegistry.shared.register(webView)
+        #if DEBUG
+        MountProbe.webViewMakes += 1   // Fix#1 mount-count probe (TSK-108)
+        #endif
         return webView
     }
 
@@ -201,6 +204,9 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "mdvEditor")
         CodeMirrorEditorRegistry.shared.unregister(webView)
         coordinator.webView = nil
+        #if DEBUG
+        MountProbe.webViewDismantles += 1   // Fix#1 mount-count probe (TSK-108)
+        #endif
     }
 
     /// Shared across all editor instances (one process pool per app
