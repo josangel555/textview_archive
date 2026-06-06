@@ -1862,3 +1862,68 @@ built (a 460-line view) in a prior session and the doc was stale. Checking the
 actual files first (per the "fetch fresh state" rule) avoided rebuilding it.
 **Lesson:** when a tracker/doc claims something is missing, verify against the
 code before acting — docs drift, code is ground truth.
+
+## Session 2026-06-05 PM — in-file find (TUI+web), SwiftUI polish, branch reconciliation
+
+### "One core, three front-ends" pays off twice: build the primitive once, wire each tier
+In-file find (TSK-197 TUI + TSK-198 web) shipped from a single new `core::find` module
+(`find_matches(text,query,Case)` + `first_from`/`next_index`/`prev_index`, 17 tests). The TUI
+got a `/` overlay with n/N nav; the web got `?find=&fmatch=` — each front-end wiring was small
+because the matching logic + cursor math lived in the tested core. **Lesson:** when a feature is
+"port the same behavior to TUI + web", write/extend a `mdvcore_core` primitive with exhaustive
+unit tests first, then the front-ends are thin shells. Validate with `cargo test --workspace`
+(TUI/web are OUT of `default-members`; the `rust-core-gate` only covers core+ffi).
+
+### Swift: adding a defaulted parameter to a public fn breaks stale callers at LINK time
+Adding `isRenderableText: Bool? = nil` to `ViewModeOptions.availableModes` is source-compatible,
+but it changes the function's MANGLED symbol. SwiftPM's incremental compiler did NOT recompile
+caller files that omit the new arg, so their cached `.o` referenced the old symbol → "Undefined
+symbols … availableModes(for:forcedCategory:)" at link, even after a full `swift build`/gate run.
+**Fix:** `grep -rl "availableModes(" Sources Tests | xargs touch` to force-recompile callers (or
+a clean build). **Lesson:** after adding a defaulted param to a widely-called public func, touch
+its callers — don't trust incremental to invalidate them.
+
+### Web text-highlight: reuse the line-anchor machinery, don't inject marks mid-line
+The web tier escapes every content byte through `esc()`. To "highlight find matches" the naive
+path is wrapping matched byte-ranges in `<mark>` inside the escaped line — fiddly + an injection
+risk. Instead the find steered the EXISTING go-to-line machinery: set the current match's line as
+the `gutter_html` `target`, which already emits `id="L<n>"` + a `.cur` highlight and a `#L<n>`
+fragment the browser scrolls to. **Zero escaping surgery, correct by construction.** **Lesson:**
+before adding HTML-generation, check whether an existing anchored/targeted render path already
+does what you need with a different input.
+
+### The ratatui TUI is headless-testable — use `render(app)` + `on_key`
+`App::snapshot(w,h)` renders one frame to an in-memory `TestBackend` string; tests drive
+`app.on_key(KeyCode::…)` then assert on the rendered text + `app` state. This gave real coverage
+for the `/` find overlay (open → type → ↵ → n/N → Esc) with no terminal. **Lesson:** TUI features
+are NOT "live only" — assert behavior through the snapshot harness.
+
+### `App.status` (TUI) is write-only — surface state in the help bar instead
+The TUI `App.status` field is set in ~10 places (`opened X`, `no matches`, prompt hints) but
+NEVER rendered. The find feature put its `i of n` count in the bottom help-bar branch instead.
+**Lesson / latent task:** wiring `App.status` into the status line would make all those messages
+visible (overlaps the [PORT][TUI] status-bar task).
+
+### View-mode resolution is URL-only and regression-prone (still)
+`ViewModeOptions.{defaultMode,availableModes}` resolve purely from the URL/extension; the LOADED
+state (e.g. an unknown-extension file the loader decoded as text) is never fed back, so such a
+file opens HEX-only. TSK-332's pure layer (an additive `isRenderableText` hint on BOTH functions,
+kept in lockstep so a hinted `.source` default is always in `availableModes`) is done + tested,
+but the loader→picker threading is deferred: it lands in the carry-mode/picker-desync zone that
+produced #212/#217/#219 (all LIVE-only bugs). **Lesson:** changes to view-mode resolution need a
+live smoke (`build-app.sh debug` → ViewModeMatrix T4), not just the headless gate.
+
+### Reconciling stale scratch branches: grep each piece against main before merging
+Two `worktree-wf_*` branches were **163 commits behind** main. Naively merging would have
+re-introduced a competing design (one re-broadened a `setCurrentViewMode` guard that main had
+deliberately scoped narrow) and conflicted on already-landed code (the other's `wireLifecycle`
+was already on main). **Lesson:** for a branch far behind main, `git diff branch...main` per file
++ `grep` each key symbol in main to classify every hunk as already-landed / superseded /
+genuinely-missing; salvage only the genuinely-missing, non-contradictory pieces (here: one
+`SessionStore` env-override). Don't blanket-merge or blanket-drop.
+
+### Board reconciliation is real work: verify-and-close already-done tasks with evidence
+~8 `[PORT][W1]` board tasks (line-number gutter, sort modes, hidden toggle, go-to-line) were
+fully implemented in code but left `reported`. Closing them to `fixed` with file-cited evidence
+(the TSK-402 reconcile chore) is legitimate Validation-lane progress, no code change. **Lesson:**
+before building a "missing" feature, grep the code — it may already exist and just need closing.
