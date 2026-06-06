@@ -390,3 +390,28 @@ gutter compositor blank-sibling bug (only `screencapture`, not
 8. Editing stays capped: picking Editor mode on a >50 MiB file shows
    the `LargeEditorPlaceholderView` with "View as Source"; the split
    pane shows "File too large for split view" for >64 MiB.
+
+## Syntax highlighting — 2026-06-06 changes (open in Normal/Source mode)
+
+These are correctness fixes whose effect is *colors*, which only the eye
+can fully confirm (token kinds are pinned by `TreeSitterEngineGoldenTests`,
+but the on-screen render is the real check). Open each in **Normal**
+(source) view — NOT Editor (CodeMirror does its own highlighting).
+
+1. **`.tsx` JSX now parses (TSK-195).** Open a `.tsx` file with JSX
+   (e.g. `const App = () => <div className="x">{count}</div>;`). The TS
+   around the JSX (keywords, the `count` expression, string literals)
+   must highlight cleanly — previously the plain TS grammar choked on
+   `<div …>` so the whole expression rendered uncolored/garbled. (JSX
+   *tag-name* coloring as a distinct hue is a known follow-up in
+   AUTONOMOUS_PROGRESS DECISIONS NEEDED; tags render as plain
+   identifiers for now, which is acceptable.)
+2. **TS/JS identifiers no longer all one color (TSK-410).** Open a `.ts`
+   or `.js` file. Ordinary lowercase variables (`let myThing = …`) render
+   in the plain *variable* color (near-black light / near-white dark),
+   NOT the purple *type* color. Capitalized names (`MyType`, `Foo()`)
+   still get type/constructor coloring. Before the fix every identifier
+   resolved to the type color.
+3. **Rust SCREAMING_CASE constants (typo fix).** Open a `.rs` file with
+   `const MAX_SIZE: u32 = …` or any ALL_CAPS name — it must render in the
+   *constant* color, not plain variable.
