@@ -29,6 +29,34 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+27) — VM UI-test lane UNBLOCKED end-to-end (TSK-439 + TSK-446 fixed)
+
+- Finished the owner-approved VM toolchain upgrade ("OK to upgrade the VM Xcode/toolchain to 6.2+ — Yes")
+  and discovered + fixed the *second* blocker behind it. Both board tasks now `fixed`.
+- **TSK-439 fixed (`bafa9a1`):** `scripts/test-in-vm.sh` `ensure_tools()` now calls `select_toolchain()`,
+  which picks the newest installed `/Library/Developer/Toolchains/swift-6.x-RELEASE` (6.3, id
+  `org.swift.630202603201a`) and exports `TOOLCHAINS`. The VM default `swift` is 6.1.2, which rejects the
+  test target (`try await super.setUp()` in `@MainActor` classes = "sending non-Sendable self") so the
+  whole bundle never compiled. **Verified on VM (`test` mode): `Build complete!` on 6.3 + every
+  headless/logic suite 0 failures.** CLAUDE.md VM commands + owner-directive note updated (a bare
+  `swift test` still uses 6.1.2 and fails — use the script).
+- **NEW finding → TSK-446 fixed (`bc2fdf7`):** running the *full* lane (`test-in-vm.sh all`) then died at
+  `build-app.sh` → `build-rust-core.sh`: **`cargo not found`**. The VM has no Rust toolchain (links the
+  host-rsynced `rust-core/link/libmdvcore_ffi.a` + `Sources/CMdvCore/mdvcore.h`). So a FRESH `dist/`
+  could never be assembled on the VM — the earlier T4 `Cm6EditorUATTests` failures + a signal-5 crash in
+  `test` mode were all artifacts of a **3-week-stale `dist/`** (May 17). Fix: `build-rust-core.sh` now
+  falls back to the pre-staged staticlib+header when cargo is absent. **Verified on VM: `cargo not
+  found; using pre-staged Rust core artifacts` → `build-app.sh` assembled + `verify-app.sh` PASS
+  `codesign --verify --deep --strict clean` on a fresh `dist/TextView.app`.** Host cargo path
+  regression-checked (still "Rust core ready (dist)", 17M staged).
+- **Net:** `bash scripts/test-in-vm.sh all` is now the working UI/live-tier validation lane on the VM
+  (owner directive: no UI tests on the Mac). This unblocks **TSK-440** (sidebar resize rework — first
+  SwiftUI fix validatable end-to-end without touching the owner's Mac). A full VM `all` run was in
+  flight at log time to capture the fresh-dist T4/T5 verdict.
+- Memories updated: `feedback-no-ui-tests-on-mac` (lane unblocked), `vm-no-rust-toolchain` (build-app
+  fallback). `main` single linear trunk @ `bc2fdf7`; both commits are scripts/docs only (no `Sources/`),
+  validated by the VM run itself (not the host headless gate).
+
 ## LOG 2026-06-06 (latest+26) — dev-loop fix: build-app.sh --install (closes the rebuild gotcha)
 - Heartbeat. SwiftUI headless pool drained; TSK-439 (VM compile skew) is owner-gated (toolchain
   upgrade — in DECISIONS NEEDED, not blasting an 85-file backport). Picked the warm dev-loop friction
