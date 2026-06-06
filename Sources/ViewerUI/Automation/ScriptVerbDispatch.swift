@@ -250,6 +250,16 @@ public enum ScriptVerb {
             Obs.shared.emit(ObsEvent(
                 level: .warn, subsystem: "wave2b",
                 message: "instrumentation smoke event 2"))
+        // ---- Text tools (clipboard surface; TSK-292/294/295) ----
+        // Generators (`tools.uuid`) write fresh output to the clipboard;
+        // transforms (`tools.sha256`, `tools.base64Encode/Decode`) read the
+        // clipboard, apply, and overwrite it on success. All clipboard IO +
+        // status lives in the headless-tested `TextToolRunner`; this layer
+        // only picks the verb and surfaces the status string via `Obs`.
+        case "tools.uuid":          Self.runTextTool(.generateUUID)
+        case "tools.sha256":        Self.runTextTool(.sha256)
+        case "tools.base64Encode":  Self.runTextTool(.base64Encode)
+        case "tools.base64Decode":  Self.runTextTool(.base64Decode)
         case "open-as":
             // WAVE 2b item 6: "<category> <path>" — open a file forced to
             // a viewer category (sqlite/code/plainText/markdown/image/
@@ -299,6 +309,18 @@ public enum ScriptVerb {
             return false
         }
         return true
+    }
+
+    /// Run a clipboard text tool against the system pasteboard and surface
+    /// the resulting status through `Obs` (visible in the Logs view and, in
+    /// the live app, the natural hook for a toast). Factored out so all four
+    /// verb cases share one line and the live adapter stays trivial — the
+    /// testable logic already lives in `TextToolRunner` (driven against a
+    /// fake pasteboard in `TextToolRunnerTests`, never the real clipboard).
+    private static func runTextTool(_ verb: TextToolVerb) {
+        let status = TextToolRunner.run(verb, pasteboard: SystemPasteboard())
+        Obs.shared.emit(ObsEvent(
+            level: .info, subsystem: "tools", message: status))
     }
 
     /// Surface an explicit error when an `open-as` / `set-open-as` verb is

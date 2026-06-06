@@ -276,5 +276,20 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "debug.emitTestLog", title: "Emit Test Log Events", category: .debug,
             scriptVerb: "emit-test-log"),
+
+        // Text tools (TSK-292/294/295) — palette/Omni-invokable; operate on the
+        // clipboard via TextToolRunner. scriptVerb == TextToolVerb.rawValue.
+        CommandDescriptor(
+            id: "tools.uuid", title: "Generate UUID", category: .edit,
+            scriptVerb: "tools.uuid"),
+        CommandDescriptor(
+            id: "tools.sha256", title: "SHA-256 (hex) of Clipboard", category: .edit,
+            scriptVerb: "tools.sha256"),
+        CommandDescriptor(
+            id: "tools.base64Encode", title: "Base64 Encode Clipboard", category: .edit,
+            scriptVerb: "tools.base64Encode"),
+        CommandDescriptor(
+            id: "tools.base64Decode", title: "Base64 Decode Clipboard", category: .edit,
+            scriptVerb: "tools.base64Decode"),
     ]
 }
