@@ -29,6 +29,24 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+25) — rebuilt app + ran tests in UTM + CLAUDE.md SOP (owner asks)
+- **Rebuilt** `dist/TextView.app` (`build-app.sh debug`, exit 0, T4 ViewModeMatrix 3/3) so the session
+  fixes + Reset menu + disk-dot are live in the installed app. Killall footgun fixed → didn't touch the
+  owner's running instance.
+- **Ran tests in UTM** (owner ask): synced to `macOS15` + `ssh … swift test`. **FINDING:** the VM's
+  Swift **6.1.2** FAILS TO COMPILE the test target — `try await super.setUp()/tearDown()` in `@MainActor`
+  test classes = "sending non-Sendable self" under 6.1.2 region isolation (host 6.2 accepts it). Dies at
+  `FindBarTests`; ~85 test files share the pattern; whole bundle blocked → no tests run on VM. Filed
+  **TSK-439**.
+- **DECISIONS NEEDED (owner):** VM test lane is red at compile. RECOMMEND **upgrade the VM toolchain to
+  Swift 6.2+** to match the host (faithful env) over backporting ~85 test files to 6.1.2 (churn/risk,
+  must stay green on both). Matches TSK-401's original recommendation. I did NOT blind-blast the 85-file
+  backport. My session changes (SessionStore guard+recovery + their tests) remain **host-gate-green**.
+- **CLAUDE.md updated** (owner ask): added the "run the suite on the VM as a validation step" rule, a
+  full "## Automated / autonomous runs (SOP)" section, the VM-no-Rust-toolchain note, and corrected the
+  persisted-state paths (two App-Support subdirs; `MarkdownViewer/` has no bundle-id prefix). New memory
+  `feedback-run-tests-in-utm`. `main` @ CLAUDE.md commit, single linear trunk, host-gate-green.
+
 ## LOG 2026-06-06 (latest+24) — session SELF-HEAL recovery (TSK-438 follow-up done)
 - Completed the optional half of TSK-438: the app now self-heals lost session tabs on launch.
 - **`38cf3e6`:** `SessionsCoordinator.restore()` — when the index is empty/absent/corrupt but
