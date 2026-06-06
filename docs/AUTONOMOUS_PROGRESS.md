@@ -317,6 +317,21 @@ SwiftUI-first progress, the next wave needs ONE of:
     CommandRegistry catalog test + `build-app.sh debug` smoke. ~1 focused session; the transforms +
     `TextToolVerb` dispatcher it builds on are already committed + tested.
 
+## LOG 2026-06-06 — LogTimestamp coverage; first full ViewerUI scan
+- **`a1dbd90` test(viewerui): LogTimestamp was untested** (board TSK-425). The observability-logs
+  `nanos→HH:mm:ss.SSS` formatter. 5 cases, all **timezone-independent** (only `HH:mm` shift with
+  zone; `ss`/`.SSS` don't — no modern zone has a sub-minute offset), pinning the format shape,
+  the `ss.SSS` tail, millisecond zero-padding, 1ms-apart distinctness, and epoch well-formedness.
+- Two ViewerCore candidates this firing were false positives (`KeyModifiers` covered via `Shortcut`'s
+  21 assertions; `LSPSymbolKind` decode-fallback lives at the `LSPClient` call site + `iconName`
+  already tested). **ViewerCore's zero-ref pool is now mostly bare enums/DTOs** (testing = theater),
+  so ran the first full **ViewerUI** scan (185 types). Remaining ViewerUI candidates with real
+  logic: `CMIndentation`, `MarkdownStylesheet`, `LogsView` helpers.
+- **Trend note:** ~6 consecutive firings of pure-logic backfill. The non-gated SwiftUI pool is
+  thinning. When it's genuinely dry, the honest move is a documented hold (not ever-more-marginal
+  tests) — the substantive remaining SwiftUI work is owner-gated (live-validation / UX decisions),
+  see DECISIONS NEEDED.
+
 ## LOG 2026-06-06 — CommandCategory coverage (uncovered-pure-logic lane)
 - **`2f4e960` test(viewercore): CommandCategory was untested** (board TSK-424). 6 cases pinning the
   `title` header labels (incl non-obvious `.lsp`→"Language") and the custom `Comparable` that orders
