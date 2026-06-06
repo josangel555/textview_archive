@@ -22,7 +22,49 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
-## LOG 2026-06-06 (later) — TextTools PoC core (SHA/Base64/UUID), surface = owner UX call
+## LOG 2026-06-06 (latest) — Tools surface LANDED (clipboard, option a); Swift headless pool drained
+- **`7e9d78f` feat(tools): clipboard text-tools surface** — wired the (previously unwired) TextTools
+  core into the command palette. Built **option (a)** from the prior DECISION NEEDED exactly per the
+  execute-ready plan: `protocol PasteboardIO` + `SystemPasteboard` adapter + `TextToolRunner.run(verb:
+  pasteboard:) -> status` in `Sources/ViewerCore/TextToolRunner.swift`; 4 `CommandDescriptor`s
+  (`tools.uuid`/`tools.sha256`/`tools.base64Encode`/`tools.base64Decode`, category `.edit`) + 4
+  `ScriptVerb.apply` cases routing through it. Generators write fresh; transforms read→apply→overwrite
+  on success (invalid input leaves clipboard untouched + status). HEADLESS-tested with a **fake**
+  pasteboard (`TextToolRunnerTests`) so the suite never touches `NSPasteboard.general`. Headless gate
+  green (3782). **Live-smoke skipped deliberately** — pure-logic surface, no new view; command-registry
+  + dispatch are fully covered headless; a window would only disrupt the owner. Bundle size unaffected.
+- **Board: TSK-291 (Tools umbrella) + TSK-292 (SHA) + TSK-294 (Base64) + TSK-295 (UUID) → `fixed`**
+  (agent cap; owner gates review→validated→done). The clipboard-vs-editor-selection UX choice is
+  recorded on the TSK-291 umbrella as a review-lane note (not a blocker — it's shipped + works).
+- **FINDING — actionable headless-safe Swift pool is DRAINED.** Swept the board (project `tasked`):
+  every `[S#]` deep-audit Swift-side finding is already `fixed`/`review` (105 fixed, 30 review); the
+  only `[S]`-reported item is TSK-400 (a Rust `mdvcore-rpcd` RPC spike, owner-gated). The remaining
+  `reported` Swift work is the **owner wishlist** (TSK-259…303) — high-signal but almost all are UI
+  features needing **visual/live validation** (a window) or **owner UX decisions**, neither of which
+  fits a headless owner-away heartbeat.
+- **Spike — TSK-266 "closing a tab takes ~1s" (→ `triaged`, flagged `live-validation`).** Traced the
+  full close path (`closeTab`→coordinator cleanup→`purgeCaches`→`updateDerived`→`startWatchingCurrentFile`).
+  No synchronous main-thread culprit on the model side: `updateDerived` is off-main (`refreshDiffMarks`
+  git-shell) / idempotent (`repoFocus.recompute`) / deduped (`warmLSPForCurrentFile`); `startWatching`
+  is idempotent + one `stat`. The ~1s most plausibly lives in **SwiftUI view-teardown** (WKWebView/CM6
+  dealloc + AttributeGraph teardown — the #192/#194 territory) or content re-render of the newly-selected
+  tab. Needs **Instruments** (can't measure headless) and overlaps the in-progress perf epics. Did NOT
+  blind-fix. Same class likely covers TSK-270 (open delay) / TSK-273 (switch slow).
+
+### DECISIONS NEEDED (refreshed 2026-06-06 latest)
+The headless-safe, owner-unambiguous Swift pool is drained (see FINDING above). To keep making
+SwiftUI-first progress, the next wave needs ONE of:
+1. **A supervised live-validation window** — then I can take the owner wishlist UI features
+   (e.g. TSK-282 inline fuzzy file-nav filter+highlight — the `FuzzyMatcher`/`filterWithMatches`
+   core already exists & is proven in the palette; TSK-263 source hover-line; TSK-268 last-tab right
+   border) and the perf items (TSK-266/270/273) and validate them on a real window.
+2. **Profiling sign-off** to run Instruments on the tab close/open/switch hot paths (perf epics
+   #207/#210 overlap) — yields the data the TSK-266 spike couldn't get headless.
+3. **A UX/algorithm decision** to unblock owner-gated text tools: TSK-293 Encryption (which cipher +
+   key/passphrase handling?) and TSK-299 "Date enter like Notepad" (insert-at-cursor in CM6 editor,
+   editor-coupled). Either extends the just-landed Tools surface.
+
+
 - **`feat(tools): TextTools core`** — landed `Sources/ViewerCore/TextTools.swift`: pure,
   dependency-free (Foundation + system CryptoKit, **no third-party dep**) transforms
   `sha256Hex` / `base64Encode` / `base64Decode` / `uuid`, with 10 unit tests (NIST SHA-256
