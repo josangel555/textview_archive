@@ -22,6 +22,24 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+1) — TSK-282 sidebar fuzzy-filter design spike (headless turn, pool still drained)
+- Re-verified the pool is drained fresh: `task_next` ranks a FOREIGN task (TSK-104, agent:forge CSV
+  export); the doc's unchecked items are all live-needed (tab-perf instrument lines, reinstall smoke)
+  or self-deferred-to-live (TSK-332 deferred half, picker-desync zone); no clean headless SwiftUI
+  implementation task remains.
+- Per the mandate's "if nothing to ship headlessly, research/breakdown" clause, did a **Spike** on the
+  highest-value owner-requested SwiftUI feature: **`docs/SIDEBAR_FUZZY_FILTER_DESIGN.md` (`2326a95`)** —
+  execute-ready plan for TSK-282 (fuzzy file-nav filter + highlight). Grounds it in the real code:
+  reuse the shipped `FuzzyMatcher.filterWithMatches` (already palette-proven) + the palette's
+  highlight helper; `VisibleRow`/`flatVisibleRows()` row model. Key design call: the naive "global
+  find" would walk the FS in `body` → reintroduces the #215 over-observation cascade, so the plan
+  keeps `filterQuery` as view `@State` (not `@Published`), debounces, caps, and puts the global
+  candidate set behind an **off-main descendant cache** invalidated by the existing FSEvents hook
+  (#153). MVP = mode (A) narrow-visible (safe); mode (B) global-find layered behind the same field.
+  Implementation deferred to a live turn (edits the perf-sensitive `SidebarView`, needs latency +
+  highlight validation on a real window). Board: **TSK-282 → `triaged`**, flagged `live-validation`,
+  confidence high. Not owner-gated — self-deferred.
+
 ## LOG 2026-06-06 (latest) — Tools surface LANDED (clipboard, option a); Swift headless pool drained
 - **`7e9d78f` feat(tools): clipboard text-tools surface** — wired the (previously unwired) TextTools
   core into the command palette. Built **option (a)** from the prior DECISION NEEDED exactly per the
