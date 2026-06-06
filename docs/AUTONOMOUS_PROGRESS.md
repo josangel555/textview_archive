@@ -22,6 +22,21 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+10) — Test-backfill #4: ClaudeLogParser system-record accessors (TSK-418 → fixed)
+- **`f0354af` test(claude)** covers the `recordType`/`recordCwd`/`recordSessionId`/`titleRecord`/
+  `userPromptText` accessors (0 prior test refs; the security-critical `redact()` sibling is covered in
+  3 other files). 14 headless cases incl. custom>ai title precedence, and `userPromptText`'s
+  plain-string / default-role / block-array-first-text / tool_result→nil discrimination. No bug
+  surfaced. Gate green (3865). Board TSK-418 → `fixed`.
+- **Easy test-backfill pool is thinning.** Covered this run: TerminalScreen, TerminalCell, ReviewSidecar,
+  ClaudeLogParser accessors (+61 tests, TSK-415→418). The last filename-grep candidate
+  `Review/ReviewStore+ProjectLocal.swift` (78) is largely path helpers now partly exercised via the
+  ReviewSidecar projectLocal tests — likely thin remaining gap; verify before spending a firing on it.
+  **Pivot guidance for next firing:** if no clearly-uncovered meaty pure component remains, switch to a
+  perf-debug spike (e.g. TSK-218 HEX-6KB-slow read path) or hold for the supervised live window that
+  unblocks the bigger queued features (TSK-300 SavePanel, TSK-282 sidebar filter). Don't manufacture
+  low-value tests for already-covered code.
+
 ## LOG 2026-06-06 (latest+9) — Test-backfill #3: TerminalCell SGR/attributes (TSK-417 → fixed)
 - **`aaec3d1` test(terminal)** covers `TerminalCell.swift` (`TerminalColor.fromSGR` + `CellAttributes`
   inverse/bold/`effectiveFg`/`effectiveBg` + `isBlank`) — was untested. 15 headless cases incl. the
