@@ -157,6 +157,18 @@ final class TreeSitterEngineGoldenTests: XCTestCase {
         assertContains(runs, in: src, substring: "\"root\"",  kind: .string)
     }
 
+    func testRust() {
+        // Rust SCREAMING_CASE names color as .constant. This regressed
+        // SILENTLY when TSK-410 began evaluating predicates: rust-highlights
+        // had a typo `^[A-Z][A-Z\d_]+$'` (stray quote → end-anchor then a
+        // literal quote) that can never match, so @constant was always
+        // dropped once predicates were honored. Fixed the query; pin it here.
+        let src = "const MAX_SIZE: u32 = 64;\nfn main() {}"
+        let runs = TreeSitterEngine.shared.tokenize(src, language: .rust)
+        XCTAssertFalse(runs.isEmpty, "rust produced no runs")
+        assertContains(runs, in: src, substring: "MAX_SIZE", kind: .constant)
+    }
+
     func testMarkdown() {
         let src = "# Title\n\nBody **bold** and `code`."
         let runs = TreeSitterEngine.shared.tokenize(src, language: .markdown)
