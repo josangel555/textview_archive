@@ -22,6 +22,21 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+7) — Pivot to test-backfill: TerminalScreen (TSK-415 → fixed)
+- Pivoted off the closed command-wiring vein. Scanned ViewerKit/ViewerCore for sources with no test
+  reference; **`TerminalScreen.swift`** (the #226 terminal grid, 225 LOC, pure Foundation) was
+  genuinely untested. **`cced59b` test(terminal)** adds 20 headless cases: write/auto-wrap (+ last-row
+  scroll), lineFeed, cursor clamping, tab stops, resize anchoring (grow/shrink/cursor-clamp/no-op),
+  the full erase family, scroll up/down with count clamping + no-op guards. No bug surfaced (behavior
+  matches the doc comments). Gate green (3824). Board TSK-415 → `fixed`.
+- **Remaining genuinely-untested pure-logic candidates** (next test-backfill targets; verified no test
+  reference, but confirm each is truly uncovered before writing): `Terminal/TerminalCell.swift` (118 —
+  CellAttributes/effectiveFg-bg/inverse, small but pure), `Review/ReviewSidecar.swift` (230),
+  `Review/ReviewStore+ProjectLocal.swift` (78), `ClaudeLogParser+SystemRecords.swift` (159 — parsing,
+  but the base `ClaudeLogParser` may already have coverage; check). NOTE the size-grep false-positives:
+  `Highlight/TreeSitterEngine+Folds.swift` and `Commands/CommandRegistry+BuiltIn.swift` are extensions
+  whose TYPES are tested under a different name — not actually uncovered.
+
 ## LOG 2026-06-06 (latest+6) — Omni: Show File History (TSK-414 → fixed); command-wiring vein CLOSED
 - **`2a4cb4a` feat(commands)** wired the last cheap one: `git.fileHistory`→`git-file-history`→
   `openFileHistory(for: currentURL)` (no-arg current-file; the existing `file-history <path>` verb
