@@ -22,6 +22,31 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-05 (latest+2) — board lanes swept; SwiftUI clean-defect pool confirmed empty
+Swept the non-`reported` lanes for actionable SwiftUI work (mandate: any SDLC type):
+- **`regressed` (TSK-104 "CSV export drops last row on large files") + `triaged` (TSK-106 "SSE
+  endpoint cold-start") + `progress` TSK-103 ("rate-limit the public API") are FOREIGN tasks** —
+  the `tasked` board is **shared across projects**; these belong to `agent:forge`'s project (public
+  API / SSE / CSV *streaming export writer* / branch `fix/csv-eof`). Verified: this repo has NO CSV
+  export writer, no SSE/rate-limit code, no such branches. Not actionable here; left untouched.
+  (Recorded as a durable memory: grep this repo before acting on a board task.)
+- **`progress` markdown_viewer tasks** (TSK-108 perf cluster, 109 quick-wins, 110 image-edit PoC,
+  111 ~/.claude monitor PoC, 113 WebView-teardown decision, 332 default-plain-text) are all
+  perf/PoC/decision/view-mode items that are **live-validation-gated** (regression-prone zones) —
+  not clean headless work.
+
+### DECISIONS NEEDED (owner) — the autonomous loop has run out of clean headless SwiftUI defects
+3 heartbeats confirm: the SwiftUI *defect* backlog is exhausted (TSK-195 + TSK-410 were the last,
+now fixed + live-validated). Productive SwiftUI work from here needs a steer:
+1. **Approve building specific BACKLOG features** (live-validated via `build-app.sh debug`): e.g.
+   TSK-304 tab-overflow dropdown, TSK-282 fuzzy file-nav highlight, TSK-292–295 text tools
+   (SHA/BASE64/UUID/date). Most need a design call on where they live + how invoked.
+2. **Approve the capture-priority engine spike** (finishes JSX `@tag` coloring + general overlap
+   precedence) — moderate blast radius, needs a live highlight eyeball.
+3. **Approve TSK-332 phase-2** (loader→picker "default plain-text if renderably-ASCII") on a
+   supervised live-smoke turn — it's in the #212/#217/#219 carry-mode/picker zone.
+Until then, heartbeats will idle on SwiftUI or fall to the PORT lane (deprioritized).
+
 ## LOG 2026-06-05 (latest+1) — live-smoke validation of the session's highlighting fixes
 - **`bash scripts/build-app.sh debug` PASSED** at `ab735b5`: `dist/TextView.app` built + signed;
   pre-install T4 `ViewModeMatrixSmokeTests` 3/3 green (default-mode render, lazy-tab content-not-
