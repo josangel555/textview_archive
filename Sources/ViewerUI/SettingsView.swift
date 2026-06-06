@@ -65,8 +65,9 @@ public struct SettingsView: View {
         section("Language servers (LSP)") {
             row("Diagnostics") {
                 NavigationLink("Open Diagnostics…") {
-                    LSPDiagnosticsView(pool: model.lspPool)
-                        .navigationTitle("LSP Diagnostics")
+                    SettingsSubPage(title: "LSP Diagnostics") {
+                        LSPDiagnosticsView(pool: model.lspPool)
+                    }
                 }
             }
             Text("Per-language LSP servers spawn on first hover / outline request and reap after 5 minutes idle. The diagnostics page shows live state.")
@@ -80,8 +81,9 @@ public struct SettingsView: View {
         section("Plugins") {
             row("Manage installed plugins") {
                 NavigationLink("Manage…") {
-                    PluginsSettingsView()
-                        .navigationTitle("Plugins")
+                    SettingsSubPage(title: "Plugins") {
+                        PluginsSettingsView()
+                    }
                 }
             }
             row("Audit log") {
@@ -285,6 +287,43 @@ public struct SettingsView: View {
 
 /// Manages a single settings window across re-opens (Cmd+, doesn't
 /// stack windows). Lives in `AppDelegate` via this small holder.
+/// A pushed Settings sub-page (Plugins, LSP Diagnostics) with an explicit
+/// in-content back control. macOS `NavigationStack` only renders its automatic
+/// back chevron inside a window toolbar, which this `NSHostingController`-hosted
+/// Settings window doesn't have — so the chevron was invisible and the user got
+/// stuck on the sub-page with no way back. An explicit Button calling
+/// `dismiss()` pops the stack reliably regardless of window chrome.
+private struct SettingsSubPage<Content: View>: View {
+    @Environment(\.dismiss) private var dismiss
+    let title: String
+    @ViewBuilder let content: Content
+
+    init(title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Button { dismiss() } label: {
+                    Label("Settings", systemImage: "chevron.backward")
+                }
+                .buttonStyle(.plain)
+                .help("Back to Settings")
+                Text(title).font(.headline)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            Divider()
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .navigationTitle(title)
+    }
+}
+
 public final class SettingsWindowController {
     private var window: NSWindow?
 
