@@ -29,6 +29,51 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+30) — killall footgun, status-bar headless-verify, board hygiene
+
+- **KILLALL FOOTGUN closed (`e5ffa08`, TSK-454):** owner's `/Applications` app "kept getting closed" —
+  `install-app.sh` ran `killall MarkdownViewer` on every `--install`; shared exec name → it SIGTERM'd the
+  owner's running app each rebuild. Removed (macOS swaps a running bundle fine). Headless gate never killed
+  the app — only this install path did. install-app.sh also now `ditto --noextattr` + `xattr -cr` so
+  `/Applications` passes `codesign --verify --strict`.
+- **Status-bar tab-change (TSK-452) — verified headlessly (owner pushed for it):** added
+  `test_selectTab_statusBarDataSourceTracksSelectedFile` (DocumentModelTests) — open 2 files, switch tabs,
+  assert `currentState`/`currentURL` track the selected file. **PASSES.** So the data source is correct for
+  loaded tabs + wiring is right (`StatusBar(tabCoordinator: model.tabCoordinator, …)`). Fixed the one
+  headless-identifiable blank window: selecting a not-yet-materialized tab (`.loading`) returned nil metrics
+  → blank; now shows Size + "loading…" (`1615b98`). Any residual blank on LOADED-tab switches would be a
+  live-only SwiftUI re-render quirk (can't repro headless) — awaiting owner confirmation post-relaunch.
+- **Board hygiene:** TSK-276 (IndentDetector CRLF) verify-and-closed → fixed (already iterates unicodeScalars
+  + has a dedicated CRLF test file; audit finding stale, matches the deep-audit-mostly-already-fixed pattern).
+- `main` linear @ `1615b98`, headless-gate-green on the committed commit (re-verified; the intermittent
+  exit-1 earlier was only `FoldBench`/`CrossFileSearchBench` wall-clock benches under machine load).
+- **Standing blockers (DECISIONS/live):** status-bar live re-render (owner confirm); GP_10 TSK-447 + sidebar
+  TSK-440 need the VM live lane (TSK-451 full-suite hang; orphan VM PIDs 28912/29140 need owner kill).
+
+## LOG 2026-06-06 (latest+29) — owner UI-bug batch: terminal Enter (real cause), palette hover-scroll, Settings back, killall footgun
+
+Owner reported a batch of interactive bugs; all SwiftUI (`Sources/`). Landed, host-compiled, installed.
+- **Terminal Enter — REAL cause (`8b8a547`):** typing worked but Enter was dead because `SidebarKeyMonitor`
+  installs an app-wide `NSEvent` keyDown monitor that ate Return and only yielded to `NSText`. The terminal
+  is a custom NSView → swallowed before the responder chain. Added `SidebarKeyMonitorExempt` marker; monitor
+  yields to it; `TerminalNSView` conforms. (Earlier `performKeyEquivalent` fix `c3a7b83` was necessary too.)
+- **Command palette hover-scroll (`65b2b32`):** hover set `selectedIndex` and `onChange`→`scrollTo(.center)`
+  re-centered the list under the pointer. Gated scroll on a keyboard-only flag set by `moveSelection`.
+- **Settings → Plugins/LSP back button (`e3cd4a2`):** macOS NavigationStack renders its back chevron only in
+  a window toolbar (the hosted Settings window has none) → user stuck. Added explicit in-content `SettingsSubPage`
+  back button via `@Environment(\.dismiss)`.
+- **KILLALL FOOTGUN (`e5ffa08`) — owner's app kept closing:** `install-app.sh` ran `killall MarkdownViewer`
+  on every `--install`; shared exec name → it killed the owner's running /Applications app each rebuild.
+  Removed it (macOS swaps a running bundle fine). Headless gate never killed the app — only this install path.
+- **Build/install xattr (`47adc00`,`d9d5b1c`):** sign in TMPDIR + `ditto --noextattr` + `xattr -cr` install,
+  closing the iCloud codesign-detritus race (TSK-449). /Applications verified clean.
+- **Board:** TSK-448 (terminal) fixed; TSK-449 (build flake) fixed; TSK-447 (GP_10) progress (VM-blocked);
+  TSK-451 (VM `all` hang) + TSK-452 (status-bar tab-change, owner-clarification-blocked) filed.
+- **Blocked / DECISIONS:** status-bar tab-change fix is live-only — awaiting owner symptom (blank vs frozen
+  vs after-click vs wrong). VM live lane still blocked (TSK-451 hang; orphan PIDs 28912/29140 need owner kill).
+- `main` linear @ `e5ffa08`; functional tiers gate-green (only flaky `FoldBench`/`CrossFileSearchBench`
+  wall-clock benches red under load; subsequent commits are script-only).
+
 ## LOG 2026-06-06 (latest+28) — terminal Enter fix (owner) + iCloud build-flake fix + VM-suite-hang finding
 
 - **Owner interactive: "Terminal — can't press enter or execute commands."** TSK-448 fixed (`c3a7b83`):
