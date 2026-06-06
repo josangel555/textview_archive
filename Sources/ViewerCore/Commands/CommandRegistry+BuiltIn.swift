@@ -59,7 +59,7 @@ extension CommandRegistry {
             id: "file.reload", title: "Reload", category: .file,
             // Menu binds ⌘R; toggle.view also uses ⇧⌘R — distinct.
             defaultShortcut: Shortcut(key: "r", modifiers: [.command]),
-            scriptVerb: nil),
+            scriptVerb: "reload"),
         CommandDescriptor(
             id: "file.clearRecents", title: "Clear Recent Files", category: .file,
             scriptVerb: nil),

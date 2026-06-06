@@ -73,6 +73,7 @@ final class CommandRegistryTests: XCTestCase {
             "sidebar-walk-up", "session-next", "session-prev",
             "session-close-active", "folder-stats", "emit-test-log",
             "tools.uuid", "tools.sha256", "tools.base64Encode", "tools.base64Decode",
+            "reload",
         ]
         for cmd in CommandRegistry.builtIn.commands {
             guard let verb = cmd.scriptVerb else { continue }
@@ -80,6 +81,16 @@ final class CommandRegistryTests: XCTestCase {
             XCTAssertTrue(known.contains(token),
                           "\(cmd.id) uses unknown verb token '\(token)'")
         }
+    }
+
+    /// `file.reload` carries a script verb so it's Omni/palette-invokable +
+    /// automatable (regression guard: it previously shipped `scriptVerb: nil`,
+    /// making Reload menu-only and headless-untestable).
+    func test_fileReload_isPaletteInvokable() {
+        let cmd = CommandRegistry.builtIn.command(id: "file.reload")
+        XCTAssertEqual(cmd?.scriptVerb, "reload")
+        XCTAssertTrue(CommandRegistry.builtIn.paletteInvokable.contains { $0.id == "file.reload" },
+                      "Reload must appear in the command palette")
     }
 
     // MARK: - Shortcut parsing

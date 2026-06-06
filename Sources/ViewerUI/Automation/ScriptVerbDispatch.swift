@@ -149,6 +149,13 @@ public enum ScriptVerb {
                     message: "save-copy failed: \(error)",
                     fields: ["target": arg, "error": "\(error)"]))
             }
+        case "reload":
+            // Re-read the active tab's file from disk (the ⌘R / File ▸ Reload
+            // action). Same entry point the menu uses; exposing it here makes
+            // Reload Omni-invokable + automatable + headless-testable. A dirty
+            // editor buffer is preserved (applyReload only rebases a CLEAN
+            // buffer), so this never silently clobbers unsaved edits.
+            model.reloadCurrentFile()
         case "toggle-bookmark": model.toggleCurrentTabBookmark()
         case "show-cross-search":    model.showCrossSearch()
         case "dismiss-cross-search": model.dismissCrossSearch()
