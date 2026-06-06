@@ -324,6 +324,26 @@ SwiftUI-first progress, the next wave needs ONE of:
     CommandRegistry catalog test + `build-app.sh debug` smoke. ~1 focused session; the transforms +
     `TextToolVerb` dispatcher it builds on are already committed + tested.
 
+## LOG 2026-06-06 — OWNER RESET: stop paper cuts; SOP added; board triaged; perf Fix#1 is the active item
+- Owner flagged the ~14-firing drift into pure-logic **test backfill (paper cuts)** and asked to work
+  the **`tasked` board** properly. Added the operating-procedure SOP (`docs/TASK_WORKFLOW.md`,
+  commit `6f2c577`) + pinned pointers atop this file and `HANDOFF`, + updated memory
+  `project_autonomous_loop_mandate`. **Test backfill is now last-resort only.**
+- **Board triage (the SOR):** queried `tasked` — only **4 open defect-type tasks**, all gated
+  (`TSK-401` VM/CI, `TSK-408/409` PORT, `TSK-399` dep-approval). The deep-audit S-findings are
+  Claude-list numbers, NOT board ids; on the board they're ~74/78 already `fixed`/`review`. So the
+  **headless-actionable defect pool is genuinely drained** (e.g. verified `IndentDetector` CRLF
+  fix is already in code + pinned by `Audit_...IndentDetector_swift_CRLFTests`).
+- **The real backlog = the perf cluster + UI features**, which I'd wrongly treated as owner-blocked.
+  The standing directive ("screen is yours, launch UI as needed") + the cron's live-smoke
+  instruction mean I'm **authorized to run `bash scripts/build-app.sh debug` myself** — so the perf
+  cluster (`TSK-108`) is NOT blocked.
+- **Claimed `TSK-108` as the active item** and commented the concrete Fix#1 plan: design-locked
+  (`docs/research/perf-fix1-view-retention.md`, Approach A), model core done
+  (`MountedPanesLRU` + 12 tests); remaining = DocumentModel drive + `ContentView.bodyRow` ZStack of
+  mounted panes + headless mount-count probe + live-smoke. **Implementing as one cohesive branch
+  next firing** (not rushed at this turn's tail).
+
 ## LOG 2026-06-06 — ClaudeMonitor aggregation coverage (ViewerCore func-scan, 4/4 — vein drained)
 - **`81d0ed1` test(viewercore): ClaudeMonitorLog eventCounts/toolFrequency was untested** (board
   TSK-434). Monitor per-type aggregations. 6 cases: empty, descending-by-count, the
