@@ -22,6 +22,25 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+6) — Omni: Show File History (TSK-414 → fixed); command-wiring vein CLOSED
+- **`2a4cb4a` feat(commands)** wired the last cheap one: `git.fileHistory`→`git-file-history`→
+  `openFileHistory(for: currentURL)` (no-arg current-file; the existing `file-history <path>` verb
+  stays for explicit-path automation). 3 headless tests incl. a **real temp git repo** (tracked file
+  opens a hosted History tab; off-repo no-op; catalog). Gate green (3804). Board TSK-414 → `fixed`.
+- **The Omni-invokability/scriptVerb-gap vein is now CLOSED.** Over TSK-411→414 (6 firings) the cheap
+  "command wired to an existing model method" lane delivered 7 commands, all `fixed` headless: reload,
+  toggle-split, swap-split, move-tab-left, move-tab-right, show-git-panel, toggle-line-bookmark,
+  git-file-history. Every remaining `scriptVerb: nil` is genuinely not cheaply wireable:
+  `git.repoHistory` (no model method), `view.foldAll`/`unfoldAll`/`toggleWordWrap`/`toggleInvisibles`/
+  `goToLine`/`applyJQ` (editor-JS or @AppStorage — would need new model plumbing), `find.replace`/
+  `session.new` (panel/picker = live), and the leave-nil set (`file.open`, `edit.undo`/`redo`,
+  `window.*`, `debug.*`, `find.find`).
+- **NEXT FIRING: pivot lanes.** Options ranked: (a) **test-coverage backfill** for a genuinely
+  under-tested shipped pure-logic component (zero UX risk, headless) — needs a quick coverage scan to
+  pick a target; (b) a **wishlist feature with a headless core + deferred glue** (e.g. TSK-303 table
+  find-logic, or a `view.foldAll`/`unfoldAll` model method so those become wireable); (c) **research/
+  spike** if neither is clean. Do NOT keep mining command-wiring — it's exhausted.
+
 ## LOG 2026-06-06 (latest+5) — Omni batch 2: Show Git Panel + Toggle Line Bookmark (TSK-413 → fixed)
 - **`c000d6d` feat(commands)** wired the next 2 model-backed `scriptVerb: nil` commands:
   `git.showPanel`→`show-git-panel`→`showGitPanel()` (bumps `gitPanelFocusRequest`),
