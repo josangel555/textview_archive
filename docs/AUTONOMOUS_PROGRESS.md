@@ -29,6 +29,22 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+20) — HEX-perf implementation+validation plan (TSK-267, live-blocked)
+- Heartbeat firing; prior work committed (not in flight). Picked the SwiftUI/perf lane (owner-reported
+  HEX slowness, TSK-267/#218). The real fix is genuinely live-validation-blocked: it hinges on TextKit
+  1 vs 2 (highlights use `textStorage` attributes → no forced TK1 downgrade → likely TK2-by-default on
+  macOS 15), which can't be safely determined without Instruments on the target OS. Shipping a blind
+  `allowsNonContiguousLayout` flip could DOWNGRADE TK2→TK1 and regress.
+- **Deliverable:** `docs/HEX_PERF_PLAN_2026-06-06.md` — confirmed diagnosis (model clean; cost is
+  view-layer: eager full-doc layout = 1MB killer; per-open overhead = 6KB~1s), the TK1/TK2 blocking
+  unknown, and **4 independently-shippable steps** (Instrument → engine-agnostic scope-the-highlight-
+  clear win → small-file sync-build path → lazy-layout lever) + a testability seam (lift pure decisions
+  out of the private `HexTextController` into `HexLayout.clearRanges`/`HexRenderPlan.useSyncBuild`).
+- **Engine-agnostic safe win identified for the next live turn:** `applyHighlights` full path does
+  `removeAttribute(.backgroundColor, NSRange(0, storage.length))` on every search edit = O(document)
+  walk; scope to painted ranges only.
+- TSK-267 commented + kept `triaged` (blocker: live-validation). No code change → no gate run needed.
+
 ## LOG 2026-06-06 (latest+19) — institutional docs + board hygiene + killall footgun fully closed
 - Owner asks this turn: (1) "write institutional knowledge to md + handoff doc for compaction"; (2)
   "also retry the failed tasks". Both done.
