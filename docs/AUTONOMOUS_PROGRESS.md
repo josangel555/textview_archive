@@ -22,6 +22,20 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+4) — Omni-invokability batch: split + move-tab (TSK-412 → fixed)
+- The TSK-411 reload gap turned out to be a **gap class**: audited all 26 `scriptVerb: nil` descriptors.
+  **`d597cfd` feat(commands)** wired the 4 that map cleanly to existing no-arg @MainActor model methods:
+  `view.toggleSplit`→`toggleSplit()`, `view.swapSplit`→`swapSplit()`, `tabs.moveLeft`/`moveRight`→
+  `moveCurrentTabLeft()`/`Right()`. They were menu/keyboard-only; now palette-invokable + scriptable +
+  tested (4 headless tests + catalog assertions). Headless gate green (3797). Board TSK-412 → `fixed`.
+- **Remaining `scriptVerb: nil` candidates for a future Omni batch** (need a model method to exist /
+  verified headless-safe first): `view.foldAll`/`unfoldAll`, `view.toggleWordWrap`,
+  `view.toggleInvisibles`, `view.goToLine`, `view.applyJQ`, `view.toggleLineBookmark`,
+  `git.showPanel`/`fileHistory`/`repoHistory` (the `file-history` verb already exists — wire showPanel),
+  `find.replace`, `session.new`. Genuinely window/NSApp-coupled (leave nil): `file.open`/`openFolder`,
+  `edit.undo`/`redo` (responder chain), `window.minimize`/`zoom`, `debug.diagnosticWindow`/
+  `instrumentation`, `find.find` (mode router). Next heartbeat can take the model-backed subset.
+
 ## LOG 2026-06-06 (latest+3) — Reload made Omni-invokable + automatable (TSK-411 → fixed, complete)
 - **`a8e69a7` feat(commands): reload script verb.** Found a real gap: `file.reload` shipped with
   `scriptVerb: nil`, so the Reload command was menu/⌘R-only — NOT in the command palette (despite the
