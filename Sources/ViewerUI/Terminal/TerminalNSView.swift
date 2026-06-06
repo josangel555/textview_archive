@@ -181,6 +181,29 @@ final class TerminalNSView: NSView {
 
     // MARK: - Key input
 
+    /// Return / keypad-Enter are routed by AppKit through the key-equivalent
+    /// (window default-button) machinery BEFORE `keyDown`. SwiftUI installs a
+    /// window default button whenever a `.keyboardShortcut(.defaultAction)` /
+    /// `.return` button exists anywhere in the chrome, so pressing Return fires
+    /// THAT button and the event never reaches our `keyDown` — the shell never
+    /// sees a CR. Symptom: typing echoes fine (letters aren't key-equivalents,
+    /// so they hit `keyDown` directly) but Enter does nothing. While the
+    /// terminal is the focused view, claim Return here and route it through the
+    /// normal `keyDown` path so it reaches the PTY. ⌘-chords are left alone so
+    /// real menu shortcuts (⌘C/⌘V/⌘W/…) still resolve.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard window?.firstResponder === self else { return false }
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            .contains(.command) { return false }
+        switch event.keyCode {
+        case 36, 76:   // Return, keypad Enter
+            keyDown(with: event)
+            return true
+        default:
+            return false
+        }
+    }
+
     override func keyDown(with event: NSEvent) {
         if let special = Self.specialKey(for: event) {
             send(TerminalKeyEncoder.bytes(for: special))
