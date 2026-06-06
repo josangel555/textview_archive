@@ -213,6 +213,32 @@ public final class SessionStore: @unchecked Sendable {
         }
     }
 
+    /// Substantial orphaned snapshots eligible for index recovery (TSK-438
+    /// self-heal): live (non-trash) snapshot files whose sidebar root still
+    /// exists AND that have ≥1 open tab — i.e. a real working session lost to an
+    /// index clobber, NOT an intentionally-closed one (`close()` trashes its
+    /// snapshot first) and NOT an empty stub. Deduped by root (newest wins),
+    /// newest-first, capped. Empty when there's nothing worth recovering, so the
+    /// caller falls back to a clean empty state.
+    public func recoverableSnapshots(maxCount: Int = 24) -> [SessionSnapshot] {
+        let fm = FileManager.default
+        var byRoot: [String: SessionSnapshot] = [:]
+        for id in liveSnapshotIDs() {
+            guard let snap = load(id: id),
+                  let root = snap.sidebarRootPath, !root.isEmpty,
+                  fm.fileExists(atPath: root),
+                  !snap.openTabs.isEmpty else { continue }
+            if let existing = byRoot[root], existing.lastActiveAt >= snap.lastActiveAt {
+                continue
+            }
+            byRoot[root] = snap
+        }
+        return byRoot.values
+            .sorted { $0.lastActiveAt > $1.lastActiveAt }
+            .prefix(maxCount)
+            .map { $0 }
+    }
+
     /// The exact session-tab-clobber signature (TSK-438): persisting an EMPTY
     /// session list while snapshot files still live on disk. Refusing such a
     /// write — keeping the prior, non-empty index — is what stops the whole

@@ -95,14 +95,17 @@ public final class SessionsCoordinator: ObservableObject {
         case .loaded(let loaded):
             idx = loaded
         case .absent:
-            // Fresh install / no index. Empty state; writes are safe.
+            // Fresh install / no index — OR the index was clobbered/deleted
+            // while session snapshots survived (TSK-438). Try to self-heal
+            // from orphaned snapshots before falling back to empty.
+            if adoptRecoveredSnapshotsIfAny() { return }
             sessions = []
             activeID = nil
             return
         case .corrupt:
-            // Unparseable bytes: start empty. Re-persisting can only
-            // improve matters, so we leave writes unblocked but flag
-            // the loss for diagnostics.
+            // Unparseable bytes: try snapshot recovery first; else start empty.
+            // Re-persisting can only improve matters, so writes stay unblocked.
+            if adoptRecoveredSnapshotsIfAny() { return }
             sessions = []
             activeID = nil
             lastError = "Session index was unreadable; starting with no sessions."
@@ -148,6 +151,9 @@ public final class SessionsCoordinator: ObservableObject {
             }
             loaded.append(snap)
         }
+        // TSK-438 self-heal: a valid-but-EMPTY index (the clobber outcome) while
+        // substantial snapshots still live on disk → recover from them.
+        if loaded.isEmpty, adoptRecoveredSnapshotsIfAny() { return }
         sessions = loaded
         if let last = idx.lastActiveID, loaded.contains(where: { $0.id == last }) {
             activeID = last
@@ -169,6 +175,33 @@ public final class SessionsCoordinator: ObservableObject {
         if let id = activeID, let s = sessions.first(where: { $0.id == id }) {
             lifecycle?.mount(s)
         }
+    }
+
+    /// TSK-438 self-heal. When the index yields no sessions but substantial
+    /// orphaned snapshots survive on disk (sessions lost to an index clobber —
+    /// NOT intentionally closed, since `close()` trashes the snapshot first),
+    /// rebuild the live list + a fresh index from them and mount the newest.
+    /// Returns true if it adopted a recovered set. Callers must NOT invoke this
+    /// under the `.newerSchema` downgrade guard (it would overwrite a newer
+    /// build's index). Snapshot files are never modified — only re-indexed.
+    private func adoptRecoveredSnapshotsIfAny() -> Bool {
+        let recovered = store.recoverableSnapshots()
+        guard !recovered.isEmpty else { return false }
+        sessions = recovered                 // already deduped + newest-first
+        activeID = recovered.first?.id
+        let entries = recovered.map {
+            SessionIndex.Entry(id: $0.id,
+                               rootPath: $0.sidebarRootPath ?? "",
+                               displayName: $0.displayName,
+                               lastActiveAt: $0.lastActiveAt)
+        }
+        store.saveIndexSync(SessionIndex(sessions: entries, lastActiveID: activeID))
+        lastError = "Recovered \(recovered.count) session(s) from disk after the "
+            + "saved index was lost."
+        if let id = activeID, let s = sessions.first(where: { $0.id == id }) {
+            lifecycle?.mount(s)
+        }
+        return true
     }
 
     /// Create-or-reveal: matches design's "open folder picks an
