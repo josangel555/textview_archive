@@ -48,6 +48,12 @@ rm -rf "$DEST_APP"
 # file-provider-synced, so nothing re-adds them. The code signature lives in
 # file contents (_CodeSignature + Mach-O), not xattrs, so it survives. (TSK-449)
 ditto --noextattr --noqtn "$SRC_APP" "$DEST_APP"
+# Belt-and-suspenders: even with --noextattr, a FinderInfo xattr can land on the
+# destination bundle root (observed when dist/ lives under iCloud). /Applications
+# is not file-provider-synced, so clearing here sticks and makes the installed
+# bundle pass `codesign --verify --strict` (xattrs don't break launch, but keep
+# it clean). The signature lives in file contents, so this is signature-safe.
+xattr -cr "$DEST_APP" 2>/dev/null || true
 # Sweep up the pre-rename bundle so Spotlight + Open With don't show
 # two entries with the same identifier.
 if [[ -d "$LEGACY_DEST" ]]; then
