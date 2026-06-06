@@ -29,6 +29,29 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+28) — terminal Enter fix (owner) + iCloud build-flake fix + VM-suite-hang finding
+
+- **Owner interactive: "Terminal — can't press enter or execute commands."** TSK-448 fixed (`c3a7b83`):
+  typing echoed but Enter was dead because AppKit routes Return through the window default-button
+  (key-equivalent) path BEFORE keyDown; SwiftUI installs a default button for any `.defaultAction`/`.return`
+  button in the chrome, so Return fired that and never reached `TerminalNSView.keyDown` (no CR to the PTY).
+  Fix: override `performKeyEquivalent` to claim Return/keypad-Enter while first responder (⌘-chords pass
+  through). swift build + **host headless gate green**; built + installed to /Applications. Board → fixed.
+- **Build-flake fix (TSK-449, `47adc00`):** the rebuild's codesign failed with "resource fork … not
+  allowed" — repo under iCloud-synced `~/Documents`; the file provider re-stamps FinderInfo/fpfs#P onto the
+  TreeSitter bundles racing `codesign --options runtime`. Fix: build-app.sh signs in a mktemp TMPDIR
+  (outside iCloud) then swaps the signed bundle into dist/; install-app.sh `cp -R`→`ditto --noextattr`.
+  Validated: `build-app.sh debug` signs in /tmp + Built, no detritus. Board → fixed.
+- **GP_10 stale test (TSK-447):** fix committed (`541b3df`, host-compiles) but **live VM validation is
+  BLOCKED** — the VM `all` sweep hung (below). Task stays `progress`.
+- **NEW finding — TSK-451:** `test-in-vm.sh all` HANGS after `TabBarWidthTests` (swift-test+xctest alive
+  30+ min, no output) — a T4/live suite never returns; the full VM suite can't run unattended. Workaround:
+  targeted `--filter` runs. Could not free the VM (auto-classifier blocked killing remote PIDs 28912/29140
+  without owner OK) — **owner: those PIDs are orphaned on the VM, safe to `kill`.**
+- **Confirmed earlier:** all 11 `Cm6EditorUATTests` PASS against the fresh dist (the `test`-mode failures
+  were stale-dist artifacts; TSK-446 live lane validated). LESSONS updated (`9d7113f`) with both gotchas.
+- `main` single linear trunk @ `47adc00`, host headless-gate-green.
+
 ## LOG 2026-06-06 (latest+27) — VM UI-test lane UNBLOCKED end-to-end (TSK-439 + TSK-446 fixed)
 
 - Finished the owner-approved VM toolchain upgrade ("OK to upgrade the VM Xcode/toolchain to 6.2+ — Yes")
