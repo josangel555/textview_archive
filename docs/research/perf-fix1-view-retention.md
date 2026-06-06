@@ -1,5 +1,13 @@
 # Perf Fix#1 — per-tab view retention (instant tab switching, no WKWebView reload)
 
+> ✅ **LANDED 2026-06-06 — commit `39925fd`** (TSK-108 → `fixed`). Approach A shipped
+> as designed: `ContentView.content` = ZStack of `MountedPanesLRU`-bounded panes,
+> driven from `DocumentModel.updateDerived`. Validated: headless merge gate (3975),
+> `MountedPanesWiringTests` (mutation-checked), `PaneRetentionMountProbeTests`
+> (A→B→A = 0 WKWebView make/dismantle, overflow = 1), live T4 `ViewModeMatrixSmokeTests`.
+> Remaining = human supervised visual/interaction review (review→validated→done).
+> The notes below are the original design (kept for context).
+
 > Research synthesis (2026-06-04, workflow `wf_5601f08d`: 1 unprimed + 1 primed
 > explorer → ranked synthesis). De-risks the **dominant** screen-gated perf fix.
 > Context: `RepublishCountTests` proved the model side is fine (warm `selectTab`
