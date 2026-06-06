@@ -317,7 +317,12 @@ public final class ReviewSession: ObservableObject {
         qos: .utility
     )
     nonisolated(unsafe) private static var pending: [String: (store: ReviewStore, review: Review)] = [:]
-    private static let coalesceLock = NSLock()
+    // `nonisolated(unsafe)` (matching `pending`): the lock guards the off-main
+    // `writeQueue` closures, so it must be reachable from a Sendable context.
+    // NSLock is itself thread-safe; the stricter VM toolchain (Swift 6.1.2)
+    // otherwise rejects referencing a main-actor static from those closures
+    // (TSK-401 default-isolation skew vs the host).
+    nonisolated(unsafe) private static let coalesceLock = NSLock()
 
     /// Coalesce by review id: a burst of edits to the same review collapses
     /// to one disk write (newer value wins). Ordering is preserved by the

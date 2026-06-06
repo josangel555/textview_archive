@@ -663,7 +663,17 @@ private final class HexTextController: NSViewController {
         // time (natural backpressure; storage append never falls
         // behind the producer).
         let captureFontSize = fontSize
-        Task.detached(priority: .userInitiated) { [weak self] in
+        // `nonisolated(unsafe) let` capture: the background producer only ever
+        // touches the view on the main actor (the `main.sync` / `MainActor.run`
+        // hops below), so opting this one immutable capture out of Sendable
+        // checking is safe — it's what lets the stricter VM toolchain (Swift
+        // 6.1.2) accept the detached task without "sending 'self'" (TSK-401
+        // skew vs host). Strong (not weak) so the `let` is sendable-suppressible;
+        // the `generation == buildGeneration` guard in append/finish already
+        // makes a stale build (tab closed / width changed) a no-op, so retaining
+        // the view until the build drains is bounded and correct.
+        nonisolated(unsafe) let strongSelf = self
+        Task.detached(priority: .userInitiated) {
             HexDumpBuilder.build(file: file,
                                  width: width) { _, chunk in
                 // `DispatchQueue.main.sync` lets the synchronous
@@ -671,23 +681,29 @@ private final class HexTextController: NSViewController {
                 // before producing the next chunk. Safe here because
                 // this task is detached (no parent main-actor frame
                 // to deadlock).
+                // `main.sync` runs this on the main thread; `assumeIsolated`
+                // tells the compiler so the main-actor `self`/`appendChunk` are
+                // reachable WITHOUT "sending" the non-Sendable view across the
+                // hop — the stricter VM toolchain (Swift 6.1.2) otherwise
+                // rejects it (TSK-401 default-isolation skew vs host).
                 let keepGoing: Bool = DispatchQueue.main.sync {
-                    guard let self else { return false }
-                    let f = NSFont.monospacedSystemFont(
-                        ofSize: captureFontSize, weight: .regular)
-                    let chunkAttr = NSAttributedString(
-                        string: chunk,
-                        attributes: [
-                            .font: f,
-                            .foregroundColor: NSColor.labelColor,
-                        ])
-                    return self.appendChunk(chunkAttr,
-                                            generation: generation)
+                    MainActor.assumeIsolated {
+                        let f = NSFont.monospacedSystemFont(
+                            ofSize: captureFontSize, weight: .regular)
+                        let chunkAttr = NSAttributedString(
+                            string: chunk,
+                            attributes: [
+                                .font: f,
+                                .foregroundColor: NSColor.labelColor,
+                            ])
+                        return strongSelf.appendChunk(chunkAttr,
+                                                      generation: generation)
+                    }
                 }
                 return keepGoing
             }
             await MainActor.run {
-                self?.finishBuild(generation: generation)
+                strongSelf.finishBuild(generation: generation)
             }
         }
     }
