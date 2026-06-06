@@ -558,6 +558,84 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         sessions.activate(index: index)
     }
 
+    // MARK: - File → Reset (recoverable cache / stuck-state invalidation)
+
+    /// Per-domain reset. The menu item's `tag` indexes `CacheDomain.allCases`.
+    @objc func resetCacheDomain(_ sender: NSMenuItem) {
+        let domains = CacheDomain.allCases
+        guard domains.indices.contains(sender.tag) else { return }
+        let d = domains[sender.tag]
+        performReset([d],
+                     label: d.title.replacingOccurrences(of: "…", with: ""),
+                     detail: d.detail,
+                     includePreferences: false)
+    }
+
+    @objc func resetPreferences(_ sender: Any?) {
+        performReset([],
+                     label: "Reset Preferences",
+                     detail: "Resets zoom, theme, word-wrap, window size and other preferences to their defaults.",
+                     includePreferences: true)
+    }
+
+    @objc func resetEverything(_ sender: Any?) {
+        performReset(CacheDomain.allCases,
+                     label: "Reset Everything",
+                     detail: "Clears ALL saved sessions, window layout, bookmarks, recent files, language-server cache, and preferences.",
+                     includePreferences: true)
+    }
+
+    /// Confirm, move the selected stores into a recoverable backup, optionally
+    /// reset UserDefaults, then relaunch. See `AppCacheReset`.
+    private func performReset(_ domains: [CacheDomain],
+                              label: String,
+                              detail: String,
+                              includePreferences: Bool) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "\(label)?"
+        alert.informativeText = detail
+            + "\n\nYour data is moved to a recoverable backup under "
+            + "Application Support/MarkdownViewer/_reset-backups/, then the app relaunches."
+        alert.addButton(withTitle: "Reset & Relaunch")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let mv = AppCacheReset.markdownViewerSupportDir()
+        let bundle = AppCacheReset.bundleIDSupportDir()
+        // Filesystem-safe timestamp (no ':').
+        let stamp = ISO8601DateFormatter().string(from: Date())
+            .replacingOccurrences(of: ":", with: "-")
+        if !domains.isEmpty {
+            AppCacheReset.reset(
+                domains,
+                markdownViewerBase: mv,
+                bundleIDBase: bundle,
+                backupRoot: AppCacheReset.defaultBackupRoot(markdownViewerBase: mv),
+                timestamp: stamp)
+        }
+        if includePreferences, let bundleID = Bundle.main.bundleIdentifier {
+            UserDefaults.standard.removePersistentDomain(forName: bundleID)
+            UserDefaults.standard.synchronize()
+        }
+        relaunchAndExit()
+    }
+
+    /// Spawn a fresh instance and HARD-exit. `exit(0)` (not `NSApp.terminate`)
+    /// deliberately bypasses `applicationWillTerminate` — its `flushSync()`
+    /// would re-persist the in-memory session/layout state we just cleared,
+    /// resurrecting exactly what the reset removed.
+    private func relaunchAndExit() -> Never {
+        let appURL = Bundle.main.bundleURL
+        if appURL.pathExtension == "app" {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            p.arguments = ["-n", appURL.path]
+            try? p.run()
+        }
+        exit(0)
+    }
+
     @objc func toggleSidebar(_ sender: Any?) {
         model.sidebar.toggleVisibility()
     }
@@ -1004,6 +1082,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         saveItem.target = self
         applyShortcut("file.save", to: saveItem)
         fileMenu.addItem(saveItem)
+
+        // File → Reset — granular "invalidate the things that get stuck".
+        // Each item moves its on-disk store into a recoverable backup and
+        // relaunches. Motivated by the empty-session-index failure (session
+        // tabs vanish with no in-app recovery). See `AppCacheReset`.
+        fileMenu.addItem(.separator())
+        let resetItem = NSMenuItem(title: "Reset", action: nil, keyEquivalent: "")
+        let resetMenu = NSMenu(title: "Reset")
+        resetMenu.autoenablesItems = false
+        for (i, domain) in CacheDomain.allCases.enumerated() {
+            let it = NSMenuItem(title: domain.title,
+                                action: #selector(resetCacheDomain(_:)),
+                                keyEquivalent: "")
+            it.tag = i
+            it.target = self
+            resetMenu.addItem(it)
+        }
+        resetMenu.addItem(.separator())
+        let prefsResetItem = NSMenuItem(
+            title: "Reset Preferences (zoom, theme, window)…",
+            action: #selector(resetPreferences(_:)), keyEquivalent: "")
+        prefsResetItem.target = self
+        resetMenu.addItem(prefsResetItem)
+        let everythingItem = NSMenuItem(
+            title: "Reset Everything…",
+            action: #selector(resetEverything(_:)), keyEquivalent: "")
+        everythingItem.target = self
+        resetMenu.addItem(everythingItem)
+        resetItem.submenu = resetMenu
+        fileMenu.addItem(resetItem)
+
         fileMenuItem.submenu = fileMenu
 
         let viewMenuItem = NSMenuItem()
