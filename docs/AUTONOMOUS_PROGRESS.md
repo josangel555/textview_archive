@@ -22,6 +22,21 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+8) — Test-backfill #2: ReviewSidecar (TSK-416 → fixed)
+- **`ba9ecf5` test(review)** covers `ReviewSidecar.swift` (`.textview/` session.json + config.json +
+  git-tracking-file emission, 230 LOC, pure Foundation/JSONFileStore) — was untested. 12 headless
+  cases: session/config round-trips, schema-too-new refusal (session→nil, config→default),
+  corrupt-JSON→nil, missing-file recommended default, `.gitignore`/`.gitattributes` bodies (tracked vs
+  ignored, trailing-newline), missing-root-dir creation, `projectLocal` default + `MDV_TEXTVIEW_DIR`
+  override. No bug surfaced. Gate green (3836). Board TSK-416 → `fixed`.
+  (Test gotcha: the env-override `sidecarRoot` is built `isDirectory: true` → trailing slash;
+  compare `.path` not `.standardizedFileURL` to avoid a spurious mismatch.)
+- **Remaining test-backfill candidates** (re-confirm uncovered before writing): `Terminal/TerminalCell.swift`
+  (118 — CellAttributes effectiveFg/bg + inverse, small/pure), `Review/ReviewStore+ProjectLocal.swift`
+  (78 — path helpers; some may be exercised transitively via the new ReviewSidecar tests' projectLocal
+  cases, check), `ClaudeLogParser+SystemRecords.swift` (159 — confirm the base parser's tests don't
+  already cover it).
+
 ## LOG 2026-06-06 (latest+7) — Pivot to test-backfill: TerminalScreen (TSK-415 → fixed)
 - Pivoted off the closed command-wiring vein. Scanned ViewerKit/ViewerCore for sources with no test
   reference; **`TerminalScreen.swift`** (the #226 terminal grid, 225 LOC, pure Foundation) was
