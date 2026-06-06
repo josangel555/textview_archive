@@ -94,22 +94,26 @@ struct TabBar: View {
                                 of: [.plainText],
                                 delegate: TabDropDelegate(model: model, targetID: tab.id)
                             )
-                            if index < model.tabs.tabs.count - 1 {
-                                // B4: full-height vertical rule between tabs.
-                                // The old `Divider().frame(height: 16)` only
-                                // spanned the middle 16pt of the 28pt-tall tab
-                                // row, so the seam looked partial and read
-                                // asymmetrically when one neighbor was the
-                                // tinted-active tab and the other was clear. A
-                                // fixed-width separator rectangle pinned to the
-                                // tab height draws a clean top-to-bottom line
-                                // that is identical regardless of which side is
-                                // active.
-                                Rectangle()
-                                    .fill(Palette.separator)
-                                    .frame(width: 1, height: model.uiSize(28))
-                                    .accessibilityIdentifier("mdv.tab.divider")
-                            }
+                            // B4: full-height vertical rule between tabs.
+                            // The old `Divider().frame(height: 16)` only
+                            // spanned the middle 16pt of the 28pt-tall tab
+                            // row, so the seam looked partial and read
+                            // asymmetrically when one neighbor was the
+                            // tinted-active tab and the other was clear. A
+                            // fixed-width separator rectangle pinned to the
+                            // tab height draws a clean top-to-bottom line
+                            // that is identical regardless of which side is
+                            // active.
+                            //
+                            // TSK-268: drawn after EVERY tab — including the
+                            // last/only one — so the trailing tab has a visible
+                            // right edge (previously gated `index < count-1`,
+                            // leaving the last tab's right border missing before
+                            // the `+` button).
+                            Rectangle()
+                                .fill(Palette.separator)
+                                .frame(width: 1, height: model.uiSize(28))
+                                .accessibilityIdentifier("mdv.tab.divider")
                         }
                     }
                 }
