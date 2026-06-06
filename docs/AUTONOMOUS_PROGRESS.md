@@ -317,6 +317,16 @@ SwiftUI-first progress, the next wave needs ONE of:
     CommandRegistry catalog test + `build-app.sh debug` smoke. ~1 focused session; the transforms +
     `TextToolVerb` dispatcher it builds on are already committed + tested.
 
+## LOG 2026-06-06 — repoRelativePath coverage (static-func scan, 3/4)
+- **`3c42a22` test(viewerui): DocumentModel.repoRelativePath was untested** (board TSK-429). Pure
+  `nonisolated` path helper (file→relative-to-repo-root, or nil if outside). 7 cases incl the
+  load-bearing **sibling-prefix guard** (`/proj` must not swallow `/proj-sibling` — the
+  trailing-slash boundary), exact-root→`""`, nested slash-join no-leading-slash, outside→nil,
+  trailing-slash-root parity, and `..` standardization. No file IO (pure path math). Gate green.
+- Static-func scan 3/4. Last flagged candidate: `ContentView.categoryLabel` /
+  `FileHistoryView.shortDate` — after that the func-scan is exhausted and a documented hold is the
+  honest next step (substantive remaining SwiftUI work is owner-gated, see DECISIONS NEEDED).
+
 ## LOG 2026-06-06 — TabBar.computedTabWidth coverage (static-func scan, 2/4)
 - **`a6fcb36` test(viewerui): TabBar.computedTabWidth was untested** (board TSK-428). The tab-strip
   width math. 7 **relational** cases (no hardcoded private constants): positive/ordered bounds, the
