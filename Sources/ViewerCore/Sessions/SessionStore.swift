@@ -65,12 +65,33 @@ public final class SessionStore: @unchecked Sendable {
 
     public static func defaultDirectory() -> URL {
         let fm = FileManager.default
-        let support = (try? fm.url(
-            for: .applicationSupportDirectory, in: .userDomainMask,
-            appropriateFor: nil, create: true
-        )) ?? fm.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support")
-        let dir = support.appendingPathComponent("MarkdownViewer/Sessions")
+        // Clean-room override (host live-smoke / T4 session smokes): redirect the
+        // store to per-run scratch so a scripted launch never appends scratch
+        // pills to the user's real `~/Library/Application Support/MarkdownViewer/
+        // Sessions`. `MDV_SKIP_WORKSPACE_RESTORE=1` only suppresses RESTORE —
+        // persist() still fires — so the harness must also point the store
+        // somewhere disposable. Two knobs, checked in order:
+        //   - `MDV_SESSIONS_DIR`: the Sessions dir itself (most direct).
+        //   - `MDV_APP_SUPPORT`:  the Application Support root; we append
+        //     `MarkdownViewer/Sessions` so one var redirects sibling stores too.
+        // (Salvaged from superseded scratch branch worktree-wf_7f6adec6-3ab-64;
+        // the rest of that branch — wireLifecycle on the skip-restore path — had
+        // already landed on main.)
+        let env = ProcessInfo.processInfo.environment
+        let dir: URL
+        if let override = env["MDV_SESSIONS_DIR"], !override.isEmpty {
+            dir = URL(fileURLWithPath: override, isDirectory: true)
+        } else if let appSupport = env["MDV_APP_SUPPORT"], !appSupport.isEmpty {
+            dir = URL(fileURLWithPath: appSupport, isDirectory: true)
+                .appendingPathComponent("MarkdownViewer/Sessions")
+        } else {
+            let support = (try? fm.url(
+                for: .applicationSupportDirectory, in: .userDomainMask,
+                appropriateFor: nil, create: true
+            )) ?? fm.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support")
+            dir = support.appendingPathComponent("MarkdownViewer/Sessions")
+        }
         // createDirectory is idempotent under withIntermediateDirectories:
         // true; failure here surfaces later as a missing-file on read.
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
