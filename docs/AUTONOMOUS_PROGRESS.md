@@ -22,6 +22,39 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+12) — HEX-perf spike (TSK-267 → triaged); headless lanes exhausted
+- **Perf-debug spike on the HEX slowness** (TSK-267 "1MB extreme" / #218 "6KB ~1s"). Ruled out the
+  model layer: `HexDumpBuilder.renderRows` is algorithmically clean (raw-pointer `withUnsafeBytes`,
+  `reserveCapacity`, amortized-O(1) appends) — a 6KB dump builds in µs, 1MB in <100 ms. The cost is
+  view-layer: `HexView` builds the **entire** dump as **one** `NSAttributedString` (no windowing) → TextKit
+  lays out a multi-MB monospaced grid in one shot (the 1MB killer); the 6KB ~1s is too small to be dump
+  size → fixed per-open overhead (mode-switch remount / async load / layout). Fix = virtualized NSTextView
+  rendering + avoid full remount on mode switch — **view-layer, no headless fix** (matches TSK-267's own
+  report). Board TSK-267 → `triaged`, flagged `live-validation`, model layer ruled out for the live turn.
+- **STATE: the headless lanes are now exhausted.** Across this owner-away run (13 firings) I've drained:
+  feature cores that don't need live (Tools surface), command-wiring/Omni (7 commands, TSK-411–414),
+  pure-logic test backfill (+67 tests, TSK-415–419), and now the perf spikes — every remaining
+  high-value item bottoms out at the **supervised live window** or an **owner decision**. Continuing to
+  manufacture headless work would mean low-value tests for covered code or risky blind view edits —
+  against the discipline. So this firing ends here; the next heartbeat re-checks the board for anything
+  newly actionable, otherwise holds.
+
+### DECISIONS NEEDED — consolidated unblock list (owner, please action on return)
+Everything below is built/spec'd and waiting on ONE of: a live window, profiling, or a UX call.
+1. **Grant a supervised live-smoke window** (`bash scripts/build-app.sh debug`) → unblocks, in order:
+   - **TSK-300** Save-a-Copy: engine + `save-copy` verb landed + tested; only the `File ▸ Save a Copy…`
+     menu + `NSSavePanel` glue remains (~10 min wire-up to the tested `saveCopyOfCurrentTab`).
+   - **TSK-282** sidebar fuzzy filter: execute-ready design in `docs/SIDEBAR_FUZZY_FILTER_DESIGN.md`
+     (reuses shipped `FuzzyMatcher`); needs latency/highlight validation on a window.
+   - **TSK-267/#218** HEX perf: model ruled out; do the virtualized-render rework under Instruments.
+   - **TSK-266/270/273** tab close/open/switch perf: model-side clean; needs Instruments.
+   - **TSK-332** deferred half (default-plain-text-if-readable-ASCII): picker-desync zone, live-only.
+2. **A UX/algorithm call** (no live needed) → unblocks: **TSK-293** Encryption (which cipher + key/
+   passphrase handling?), **TSK-299** "Date enter like Notepad" (insert-at-cursor vs the clipboard
+   Tools-surface variant).
+3. **A close-out**: the audit `#301` (RustCoreFallback observability) is **already implemented** in
+   shipped code (pinned by TSK-419's tests) — please mark that board finding done, don't redo.
+
 ## LOG 2026-06-06 (latest+11) — Test-backfill #5: RustCoreFallback (TSK-419 → fixed); pool drained
 - **`ed3e24e` test(rust-core)** covers `RustCoreFallback.run` (the gate-OFF/Rust-ok/Rust-throws
   fail-safe router every Rust slice ships behind — the migration safety net) — was untested. 6 headless
