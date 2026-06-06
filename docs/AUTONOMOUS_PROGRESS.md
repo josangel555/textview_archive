@@ -22,6 +22,19 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+3) — Reload made Omni-invokable + automatable (TSK-411 → fixed, complete)
+- **`a8e69a7` feat(commands): reload script verb.** Found a real gap: `file.reload` shipped with
+  `scriptVerb: nil`, so the Reload command was menu/⌘R-only — NOT in the command palette (despite the
+  #232 Omni-invokability work) and untestable headless. Wired a `reload` ScriptVerb →
+  `model.reloadCurrentFile()` (the same entry the menu uses; `applyReload` rebases only a CLEAN editor
+  buffer, so a dirty buffer is preserved — verified, no silent clobber) and set the descriptor's
+  `scriptVerb`. 3 headless tests (verb routes + picks up disk changes / no-selection no-op / catalog
+  palette-invokability). Headless gate green (3793).
+- **First COMPLETE item this run (board TSK-411 → `fixed`, agent cap).** No deferred live glue: Reload
+  already had a menu, so adding the palette + automation surfaces + tests finishes it end-to-end —
+  unlike TSK-300/282 whose NSPanel/SidebarView glue is live-gated. The "command wired to an existing
+  model capability" shape (cf. TSK-328) is the cleanest fully-headless-shippable SwiftUI lane.
+
 ## LOG 2026-06-06 (latest+2) — Save a Copy engine LANDED (TSK-300, headless), menu deferred
 - Challenged the "pool drained" conclusion: there IS a headless-shippable SwiftUI class — **@MainActor
   model/command logic** drivable via ScriptVerb/HeadlessHarness (not pixel rendering). TSK-300 fits.
