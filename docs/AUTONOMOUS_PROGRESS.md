@@ -176,6 +176,20 @@ build it, else hold.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-05 **Front-ends: in-file content find — shared core module + TUI wiring (TSK-197 → `fixed`, `f6108a5`).**
+  New lane (Rust front-ends, all headless via cargo). Built the missing shared primitive
+  **`crates/core/src/find.rs`** — `find_matches(text, query, Case)` → byte-accurate, non-overlapping
+  `Match{line,start,end}` in document order (literal + ASCII-case-insensitive; the fold preserves byte
+  lengths so offsets stay valid; CRLF-aware; UTF-8 boundary-safe), plus `first_from`/`next_index`/
+  `prev_index` cursor helpers. 17 unit tests. This is the shared dependency for TSK-198 (web) too.
+  **TUI**: `/` opens an in-file find prompt in text/hex modes (Table mode keeps the column filter); Enter
+  searches the raw bytes (mode-independent like the outline), jumps+centers+flashes the first match at/after
+  the viewport (forcing Text mode); `n`/`N` step next/prev (wrapping) and only shadow the gutter toggle
+  while a find is active; `Esc` dismisses; the status bar shows a live `find: i of n` count. 2 TUI snapshot
+  tests via the existing `render()` harness (31 TUI tests total green). **Validated on the committed commit**:
+  `scripts/rust-core-gate.sh` GREEN + `cargo test --workspace` all-green (191 core incl. find + 31 TUI) +
+  new code clippy-clean. (Aside: found `App.status` is a write-only field — set in ~10 places, never
+  rendered; bypassed it by surfacing the find count in the help bar. Worth a future status-bar wiring task.)
 - 2026-06-05 **SwiftUI: default-plain-text-for-readable-ASCII — pure layer (TSK-332 → still `progress`, `427fe3c`).**
   Investigated: `controller.open` ALREADY returns `.loaded(text)` for unknown-extension readable-ASCII files
   (the text loader only rejects on NUL bytes), so the content loads fine — the HEX default is purely a
