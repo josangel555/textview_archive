@@ -29,6 +29,20 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+26) — dev-loop fix: build-app.sh --install (closes the rebuild gotcha)
+- Heartbeat. SwiftUI headless pool drained; TSK-439 (VM compile skew) is owner-gated (toolchain
+  upgrade — in DECISIONS NEEDED, not blasting an 85-file backport). Picked the warm dev-loop friction
+  the owner just hit: "don't see Reset" because `build-app.sh debug` writes `dist/` but the owner runs
+  `/Applications/TextView.app` (stale).
+- **`c69947f`:** `build-app.sh` gains a `--install` flag that chains `install-app.sh` after a green
+  build, so a rebuild actually updates the launched app. Robust arg parsing (`debug|release` +
+  `--install`, any order; unknown arg → exit 2). Validated `bash -n` + arg-rejection (errors before
+  any build). CLAUDE.md SOP validation-ladder rung-4 updated to `build-app.sh debug --install`.
+- **Also this session (manual, for the owner):** installed the fresh build to `/Applications`
+  (`install-app.sh`) + relaunched, so File→Reset + session fixes + disk-dot are now live.
+- Script/docs only (no `Sources/` change) → headless gate not required. `main` @ `c69947f`, single
+  linear trunk.
+
 ## LOG 2026-06-06 (latest+25) — rebuilt app + ran tests in UTM + CLAUDE.md SOP (owner asks)
 - **Rebuilt** `dist/TextView.app` (`build-app.sh debug`, exit 0, T4 ViewModeMatrix 3/3) so the session
   fixes + Reset menu + disk-dot are live in the installed app. Killall footgun fixed → didn't touch the
