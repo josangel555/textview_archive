@@ -22,6 +22,23 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+2) — Save a Copy engine LANDED (TSK-300, headless), menu deferred
+- Challenged the "pool drained" conclusion: there IS a headless-shippable SwiftUI class — **@MainActor
+  model/command logic** drivable via ScriptVerb/HeadlessHarness (not pixel rendering). TSK-300 fits.
+- **`6c2fc9e` feat(save): Save a Copy engine + `save-copy` verb.** `DocumentModel.saveCopy(ofTabAt:to:)`
+  + `saveCopyOfCurrentTab(to:)` write the tab's CURRENT effective content to a NEW path, leaving the
+  open tab untouched (no save, no retarget, no dirty-flag change). Content precedence: HEX-dirty bytes
+  → dirty editor text (buffer encoding) → verbatim on-disk file. Production-grade write: atomic for the
+  dirty cases, temp-then-`replaceItemAt` for overwrite (no data-loss window), `copyItem` streaming for
+  clean files (no memory slurp, attribute-preserving). Exposed as the `save-copy <path>` ScriptVerb —
+  **automation/MCP-reachable today**. 9 headless tests (3 content sources + tab-unchanged invariant +
+  overwrite + noTab/emptyTab/no-selection). Headless gate green (3791 tests).
+- Board: **TSK-300 → `progress`**, flagged `live-validation`. **Remaining (live turn):** the thin
+  user-facing wire-up `File > Save a Copy…` → `NSSavePanel` → `saveCopyOfCurrentTab(to:)` (needs a
+  window to validate). The risky/correctness-heavy core is done + tested; the live part is ~10 min.
+- Pattern confirmed for the owner-away headless lane: ship the tested model/command CORE + a script
+  verb (automation surface) now; defer only the NSPanel/menu glue to a supervised turn.
+
 ## LOG 2026-06-06 (latest+1) — TSK-282 sidebar fuzzy-filter design spike (headless turn, pool still drained)
 - Re-verified the pool is drained fresh: `task_next` ranks a FOREIGN task (TSK-104, agent:forge CSV
   export); the doc's unchecked items are all live-needed (tab-perf instrument lines, reinstall smoke)
