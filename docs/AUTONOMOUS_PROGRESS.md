@@ -29,6 +29,26 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+19) — institutional docs + board hygiene + killall footgun fully closed
+- Owner asks this turn: (1) "write institutional knowledge to md + handoff doc for compaction"; (2)
+  "also retry the failed tasks". Both done.
+- **Docs:** `docs/HANDOFF_2026-06-06.md` (new; supersedes 06-05) + `LESSONS.md` §"Session 2026-06-06"
+  (killall footgun, VM-builds-now/Swift-6.1.2 patterns, flaky-gate, board-id≠audit-#N) +
+  memory updates (`reference_vm_no_rust_toolchain` VM-builds-now; new `feedback_killall_footgun`).
+  Committed `56d7311`.
+- **Board hygiene:** TSK-401 (VM build) → `fixed` (`1a9aabc`); TSK-113 (WebView teardown DECISION) →
+  `fixed` (resolved+shipped by perf Fix#1 TSK-108 = bounded keep-alive, LRU cap 4); filed+fixed
+  TSK-435 (AppLauncher killall fix `ca67005`) and TSK-436 (3 remaining killall sites `8bfb4ee`);
+  commented honest status on stalled TSK-109/111 (screen-gated roll-ups, not failures).
+- **"Retry failed tasks":** the only `regressed:true` board task is TSK-104 (CSV export,
+  `agent:forge`) — grep-confirmed FOREIGN (not in this repo), skipped per shared-board discipline.
+  No genuine failed MDV task remained; the stalled `progress` ones are live-gated, not failed.
+- **killall footgun fully closed (`8bfb4ee`, TSK-436):** SourceViewVisualRegressionTests (×2) +
+  WalkthroughAndCodeReviewUATTests now tag direct spawns `MDV_TEST_INSTANCE=1` and reap via
+  `AppLauncher.killTestInstances` instead of blanket `killall` (which killed the user's own app).
+  Verified `swift build --build-tests` = Build complete. LSPUATTests `killall sourcekit-lsp` is a
+  separate lower-severity daemon case, left noted. `main` @ `56d7311`.
+
 ## LOG 2026-06-06 (latest+18) — TSK-263 line HOVER highlight FIXED (Source + Editor) — larger feature
 - Owner asked for bigger 20–30min tasks (keep the session busy). Took the line-hover-highlight cross-view
   feature end-to-end.
