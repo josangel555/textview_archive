@@ -317,6 +317,19 @@ SwiftUI-first progress, the next wave needs ONE of:
     CommandRegistry catalog test + `build-app.sh debug` smoke. ~1 focused session; the transforms +
     `TextToolVerb` dispatcher it builds on are already committed + tested.
 
+## LOG 2026-06-06 — ClaudeMonitor aggregation coverage (ViewerCore func-scan, 4/4 — vein drained)
+- **`81d0ed1` test(viewercore): ClaudeMonitorLog eventCounts/toolFrequency was untested** (board
+  TSK-434). Monitor per-type aggregations. 6 cases: empty, descending-by-count, the
+  **count-desc/name-asc tie-break**, `toolFrequency` skips nil-tool events, all-nil→empty. Gate green.
+- **ViewerCore func-scan high-value vein is now drained** (safeURL/uniqueSlug/atxHeadingLevel/
+  eventCounts+toolFrequency done; `failures` already had 8 refs; `hunkMarks` 1 ref / partially
+  covered). Remaining zero-ref funcs are `default*Dir()`/`defaultStoreURL()` path getters and
+  bundle/discovery helpers (env-dependent, low-value/theater).
+- **Next heartbeat: reassess.** Both ViewerUI axes + the ViewerCore func-scan high-value set are now
+  exhausted. Absent owner input (DECISIONS NEEDED — live-smoke window / UX call), the honest move is
+  a documented HOLD rather than testing path-getters. `main` gate-green; 14 genuine suites landed
+  this run (TSK-420…434) + #298 pin.
+
 ## LOG 2026-06-06 — atxHeadingLevel coverage (ViewerCore func-scan, 3)
 - **`5bfd73c` test(viewercore): TreeSitterEngine.atxHeadingLevel was untested** (board TSK-433).
   Markdown `#`-count heading level for a 1-based line (drives folding). 7 cases: levels 1–6, cap at
