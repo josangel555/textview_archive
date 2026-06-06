@@ -287,7 +287,13 @@ fi
 # ForTesting, deliberately kept out of the release symbol table) make the
 # TEST target uncompilable in release. Debug is the config the test target
 # is known-good in; the dist/ under test is still the real release artifact.
-if [[ "$CONFIG" == "release" || "${MDV_SKIP_SMOKE_GATE:-0}" != "1" ]]; then
+# OWNER DIRECTIVE (2026-06-06): NO UI tests on the Mac — UI/live-tier
+# validation runs on the UTM VM only. The pre-install ViewModeMatrix smoke
+# SPAWNS the app on the host (a live UI test), so it is now OPT-IN
+# (`MDV_RUN_SMOKE_GATE=1`) instead of default-on. The default build/install
+# path never opens a window on the Mac. Run UI validation via the VM
+# (`ssh macOS15 'cd markdown_viewer && swift test …'` / `vm-smoke.sh`).
+if [[ "${MDV_RUN_SMOKE_GATE:-0}" == "1" ]]; then
   echo "==> Pre-install live-app smoke gate (ViewModeMatrixSmokeTests, debug runner)"
   if ! ( cd "$ROOT_DIR" && env -u MDV_HEADLESS_GATE \
            swift test \

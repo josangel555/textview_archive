@@ -2,6 +2,15 @@
 
 ## Testing rules
 
+> **OWNER DIRECTIVE (2026-06-06): NO UI tests on the Mac — run UI / live-tier
+> tests on the UTM VM only.** Never run T4 `LiveAppTestCase`, T5 `PixelTestCase`,
+> the in-process WebView suites, or the `build-app.sh` pre-install smoke on the
+> host (they open a window / spawn the app). The pre-install smoke is now opt-in
+> (`MDV_RUN_SMOKE_GATE=1`); the headless gate (`test-headless-gate.sh`) is
+> window-free and stays the host merge gate. UI validation → `ssh macOS15` +
+> `swift test` / `bash scripts/vm-smoke.sh`. (VM test-target compile is blocked
+> on TSK-439 until the VM toolchain is upgraded — track that.)
+
 Tier is the **type** (`Tests/ViewerUITests/Harness/TierBaseCases.swift`):
 `HeadlessUITestCase` (T1/T1m/T2', the default) is host-safe; `LiveAppTestCase`
 (T4, spawns `dist/TextView.app`) and `PixelTestCase` (T5, WindowServer pixels)
@@ -138,12 +147,13 @@ continue", document blockers and move on):
   (rust-core). New deps need explicit owner approval.
 - **Validation ladder:** (1) `swift build` compile; (2) targeted
   `swift test --filter …` for the changed logic; (3) host headless gate
-  (window-free); (4) `bash scripts/build-app.sh debug --install` for a T4
-  live-smoke when the change is view/live-tier — `--install` pushes the fresh
-  bundle to `/Applications/TextView.app` (the copy the owner launches), avoiding
-  the "rebuild didn't show my change" gotcha where only `dist/` updated;
-  (5) **run the suite on the VM** (`ssh macOS15`, Swift 6.1.2 — see Testing
-  rules) for the stricter forward-compat check.
+  (window-free); (4) `bash scripts/build-app.sh debug --install` to push the
+  fresh bundle to `/Applications/TextView.app` (the copy the owner launches) —
+  this does NOT run a host UI test (the pre-install smoke is opt-in via
+  `MDV_RUN_SMOKE_GATE=1`); it just builds + installs; (5) **UI / live-tier
+  validation runs on the UTM VM, never the Mac** (owner directive) — `ssh
+  macOS15` + `swift test` / `vm-smoke.sh`. **Do NOT run T4/T5/live-app UI tests
+  on the host.**
 - **Log every landed item** to `docs/AUTONOMOUS_PROGRESS.md` (the narrative that
   survives compaction) and advance the board task to `fixed` with the commit SHA.
 - A perf-bench-only gate failure (e.g. `FoldBench`/`CrossFileSearchBench`
