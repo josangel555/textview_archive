@@ -175,7 +175,18 @@ build it, else hold.
   design + measurements rather than ship a risky half-validated refactor to the central view.
   Meanwhile I land the safe wins (PoCs, Wave-2 quick-wins, Fix#3 double-republish, Fix#4 off-main stat).
 
+> **PRIORITY UPDATE (owner, 2026-06-05):** prioritize **SwiftUI app features/fixes**
+> (`Sources/` — the macOS app) over the Rust TUI/web front-end ports. Heartbeat cron
+> changed hourly → **every 20 min** (`7,27,47 * * * *`, id `8b5aee14`); SwiftUI-priority
+> is baked into the cron prompt so every firing leads with `Sources/` work.
+
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-05 **Board reconciliation: closed 8 already-implemented W1 port tasks (no code change).**
+  Verified against code + closed to `fixed` with file-cited evidence (TSK-402 reconcile): line-number
+  gutter (TSK-364 TUI / TSK-365 web), sort modes name/modified/size + dirs-first (TSK-372/373), hidden
+  toggle (TSK-374/375), go-to-line (TSK-376/377). All were shipped in prior commits but left `reported`.
+  Also (owner directive) flipped the standing priority to **SwiftUI-first** and moved the heartbeat cron
+  to a 20-min cadence. No `main` change → no gate needed; board now reflects reality.
 - 2026-06-05 **Web: in-file content find — reuses the shared core module → TUI/web parity (TSK-198 → `fixed`, `d82eb30`).**
   Second consumer of `crates/core/src/find.rs` (built in TSK-197). Stateless query-param design on `/view`:
   `?find=<query>` runs `find::find_matches` over the raw bytes; `?fmatch=<i>` (clamped) selects the current
