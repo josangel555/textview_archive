@@ -53,7 +53,24 @@ esac
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/private/tmp/claude-$(id -u)/mdv-rust-csv-target}"
 
 if ! command -v cargo >/dev/null 2>&1; then
-  echo "Error: cargo not found on PATH. Install the Rust toolchain (rustup)." >&2
+  # No Rust toolchain on this host. The UTM test VM is exactly this case: it has
+  # no cargo and links the HOST-built staticlib + header that ride along in the
+  # rsync (rust-core/link/ and Sources/CMdvCore/ aren't excluded). `swift build`/
+  # `swift test` already link these; the only thing that broke was build-app.sh
+  # calling here and hard-failing. So if the staged artifacts are present, use
+  # them and skip the cargo build — that's what lets build-app.sh assemble a
+  # fresh dist/ on the VM for the live-tier (T4/T5) lane.
+  if [[ -f "$LINK_DIR/libmdvcore_ffi.a" && -f "$CMOD_DIR/mdvcore.h" ]]; then
+    echo "==> cargo not found; using pre-staged Rust core artifacts (no rebuild):"
+    echo "    $LINK_DIR/libmdvcore_ffi.a   ($(/usr/bin/du -h "$LINK_DIR/libmdvcore_ffi.a" | awk '{print $1}'))"
+    echo "    $CMOD_DIR/mdvcore.h"
+    echo "==> Rust core ready (pre-staged; cargo absent)."
+    exit 0
+  fi
+  echo "Error: cargo not found on PATH AND no pre-staged staticlib at" >&2
+  echo "       $LINK_DIR/libmdvcore_ffi.a (+ $CMOD_DIR/mdvcore.h)." >&2
+  echo "       Install the Rust toolchain (rustup) on a build host, or rsync the" >&2
+  echo "       host-built staticlib + header here first (the VM model)." >&2
   exit 1
 fi
 
