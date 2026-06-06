@@ -317,6 +317,14 @@ SwiftUI-first progress, the next wave needs ONE of:
     CommandRegistry catalog test + `build-app.sh debug` smoke. ~1 focused session; the transforms +
     `TextToolVerb` dispatcher it builds on are already committed + tested.
 
+## LOG 2026-06-06 — atxHeadingLevel coverage (ViewerCore func-scan, 3)
+- **`5bfd73c` test(viewercore): TreeSitterEngine.atxHeadingLevel was untested** (board TSK-433).
+  Markdown `#`-count heading level for a 1-based line (drives folding). 7 cases: levels 1–6, cap at
+  6 (7 and 20 hashes), leading space/tab skip, multi-line addressing, no-space-after-`#` still
+  counts, non-heading/empty→1, out-of-range line→1. Gate green.
+- ViewerCore func-scan 3/4. Remaining flagged: `ClaudeMonitorLog.eventCounts` (aggregation),
+  `RustDiffAdapter.hunkMarks`.
+
 ## LOG 2026-06-06 — uniqueSlug coverage (ViewerCore func-scan, 2)
 - **`61f36bd` test(viewercore): HTMLVisitor.uniqueSlug was untested** (board TSK-432). GFM
   heading-anchor slug + in-document dedup. 8 cases: lowercase/dash-collapse/edge-trim, numbers
