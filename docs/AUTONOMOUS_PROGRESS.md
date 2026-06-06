@@ -317,6 +317,20 @@ SwiftUI-first progress, the next wave needs ONE of:
     CommandRegistry catalog test + `build-app.sh debug` smoke. ~1 focused session; the transforms +
     `TextToolVerb` dispatcher it builds on are already committed + tested.
 
+## LOG 2026-06-06 — safeURL security coverage; ViewerCore func-scan is a LIVE axis (hold was premature)
+- **`0f874db` test(viewercore)[security]: HTMLVisitor.safeURL was untested directly** (board TSK-431).
+  The href/src scheme allowlist that rewrites `javascript:`/`vbscript:`/`data:`/custom → `about:blank`
+  so malicious markdown can't smuggle them past WKWebView nav policy. 8 cases pinning the full
+  link/image × scheme matrix + the `data:image/*` sub-rule + authority-relative/fragment/relative
+  passthrough + case-insensitive scheme. (Lives on the internal `HTMLVisitor` struct, not
+  `HTMLRenderer`.) Gate green.
+- **CORRECTION to last firing's "scan axes exhausted":** that was ViewerUI-only. The **ViewerCore
+  static-func scan** (the untried axis I flagged) is NOT theater — it surfaced real, security-grade
+  helpers. ViewerCore is the macOS app's shared core (NOT the deprioritized Rust ports), so it's
+  in-scope. **The backfill lane is live again.** Remaining genuine ViewerCore func candidates:
+  `HTMLRenderer.uniqueSlug` (heading-anchor dedup), `atxHeadingLevel` (markdown heading parse),
+  `ClaudeMonitorLog.eventCounts` (aggregation), `RustDiffAdapter.hunkMarks`. Hold deferred.
+
 ## LOG 2026-06-06 — shortDate coverage (static-func scan 4/4) → SCAN AXES EXHAUSTED
 - **`5aeb7f8` test(viewerui): FileHistoryView.shortDate was untested** (board TSK-430). git `%ai`
   timestamp → `YYYY-MM-DD HH:MM` compaction. 6 cases: drops seconds+tz, no-tz, already-minute,
