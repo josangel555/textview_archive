@@ -22,6 +22,20 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (later) — TextTools PoC core (SHA/Base64/UUID), surface = owner UX call
+- **`feat(tools): TextTools core`** — landed `Sources/ViewerCore/TextTools.swift`: pure,
+  dependency-free (Foundation + system CryptoKit, **no third-party dep**) transforms
+  `sha256Hex` / `base64Encode` / `base64Decode` / `uuid`, with 10 unit tests (NIST SHA-256
+  vectors, Base64 round-trip incl. unicode + wrapped input + invalid→nil). Headless gate green.
+  This is the de-risked, correctness-pinned core for the BACKLOG "Tools" family (TSK-292 SHA,
+  TSK-294 Base64, TSK-295 UUID); zero risk (pure logic, nowhere near view-mode/compositor zones).
+- **DECISION NEEDED — Tools surface/UX:** the core is unwired. How should these be invoked?
+  (a) **Command-palette/Omni → clipboard** (copy text, run "Base64 Encode", result on clipboard) —
+  fully buildable now, no editor coupling; (b) **operate-on-selection / insert-at-cursor** in the
+  CM6 editor (matches "Date enter like Notepad" TSK-299 intent) — more natural but editor-coupled +
+  live-validated. Pick one and I'll wire it + live-smoke. (Encryption TSK-293 intentionally NOT
+  built — needs a key-management design.)
+
 ## LOG 2026-06-06 — adversarial self-audit of TSK-410 found + fixed a silent Rust regression
 - **`ef05840` fix(highlight): repair rust @constant query typo** (TSK-410 follow-up). Audited every
   grammar query's `#match?` regex for NSRegularExpression mis-evaluation now that predicates are
