@@ -26,6 +26,7 @@ use std::time::{Duration, UNIX_EPOCH};
 use std::{fs, thread};
 
 use mdvcore_core::filter;
+use mdvcore_core::find;
 use mdvcore_core::image::{self, ImageInfo};
 use mdvcore_core::nav::{self, SortKey};
 use mdvcore_core::outline::{self, Heading};
@@ -219,6 +220,11 @@ fn route(req_line: &str, root: &Path) -> (&'static str, &'static str, String) {
                 // for a single column) via the shared `view::table_query` + core
                 // `filter`. Ignored for non-table bodies.
                 let tfilter = q.get("tfilter").map(String::as_str).unwrap_or("");
+                // `?find=<query>` runs the shared in-file content find over the raw
+                // bytes; `?fmatch=<i>` (0-based, clamped) selects the current match
+                // the page centers + anchors on (see `content_html` / `find_box`).
+                let find = q.get("find").map(String::as_str).unwrap_or("");
+                let fmatch = q.get("fmatch").and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
                 (
                     "200 OK",
                     HTML,
@@ -229,6 +235,8 @@ fn route(req_line: &str, root: &Path) -> (&'static str, &'static str, String) {
                         show_hidden,
                         line,
                         tfilter,
+                        find,
+                        fmatch,
                     ),
                 )
             }
@@ -274,12 +282,13 @@ fn render_view(
     show_hidden: bool,
     line: Option<usize>,
 ) -> String {
-    render_view_filtered(file, mode, sort, show_hidden, line, "")
+    render_view_filtered(file, mode, sort, show_hidden, line, "", "", 0)
 }
 
 /// `render_view` plus the active CSV table-filter needle (`?tfilter=`), threaded
 /// to `content_html`. The no-filter case is the common one, so `render_view`
 /// wraps this with an empty needle.
+#[allow(clippy::too_many_arguments)]
 fn render_view_filtered(
     file: &Path,
     mode: Option<&str>,
@@ -287,6 +296,8 @@ fn render_view_filtered(
     show_hidden: bool,
     line: Option<usize>,
     tfilter: &str,
+    find: &str,
+    fmatch: usize,
 ) -> String {
     let parent = file.parent().unwrap_or(file);
     let name = file_name(file);
@@ -296,7 +307,7 @@ fn render_view_filtered(
     page(
         &name,
         &nav_html(parent, Some(&name), sort, show_hidden, ""),
-        &content_html(file, mode, line, tfilter),
+        &content_html(file, mode, line, tfilter, find, fmatch),
     )
 }
 
@@ -467,7 +478,14 @@ fn nav_html(dir: &Path, selected: Option<&str>, sort: SortKey, show_hidden: bool
     s
 }
 
-fn content_html(file: &Path, mode_param: Option<&str>, line: Option<usize>, tfilter: &str) -> String {
+fn content_html(
+    file: &Path,
+    mode_param: Option<&str>,
+    line: Option<usize>,
+    tfilter: &str,
+    find: &str,
+    fmatch: usize,
+) -> String {
     let (raw, truncated, total) = match read_capped(file, PREVIEW_CAP) {
         Ok(x) => x,
         Err(e) => return format!("<p class=\"hint\">cannot read: {}</p>", esc(&e.to_string())),
@@ -517,16 +535,32 @@ fn content_html(file: &Path, mode_param: Option<&str>, line: Option<usize>, tfil
 
     let content = match &v.body {
         ViewBody::Hex(lines) | ViewBody::Text(lines) => {
-            // Resolve the requested 1-based line against the shared core clamp so
-            // an out-of-range `?line=` lands on a real row (and the TUI / web
-            // agree on the target). Table mode has no line gutter, so the goto
-            // box only shows for text/hex bodies.
-            let target = line.map(|n| view::clamp_line(n, lines.len()));
+            // In-file content find (TSK-198): when `?find=` is set, run the shared
+            // `find::find_matches` over the RAW bytes (mode-independent, like the
+            // outline) and steer the existing line-jump machinery to the current
+            // match's line — the matched row gets the same `id="L<n>"` anchor +
+            // `.cur` highlight as go-to-line, and the find box's prev/next links
+            // carry `#L<n>` so the browser scrolls natively (no JS). `?fmatch=<i>`
+            // (clamped) selects which match is current.
+            let matches = if find.is_empty() {
+                Vec::new()
+            } else {
+                find::find_matches(&String::from_utf8_lossy(&raw), find, find::Case::Insensitive)
+            };
+            let find_nav = find_box(&href, mode_str(v.mode), find, fmatch, &matches, lines.len());
+            // An active find overrides `?line=` so the page centers on the match;
+            // otherwise honor the go-to-line target.
+            let target = if matches.is_empty() {
+                line.map(|n| view::clamp_line(n, lines.len()))
+            } else {
+                let fi = fmatch.min(matches.len() - 1);
+                Some(view::clamp_line(matches[fi].line + 1, lines.len()))
+            };
             let goto = goto_box(&href, mode_str(v.mode), target);
             // Anchor every heading line (not just the goto target) so the outline
             // links resolve; the set is empty for non-markdown / non-text views.
             let anchors: Vec<usize> = headings.iter().map(|h| h.line).collect();
-            format!("{}{}", goto, gutter_html(lines, target, &anchors))
+            format!("{}{}{}", find_nav, goto, gutter_html(lines, target, &anchors))
         }
         ViewBody::Table { header, rows, truncated } => {
             // Apply the active CSV filter (shared `view::table_query` + core
@@ -563,6 +597,55 @@ fn goto_box(href: &str, mode: &str, target: Option<usize>) -> String {
         // A native fragment link to the tagged row — clicking it (or following
         // it after the reload) scrolls the browser to line n with no JS.
         s.push_str(&format!("<a class=\"jump\" href=\"#L{n}\">jump to {n}</a>"));
+    }
+    s.push_str("</form>");
+    s
+}
+
+/// The in-file find box (TSK-198): a JS-free GET form that reloads `/view` with
+/// `?find=<query>`. The server runs the shared `find::find_matches` over the raw
+/// bytes; this box echoes the query, shows the `i of n` match count, and renders
+/// prev/next anchor links that bump `?fmatch=` (wrapping) and carry the matching
+/// row's `#L<n>` fragment so the browser scrolls there natively (no client JS) —
+/// the same line-anchor mechanism go-to-line uses. An empty query renders just
+/// the input; a query with no hits shows "no matches".
+fn find_box(
+    href: &str,
+    mode: &str,
+    find: &str,
+    fmatch: usize,
+    matches: &[find::Match],
+    content_len: usize,
+) -> String {
+    let mut s = String::from("<form class=\"find\" method=\"get\" action=\"/view\">");
+    s.push_str(&format!("<input type=\"hidden\" name=\"path\" value=\"{}\">", esc(&pct_decode(href))));
+    s.push_str(&format!("<input type=\"hidden\" name=\"mode\" value=\"{}\">", esc(mode)));
+    s.push_str(&format!(
+        "<input type=\"text\" name=\"find\" value=\"{}\" placeholder=\"find in file\">",
+        esc(find)
+    ));
+    s.push_str("<button type=\"submit\">find</button>");
+    if !find.is_empty() {
+        if matches.is_empty() {
+            s.push_str("<span class=\"count\">no matches</span>");
+        } else {
+            let n = matches.len();
+            let cur = fmatch.min(n - 1);
+            let fq = pct_encode(find);
+            // Wrapping prev/next; each carries the target row's `#L<line>` so the
+            // browser jumps natively. `content_len` clamps an out-of-range line.
+            let link = |idx: usize, label: &str| -> String {
+                let line = view::clamp_line(matches[idx].line + 1, content_len);
+                format!(
+                    "<a class=\"jump\" href=\"/view?path={href}&mode={mode}&find={fq}&fmatch={idx}#L{line}\">{label}</a>"
+                )
+            };
+            let prev = (cur + n - 1) % n;
+            let next = (cur + 1) % n;
+            s.push_str(&link(prev, "prev"));
+            s.push_str(&link(next, "next"));
+            s.push_str(&format!("<span class=\"count\">{} of {n}</span>", cur + 1));
+        }
     }
     s.push_str("</form>");
     s
@@ -1197,6 +1280,50 @@ mod tests {
     }
 
     #[test]
+    fn in_file_find_shows_count_and_anchors_first_match() {
+        let dir = fixture();
+        // doc.md (as text) has "## Section A" on line 4 and "## Section B" on line 9.
+        // find="Section", fmatch=0 → 2 matches, current is the first (line 4).
+        let html = render_view_filtered(
+            &dir.join("doc.md"), Some("text"), SortKey::Name, false, None, "", "Section", 0,
+        );
+        assert!(html.contains("class=\"find\""), "find box present:\n{html}");
+        assert!(html.contains("1 of 2"), "match count shows current+total:\n{html}");
+        // The current match's line is the goto target → gets the L4 anchor.
+        assert!(html.contains("id=\"L4\""), "first match's line anchored:\n{html}");
+        // prev/next links carry the query + a sibling fmatch.
+        assert!(html.contains("find=Section"), "nav links carry the query:\n{html}");
+        assert!(html.contains("fmatch=1"), "nav links bump fmatch:\n{html}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn in_file_find_fmatch_selects_and_anchors_that_match() {
+        let dir = fixture();
+        // fmatch=1 → the second "Section" (line 9) becomes current + anchored.
+        let html = render_view_filtered(
+            &dir.join("doc.md"), Some("text"), SortKey::Name, false, None, "", "Section", 1,
+        );
+        assert!(html.contains("2 of 2"), "second match is current:\n{html}");
+        assert!(html.contains("id=\"L9\""), "second match's line (9) anchored:\n{html}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn in_file_find_no_match_and_query_is_escaped() {
+        let dir = fixture();
+        // hello.txt has no "<script>" → no matches, and the hostile query must be
+        // HTML-escaped where it's reflected into the find-box input value.
+        let html = render_view_filtered(
+            &dir.join("hello.txt"), Some("text"), SortKey::Name, false, None, "", "<script>", 0,
+        );
+        assert!(html.contains("no matches"), "empty result reported:\n{html}");
+        assert!(!html.contains("value=\"<script>\""), "raw query reflected unescaped:\n{html}");
+        assert!(html.contains("&lt;script&gt;"), "query HTML-escaped in the box:\n{html}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn view_hex_uses_core() {
         let dir = fixture();
         let html = render_view(&dir.join("data.bin"), Some("hex"), SortKey::Name, false, None);
@@ -1374,7 +1501,7 @@ mod tests {
         let dir = fixture(); // people.csv = name,age / Alice,30 / Bob,25
         let csv = dir.join("people.csv");
         // Global substring: any cell containing "Alice".
-        let g = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "Alice");
+        let g = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "Alice", "", 0);
         assert!(g.contains("class=\"find\""), "filter box present:\n{g}");
         assert!(g.contains("<td>Alice</td>"), "Alice row kept:\n{g}");
         assert!(!g.contains("<td>Bob</td>"), "Bob filtered out:\n{g}");
@@ -1382,7 +1509,7 @@ mod tests {
         // Column-scoped `age:Alice` matches NOTHING — "Alice" is in the name
         // column, not age — proving the scope restricts the search (global did
         // match it above).
-        let c = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "age:Alice");
+        let c = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "age:Alice", "", 0);
         assert!(!c.contains("<td>Alice</td>"), "age-scoped search excludes the name col:\n{c}");
         assert!(c.contains("0/2 rows"), "no rows match age:Alice:\n{c}");
         let _ = fs::remove_dir_all(&dir);
