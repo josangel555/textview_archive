@@ -22,6 +22,23 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+5) — Omni batch 2: Show Git Panel + Toggle Line Bookmark (TSK-413 → fixed)
+- **`c000d6d` feat(commands)** wired the next 2 model-backed `scriptVerb: nil` commands:
+  `git.showPanel`→`show-git-panel`→`showGitPanel()` (bumps `gitPanelFocusRequest`),
+  `view.toggleLineBookmark`→`toggle-line-bookmark`→`toggleCurrentLineBookmark()`. 4 headless tests
+  (focus bump, line-bookmark add/remove toggle via seeded `sourceSelection`, no-caret no-op, catalog).
+  Gate green (3801). Board TSK-413 → `fixed`.
+- **Omni-invokability vein now nearly exhausted.** Remaining `scriptVerb: nil` with NO clean no-arg
+  model method (skip until built/decided): `git.repoHistory` (no model method — would need an
+  open-repo-history path), `git.fileHistory` (`openFileHistory(for:)` exists but needs a git-repo temp
+  fixture to test + a no-arg current-file wrapper — a slightly bigger unit), `view.foldAll`/`unfoldAll`/
+  `toggleWordWrap`/`toggleInvisibles`/`goToLine`/`applyJQ` (editor-JS or @AppStorage, not no-arg model
+  methods), `find.replace`/`session.new` (panel/picker = live). Genuinely leave-nil: `file.open`/
+  `openFolder`, `edit.undo`/`redo`, `window.*`, `debug.*`, `find.find`. **Net:** the cheap command-
+  wiring lane is essentially done (TSK-411/412/413 covered reload, split, move-tab×2, git-panel,
+  line-bookmark); next firing should shift lanes (e.g. git.fileHistory as a small standalone, or a
+  new wishlist feature).
+
 ## LOG 2026-06-06 (latest+4) — Omni-invokability batch: split + move-tab (TSK-412 → fixed)
 - The TSK-411 reload gap turned out to be a **gap class**: audited all 26 `scriptVerb: nil` descriptors.
   **`d597cfd` feat(commands)** wired the 4 that map cleanly to existing no-arg @MainActor model methods:
