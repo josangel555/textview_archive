@@ -2084,3 +2084,37 @@ dividers (can't drag); 2 → divider only between the two tools, above-only resi
 leave a gap. **A "uniform/proportional resize incl. FILES" rework (TSK-440) is a layout-model change in a
 regression-prone zone (#100/#133/#211/#215/ChromeLayoutGate) — needs the live/VM verify loop, not a blind
 edit.**
+
+## Session 2026-06-06 (later) — terminal Enter, iCloud build-detritus race, VM live lane
+
+### Embedded terminal: Return is eaten as a key-equivalent BEFORE keyDown (TSK-448)
+Owner: "Terminal — I can't press enter or execute commands" (typing echoed fine, only Enter was dead). A
+custom input `NSView` (the terminal grid) handles Return in `keyDown` (keyCode 36/76 → CR `0x0D`), and that
+code was correct — but **Return never reached `keyDown`**. AppKit dispatches Return through the window
+**key-equivalent / default-button** path FIRST (`performKeyEquivalent` walks the tree, then the window's
+default button cell). SwiftUI installs a window default button whenever ANY `.keyboardShortcut(.defaultAction)`
+/ `.return` button exists in the chrome — so Return fired that button and the terminal's `keyDown` was never
+called. Plain letters aren't key-equivalents, so they skip that path and hit `keyDown` directly → "typing works
+but Enter doesn't" is the exact signature. **Fix (`c3a7b83`):** override `performKeyEquivalent(with:)` on the
+terminal view to claim Return/keypad-Enter (keyCode 36/76) **only while `window?.firstResponder === self`** and
+**only when `.command` is absent** (so ⌘C/⌘V/menu shortcuts still resolve), routing them back through the
+existing `keyDown`. **Lesson:** for any embedded AppKit view that must receive Return/Tab/Esc (terminals, custom
+editors), `keyDown` alone is insufficient — those keys are claimed by the default-button/focus machinery first;
+intercept them in `performKeyEquivalent` gated on first-responder. This is **live-only** (no headless test can
+synthesize the window default-button race); verify by relaunching the installed app or on the VM.
+
+### `build-app.sh` codesign intermittently fails on iCloud xattr re-stamping (TSK-449)
+`build-app.sh` failed at `codesign --options runtime` with "resource fork, Finder information, or similar
+detritus not allowed" — but had succeeded twice minutes earlier with the SAME code. Root cause: the repo lives
+under `~/Documents`, which is **iCloud-synced**, and the iCloud **file provider re-stamps** `com.apple.FinderInfo`
++ `com.apple.fileprovider.fpfs#P` onto the TreeSitter resource bundles *in real time*. `build-app.sh` does
+`ditto --noextattr` + `xattr -dr com.apple.FinderInfo` before signing, but iCloud re-adds the xattrs in the
+window between the clean and the sign — a **race** the build usually wins but sometimes loses. **Deterministic
+workaround (used to ship c3a7b83):** `ditto --norsrc --noextattr --noacl --noqtn dist/TextView.app
+/tmp/X.app` → `xattr -cr /tmp/X.app` → `codesign --force --deep --sign 'MarkdownViewer Local Dev'
+--options runtime --timestamp=none /tmp/X.app` → `codesign --verify --deep --strict` → `ditto /tmp/X.app
+/Applications/TextView.app`. `/private/tmp` and `/Applications` are NOT file-provider-synced, so xattrs aren't
+re-stamped there and the signature holds. **Proper fix (filed):** make `build-app.sh` do its clean+sign step in
+a `TMPDIR` outside iCloud, then move the signed bundle into `dist/`. **Lesson:** a codesign "detritus" failure
+that is *intermittent* on an unchanged tree = something is re-adding xattrs out of band; on an iCloud/Dropbox-
+synced working copy that's the file provider. Sign outside the synced tree.
