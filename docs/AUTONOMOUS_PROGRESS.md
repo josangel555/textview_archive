@@ -22,6 +22,19 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+9) — Test-backfill #3: TerminalCell SGR/attributes (TSK-417 → fixed)
+- **`aaec3d1` test(terminal)** covers `TerminalCell.swift` (`TerminalColor.fromSGR` + `CellAttributes`
+  inverse/bold/`effectiveFg`/`effectiveBg` + `isBlank`) — was untested. 15 headless cases incl. the
+  bold→bright promotion, inverse fg/bg swap, inverse+bold compound, and 256-/true-colour-introducer
+  (38/48) rejection. No bug surfaced. Gate green (3851). Board TSK-417 → `fixed`. (Test gotcha:
+  `CellAttributes.init` arg order is fg,bg,bold,underline,inverse — `bold` must precede `inverse`.)
+- The Terminal module is now well-covered (TerminalScreen + TerminalCell). **Remaining backfill
+  candidates** (re-confirm uncovered first): `Review/ReviewStore+ProjectLocal.swift` (78 — some path
+  helpers now exercised transitively by ReviewSidecarTests' projectLocal cases; check what's left),
+  `ClaudeLogParser+SystemRecords.swift` (159 — confirm the base parser's tests don't already cover the
+  system-record extension). If the backfill pool thins out, pivot again (perf-debug spike or, on a
+  supervised window, the live-gated features).
+
 ## LOG 2026-06-06 (latest+8) — Test-backfill #2: ReviewSidecar (TSK-416 → fixed)
 - **`ba9ecf5` test(review)** covers `ReviewSidecar.swift` (`.textview/` session.json + config.json +
   git-tracking-file emission, 230 LOC, pure Foundation/JSONFileStore) — was untested. 12 headless
