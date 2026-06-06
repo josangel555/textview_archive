@@ -317,6 +317,30 @@ SwiftUI-first progress, the next wave needs ONE of:
     CommandRegistry catalog test + `build-app.sh debug` smoke. ~1 focused session; the transforms +
     `TextToolVerb` dispatcher it builds on are already committed + tested.
 
+## LOG 2026-06-06 — ByteFormat coverage + 5 audit findings confirmed already-fixed (pending-list is stale)
+- **`b48935a` test(viewerui): ByteFormat was untested** (board TSK-422). `ByteFormat.human/.mib`
+  (memory + logs byte readouts, 5 `MemoryView` call sites) had zero tests. 6 cases pinning the
+  edge logic: `unit==0` no-decimal path, exact-1024 boundary promotion, **GB ceiling (no TB
+  rollover)**, `Int` negative-clamp, `Int`/`UInt64` parity, `mib` binary-MB. Gate green.
+- **META-FINDING — the deep-audit pending-list (Claude-TaskList #266–#345) is STALE.** This firing
+  sampled 5 findings to fix; **all 5 were already fixed-in-code or already test-covered**:
+  - #335 (MCP current_state 0-based vs select_tab 1-based) — fixed: `automationCurrentState()`
+    emits `selectedIndex+1`; consumer does `index-1`. AND already pinned by
+    `Audit_..._AutomationHost_swift_Tests.test_selectedTabIndex_roundTripsThroughSelectTab`.
+  - #298 (SidebarModel stale flat-memo) — fixed + pinned last firing (TSK-421).
+  - #307 (.svg dead/contradictory type model) — fixed: `Formatter.SupportedFormat.detect` doc
+    explicitly records removing the dead `.svg→.xml` config.
+  - #324 (Editor nav delegate allows ALL .other) — fixed: `CodeMirrorEditorView.Coordinator.decide`
+    is a hardened pure allow/cancel (blocks js/vbscript/data any-type; file: only pre-first-load).
+  - #325 (Editor nav-policy zero coverage) — already covered by
+    `Audit_..._CodeMirrorEditorView_swift_LinkPolicyTests`.
+  **Takeaway for future heartbeats:** do NOT mine the audit `pending` list finding-by-finding — it
+  is mostly already-addressed (waves 1/2 + later fixes landed without flipping the list status).
+  Higher-yield lanes: (a) genuinely-uncovered pure-logic backfill (scan `Sources/ViewerUI` /
+  `ViewerCore` for zero-test-ref types — reliably finds real gaps, e.g. LSPMarkdownRenderer,
+  ByteFormat), (b) test-gap findings specifically (those don't get "accidentally fixed"), (c) the
+  owner-gated live/feature work in the DECISIONS NEEDED list.
+
 ## LOG 2026-06-06 — ViewerUI headless coverage: LSPMarkdownRenderer + #298 stale-tree pin
 Two items, SwiftUI lane, both committed + central-gate-green (3883 headless) + board-recorded.
 - **`c207318` test(viewerui): LSPMarkdownRenderer was untested** (board TSK-420). Scanned
