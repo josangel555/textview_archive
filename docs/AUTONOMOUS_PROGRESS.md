@@ -29,6 +29,23 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+23) — ROOT-CAUSE FIX: session-index clobber guard (TSK-438 fixed)
+- Continued from the session-tab diagnosis. Shipped the durable fix the owner actually wants (the Reset
+  menu was only the escape hatch).
+- **TSK-438 FIXED (`bf395f9`):** `SessionStore` now refuses to persist an EMPTY `SessionIndex` while
+  `liveSnapshotIDs()` (non-trashed `<uuid>.json` files) is non-empty — at BOTH write entry points
+  (`saveIndexSync`, `enqueueSaveIndex`). Keeps the prior index + logs to stderr. That is the exact
+  clobber signature (empty index.json next to live snapshots → empty strip). A legitimate close-all has
+  already trashed its snapshot, so `liveSnapshotIDs()` is empty and the empty write proceeds. Store-level
+  = one chokepoint, robust regardless of which coordinator race (#330) triggers it.
+- **Validation:** 5 ViewerCore unit tests (`SessionIndexClobberGuardTests`) + `swift build` +
+  `scripts/test-headless-gate.sh` = **exit 0, PASSED** on the committed commit (no session-test
+  regressions; this run was fully clean — perf benches passed too).
+- **FOLLOW-UP (optional, not blocking):** auto-rebuild the index from orphaned snapshots on restore
+  (selective — ~40 stale tiny test snapshots on the owner machine). The Reset menu + this guard already
+  cover recover + prevent-recurrence, so this is a nice-to-have.
+- `main` @ guard commit, single linear trunk, headless-gate-green.
+
 ## LOG 2026-06-06 (latest+22) — DIAGNOSED session-tab bug + SHIPPED File → Reset menu
 - Owner: "session tabs still broken" + "give me a way to reset the cache (File → Cache → Invalidate X)".
 - **ROOT CAUSE FOUND (TSK-438, open):** `~/Library/Application Support/MarkdownViewer/Sessions/index.json`
