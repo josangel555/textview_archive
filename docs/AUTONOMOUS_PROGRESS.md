@@ -317,6 +317,15 @@ SwiftUI-first progress, the next wave needs ONE of:
     CommandRegistry catalog test + `build-app.sh debug` smoke. ~1 focused session; the transforms +
     `TextToolVerb` dispatcher it builds on are already committed + tested.
 
+## LOG 2026-06-06 — uniqueSlug coverage (ViewerCore func-scan, 2)
+- **`61f36bd` test(viewercore): HTMLVisitor.uniqueSlug was untested** (board TSK-432). GFM
+  heading-anchor slug + in-document dedup. 8 cases: lowercase/dash-collapse/edge-trim, numbers
+  kept, empty→`section`, **Unicode letters survive** (pins the doc-says-ASCII / code-uses-`isLetter`
+  mismatch), the duplicate counter (`x`/`x-1`/`x-2`) + per-key independence, dedup keyed post-slugify.
+  Gate green.
+- ViewerCore func-scan candidate 2/4 done. Remaining: `atxHeadingLevel` (markdown heading parse),
+  `ClaudeMonitorLog.eventCounts` (aggregation), `RustDiffAdapter.hunkMarks`.
+
 ## LOG 2026-06-06 — safeURL security coverage; ViewerCore func-scan is a LIVE axis (hold was premature)
 - **`0f874db` test(viewercore)[security]: HTMLVisitor.safeURL was untested directly** (board TSK-431).
   The href/src scheme allowlist that rewrites `javascript:`/`vbscript:`/`data:`/custom → `about:blank`
