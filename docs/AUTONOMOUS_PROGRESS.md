@@ -29,6 +29,28 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+22) — DIAGNOSED session-tab bug + SHIPPED File → Reset menu
+- Owner: "session tabs still broken" + "give me a way to reset the cache (File → Cache → Invalidate X)".
+- **ROOT CAUSE FOUND (TSK-438, open):** `~/Library/Application Support/MarkdownViewer/Sessions/index.json`
+  = `{"sessions":[],"version":1}` while ~40 per-session `<uuid>.json` snapshots survive next to it. On
+  launch `SessionsCoordinator.restore()` reads the empty index → `core.sessions` empty → `SessionTabBar`
+  `ForEach` renders nothing but the `+`. The INDEX got clobbered empty (the coordinator persisted an
+  empty `SessionIndex`; matches audit #330 saveSync-races-enqueueSave). Snapshots intact — data not lost.
+  NOTE: persisted state lives under `Application Support/MarkdownViewer/` (NO bundle-id prefix); the
+  bundle-id dir holds only Plugins/Walkthroughs/jdtls-data.
+- **SHIPPED — File → Reset (TSK-437 `28331c3`, fixed):** the requested escape hatch. New ViewerCore
+  `AppCacheReset` (enum `CacheDomain`: sessions/workspaces/bookmarks/recents/lspCache) MOVES each store to
+  a recoverable `_reset-backups/<ts>/` backup (never hard-deletes), + Reset Preferences (UserDefaults
+  `removePersistentDomain`) + Reset Everything. Menu wired in `main.swift` (NSAlert confirm → backup →
+  relaunch via `exit(0)`, which bypasses the terminate-flush that would re-persist cleared state). 5
+  headless unit tests; `swift build` green; headless gate logic tiers green (only `FoldBench`/
+  `CrossFileSearchBench` timing perf assertions flaked under machine load — unrelated to this change).
+- **TSK-438 (open) — the real fix (follow-up):** (1) prevent writing an empty index over a non-empty one
+  unless all sessions genuinely closed; (2) auto-recover on restore from orphaned snapshots (selectively —
+  ~40 stale tiny test snapshots present). Needs the live coordinator path + a supervised session smoke.
+- Owner must rebuild the debug app (`bash scripts/build-app.sh debug`) for the menu to appear in the
+  running instance. `main` @ reset commit, single linear trunk.
+
 ## LOG 2026-06-06 (latest+21) — SHIPPED: red disk-change tab dot (TSK-371), gate-green
 - Heartbeat firing. Surveyed the SwiftUI lane: most remaining backlog items are live/visual or
   owner-design-gated (TSK-272 needs preview-tab semantics ↔ TSK-220; TSK-359 needs a risky custom
