@@ -489,7 +489,10 @@ final class WalkthroughAndCodeReviewUATTests: LiveAppTestCase {
         try (scriptSteps.joined(separator: "\n") + "\n")
             .write(to: scriptPath, atomically: true, encoding: .utf8)
 
-        _ = shell(["/usr/bin/killall", "MarkdownViewer"], wait: 0.5)
+        // Reap only leaked TEST instances (marked MDV_TEST_INSTANCE=1) — a
+        // blanket `killall MarkdownViewer` also kills the developer's own
+        // running app (shared exec name). See AppLauncher.killTestInstances.
+        AppLauncher.killTestInstances(named: "MarkdownViewer")
         Thread.sleep(forTimeInterval: 0.3)
 
         let exe = harness.appExecutable

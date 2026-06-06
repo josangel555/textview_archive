@@ -73,7 +73,10 @@ final class SourceViewVisualRegressionTests: PixelTestCase {
         let sourceFile = here
             .appendingPathComponent("Sources/ViewerCore/Highlight/TreeSitterEngine.swift")
         try? fm.removeItem(at: Self.windowIDFile)
-        _ = try? shell(["/usr/bin/killall", "MarkdownViewer"])
+        // Reap only leaked TEST instances (marked MDV_TEST_INSTANCE=1) — a
+        // blanket `killall MarkdownViewer` also kills the developer's own
+        // running app (shared exec name). See AppLauncher.killTestInstances.
+        AppLauncher.killTestInstances(named: "MarkdownViewer")
 
         let p = Process()
         p.executableURL = URL(fileURLWithPath: appExe)
@@ -81,6 +84,7 @@ final class SourceViewVisualRegressionTests: PixelTestCase {
         var env = ProcessInfo.processInfo.environment
         env["MDV_ENABLE_BROKEN_RULER"] = "1"
         env["MDV_SKIP_WORKSPACE_RESTORE"] = "1"
+        env["MDV_TEST_INSTANCE"] = "1"   // so killTestInstances can reap a leak of this spawn
         p.environment = env
         p.standardOutput = FileHandle.standardError
         p.standardError = FileHandle.standardError
@@ -160,7 +164,10 @@ final class SourceViewVisualRegressionTests: PixelTestCase {
 
         // 2. Reset state.
         try? fm.removeItem(at: Self.windowIDFile)
-        _ = try? shell(["/usr/bin/killall", "MarkdownViewer"])
+        // Reap only leaked TEST instances (marked MDV_TEST_INSTANCE=1) — a
+        // blanket `killall MarkdownViewer` also kills the developer's own
+        // running app (shared exec name). See AppLauncher.killTestInstances.
+        AppLauncher.killTestInstances(named: "MarkdownViewer")
 
         // 3. Launch the app. Skip workspace restore so we start with
         // a known clean tab set.
@@ -169,6 +176,7 @@ final class SourceViewVisualRegressionTests: PixelTestCase {
         p.arguments = [sourceFile.path]
         var env3 = ProcessInfo.processInfo.environment
         env3["MDV_SKIP_WORKSPACE_RESTORE"] = "1"
+        env3["MDV_TEST_INSTANCE"] = "1"   // so killTestInstances can reap a leak of this spawn
         p.environment = env3
         p.standardOutput = FileHandle.standardError
         p.standardError = FileHandle.standardError
