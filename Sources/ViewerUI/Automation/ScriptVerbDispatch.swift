@@ -102,6 +102,10 @@ public enum ScriptVerb {
         case "prev-tab":       model.selectPreviousTab()
         case "select-tab":
             if let n = Int(arg), n >= 1 { model.selectTab(at: n - 1) }
+        // Move the selected tab within the bar (Omni-invokability: tabs.moveLeft
+        // / tabs.moveRight previously had no script verb — menu/⌘⌥[ ⌘⌥]-only).
+        case "move-tab-left":   model.moveCurrentTabLeft()
+        case "move-tab-right":  model.moveCurrentTabRight()
         case "show-palette":    model.showPalette()
         case "dismiss-palette": model.dismissPalette()
         case "show-goto":       model.showGoToPath()
@@ -109,6 +113,11 @@ public enum ScriptVerb {
         case "goto-commit":     model.commitGoToPath(arg, newSession: false)
         case "goto-commit-new-session": model.commitGoToPath(arg, newSession: true)
         case "toggle-format":   model.toggleFormat()
+        // Split view (Omni-invokability: view.toggleSplit / view.swapSplit
+        // previously had no script verb, so they were menu/⌘\-only). Both wire
+        // to existing @MainActor model methods — headless-safe, no window.
+        case "toggle-split":    model.toggleSplit()
+        case "swap-split":      model.swapSplit()
         // ---- Editor (CM6) — VM-only flow verbs (Phase 6.x) ----
         // These drive the Swift-side editor state machine that backs
         // the CodeMirror WebView. Used by EditorMultiScenarioTests to

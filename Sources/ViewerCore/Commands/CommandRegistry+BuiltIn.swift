@@ -131,11 +131,11 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "view.toggleSplit", title: "Toggle Split", category: .view,
             defaultShortcut: Shortcut(key: "backslash", modifiers: [.command]),
-            scriptVerb: nil),
+            scriptVerb: "toggle-split"),
         CommandDescriptor(
             id: "view.swapSplit", title: "Swap Split Panes", category: .view,
             defaultShortcut: Shortcut(key: "backslash", modifiers: [.command, .shift]),
-            scriptVerb: nil),
+            scriptVerb: "swap-split"),
         CommandDescriptor(
             id: "view.folderStats", title: "Toggle Folder Stats", category: .view,
             defaultShortcut: Shortcut(key: "i", modifiers: [.command, .control]),
@@ -197,11 +197,11 @@ extension CommandRegistry {
             defaultShortcut: Shortcut(key: "[", modifiers: [.command, .option]),
             // Collides with view.foldAll by default — intentional, the menu
             // disambiguates by responder/mode; flagged in shortcutMap.
-            scriptVerb: nil),
+            scriptVerb: "move-tab-left"),
         CommandDescriptor(
             id: "tabs.moveRight", title: "Move Tab Right", category: .tabs,
             defaultShortcut: Shortcut(key: "]", modifiers: [.command, .option]),
-            scriptVerb: nil),
+            scriptVerb: "move-tab-right"),
 
         // MARK: Navigation (palette / go-to overlays)
         CommandDescriptor(

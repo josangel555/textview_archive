@@ -73,7 +73,7 @@ final class CommandRegistryTests: XCTestCase {
             "sidebar-walk-up", "session-next", "session-prev",
             "session-close-active", "folder-stats", "emit-test-log",
             "tools.uuid", "tools.sha256", "tools.base64Encode", "tools.base64Decode",
-            "reload",
+            "reload", "toggle-split", "swap-split", "move-tab-left", "move-tab-right",
         ]
         for cmd in CommandRegistry.builtIn.commands {
             guard let verb = cmd.scriptVerb else { continue }
