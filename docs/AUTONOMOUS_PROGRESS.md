@@ -317,6 +317,17 @@ SwiftUI-first progress, the next wave needs ONE of:
     CommandRegistry catalog test + `build-app.sh debug` smoke. ~1 focused session; the transforms +
     `TextToolVerb` dispatcher it builds on are already committed + tested.
 
+## LOG 2026-06-06 — CMIndentation coverage; #315 confirmed already-covered
+- **`72fef7a` test(viewerui): CMIndentation was untested** (board TSK-426). 5 cases pinning the
+  `size` clamp to [1,16] on both `tabs`/`spaces` arms (0/negative→1, 17/100/Int.max→16, in-range
+  passthrough + boundaries), `useTabs` discriminator, Equatable by case+value. Gate green.
+- Assessed #315 (editable-HEX dirty/save/close, a bigger test-gap) — **already covered** by
+  `HexDirtySaveClose_Audit_...Tests` (10 cases: dirty-mirror, save/clear, baseline refresh,
+  close-confirm save/discard/cancel routing, leak-freedom). That's **3/3 sampled `[test-gap]`
+  findings already done** (#315/#318/#325) — so even the test-gap subset is mostly addressed;
+  corrected the `project_audit_pending_list_stale` memory (always grep `Tests/` for the symbol
+  first; the reliable yield is the zero-test-ref TYPE scan, not the finding list).
+
 ## LOG 2026-06-06 — LogTimestamp coverage; first full ViewerUI scan
 - **`a1dbd90` test(viewerui): LogTimestamp was untested** (board TSK-425). The observability-logs
   `nanos→HH:mm:ss.SSS` formatter. 5 cases, all **timezone-independent** (only `HH:mm` shift with
