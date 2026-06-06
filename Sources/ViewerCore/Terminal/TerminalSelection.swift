@@ -58,16 +58,19 @@ public struct TerminalSelection: Sendable, Equatable {
         return lower..<upper
     }
 
-    /// The selected text, one line per selected row, with trailing spaces
-    /// trimmed per line (the terminal copy convention) and rows joined by
-    /// "\n". Out-of-range rows are skipped safely.
-    public func selectedText(from screen: TerminalScreen) -> String {
+    /// The selected text over an explicit grid (`rows` × `cols`), one line
+    /// per selected row, with trailing spaces trimmed per line (the
+    /// terminal copy convention) and rows joined by "\n". Out-of-range
+    /// rows are skipped safely. This is the grid-based core — the view
+    /// passes its currently-visible window (which may be scrollback), so
+    /// copy works on whatever is on screen.
+    public func selectedText(fromRows rows: [[TerminalCell]], cols: Int) -> String {
         let (s, e) = ordered
         var lines: [String] = []
         for row in s.row...e.row {
-            guard screen.cells.indices.contains(row),
-                  let range = columnRange(forRow: row, cols: screen.cols) else { continue }
-            let rowCells = screen.cells[row]
+            guard rows.indices.contains(row),
+                  let range = columnRange(forRow: row, cols: cols) else { continue }
+            let rowCells = rows[row]
             let clamped = range.clamped(to: 0..<rowCells.count)
             guard !clamped.isEmpty else { lines.append(""); continue }
             var seg = String(rowCells[clamped].map(\.char))
@@ -77,24 +80,33 @@ public struct TerminalSelection: Sendable, Equatable {
         return lines.joined(separator: "\n")
     }
 
+    /// Convenience: extract from a live screen's grid.
+    public func selectedText(from screen: TerminalScreen) -> String {
+        selectedText(fromRows: screen.cells, cols: screen.cols)
+    }
+
     // MARK: - Constructors for double / triple-click
 
-    /// The whole grid (Select All).
-    public static func all(in screen: TerminalScreen) -> TerminalSelection {
+    /// The whole `rows × cols` grid (Select All).
+    public static func all(rows: Int, cols: Int) -> TerminalSelection {
         TerminalSelection(
             anchor: Point(row: 0, col: 0),
-            head: Point(row: max(0, screen.rows - 1), col: max(0, screen.cols - 1))
+            head: Point(row: max(0, rows - 1), col: max(0, cols - 1))
         )
     }
 
+    public static func all(in screen: TerminalScreen) -> TerminalSelection {
+        all(rows: screen.rows, cols: screen.cols)
+    }
+
     /// The contiguous run of non-space cells containing `p` (double-click
-    /// word select). If `p` is on a blank cell, returns a single-cell
-    /// selection at `p`.
-    public static func word(at p: Point, in screen: TerminalScreen) -> TerminalSelection {
-        guard screen.cells.indices.contains(p.row) else {
+    /// word select) over an explicit grid. If `p` is on a blank cell,
+    /// returns a single-cell selection at `p`.
+    public static func word(at p: Point, inRows rows: [[TerminalCell]]) -> TerminalSelection {
+        guard rows.indices.contains(p.row) else {
             return TerminalSelection(anchor: p, head: p)
         }
-        let row = screen.cells[p.row]
+        let row = rows[p.row]
         let n = row.count
         guard n > 0 else { return TerminalSelection(anchor: p, head: p) }
         let col = min(max(0, p.col), n - 1)
@@ -111,10 +123,18 @@ public struct TerminalSelection: Sendable, Equatable {
                                  head: Point(row: p.row, col: hi))
     }
 
-    /// The entire `row` (triple-click line select).
-    public static func line(_ row: Int, in screen: TerminalScreen) -> TerminalSelection {
-        let r = min(max(0, row), max(0, screen.rows - 1))
+    public static func word(at p: Point, in screen: TerminalScreen) -> TerminalSelection {
+        word(at: p, inRows: screen.cells)
+    }
+
+    /// The entire `row` (triple-click line select), full `cols` width.
+    public static func line(_ row: Int, cols: Int) -> TerminalSelection {
+        let r = max(0, row)
         return TerminalSelection(anchor: Point(row: r, col: 0),
-                                 head: Point(row: r, col: max(0, screen.cols - 1)))
+                                 head: Point(row: r, col: max(0, cols - 1)))
+    }
+
+    public static func line(_ row: Int, in screen: TerminalScreen) -> TerminalSelection {
+        line(min(max(0, row), max(0, screen.rows - 1)), cols: screen.cols)
     }
 }

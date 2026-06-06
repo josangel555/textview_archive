@@ -223,4 +223,65 @@ final class TerminalScreenTests: XCTestCase {
         s2.scrollUp(0); s2.scrollDown(-3) // no-ops
         XCTAssertEqual(s2, before)
     }
+
+    // MARK: - Scrollback
+
+    private func line(_ row: [TerminalCell]) -> String {
+        var s = String(row.map(\.char))
+        while s.hasSuffix(" ") { s.removeLast() }
+        return s
+    }
+
+    func test_scrollUp_capturesEvictedLineIntoScrollback() {
+        var s = TerminalScreen(rows: 2, cols: 3)
+        type("aaabbb", into: &s)   // row0=aaa row1=bbb (auto-wrap)
+        s.scrollUp(1)               // aaa evicted into scrollback
+        XCTAssertEqual(s.scrollback.count, 1)
+        XCTAssertEqual(line(s.scrollback[0]), "aaa")
+        XCTAssertEqual(s.line(0), "bbb")
+    }
+
+    func test_scrollback_isBounded() {
+        var s = TerminalScreen(rows: 1, cols: 2)
+        for _ in 0..<(TerminalScreen.maxScrollback + 50) { s.scrollUp(1) }
+        XCTAssertEqual(s.scrollback.count, TerminalScreen.maxScrollback)
+    }
+
+    func test_visibleLines_offsetZero_isLiveGrid() {
+        var s = TerminalScreen(rows: 2, cols: 3)
+        type("aaabbb", into: &s)
+        s.scrollUp(1)               // grid now: bbb / blank, scrollback: [aaa]
+        let live = s.visibleLines(scrollOffset: 0)
+        XCTAssertEqual(live.map(line), ["bbb", ""])
+    }
+
+    func test_visibleLines_scrolledUp_showsHistoryAtTop() {
+        var s = TerminalScreen(rows: 2, cols: 3)
+        type("aaabbb", into: &s)     // aaa / bbb
+        s.scrollUp(1)                // scrollback [aaa]; grid bbb / blank
+        // Offset 1: window starts one line up → [aaa, bbb].
+        let view = s.visibleLines(scrollOffset: 1)
+        XCTAssertEqual(view.count, 2)
+        XCTAssertEqual(line(view[0]), "aaa")
+        XCTAssertEqual(line(view[1]), "bbb")
+    }
+
+    func test_visibleLines_clampsOffsetToScrollbackCount() {
+        var s = TerminalScreen(rows: 2, cols: 3)
+        type("aaabbb", into: &s)
+        s.scrollUp(1)               // scrollback.count == 1
+        // Over-scroll clamps to the same window as offset 1.
+        XCTAssertEqual(s.visibleLines(scrollOffset: 99).map(line),
+                       s.visibleLines(scrollOffset: 1).map(line))
+    }
+
+    func test_visibleLines_normalizesScrollbackRowToCurrentCols() {
+        var s = TerminalScreen(rows: 2, cols: 4)
+        type("wwwwxxxx", into: &s)   // row0 wwww (4 wide) / row1 xxxx
+        s.scrollUp(1)                // scrollback [wwww] at width 4
+        s.resize(rows: 2, cols: 2)   // shrink; scrollback row keeps width 4
+        let view = s.visibleLines(scrollOffset: 1)
+        XCTAssertEqual(view[0].count, 2, "scrollback row normalized to current cols")
+        XCTAssertEqual(line(view[0]), "ww")
+    }
 }

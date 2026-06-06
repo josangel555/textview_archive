@@ -51,6 +51,20 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
 
     var hasSelection: Bool { selection != nil }
 
+    /// Scrollback viewport: lines scrolled up from the live bottom.
+    /// 0 == following the live output. Driven by `scrollWheel`; reset to 0
+    /// on keyboard input.
+    private var scrollOffset = 0
+    /// Sub-line scroll accumulator so trackpad momentum maps smoothly to
+    /// whole-line steps.
+    private var scrollAccum: CGFloat = 0
+
+    /// The rows currently on screen — the live grid when at the bottom, or
+    /// a window into scrollback when scrolled up.
+    private var displayRows: [[TerminalCell]] {
+        screen.visibleLines(scrollOffset: scrollOffset)
+    }
+
     init(initialScreen: TerminalScreen, fontSize: CGFloat) {
         self.screen = initialScreen
         super.init(frame: .zero)
@@ -86,12 +100,12 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
         window?.makeFirstResponder(self)
         let p = cellPoint(for: event)
         switch event.clickCount {
-        case 2:    // word
-            selection = TerminalSelection.word(at: p, in: screen)
+        case 2:    // word (over the currently-visible rows — may be scrollback)
+            selection = TerminalSelection.word(at: p, inRows: displayRows)
             isDragging = false
             didDrag = true            // keep it on mouseUp
         case 3:    // line
-            selection = TerminalSelection.line(p.row, in: screen)
+            selection = TerminalSelection.line(p.row, cols: screen.cols)
             isDragging = false
             didDrag = true
         default:   // begin drag-select (tentative 1-cell anchor)
@@ -126,7 +140,40 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
         var changed = false
         if self.fontSize != fontSize { self.fontSize = fontSize; changed = true }
         if self.screen != screen { self.screen = screen; changed = true }
+        // Keep the viewport valid as scrollback grows/shrinks. Following
+        // the live bottom (offset 0) is the steady state; a held scroll
+        // position is preserved but clamped into range.
+        let maxOff = self.screen.scrollback.count
+        if scrollOffset > maxOff { scrollOffset = maxOff; changed = true }
         if changed { needsDisplay = true }
+    }
+
+    // MARK: - Scroll (scrollback viewport)
+
+    override func scrollWheel(with event: NSEvent) {
+        guard cellHeight > 0 else { return }
+        scrollAccum += event.scrollingDeltaY
+        let lines = Int((scrollAccum / cellHeight).rounded(.towardZero))
+        guard lines != 0 else { return }
+        scrollAccum -= CGFloat(lines) * cellHeight
+        // Positive scrollingDeltaY (content pulled down) reveals older
+        // lines → larger offset.
+        let maxOff = screen.scrollback.count
+        let newOff = min(max(0, scrollOffset + lines), maxOff)
+        guard newOff != scrollOffset else { return }
+        scrollOffset = newOff
+        // Selection is in viewport-row space; scrolling moves content under
+        // it, so drop it rather than leave a misaligned highlight.
+        if selection != nil { selection = nil }
+        needsDisplay = true
+    }
+
+    /// Snap the viewport back to the live bottom (called on keyboard input).
+    private func snapToBottom() {
+        guard scrollOffset != 0 else { return }
+        scrollOffset = 0
+        scrollAccum = 0
+        needsDisplay = true
     }
 
     private func rebuildFontMetrics() {
@@ -168,18 +215,21 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
         dirtyRect.fill()
 
         let defaultFg = NSColor.labelColor
-        let rows = screen.rows
         let cols = screen.cols
+        // Render the current viewport — the live grid at the bottom, or a
+        // window into scrollback when scrolled up.
+        let rows = displayRows
 
-        for r in 0..<rows {
-            let rowCells = screen.cells[r]
+        for r in 0..<rows.count {
+            let rowCells = rows[r]
+            let rowCount = min(rowCells.count, cols)
             let y = CGFloat(r) * cellHeight
             var c = 0
-            while c < cols {
+            while c < rowCount {
                 let attrs = rowCells[c].attributes
                 // Coalesce a run of cells sharing the same attributes.
                 var end = c + 1
-                while end < cols && rowCells[end].attributes == attrs {
+                while end < rowCount && rowCells[end].attributes == attrs {
                     end += 1
                 }
                 let runText = String(rowCells[c..<end].map(\.char))
@@ -244,7 +294,8 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
     }
 
     private func drawCursor(defaultFg: NSColor) {
-        guard window?.firstResponder === self else { return }
+        // No cursor while scrolled into history (it belongs to the live grid).
+        guard scrollOffset == 0, window?.firstResponder === self else { return }
         let cur = screen.cursor
         guard cur.row < screen.rows, cur.col < screen.cols else { return }
         let x = CGFloat(cur.col) * cellWidth
@@ -308,6 +359,8 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
 
     private func send(_ bytes: [UInt8]) {
         guard !bytes.isEmpty else { return }
+        // Typing / pasting jumps back to the live prompt.
+        snapToBottom()
         onInput?(Data(bytes))
     }
 
@@ -321,7 +374,8 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
     // that's the `.control` chord handled in `keyDown`.
 
     @objc func copy(_ sender: Any?) {
-        guard let text = selection?.selectedText(from: screen), !text.isEmpty else { return }
+        guard let text = selection?.selectedText(fromRows: displayRows, cols: screen.cols),
+              !text.isEmpty else { return }
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setString(text, forType: .string)
@@ -335,7 +389,7 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
     }
 
     @objc override func selectAll(_ sender: Any?) {
-        selection = TerminalSelection.all(in: screen)
+        selection = TerminalSelection.all(rows: screen.rows, cols: screen.cols)
         needsDisplay = true
     }
 

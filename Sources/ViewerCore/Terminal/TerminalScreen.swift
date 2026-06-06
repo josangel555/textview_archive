@@ -30,6 +30,15 @@ public struct TerminalScreen: Sendable, Equatable {
     public private(set) var cells: [[TerminalCell]]
     public private(set) var cursor: TerminalCursor
 
+    /// Lines that have scrolled off the top of the live grid, oldest
+    /// first — the scrollback history the view can scroll up into.
+    /// Bounded to `maxScrollback`; rows keep the width they had when
+    /// evicted (the viewport normalizes them to the current `cols`).
+    public private(set) var scrollback: [[TerminalCell]] = []
+
+    /// Hard cap on retained scrollback lines (memory bound).
+    public static let maxScrollback = 1000
+
     /// The pen — current SGR attributes stamped onto written cells.
     public var pen: CellAttributes = .default
 
@@ -193,17 +202,54 @@ public struct TerminalScreen: Sendable, Equatable {
 
     // MARK: - Scrolling
 
-    /// Scroll the entire grid up by `n` lines: top `n` lines fall off,
-    /// `n` blank lines appear at the bottom. The cursor row stays put
-    /// (used by `lineFeed` on the last row).
+    /// Scroll the entire grid up by `n` lines: top `n` lines fall off
+    /// (into `scrollback`), `n` blank lines appear at the bottom. The
+    /// cursor row stays put (used by `lineFeed` on the last row).
     public mutating func scrollUp(_ n: Int) {
         let count = min(max(0, n), rows)
         guard count > 0 else { return }
+        // Retain the evicted top lines as scrollback (bounded).
+        scrollback.append(contentsOf: cells[0..<count])
+        if scrollback.count > Self.maxScrollback {
+            scrollback.removeFirst(scrollback.count - Self.maxScrollback)
+        }
         cells.removeFirst(count)
         cells.append(contentsOf: Array(
             repeating: Array(repeating: TerminalCell.blank, count: cols),
             count: count
         ))
+    }
+
+    // MARK: - Scrollback viewport
+
+    /// The `rows` display lines (each exactly `cols` cells) for a viewport
+    /// scrolled up `offset` lines from the live bottom. `offset` 0 → the
+    /// live grid; it is clamped to `0...scrollback.count`. Scrollback rows
+    /// are normalized (padded/truncated) to the current `cols` so the view
+    /// can render a uniform grid regardless of the width they were evicted
+    /// at.
+    public func visibleLines(scrollOffset offset: Int) -> [[TerminalCell]] {
+        let o = min(max(0, offset), scrollback.count)
+        if o == 0 { return cells }
+        var out: [[TerminalCell]] = []
+        out.reserveCapacity(rows)
+        // Combined index space: [scrollback…] then [live grid…]. The
+        // bottom-anchored window of height `rows` begins `o` lines up.
+        let start = scrollback.count - o
+        for i in start..<(start + rows) {
+            if i < scrollback.count {
+                out.append(normalizedRow(scrollback[i]))
+            } else {
+                out.append(cells[i - scrollback.count])
+            }
+        }
+        return out
+    }
+
+    private func normalizedRow(_ row: [TerminalCell]) -> [TerminalCell] {
+        if row.count == cols { return row }
+        if row.count > cols { return Array(row[0..<cols]) }
+        return row + Array(repeating: .blank, count: cols - row.count)
     }
 
     /// Scroll the entire grid down by `n` lines: bottom `n` lines fall
