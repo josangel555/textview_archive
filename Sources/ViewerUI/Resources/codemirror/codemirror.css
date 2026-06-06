@@ -100,3 +100,11 @@ body.dark .cm-invisible {
 .cm-indent-guide {
   color: currentColor;
 }
+/* TSK-263: mouse-over line HOVER highlight — a faint backdrop on the line
+ * under the pointer, distinct from (and quieter than) CM's caret/active line.
+ * Theme-aware to read on both host backgrounds; pointer-only, so it never
+ * persists or interferes with selection. Mirrors the Source view's native
+ * NSTextView hover highlight (SourceHoverHighlight). */
+.cm-line:hover            { background: rgba(127, 127, 127, 0.05); }
+body.dark  .cm-line:hover { background: rgba(255, 255, 255, 0.05); }
+body.light .cm-line:hover { background: rgba(0, 0, 0, 0.04); }

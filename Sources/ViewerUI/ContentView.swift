@@ -776,6 +776,10 @@ struct SourceModeView: View {
     /// find bar so only the visible pane shows it (no first-responder fight).
     let isActive: Bool
 
+    /// TSK-263: 1-based source line under the pointer, or nil when the pointer
+    /// is outside the text rows. Drives `SourceHoverHighlight`.
+    @State private var hoveredSourceLine: Int?
+
     var body: some View {
         let displayedInfo = model.displayedText(for: file)
         let displayed = displayedInfo.text
@@ -798,42 +802,63 @@ struct SourceModeView: View {
                     diffMarks: model.sourceDiffMarks,
                     bookmarkedLines: model.bookmarkedLines(for: file.url)
                 )
-                TextDisplayView(
-                    text: displayed,
-                    fontSize: 13 * model.zoom,
-                    language: lang,
-                    runs: runs,
-                    theme: model.activeTheme,
-                    findState: TextDisplayView.FindState(
-                        query: (isActive && model.isSourceFindBarPresented) ? model.sourceFindQuery : "",
-                        caseSensitive: model.sourceFindCaseSensitive,
-                        isRegex: model.sourceFindIsRegex,
-                        nextNonce: model.sourceFindNextRequest,
-                        prevNonce: model.sourceFindPrevRequest
-                    ),
-                    wordWrap: model.sourceWordWrap,
-                    showInvisibles: model.showInvisibleChars,
-                    isLargeReadOnly: file.isLargeReadOnly,
-                    scrollLineRequest: TextDisplayView.ScrollLineRequest(
-                        line: sourceView.sourceScrollLineTarget,
-                        nonce: sourceView.sourceScrollLineNonce
-                    ),
-                    onFindSummary: { summary in
-                        model.setSourceFindMatchSummary(summary)
-                    },
-                    onScrollChange: { state in
-                        sourceView.sourceScrollState = state
-                    },
-                    onSelectionChange: { sel in
-                        sourceView.sourceSelection = sel
-                    },
-                    onFindMatchesChange: { set in
-                        model.setSourceFindMatches(
-                            lines: set.lines, currentIndex: set.currentIndex
-                        )
-                    }
-                )
+                ZStack(alignment: .topLeading) {
+                    TextDisplayView(
+                        text: displayed,
+                        fontSize: 13 * model.zoom,
+                        language: lang,
+                        runs: runs,
+                        theme: model.activeTheme,
+                        findState: TextDisplayView.FindState(
+                            query: (isActive && model.isSourceFindBarPresented) ? model.sourceFindQuery : "",
+                            caseSensitive: model.sourceFindCaseSensitive,
+                            isRegex: model.sourceFindIsRegex,
+                            nextNonce: model.sourceFindNextRequest,
+                            prevNonce: model.sourceFindPrevRequest
+                        ),
+                        wordWrap: model.sourceWordWrap,
+                        showInvisibles: model.showInvisibleChars,
+                        isLargeReadOnly: file.isLargeReadOnly,
+                        scrollLineRequest: TextDisplayView.ScrollLineRequest(
+                            line: sourceView.sourceScrollLineTarget,
+                            nonce: sourceView.sourceScrollLineNonce
+                        ),
+                        onFindSummary: { summary in
+                            model.setSourceFindMatchSummary(summary)
+                        },
+                        onScrollChange: { state in
+                            sourceView.sourceScrollState = state
+                        },
+                        onSelectionChange: { sel in
+                            sourceView.sourceSelection = sel
+                        },
+                        onFindMatchesChange: { set in
+                            model.setSourceFindMatches(
+                                lines: set.lines, currentIndex: set.currentIndex
+                            )
+                        }
+                    )
+                    // TSK-263: mouse-over line hover highlight (distinct from the
+                    // caret/selection current-line backdrop). A non-interactive
+                    // sibling rect; the hover tracking is on the ZStack so it
+                    // never blocks the NSTextView's clicks/selection.
+                    SourceHoverHighlight(
+                        state: sourceView.sourceScrollState,
+                        caretLine: sourceView.sourceSelection.line,
+                        hoveredLine: hoveredSourceLine,
+                        theme: model.activeTheme
+                    )
+                }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onContinuousHover { phase in
+                    switch phase {
+                    case .active(let p):
+                        hoveredSourceLine = SourceHoverGeometry.lineAtPointer(
+                            p.y, in: sourceView.sourceScrollState)
+                    case .ended:
+                        hoveredSourceLine = nil
+                    }
+                }
                 if model.isSourceFindBarPresented,
                    !model.sourceFindMatchLines.isEmpty {
                     FindMatchMinimapView(
