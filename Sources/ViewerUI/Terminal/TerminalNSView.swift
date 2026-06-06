@@ -18,7 +18,7 @@ import ViewerCore
 /// terminal bytes via `TerminalKeyEncoder` (pure logic) and writes them
 /// to the PTY. `insertText`/IME paths route plain text through the same
 /// encoder.
-final class TerminalNSView: NSView, SidebarKeyMonitorExempt {
+final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidation {
     /// Callback the view uses to push input bytes to the PTY. Set by the
     /// representable's coordinator. Off the SwiftUI body path.
     var onInput: ((Data) -> Void)?
@@ -38,6 +38,19 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt {
     private var cellHeight: CGFloat = 15
     private var ascent: CGFloat = 12
 
+    /// Live mouse selection over the grid (pure geometry in ViewerCore).
+    /// `nil` when nothing is selected.
+    private var selection: TerminalSelection?
+    /// True between `mouseDown` and `mouseUp` for a plain (click+drag)
+    /// gesture — distinguishes a drag-select from a focus click.
+    private var isDragging = false
+    /// True once a drag has moved off the anchor cell. A click that never
+    /// moves clears the selection on `mouseUp` (so a focus click doesn't
+    /// leave a stray 1-cell selection); word/line selects bypass this.
+    private var didDrag = false
+
+    var hasSelection: Bool { selection != nil }
+
     init(initialScreen: TerminalScreen, fontSize: CGFloat) {
         self.screen = initialScreen
         super.init(frame: .zero)
@@ -53,11 +66,57 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt {
     override var acceptsFirstResponder: Bool { true }
     override func becomeFirstResponder() -> Bool { true }
     override func resignFirstResponder() -> Bool { true }
-    // Click anywhere focuses the terminal.
+    override var isFlipped: Bool { true }   // top-left origin matches the grid
+
+    // MARK: - Mouse: focus + text selection
+
+    /// Convert a mouse event to the grid cell under the pointer (clamped
+    /// to the grid).
+    private func cellPoint(for event: NSEvent) -> TerminalSelection.Point {
+        let p = convert(event.locationInWindow, from: nil)
+        let col = cellWidth > 0 ? Int(floor(p.x / cellWidth)) : 0
+        let row = cellHeight > 0 ? Int(floor(p.y / cellHeight)) : 0
+        return TerminalSelection.Point(
+            row: min(max(0, row), max(0, screen.rows - 1)),
+            col: min(max(0, col), max(0, screen.cols - 1))
+        )
+    }
+
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        let p = cellPoint(for: event)
+        switch event.clickCount {
+        case 2:    // word
+            selection = TerminalSelection.word(at: p, in: screen)
+            isDragging = false
+            didDrag = true            // keep it on mouseUp
+        case 3:    // line
+            selection = TerminalSelection.line(p.row, in: screen)
+            isDragging = false
+            didDrag = true
+        default:   // begin drag-select (tentative 1-cell anchor)
+            selection = TerminalSelection(anchor: p, head: p)
+            isDragging = true
+            didDrag = false
+        }
+        needsDisplay = true
     }
-    override var isFlipped: Bool { true }   // top-left origin matches the grid
+
+    override func mouseDragged(with event: NSEvent) {
+        guard isDragging else { return }
+        let p = cellPoint(for: event)
+        guard var sel = selection else { return }
+        if p != sel.anchor { didDrag = true }
+        sel.head = p
+        selection = sel
+        needsDisplay = true
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        // A focus click that never dragged clears any tentative selection.
+        if isDragging && !didDrag { selection = nil; needsDisplay = true }
+        isDragging = false
+    }
 
     // MARK: - Public update
 
@@ -135,7 +194,22 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt {
             }
         }
 
+        drawSelection()
         drawCursor(defaultFg: defaultFg)
+    }
+
+    /// Translucent highlight over the selected cell spans (drawn after the
+    /// glyphs so the text shows through). Per-row span comes from the pure
+    /// `TerminalSelection.columnRange`.
+    private func drawSelection() {
+        guard let selection else { return }
+        NSColor.selectedTextBackgroundColor.withAlphaComponent(0.45).setFill()
+        for r in 0..<screen.rows {
+            guard let range = selection.columnRange(forRow: r, cols: screen.cols) else { continue }
+            let x = CGFloat(range.lowerBound) * cellWidth
+            let w = CGFloat(range.count) * cellWidth
+            NSRect(x: x, y: CGFloat(r) * cellHeight, width: w, height: cellHeight).fill()
+        }
     }
 
     private func drawRun(
@@ -235,6 +309,78 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt {
     private func send(_ bytes: [UInt8]) {
         guard !bytes.isEmpty else { return }
         onInput?(Data(bytes))
+    }
+
+    // MARK: - Copy / Paste / Select All (Edit menu + ⌘C/⌘V/⌘A + context menu)
+    //
+    // The app's Edit menu wires `copy:`/`paste:`/`selectAll:` to the first
+    // responder with a nil target (main.swift), so implementing these
+    // selectors here makes ⌘C/⌘V/⌘A work automatically while the terminal
+    // is focused — no `performKeyEquivalent` hijacking needed. `validate-
+    // MenuItem` drives their enabled state. Ctrl-C (SIGINT) is unaffected:
+    // that's the `.control` chord handled in `keyDown`.
+
+    @objc func copy(_ sender: Any?) {
+        guard let text = selection?.selectedText(from: screen), !text.isEmpty else { return }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+    }
+
+    @objc func paste(_ sender: Any?) {
+        guard let s = NSPasteboard.general.string(forType: .string), !s.isEmpty else { return }
+        // Send raw bytes. We don't advertise bracketed-paste (mode 2004 is
+        // parse-and-ignored), so a raw write is correct for the shell.
+        send(Array(s.utf8))
+    }
+
+    @objc override func selectAll(_ sender: Any?) {
+        selection = TerminalSelection.all(in: screen)
+        needsDisplay = true
+    }
+
+    @objc func clearSelection(_ sender: Any?) {
+        guard selection != nil else { return }
+        selection = nil
+        needsDisplay = true
+    }
+
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(copy(_:)):
+            return hasSelection
+        case #selector(paste(_:)):
+            return NSPasteboard.general.string(forType: .string) != nil
+        case #selector(clearSelection(_:)):
+            return hasSelection
+        case #selector(selectAll(_:)):
+            return true
+        default:
+            return true
+        }
+    }
+
+    /// Right-click context menu: Copy / Paste / Select All / Clear.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        let copyItem = NSMenuItem(title: "Copy", action: #selector(copy(_:)), keyEquivalent: "")
+        copyItem.target = self
+        copyItem.isEnabled = hasSelection
+        let pasteItem = NSMenuItem(title: "Paste", action: #selector(paste(_:)), keyEquivalent: "")
+        pasteItem.target = self
+        pasteItem.isEnabled = NSPasteboard.general.string(forType: .string) != nil
+        let selectAllItem = NSMenuItem(title: "Select All", action: #selector(selectAll(_:)), keyEquivalent: "")
+        selectAllItem.target = self
+        let clearItem = NSMenuItem(title: "Clear Selection", action: #selector(clearSelection(_:)), keyEquivalent: "")
+        clearItem.target = self
+        clearItem.isEnabled = hasSelection
+        menu.addItem(copyItem)
+        menu.addItem(pasteItem)
+        menu.addItem(.separator())
+        menu.addItem(selectAllItem)
+        menu.addItem(clearItem)
+        return menu
     }
 
     /// Map an `NSEvent` to a `SpecialKey`, or nil for ordinary text.

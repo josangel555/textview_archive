@@ -18,13 +18,12 @@ import Foundation
 ///   • CSI scroll: SU `S`, SD `T`.
 ///   • CSI SGR `m`: reset(0), bold(1), underline(4), inverse(7),
 ///     un-bold(22), un-underline(24), un-inverse(27), fg 30–37 / 90–97,
-///     bg 40–47 / 100–107, default fg(39) / bg(49).
+///     bg 40–47 / 100–107, default fg(39) / bg(49), 256-colour
+///     (`38;5;n` / `48;5;n`), and truecolor (`38;2;r;g;b` / `48;2;…`).
 ///
 ///   PARSED-THEN-IGNORED (consumed so they don't garble the grid, but
 ///   produce no screen change)
 ///   ──────────────────────────────────────────────────────────────────
-///   • 256-colour / truecolor SGR (`38;5;n`, `38;2;r;g;b`, and the 48;…
-///     background forms) — the param run is skipped; pen colour unchanged.
 ///   • DEC private modes `ESC[?…h` / `ESC[?…l` (cursor visibility,
 ///     bracketed paste, alt-screen, mouse tracking, …).
 ///   • Other unrecognised CSI final bytes, and any unrecognised
@@ -331,16 +330,24 @@ public struct ANSIParser: Sendable {
             case 100...107:
                 screen.pen.bg = TerminalColor.fromSGR(p, base: 100, bright: true) ?? .default
             case 38, 48:
-                // Extended colour: `38;5;n` (256) or `38;2;r;g;b` (truecolor),
-                // likewise 48 for background. OUT OF SCOPE — consume the
-                // param run so the rest of the SGR list still applies, but
-                // leave the pen colour unchanged.
+                // Extended colour: `38;5;n` (256-index) or `38;2;r;g;b`
+                // (truecolor), and the `48;…` background forms. Consume the
+                // param run AND apply the colour. A short/malformed run
+                // consumes what it can and leaves the pen unchanged.
+                let isForeground = (p == 38)
                 if i + 1 < params.count {
                     let mode = params[i + 1] ?? 0
-                    if mode == 5 {
-                        i += 2                       // skip `5;n`
-                    } else if mode == 2 {
-                        i += 4                       // skip `2;r;g;b`
+                    if mode == 5, i + 2 < params.count {
+                        let raw = max(0, params[i + 2] ?? 0)
+                        let color = TerminalColor.indexed(UInt8(clamping: raw))
+                        if isForeground { screen.pen.fg = color } else { screen.pen.bg = color }
+                        i += 2                       // consume `5;n`
+                    } else if mode == 2, i + 4 < params.count {
+                        let r = UInt8(clamping: max(0, params[i + 2] ?? 0))
+                        let g = UInt8(clamping: max(0, params[i + 3] ?? 0))
+                        let b = UInt8(clamping: max(0, params[i + 4] ?? 0))
+                        if isForeground { screen.pen.fg = .rgb(r, g, b) } else { screen.pen.bg = .rgb(r, g, b) }
+                        i += 4                       // consume `2;r;g;b`
                     } else {
                         i += 1
                     }

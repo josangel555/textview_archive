@@ -6,38 +6,49 @@ import Foundation
 /// `NSColor`s at draw time — the same capture→trait→colour split the
 /// highlighter uses (LESSONS / DESIGN §11).
 ///
-/// We model the classic 16-colour palette (the 8 base ANSI colours plus
-/// their bright variants) plus a `default` sentinel meaning "the
-/// view's default fg/bg". 256-colour and truecolor (`ESC[38;2;r;g;bm`)
-/// are OUT OF SCOPE for this dep-free v1 and are parsed-then-ignored
-/// (they fall back to `.default`) rather than garbling the grid.
-public enum TerminalColor: UInt8, Sendable, Equatable, Hashable {
-    case `default` = 0
-    case black
-    case red
-    case green
-    case yellow
-    case blue
-    case magenta
-    case cyan
-    case white
-    case brightBlack
-    case brightRed
-    case brightGreen
-    case brightYellow
-    case brightBlue
-    case brightMagenta
-    case brightCyan
-    case brightWhite
+/// Cases:
+///   • `.default`        — the view's default fg/bg.
+///   • `.ansi(0...15)`   — the classic 16-colour palette (8 base + 8
+///     bright). The base 8 (0–7) are subject to the historical
+///     bold→bright promotion.
+///   • `.indexed(0...255)` — an xterm 256-colour index (`ESC[38;5;n`):
+///     0–15 alias the 16-colour palette, 16–231 the 6×6×6 cube, 232–255
+///     the greyscale ramp. NOT bold-promoted (an explicit index is exact).
+///   • `.rgb(r,g,b)`     — 24-bit truecolor (`ESC[38;2;r;g;b`).
+///
+/// The 16 named statics (`.red`, `.brightGreen`, …) are readability/test
+/// aliases onto `.ansi(0...15)`.
+public enum TerminalColor: Sendable, Equatable, Hashable {
+    case `default`
+    case ansi(UInt8)
+    case indexed(UInt8)
+    case rgb(UInt8, UInt8, UInt8)
+
+    public static let black         = TerminalColor.ansi(0)
+    public static let red           = TerminalColor.ansi(1)
+    public static let green         = TerminalColor.ansi(2)
+    public static let yellow        = TerminalColor.ansi(3)
+    public static let blue          = TerminalColor.ansi(4)
+    public static let magenta       = TerminalColor.ansi(5)
+    public static let cyan          = TerminalColor.ansi(6)
+    public static let white         = TerminalColor.ansi(7)
+    public static let brightBlack   = TerminalColor.ansi(8)
+    public static let brightRed     = TerminalColor.ansi(9)
+    public static let brightGreen   = TerminalColor.ansi(10)
+    public static let brightYellow  = TerminalColor.ansi(11)
+    public static let brightBlue    = TerminalColor.ansi(12)
+    public static let brightMagenta = TerminalColor.ansi(13)
+    public static let brightCyan    = TerminalColor.ansi(14)
+    public static let brightWhite   = TerminalColor.ansi(15)
 
     /// Map an ANSI SGR colour index (the `3x` / `4x` family) to a case.
     /// `base` is 30 for foreground, 40 for background. `bright` is true
-    /// for the `9x` / `10x` (bright) family.
+    /// for the `9x` / `10x` (bright) family. Returns nil for an
+    /// out-of-range index (e.g. the `38`/`48` extended-colour introducers).
     static func fromSGR(_ value: Int, base: Int, bright: Bool) -> TerminalColor? {
         let idx = value - base
         guard (0...7).contains(idx) else { return nil }
-        let raw = UInt8(idx) + (bright ? 9 : 1)
-        return TerminalColor(rawValue: raw)
+        return .ansi(UInt8(idx) + (bright ? 8 : 0))
     }
 }
 
@@ -75,20 +86,12 @@ public struct CellAttributes: Sendable, Equatable, Hashable {
     public var effectiveFg: TerminalColor {
         let base = inverse ? bg : fg
         guard bold else { return base }
-        // Bold promotes a base ANSI colour to its bright sibling
-        // (the historical "bold = bright" behaviour). `.default` and
-        // already-bright colours are left untouched.
-        switch base {
-        case .black:   return .brightBlack
-        case .red:     return .brightRed
-        case .green:   return .brightGreen
-        case .yellow:  return .brightYellow
-        case .blue:    return .brightBlue
-        case .magenta: return .brightMagenta
-        case .cyan:    return .brightCyan
-        case .white:   return .brightWhite
-        default:       return base
-        }
+        // Bold promotes a base ANSI colour (0–7) to its bright sibling
+        // (8–15) — the historical "bold = bright" behaviour. `.default`,
+        // already-bright `.ansi`, and explicit `.indexed`/`.rgb` are left
+        // untouched (an explicit extended colour is exact, not promoted).
+        if case let .ansi(n) = base, n < 8 { return .ansi(n + 8) }
+        return base
     }
 
     /// Background colour after applying `inverse`.

@@ -236,21 +236,41 @@ final class ANSIParserTests: XCTestCase {
         XCTAssertEqual(p.screen.cells[0][0].attributes.fg, .default)
     }
 
-    func test_SGR_256color_isConsumed_notGarbled() {
+    func test_SGR_256color_index_isApplied_notGarbled() {
         var p = parser()
-        // ESC[38;5;200m sets a 256-colour we don't model; must be ignored
-        // (pen colour stays default) AND must NOT print the params as text.
+        // ESC[38;5;200m sets a 256-colour index AND must NOT print the
+        // params as text.
         feed(&p, "\u{1B}[38;5;200mX")
         XCTAssertEqual(p.screen.line(0), "X")
-        XCTAssertEqual(p.screen.cells[0][0].attributes.fg, .default)
+        XCTAssertEqual(p.screen.cells[0][0].attributes.fg, .indexed(200))
     }
 
-    func test_SGR_truecolor_isConsumed_thenSubsequentSGRapplies() {
+    func test_SGR_256color_background_isApplied() {
         var p = parser()
-        // ESC[38;2;10;20;30;1m → truecolor (ignored) + bold (applied).
+        feed(&p, "\u{1B}[48;5;17mX")
+        XCTAssertEqual(p.screen.cells[0][0].attributes.bg, .indexed(17))
+    }
+
+    func test_SGR_truecolor_isApplied_thenSubsequentSGRapplies() {
+        var p = parser()
+        // ESC[38;2;10;20;30;1m → truecolor fg (applied) + bold (applied).
         feed(&p, "\u{1B}[38;2;10;20;30;1mX")
         XCTAssertEqual(p.screen.line(0), "X")
+        XCTAssertEqual(p.screen.cells[0][0].attributes.fg, .rgb(10, 20, 30))
         XCTAssertTrue(p.screen.cells[0][0].attributes.bold)
+    }
+
+    func test_SGR_truecolor_background_isApplied() {
+        var p = parser()
+        feed(&p, "\u{1B}[48;2;200;100;50mX")
+        XCTAssertEqual(p.screen.cells[0][0].attributes.bg, .rgb(200, 100, 50))
+    }
+
+    func test_SGR_256color_index_outOfRange_isClamped() {
+        var p = parser()
+        // 999 is out of the 0–255 byte range; clamp to 255 rather than trap.
+        feed(&p, "\u{1B}[38;5;999mX")
+        XCTAssertEqual(p.screen.cells[0][0].attributes.fg, .indexed(255))
     }
 
     // MARK: - Ignored / stripped sequences
