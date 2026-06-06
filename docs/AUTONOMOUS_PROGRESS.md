@@ -22,6 +22,22 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-05 (latest) — TSK-410 predicate evaluation FIXED
+- **`5e840b3` fix(highlight): evaluate tree-sitter query predicates** (TSK-410 → `fixed`).
+  `TreeSitterEngine.tokenize` now routes the query cursor through SwiftTreeSitter's
+  `resolve(with: Predicate.Context)` so `#match?`/`#eq?`/`#any-of?` are evaluated. The
+  textProvider returns each node's source slice; the default group-membership provider keeps
+  `#is-not? local` satisfied → **no currently-rendered capture is dropped**, only wrongly-firing
+  regex/eq captures are filtered. `const myThing = 5` → `myThing` is now `.variable` (was `.type`).
+  Fixes broad TS/JS identifier mis-coloring in the Source view + markdown code fences.
+- Caught a dependent test: the cpp smoke snippet (`std::vector<int> v;`) only ever produced a run
+  via the bug (`std` lowercase namespace_identifier wrongly matched `#match? "^[A-Z]"`). Restated
+  to `class C { auto x = nullptr; };` (real captures). Golden `testPredicatesAreEvaluated` added.
+  Headless gate green (3762). **Lesson:** a smoke that only asserts "produces runs" can silently
+  depend on buggy output — see LESSONS.
+- **Bonus:** predicate eval now UNBLOCKS JSX `@tag`/`@attribute` coloring for `.tsx` (the bogus
+  `@type` is filtered for lowercase tags) — a small follow-up could re-add a tsx-highlights query.
+
 ## LOG 2026-06-05 (late) — TSK-195 .tsx grammar landed + defect-pool exhausted
 - **`71586a5` feat(highlight): route `.tsx` through `tree_sitter_tsx`** (TSK-195 → `fixed`).
   Pure wiring — the tsx grammar already ships in `libTreeSitterTypeScriptLazy` (keepalive +
