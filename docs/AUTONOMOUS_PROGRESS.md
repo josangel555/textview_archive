@@ -317,6 +317,15 @@ SwiftUI-first progress, the next wave needs ONE of:
     CommandRegistry catalog test + `build-app.sh debug` smoke. ~1 focused session; the transforms +
     `TextToolVerb` dispatcher it builds on are already committed + tested.
 
+## LOG 2026-06-06 — TabBar.computedTabWidth coverage (static-func scan, 2/4)
+- **`a6fcb36` test(viewerui): TabBar.computedTabWidth was untested** (board TSK-428). The tab-strip
+  width math. 7 **relational** cases (no hardcoded private constants): positive/ordered bounds, the
+  `count==0` + non-positive-`available` div-by-zero guards (→ upper), sparse→upper, crowded→lower,
+  within-`[lower,upper]` over a grid, non-increasing as count grows, scale-linear at both
+  saturations. Test class `@MainActor` (TabBar is a View). Gate green.
+- Static-func scan candidate 2/4. Remaining: `DocumentModel.repoRelativePath` (path-under-root→nil),
+  `ContentView.categoryLabel`, `FileHistoryView.shortDate`.
+
 ## LOG 2026-06-06 — jsEscape (security) coverage; NEW scan axis = static helper functions
 - **`85db189` test(viewerui): MarkdownRenderedView.jsEscape was untested** (board TSK-427,
   `[SECURITY]`). The escaper turning a search string into a safe JS string literal for the
