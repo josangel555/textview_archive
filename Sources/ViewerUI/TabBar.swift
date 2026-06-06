@@ -115,6 +115,23 @@ struct TabBar: View {
                                 .frame(width: 1, height: model.uiSize(28))
                                 .accessibilityIdentifier("mdv.tab.divider")
                         }
+                        // TSK-261: the "+" sits BESIDE the last tab (inside the
+                        // scrolling content), not pinned at the far-right edge.
+                        // `computedTabWidth` still reserves ~32pt for it so it
+                        // stays visible beside the last tab until the strip
+                        // genuinely overflows.
+                        Button(action: { model.newTab() }) {
+                            Image(systemName: "plus")
+                                .font(.system(size: model.uiSize(11), weight: .medium))
+                                .frame(width: model.uiSize(24), height: model.uiSize(24))
+                        }
+                        // UX-H (#230): shared icon style for hover/press feedback.
+                        .buttonStyle(IconHoverButtonStyle())
+                        // 0c: uniform HelpInfo model — native tooltip + status-bar
+                        // description + a11y label/hint from one source.
+                        .helpInfo(title: "New Tab (⌘T)",
+                                  description: "Open a new empty tab in the current session")
+                        .padding(.horizontal, model.uiSize(4))
                     }
                 }
                 // item12a: keep the active tab visible. Fires on programmatic
@@ -126,19 +143,6 @@ struct TabBar: View {
                 }
                 .onAppear { scrollToSelected(proxy, animated: false) }
             }
-            Button(action: { model.newTab() }) {
-                Image(systemName: "plus")
-                    .font(.system(size: model.uiSize(11), weight: .medium))
-                    .frame(width: model.uiSize(24), height: model.uiSize(24))
-            }
-            // UX-H (#230): shared icon style for hover/press feedback.
-            .buttonStyle(IconHoverButtonStyle())
-            // 0c: migrated to the uniform HelpInfo model — native tooltip
-            // shows the title, the status bar shows the longer description
-            // on hover, and a11y label/hint are set from the same source.
-            .helpInfo(title: "New Tab (⌘T)",
-                      description: "Open a new empty tab in the current session")
-            .padding(.horizontal, model.uiSize(4))
         }
         .frame(height: model.uiSize(30))
         // Measure the strip's available width WITHOUT a wrapping

@@ -75,19 +75,21 @@ struct SessionTabBar: View {
                             Divider().frame(height: rowHeight - model.uiSize(12))
                         }
                     }
+                    // TSK-261: the "+" sits BESIDE the last session tab (inside
+                    // the scrolling content), not pinned at the far-right edge.
+                    Button(action: openNewSession) {
+                        Image(systemName: "plus")
+                            .font(.system(size: model.uiSize(11), weight: .medium))
+                            .frame(width: model.uiSize(24), height: model.uiSize(24))
+                    }
+                    .buttonStyle(IconHoverButtonStyle())
+                    .helpInfo(title: "New Session",
+                              description: "Open a folder in a new session")
+                    .padding(.horizontal, 4)
+                    .accessibilityIdentifier("mdv.sessionTab.new")
+                    .accessibilityLabel("Open Folder in New Session")
                 }
             }
-            Button(action: openNewSession) {
-                Image(systemName: "plus")
-                    .font(.system(size: model.uiSize(11), weight: .medium))
-                    .frame(width: model.uiSize(24), height: model.uiSize(24))
-            }
-            .buttonStyle(IconHoverButtonStyle())
-            .helpInfo(title: "New Session",
-                      description: "Open a folder in a new session")
-            .padding(.horizontal, 4)
-            .accessibilityIdentifier("mdv.sessionTab.new")
-            .accessibilityLabel("Open Folder in New Session")
         }
         .frame(height: rowHeight)
         .background(Palette.windowBackground)
