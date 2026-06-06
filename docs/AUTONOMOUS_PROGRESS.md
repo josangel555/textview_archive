@@ -317,6 +317,21 @@ SwiftUI-first progress, the next wave needs ONE of:
     CommandRegistry catalog test + `build-app.sh debug` smoke. ~1 focused session; the transforms +
     `TextToolVerb` dispatcher it builds on are already committed + tested.
 
+## LOG 2026-06-06 — jsEscape (security) coverage; NEW scan axis = static helper functions
+- **`85db189` test(viewerui): MarkdownRenderedView.jsEscape was untested** (board TSK-427,
+  `[SECURITY]`). The escaper turning a search string into a safe JS string literal for the
+  rendered-markdown find injection (`evaluateJavaScript`). 4 cases: quoted-literal shape, exact
+  round-trip through tricky inputs (quotes/backslash/newline/tab/emoji/empty/`</script>`),
+  `empty→""`, and the load-bearing **U+2028/U+2029 escaped-not-raw** contract (legal in JSON, fatal
+  in a JS literal) + still-round-trips. Needed `@MainActor` on the test class (jsEscape is
+  actor-isolated). Gate green.
+- **NEW productive scan axis: untested pure static FUNCTIONS** (not just types). The type-name scan
+  was thinning, but a `static func` scan of `Sources/ViewerUI` surfaced ~50 zero-test-ref helpers,
+  several with real logic. Remaining genuine candidates: `TabBar.computedTabWidth` (layout math,
+  count=0 / narrow / scale edges), `DocumentModel.repoRelativePath` (path-under-root → nil),
+  `ContentView.categoryLabel`, `FileHistoryView.shortDate`. So the pool is NOT dry — the func-scan
+  axis extends the runway. (Skip `private` funcs — unreachable even via @testable.)
+
 ## LOG 2026-06-06 — CMIndentation coverage; #315 confirmed already-covered
 - **`72fef7a` test(viewerui): CMIndentation was untested** (board TSK-426). 5 cases pinning the
   `size` clamp to [1,16] on both `tabs`/`spaces` arms (0/negative→1, 17/100/Int.max→16, in-range
