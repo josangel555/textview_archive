@@ -90,10 +90,50 @@ struct SessionTabBar: View {
                     .accessibilityLabel("Open Folder in New Session")
                 }
             }
+            // TSK-262: persistent trailing action icons pinned at the far
+            // right of the session-tab row — Settings, File search, Omni.
+            // (The "+" sits beside the last tab inside the scroll content;
+            // these are app-wide actions, so they stay pinned + always visible.)
+            HStack(spacing: model.uiSize(2)) {
+                sessionActionButton(symbol: "gearshape", title: "Settings",
+                                    help: "Open Settings",
+                                    id: "mdv.sessionTab.settings") {
+                    NSApp.sendAction(NSSelectorFromString("showSettings:"), to: nil, from: nil)
+                }
+                sessionActionButton(symbol: "magnifyingglass", title: "Search Files",
+                                    help: "Search across files in this session",
+                                    id: "mdv.sessionTab.search") {
+                    model.showCrossSearch()
+                }
+                sessionActionButton(symbol: "command", title: "Command Palette",
+                                    help: "Open the command palette",
+                                    id: "mdv.sessionTab.omni") {
+                    model.showPalette()
+                }
+            }
+            .padding(.horizontal, model.uiSize(4))
         }
         .frame(height: rowHeight)
         .background(Palette.windowBackground)
         .accessibilityIdentifier("mdv.sessionTabBar")
+    }
+
+    /// One pinned trailing action icon for the session-tab row (TSK-262).
+    /// Mirrors the `+` button's `IconHoverButtonStyle` + `helpInfo` styling.
+    @ViewBuilder
+    private func sessionActionButton(
+        symbol: String, title: String, help: String, id: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: model.uiSize(11), weight: .medium))
+                .frame(width: model.uiSize(24), height: model.uiSize(24))
+        }
+        .buttonStyle(IconHoverButtonStyle())
+        .helpInfo(title: title, description: help)
+        .accessibilityIdentifier(id)
+        .accessibilityLabel(title)
     }
 
     /// `+` button entry point. Rather than upfront-prompting via
