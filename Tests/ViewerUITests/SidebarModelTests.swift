@@ -429,6 +429,68 @@ final class SidebarModelTests: XCTestCase {
         XCTAssertEqual(third.map { $0.node.name }.last, "child.md")
     }
 
+    // MARK: - #298 — clearCache() must drop the flat-row memo
+
+    /// Regression for the deep-audit #298 desync: `flatVisibleRows()` is
+    /// memoized off `childrenCache`, so any code that clears the children
+    /// cache without also dropping the flat memo leaves a STALE flattened
+    /// tree on screen. `clearCache()` folds the memo drop in (it is the
+    /// only handle the git-checkout path — `DocumentModel`, which has no
+    /// access to the private `invalidateFlatCache()` — can reach).
+    ///
+    /// Mirrors the exact git branch-switch handler in `DocumentModel`
+    /// (`sidebar.clearCache()` with NO explicit re-`ensureLoaded` — the
+    /// tree re-reads lazily / via its FSEvents watcher). With no reload
+    /// between `clearCache()` and the next `flatVisibleRows()` read, the
+    /// memo drop folded into `clearCache()` is the ONLY thing preventing
+    /// the stale pre-checkout tree from being served. (Removing
+    /// `cachedFlatRows = nil` from `clearCache()` makes this fail; the
+    /// reload-driven paths don't catch it because `ensureLoaded` drops the
+    /// memo on its own.)
+    func test_clearCache_dropsFlatMemo_withoutReload() async throws {
+        let model = SidebarModel()
+        let dir = try mkdir("pkg")
+        try touch("pkg/old.md")
+        model.setRoot(tmpDir)
+        model.toggleExpansion(dir)
+        let before = model.flatVisibleNodes().map { $0.name }
+        XCTAssertTrue(before.contains("old.md"), "precondition: expanded child memoized")
+        XCTAssertTrue(before.contains("pkg"))
+
+        // The git-checkout path: clearCache() then read (no reload).
+        model.clearCache()
+        let after = model.flatVisibleNodes().map { $0.name }
+        XCTAssertFalse(after.contains("old.md"),
+                       "#298: stale flat memo served after clearCache() without a reload")
+        XCTAssertFalse(after.contains("pkg"),
+                       "#298: cleared children must not survive in the flattened tree")
+    }
+
+    /// The "show hidden" user toggle (`includeHidden` didSet → clearCache()
+    /// + reload of expanded dirs) must actually re-flatten: flipping it off
+    /// drops dotfiles from the rows, flipping on restores them. This pins
+    /// the toggle end-to-end (the memo is re-dropped on this path by
+    /// `ensureLoaded`'s own invalidation; see the no-reload test above for
+    /// the `clearCache()`-isolating assertion).
+    func test_includeHiddenToggle_reflattensRows() async throws {
+        let model = SidebarModel()
+        try touch("visible.md")
+        try touch(".hidden.md")
+        model.includeHidden = true
+        model.setRoot(tmpDir)
+        let shown = model.flatVisibleNodes().map { $0.name }
+        XCTAssertTrue(shown.contains(".hidden.md"), "precondition: hidden file visible")
+
+        model.includeHidden = false
+        let hiddenOff = model.flatVisibleNodes().map { $0.name }
+        XCTAssertFalse(hiddenOff.contains(".hidden.md"), "toggle off must drop the dotfile")
+        XCTAssertTrue(hiddenOff.contains("visible.md"))
+
+        model.includeHidden = true
+        XCTAssertTrue(model.flatVisibleNodes().map { $0.name }.contains(".hidden.md"),
+                      "toggle on must restore the dotfile")
+    }
+
     // MARK: - RWC-5 — childrenCache LRU prune
 
     /// Loading far more directories than the cache cap must (a) bound
