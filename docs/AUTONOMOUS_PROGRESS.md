@@ -29,6 +29,25 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+17) — TSK-262 session-tab action icons FIXED (Settings/Search/Omni)
+- Heartbeat firing — finishing the session/tab-strip UX cluster.
+- **TSK-262 (LANDED `3105935`):** the session-tab row ended at the `+` with no trailing action icons.
+  Added a pinned, right-aligned icon group on `SessionTabBar` (after the `ScrollView`, always visible):
+  `gearshape`→Settings, `magnifyingglass`→File search, `command`→Omni/Command Palette. All three wire to
+  EXISTING actions — `model.showCrossSearch()`, `model.showPalette()`, and Settings via
+  `NSApp.sendAction(NSSelectorFromString("showSettings:"), …)` (the established cross-module
+  responder-chain pattern already used in `ContentView` for `openDocument:`/`openFolder:`). No new deps.
+  Small `sessionActionButton` helper mirrors the `+` button's `IconHoverButtonStyle` + `helpInfo` + a11y.
+- **Validated:** headless gate green + live T4 ViewModeMatrix smoke green on the assembled bundle.
+- **UX latitude noted:** icon set + order (Settings, Search, Omni) follows the owner's illustrative
+  list; trivially reorderable. Human review→validated→done is the visual confirm.
+- **Session/tab-strip UX cluster COMPLETE:** TSK-268 (last-tab border) ✓, TSK-261/269 (`+` placement) ✓,
+  TSK-262 (action icons) ✓.
+- **Next:** `TSK-263` (source/editor line hover-highlight — bigger view feature: NSTextView mouse
+  tracking → hovered-line backdrop), `TSK-270` (file-open delay — needs profiling), `TSK-259`/`264`/`265`
+  (front picker / sessions options — vaguer, may need owner UX input → triage). Heartbeat re-queries
+  per TASK_WORKFLOW.md.
+
 ## LOG 2026-06-06 (latest+16) — TSK-261 "+" beside last tab FIXED (file + session bars); TSK-269 dup closed
 - Heartbeat firing. Board-driven SwiftUI work (continuing the tab-strip UX cluster after TSK-268).
 - **TSK-261 (LANDED `c72ed38`):** both `TabBar` (file tabs) and `SessionTabBar` pinned the `+` button
