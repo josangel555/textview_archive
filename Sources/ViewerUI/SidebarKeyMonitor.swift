@@ -1,11 +1,19 @@
 import AppKit
 import SwiftUI
 
+/// Marker for custom `NSView`s that consume raw key events (Return / arrows)
+/// themselves and must NOT have those keys stolen by the app-wide sidebar key
+/// monitor. `NSText` subclasses are already exempt (text editing); this covers
+/// non-`NSText` focusable views like the embedded terminal grid, whose Return
+/// must reach the PTY rather than driving sidebar navigation.
+protocol SidebarKeyMonitorExempt: AnyObject {}
+
 /// Installs an NSEvent local monitor for arrow / Enter keys while the sidebar
 /// is visible. The monitor only intercepts when the key window's first
 /// responder is **not** a text-editing view (NSTextView, NSSearchField,
-/// NSTextField) — that way users can still type and use cursor keys inside
-/// the command palette, NSTextView source pane, etc. (CRIT-6.)
+/// NSTextField) AND not a `SidebarKeyMonitorExempt` view (e.g. the terminal) —
+/// that way users can still type and use cursor keys inside the command
+/// palette, NSTextView source pane, the terminal, etc. (CRIT-6.)
 struct SidebarKeyMonitor: NSViewRepresentable {
     let isActive: Bool
     let handle: (Key) -> Bool
@@ -92,7 +100,10 @@ struct SidebarKeyMonitor: NSViewRepresentable {
         /// AppKit contract; declare it explicitly so the checker agrees.
         @MainActor
         private static func shouldYieldToFirstResponder() -> Bool {
-            NSApp.keyWindow?.firstResponder is NSText
+            let fr = NSApp.keyWindow?.firstResponder
+            // Text editors (NSTextView / field editor) AND custom raw-key views
+            // (the terminal grid) own their key events — don't steal Return/arrows.
+            return fr is NSText || fr is SidebarKeyMonitorExempt
         }
 
         deinit {

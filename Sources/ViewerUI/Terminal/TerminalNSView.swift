@@ -18,7 +18,7 @@ import ViewerCore
 /// terminal bytes via `TerminalKeyEncoder` (pure logic) and writes them
 /// to the PTY. `insertText`/IME paths route plain text through the same
 /// encoder.
-final class TerminalNSView: NSView {
+final class TerminalNSView: NSView, SidebarKeyMonitorExempt {
     /// Callback the view uses to push input bytes to the PTY. Set by the
     /// representable's coordinator. Off the SwiftUI body path.
     var onInput: ((Data) -> Void)?
