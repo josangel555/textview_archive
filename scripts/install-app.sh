@@ -40,7 +40,14 @@ echo "==> Installing $SRC_APP → $DEST_APP"
 /usr/bin/killall MarkdownViewer 2>/dev/null || true
 sleep 0.3
 rm -rf "$DEST_APP"
-cp -R "$SRC_APP" "$DEST_APP"
+# `ditto --noextattr` (not `cp -R`) so any com.apple.FinderInfo /
+# com.apple.fileprovider.fpfs#P the iCloud file provider stamped onto dist/
+# (the repo lives under ~/Documents) does NOT ride into /Applications. Those
+# xattrs don't break launch but DO trip `codesign --verify --strict`. Stripping
+# them on the copy keeps the installed bundle clean; /Applications isn't
+# file-provider-synced, so nothing re-adds them. The code signature lives in
+# file contents (_CodeSignature + Mach-O), not xattrs, so it survives. (TSK-449)
+ditto --noextattr --noqtn "$SRC_APP" "$DEST_APP"
 # Sweep up the pre-rename bundle so Spotlight + Open With don't show
 # two entries with the same identifier.
 if [[ -d "$LEGACY_DEST" ]]; then

@@ -186,15 +186,17 @@ if [[ "$HAS_LOCAL_IDENTITY" == "1" ]]; then
   # belt-and-suspenders: `strip` (above) adds FinderInfo back to the
   # binary, and certain cp paths preserve FinderInfo on nested files.
   chmod -R u+w "$APP_DIR"
-  TMP_CLEAN="${APP_DIR}.clean.$$"
-  ditto --norsrc --noextattr --noacl --noqtn "$APP_DIR" "$TMP_CLEAN"
-  rm -rf "$APP_DIR"
-  mv "$TMP_CLEAN" "$APP_DIR"
-  # Final sweep: recursive `xattr -dr` for FinderInfo. The xargs/find
-  # combo silently failed for the root bundle path (xargs's quoting +
-  # xattr exit codes don't play well together); `xattr -dr` does it
-  # in one call and is idempotent.
-  xattr -dr com.apple.FinderInfo "$APP_DIR" 2>/dev/null || true
+  # Clean + sign in a NON-synced TMPDIR, never a sibling of $APP_DIR. If the repo
+  # lives under an iCloud/Dropbox-synced tree (e.g. ~/Documents), the file
+  # provider re-stamps com.apple.FinderInfo / com.apple.fileprovider.fpfs#P onto
+  # the resource bundles in REAL TIME, racing `codesign --options runtime` (which
+  # rejects any detritus) — an intermittent "resource fork ... not allowed"
+  # failure on an unchanged tree. /private/tmp is not file-provider-synced, so the
+  # cleaned tree stays clean through the sign. (LESSONS 2026-06-06; TSK-449.)
+  SIGN_TMP="$(mktemp -d "${TMPDIR:-/private/tmp}/mdv-sign.XXXXXX")"
+  SIGN_STAGE="$SIGN_TMP/$(basename "$APP_DIR")"
+  ditto --norsrc --noextattr --noacl --noqtn "$APP_DIR" "$SIGN_STAGE"
+  xattr -cr "$SIGN_STAGE" 2>/dev/null || true
   # Single `--deep` pass signs the executable + all nested dylibs
   # (Contents/Frameworks/*.dylib) and SwiftPM resource bundles
   # (Contents/Resources/*.bundle) in one go. We deliberately do NOT
@@ -217,7 +219,13 @@ if [[ "$HAS_LOCAL_IDENTITY" == "1" ]]; then
     --sign "$SIGN_IDENTITY" \
     --options runtime \
     --timestamp=none \
-    "$APP_DIR" >/dev/null
+    "$SIGN_STAGE" >/dev/null
+  # Swap the signed, clean bundle back into place. dist/ may be re-stamped by the
+  # file provider afterward, but xattrs added AFTER signing neither invalidate the
+  # signature nor block launch — only codesign-time --options runtime rejects them.
+  rm -rf "$APP_DIR"
+  ditto "$SIGN_STAGE" "$APP_DIR"
+  rm -rf "$SIGN_TMP"
 else
   echo "==> No local signing identity; falling back to ad-hoc"
   echo "    (TCC will re-prompt on every rebuild — fix with"
