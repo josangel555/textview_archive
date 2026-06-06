@@ -24,30 +24,37 @@ public struct SettingsView: View {
     }
 
     public var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                appearanceSection
-                Divider()
-                editorSection
-                Divider()
-                viewerSection
-                Divider()
-                privacySection
-                Divider()
-                pluginsSection
-                Divider()
-                lspSection
-                Divider()
-                advancedSection
+        // NavigationStack so sub-pages (Plugins, LSP Diagnostics) push in-place
+        // with a native back button instead of opening detached windows the
+        // user can't navigate back from.
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    appearanceSection
+                    Divider()
+                    editorSection
+                    Divider()
+                    viewerSection
+                    Divider()
+                    privacySection
+                    Divider()
+                    pluginsSection
+                    Divider()
+                    lspSection
+                    Divider()
+                    advancedSection
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(20)
+            .navigationTitle("Settings")
         }
-        .frame(width: 460, height: 540)
+        // Resizable window: open at a size that fits the content, but let the
+        // user grow it (styleMask gets `.resizable` in SettingsWindowController)
+        // and scroll when smaller. A hard fixed frame previously clipped rows.
+        .frame(minWidth: 500, idealWidth: 560, maxWidth: .infinity,
+               minHeight: 480, idealHeight: 720, maxHeight: .infinity)
     }
-
-    @State private var pluginsWindow: NSWindow?
-
-    @State private var lspDiagnosticsWindow: NSWindow?
 
     /// Drives the "Clear all bookmarks" confirmation. Clearing is
     /// destructive and irreversible, so we gate it behind a dialog with
@@ -57,40 +64,25 @@ public struct SettingsView: View {
     private var lspSection: some View {
         section("Language servers (LSP)") {
             row("Diagnostics") {
-                Button("Open Diagnostics…") { openLSPDiagnosticsWindow() }
+                NavigationLink("Open Diagnostics…") {
+                    LSPDiagnosticsView(pool: model.lspPool)
+                        .navigationTitle("LSP Diagnostics")
+                }
             }
-            Text("Per-language LSP servers spawn on first hover / outline request and reap after 5 minutes idle. The diagnostics window shows live state.")
+            Text("Per-language LSP servers spawn on first hover / outline request and reap after 5 minutes idle. The diagnostics page shows live state.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .padding(.leading, 4)
         }
     }
 
-    private func openLSPDiagnosticsWindow() {
-        if let w = lspDiagnosticsWindow {
-            w.makeKeyAndOrderFront(nil)
-            return
-        }
-        let host = NSHostingController(
-            rootView: LSPDiagnosticsView(pool: model.lspPool)
-        )
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 420),
-            styleMask: [.titled, .closable, .resizable, .miniaturizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "LSP Diagnostics"
-        window.contentViewController = host
-        window.center()
-        window.makeKeyAndOrderFront(nil)
-        lspDiagnosticsWindow = window
-    }
-
     private var pluginsSection: some View {
         section("Plugins") {
             row("Manage installed plugins") {
-                Button("Manage…") { openPluginsWindow() }
+                NavigationLink("Manage…") {
+                    PluginsSettingsView()
+                        .navigationTitle("Plugins")
+                }
             }
             row("Audit log") {
                 Button("Open Log") {
@@ -104,21 +96,6 @@ public struct SettingsView: View {
                 .foregroundStyle(.secondary)
                 .padding(.leading, 4)
         }
-    }
-
-    private func openPluginsWindow() {
-        if let w = pluginsWindow {
-            w.makeKeyAndOrderFront(nil)
-            return
-        }
-        let hosting = NSHostingController(rootView: PluginsSettingsView())
-        let w = NSWindow(contentViewController: hosting)
-        w.title = "Plugins"
-        w.styleMask = [.titled, .closable, .miniaturizable]
-        w.isReleasedWhenClosed = false
-        w.center()
-        w.makeKeyAndOrderFront(nil)
-        pluginsWindow = w
     }
 
     private var appearanceSection: some View {
@@ -329,7 +306,7 @@ public final class SettingsWindowController {
         let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
             ?? "TextView"
         win.title = "\(appName) Settings"
-        win.styleMask = [.titled, .closable, .miniaturizable]
+        win.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         win.isReleasedWhenClosed = false
         win.center()
         win.makeKeyAndOrderFront(nil)
