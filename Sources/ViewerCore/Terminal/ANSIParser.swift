@@ -20,12 +20,15 @@ import Foundation
 ///     un-bold(22), un-underline(24), un-inverse(27), fg 30–37 / 90–97,
 ///     bg 40–47 / 100–107, default fg(39) / bg(49), 256-colour
 ///     (`38;5;n` / `48;5;n`), and truecolor (`38;2;r;g;b` / `48;2;…`).
+///   • DEC private alternate-screen toggles `ESC[?1049h/l`, `?1047h/l`,
+///     `?47h/l` → `TerminalScreen.enterAltScreen()`/`exitAltScreen()`
+///     (`top`/`vim`/`less` render on a throwaway buffer; scrollback intact).
 ///
 ///   PARSED-THEN-IGNORED (consumed so they don't garble the grid, but
 ///   produce no screen change)
 ///   ──────────────────────────────────────────────────────────────────
-///   • DEC private modes `ESC[?…h` / `ESC[?…l` (cursor visibility,
-///     bracketed paste, alt-screen, mouse tracking, …).
+///   • Other DEC private modes `ESC[?…h` / `ESC[?…l` (cursor visibility,
+///     bracketed paste, mouse tracking, …).
 ///   • Other unrecognised CSI final bytes, and any unrecognised
 ///     intermediate.
 ///   • OSC sequences `ESC]…BEL` / `ESC]…ST` (window-title sets, etc.) —
@@ -246,11 +249,13 @@ public struct ANSIParser: Sendable {
     }
 
     private mutating func dispatchCSI(final: UInt8, raw: [UInt8]) {
-        // DEC private sequences start with '?' (0x3F). We parse-and-ignore
-        // all of them (cursor show/hide, alt-screen, bracketed paste,
-        // mouse modes) — none change the grid in our v1 model.
-        let isPrivate = raw.first == 0x3F
-        if isPrivate { return }
+        // DEC private sequences start with '?' (0x3F). We ACT on the
+        // alternate-screen toggles (1049/1047/47) and parse-and-ignore the
+        // rest (cursor show/hide, bracketed paste, mouse modes).
+        if raw.first == 0x3F {
+            handlePrivateMode(raw: raw, final: final)
+            return
+        }
 
         let params = parseParams(raw)
         let ch = Character(UnicodeScalar(final))
@@ -295,6 +300,25 @@ public struct ANSIParser: Sendable {
             // Unrecognised final byte (DCH/ICH/IL/DL/cursor-save/etc.) —
             // parse-and-ignore so it never garbles the grid.
             break
+        }
+    }
+
+    /// DEC private modes (`ESC[?…h` set / `ESC[?…l` reset). We act on the
+    /// alternate-screen toggles (1049 / 1047 / 47) so full-screen apps
+    /// (`top`/`vim`/`less`) render on a throwaway buffer and never churn the
+    /// user's scrollback (the `top` "constant scroll" report). Every other
+    /// private mode (cursor visibility, bracketed paste, mouse tracking) is
+    /// still parse-and-ignored.
+    private mutating func handlePrivateMode(raw: [UInt8], final: UInt8) {
+        guard final == 0x68 || final == 0x6C else { return }   // 'h' set / 'l' reset
+        let enable = (final == 0x68)
+        for case let mode? in parseParams(raw) {
+            switch mode {
+            case 47, 1047, 1049:
+                if enable { screen.enterAltScreen() } else { screen.exitAltScreen() }
+            default:
+                break
+            }
         }
     }
 

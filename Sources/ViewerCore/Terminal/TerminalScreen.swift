@@ -19,11 +19,14 @@ public struct TerminalCursor: Sendable, Equatable {
 /// left column). VT/ANSI escape sequences are 1-based; the parser does
 /// the −1 conversion before calling in here.
 ///
-/// Out of scope for v1: alternate screen buffer, scroll-region
-/// (DECSTBM), wide-char column accounting, scrollback history. The grid
-/// is exactly `rows × cols`; content scrolled off the top is discarded
-/// (a real shell mostly works fine against this — `less`/`vim` that use
-/// the alt-screen will be imperfect, which is the documented v1 gap).
+/// Out of scope: scroll-region (DECSTBM) and wide-char (CJK / emoji)
+/// column accounting. The alternate screen buffer (DEC private modes
+/// 1049 / 1047 / 47, used by `top` / `vim` / `less`) and bounded
+/// scrollback history ARE modelled — see `enterAltScreen` /
+/// `exitAltScreen` and `scrollback`. Entering the alt screen preserves
+/// the main grid + scrollback + cursor + pen and restores them on exit,
+/// so a full-screen app never churns the user's scrollback (the cause of
+/// the `top` "constant scroll" report).
 public struct TerminalScreen: Sendable, Equatable {
     public private(set) var rows: Int
     public private(set) var cols: Int
@@ -49,6 +52,22 @@ public struct TerminalScreen: Sendable, Equatable {
 
     /// The pen — current SGR attributes stamped onto written cells.
     public var pen: CellAttributes = .default
+
+    /// True while the alternate screen buffer is active (DEC private modes
+    /// 1049 / 1047 / 47 — `top` / `vim` / `less`). The alt buffer has NO
+    /// scrollback and is discarded on exit; the saved main state is restored.
+    public private(set) var inAltScreen: Bool = false
+
+    /// Saved main-screen state, captured on `enterAltScreen` and restored on
+    /// `exitAltScreen`. `nil` while on the main screen.
+    private var savedMain: SavedBuffer?
+
+    private struct SavedBuffer: Sendable, Equatable {
+        var cells: [[TerminalCell]]
+        var cursor: TerminalCursor
+        var scrollback: [[TerminalCell]]
+        var pen: CellAttributes
+    }
 
     public init(rows: Int, cols: Int) {
         let r = max(1, rows)
@@ -90,20 +109,38 @@ public struct TerminalScreen: Sendable, Equatable {
         let r = max(1, newRows)
         let c = max(1, newCols)
         guard r != rows || c != cols else { return }
-        var grid = Array(
-            repeating: Array(repeating: TerminalCell.blank, count: c),
-            count: r
-        )
-        for row in 0..<min(r, rows) {
-            for col in 0..<min(c, cols) {
-                grid[row][col] = cells[row][col]
-            }
+        cells = Self.resizedGrid(cells, fromRows: rows, fromCols: cols, toRows: r, toCols: c)
+        // Keep the saved (inactive) main buffer in sync so exiting the alt
+        // screen after a resize restores at the CURRENT geometry, not the
+        // stale pre-resize one.
+        if var saved = savedMain {
+            saved.cells = Self.resizedGrid(saved.cells, fromRows: rows, fromCols: cols,
+                                           toRows: r, toCols: c)
+            saved.cursor.row = min(saved.cursor.row, r - 1)
+            saved.cursor.col = min(saved.cursor.col, c - 1)
+            savedMain = saved
         }
         rows = r
         cols = c
-        cells = grid
         cursor.row = min(cursor.row, r - 1)
         cursor.col = min(cursor.col, c - 1)
+    }
+
+    /// Top-left-anchored grid resize, preserving as much content as fits.
+    private static func resizedGrid(_ grid: [[TerminalCell]],
+                                    fromRows: Int, fromCols: Int,
+                                    toRows: Int, toCols: Int) -> [[TerminalCell]] {
+        var out = blankGrid(rows: toRows, cols: toCols)
+        for row in 0..<min(toRows, fromRows) {
+            for col in 0..<min(toCols, fromCols) {
+                out[row][col] = grid[row][col]
+            }
+        }
+        return out
+    }
+
+    private static func blankGrid(rows: Int, cols: Int) -> [[TerminalCell]] {
+        Array(repeating: Array(repeating: TerminalCell.blank, count: cols), count: rows)
     }
 
     // MARK: - Cursor movement (all clamp to the grid)
@@ -216,20 +253,55 @@ public struct TerminalScreen: Sendable, Equatable {
     public mutating func scrollUp(_ n: Int) {
         let count = min(max(0, n), rows)
         guard count > 0 else { return }
-        // Retain the evicted top lines as scrollback. Trim in BATCHES (only
-        // once the buffer overflows the cap by `scrollbackSlack`) — a
-        // per-line `removeFirst(1)` is an O(maxScrollback) memmove on every
-        // scrolled line, which dominates under bulk output (build logs,
-        // `cat`). Batching amortizes it to ~O(maxScrollback / slack)/line.
-        scrollback.append(contentsOf: cells[0..<count])
-        if scrollback.count > Self.maxScrollback + Self.scrollbackSlack {
-            scrollback.removeFirst(scrollback.count - Self.maxScrollback)
+        // The alternate screen has NO scrollback — full-screen apps
+        // (`top`/`vim`/`less`) that scroll inside it must not push lines into
+        // the user's history (that was the perceived "constant scroll").
+        if !inAltScreen {
+            // Retain the evicted top lines as scrollback. Trim in BATCHES
+            // (only once the buffer overflows the cap by `scrollbackSlack`) —
+            // a per-line `removeFirst(1)` is an O(maxScrollback) memmove on
+            // every scrolled line, which dominates under bulk output (build
+            // logs, `cat`). Batching amortizes it to ~O(maxScrollback/slack)/line.
+            scrollback.append(contentsOf: cells[0..<count])
+            if scrollback.count > Self.maxScrollback + Self.scrollbackSlack {
+                scrollback.removeFirst(scrollback.count - Self.maxScrollback)
+            }
         }
         cells.removeFirst(count)
-        cells.append(contentsOf: Array(
-            repeating: Array(repeating: TerminalCell.blank, count: cols),
-            count: count
-        ))
+        cells.append(contentsOf: Self.blankGrid(rows: count, cols: cols))
+    }
+
+    // MARK: - Alternate screen buffer (DEC 1049 / 1047 / 47)
+
+    /// Enter the alternate screen buffer. Saves the main grid, scrollback,
+    /// cursor, and pen; swaps in a fresh blank buffer with no scrollback and
+    /// homes the cursor. Idempotent (a second enter while already in alt is a
+    /// no-op, so the saved main state is never clobbered). Driven by DECSET
+    /// 1049h / 1047h / 47h from the parser.
+    public mutating func enterAltScreen() {
+        guard !inAltScreen else { return }
+        savedMain = SavedBuffer(cells: cells, cursor: cursor,
+                                scrollback: scrollback, pen: pen)
+        inAltScreen = true
+        cells = Self.blankGrid(rows: rows, cols: cols)
+        scrollback = []
+        cursor = TerminalCursor()
+        pen = .default
+    }
+
+    /// Exit the alternate screen buffer, restoring the saved main grid,
+    /// scrollback, cursor, and pen. Idempotent (no-op when not in alt). The
+    /// restored cursor is clamped to the current geometry. Driven by DECRST
+    /// 1049l / 1047l / 47l from the parser.
+    public mutating func exitAltScreen() {
+        guard inAltScreen, let saved = savedMain else { return }
+        inAltScreen = false
+        cells = saved.cells
+        scrollback = saved.scrollback
+        pen = saved.pen
+        cursor = TerminalCursor(row: clampRow(saved.cursor.row),
+                                col: clampCol(saved.cursor.col))
+        savedMain = nil
     }
 
     // MARK: - Scrollback viewport
