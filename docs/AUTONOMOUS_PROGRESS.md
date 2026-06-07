@@ -29,6 +29,23 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-07 (latest+41) — verify-first: TSK-296 + TSK-285 already-fixed (security/leak)
+
+Two more full-read verifications, both genuinely remediated — no code change:
+- **TSK-296** (FileWatcher reattach races stop → source+fd leak): `attach()` sets an fd-closing cancel
+  handler and re-checks `_stopped` under the lock after resuming; if stop() raced, it cancels the new
+  source and bails (FW-S3). No leak.
+- **TSK-285** (path validators standardize but don't resolve symlinks → HOME escape): `URLSchemePolicy`
+  (link-nav jail) resolves symlinks on BOTH candidate and HOME/temp roots, with an AUDIT-S3 comment on
+  the exact `~/link->/etc` escape; MCPToolCatalog/WalkthroughLoader likewise.
+Running tally ~15/17 sampled already-fixed; 1 genuine (TSK-293/279). The codebase's security posture is
+confirmed strong on the sampled paths. **Plan shift for idle heartbeats:** sampling more
+already-fixed audit items is low-EV (1-in-~16 real). Next input-bound firing I'll instead *prep a live
+feature* so it's execute-ready when the VM opens — building the headless-testable core of TSK-466's
+per-tab fold pipeline (compute off-main → store → invalidate-on-edit → pass at ContentView:570), model
+layer fully unit-tested, leaving only the WebView render for VM validation. Higher forward value than
+continued hygiene. Structural blocker unchanged (latest+37 DECISIONS NEEDED).
+
 ## LOG 2026-06-07 (latest+40) — verify-first sweep: TSK-305 + TSK-307 already-fixed
 
 Continued verify-first on un-sampled concrete bugs (after latest+39 found a real one). Both this
