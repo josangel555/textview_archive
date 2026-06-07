@@ -80,8 +80,8 @@ SwiftUI triggers + visual affordance (live/VM-validated) behind it.
 **Recommendation: A.** It's the safe default, needs zero codec surgery (omit the flag), and
 respects the app's persistence-first identity. The owner can upgrade to C later additively.
 
-Until the owner rules, Phase 1 will assume **A** (it's the zero-risk default and doesn't
-foreclose B/C).
+**RESOLVED — owner confirmed A (2026-06-07).** Preview tabs promote-on-save. Already realized
+(the flag isn't in `TabSnapshot`); Phase 2 proceeds with no model change.
 
 ## 5. Risks / notes
 - Single-vs-double-click on a SwiftUI `List` row is historically finicky on macOS; budget

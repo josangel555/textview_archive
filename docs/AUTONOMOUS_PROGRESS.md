@@ -51,11 +51,16 @@ Did BOTH a Task-Breakdown and shipped the host-testable foundation (not doc-only
 - NOT installed this firing — the model core is additive + unwired (no user-visible change yet); Phase
   2 (sidebar triggers, live) + Phase 3 (italic affordance, VM-visual) follow.
 
-### DECISION NEEDED (owner) — preview-tab persistence (TSK-306)
-When the app relaunches / a session saves, what happens to an ephemeral preview tab? **(A, recommended)
-promote-on-save** — persist it as a normal tab (zero-risk, already realized by not encoding the flag);
-(B) drop it (pure VSCode); (C) persist as preview (most work). Proceeding on **A** for Phase 2; only a
-switch to B/C needs your call. See `docs/PREVIEW_TAB_DESIGN.md` §4.
+### DECISION RESOLVED (owner, 2026-06-07) — preview-tab persistence (TSK-306)
+Owner confirmed **A (promote-on-save)** — preview tabs persist as normal tabs across relaunch.
+Already realized (flag not in `TabSnapshot`); Phase 2 proceeds with no model change.
+
+> **TOOLING (owner, 2026-06-07): the `tasked` board is now first-class MCP tools** (`mcp__tasked__*`).
+> Use those, NOT `python3 /tmp/board.py` (deprecated). Notes: `task_advance` auto-walks lanes in one
+> call (supply understanding/note/summary); `task_park` is the first-class owner-decision gate (replaces
+> hand-appending here); agents *can* now reach validated/done via `task_validate` WITH hard-artifact
+> proof — but per the standing mandate keep stopping at `fixed`/`review` and let the human gate unless
+> told otherwise.
 
 ## LOG 2026-06-07 (latest+45) — TSK-299: Insert Date & Time editor command
 
