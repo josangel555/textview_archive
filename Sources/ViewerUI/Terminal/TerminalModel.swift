@@ -90,7 +90,9 @@ public final class TerminalModel: ObservableObject {
 
     private let pty = PTYProcess()
     private let box: TerminalParserBox
-    private var bumpScheduled = false
+    /// Leading-edge throttle: first output after an idle gap paints
+    /// immediately; subsequent output within a frame is coalesced.
+    private var throttle = FrameThrottle()
     private static let coalesceInterval: TimeInterval = 1.0 / 60.0
 
     public init(rows: Int = 24, cols: Int = 80) {
@@ -164,15 +166,29 @@ public final class TerminalModel: ObservableObject {
 
     // MARK: - Throttled UI bump
 
-    /// Coalesce UI bumps to one per frame. Safe to call from any context;
-    /// hops to the main actor and de-dupes via `bumpScheduled`.
+    /// Coalesce UI bumps. LEADING-EDGE: the first bump after an idle gap
+    /// fires IMMEDIATELY (no added latency — what makes interactive typing
+    /// feel instant), then a `coalesceInterval` cooldown throttles the
+    /// burst that follows and a single trailing bump flushes whatever
+    /// arrived during the cooldown. The previous purely trailing throttle
+    /// delayed EVERY keystroke echo by a full frame even when the terminal
+    /// had been idle — the "typing is slow" report. Safe to call from any
+    /// context; hops to the main actor.
     private nonisolated func scheduleBump() {
         Task { @MainActor [weak self] in
-            guard let self, !self.bumpScheduled else { return }
-            self.bumpScheduled = true
+            guard let self else { return }
+            if self.throttle.requestFrame() == .emitNow { self.emitBump() }
+        }
+    }
+
+    /// Bump `version` now and open a cooldown window; when it closes, flush
+    /// one trailing bump if more output landed meanwhile. MainActor-confined.
+    private func emitBump() {
+        version &+= 1
+        Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(Self.coalesceInterval * 1_000_000_000))
-            self.bumpScheduled = false
-            self.version &+= 1
+            guard let self else { return }
+            if self.throttle.cooldownElapsed() { self.emitBump() }
         }
     }
 }

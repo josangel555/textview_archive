@@ -15,18 +15,36 @@ import ViewerCore
 enum TerminalPalette {
     /// Foreground/background swatch for a `TerminalColor`, or `nil` for
     /// `.default` (caller uses its own default fg/bg).
+    ///
+    /// PERF: the 256 palette entries (`.ansi`/`.indexed`) resolve to a
+    /// shared, precomputed `NSColor` — the terminal draw path calls this
+    /// twice per attribute-run per frame, and a heavily-coloured prompt has
+    /// dozens of runs, so allocating a fresh `NSColor` each time was real
+    /// per-frame churn. Only truecolor (`.rgb`, rare) still allocates.
     static func nsColor(_ c: TerminalColor) -> NSColor? {
         switch c {
         case .default:
             return nil
         case .ansi(let n):
-            return ansiColor(n)
+            return palette256[Int(n)]
         case .indexed(let n):
-            return indexedColor(n)
+            return palette256[Int(n)]
         case .rgb(let r, let g, let b):
             return NSColor(srgbRed: CGFloat(r) / 255, green: CGFloat(g) / 255,
                            blue: CGFloat(b) / 255, alpha: 1)
         }
+    }
+
+    /// The full xterm-256 palette, resolved once. Indices 0–15 are the
+    /// tuned 16-colour palette, 16–231 the 6×6×6 cube, 232–255 the
+    /// greyscale ramp — `.ansi(0...15)` and `.indexed(0...255)` both index
+    /// straight into it. `NSColor` is immutable, so sharing instances
+    /// across draws (and threads) is safe.
+    private static let palette256: [NSColor] = (0...255).map { n in
+        // `indexedColor` is total over 0...255 (it routes 0–15 to the tuned
+        // `ansiColor`), and never returns nil for those — the `?? clear`
+        // is a belt-and-braces fallback that can't actually fire.
+        indexedColor(UInt8(n)) ?? .clear
     }
 
     /// The tuned 16-colour palette (8 base + 8 bright).
