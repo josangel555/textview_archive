@@ -139,12 +139,21 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
     func update(screen: TerminalScreen, fontSize: CGFloat) {
         var changed = false
         if self.fontSize != fontSize { self.fontSize = fontSize; changed = true }
+        let oldScrollback = self.screen.scrollback.count
         if self.screen != screen { self.screen = screen; changed = true }
-        // Keep the viewport valid as scrollback grows/shrinks. Following
-        // the live bottom (offset 0) is the steady state; a held scroll
-        // position is preserved but clamped into range.
-        let maxOff = self.screen.scrollback.count
-        if scrollOffset > maxOff { scrollOffset = maxOff; changed = true }
+        let newScrollback = self.screen.scrollback.count
+        // While scrolled up (reading history), new shell output that pushes
+        // lines into scrollback would otherwise slide the "frozen" view —
+        // and drag a held selection off its content. Advance the offset by
+        // the same growth so the viewport stays pinned to what the user is
+        // reading (capped at the buffer; at the cap the oldest line is
+        // genuinely evicted and can't be pinned).
+        if scrollOffset > 0, newScrollback > oldScrollback {
+            scrollOffset = min(scrollOffset + (newScrollback - oldScrollback), newScrollback)
+            changed = true
+        }
+        // Keep the viewport valid as scrollback shrinks (resize/reset).
+        if scrollOffset > newScrollback { scrollOffset = newScrollback; changed = true }
         if changed { needsDisplay = true }
     }
 
@@ -376,9 +385,7 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
     @objc func copy(_ sender: Any?) {
         guard let text = selection?.selectedText(fromRows: displayRows, cols: screen.cols),
               !text.isEmpty else { return }
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.setString(text, forType: .string)
+        Pasteboard.copy(text)
     }
 
     @objc func paste(_ sender: Any?) {
@@ -389,6 +396,9 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
     }
 
     @objc override func selectAll(_ sender: Any?) {
+        // Snap to the live grid first so "Select All" copies the on-screen
+        // buffer rather than whatever scrollback window happens to show.
+        snapToBottom()
         selection = TerminalSelection.all(rows: screen.rows, cols: screen.cols)
         needsDisplay = true
     }
