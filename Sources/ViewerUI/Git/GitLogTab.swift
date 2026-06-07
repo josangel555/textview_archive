@@ -93,7 +93,7 @@ struct GitLogTab: View {
                                 .foregroundStyle(Color.accentColor)
                         }
                         Spacer(minLength: 4)
-                        Text(relativeTime(c.timestamp))
+                        Text(GitRelativeTime.format(unix: c.timestamp))
                             .font(.system(size: doc.uiSize(9)))
                             .foregroundStyle(.tertiary)
                     }

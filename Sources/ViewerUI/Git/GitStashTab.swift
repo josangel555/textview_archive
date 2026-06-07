@@ -44,7 +44,7 @@ struct GitStashTab: View {
                     .font(.system(size: doc.uiSize(11), design: .monospaced))
                     .foregroundStyle(Color.accentColor)
                 Spacer(minLength: 4)
-                Text(relativeTime(s.timestamp))
+                Text(GitRelativeTime.format(unix: s.timestamp))
                     .font(.system(size: doc.uiSize(9)))
                     .foregroundStyle(.tertiary)
             }
@@ -106,17 +106,6 @@ struct GitStashTab: View {
         doc.openInNewTab(out)
     }
 
-    private func relativeTime(_ unix: Int) -> String {
-        let then = Date(timeIntervalSince1970: TimeInterval(unix))
-        let diff = Date().timeIntervalSince(then)
-        switch diff {
-        case ..<60:        return "just now"
-        case ..<3600:      return "\(Int(diff / 60)) min ago"
-        case ..<86_400:    return "\(Int(diff / 3600)) h ago"
-        case ..<604_800:   return "yesterday"
-        default:           return "\(Int(diff / 604_800)) wk ago"
-        }
-    }
 }
 
 extension GitClient.StashEntry: Identifiable {
