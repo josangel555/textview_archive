@@ -334,6 +334,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
         installDiagnosticSignalHandler()
 
+        // Deterministic UI-scene control for the visual-test harness (TSK-492).
+        applyUISceneIfRequested()
+
         if diagnoseMode {
             runDiagnoseAndExit(forceSource: forceSource)
         }

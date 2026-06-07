@@ -164,6 +164,44 @@ extension AppDelegate {
         }
     }
 
+    /// Deterministic UI-scene control for the visual-test harness (TSK-492).
+    /// `MDV_UI_SCENE` drives the LIVE model into an EXACT state at launch so a
+    /// screenshot harness gets a reproducible frame WITHOUT fragile
+    /// `defaults`/AX — today's terminal-tabs debugging proved those
+    /// unreliable (persisted layout isn't honored under skip-restore; AX
+    /// keystrokes mis-route). Applied after a short delay so it is the LAST
+    /// word over session bootstrap + file open. The app stays running; an
+    /// external capture (`scripts/ui-snapshot.sh`) screenshots the window by
+    /// id, evaluates pixels, then reaps the instance.
+    ///
+    /// Scenes (extend the catalog as features land):
+    ///   terminal[-left|-top|-right][-<N>]
+    ///       Open the bottom terminal, place the tab strip (default left),
+    ///       seed N tabs (default 2), tall enough that the rail is visible.
+    func applyUISceneIfRequested() {
+        let env = ProcessInfo.processInfo.environment
+        guard let scene = env["MDV_UI_SCENE"]?.lowercased(), !scene.isEmpty else { return }
+        let delay = Double(env["MDV_UI_SCENE_DELAY"] ?? "") ?? 0.6
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            let parts = scene.split(separator: "-").map(String.init)
+            guard parts.first == "terminal" else {
+                FileHandle.standardError.write(Data("ui-scene: unknown scene '\(scene)'\n".utf8))
+                return
+            }
+            let pane = self.model.terminalPane
+            pane.setOpen(true)                      // open FIRST so height applies to the live pane
+            if parts.contains("top") { pane.setTabPosition(.top) }
+            else if parts.contains("right") { pane.setTabPosition(.right) }
+            else { pane.setTabPosition(.left) }
+            pane.setHeight(320)
+            let count = max(1, parts.compactMap { Int($0) }.first ?? 2)
+            while pane.tabs.count < count { pane.addTab() }
+            FileHandle.standardError.write(
+                Data("ui-scene: applied '\(scene)' tabs=\(pane.tabs.count) height=\(pane.height)\n".utf8))
+        }
+    }
+
     /// Runs after the window/AppDelegate have finished launching and the
     /// file is loaded. Waits a couple of run-loop ticks so SwiftUI has a
     /// chance to lay out and the WKWebView (if any) has had a beat to
