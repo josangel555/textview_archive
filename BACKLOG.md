@@ -845,3 +845,21 @@ bundle (main kept CrossSearchPanel) — resurrect or abandon. **DECISION owed.**
 - **Build flake follow-up:** `build-app.sh` now signs in a non-iCloud TMPDIR + `install-app.sh` `xattr -cr`s
   the install — closed. The repo living under iCloud `~/Documents` is the root environmental cause; if more
   iCloud-detritus issues appear, the fix pattern is "operate outside the synced tree."
+
+## 2026-06-07 — terminal + editor follow-ups
+- **Terminal alternate-screen buffer** (no task yet; flagged on TSK-489) — implement DECSET 1049/1047/47
+  + save/restore cursor + a second grid in `ANSIParser`/`TerminalScreen` so `top`/`vim`/`less` render
+  correctly. Host-testable at the parser level (golden tests) → self-validatable. Medium size. The real
+  fix for "top renders wrong"; the TSK-489 scroll-persist fix only addresses tab-switch scroll.
+- **Preview-tab Phase 2/3 (TSK-306, in `progress`)** — Phase 1 model core landed (`a37f861`). Remaining:
+  Phase 2 sidebar single-vs-double-click + arrow-nav triggers + auto-promote-on-edit (live); Phase 3
+  italic preview-tab title affordance (VM-visual). Persistence = Option A (promote-on-save), confirmed.
+  Design in `docs/PREVIEW_TAB_DESIGN.md`.
+- **indent-guides default (TSK-487, fixed/opt-in)** — owner may later flip default to ON; today off + a
+  Settings toggle.
+- **VM UI tests for editor/terminal render features** — folds collapse, indent-guide lines, date stamp
+  at caret, terminal strip placement, scroll-persist-on-switch. Nightly `LiveAppTestCase`/`PixelTestCase`
+  lane. Unlocks self-validation of these WebView/AppKit behaviours per the new policy.
+- **tasked MCP gaps reported to owner (2026-06-07):** (1) no free-text/substring `task_list` search;
+  (2) no `task_update` (edit title/report/type/prio post-create); (3) no agent dismiss for already-fixed/
+  wontfix/duplicate/foreign — relevant since the board is shared across projects.

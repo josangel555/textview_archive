@@ -2243,3 +2243,35 @@ the live surface to the genuine re-render rather than guessing.
   selectedText, word/line/all) is AppKit-free → 17 headless tests cover geometry + extraction + word/line.
   The NSView only does mouse→cell mapping + drag tracking + the translucent highlight draw. Same
   prove-it-headlessly discipline as the status-bar work.
+
+## Session 2026-06-07 (terminal tabs, CM6 editor features, tasked-MCP migration)
+
+- **CM6 editor props were plumbed-but-never-passed.** `foldingRanges`, `indentGuides`, and an
+  insert-at-cursor path were fully built in `CodeMirrorEditorView` + `codemirror.html` (real
+  `foldService`/`applySetFoldingRanges`, `IndentGuideWidget`/`applySetIndentGuides`) but the only call
+  site (`ContentView.swift:~570`) passed none of them, so the features were dark. LESSON: before
+  assuming a feature is unbuilt, grep the **call site** — the view/JS layer may already support it and
+  only the wiring is missing. (Folds=TSK-466, indent guides=TSK-487.)
+- **`Tab` is NOT `Codable`.** Session persistence serializes a separate `TabSnapshot` DTO
+  (`Sources/ViewerCore/Tab.swift` is `Sendable, Identifiable` only). So a new in-memory-only `Tab`
+  field (e.g. `isPreview`, TSK-306) is non-persisted *for free* — the snapshot just won't carry it.
+  Add it to `Tab`'s custom `Equatable` if a visual depends on it (the SwiftUI tab-strip diffs on it).
+- **Terminal scroll reset on tab switch = view-local state + `.id` remount.** `scrollOffset` lived on
+  `TerminalNSView`, and `TerminalPaneView` puts `.id(selectedTabID)` on the single representable, so
+  AppKit destroys+recreates the NSView every tab switch → offset reset to 0 (broke scrolled-up history
+  + felt like it disrupted `top`). Fix (TSK-489): lift per-tab render state onto the per-tab
+  `TerminalModel`; the recreated view seeds from it + writes back. GENERAL: any view-local state on a
+  `.id`-keyed terminal/editor tab view is lost on switch — store it on the per-tab model.
+- **Terminal lacks the alternate-screen buffer** (`TerminalScreen.swift:~22` "out of scope"). Full-
+  screen TUIs (`top`/`vim`/`less`) therefore write into the normal grid+scrollback. If `top` renders
+  wrong, THIS is the root cause, not scroll — it's a separate parser feature (host-testable w/ golden
+  tests). Don't blind-fix it as a "scroll" issue.
+- **`tasked` board is now first-class MCP tools** (`mcp__tasked__*`); the old `python3 /tmp/board.py`
+  HTTP shim is RETIRED (owner, 2026-06-07). `task_advance{to,understanding,note,summary}` auto-walks
+  reported→…→fixed in ONE call. `task_park{kind,question,context}` is the owner-decision gate (pings).
+  `task_record` needs `summary` (and `commits` to link SHAs; `task_advance` does NOT take commits).
+- **Agent self-validation policy (owner, 2026-06-07):** agents MAY `task_validate` to validated/done,
+  but ONLY with a `checks` artifact = an *automated test exercising the actual behaviour*. WebView/
+  AppKit-RENDERED behaviour (CM6 pixels, fold gutter, indent guides, caret insert, terminal strip
+  placement/scroll) has NO host coverage → cannot self-validate on host; leave at `fixed` for owner/VM
+  or add a VM UI test first. Full rule in `CLAUDE.md` (Automated runs SOP).
