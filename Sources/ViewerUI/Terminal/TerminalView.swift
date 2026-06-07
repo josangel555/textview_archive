@@ -22,6 +22,9 @@ struct TerminalRepresentable: NSViewRepresentable {
     /// Cycle terminal tabs (⌃Tab / ⌃⇧Tab). `true` = next. Provided by the
     /// pane (which owns the store); defaults to a no-op for previews/standalone.
     var onCycleTab: (Bool) -> Void = { _ in }
+    /// New / close terminal tab (⌘T / ⌘W while focused).
+    var onNewTab: () -> Void = {}
+    var onCloseTab: () -> Void = {}
 
     func makeCoordinator() -> Coordinator { Coordinator(model: model) }
 
@@ -34,6 +37,8 @@ struct TerminalRepresentable: NSViewRepresentable {
         view.onInput = { data in coord.model.sendInput(data) }
         view.onResize = { rows, cols in coord.model.resize(rows: rows, cols: cols) }
         view.onCycleTab = onCycleTab
+        view.onNewTab = onNewTab
+        view.onCloseTab = onCloseTab
         // Spawn the shell on first appearance (idempotent).
         coord.model.start()
         // Grab keyboard focus once the view is in a window. Without this the
@@ -81,7 +86,9 @@ struct TerminalPaneView: View {
                     TerminalRepresentable(
                         model: terminal,
                         fontSize: fontSize,
-                        onCycleTab: { forward in store.cycleTab(forward: forward) }
+                        onCycleTab: { forward in store.cycleTab(forward: forward) },
+                        onNewTab: { store.addTab() },
+                        onCloseTab: { if let id = store.selectedTabID { store.closeTab(id) } }
                     )
                     .id(store.selectedTabID)
                     if terminal.hasExited {

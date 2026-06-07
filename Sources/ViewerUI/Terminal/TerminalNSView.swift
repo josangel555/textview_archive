@@ -29,6 +29,15 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
     /// Cycle terminal tabs (⌃Tab next / ⌃⇧Tab prev). Set by the
     /// representable; routed to `TerminalPaneStore.cycleTab`.
     var onCycleTab: ((_ forward: Bool) -> Void)?
+    /// New terminal tab (⌘T while the terminal is focused).
+    var onNewTab: (() -> Void)?
+    /// Close the current terminal tab (⌘W while the terminal is focused).
+    var onCloseTab: (() -> Void)?
+
+    /// True while dragging the scrollback scrollbar thumb (vs selecting text).
+    private var isScrollbarDrag = false
+    /// Hit width of the right-edge scrollbar gutter, in points.
+    private let scrollbarHitWidth: CGFloat = 14
 
     private(set) var fontSize: CGFloat = 12 {
         didSet { rebuildFontMetrics() }
@@ -99,8 +108,25 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
         )
     }
 
+    /// Map a mouse event to a scroll offset via the scrollbar gutter.
+    private func scrollbarOffset(for event: NSEvent) -> Int {
+        let local = convert(event.locationInWindow, from: nil)
+        let f = bounds.height > 0 ? Double(local.y / bounds.height) : 0
+        return TerminalScrollbar.offset(forYFraction: f,
+                                        rows: screen.rows, scrollback: screen.scrollback.count)
+    }
+
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        // Right-edge gutter drives the scrollbar (when there's scrollback).
+        let local = convert(event.locationInWindow, from: nil)
+        if screen.scrollback.count > 0, local.x >= bounds.width - scrollbarHitWidth {
+            isScrollbarDrag = true
+            if selection != nil { selection = nil }
+            scrollOffset = scrollbarOffset(for: event)
+            needsDisplay = true
+            return
+        }
         let p = cellPoint(for: event)
         switch event.clickCount {
         case 2:    // word (over the currently-visible rows — may be scrollback)
@@ -120,6 +146,11 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if isScrollbarDrag {
+            scrollOffset = scrollbarOffset(for: event)
+            needsDisplay = true
+            return
+        }
         guard isDragging else { return }
         let p = cellPoint(for: event)
         guard var sel = selection else { return }
@@ -130,6 +161,7 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
     }
 
     override func mouseUp(with event: NSEvent) {
+        if isScrollbarDrag { isScrollbarDrag = false; return }
         // A focus click that never dragged clears any tentative selection.
         if isDragging && !didDrag { selection = nil; needsDisplay = true }
         isDragging = false
@@ -258,6 +290,27 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
 
         drawSelection()
         drawCursor(defaultFg: defaultFg)
+        drawScrollbar()
+    }
+
+    /// Right-edge scrollback thumb (overlay style — only when there's
+    /// history to scroll). Geometry from the pure `TerminalScrollbar`.
+    private func drawScrollbar() {
+        guard let t = TerminalScrollbar.thumb(rows: screen.rows,
+                                              scrollback: screen.scrollback.count,
+                                              offset: scrollOffset) else { return }
+        let trackH = bounds.height
+        let thumbW: CGFloat = 6
+        let thumbH = max(18, min(CGFloat(t.height) * trackH, trackH))
+        let travel = max(0, trackH - thumbH)
+        let y = CGFloat(t.position) * travel
+        let x = bounds.width - thumbW - 2
+        let highlighted = isScrollbarDrag || scrollOffset > 0
+        NSColor.secondaryLabelColor
+            .withAlphaComponent(highlighted ? 0.55 : 0.30)
+            .setFill()
+        NSBezierPath(roundedRect: NSRect(x: x, y: y, width: thumbW, height: thumbH),
+                     xRadius: thumbW / 2, yRadius: thumbW / 2).fill()
     }
 
     /// Translucent highlight over the selected cell spans (drawn after the
@@ -337,6 +390,13 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
         if event.keyCode == 48, flags.contains(.control), !flags.contains(.command) {
             onCycleTab?(!flags.contains(.shift))
             return true
+        }
+        // Bare ⌘T / ⌘W act on terminal tabs while the terminal is focused
+        // (shadowing the document-tab New/Close only when typing here).
+        // Other ⌘-chords (⌘C/⌘V/⌘A, ⌘⇧T, …) fall through to the menu.
+        if flags == .command, let ch = event.charactersIgnoringModifiers {
+            if ch == "t" { onNewTab?(); return true }
+            if ch == "w" { onCloseTab?(); return true }
         }
         if flags.contains(.command) { return false }
         switch event.keyCode {
