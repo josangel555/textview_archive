@@ -163,7 +163,11 @@ private struct ViewModeControlView: View {
             // Render it's always on; we still show it (disabled) so the
             // control reads consistently, but only when an editable lens is
             // reachable does it actually drive a swap.
-            if model.showsEditorPrimary {
+            // Show for any editable lens: Editor (Source ↔ CM6) OR HEX
+            // (read-only ↔ byte-edit). A binary file opens straight into HEX
+            // with no Editor lens, so gating on `showsEditorPrimary` alone hid
+            // the toggle there and made HEX byte-edit unreachable (TSK-467).
+            if model.showsEditorPrimary || p.primary == .hex {
                 Toggle("View Only", isOn: Binding(
                     get: { p.viewOnly },
                     set: { model.setViewOnly($0) }
@@ -177,7 +181,7 @@ private struct ViewModeControlView: View {
                 .disabled(p.primary == .render)
                 .helpInfo(title: "View Only",
                           description: "Show the file read-only. Turn off to edit "
-                          + "(Editor → editable text; HEX byte-edit is planned).")
+                          + "(Editor → editable text; HEX → editable byte grid).")
                 .accessibilityIdentifier("mdv.viewOnlyToggle")
             }
 

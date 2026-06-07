@@ -103,6 +103,65 @@ final class ContentToolbarMappingTests: XCTestCase {
         XCTAssertEqual(m.viewModePresentation.primary, .hex)
     }
 
+    // MARK: - HEX View Only toggle arms byte editing (#234 / TSK-467)
+
+    func test_hex_defaultsToReadOnly() throws {
+        let m = makeModel()
+        m.open(url: try writeFile("code.swift", "let x = 1\n"))
+        m.selectViewPrimary(.hex, viewOnly: true)
+        // Default: View Only ON, not armed — byte-identical to before.
+        XCTAssertTrue(m.viewModePresentation.viewOnly)
+        if let id = m.tabs.selected?.id {
+            XCTAssertFalse(m.isHexEditArmed(forTabID: id))
+        } else { XCTFail("no selected tab") }
+    }
+
+    func test_hex_setViewOnlyFalse_armsEditing_withoutChangingMode() throws {
+        let m = makeModel()
+        m.open(url: try writeFile("code.swift", "let x = 1\n"))
+        m.selectViewPrimary(.hex, viewOnly: true)
+        guard let id = m.tabs.selected?.id else { return XCTFail("no selected tab") }
+
+        m.setViewOnly(false)   // arm
+        XCTAssertFalse(m.viewModePresentation.viewOnly, "toggling View Only off arms HEX editing")
+        XCTAssertTrue(m.isHexEditArmed(forTabID: id))
+        XCTAssertEqual(m.currentViewMode, .hex, "arming must NOT churn the ViewMode (LOADBUG safety)")
+
+        m.setViewOnly(true)    // disarm
+        XCTAssertTrue(m.viewModePresentation.viewOnly)
+        XCTAssertFalse(m.isHexEditArmed(forTabID: id))
+        XCTAssertEqual(m.currentViewMode, .hex)
+    }
+
+    func test_hex_armedState_isPerTab() throws {
+        let m = makeModel()
+        m.open(url: try writeFile("a.swift", "let a = 1\n"))
+        m.selectViewPrimary(.hex, viewOnly: true)
+        guard let idA = m.tabs.selected?.id else { return XCTFail("no tab A") }
+        m.setViewOnly(false)   // arm tab A
+
+        m.open(url: try writeFile("b.swift", "let b = 2\n"))
+        m.selectViewPrimary(.hex, viewOnly: true)
+        guard let idB = m.tabs.selected?.id, idB != idA else { return XCTFail("no distinct tab B") }
+
+        XCTAssertTrue(m.isHexEditArmed(forTabID: idA), "tab A stays armed")
+        XCTAssertFalse(m.isHexEditArmed(forTabID: idB), "tab B is independently read-only")
+        // The current presentation reflects the selected tab (B → read-only).
+        XCTAssertTrue(m.viewModePresentation.viewOnly)
+    }
+
+    func test_hex_republishesOnArm() async throws {
+        let m = makeModel()
+        m.open(url: try writeFile("code.swift", "let x = 1\n"))
+        m.selectViewPrimary(.hex, viewOnly: true)
+        var count = 0
+        let sub = m.objectWillChange.sink { _ in count += 1 }
+        defer { sub.cancel() }
+        m.setViewOnly(false)
+        await Task.yield()
+        XCTAssertGreaterThan(count, 0, "arming HEX edit must republish so the toolbar/HexView re-evaluate")
+    }
+
     func test_plainText_render_fallsBackToSource() throws {
         let m = makeModel()
         // .txt has no rich lens; Render must resolve to .source, not reject.

@@ -115,8 +115,11 @@ public enum ViewModeControl {
             // the Format button active.
             return Presentation(primary: .editor, viewOnly: true, isFormatted: true)
         case .hex:
-            // HEX edit-mode (View Only off) is a deferred capability; today
-            // the byte grid is always read-only, so present View Only on.
+            // There is a single `.hex` ViewMode for both read-only and
+            // byte-edit, so the mode alone can't say which. Report View Only
+            // ON as the mode-only default; the per-tab edit-armed flag lives
+            // on DocumentModel, which overrides this in `viewModePresentation`
+            // (#234 / TSK-467).
             return Presentation(primary: .hex, viewOnly: true, isFormatted: false)
         }
     }

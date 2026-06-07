@@ -2165,6 +2165,30 @@ public final class DocumentModel: ObservableObject {
         hexDirtyBytes[id] = data
     }
 
+    /// Per-tab HEX "edit armed" intent — the ViewOnly toggle flipped OFF
+    /// while the tab is in `.hex` (#234 / TSK-467). There is a single `.hex`
+    /// `ViewMode`, so the armed flag has nowhere to live in the mode enum;
+    /// it rides here (mirrors `hexDirtyBytes`). Default empty ⇒ View Only ON
+    /// ⇒ read-only, so behaviour is byte-identical until the user opts in.
+    private var hexEditArmedTabs: Set<UUID> = []
+
+    /// True when the given HEX tab has been armed for byte editing.
+    public func isHexEditArmed(forTabID id: UUID) -> Bool {
+        hexEditArmedTabs.contains(id)
+    }
+
+    /// Arm / disarm byte editing for a HEX tab. Republishes so the toolbar's
+    /// ViewOnly checkbox + `HexView.isEditable` re-evaluate (the `.hex`
+    /// `ViewMode` is unchanged, so `setCurrentViewMode`'s republish doesn't
+    /// fire — we send our own, equality-guarded).
+    public func setHexEditArmed(_ armed: Bool, forTabID id: UUID) {
+        let changed = armed
+            ? hexEditArmedTabs.insert(id).inserted
+            : (hexEditArmedTabs.remove(id) != nil)
+        guard changed else { return }
+        objectWillChange.send()
+    }
+
     /// Write the edited HEX bytes back to disk (⌘S). Mirrors the editor
     /// save: pause the watcher around the write, refresh the loaded
     /// `BinaryFile` so a later re-render shows the saved bytes, clear the
@@ -2795,7 +2819,16 @@ public final class DocumentModel: ObservableObject {
     /// primary button is selected, whether ViewOnly reads on, whether the
     /// Format button is the active lens).
     public var viewModePresentation: ViewModeControl.Presentation {
-        ViewModeControl.present(currentViewMode)
+        let base = ViewModeControl.present(currentViewMode)
+        // HEX edit-armed state rides DocumentModel, not the (single) `.hex`
+        // ViewMode, so `present` always reports HEX read-only. Reflect the
+        // per-tab armed flag here so the ViewOnly checkbox + HexView.isEditable
+        // read a live value (#234 / TSK-467).
+        guard base.primary == .hex, let id = tabs.selected?.id else { return base }
+        return ViewModeControl.Presentation(
+            primary: .hex,
+            viewOnly: !isHexEditArmed(forTabID: id),
+            isFormatted: false)
     }
 
     /// Select a primary lens (Render / Editor / HEX) from the toolbar.
@@ -2814,11 +2847,15 @@ public final class DocumentModel: ObservableObject {
 
     /// Flip the ViewOnly toggle while keeping the current primary lens.
     /// For the Editor primary this is the Source(read-only) ↔ Editor(edit)
-    /// swap; for Render / HEX it re-resolves under the new flag (today a
-    /// no-op for those, since Render is always read-only and HEX byte-edit
-    /// is deferred — see the HEX-edit TODO).
+    /// swap. For HEX it arms/disarms byte editing via the per-tab flag (the
+    /// `.hex` ViewMode is the same either way — #234 / TSK-467). For Render
+    /// it's a no-op (always read-only).
     public func setViewOnly(_ viewOnly: Bool) {
         let primary = viewModePresentation.primary
+        if primary == .hex {
+            if let id = tabs.selected?.id { setHexEditArmed(!viewOnly, forTabID: id) }
+            return
+        }
         selectViewPrimary(primary, viewOnly: viewOnly)
     }
 
