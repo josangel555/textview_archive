@@ -111,6 +111,16 @@ public final class TerminalPaneStore: ObservableObject {
         selectedTabID = id
     }
 
+    /// Cycle to the next (`forward`) or previous tab, wrapping around.
+    /// No-op with fewer than two tabs. Drives ⌃Tab / ⌃⇧Tab.
+    public func cycleTab(forward: Bool) {
+        guard tabs.count > 1, let id = selectedTabID,
+              let idx = tabs.firstIndex(where: { $0.id == id }) else { return }
+        let n = tabs.count
+        let next = forward ? (idx + 1) % n : (idx - 1 + n) % n
+        selectedTabID = tabs[next].id
+    }
+
     /// Close a tab, reaping its shell. Closing the last tab closes the
     /// whole pane; closing the selected tab selects a neighbor.
     public func closeTab(_ id: UUID) {

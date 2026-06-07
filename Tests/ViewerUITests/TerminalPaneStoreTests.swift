@@ -209,6 +209,32 @@ final class TerminalPaneStoreTests: XCTestCase {
         XCTAssertEqual(store.tabs.first?.number, 1)
     }
 
+    func test_cycleTab_wrapsForwardAndBackward() {
+        let store = TerminalPaneStore(defaults: defaults)
+        store.setOpen(true)               // tab 1 (selected)
+        store.addTab()                    // tab 2
+        store.addTab()                    // tab 3 (selected)
+        let ids = store.tabs.map(\.id)
+        XCTAssertEqual(store.selectedTabID, ids[2])
+        store.cycleTab(forward: true)     // 3 -> wrap -> 1
+        XCTAssertEqual(store.selectedTabID, ids[0])
+        store.cycleTab(forward: true)     // 1 -> 2
+        XCTAssertEqual(store.selectedTabID, ids[1])
+        store.cycleTab(forward: false)    // 2 -> 1
+        XCTAssertEqual(store.selectedTabID, ids[0])
+        store.cycleTab(forward: false)    // 1 -> wrap -> 3
+        XCTAssertEqual(store.selectedTabID, ids[2])
+    }
+
+    func test_cycleTab_singleTab_isNoOp() {
+        let store = TerminalPaneStore(defaults: defaults)
+        store.setOpen(true)
+        let only = store.selectedTabID
+        store.cycleTab(forward: true)
+        store.cycleTab(forward: false)
+        XCTAssertEqual(store.selectedTabID, only)
+    }
+
     // MARK: - Idempotence
 
     func test_setOpen_sameValue_isNoOpRepublish() async {

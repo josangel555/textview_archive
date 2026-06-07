@@ -26,6 +26,9 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
     /// the model + PTY can re-dimension. Debounced by equality on the
     /// model side.
     var onResize: ((_ rows: Int, _ cols: Int) -> Void)?
+    /// Cycle terminal tabs (⌃Tab next / ⌃⇧Tab prev). Set by the
+    /// representable; routed to `TerminalPaneStore.cycleTab`.
+    var onCycleTab: ((_ forward: Bool) -> Void)?
 
     private(set) var fontSize: CGFloat = 12 {
         didSet { rebuildFontMetrics() }
@@ -327,8 +330,15 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
     /// real menu shortcuts (⌘C/⌘V/⌘W/…) still resolve.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard window?.firstResponder === self else { return false }
-        if event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            .contains(.command) { return false }
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        // ⌃Tab / ⌃⇧Tab → cycle terminal tabs. Focus-scoped (only while the
+        // terminal owns first responder), so it doesn't collide with the
+        // document-tab shortcuts (⌘⇧[ / ⌘⇧] / ⌃1–9). keyCode 48 = Tab.
+        if event.keyCode == 48, flags.contains(.control), !flags.contains(.command) {
+            onCycleTab?(!flags.contains(.shift))
+            return true
+        }
+        if flags.contains(.command) { return false }
         switch event.keyCode {
         case 36, 76:   // Return, keypad Enter
             keyDown(with: event)

@@ -19,6 +19,9 @@ import ViewerCore
 struct TerminalRepresentable: NSViewRepresentable {
     @ObservedObject var model: TerminalModel
     let fontSize: CGFloat
+    /// Cycle terminal tabs (⌃Tab / ⌃⇧Tab). `true` = next. Provided by the
+    /// pane (which owns the store); defaults to a no-op for previews/standalone.
+    var onCycleTab: (Bool) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator { Coordinator(model: model) }
 
@@ -30,6 +33,7 @@ struct TerminalRepresentable: NSViewRepresentable {
         let coord = context.coordinator
         view.onInput = { data in coord.model.sendInput(data) }
         view.onResize = { rows, cols in coord.model.resize(rows: rows, cols: cols) }
+        view.onCycleTab = onCycleTab
         // Spawn the shell on first appearance (idempotent).
         coord.model.start()
         // Grab keyboard focus once the view is in a window. Without this the
@@ -74,8 +78,12 @@ struct TerminalPaneView: View {
                     // `.id(selectedTabID)` gives each tab its own NSView +
                     // coordinator, so switching tabs swaps the live surface
                     // rather than rebinding one view to a different model.
-                    TerminalRepresentable(model: terminal, fontSize: fontSize)
-                        .id(store.selectedTabID)
+                    TerminalRepresentable(
+                        model: terminal,
+                        fontSize: fontSize,
+                        onCycleTab: { forward in store.cycleTab(forward: forward) }
+                    )
+                    .id(store.selectedTabID)
                     if terminal.hasExited {
                         exitedOverlay(terminal)
                     }
