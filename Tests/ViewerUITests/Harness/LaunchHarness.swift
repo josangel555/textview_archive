@@ -101,10 +101,19 @@ final class LaunchHarness {
             at: tmpDir, withIntermediateDirectories: true)
     }
 
-    /// SIGTERM any leftover MarkdownViewer process and remove the
-    /// scratch directory. Idempotent.
+    /// SIGTERM any leftover TEST-spawned MarkdownViewer process and remove
+    /// the scratch directory. Idempotent.
+    ///
+    /// MUST reap only test spawns (marked `MDV_TEST_INSTANCE=1` by
+    /// `AppLauncher.runScript`), never the developer's prod
+    /// `/Applications/TextView.app` — it shares the `MarkdownViewer` exec
+    /// name, so the old `currentPID(of:) + kill` (a `pgrep -x`-by-name
+    /// SIGTERM) terminated the owner's running app whenever this tear-down
+    /// fired (heavy-tier tear-downs run even when the body self-skips in the
+    /// headless gate). Route through the marker-scoped reaper. See
+    /// `AppLauncher.killTestInstances`.
     func cleanup() {
-        _ = AppLauncher.currentPID(of: "MarkdownViewer").map { kill($0, SIGTERM) }
+        AppLauncher.killTestInstances(named: "MarkdownViewer")
         try? FileManager.default.removeItem(at: tmpDir)
     }
 
