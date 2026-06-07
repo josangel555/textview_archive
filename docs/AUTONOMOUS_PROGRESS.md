@@ -29,6 +29,22 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-07 (latest+44) — TSK-487: CM6 indent guides wired (opt-in)
+
+Closed the second half of the original fold/indent-guides finding (split out as TSK-487 last firing).
+Investigation: the `indentGuides` prop was plumbed through `CodeMirrorEditorView` AND the JS side is
+**real** (`IndentGuideWidget` + `buildIndentGuidesPlugin` + `applySetIndentGuides`, codemirror.html
+:418/454/504/873) — only `ContentView:570` never passed it, so guides were permanently off.
+
+Shipped **opt-in** (the conservative resolution of the owner-decision blocker — default OFF needs no
+call): `PreferencesStore.editorIndentGuides` (persisted, default false) + `DocumentModel`
+`@Published editorIndentGuides`/`toggleEditorIndentGuides`/init-seed (mirrors `showInvisibleChars`
+exactly) + Settings → Editor "Show indent guides" toggle + `ContentView:570` passes
+`indentGuides: model.editorIndentGuides`. 4 host tests (pref default-false + round-trip; model
+seed/toggle/persist). swift build clean; headless gate green (4113); committed **`f5a3f38`**; debug
+bundle installed. Board: TSK-487 → fixed. **Only remaining owner tweak:** flip the default to ON (opt
+to show guides for everyone) — not a blocker. VM-pending: visual confirmation the guide lines render.
+
 ## LOG 2026-06-07 (latest+43) — TSK-466 step 2/3: CM6 editor folds wired end-to-end
 
 Completed the editor-folding feature on the host-testable side. Investigation showed the CM6 render
@@ -162,8 +178,8 @@ The genuinely-remaining board work is NOT host-implementable by the autonomous l
   - TSK-469 Plugin Tier A real rows (vs placeholder).
 - **Owner UX decision (small code, needs a call):**
   - TSK-470 zoom split (UI-chrome vs document zoom) — single unified `model.zoom` today.
-  - TSK-487 (split from TSK-466) indent-guides: wire the plumbed `indentGuides` prop — needs an
-    owner call on default-on vs off + whether it gets a Settings toggle (small once decided).
+  - ~~TSK-487 indent-guides~~ **SHIPPED opt-in (latest+44, `f5a3f38`)**: persisted pref (default OFF)
+    + Settings → Editor toggle + call-site wire. Only optional owner tweak left: flip default to ON.
   - TSK-221 remove "Open As" menu in favour of the file-type chip dropdown.
 - **Owner dep-approval (new crates):** TSK-247 (`regex`), TSK-248 (`serde_json`), TSK-249
   (`comrak`+`tree-sitter`), TSK-246 (grapheme dep) — all `[BLOCKED:owner-dep]`.
