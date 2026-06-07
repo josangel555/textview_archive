@@ -290,3 +290,39 @@ struct TerminalResizeHandle: View {
             .accessibilityIdentifier("mdv.terminal.resize")
     }
 }
+
+/// A thin draggable divider on the content-facing edge of a SIDE-docked
+/// terminal column (TSK-491). Drag toward the content shrinks the column;
+/// drag away grows it. `TerminalPaneStore.setWidth` clamps + persists. The
+/// drag sign flips with the dock edge: for `.left` the handle is on the right
+/// (drag right grows), for `.right` it's on the left (drag left grows).
+struct TerminalSideResizeHandle: View {
+    @ObservedObject var store: TerminalPaneStore
+    @State private var dragStartWidth: CGFloat?
+
+    var body: some View {
+        Rectangle()
+            .fill(Palette.separator)
+            .frame(width: 5)
+            .overlay(Rectangle().fill(Palette.windowBackground).frame(width: 3))
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { value in
+                        let start = dragStartWidth ?? store.sideWidth
+                        if dragStartWidth == nil { dragStartWidth = start }
+                        // Left dock: handle on the right → drag right (+x) grows.
+                        // Right dock: handle on the left → drag left (−x) grows.
+                        let delta = store.paneEdge == .left
+                            ? value.translation.width
+                            : -value.translation.width
+                        store.setWidth(start + delta)
+                    }
+                    .onEnded { _ in dragStartWidth = nil }
+            )
+            .accessibilityIdentifier("mdv.terminal.resize.side")
+    }
+}

@@ -67,11 +67,64 @@ final class TerminalTabStripVisualRegressionTests: PixelTestCase {
         try assertChipComposites(scene: "terminal-top", edge: .top)
     }
 
+    /// Pane-EDGE placement (TSK-491): a right-DOCKED terminal must (1) composite
+    /// its chip in the RIGHT column AND (2) leave the center content WebView
+    /// painting (NOT blank). Guards the regression caught during development —
+    /// nesting `bodyRow` in the side-dock HStack collapsed the content render;
+    /// a chip-only check would have passed while the document went blank.
+    func test_rightDockedPane_terminalComposites_andContentNotBlank() throws {
+        let cg = try captureSceneCGImage("terminal-paneright")
+        let w = cg.width, h = cg.height
+        // (1) accent chip block in the RIGHT column band.
+        let chip = Self.denseSaturatedBlock(
+            in: cg, xRange: Int(Double(w) * 0.82) ..< w,
+            yRange: Int(Double(h) * 0.10) ..< Int(Double(h) * 0.55))
+        XCTAssertNotNil(chip,
+            "right-docked terminal chip didn't composite in the right column (TSK-491)")
+        // (2) center content region must NOT be blank (the collapse regression).
+        let contentVaried = Self.regionHasVariety(
+            in: cg,
+            xRange: Int(Double(w) * 0.28) ..< Int(Double(w) * 0.78),
+            yRange: Int(Double(h) * 0.12) ..< Int(Double(h) * 0.45))
+        XCTAssertTrue(contentVaried,
+            "center content went BLANK with a side-docked terminal — the content " +
+            "WebView collapsed (side-dock must not nest bodyRow). TSK-491")
+    }
+
     // MARK: - core
 
     /// Launch the app into `scene`, screen-capture the window, and assert a
     /// dense saturated chip block composited in the band for `edge`.
     private func assertChipComposites(scene: String, edge: Edge) throws {
+        let cg = try captureSceneCGImage(scene)
+        let w = cg.width, h = cg.height
+        // The terminal pane occupies the bottom of the window; the status
+        // bar is the bottom ~50px. The vertical-rail chips sit near the
+        // pane's TOP, so the band starts at ~52% of the window height to
+        // cover the whole open pane.
+        let yLo = Int(Double(h) * 0.52)
+        let yHi = max(yLo + 1, h - 50)
+        let xRange: Range<Int>
+        switch edge {
+        case .left:  xRange = 0 ..< (w / 2)            // chip in the left half
+        case .right: xRange = (w / 2) ..< w            // chip in the right half
+        case .top:   xRange = 0 ..< w                  // horizontal strip spans width
+        }
+
+        let block = Self.denseSaturatedBlock(in: cg, xRange: xRange, yRange: yLo ..< yHi)
+        XCTAssertNotNil(
+            block,
+            "No accent-selected chip composited in the \(edge) rail band for scene " +
+            "'\(scene)'. The opaque terminal surface is occluding the SwiftUI tab " +
+            "strip again (the 'gap but no tabs' regression).")
+    }
+
+    /// Launch the app into `scene` via `MDV_UI_SCENE`, capture its real window
+    /// through the WindowServer (`screencapture -l<id>`), and return the decoded
+    /// CGImage. Throws `XCTSkip` in the headless gate / when the bundle isn't
+    /// built / Screen Recording is denied — so the heavy tier self-skips on the
+    /// host and runs for real only in the VM/nightly lane.
+    private func captureSceneCGImage(_ scene: String) throws -> CGImage {
         if ProcessInfo.processInfo.environment["MDV_HEADLESS_GATE"] == "1" {
             throw XCTSkip("T5 heavy tier — runs in the VM/nightly lane, not the headless gate.")
         }
@@ -94,9 +147,7 @@ final class TerminalTabStripVisualRegressionTests: PixelTestCase {
         // blanket killall (shared exec name reaps the owner's running app).
         AppLauncher.killTestInstances(named: "MarkdownViewer")
 
-        // Keep the display awake — a slept/locked display can't be captured
-        // ("could not create image from window"), the norm for overnight
-        // nightly runs. Best-effort, self-terminates.
+        // Keep the display awake — a slept/locked display can't be captured.
         let caff = Process()
         caff.executableURL = URL(fileURLWithPath: "/usr/bin/caffeinate")
         caff.arguments = ["-u", "-t", "30"]
@@ -126,15 +177,16 @@ final class TerminalTabStripVisualRegressionTests: PixelTestCase {
             "/usr/bin/osascript", "-e",
             "tell application \"MarkdownViewer\" to activate",
         ])
-        // Scene-apply delay (0.6s) + open animation + first paint of the
-        // shell + chip composite. Match the ui-snapshot.sh budget.
+        // Scene-apply delay (0.6s) + open animation + first paint. Matches
+        // ui-snapshot.sh's budget.
         Thread.sleep(forTimeInterval: 2.5)
 
         let pngURL = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("mdv-term-strip-\(scene)-\(UUID().uuidString).png")
+            .appendingPathComponent("mdv-term-\(scene)-\(UUID().uuidString).png")
         let res = try shell([
             "/usr/sbin/screencapture", "-l\(windowID)", "-x", "-o", pngURL.path,
         ])
+        defer { try? fm.removeItem(at: pngURL) }
         guard res.exit == 0, fm.fileExists(atPath: pngURL.path),
               let image = NSImage(contentsOf: pngURL),
               let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
@@ -144,33 +196,7 @@ final class TerminalTabStripVisualRegressionTests: PixelTestCase {
                 "grant Screen Recording to both Terminal AND " +
                 "/Applications/Xcode.app/Contents/Developer/usr/bin/xctest.")
         }
-        defer { try? fm.removeItem(at: pngURL) }
-
-        let w = cg.width, h = cg.height
-        // The terminal pane occupies the bottom of the window; the status
-        // bar is the bottom ~50px. The vertical-rail chips sit near the
-        // pane's TOP, so the band starts at ~52% of the window height to
-        // cover the whole open pane.
-        let yLo = Int(Double(h) * 0.52)
-        let yHi = max(yLo + 1, h - 50)
-        let xRange: Range<Int>
-        switch edge {
-        case .left:  xRange = 0 ..< (w / 2)            // chip in the left half
-        case .right: xRange = (w / 2) ..< w            // chip in the right half
-        case .top:   xRange = 0 ..< w                  // horizontal strip spans width
-        }
-
-        let block = Self.denseSaturatedBlock(in: cg, xRange: xRange, yRange: yLo ..< yHi)
-        if block == nil {
-            let kept = pngURL.deletingPathExtension().appendingPathExtension("fail.png")
-            try? fm.copyItem(at: pngURL, to: kept)
-            print("  → kept failing screenshot at \(kept.path)")
-        }
-        XCTAssertNotNil(
-            block,
-            "No accent-selected chip composited in the \(edge) rail band for scene " +
-            "'\(scene)'. The opaque terminal surface is occluding the SwiftUI tab " +
-            "strip again (the 'gap but no tabs' regression). Screenshot: \(pngURL.path)")
+        return cg
     }
 
     // MARK: - pixel eval
@@ -229,6 +255,40 @@ final class TerminalTabStripVisualRegressionTests: PixelTestCase {
             y += 4
         }
         return nil
+    }
+
+    /// True if `xRange × yRange` contains ≥4 distinct 4-bit-quantized colors —
+    /// i.e. the region is NOT a flat solid blob. Used to prove the content
+    /// WebView actually painted (a blank/collapsed pane is one uniform colour).
+    /// Same idea as `SourceViewVisualRegressionTests.regionHasVariety`.
+    static func regionHasVariety(in cg: CGImage, xRange: Range<Int>, yRange: Range<Int>) -> Bool {
+        let bpr = cg.width * 4
+        guard let ctx = CGContext(
+            data: nil, width: cg.width, height: cg.height,
+            bitsPerComponent: 8, bytesPerRow: bpr, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                | CGImageAlphaInfo.premultipliedLast.rawValue),
+              let buf = ctx.data else { return false }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+        let ptr = buf.bindMemory(to: UInt8.self, capacity: cg.height * bpr)
+        let xLo = max(0, xRange.lowerBound), xHi = min(cg.width, xRange.upperBound)
+        let yLo = max(0, yRange.lowerBound), yHi = min(cg.height, yRange.upperBound)
+        guard xHi > xLo, yHi > yLo else { return false }
+        var seen = Set<Int>()
+        let xStep = max(1, (xHi - xLo) / 80), yStep = max(1, (yHi - yLo) / 40)
+        var y = yLo
+        while y < yHi {
+            var x = xLo
+            while x < xHi {
+                let i = y * bpr + x * 4
+                let r = Int(ptr[i]) >> 4, g = Int(ptr[i + 1]) >> 4, b = Int(ptr[i + 2]) >> 4
+                seen.insert((r << 8) | (g << 4) | b)
+                if seen.count >= 4 { return true }
+                x += xStep
+            }
+            y += yStep
+        }
+        return seen.count >= 4
     }
 
     // MARK: - harness (mirrors SourceViewVisualRegressionTests)

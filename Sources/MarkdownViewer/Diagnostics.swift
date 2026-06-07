@@ -194,11 +194,20 @@ extension AppDelegate {
             if parts.contains("top") { pane.setTabPosition(.top) }
             else if parts.contains("right") { pane.setTabPosition(.right) }
             else { pane.setTabPosition(.left) }
+            // Pane DOCK edge (TSK-491) — distinct tokens from the tab-strip
+            // position above. e.g. MDV_UI_SCENE=terminal-paneright. ALWAYS set
+            // it (default .bottom) so a scene is DETERMINISTIC and doesn't
+            // inherit a persisted edge from a prior launch — the state leak the
+            // T5 tests caught.
+            if parts.contains("paneright") { pane.setPaneEdge(.right) }
+            else if parts.contains("paneleft") { pane.setPaneEdge(.left) }
+            else { pane.setPaneEdge(.bottom) }
             pane.setHeight(320)
+            pane.setWidth(360)
             let count = max(1, parts.compactMap { Int($0) }.first ?? 2)
             while pane.tabs.count < count { pane.addTab() }
             FileHandle.standardError.write(
-                Data("ui-scene: applied '\(scene)' tabs=\(pane.tabs.count) height=\(pane.height)\n".utf8))
+                Data("ui-scene: applied '\(scene)' tabs=\(pane.tabs.count) height=\(pane.height) edge=\(pane.paneEdge.rawValue) width=\(pane.sideWidth)\n".utf8))
         }
     }
 

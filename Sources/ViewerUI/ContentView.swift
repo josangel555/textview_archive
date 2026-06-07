@@ -137,6 +137,14 @@ public struct ContentView: View {
                         .panelDropZone(.left, panelLayout: panelLayout)
                         Divider()
                     }
+                    // LEFT-docked terminal column (TSK-491): a fixed-WIDTH
+                    // sibling of the whole center column, beside the left rail —
+                    // mirrors RightDockContainer's placement so the content
+                    // WebView is NOT nested deeper (nesting it collapsed the
+                    // render — caught via real-pixel capture).
+                    if terminalPane.isOpen && terminalPane.paneEdge == .left {
+                        sideTerminalColumn
+                    }
                     // Center column: body row over the optional terminal
                     // pane over the bottom dock + bottom rail.
                     VStack(spacing: 0) {
@@ -150,14 +158,14 @@ public struct ContentView: View {
                         bodyRow
                             .frame(maxHeight: .infinity, alignment: .top)
                             .layoutPriority(1)
-                        // BOTTOM terminal pane (#226). Fixed-height shell pane
-                        // below the content. `.clipped()` is load-bearing: the
-                        // terminal surface is an opaque, layer-backed NSView; if
-                        // SwiftUI ever proposes it more than `height` mid-relayout
-                        // it must NOT paint past its band onto the document /
-                        // its own header (the "no header / covers the file"
-                        // half of the bug).
-                        if terminalPane.isOpen {
+                        // BOTTOM terminal pane (#226), only when docked `.bottom`
+                        // (TSK-491). Fixed-height shell pane below the content.
+                        // `.clipped()` is load-bearing: the terminal surface is
+                        // an opaque, layer-backed NSView; if SwiftUI ever
+                        // proposes it more than `height` mid-relayout it must NOT
+                        // paint past its band onto the document / its own header
+                        // (the "no header / covers the file" half of the bug).
+                        if terminalPane.isOpen && terminalPane.paneEdge == .bottom {
                             TerminalResizeHandle(store: terminalPane)
                             TerminalPaneView(
                                 store: terminalPane,
@@ -195,6 +203,13 @@ public struct ContentView: View {
                         .panelDropZone(.bottom, panelLayout: panelLayout)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // RIGHT-docked terminal column (TSK-491): a fixed-WIDTH
+                    // sibling between the center column and the right dock —
+                    // same level as RightDockContainer (NOT nested in the center
+                    // column), so the content WebView keeps its full size.
+                    if terminalPane.isOpen && terminalPane.paneEdge == .right {
+                        sideTerminalColumn
+                    }
                     // RIGHT dock (UX-E / #227): free-standing, fixed-WIDTH
                     // tool windows for panels dragged onto the right rail.
                     // Sits between the center column and the right shoulder
@@ -319,6 +334,25 @@ public struct ContentView: View {
     // intrinsic size collapse the content pane. The `content` /
     // `loadedView` subtree is byte-for-byte unchanged.
     @ViewBuilder
+    /// The terminal as a fixed-WIDTH side column (TSK-491), with its resize
+    /// handle on the content-facing edge. Used only when `paneEdge` is
+    /// `.left`/`.right`. `.clipped()` matches the bottom-band discipline so the
+    /// opaque terminal surface can't paint past its column. The pane keeps its
+    /// own internal tab strip (TSK-488) via `TerminalPaneView`.
+    private var sideTerminalColumn: some View {
+        let column = TerminalPaneView(store: terminalPane, fontSize: model.uiSize(12))
+            .frame(width: terminalPane.sideWidth)
+            .clipped()
+            .layoutPriority(0)
+        return HStack(spacing: 0) {
+            // Right dock → handle on the LEFT (content-facing) edge.
+            if terminalPane.paneEdge == .right { TerminalSideResizeHandle(store: terminalPane) }
+            column
+            // Left dock → handle on the RIGHT (content-facing) edge.
+            if terminalPane.paneEdge == .left { TerminalSideResizeHandle(store: terminalPane) }
+        }
+    }
+
     private var bodyRow: some View {
         HStack(spacing: 0) {
             if leftContainerVisible {
