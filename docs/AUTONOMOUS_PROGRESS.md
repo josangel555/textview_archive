@@ -29,6 +29,28 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-07 (latest+47) — Terminal: configurable tab-strip position + scroll-persist on tab switch
+
+Owner-requested (direct, batched: a feature + a bug). Both in the terminal subsystem; shipped together
+`dd8570f`. Also: the owner connected the `tasked` MCP — switched off `/tmp/board.py` to `mcp__tasked__*`
+this firing (filed TSK-488/489 + advanced via the MCP).
+
+- **TSK-488 (feature) — tab strip position left(default)/top/right, always-shown:** `TerminalPaneStore`
+  already had the full multi-tab model; the gap was placement. Added `TerminalTabPosition`
+  enum (+`isVertical`) persisted in `TerminalPaneLayout` (default `.left`, unknown→`.left`);
+  `TerminalPaneStore.tabPosition`/`setTabPosition`; refactored `TerminalPaneView` → vertical chip column
+  (left/right) or horizontal strip (top); Settings → Terminal segmented picker. Always-show already held.
+- **TSK-489 (bug) — scroll resets on tab switch (breaks `top`):** root cause = `scrollOffset` was
+  VIEW-LOCAL and `.id(selectedTabID)` recreates the `TerminalNSView` on every switch. Lifted
+  `scrollOffset` into the per-tab `TerminalModel`; the view seeds from it (`initialScrollOffset`,
+  clamped) + writes back (`onScrollOffsetChange`). Remount now restores the prior offset.
+- 5 host tests (TerminalPaneLayout position round-trip/default/unknown-degrade/key + isVertical).
+  Gate green (4127); debug bundle installed. Per the new self-validation policy, **NOT** self-validated:
+  both behaviors render in AppKit with no host coverage → left at `fixed` for owner/VM eyeball.
+- **Flagged (not blind-fixed):** the deeper `top`/full-screen-TUI rendering needs the **alternate-screen
+  buffer** (unimplemented, `TerminalScreen.swift:22`). If `top` still misbehaves after the scroll fix,
+  that's the real root cause — a separate parser feature I'll file/scope next rather than guess.
+
 ## LOG 2026-06-07 (latest+46) — TSK-306/272: preview-tab — design breakdown + model core (Phase 1)
 
 After three shipped editor features, the remaining `reported` backlog is large/design-gated. Highest
