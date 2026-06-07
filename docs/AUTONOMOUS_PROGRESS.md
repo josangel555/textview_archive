@@ -29,6 +29,27 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+33) — TSK-467 HEX View Only toggle wired + 2 stale audit closes
+
+- **TSK-467 (`14c6bf6`) → fixed:** HEX byte-editing (#234 — buffer/keystroke/save) was shipped but
+  **unreachable**. Root cause was two-layered: `ViewModeControl.present(.hex)` hardcoded `viewOnly:true`
+  ('deferred capability'), so `HexView.isEditable` (`p.viewOnly == false`) was never true; AND the
+  toolbar's View Only toggle only rendered `if showsEditorPrimary`, so a binary (HEX-only) file showed
+  no toggle. There's a single `.hex` ViewMode, so the armed flag has nowhere to live in the enum →
+  stored a per-tab `hexEditArmed` flag on DocumentModel (mirrors `hexDirtyBytes`), default OFF
+  (read-only, byte-identical until opt-in). `viewModePresentation` reflects it; `setViewOnly(.hex)`
+  arms/disarms with NO ViewMode churn (LOADBUG-safe); toolbar shows the toggle for HEX; stale
+  help/comments updated. 4 headless tests (default-read-only, arm-without-mode-change, per-tab,
+  republish). Gate green (4078 tests).
+  - **DECISIONS NEEDED / live-validation:** this makes editable-HEX REACHABLE and proves the *gating*
+    headlessly, but the end-to-end **byte-edit keystroke → buffer → save-to-disk** is a file-MUTATING
+    path only exercisable on the VM/live tier. Needs a VM sanity check before relying on it (board
+    TSK-467 carries the same caveat; agent lane stops at `fixed`, human gates `validated`).
+- **Stale audit closes (verify-first):** TSK-478 (MCP.Value.int Int64 trap) and TSK-479 (MessagePack
+  untrusted-count OOM) were BOTH already remediated in-tree (`Int(exactly:)` / clamped
+  `reserveCapacity`). Closed as verified-already-fixed, no commits — reconfirms
+  `project_audit_pending_list_stale`.
+
 ## LOG 2026-06-06 (latest+32) — TSK-459 terminal background-tab bump pause
 
 - **TSK-459 (`ba1e463`) → fixed:** continuation of the terminal-perf work. With `.id(selectedTabID)`,
