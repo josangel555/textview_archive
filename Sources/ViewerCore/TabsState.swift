@@ -232,4 +232,64 @@ public struct TabsState: Equatable, Sendable {
         selectedIndex = tabs.count - 1
         return tabs.count - 1
     }
+
+    // MARK: Preview tab (TSK-306 / TSK-272 — see docs/PREVIEW_TAB_DESIGN.md)
+
+    /// id of the single ephemeral preview tab, if one exists.
+    public var previewTabID: UUID? { tabs.first(where: { $0.isPreview })?.id }
+
+    /// Open `url` in the ONE ephemeral preview slot (VSCode-style):
+    /// - If `url` is already open in ANY tab → reveal it via `openOrReveal`
+    ///   (never preview a file that already has a real tab).
+    /// - Else if a preview tab already exists → replace its content in place
+    ///   (same tab id), keeping it flagged preview.
+    /// - Else reuse a blank selected tab, or append a fresh preview tab.
+    ///
+    /// Invariant: at most one tab is ever `isPreview`. Selecting/returning
+    /// the resulting index mirrors `openOrReveal`.
+    @discardableResult
+    public mutating func openPreview(
+        url: URL,
+        state: DocumentState,
+        viewMode: ViewMode
+    ) -> Int {
+        let key = TabsState.dedupKey(url)
+        if tabs.contains(where: { $0.url.map(TabsState.dedupKey) == key }) {
+            // Already open somewhere — reveal it (and re-materialize a lazy
+            // tab) through the shared path; don't create a preview.
+            return openOrReveal(url: url, state: state, viewMode: viewMode)
+        }
+        if let p = tabs.firstIndex(where: { $0.isPreview }) {
+            tabs[p] = Tab(
+                id: tabs[p].id,
+                url: url,
+                state: state,
+                viewMode: viewMode,
+                isPreview: true
+            )
+            selectedIndex = p
+            return p
+        }
+        if let cur = selectedIndex, tabs.indices.contains(cur), tabs[cur].isBlank {
+            tabs[cur] = Tab(
+                id: tabs[cur].id,
+                url: url,
+                state: state,
+                viewMode: viewMode,
+                isPreview: true
+            )
+            selectedIndex = cur
+            return cur
+        }
+        tabs.append(Tab(url: url, state: state, viewMode: viewMode, isPreview: true))
+        selectedIndex = tabs.count - 1
+        return tabs.count - 1
+    }
+
+    /// Promote the tab with `id` from preview → permanent ("pin"). No-op if
+    /// `id` isn't a tab or isn't a preview. Idempotent.
+    public mutating func promoteTab(id: UUID) {
+        guard let i = tabs.firstIndex(where: { $0.id == id }), tabs[i].isPreview else { return }
+        tabs[i].isPreview = false
+    }
 }

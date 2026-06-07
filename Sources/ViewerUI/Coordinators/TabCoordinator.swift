@@ -222,6 +222,23 @@ public final class TabCoordinator: ObservableObject {
         return i
     }
 
+    /// Open `url` in the single ephemeral preview slot (TSK-306 / TSK-272).
+    /// Forwarder onto `TabsState.openPreview`. See `docs/PREVIEW_TAB_DESIGN.md`.
+    @discardableResult
+    public func openPreview(url: URL, state: DocumentState, viewMode: ViewMode) -> Int {
+        let i = tabs.openPreview(url: url, state: state, viewMode: viewMode)
+        refreshOpenTabURLs()
+        return i
+    }
+
+    /// Promote the preview tab `id` → permanent ("pin"). Forwarder.
+    public func promoteTab(id: UUID) {
+        tabs.promoteTab(id: id)
+    }
+
+    /// id of the current ephemeral preview tab, if any. Forwarder.
+    public var previewTabID: UUID? { tabs.previewTabID }
+
     // MARK: - Close paths (the three that prune per-tab dicts)
 
     /// Close the tab at `index` and prune every per-tab cache that

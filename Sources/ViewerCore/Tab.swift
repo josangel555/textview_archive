@@ -84,6 +84,17 @@ public struct Tab: Sendable, Identifiable {
     /// metadata, not display state.
     public var scrollTopLine: Int?
 
+    /// True for an ephemeral "preview" tab (VSCode-style): single-click /
+    /// arrow-nav in the sidebar reuses the one preview slot instead of
+    /// spawning a tab per file; an explicit commit (double-click / Enter /
+    /// edit) promotes it to permanent via `TabsState.promoteTab` (TSK-306,
+    /// TSK-272 — see `docs/PREVIEW_TAB_DESIGN.md`). In-memory only: NOT
+    /// carried by `TabSnapshot`, so a relaunch rehydrates tabs as permanent
+    /// (the "promote on save" persistence rule, for free). INCLUDED in
+    /// `Equatable` so the tab strip re-renders the preview affordance on
+    /// promote.
+    public var isPreview: Bool
+
     public init(
         id: UUID = UUID(),
         url: URL? = nil,
@@ -92,7 +103,8 @@ public struct Tab: Sendable, Identifiable {
         isDirty: Bool = false,
         diskState: DiskState = .fresh,
         categoryOverride: FileCategory? = nil,
-        scrollTopLine: Int? = nil
+        scrollTopLine: Int? = nil,
+        isPreview: Bool = false
     ) {
         self.id = id
         self.url = url
@@ -102,6 +114,7 @@ public struct Tab: Sendable, Identifiable {
         self.diskState = diskState
         self.categoryOverride = categoryOverride
         self.scrollTopLine = scrollTopLine
+        self.isPreview = isPreview
     }
 
     /// Pure staleness classification, reusing the same mtime-OR-size
@@ -156,6 +169,7 @@ extension Tab: Equatable {
         guard lhs.isDirty == rhs.isDirty else { return false }
         guard lhs.diskState == rhs.diskState else { return false }
         guard lhs.categoryOverride == rhs.categoryOverride else { return false }
+        guard lhs.isPreview == rhs.isPreview else { return false }
         // `scrollTopLine` is intentionally NOT compared (UX-K, #231): it's
         // persistence-only scroll metadata captured at focus-loss/close
         // boundaries. Comparing it would make a scroll capture re-trigger
