@@ -139,7 +139,7 @@ struct TerminalPaneView: View {
                 .font(.system(size: fontSize * 0.85, weight: .medium))
                 .foregroundStyle(Palette.secondaryLabel)
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 4) { ForEach(store.tabs) { tabChip($0) } }
+                HStack(spacing: 4) { ForEach(store.tabs) { tabChip($0, fillWidth: false) } }
             }
             newTabButton
             Spacer(minLength: 0)
@@ -158,14 +158,14 @@ struct TerminalPaneView: View {
                 .font(.system(size: fontSize * 0.85, weight: .medium))
                 .foregroundStyle(Palette.secondaryLabel)
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 4) { ForEach(store.tabs) { tabChip($0) } }
+                VStack(spacing: 4) { ForEach(store.tabs) { tabChip($0, fillWidth: true) } }
             }
             newTabButton
             Spacer(minLength: 0)
             restartButtonIfExited
             closePaneButton
         }
-        .frame(width: max(34, fontSize * 2.6))
+        .frame(width: max(46, fontSize * 3.6))
         .padding(.vertical, 8)
         .padding(.horizontal, 4)
         .background(Palette.windowBackground)
@@ -196,34 +196,43 @@ struct TerminalPaneView: View {
             .accessibilityIdentifier("mdv.terminal.close")
     }
 
-    private func tabChip(_ tab: TerminalTab) -> some View {
+    /// A single terminal tab, rendered as an explicit chip so it reads as a
+    /// tab even when there's only one (owner: "even if only one tab, show
+    /// tab"). Selected → accent-filled with white text; unselected →
+    /// control-filled with a hairline border. `fillWidth` makes the chip
+    /// span the vertical rail (left/right) so the column looks like stacked
+    /// tabs; the horizontal (top) strip leaves chips at their natural width.
+    private func tabChip(_ tab: TerminalTab, fillWidth: Bool) -> some View {
         let selected = tab.id == store.selectedTabID
         return HStack(spacing: 4) {
+            Image(systemName: "terminal")
+                .font(.system(size: fontSize * 0.72, weight: .semibold))
             Text("\(tab.number)")
-                .font(.system(size: fontSize * 0.8, weight: selected ? .semibold : .regular,
-                              design: .monospaced))
-                .foregroundStyle(selected ? Palette.labelColor : Palette.secondaryLabel)
+                .font(.system(size: fontSize * 0.92, weight: .bold, design: .monospaced))
             // Close affordance — only the selected tab shows it inline to
             // keep the strip tidy; any tab can be closed once selected.
             if selected && store.tabs.count > 1 {
                 Button { store.closeTab(tab.id) } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: fontSize * 0.62, weight: .bold))
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: fontSize * 0.72))
                 }
                 .buttonStyle(.plain)
                 .help("Close this tab")
             }
         }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 2)
-        .background(selected ? Palette.textBackground : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .foregroundStyle(selected ? Color.white : Palette.labelColor)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .frame(maxWidth: fillWidth ? .infinity : nil, minHeight: 24)
+        .background(selected ? Palette.selectedContentBackground : Palette.controlBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 5))
         .overlay(
-            RoundedRectangle(cornerRadius: 4)
-                .strokeBorder(selected ? Palette.separator : .clear, lineWidth: 1)
+            RoundedRectangle(cornerRadius: 5)
+                .strokeBorder(selected ? Color.clear : Palette.separator, lineWidth: 1)
         )
         .contentShape(Rectangle())
         .onTapGesture { store.selectTab(tab.id) }
+        .help("Terminal \(tab.number)")
         .accessibilityIdentifier("mdv.terminal.tab.\(tab.number)")
     }
 
