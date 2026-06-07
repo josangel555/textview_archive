@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# vm-uitest.sh — PROGRAMMATIC visual-UI validation on the macOS15 VM (TSK-492).
+#
+# Replaces "spawn over SSH + screencapture" (whose windows macOS 15 redacts to
+# blank) with a LaunchAgent that runs the capture INSIDE the VM's Aqua session,
+# where the WindowServer hands over real pixels. Eval is a dense-saturated-block
+# check (scripts/vm-uitest/aqua-runner.sh) → deterministic PASS/FAIL, no human
+# eyeballing (owner directive 2026-06-07: screenshots don't scale).
+#
+# Subcommands:
+#   setup            ONE-TIME, OWNER-AUTHORIZED: rsync, install + bootstrap the
+#                    LaunchAgent into gui/<uid>. After this the owner must grant
+#                    Screen Recording to the agent ONCE on the VM (see below).
+#   run <scene>      Sync the runner, kickstart the agent for <scene>, poll for
+#                    the result, copy the PNG + result back, print PASS/FAIL.
+#   teardown         Bootout + remove the LaunchAgent (clean uninstall).
+#
+# One-time Screen-Recording grant (macOS 15, on the VM GUI, owner action):
+#   System Settings → Privacy & Security → Screen Recording → enable the entry
+#   that appears the first time the agent runs `screencapture` (it will be
+#   `bash`/the agent). If none appears, add `/bin/bash`. Then `run` again.
+#
+# Why setup needs the owner: installing/bootstrapping a LaunchAgent is a
+# persistence change on a shared VM, and the TCC grant is a GUI action — both
+# are the owner's to authorize. The agent scripts are committed so setup is a
+# single authorized step.
+set -uo pipefail
+
+HOST="${MDV_VM_HOST:-macOS15}"
+GUI_UID="${MDV_VM_GUI_UID:-501}"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LABEL="com.markdownviewer.uitest"
+REMOTE_HOME_CMD='echo $HOME'
+
+rsync_tree() {
+  rsync -az --delete \
+    --exclude='.build/' --exclude='.swiftpm/' --exclude='dist/' \
+    --exclude='.git/objects/pack/' \
+    "$ROOT/" "$HOST:markdown_viewer/"
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  setup)
+    echo "==> rsync tree to $HOST"
+    rsync_tree
+    HOME_DIR="$(ssh "$HOST" "$REMOTE_HOME_CMD")"
+    echo "==> install LaunchAgent plist (HOME=$HOME_DIR)"
+    sed "s#__HOME__#$HOME_DIR#g" \
+      "$ROOT/scripts/vm-uitest/com.markdownviewer.uitest.plist.template" \
+      | ssh "$HOST" "mkdir -p ~/.mdv-uitest ~/Library/LaunchAgents && cat > ~/Library/LaunchAgents/$LABEL.plist"
+    echo "==> bootstrap into gui/$GUI_UID"
+    ssh "$HOST" "launchctl bootstrap gui/$GUI_UID ~/Library/LaunchAgents/$LABEL.plist 2>&1 || launchctl enable gui/$GUI_UID/$LABEL"
+    echo "==> done. Build dist on the VM (scripts/test-in-vm.sh or build-app) then:"
+    echo "    bash scripts/vm-uitest.sh run terminal-paneright"
+    echo "    (first run: grant Screen Recording to the agent on the VM GUI)"
+    ;;
+  run)
+    scene="${1:-terminal-paneright}"
+    echo "==> sync runner + kickstart '$scene' on $HOST (gui/$GUI_UID)"
+    rsync_tree
+    ssh "$HOST" "mkdir -p ~/.mdv-uitest; printf '%s' '$scene' > ~/.mdv-uitest/scene; rm -f ~/.mdv-uitest/done ~/.mdv-uitest/$scene.result; launchctl kickstart -k gui/$GUI_UID/$LABEL"
+    echo "==> poll for completion (≤30s)"
+    ok=""
+    for _ in $(seq 1 60); do
+      if ssh "$HOST" "test -f ~/.mdv-uitest/done" 2>/dev/null; then ok=1; break; fi
+      sleep 0.5
+    done
+    [ -n "$ok" ] || { echo "FAIL: agent didn't finish (not bootstrapped? run setup)"; exit 3; }
+    mkdir -p /tmp/mdv-vm-ui
+    ssh "$HOST" "cat ~/.mdv-uitest/$scene.result" | tee "/tmp/mdv-vm-ui/$scene.result"
+    scp -q "$HOST:.mdv-uitest/$scene.png" "/tmp/mdv-vm-ui/$scene.png" 2>/dev/null || true
+    grep -q '^PASS' "/tmp/mdv-vm-ui/$scene.result" && { echo "PASS -> /tmp/mdv-vm-ui/$scene.png"; exit 0; } || { echo "FAIL -> /tmp/mdv-vm-ui/$scene.png"; exit 1; }
+    ;;
+  teardown)
+    ssh "$HOST" "launchctl bootout gui/$GUI_UID/$LABEL 2>/dev/null; rm -f ~/Library/LaunchAgents/$LABEL.plist"
+    echo "==> removed $LABEL"
+    ;;
+  *)
+    echo "usage: vm-uitest.sh {setup|run <scene>|teardown}"; exit 2;;
+esac

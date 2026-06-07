@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LaunchAgent for the VM visual-UI-test lane (TSK-492).
+
+  WHY a LaunchAgent (not `launchctl asuser`): a LaunchAgent bootstrapped into
+  the user's `gui/<uid>` domain runs in the **Aqua** session, so
+  `launchctl managername` == Aqua and the WindowServer gives `screencapture
+  -l<windowID>` REAL pixels. Processes spawned over SSH (Background domain) or
+  via `launchctl asuser` have their windows REDACTED to blank on macOS 15 — the
+  documented blocker (vm-smoke.sh "known limitation").
+
+  RunAtLoad is false: the host kickstarts it on demand
+  (`launchctl kickstart -k gui/<uid>/com.markdownviewer.uitest`) once per scene.
+  __HOME__ is substituted at install time by scripts/vm-uitest.sh setup.
+-->
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.markdownviewer.uitest</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__HOME__/markdown_viewer/scripts/vm-uitest/aqua-runner.sh</string>
+  </array>
+  <key>RunAtLoad</key><false/>
+  <key>StandardOutPath</key><string>__HOME__/.mdv-uitest/agent.out</string>
+  <key>StandardErrorPath</key><string>__HOME__/.mdv-uitest/agent.err</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>MDV_UITEST_JOB_DIR</key><string>__HOME__/.mdv-uitest</string>
+  </dict>
+</dict></plist>
