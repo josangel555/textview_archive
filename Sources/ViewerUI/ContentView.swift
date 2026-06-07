@@ -938,8 +938,8 @@ struct LargeMarkdownPlaceholderView: View {
                 .foregroundStyle(.tertiary)
             Text("Markdown too large to render")
                 .font(.title3)
-            Text("This file is \(byteString(file.byteCount)). " +
-                 "Rendered mode is capped at \(byteString(markdownRenderMaxBytes)) " +
+            Text("This file is \(ByteSize.mbString(file.byteCount)). " +
+                 "Rendered mode is capped at \(ByteSize.mbString(markdownRenderMaxBytes)) " +
                  "to avoid multi-hundred-MB transient allocations through the " +
                  "parser → HTML → WebView pipeline.")
                 .font(.callout)
@@ -955,10 +955,6 @@ struct LargeMarkdownPlaceholderView: View {
         .padding(40)
     }
 
-    private func byteString(_ bytes: Int) -> String {
-        let mb = Double(bytes) / 1_048_576.0
-        return String(format: "%.1f MB", mb)
-    }
 }
 
 /// Shown for files that exceed `codeMirrorEditorMaxBytes` in editor
@@ -981,8 +977,8 @@ struct LargeEditorPlaceholderView: View {
                 .foregroundStyle(.tertiary)
             Text("File too large for editor mode")
                 .font(.title3)
-            Text("This file is \(byteString(file.byteCount)). " +
-                 "CodeMirror is capped at \(byteString(codeMirrorEditorMaxBytes)) " +
+            Text("This file is \(ByteSize.mbString(file.byteCount)). " +
+                 "CodeMirror is capped at \(ByteSize.mbString(codeMirrorEditorMaxBytes)) " +
                  "to avoid JS-heap pressure in the WebView. Source view " +
                  "handles larger files read-only (high memory use above ~64 MB).")
                 .font(.callout)
@@ -998,10 +994,6 @@ struct LargeEditorPlaceholderView: View {
         .padding(40)
     }
 
-    private func byteString(_ bytes: Int) -> String {
-        let mb = Double(bytes) / 1_048_576.0
-        return String(format: "%.1f MB", mb)
-    }
 }
 
 struct ModeBar: View {

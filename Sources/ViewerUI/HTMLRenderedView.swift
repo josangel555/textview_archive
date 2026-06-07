@@ -236,8 +236,8 @@ struct LargeHTMLPlaceholderView: View {
                 .foregroundStyle(.tertiary)
             Text("HTML too large to render")
                 .font(.title3)
-            Text("This file is \(byteString(file.byteCount)). " +
-                 "Rendered mode is capped at \(byteString(HTMLDocumentPolicy.renderMaxBytes)) " +
+            Text("This file is \(ByteSize.mbString(file.byteCount)). " +
+                 "Rendered mode is capped at \(ByteSize.mbString(HTMLDocumentPolicy.renderMaxBytes)) " +
                  "to avoid slurping a multi-MB untrusted document into the " +
                  "WebContent process.")
                 .font(.callout)
@@ -253,8 +253,4 @@ struct LargeHTMLPlaceholderView: View {
         .padding(40)
     }
 
-    private func byteString(_ bytes: Int) -> String {
-        let mb = Double(bytes) / 1_048_576.0
-        return String(format: "%.1f MB", mb)
-    }
 }
