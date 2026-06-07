@@ -163,10 +163,24 @@ continue", document blockers and move on):
   drift) — but DON'T ship a risky blind change; if it needs the screen/owner,
   file it and move on.
 - **Lifecycle lanes:** `reported → ack → triaged → progress → fixed → review →
-  validated → done`. **Agents only reach `fixed`** (via `task_advance`/
-  `task_record`); the human gates `review`/`validated`/`done`. Owner-gated items
-  (dep approval, risky supervised refactor) → set `blocker` + append to the
-  `DECISIONS NEEDED` section of `docs/AUTONOMOUS_PROGRESS.md`; don't block the loop.
+  validated → done`. Drive via the **`mcp__tasked__*` tools** (NOT the retired
+  `python3 /tmp/board.py`); `task_advance` auto-walks lanes to `fixed`/`review`.
+- **Agent self-validation (owner policy, 2026-06-07):** an agent MAY close its own
+  work to `validated`/`done` via **`task_validate`** — BUT *only* with a `checks`
+  artifact proving an **automated test that exercises the actual feature/behavior**
+  and would fail if it regressed. The bar is "are we confident automated tests
+  catch any regression of this behavior," not "build is green." Concretely:
+  - **Pure-logic / model / FFI / parser behavior** (host-testable): write the
+    behavior test, run it, attach the passing-checks artifact, self-validate.
+  - **WebView/AppKit-*rendered* behavior** (CM6 editor pixels, gutter folds,
+    indent-guide lines, caret insert, SwiftUI view wiring): host tests cover only
+    the model layer — the render path has NO host coverage — so do NOT self-validate
+    on host alone. Either add a VM UI test (nightly lane) that covers it, then
+    validate, or leave at `fixed`/`review` for the human/VM gate. Never claim a
+    visual behavior is regression-guarded when only its model is tested.
+  - Owner-gated items (dep approval, risky supervised refactor, a genuine product
+    decision) → use **`task_park{kind,question,context}`** (pings the owner) rather
+    than self-advancing; don't block the loop.
 - **Discipline:** keep `main` headless-gate-green; **commit per item**; land via
   rebase + fast-forward (no merge bubbles). Re-verify with the CENTRAL gate on the
   **committed** commit, not a torn worktree:
