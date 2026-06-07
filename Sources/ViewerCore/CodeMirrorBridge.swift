@@ -164,6 +164,10 @@ public enum CMOutboundMessage: Equatable, Sendable {
     case setShowInvisibles(Bool)
     case setIndentation(useTabs: Bool, size: Int)
     case gotoLine(line: Int, column: Int?, select: Bool)
+    /// Insert `text` at the current selection (replacing it if non-empty),
+    /// via CM6 `state.replaceSelection` — undoable, cursor lands after the
+    /// inserted text. Drives the "Insert Date & Time" command (TSK-299).
+    case insertAtCursor(text: String)
     case setSelection(anchor: Int, head: Int, scroll: Bool)
     case openSearch(query: String?, replace: Bool)
     case closeSearch
@@ -233,7 +237,8 @@ public enum CMOutboundMessage: Equatable, Sendable {
     /// listed explicitly; everything else is v1.
     public var minimumVersion: Int {
         switch self {
-        case .applyEdits, .setFoldingRanges, .setGutterMarkers, .setIndentGuides:
+        case .applyEdits, .setFoldingRanges, .setGutterMarkers, .setIndentGuides,
+             .insertAtCursor:
             return 2
         default:
             return 1
@@ -519,6 +524,9 @@ public enum CMBridgeCodec {
             dict["line"] = line
             if let column = column { dict["column"] = column }
             dict["select"] = select
+        case .insertAtCursor(let text):
+            dict["type"] = "insertAtCursor"
+            dict["text"] = text
         case .setSelection(let anchor, let head, let scroll):
             dict["type"] = "setSelection"
             dict["anchor"] = anchor

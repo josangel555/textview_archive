@@ -81,6 +81,17 @@ public final class EditorCoordinator: ObservableObject {
     /// `CodeMirrorEditorView` builds the `CMGotoLineRequest` from this.
     @Published public var editorGotoLine: CMGotoLineRequest? = nil
 
+    /// Set to a fresh `CMInsertRequest` to insert text at the active
+    /// editor's caret (TSK-299). The active `CodeMirrorEditorView` reads
+    /// this and dispatches `insertAtCursor`. One-shot; nonce-distinct.
+    @Published public var editorInsertRequest: CMInsertRequest? = nil
+
+    /// Queue an insert-at-caret of `text` into the active CM6 editor.
+    public func insertIntoEditor(_ text: String) {
+        guard !text.isEmpty else { return }
+        editorInsertRequest = CMInsertRequest(text: text)
+    }
+
     /// Indent setting for CM6 editor. Drives CM6's `indentUnit` + tab
     /// size facets via the v1 bridge. Defaults to 2 spaces (matches
     /// the bundle's `applySetIndentation` default).

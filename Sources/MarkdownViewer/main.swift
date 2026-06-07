@@ -683,6 +683,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         webView.evaluateJavaScript("redo()", completionHandler: nil)
     }
 
+    /// Edit → Insert Date and Time (⌥F5-style; TSK-299). Routes to the
+    /// model, which formats the current time + inserts it at the active
+    /// editor's caret. validateMenuItem gates it to editor mode.
+    @objc func insertDateTime(_ sender: Any?) {
+        model.insertDateAndTime()
+    }
+
     @objc func toggleViewMode(_ sender: Any?) {
         model.toggleViewMode()
     }
@@ -1388,6 +1395,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
         editMenu.addItem(.separator())
 
+        // Insert Date & Time (TSK-299, Notepad's F5). Only enabled in
+        // editor mode (validateMenuItem); inserts a locale-formatted
+        // stamp at the caret via the CM6 `insertAtCursor` bridge.
+        let insertDateItem = NSMenuItem(
+            title: "Insert Date and Time",
+            action: #selector(insertDateTime(_:)),
+            keyEquivalent: ""
+        )
+        insertDateItem.target = self
+        editMenu.addItem(insertDateItem)
+        editMenu.addItem(.separator())
+
         // U7 — Find / Find Next / Find Previous. The system routes these to
         // the first responder; NSTextView with usesFindBar=true handles them
         // natively in source mode. WKWebView (rendered mode) handling is the
@@ -1746,6 +1765,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             if let i = model.tabs.selectedIndex, model.isHexDirtyTab(at: i) { return true }
             guard model.currentViewMode == .editor else { return false }
             return model.tabs.selected?.isDirty == true
+        case #selector(insertDateTime(_:)):
+            // Only meaningful when an editor is on screen to receive it.
+            return hasTab && model.currentViewMode == .editor
+                && CodeMirrorEditorRegistry.shared.current() != nil
         case #selector(editorUndo(_:)), #selector(editorRedo(_:)):
             // Only intercept ⌘Z / ⇧⌘Z when an editor is on screen.
             // Returning false here releases the keystroke back to the

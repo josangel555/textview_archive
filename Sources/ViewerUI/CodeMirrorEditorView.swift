@@ -37,6 +37,9 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
     /// nothing. Compare-by-equality means stable tab redraws don't
     /// re-trigger the jump.
     public let gotoLineRequest: CMGotoLineRequest?
+    /// One-shot insert-at-caret request (TSK-299). Same nonce semantics
+    /// as `gotoLineRequest`.
+    public let insertRequest: CMInsertRequest?
     public let showInvisibles: Bool
     /// Phase 4 (v2): toggle the indent-guides decoration plugin.
     /// Pure visual cue; no language-pack dependency.
@@ -101,6 +104,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         lineNumbers: Bool = true,
         indentation: CMIndentation = .spaces(2),
         gotoLineRequest: CMGotoLineRequest? = nil,
+        insertRequest: CMInsertRequest? = nil,
         showInvisibles: Bool = false,
         indentGuides: Bool = false,
         foldingRanges: [CMFoldRange] = [],
@@ -134,6 +138,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         self.lineNumbers = lineNumbers
         self.indentation = indentation
         self.gotoLineRequest = gotoLineRequest
+        self.insertRequest = insertRequest
         self.showInvisibles = showInvisibles
         self.indentGuides = indentGuides
         self.foldingRanges = foldingRanges
@@ -257,6 +262,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         private var pendingLineNumbers: Bool?
         private var pendingIndentation: CMIndentation?
         private var pendingGotoLine: CMGotoLineRequest?
+        private var pendingInsert: CMInsertRequest?
         private var pendingShowInvisibles: Bool?
         private var pendingIndentGuides: Bool?
         private var pendingFoldingRanges: [CMFoldRange]?
@@ -285,6 +291,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         private var lastSentLineNumbers: Bool?
         private var lastSentIndentation: CMIndentation?
         private var lastAppliedGotoLine: CMGotoLineRequest?
+        private var lastAppliedInsert: CMInsertRequest?
         private var lastSentShowInvisibles: Bool?
         private var lastSentIndentGuides: Bool?
         private var lastSentFoldingRanges: [CMFoldRange]?
@@ -326,6 +333,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             self.pendingLineNumbers = view.lineNumbers
             self.pendingIndentation = view.indentation
             self.pendingGotoLine = view.gotoLineRequest
+            self.pendingInsert = view.insertRequest
             self.pendingShowInvisibles = view.showInvisibles
             self.pendingIndentGuides = view.indentGuides
             self.pendingFoldingRanges = view.foldingRanges
@@ -423,6 +431,10 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
                     .gotoLine(line: req.line, column: req.column, select: req.select),
                     webView: webView
                 )
+            }
+            if let req = pendingInsert, req != lastAppliedInsert {
+                lastAppliedInsert = req
+                dispatch(.insertAtCursor(text: req.text), webView: webView)
             }
             // Initial selection: applied exactly once after the text
             // is in the editor — using `setSelection` (anchor/head)
@@ -853,6 +865,18 @@ public struct CMGotoLineRequest: Equatable, Sendable {
     public let select: Bool
     public init(id: UUID = UUID(), line: Int, column: Int? = nil, select: Bool = false) {
         self.id = id; self.line = line; self.column = column; self.select = select
+    }
+}
+
+/// One-shot "insert this text at the caret" request (TSK-299). Same
+/// nonce pattern as `CMGotoLineRequest`: the host sets a fresh value
+/// (new `id`) to fire; whole-struct equality decides whether to dispatch,
+/// so inserting the SAME text twice in a row still fires both times.
+public struct CMInsertRequest: Equatable, Sendable {
+    public let id: UUID
+    public let text: String
+    public init(id: UUID = UUID(), text: String) {
+        self.id = id; self.text = text
     }
 }
 

@@ -224,6 +224,23 @@ final class CMBridgeV2Tests: XCTestCase {
         XCTAssertEqual(dict?["enabled"] as? Bool, true)
     }
 
+    // MARK: - Outbound: insertAtCursor (TSK-299)
+
+    func testEncodeInsertAtCursor() {
+        let raw = CMBridgeCodec.encodeOutboundJSON(.insertAtCursor(text: "Jun 7, 2026"))
+        let dict = try? JSONSerialization.jsonObject(
+            with: raw.data(using: .utf8)!) as? [String: Any]
+        XCTAssertEqual(dict?["type"] as? String, "insertAtCursor")
+        XCTAssertEqual(dict?["text"] as? String, "Jun 7, 2026")
+    }
+
+    func testInsertAtCursorIsV2() {
+        // New message; must refuse to encode for a v1 peer (no JS handler
+        // in a v1 bundle) rather than land as "unknown message type".
+        XCTAssertNil(CMBridgeCodec.encodeOutbound(.insertAtCursor(text: "x"), peerVersion: 1))
+        XCTAssertNotNil(CMBridgeCodec.encodeOutbound(.insertAtCursor(text: "x"), peerVersion: 2))
+    }
+
     // MARK: - API-08: v > current surfaces as .unsupportedVersion
 
     func testDecodeTooNewEnvelopeReturnsUnsupportedVersion() {

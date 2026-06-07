@@ -835,6 +835,7 @@
         case "setLineNumbers":     applySetLineNumbers(msg); break;
         case "setIndentation":     applySetIndentation(msg); break;
         case "gotoLine":           applyGotoLine(msg); break;
+        case "insertAtCursor":     applyInsertAtCursor(msg); break;
         case "setSelection":       applySetSelection(msg); break;
         case "openSearch":         openSearchPanel(view); break;
         case "closeSearch":        closeSearchPanel(view); break;
@@ -1015,6 +1016,16 @@
       selection: sel,
       effects: EditorView.scrollIntoView(pos, { y: "center" }),
     });
+    view.focus();
+  }
+
+  // Insert text at the current selection (Insert Date & Time, TSK-299).
+  // `replaceSelection` is the idiomatic CM6 insert: it's undoable, drops
+  // the caret after the inserted text, and replaces any active selection.
+  function applyInsertAtCursor(msg) {
+    const text = typeof msg.text === "string" ? msg.text : "";
+    if (!text) return;
+    view.dispatch(view.state.replaceSelection(text));
     view.focus();
   }
 

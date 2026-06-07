@@ -576,6 +576,7 @@ public struct ContentView: View {
                     lineNumbers: true,
                     indentation: model.editorIndentation,
                     gotoLineRequest: model.editorGotoLine,
+                    insertRequest: model.editorInsertRequest,
                     showInvisibles: model.showInvisibleChars,
                     indentGuides: model.editorIndentGuides,
                     foldingRanges: model.editorFoldRangesByTab[tid] ?? [],

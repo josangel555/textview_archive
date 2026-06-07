@@ -115,6 +115,38 @@ final class EditorCoordinatorTests: XCTestCase {
         XCTAssertEqual(ec.editorScrollByTab[b]?.top, 250)
     }
 
+    // MARK: - Insert-at-cursor request (TSK-299)
+
+    func test_insertIntoEditor_setsRequestWithText() {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        _ = wire(ec, tc)
+        XCTAssertNil(ec.editorInsertRequest)
+        ec.insertIntoEditor("Jun 7, 2026")
+        XCTAssertEqual(ec.editorInsertRequest?.text, "Jun 7, 2026")
+    }
+
+    func test_insertIntoEditor_consecutiveCallsAreDistinct() {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        _ = wire(ec, tc)
+        ec.insertIntoEditor("stamp")
+        let first = ec.editorInsertRequest
+        ec.insertIntoEditor("stamp") // same text — must still re-fire
+        let second = ec.editorInsertRequest
+        XCTAssertNotNil(first); XCTAssertNotNil(second)
+        XCTAssertNotEqual(first, second,
+            "identical-text inserts need distinct nonces so both dispatch")
+    }
+
+    func test_insertIntoEditor_emptyIsNoOp() {
+        let tc = TabCoordinator()
+        let ec = EditorCoordinator(tabCoordinator: tc)
+        _ = wire(ec, tc)
+        ec.insertIntoEditor("")
+        XCTAssertNil(ec.editorInsertRequest)
+    }
+
     // MARK: - Pending diagnostics fan-out
 
     func test_pendingDiagnostics_consumeClears() {

@@ -1777,6 +1777,20 @@ public final class DocumentModel: ObservableObject {
         set { editor.editorGotoLine = newValue }
     }
 
+    /// Forwarder. Read at the `CodeMirrorEditorView` call site
+    /// (`insertRequest:`).
+    public var editorInsertRequest: CMInsertRequest? {
+        editor.editorInsertRequest
+    }
+
+    /// Edit → Insert Date & Time (TSK-299). Formats the current time in
+    /// the user's locale and inserts it at the active editor's caret.
+    /// No-op unless the selected tab is in editor mode.
+    public func insertDateAndTime() {
+        guard currentViewMode == .editor else { return }
+        editor.insertIntoEditor(DateTimeStamp.string(for: Date()))
+    }
+
     /// Forwarder. New code should bind `$editor.editorIndentation`.
     public var editorIndentation: CMIndentation {
         get { editor.editorIndentation }
