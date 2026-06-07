@@ -38,6 +38,59 @@ final class RegexComplexityGuardTests: XCTestCase {
         XCTAssertNotNil(RegexComplexityGuard.reject("^(a|aa)+$"))
     }
 
+    // MARK: - Group-prefix tokenization (TSK-293 / TSK-279)
+    // These ReDoS shapes previously slipped through because the group-
+    // modifier-prefix skip over-consumed: it ate `>` of a named group as
+    // the "first atom", and ate the first body letter of `(?:…)`.
+
+    func test_rejectsNestedQuantifier_nonCapturingGroup() {
+        // (?:a+)+ is the non-capturing twin of (a+)+ — equally exponential.
+        XCTAssertNotNil(RegexComplexityGuard.reject("(?:a+)+"))
+    }
+
+    func test_rejectsNestedQuantifier_namedGroup() {
+        // (?<name>a+)+ — ICU/NSRegularExpression named-capture syntax.
+        XCTAssertNotNil(RegexComplexityGuard.reject("(?<name>a+)+"))
+    }
+
+    func test_rejectsNestedQuantifier_pythonNamedGroup() {
+        XCTAssertNotNil(RegexComplexityGuard.reject("(?P<name>a+)+"))
+    }
+
+    func test_rejectsNestedQuantifier_flaggedGroup() {
+        // (?i:a+)+ — flags-on-group prefix; body still nests.
+        XCTAssertNotNil(RegexComplexityGuard.reject("(?i:a+)+"))
+    }
+
+    func test_rejectsAlternationUnderQuantifier_nonCapturing() {
+        XCTAssertNotNil(RegexComplexityGuard.reject("(?:a|aa)+"))
+    }
+
+    func test_rejectsAlternationUnderQuantifier_namedGroup() {
+        XCTAssertNotNil(RegexComplexityGuard.reject("(?<g>a|aa)+"))
+    }
+
+    // Benign group-prefix forms must STILL pass (no false positives).
+
+    func test_acceptsAnchoredNonCapturingRepetition() {
+        // (?:\.\d+)+ — first atom `\.` is unquantified; each iteration is
+        // anchored, so this is NOT exponential.
+        XCTAssertNil(RegexComplexityGuard.reject(#"(?:\.\d+)+"#))
+    }
+
+    func test_acceptsNamedGroupBoundedBody() {
+        XCTAssertNil(RegexComplexityGuard.reject(#"(?<year>\d{4})"#))
+    }
+
+    func test_acceptsInlineFlagsThenLiteral() {
+        XCTAssertNil(RegexComplexityGuard.reject("(?i)hello"))
+    }
+
+    func test_acceptsLookahead_and_lookbehind() {
+        XCTAssertNil(RegexComplexityGuard.reject("foo(?=bar)"))
+        XCTAssertNil(RegexComplexityGuard.reject("(?<=foo)bar"))
+    }
+
     func test_rejectsExcessivelyLongPattern() {
         let big = String(repeating: "a", count: 2048)
         XCTAssertNotNil(RegexComplexityGuard.reject(big))

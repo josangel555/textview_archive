@@ -112,6 +112,58 @@ public enum RegexComplexityGuard {
 
     // MARK: - Heuristics
 
+    /// Given `chars[q] == "?"` immediately after a group-opening `(`,
+    /// return the index of the first character of the group BODY — i.e.
+    /// past the whole `(?…` modifier prefix. Both shape heuristics call
+    /// this so a group's prefix is never mistaken for body content.
+    ///
+    /// SECURITY (TSK-293 / TSK-279): the previous inline skip consumed any
+    /// run of `[A-Za-z:=!<]`, which mis-handled two forms and let
+    /// catastrophic regexes slip through:
+    ///   - `(?<name>a+)+` — `>` wasn't consumed, so it became the group's
+    ///     "first atom", displacing `a+` and defeating the
+    ///     `firstAtomQuantified` check.
+    ///   - `(?:a+)+` — after `:` the loop kept eating letters, so the body
+    ///     atom `a` was swallowed into the prefix and the inner `+`
+    ///     quantified nothing.
+    /// Both shapes are exponential ReDoS (non-capturing/named twins of
+    /// `(a+)+`). This tokenizer terminates the prefix precisely instead.
+    static func skipGroupPrefix(_ chars: [Character], questionMarkAt q: Int) -> Int {
+        let j = q + 1                       // first char after '?'
+        guard j < chars.count else { return j }
+        switch chars[j] {
+        case ":", "=", "!":
+            return j + 1                    // (?:  (?=  (?!
+        case "<":
+            // Lookbehind (?<= / (?<! vs named group (?<name>.
+            if j + 1 < chars.count, chars[j + 1] == "=" || chars[j + 1] == "!" {
+                return j + 2
+            }
+            return indexPastClosingAngle(chars, from: j + 1)
+        default:
+            // Python named group (?P<name>…
+            if chars[j] == "P", j + 1 < chars.count, chars[j + 1] == "<" {
+                return indexPastClosingAngle(chars, from: j + 2)
+            }
+            // Inline flags: (?i) (?ism:…) (?-i:…). Consume flag chars,
+            // then `:` opens a group body; a `)` closes a flag-only group
+            // (leave it for the caller's main loop).
+            var k = j
+            while k < chars.count, chars[k].isLetter || chars[k] == "-" { k += 1 }
+            if k < chars.count, chars[k] == ":" { return k + 1 }
+            return k
+        }
+    }
+
+    /// Scan from `start` to the next `>` and return the index just past it
+    /// (the named-group body start). Falls back to end-of-pattern if the
+    /// `>` is missing (malformed prefix — caller still makes progress).
+    private static func indexPastClosingAngle(_ chars: [Character], from start: Int) -> Int {
+        var k = start
+        while k < chars.count, chars[k] != ">" { k += 1 }
+        return k < chars.count ? k + 1 : k
+    }
+
     /// True iff the pattern contains a "dangerous nested quantifier"
     /// shape — narrowly: a quantified group whose **first atom** is
     /// itself an unbounded-quantified atom. ReDoS exponential
@@ -200,15 +252,7 @@ public enum RegexComplexityGuard {
                 // Skip group-modifier prefix `(?…` so it doesn't
                 // appear as content in the new frame.
                 if i < chars.count && chars[i] == "?" {
-                    i += 1
-                    while i < chars.count {
-                        let m = chars[i]
-                        if m.isLetter || m == ":" || m == "=" || m == "!" || m == "<" {
-                            i += 1
-                        } else {
-                            break
-                        }
-                    }
+                    i = Self.skipGroupPrefix(chars, questionMarkAt: i)
                 }
                 continue
             }
@@ -329,15 +373,7 @@ public enum RegexComplexityGuard {
                 stack.append(Frame())
                 i += 1
                 if i < chars.count && chars[i] == "?" {
-                    i += 1
-                    while i < chars.count {
-                        let m = chars[i]
-                        if m.isLetter || m == ":" || m == "=" || m == "!" || m == "<" {
-                            i += 1
-                        } else {
-                            break
-                        }
-                    }
+                    i = Self.skipGroupPrefix(chars, questionMarkAt: i)
                 }
                 continue
             }
