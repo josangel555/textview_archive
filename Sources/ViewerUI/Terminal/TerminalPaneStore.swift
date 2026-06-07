@@ -18,6 +18,14 @@ import ViewerCore
 /// synchronously (user-paced; no debounce needed). The shell process is
 /// spawned LAZILY on first open and reaped on `shutdown()` — an app that
 /// never opens the terminal never forks a shell.
+/// One terminal tab — a live shell session plus a stable id + display
+/// number. Multiple tabs each fork their own PTY (like iTerm tabs).
+public struct TerminalTab: Identifiable {
+    public let id = UUID()
+    public let number: Int
+    public let model: TerminalModel
+}
+
 @MainActor
 public final class TerminalPaneStore: ObservableObject {
     /// Whether the pane is showing. Mutating fires `objectWillChange` for
@@ -27,9 +35,18 @@ public final class TerminalPaneStore: ObservableObject {
     /// to `[minHeight, maxHeight]`.
     @Published public private(set) var height: CGFloat
 
-    /// The live terminal — created on first open so the app pays no PTY
-    /// cost until the user actually wants a shell.
-    public private(set) var terminal: TerminalModel?
+    /// Open terminal tabs (each its own shell), in display order.
+    @Published public private(set) var tabs: [TerminalTab] = []
+    /// The selected tab's id, or nil when the pane has no tabs.
+    @Published public private(set) var selectedTabID: UUID?
+
+    private var nextNumber = 1
+
+    /// The selected tab's live terminal — created on first open so the app
+    /// pays no PTY cost until the user actually wants a shell.
+    public var terminal: TerminalModel? {
+        tabs.first { $0.id == selectedTabID }?.model
+    }
 
     private let defaults: UserDefaults
     private var layout: TerminalPaneLayout
@@ -77,18 +94,50 @@ public final class TerminalPaneStore: ObservableObject {
         layout.save(to: defaults)
     }
 
-    // MARK: - Shell lifecycle
+    // MARK: - Tabs
 
-    /// Lazily create (but don't necessarily start) the terminal model.
-    /// The model spawns the shell itself when the representable mounts.
-    private func ensureTerminal() {
-        if terminal == nil {
-            terminal = TerminalModel()
+    /// Add a new shell tab and select it. The model spawns its shell when
+    /// the representable mounts.
+    public func addTab() {
+        let tab = TerminalTab(number: nextNumber, model: TerminalModel())
+        nextNumber += 1
+        tabs.append(tab)
+        selectedTabID = tab.id
+    }
+
+    /// Select an existing tab by id (no-op for an unknown id).
+    public func selectTab(_ id: UUID) {
+        guard selectedTabID != id, tabs.contains(where: { $0.id == id }) else { return }
+        selectedTabID = id
+    }
+
+    /// Close a tab, reaping its shell. Closing the last tab closes the
+    /// whole pane; closing the selected tab selects a neighbor.
+    public func closeTab(_ id: UUID) {
+        guard let idx = tabs.firstIndex(where: { $0.id == id }) else { return }
+        let tab = tabs.remove(at: idx)
+        tab.model.stop()
+        if tabs.isEmpty {
+            selectedTabID = nil
+            nextNumber = 1            // fresh numbering next time it opens
+            setOpen(false)            // last tab closed → close the pane
+            return
+        }
+        if selectedTabID == id {
+            selectedTabID = tabs[min(idx, tabs.count - 1)].id
         }
     }
 
-    /// Reap the shell on app teardown. Idempotent.
+    // MARK: - Shell lifecycle
+
+    /// Ensure the pane has at least one tab (called on open). The model
+    /// spawns the shell itself when the representable mounts.
+    private func ensureTerminal() {
+        if tabs.isEmpty { addTab() }
+    }
+
+    /// Reap every shell on app teardown. Idempotent.
     public func shutdown() {
-        terminal?.stop()
+        for tab in tabs { tab.model.stop() }
     }
 }

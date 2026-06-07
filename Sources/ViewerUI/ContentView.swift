@@ -157,12 +157,11 @@ public struct ContentView: View {
                         // it must NOT paint past its band onto the document /
                         // its own header (the "no header / covers the file"
                         // half of the bug).
-                        if terminalPane.isOpen, let terminal = terminalPane.terminal {
+                        if terminalPane.isOpen {
                             TerminalResizeHandle(store: terminalPane)
                             TerminalPaneView(
-                                model: terminal,
-                                fontSize: model.uiSize(12),
-                                onClose: { terminalPane.setOpen(false) }
+                                store: terminalPane,
+                                fontSize: model.uiSize(12)
                             )
                             .frame(height: terminalPane.height)
                             .clipped()

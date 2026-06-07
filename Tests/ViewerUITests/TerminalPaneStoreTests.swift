@@ -146,6 +146,69 @@ final class TerminalPaneStoreTests: XCTestCase {
             "TerminalPaneStore.objectWillChange must fire on toggle so ContentView/rail re-body")
     }
 
+    // MARK: - Tabs
+
+    func test_open_createsOneTab_selected() {
+        let store = TerminalPaneStore(defaults: defaults)
+        store.setOpen(true)
+        XCTAssertEqual(store.tabs.count, 1)
+        XCTAssertEqual(store.selectedTabID, store.tabs.first?.id)
+        XCTAssertEqual(store.tabs.first?.number, 1)
+    }
+
+    func test_addTab_appendsAndSelects() {
+        let store = TerminalPaneStore(defaults: defaults)
+        store.setOpen(true)
+        store.addTab()
+        XCTAssertEqual(store.tabs.count, 2)
+        XCTAssertEqual(store.selectedTabID, store.tabs[1].id, "new tab becomes selected")
+        XCTAssertEqual(store.tabs.map(\.number), [1, 2])
+    }
+
+    func test_selectTab_switchesSelection() {
+        let store = TerminalPaneStore(defaults: defaults)
+        store.setOpen(true)               // tab 1
+        store.addTab()                    // tab 2 (selected)
+        let first = store.tabs[0].id
+        store.selectTab(first)
+        XCTAssertEqual(store.selectedTabID, first)
+        XCTAssertNotNil(store.terminal)
+    }
+
+    func test_closeTab_selectsNeighbor() {
+        let store = TerminalPaneStore(defaults: defaults)
+        store.setOpen(true)               // 1
+        store.addTab()                    // 2
+        store.addTab()                    // 3 (selected)
+        let middle = store.tabs[1].id
+        store.selectTab(middle)
+        store.closeTab(middle)
+        XCTAssertEqual(store.tabs.count, 2)
+        XCTAssertFalse(store.tabs.contains { $0.id == middle })
+        XCTAssertNotNil(store.selectedTabID, "a neighbor is selected after closing the active tab")
+        XCTAssertTrue(store.tabs.contains { $0.id == store.selectedTabID })
+    }
+
+    func test_closeLastTab_closesPane() {
+        let store = TerminalPaneStore(defaults: defaults)
+        store.setOpen(true)
+        let only = store.tabs[0].id
+        store.closeTab(only)
+        XCTAssertTrue(store.tabs.isEmpty)
+        XCTAssertNil(store.selectedTabID)
+        XCTAssertFalse(store.isOpen, "closing the last tab closes the whole pane")
+    }
+
+    func test_reopen_afterCloseAll_restartsNumberingAtOne() {
+        let store = TerminalPaneStore(defaults: defaults)
+        store.setOpen(true)               // tab 1
+        store.addTab()                    // tab 2
+        store.closeTab(store.tabs[1].id)  // back to 1 tab
+        store.closeTab(store.tabs[0].id)  // pane closes, numbering resets
+        store.setOpen(true)               // fresh tab
+        XCTAssertEqual(store.tabs.first?.number, 1)
+    }
+
     // MARK: - Idempotence
 
     func test_setOpen_sameValue_isNoOpRepublish() async {

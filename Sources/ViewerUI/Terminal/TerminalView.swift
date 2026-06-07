@@ -58,22 +58,27 @@ struct TerminalRepresentable: NSViewRepresentable {
     }
 }
 
-/// The bottom terminal pane: a thin header (title + restart/close) over
-/// the live terminal surface. Fixed-height; the height + open state are
-/// owned by `TerminalPaneStore` and persisted there.
+/// The bottom terminal pane: a tab strip (one chip per shell + a "+" to
+/// add) over the selected tab's live terminal surface. Fixed-height; the
+/// height, open state, and tab set are owned by `TerminalPaneStore`.
 struct TerminalPaneView: View {
-    @ObservedObject var model: TerminalModel
+    @ObservedObject var store: TerminalPaneStore
     let fontSize: CGFloat
-    let onClose: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
-            header
+            tabStrip
             Divider()
             ZStack {
-                TerminalRepresentable(model: model, fontSize: fontSize)
-                if model.hasExited {
-                    exitedOverlay
+                if let terminal = store.terminal {
+                    // `.id(selectedTabID)` gives each tab its own NSView +
+                    // coordinator, so switching tabs swaps the live surface
+                    // rather than rebinding one view to a different model.
+                    TerminalRepresentable(model: terminal, fontSize: fontSize)
+                        .id(store.selectedTabID)
+                    if terminal.hasExited {
+                        exitedOverlay(terminal)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -82,25 +87,38 @@ struct TerminalPaneView: View {
         .accessibilityIdentifier("mdv.terminal.pane")
     }
 
-    private var header: some View {
+    private var tabStrip: some View {
         HStack(spacing: 6) {
             Image(systemName: "terminal")
                 .font(.system(size: fontSize * 0.85, weight: .medium))
                 .foregroundStyle(Palette.secondaryLabel)
-            Text("Terminal")
-                .font(.system(size: fontSize * 0.85, weight: .medium))
-                .foregroundStyle(Palette.secondaryLabel)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    ForEach(store.tabs) { tab in
+                        tabChip(tab)
+                    }
+                }
+            }
+
+            Button { store.addTab() } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: fontSize * 0.8, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .help("New terminal tab")
+            .accessibilityIdentifier("mdv.terminal.newTab")
+
             Spacer(minLength: 0)
-            if model.hasExited {
-                Button {
-                    model.restart()
-                } label: {
+
+            if let t = store.terminal, t.hasExited {
+                Button { t.restart() } label: {
                     Image(systemName: "arrow.clockwise")
                 }
                 .buttonStyle(.plain)
                 .help("Restart shell")
             }
-            Button(action: onClose) {
+            Button { store.setOpen(false) } label: {
                 Image(systemName: "xmark")
             }
             .buttonStyle(.plain)
@@ -112,7 +130,38 @@ struct TerminalPaneView: View {
         .background(Palette.windowBackground)
     }
 
-    private var exitedOverlay: some View {
+    private func tabChip(_ tab: TerminalTab) -> some View {
+        let selected = tab.id == store.selectedTabID
+        return HStack(spacing: 4) {
+            Text("\(tab.number)")
+                .font(.system(size: fontSize * 0.8, weight: selected ? .semibold : .regular,
+                              design: .monospaced))
+                .foregroundStyle(selected ? Palette.labelColor : Palette.secondaryLabel)
+            // Close affordance — only the selected tab shows it inline to
+            // keep the strip tidy; any tab can be closed once selected.
+            if selected && store.tabs.count > 1 {
+                Button { store.closeTab(tab.id) } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: fontSize * 0.62, weight: .bold))
+                }
+                .buttonStyle(.plain)
+                .help("Close this tab")
+            }
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 2)
+        .background(selected ? Palette.textBackground : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .overlay(
+            RoundedRectangle(cornerRadius: 4)
+                .strokeBorder(selected ? Palette.separator : .clear, lineWidth: 1)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture { store.selectTab(tab.id) }
+        .accessibilityIdentifier("mdv.terminal.tab.\(tab.number)")
+    }
+
+    private func exitedOverlay(_ model: TerminalModel) -> some View {
         VStack(spacing: 8) {
             Text("[process exited]")
                 .font(.system(size: fontSize, weight: .regular, design: .monospaced))
