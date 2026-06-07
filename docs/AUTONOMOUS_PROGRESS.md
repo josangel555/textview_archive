@@ -155,13 +155,15 @@ The genuinely-remaining board work is NOT host-implementable by the autonomous l
 - **Live / VM-only (need the screen — UI renders in WebView or needs a GUI session):**
   - TSK-467 editable-HEX end-to-end (keystroke→buffer→**save-to-disk**) — wiring landed, file-mutating
     round-trip needs a VM sanity check.
-  - TSK-466 CM6 indent-guides + fold gutter (needs an async per-tab fold pipeline; renders in CM6).
+  - TSK-466 CM6 fold gutter — **model layer DELIVERED (latest+43, `bef2b82`)**: per-tab fold pipeline
+    + `foldingRanges:` wired; only the WebView *visual* (arrows appear + collapse) is VM-pending.
   - TSK-468 LSP References button enable, TSK-464 LSP formatting/decl/typeDef commands, TSK-463 LSP
     autocomplete — all need a running language server + live UI.
   - TSK-469 Plugin Tier A real rows (vs placeholder).
 - **Owner UX decision (small code, needs a call):**
   - TSK-470 zoom split (UI-chrome vs document zoom) — single unified `model.zoom` today.
-  - TSK-466a indent-guides default-on vs a new toggle pref.
+  - TSK-487 (split from TSK-466) indent-guides: wire the plumbed `indentGuides` prop — needs an
+    owner call on default-on vs off + whether it gets a Settings toggle (small once decided).
   - TSK-221 remove "Open As" menu in favour of the file-type chip dropdown.
 - **Owner dep-approval (new crates):** TSK-247 (`regex`), TSK-248 (`serde_json`), TSK-249
   (`comrak`+`tree-sitter`), TSK-246 (grapheme dep) — all `[BLOCKED:owner-dep]`.
