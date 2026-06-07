@@ -4,6 +4,16 @@ import AppKit
 /// non-editable `NSTextView`. Survives scrolling/resize via standard
 /// NSRulerView hooks; no manual sync needed.
 ///
+/// ⚠️ INTENTIONALLY RETAINED — DO NOT DELETE (TSK-477). This looks like dead
+/// legacy: the editable CodeMirror 6 editor draws its own gutter, and other
+/// gutter work (#102) replaced line numbers elsewhere. But this view is STILL
+/// the live line-number renderer for the read-only **Source** lens —
+/// `TextDisplayView`'s `NSScrollView + NSTextView` triple attaches it (see
+/// `TextDisplayView.swift:416`). A prior pass already tried to drop it (batch
+/// #64) before that dependency was understood; removing it silently strips the
+/// Source view's gutter. If you think it's unused, grep `LineNumberRulerView`
+/// across `Sources/` first.
+///
 /// P4: a flat array of newline character offsets is built once when the
 /// view's text changes (see `invalidateLineCache()` called from
 /// `TextDisplayView.updateNSView`). Drawing then binary-searches it
