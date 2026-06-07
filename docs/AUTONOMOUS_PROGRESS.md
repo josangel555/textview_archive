@@ -29,6 +29,24 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-07 (latest+39) — REAL security bug found + fixed: ReDoS guard group-prefix (TSK-293/279)
+
+First genuinely-unfixed board item this session. The ReDoS shape guard
+(`RegexComplexityGuard`) skipped a group's `(?…` modifier prefix by consuming any run of
+`[A-Za-z:=!<]` — which over-consumed and let catastrophic patterns slip past `reject()`:
+- `(?<name>a+)+` — `>` not consumed → became the group's first atom, defeating the
+  `firstAtomQuantified` check (TSK-293, named groups).
+- `(?:a+)+` — after `:` it kept eating letters → body atom `a` swallowed, inner `+` quantified
+  nothing (TSK-279 — a real hole, not just a missing test).
+- `(?:a|aa)+` / `(?<g>a|aa)+` — same corruption defeated the alternation-overlap check.
+All are exponential ReDoS that the find/MCP-find/cross-file-search paths must reject. **Fix
+(`c7a9bb8`):** replaced the loose inline skip in BOTH heuristics with a precise shared
+`skipGroupPrefix()` (handles `(?:`,`(?=`,`(?!`,`(?<=`,`(?<!`,`(?<name>`,`(?P<name>`,`(?flags:`/`(?flags)`).
+10 tests: 6 newly-caught ReDoS forms + 4 benign forms that must still pass (anchored `(?:\.\d+)+`,
+named bounded body, inline flags, look-around). Headless gate green (FoldBench load-flake only).
+Note: this is a host-validatable real bug — disproves "queue fully drained"; the audit list still
+holds the occasional genuine miss, so verify-first remains worthwhile (just not blind closing).
+
 ## LOG 2026-06-07 (latest+38) — board reconcile cont'd (3 more verified already-fixed)
 
 Continued the reconciliation; full-read-verified + closed three more as already-remediated (no commits):
