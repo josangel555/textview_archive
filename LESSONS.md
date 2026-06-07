@@ -2275,3 +2275,23 @@ the live surface to the genuine re-render rather than guessing.
   AppKit-RENDERED behaviour (CM6 pixels, fold gutter, indent guides, caret insert, terminal strip
   placement/scroll) has NO host coverage → cannot self-validate on host; leave at `fixed` for owner/VM
   or add a VM UI test first. Full rule in `CLAUDE.md` (Automated runs SOP).
+- **An opaque layer-backed `NSViewRepresentable` OCCLUDES a SwiftUI sibling drawn before it** (TSK-488,
+  the recurring "I see a gap before the terminal but no tabs"). The terminal tab strip and the opaque
+  `TerminalNSView` were plain `HStack`/`VStack` siblings. In a SwiftUI stack, an AppKit-hosted
+  representable composites in a layer that can cover earlier siblings even though geometrically
+  side-by-side — so when the strip was drawn BEFORE the surface (`.left`/`.top` cases) the surface
+  blanked it; when drawn AFTER (`.right`) it was fine. That paint-order asymmetry is exactly why the
+  owner (default LEFT) saw no tabs while `right` worked. FIX: force the strip into its own compositing
+  layer ordered above the surface — `someStrip.compositingGroup().zIndex(1)` vs `surface.zIndex(0)` in
+  every position case. The earlier "fixes" (ScrollView removal, accent colour, widen rail) were
+  symptom-chasing; this was the root cause. Same family as the documented NSRulerView sibling-blank.
+- **`ImageRenderer` gives a FALSE GREEN for compositor-occlusion bugs** (owner: "test is broken").
+  `ImageRenderer` rasterizes SwiftUI's OWN view tree in isolation — it draws a placeholder for an
+  `NSViewRepresentable`, never instantiates the real opaque AppKit layer, so it renders an occluded
+  strip perfectly while the live window is blank. It passed green THREE times while tabs were
+  invisible. The ONLY test that catches this is stage-④ pixels: spawn the app + `screencapture
+  -l<windowID>` (a `PixelTestCase`/T5). `cacheDisplay` is also blind (SwiftUI CA layers render black).
+  Pattern to copy: `TerminalTabStripVisualRegressionTests` (launch via `MDV_UI_SCENE`, capture, assert
+  a dense saturated chip block in the rail band) — proven to have teeth (FAILS on the pre-fix build).
+  ALWAYS demonstrate teeth on a real UI test by reverting the fix + rebuilding once; a green that was
+  never shown to go red is not a guard.

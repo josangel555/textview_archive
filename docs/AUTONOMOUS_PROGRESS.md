@@ -29,6 +29,31 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-07 (latest+48) — TSK-488 REAL FIX: terminal tabs were compositor-occluded (validated w/ real pixels)
+
+The recurring "I see a gap before the terminal but no tabs" — finally root-caused and fixed with REAL
+compositor-pixel proof, not another symptom guess. Commits `1dd0483` (fix) + `a99e978` (test);
+TSK-488 → **validated** (self, with a teeth-proven T5 test).
+
+- **Root cause = compositor occlusion.** The opaque, layer-backed `TerminalNSView`
+  (`NSViewRepresentable`) overdrew its sibling SwiftUI tab strip when the strip was drawn BEFORE it in
+  the stack (`.left`/`.top`). Drawn AFTER (`.right`) it was fine — which is exactly why the owner, on the
+  default LEFT, saw nothing. The prior four "fixes" (ScrollView removal, accent colour, widen rail) were
+  all chasing symptoms.
+- **Fix:** force each strip into its own compositing layer ordered above the surface —
+  `strip.compositingGroup().zIndex(1)` vs `terminalSurface.zIndex(0)` in all three position cases
+  (`TerminalView.swift`). Verified with `screencapture -l<windowID>` for left/top/right; I visually
+  inspected the rail crops — terminal glyph + "1" chip + accent-blue selected chip + "+" + close all
+  paint in the rail.
+- **The owner's "test is broken" was right.** The headless `ImageRenderer` test was a FALSE GREEN — it
+  rasterizes SwiftUI's own drawing in isolation, never instantiates the opaque AppKit layer, so it
+  passed while the live window was blank. Replaced it: renamed to `TerminalTabStripRasterTests` (honest
+  scope: chip colour/layout only) + added `TerminalTabStripVisualRegressionTests` (T5 `PixelTestCase`)
+  that captures the REAL window via `MDV_UI_SCENE` + `screencapture`. **Proven to have teeth:** reverted
+  the fix, rebuilt, ran it → FAILS for left+top (passes for right, correctly). Restored + reinstalled.
+- Headless gate green (4150); fixed debug bundle installed to `/Applications`. Lessons captured in
+  `LESSONS.md` (opaque-representable occlusion + ImageRenderer false-green + "always demonstrate teeth").
+
 ## LOG 2026-06-07 (latest+47) — Terminal: configurable tab-strip position + scroll-persist on tab switch
 
 Owner-requested (direct, batched: a feature + a bug). Both in the terminal subsystem; shipped together
