@@ -5,26 +5,25 @@ import AppKit
 @testable import ViewerCore
 import ViewerKit
 
-/// Headless RENDER coverage for the terminal tab strip (TSK-488 / owner
-/// "I see no tabs"). The model layer (`TerminalPaneStoreTests`) proves the
-/// store always has ≥1 tab when open — but that says nothing about whether
-/// the STRIP actually renders beside the terminal surface. This mounts the
-/// real `TerminalPaneView` inside a ContentView-faithful column (a greedy
-/// body over a fixed-height, `.clipped()` terminal pane, framed by rails)
-/// and walks the realized AppKit tree to assert the strip's tab-chip
-/// scrollview sits on the correct EDGE relative to the live terminal
-/// surface (`TerminalNSView`).
+/// Headless VISIBILITY coverage for the terminal tab strip (TSK-488 / owner
+/// "I see a gap but no tabs"). The model layer (`TerminalPaneStoreTests`)
+/// proves the store always has ≥1 tab; the earlier frame-walk proved the
+/// chips occupy layout space — but BOTH were satisfied while the chips were
+/// invisible on screen, because they were wrapped in a `ScrollView` whose
+/// content does not paint here. The real signal is PIXELS.
 ///
-/// HEADLESS, host-safe: an in-process `NSHostingController` + an unshown,
-/// explicitly-sized `NSWindow` (never `orderFront`) — same pattern as
-/// `TabBarIntrinsicSizeTests`. Sizing the window is load-bearing: an
-/// unsized host is 0×0 and every realized frame comes back centered around
-/// the origin (garbage negative coords).
+/// `ImageRenderer` rasterizes SwiftUI's OWN drawing — colors included —
+/// unlike `cacheDisplay` (which doesn't capture SwiftUI CA layers) or an
+/// `NSView` frame walk (which sees layout, not paint). The selected chip is
+/// the user's vivid ACCENT colour; the rail background is unsaturated
+/// (grey/white). So "a highly-saturated pixel in the strip's edge band"
+/// proves the chip actually painted, AND its location proves the strip is on
+/// the configured edge.
 ///
-/// CAVEAT (LESSONS): an in-process frame walk pins the SwiftUI LAYOUT, not
-/// the WindowServer compositor — it proves the strip occupies its band and
-/// the opaque surface does not overlap it. A live compositor-only hide
-/// stays VM/T5-owed.
+/// The terminal surface is an `NSViewRepresentable`; `ImageRenderer` draws a
+/// placeholder (a saturated red glyph) for it, CENTERED — so each test scans
+/// only the thin EDGE band where the chip lives and the centered placeholder
+/// never reaches.
 @MainActor
 final class TerminalTabStripRenderTests: HeadlessUITestCase {
 
@@ -39,129 +38,77 @@ final class TerminalTabStripRenderTests: HeadlessUITestCase {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
-    /// LEFT strip (default): the tab-chip scrollview sits entirely to the
-    /// LEFT of the terminal surface, and the surface starts to its right.
-    func test_leftStrip_sitsLeftOfSurface() throws {
-        let (strip, surface) = mountAndLocate(.left)
-        XCTAssertNotNil(strip, "tab-strip scrollview not found — strip didn't render")
-        XCTAssertNotNil(surface, "terminal surface (TerminalNSView) not found")
-        XCTAssertLessThanOrEqual(strip!.maxX, surface!.minX + 1,
-            "strip (maxX=\(strip!.maxX)) must sit left of the surface (minX=\(surface!.minX))")
-        XCTAssertGreaterThan(strip!.width, 0, "strip collapsed to zero width")
+    private let W = 400, H = 240
+
+    /// LEFT strip (default): the selected chip paints a saturated swatch in
+    /// the LEFT rail band.
+    func test_leftStrip_chipPaintsOnLeftEdge() throws {
+        let rep = try renderPane(.left)
+        // The LEFT rail band contains the chip; the surface is on the right,
+        // so its centered placeholder never reaches x<48 — a saturated pixel
+        // here is the chip.
+        XCTAssertTrue(hasSaturatedPixel(rep, x: 0..<48, y: 0..<rep.pixelsHigh),
+            "no saturated chip swatch in the LEFT rail — the strip isn't painting")
     }
 
-    /// RIGHT strip: scrollview sits entirely to the RIGHT of the surface.
-    func test_rightStrip_sitsRightOfSurface() throws {
-        let (strip, surface) = mountAndLocate(.right)
-        XCTAssertNotNil(strip, "tab-strip scrollview not found")
-        XCTAssertNotNil(surface, "terminal surface not found")
-        XCTAssertGreaterThanOrEqual(strip!.minX, surface!.maxX - 1,
-            "strip (minX=\(strip!.minX)) must sit right of the surface (maxX=\(surface!.maxX))")
+    /// RIGHT strip: the chip paints in the RIGHT rail band.
+    func test_rightStrip_chipPaintsOnRightEdge() throws {
+        let rep = try renderPane(.right)
+        XCTAssertTrue(hasSaturatedPixel(rep, x: (rep.pixelsWide - 48)..<rep.pixelsWide, y: 0..<rep.pixelsHigh),
+            "no saturated chip swatch in the RIGHT rail — the strip isn't painting")
     }
 
-    /// TOP strip: the horizontal strip sits ABOVE the surface.
-    func test_topStrip_sitsAboveSurface() throws {
-        let (strip, surface) = mountAndLocate(.top)
-        XCTAssertNotNil(strip, "tab-strip scrollview not found")
-        XCTAssertNotNil(surface, "terminal surface not found")
-        XCTAssertLessThanOrEqual(strip!.maxY, surface!.minY + 1,
-            "strip (maxY=\(strip!.maxY)) must sit above the surface (minY=\(surface!.minY))")
+    /// TOP strip: the chip paints in the TOP band.
+    func test_topStrip_chipPaintsOnTopEdge() throws {
+        let rep = try renderPane(.top)
+        XCTAssertTrue(hasSaturatedPixel(rep, x: 0..<rep.pixelsWide, y: 0..<44),
+            "no saturated chip swatch in the TOP band — the strip isn't painting")
     }
 
-    /// The tab chips must occupy REAL space (owner: "are they zero size?").
-    /// The chip container (the strip ScrollView's DocumentView) must have a
-    /// non-trivial area for one tab, and grow taller with more tabs in the
-    /// vertical rail — a zero/collapsed chip would fail both.
-    ///
-    /// NOTE on what this CAN'T prove (verified 2026-06-07): NSView.hitTest
-    /// returns the hosting view for every point (SwiftUI routes taps through
-    /// its own gesture system, not AppKit), and `cacheDisplay` does not
-    /// capture SwiftUI's CA-rendered layers — so a true on-screen pixel /
-    /// click check is VM-only (T5). This pins the layout (size != 0), which
-    /// is the part that regressed.
-    func test_tabChipContainer_hasRealSize_andGrowsWithCount() throws {
-        let one = chipContainerFrame(tabs: 1)
-        XCTAssertNotNil(one, "chip container (ScrollView DocumentView) not found")
-        XCTAssertGreaterThan(one!.width, 24, "single chip collapsed in width")
-        XCTAssertGreaterThan(one!.height, 18, "single chip collapsed in height")
-
-        let three = chipContainerFrame(tabs: 3)
-        XCTAssertNotNil(three)
-        XCTAssertGreaterThan(three!.height, one!.height + 20,
-            "3 stacked chips (h=\(three!.height)) must be taller than 1 (h=\(one!.height)) — " +
-            "chips aren't collapsing to zero height")
-    }
-
-    private func chipContainerFrame(tabs: Int) -> NSRect? {
-        let store = TerminalPaneStore(defaults: defaults)
-        store.setOpen(true)
-        store.setTabPosition(.left)
-        for _ in 1..<tabs { store.addTab() }
-        XCTAssertEqual(store.tabs.count, tabs)
-        defer { store.shutdown() }
-        let root = mountInColumn(store: store)
-        return frame(in: root, classContains: "DocumentView")
+    /// A single tab (no `addTab`) must STILL paint a chip (owner: "even if
+    /// only one tab, show tab").
+    func test_singleTab_stillPaintsChip() throws {
+        let rep = try renderPane(.left, tabs: 1)
+        XCTAssertTrue(hasSaturatedPixel(rep, x: 0..<48, y: 0..<rep.pixelsHigh),
+            "a single selected tab must still paint a visible chip")
     }
 
     // MARK: - Harness
 
-    /// Mount the pane for a tab position and return (stripFrame, surfaceFrame)
-    /// in the root's coordinate space.
-    private func mountAndLocate(_ pos: TerminalTabPosition)
-        -> (NSRect?, NSRect?) {
+    /// Rasterize `TerminalPaneView` (terminal open, `tabs` tabs, last one
+    /// selected) at the given strip position via `ImageRenderer`.
+    private func renderPane(_ pos: TerminalTabPosition, tabs: Int = 2) throws -> NSBitmapImageRep {
         let store = TerminalPaneStore(defaults: defaults)
         store.setOpen(true)
         store.setTabPosition(pos)
-        XCTAssertEqual(store.tabs.count, 1)
-        let root = mountInColumn(store: store)
+        for _ in 1..<tabs { store.addTab() }
         defer { store.shutdown() }
-        return (frame(in: root, classContains: "HostingScrollView"),
-                frame(in: root, classContains: "TerminalNSView"))
+
+        let view = TerminalPaneView(store: store, fontSize: 13)
+            .frame(width: CGFloat(W), height: CGFloat(H))
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 1
+        guard let img = renderer.nsImage,
+              let tiff = img.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff) else {
+            throw XCTSkip("ImageRenderer produced no image")
+        }
+        return rep
     }
 
-    /// Reproduce ContentView's center column: a greedy body over a fixed-
-    /// height, `.clipped()` terminal pane, inside an outer HStack with rails
-    /// — the context the live pane lives in.
-    private func mountInColumn(store: TerminalPaneStore) -> NSView {
-        let rootView = HStack(spacing: 0) {
-            Color.clear.frame(width: 44)                 // left rail stand-in
-            Divider()
-            VStack(spacing: 0) {                          // center column
-                Color.gray
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .layoutPriority(1)
-                TerminalResizeHandle(store: store)
-                TerminalPaneView(store: store, fontSize: 12)
-                    .frame(height: 160)
-                    .clipped()
-                    .layoutPriority(0)
+    /// True if any pixel in the box is highly saturated (a vivid chip swatch).
+    /// The rail background (grey/white) and the title-bar chrome are
+    /// unsaturated, so this isolates the accent-selected chip.
+    private func hasSaturatedPixel(_ rep: NSBitmapImageRep, x xs: Range<Int>, y ys: Range<Int>) -> Bool {
+        let xr = xs.clamped(to: 0..<rep.pixelsWide)
+        let yr = ys.clamped(to: 0..<rep.pixelsHigh)
+        for x in xr {
+            for y in yr {
+                guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+                let r = c.redComponent, g = c.greenComponent, b = c.blueComponent
+                if max(r, g, b) - min(r, g, b) > 0.35 { return true }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            Color.clear.frame(width: 44)                 // right rail stand-in
         }
-        let hc = NSHostingController(rootView: rootView)
-        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 600),
-                           styleMask: [.titled, .resizable], backing: .buffered, defer: false)
-        win.contentViewController = hc
-        win.setContentSize(NSSize(width: 1000, height: 600))   // else host is 0×0
-        let root = win.contentView ?? hc.view
-        hc.view.layoutSubtreeIfNeeded()
-        win.layoutIfNeeded()
-        hc.view.layoutSubtreeIfNeeded()
-        return root
-    }
-
-    /// First realized NSView whose class name contains `needle`, as a frame
-    /// in `root`'s coordinate space.
-    private func frame(in root: NSView, classContains needle: String) -> NSRect? {
-        var found: NSRect?
-        func rec(_ v: NSView) {
-            if found == nil, String(describing: type(of: v)).contains(needle) {
-                found = v.convert(v.bounds, to: root)
-            }
-            for s in v.subviews where found == nil { rec(s) }
-        }
-        rec(root)
-        return found
+        return false
     }
 }

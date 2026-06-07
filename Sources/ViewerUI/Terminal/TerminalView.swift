@@ -138,9 +138,7 @@ struct TerminalPaneView: View {
             Image(systemName: "terminal")
                 .font(.system(size: fontSize * 0.85, weight: .medium))
                 .foregroundStyle(Palette.secondaryLabel)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 4) { ForEach(store.tabs) { tabChip($0, fillWidth: false) } }
-            }
+            HStack(spacing: 4) { ForEach(store.tabs) { tabChip($0, fillWidth: false) } }
             newTabButton
             Spacer(minLength: 0)
             restartButtonIfExited
@@ -157,9 +155,7 @@ struct TerminalPaneView: View {
             Image(systemName: "terminal")
                 .font(.system(size: fontSize * 0.85, weight: .medium))
                 .foregroundStyle(Palette.secondaryLabel)
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 4) { ForEach(store.tabs) { tabChip($0, fillWidth: true) } }
-            }
+            VStack(spacing: 4) { ForEach(store.tabs) { tabChip($0, fillWidth: true) } }
             newTabButton
             Spacer(minLength: 0)
             restartButtonIfExited
