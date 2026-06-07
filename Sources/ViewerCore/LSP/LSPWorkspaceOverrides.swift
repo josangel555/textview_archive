@@ -47,10 +47,10 @@ import Foundation
 ///     child inherits the parent env unchanged. A non-empty env is
 ///     **merged on top of** the current process environment when the
 ///     override fires (see `mergedEnvironment(parent:)`).
-///   - `initializationOptions` from §11 is currently parsed but not
-///     forwarded — `LSPClient.initialize()` ignores per-server
-///     init options today. Field is kept on the model so a future
-///     wiring change is local. (TODO: thread through `LSPClient.Config`.)
+///   - `initializationOptions` from §11 is parsed here and forwarded:
+///     `overrideConfig` threads it into `LSPClient.Config`, and
+///     `LSPClient.makeInitializeParams` injects it (verbatim, when
+///     well-formed) into the `initialize` request (TSK-465).
 ///
 /// Loader is **synchronous + cheap** — one file read per workspace
 /// resolution. The pool calls per-launcher (per cold-spawn), which is

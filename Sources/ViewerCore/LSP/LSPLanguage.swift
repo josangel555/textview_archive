@@ -345,7 +345,8 @@ public struct LSPLanguageRegistry: Sendable {
                 executable: binaryURL,
                 arguments: entry.arguments,
                 workspaceRoot: workspaceRoot,
-                environment: environment)
+                environment: environment,
+                initializationOptions: entry.initializationOptions)
         }
 
         // Untrusted command. Refuse to spawn it; instead discover the
@@ -361,7 +362,8 @@ public struct LSPLanguageRegistry: Sendable {
             executable: discovered,
             arguments: defaultArguments + entry.arguments,
             workspaceRoot: workspaceRoot,
-            environment: environment)
+            environment: environment,
+            initializationOptions: entry.initializationOptions)
     }
 
     /// A workspace-supplied override `command` is trusted iff its

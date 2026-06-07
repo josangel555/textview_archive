@@ -418,6 +418,44 @@ final class LSPWorkspaceOverridesTests: XCTestCase {
                        "trusted command uses user args verbatim (no defaults prepended)")
     }
 
+    func test_overrideConfig_threadsInitializationOptionsIntoConfig() throws {
+        // TSK-465: initializationOptions from lsp.json must reach
+        // LSPClient.Config (it was parsed but dropped before).
+        let good = makeFakeBinary(named: "trusted-lsp")
+        try writeOverride("""
+        {
+          "servers": {
+            "swift": {
+              "command": "\(good.path)",
+              "initializationOptions": { "f": true, "n": 7, "s": "x" }
+            }
+          }
+        }
+        """)
+        let cfg = LSPLanguageRegistry.overrideConfig(
+            for: .swift, workspaceRoot: tmpRoot, defaultArguments: [])
+        guard let data = cfg?.initializationOptions else {
+            return XCTFail("Config.initializationOptions should be populated from the override")
+        }
+        let obj = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(obj["f"] as? Bool, true)
+        XCTAssertEqual(obj["n"] as? Int, 7)
+        XCTAssertEqual(obj["s"] as? String, "x")
+    }
+
+    func test_overrideConfig_noInitOptions_leavesConfigNil() throws {
+        let good = makeFakeBinary(named: "trusted-lsp")
+        try writeOverride("""
+        { "servers": { "swift": { "command": "\(good.path)" } } }
+        """)
+        let cfg = LSPLanguageRegistry.overrideConfig(
+            for: .swift, workspaceRoot: tmpRoot, defaultArguments: [])
+        XCTAssertNotNil(cfg)
+        XCTAssertNil(cfg?.initializationOptions,
+                     "absent initializationOptions ⇒ nil (no field sent)")
+    }
+
     func test_overrideConfig_refusesCommandInWorldWritableDir() throws {
         // Even outside the workspace, a world-writable container dir
         // means anyone can swap the binary → refuse.

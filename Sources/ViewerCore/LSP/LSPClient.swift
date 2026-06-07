@@ -28,14 +28,23 @@ public actor LSPClient {
         /// overlay). Tests use this to dial in fake-server scenarios
         /// without polluting the test process's own env.
         public let environment: [String: String]?
+        /// Raw JSON bytes of the per-server `initializationOptions` from a
+        /// workspace `lsp.json` override (§11), forwarded verbatim into the
+        /// `initialize` request's `initializationOptions` field. `nil` (the
+        /// default / discovered path) sends no field. Stored as serialized
+        /// `Data` so the value crosses the `Sendable` boundary cleanly; it's
+        /// re-parsed once in `initialize()`.
+        public let initializationOptions: Data?
         public init(
             executable: URL, arguments: [String] = [],
-            workspaceRoot: URL, environment: [String: String]? = nil
+            workspaceRoot: URL, environment: [String: String]? = nil,
+            initializationOptions: Data? = nil
         ) {
             self.executable = executable
             self.arguments = arguments
             self.workspaceRoot = workspaceRoot
             self.environment = environment
+            self.initializationOptions = initializationOptions
         }
     }
 
@@ -508,20 +517,23 @@ public actor LSPClient {
 
     // MARK: Public capability methods
 
-    /// Send `initialize` + `initialized`. Must complete before any
-    /// other call. Throws `LSPError.timeout(method: "initialize")` if
-    /// the server doesn't respond within 30s (sourcekit-lsp is
-    /// typically <1s on a small package; longer on Cargo/RA-class).
-    public func initialize() async throws {
-        startReader()
-        let pid = ProcessInfo.processInfo.processIdentifier
-        let rootURI = config.workspaceRoot.absoluteString
-        let params: [String: Any] = [
-            "processId": pid,
+    /// Build the `initialize` request params. Pure (no I/O) so the
+    /// capability advert + the per-server `initializationOptions` wiring
+    /// (§11 / TSK-465) are headlessly testable without spawning a server.
+    /// `initializationOptions` is the override's raw JSON bytes; when
+    /// present and well-formed it's forwarded verbatim under the
+    /// `initializationOptions` key, and skipped (with no field) when nil or
+    /// unparseable — a malformed override must never abort startup.
+    static func makeInitializeParams(
+        workspaceRoot: URL, processId: Int32, initializationOptions: Data?
+    ) -> [String: Any] {
+        let rootURI = workspaceRoot.absoluteString
+        var params: [String: Any] = [
+            "processId": processId,
             "clientInfo": ["name": "TextView-PoC", "version": "0.1"],
             "rootUri": rootURI,
             "workspaceFolders": [
-                ["uri": rootURI, "name": config.workspaceRoot.lastPathComponent]
+                ["uri": rootURI, "name": workspaceRoot.lastPathComponent]
             ],
             // Minimal capability advert. Design doc §3.7 explicitly
             // does NOT advertise completion / signatureHelp / codeAction
@@ -552,6 +564,24 @@ public actor LSPClient {
             ],
             "trace": "off"
         ]
+        if let data = initializationOptions,
+           let obj = try? JSONSerialization.jsonObject(with: data) {
+            params["initializationOptions"] = obj
+        }
+        return params
+    }
+
+    /// Send `initialize` + `initialized`. Must complete before any
+    /// other call. Throws `LSPError.timeout(method: "initialize")` if
+    /// the server doesn't respond within 30s (sourcekit-lsp is
+    /// typically <1s on a small package; longer on Cargo/RA-class).
+    public func initialize() async throws {
+        startReader()
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let params = Self.makeInitializeParams(
+            workspaceRoot: config.workspaceRoot,
+            processId: pid,
+            initializationOptions: config.initializationOptions)
         let raw = try await request(method: "initialize", params: params, timeout: .seconds(30))
         // Parse server's `capabilities.positionEncoding`. Optional;
         // absent → utf-16 default (spec).
