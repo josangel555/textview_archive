@@ -29,6 +29,34 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-07 (latest+43) — TSK-466 step 2/3: CM6 editor folds wired end-to-end
+
+Completed the editor-folding feature on the host-testable side. Investigation showed the CM6 render
+path was **already fully built** — `CodeMirrorEditorView` accepts `foldingRanges: [CMFoldRange]`
+(default `[]`) with full Coordinator dispatch, and `codemirror.html` has a real `foldService` +
+`applySetFoldingRanges` + fold gutter. The only gap was the *source* of ranges at `ContentView:570`.
+
+- **`EditorCoordinator`**: `editorFoldRangesByTab: [UUID:[CMFoldRange]]` (published) + `setEditorFoldRanges(_:forTabID:)`
+  (open-tab guard + equality-guarded no-republish) + close-hook drain (5th editor dict).
+- **`DocumentModel`**: `refreshEditorFolds()` — cancel-then-relaunch off-main producer mirroring
+  `refreshDiffMarks`; computes `TreeSitterEngine.shared.computeFolds` → `SyntaxFoldRangeMapping`
+  (mapping + parse both off-main), assigns on MainActor with a tab-still-selected guard. Triggered
+  from `updateDerived()` (selection/open) and `updateEditorText` (edit). No-op outside editor mode /
+  loaded tabs. `editorFoldRangesByTab` read forwarder added.
+- **`ContentView:570`**: passes `foldingRanges: model.editorFoldRangesByTab[tid] ?? []`.
+- **Tests** (`EditorFoldRangesTests.swift`, 7, all pass): routing (open-tab set / unknown-tab no-op /
+  identical-value no-republish via Combine sink / close-hook drain) + end-to-end producer (folds
+  populate for multi-line JSON in editor mode; recompute after edit; no-op outside editor mode).
+
+**Source decision taken (v1):** TreeSitter-only — needs no language server, always available, and is
+the same syntax-fold source the read-only Source view (#139) already uses. An LSP-fold *union* is an
+additive follow-up in `refreshEditorFolds` (filed as a note on TSK-466). swift build clean; headless
+gate green (4113); committed **`bef2b82`**; debug bundle built + installed to `/Applications/TextView.app`.
+
+**VM-pending (visual only):** that the fold gutter arrows actually appear + collapse correctly in the
+WKWebView. The model layer (correct ranges flow to `foldingRanges:`) is host-proven; only the CM6
+render needs an eyeball on the VM.
+
 ## LOG 2026-06-07 (latest+42) — TSK-466 step 1: SyntaxFoldRangeMapping (pure core) landed
 
 Executed the latest+41 plan — prepped the live editor-folding feature by building its **design-agnostic
