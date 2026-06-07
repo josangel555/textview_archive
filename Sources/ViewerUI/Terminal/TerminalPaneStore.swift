@@ -44,6 +44,14 @@ public final class TerminalPaneStore: ObservableObject {
     /// Default `.left`; persisted in `TerminalPaneLayout`.
     @Published public private(set) var tabPosition: TerminalTabPosition
 
+    /// Which window edge the pane docks to (TSK-491). Default `.bottom`;
+    /// persisted in `TerminalPaneLayout`. Distinct from `tabPosition`.
+    @Published public private(set) var paneEdge: TerminalPaneEdge
+
+    /// Side-column width when `paneEdge` is `.left`/`.right` (TSK-491).
+    /// Clamped + persisted. (`height` still drives the bottom band.)
+    @Published public private(set) var sideWidth: CGFloat
+
     private var nextNumber = 1
 
     /// The selected tab's live terminal — created on first open so the app
@@ -61,6 +69,8 @@ public final class TerminalPaneStore: ObservableObject {
         self.layout = loaded
         self.height = loaded.height
         self.tabPosition = loaded.tabPosition
+        self.paneEdge = loaded.paneEdge
+        self.sideWidth = loaded.sideWidth
         // Restore "open" intent, but DON'T spawn the shell here — the
         // shell spawns when the view first mounts (the terminal getter is
         // exercised by ContentView only while `isOpen`).
@@ -109,6 +119,30 @@ public final class TerminalPaneStore: ObservableObject {
         guard pos != tabPosition else { return }
         tabPosition = pos
         layout.tabPosition = pos
+        layout.save(to: defaults)
+    }
+
+    // MARK: - Pane dock edge (TSK-491)
+
+    /// Dock the pane to a window edge (bottom/left/right). Persisted;
+    /// equality-guarded so re-selecting the current edge doesn't republish.
+    public func setPaneEdge(_ edge: TerminalPaneEdge) {
+        guard edge != paneEdge else { return }
+        paneEdge = edge
+        layout.paneEdge = edge
+        layout.save(to: defaults)
+    }
+
+    public var minWidth: CGFloat { TerminalPaneLayout.minWidth }
+    public var maxWidth: CGFloat { TerminalPaneLayout.maxWidth }
+
+    /// Set the side-column width (drag-resize when docked left/right).
+    /// Clamped + persisted; equality-guarded against no-op drag frames.
+    public func setWidth(_ w: CGFloat) {
+        let clamped = TerminalPaneLayout.clampWidth(w)
+        guard clamped != sideWidth else { return }
+        sideWidth = clamped
+        layout.setWidth(clamped)
         layout.save(to: defaults)
     }
 

@@ -68,6 +68,8 @@ final class TerminalPaneLayoutTests: XCTestCase {
         XCTAssertEqual(TerminalPaneLayout.openKey, "MarkdownViewer.terminal.isOpen")
         XCTAssertEqual(TerminalPaneLayout.heightKey, "MarkdownViewer.terminal.height")
         XCTAssertEqual(TerminalPaneLayout.tabPositionKey, "MarkdownViewer.terminal.tabPosition")
+        XCTAssertEqual(TerminalPaneLayout.paneEdgeKey, "MarkdownViewer.terminal.paneEdge")
+        XCTAssertEqual(TerminalPaneLayout.sideWidthKey, "MarkdownViewer.terminal.sideWidth")
     }
 
     // MARK: - Tab-strip position (TSK-488)
@@ -95,5 +97,59 @@ final class TerminalPaneLayoutTests: XCTestCase {
         XCTAssertTrue(TerminalTabPosition.left.isVertical)
         XCTAssertTrue(TerminalTabPosition.right.isVertical)
         XCTAssertFalse(TerminalTabPosition.top.isVertical)
+    }
+
+    // MARK: - Pane dock edge + side width (TSK-491)
+
+    func test_paneEdge_defaultsToBottom() {
+        XCTAssertEqual(TerminalPaneLayout().paneEdge, .bottom)
+        XCTAssertEqual(TerminalPaneEdge.default, .bottom)
+        XCTAssertEqual(TerminalPaneLayout.load(from: freshDefaults()).paneEdge, .bottom)
+    }
+
+    func test_paneEdge_roundTrips() {
+        let d = freshDefaults()
+        var l = TerminalPaneLayout()
+        l.paneEdge = .right
+        l.save(to: d)
+        XCTAssertEqual(TerminalPaneLayout.load(from: d).paneEdge, .right)
+    }
+
+    func test_paneEdge_unknownStoredValue_degradesToBottom() {
+        let d = freshDefaults()
+        d.set("bogus", forKey: TerminalPaneLayout.paneEdgeKey)
+        XCTAssertEqual(TerminalPaneLayout.load(from: d).paneEdge, .bottom)
+    }
+
+    func test_paneEdge_isSide() {
+        XCTAssertTrue(TerminalPaneEdge.left.isSide)
+        XCTAssertTrue(TerminalPaneEdge.right.isSide)
+        XCTAssertFalse(TerminalPaneEdge.bottom.isSide)
+    }
+
+    func test_sideWidth_defaultAndClamp() {
+        XCTAssertEqual(TerminalPaneLayout().sideWidth, TerminalPaneLayout.defaultWidth)
+        XCTAssertEqual(TerminalPaneLayout(sideWidth: 10).sideWidth, TerminalPaneLayout.minWidth)
+        XCTAssertEqual(TerminalPaneLayout(sideWidth: 99999).sideWidth, TerminalPaneLayout.maxWidth)
+        XCTAssertEqual(TerminalPaneLayout.clampWidth(.nan), TerminalPaneLayout.defaultWidth)
+    }
+
+    func test_setWidth_clamps() {
+        var l = TerminalPaneLayout()
+        l.setWidth(420)
+        XCTAssertEqual(l.sideWidth, 420)
+        l.setWidth(5)
+        XCTAssertEqual(l.sideWidth, TerminalPaneLayout.minWidth)
+    }
+
+    func test_sideWidth_roundTrips_andUnsetUsesDefault() {
+        let d = freshDefaults()
+        var l = TerminalPaneLayout()
+        l.setWidth(411)
+        l.save(to: d)
+        XCTAssertEqual(TerminalPaneLayout.load(from: d).sideWidth, 411)
+        // Unset → default, not zero.
+        XCTAssertEqual(TerminalPaneLayout.load(from: freshDefaults()).sideWidth,
+                       TerminalPaneLayout.defaultWidth)
     }
 }
