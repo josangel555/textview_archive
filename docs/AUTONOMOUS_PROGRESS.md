@@ -29,6 +29,42 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+37) — host-validatable queue drained; board reconcile + unblock signal
+
+**Finding (evidence-backed): the host-validatable implementation queue is drained.** Verify-first this
+firing hit already-fixed on every sampled item across all three tiers:
+- Fully read + closed: **TSK-482** (HexView HighlightFingerprint is O(1), not O(matches)), **TSK-484**
+  (WalkthroughLoader has the trustedRoot intersection fence). Earlier this session: TSK-478/479/326.
+- Verified earlier-this-session: **TSK-269** (PTYProcess resets `childPID=-1` in handleEOF + terminate).
+- Strong code evidence, commented for confirm: **TSK-270** (CSVParser tracks field length, no O(n²)
+  rescan), **TSK-283** (ClaudeMonitor "Open read-only ONCE", no per-line reopen).
+That's ~8/8 sampled already-remediated — the deep-audit `[S*]` AND the loose-ends batches are
+comprehensively stale. Per `project_audit_pending_list_stale`, stopping the finding-by-finding mining;
+it's pure churn.
+
+### DECISIONS NEEDED (owner) — loop is input-bound, not work-bound (2026-06-06 latest+37)
+The genuinely-remaining board work is NOT host-implementable by the autonomous loop. It splits into:
+- **Live / VM-only (need the screen — UI renders in WebView or needs a GUI session):**
+  - TSK-467 editable-HEX end-to-end (keystroke→buffer→**save-to-disk**) — wiring landed, file-mutating
+    round-trip needs a VM sanity check.
+  - TSK-466 CM6 indent-guides + fold gutter (needs an async per-tab fold pipeline; renders in CM6).
+  - TSK-468 LSP References button enable, TSK-464 LSP formatting/decl/typeDef commands, TSK-463 LSP
+    autocomplete — all need a running language server + live UI.
+  - TSK-469 Plugin Tier A real rows (vs placeholder).
+- **Owner UX decision (small code, needs a call):**
+  - TSK-470 zoom split (UI-chrome vs document zoom) — single unified `model.zoom` today.
+  - TSK-466a indent-guides default-on vs a new toggle pref.
+  - TSK-221 remove "Open As" menu in favour of the file-type chip dropdown.
+- **Owner dep-approval (new crates):** TSK-247 (`regex`), TSK-248 (`serde_json`), TSK-249
+  (`comrak`+`tree-sitter`), TSK-246 (grapheme dep) — all `[BLOCKED:owner-dep]`.
+- **The VM lane itself is blocked:** `test-in-vm.sh all` hangs (TSK-451) — reopening live validation
+  needs the owner to kill the orphan VM PIDs (see earlier handoff).
+
+**Recommendation:** to keep the loop productive, the owner could (a) green-light one VM-validation
+session so the live items (TSK-467/466/468) can be driven + validated, or (b) make the small UX calls
+(TSK-470/221), or (c) approve a dep for the Rust-core lane. Absent that, future heartbeats will be
+limited to board hygiene + opportunistic real bugs as they're reported.
+
 ## LOG 2026-06-06 (latest+36) — TSK-477 keep-note; TSK-326 stale-fixed; TSK-476 WONT-DO
 
 - **TSK-477 (`e89d3cd`) → fixed:** added an INTENTIONALLY-RETAINED / DO-NOT-DELETE header to
