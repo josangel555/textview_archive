@@ -702,7 +702,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
                 return .cancel
             }
             // Same-document #fragment navigation (in-page anchor) is safe.
-            if let url, isSameDocumentFragment(url, currentDocumentURL: currentDocumentURL) {
+            if let url, URLFragmentPolicy.isSameDocument(url, as: currentDocumentURL) {
                 return .allow
             }
             // The bootstrap `loadFileURL` (and its relative file: subresources)
@@ -716,21 +716,6 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             return .cancel
         }
 
-        private static func isSameDocumentFragment(_ url: URL, currentDocumentURL: URL?) -> Bool {
-            guard let fragment = url.fragment, !fragment.isEmpty else { return false }
-            guard let cur = currentDocumentURL else {
-                // No current page yet — treat as a stand-alone fragment OK
-                // (rare; happens before first load completes).
-                return url.scheme == nil
-            }
-            // Field-by-field comparison (scheme+host+path+query) is robust
-            // across Foundation versions — see the same helper in
-            // `MarkdownRenderedView.Coordinator`.
-            return url.scheme == cur.scheme
-                && url.host == cur.host
-                && url.path == cur.path
-                && url.query == cur.query
-        }
     }
 
     /// Resolution of an editor navigation decision. Pure value so the

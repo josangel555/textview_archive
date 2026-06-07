@@ -201,7 +201,7 @@ public enum HTMLDocumentPolicy {
         documentURL: URL?
     ) -> LoadDecision {
         guard let url else { return .cancel }
-        if isSameDocumentFragment(url, documentURL: documentURL) {
+        if URLFragmentPolicy.isSameDocument(url, as: documentURL) {
             return .allow
         }
         switch url.scheme?.lowercased() ?? "" {
@@ -243,17 +243,6 @@ public enum HTMLDocumentPolicy {
         // (`/a/site` must not match `/a/site-secret/x`); the trailing
         // slash on `dir` enforces the boundary.
         return target.hasPrefix(dir)
-    }
-
-    private static func isSameDocumentFragment(
-        _ url: URL, documentURL: URL?
-    ) -> Bool {
-        guard let fragment = url.fragment, !fragment.isEmpty else { return false }
-        guard let doc = documentURL else { return url.scheme == nil }
-        return url.scheme == doc.scheme
-            && url.host == doc.host
-            && url.path == doc.path
-            && url.query == doc.query
     }
 
     // MARK: - Document envelope

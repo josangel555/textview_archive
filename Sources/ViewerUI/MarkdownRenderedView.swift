@@ -653,7 +653,7 @@ public struct MarkdownRenderedView: NSViewRepresentable {
                 // a DIFFERENT document still can't slip through here; the
                 // dangerous schemes stay blocked unconditionally just below.
                 if !["javascript", "vbscript", "data"].contains(s),
-                   isSameDocumentFragment(url, currentDocumentURL: currentDocumentURL) {
+                   URLFragmentPolicy.isSameDocument(url, as: currentDocumentURL) {
                     return .allow
                 }
                 if ["javascript", "vbscript", "data", "file"].contains(s) {
@@ -684,7 +684,7 @@ public struct MarkdownRenderedView: NSViewRepresentable {
             }
             guard navigationType == .linkActivated else { return .allow }
             guard let url else { return .cancel }
-            if isSameDocumentFragment(url, currentDocumentURL: currentDocumentURL) {
+            if URLFragmentPolicy.isSameDocument(url, as: currentDocumentURL) {
                 return .allow
             }
             switch url.scheme?.lowercased() ?? "" {
@@ -695,24 +695,6 @@ public struct MarkdownRenderedView: NSViewRepresentable {
             }
         }
 
-        private static func isSameDocumentFragment(_ url: URL, currentDocumentURL: URL?) -> Bool {
-            guard let fragment = url.fragment, !fragment.isEmpty else { return false }
-            guard let cur = currentDocumentURL else {
-                // No current page yet — treat as a stand-alone fragment OK
-                // (rare; happens before first load completes).
-                return url.scheme == nil
-            }
-            // Compare scheme + host + path + query directly. Previously
-            // round-tripped through URLComponents to strip the fragment,
-            // but newer Foundation (Xcode 16.4 / macOS 15.6.1+)
-            // reserializes scheme-only URLs like `about:blank` to a
-            // different form, breaking the equality check. Field-by-field
-            // is robust across Foundation versions.
-            return url.scheme == cur.scheme
-                && url.host == cur.host
-                && url.path == cur.path
-                && url.query == cur.query
-        }
     }
 }
 
