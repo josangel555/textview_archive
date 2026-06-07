@@ -235,6 +235,77 @@ final class TerminalPaneStoreTests: XCTestCase {
         XCTAssertEqual(store.selectedTabID, only)
     }
 
+    // MARK: - Foreground gating (TSK-459)
+
+    func test_open_selectedTabIsForeground() {
+        let store = TerminalPaneStore(defaults: defaults)
+        store.setOpen(true)
+        XCTAssertTrue(store.tabs[0].model.isForeground,
+                      "the sole open tab is foreground")
+    }
+
+    func test_addTab_backgroundsPreviousSelection() {
+        let store = TerminalPaneStore(defaults: defaults)
+        store.setOpen(true)               // tab 1 (selected, fg)
+        store.addTab()                    // tab 2 (selected, fg) → tab 1 bg
+        XCTAssertTrue(store.tabs[1].model.isForeground, "new selected tab is foreground")
+        XCTAssertFalse(store.tabs[0].model.isForeground, "deselected tab is backgrounded")
+    }
+
+    func test_selectTab_movesForegroundToSelection() {
+        let store = TerminalPaneStore(defaults: defaults)
+        store.setOpen(true)               // tab 1
+        store.addTab()                    // tab 2 (selected)
+        store.selectTab(store.tabs[0].id) // back to tab 1
+        XCTAssertTrue(store.tabs[0].model.isForeground)
+        XCTAssertFalse(store.tabs[1].model.isForeground)
+    }
+
+    func test_cycleTab_movesForeground() {
+        let store = TerminalPaneStore(defaults: defaults)
+        store.setOpen(true)               // 1
+        store.addTab()                    // 2
+        store.addTab()                    // 3 (selected, fg)
+        store.cycleTab(forward: true)     // wrap → 1 fg
+        XCTAssertTrue(store.tabs[0].model.isForeground)
+        XCTAssertFalse(store.tabs[1].model.isForeground)
+        XCTAssertFalse(store.tabs[2].model.isForeground)
+    }
+
+    func test_closePane_backgroundsEveryTab() {
+        let store = TerminalPaneStore(defaults: defaults)
+        store.setOpen(true)               // 1
+        store.addTab()                    // 2 (selected)
+        // Capture models before closing (closeTab on the last tab clears tabs).
+        let models = store.tabs.map(\.model)
+        store.setOpen(false)              // pane hidden → nothing is visible
+        for m in models {
+            XCTAssertFalse(m.isForeground, "a hidden pane has no foreground shell")
+        }
+    }
+
+    func test_reopen_restoresForegroundOnSelectedTab() {
+        let store = TerminalPaneStore(defaults: defaults)
+        store.setOpen(true)
+        let model = store.tabs[0].model
+        store.setOpen(false)
+        XCTAssertFalse(model.isForeground)
+        store.setOpen(true)
+        XCTAssertTrue(model.isForeground, "reopening the pane re-foregrounds the selected shell")
+    }
+
+    func test_closeActiveTab_foregroundsTheNeighbor() {
+        let store = TerminalPaneStore(defaults: defaults)
+        store.setOpen(true)               // 1
+        store.addTab()                    // 2
+        store.addTab()                    // 3 (selected)
+        store.closeTab(store.tabs[2].id)  // neighbor (tab 2) becomes selected
+        let selected = store.tabs.first { $0.id == store.selectedTabID }
+        XCTAssertNotNil(selected)
+        XCTAssertTrue(selected!.model.isForeground)
+        XCTAssertFalse(store.tabs[0].model.isForeground, "non-selected tab stays backgrounded")
+    }
+
     // MARK: - Idempotence
 
     func test_setOpen_sameValue_isNoOpRepublish() async {

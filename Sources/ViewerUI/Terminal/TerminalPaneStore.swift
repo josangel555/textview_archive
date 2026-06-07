@@ -61,6 +61,7 @@ public final class TerminalPaneStore: ObservableObject {
         // exercised by ContentView only while `isOpen`).
         self.isOpen = loaded.isOpen
         if loaded.isOpen { ensureTerminal() }
+        syncForeground()
     }
 
     public var minHeight: CGFloat { TerminalPaneLayout.minHeight }
@@ -79,6 +80,7 @@ public final class TerminalPaneStore: ObservableObject {
         isOpen = open
         layout.isOpen = open
         if open { ensureTerminal() }
+        syncForeground()
         layout.save(to: defaults)
     }
 
@@ -103,12 +105,14 @@ public final class TerminalPaneStore: ObservableObject {
         nextNumber += 1
         tabs.append(tab)
         selectedTabID = tab.id
+        syncForeground()
     }
 
     /// Select an existing tab by id (no-op for an unknown id).
     public func selectTab(_ id: UUID) {
         guard selectedTabID != id, tabs.contains(where: { $0.id == id }) else { return }
         selectedTabID = id
+        syncForeground()
     }
 
     /// Cycle to the next (`forward`) or previous tab, wrapping around.
@@ -119,6 +123,7 @@ public final class TerminalPaneStore: ObservableObject {
         let n = tabs.count
         let next = forward ? (idx + 1) % n : (idx - 1 + n) % n
         selectedTabID = tabs[next].id
+        syncForeground()
     }
 
     /// Close a tab, reaping its shell. Closing the last tab closes the
@@ -136,6 +141,7 @@ public final class TerminalPaneStore: ObservableObject {
         if selectedTabID == id {
             selectedTabID = tabs[min(idx, tabs.count - 1)].id
         }
+        syncForeground()
     }
 
     // MARK: - Shell lifecycle
@@ -144,6 +150,16 @@ public final class TerminalPaneStore: ObservableObject {
     /// spawns the shell itself when the representable mounts.
     private func ensureTerminal() {
         if tabs.isEmpty { addTab() }
+    }
+
+    /// Mark exactly the visible shell foreground (pane open AND selected)
+    /// and every other tab background, so deselected/closed-pane shells stop
+    /// scheduling UI bumps no view observes (TSK-459). Cheap + idempotent
+    /// (each model's `setForeground` early-returns on no change).
+    private func syncForeground() {
+        for tab in tabs {
+            tab.model.setForeground(isOpen && tab.id == selectedTabID)
+        }
     }
 
     /// Reap every shell on app teardown. Idempotent.

@@ -19,6 +19,15 @@ private final class TerminalParserBox: @unchecked Sendable {
     private let snapshotLock = NSLock()
     private var latestSnapshot: TerminalScreen
 
+    /// Whether the owning tab is currently the visible/selected one. Read
+    /// from the PTY's background queue (nonisolated) to decide whether an
+    /// output chunk is worth a main-actor UI bump, so a backgrounded tab's
+    /// chatty shell stops churning `Task { @MainActor }` hops that no
+    /// mounted view observes. Guarded by its own lock (independent of the
+    /// snapshot lock — different access cadence).
+    private let foregroundLock = NSLock()
+    private var _foreground = true
+
     init(rows: Int, cols: Int) {
         self.parser = ANSIParser(rows: rows, cols: cols)
         self.latestSnapshot = TerminalScreen(rows: rows, cols: cols)
@@ -27,6 +36,15 @@ private final class TerminalParserBox: @unchecked Sendable {
     var snapshot: TerminalScreen {
         snapshotLock.lock(); defer { snapshotLock.unlock() }
         return latestSnapshot
+    }
+
+    var isForeground: Bool {
+        foregroundLock.lock(); defer { foregroundLock.unlock() }
+        return _foreground
+    }
+
+    func setForeground(_ on: Bool) {
+        foregroundLock.lock(); _foreground = on; foregroundLock.unlock()
     }
 
     /// Decode a chunk + republish a snapshot. Runs on `queue`.
@@ -116,8 +134,13 @@ public final class TerminalModel: ObservableObject {
 
         let box = self.box
         pty.onOutput = { [weak self] data in
+            // Always feed the parser so scrollback/screen stay current even
+            // while backgrounded; only schedule a UI bump when this tab is
+            // visible — a backgrounded tab has no mounted observer, so the
+            // main-actor hop would be pure waste (TSK-459). The flag is read
+            // here, BEFORE the Task hop, to actually skip the spawn.
             box.feed(data)
-            self?.scheduleBump()
+            if box.isForeground { self?.scheduleBump() }
         }
         pty.onExit = { [weak self] _ in
             Task { @MainActor in self?.hasExited = true }
@@ -142,6 +165,27 @@ public final class TerminalModel: ObservableObject {
         // Re-spawn on the next runloop tick so the prior reap settles.
         Task { @MainActor [weak self] in
             self?.start(workingDirectory: workingDirectory)
+        }
+    }
+
+    // MARK: - Foreground gating (TSK-459)
+
+    /// Whether this tab's shell is the visible/selected one. Mirrors the
+    /// thread-safe flag the PTY callback reads to skip UI bumps off-screen.
+    public var isForeground: Bool { box.isForeground }
+
+    /// Mark this terminal foreground (visible) or background (a deselected
+    /// tab / closed pane). Backgrounded tabs keep their shell + parser
+    /// running but stop scheduling UI bumps no view observes. Returning to
+    /// foreground forces one bump so the freshly-shown view picks up
+    /// everything that accumulated while hidden, and resets the throttle so
+    /// the next live output is a clean leading edge.
+    public func setForeground(_ on: Bool) {
+        guard on != box.isForeground else { return }
+        box.setForeground(on)
+        if on {
+            throttle = FrameThrottle()
+            version &+= 1
         }
     }
 
