@@ -29,6 +29,34 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-07 (latest+46) — TSK-306/272: preview-tab — design breakdown + model core (Phase 1)
+
+After three shipped editor features, the remaining `reported` backlog is large/design-gated. Highest
+-leverage next item: the **preview-tab/scrub** cluster — **TSK-306** (single-click → ephemeral preview;
+Enter/double-click persists) + **TSK-272** (arrow-keys equivalent). One feature, the VSCode
+ephemeral-preview-tab model. (NB: SoR `TSK-220` is a `[PORT][WEB]` task, *not* preview — the preview
+spec lives in TSK-306/272.)
+
+Did BOTH a Task-Breakdown and shipped the host-testable foundation (not doc-only):
+- **`docs/PREVIEW_TAB_DESIGN.md`** (NEW): confirms the model, the current baseline (sidebar opens
+  immediately+permanently at `SidebarView.swift:257`/`:1174`; `TabCoordinator.openOrReveal:219`), a
+  phased host-testable-first plan, and isolates the ONE real owner decision (preview-tab persistence
+  across relaunch) with a recommendation.
+- **Phase 1 model core (`a37f861`)**: `Tab.isPreview` (in `Equatable`; in-memory only — `Tab` isn't
+  `Codable`, persistence is via `TabSnapshot` which won't carry it, so relaunch rehydrates permanent =
+  persistence Option A for free); `TabsState.openPreview` (reuse-one-slot / reveal-not-preview-when-
+  already-open / blank-reuse) + `promoteTab` + `previewTabID`; `TabCoordinator` forwarders. 8 pure
+  tests incl the never-two-previews invariant. swift build clean; headless gate green (4123).
+- Board: TSK-306 → `progress` (Phase-1 comment); TSK-272 commented (same feature, keyboard half).
+- NOT installed this firing — the model core is additive + unwired (no user-visible change yet); Phase
+  2 (sidebar triggers, live) + Phase 3 (italic affordance, VM-visual) follow.
+
+### DECISION NEEDED (owner) — preview-tab persistence (TSK-306)
+When the app relaunches / a session saves, what happens to an ephemeral preview tab? **(A, recommended)
+promote-on-save** — persist it as a normal tab (zero-risk, already realized by not encoding the flag);
+(B) drop it (pure VSCode); (C) persist as preview (most work). Proceeding on **A** for Phase 2; only a
+switch to B/C needs your call. See `docs/PREVIEW_TAB_DESIGN.md` §4.
+
 ## LOG 2026-06-07 (latest+45) — TSK-299: Insert Date & Time editor command
 
 New SwiftUI feature (owner-filed, Notepad's F5). Picked a different lane from the prior two editor
