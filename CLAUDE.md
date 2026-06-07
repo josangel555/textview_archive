@@ -2,6 +2,41 @@
 
 ## Testing rules
 
+### Change → tests + tracker mandate (OWNER DIRECTIVE 2026-06-07)
+
+Non-negotiable for **every** change. This codifies the terminal-tab-strip
+miss, where a feature was shipped that headless tests "proved rendered" yet was
+invisible on screen.
+
+1. **Every change ships with tests.** Any code change MUST include corresponding
+   new/updated tests. No test changes ⇒ the change isn't done.
+2. **Cover all tiers that apply:** unit, integration, headless, AND UI tests —
+   not just one.
+3. **Real-UI tests run in the UTM VM** (T4 `LiveAppTestCase` / T5
+   `PixelTestCase` / WebView suites), never the Mac host, unless the owner says
+   otherwise. (Same as the 2026-06-06 directive below.)
+4. **A headless "the element is rendered" check is NOT sufficient for UI.** An
+   element can be in the view tree yet invisible on screen — zero/collapsed
+   size, z-index/occlusion, color blending into its background (e.g. an
+   *unemphasised* `selectedContentBackgroundColor` going grey), `isHidden`,
+   `alpha`, clipping. When adding a UI element you MUST verify it is actually
+   VISIBLE on screen (VM pixel capture / T5), not merely present in layout.
+   NOTE the host limits found 2026-06-07: `NSView.hitTest` returns the hosting
+   view for SwiftUI tap targets (SwiftUI owns its gesture routing), and
+   `cacheDisplay` does NOT capture SwiftUI's CA-rendered layers — so true
+   pixel/click validation of SwiftUI UI is VM-only.
+5. **At least one test must INTERACT with the element** (click / keypress / etc.)
+   to prove it exists and is interactable — "if it's not visible, how do we
+   click it?" For SwiftUI, that's a VM UI test (real event) or, where a real
+   event can't be synthesized, exercising the exact action closure the control
+   is wired to (not a parallel reimplementation).
+6. **Headless tests must pin each element's interaction BEHAVIOUR** — the
+   model/state outcome of select/close/toggle/cycle/etc. — so a logic
+   regression fails on the host gate even though the pixel check is VM-only.
+7. **Every change has a `tasked` task.** No task ⇒ don't start. File it first.
+8. **Drive `tasked` only via its MCP tools** (`mcp__tasked__*`) — never the
+   retired `python3 /tmp/board.py`, never the human REST endpoint.
+
 > **OWNER DIRECTIVE (2026-06-06): NO UI tests on the Mac — run UI / live-tier
 > tests on the UTM VM only.** Never run T4 `LiveAppTestCase`, T5 `PixelTestCase`,
 > the in-process WebView suites, or the `build-app.sh` pre-install smoke on the
