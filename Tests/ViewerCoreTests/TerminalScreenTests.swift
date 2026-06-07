@@ -241,10 +241,23 @@ final class TerminalScreenTests: XCTestCase {
         XCTAssertEqual(s.line(0), "bbb")
     }
 
-    func test_scrollback_isBounded() {
+    func test_scrollback_isBounded_withinCapPlusSlack() {
         var s = TerminalScreen(rows: 1, cols: 2)
-        for _ in 0..<(TerminalScreen.maxScrollback + 50) { s.scrollUp(1) }
-        XCTAssertEqual(s.scrollback.count, TerminalScreen.maxScrollback)
+        // Scroll well past cap+slack so at least one batch trim fires.
+        let n = TerminalScreen.maxScrollback + TerminalScreen.scrollbackSlack + 100
+        for _ in 0..<n { s.scrollUp(1) }
+        // Batched trim keeps the count in [cap, cap+slack] — never unbounded,
+        // never below the cap once we've scrolled past it.
+        XCTAssertLessThanOrEqual(s.scrollback.count,
+                                 TerminalScreen.maxScrollback + TerminalScreen.scrollbackSlack)
+        XCTAssertGreaterThanOrEqual(s.scrollback.count, TerminalScreen.maxScrollback)
+    }
+
+    func test_scrollback_doesNotTrimBeforeOverflowingSlack() {
+        var s = TerminalScreen(rows: 1, cols: 2)
+        // Just past the cap but within slack → no trim yet (all lines kept).
+        for _ in 0..<(TerminalScreen.maxScrollback + 10) { s.scrollUp(1) }
+        XCTAssertEqual(s.scrollback.count, TerminalScreen.maxScrollback + 10)
     }
 
     func test_visibleLines_offsetZero_isLiveGrid() {

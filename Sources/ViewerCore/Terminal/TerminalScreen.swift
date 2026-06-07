@@ -39,6 +39,14 @@ public struct TerminalScreen: Sendable, Equatable {
     /// Hard cap on retained scrollback lines (memory bound).
     public static let maxScrollback = 1000
 
+    /// Overflow slack before trimming. `scrollUp` lets `scrollback` grow to
+    /// `maxScrollback + scrollbackSlack` and then trims back to the cap in
+    /// one batch, rather than `removeFirst(1)` per line (an
+    /// O(maxScrollback) memmove on EVERY scrolled line — costly under bulk
+    /// output). Count therefore oscillates in `[maxScrollback,
+    /// maxScrollback + scrollbackSlack]`.
+    public static let scrollbackSlack = 256
+
     /// The pen — current SGR attributes stamped onto written cells.
     public var pen: CellAttributes = .default
 
@@ -208,9 +216,13 @@ public struct TerminalScreen: Sendable, Equatable {
     public mutating func scrollUp(_ n: Int) {
         let count = min(max(0, n), rows)
         guard count > 0 else { return }
-        // Retain the evicted top lines as scrollback (bounded).
+        // Retain the evicted top lines as scrollback. Trim in BATCHES (only
+        // once the buffer overflows the cap by `scrollbackSlack`) — a
+        // per-line `removeFirst(1)` is an O(maxScrollback) memmove on every
+        // scrolled line, which dominates under bulk output (build logs,
+        // `cat`). Batching amortizes it to ~O(maxScrollback / slack)/line.
         scrollback.append(contentsOf: cells[0..<count])
-        if scrollback.count > Self.maxScrollback {
+        if scrollback.count > Self.maxScrollback + Self.scrollbackSlack {
             scrollback.removeFirst(scrollback.count - Self.maxScrollback)
         }
         cells.removeFirst(count)
