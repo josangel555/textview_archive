@@ -29,6 +29,27 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-07 (latest+45) — TSK-299: Insert Date & Time editor command
+
+New SwiftUI feature (owner-filed, Notepad's F5). Picked a different lane from the prior two editor
+toggles; verified the reported backlog is otherwise large/design-gated (preview-cluster TSK-272/220/306
+needs an owner ephemeral-preview decision; find-in-CSV-table overlaps existing filter + is mostly
+visual). Date-insert is self-contained, owner-requested, host-testable.
+
+- **`Sources/ViewerCore/DateTimeStamp.swift`** (NEW): pure locale-aware formatter (medium date + short
+  time), date/locale/tz-injected → fully unit-tested.
+- **CM6 bridge:** new `CMOutboundMessage.insertAtCursor(text:)` (v2 — refuses v1 peers) + encode;
+  `codemirror.html` `applyInsertAtCursor` uses `state.replaceSelection` (idiomatic, undoable, caret
+  lands after). No fragile version/OT path.
+- **View plumbing:** `CMInsertRequest` nonce struct + `CodeMirrorEditorView.insertRequest` dispatch
+  (mirrors `gotoLineRequest`); `EditorCoordinator.editorInsertRequest`/`insertIntoEditor`;
+  `DocumentModel.insertDateAndTime()` (editor-mode-gated) + `ContentView` wire.
+- **Menu:** Edit → "Insert Date and Time" + `insertDateTime` handler + `validateMenuItem` gate (editor
+  mode + mounted webview).
+- 8 host tests (formatter ×3, bridge encode + v2-gate, coordinator set/distinct-nonce/empty-noop).
+  swift build clean; headless gate green (4115); committed **`63b03ce`**; debug bundle installed.
+- VM-pending (visual only): the stamp actually lands at the caret in the live CM6 editor.
+
 ## LOG 2026-06-07 (latest+44) — TSK-487: CM6 indent guides wired (opt-in)
 
 Closed the second half of the original fold/indent-guides finding (split out as TSK-487 last firing).
