@@ -5,27 +5,29 @@ import AppKit
 @testable import ViewerCore
 import ViewerKit
 
-/// Headless VISIBILITY coverage for the terminal tab strip (TSK-488 / owner
-/// "I see a gap but no tabs"). The model layer (`TerminalPaneStoreTests`)
-/// proves the store always has ≥1 tab; the earlier frame-walk proved the
-/// chips occupy layout space — but BOTH were satisfied while the chips were
-/// invisible on screen, because they were wrapped in a `ScrollView` whose
-/// content does not paint here. The real signal is PIXELS.
+/// SwiftUI-RASTER smoke for the terminal tab strip (TSK-488). Proves a
+/// narrow thing: SwiftUI's OWN drawing of `TerminalPaneView` paints an
+/// accent-coloured chip swatch on the configured edge. It does NOT — and
+/// structurally CANNOT — prove the chip is VISIBLE in the live window.
 ///
-/// `ImageRenderer` rasterizes SwiftUI's OWN drawing — colors included —
-/// unlike `cacheDisplay` (which doesn't capture SwiftUI CA layers) or an
-/// `NSView` frame walk (which sees layout, not paint). The selected chip is
-/// the user's vivid ACCENT colour; the rail background is unsaturated
-/// (grey/white). So "a highly-saturated pixel in the strip's edge band"
-/// proves the chip actually painted, AND its location proves the strip is on
-/// the configured edge.
+/// ⚠️ WHY THIS IS NOT A VISIBILITY GUARD (owner: "test is broken" — it was a
+/// false green): the real "gap but no tabs" bug was COMPOSITOR OCCLUSION.
+/// The terminal surface is an opaque, layer-backed `NSViewRepresentable`
+/// (`TerminalNSView`) that overdrew its sibling strip on the real screen.
+/// `ImageRenderer` rasterizes SwiftUI's view tree in ISOLATION — it never
+/// instantiates the real opaque AppKit layer (it draws a placeholder glyph
+/// for the representable), so it renders the chips fine while the live window
+/// is blank. It therefore passed green three times while the feature was
+/// visibly broken. The actual on-screen-visibility guard is the T5
+/// `TerminalTabStripVisualRegressionTests`, which reads the WindowServer
+/// composite via `screencapture(1)`.
 ///
-/// The terminal surface is an `NSViewRepresentable`; `ImageRenderer` draws a
-/// placeholder (a saturated red glyph) for it, CENTERED — so each test scans
-/// only the thin EDGE band where the chip lives and the centered placeholder
-/// never reaches.
+/// Kept (not deleted) because it still catches a real, distinct regression
+/// class this raster CAN see: the chip being mis-coloured (e.g. unsaturated
+/// so it blends into the rail) or dropped from the SwiftUI layout entirely.
+/// Just don't mistake a green here for "the user can see the tabs."
 @MainActor
-final class TerminalTabStripRenderTests: HeadlessUITestCase {
+final class TerminalTabStripRasterTests: HeadlessUITestCase {
 
     private var suiteName: String!
     private var defaults: UserDefaults!
@@ -48,21 +50,21 @@ final class TerminalTabStripRenderTests: HeadlessUITestCase {
         // so its centered placeholder never reaches x<48 — a saturated pixel
         // here is the chip.
         XCTAssertTrue(hasSaturatedPixel(rep, x: 0..<48, y: 0..<rep.pixelsHigh),
-            "no saturated chip swatch in the LEFT rail — the strip isn't painting")
+            "no accent chip swatch in the LEFT rail of SwiftUI's raster — chip mis-coloured or dropped from layout (NOT a visibility check; see TerminalTabStripVisualRegressionTests)")
     }
 
     /// RIGHT strip: the chip paints in the RIGHT rail band.
     func test_rightStrip_chipPaintsOnRightEdge() throws {
         let rep = try renderPane(.right)
         XCTAssertTrue(hasSaturatedPixel(rep, x: (rep.pixelsWide - 48)..<rep.pixelsWide, y: 0..<rep.pixelsHigh),
-            "no saturated chip swatch in the RIGHT rail — the strip isn't painting")
+            "no accent chip swatch in the RIGHT rail of SwiftUI's raster — chip mis-coloured or dropped from layout (NOT a visibility check; see TerminalTabStripVisualRegressionTests)")
     }
 
     /// TOP strip: the chip paints in the TOP band.
     func test_topStrip_chipPaintsOnTopEdge() throws {
         let rep = try renderPane(.top)
         XCTAssertTrue(hasSaturatedPixel(rep, x: 0..<rep.pixelsWide, y: 0..<44),
-            "no saturated chip swatch in the TOP band — the strip isn't painting")
+            "no accent chip swatch in the TOP band of SwiftUI's raster — chip mis-coloured or dropped from layout (NOT a visibility check; see TerminalTabStripVisualRegressionTests)")
     }
 
     /// A single tab (no `addTab`) must STILL paint a chip (owner: "even if
