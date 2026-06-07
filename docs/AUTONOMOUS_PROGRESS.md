@@ -29,6 +29,29 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-07 (latest+42) — TSK-466 step 1: SyntaxFoldRangeMapping (pure core) landed
+
+Executed the latest+41 plan — prepped the live editor-folding feature by building its **design-agnostic
+pure core** first, so the model layer is fully host-tested and only the WebView render stays VM-gated.
+
+- **`Sources/ViewerCore/SyntaxFoldRangeMapping.swift`** (NEW): `cmFoldRanges(from: [FoldRegion],
+  documentText:, encoding:)` + a cached-converter overload. Maps 1-based inclusive TreeSitter
+  `FoldRegion` → CM6 `CMFoldRange` (UTF-16 doc offsets) via `LSPPositionConverter` with
+  `character: Int.max` (end-of-line clamp) — the IDENTICAL CM6/VSCode rule `CMFoldRangeMapping` uses
+  for LSP folds, so the two sources are interchangeable downstream. `from` = end of startLine content,
+  `to` = end of endLine content; clamps to doc length; drops `to <= from`; forwards `kind.rawValue`.
+- **`Tests/ViewerCoreTests/SyntaxFoldRangeMappingTests.swift`** (NEW): 7 tests — start/end offset
+  contract (pinned by an independent `endOfLine` helper), kind passthrough, degenerate same-line drop,
+  beyond-EOF clamp, multi-region ordering, UTF-16 surrogate-pair (emoji) offset correctness. All pass.
+- `swift build` clean; headless gate green (4106 tests); committed **`24cc94b`**. Board comment on
+  TSK-466 records step 1 landed.
+
+**Remaining for TSK-466 (staged, NOT landed):** step 2 — DocumentModel per-tab `[CMFoldRange]` side
+table computed off-main via `TreeSitterEngine.computeFolds(text:language:)` on editor text set/change +
+per-tab edit invalidation (host-testable); step 3 — pass `foldingRanges:` at `ContentView.swift:570`.
+**Owner nod still wanted on the fold SOURCE** (recommend TreeSitter-only for v1; LSP-union later). The
+CM6 render itself is **VM-validation-only**. Structural blocker unchanged (latest+37 DECISIONS NEEDED).
+
 ## LOG 2026-06-07 (latest+41) — verify-first: TSK-296 + TSK-285 already-fixed (security/leak)
 
 Two more full-read verifications, both genuinely remediated — no code change:
