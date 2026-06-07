@@ -83,24 +83,31 @@ struct TerminalPaneView: View {
         // Strip placement (TSK-488): left (default) / top / right. The strip
         // runs vertically for left/right, horizontally for top.
         Group {
+            // COMPOSITOR (LESSONS): the terminal surface is an opaque,
+            // layer-backed NSViewRepresentable. As a plain stack sibling it
+            // OCCLUDES the SwiftUI-drawn tab strip (the chips/icon vanish while
+            // the separately-hosted AppKit buttons punch through) — the live
+            // "I see a gap but no tabs" bug, invisible to ImageRenderer. Force
+            // each strip into its OWN compositing layer ordered ABOVE the
+            // surface so it can't be occluded. (TSK-488)
             switch store.tabPosition {
             case .top:
                 VStack(spacing: 0) {
-                    horizontalTabStrip
+                    horizontalTabStrip.compositingGroup().zIndex(1)
                     Divider()
-                    terminalSurface
+                    terminalSurface.zIndex(0)
                 }
             case .left:
                 HStack(spacing: 0) {
-                    verticalTabStrip
+                    verticalTabStrip.compositingGroup().zIndex(1)
                     Divider()
-                    terminalSurface
+                    terminalSurface.zIndex(0)
                 }
             case .right:
                 HStack(spacing: 0) {
-                    terminalSurface
+                    terminalSurface.zIndex(0)
                     Divider()
-                    verticalTabStrip
+                    verticalTabStrip.compositingGroup().zIndex(1)
                 }
             }
         }
