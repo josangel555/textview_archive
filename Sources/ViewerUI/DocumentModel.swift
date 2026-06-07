@@ -1041,6 +1041,11 @@ public final class DocumentModel: ObservableObject {
     /// split pane gets its own diff feed (it can be a file in a DIFFERENT
     /// repo than the primary pane — "two repos colored simultaneously").
     private var splitDiffMarksTask: Task<Void, Never>?
+    /// In-flight syntax-fold compute for the selected editor tab (TSK-466).
+    /// Cancelled + relaunched on selection change / edit so a keystroke
+    /// burst doesn't stack TreeSitter parses. Single handle is enough —
+    /// only the *selected* editor tab's folds are ever computed.
+    private var editorFoldsTask: Task<Void, Never>?
 
     /// Wall-clock cap for the gutter's `git diff` (CHANGE 3). On timeout
     /// we leave the prior markers rather than clearing. `nonisolated` so
@@ -1140,6 +1145,63 @@ public final class DocumentModel: ObservableObject {
                 self.editor.setEditorGutterMarkers(cmMarkers, forURL: token)
             }
         }
+    }
+
+    /// Recompute syntax fold regions for the selected editor tab off-main
+    /// and push them into the CM6 editor's per-tab fold channel (TSK-466).
+    /// Mirrors `refreshDiffMarks`' cancel-then-relaunch shape. Called on
+    /// selection change (`updateDerived`) and on edits (`updateEditorText`).
+    ///
+    /// Source = TreeSitter `FoldRegion` (the same syntax folds the
+    /// read-only Source view uses, #139), mapped through
+    /// `SyntaxFoldRangeMapping`. A future LSP-fold union would add a
+    /// second source here; the v1 default is TreeSitter-only because it
+    /// needs no language server and is always available.
+    ///
+    /// No-op unless the selected tab is a loaded file in editor mode.
+    /// The engine caps by byte size and caches by content hash, so a
+    /// recompute over unchanged text is cheap; the `setEditorFoldRanges`
+    /// equality guard suppresses the redundant republish.
+    public func refreshEditorFolds() {
+        editorFoldsTask?.cancel()
+        guard let tab = tabs.selected,
+              tab.viewMode == .editor,
+              let url = tab.url
+        else {
+            editorFoldsTask = nil
+            return
+        }
+        let tid = tab.id
+        let lang = effectiveLanguage(forTabID: tid, url: url)
+        // Prefer the live edited buffer; fall back to the loaded-on-disk
+        // text for a freshly-selected tab whose editor buffer hasn't been
+        // seeded yet (updateDerived can fire before the editor view's
+        // ensureEditorBuffer pass).
+        let text = editor.editorBuffer(forTabID: tid)?.text ?? Self.loadedText(of: tab)
+        guard let text, !text.isEmpty else {
+            editor.setEditorFoldRanges([], forTabID: tid)
+            editorFoldsTask = nil
+            return
+        }
+        editorFoldsTask = Task { [weak self] in
+            // `computeFolds` runs the parse on a detached task internally;
+            // do the (O(n) converter) mapping off-main too so the main
+            // actor only sees the final assignment.
+            let folds = await Task.detached(priority: .userInitiated) { () -> [CMFoldRange] in
+                let regions = await TreeSitterEngine.shared.computeFolds(text: text, language: lang)
+                return SyntaxFoldRangeMapping.cmFoldRanges(from: regions, documentText: text)
+            }.value
+            if Task.isCancelled { return }
+            guard let self, self.tabs.selected?.id == tid else { return }
+            self.editor.setEditorFoldRanges(folds, forTabID: tid)
+        }
+    }
+
+    /// The loaded-from-disk text of a tab, or nil if it isn't in the
+    /// `.loaded` state (binary / error / preview / still loading).
+    private static func loadedText(of tab: ViewerCore.Tab) -> String? {
+        if case .loaded(let f) = tab.state { return f.contents }
+        return nil
     }
 
     /// Resolve the gutter's repo root via the registry first (shared
@@ -1748,6 +1810,12 @@ public final class DocumentModel: ObservableObject {
         editor.pendingEditorGutterMarkers
     }
 
+    /// Forwarder. New code should read `editor.editorFoldRangesByTab`.
+    /// Read at the `CodeMirrorEditorView` call site (`foldingRanges:`).
+    public var editorFoldRangesByTab: [UUID: [CMFoldRange]] {
+        editor.editorFoldRangesByTab
+    }
+
     public func consumePendingEditorGutterMarkers(forTabID id: UUID) {
         editor.consumePendingEditorGutterMarkers(forTabID: id)
     }
@@ -2018,6 +2086,9 @@ public final class DocumentModel: ObservableObject {
     /// Forwarder. New code should call `editor.updateEditorText(...)`.
     public func updateEditorText(_ newText: String, forTabID id: UUID) {
         editor.updateEditorText(newText, forTabID: id)
+        // Recompute folds against the edited text (TSK-466). Only for the
+        // selected tab — a background tab's editor isn't on screen.
+        if tabs.selected?.id == id { refreshEditorFolds() }
     }
 
     /// Forwarder. New code should call `editor.saveActiveEditor()`.
@@ -4190,6 +4261,9 @@ public final class DocumentModel: ObservableObject {
         // file changes. Cheap-ish: shells `git diff` once per switch
         // (off-main); skipped when not inside a repo.
         refreshDiffMarks()
+        // Sibling: recompute the CM6 editor's syntax fold ranges for the
+        // newly-focused tab (TSK-466). No-op outside editor mode.
+        refreshEditorFolds()
         // Sibling to refreshDiffMarks: keep the multi-repo registry's
         // demand set in sync with the open-tab/selection state. The
         // tabCoordinator/sidebar Combine sinks in RepoFocusTracker cover

@@ -577,6 +577,7 @@ public struct ContentView: View {
                     indentation: model.editorIndentation,
                     gotoLineRequest: model.editorGotoLine,
                     showInvisibles: model.showInvisibleChars,
+                    foldingRanges: model.editorFoldRangesByTab[tid] ?? [],
                     gutterMarkers: gutter,
                     diagnostics: diags,
                     findQuery: (isActive && model.isEditorFindBarPresented) ? model.editorFindQuery : "",

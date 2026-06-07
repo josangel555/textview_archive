@@ -119,6 +119,15 @@ public final class EditorCoordinator: ObservableObject {
     /// via the TabCoordinator close hook.
     @Published public internal(set) var pendingEditorGutterMarkers: [UUID: [CMGutterMarker]] = [:]
 
+    /// Per-tab syntax fold ranges for the CM6 editor (TSK-466). Produced
+    /// off-main by `DocumentModel.refreshEditorFolds` (TreeSitter
+    /// `FoldRegion` → `SyntaxFoldRangeMapping` → CM6 `CMFoldRange`) and
+    /// read at the `CodeMirrorEditorView` call site, which dedups via its
+    /// own `lastSentFoldingRanges`. Mirror of the diagnostics/gutter
+    /// dicts in shape + close-hook lifecycle. Empty array clears the
+    /// editor's fold gutter for that tab.
+    @Published public internal(set) var editorFoldRangesByTab: [UUID: [CMFoldRange]] = [:]
+
     // MARK: - Test seams
 
     /// Override the dirty-close NSAlert with a test-driven response.
@@ -183,6 +192,7 @@ public final class EditorCoordinator: ObservableObject {
             self.editorScrollByTab.removeValue(forKey: id)
             self.pendingEditorDiagnostics.removeValue(forKey: id)
             self.pendingEditorGutterMarkers.removeValue(forKey: id)
+            self.editorFoldRangesByTab.removeValue(forKey: id)
         }
     }
 
@@ -303,6 +313,23 @@ public final class EditorCoordinator: ObservableObject {
             let stdTab = tabURL.standardizedFileURL.resolvingSymlinksInPath()
             guard stdTab == standardized else { continue }
             pendingEditorGutterMarkers[tab.id] = markers
+        }
+    }
+
+    /// Park syntax fold ranges on the per-tab fold dict for `id`.
+    /// No-op when `id` isn't an open tab (a compute that finished after
+    /// the tab closed) OR when the value is unchanged — the equality
+    /// short-circuit avoids a redundant `@Published` republish when a
+    /// re-select of an unedited tab recomputes the identical folds.
+    ///
+    /// Producer side: `DocumentModel.refreshEditorFolds` runs the
+    /// off-main TreeSitter fold compute and calls this once the result
+    /// arrives. Keys by tab id (not URL) because the fold buffer is
+    /// itself tab-id-keyed, so there's no URL→tab ambiguity to resolve.
+    public func setEditorFoldRanges(_ ranges: [CMFoldRange], forTabID id: UUID) {
+        guard tabsSnapshot().contains(where: { $0.id == id }) else { return }
+        if editorFoldRangesByTab[id] != ranges {
+            editorFoldRangesByTab[id] = ranges
         }
     }
 
