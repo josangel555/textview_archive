@@ -29,6 +29,23 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+35) — TSK-473 xattr dedup; TSK-466 scoped (live-only)
+
+- **TSK-473 (`3a78425`) → fixed:** `EditorBuffer.ExistingFileMeta` and `HexEditBuffer.HexFileMeta`
+  each carried a byte-identical `readXattrs`/`readOneXattr` pair + the same `setxattr` replay loop
+  (preserve quarantine/ACL xattrs across an atomic rewrite). Extracted to one `ViewerCore.XattrIO`
+  (`read`/`readOne`/`apply`); both delegate, no behaviour change. New `XattrIOTests` round-trip REAL
+  xattr syscalls (host-validatable): apply→read, empty value, 4 KB value, missing-attr nil; existing
+  EditorBuffer (26) + HexEditBuffer (27) suites still green. Gate green (4089). Test lesson: a freshly
+  created file is NOT xattr-empty on modern macOS (auto `com.apple.provenance`) — assert
+  our-names-absent, not total emptiness.
+- **TSK-466 → triaged (not implemented — live-only):** CM6 `indentGuides`/`foldingRanges` props exist
+  but the only call site (`ContentView.swift:570`) passes neither. Splits into (a) one-line
+  `indentGuides` bool (needs a default-on-vs-toggle UX call) and (b) a real async per-tab fold pipeline
+  (`computeFolds`→store→invalidate-on-edit→pass) that DocumentModel lacks today. Both payoffs render in
+  the CM6 WebView → end-to-end validation is VM/live only. Recorded full scoping on the board;
+  deferred to keep this firing host-validatable rather than blind-ship a WebView feature.
+
 ## LOG 2026-06-06 (latest+34) — TSK-465 LSP initializationOptions forwarded
 
 - **TSK-465 (`a13fc24`) → fixed:** `lsp.json`'s per-server `initializationOptions` was parsed into
