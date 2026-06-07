@@ -29,6 +29,32 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+31) — owner two-bug batch: terminal latency + 2nd prod-app-nuke site
+
+Owner reported two bugs interactively; both fixed, gated, committed, and the fresh debug
+bundle installed to `/Applications/TextView.app` (owner must relaunch to pick up new code).
+
+- **BUG #2 — "headless test STILL nuking /Applications/TextView" (`f6499fe`):** a SECOND
+  by-exec-name kill site after the `install-app.sh` killall (`e5ffa08`). `LaunchHarness.cleanup()`
+  did `AppLauncher.currentPID(of: "MarkdownViewer").map { kill($0, SIGTERM) }` — `currentPID` is a
+  raw `pgrep -x`-by-name lookup, so it SIGTERM'd the owner's running prod app (shared exec name).
+  Fires in heavy-tier TEAR-DOWN, which runs **even when the body self-skips in the gate** (setUp/
+  tearDown still execute around a skipped test) — so the window-free gate WAS killing the app.
+  Fixed: route through `AppLauncher.killTestInstances(named:)` (MDV_TEST_INSTANCE-scoped). Lesson:
+  the footgun isn't only `killall`, and "self-skip" doesn't cover tear-down. (LESSONS + memory
+  `feedback-killall-footgun` updated.)
+- **BUG #1 — "terminal very slow typing/Enter" (`d8141c5`):** root cause = `TerminalModel.scheduleBump`
+  was a PURELY TRAILING-edge throttle — every keystroke echo spawned a Task that slept a full frame
+  (≥16ms, more under Task.sleep imprecision) BEFORE bumping `version`, so input never painted until a
+  frame after the shell echoed, even on an idle prompt. Replaced with a LEADING-edge throttle (new
+  pure `ViewerCore/Terminal/FrameThrottle.swift`, headlessly tested): first event after idle paints
+  immediately, then 16ms cooldown coalesces the burst + one trailing flush. Also memoized the 256
+  ansi/indexed `NSColor` palette (was allocating per attribute-run per frame — 256/truecolor churn in
+  the draw path). New tests: `FrameThrottleTests` (ViewerCore), `TerminalPaletteTests` (ViewerUI,
+  memoization + value-equivalence). Headless gate GREEN (4067 tests, tier enforcement OK).
+- **Board down:** `localhost:8787` unreachable this turn — couldn't advance board tasks to `fixed`.
+  Recorded here; create/advance TSK entries for both fixes when the board is back up.
+
 ## LOG 2026-06-06 (latest+30) — killall footgun, status-bar headless-verify, board hygiene
 
 - **KILLALL FOOTGUN closed (`e5ffa08`, TSK-454):** owner's `/Applications` app "kept getting closed" —

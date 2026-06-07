@@ -5,6 +5,58 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## Terminal "typing is slow": a purely trailing-edge render throttle (2026-06-06)
+
+**Symptom.** Owner: "Terminal is very slow — typing, pressing Enter."
+Echo appears a beat after each keystroke even on an idle prompt.
+
+**Cause.** `TerminalModel.scheduleBump()` was a **trailing-edge** throttle:
+every PTY-output chunk (including each keystroke echo) spawned a
+`Task { @MainActor }` that `await Task.sleep`'d a full frame (`1/60s`,
+and more under the cooperative executor's imprecision) **before** bumping
+`version`. So the view never repainted until a frame *after* the shell
+echoed — even when the terminal had been idle and there was nothing to
+coalesce. At human typing speed (keystrokes >16ms apart) EVERY echo ate
+the full delay → "slow."
+
+**Fix (`d8141c5`).** Leading-edge throttle (new pure
+`ViewerCore/Terminal/FrameThrottle.swift`): the first event after an idle
+gap emits **immediately**, then a `coalesceInterval` cooldown coalesces
+the following burst with a single trailing flush. Decision logic is pure
++ headlessly tested (`FrameThrottleTests`); the `Task.sleep` plumbing
+stays in `TerminalModel`. General rule: throttles on the *interactive
+input→echo* path must be leading-edge; trailing-edge is for pure
+output-rate limiting where first-paint latency doesn't matter.
+
+**Also fixed same commit:** `TerminalPalette.nsColor` allocated a fresh
+`NSColor` per attribute-run per frame — a coloured prompt has dozens of
+runs, so 256/truecolor turned the draw path into per-frame allocation
+churn. Memoized the 256 ansi/indexed entries into a shared precomputed
+table (truecolor `.rgb` still allocates, but it's rare).
+
+## by-exec-name kill in TEST TEAR-DOWN nukes the owner's prod app — "self-skip" doesn't cover setUp/tearDown (2026-06-06)
+
+**Symptom.** Owner: "Why is the headless test STILL nuking
+`/Applications/TextView`? It should only care about the build version,
+not the prod install." (A second occurrence after the `install-app.sh`
+killall was removed.)
+
+**Cause.** `LaunchHarness.cleanup()` did
+`AppLauncher.currentPID(of: "MarkdownViewer").map { kill($0, SIGTERM) }`.
+`currentPID` is a raw `pgrep -x`-by-exec-name lookup; the prod app and
+test spawns share the exec name `MarkdownViewer`, so the SIGTERM also hit
+the owner's running `/Applications` app. Two non-obvious traps: (1) the
+footgun is **not only `killall`** — any by-exec-name kill (`pgrep -x` /
+`currentPID` + `kill`) is equally unsafe; (2) "heavy tiers self-skip in
+the gate" protects the test *body* but **not `setUp`/tearDown** — XCTest
+still runs them around a skipped body, and `cleanup()` runs there, so the
+window-free headless gate WAS terminating the owner's app.
+
+**Fix (`f6499fe`).** Route `cleanup()` through
+`AppLauncher.killTestInstances(named:)`, which only SIGTERMs PIDs whose
+`ps eww` env shows `MDV_TEST_INSTANCE=1` (set by `AppLauncher.runScript`).
+See memory `[[feedback-killall-footgun]]`.
+
 ## TCC re-prompt-on-every-rebuild: ad-hoc signing is keyed on cdhash
 
 **Symptom.** macOS keeps showing the "MarkdownViewer reads files from
