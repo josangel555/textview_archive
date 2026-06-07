@@ -140,6 +140,9 @@ public struct SettingsView: View {
             row("Show invisible characters") {
                 Toggle("", isOn: $model.showInvisibleChars).labelsHidden()
             }
+            row("Show indent guides") {
+                Toggle("", isOn: $model.editorIndentGuides).labelsHidden()
+            }
             row("Indentation") {
                 Picker("", selection: $model.editorIndentation) {
                     Text("2 spaces").tag(CMIndentation.spaces(2))

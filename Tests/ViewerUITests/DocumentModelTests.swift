@@ -537,6 +537,24 @@ final class DocumentModelTests: XCTestCase {
                        "didSet should write through to preferences")
     }
 
+    // MARK: - editorIndentGuides (TSK-487)
+
+    func test_editorIndentGuides_seeds_and_persists() {
+        let prefs = PreferencesStore(defaults: defaults)
+        prefs.editorIndentGuides = true
+        let model = DocumentModel(
+            controller: DocumentController(),
+            history: HistoryStore(storeURL: historyStoreURL),
+            sidebar: SidebarModel(),
+            preferences: prefs
+        )
+        XCTAssertTrue(model.editorIndentGuides, "seeds from preferences at init")
+        model.toggleEditorIndentGuides()
+        XCTAssertFalse(model.editorIndentGuides)
+        XCTAssertFalse(prefs.editorIndentGuides,
+                       "didSet should write through to preferences")
+    }
+
     // MARK: - Find bar regex flag (Batch B)
 
     func test_sourceFindIsRegex_defaultsOff() {

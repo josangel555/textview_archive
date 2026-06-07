@@ -139,6 +139,21 @@ final class PreferencesStoreTests: XCTestCase {
         XCTAssertTrue(other.showInvisibleChars)
     }
 
+    // MARK: Editor indent guides (TSK-487)
+
+    func test_editorIndentGuides_defaultsToFalse() {
+        let store = PreferencesStore(defaults: defaults)
+        XCTAssertFalse(store.editorIndentGuides,
+                       "opt-in: default off so the editor's default look is unchanged")
+    }
+
+    func test_editorIndentGuides_roundTrips() {
+        let store = PreferencesStore(defaults: defaults)
+        store.editorIndentGuides = true
+        let other = PreferencesStore(defaults: defaults)
+        XCTAssertTrue(other.editorIndentGuides)
+    }
+
     // MARK: Legacy uiScale → zoom migration
 
     /// Legacy users with only `MarkdownViewer.uiScale` set on disk

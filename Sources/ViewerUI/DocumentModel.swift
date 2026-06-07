@@ -158,6 +158,15 @@ public final class DocumentModel: ObservableObject {
     }
     public func toggleShowInvisibleChars() { showInvisibleChars.toggle() }
 
+    /// When on, the CM6 editor draws vertical indentation guide lines
+    /// (`CodeMirrorEditorView(indentGuides:)` → JS `setIndentGuides`).
+    /// Persisted; off by default (opt-in, TSK-487) so the editor's
+    /// default look is unchanged until the user enables it in Settings.
+    @Published public var editorIndentGuides: Bool {
+        didSet { preferences.editorIndentGuides = editorIndentGuides }
+    }
+    public func toggleEditorIndentGuides() { editorIndentGuides.toggle() }
+
     /// Helper for view code: scale a base font size by the unified
     /// zoom factor. Used by sidebar / tabs / status bar / mode bar so
     /// chrome grows with the same Cmd++/Cmd+− / Settings slider that
@@ -311,6 +320,7 @@ public final class DocumentModel: ObservableObject {
         self.zoom = preferences.zoom
         self.sourceWordWrap = preferences.sourceWordWrap
         self.showInvisibleChars = preferences.showInvisibleChars
+        self.editorIndentGuides = preferences.editorIndentGuides
         // Restore the persisted theme override (TSK-101). An unknown/stale raw
         // (e.g. a renamed theme) maps to nil = Follow System, never a crash.
         self.themeOverride = preferences.themeOverrideRaw.flatMap(SyntaxTheme.Name.init(rawValue:))

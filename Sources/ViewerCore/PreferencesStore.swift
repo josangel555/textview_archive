@@ -18,6 +18,7 @@ public final class PreferencesStore: @unchecked Sendable {
         static let zoom = "MarkdownViewer.zoom"
         static let sourceWordWrap = "MarkdownViewer.sourceWordWrap"
         static let showInvisibleChars = "MarkdownViewer.showInvisibleChars"
+        static let editorIndentGuides = "MarkdownViewer.editorIndentGuides"
         static let themeOverride = "MarkdownViewer.themeOverride"
         /// Legacy chrome-scale preference, retired when `uiScale` and
         /// `zoom` were unified onto `zoom`. Still read once for
@@ -79,6 +80,16 @@ public final class PreferencesStore: @unchecked Sendable {
     public var showInvisibleChars: Bool {
         get { defaults.object(forKey: Key.showInvisibleChars) as? Bool ?? false }
         set { defaults.set(newValue, forKey: Key.showInvisibleChars) }
+    }
+
+    /// Render vertical indentation guide lines in the CM6 editor (the
+    /// `foldGutter`-adjacent guide rules CodeMirror's `indentationMarkers`
+    /// draws). Off by default — opt-in via Settings → Editor so today's
+    /// default rendering is unchanged; an owner call could flip the
+    /// default to on later (TSK-487).
+    public var editorIndentGuides: Bool {
+        get { defaults.object(forKey: Key.editorIndentGuides) as? Bool ?? false }
+        set { defaults.set(newValue, forKey: Key.editorIndentGuides) }
     }
 
     /// Persisted syntax-theme override (Settings → Appearance → Theme). `nil` =
