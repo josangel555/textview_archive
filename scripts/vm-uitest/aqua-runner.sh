@@ -69,35 +69,11 @@ if [ ! -s "$PNG" ]; then
   mv "$RESULT" "$JOB_DIR/$scene.result"; : > "$JOB_DIR/done"; exit 4
 fi
 
-# Programmatic eval: a dense saturated (accent-chip) block proves the terminal
-# tab strip composited; mirrors ui-snapshot.sh. Scene-agnostic band (whole
-# window minus status bar) so it works for bottom AND side docks.
-python3 - "$PNG" "$scene" >> "$RESULT" 2>&1 <<'PY'
-import sys
-from PIL import Image
-png, scene = sys.argv[1], sys.argv[2]
-im = Image.open(png).convert("RGB"); W,H = im.size; px = im.load()
-def sat(x,y):
-    r,g,b = px[x,y]; return (max(r,g,b)-min(r,g,b))>90
-def dense(cx,cy):
-    tot=s=0
-    for dy in range(-16,17,4):
-        for dx in range(-16,17,4):
-            x,y=cx+dx,cy+dy
-            if 0<=x<W and 0<=y<H:
-                tot+=1
-                if sat(x,y): s+=1
-    return tot>0 and s/tot>=0.6
-found=None
-for y in range(int(H*0.10), H-50, 4):
-    for x in range(0, W, 4):
-        if sat(x,y) and dense(x,y): found=(x,y); break
-    if found: break
-print(f"eval scene={scene} size={W}x{H} dense_chip_block={found is not None} loc={found}")
-sys.exit(0 if found else 5)
-PY
-RC=$?
-[ $RC -eq 0 ] && log "PASS: $scene" || log "FAIL($RC): $scene"
+# Capture only — the PIXEL EVAL runs on the HOST (scripts/vm-uitest.sh), which
+# has Pillow; the VM's stock python3 does not, and we deliberately avoid
+# installing deps on the shared VM. The agent's job is just to produce real
+# Aqua-session pixels.
+log "CAPTURED: $scene -> $PNG"
 mv "$RESULT" "$JOB_DIR/$scene.result"
 : > "$JOB_DIR/done"
-exit $RC
+exit 0
