@@ -222,13 +222,19 @@ struct TerminalPaneView: View {
         }
         .foregroundStyle(selected ? Color.white : Palette.labelColor)
         .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .frame(maxWidth: fillWidth ? .infinity : nil, minHeight: 24)
-        .background(selected ? Palette.selectedContentBackground : Palette.controlBackground)
+        .padding(.vertical, 6)
+        .frame(maxWidth: fillWidth ? .infinity : nil, minHeight: 28)
+        // Selected → the user's ACCENT colour (always vivid, even when the
+        // strip isn't first responder — `selectedContentBackgroundColor`
+        // renders MUTED/grey when unemphasised, which made the single tab
+        // blend into the rail: the "I see a gap but no tabs" report).
+        // Unselected → a filled control chip with a hairline border so it
+        // still reads as a tab.
+        .background(selected ? Color.accentColor : Palette.controlBackground)
         .clipShape(RoundedRectangle(cornerRadius: 5))
         .overlay(
             RoundedRectangle(cornerRadius: 5)
-                .strokeBorder(selected ? Color.clear : Palette.separator, lineWidth: 1)
+                .strokeBorder(selected ? Color.accentColor : Palette.separator, lineWidth: 1)
         )
         .contentShape(Rectangle())
         .onTapGesture { store.selectTab(tab.id) }

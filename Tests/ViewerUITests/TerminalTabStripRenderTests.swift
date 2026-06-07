@@ -68,6 +68,41 @@ final class TerminalTabStripRenderTests: HeadlessUITestCase {
             "strip (maxY=\(strip!.maxY)) must sit above the surface (minY=\(surface!.minY))")
     }
 
+    /// The tab chips must occupy REAL space (owner: "are they zero size?").
+    /// The chip container (the strip ScrollView's DocumentView) must have a
+    /// non-trivial area for one tab, and grow taller with more tabs in the
+    /// vertical rail — a zero/collapsed chip would fail both.
+    ///
+    /// NOTE on what this CAN'T prove (verified 2026-06-07): NSView.hitTest
+    /// returns the hosting view for every point (SwiftUI routes taps through
+    /// its own gesture system, not AppKit), and `cacheDisplay` does not
+    /// capture SwiftUI's CA-rendered layers — so a true on-screen pixel /
+    /// click check is VM-only (T5). This pins the layout (size != 0), which
+    /// is the part that regressed.
+    func test_tabChipContainer_hasRealSize_andGrowsWithCount() throws {
+        let one = chipContainerFrame(tabs: 1)
+        XCTAssertNotNil(one, "chip container (ScrollView DocumentView) not found")
+        XCTAssertGreaterThan(one!.width, 24, "single chip collapsed in width")
+        XCTAssertGreaterThan(one!.height, 18, "single chip collapsed in height")
+
+        let three = chipContainerFrame(tabs: 3)
+        XCTAssertNotNil(three)
+        XCTAssertGreaterThan(three!.height, one!.height + 20,
+            "3 stacked chips (h=\(three!.height)) must be taller than 1 (h=\(one!.height)) — " +
+            "chips aren't collapsing to zero height")
+    }
+
+    private func chipContainerFrame(tabs: Int) -> NSRect? {
+        let store = TerminalPaneStore(defaults: defaults)
+        store.setOpen(true)
+        store.setTabPosition(.left)
+        for _ in 1..<tabs { store.addTab() }
+        XCTAssertEqual(store.tabs.count, tabs)
+        defer { store.shutdown() }
+        let root = mountInColumn(store: store)
+        return frame(in: root, classContains: "DocumentView")
+    }
+
     // MARK: - Harness
 
     /// Mount the pane for a tab position and return (stripFrame, surfaceFrame)
