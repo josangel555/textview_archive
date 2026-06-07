@@ -255,10 +255,27 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
         recomputeGridDimensions()
     }
 
+    /// Last (rows, cols) actually reported via `onResize`, to suppress
+    /// duplicate / destructive resizes.
+    private var lastReportedGrid: (rows: Int, cols: Int)?
+
     private func recomputeGridDimensions() {
         guard cellWidth > 0, cellHeight > 0 else { return }
+        // CRITICAL (TSK-489 follow-up): on a tab-switch REMOUNT the view first
+        // lays out at frame `.zero`, so `floor(0/cellHeight)` would be 0 →
+        // `max(1, …)` = a 1×1 grid. Firing `onResize(1,1)` collapses the live
+        // grid to one cell and DESTROYS the on-screen output (the reported
+        // "switch away + back → results gone, prompt scrolled to the top",
+        // and it wrecks alt-screen TUIs). Require at least one full cell of
+        // real space before reporting a size; a zero/degenerate transient is
+        // ignored, so the geometry the model already has survives the remount.
+        guard bounds.width >= cellWidth, bounds.height >= cellHeight else { return }
         let cols = max(1, Int(floor(bounds.width / cellWidth)))
         let rows = max(1, Int(floor(bounds.height / cellHeight)))
+        // Dedupe: an unchanged size must not churn the parser / re-SIGWINCH the
+        // shell on every layout pass.
+        if let last = lastReportedGrid, last == (rows, cols) { return }
+        lastReportedGrid = (rows, cols)
         onResize?(rows, cols)
     }
 
