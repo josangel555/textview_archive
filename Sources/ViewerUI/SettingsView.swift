@@ -34,6 +34,8 @@ public struct SettingsView: View {
                     Divider()
                     editorSection
                     Divider()
+                    terminalSection
+                    Divider()
                     viewerSection
                     Divider()
                     privacySection
@@ -159,6 +161,24 @@ public struct SettingsView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .padding(.leading, 4)
+        }
+    }
+
+    private var terminalSection: some View {
+        section("Terminal") {
+            row("Tab strip position") {
+                Picker("", selection: Binding(
+                    get: { model.terminalPane.tabPosition },
+                    set: { model.terminalPane.setTabPosition($0) }
+                )) {
+                    Text("Left").tag(TerminalTabPosition.left)
+                    Text("Top").tag(TerminalTabPosition.top)
+                    Text("Right").tag(TerminalTabPosition.right)
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 220)
+            }
         }
     }
 

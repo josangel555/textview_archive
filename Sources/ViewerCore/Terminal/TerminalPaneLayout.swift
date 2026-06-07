@@ -1,6 +1,20 @@
 import Foundation
 import CoreGraphics
 
+/// Where the terminal's tab strip sits relative to the terminal surface
+/// (TSK-488). `left` is the default; `top`/`right` are user choices. A
+/// vertical chip column is drawn for `left`/`right`, a horizontal strip
+/// for `top`. Raw-string-backed so an unknown persisted value degrades to
+/// `.left` rather than crashing.
+public enum TerminalTabPosition: String, Sendable, Equatable, CaseIterable, Codable {
+    case left
+    case top
+    case right
+
+    /// The strip runs vertically (a column of chips) for left/right.
+    public var isVertical: Bool { self == .left || self == .right }
+}
+
 /// Persisted layout for the bottom terminal pane: whether it's open and
 /// how tall it is. Mirrors the `PanelEdgeAssignment` / `PanelVisibility`
 /// persistence idiom — a value type that owns its own `UserDefaults`
@@ -14,6 +28,8 @@ public struct TerminalPaneLayout: Sendable, Equatable {
     public static let openKey   = "MarkdownViewer.terminal.isOpen"
     /// Pane height in points. Pinned by test.
     public static let heightKey = "MarkdownViewer.terminal.height"
+    /// Tab-strip position (raw `TerminalTabPosition`). Pinned by test.
+    public static let tabPositionKey = "MarkdownViewer.terminal.tabPosition"
 
     /// Sensible bounds so a corrupted / hostile default can't make the
     /// pane swallow the window or collapse to nothing.
@@ -23,10 +39,17 @@ public struct TerminalPaneLayout: Sendable, Equatable {
 
     public var isOpen: Bool
     public private(set) var height: CGFloat
+    /// Tab-strip placement (default `.left`, TSK-488).
+    public var tabPosition: TerminalTabPosition
 
-    public init(isOpen: Bool = false, height: CGFloat = TerminalPaneLayout.defaultHeight) {
+    public init(
+        isOpen: Bool = false,
+        height: CGFloat = TerminalPaneLayout.defaultHeight,
+        tabPosition: TerminalTabPosition = .left
+    ) {
         self.isOpen = isOpen
         self.height = TerminalPaneLayout.clampHeight(height)
+        self.tabPosition = tabPosition
     }
 
     /// Clamp a height into `[minHeight, maxHeight]`. NaN (garbage) falls back
@@ -52,11 +75,15 @@ public struct TerminalPaneLayout: Sendable, Equatable {
         } else {
             storedHeight = defaultHeight
         }
-        return TerminalPaneLayout(isOpen: open, height: storedHeight)
+        // Unknown / unset raw → default `.left`.
+        let pos = defaults.string(forKey: tabPositionKey)
+            .flatMap(TerminalTabPosition.init(rawValue:)) ?? .left
+        return TerminalPaneLayout(isOpen: open, height: storedHeight, tabPosition: pos)
     }
 
     public func save(to defaults: UserDefaults) {
         defaults.set(isOpen, forKey: TerminalPaneLayout.openKey)
         defaults.set(Double(height), forKey: TerminalPaneLayout.heightKey)
+        defaults.set(tabPosition.rawValue, forKey: TerminalPaneLayout.tabPositionKey)
     }
 }

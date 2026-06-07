@@ -40,6 +40,10 @@ public final class TerminalPaneStore: ObservableObject {
     /// The selected tab's id, or nil when the pane has no tabs.
     @Published public private(set) var selectedTabID: UUID?
 
+    /// Where the tab strip sits relative to the terminal surface (TSK-488).
+    /// Default `.left`; persisted in `TerminalPaneLayout`.
+    @Published public private(set) var tabPosition: TerminalTabPosition
+
     private var nextNumber = 1
 
     /// The selected tab's live terminal — created on first open so the app
@@ -56,6 +60,7 @@ public final class TerminalPaneStore: ObservableObject {
         let loaded = TerminalPaneLayout.load(from: defaults)
         self.layout = loaded
         self.height = loaded.height
+        self.tabPosition = loaded.tabPosition
         // Restore "open" intent, but DON'T spawn the shell here — the
         // shell spawns when the view first mounts (the terminal getter is
         // exercised by ContentView only while `isOpen`).
@@ -93,6 +98,17 @@ public final class TerminalPaneStore: ObservableObject {
         guard clamped != height else { return }
         height = clamped
         layout.setHeight(clamped)
+        layout.save(to: defaults)
+    }
+
+    // MARK: - Tab-strip position (TSK-488)
+
+    /// Set where the tab strip sits (left/top/right). Persisted; equality-
+    /// guarded so re-selecting the current position doesn't republish.
+    public func setTabPosition(_ pos: TerminalTabPosition) {
+        guard pos != tabPosition else { return }
+        tabPosition = pos
+        layout.tabPosition = pos
         layout.save(to: defaults)
     }
 

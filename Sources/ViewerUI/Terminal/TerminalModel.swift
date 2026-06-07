@@ -106,6 +106,16 @@ public final class TerminalModel: ObservableObject {
     public private(set) var rows: Int
     public private(set) var cols: Int
 
+    /// Scrollback viewport offset (lines scrolled up from the live bottom;
+    /// 0 == following live output). Held HERE, per tab, not on the NSView —
+    /// `TerminalPaneView` re-creates the `TerminalNSView` on every tab
+    /// switch (`.id(selectedTabID)`), so a view-local offset would reset to
+    /// 0 each switch. Persisting it on the model maintains the user's scroll
+    /// position across tab switches (TSK-489). Not `@Published`: it's
+    /// view-render state seeded on mount + written back on scroll, not
+    /// something the SwiftUI body re-renders on.
+    public var scrollOffset: Int = 0
+
     private let pty = PTYProcess()
     private let box: TerminalParserBox
     /// Leading-edge throttle: first output after an idle gap paints

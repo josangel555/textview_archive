@@ -67,5 +67,33 @@ final class TerminalPaneLayoutTests: XCTestCase {
         // Pin the keys — changing them silently drops users' layout.
         XCTAssertEqual(TerminalPaneLayout.openKey, "MarkdownViewer.terminal.isOpen")
         XCTAssertEqual(TerminalPaneLayout.heightKey, "MarkdownViewer.terminal.height")
+        XCTAssertEqual(TerminalPaneLayout.tabPositionKey, "MarkdownViewer.terminal.tabPosition")
+    }
+
+    // MARK: - Tab-strip position (TSK-488)
+
+    func test_tabPosition_defaultsToLeft() {
+        XCTAssertEqual(TerminalPaneLayout().tabPosition, .left)
+        XCTAssertEqual(TerminalPaneLayout.load(from: freshDefaults()).tabPosition, .left)
+    }
+
+    func test_tabPosition_roundTrips() {
+        let d = freshDefaults()
+        var l = TerminalPaneLayout()
+        l.tabPosition = .right
+        l.save(to: d)
+        XCTAssertEqual(TerminalPaneLayout.load(from: d).tabPosition, .right)
+    }
+
+    func test_tabPosition_unknownStoredValue_degradesToLeft() {
+        let d = freshDefaults()
+        d.set("bogus", forKey: TerminalPaneLayout.tabPositionKey)
+        XCTAssertEqual(TerminalPaneLayout.load(from: d).tabPosition, .left)
+    }
+
+    func test_tabPosition_isVertical() {
+        XCTAssertTrue(TerminalTabPosition.left.isVertical)
+        XCTAssertTrue(TerminalTabPosition.right.isVertical)
+        XCTAssertFalse(TerminalTabPosition.top.isVertical)
     }
 }

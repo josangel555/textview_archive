@@ -31,7 +31,11 @@ struct TerminalRepresentable: NSViewRepresentable {
     func makeNSView(context: Context) -> TerminalNSView {
         let view = TerminalNSView(
             initialScreen: model.screenSnapshot,
-            fontSize: fontSize
+            fontSize: fontSize,
+            // Restore the per-tab scroll position so a tab switch (which
+            // recreates this view via `.id`) doesn't snap back to the
+            // bottom. TSK-489.
+            initialScrollOffset: model.scrollOffset
         )
         let coord = context.coordinator
         view.onInput = { data in coord.model.sendInput(data) }
@@ -39,6 +43,7 @@ struct TerminalRepresentable: NSViewRepresentable {
         view.onCycleTab = onCycleTab
         view.onNewTab = onNewTab
         view.onCloseTab = onCloseTab
+        view.onScrollOffsetChange = { off in coord.model.scrollOffset = off }
         // Spawn the shell on first appearance (idempotent).
         coord.model.start()
         // Grab keyboard focus once the view is in a window. Without this the
@@ -75,74 +80,120 @@ struct TerminalPaneView: View {
     let fontSize: CGFloat
 
     var body: some View {
-        VStack(spacing: 0) {
-            tabStrip
-            Divider()
-            ZStack {
-                if let terminal = store.terminal {
-                    // `.id(selectedTabID)` gives each tab its own NSView +
-                    // coordinator, so switching tabs swaps the live surface
-                    // rather than rebinding one view to a different model.
-                    TerminalRepresentable(
-                        model: terminal,
-                        fontSize: fontSize,
-                        onCycleTab: { forward in store.cycleTab(forward: forward) },
-                        onNewTab: { store.addTab() },
-                        onCloseTab: { if let id = store.selectedTabID { store.closeTab(id) } }
-                    )
-                    .id(store.selectedTabID)
-                    if terminal.hasExited {
-                        exitedOverlay(terminal)
-                    }
+        // Strip placement (TSK-488): left (default) / top / right. The strip
+        // runs vertically for left/right, horizontally for top.
+        Group {
+            switch store.tabPosition {
+            case .top:
+                VStack(spacing: 0) {
+                    horizontalTabStrip
+                    Divider()
+                    terminalSurface
+                }
+            case .left:
+                HStack(spacing: 0) {
+                    verticalTabStrip
+                    Divider()
+                    terminalSurface
+                }
+            case .right:
+                HStack(spacing: 0) {
+                    terminalSurface
+                    Divider()
+                    verticalTabStrip
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(Palette.textBackground)
         .accessibilityIdentifier("mdv.terminal.pane")
     }
 
-    private var tabStrip: some View {
+    /// The live terminal surface for the selected tab. `.id(selectedTabID)`
+    /// gives each tab its own NSView + coordinator so switching swaps the
+    /// surface rather than rebinding one view to a different model. (Scroll
+    /// position survives the swap because it lives on the per-tab
+    /// `TerminalModel`, not the view — TSK-489.)
+    private var terminalSurface: some View {
+        ZStack {
+            if let terminal = store.terminal {
+                TerminalRepresentable(
+                    model: terminal,
+                    fontSize: fontSize,
+                    onCycleTab: { forward in store.cycleTab(forward: forward) },
+                    onNewTab: { store.addTab() },
+                    onCloseTab: { if let id = store.selectedTabID { store.closeTab(id) } }
+                )
+                .id(store.selectedTabID)
+                if terminal.hasExited {
+                    exitedOverlay(terminal)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Horizontal strip (tab position = top).
+    private var horizontalTabStrip: some View {
         HStack(spacing: 6) {
             Image(systemName: "terminal")
                 .font(.system(size: fontSize * 0.85, weight: .medium))
                 .foregroundStyle(Palette.secondaryLabel)
-
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 4) {
-                    ForEach(store.tabs) { tab in
-                        tabChip(tab)
-                    }
-                }
+                HStack(spacing: 4) { ForEach(store.tabs) { tabChip($0) } }
             }
-
-            Button { store.addTab() } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: fontSize * 0.8, weight: .medium))
-            }
-            .buttonStyle(.plain)
-            .help("New terminal tab")
-            .accessibilityIdentifier("mdv.terminal.newTab")
-
+            newTabButton
             Spacer(minLength: 0)
-
-            if let t = store.terminal, t.hasExited {
-                Button { t.restart() } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .buttonStyle(.plain)
-                .help("Restart shell")
-            }
-            Button { store.setOpen(false) } label: {
-                Image(systemName: "xmark")
-            }
-            .buttonStyle(.plain)
-            .help("Close terminal")
-            .accessibilityIdentifier("mdv.terminal.close")
+            restartButtonIfExited
+            closePaneButton
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(Palette.windowBackground)
+    }
+
+    /// Vertical strip (tab position = left/right) — a fixed-width column.
+    private var verticalTabStrip: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "terminal")
+                .font(.system(size: fontSize * 0.85, weight: .medium))
+                .foregroundStyle(Palette.secondaryLabel)
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 4) { ForEach(store.tabs) { tabChip($0) } }
+            }
+            newTabButton
+            Spacer(minLength: 0)
+            restartButtonIfExited
+            closePaneButton
+        }
+        .frame(width: max(34, fontSize * 2.6))
+        .padding(.vertical, 8)
+        .padding(.horizontal, 4)
+        .background(Palette.windowBackground)
+    }
+
+    private var newTabButton: some View {
+        Button { store.addTab() } label: {
+            Image(systemName: "plus").font(.system(size: fontSize * 0.8, weight: .medium))
+        }
+        .buttonStyle(.plain)
+        .help("New terminal tab")
+        .accessibilityIdentifier("mdv.terminal.newTab")
+    }
+
+    @ViewBuilder
+    private var restartButtonIfExited: some View {
+        if let t = store.terminal, t.hasExited {
+            Button { t.restart() } label: { Image(systemName: "arrow.clockwise") }
+                .buttonStyle(.plain)
+                .help("Restart shell")
+        }
+    }
+
+    private var closePaneButton: some View {
+        Button { store.setOpen(false) } label: { Image(systemName: "xmark") }
+            .buttonStyle(.plain)
+            .help("Close terminal")
+            .accessibilityIdentifier("mdv.terminal.close")
     }
 
     private func tabChip(_ tab: TerminalTab) -> some View {

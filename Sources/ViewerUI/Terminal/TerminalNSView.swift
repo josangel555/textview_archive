@@ -33,6 +33,9 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
     var onNewTab: (() -> Void)?
     /// Close the current terminal tab (⌘W while the terminal is focused).
     var onCloseTab: (() -> Void)?
+    /// Persist the scrollback offset back to the per-tab model so it
+    /// survives the `.id`-driven view recreation on tab switch (TSK-489).
+    var onScrollOffsetChange: ((Int) -> Void)?
 
     /// True while dragging the scrollback scrollbar thumb (vs selecting text).
     private var isScrollbarDrag = false
@@ -77,8 +80,11 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
         screen.visibleLines(scrollOffset: scrollOffset)
     }
 
-    init(initialScreen: TerminalScreen, fontSize: CGFloat) {
+    init(initialScreen: TerminalScreen, fontSize: CGFloat, initialScrollOffset: Int = 0) {
         self.screen = initialScreen
+        // Seed from the per-tab model so a tab switch restores the prior
+        // scroll position (clamped to this screen's scrollback). TSK-489.
+        self.scrollOffset = min(max(0, initialScrollOffset), initialScreen.scrollback.count)
         super.init(frame: .zero)
         self.fontSize = fontSize
         wantsLayer = true
@@ -186,9 +192,14 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
         if scrollOffset > 0, newScrollback > oldScrollback {
             scrollOffset = min(scrollOffset + (newScrollback - oldScrollback), newScrollback)
             changed = true
+            onScrollOffsetChange?(scrollOffset)
         }
         // Keep the viewport valid as scrollback shrinks (resize/reset).
-        if scrollOffset > newScrollback { scrollOffset = newScrollback; changed = true }
+        if scrollOffset > newScrollback {
+            scrollOffset = newScrollback
+            changed = true
+            onScrollOffsetChange?(scrollOffset)
+        }
         if changed { needsDisplay = true }
     }
 
