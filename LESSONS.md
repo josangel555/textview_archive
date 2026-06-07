@@ -2275,23 +2275,40 @@ the live surface to the genuine re-render rather than guessing.
   AppKit-RENDERED behaviour (CM6 pixels, fold gutter, indent guides, caret insert, terminal strip
   placement/scroll) has NO host coverage → cannot self-validate on host; leave at `fixed` for owner/VM
   or add a VM UI test first. Full rule in `CLAUDE.md` (Automated runs SOP).
-- **An opaque layer-backed `NSViewRepresentable` OCCLUDES a SwiftUI sibling drawn before it** (TSK-488,
-  the recurring "I see a gap before the terminal but no tabs"). The terminal tab strip and the opaque
-  `TerminalNSView` were plain `HStack`/`VStack` siblings. In a SwiftUI stack, an AppKit-hosted
-  representable composites in a layer that can cover earlier siblings even though geometrically
-  side-by-side — so when the strip was drawn BEFORE the surface (`.left`/`.top` cases) the surface
-  blanked it; when drawn AFTER (`.right`) it was fine. That paint-order asymmetry is exactly why the
-  owner (default LEFT) saw no tabs while `right` worked. FIX: force the strip into its own compositing
-  layer ordered above the surface — `someStrip.compositingGroup().zIndex(1)` vs `surface.zIndex(0)` in
-  every position case. The earlier "fixes" (ScrollView removal, accent colour, widen rail) were
-  symptom-chasing; this was the root cause. Same family as the documented NSRulerView sibling-blank.
-- **`ImageRenderer` gives a FALSE GREEN for compositor-occlusion bugs** (owner: "test is broken").
-  `ImageRenderer` rasterizes SwiftUI's OWN view tree in isolation — it draws a placeholder for an
-  `NSViewRepresentable`, never instantiates the real opaque AppKit layer, so it renders an occluded
-  strip perfectly while the live window is blank. It passed green THREE times while tabs were
-  invisible. The ONLY test that catches this is stage-④ pixels: spawn the app + `screencapture
-  -l<windowID>` (a `PixelTestCase`/T5). `cacheDisplay` is also blind (SwiftUI CA layers render black).
-  Pattern to copy: `TerminalTabStripVisualRegressionTests` (launch via `MDV_UI_SCENE`, capture, assert
-  a dense saturated chip block in the rail band) — proven to have teeth (FAILS on the pre-fix build).
-  ALWAYS demonstrate teeth on a real UI test by reverting the fix + rebuilding once; a green that was
-  never shown to go red is not a guard.
+### Terminal tabs invisible — compositor occlusion + ImageRenderer false-green (TSK-488, 2026-06-07)
+
+The "I see a gap before the terminal but no tabs" report. Took FOUR wrong fixes before the real cause,
+because every diagnosis used a tool structurally blind to the actual bug. Full detail so we never burn
+this many rounds again.
+
+- **Root cause = opaque layer-backed `NSViewRepresentable` occludes a SwiftUI sibling drawn before it.**
+  `TerminalPaneView` is a SwiftUI `HStack`/`VStack` whose siblings are (a) the SwiftUI-drawn tab strip
+  (chips) and (b) `terminalSurface`, an `NSViewRepresentable` wrapping the opaque, layer-backed
+  `TerminalNSView`. On macOS SwiftUI hosts a representable as a REAL AppKit subview backed by its own
+  `CALayer`. That opaque layer composites OVER any SwiftUI sibling **painted before it**, even when the
+  two are geometrically adjacent in a stack (NOT overlapping). So it is **paint-order / position
+  dependent**: strip drawn BEFORE the surface (`.left`/`.top` — strip is the first child) → surface's
+  layer covers the chips → blank rail (the "gap"); strip drawn AFTER (`.right` — strip is the last
+  child) → strip wins → visible. That asymmetry is the tell: the owner on the default LEFT saw nothing
+  while RIGHT would have worked. Same family as the documented `NSRulerView`-in-`tile()` sibling-blank.
+- **FIX:** give each SwiftUI sibling its own compositing layer with an explicit z-order above the
+  surface — `strip.compositingGroup().zIndex(1)` vs `terminalSurface.zIndex(0)` — in EVERY layout
+  branch, so visibility no longer depends on child order.
+  (`Sources/ViewerUI/Terminal/TerminalView.swift`, commit 1dd0483.)
+- **Why it survived 4 rounds — the false-green tool matrix.** What each "test" actually sees:
+  | Tool | Sees SwiftUI draw? | Sees the opaque AppKit layer? | Verdict for this bug |
+  | --- | --- | --- | --- |
+  | NSView frame-walk / `DiagnosticDump` | layout only | no paint | useless ("rail has size") |
+  | `ImageRenderer` | yes, in ISOLATION | NO — draws a placeholder for the representable | **FALSE GREEN** |
+  | `cacheDisplay` | no (SwiftUI CA layers → black) | partial | useless |
+  | `screencapture -l<windowID>` (stage ④) | yes | YES — real composite | **the only authority** |
+  The four discarded fixes (ScrollView removal, widen rail, accent colour vs muted
+  `selectedContentBackgroundColor`, frame-size asserts) were all chasing what those blind tools showed.
+- **The guard that works:** `TerminalTabStripVisualRegressionTests` (T5 `PixelTestCase`) — launches the
+  app via `MDV_UI_SCENE=terminal-{left,top,right}`, captures the real window with `screencapture`, and
+  asserts a dense accent-chip block in the configured rail band. Harness: `scripts/ui-snapshot.sh`.
+- **ALWAYS demonstrate teeth on a real-UI test.** A green never shown to go red is not a guard. I
+  reverted the fix, rebuilt, confirmed the test FAILS for left+top (passes for right — correct, since
+  right was never occluded), then restored. Make this a habit for any T5 pixel test.
+- Codified as a preventive rule in `CLAUDE.md` (Testing rules → "Compositor occlusion + the
+  ImageRenderer false-green trap").

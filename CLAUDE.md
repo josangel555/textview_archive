@@ -37,6 +37,35 @@ invisible on screen.
 8. **Drive `tasked` only via its MCP tools** (`mcp__tasked__*`) — never the
    retired `python3 /tmp/board.py`, never the human REST endpoint.
 
+### Compositor occlusion + the ImageRenderer false-green trap (TSK-488, 2026-06-07)
+
+The terminal-tab-strip miss recurred FOUR times because the symptom (no tabs)
+was diagnosed with the wrong tool. Codified so we catch this class early:
+
+- **An opaque, layer-backed `NSViewRepresentable` OCCLUDES a SwiftUI sibling
+  drawn before it.** A SwiftUI stack hosting both a SwiftUI-drawn view and an
+  `NSViewRepresentable` (CodeMirror WebView, terminal surface, any AppKit
+  surface) is the danger zone: the representable becomes a real AppKit subview
+  with its own `CALayer` that composites OVER earlier-painted SwiftUI siblings,
+  even when geometrically adjacent (not overlapping). It is **position-
+  dependent** — the SwiftUI view is fine if drawn AFTER the surface, blanked if
+  drawn BEFORE. RULE: when a SwiftUI view shares a container with an opaque
+  representable, give it its own layer ordered above the surface —
+  `swiftUIView.compositingGroup().zIndex(1)` vs `surface.zIndex(0)` — in EVERY
+  layout branch. Same family as the LESSONS `NSRulerView` sibling-blank.
+- **`ImageRenderer` (and `cacheDisplay`, and headless frame-walks) give a FALSE
+  GREEN for this class.** `ImageRenderer` rasterizes SwiftUI's OWN tree in
+  isolation and draws a PLACEHOLDER for a representable — there is no opaque
+  layer to occlude, so an occluded view renders perfectly. `cacheDisplay` is
+  blind to SwiftUI CA layers (renders black). NEVER treat any of these as proof
+  that on-screen UI is visible. The ONLY authority for "did it composite" is
+  stage-④ WindowServer pixels: spawn the app + `screencapture -l<windowID>`
+  (`PixelTestCase`/T5; harness `scripts/ui-snapshot.sh` + `MDV_UI_SCENE`).
+- **Demonstrate TEETH on every real-UI test.** A green that has never been shown
+  to go red is not a guard. After writing/maintaining a T5 pixel test, revert
+  the fix once, rebuild, and confirm the test FAILS — then restore. A test that
+  can't fail on the broken build is the false green we are trying to kill.
+
 > **OWNER DIRECTIVE (2026-06-06): NO UI tests on the Mac — run UI / live-tier
 > tests on the UTM VM only.** Never run T4 `LiveAppTestCase`, T5 `PixelTestCase`,
 > the in-process WebView suites, or the `build-app.sh` pre-install smoke on the
