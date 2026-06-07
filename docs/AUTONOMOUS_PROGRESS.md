@@ -29,6 +29,26 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+36) — TSK-477 keep-note; TSK-326 stale-fixed; TSK-476 WONT-DO
+
+- **TSK-477 (`e89d3cd`) → fixed:** added an INTENTIONALLY-RETAINED / DO-NOT-DELETE header to
+  `LineNumberRulerView` — it looks like dead legacy (CM6 editor has its own gutter; #102 reworked line
+  numbers) but is STILL the live gutter for the read-only Source `NSTextView` path
+  (`TextDisplayView.swift:416`); a prior pass (batch #64) nearly deleted it. Cites the dependency + a
+  grep pointer. Comment-only; gate green (4089).
+- **TSK-326 → fixed (verified already-remediated + tested):** `EditOp.aspectFit` already guards
+  NaN/Inf/non-positive (returns `(1,1)`) and routes products through the non-trapping `clampToInt`
+  (`< 2^63` guard); `AspectFitFiniteGuardTests` already pins the NaN cases. No change needed.
+- **TSK-476 → WONT-DO (left triaged for human close):** the `NSSelectorFromString` uses are CORRECT
+  and not convertible to `#selector`. The 3 action selectors are `@objc` on the AppDelegate in the
+  **exe** target and dispatched to the first responder via `NSApp.sendAction(to: nil)`; the call sites
+  are in the **ViewerUI framework**, which can't import the exe — so `#selector(AppDelegate.x)` is
+  impossible across the module boundary. `DiagnosticDump` uses the private `recursiveDescription`
+  NSView API (no Swift selector). `NSSelectorFromString` is the only reference available in all 4.
+- **Audit-list note:** TSK-478/479/326 were all verified already-fixed this session — the deep-audit
+  `[S*]` list is heavily stale + already-tested; per `project_audit_pending_list_stale`, stopping the
+  finding-by-finding mining and favouring loose-ends / real bugs.
+
 ## LOG 2026-06-06 (latest+35) — TSK-473 xattr dedup; TSK-466 scoped (live-only)
 
 - **TSK-473 (`3a78425`) → fixed:** `EditorBuffer.ExistingFileMeta` and `HexEditBuffer.HexFileMeta`
