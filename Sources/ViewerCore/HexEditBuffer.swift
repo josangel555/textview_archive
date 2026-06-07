@@ -291,48 +291,12 @@ private struct HexFileMeta {
         } else {
             mode = 0; uid = 0; gid = 0
         }
-        xattrs = HexFileMeta.readXattrs(fd: fd)
+        xattrs = XattrIO.read(fd: fd)
     }
 
     func replay(onto path: String) {
         if uid != 0 || gid != 0 { _ = chown(path, uid, gid) }
         if mode != 0 { _ = chmod(path, mode) }
-        for attr in xattrs {
-            attr.value.withUnsafeBytes { raw in
-                _ = setxattr(path, attr.name, raw.baseAddress, raw.count, 0, 0)
-            }
-        }
-    }
-
-    private static func readXattrs(fd: Int32) -> [(name: String, value: Data)] {
-        let listLen = flistxattr(fd, nil, 0, 0)
-        guard listLen > 0 else { return [] }
-        var nameBuf = [CChar](repeating: 0, count: listLen)
-        let got = flistxattr(fd, &nameBuf, listLen, 0)
-        guard got > 0 else { return [] }
-        var result: [(name: String, value: Data)] = []
-        let raw = nameBuf.prefix(got).map { UInt8(bitPattern: $0) }
-        var start = 0
-        for i in 0 ..< raw.count where raw[i] == 0 {
-            if i > start, let name = String(bytes: raw[start ..< i], encoding: .utf8),
-               let value = readOneXattr(fd: fd, name: name) {
-                result.append((name: name, value: value))
-            }
-            start = i + 1
-        }
-        return result
-    }
-
-    private static func readOneXattr(fd: Int32, name: String) -> Data? {
-        let valLen = fgetxattr(fd, name, nil, 0, 0, 0)
-        guard valLen >= 0 else { return nil }
-        if valLen == 0 { return Data() }
-        var buf = Data(count: valLen)
-        let got = buf.withUnsafeMutableBytes { raw in
-            fgetxattr(fd, name, raw.baseAddress, valLen, 0, 0)
-        }
-        guard got >= 0 else { return nil }
-        if got < valLen { buf.removeLast(valLen - got) }
-        return buf
+        XattrIO.apply(xattrs, toPath: path)
     }
 }
