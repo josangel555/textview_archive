@@ -29,6 +29,15 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-07 (latest+38) — board reconcile cont'd (3 more verified already-fixed)
+
+Continued the reconciliation; full-read-verified + closed three more as already-remediated (no commits):
+**TSK-298** (`SidebarModel.clearCache` clears `cachedFlatRows`), **TSK-270** (CSVParser tracks
+`fieldScalarCount`, no O(N²) rescan), **TSK-283** (ClaudeMonitor single-FileHandle streaming pass).
+Running tally: 11/11 sampled board findings already-fixed across deep-audit + loose-ends + [S2]/[S3].
+Conclusion from latest+37 stands — loop is input-bound; see that DECISIONS NEEDED block. No code change
+this firing (board hygiene only); HEAD unchanged, gate stays green.
+
 ## LOG 2026-06-06 (latest+37) — host-validatable queue drained; board reconcile + unblock signal
 
 **Finding (evidence-backed): the host-validatable implementation queue is drained.** Verify-first this
