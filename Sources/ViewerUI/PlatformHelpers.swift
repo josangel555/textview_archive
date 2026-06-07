@@ -5,9 +5,12 @@ import AppKit
 /// setString(...)` and `NSWorkspace.shared.activateFileViewerSelecting(...)`
 /// every place we need them.
 enum Pasteboard {
-    static func copy(_ string: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(string, forType: .string)
+    /// Replace the pasteboard's contents with `string`. `pasteboard` is
+    /// injectable so callers with a test seam (e.g. ReviewExport) can route
+    /// through the same canonical write instead of open-coding it.
+    static func copy(_ string: String, to pasteboard: NSPasteboard = .general) {
+        pasteboard.clearContents()
+        pasteboard.setString(string, forType: .string)
     }
 }
 

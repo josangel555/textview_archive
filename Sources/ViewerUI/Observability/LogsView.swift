@@ -217,9 +217,7 @@ public struct LogsView: View {
 
     private func copyVisibleToPasteboard() {
         let text = filtered.map(LogsView.line).joined(separator: "\n")
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.setString(text, forType: .string)
+        Pasteboard.copy(text)
     }
 
     /// Single-line rendering for copy/export. Mirrors

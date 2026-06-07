@@ -31,8 +31,7 @@ enum ReviewExportCoordinator {
         pasteboard: NSPasteboard = .general
     ) -> String? {
         guard let json = renderJSON(session, instructions: instructions) else { return nil }
-        pasteboard.clearContents()
-        pasteboard.setString(json, forType: .string)
+        Pasteboard.copy(json, to: pasteboard)
         session.recordExport(target: .clipboard, destination: "clipboard")
         return json
     }
