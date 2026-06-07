@@ -29,6 +29,19 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-07 (latest+40) — verify-first sweep: TSK-305 + TSK-307 already-fixed
+
+Continued verify-first on un-sampled concrete bugs (after latest+39 found a real one). Both this
+firing checked out as genuinely remediated via full read — no code change:
+- **TSK-305** (HTMLSanitizer not quote-aware → XSS): `stripElement`→`matchOpenTag`→`tagEnd` is a real
+  quote-state machine (returns `>` only outside quotes); dedicated `QuoteAwareElementStripTests` covers
+  `<script foo="a>b">EVIL()`, single-quote, self-closing, unterminated. Solid.
+- **TSK-307** (dead/contradictory .svg type model): already resolved — `svg` removed from
+  `formatterExtensions` with an explanatory NOTE; SVG commits to image/preview; no contradiction.
+Running ratio: ~13/15 sampled already-fixed, 1 genuine (TSK-293/279). Verify-first remains the right
+discipline — it both caught the ReDoS hole and confirms the security posture on the rest. The
+structural blocker (live/VM + owner-gated items) is unchanged — see latest+37 DECISIONS NEEDED.
+
 ## LOG 2026-06-07 (latest+39) — REAL security bug found + fixed: ReDoS guard group-prefix (TSK-293/279)
 
 First genuinely-unfixed board item this session. The ReDoS shape guard
