@@ -1132,6 +1132,20 @@ build it, else hold.
 > is baked into the cron prompt so every firing leads with `Sources/` work.
 
 ## LOG (per item: commit + what shipped + how validated)
+- 2026-06-06 **Terminal feature arc + loose-ends audit (owner-driven, this session).** Shipped to the terminal:
+  copy/paste + mouse selection + right-click menu + real 256/truecolor (`531a5f0`); scrollback + scroll-wheel
+  viewport (`13c6422`); multiple tabs + tab strip (`6cfa211`); review-fix viewport-pin-on-output (`3d7ed9e`);
+  keyboard tab cycling ⌃Tab/⌃⇧Tab (`550ece5`); batched scrollback trim — drop O(n) removeFirst/line (`1712f3e`);
+  scrollback scrollbar + ⌘T/⌘W tab new/close (`3677f7b`). All headless-tested (TerminalScreen/Selection/Scrollbar/
+  PaneStore) + host gate green + installed per item. **`loose-ends-audit` workflow** (`wf_6586bc7b-ef6`, 9 agents:
+  6 primed finders + 2 unprimed explorers + synthesis): 31 findings (24 filed as **TSK-462…485** tagged
+  **`loose-ends`** + category; 7 document-only). New project tags: loose-ends, backend-not-surfaced, incomplete,
+  unfinished, redundant, cleanup. Full report: `docs/research/loose-ends-audit-2026-06-06/README.md`. Key result:
+  the deep-audit [S*] cluster is ~90% ALREADY-FIXED (re-confirms the stale-audit lesson); genuine remainder is
+  backend-not-surfaced features (image editor, LSP completion/format/init-options, CM indentGuides/foldingRanges)
+  + a mechanical redundancy/cleanup batch + low-sev hardening. `main` @ `3677f7b`, gate-green (FoldBench re-confirmed
+  0.13s idle; the mid-workflow red was load-induced flake).
+
 - 2026-06-06 **Terminal: mouse selection + copy/paste + right-click menu + real 256/truecolor (TSK-456 → `fixed`, `531a5f0`; lessons `dfce312`).**
   Owner asked for terminal copy/paste, text selection, right-click menu, and "support color." Root cause of the
   monochrome terminal: `TERM=xterm-256color` was advertised but the ANSI parser *parsed-then-DROPPED* 256-color
