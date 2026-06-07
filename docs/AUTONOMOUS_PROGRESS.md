@@ -29,6 +29,21 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+32) — TSK-459 terminal background-tab bump pause
+
+- **TSK-459 (`ba1e463`) → fixed:** continuation of the terminal-perf work. With `.id(selectedTabID)`,
+  a deselected terminal tab's representable is torn down but its `TerminalModel` keeps running the
+  shell and bumping `version` at up to 60fps with no mounted observer — wasted `Task { @MainActor }`
+  hops per output chunk for any chatty background tab. Added a thread-safe foreground flag on
+  `TerminalParserBox`, read in the PTY `onOutput` callback BEFORE the Task hop so the spawn is skipped
+  entirely off-screen (parser still feeds → scrollback stays current); foreground re-entry forces one
+  refresh bump + resets the leading-edge throttle. `TerminalPaneStore.syncForeground()` drives it from
+  `isOpen`+`selectedTabID` across open/select/cycle/close/init. 7 headless store-wiring tests. Gate
+  green (FoldBench load-flake only).
+- **Board reconciled:** board came back up; advanced TSK-459 → fixed; backfilled last turn's two fixes
+  (TSK-486 created+fixed for terminal latency `d8141c5`; commented on TSK-454 re the LaunchHarness
+  second prod-nuke site `f6499fe`).
+
 ## LOG 2026-06-06 (latest+31) — owner two-bug batch: terminal latency + 2nd prod-app-nuke site
 
 Owner reported two bugs interactively; both fixed, gated, committed, and the fresh debug
