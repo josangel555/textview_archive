@@ -29,6 +29,19 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-06 (latest+34) — TSK-465 LSP initializationOptions forwarded
+
+- **TSK-465 (`a13fc24`) → fixed:** `lsp.json`'s per-server `initializationOptions` was parsed into
+  `ServerOverride` but **silently dropped** — `LSPClient.Config` had no field for it and
+  `initialize()` never sent it, so a workspace's server config was ignored. Threaded it through:
+  `LSPClient.Config` gains `initializationOptions: Data?`; extracted a pure, testable
+  `makeInitializeParams` that injects the options verbatim when well-formed and **skips them (no field)
+  when nil/unparseable** (a malformed override must never abort startup); `LSPLanguage.overrideConfig`
+  passes `entry.initializationOptions` on both the trusted and discovered-fallback paths. Stale §11
+  "parsed but not forwarded" note corrected. 6 headless tests (params builder nil/valid/malformed/array
+  + Config-threading present/absent). Gate green (4084). Live note: the server actually *consuming* the
+  options is a VM/live check; the wiring + skip-on-malformed are proven headlessly.
+
 ## LOG 2026-06-06 (latest+33) — TSK-467 HEX View Only toggle wired + 2 stale audit closes
 
 - **TSK-467 (`14c6bf6`) → fixed:** HEX byte-editing (#234 — buffer/keystroke/save) was shipped but
