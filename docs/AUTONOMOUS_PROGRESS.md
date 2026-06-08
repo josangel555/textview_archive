@@ -4026,3 +4026,24 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   is blocked on the render-path validation gap — **TSK-502 (VM Screen-Recording TCC) is the single
   highest-leverage unblock**. The easy no-dep model lane is near-exhausted; future ticks likely need an owner
   unblock (TSK-502 / a dep approval / a parked decision) to deliver *user-facing* value, not more unwired cores.
+
+## LOG +143 (2026-06-08, autonomous tick — TSK-502 VM pixel-lane: rebuilt + diagnosed + parked w/ precise finding)
+- Owner RESOLVED the TSK-502 park (granted Screen-Recording TCC on the VM) → pursued it as the single
+  highest-leverage unblock (it gates phase-2 of all 7 no-dep cores + VM bugs like TSK-452). Verified the
+  VM end-to-end: re-synced; **fixed a build blocker** — a prior `sudo` build left ~1037 root-owned files
+  in the VM `.build`, so `build-app.sh` failed with `ModuleCache …Operation not permitted`; fixed via
+  `chown -R vm-tester .build` (keeps cache; rsync excludes .build so it's VM-local). Rebuilt
+  `dist/TextView.app` fresh (Swift 6.3, ad-hoc signed). Ran the two T5 suites under the GUI session
+  (`launchctl asuser 501`): **6 tests, 0 failures, but ALL 6 SKIPPED** at the `screencapture -l<id>` guard.
+- ROOT CAUSE (read the SIP system TCC.db): `kTCCServiceScreenCapture` is allowed for `/bin/bash` + `Terminal`
+  but NOT `xctest`. The tests spawn screencapture from inside xctest, whose TCC responsible-process is xctest
+  → denied. A direct full-screen `screencapture -x` via the bash chain DOES capture (9.4MB PNG), proving the
+  /bin/bash grant is real — the gap is purely xctest attribution. An agent can't add the xctest grant (SIP
+  blocks sqlite/tccutil INSERT). **Parked TSK-502 (decision)** with 3 options: owner grants Screen Recording
+  to the swiftpm xctest runner / I try a `/bin/bash -c "screencapture …"` wrapper workaround / LaunchAgent the
+  app (un-bridge from asuser). main unaffected (tests skip, never fail; host gate green). Lessons → LESSONS.md.
+- Also this tick: TSK-514 (DiffStat) driven to **validated** + logged (+142); TSK-483 verified STALE (the
+  Swift `CSVSession` it cites was removed by the Rust-CSV migration — commented, recommended dismissal);
+  audit #276 (IndentDetector CRLF) confirmed ALREADY-FIXED on the Swift side (LF-scalar split in place).
+  Net: the host-side SwiftUI bug queue is confirmed exhausted/stale/VM-gated across 4 probes; the productive
+  frontier is now the owner-gated TSK-502 pixel-lane unblock (parked) and the dep-/owner-gated PORT lane.

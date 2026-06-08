@@ -2430,3 +2430,32 @@ the ACTIVE pane is Source. The model state (`currentViewMode`/`currentStateKind`
 assertion's scope is wrong. RULE: "no <kind> view present" assertions in the retained-pane world MUST be
 scoped to the ACTIVE pane subtree (opacity==1 / hit-testable / URL-matched), never the whole window.
 Audit siblings: `LSPUATTests.assertNoHexView` likely shares the hazard.
+
+## VM pixel lane: TCC screencapture is attributed to xctest, NOT /bin/bash (2026-06-08, TSK-502)
+
+Two durable VM gotchas found finishing the T5/VisualRegression pixel lane:
+
+- **A prior `sudo` build poisons `.build` with root-owned files → `ModuleCache ...Operation not
+  permitted` (EPERM) on the next `vm-tester` build.** A one-off `sudo swift build` (or any root-context
+  compile) left ~1000 root-owned files in `~/markdown_viewer/.build` on the VM; the normal
+  `build-app.sh` run as vm-tester then can't overwrite the CMdvCore `.pcm` and fails. FIX (fast, keeps
+  the build cache): `echo <pass> | sudo -S chown -R vm-tester:staff .build` then rebuild as vm-tester.
+  rsync excludes `.build`, so it's VM-local — chown is safe. Prefer chown over `rm -rf .build` (a full
+  wipe forces a from-scratch recompile + SwiftPM re-resolve). Never run the VM build/test under `sudo`
+  directly — the GUI-session path is `sudo -S launchctl asuser 501 …` which DROPS to uid 501 (vm-tester),
+  so artifacts stay vm-tester-owned and consistent.
+- **Granting Screen Recording to `/bin/bash` + `Terminal` does NOT let the T5 tests capture.** The T5
+  PixelTestCase/VisualRegression suites spawn `/usr/sbin/screencapture -l<windowID>` from *inside* the
+  `xctest` process (Foundation `Process`). macOS attributes the `kTCCServiceScreenCapture` check to the
+  **responsible process = xctest**, not the `/bin/bash` ancestor — so even with `/bin/bash` granted
+  (auth_value=2, client_type=1 in the SIP-protected system TCC.db), the per-window capture is denied and
+  every pixel test self-skips ("Screen Recording denied"). A *direct* full-screen `screencapture -x` run
+  as a bash-chain child DOES capture (proves the /bin/bash grant is real) — the difference is purely the
+  responsible-process attribution of the xctest-spawned child. The grant must be on the **swiftpm xctest
+  runner** specifically (the tests' own skip message says so). An agent CANNOT add it: the system TCC.db
+  is SIP-protected, no `sqlite`/`tccutil` INSERT works without disabling SIP — it needs the owner's GUI
+  grant or an MDM PPPC profile. Candidate code workaround (unverified): route the test's screencapture
+  through `/bin/bash -c "screencapture …"` so the responsible process becomes the granted /bin/bash.
+  Also recall the standing vm-smoke caveat: macOS 15 "Screen Capture Privacy" can redact windows of
+  `launchctl asuser`-bridged processes regardless of grant; the durable fix may be running the app as a
+  GUI-session-owned LaunchAgent. Parked as TSK-502 (decision).
