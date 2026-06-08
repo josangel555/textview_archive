@@ -29,6 +29,30 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+60) — verify-and-validate: TSK-486 (terminal typing latency) + TSK-484 (Walkthrough containment)
+
+Same tick as +59. Two loose-ends tasks were sitting at `fixed` from a prior tick with real,
+committed fixes but no `validated` close — drove both to **validated** after confirming their
+host tests are genuine teeth (not the paper-cut backfill the owner flagged; these are a perf fix
+and a security-containment fix, each with a regression guard).
+
+- **TSK-486** (terminal typing/Enter slow) → validated. Fix `d8141c5` extracted the render-throttle
+  DECISION into a pure `ViewerCore.FrameThrottle` (leading-edge: first event after idle paints
+  immediately, then coalesces) + memoized the 256-colour `NSColor` palette. Backfilled the commit
+  SHA on the board (was empty). Teeth: `FrameThrottleTests` 7/7 — `test_firstEventAfterIdle_emitsImmediately`
+  asserts the exact property the trailing-edge bug violated; `TerminalPaletteTests` 5/5 (memoization
+  identity). Wired at `TerminalModel.swift:123`. Honest scope: the `Task.sleep` timer plumbing + paint
+  are render-path (uncovered) but the regressed logic is fully host-guarded.
+- **TSK-484** (WalkthroughLoader rootHint containment, [S3] security) → validated. Already remediated
+  in-tree (caller-derived `trustedRoot` is the authoritative fence; JSON `rootHint` may only narrow
+  within it). Teeth: `Audit_…_WalkthroughLoader_…_TrustedRootTests` 8/8 — covers the exact `rootHint:/`
+  bypass + `../`-escape + absolute-outside + missing-rootHint rejections, plus legit narrowing.
+
+Board now: TSK-485/486/484 all `validated` (agent:claude-mdv). `task_next` currently surfaces a
+FOREIGN forge seed (TSK-104, sess-forge-03) — skipped per the shared-board rule; the genuine
+markdown_viewer actionable head is thin (remaining mine-able work is owner-gated deps / VM-render
+-gated, e.g. parked TSK-502 Screen-Recording grant).
+
 ## LOG 2026-06-08 (latest+59) — TSK-485 VALIDATED: LSPPool.closeAll() parallelized + deterministic teeth
 
 SwiftUI/ViewerCore tick (SwiftUI lane first per SOP). Picked up the executable spec I left
