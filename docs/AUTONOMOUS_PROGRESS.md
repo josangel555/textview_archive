@@ -3778,3 +3778,19 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - **Lane for future ticks ([[project_audit_pending_list_stale]]):** for each `[BACKLOG]`/`[PARTIAL]` feature
   task, grep Sources/ for its model type FIRST — many shipped in later waves but the tasks were never closed;
   if built + host-model-teeth-tested, walk to `validated`. No code change; `main` @ b9be9f7, host gate green.
+
+## LOG +131 (2026-06-08, autonomous tick — drained 2 more stale-but-built BACKLOG features via host teeth)
+- Worked the lane from +130. Both were already built (fix landed in earlier waves) but their board tasks
+  sat unvalidated; both have a pure host-testable core, so validated honestly on the model/kernel teeth:
+- **TSK-260** ("shoulder button always forces Files open" exclusivity bug) → **validated**. Fixed by the
+  panel-override redesign: `PanelVisibilityResolver.isVisible(kind, override:, dataPresent:)` is a PURE
+  per-panel function with NO cross-panel input, so one button can't force another panel — the old
+  exclusivity is structurally impossible. `MDV_HEADLESS_GATE=1 swift test --filter PanelVisibilityResolverTests`
+  → 18/18, ^EXIT=0 (truth-table + shown-forces-visible + toggle-flip + overrides persistence).
+- **TSK-304** (tab-overflow dropdown) → **validated**. The trigger — `TabBar.tabsAreCrowded` /
+  `computedTabWidth` pure kernel — is host-teeth-tested (`TabBarWidthTests` 11/11, ^EXIT=0:
+  false-for-few/wide, true-at-floor, count-guard, monotonic). The chevron Menu surfaces iff crowded +
+  routes tap→selectTab through the tested model; pixel render is the VM concern (prior live T4 smoke green).
+- Pattern holding: the `[BACKLOG]` cluster has many shipped-but-unclosed features; those with a pure
+  ViewerCore/kernel layer are honestly validatable on host teeth (scope to the kernel, note UI-pixel as VM).
+  No code change; `main` @ b9be9f7, host gate green.
