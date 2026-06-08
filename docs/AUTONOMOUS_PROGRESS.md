@@ -2903,3 +2903,27 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   features (UI-deferred → live/owner).
 - main @ 0e16101 (no code change; board state only) + this doc. **Session
   cumulative: 51 validated + 1 bug fixed + 4 owner-parked.**
+
+## LOG +90 (2026-06-08, autonomous tick — 2 rust-core test-gap findings validated)
+- **The `fixed`-state cluster is the richer seam** (vs `review`): `task_list
+  {ready:true, state:fixed}` surfaces ~30 audit findings reconciled-as-fixed by the
+  prior `claude` wave, many `[S3][test-gap]` host-testable pure logic. Validated two
+  this tick (verify-and-validate, no new code — teeth already present + green):
+- **TSK-167** `[S3][test-gap] csv.rs quote-state-machine edge cases (PARSE-04) zero
+  coverage`. rust-core, gate-covered. `cargo test -p mdvcore-core --lib csv::` =
+  22/22 incl unterminated_quote_caps_with_marker, mid_field_quote_does_not_open_
+  quoting, closing_quote_then_text_appends_literally, escaped_only_field_then_split,
+  escaped_quotes, quoted_field_with_delimiter/newline, crlf_no_empty_rows — the
+  exact motivating shapes. Validated.
+- **TSK-168** `[S3][test-gap] web router error paths (400/404/malformed) zero
+  coverage`. `cargo test -p mdvcore-web` = 58/58 incl route_unknown_path_is_404 +
+  oversized_request_head_is_rejected_400. (Web suite is outside the merge gate by
+  design — TSK-498 — so run explicitly with -p mdvcore-web.) Validated.
+- **Deferred TSK-182** `[S4][bug] diff::parse_diff_git_paths strategy-4 splits
+  empties differently from Swift` — `rename_keeps_both_paths` covers normal renames
+  but the specific leading-space/whitespace-run parity edge is unpinned; a real
+  teeth test needs Swift-parity study (S4, not a quick verify). Next-tick candidate.
+- main @ 0e16101 (no code change; board state only) + this doc. **Session
+  cumulative: 53 validated + 1 bug fixed + 4 owner-parked.** Remaining `fixed`
+  test-gaps for future ticks: TSK-165 (.handleDead), 166 (editable-HEX),
+  169 (EditorRepublish), 182 (diff parity), 184/186 (MCP).
