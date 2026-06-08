@@ -1820,6 +1820,35 @@ impl App {
         frame.render_widget(list, popup);
     }
 
+    /// Build the find match-minimap strip — a compact, FIXED-width distribution
+    /// of where the active find's matches sit in the document, with the current
+    /// match's bucket distinguished from the rest. Reuses the shared
+    /// `find::match_minimap`/`find::bucket_of` so the bucketing is identical
+    /// across all three front-ends (web TSK-254 is the sibling); the GLYPHS — not
+    /// color — carry the signal, so the colorless TUI snapshot can assert it.
+    /// `▮` = current match's bucket, `▪` = a bucket with ≥1 other match, `·` =
+    /// empty. Returns `[…]` bracketed for unambiguous matching in the status line.
+    fn find_minimap(&self) -> String {
+        const BUCKETS: usize = 24;
+        let total = self.preview.as_ref().map_or(0, Preview::content_len);
+        let lines: Vec<usize> = self.find_matches.iter().map(|m| m.line).collect();
+        let counts = find::match_minimap(&lines, total, BUCKETS);
+        let cur = self.find_matches.get(self.find_sel).map(|m| find::bucket_of(m.line, total, BUCKETS));
+        let mut s = String::with_capacity(BUCKETS + 2);
+        s.push('[');
+        for (i, &c) in counts.iter().enumerate() {
+            s.push(if Some(i) == cur {
+                '▮'
+            } else if c > 0 {
+                '▪'
+            } else {
+                '·'
+            });
+        }
+        s.push(']');
+        s
+    }
+
     fn draw_status(&self, frame: &mut Frame, area: Rect) {
         // While the quick-find prompt is open, the command keys are captured as
         // needle text — show the prompt-specific bindings so the help isn't a lie.
@@ -1838,10 +1867,11 @@ impl App {
             // line field is not rendered) — "find: i of n · …" / "hex: …" when
             // the query parsed as a hex byte pattern (TSK-205 parity).
             format!(
-                "{}: {} of {} \"{}\" · n/N next/prev · / new · ESC clear",
+                "{}: {} of {} {} \"{}\" · n/N next/prev · / new · ESC clear",
                 if self.find_is_hex { "hex" } else { "find" },
                 self.find_sel + 1,
                 self.find_matches.len(),
+                self.find_minimap(),
                 self.find_query,
             )
         } else {
@@ -2202,6 +2232,52 @@ mod tests {
         let gutter = app.show_gutter;
         app.on_key(KeyCode::Char('n'));
         assert_ne!(app.show_gutter, gutter, "with no find, n toggles the gutter again");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn find_minimap_marks_match_buckets_and_current_and_renders_in_status() {
+        // TSK-253: the find-bar minimap is a fixed 24-bucket distribution of the
+        // active find's matches (shared `find::match_minimap`/`bucket_of`, parity
+        // with web TSK-254). hello.txt is 2 lines; "line" matches BOTH, so they
+        // land in buckets 0 (line 0) and 12 (line 1 → 1*24/2). The CURRENT match
+        // is `▮`, other hit buckets `▪`, empty `·`. The glyphs (not color) carry
+        // the signal so the colorless snapshot has teeth.
+        let dir = fixture_dir();
+        let mut app = App::new(dir.clone());
+        select_name(&mut app, "hello.txt");
+        app.enter();
+        let _ = render(&mut app);
+        app.on_key(KeyCode::Char('/'));
+        for c in "line".chars() {
+            app.on_key(KeyCode::Char(c));
+        }
+        app.on_key(KeyCode::Enter);
+        assert_eq!(app.find_matches.len(), 2, "'line' matches both lines");
+
+        // Structural invariants — stable regardless of the file's exact line count
+        // (the first match is line 0, which buckets to 0 for ANY total).
+        let m0 = app.find_minimap();
+        assert_eq!(m0.chars().count(), 26, "bracketed strip is [ + 24 buckets + ]");
+        assert_eq!(m0.matches('▮').count(), 1, "exactly one current-match marker");
+        assert!(m0.starts_with("[▮"), "current match (sel 0, line 0 → bucket 0) marks the first bucket: {m0}");
+        assert!(m0.contains('▪'), "the other match shows as a hit bucket: {m0}");
+        assert!(render(&mut app).contains(&m0), "minimap is actually drawn in the status line");
+
+        // n advances the selection → the single current marker moves OFF bucket 0,
+        // which becomes a plain hit. Proves the marker tracks find_sel.
+        app.on_key(KeyCode::Char('n'));
+        assert_eq!(app.find_sel, 1, "n advanced the selection");
+        let m1 = app.find_minimap();
+        assert_eq!(m1.matches('▮').count(), 1, "still exactly one current marker");
+        assert!(m1.starts_with("[▪"), "bucket 0 is now a plain hit, not current: {m1}");
+        assert_ne!(m0, m1, "the current marker moved with the selection");
+        assert!(render(&mut app).contains(&m1), "moved minimap is drawn");
+
+        // ESC clears the find → no current-bucket marker anywhere on screen.
+        app.on_key(KeyCode::Esc);
+        assert!(app.find_matches.is_empty(), "ESC clears the find");
+        assert!(!render(&mut app).contains('▮'), "no minimap when no find is active");
         let _ = fs::remove_dir_all(&dir);
     }
 
