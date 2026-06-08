@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreImage
 import Foundation
 import ImageIO
 
@@ -109,6 +110,8 @@ public enum Renderer {
         case .crop(let rect):       return try crop(image, to: rect)
         case .resize(let w, let h): return try resize(image, width: w, height: h)
         case .orient(let o):        return try orient(image, orientation: o)
+        case .colorControls(let b, let c, let s):
+            return try colorControls(image, brightness: b, contrast: c, saturation: s)
         }
     }
 
@@ -223,6 +226,33 @@ public enum Renderer {
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
         guard let out = ctx.makeImage() else { throw ImageEditError.contextCreationFailed }
         return out
+    }
+
+    // MARK: - Tonal adjustment (CIColorControls)
+
+    /// Apply brightness/contrast/saturation via Core Image's `CIColorControls`,
+    /// then re-normalize to the canonical working format so subsequent ops see a
+    /// consistent raster. Identity is `(0, 1, 1)`. Headless — `CIContext` needs
+    /// no window/GPU surface (software renderer is fine for the PoC). Geometry is
+    /// preserved (render at the input extent), so this never changes dimensions.
+    /// Any Core Image failure degrades to a throw rather than a force-unwrap.
+    static func colorControls(
+        _ image: CGImage, brightness: Double, contrast: Double, saturation: Double
+    ) throws -> CGImage {
+        let input = CIImage(cgImage: image)
+        guard let filter = CIFilter(name: "CIColorControls", parameters: [
+            kCIInputImageKey: input,
+            kCIInputBrightnessKey: brightness,
+            kCIInputContrastKey: contrast,
+            kCIInputSaturationKey: saturation,
+        ]), let output = filter.outputImage else {
+            throw ImageEditError.contextCreationFailed
+        }
+        let ciContext = CIContext(options: [.workingColorSpace: workingColorSpace])
+        guard let cg = ciContext.createCGImage(output, from: input.extent) else {
+            throw ImageEditError.contextCreationFailed
+        }
+        return try normalized(cg)
     }
 
     // MARK: - Context factory

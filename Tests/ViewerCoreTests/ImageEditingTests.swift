@@ -169,6 +169,60 @@ final class ImageEditingTests: XCTestCase {
         XCTAssertEqual(out.height, 200)
     }
 
+    // MARK: - Color controls / tonal adjustment (TSK-344)
+
+    func test_colorControls_identity_preservesColorAndDims() throws {
+        let data = try Exporter.encode(
+            solidImage(width: 64, height: 48, r: 0.5, g: 0.3, b: 0.7),
+            ExportSpec(format: .png))
+        let plain = try Renderer.render(ImageDocument(data: data))
+        let adjusted = try Renderer.render(
+            ImageDocument(data: data)
+                .appending(.colorControls(brightness: 0, contrast: 1, saturation: 1)))
+        XCTAssertEqual(adjusted.width, 64)
+        XCTAssertEqual(adjusted.height, 48, "color op must not change geometry")
+        // Identity (0,1,1) vs the un-adjusted render: same pixel (CI round-trip
+        // tolerance a touch looser than the lossless CG paths).
+        let p = sampleRGBA(plain, x: 32, y: 24)
+        let a = sampleRGBA(adjusted, x: 32, y: 24)
+        XCTAssertTrue(a.close(to: p, tol: 6),
+                      "identity colorControls changed the color: \(p) -> \(a)")
+    }
+
+    func test_colorControls_saturationZero_graysOutColor() throws {
+        // A saturated red, desaturated to 0, must collapse to neutral gray
+        // (R≈G≈B) at the center.
+        let doc = ImageDocument(data: try Exporter.encode(
+            solidImage(width: 32, height: 32, r: 0.9, g: 0.1, b: 0.1),
+            ExportSpec(format: .png)))
+            .appending(.colorControls(brightness: 0, contrast: 1, saturation: 0))
+        let c = sampleRGBA(try Renderer.render(doc), x: 16, y: 16)
+        XCTAssertTrue(abs(Int(c.r) - Int(c.g)) <= 3 && abs(Int(c.g) - Int(c.b)) <= 3,
+                      "saturation 0 should grayscale (R≈G≈B), got \(c)")
+    }
+
+    func test_colorControls_brightnessUp_lightens() throws {
+        let base = solidImage(width: 32, height: 32, r: 0.4, g: 0.4, b: 0.4)
+        let before = sampleRGBA(try Renderer.render(ImageDocument(data:
+            try Exporter.encode(base, ExportSpec(format: .png)))), x: 16, y: 16)
+        let after = sampleRGBA(try Renderer.render(
+            ImageDocument(data: try Exporter.encode(base, ExportSpec(format: .png)))
+                .appending(.colorControls(brightness: 0.3, contrast: 1, saturation: 1))),
+            x: 16, y: 16)
+        XCTAssertGreaterThan(Int(after.r), Int(before.r) + 10,
+                             "brightness +0.3 should lighten (\(before.r) -> \(after.r))")
+    }
+
+    func test_colorControls_survivesDocumentCodableRoundTrip() throws {
+        // The op must persist in a serialized ImageDocument (workspace snapshot /
+        // non-destructive history). Guards the EditOp Codable conformance.
+        let doc = ImageDocument(data: Data([1, 2, 3]))
+            .appending(.colorControls(brightness: -0.2, contrast: 1.5, saturation: 0.8))
+        let round = try JSONDecoder().decode(
+            ImageDocument.self, from: JSONEncoder().encode(doc))
+        XCTAssertEqual(round, doc, "colorControls op must round-trip through Codable")
+    }
+
     // MARK: - Crop
 
     func test_crop_topLeftQuadrant_centerSampleMatchesColor() throws {

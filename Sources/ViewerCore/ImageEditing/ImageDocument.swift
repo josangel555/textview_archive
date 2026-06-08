@@ -82,6 +82,13 @@ public enum EditOp: Sendable, Codable, Equatable {
     case resize(width: Int, height: Int)
     /// Bake the given EXIF orientation into the raster.
     case orient(EXIFOrientation)
+    /// Tonal adjustment via Core Image's `CIColorControls` (TSK-344). Identity
+    /// is `(brightness: 0, contrast: 1, saturation: 1)`: `brightness` is
+    /// additive (useful range ~−1…1), `contrast` multiplicative (range ~0…4,
+    /// 1 = unchanged), `saturation` 0 = grayscale … 1 = unchanged … ~2 = vivid.
+    /// Pure per-pixel color transform — geometry (dimensions) is unchanged, so
+    /// it composes freely before/after crop/resize/orient.
+    case colorControls(brightness: Double, contrast: Double, saturation: Double)
 }
 
 extension EditOp {
