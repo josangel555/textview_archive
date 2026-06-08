@@ -2510,3 +2510,25 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   (TSK-233/234 — web threads shared state), persistent session state (TSK-235/236),
   cross-file grep (TSK-213/214), multi-file tabs/back-forward (TSK-249/250),
   find minimap (TSK-253/254), git status (TSK-251/252).
+
+## LOG +76 (2026-06-08, autonomous tick — web cross-file folder grep)
+- **Shipped TSK-214 [PORT][WEB] cross-file folder grep (search anywhere)**
+  (commit 0d611b3):
+  - **core**: new `find::grep_lines(text, query, case, max) -> Vec<LineHit>` —
+    distinct matching lines (multi-match line collapsed), capped, CR-stripped;
+    built on `find_matches` so "what's a hit" matches the in-file find. 1 unit
+    test (distinct/cap/CRLF/empty). Reusable by the TUI half next.
+  - **web**: `/grep?path=<dir>&q=<needle>` route → bounded recursive `grep_walk`
+    (caps: 2000 files / 500 hits / 50 per-file) confined to root, dotfile-skip
+    (unless `?hidden`), binary/empty-skip via `view::content_state`, symlink-loop
+    guard (canonical visited set). `render_grep` lists per-file groups, each hit a
+    `/view?path=&line=N#LN` link. A grep box on the browse page posts to `/grep`.
+    web 56 (+1); gate GATE_EXIT=0; clippy clean. reported→…→validated.
+  - Security: reuses the existing `confined()` chokepoint + content_state; caps
+    keep the single-threaded server from hanging on a pathological tree.
+- **Next-tick follow-on:** TSK-213 [PORT][TUI] cross-file grep — reuse
+  `find::grep_lines` + a results overlay (walk cwd, grep, Enter opens file@line).
+- main @ 0d611b3 + this doc; gates green. Cumulative session: 37 validated +
+  1 bug fixed + 1 parked. 8th shared-core helper this run (find::grep_lines).
+  Next veins: TUI grep (TSK-213), recently-opened/history (TSK-233/234),
+  persistent session state (TSK-235/236), find minimap (TSK-253/254).
