@@ -2626,3 +2626,38 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   per-connection server; the DEPGATED markdown-render / syntax-highlight pairs
   (TSK-255–258) need owner dep-approval (comrak / tree-sitter). The clean next
   TUI-side slice is recents/history backed by a pure core MRU helper.
+
+## LOG +80 (2026-06-08, autonomous tick — TUI recents + parked the dep-gated tier)
+- **Shipped TSK-233 [PORT][TUI] recently-opened picker** (commit 7ca401f),
+  validated. New pure core module `history`: `history::push<T>(list, item, cap)`
+  = dedupe + front-insert + truncate (cap=0 → empty), the one shared MRU
+  definition for all front-ends. 5 core tests (newest-first, reopen-bumps-no-dup,
+  cap-evicts-oldest, cap-0-empty, bump-within-full-stays-capped).
+- **TUI wiring:** `recent: Vec<PathBuf>` recorded via `history::push` on the
+  single `open_file` path (cap 20, in-session); new `R` key opens a picker
+  overlay (↑/↓ select, ↵ re-open → bumps to front, ESC/R close), mirroring the
+  outline/grep overlays; added to bottom help + `?` overlay. Test
+  `recents_picker_lists_opened_files_mru_and_enter_reopens` drives it end to end
+  (R no-op empty → open 2 → R lists both newest-first + rendered overlay → ↓ +↵
+  re-opens selected + bumps to front → ESC closes). tui 47 (+1). Disk
+  PERSISTENCE across launches is the separate TSK-235 — explicitly out of scope.
+- **Parked the DEPGATED dep decisions** (owner pinged via task_park): TSK-255
+  (markdown render needs `comrak`) and TSK-257 (syntax highlight needs
+  `tree-sitter`). Per the CLAUDE.md minimal-dependency rule these can't proceed
+  without an explicit OK; both sit `waiting=human` with approval questions +
+  options. Their web siblings (TSK-256/258) ride the same decisions.
+- `bash scripts/rust-core-gate.sh` GREEN on the committed tree. main @ 7ca401f
+  + this doc.
+- **Session cumulative: 43 validated + 1 bug fixed + 1 parked-earlier + 2
+  dep-parked.** Tick +78/+79/+80 added 5 validated features (find-minimap pair,
+  git-status pair, TUI recents) over 2 new shared-core modules (`git`, `history`)
+  + the `find::bucket_of/match_minimap` helpers.
+- **Remaining PORT board work is now all stateful-on-stateless or dep-gated:**
+  web recents (TSK-234), persistent session (TSK-235/236 — needs a persistence-
+  location decision for the PoC), multi-file tabs / back-forward (TSK-249/250).
+  The clean next TUI-side feature is **TSK-249 multi-file tabs** — feasible in
+  one process but a real refactor (App's single `preview: Option<Preview>` →
+  multi-buffer + active index + tab bar; touches every `self.preview` site), so
+  best started fresh with full attention rather than rushed. The web stateful
+  halves remain awkward on the per-connection stateless server (would need a
+  shared `Mutex`/`LazyLock` global — a deliberate design choice to confirm).

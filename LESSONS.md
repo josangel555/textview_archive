@@ -2362,3 +2362,37 @@ new variant in its label/parse matches — both the TUI (`x`/cycle) and web (mod
 `available_modes`) pick it up *by construction* because they iterate `available_modes`
 rather than hard-coding the set. Classify conservatively: `.json`→Structured now, `.xml`
 left `Plain` until the XML formatter lands (TSK-496) so no no-op Formatted is ever offered.
+
+### Front-end-owned IO + core-owned parse keeps `mdvcore-core` sans-IO while still sharing logic (TSK-251/252, 2026-06-08)
+
+Git status and recents both needed something the pure core forbids (process spawn / time).
+The pattern that keeps the `#![forbid(unsafe_code)]` + no-IO + no-panic core intact AND
+still shares the real logic across front-ends: **the front-end does the IO, the core does
+the parse/transform.**
+- `git`: TUI/web spawn `git --no-optional-locks status --porcelain=v1 --branch` (IO), then
+  hand the stdout to `git::parse_status(&str) -> RepoStatus` (pure, host-tested with 8 cases
+  incl all 7 unmerged XY codes + fresh-repo `No commits yet` + detached HEAD). Non-repo /
+  git-absent → the front-end maps the non-zero exit / spawn error to `None`, no panic.
+- `history`: the front-end owns the `Vec<PathBuf>` + when to record; `history::push<T>` does
+  the MRU semantics (dedupe + front-insert + cap; cap=0 edge).
+The merge-gate teeth live on the pure half (runs in the host gate); the IO half gets one
+end-to-end test that stands up a *real* throwaway artifact (a `git init` temp repo) so the
+spawn→parse→render wiring is exercised, not mocked. Temp repos go under
+`std::env::temp_dir()` (NOT inside the working tree — else `git status` reports THIS repo).
+
+### TUI status-line additions clip in the 35%-wide files pane — make the composition testable, not the clipped snapshot (TSK-251)
+
+The files pane is `Constraint::Percentage(35)` of the terminal; a bordered-block title longer
+than ~33 cols is truncated on screen, so a `render()` snapshot at 100 cols can't prove a new
+title segment is visible. Fix: extract the title into a method (`files_title()`) and assert on
+THAT string (width-independent), keeping the snapshot assertion for things that live on the
+full-width status row (e.g. the find minimap, which is short + near the front so it survives).
+Pane-title clipping eats the TAIL first — so a segment you must keep visible goes at the front.
+
+### The autonomous progress log flipped from prepend-top to append-bottom around tick +59 (2026-06-08)
+
+`docs/AUTONOMOUS_PROGRESS.md` has TWO numbering schemes that coexist: the OLD blocks near the
+top use `## LOG 2026-06-07 (latest+NN)` DESCENDING (newest-on-top, tops out at +58); the
+NEWER blocks are APPENDED AT THE BOTTOM as `## LOG +NN (date — …)` ASCENDING (+75, +76, …).
+The "latest+N" and the commit-message "tick +N" are different counters. To find the real
+latest entry, read the BOTTOM of the file, not the top. New entries append at the bottom.
