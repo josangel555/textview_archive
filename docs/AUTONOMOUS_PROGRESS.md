@@ -2456,3 +2456,19 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - main @ 60e4d56 + this doc; gates green. Cumulative session: 32 validated +
   1 bug fixed. Next PORT veins: web reload (TSK-240), recently-opened/history
   (TSK-233/234), dark-mode tokens (TSK-243/244).
+
+## LOG +73 (2026-06-08, autonomous tick — web reload-from-disk)
+- **Shipped TSK-240 [PORT][WEB] reload current file from disk** (commit 249a9c0):
+  the mdv-web view toolbar gets a `↻ reload` link that re-requests the current
+  /view URL preserving the active mode, shown for EVERY view mode (unlike the
+  text-only ws/wrap toggles). `.reload` CSS added. The server already re-reads the
+  file on every request and has no file watcher, so this is the one-click way to
+  pick up an on-disk change (the TUI's `r` key already did this).
+  web 53 (+1); rust-core gate GATE_EXIT=0; clippy clean. Drove reported→…→validated.
+- Singleton (no TUI pair — TUI reload landed earlier). Process clean this tick:
+  restate→triage→claim→record→validate in order.
+- main @ 249a9c0 + this doc; gates green. Cumulative session: 33 validated +
+  1 bug fixed. Next PORT veins: recently-opened/history (TSK-233/234 — needs an
+  in-memory recents list, web side threads shared state), dark-mode tokens
+  (TSK-243/244 — web @media prefers-color-scheme is clean; TUI palette thin),
+  keyboard help overlay (TSK-247/248), persistent session state (TSK-235/236).
