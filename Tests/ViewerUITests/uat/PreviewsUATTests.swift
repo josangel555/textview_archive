@@ -829,6 +829,39 @@ final class PreviewsUATTests: MultiScenarioTestCase {
     private func hasViewClass(_ dump: [String: Any], containing needle: String) -> Bool {
         allNodes(in: dump).contains { (($0["class"] as? String) ?? "").contains(needle) }
     }
+
+    /// A node is effectively invisible if it's hidden, alpha≈0, or its CALayer
+    /// opacity≈0. NSNumber casts so it works whether the dump was read in-process
+    /// (Bool/CGFloat/Float) or round-tripped through JSON (NSNumber). TSK-504.
+    private func isInvisibleNode(_ node: [String: Any]) -> Bool {
+        if (node["isHidden"] as? NSNumber)?.boolValue == true { return true }
+        if let a = (node["alphaValue"] as? NSNumber)?.doubleValue, a <= 0.01 { return true }
+        if let layer = node["layer"] as? [String: Any] {
+            if (layer["isHidden"] as? NSNumber)?.boolValue == true { return true }
+            if let op = (layer["opacity"] as? NSNumber)?.doubleValue, op <= 0.01 { return true }
+        }
+        return false
+    }
+
+    /// Like `hasViewClass`, but only the VISIBLE subtree counts: any subtree
+    /// rooted at an invisible node (hidden / alpha≈0 / layer-opacity≈0) is
+    /// pruned. This scopes "is an X view mounted" to the ACTIVE pane — the
+    /// ContentView ZStack keeps up to `MountedPanesLRU.capacity` retained panes
+    /// alive at `.opacity(0)` (ContentView.swift:504), so a backgrounded pane
+    /// legitimately still holding e.g. a HexView must NOT count as a leak in the
+    /// foreground pane. A genuinely-visible leak is still caught. TSK-504.
+    private func hasVisibleViewClass(_ dump: [String: Any], containing needle: String) -> Bool {
+        guard let root = dump["contentView"] as? [String: Any] else { return false }
+        var stack: [[String: Any]] = [root]
+        while let node = stack.popLast() {
+            if isInvisibleNode(node) { continue }   // prune the invisible subtree
+            if (((node["class"] as? String) ?? "").contains(needle)) { return true }
+            if let kids = node["subviews"] as? [[String: Any]] {
+                stack.append(contentsOf: kids)
+            }
+        }
+        return false
+    }
     private func anyTextViewWithGlyphs(_ dump: [String: Any]) -> Bool {
         allNodes(in: dump).contains { node in
             guard let tv = node["nsTextView"] as? [String: Any] else { return false }
@@ -864,8 +897,12 @@ final class PreviewsUATTests: MultiScenarioTestCase {
     private func assertNoHexView(
         _ dump: [String: Any], label: String, file: StaticString, line: UInt
     ) {
-        XCTAssertFalse(hasViewClass(dump, containing: "Hex"),
-            "[\(label)] a Hex* byte-grid view is mounted under a non-HEX picker — stale/desynced view",
+        // Scope to the VISIBLE subtree: a retained inactive pane (opacity:0 in
+        // the MountedPanesLRU ZStack) may legitimately still hold a HexView, so
+        // a whole-window `hasViewClass("Hex")` over-reports. Only a Hex view in
+        // the foreground pane is a real desync. TSK-504.
+        XCTAssertFalse(hasVisibleViewClass(dump, containing: "Hex"),
+            "[\(label)] a VISIBLE Hex* byte-grid view is mounted under a non-HEX picker — stale/desynced view",
             file: file, line: line)
     }
 
