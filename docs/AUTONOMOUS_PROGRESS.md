@@ -2983,3 +2983,20 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - main @ add6d85 (no code change; board state only) + this doc. **Session
   cumulative: 58 validated + 1 bug fixed + 4 owner-parked.** 11 audit findings
   validated across the last 8 ticks.
+
+## LOG +94 (2026-06-08, autonomous tick — TSK-182 diff strategy-4 parity, NEW teeth written)
+- **TSK-182** `[S4][bug] diff::parse_diff_git_paths strategy-4 splits empties
+  differently from Swift (leading-space/whitespace-run)`. Unlike the recent
+  verify-and-validates, the strategy-4 Swift-parity fix was present but UNPINNED —
+  so I WROTE the missing teeth (commit 0f4655e). The fallback does
+  `rest.trim_start_matches(' ').splitn(2,' ').filter(non-empty)` to mirror Swift's
+  `split(maxSplits:1, omittingEmptySubsequences:true)`; <2 tokens → `(rest,rest)`
+  on the untrimmed original. New `git_paths_strategy4_leading_space_splits_like_swift`:
+  `'  alpha beta'→(alpha,beta)` (leading run collapsed, not degenerate),
+  `'foo   qux'→(foo,qux)`, `'solo'/'   '→(rest,rest)`. Teeth confirmed: dropping the
+  `trim_start_matches` degenerates the leading-space case to `(rest,rest)` → fails.
+  diff 19/19; rust-core gate exit 0. Validated.
+- main @ 0f4655e + this doc. **Session cumulative: 59 validated + 1 bug fixed +
+  4 owner-parked.** 12 audit findings validated across the last 9 ticks. Remaining
+  `fixed`-state items are perf/race/infra (no behavior teeth) or process-exit
+  (TSK-187) — correctly held for the human.
