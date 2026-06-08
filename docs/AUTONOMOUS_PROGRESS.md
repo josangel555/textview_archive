@@ -2266,3 +2266,24 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   added alloc/timing assert needed.
 - main @ 5449b59 + this doc; gates green. Cumulative session: 18 board items
   validated + 1 real bug fixed + 2 follow-up tasks filed.
+
+## LOG +63 (2026-06-07, autonomous tick — implemented a real PORT feature)
+- **Shipped TSK-223 [PORT][TUI] encoding / line-ending badge** (commit 18c1fb4):
+  - New no-dep shared core module `core::meta` — `line_ending()`
+    (LF/CRLF/CR/Mixed/None; CRLF never double-counted; trailing-CR-at-EOF = CR)
+    + `encoding_label()` (BOM sniff → UTF-8 / UTF-8 BOM / UTF-16 LE / BE). 8
+    gated unit tests (core is in the merge gate → real teeth).
+  - Wired into the ratatui Text-view title: ` … · UTF-8 · CRLF` (Text mode only;
+    HEX shows raw bytes so it's skipped). TUI test asserts a CRLF no-BOM file
+    renders `UTF-8 · CRLF` (CRLF, not hardcoded LF, proves it reads the bytes).
+  - core 207 (+8) / tui 36 (+1) green; rust-core gate GATE_EXIT=0. Drove the
+    board task reported→ack→triaged→progress→fixed→validated.
+- **Discovery:** mapped the real open board lane — the `[PORT][TUI]/[WEB]` features
+  (TSK-213/214, 221-258) are the actionable fallback work; the `[BACKLOG]` items
+  (TSK-259+) are vague owner wishlist (owner-gated). The 5 [S2] fixes I flagged
+  in +62 turned out to be already-closed (not in fixed/review/reported) — nothing
+  to re-validate; confirmed via jq rather than guessing.
+- **Next-tick follow-on:** TSK-224 [PORT][WEB] encoding badge is now a thin wire
+  over the same `core::meta` (add to the web /view header).
+- main @ 18c1fb4 + this doc; gates green. Cumulative session: 19 validated +
+  1 bug fixed + 1 new shared-core feature module + 2 follow-ups filed.
