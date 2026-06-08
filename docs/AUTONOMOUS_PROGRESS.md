@@ -2200,3 +2200,20 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   validations + this log). Next ticks: continue draining `fixed`/`review` audit
   findings that have host teeth → validated; implement clean PORT TUI/web features;
   park live/VM/owner-gated ones.
+
+## LOG +60 (2026-06-07, autonomous tick — board drain continued)
+- **Validated 4 more audit findings (all real teeth, host-verified):**
+  - TSK-116 + TSK-117 — mdv-web DNS-rebinding S1 (Host allowlist + confined() path
+    jail); `cargo test -p mdvcore-web` 45 passed incl `host_allowed_only_loopback`
+    + `rejects_foreign_host_over_socket`.
+  - TSK-153 — MCP find tool pre-validates regex → throws `invalidParams` (not
+    total:0); `MCPToolCatalogTests.test_find_invalidRegex_throwsInvalidParams_notZeroMatches`
+    + `…unsafeRegex…` + valid/literal pass-through.
+  - TSK-164 — Swift `automationFind` negative-path coverage (was zero):
+    non-text tab → [], invalid-regex → [] with positive preconditions
+    (`AutomationHost` suite 5/5, host-headless).
+  - Targeted host `swift test` (ViewerCore/ViewerUI suites, window-free) exit 0;
+    web crate via cargo, exit 0. No source changes (board validations + this log).
+- Cumulative this session: 9 audit findings validated (5 in +59, 4 in +60).
+- Still held (no host teeth): TSK-122/123 (HexView repaint / session_table clone —
+  perf, VM or alloc-assert needed). main @ a51e4e6 + this doc; gates green.
