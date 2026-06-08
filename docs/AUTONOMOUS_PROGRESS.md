@@ -2927,3 +2927,22 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   cumulative: 53 validated + 1 bug fixed + 4 owner-parked.** Remaining `fixed`
   test-gaps for future ticks: TSK-165 (.handleDead), 166 (editable-HEX),
   169 (EditorRepublish), 182 (diff parity), 184/186 (MCP).
+
+## LOG +91 (2026-06-08, autonomous tick — 2 more fixed-state test-gaps validated)
+- **TSK-165** `[S3][test-gap] .handleDead / dead-flag FFI panic-recovery contract
+  (headline safety mitigation) untested`. Verify-and-validate (no code):
+  Tests/RustCoreTests/SessionPanicDeadFlag_Audit…Tests 3/3 green — a caught FFI
+  panic returns .panic AND latches _isDead; subsequent table()/snapshot()/
+  setFilter() short-circuit to .handleDead (no dead-core re-entry); .busy does NOT
+  latch (retryable); busy-then-panic latches only on the panic. Validated.
+- **TSK-166** `[S3][test-gap] editable-HEX dirty/save/close (#234) data-loss path
+  untested`. HexDirtySaveClose_Audit…Tests 10/10 green (host-safe HeadlessUITestCase,
+  DocumentModel model state not render path): dirty-dot mirror, save writes+clears+
+  drops-stash+refreshes-baseline, close-confirm SAVE routes to HexWriter (not
+  EditorWriter — data integrity), DISCARD drops stash w/o write, CANCEL keeps tab+
+  stash, stash-only-save, no-stash-leak-after-discard. Validated.
+- main @ 0e16101 (no code change; board state only) + this doc. **Session
+  cumulative: 55 validated + 1 bug fixed + 4 owner-parked.** Remaining `fixed`
+  test-gaps: TSK-169 (EditorRepublish assertion-tightening — needs care, the
+  finding is the test was too lax), 182 (diff parity — needs Swift-parity study),
+  184/186 (MCP stdout/index).
