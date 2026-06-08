@@ -48,6 +48,21 @@ final class TextToolsTests: XCTestCase {
         XCTAssertNil(TextTools.base64Decode("/w=="))   // 0xFF, not UTF-8
     }
 
+    /// TSK-503: invalid input must decode to `nil` DETERMINISTICALLY across
+    /// Foundation versions. The bug was that `.ignoreUnknownCharacters`
+    /// returned `""` on macOS 15+ for all-junk input (`"!!!"`) and silently
+    /// dropped junk mid-string (`"ab@cd"` → `"abcd"`); strict decode rejects
+    /// any non-alphabet char on every OS. Empty / whitespace-only stays `""`
+    /// so the `base64Decode(base64Encode("")) == ""` round-trip identity holds.
+    func testBase64Decode_rejectsNonAlphabetDeterministically() {
+        XCTAssertNil(TextTools.base64Decode("!!!"))
+        XCTAssertNil(TextTools.base64Decode("@@@@"))
+        XCTAssertNil(TextTools.base64Decode("ab@cd"))   // no silent junk-strip
+        XCTAssertNil(TextTools.base64Decode("a-_b"))    // URL-safe is not standard
+        XCTAssertEqual(TextTools.base64Decode(""), "")  // empty round-trips
+        XCTAssertEqual(TextTools.base64Decode("   \n "), "")  // whitespace-only
+    }
+
     // MARK: SHA-256 (NIST/standard test vectors)
 
     func testSHA256_emptyString() {

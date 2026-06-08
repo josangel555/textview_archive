@@ -3481,3 +3481,23 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   hazard. A focused tick should do the scoped-fix + VM re-run (UAT is VM-only). NOT blind-fixed.
 - Filed **TSK-502 / TSK-503 / TSK-504** (follow-ups). main @ `b3ec338` (+ this doc log). Per the
   no-blind-rendered-change rule, no app source touched this tick.
+
+## LOG +117 (2026-06-08, autonomous tick — TSK-503 fixed: deterministic Base64 decode + host teeth)
+- **TSK-503 driven reported→…→fixed** (validated pending the headless gate). `TextTools.base64Decode`
+  used `Data(base64Encoded:.ignoreUnknownCharacters)`, whose all-junk handling DIVERGES by Foundation
+  version AND by input length. **Reproduced on the HOST** (macOS 26 / Darwin 25.2.0), not just the VM:
+  the original `testBase64Decode_invalidReturnsNil("!!!")` passed only by luck — "!!!" is length-3 (bad
+  quantum → nil), but a length-4 all-junk input like `"@@@@"` strips to empty → empty `Data` → `""`
+  (NOT nil) on macOS 26. So it's a real host-reproducible correctness bug, fully host-validatable.
+- **Fix** (Sources/ViewerCore/TextTools.swift): strip whitespace ourselves + decode with STRICT
+  `Data(base64Encoded:)` (dropped `.ignoreUnknownCharacters`); empty / whitespace-only → `""` (keeps the
+  `base64Decode(base64Encode("")) == ""` round-trip). Now deterministic on every OS: any non-alphabet
+  char → nil; no silent mid-string junk-strip (`"ab@cd"` → nil, not `"abcd"`). Net −1 line vs the
+  original (an earlier draft added an explicit alphabet validator + helper; dropped it as redundant
+  with strict decode — minimal is better).
+- **Test** (Tests/ViewerCoreTests/TextToolsTests.swift): `testBase64Decode_rejectsNonAlphabetDeterministically`
+  pins `"!!!"/"@@@@"/"ab@cd"/"a-_b"` → nil and `""/"   \n "` → "". Host TextToolsTests 14/14 green.
+  **TEETH demonstrated on host:** reverting to the original `.ignoreUnknownCharacters` impl makes the new
+  test fail 2 assertions on the host (`"@@@@"` → "" ; whitespace-only → nil); restored → green.
+- This is a pure-logic ViewerCore fix → **host-self-validatable** (no VM needed). The VM lane (TSK-501)
+  would also confirm cross-platform, but the host repro makes it unnecessary for validation.

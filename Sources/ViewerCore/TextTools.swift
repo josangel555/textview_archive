@@ -26,12 +26,25 @@ public enum TextTools {
     }
 
     /// Decode a Base64 string back to UTF-8 text. Returns `nil` when the
-    /// input isn't decodable Base64 or the decoded bytes aren't valid
-    /// UTF-8. `.ignoreUnknownCharacters` tolerates the whitespace/newlines
-    /// of pasted or MIME-wrapped Base64.
+    /// input isn't decodable Base64 or the decoded bytes aren't valid UTF-8.
+    /// Whitespace/newlines are tolerated (pasted or MIME-wrapped Base64); any
+    /// other non-alphabet character makes the whole input invalid.
+    ///
+    /// We strip whitespace OURSELVES and decode with STRICT Base64 rather than
+    /// lean on Foundation's `.ignoreUnknownCharacters`, because that option's
+    /// handling of all-invalid input DIVERGES across Foundation versions —
+    /// e.g. `"!!!"` strips to empty → older macOS returns `nil` but macOS 15+
+    /// returns an empty `Data` (→ `""`, not nil) — and it also silently drops
+    /// junk *mid*-string. Strict decode rejects any non-alphabet character on
+    /// every OS; empty / whitespace-only content maps to `""` uniformly, which
+    /// keeps the round-trip identity `base64Decode(base64Encode("")) == ""`
+    /// (TSK-503).
     public static func base64Decode(_ text: String) -> String? {
-        guard let data = Data(base64Encoded: text,
-                              options: [.ignoreUnknownCharacters]) else {
+        let compact = String(text.unicodeScalars.filter {
+            !CharacterSet.whitespacesAndNewlines.contains($0)
+        })
+        if compact.isEmpty { return "" }
+        guard let data = Data(base64Encoded: compact) else {
             return nil
         }
         return String(data: data, encoding: .utf8)
