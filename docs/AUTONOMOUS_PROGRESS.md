@@ -29,6 +29,34 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+65) — TSK-344: image colorControls (brightness/contrast/saturation) edit op (fixed; tonal-op + histogram + UI remainder render-gated)
+
+Same `[PARTIAL]`-task-has-a-host-testable-engine-core move as +64: TSK-344 (Wishlist > Image —
+"Format conversion, Histogram, Editing[brightness/contrast/saturation/exposure/shadows/sharpness]")
+already had export (PNG/JPEG/HEIC) in `Exporter`; the gap is histogram + tonal adjustments. Shipped
+the first tonal slice as a host-testable engine op. Commit `a483c6a`, board TSK-344 → **fixed**.
+
+`EditOp.colorControls(brightness:contrast:saturation:)` (ImageDocument) baked through Core Image
+`CIColorControls` in `Renderer` (`CIContext.createCGImage` → `normalized()` to canonical
+premultiplied-sRGB). Identity is `(0,1,1)`; geometry-preserving, so it composes freely with
+crop/resize/orient and rides the existing replay/undo/Codable history with no new state. No deps —
+CoreImage is a system framework, and `CIColorControls` runs headless (CIContext, no window) so it
+carries REAL host teeth, unlike the SwiftUI render path.
+
+Host teeth in ImageEditingTests (4 new; full suite 20/0): identity preserves color+dims
+(engine-vs-engine, tol 6); saturation 0 grays out color (R≈G≈B, tol 3); brightness +0.3 lightens
+(sampled R up >10); op survives `ImageDocument` Codable round-trip. Recorded `fixed`, NOT
+self-validated — the task's full scope (remaining tonal ops exposure/shadows/sharpness, the
+histogram, and the editor-panel UI that drives these sliders, tracked alongside TSK-253) is
+render-gated/follow-on with no host coverage; claiming `done` would falsely assert those exist.
+
+GATE NOTE (flaky, not a regression — same class as +64): the headless gate's only persistent failure
+across two runs was `FoldBenchTests.testCold10KLineJSONUnder250ms` (269ms then, 81ms in isolation) —
+a perf-bench wall-clock assert under the 16-way parallel suite load, which CLAUDE.md explicitly flags
+as flaky. A one-off `LSPPoolSmokeTests` "transport closed" on the first run did NOT recur and passes
+2/2 isolated (subprocess race, GrandchildPipe family). My change is purely additive to the image
+engine and cannot touch FoldBench or LSP. No non-bench failure persisted.
+
 ## LOG 2026-06-08 (latest+64) — TSK-349: GitClient worktree create/remove/prune service methods (fixed; UI button render-gated)
 
 Found a genuinely-buildable service-layer core inside a `[PARTIAL]` backlog task by looking past
