@@ -221,6 +221,59 @@ fn is_prefix(hay: &[u8], pat: &[u8], case_sensitive: bool) -> bool {
     true
 }
 
+/// One segment of a breadcrumb trail: a display `label` and the cumulative
+/// `path` from the root up to and including this segment. The front-end renders
+/// `label` and navigates to `path` (a web `<a href>`, a TUI header segment).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Crumb {
+    /// The segment's display text (a path component, or `"/"` for the root).
+    pub label: String,
+    /// The cumulative path from the root up to and including this segment —
+    /// what a front-end navigates to when this crumb is activated.
+    pub path: String,
+}
+
+/// Split an absolute or relative filesystem `path` into a breadcrumb trail — the
+/// cumulative `(label, path)` segments a front-end renders as a clickable path
+/// bar (the web `<a href>` chain, the TUI header). Shared so both front-ends
+/// derive the *same* trail from the same path, by construction.
+///
+/// An absolute path (leading `/`) leads with a root crumb (`label "/"`,
+/// `path "/"`); a relative path has no root crumb. Empty segments (from `//` or a
+/// trailing `/`) are skipped, so `"/a/b/"` and `"/a//b"` both yield `a → b`. An
+/// empty path yields an empty trail. Segments are kept verbatim — `.`/`..` are
+/// NOT resolved (the caller passes the path it wants shown).
+///
+/// ```
+/// use mdvcore_core::nav::breadcrumbs;
+/// let trail = breadcrumbs("/Users/me");
+/// assert_eq!(trail.len(), 3);
+/// assert_eq!(trail[0].label, "/");      assert_eq!(trail[0].path, "/");
+/// assert_eq!(trail[1].label, "Users");  assert_eq!(trail[1].path, "/Users");
+/// assert_eq!(trail[2].label, "jos");    assert_eq!(trail[2].path, "/Users/me");
+/// ```
+#[must_use]
+pub fn breadcrumbs(path: &str) -> Vec<Crumb> {
+    let is_absolute = path.starts_with('/');
+    let mut crumbs: Vec<Crumb> = Vec::new();
+    if is_absolute {
+        crumbs.push(Crumb { label: "/".to_string(), path: "/".to_string() });
+    }
+    let mut acc = String::new();
+    for seg in path.split('/').filter(|s| !s.is_empty()) {
+        // Relative first segment stands alone (no leading slash); every other
+        // segment (and every absolute segment) is slash-joined onto the accumulator.
+        if acc.is_empty() && !is_absolute {
+            acc.push_str(seg);
+        } else {
+            acc.push('/');
+            acc.push_str(seg);
+        }
+        crumbs.push(Crumb { label: seg.to_string(), path: acc.clone() });
+    }
+    crumbs
+}
+
 /// A directory entry, with the metadata the sort keys read. The front-end fills
 /// this from `read_dir` + `metadata`; the core never touches the filesystem.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -586,6 +639,70 @@ mod tests {
         // ...but the exact-case needle does.
         let cs2 = filter_idx(&names, "Main", true);
         assert_eq!(cs2.first(), Some(&0), "case-sensitive 'Main' matches: {cs2:?}");
+    }
+
+    // MARK: - breadcrumbs (clickable path navigation)
+
+    /// Flatten a trail to `(label, path)` pairs for terse assertions.
+    fn crumbs(path: &str) -> Vec<(String, String)> {
+        breadcrumbs(path).into_iter().map(|c| (c.label, c.path)).collect()
+    }
+
+    #[test]
+    fn breadcrumbs_absolute_path_leads_with_root_and_accumulates() {
+        assert_eq!(
+            crumbs("/Users/me/project"),
+            vec![
+                ("/".to_string(), "/".to_string()),
+                ("Users".to_string(), "/Users".to_string()),
+                ("jos".to_string(), "/Users/me".to_string()),
+                ("project".to_string(), "/Users/me/project".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn breadcrumbs_root_is_a_single_crumb() {
+        assert_eq!(crumbs("/"), vec![("/".to_string(), "/".to_string())]);
+    }
+
+    #[test]
+    fn breadcrumbs_relative_path_has_no_root_crumb() {
+        assert_eq!(
+            crumbs("a/b"),
+            vec![("a".to_string(), "a".to_string()), ("b".to_string(), "a/b".to_string())]
+        );
+    }
+
+    #[test]
+    fn breadcrumbs_skips_empty_segments_from_double_and_trailing_slash() {
+        // Trailing slash and a doubled slash both collapse to the same a→b trail.
+        let want = vec![
+            ("/".to_string(), "/".to_string()),
+            ("a".to_string(), "/a".to_string()),
+            ("b".to_string(), "/a/b".to_string()),
+        ];
+        assert_eq!(crumbs("/a/b/"), want);
+        assert_eq!(crumbs("/a//b"), want);
+    }
+
+    #[test]
+    fn breadcrumbs_empty_path_is_empty_trail() {
+        assert!(breadcrumbs("").is_empty());
+    }
+
+    #[test]
+    fn breadcrumbs_keeps_dot_segments_verbatim() {
+        // `.`/`..` are not resolved — the trail shows exactly what was passed.
+        assert_eq!(
+            crumbs("/a/../b"),
+            vec![
+                ("/".to_string(), "/".to_string()),
+                ("a".to_string(), "/a".to_string()),
+                ("..".to_string(), "/a/..".to_string()),
+                ("b".to_string(), "/a/../b".to_string()),
+            ]
+        );
     }
 
     #[test]

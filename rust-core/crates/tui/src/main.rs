@@ -1226,7 +1226,7 @@ impl App {
             // and a "(. shows hidden)" affordance when suppressing — so the user
             // knows dotfiles are filtered and how to reveal them.
             let hidden = if self.show_hidden { " · hidden shown" } else { " · . shows hidden" };
-            format!(" {} · sort: {}{hidden} ", short_path(&self.cwd), self.sort.as_str())
+            format!(" {} · sort: {}{hidden} ", breadcrumb_trail(&self.cwd), self.sort.as_str())
         };
         // Reuse the labels formatted once in `reload_dir`; per frame we only
         // borrow them into a `Span` (zero string allocs). When filtering we walk
@@ -1652,29 +1652,30 @@ fn centered_rect(pct_x: u16, pct_y: u16, area: Rect) -> Rect {
     Rect { x, y, width: w, height: h }
 }
 
-/// Abbreviate `$HOME` to `~` in a path for the pane title.
-/// Display the cwd for the files-pane title: collapse a `$HOME` prefix to `~`,
-/// then bound the length so a deep path (e.g. a long macOS `$TMPDIR`) can't fill
-/// the title and clip the trailing ` · sort: … · hidden …` state markers off the
-/// pane's right border. Keeps the TAIL — the current directory name is the most
-/// useful part — and prefixes a `…` when truncated. Char-based (never splits a
-/// multi-byte UTF-8 scalar).
-fn short_path(path: &Path) -> String {
-    let mut s = path.display().to_string();
-    if let Some(home) = std::env::var_os("HOME") {
-        let home = home.to_string_lossy();
-        if let Some(rest) = s.strip_prefix(home.as_ref()) {
-            s = format!("~{rest}");
-        }
-    }
-    const MAX: usize = 36;
+/// Tail-keeping length cap for a pane-title string (TSK-497). If `s` exceeds
+/// `max` columns, keep the LAST `max-1` chars behind a leading `…`, so the most
+/// specific tail — the deepest path segments / current dir — stays visible while
+/// the ` · sort: … · hidden …` state markers still fit on the title line.
+/// Char-based, so a multi-byte UTF-8 scalar is never split.
+fn cap_tail(s: &str, max: usize) -> String {
     let count = s.chars().count();
-    if count > MAX {
-        // Keep the last MAX-1 chars (one column reserved for the leading `…`).
-        let tail: String = s.chars().skip(count - (MAX - 1)).collect();
+    if count > max {
+        let tail: String = s.chars().skip(count - max.saturating_sub(1)).collect();
         return format!("…{tail}");
     }
-    s
+    s.to_string()
+}
+
+/// The files-pane breadcrumb for `dir` (TSK-229): the path split into its
+/// segments and rejoined with ` › ` via the shared `nav::breadcrumbs` splitter,
+/// so the TUI's path trail matches the web front-end's by construction. Then
+/// [`cap_tail`]-bounded so a deep path (e.g. a long macOS `$TMPDIR`) can't fill
+/// the title and clip the trailing ` · sort: … · hidden …` state markers.
+fn breadcrumb_trail(dir: &Path) -> String {
+    const MAX: usize = 36;
+    let labels: Vec<String> =
+        nav::breadcrumbs(&dir.to_string_lossy()).into_iter().map(|c| c.label).collect();
+    cap_tail(&labels.join(" \u{203a} "), MAX)
 }
 
 #[cfg(test)]
@@ -2052,6 +2053,22 @@ mod tests {
     }
 
     #[test]
+    fn files_pane_title_shows_breadcrumb_trail() {
+        let dir = fixture_dir();
+        let mut app = App::new(dir.clone());
+        // Render wide so the breadcrumb at the START of the pane title isn't
+        // clipped by the 35%-width pane border.
+        let wide = app.snapshot(220, 24).expect("snapshot render");
+        // The cwd is shown as a `›`-separated breadcrumb (root + ≥1 segment), so
+        // at least one separator is visible — this is the breadcrumb, not the old
+        // plain path. The leaf segment (the temp dir name) is its tail.
+        assert!(wide.contains('\u{203a}'), "pane title shows a breadcrumb separator:\n{wide}");
+        let leaf = dir.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        assert!(wide.contains(&leaf), "breadcrumb tail is the current dir name:\n{wide}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn sort_keeps_dirs_first_and_parent_pinned() {
         let dir = fixture_dir();
         let mut app = App::new(dir.clone());
@@ -2087,21 +2104,35 @@ mod tests {
     }
 
     #[test]
-    fn short_path_caps_long_cwd_keeping_tail() {
-        use std::path::PathBuf;
-        // A short path passes through unchanged.
-        assert_eq!(short_path(&PathBuf::from("/tmp/a")), "/tmp/a");
-        // A long cwd (e.g. a deep macOS $TMPDIR) is left-ellipsized to <=36
-        // display columns, keeping the TAIL (the current dir name) so the
-        // files-pane title still has room for the ` · sort: … · hidden …`
-        // state markers instead of clipping them off the right border (TSK-497).
-        let long = PathBuf::from(
-            "/private/var/folders/rw/l8yh97w15_5frl0n0bhvpvtc0000gn/T/mdv-tui-test-1519",
-        );
-        let out = short_path(&long);
+    fn cap_tail_keeps_the_tail_under_the_column_budget() {
+        // A short string passes through unchanged.
+        assert_eq!(cap_tail("/tmp/a", 36), "/tmp/a");
+        // A long string is left-ellipsized to <=max columns, keeping the TAIL
+        // (the most specific suffix) so the files-pane title still has room for
+        // the ` · sort: … · hidden …` state markers (TSK-497).
+        let long = "/private/var/folders/rw/l8yh97w15_5frl0n0bhvpvtc0000gn/T/mdv-tui-test-1519";
+        let out = cap_tail(long, 36);
         assert!(out.chars().count() <= 36, "capped to 36 cols, got {}: {out}", out.chars().count());
         assert!(out.starts_with('…'), "truncation marked with a leading ellipsis: {out}");
         assert!(out.ends_with("mdv-tui-test-1519"), "keeps the tail (current dir): {out}");
+    }
+
+    #[test]
+    fn breadcrumb_trail_segments_the_path_and_caps_it() {
+        use std::path::PathBuf;
+        // Short absolute path → root crumb then segments, joined with ` › `.
+        assert_eq!(breadcrumb_trail(&PathBuf::from("/a/b/c")), "/ \u{203a} a \u{203a} b \u{203a} c");
+        // The root is a single crumb.
+        assert_eq!(breadcrumb_trail(&PathBuf::from("/")), "/");
+        // A deep path is tail-capped (leading ellipsis) but still carries the
+        // breadcrumb separator into the kept tail.
+        let deep = PathBuf::from(
+            "/private/var/folders/rw/l8yh97w15_5frl0n0bhvpvtc0000gn/T/mdv-tui-test-1519",
+        );
+        let out = breadcrumb_trail(&deep);
+        assert!(out.chars().count() <= 36, "capped to 36 cols: {out}");
+        assert!(out.starts_with('…'), "long trail is ellipsized: {out}");
+        assert!(out.contains('\u{203a}'), "kept tail still shows a › separator: {out}");
     }
 
     #[test]

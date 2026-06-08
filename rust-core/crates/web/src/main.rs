@@ -445,11 +445,41 @@ fn filter_box(dir: &Path, sort: SortKey, show_hidden: bool, filter: &str) -> Str
     s
 }
 
+/// A clickable breadcrumb trail for `dir` (TSK-230): every ancestor segment is a
+/// `/browse?path=` link carrying the sticky sort+hidden state; the final segment
+/// (the current directory) renders as plain text. Built from the shared
+/// `nav::breadcrumbs` splitter so the web trail and the TUI's are the same by
+/// construction. Labels and the encoded link target both pass through `esc` /
+/// `pct_encode`, so a crafted directory name can't inject markup or break the URL.
+fn breadcrumb_html(dir: &Path, sort: SortKey, show_hidden: bool) -> String {
+    let hq = hidden_q(show_hidden);
+    let trail = nav::breadcrumbs(&dir.to_string_lossy());
+    let last = trail.len().saturating_sub(1);
+    let mut s = String::from("<div class=\"crumbs\">");
+    for (i, c) in trail.iter().enumerate() {
+        if i > 0 {
+            s.push_str("<span class=\"sep\">\u{203a}</span>");
+        }
+        if i == last {
+            s.push_str(&format!("<span class=\"here\">{}</span>", esc(&c.label)));
+        } else {
+            s.push_str(&format!(
+                "<a href=\"/browse?path={}&sort={}{hq}\">{}</a>",
+                pct_encode(&c.path),
+                sort.as_str(),
+                esc(&c.label)
+            ));
+        }
+    }
+    s.push_str("</div>");
+    s
+}
+
 fn nav_html(dir: &Path, selected: Option<&str>, sort: SortKey, show_hidden: bool, filter: &str) -> String {
     let hq = hidden_q(show_hidden);
     let mut s = format!(
-        "<div class=\"bar\">{}</div>{}{}{}<ul>",
-        esc(&short(dir)),
+        "{}{}{}{}<ul>",
+        breadcrumb_html(dir, sort, show_hidden),
         filter_box(dir, sort, show_hidden, filter),
         sort_links(dir, sort, show_hidden, filter),
         hidden_toggle_link(dir, sort, show_hidden, filter)
@@ -963,6 +993,9 @@ nav .dir a{{color:#0a7;font-weight:600}}\
 nav .sel{{background:#1a5fb4;border-radius:4px}} nav .sel a{{color:#fff}}\
 main{{flex:1;overflow:auto;padding:12px}}\
 .bar{{font:12px ui-monospace,Menlo,monospace;color:#666;margin:6px 0}}\
+.crumbs{{font:12px ui-monospace,Menlo,monospace;color:#666;margin:6px 0;word-break:break-all}}\
+.crumbs a{{color:#1a5fb4;text-decoration:none}}\
+.crumbs .sep{{color:#bbb;margin:0 4px}} .crumbs .here{{color:#333;font-weight:600}}\
 .find{{display:flex;gap:4px;align-items:center;margin:0 0 6px;flex-wrap:wrap}}\
 .find input[type=text]{{flex:1;min-width:80px;font:12px -apple-system,Segoe UI,sans-serif;padding:3px 6px;border:1px solid #ccc;border-radius:4px}}\
 .find button{{font:11px -apple-system,Segoe UI,sans-serif;padding:3px 8px;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer}}\
@@ -1195,6 +1228,31 @@ mod tests {
         assert!(html.contains("/browse?path="), "dir link present");
         assert!(html.contains("/view?path="), "file link present");
         assert!(html.contains("sub/"), "subdir shown");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn browse_renders_clickable_breadcrumb_trail() {
+        let dir = fixture();
+        let html = render_browse(&dir, SortKey::Name, false, "");
+        // The breadcrumb container is present, and the current dir is the final
+        // (plain-text, non-link) segment.
+        assert!(html.contains("class=\"crumbs\""), "breadcrumb bar present:\n{html}");
+        let leaf = file_name(&dir);
+        assert!(
+            html.contains(&format!("<span class=\"here\">{}</span>", esc(&leaf))),
+            "current dir is the non-link leaf crumb:\n{html}"
+        );
+        // Ancestor segments are /browse links carrying the active sort. The temp
+        // dir lives under at least one ancestor, so a parent crumb link exists.
+        let parent = dir.parent().unwrap();
+        let parent_q = pct_encode(&parent.to_string_lossy());
+        assert!(
+            html.contains(&format!("/browse?path={parent_q}&sort=name")),
+            "parent crumb is a sort-carrying /browse link:\n{html}"
+        );
+        // The root crumb is always a link to "/".
+        assert!(html.contains("/browse?path=/&sort=name"), "root crumb links to /:\n{html}");
         let _ = fs::remove_dir_all(&dir);
     }
 
