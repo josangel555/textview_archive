@@ -3986,3 +3986,22 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   Outline/AnnotationScanner + the DRY fix). NOTE for future ticks/owner: these are all phase-1 model cores
   with phase-2 (sidebar/menu wiring) blocked on the render-path validation gap (TSK-502 VM Screen-Recording).
   The no-dep model lane is productive but the user-facing payoff needs those phase-2 wirings unblocked.
+
+## LOG +141 (2026-06-08, autonomous tick — verified #294 fixed; 2 dup-averts; shipped JSON error-locator)
+- Bug-hunt first (prefer real bugs over more cores): verified audit **#294** (MCP.Value.int out-of-Int64
+  trap) is **already fixed** — `int(_:)`/`optionalInt(_:)` use non-trapping `Int(exactly:)`, decode path
+  throws. No action. Then grep-first averted TWO would-be duplications: a CSV delimiter sniffer
+  (`CSVParser.detectDelimiter` already exists, quote-aware) and (last tick) a TOC renderer (slug coupling).
+  Signal: the codebase is mature; easy no-dep wins are genuinely thinning.
+- Shipped the one genuinely-missing, non-redundant unit found: **TSK-513 → validated** (commit 18dbbdb):
+  `Sources/ViewerCore/JSONSyntaxChecker.swift` — pure RFC-8259 validator `check(_:) -> .valid |
+  .invalid(line,column,message)` reporting the FIRST error with 1-based position (Foundation's
+  JSONSerialization gives none → the JSON viewer can finally point at *where* it broke). Recursive-descent
+  over scalars, depth-capped at 512 (pretty_json/cmark recursion lesson applied proactively). 16 host tests
+  pin valid cases + each error class at EXACT line:col + the deep-nesting guard. Gate PASSED on the commit.
+- `main` @ 18dbbdb (+ this log). Six no-dep host-tested ViewerCore units now (DotGraph/LineEnding/Markdown
+  Outline/AnnotationScanner/JSONSyntaxChecker + DRY fix). STANDING NOTE for the owner: all are phase-1 model
+  cores; their user-facing phase-2 (sidebar/menu/banner wiring) is blocked on the render-path validation gap
+  — **TSK-502 (VM Screen-Recording TCC) remains the single highest-leverage unblock**, and the easy no-dep
+  model lane is now near-exhausted (3 dup/already-fixed probes this tick). Future ticks likely need an owner
+  unblock to keep delivering *user-facing* value rather than more unwired cores.
