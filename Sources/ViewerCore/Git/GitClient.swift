@@ -476,6 +476,47 @@ public final class GitClient: Sendable {
         return entries
     }
 
+    /// Create a linked worktree at `path` (TSK-349). Modes:
+    ///   * `createBranch == true` + `branch` → `git worktree add -b <branch>
+    ///     <path>` (new branch off current HEAD checked out in the worktree),
+    ///   * existing `branch` → `git worktree add <path> <branch>`,
+    ///   * `branch == nil` → `git worktree add <path>` (worktree at current
+    ///     HEAD on an auto-named branch).
+    /// Returns `false` on any git failure (path already exists, branch already
+    /// checked out in another worktree, unborn HEAD, …) — non-throwing, matching
+    /// the rest of the mutation API (`stashApply`/`stashPop`/…).
+    @discardableResult
+    public func worktreeAdd(path: URL, branch: String? = nil, createBranch: Bool = false) -> Bool {
+        var args = ["worktree", "add"]
+        if createBranch, let branch {
+            args += ["-b", branch, path.path]
+        } else if let branch {
+            args += [path.path, branch]
+        } else {
+            args.append(path.path)
+        }
+        return (try? run(args)) != nil
+    }
+
+    /// Remove the worktree registered at `path` (`git worktree remove`).
+    /// `force == true` adds `--force` (removes even a dirty/locked worktree).
+    /// Returns `false` on failure (not a registered worktree, dirty without
+    /// force, …).
+    @discardableResult
+    public func worktreeRemove(path: URL, force: Bool = false) -> Bool {
+        var args = ["worktree", "remove"]
+        if force { args.append("--force") }
+        args.append(path.path)
+        return (try? run(args)) != nil
+    }
+
+    /// Prune administrative entries for worktrees whose directories are gone
+    /// (`git worktree prune`). Returns `false` on failure.
+    @discardableResult
+    public func worktreePrune() -> Bool {
+        (try? run(["worktree", "prune"])) != nil
+    }
+
     // MARK: - branch switch (UX-C, #225)
 
     /// Local branch names (`git for-each-ref --format=%(refname:short)

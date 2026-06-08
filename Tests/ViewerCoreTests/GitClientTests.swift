@@ -186,6 +186,56 @@ final class GitClientTests: XCTestCase {
         XCTAssertFalse(GitClient(repoRoot: tmp).status().isEmpty)
     }
 
+    // MARK: - worktree create/remove (TSK-349)
+
+    func testWorktreeAddCreatesBranchThenRemove() throws {
+        // `git worktree add` needs a commit (HEAD must resolve).
+        try "hi".write(to: tmp.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
+        _ = try git(["add", "a.txt"])
+        _ = try git(["commit", "-q", "-m", "init"])
+        let client = GitClient(repoRoot: tmp)
+
+        // A worktree must live OUTSIDE the main worktree → sibling temp dir.
+        let wt = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("mdv-wt-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: wt) }
+
+        func same(_ a: URL, _ b: URL) -> Bool {
+            a.standardizedFileURL.resolvingSymlinksInPath().path
+                == b.standardizedFileURL.resolvingSymlinksInPath().path
+        }
+
+        XCTAssertTrue(client.worktreeAdd(path: wt, branch: "feature", createBranch: true),
+                      "worktree add -b feature should succeed")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: wt.path),
+                      "worktree directory created on disk")
+        let afterAdd = client.worktreeList()
+        XCTAssertTrue(afterAdd.contains { same($0.path, wt) },
+                      "worktreeList reflects the new worktree — got \(afterAdd.map { $0.path.lastPathComponent })")
+        XCTAssertTrue(afterAdd.contains { same($0.path, wt) && $0.branch == "feature" },
+                      "the new worktree is on branch 'feature'")
+
+        XCTAssertTrue(client.worktreeRemove(path: wt),
+                      "worktree remove should succeed on a clean worktree")
+        XCTAssertFalse(client.worktreeList().contains { same($0.path, wt) },
+                       "worktreeList no longer shows the removed worktree")
+    }
+
+    func testWorktreeRemoveFailsGracefullyOnNonWorktree() throws {
+        // Removing a path that was never registered as a worktree makes git
+        // error ("is not a working tree"); the method must return false
+        // (non-throwing), never crash. Teeth for the `(try? run(...)) != nil`
+        // error contract — and side-effect-free (no worktree is created).
+        try "hi".write(to: tmp.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
+        _ = try git(["add", "a.txt"])
+        _ = try git(["commit", "-q", "-m", "init"])
+        let client = GitClient(repoRoot: tmp)
+        let bogus = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("mdv-not-a-worktree-\(UUID().uuidString)")
+        XCTAssertFalse(client.worktreeRemove(path: bogus),
+                       "removing a non-worktree path returns false, doesn't throw")
+    }
+
     private func git(_ args: [String]) throws -> String {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
