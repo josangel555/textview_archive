@@ -3678,3 +3678,37 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   call sites are in the ViewerUI FRAMEWORK, which can't import the exe — so #selector is impossible across
   that module boundary. Not a defect; only the owner can close to wont-do.
 - No code changes this tick — board-state only; `main` unchanged @ 13fda83, rust-core gate GREEN.
+
+## LOG +126 (2026-06-08, autonomous tick — loop is INPUT-BOUND; consolidated the live blocker set)
+- Swept for any un-gated host-completable task; found none. Confirmed two more audit test-gaps are already
+  closed (csv.rs quote-state-machine #316 has 4 PARSE-04 edge tests + the basic quoting set;
+  Swift MsgPack negative paths #313 has a dedicated `MsgPackDecoderNegative_Audit_…Tests.swift`). The deep-audit
+  cluster is stale across the board — see [[project_audit_pending_list_stale]]. No churn manufactured.
+- **The loop is input-bound, not work-bound.** 12 board tasks are `waiting=human` — every actionable feature
+  lane is gated on an owner decision/approval/grant, and several already have their host-completable CORE
+  shipped+tested with only the gated half remaining. Answering ANY of these reopens a lane:
+
+### DECISIONS NEEDED (owner) — refreshed 2026-06-08 (supersedes the 2026-06-06 latest+37 block)
+- **TSK-235** (decision) — rust-core persistent session state: disk dotfile vs in-session-only vs
+  process-global Mutex. **Gates TSK-234/236/250** (web recents / persistent / back-forward) — the biggest unlock.
+- **TSK-255** (approval) — add `comrak` crate for Markdown render in TUI/web. Gates TSK-256.
+- **TSK-257** (approval) — add `tree-sitter` + grammar crates for source highlighting. Gates TSK-258.
+- **TSK-362** (approval) — add CM6 `@codemirror/lang-*` packs so the Editor highlights Java/Rust/C/Go/etc.
+  (build-only deps + VM-validated). Core map (`jsLanguageName`) trivial once the bundle supports tokens.
+- **TSK-409** (approval) — build the web command palette as vanilla inline JS (no new dep); would land at
+  fixed/review (browser-rendered interaction isn't host-validatable). TUI palette TSK-408 already shipped.
+- **TSK-243** (decision) — TUI dark-mode palette: skip (terminal already themes) / model-only / VM-pixel.
+  WEB dark-mode (TSK-244) already shipped.
+- **TSK-301** (decision) — local-history retention/privacy policy (opt-in? cap? which files? location). The
+  STORE is built+host-tested (c79a5af); only snapshot-on-save wiring + UI await the policy.
+- **TSK-306** (decision) — preview-tab Phase 2 (sidebar click/arrow triggers + promote-on-edit): authorize VM
+  UI lane / land-at-review / defer. Phase 1 model core shipped+validated (a37f861).
+- **TSK-332** (decision) — unknown-ext readable-ASCII → default Source (not HEX): supervised/VM wire / land-at-
+  review / wont-do. Resolution core built+host-tested; only the delicate open-path re-resolution wiring remains.
+- **TSK-476** (decision) — close as WONT-DO: the 3 NSSelectorFromString sites aren't convertible to #selector
+  across the exe/framework module boundary (not a defect).
+- **TSK-492 / TSK-502** (owner action) — VM visual-test lane: install the LaunchAgent + grant Screen-Recording
+  TCC to xctest on macOS15. Unblocks ALL SwiftUI render/pixel validation (the T5 lane) → would let the agent
+  self-validate the render-gated cluster (505-B/506/334/504/preview-tab/…) instead of leaving them for manual VM checks.
+- Net this tick: board-state + doc only; `main` unchanged @ 13fda83, rust-core gate GREEN. The highest-leverage
+  unblocks are **TSK-502** (opens the whole render-validation lane) and **TSK-235** (opens 3 web features).
