@@ -1063,6 +1063,23 @@ pre.diff span{{display:block}}\
 .diff-ctx{{color:#444}}\
 .imgcard{{font:12px ui-monospace,Menlo,monospace;color:#444;margin:0 0 10px;padding:6px 10px;border:1px solid #e3e3e3;border-radius:6px;background:#fafafa}}\
 .imgview{{max-width:100%;height:auto;border:1px solid #ddd;border-radius:4px;background:repeating-conic-gradient(#eee 0% 25%,#fff 0% 50%) 50%/16px 16px}}\
+@media (prefers-color-scheme: dark){{\
+body{{color:#ddd;background:#1e1e1e}}\
+nav{{background:#252526;border-right-color:#333}}\
+a,nav a,.crumbs a,.sort a,.find .clear,.reload a,.hidden-toggle a,.outline a,.goto .jump{{color:#5a9cf5}}\
+nav .dir a{{color:#3ec9a0}} nav .sel{{background:#0d57b5}}\
+.bar,.crumbs,.sort,.find .count,.hint,.outline summary{{color:#9aa0a6}}\
+.crumbs .sep{{color:#666}} .crumbs .here{{color:#ddd}}\
+input,textarea,.find button,.goto button{{background:#2d2d2d;border-color:#444;color:#ddd}}\
+.outline,.imgcard{{background:#252526;border-color:#3a3a3a;color:#bbb}}\
+.banner{{background:#3a3320;border-color:#6b5e2a;color:#e6d48a}}\
+.gutter{{color:#777;border-right-color:#333}} .code .cur{{background:#5a4b00}}\
+th,td{{border-color:#3a3a3a}} th{{background:#2d2d3a}}\
+.diff-hunk{{color:#c8a6ff;background:#2a2336}}\
+.diff-add{{color:#7ee2a8;background:#16301f}}\
+.diff-del{{color:#ff9aa2;background:#3a1f22}}\
+.diff-ctx{{color:#bbb}} .diff-file{{color:#5a9cf5}}\
+}}\
 </style></head><body><div class=\"app\"><nav>{nav}</nav><main>{main_html}</main></div></body></html>",
         t = esc(title)
     )
@@ -1558,6 +1575,28 @@ mod tests {
         // A normal readable text file → no banner.
         let ok = render_view(&dir.join("hello.txt"), Some("text"), SortKey::Name, false, None);
         assert!(!ok.contains("class=\"banner\""), "readable text gets no banner:\n{ok}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn page_carries_prefers_color_scheme_dark_overrides() {
+        let dir = fixture();
+        // Every page (browse or view) ships the dark-mode media query so the UI
+        // follows the OS appearance with no toggle (TSK-244).
+        let browse = render_browse(&dir, SortKey::Name, false, "");
+        assert!(
+            browse.contains("@media (prefers-color-scheme: dark)"),
+            "dark-mode media query present in the page CSS:\n{browse}"
+        );
+        // A representative dark override (the body background) is inside the block.
+        assert!(browse.contains("background:#1e1e1e"), "dark body background defined:\n{browse}");
+        // The light defaults are still present (dark is an override, not a replacement).
+        assert!(browse.contains("background:#fff"), "light default still present:\n{browse}");
+        let view = render_view(&dir.join("hello.txt"), Some("text"), SortKey::Name, false, None);
+        assert!(
+            view.contains("@media (prefers-color-scheme: dark)"),
+            "dark-mode media query present on the view page too:\n{view}"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
