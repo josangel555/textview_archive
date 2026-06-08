@@ -229,6 +229,8 @@ fn route(req_line: &str, root: &Path) -> (&'static str, &'static str, String) {
                 let fmatch = q.get("fmatch").and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
                 // `?ws=1` reveals whitespace (spaces/tabs → markers) in the Text view.
                 let ws = q.get("ws").map(String::as_str) == Some("1");
+                // `?wrap=1` soft-wraps long lines in the Text view (default: no wrap).
+                let wrap = q.get("wrap").map(String::as_str) == Some("1");
                 (
                     "200 OK",
                     HTML,
@@ -242,6 +244,7 @@ fn route(req_line: &str, root: &Path) -> (&'static str, &'static str, String) {
                         find,
                         fmatch,
                         ws,
+                        wrap,
                     ),
                 )
             }
@@ -287,7 +290,7 @@ fn render_view(
     show_hidden: bool,
     line: Option<usize>,
 ) -> String {
-    render_view_filtered(file, mode, sort, show_hidden, line, "", "", 0, false)
+    render_view_filtered(file, mode, sort, show_hidden, line, "", "", 0, false, false)
 }
 
 /// `render_view` plus the active CSV table-filter needle (`?tfilter=`), threaded
@@ -304,6 +307,7 @@ fn render_view_filtered(
     find: &str,
     fmatch: usize,
     ws: bool,
+    wrap: bool,
 ) -> String {
     let parent = file.parent().unwrap_or(file);
     let name = file_name(file);
@@ -313,7 +317,7 @@ fn render_view_filtered(
     page(
         &name,
         &nav_html(parent, Some(&name), sort, show_hidden, ""),
-        &content_html(file, mode, line, tfilter, find, fmatch, ws),
+        &content_html(file, mode, line, tfilter, find, fmatch, ws, wrap),
     )
 }
 
@@ -484,6 +488,7 @@ fn nav_html(dir: &Path, selected: Option<&str>, sort: SortKey, show_hidden: bool
     s
 }
 
+#[allow(clippy::too_many_arguments)]
 fn content_html(
     file: &Path,
     mode_param: Option<&str>,
@@ -492,6 +497,7 @@ fn content_html(
     find: &str,
     fmatch: usize,
     ws: bool,
+    wrap: bool,
 ) -> String {
     let (raw, truncated, total) = match read_capped(file, PREVIEW_CAP) {
         Ok(x) => x,
@@ -611,16 +617,35 @@ fn content_html(
     };
     // Whitespace-markers toggle link (Text mode only): flips `?ws=` and preserves
     // the path + mode. Labels reflect the current state.
+    // Current-state strings so each toggle link preserves the OTHER flag on click.
+    let cur_ws = if ws { "1" } else { "0" };
+    let cur_wrap = if wrap { "1" } else { "0" };
     let ws_link = if v.mode == ViewMode::Text {
         let (label, next) = if ws { ("hide whitespace", "0") } else { ("show whitespace", "1") };
         format!(
-            "<div class=\"wstoggle\"><a href=\"/view?path={href}&mode={}&ws={next}\">{label}</a></div>",
+            "<div class=\"wstoggle\"><a href=\"/view?path={href}&mode={}&ws={next}&wrap={cur_wrap}\">{label}</a></div>",
             mode_str(v.mode)
         )
     } else {
         String::new()
     };
-    format!("{modes}{bar}{ws_link}{outline_nav}{content}")
+    // Word-wrap toggle (TSK-232): a `?wrap=` link + an inline override flipping the
+    // `.src` pane to soft-wrap (the base stylesheet is `white-space:pre`).
+    let wrap_link = if v.mode == ViewMode::Text {
+        let (label, next) = if wrap { ("nowrap", "0") } else { ("wrap", "1") };
+        format!(
+            "<div class=\"wraptoggle\"><a href=\"/view?path={href}&mode={}&ws={cur_ws}&wrap={next}\">{label}</a></div>",
+            mode_str(v.mode)
+        )
+    } else {
+        String::new()
+    };
+    let wrap_style = if wrap && v.mode == ViewMode::Text {
+        "<style>.src{white-space:pre-wrap;overflow-wrap:anywhere}</style>"
+    } else {
+        ""
+    };
+    format!("{modes}{bar}{ws_link}{wrap_link}{wrap_style}{outline_nav}{content}")
 }
 
 /// The go-to-line box: a JS-free GET form that reloads `/view` with `?line=<n>`.
@@ -1365,10 +1390,30 @@ mod tests {
         assert!(plain.contains("show whitespace"), "toggle link offers to show:\n{plain}");
         // ?ws=1: spaces revealed as ·; the toggle now offers to hide.
         let revealed = render_view_filtered(
-            &dir.join("ws.txt"), Some("text"), SortKey::Name, false, None, "", "", 0, true,
+            &dir.join("ws.txt"), Some("text"), SortKey::Name, false, None, "", "", 0, true, false,
         );
         assert!(revealed.contains("a·b·c"), "spaces revealed with ?ws=1:\n{revealed}");
         assert!(revealed.contains("hide whitespace"), "toggle link offers to hide:\n{revealed}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn view_text_wrap_param_soft_wraps() {
+        let dir = fixture();
+        fs::write(dir.join("wrap.txt"), b"a long line\n").unwrap();
+        // Default: base stylesheet is white-space:pre (no override); the toggle
+        // link offers to turn wrapping ON.
+        let plain = render_view(&dir.join("wrap.txt"), Some("text"), SortKey::Name, false, None);
+        assert!(!plain.contains("white-space:pre-wrap"), "no wrap override without ?wrap:\n{plain}");
+        assert!(plain.contains(">wrap<"), "toggle link offers to wrap:\n{plain}");
+        // ?wrap=1: inline override flips .src to soft-wrap; toggle now offers nowrap.
+        let wrapped = render_view_filtered(
+            &dir.join("wrap.txt"), Some("text"), SortKey::Name, false, None, "", "", 0, false, true,
+        );
+        assert!(wrapped.contains("white-space:pre-wrap"), "wrap override present with ?wrap=1:\n{wrapped}");
+        assert!(wrapped.contains(">nowrap<"), "toggle link offers to stop wrapping:\n{wrapped}");
+        // The ws toggle must preserve the active wrap flag (and vice-versa).
+        assert!(wrapped.contains("ws=1&wrap=1"), "ws link preserves wrap=1:\n{wrapped}");
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -1378,7 +1423,7 @@ mod tests {
         // doc.md (as text) has "## Section A" on line 4 and "## Section B" on line 9.
         // find="Section", fmatch=0 → 2 matches, current is the first (line 4).
         let html = render_view_filtered(
-            &dir.join("doc.md"), Some("text"), SortKey::Name, false, None, "", "Section", 0, false,
+            &dir.join("doc.md"), Some("text"), SortKey::Name, false, None, "", "Section", 0, false, false,
         );
         assert!(html.contains("class=\"find\""), "find box present:\n{html}");
         assert!(html.contains("1 of 2"), "match count shows current+total:\n{html}");
@@ -1395,7 +1440,7 @@ mod tests {
         let dir = fixture();
         // fmatch=1 → the second "Section" (line 9) becomes current + anchored.
         let html = render_view_filtered(
-            &dir.join("doc.md"), Some("text"), SortKey::Name, false, None, "", "Section", 1, false,
+            &dir.join("doc.md"), Some("text"), SortKey::Name, false, None, "", "Section", 1, false, false,
         );
         assert!(html.contains("2 of 2"), "second match is current:\n{html}");
         assert!(html.contains("id=\"L9\""), "second match's line (9) anchored:\n{html}");
@@ -1408,7 +1453,7 @@ mod tests {
         // hello.txt has no "<script>" → no matches, and the hostile query must be
         // HTML-escaped where it's reflected into the find-box input value.
         let html = render_view_filtered(
-            &dir.join("hello.txt"), Some("text"), SortKey::Name, false, None, "", "<script>", 0, false,
+            &dir.join("hello.txt"), Some("text"), SortKey::Name, false, None, "", "<script>", 0, false, false,
         );
         assert!(html.contains("no matches"), "empty result reported:\n{html}");
         assert!(!html.contains("value=\"<script>\""), "raw query reflected unescaped:\n{html}");
@@ -1616,7 +1661,7 @@ mod tests {
         let dir = fixture(); // people.csv = name,age / Alice,30 / Bob,25
         let csv = dir.join("people.csv");
         // Global substring: any cell containing "Alice".
-        let g = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "Alice", "", 0, false);
+        let g = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "Alice", "", 0, false, false);
         assert!(g.contains("class=\"find\""), "filter box present:\n{g}");
         assert!(g.contains("<td>Alice</td>"), "Alice row kept:\n{g}");
         assert!(!g.contains("<td>Bob</td>"), "Bob filtered out:\n{g}");
@@ -1624,7 +1669,7 @@ mod tests {
         // Column-scoped `age:Alice` matches NOTHING — "Alice" is in the name
         // column, not age — proving the scope restricts the search (global did
         // match it above).
-        let c = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "age:Alice", "", 0, false);
+        let c = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "age:Alice", "", 0, false, false);
         assert!(!c.contains("<td>Alice</td>"), "age-scoped search excludes the name col:\n{c}");
         assert!(c.contains("0/2 rows"), "no rows match age:Alice:\n{c}");
         let _ = fs::remove_dir_all(&dir);
