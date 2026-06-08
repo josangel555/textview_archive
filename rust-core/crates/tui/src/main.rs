@@ -114,6 +114,9 @@ struct ListRow {
 /// A loaded file: the raw bytes + metadata, plus the current shaped `View` from
 /// the shared `mdvcore_core::view` (the same shaping the web front-end uses).
 struct Preview {
+    /// Absolute path the bytes were read from — kept so `reload_current` (the
+    /// `r` key) can re-read the same file after it changes on disk.
+    path: PathBuf,
     name: String,
     total: usize,
     truncated: bool,
@@ -505,6 +508,7 @@ impl App {
                 let kind = view::classify(&name);
                 let v = view::build(&raw, &name, total, truncated, view::default_mode(kind));
                 self.preview = Some(Preview {
+                    path: path.to_path_buf(),
                     name,
                     total,
                     truncated,
@@ -521,6 +525,60 @@ impl App {
                 self.status = format!("opened {}", path.display());
             }
             Err(e) => self.status = format!("open failed: {e}"),
+        }
+    }
+
+    /// Re-read the open file from disk and re-shape it (the `r` key / TSK-239).
+    /// Preserves the CURRENT view mode and clamps the saved scroll to the new
+    /// content length, so picking up an external edit doesn't reset the user's
+    /// place or mode. The active table filter survives too. If the file's type
+    /// changed on disk such that the current mode is no longer offered, falls
+    /// back to the new kind's default mode. Find matches are cleared (offsets
+    /// belonged to the old content).
+    fn reload_current(&mut self) {
+        let Some(p) = &self.preview else { return };
+        let path = p.path.clone();
+        let prev_mode = p.view.mode;
+        let prev_scroll = p.scroll;
+        let table_filter = p.table_filter.clone();
+        match read_capped(&path, PREVIEW_CAP) {
+            Ok((raw, truncated, total)) => {
+                let shown = path.display().to_string();
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| shown.clone());
+                let kind = view::classify(&name);
+                // Keep the mode the user was in unless the file changed type and
+                // no longer offers it.
+                let mode = if view::available_modes(kind).contains(&prev_mode) {
+                    prev_mode
+                } else {
+                    view::default_mode(kind)
+                };
+                let v = view::build(&raw, &name, total, truncated, mode);
+                let mut next = Preview {
+                    path,
+                    name,
+                    total,
+                    truncated,
+                    raw,
+                    kind,
+                    view: v,
+                    scroll: 0,
+                    table_filter,
+                    table_filter_editing: None,
+                };
+                // Clamp the old scroll into the (possibly shorter) new content.
+                let max_scroll = next.content_len().saturating_sub(1);
+                next.scroll = prev_scroll.min(max_scroll);
+                self.preview = Some(next);
+                self.flash = None;
+                self.outline = None; // a stale outline belongs to the old bytes
+                self.clear_find(); // matches/needle belong to the old content
+                self.status = format!("reloaded {shown}");
+            }
+            Err(e) => self.status = format!("reload failed: {e}"),
         }
     }
 
@@ -997,6 +1055,9 @@ impl App {
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.enter(),
             KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') => self.go_parent(),
             KeyCode::Char('x') => self.cycle_mode(),
+            // `r` re-reads the open file from disk (picks up external edits),
+            // preserving mode + scroll (TSK-239).
+            KeyCode::Char('r') => self.reload_current(),
             // Open-as: 1-9 force the file's Nth available mode directly.
             KeyCode::Char(c @ '1'..='9') => self.set_mode(c as usize - '1' as usize),
             // `n`/`N` step the find matches WHILE a find is active; with no
@@ -1454,7 +1515,7 @@ impl App {
                 self.find_query,
             )
         } else {
-            "↑/↓ move · ↵ open · ⌫ up · x mode · 1-9 open-as · n nums · s sort · . hidden · f file-find · / find · : goto · o outline · q quit".into()
+            "↑/↓ move · ↵ open · ⌫ up · x mode · 1-9 open-as · r reload · n nums · s sort · . hidden · f file-find · / find · : goto · o outline · q quit".into()
         };
         let line = Line::from(vec![
             Span::styled(" mdv-tui ", Style::new().fg(Color::Black).bg(Color::Cyan).bold()),
@@ -1864,6 +1925,34 @@ mod tests {
         assert!(pretty.contains("formatted"), "title reflects formatted mode:\n{pretty}");
         assert!(pretty.contains(r#"  "a": 1,"#), "2-space indented key:\n{pretty}");
         assert!(pretty.contains(r#"    2,"#), "nested array element indented:\n{pretty}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn r_reloads_current_file_from_disk() {
+        // TSK-239: `r` re-reads the open file, picking up an external edit while
+        // preserving the view mode. No auto-reload before the key is pressed.
+        let dir = fixture_dir();
+        let mut app = App::new(dir.clone());
+        select_name(&mut app, "hello.txt"); // "line one\nline two\n"
+        app.enter();
+        assert!(render(&mut app).contains("line one"), "initial content shown");
+
+        // External edit on disk.
+        fs::write(dir.join("hello.txt"), b"fresh alpha\nfresh beta\nfresh gamma\n").unwrap();
+        // Stale until the user reloads — the preview is not a live file watcher.
+        let stale = render(&mut app);
+        assert!(stale.contains("line one") && !stale.contains("fresh alpha"),
+            "content stays stale until reload:\n{stale}");
+
+        // `r` re-reads from disk.
+        app.on_key(KeyCode::Char('r'));
+        let out = render(&mut app);
+        assert!(out.contains("fresh alpha") && out.contains("fresh gamma"),
+            "reloaded content shown:\n{out}");
+        assert!(!out.contains("line one"), "old content gone:\n{out}");
+        assert_eq!(app.preview.as_ref().unwrap().view.mode, ViewMode::Text, "mode preserved");
+        assert!(app.status.starts_with("reloaded"), "status reports reload: {:?}", app.status);
         let _ = fs::remove_dir_all(&dir);
     }
 
