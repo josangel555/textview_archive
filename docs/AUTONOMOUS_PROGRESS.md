@@ -3285,3 +3285,31 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   (core 262 tests + ffi no_panic + doctests; covers the generic `find_in_table` change). main @ `4315a94`,
   tree clean. **PORT lane note:** the [PORT][TUI/WEB] W1 backlog (TSK-362..423) remains the standing
   host-completable queue when no SwiftUI task is actionable.
+
+## LOG +108 (2026-06-08, autonomous tick — board sweep: actionable host-completable queue drained; fixed TSK-362's broken gate)
+- No code landed this tick — a full board sweep found the actionable host-completable queue DRAINED;
+  every remaining lane is owner-gated and already parked. Triage + one board-hygiene fix instead.
+- **task_next is unreliable here:** ranked head returned **TSK-104** (foreign `agent:forge`,
+  `sess-forge-03`, branch `fix/csv-eof` — "CSV export drops last row") — NOT markdown_viewer. The
+  board project `tasked` is shared with forge; `task_next` ranks across it. Skipped per
+  [[reference_tasked_board_is_shared_across_projects]].
+- **Fixed TSK-362's broken state.** Board TSK-362 = "[PARTIAL] Many languages missing syntax
+  highlight in Editor" (real CM6 gap: `jsLanguageName(for:)` maps only md/js/ts/python/json → CM
+  tokens, everything else → "plain"; Source mode highlights ~15+ via TreeSitter). It carried a STALE
+  BOGUS pending gate from a prior offset-trap mis-park (I'd mapped built-in TaskList #362 "In-file
+  find" onto it; retracted by comment but the gate stayed open). Re-parked with the CORRECT question:
+  adding Editor languages needs new build-only `@codemirror/lang-*`/`legacy-modes` deps (owner
+  approval) + an esbuild bundle rebuild (`scripts/codemirror-build`, npm install/network) + VM
+  validation of the WebView render — none host-completable. Default offered: keep Source-mode-only.
+- **Confirmed the audit list is stale (re-verified fresh, not from memory):** `diff::parse_coord`
+  already mirrors Swift `omittingEmptySubsequences` (`,5`→`(5,1)` both sides) — finding #303 fixed;
+  `csv.rs` already has a "PARSE-04 degenerate / quote-state-machine edge cases" test section —
+  #316 fixed; `view::tests::build_table_propagates_parse_truncation` exists — #304 fixed. Mining the
+  deep-audit findings is low-yield; they're mostly already-fixed (matches [[project_audit_pending_list_stale]]).
+- **Owner-gated lanes blocking the loop (all already parked — need owner input to refill the queue):**
+  TSK-235 (PORT persistence location decision — also blocks TSK-234/236/250 web stateful);
+  TSK-255/257 (comrak / tree-sitter dep approvals — DEPGATED render); TSK-306/272 (preview-tab Phase 2
+  — VM UI-test-lane decision); TSK-243 (TUI theme — value+validation); TSK-362 (Editor langs — dep+VM).
+- main @ `f68fbfd` (unchanged this tick), tree clean. No commit — triage-only. NEXT TICK: if the owner
+  has answered any park, execute it; else the queue remains owner-gated (host-completable feature work
+  is genuinely exhausted — avoid paper-cut test backfill on already-covered code per owner steer).
