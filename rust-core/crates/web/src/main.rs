@@ -28,6 +28,7 @@ use std::{fs, thread};
 use mdvcore_core::filter;
 use mdvcore_core::find;
 use mdvcore_core::image::{self, ImageInfo};
+use mdvcore_core::meta;
 use mdvcore_core::nav::{self, SortKey};
 use mdvcore_core::outline::{self, Heading};
 use mdvcore_core::view::{self, DiffLine, DiffLineKind, FileKind, ViewBody, ViewMode};
@@ -511,12 +512,25 @@ fn content_html(
     modes.push_str("</div>");
 
     let trunc = if truncated { " · TRUNCATED" } else { "" };
+    // Encoding + line-ending badge (shared `core::meta`, same logic as the TUI) —
+    // Text mode only; HEX/table/image show raw bytes or structured data. The
+    // labels are a fixed safe set (no HTML metacharacters), so no escaping needed.
+    let badge = if v.mode == ViewMode::Text {
+        format!(
+            " · {} · {}",
+            meta::encoding_label(&raw),
+            meta::line_ending(&raw).as_str()
+        )
+    } else {
+        String::new()
+    };
     let bar = format!(
-        "<div class=\"bar\">{} · {} · indent: {} · {}{}</div>",
+        "<div class=\"bar\">{} · {} · indent: {} · {}{}{}</div>",
         esc(&name),
         mode_str(v.mode),
         esc(&v.indent),
         human_size(total),
+        badge,
         trunc
     );
 
@@ -1280,6 +1294,21 @@ mod tests {
         let html = render_view(&dir.join("hello.txt"), Some("text"), SortKey::Name, false, None);
         assert!(html.contains("hello &lt;world&gt;"), "content HTML-escaped:\n{html}");
         assert!(html.contains("indent:"), "indent badge present");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn view_text_shows_encoding_and_line_ending_badge() {
+        let dir = fixture();
+        // CRLF, no-BOM — CRLF (not LF) proves the badge is computed from the bytes.
+        fs::write(dir.join("crlf.txt"), b"a\r\nb\r\n").unwrap();
+        let html = render_view(&dir.join("crlf.txt"), Some("text"), SortKey::Name, false, None);
+        // The combined `UTF-8 · CRLF` form is distinctive — it cannot collide with
+        // the page head's lowercase `charset=utf-8` meta.
+        assert!(html.contains("UTF-8 · CRLF"), "encoding+line-ending badge in the bar:\n{html}");
+        // HEX mode shows raw bytes, so the text badge is suppressed.
+        let hex = render_view(&dir.join("crlf.txt"), Some("hex"), SortKey::Name, false, None);
+        assert!(!hex.contains("CRLF"), "no line-ending badge in HEX mode:\n{hex}");
         let _ = fs::remove_dir_all(&dir);
     }
 
