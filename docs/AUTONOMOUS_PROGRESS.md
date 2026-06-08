@@ -29,6 +29,30 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+67) — TSK-344: exposure (EV) tonal op (fixed; third engine increment, image vein closing)
+
+Third image-engine increment this session. `EditOp.exposure(ev:)` via Core Image `CIExposureAdjust`
+(`inputEV`): identity `ev=0`, scales in LINEAR light (`output = input·2^EV`) — the camera/photo-editor
+exposure model, deliberately distinct from `colorControls`'s additive brightness. Per-pixel,
+geometry-preserving, re-normalized; composes with the other ops and rides the lossless history. No
+new deps. Commit `cd0551c`, TSK-344 still **fixed** (three commits: `a483c6a` colorControls, `728c7f5`
+histogram, `cd0551c` exposure).
+
+Host teeth (ImageEditingTests 22→25): `ev=0` identity preserves color+dims; `+1` EV lightens a
+mid-tone (sampled R up >10); op survives Codable round-trip.
+
+**Image-engine state after this session:** TSK-344's engine now covers **4 of 6 named tonal
+adjustments** (brightness/contrast/saturation via colorControls + exposure) **plus the histogram**.
+Remaining engine slice = shadows/highlights (`CIHighlightShadowAdjust`) + sharpness
+(`CISharpenLuminance`) — deferred because their teeth need dark/edge fixtures + a contrast metric
+(not a single-pixel sample). The editor-panel UI that drives all these sliders + draws the histogram
+stays render-gated (tracked with TSK-253) — the honest `fixed`-not-`validated` ceiling.
+
+GATE NOTE (flaky): this run the gate tripped 8 `PluginSubprocessHostTests` "timedOut" — the
+load-sensitive plugin-subprocess family (same root as the GrandchildPipe fd flake), aggravated by
+running the full parallel gate ~4× back-to-back this session. 21/21 in isolation; zero subprocess
+path from an additive CoreImage op. Not a regression.
+
 ## LOG 2026-06-08 (latest+66) — TSK-344: per-channel image Histogram analysis (fixed; second engine increment)
 
 Continued the image-engine vein (owner's standing "build PoCs: image editing" directive) with the
