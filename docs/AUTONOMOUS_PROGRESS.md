@@ -2429,3 +2429,30 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - main @ f86a97c + this doc; gates green. Cumulative session: 30 validated +
   1 bug fixed. Next PORT veins: recently-opened/history (TSK-233/234), reload web
   (TSK-240), table column-width parity (TSK-237/238), dark mode (TSK-243/244).
+
+## LOG +72 (2026-06-08, autonomous tick — table column-width parity, both front-ends)
+- **Shipped TSK-237 + TSK-238 [PORT][TUI/WEB] table column-width parity**
+  (commit 60e4d56) by hoisting the width math into shared core:
+  - **core**: `view::table_col_widths(header, rows) -> Vec<usize>` — widest of
+    header + first-200-rows sample, clamped 4..=30 chars, char-counted, never
+    indexes. 2 unit tests + doctest.
+  - **tui (TSK-237)**: `column_widths` now delegates to it (maps usize→ratatui
+    `Constraint::Length` via `u16::try_from`). Pure refactor, no behavior change —
+    the width logic is now the SAME the web tier uses.
+  - **web (TSK-238)**: `table_html` emits a `<colgroup>` of `ch`-based widths from
+    the helper + `table-layout:fixed`/`white-space:nowrap` CSS so the widths are
+    authoritative (no more browser auto-size runaway). Test
+    `table_emits_colgroup_widths_from_shared_core`.
+  - tui 42, web 52 (+1), core +2; rust-core gate GATE_EXIT=0. Drove both
+    reported→…→validated.
+- **Process note:** initially called task_record before task_claim (board rejected
+  triaged→fixed for an agent) — claimed first, then recorded. Lane order is
+  restate→triage→**claim**→record.
+- **Scope:** delivered the column-width *parity* (the shared win). The pair title's
+  "+ TUI horizontal column scroll" is a TUI-only extra (ratatui already clips
+  columns to the pane) — not blocking; left for a later TUI-scroll pass if wanted.
+- 7th shared-core helper this run (meta, whitespace, nav::breadcrumbs,
+  view::content_state, view::table_col_widths).
+- main @ 60e4d56 + this doc; gates green. Cumulative session: 32 validated +
+  1 bug fixed. Next PORT veins: web reload (TSK-240), recently-opened/history
+  (TSK-233/234), dark-mode tokens (TSK-243/244).
