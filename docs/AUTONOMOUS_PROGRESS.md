@@ -3823,3 +3823,26 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   dropdown-as-escape-hatch or require true never-scroll is an owner product call.
 - View-layout-only BACKLOG siblings (TSK-261 + button position, 262 trailing icon group, 268 last-tab
   divider) correctly sit at `fixed` — no extractable host kernel, human/VM visual gate. Not churned.
+
+## LOG +133 (2026-06-08, autonomous tick — validated the whole Tools cluster + the TreeSitter predicate bug)
+- Paged the board `fixed` cluster to offset 40; surfaced two clean, host-testable groups beyond the
+  view-layout/hijacked ones. No code change this tick; `main` @ 146f7e5, host gate green.
+- **Tools cluster → all validated** (TSK-291 umbrella + 292 SHA-256 + 294 Base64 + 295 UUID). Shipped as
+  `Sources/ViewerCore/TextTools.swift`: a PURE, surface-agnostic core (CryptoKit only, no 3rd-party dep) —
+  `TextToolVerb` catalog + `apply(verb,to:)` dispatcher backing `sha256Hex`(+`FileChecksum`), `base64Encode/
+  Decode`, `uuid()`. `TextToolsTests` (19) + `TextToolRunnerTests` → 24 host tests, 0 failures: NIST SHA
+  vectors (empty/abc) + streamed-chunk==one-shot + non-UTF-8 + missing-throws; Base64 known-vector + unicode
+  round-trip + whitespace-tolerant + DETERMINISTIC invalid→nil (TSK-503); UUID v4-shape regex + freshness;
+  verb metadata + dispatch. Scoped to the core; the palette/clipboard/editor-insertion UX is DELIBERATELY
+  owner-deferred (per the source comment) — not claimed. **TSK-293 (Encryption) NOT validated** — genuinely
+  absent (no encrypt/decrypt in TextTools) AND its understanding is hijacked (ReDoS) → left at `fixed`.
+- **TSK-410 (TreeSitter ignores query predicates → TS/JS identifiers mis-colored `.type`) → validated.** The
+  fix evaluates `#match?`/`#eq?`/`#is-not?` in `tokenize()` — a pure function the golden tests exercise
+  directly, so fully host-validatable (the coloring DECISION per token IS what's tested). `TreeSitterEngine
+  GoldenTests` → 13 tests, 0 failures: the exact repro pinned (`const myThing: Widget = makeThing();` →
+  `myThing`=.variable not .type, `Widget`=.type), `testPredicateGatedConstants_acrossLanguages`, `testTSX`,
+  and `testRust` (pins a query whose coverage would silently drop once predicates honored). Closes the
+  [[project_treesitter_predicates_unevaluated]] memory item.
+- Lane note: the offset-40 page also holds many hijacked-understanding tasks (TSK-270/276/279/283/285/287/
+  296/298/305/307/326 — repurposed for audit fixes) and big [PARTIAL] far-future features (321-377) →
+  skip/human-gate. The clean host-testable feature subset is getting thin.
