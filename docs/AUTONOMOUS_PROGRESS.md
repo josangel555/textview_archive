@@ -3501,3 +3501,27 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   test fail 2 assertions on the host (`"@@@@"` → "" ; whitespace-only → nil); restored → green.
 - This is a pure-logic ViewerCore fix → **host-self-validatable** (no VM needed). The VM lane (TSK-501)
   would also confirm cross-platform, but the host repro makes it unnecessary for validation.
+
+## LOG +118 (2026-06-08, autonomous tick — TSK-504 VALIDATED on the VM; first end-to-end use of the VM UI lane)
+- **TSK-504 driven reported→…→validated** (commit `d9862f8`). Confirmed it was a **stale TEST assertion,
+  not an app bug**: `PreviewsUATTests.assertNoHexView` did a WHOLE-WINDOW `hasViewClass("Hex")`, but the
+  diagnostic dump is whole-window (`DiagnosticDump.swift:60/67`) and `DocumentModel.mountedPanes =
+  MountedPanesLRU(capacity:4)` keeps the PV_07 scenario's 3 tabs (data.bin HEX + empty.bin HEX +
+  code.txt) all mounted at `opacity:0` — so the retained binary panes' HexViews tripped the check even
+  though the foreground pane (code.txt) was correctly in Source. The app model was always right.
+- **Fix:** added `isInvisibleNode` + `hasVisibleViewClass` (DFS pruning any subtree rooted at a
+  hidden / `alpha≈0` / `layer.opacity≈0` node; NSNumber casts robust to in-process vs JSON dumps) and
+  scoped `assertNoHexView` to the VISIBLE pane. Strict improvement for all callers; a genuinely-visible
+  leak is still caught.
+- **VM-VALIDATED — first real end-to-end use of the lane TSK-500/501 built.** `MDV_VM_GUI_SESSION=1`
+  `launchctl asuser` run of `swift test --filter ViewerUITests.PreviewsUATTests`: **PV_07 now PASSES
+  (9.148s, window realized)** — it was FAILING on the SAME VM in the +116 run; only the assertion scoping
+  changed. All **9 PreviewsUATTests pass, 0 failures** (PV_01 image / PV_02 av / PV_03 pdf / PV_06
+  routing-matrix all share `assertNoHexView` → no sibling regression). Host `swift build --build-tests`
+  clean.
+- **Tick arc (TSK-501 → 502 → 503 → 504):** the VM lane is built (ulimit + asuser), its residuals
+  triaged + filed, and now PROVEN by validating a real UI fix through it. TSK-502 (Screen-Recording TCC)
+  remains parked for the owner — the only thing between here and a fully-green VM UI+pixel lane.
+- main @ `d9862f8` (+ this log). Sibling `assertNoHexView` copies in LSPUATTests/Cm6/SearchSurfaces share
+  the hazard but only fail if their scenarios mount ≥2 panes incl. a binary one — not yet observed
+  failing; left as-is (fix-on-demand).
