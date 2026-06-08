@@ -2361,3 +2361,19 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   link. Split out (the web side is deeper than a render flag).
 - main @ 4e0cd26 + this doc; gates green. Cumulative session: 25 validated +
   1 bug fixed + 2 shared-core modules + 2 follow-ups.
+
+## LOG +69 (2026-06-07, autonomous tick — web word-wrap, completes the slice)
+- **Shipped TSK-232 [PORT][WEB] word-wrap toggle** (commit 8077fc3): `?wrap=1`
+  threads a `wrap` bool from the query through render_view_filtered → content_html
+  (`#[allow(too_many_arguments)]` since content_html now takes 10 args). When on,
+  an inline `<style>.src{white-space:pre-wrap;overflow-wrap:anywhere}</style>`
+  overrides the base `white-space:pre`, plus a `wrap`/`nowrap` bar toggle link that
+  PRESERVES the active `?ws` flag (and the `ws` link preserves `?wrap`). Updated
+  the 6 existing render_view_filtered call sites for the new 10th arg. web 49 (+1);
+  rust-core gate GATE_EXIT=0. Drove reported→…→validated.
+- **Word-wrap now parity across TUI + web**, completing the TSK-231/232 slice. Web
+  uses a CSS override (no core component needed); TUI uses ratatui `.wrap()`.
+- main @ 8077fc3 + this doc; gates green. Cumulative session: 26 validated +
+  1 bug fixed + 2 shared-core modules + 2 follow-ups. Next PORT veins: breadcrumb
+  nav (TSK-229/230), recently-opened/history (TSK-233/234), empty/error/too-large
+  states (TSK-245/246), reload (TSK-239/240).
