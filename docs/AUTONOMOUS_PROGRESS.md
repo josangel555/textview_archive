@@ -2532,3 +2532,24 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   1 bug fixed + 1 parked. 8th shared-core helper this run (find::grep_lines).
   Next veins: TUI grep (TSK-213), recently-opened/history (TSK-233/234),
   persistent session state (TSK-235/236), find minimap (TSK-253/254).
+
+## LOG +77 (2026-06-08, autonomous tick — TUI cross-file grep, completes the pair)
+- **Shipped TSK-213 [PORT][TUI] cross-file folder grep (search anywhere)**
+  (commit 9aaa4d8), reusing last tick's shared `find::grep_lines`:
+  - `F` opens a "search anywhere" prompt (modal, captures text); Enter runs
+    `run_grep` — a bounded recursive walk under cwd mirroring the web `grep_walk`
+    (caps 2000 files / 500 hits / 50-per-file, dotfile-skip per `show_hidden`,
+    binary/empty-skip via `view::content_state`, symlink-loop guard).
+  - A results overlay (centered popup) lists `path:line: text` rows; ↑/↓ (j/k)
+    select, Enter opens the file centered+flashed on the hit line (reuses the
+    go-to-line center+flash path), ESC/q close. Bottom help + `?` overlay gain `F`.
+  - tui 44 (+1); gate GATE_EXIT=0; clippy clean. Drove reported→…→validated.
+  - Test `capital_f_greps_across_files_and_enter_opens_hit_at_line`:
+    prompt→run→only-hello.txt→overlay→open-at-line(flash assert)→no-match status.
+- **Grep pair complete** (TSK-213 TUI + TSK-214 web) off ONE shared core helper —
+  the "one core, three front-ends" pattern: web `/grep` route and TUI `F` overlay
+  derive identical matches from `find::grep_lines`.
+- main @ 9aaa4d8 + this doc; gates green. Cumulative session: 38 validated +
+  1 bug fixed + 1 parked. Next veins: recently-opened/history (TSK-233/234 — web
+  shared-state cost), persistent session state (TSK-235/236), find minimap
+  (TSK-253/254), git status (TSK-251/252).
