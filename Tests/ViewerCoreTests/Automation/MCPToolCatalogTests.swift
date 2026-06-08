@@ -105,6 +105,27 @@ final class MCPToolCatalogTests: XCTestCase {
         }
     }
 
+    func test_openPath_tempDirSiblingPrefix_throwsPermissionDenied() {
+        // TSK-135: containment must be ANCHORED. A path that merely shares the
+        // per-user temp dir as a string prefix WITHOUT a separator
+        // (…/T  vs  …/T-evil/loot) is a sibling OUTSIDE the jail and must be
+        // rejected with .permissionDenied. A bare `hasPrefix(temp)` would admit
+        // it (then fall through to a notFound existence probe) — so this asserts
+        // permissionDenied specifically, and fails if the anchor regresses.
+        // Containment is checked before existence, so the path need not exist.
+        let temp = FileManager.default.temporaryDirectory
+            .standardizedFileURL.resolvingSymlinksInPath().path
+        let sibling = temp + "-evil-\(UUID().uuidString)/loot.txt"
+        let args: MCP.Value = .object(["path": .string(sibling)])
+        XCTAssertThrowsError(
+            try MCPToolCatalog.dispatch(name: "open_path", args: args, host: host)
+        ) { error in
+            guard case .permissionDenied = error as? MCPError else {
+                XCTFail("expected .permissionDenied for temp-dir sibling, got \(error)"); return
+            }
+        }
+    }
+
     func test_openPath_nonexistentPath_throwsNotFound() {
         // Use a tilde-expanded path that won't exist.
         let args: MCP.Value = .object([
