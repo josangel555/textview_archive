@@ -29,6 +29,7 @@ pub mod find;
 pub mod format;
 pub mod git;
 pub mod hex;
+pub mod history;
 pub mod image;
 pub mod indent;
 pub mod meta;

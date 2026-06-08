@@ -39,6 +39,7 @@ use mdvcore_core::outline::{self, Heading};
 use mdvcore_core::filter;
 use mdvcore_core::find;
 use mdvcore_core::git;
+use mdvcore_core::history;
 use mdvcore_core::meta;
 use mdvcore_core::hex::{self, HexSearchMode};
 use mdvcore_core::view::{self, DiffLineKind, FileKind, View, ViewBody, ViewMode};
@@ -176,8 +177,19 @@ struct GrepHit {
     text: String,
 }
 
+/// How many recently-opened files the in-session history keeps (TSK-233).
+const RECENT_CAP: usize = 20;
+
 struct App {
     cwd: PathBuf,
+    /// Recently-opened files, newest-first, de-duplicated and capped at
+    /// [`RECENT_CAP`] via the shared `history::push` (TSK-233). In-session only —
+    /// disk persistence is the separate TSK-235. `R` opens the picker overlay.
+    recent: Vec<PathBuf>,
+    /// `true` while the recents picker overlay is open (captures ↑/↓/↵/ESC).
+    recent_open: bool,
+    /// Selected row in the recents overlay; indexes into `recent`.
+    recent_sel: usize,
     /// Git working-tree summary for `cwd` (branch + ahead/behind + dirty counts),
     /// refreshed by `reload_dir` via the shared `git::parse_status`. `None` when
     /// `cwd` isn't a git repo (or git isn't installed) — the title omits it.
@@ -285,6 +297,9 @@ impl App {
         let cwd = start.canonicalize().unwrap_or(start);
         let mut app = App {
             cwd,
+            recent: Vec::new(),
+            recent_open: false,
+            recent_sel: 0,
             git_status: None,
             entries: Vec::new(),
             list_rows: Vec::new(),
@@ -586,6 +601,13 @@ impl App {
                 self.flash = None;
                 self.outline = None; // a stale outline belongs to the old file
                 self.clear_find(); // matches/needle belong to the old file
+                // Record the open in the MRU history (shared `history::push`):
+                // re-opening bumps to front, no dups, capped (TSK-233).
+                self.recent = history::push(
+                    std::mem::take(&mut self.recent),
+                    path.to_path_buf(),
+                    RECENT_CAP,
+                );
                 self.status = format!("opened {}", path.display());
             }
             Err(e) => self.status = format!("open failed: {e}"),
@@ -1042,6 +1064,57 @@ impl App {
         self.flash = Some(line0);
     }
 
+    // MARK: - Recently-opened picker (shared `history::push`)
+
+    /// Whether the recents overlay is open and capturing navigation keys.
+    fn recent_active(&self) -> bool {
+        self.recent_open
+    }
+
+    /// Open the recents picker (`R`). No-op with an empty history (nothing to
+    /// pick); resets the selection to the most-recent entry.
+    fn open_recent(&mut self) {
+        if self.recent.is_empty() {
+            self.status = "recents: nothing opened yet".into();
+            return;
+        }
+        self.recent_sel = 0;
+        self.recent_open = true;
+    }
+
+    /// Move the recents selection by `delta`, clamped to the list length.
+    fn recent_move(&mut self, delta: isize) {
+        if self.recent.is_empty() {
+            return;
+        }
+        let max = self.recent.len() as isize - 1;
+        self.recent_sel = (self.recent_sel as isize + delta).clamp(0, max) as usize;
+    }
+
+    /// Commit the recents selection: re-open the chosen file (which also bumps it
+    /// to the front of the history) and close the overlay.
+    fn commit_recent(&mut self) {
+        let Some(path) = self.recent.get(self.recent_sel).cloned() else {
+            self.recent_open = false;
+            return;
+        };
+        self.recent_open = false;
+        self.open_file(&path);
+    }
+
+    /// Key handling while the recents overlay is open: ↑/↓ pick, ↵ open, ESC/R
+    /// close. Never quits the app.
+    fn on_key_recent(&mut self, code: KeyCode) -> bool {
+        match code {
+            KeyCode::Esc | KeyCode::Char('R') => self.recent_open = false,
+            KeyCode::Enter => self.commit_recent(),
+            KeyCode::Down | KeyCode::Char('j') => self.recent_move(1),
+            KeyCode::Up | KeyCode::Char('k') => self.recent_move(-1),
+            _ => {}
+        }
+        false
+    }
+
     // MARK: - In-file content find (shared `find::find_matches`)
 
     /// Whether the find prompt is open and capturing the query.
@@ -1253,6 +1326,11 @@ impl App {
         if self.outline_active() {
             return self.on_key_outline(code);
         }
+        // The recents picker captures navigation keys (↑/↓ pick, ↵ open, ESC/R
+        // close) before the normal keymap (TSK-233).
+        if self.recent_active() {
+            return self.on_key_recent(code);
+        }
         // The table-filter prompt captures text the same way — runs before the
         // normal keymap so typed needle chars don't fire command keys.
         if self.table_filtering() {
@@ -1313,6 +1391,8 @@ impl App {
                 }
             }
             KeyCode::Char('o') => self.toggle_outline(),
+            // `R` opens the recently-opened picker (TSK-233).
+            KeyCode::Char('R') => self.open_recent(),
             // `F` opens the cross-file "search anywhere" grep prompt (TSK-213).
             KeyCode::Char('F') => self.open_grep(),
             // `?` opens the keyboard-help overlay (any key then dismisses it).
@@ -1427,6 +1507,10 @@ impl App {
         // The outline overlay floats over the content pane when open.
         if self.outline.is_some() {
             self.draw_outline(frame, cols[1]);
+        }
+        // The recents picker floats over the content pane when open (TSK-233).
+        if self.recent_open {
+            self.draw_recent(frame, cols[1]);
         }
         // The cross-file grep prompt / results overlay floats over the content row.
         if self.grep_prompt.is_some() || !self.grep_results.is_empty() {
@@ -1754,6 +1838,35 @@ impl App {
         frame.render_widget(list, popup);
     }
 
+    /// Render the recently-opened picker (TSK-233) as a centered popup: one row
+    /// per recent file (newest first, path made relative to `cwd` when possible),
+    /// the selection reversed, scrolled to keep it visible. `Clear` wipes the
+    /// cells underneath. Mirrors the outline/grep overlays.
+    fn draw_recent(&self, frame: &mut Frame, area: Rect) {
+        if self.recent.is_empty() {
+            return;
+        }
+        let popup = centered_rect(70, 70, area);
+        frame.render_widget(Clear, popup);
+        let inner_h = popup.height.saturating_sub(2) as usize;
+        let start = self.recent_sel.saturating_sub(inner_h.saturating_sub(1));
+        let items: Vec<ListItem> = self
+            .recent
+            .iter()
+            .enumerate()
+            .skip(start)
+            .take(inner_h.max(1))
+            .map(|(i, p)| {
+                let label = p.strip_prefix(&self.cwd).unwrap_or(p).to_string_lossy().into_owned();
+                let style = if i == self.recent_sel { Style::new().reversed() } else { Style::new() };
+                ListItem::new(Line::from(Span::styled(label, style)))
+            })
+            .collect();
+        let title = format!(" recent · {} files · ↵ open · ESC close ", self.recent.len());
+        let list = List::new(items).block(Block::bordered().title(title));
+        frame.render_widget(list, popup);
+    }
+
     /// Render the keyboard-help overlay (TSK-247) as a centered popup listing
     /// every keybinding (key on the left, action on the right). `Clear` wipes the
     /// cells underneath so the panes don't bleed through. Any key closes it (see
@@ -1776,6 +1889,7 @@ impl App {
             ("/", "find in file (table filter in table mode)"),
             (":", "go to line"),
             ("o", "markdown outline"),
+            ("R", "recently-opened files"),
             ("g / G", "jump to top / bottom"),
             ("PgUp/PgDn", "scroll by a page"),
             ("?", "this help (any key closes)"),
@@ -1896,7 +2010,7 @@ impl App {
                 self.find_query,
             )
         } else {
-            "↑/↓ move · ↵ open · ⌫ up · x mode · 1-9 open-as · r reload · n nums · i ws · w wrap · s sort · . hidden · f file-find · F grep · / find · : goto · o outline · ? help · q quit".into()
+            "↑/↓ move · ↵ open · ⌫ up · x mode · 1-9 open-as · r reload · n nums · i ws · w wrap · s sort · . hidden · f file-find · F grep · / find · : goto · o outline · R recent · ? help · q quit".into()
         };
         let line = Line::from(vec![
             Span::styled(" mdv-tui ", Style::new().fg(Color::Black).bg(Color::Cyan).bold()),
@@ -2317,6 +2431,59 @@ mod tests {
         app.on_key(KeyCode::Esc);
         assert!(app.find_matches.is_empty(), "ESC clears the find");
         assert!(!render(&mut app).contains('▮'), "no minimap when no find is active");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn recents_picker_lists_opened_files_mru_and_enter_reopens() {
+        // TSK-233: opening files records them in an MRU history (shared
+        // history::push); `R` opens a picker overlay listing them newest-first;
+        // Enter re-opens the selected one. Glyph-free text rows, so the colorless
+        // snapshot can assert them.
+        let dir = fixture_dir();
+        let mut app = App::new(dir.clone());
+
+        // R with empty history is a no-op (nothing opened yet).
+        app.on_key(KeyCode::Char('R'));
+        assert!(!app.recent_active(), "R does nothing with an empty history");
+
+        // Open two files; the second becomes the most-recent.
+        select_name(&mut app, "hello.txt");
+        app.enter();
+        select_name(&mut app, "data.bin");
+        app.enter();
+        assert_eq!(app.recent.len(), 2, "two distinct opens recorded");
+
+        // R opens the picker; it lists both, newest (data.bin) first and selected.
+        app.on_key(KeyCode::Char('R'));
+        assert!(app.recent_active(), "R opens the recents picker");
+        let out = render(&mut app);
+        assert!(out.contains("recent ·"), "recents overlay titled:\n{out}");
+        assert!(out.contains("data.bin") && out.contains("hello.txt"), "both files listed:\n{out}");
+        assert_eq!(app.recent_sel, 0, "selection starts at the most-recent");
+
+        // ↓ selects the older entry (hello.txt); Enter re-opens it, which also
+        // bumps it back to the front of the MRU.
+        app.on_key(KeyCode::Down);
+        assert_eq!(app.recent_sel, 1, "down moves to the older entry");
+        app.on_key(KeyCode::Enter);
+        assert!(!app.recent_active(), "Enter closes the picker");
+        assert_eq!(
+            app.preview.as_ref().map(|p| p.name.as_str()),
+            Some("hello.txt"),
+            "Enter re-opened the selected recent file"
+        );
+        assert_eq!(
+            app.recent.first().and_then(|p| p.file_name()).and_then(|n| n.to_str()),
+            Some("hello.txt"),
+            "re-open bumped it to the front of the MRU"
+        );
+
+        // ESC closes the picker without opening (re-open it, then ESC).
+        app.on_key(KeyCode::Char('R'));
+        assert!(app.recent_active());
+        app.on_key(KeyCode::Esc);
+        assert!(!app.recent_active(), "ESC closes the picker");
         let _ = fs::remove_dir_all(&dir);
     }
 
