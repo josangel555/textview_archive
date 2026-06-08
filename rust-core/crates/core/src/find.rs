@@ -194,6 +194,77 @@ fn fold(s: &str, case: Case) -> String {
     }
 }
 
+/// Sentinel [`TableHit::row`] for a header-cell match (negative so it can never
+/// collide with a real `rows` index).
+pub const TABLE_HEADER_ROW: i64 = -1;
+
+/// A matching cell in a parsed table — the cell-coordinate find behind a CSV
+/// grid's Cmd-F (parity with the Swift `CSVFind`). `row == TABLE_HEADER_ROW`
+/// (-1) marks a header cell; data cells carry their 0-based `rows` index.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct TableHit {
+    pub row: i64,
+    pub col: usize,
+}
+
+/// Every cell containing `query` (case per `case`), in reading order: header
+/// first (when `include_header`), then data rows top-to-bottom, each
+/// left-to-right — which is the order next/prev cycles. An empty `query` yields
+/// no hits. `scope` restricts to a single column when `Some` (an out-of-range
+/// column yields no hits, matching the Swift side). Substring match, mirroring
+/// `find_matches`/`CSVFilter` so the user has one mental model across views.
+///
+/// Navigation reuses the existing wraparound: callers step with
+/// `(cur + 1) % hits.len()` (forward) / the [`prev_index`] pattern — the hit
+/// list is a flat `Vec`, so the same modulo math applies.
+#[must_use]
+pub fn find_in_table(
+    header: &[String],
+    rows: &[Vec<String>],
+    query: &str,
+    case: Case,
+    include_header: bool,
+    scope: Option<usize>,
+) -> Vec<TableHit> {
+    if query.is_empty() {
+        return Vec::new();
+    }
+    let needle = fold(query, case);
+    let mut out: Vec<TableHit> = Vec::new();
+    if include_header {
+        push_row_hits(&mut out, TABLE_HEADER_ROW, header, &needle, case, scope);
+    }
+    for (i, row) in rows.iter().enumerate() {
+        // A row index past i64::MAX is unreachable for any real table; saturate
+        // rather than panic to stay lint-clean under the no-panic policy.
+        let r = i64::try_from(i).unwrap_or(i64::MAX);
+        push_row_hits(&mut out, r, row, &needle, case, scope);
+    }
+    out
+}
+
+/// Append the matching-cell hits for one row (header or data). Split out so the
+/// header and data passes share identical column-scope + folding logic.
+fn push_row_hits(
+    out: &mut Vec<TableHit>,
+    row: i64,
+    cells: &[String],
+    needle: &str,
+    case: Case,
+    scope: Option<usize>,
+) {
+    for (col, cell) in cells.iter().enumerate() {
+        if let Some(only) = scope {
+            if only != col {
+                continue;
+            }
+        }
+        if fold(cell, case).contains(needle) {
+            out.push(TableHit { row, col });
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -377,5 +448,113 @@ mod tests {
         let text = "hit\n\n\nhit";
         let hits = find_matches(text, "hit", Case::Sensitive);
         assert_eq!(hits, vec![m(0, 0, 3), m(3, 0, 3)]);
+    }
+
+    // MARK: - find_in_table (CSV cell-find, parity with Swift CSVFind)
+
+    fn cells(rows: &[&[&str]]) -> Vec<Vec<String>> {
+        rows.iter().map(|r| r.iter().map(|s| s.to_string()).collect()).collect()
+    }
+    fn hdr(names: &[&str]) -> Vec<String> {
+        names.iter().map(|s| s.to_string()).collect()
+    }
+    fn th(row: i64, col: usize) -> TableHit {
+        TableHit { row, col }
+    }
+
+    #[test]
+    fn table_find_empty_query_is_none() {
+        let h = hdr(&["Name", "City"]);
+        let r = cells(&[&["Alice", "NYC"]]);
+        assert!(find_in_table(&h, &r, "", Case::Insensitive, true, None).is_empty());
+    }
+
+    #[test]
+    fn table_find_reading_order_header_then_rows_left_to_right() {
+        let h = hdr(&["Name", "City"]);
+        let r = cells(&[&["Alice", "NYC"], &["Bob", "LA"], &["Carol", "Austin"]]);
+        // "a" (insensitive): header "Name"(-1,0); Alice(0,0); LA(1,1); Carol(2,0); Austin(2,1).
+        let hits = find_in_table(&h, &r, "a", Case::Insensitive, true, None);
+        assert_eq!(hits, vec![
+            th(TABLE_HEADER_ROW, 0),
+            th(0, 0),
+            th(1, 1),
+            th(2, 0),
+            th(2, 1),
+        ]);
+    }
+
+    #[test]
+    fn table_find_case_sensitive_vs_insensitive() {
+        let h = hdr(&["Name"]);
+        let r = cells(&[&["alice"], &["Alice"]]);
+        // Sensitive "Alice" hits only the capitalized data cell.
+        assert_eq!(
+            find_in_table(&h, &r, "Alice", Case::Sensitive, false, None),
+            vec![th(1, 0)]
+        );
+        // Insensitive "alice" hits both.
+        assert_eq!(
+            find_in_table(&h, &r, "alice", Case::Insensitive, false, None),
+            vec![th(0, 0), th(1, 0)]
+        );
+    }
+
+    #[test]
+    fn table_find_include_header_toggle() {
+        let h = hdr(&["Name", "City"]);
+        let r = cells(&[&["Alice", "NYC"]]);
+        // "name" with header excluded → no hit.
+        assert!(find_in_table(&h, &r, "name", Case::Insensitive, false, None).is_empty());
+        // included → the header cell.
+        assert_eq!(
+            find_in_table(&h, &r, "name", Case::Insensitive, true, None),
+            vec![th(TABLE_HEADER_ROW, 0)]
+        );
+    }
+
+    #[test]
+    fn table_find_column_scope_and_out_of_range() {
+        let h = hdr(&["Name", "City"]);
+        let r = cells(&[&["Alice", "NYC"], &["Bob", "LA"], &["Carol", "Austin"]]);
+        // "a" restricted to column 1 (City): LA(1,1), Austin(2,1).
+        assert_eq!(
+            find_in_table(&h, &r, "a", Case::Insensitive, false, Some(1)),
+            vec![th(1, 1), th(2, 1)]
+        );
+        // Out-of-range column → nothing.
+        assert!(find_in_table(&h, &r, "a", Case::Insensitive, true, Some(99)).is_empty());
+    }
+
+    #[test]
+    fn table_find_no_match_and_empty_table() {
+        let h = hdr(&["Name"]);
+        let r = cells(&[&["Alice"]]);
+        assert!(find_in_table(&h, &r, "zzz", Case::Insensitive, true, None).is_empty());
+        // Empty table (no header, no rows) → no hits, no panic.
+        assert!(find_in_table(&[], &[], "x", Case::Insensitive, true, None).is_empty());
+    }
+
+    #[test]
+    fn table_find_substring_not_just_equality() {
+        let h = hdr(&["x"]);
+        let r = cells(&[&["foobar"]]);
+        assert_eq!(
+            find_in_table(&h, &r, "oba", Case::Insensitive, false, None),
+            vec![th(0, 0)]
+        );
+    }
+
+    #[test]
+    fn table_find_navigation_wraps_via_existing_modulo() {
+        // The hit list is a flat Vec, so next/prev wraparound reuses the same
+        // modulo math as next_index/prev_index over its length.
+        let h = hdr(&["a"]);
+        let r = cells(&[&["a"], &["a"], &["a"]]);
+        let hits = find_in_table(&h, &r, "a", Case::Insensitive, false, None);
+        assert_eq!(hits.len(), 3);
+        let n = hits.len();
+        assert_eq!((2 + 1) % n, 0, "forward from last wraps to first");
+        assert_eq!((n - 1) % n, 2, "backward from first wraps to last");
     }
 }
