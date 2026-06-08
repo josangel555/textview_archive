@@ -3202,3 +3202,24 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   pure-SwiftUI CSVTableView, lowest compositor risk) WITH a VM T4/T5 test, leave at `review`
   for the nightly VM lane — the documented "implement + VM test + leave for VM" path — to
   actually move a feature toward done rather than add more model-only cores.
+
+## LOG +104 (2026-06-08, autonomous tick — TSK-301 LocalHistoryStore: host-COMPLETABLE store engine shipped + tested)
+- Deliberately chose host-COMPLETABLE work over more VM-pending value-type models or blind UI:
+  a real on-disk subsystem whose behaviour is end-to-end testable (like ReviewStore/SessionStore).
+  Reconsidered building blind interactive CSV-grid focus/keyboard UI — that's genuinely a
+  supervised/VM-interactive job (ScrollView focus management), not safe to ship blind, so deferred.
+- **TSK-301** "[BACKLOG] View local history" → **progress** (commit `c79a5af`), board id verified.
+  **Slice 1 (STORE, done + host-validated end-to-end):** new `Sources/ViewerCore/LocalHistoryStore.swift`
+  — Sendable on-disk file-version store: `snapshot(path:content:at:)` (dedup vs latest, skip >10 MiB,
+  prune oldest beyond 50/file, `_N` bump on same-ms collision), `versions(for:)` newest-first,
+  `contentString(of:for:)` restore, `clear(for:)`. Stable FNV-1a-64 path hash (Hasher is per-run
+  randomized). Time injected (`at:`) for deterministic tests. Teeth: `LocalHistoryStoreTests` 10/10
+  end-to-end in a temp dir (round-trip, newest-first, dedup, prune-at-cap, oversize-skip, per-file
+  isolation, clear, same-ms no-collision, stable hash). `swift build` + headless gate green.
+- **Slices 2+3 PARKED for owner (decision):** snapshot-on-save wiring + history-panel UI (slice 2,
+  live/VM) and the retention/privacy POLICY (slice 3 — opt-in vs default-on, version/size caps, which
+  files, storage location). Silently retaining copies of every edited file is a genuine privacy/disk
+  decision; the store is INERT until wired (no behaviour change on main), so safe to land the engine now.
+- Why not taper: this is a real, host-validated subsystem advancing a filed feature — different from the
+  value-type model cores, and its behaviour (not just pixels) is regression-guarded on the host gate.
+  main @ `c79a5af`, tree clean.
