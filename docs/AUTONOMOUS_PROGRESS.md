@@ -29,6 +29,30 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+64) — TSK-349: GitClient worktree create/remove/prune service methods (fixed; UI button render-gated)
+
+Found a genuinely-buildable service-layer core inside a `[PARTIAL]` backlog task by looking past
+the render-gated surface. Commit `60fbede`, board TSK-349 → **fixed** (not validated — see below).
+
+`GitClient` (ViewerCore) could `worktreeList()` but not mutate. Added the host-testable core:
+`worktreeAdd(path:branch:createBranch:)` / `worktreeRemove(path:force:)` / `worktreePrune()` —
+git shell-out via the existing `run()`, `@discardableResult` + non-throwing, mirroring
+`stashApply/Pop/Drop`; no deps. Host teeth in GitClientTests (temp-repo harness, strict worktree
+cleanup): add-`-b`-feature → `worktreeList()` shows it on branch 'feature' → remove → gone;
+remove-non-worktree → false (error contract, side-effect-free). Both pass in isolation.
+
+Recorded `fixed`, NOT self-validated: the remaining deliverable is the Git-panel UI ACTION (a
+create/remove button in `GitWorktreesTab`), which is SwiftUI render-path with no host coverage —
+left for the human/VM gate to wire + confirm end-to-end. The service methods are fully host-tested.
+
+GATE NOTE (flaky, not a regression): the headless gate's only failure was
+`GrandchildPipeTests.test_repeated_grandchild_calls_do_not_leak_fds` — it counts PROCESS-GLOBAL
+fds, so under the 16-way parallel suite concurrent subprocesses (LSP fake servers, web sockets, and
+this tick's git subprocesses) pollute the sample (32→40). It PASSES in isolation (0 failures), is an
+unrelated subsystem (plugin host), and matches the load-sensitive-resource-assert flake class
+CLAUDE.md flags. Not caused by this change. (Candidate future fix: make that test measure its own
+fd delta against a quiesced baseline, or mark it serial/non-parallel.)
+
 ## LOG 2026-06-08 (latest+63) — TSK-234 BUILT + validated: web recently-opened (/recent) list, in-memory MRU
 
 Reversed last tick's over-cautious park and BUILT it — the owner's standing "drain PORT rather
