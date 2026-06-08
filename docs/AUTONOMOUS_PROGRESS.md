@@ -3257,3 +3257,31 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   outside the central rust-core gate (TSK-498), so validated directly via cargo.
 - **REMAINING (slice 2b):** wire `find_in_table` into the TUI table overlay (ratatui snapshot test) —
   also host-completable, no VM. Then TSK-499 is fully done → validated. main @ `7f43701`, tree clean.
+
+## LOG +107 (2026-06-08, autonomous tick — TSK-499 slice 2b: TUI CSV cell-find wired + host-tested → TSK-499 DONE/validated)
+- Closed out TSK-499 on the host-completable PORT lane: wired the shared `find::find_in_table` into
+  the ratatui TUI table view (commit `4315a94`) → **TSK-499 validated** (all 3 tiers — core `37fc03d`,
+  web `7f43701`, TUI `4315a94` — each regression-guarded by automated tests).
+- **Design decision (UX trigger):** in table mode `/` is already the row FILTER (established, tested),
+  so cell-FIND gets NO new keybinding — it's reachable via the command **palette** ("find in file" →
+  `Cmd::Find` → `open_find`), which is discoverable and leaves `/` alone. Find LOCATES (highlight +
+  jump), filter NARROWS; they compose (find runs over the SHOWN/filtered rows).
+- **Behaviour:** `commit_find` is now table-aware (computes cell hits over shown rows; does NOT fall
+  through to the text branch that would force Text mode via `jump_to_current_match`). Render highlights
+  every matching cell (yellow) and marks the current `find_sel`-th hit distinctly (magenta); `n`/`N`
+  step cells (`find_step` recomputes hits so stepping stays aligned after a re-filter, wraps);
+  `scroll_table_to_current_hit` keeps the current hit visible without jumping a fully-visible table;
+  `draw_status` shows "find: i of n cells"; ESC clears. Also made `find_in_table` GENERIC over the row
+  type (`R: AsRef<[String]>`) so the TUI passes its borrowed `Vec<&Vec<String>>` slice without cloning
+  (web/core still pass owned rows); fixed the core empty-table test's now-ambiguous `&[]` → typed slice.
+- **Teeth (pixel-style, host):** `table_cell_find_highlights_current_steps_and_clears` drives the REAL
+  palette trigger then asserts per-cell **bg** on the rendered `TestBackend` buffer (current=Magenta,
+  other hit=Yellow, non-match=Reset) across commit → n-step → wrap → ESC-clear. Unlike SwiftUI CA
+  layers, the ratatui render path is a deterministic in-process buffer, so this is genuine host
+  coverage of the rendered behaviour (not layout-only). **Teeth DEMONSTRATED:** making the current-cell
+  style non-distinct turned it red (`left: Some(Yellow), right: Some(Magenta)`), then restored → green.
+- Gates: TUI suite 50/50; web 61/61; `cargo clippy -p mdvcore-tui` no NEW warnings (4→3 after factoring
+  out a `type_complexity`; remaining 3 are pre-existing module-doc lints); **rust-core-gate green**
+  (core 262 tests + ffi no_panic + doctests; covers the generic `find_in_table` change). main @ `4315a94`,
+  tree clean. **PORT lane note:** the [PORT][TUI/WEB] W1 backlog (TSK-362..423) remains the standing
+  host-completable queue when no SwiftUI task is actionable.
