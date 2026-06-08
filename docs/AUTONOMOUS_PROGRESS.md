@@ -3846,3 +3846,22 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - Lane note: the offset-40 page also holds many hijacked-understanding tasks (TSK-270/276/279/283/285/287/
   296/298/305/307/326 — repurposed for audit fixes) and big [PARTIAL] far-future features (321-377) →
   skip/human-gate. The clean host-testable feature subset is getting thin.
+
+## LOG +134 (2026-06-08, autonomous tick — validated the two command-registry keybinding data tasks)
+- Two [PARTIAL] keybinding tasks were genuine CommandRegistry *data* changes (not view-layout) with precise
+  host teeth in `CommandRegistryTests` that pin the exact values — validated. No code change; `main` @
+  81d37ca, host gate green (`swift test --filter CommandRegistryTests` → 32 tests, 0 failures).
+- **TSK-325** ("keyboard shortcutable" — assign defaults to nil-shortcut commands) → **validated**. Three
+  user-facing commands got conflict-free defaults (view.folderStats=⌘⌃I, git.fileHistory=⌘⌥⇧H,
+  git.repoHistory=⌘⌥⇧L). `test_addedDefaultShortcuts_arePresentAndConflictFree` pins non-nil default +
+  collision-free shortcutMap routing for each → dropping a default or adding a clash fails on host.
+- **TSK-328** ("natural keybindings") → **validated**. Next/Prev-tab defaults changed to ⌘⇧] / ⌘⇧[
+  (Safari/Terminal/Notes convention). `test_tabSwitch_naturalDefaults_routeWithoutCollision` pins the
+  EXACT default values + no collision with the Move-Tab bindings (⌘⌥[ / ⌘⌥], distinct modifier set).
+- Scope on both: the registry descriptor data + pure shortcutMap routing (host kernel) is validated; live
+  AppKit Window-menu keystroke interception in a running window is the VM/view concern, not claimed.
+- **Lane status:** the agent-validatable SwiftUI `fixed` subset is now essentially drained for this session
+  (validated this run: 260/263/281/291/292/294/295/299/304/325/328/371/410 + earlier audit subset). What
+  remains at `fixed` is hijacked-understanding audit findings (perf/leak/race → human-gate) + view-layout
+  BACKLOG (VM-visual) + big [PARTIAL]s needing owner decisions. Next ticks: either an owner unblock from
+  DECISIONS NEEDED, or drain the rust-core [PORT] lane (TSK-362+, real implementation work) per SOP.
