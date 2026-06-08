@@ -22,6 +22,15 @@
 /// Two spaces per nesting level — matches the SwiftUI `FormatViewer` default.
 const INDENT: &str = "  ";
 
+/// Max container nesting the recursive walk will descend before bailing. The
+/// parser is recursive (`value`→`object`/`array`→`value`), so an adversarial
+/// deeply-nested document (e.g. `[[[[…]]]]`) would otherwise overflow the stack
+/// and abort the process (release builds are `panic = "abort"`). Past this the
+/// reformat returns `None` and the caller falls back to showing the raw text —
+/// the same defense class as the cmark deep-nesting guard. 128 matches
+/// `serde_json`'s default recursion limit; real JSON never nests this deep.
+const MAX_DEPTH: usize = 128;
+
 /// Reformat `input` as pretty-printed JSON with a 2-space indent.
 ///
 /// Returns `None` when `input` is not a single well-formed JSON document
@@ -77,6 +86,12 @@ impl Json<'_> {
     }
 
     fn value(&mut self, depth: usize) -> Option<()> {
+        // Bound recursion: `depth` is the container nesting level, so this caps
+        // the recursive descent and prevents a stack overflow on pathological
+        // input (returns None → caller shows raw text).
+        if depth > MAX_DEPTH {
+            return None;
+        }
         match self.peek()? {
             b'{' => self.object(depth),
             b'[' => self.array(depth),
@@ -279,6 +294,19 @@ mod tests {
         let pretty = "{\n  \"a\": 1\n}";
         // Re-formatting an already-pretty document is idempotent.
         assert_eq!(pretty_json(pretty).unwrap(), pretty);
+    }
+
+    #[test]
+    fn deeply_nested_input_is_bounded_not_overflowed() {
+        // Balanced, *valid* deeply-nested JSON: the only reason to reject it is
+        // the recursion cap. Without the cap this would recurse ~100k frames and
+        // abort the process; with it, pretty_json returns None (→ raw-text
+        // fallback) and the call simply completes.
+        let deep = format!("{}{}", "[".repeat(100_000), "]".repeat(100_000));
+        assert!(pretty_json(&deep).is_none(), "over-deep nesting bails to None, no overflow");
+        // A modest nesting well under the cap still formats fine.
+        let ok = format!("{}1{}", "[".repeat(10), "]".repeat(10));
+        assert!(pretty_json(&ok).is_some(), "normal nesting still pretty-prints");
     }
 
     #[test]
