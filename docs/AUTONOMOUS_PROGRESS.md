@@ -3360,3 +3360,15 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   TSK-306/272 (preview-tab Phase 2 — VM UI lane), TSK-243 (TUI theme), TSK-332 (open-path mode
   re-resolution — supervised), TSK-362 (Editor language packs — dep+VM). Answering any one refills the
   actionable queue. main @ `a54d752` (+ this log).
+
+## LOG +111 (2026-06-08, autonomous tick — HOLD continues; verified TSK-339 fixed + worktree hygiene clean)
+- Two checks, both negative-for-new-work: (1) TSK-339 [S4][bug] "TUI --snapshot uses .expect()" is
+  ALREADY FIXED — `main()` returns `io::Result`, the `--snapshot` path uses `app.snapshot(100,30)?` +
+  `current_dir()?` (the `.expect()`s are all `#[cfg(test)]`). Extends the audit-stale finding to rust-core
+  BUG findings (now 5/5 fresh samples this run already-fixed). (2) Worktree hygiene clean (global CLAUDE.md
+  standing ask): `git worktree list` = main only; no merged scratch branches; no stale/locked trees to reap.
+- HOLD continues (per +110): host-completable queue exhausted across all lanes — audit ~100% stale,
+  ready:true lane skip-dominated (perf/leak/race + forge + bash-infra), PORT no-dep tier feature-complete
+  with no open bugs, SwiftUI feature halves VM/owner-gated. Outstanding owner parks (answering any one
+  refills the queue): TSK-235 (persistence), TSK-255/257 (deps), TSK-306/272 (preview VM lane), TSK-243
+  (TUI theme), TSK-332 (open-path mode re-resolution), TSK-362 (Editor langs). main @ `9691eff` (+ this log).
