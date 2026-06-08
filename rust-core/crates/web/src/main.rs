@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
@@ -27,6 +28,7 @@ use std::{fs, thread};
 
 use mdvcore_core::filter;
 use mdvcore_core::find;
+use mdvcore_core::git;
 use mdvcore_core::image::{self, ImageInfo};
 use mdvcore_core::meta;
 use mdvcore_core::nav::{self, SortKey};
@@ -612,6 +614,29 @@ fn filter_box(dir: &Path, sort: SortKey, show_hidden: bool, filter: &str) -> Str
     s
 }
 
+/// A one-line git working-tree summary for `dir` (TSK-252), or empty string when
+/// `dir` isn't a git repo / git isn't installed. The front-end owns the IO
+/// (spawns `git`); the shared `git::parse_status` does the parsing, so the web
+/// and TUI tiers show IDENTICAL summaries. `--no-optional-locks` keeps it
+/// read-only-friendly; a non-repo exits non-zero and yields no badge. The summary
+/// text is `esc`-escaped (a branch name can contain markup-significant chars).
+fn git_status_html(dir: &Path) -> String {
+    let Ok(out) = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["--no-optional-locks", "status", "--porcelain=v1", "--branch"])
+        .output()
+    else {
+        return String::new();
+    };
+    if !out.status.success() {
+        return String::new();
+    }
+    let st = git::parse_status(&String::from_utf8_lossy(&out.stdout));
+    let cls = if st.is_clean() { "gitstatus clean" } else { "gitstatus dirty" };
+    format!("<div class=\"{cls}\">git: {}</div>", esc(&st.summary()))
+}
+
 /// A clickable breadcrumb trail for `dir` (TSK-230): every ancestor segment is a
 /// `/browse?path=` link carrying the sticky sort+hidden state; the final segment
 /// (the current directory) renders as plain text. Built from the shared
@@ -645,8 +670,9 @@ fn breadcrumb_html(dir: &Path, sort: SortKey, show_hidden: bool) -> String {
 fn nav_html(dir: &Path, selected: Option<&str>, sort: SortKey, show_hidden: bool, filter: &str) -> String {
     let hq = hidden_q(show_hidden);
     let mut s = format!(
-        "{}{}{}{}<ul>",
+        "{}{}{}{}{}<ul>",
         breadcrumb_html(dir, sort, show_hidden),
+        git_status_html(dir),
         filter_box(dir, sort, show_hidden, filter),
         sort_links(dir, sort, show_hidden, filter),
         hidden_toggle_link(dir, sort, show_hidden, filter)
@@ -1215,6 +1241,8 @@ main{{flex:1;overflow:auto;padding:12px}}\
 .minimap{{display:inline-flex;gap:1px;align-items:center;height:14px;margin-left:6px}}\
 .minimap i{{width:3px;height:12px;background:#e6e6e6;border-radius:1px}}\
 .minimap i.hit{{background:#1a5fb4}} .minimap i.cur{{background:#f0a020}}\
+.gitstatus{{font:11px ui-monospace,Menlo,monospace;margin:0 0 6px;padding:2px 6px;border-radius:4px;display:inline-block}}\
+.gitstatus.clean{{color:#1a7f37;background:#eaf6ec}} .gitstatus.dirty{{color:#8a6d00;background:#fff8e1}}\
 .sort{{font:11px -apple-system,Segoe UI,sans-serif;color:#888;margin:0 0 4px}}\
 .sort a{{color:#1a5fb4;margin-right:6px}} .sort b{{margin-right:6px;color:#333}}\
 .hidden-toggle{{font:11px -apple-system,Segoe UI,sans-serif;margin:0 0 8px}}\
@@ -1280,6 +1308,7 @@ th,td{{border-color:#3a3a3a}} th{{background:#2d2d3a}}\
 .diff-del{{color:#ff9aa2;background:#3a1f22}}\
 .diff-ctx{{color:#bbb}} .diff-file{{color:#5a9cf5}}\
 .minimap i{{background:#3a3a3a}} .minimap i.hit{{background:#5a9cf5}} .minimap i.cur{{background:#f0a020}}\
+.gitstatus.clean{{color:#7ee787;background:#16291b}} .gitstatus.dirty{{color:#e3b341;background:#2b2410}}\
 }}\
 </style></head><body><div class=\"app\"><nav>{nav}</nav><main>{main_html}</main></div></body></html>",
         t = esc(title)
@@ -1472,6 +1501,34 @@ mod tests {
         assert!(html.contains("/view?path="), "file link present");
         assert!(html.contains("sub/"), "subdir shown");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn browse_shows_git_status_badge_for_a_repo_and_omits_it_elsewhere() {
+        // TSK-252: the browse page surfaces a git working-tree summary (branch +
+        // dirty counts) parsed by the shared git::parse_status, the sibling of the
+        // TUI's TSK-251. The web front-end owns the `git` invocation; here we stand
+        // up a real throwaway repo so git_status_html → parse_status → render is
+        // exercised end to end. The non-git fixture must NOT show a badge (no
+        // false-positive on a plain directory).
+        let repo = std::env::temp_dir().join(format!("mdv-web-git-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&repo);
+        fs::create_dir_all(&repo).expect("mk tmp repo dir");
+        let init = Command::new("git").arg("-C").arg(&repo).arg("init").output().expect("spawn git");
+        assert!(init.status.success(), "git init failed: {init:?}");
+        fs::write(repo.join("scratch.txt"), b"hi").expect("write untracked file");
+
+        let html = render_browse(&repo, SortKey::Name, false, "");
+        assert!(html.contains("class=\"gitstatus dirty\""), "dirty repo shows the git badge:\n{html}");
+        assert!(html.contains("git: "), "badge is labelled:\n{html}");
+        assert!(html.contains("?1"), "badge shows the untracked count:\n{html}");
+        let _ = fs::remove_dir_all(&repo);
+
+        // A non-git directory yields NO badge (git exits non-zero ⇒ empty string).
+        let plain = fixture();
+        let plain_html = render_browse(&plain, SortKey::Name, false, "");
+        assert!(!plain_html.contains("class=\"gitstatus"), "no git badge outside a repo:\n{plain_html}");
+        let _ = fs::remove_dir_all(&plain);
     }
 
     #[test]
