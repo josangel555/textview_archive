@@ -29,6 +29,30 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+63) — TSK-234 BUILT + validated: web recently-opened (/recent) list, in-memory MRU
+
+Reversed last tick's over-cautious park and BUILT it — the owner's standing "drain PORT rather
+than idle" + "features over test-backfill" make the call clear, and on closer scoping the design
+concern (cross-request state) was resolvable safely. Commit `8054540`, board TSK-234 → **validated**.
+
+Wired the already-tested core MRU (`mdvcore_core::history::push`) into the std-only web front-end:
+a single global `Arc<Mutex<Vec<String>>>` recorded on each confined `/view`, served at a new
+`/recent` route, with a `★ Recent` nav link. **Low-blast design** — the pure `route()` and its
+~15 tests are UNTOUCHED; the feature lives in new pure helpers (`viewed_path`, `record_recent`,
+`render_recent`, `recent_page`) + a `&Mutex` threaded through `handle_conn` only (1 prod call site
++ 3 mechanical test-site updates).
+
+Security held: `viewed_path` reuses the existing `confined()` fence, so a recorded recent is only
+ever a path the server would serve (out-of-root / `..`-traversal rejected — tested); every path is
+HTML-escaped via `esc()` (XSS — tested). Lock poisoning recovered without panic (rust-core gate
+denies unwrap/expect/panic). In-memory/session-scoped only — `root` remains the complete
+*persistable* state; persist (opt 2) / back-forward (TSK-250) left open.
+
+Teeth: 5 new host unit tests (`cargo test -p mdvcore-web` → 73 pass) covering confined-only
+recording, the security rejections, XSS escaping, newest-first dedupe/bump, empty-state, and the
+`/recent` route. `bash scripts/rust-core-gate.sh` green. Self-validated (web HTML-emission is the
+same host-testable layer as every existing web route test — no SwiftUI-style render path).
+
 ## LOG 2026-06-08 (latest+62) — full `reported` lane walked: every unworked task is gated; parked PORT-W2 web-recents decision (TSK-234)
 
 Next tick. Walked the entire `reported` lane (project `tasked`, priority-sorted) to test the
