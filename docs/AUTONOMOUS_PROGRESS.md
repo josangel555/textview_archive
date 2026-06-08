@@ -29,6 +29,23 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-07 (latest+51) — verify-and-validate sweep: TSK-127 (CRLF) + TSK-119 (temp-sibling) confirmed regression-guarded
+
+Autonomous tick. Continued the `review`-lane verify-and-validate sweep — for each, confirm
+the fix is present AND a teeth-bearing host test exists, then validate (don't rubber-stamp).
+
+- **TSK-127** [S2][bug] IndentDetector CRLF collapse → **validated**. Fix (`1dbf1ca`):
+  scalar-view split on LF + per-line trailing-CR strip. `Audit_..._IndentDetector_..._CRLFTests`
+  (11 tests) directly pins the audit case (`"def f():\r\n    pass\r\n"` → "Spaces (4)", was "—")
+  + tabs/2-space/mixed/whitespace-only/final-no-LF/mixed-endings/lone-CR/LF-parity. 11/11 green.
+- **TSK-119** [S2][security] URLSchemePolicy temp-arm unanchored-prefix sibling bypass →
+  **validated**. Fix (`1dbf1ca`): dropped the bare `hasPrefix(temp)` arm for the anchored
+  `== temp || hasPrefix(temp + "/")` + symlink-resolve both operands.
+  `URLSchemePolicyTests.test_tempSiblingDirectoryPrefix_rejected` asserts `<temp>_evil/loot.md`
+  is rejected (exact AUDIT S2 case). 12/12 green.
+- No code change this tick — these were already fixed-with-tests in the big audit-resolution
+  commit `1dbf1ca`; the sweep's job is to confirm coverage has teeth and close the board state.
+
 ## LOG 2026-06-07 (latest+50) — TSK-101: theme-override persistence — closed the test gap, validated
 
 The Settings → Appearance → Theme fix (`40c7b5b`) was sitting in `review`. Before
