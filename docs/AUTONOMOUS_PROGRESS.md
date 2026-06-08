@@ -2661,3 +2661,34 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   best started fresh with full attention rather than rushed. The web stateful
   halves remain awkward on the per-connection stateless server (would need a
   shared `Mutex`/`LazyLock` global — a deliberate design choice to confirm).
+
+## LOG +81 (2026-06-08, autonomous tick — TUI multi-file tabs)
+- **Shipped TSK-249 [PORT][TUI] multi-file tabs** (commit 967341b), validated.
+  The largest remaining no-dep PORT feature.
+- **Refactor:** App's single `preview: Option<Preview>` → `tabs: Vec<Preview>` +
+  `active: usize`, so each open file is a buffer with its OWN scroll/mode/etc
+  (real per-tab state retention). The ~26 `self.preview` access sites became
+  inline `self.tabs.get(self.active)` / `get_mut(self.active)` — this PRESERVES
+  partial borrows (only `self.tabs` borrowed, other fields stay reachable) where
+  an accessor method would over-borrow `self`. Compiler-verified; all 47 prior
+  TUI tests passed unchanged ⇒ behavior preserved.
+- **Behaviour:** `open_file` focuses an already-open tab (preserving its state)
+  or pushes + activates a new one; `r` reload replaces the active tab in place; a
+  tab strip (drawn for ≥2 tabs) lists buffers, the active one marked `▸N name`
+  (glyph not just color → snapshot-assertable) + cyan; `]`/`[` cycle (wrapping),
+  `X` closes the active tab; help + `?` overlay updated.
+- **Teeth:** `tabs_open_switch_retain_state_focus_existing_and_close` (1 tab → no
+  strip; 2nd open → 2 tabs + active strip marker; cycle a tab's mode, switch away
+  and back → per-tab mode retained; re-open focuses existing tab, no dup; X
+  closes). tui 48 (+1). Gate green; drove reported→…→validated.
+- main @ 967341b + this doc. **Session cumulative: 44 validated + 1 bug fixed +
+  1 parked-earlier + 2 dep-parked.**
+- **The no-dep PORT lane is now EXHAUSTED.** Every remaining `[PORT]` board task
+  is one of: (a) **stateful-on-the-stateless web server** — web recents
+  (TSK-234), web back-forward (TSK-250), persistent session both halves
+  (TSK-235/236); these need a shared-state/persistence design decision for the
+  PoC front-ends (where does state live — a `Mutex`/`LazyLock` global? a dotfile?
+  at all?); (b) **DEPGATED** markdown-render / syntax-highlight (TSK-255–258) —
+  already parked for owner dep-approval (comrak / tree-sitter); (c) TUI dark mode
+  (TSK-243) — parked earlier (color-only, no colorless-snapshot teeth). Parking
+  TSK-235 as the keystone design decision for the stateful cluster.
