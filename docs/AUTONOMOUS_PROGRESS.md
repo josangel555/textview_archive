@@ -29,6 +29,21 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-07 (latest+56) — TSK-218 DONE: web JSON Formatted parity (test + validate)
+
+Autonomous tick. Finished TSK-218 (web Formatted). The actual wiring already landed with
+TSK-217 (`0f20fb5`): web `parse_mode` accepts `?mode=formatted` for Structured, `mode_str`
+labels it, and the mode switcher is built from `view::available_modes` — so a `.json` file
+shows a `mode=formatted` link **by construction**. This tick added the missing regression
+test; commit `656c59f`; TSK-218 → **validated**.
+
+- **Test** `json_offers_formatted_mode_and_pretty_prints` (web, host-safe — std-only
+  router/render, no browser): default Text render of `config.json` offers `&mode=formatted`
+  + shows compact source; `render_view(.., Some("formatted"))` renders 2-space pretty JSON
+  (HTML-escaped `&quot;a&quot;: 1`) with `<b>formatted</b>` active. rust-core gate green.
+- JSON Formatted mode is now **complete across both Rust front-ends** (TUI TSK-217 + web
+  TSK-218) on the one shared `format::pretty_json`. XML remains the deferred slice (TSK-496).
+
 ## LOG 2026-06-07 (latest+55) — TSK-217 DONE: JSON Formatted view mode end-to-end (TUI + core + web)
 
 Autonomous tick. Finished TSK-217 on top of last tick's core slice; commit `0f20fb5`;
