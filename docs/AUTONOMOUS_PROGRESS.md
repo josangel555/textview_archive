@@ -4067,3 +4067,18 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - `main` @ 72a3af7 (+ this log). Drained a PORT-lane item to validated while the SwiftUI render-path lane is
   owner-gated (TSK-502 parked). Unrouted TUI color sites (diff lines, file-nav entries) stay Adaptive — safe
   (they keep the ANSI colors) and routable incrementally in a follow-up.
+
+## LOG +145 (2026-06-08, autonomous tick — TSK-235 TUI persistent session state, owner-greenlit location)
+- Owner RESOLVED the TSK-235 park: "Save config in ~/.textview/tui or wui". Shipped **TSK-235 phase 1 →
+  validated** (commit a3c546d): the TUI now persists app-global session prefs to ~/.textview/tui/config —
+  a hand-rolled (no-serde, panic-free → clears the gate's clippy no-panic deny) key=value `PersistState`
+  codec {cwd, sort, show_hidden, wrap, show_gutter, theme} with lenient parse (unknown keys ignored,
+  malformed/missing → defaults). main() loads on launch (start dir = explicit arg > persisted cwd if still a
+  dir > current_dir), applies prefs via App::apply_prefs (+reload_dir), and saves on quit. Defaults make it
+  a no-op when no config exists → default launch path unchanged.
+- Teeth (host): 4 new TUI tests — codec roundtrip, leniency, save→load roundtrip via a TEMP path (never the
+  real ~/.textview, per the no-write-to-home rule), and apply_prefs sets App view state. Full TUI suite 55/55;
+  rust-core gate green. Phase 2 (restore last OPEN file + scroll + per-file mode — needs best-effort reopen of
+  possibly-moved files) filed as **TSK-515**. Web parity (~/.textview/wui) remains TSK-236.
+- `main` @ a3c546d (+ this log). Three PORT-lane items driven to validated this session (TSK-243 theme, footer
+  split, TSK-235 persistence) while the SwiftUI render-path lane stays owner-gated (TSK-502 parked).
