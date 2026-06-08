@@ -200,7 +200,14 @@ struct App {
     /// bounded rather than scaling with directory size.
     list_rows: Vec<ListRow>,
     list: ListState,
-    preview: Option<Preview>,
+    /// Open file buffers as TABS (TSK-249): each carries its own scroll/mode/
+    /// find-independent `Preview` state, so switching tabs preserves where you
+    /// were. `tabs.get(active)` is the rendered buffer (replaces the old single
+    /// `preview` field — call sites read `self.tabs.get(self.active)` inline to
+    /// keep partial borrows). Empty = nothing open yet.
+    tabs: Vec<Preview>,
+    /// Index of the active tab in `tabs`; meaningless when `tabs` is empty.
+    active: usize,
     status: String,
     /// Last-drawn content-pane inner height, used for page scrolling.
     content_height: usize,
@@ -304,7 +311,8 @@ impl App {
             entries: Vec::new(),
             list_rows: Vec::new(),
             list: ListState::default(),
-            preview: None,
+            tabs: Vec::new(),
+            active: 0,
             status: String::new(),
             content_height: 1,
             sort: SortKey::Name,
@@ -575,6 +583,17 @@ impl App {
     }
 
     fn open_file(&mut self, path: &Path) {
+        // Already open in a tab? Focus it (preserving its scroll/mode/etc) rather
+        // than re-reading — `r` is the explicit reload. (TSK-249)
+        if let Some(i) = self.tabs.iter().position(|t| t.path == path) {
+            self.active = i;
+            self.flash = None;
+            self.outline = None;
+            self.clear_find();
+            self.recent = history::push(std::mem::take(&mut self.recent), path.to_path_buf(), RECENT_CAP);
+            self.status = format!("switched to {}", path.display());
+            return;
+        }
         match read_capped(path, PREVIEW_CAP) {
             Ok((raw, truncated, total)) => {
                 let name = path
@@ -586,7 +605,8 @@ impl App {
                 // same path the web front-end uses.
                 let kind = view::classify(&name);
                 let v = view::build(&raw, &name, total, truncated, view::default_mode(kind));
-                self.preview = Some(Preview {
+                // New buffer → push a tab and make it active (TSK-249).
+                self.tabs.push(Preview {
                     path: path.to_path_buf(),
                     name,
                     total,
@@ -598,6 +618,7 @@ impl App {
                     table_filter: String::new(),
                     table_filter_editing: None,
                 });
+                self.active = self.tabs.len() - 1;
                 self.flash = None;
                 self.outline = None; // a stale outline belongs to the old file
                 self.clear_find(); // matches/needle belong to the old file
@@ -622,7 +643,7 @@ impl App {
     /// back to the new kind's default mode. Find matches are cleared (offsets
     /// belonged to the old content).
     fn reload_current(&mut self) {
-        let Some(p) = &self.preview else { return };
+        let Some(p) = self.tabs.get(self.active) else { return };
         let path = p.path.clone();
         let prev_mode = p.view.mode;
         let prev_scroll = p.scroll;
@@ -658,7 +679,10 @@ impl App {
                 // Clamp the old scroll into the (possibly shorter) new content.
                 let max_scroll = next.content_len().saturating_sub(1);
                 next.scroll = prev_scroll.min(max_scroll);
-                self.preview = Some(next);
+                // Replace the active tab in place (reload keeps the same tab).
+                if let Some(slot) = self.tabs.get_mut(self.active) {
+                    *slot = next;
+                }
                 self.flash = None;
                 self.outline = None; // a stale outline belongs to the old bytes
                 self.clear_find(); // matches/needle belong to the old content
@@ -670,7 +694,7 @@ impl App {
 
     /// Cycle to the next available view mode, re-shaping via the shared core.
     fn cycle_mode(&mut self) {
-        if let Some(p) = &mut self.preview {
+        if let Some(p) = self.tabs.get_mut(self.active) {
             let next = view::cycle(p.view.mode, p.kind);
             p.view = view::build(&p.raw, &p.name, p.total, p.truncated, next);
             p.scroll = 0;
@@ -684,7 +708,7 @@ impl App {
     /// no-op re-select of the current mode are ignored. The applied table filter
     /// (on the Preview) survives the rebuild, so table→text→table keeps it.
     fn set_mode(&mut self, idx: usize) {
-        if let Some(p) = &mut self.preview {
+        if let Some(p) = self.tabs.get_mut(self.active) {
             if let Some(&mode) = p.view.available_modes.get(idx) {
                 if mode != p.view.mode {
                     p.view = view::build(&p.raw, &p.name, p.total, p.truncated, mode);
@@ -696,7 +720,7 @@ impl App {
     }
 
     fn scroll_by(&mut self, delta: isize) {
-        if let Some(p) = &mut self.preview {
+        if let Some(p) = self.tabs.get_mut(self.active) {
             let max = p.content_len().saturating_sub(1);
             let next = (p.scroll as isize + delta).clamp(0, max as isize);
             p.scroll = next as usize;
@@ -705,7 +729,7 @@ impl App {
     }
 
     fn scroll_to(&mut self, top: bool) {
-        if let Some(p) = &mut self.preview {
+        if let Some(p) = self.tabs.get_mut(self.active) {
             p.scroll = if top { 0 } else { p.content_len().saturating_sub(1) };
         }
         self.flash = None;
@@ -722,7 +746,7 @@ impl App {
     /// open file (nothing to jump within) or the prompt is already open (so a
     /// re-pressed `:` can't clobber an in-progress number).
     fn open_goto(&mut self) {
-        if self.preview.is_some() && self.goto.is_none() {
+        if self.tabs.get(self.active).is_some() && self.goto.is_none() {
             self.goto = Some(String::new());
         }
     }
@@ -756,7 +780,7 @@ impl App {
     /// context above and below rather than pinned to the top edge.
     fn commit_goto(&mut self) {
         let Some(raw) = self.goto.take() else { return };
-        let Some(p) = &mut self.preview else { return };
+        let Some(p) = self.tabs.get_mut(self.active) else { return };
         let Ok(target) = raw.trim().parse::<usize>() else {
             // Empty / unparseable (e.g. bare `:` then Enter) — nothing to jump to.
             return;
@@ -907,7 +931,7 @@ impl App {
         let Some(hit) = self.grep_results.get(self.grep_sel).cloned() else { return };
         self.grep_results.clear();
         self.open_file(&hit.path);
-        if let Some(p) = &mut self.preview {
+        if let Some(p) = self.tabs.get_mut(self.active) {
             let len = p.content_len();
             let line0 = view::clamp_line(hit.line + 1, len).saturating_sub(1);
             let half = self.content_height / 2;
@@ -921,19 +945,19 @@ impl App {
 
     /// Whether the table-filter prompt is open (capturing keys).
     fn table_filtering(&self) -> bool {
-        self.preview.as_ref().is_some_and(|p| p.table_filter_editing.is_some())
+        self.tabs.get(self.active).is_some_and(|p| p.table_filter_editing.is_some())
     }
 
     /// Open the table-filter prompt (Table mode only), seeding it with the
     /// currently-applied needle so re-opening lets you edit it. A no-op with a
     /// status hint when the current view isn't a table.
     fn open_table_filter(&mut self) {
-        let is_table = self.preview.as_ref().is_some_and(|p| p.view.mode == ViewMode::Table);
+        let is_table = self.tabs.get(self.active).is_some_and(|p| p.view.mode == ViewMode::Table);
         if !is_table {
             self.status = "filter: switch to table view first (x)".into();
             return;
         }
-        if let Some(p) = &mut self.preview {
+        if let Some(p) = self.tabs.get_mut(self.active) {
             if p.table_filter_editing.is_none() {
                 p.table_filter_editing = Some(p.table_filter.clone());
             }
@@ -943,7 +967,7 @@ impl App {
     /// Commit the prompt: the live needle becomes the applied filter; scroll
     /// resets to the top of the narrowed rows.
     fn commit_table_filter(&mut self) {
-        if let Some(p) = &mut self.preview {
+        if let Some(p) = self.tabs.get_mut(self.active) {
             if let Some(needle) = p.table_filter_editing.take() {
                 p.table_filter = needle;
                 p.scroll = 0;
@@ -954,7 +978,7 @@ impl App {
     /// Cancel the prompt, reverting to the previously-applied filter (live edits
     /// discarded).
     fn cancel_table_filter(&mut self) {
-        if let Some(p) = &mut self.preview {
+        if let Some(p) = self.tabs.get_mut(self.active) {
             p.table_filter_editing = None;
             p.scroll = 0;
         }
@@ -962,7 +986,7 @@ impl App {
 
     /// Append a character to the live needle (results re-filter as you type).
     fn table_filter_push(&mut self, c: char) {
-        if let Some(p) = &mut self.preview {
+        if let Some(p) = self.tabs.get_mut(self.active) {
             if let Some(n) = &mut p.table_filter_editing {
                 n.push(c);
                 p.scroll = 0;
@@ -972,7 +996,7 @@ impl App {
 
     /// Delete the last character of the live needle.
     fn table_filter_backspace(&mut self) {
-        if let Some(p) = &mut self.preview {
+        if let Some(p) = self.tabs.get_mut(self.active) {
             if let Some(n) = &mut p.table_filter_editing {
                 n.pop();
                 p.scroll = 0;
@@ -997,7 +1021,7 @@ impl App {
             self.outline = None;
             return;
         }
-        let Some(p) = &self.preview else {
+        let Some(p) = self.tabs.get(self.active) else {
             self.status = "outline: open a markdown file first".into();
             return;
         };
@@ -1048,14 +1072,14 @@ impl App {
         let target = h.line;
         // Heading lines index the markdown SOURCE — ensure we're in Text mode so
         // the jump lands on a real line (re-shape via the shared core if not).
-        if let Some(p) = &mut self.preview {
+        if let Some(p) = self.tabs.get_mut(self.active) {
             if p.view.mode != ViewMode::Text {
                 p.view = view::build(&p.raw, &p.name, p.total, p.truncated, ViewMode::Text);
                 p.scroll = 0;
             }
         }
         self.outline = None;
-        let Some(p) = &mut self.preview else { return };
+        let Some(p) = self.tabs.get_mut(self.active) else { return };
         let len = p.content_len();
         let line0 = view::clamp_line(target, len).saturating_sub(1); // 1-based → 0-based
         let half = self.content_height / 2;
@@ -1115,6 +1139,43 @@ impl App {
         false
     }
 
+    // MARK: - Multi-file tabs (TSK-249)
+
+    /// Switch to the next (`delta=1`) / previous (`delta=-1`) tab, wrapping. A
+    /// tab-switch preserves each tab's own scroll/mode (its `Preview` lives on);
+    /// the transient find/outline overlays belong to the old file, so clear them.
+    /// No-op with 0 or 1 tabs.
+    fn cycle_tab(&mut self, delta: isize) {
+        let n = self.tabs.len();
+        if n <= 1 {
+            return;
+        }
+        self.active = (self.active as isize + delta).rem_euclid(n as isize) as usize;
+        self.flash = None;
+        self.outline = None;
+        self.clear_find();
+    }
+
+    /// Close the active tab; the tab to its right (or the new last tab) becomes
+    /// active. No-op with no tabs.
+    fn close_tab(&mut self) {
+        if self.active >= self.tabs.len() {
+            return;
+        }
+        self.tabs.remove(self.active);
+        if self.active >= self.tabs.len() {
+            self.active = self.tabs.len().saturating_sub(1);
+        }
+        self.flash = None;
+        self.outline = None;
+        self.clear_find();
+        self.status = if self.tabs.is_empty() {
+            "closed last tab".into()
+        } else {
+            format!("closed tab · {} open", self.tabs.len())
+        };
+    }
+
     // MARK: - In-file content find (shared `find::find_matches`)
 
     /// Whether the find prompt is open and capturing the query.
@@ -1127,7 +1188,7 @@ impl App {
     /// so re-pressing `/` lets you refine it. A no-op when no file is open or the
     /// prompt is already up.
     fn open_find(&mut self) {
-        if self.preview.is_some() && self.find.is_none() {
+        if self.tabs.get(self.active).is_some() && self.find.is_none() {
             self.find = Some(self.find_query.clone());
         }
     }
@@ -1175,7 +1236,7 @@ impl App {
             self.clear_find();
             return;
         }
-        let Some(p) = &self.preview else { return };
+        let Some(p) = self.tabs.get(self.active) else { return };
         // HEX mode (TSK-205): search the raw BYTES for a byte/ASCII pattern via
         // the shared core `hex::hex_search`, and land each match on the dump ROW
         // it falls in (offset / 16). Distinct from the text find below.
@@ -1256,7 +1317,7 @@ impl App {
             // Text matches index the SOURCE lines — ensure Text mode so the jump
             // lands on a real line (table rows don't map to source line numbers).
             // HEX matches index dump ROWS, so we STAY in Hex (TSK-205).
-            if let Some(p) = &mut self.preview {
+            if let Some(p) = self.tabs.get_mut(self.active) {
                 if p.view.mode != ViewMode::Text {
                     p.view = view::build(&p.raw, &p.name, p.total, p.truncated, ViewMode::Text);
                     p.scroll = 0;
@@ -1267,7 +1328,7 @@ impl App {
         let n = self.find_matches.len();
         let q = self.find_query.clone();
         let label = if self.find_is_hex { "hex" } else { "find" };
-        let Some(p) = &mut self.preview else { return };
+        let Some(p) = self.tabs.get_mut(self.active) else { return };
         let len = p.content_len();
         let line0 = view::clamp_line(target + 1, len).saturating_sub(1); // 0-based → 1-based → clamp → 0-based
         let half = self.content_height / 2;
@@ -1383,7 +1444,7 @@ impl App {
             // `/` searches: the table filter in Table mode, in-file find otherwise.
             KeyCode::Char('/') => {
                 let is_table =
-                    self.preview.as_ref().is_some_and(|p| p.view.mode == ViewMode::Table);
+                    self.tabs.get(self.active).is_some_and(|p| p.view.mode == ViewMode::Table);
                 if is_table {
                     self.open_table_filter();
                 } else {
@@ -1391,6 +1452,10 @@ impl App {
                 }
             }
             KeyCode::Char('o') => self.toggle_outline(),
+            // `]`/`[` cycle tabs; `X` closes the active tab (TSK-249).
+            KeyCode::Char(']') => self.cycle_tab(1),
+            KeyCode::Char('[') => self.cycle_tab(-1),
+            KeyCode::Char('X') => self.close_tab(),
             // `R` opens the recently-opened picker (TSK-233).
             KeyCode::Char('R') => self.open_recent(),
             // `F` opens the cross-file "search anywhere" grep prompt (TSK-213).
@@ -1503,14 +1568,23 @@ impl App {
         let cols =
             Layout::horizontal([Constraint::Percentage(35), Constraint::Percentage(65)]).split(rows[0]);
         self.draw_files(frame, cols[0]);
-        self.draw_content(frame, cols[1]);
+        // With ≥2 open buffers, reserve the content column's top line for the tab
+        // strip (TSK-249); a single buffer uses the full height as before.
+        let content = if self.tabs.len() >= 2 {
+            let v = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).split(cols[1]);
+            self.draw_tabstrip(frame, v[0]);
+            v[1]
+        } else {
+            cols[1]
+        };
+        self.draw_content(frame, content);
         // The outline overlay floats over the content pane when open.
         if self.outline.is_some() {
-            self.draw_outline(frame, cols[1]);
+            self.draw_outline(frame, content);
         }
         // The recents picker floats over the content pane when open (TSK-233).
         if self.recent_open {
-            self.draw_recent(frame, cols[1]);
+            self.draw_recent(frame, content);
         }
         // The cross-file grep prompt / results overlay floats over the content row.
         if self.grep_prompt.is_some() || !self.grep_results.is_empty() {
@@ -1564,7 +1638,7 @@ impl App {
     fn draw_content(&mut self, frame: &mut Frame, area: Rect) {
         let inner_h = area.height.saturating_sub(2) as usize; // minus borders
         self.content_height = inner_h.max(1);
-        let Some(p) = &self.preview else {
+        let Some(p) = self.tabs.get(self.active) else {
             let hint = Paragraph::new("Select a file and press ↵ to view it.\nx cycles view modes (table / text / HEX).")
                 .block(Block::bordered().title(" content "))
                 .style(Style::new().fg(Color::DarkGray));
@@ -1889,6 +1963,8 @@ impl App {
             ("/", "find in file (table filter in table mode)"),
             (":", "go to line"),
             ("o", "markdown outline"),
+            ("] / [", "next / prev tab"),
+            ("X", "close active tab"),
             ("R", "recently-opened files"),
             ("g / G", "jump to top / bottom"),
             ("PgUp/PgDn", "scroll by a page"),
@@ -1965,7 +2041,7 @@ impl App {
     /// empty. Returns `[…]` bracketed for unambiguous matching in the status line.
     fn find_minimap(&self) -> String {
         const BUCKETS: usize = 24;
-        let total = self.preview.as_ref().map_or(0, Preview::content_len);
+        let total = self.tabs.get(self.active).map_or(0, Preview::content_len);
         let lines: Vec<usize> = self.find_matches.iter().map(|m| m.line).collect();
         let counts = find::match_minimap(&lines, total, BUCKETS);
         let cur = self.find_matches.get(self.find_sel).map(|m| find::bucket_of(m.line, total, BUCKETS));
@@ -1982,6 +2058,28 @@ impl App {
         }
         s.push(']');
         s
+    }
+
+    /// Render the tab strip (TSK-249): one chip per open buffer, `▸N name` for
+    /// the active tab and ` N name` for the rest. The `▸` marker (not just color)
+    /// makes the active tab assertable in the colorless snapshot; the active chip
+    /// also gets a cyan style for the real terminal. Only drawn for ≥2 tabs (see
+    /// `draw`).
+    fn draw_tabstrip(&self, frame: &mut Frame, area: Rect) {
+        let mut spans: Vec<Span> = Vec::new();
+        for (i, t) in self.tabs.iter().enumerate() {
+            let active = i == self.active;
+            let marker = if active { '▸' } else { ' ' };
+            let label = format!("{marker}{} {} ", i + 1, t.name);
+            let style = if active {
+                Style::new().fg(Color::Black).bg(Color::Cyan).bold()
+            } else {
+                Style::new().fg(Color::DarkGray)
+            };
+            spans.push(Span::styled(label, style));
+            spans.push(Span::raw(" "));
+        }
+        frame.render_widget(Paragraph::new(Line::from(spans)), area);
     }
 
     fn draw_status(&self, frame: &mut Frame, area: Rect) {
@@ -2010,7 +2108,7 @@ impl App {
                 self.find_query,
             )
         } else {
-            "↑/↓ move · ↵ open · ⌫ up · x mode · 1-9 open-as · r reload · n nums · i ws · w wrap · s sort · . hidden · f file-find · F grep · / find · : goto · o outline · R recent · ? help · q quit".into()
+            "↑/↓ move · ↵ open · ⌫ up · x mode · 1-9 open-as · r reload · n nums · i ws · w wrap · s sort · . hidden · f file-find · F grep · / find · : goto · o outline · ]/[ tabs · X close · R recent · ? help · q quit".into()
         };
         let line = Line::from(vec![
             Span::styled(" mdv-tui ", Style::new().fg(Color::Black).bg(Color::Cyan).bold()),
@@ -2435,6 +2533,55 @@ mod tests {
     }
 
     #[test]
+    fn tabs_open_switch_retain_state_focus_existing_and_close() {
+        // TSK-249: each open file is a tab with its own Preview (scroll/mode); a
+        // strip lists them with the active marked `▸`; ]/[ cycle and preserve
+        // per-tab state; re-opening an open file focuses its tab; X closes.
+        let dir = fixture_dir();
+        let mut app = App::new(dir.clone());
+
+        // One open file → no tab strip (single buffer uses full height).
+        select_name(&mut app, "hello.txt");
+        app.enter();
+        assert_eq!(app.tabs.len(), 1, "one tab open");
+        assert!(!render(&mut app).contains('▸'), "no tab strip for a single buffer");
+
+        // Open a second file → 2 tabs, the new one active and strip-marked.
+        select_name(&mut app, "config.json");
+        app.enter();
+        assert_eq!(app.tabs.len(), 2, "second file opened a second tab");
+        assert_eq!(app.active, 1, "newly opened tab is active");
+        let strip = render(&mut app);
+        assert!(strip.contains("hello.txt") && strip.contains("config.json"), "strip lists both:\n{strip}");
+        assert!(strip.contains("▸2 config.json"), "active tab is marked in the strip:\n{strip}");
+
+        // Per-tab state retention: change the active tab's (config.json) mode, switch
+        // away and back — the Preview lives on, so its mode is preserved.
+        let before = app.tabs.get(app.active).unwrap().view.mode;
+        app.on_key(KeyCode::Char('x'));
+        let after = app.tabs.get(app.active).unwrap().view.mode;
+        assert_ne!(before, after, "x cycled the active tab's mode");
+        app.on_key(KeyCode::Char('[')); // → tab 0 (hello.txt)
+        assert_eq!(app.active, 0, "[ moved to the previous tab");
+        assert_eq!(app.tabs.get(app.active).unwrap().name, "hello.txt", "tab 0 is hello.txt");
+        app.on_key(KeyCode::Char(']')); // → back to tab 1 (config.json)
+        assert_eq!(app.active, 1, "] wrapped back to config.json");
+        assert_eq!(app.tabs.get(app.active).unwrap().view.mode, after, "per-tab mode retained across switch");
+
+        // Re-opening an already-open file focuses its tab (no duplicate).
+        select_name(&mut app, "hello.txt");
+        app.enter();
+        assert_eq!(app.tabs.len(), 2, "re-open focuses, does not duplicate");
+        assert_eq!(app.active, 0, "focused the existing hello.txt tab");
+
+        // X closes the active tab; the other becomes active.
+        app.on_key(KeyCode::Char('X'));
+        assert_eq!(app.tabs.len(), 1, "X closed a tab");
+        assert_eq!(app.tabs.get(app.active).unwrap().name, "config.json", "remaining tab is active");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn recents_picker_lists_opened_files_mru_and_enter_reopens() {
         // TSK-233: opening files records them in an MRU history (shared
         // history::push); `R` opens a picker overlay listing them newest-first;
@@ -2469,7 +2616,7 @@ mod tests {
         app.on_key(KeyCode::Enter);
         assert!(!app.recent_active(), "Enter closes the picker");
         assert_eq!(
-            app.preview.as_ref().map(|p| p.name.as_str()),
+            app.tabs.get(app.active).map(|p| p.name.as_str()),
             Some("hello.txt"),
             "Enter re-opened the selected recent file"
         );
@@ -2524,7 +2671,7 @@ mod tests {
         select_name(&mut app, "data.bin"); // bytes: 00 41 ff 7f
         app.enter();
         app.cycle_mode(); // → Hex (per hex_of_binary_uses_core_render)
-        assert_eq!(app.preview.as_ref().unwrap().view.mode, ViewMode::Hex, "in hex mode");
+        assert_eq!(app.tabs.get(app.active).unwrap().view.mode, ViewMode::Hex, "in hex mode");
         let _ = render(&mut app); // populate content_height (centering needs it)
 
         // Hex-byte query "41" → byte 0x41 at offset 1 → dump row 0.
@@ -2538,7 +2685,7 @@ mod tests {
         assert_eq!(app.find_matches.len(), 1, "one 0x41 byte in data.bin");
         assert_eq!(app.find_matches[0].line, 0, "offset 1 → dump row 0");
         assert_eq!(
-            app.preview.as_ref().unwrap().view.mode,
+            app.tabs.get(app.active).unwrap().view.mode,
             ViewMode::Hex,
             "hex search STAYS in Hex view (not forced to Text)"
         );
@@ -2575,7 +2722,7 @@ mod tests {
         let mut app = App::new(dir.clone());
         select_name(&mut app, "config.json"); // {"a":1,"b":[2,3]}
         app.enter();
-        let p = app.preview.as_ref().unwrap();
+        let p = app.tabs.get(app.active).unwrap();
         assert_eq!(p.kind, view::FileKind::Structured, "json is Structured");
         assert_eq!(p.view.mode, ViewMode::Text, "opens in Text (the raw source)");
         assert_eq!(
@@ -2589,7 +2736,7 @@ mod tests {
 
         // Cycle Text → Formatted; the body is now the pretty-printed JSON.
         app.cycle_mode();
-        assert_eq!(app.preview.as_ref().unwrap().view.mode, ViewMode::Formatted);
+        assert_eq!(app.tabs.get(app.active).unwrap().view.mode, ViewMode::Formatted);
         let pretty = render(&mut app);
         assert!(pretty.contains("formatted"), "title reflects formatted mode:\n{pretty}");
         assert!(pretty.contains(r#"  "a": 1,"#), "2-space indented key:\n{pretty}");
@@ -2620,7 +2767,7 @@ mod tests {
         assert!(out.contains("fresh alpha") && out.contains("fresh gamma"),
             "reloaded content shown:\n{out}");
         assert!(!out.contains("line one"), "old content gone:\n{out}");
-        assert_eq!(app.preview.as_ref().unwrap().view.mode, ViewMode::Text, "mode preserved");
+        assert_eq!(app.tabs.get(app.active).unwrap().view.mode, ViewMode::Text, "mode preserved");
         assert!(app.status.starts_with("reloaded"), "status reports reload: {:?}", app.status);
         let _ = fs::remove_dir_all(&dir);
     }
@@ -2733,7 +2880,7 @@ mod tests {
         let target_line = app.grep_results[0].line;
         app.on_key(KeyCode::Enter);
         assert!(app.grep_results.is_empty(), "opening a hit closes the overlay");
-        assert!(app.preview.as_ref().is_some_and(|p| p.name == "hello.txt"), "hit's file opened");
+        assert!(app.tabs.get(app.active).is_some_and(|p| p.name == "hello.txt"), "hit's file opened");
         assert_eq!(app.flash, Some(target_line), "the hit line is flashed");
         // A no-match query reports cleanly and shows no overlay.
         app.on_key(KeyCode::Char('F'));
@@ -3065,7 +3212,7 @@ mod tests {
         assert_eq!(app.flash, Some(99), "flash marks the 0-based target line");
         // Centered: scroll puts line 100 roughly mid-viewport (not at the top).
         let half = app.content_height / 2;
-        assert_eq!(app.preview.as_ref().unwrap().scroll, 99usize.saturating_sub(half));
+        assert_eq!(app.tabs.get(app.active).unwrap().scroll, 99usize.saturating_sub(half));
         // The target line is now visible in the rendered frame.
         let out = render(&mut app);
         assert!(out.contains("line 100"), "jumped-to line visible:\n{out}");
@@ -3085,7 +3232,7 @@ mod tests {
             app.on_key(KeyCode::Char(c));
         }
         app.on_key(KeyCode::Enter);
-        let len = app.preview.as_ref().unwrap().content_len();
+        let len = app.tabs.get(app.active).unwrap().content_len();
         assert_eq!(app.flash, Some(len - 1), "over-shoot clamps to the last line");
         let _ = fs::remove_dir_all(&dir);
     }
@@ -3217,14 +3364,14 @@ more text
         let mut app = App::new(dir.clone());
         app.open_file(&path);
         app.cycle_mode(); // → HEX
-        assert_eq!(app.preview.as_ref().unwrap().view.mode, ViewMode::Hex);
+        assert_eq!(app.tabs.get(app.active).unwrap().view.mode, ViewMode::Hex);
         let _ = render(&mut app);
         // Outline scans the raw bytes, so it opens even in hex mode.
         app.on_key(KeyCode::Char('o'));
         assert!(app.outline_active(), "outline opens regardless of view mode");
         app.on_key(KeyCode::Enter); // jump to H1
         // Jumping a heading forces Text mode so the line target is meaningful.
-        assert_eq!(app.preview.as_ref().unwrap().view.mode, ViewMode::Text, "jump switches to text");
+        assert_eq!(app.tabs.get(app.active).unwrap().view.mode, ViewMode::Text, "jump switches to text");
         let _ = fs::remove_dir_all(&dir);
     }
 
