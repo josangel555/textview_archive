@@ -44,6 +44,7 @@ use mdvcore_core::meta;
 use mdvcore_core::hex::{self, HexSearchMode};
 use mdvcore_core::view::{self, DiffLineKind, FileKind, View, ViewBody, ViewMode};
 use mdvcore_core::whitespace;
+use mdvcore_core::theme::{self, Role};
 
 /// Bytes per hex-dump row (must match `mdvcore_core::hex::render_all`). A hex
 /// search match at byte offset `o` lands on dump row `o / HEX_BYTES_PER_ROW`.
@@ -223,6 +224,17 @@ const PALETTE: &[(&str, Cmd)] = &[
     ("keyboard help", Cmd::Help),
 ];
 
+/// TUI color theme (TSK-243). `Adaptive` defers to the terminal's own ANSI
+/// theme (the original behavior — zero change by default); `Dark`/`Light` apply
+/// the fixed `mdvcore_core::theme` palette so the look is consistent regardless
+/// of the terminal theme. Cycled with `t`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ThemeMode {
+    Adaptive,
+    Dark,
+    Light,
+}
+
 struct App {
     cwd: PathBuf,
     /// Recently-opened files, newest-first, de-duplicated and capped at
@@ -289,6 +301,10 @@ struct App {
     /// Whether the Text content pane soft-wraps long lines (on by default) or —
     /// when off — truncates them at the pane edge. Toggled with `w`.
     wrap: bool,
+    /// Active color theme (TSK-243). `Adaptive` (default) renders today's exact
+    /// ANSI colors; `Dark`/`Light` route the chrome through the core palette.
+    /// Cycled with `t`.
+    theme_mode: ThemeMode,
     /// Whether the keyboard-help overlay is open (TSK-247). Toggled with `?`;
     /// any key dismisses it. A centered popup listing every keybinding, drawn
     /// over the panes — so the full shortcut set is discoverable without leaving
@@ -375,6 +391,7 @@ impl App {
             show_gutter: true,
             show_whitespace: false,
             wrap: true,
+            theme_mode: ThemeMode::Adaptive,
             show_help: false,
             grep_prompt: None,
             grep_results: Vec::new(),
@@ -391,6 +408,36 @@ impl App {
         };
         app.reload_dir();
         app
+    }
+
+    /// Cycle the color theme Adaptive → Dark → Light → Adaptive (TSK-243, `t`).
+    fn cycle_theme(&mut self) {
+        self.theme_mode = match self.theme_mode {
+            ThemeMode::Adaptive => ThemeMode::Dark,
+            ThemeMode::Dark => ThemeMode::Light,
+            ThemeMode::Light => ThemeMode::Adaptive,
+        };
+        let label = match self.theme_mode {
+            ThemeMode::Adaptive => "adaptive (terminal)",
+            ThemeMode::Dark => "dark",
+            ThemeMode::Light => "light",
+        };
+        self.status = format!("theme: {label}");
+    }
+
+    /// Resolve a semantic [`Role`] to a ratatui `Color`. In `Adaptive` mode this
+    /// returns `adaptive` verbatim — the caller's existing ANSI color, so the
+    /// default look is byte-identical to before. In `Dark`/`Light` it returns
+    /// the core palette's `Color::Rgb`, painting a fixed look independent of the
+    /// terminal theme (TSK-243).
+    fn tc(&self, role: Role, adaptive: Color) -> Color {
+        let mode = match self.theme_mode {
+            ThemeMode::Adaptive => return adaptive,
+            ThemeMode::Dark => theme::Mode::Dark,
+            ThemeMode::Light => theme::Mode::Light,
+        };
+        let c = theme::Palette::for_mode(mode).color(role);
+        Color::Rgb(c.r, c.g, c.b)
     }
 
     // MARK: - Directory navigation (the front-end owns IO; the core is sans-IO)
@@ -1675,6 +1722,7 @@ impl App {
             // Toggle soft-wrap vs truncate for the Text view.
             KeyCode::Char('w') => self.wrap = !self.wrap,
             KeyCode::Char('s') => self.cycle_sort(),
+            KeyCode::Char('t') => self.cycle_theme(),
             KeyCode::Char('.') => self.toggle_hidden(),
             KeyCode::Char('f') => self.open_filter(),
             KeyCode::Char(':') => self.open_goto(),
@@ -1803,7 +1851,10 @@ impl App {
     // MARK: - Rendering
 
     fn draw(&mut self, frame: &mut Frame) {
-        let rows = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).split(frame.area());
+        // Footer is TWO rows so the full key legend wraps instead of truncating
+        // at the right edge (the idle help is long; `t theme` etc. pushed it past
+        // one line). `draw_status` soft-wraps the help across both rows.
+        let rows = Layout::vertical([Constraint::Min(1), Constraint::Length(2)]).split(frame.area());
         let cols =
             Layout::horizontal([Constraint::Percentage(35), Constraint::Percentage(65)]).split(rows[0]);
         self.draw_files(frame, cols[0]);
@@ -1942,8 +1993,15 @@ impl App {
                 // match (find_sel-th in reading order) gets a distinct style so the
                 // n/N cell-stepping is visible. Find LOCATES; it never narrows —
                 // that's the `/` row filter, with which it composes.
-                let hl = Style::new().bg(Color::Yellow).fg(Color::Black);
-                let cur_hl = Style::new().bg(Color::Magenta).fg(Color::White).bold();
+                // Theme-routed (TSK-243): Adaptive keeps the exact ANSI colors;
+                // Dark/Light paint the core palette's HighlightBg/CurrentBg.
+                let hl = Style::new()
+                    .bg(self.tc(Role::HighlightBg, Color::Yellow))
+                    .fg(self.tc(Role::OnHighlight, Color::Black));
+                let cur_hl = Style::new()
+                    .bg(self.tc(Role::CurrentBg, Color::Magenta))
+                    .fg(self.tc(Role::OnHighlight, Color::White))
+                    .bold();
                 let hv = if self.find_query.is_empty() {
                     Vec::new()
                 } else {
@@ -2396,9 +2454,12 @@ impl App {
             let marker = if active { '▸' } else { ' ' };
             let label = format!("{marker}{} {} ", i + 1, t.name);
             let style = if active {
-                Style::new().fg(Color::Black).bg(Color::Cyan).bold()
+                Style::new()
+                    .fg(self.tc(Role::OnHighlight, Color::Black))
+                    .bg(self.tc(Role::Accent, Color::Cyan))
+                    .bold()
             } else {
-                Style::new().fg(Color::DarkGray)
+                Style::new().fg(self.tc(Role::Muted, Color::DarkGray))
             };
             spans.push(Span::styled(label, style));
             spans.push(Span::raw(" "));
@@ -2444,14 +2505,23 @@ impl App {
                 self.find_query,
             )
         } else {
-            "↑/↓ move · ↵ open · ⌫ up · x mode · 1-9 open-as · r reload · n nums · i ws · w wrap · s sort · . hidden · f file-find · F grep · / find · : goto · o outline · ]/[ tabs · X close · p palette · R recent · ? help · q quit".into()
+            "↑/↓ move · ↵ open · ⌫ up · x mode · 1-9 open-as · r reload · n nums · i ws · w wrap · s sort · t theme · . hidden · f file-find · F grep · / find · : goto · o outline · ]/[ tabs · X close · p palette · R recent · ? help · q quit".into()
         };
         let line = Line::from(vec![
-            Span::styled(" mdv-tui ", Style::new().fg(Color::Black).bg(Color::Cyan).bold()),
+            Span::styled(
+                " mdv-tui ",
+                Style::new()
+                    .fg(self.tc(Role::OnHighlight, Color::Black))
+                    .bg(self.tc(Role::Accent, Color::Cyan))
+                    .bold(),
+            ),
             Span::raw(" "),
-            Span::styled(help, Style::new().fg(Color::DarkGray)),
+            Span::styled(help, Style::new().fg(self.tc(Role::Muted, Color::DarkGray))),
         ]);
-        frame.render_widget(Paragraph::new(line), area);
+        // Soft-wrap across the 2-row footer (TSK-243 follow-up): the badge +
+        // legend flow onto the second row instead of being cut off. `trim:false`
+        // keeps the leading-space alignment of wrapped continuation lines.
+        frame.render_widget(Paragraph::new(line).wrap(Wrap { trim: false }), area);
     }
 }
 
@@ -2813,6 +2883,79 @@ mod tests {
             }
         }
         None
+    }
+
+    #[test]
+    fn theme_toggle_routes_highlight_colors_through_the_core_palette() {
+        // TSK-243: `t` cycles Adaptive → Dark → Light → Adaptive, routing the
+        // chrome through `mdvcore_core::theme`. This is a REAL per-cell pixel
+        // assertion — it reads the actual bg `Color` of the find-highlight cells
+        // (reusing the proven CSV cell-find path). Adaptive keeps the exact ANSI
+        // colors (so the default look is unchanged — the existing find tests stay
+        // green); Dark/Light swap in the palette's `Color::Rgb`. A layout-only
+        // check would miss the color entirely (the original park's concern).
+        let dir = fixture_dir();
+        fs::write(dir.join("cells.csv"), b"city,note\nParis,xx\nplan,Paris\n").unwrap();
+        let mut app = App::new(dir.clone());
+        select_name(&mut app, "cells.csv");
+        app.enter();
+        // Open the in-file find via the palette and commit "par" → hits (0,0)+(1,1).
+        app.on_key(KeyCode::Char('p'));
+        for c in "find".chars() {
+            app.on_key(KeyCode::Char(c));
+        }
+        app.on_key(KeyCode::Enter);
+        for c in "par".chars() {
+            app.on_key(KeyCode::Char(c));
+        }
+        app.on_key(KeyCode::Enter);
+
+        // Adaptive (default): current cell magenta, other hit yellow — UNCHANGED.
+        let term = render_buf(&mut app, 100, 24);
+        let buf = term.backend().buffer();
+        assert_eq!(bg_in_row(buf, "xx", "Paris"), Some(Color::Magenta), "adaptive current");
+        assert_eq!(bg_in_row(buf, "plan", "Paris"), Some(Color::Yellow), "adaptive other hit");
+
+        // `t` → Dark: the highlight bgs become the palette's dark RGB tokens.
+        app.on_key(KeyCode::Char('t'));
+        assert_eq!(app.theme_mode, ThemeMode::Dark);
+        let cur_d = theme::Palette::for_mode(theme::Mode::Dark).color(Role::CurrentBg);
+        let hl_d = theme::Palette::for_mode(theme::Mode::Dark).color(Role::HighlightBg);
+        let term = render_buf(&mut app, 100, 24);
+        let buf = term.backend().buffer();
+        assert_eq!(
+            bg_in_row(buf, "xx", "Paris"),
+            Some(Color::Rgb(cur_d.r, cur_d.g, cur_d.b)),
+            "dark mode paints the current cell with the palette CurrentBg"
+        );
+        assert_eq!(
+            bg_in_row(buf, "plan", "Paris"),
+            Some(Color::Rgb(hl_d.r, hl_d.g, hl_d.b)),
+            "dark mode paints the other hit with the palette HighlightBg"
+        );
+
+        // `t` → Light: distinct light RGB tokens.
+        app.on_key(KeyCode::Char('t'));
+        assert_eq!(app.theme_mode, ThemeMode::Light);
+        let cur_l = theme::Palette::for_mode(theme::Mode::Light).color(Role::CurrentBg);
+        let term = render_buf(&mut app, 100, 24);
+        assert_eq!(
+            bg_in_row(term.backend().buffer(), "xx", "Paris"),
+            Some(Color::Rgb(cur_l.r, cur_l.g, cur_l.b)),
+            "light mode paints the light CurrentBg"
+        );
+        assert_ne!((cur_d.r, cur_d.g, cur_d.b), (cur_l.r, cur_l.g, cur_l.b), "dark≠light");
+
+        // `t` → back to Adaptive (the exact ANSI Magenta again).
+        app.on_key(KeyCode::Char('t'));
+        assert_eq!(app.theme_mode, ThemeMode::Adaptive);
+        let term = render_buf(&mut app, 100, 24);
+        assert_eq!(
+            bg_in_row(term.backend().buffer(), "xx", "Paris"),
+            Some(Color::Magenta),
+            "cycles back to adaptive (ANSI magenta)"
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
