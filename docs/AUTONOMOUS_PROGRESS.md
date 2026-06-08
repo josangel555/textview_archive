@@ -4082,3 +4082,20 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   possibly-moved files) filed as **TSK-515**. Web parity (~/.textview/wui) remains TSK-236.
 - `main` @ a3c546d (+ this log). Three PORT-lane items driven to validated this session (TSK-243 theme, footer
   split, TSK-235 persistence) while the SwiftUI render-path lane stays owner-gated (TSK-502 parked).
+
+## LOG +146 (2026-06-08, autonomous tick — TSK-236 web persistent session state, parity of TSK-235)
+- Shipped **TSK-236 → validated** (commit 0b4fa59): the std-only web front-end persists its only server-side
+  session state — the served ROOT dir — to ~/.textview/wui/config (owner-chosen per-front-end location). Pure
+  `WebConfig{root}` key=value codec (no serde, panic-free, lenient) + config_path/load_config/save_config.
+  main(): with no path arg, restore the persisted root (if still a dir) else current_dir; save the resolved
+  root on startup for next launch (best-effort). The web's sort/hidden/filter are per-request URL params and
+  dark mode is CSS @media (TSK-244) → root is the complete server-side persistable state (no global mutable
+  state introduced). 2 host tests (codec roundtrip+leniency, save/load via TEMP path); web suite 68/68;
+  rust-core gate green.
+- **Web recents (TSK-234) + back-forward (TSK-250) stay BLOCKED**: they require cross-request GLOBAL mutable
+  state (a Mutex/LazyLock list) in the otherwise-stateless per-connection server — the park's option (3),
+  which the owner did NOT grant (the resolution only picked the persistence-location). Noted on the board.
+- `main` @ 0b4fa59 (+ this log). Four PORT items validated this session (TSK-243 theme + footer, TSK-235 TUI
+  persist, TSK-236 web persist). The no-dep PORT lane is now essentially exhausted: what remains is dep-gated
+  (TSK-247/248/249/255/257 comrak/regex/serde/tree-sitter), global-state-gated (TSK-234/250), or owner-wishlist
+  ([PAINT]/image-editor/[PARTIAL]) — and the SwiftUI render-path lane is owner-gated on TSK-502 (parked).
