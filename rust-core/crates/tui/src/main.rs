@@ -201,6 +201,9 @@ struct App {
     /// (spaces → ·, tabs → →) via the shared `whitespace::reveal`. Toggled with
     /// `i`; off by default. Text mode only (HEX/table are unaffected).
     show_whitespace: bool,
+    /// Whether the Text content pane soft-wraps long lines (on by default) or —
+    /// when off — truncates them at the pane edge. Toggled with `w`.
+    wrap: bool,
     /// Go-to-line prompt state. `Some(digits)` means the `:` prompt is open and
     /// capturing a numeric line target; the content-pane title shows the live
     /// "goto: N" input. On Enter the (1-based) line is clamped via
@@ -263,6 +266,7 @@ impl App {
             filtered: Vec::new(),
             show_gutter: true,
             show_whitespace: false,
+            wrap: true,
             goto: None,
             flash: None,
             outline: None,
@@ -1079,6 +1083,8 @@ impl App {
             KeyCode::Char('N') => self.find_step(false),
             // Toggle show-invisibles (whitespace markers) for the Text view.
             KeyCode::Char('i') => self.show_whitespace = !self.show_whitespace,
+            // Toggle soft-wrap vs truncate for the Text view.
+            KeyCode::Char('w') => self.wrap = !self.wrap,
             KeyCode::Char('s') => self.cycle_sort(),
             KeyCode::Char('.') => self.toggle_hidden(),
             KeyCode::Char('f') => self.open_filter(),
@@ -1475,9 +1481,10 @@ impl App {
                         }
                     })
                     .collect();
-                let para = Paragraph::new(visible)
-                    .block(Block::bordered().title(title))
-                    .wrap(Wrap { trim: false });
+                let para = Paragraph::new(visible).block(Block::bordered().title(title));
+                // Word-wrap toggle (`w`): soft-wrap long lines (default) or, when
+                // off, truncate them at the pane edge.
+                let para = if self.wrap { para.wrap(Wrap { trim: false }) } else { para };
                 frame.render_widget(para, area);
             }
         }
@@ -1543,7 +1550,7 @@ impl App {
                 self.find_query,
             )
         } else {
-            "↑/↓ move · ↵ open · ⌫ up · x mode · 1-9 open-as · r reload · n nums · i ws · s sort · . hidden · f file-find · / find · : goto · o outline · q quit".into()
+            "↑/↓ move · ↵ open · ⌫ up · x mode · 1-9 open-as · r reload · n nums · i ws · w wrap · s sort · . hidden · f file-find · / find · : goto · o outline · q quit".into()
         };
         let line = Line::from(vec![
             Span::styled(" mdv-tui ", Style::new().fg(Color::Black).bg(Color::Cyan).bold()),
@@ -2109,6 +2116,27 @@ mod tests {
         let out = app.snapshot(220, 24).expect("snapshot render");
         assert!(out.contains("UTF-8"), "encoding label in the text-view title:\n{out}");
         assert!(out.contains("CRLF"), "CRLF line-ending badge (from bytes, not hardcoded):\n{out}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn w_toggles_word_wrap_in_text_view() {
+        let dir = fixture_dir();
+        // A line far longer than the content pane so wrap vs truncate is
+        // observable: the trailing "TAIL" only renders when the line soft-wraps.
+        let long = "X".repeat(200);
+        fs::write(dir.join("long.txt"), format!("{long}TAIL\n")).unwrap();
+        let mut app = App::new(dir.clone());
+        select_name(&mut app, "long.txt");
+        app.enter();
+        assert!(app.wrap, "wrap on by default");
+        let wrapped = app.snapshot(120, 24).expect("render");
+        assert!(wrapped.contains("TAIL"), "wrapped line shows its tail:\n{wrapped}");
+        // `w` turns wrap OFF → the long line truncates at the pane edge, hiding TAIL.
+        app.on_key(KeyCode::Char('w'));
+        assert!(!app.wrap, "w toggles wrap off");
+        let truncated = app.snapshot(120, 24).expect("render");
+        assert!(!truncated.contains("TAIL"), "truncated line hides its tail:\n{truncated}");
         let _ = fs::remove_dir_all(&dir);
     }
 
