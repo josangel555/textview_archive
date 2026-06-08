@@ -165,6 +165,52 @@ pub fn clamp_line(target: usize, line_count: usize) -> usize {
     target.clamp(1, line_count.max(1))
 }
 
+/// Body rows sampled by [`table_col_widths`] when sizing columns — measuring
+/// every row of a huge CSV is wasteful and one runaway row far down shouldn't
+/// dominate the layout, so only the first N are inspected.
+const TABLE_WIDTH_SAMPLE: usize = 200;
+/// Minimum column width (chars) — an empty/short column still gets a usable cell.
+const TABLE_MIN_COL: usize = 4;
+/// Maximum column width (chars) — one long value can't blow the layout; over-long
+/// cells are truncated/ellipsized by the front-end within this bound.
+const TABLE_MAX_COL: usize = 30;
+
+/// Per-column display widths (in characters) for a table view — shared by every
+/// front-end so a CSV renders with the SAME column proportions in the TUI (fixed
+/// `Constraint::Length`) and the web tier (`<col>` `ch` widths) by construction.
+///
+/// Each column's width is the widest of its header and a sample of body cells
+/// (first [`TABLE_WIDTH_SAMPLE`] rows), clamped to
+/// [`TABLE_MIN_COL`]..=[`TABLE_MAX_COL`]. Char-counted (not byte), so multi-byte
+/// content measures correctly. Returns exactly one width per header column (an
+/// empty header yields an empty `Vec`). Pure, allocation-light, never indexes.
+///
+/// ```
+/// use mdvcore_core::view::table_col_widths;
+/// let header = vec!["id".to_string(), "name".to_string()];
+/// let rows = vec![vec!["1".to_string(), "Alexandra".to_string()]];
+/// let w = table_col_widths(&header, &rows);
+/// assert_eq!(w[0], 4);  // "id"/"1" both short → clamped up to the 4-char min
+/// assert_eq!(w[1], 9);  // widest is "Alexandra" (9)
+/// ```
+#[must_use]
+pub fn table_col_widths(header: &[String], rows: &[Vec<String>]) -> Vec<usize> {
+    let mut w = vec![0usize; header.len()];
+    for (i, h) in header.iter().enumerate() {
+        if let Some(c) = w.get_mut(i) {
+            *c = h.chars().count();
+        }
+    }
+    for row in rows.iter().take(TABLE_WIDTH_SAMPLE) {
+        for (i, cell) in row.iter().enumerate() {
+            if let Some(c) = w.get_mut(i) {
+                *c = (*c).max(cell.chars().count());
+            }
+        }
+    }
+    w.into_iter().map(|x| x.clamp(TABLE_MIN_COL, TABLE_MAX_COL)).collect()
+}
+
 /// Classify a file by name (extension). Diff/patch wins over tabular wins over
 /// plain; the extension sets are disjoint so the order is only a tie-break
 /// formality. This is the single source of truth the front-ends use to pick the
@@ -460,6 +506,33 @@ mod tests {
         assert_eq!(classify("a.jpeg"), FileKind::Image);
         assert_eq!(classify("a.txt"), FileKind::Plain);
         assert_eq!(classify("patch"), FileKind::Plain);
+    }
+
+    #[test]
+    fn table_col_widths_measures_header_and_sampled_cells_clamped() {
+        let header = vec!["id".to_string(), "name".to_string(), "note".to_string()];
+        let rows = vec![
+            vec!["1".to_string(), "Alexandra".to_string(), "x".to_string()],
+            vec!["22".to_string(), "Bo".to_string(), "y".to_string()],
+        ];
+        let w = table_col_widths(&header, &rows);
+        assert_eq!(w.len(), 3, "one width per header column");
+        assert_eq!(w[0], 4, "id/1/22 all under the 4-char min → clamped up");
+        assert_eq!(w[1], 9, "widest body cell Alexandra (9) wins over header name (4)");
+        assert_eq!(w[2], 4, "note(4)/x/y → exactly the min");
+    }
+
+    #[test]
+    fn table_col_widths_caps_runaway_cell_and_handles_empty() {
+        // A 100-char cell is clamped to the 30-char max so it can't blow layout.
+        let header = vec!["c".to_string()];
+        let rows = vec![vec!["z".repeat(100)]];
+        assert_eq!(table_col_widths(&header, &rows), vec![30]);
+        // Empty header → empty widths (no columns).
+        assert!(table_col_widths(&[], &[]).is_empty());
+        // Multi-byte header measured by chars, not bytes (clamped to min here).
+        let h = vec!["café".to_string()];
+        assert_eq!(table_col_widths(&h, &[]), vec![4]);
     }
 
     #[test]

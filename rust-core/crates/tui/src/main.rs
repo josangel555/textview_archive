@@ -1615,25 +1615,14 @@ fn read_capped(path: &Path, cap: usize) -> io::Result<(Vec<u8>, bool, usize)> {
     Ok((buf, truncated, total))
 }
 
-/// Per-column widths for the table view: the widest of header + a sample of
-/// rows, clamped to a sane cell range so one long value can't blow the layout.
+/// Per-column widths for the table view as ratatui `Constraint`s, derived from
+/// the shared `view::table_col_widths` (the widest of header + a row sample,
+/// clamped to a sane range) so the TUI and the web tier size CSV columns
+/// identically by construction (TSK-237).
 fn column_widths(header: &[String], rows: &[Vec<String>]) -> Vec<Constraint> {
-    let ncols = header.len().max(1);
-    let mut w = vec![0usize; ncols];
-    for (i, h) in header.iter().enumerate() {
-        if let Some(c) = w.get_mut(i) {
-            *c = h.chars().count();
-        }
-    }
-    for row in rows.iter().take(200) {
-        for (i, cell) in row.iter().enumerate() {
-            if let Some(c) = w.get_mut(i) {
-                *c = (*c).max(cell.chars().count());
-            }
-        }
-    }
-    w.into_iter()
-        .map(|x| Constraint::Length(x.clamp(4, 30) as u16))
+    view::table_col_widths(header, rows)
+        .into_iter()
+        .map(|x| Constraint::Length(u16::try_from(x).unwrap_or(u16::MAX)))
         .collect()
 }
 

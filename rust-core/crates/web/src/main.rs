@@ -896,7 +896,15 @@ fn table_html(header: &[String], rows: &[Vec<String>], truncated: bool) -> Strin
     } else {
         String::new()
     };
-    s.push_str("<table><thead><tr>");
+    // Per-column widths from the shared core helper (the SAME logic the TUI uses)
+    // → a `<colgroup>` of `ch`-based widths so the web table sizes columns to
+    // match the TUI by construction (TSK-238). `ch` ties to the monospace font,
+    // so N ch ≈ N characters; `table-layout:fixed` (CSS) makes these authoritative.
+    s.push_str("<table><colgroup>");
+    for w in view::table_col_widths(header, rows) {
+        s.push_str(&format!("<col style=\"width:{w}ch\">"));
+    }
+    s.push_str("</colgroup><thead><tr>");
     for h in header {
         s.push_str(&format!("<th>{}</th>", esc(h)));
     }
@@ -1033,8 +1041,8 @@ pre{{font:12px ui-monospace,Menlo,monospace;white-space:pre;overflow:auto;margin
 .gutter{{-webkit-user-select:none;user-select:none;text-align:right;color:#999;padding-right:10px;border-right:1px solid #eee;margin-right:10px;overflow:visible;flex:none}}\
 .src{{flex:1}}\
 .code .cur{{background:#fff3b0;scroll-margin-top:12px}}\
-table{{border-collapse:collapse;font:12px ui-monospace,Menlo,monospace}}\
-th,td{{border:1px solid #ddd;padding:2px 6px;text-align:left;max-width:320px;overflow:hidden;text-overflow:ellipsis}}\
+table{{border-collapse:collapse;font:12px ui-monospace,Menlo,monospace;table-layout:fixed}}\
+th,td{{border:1px solid #ddd;padding:2px 6px;text-align:left;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}\
 th{{background:#eef;position:sticky;top:0}}\
 .hint{{color:#999}}\
 pre.diff{{line-height:1.4}}\
@@ -1644,6 +1652,28 @@ mod tests {
         assert!(html.contains("<table>"), "table rendered:\n{html}");
         assert!(html.contains("<th>name</th>"), "header cell");
         assert!(html.contains("<td>Alice</td>"), "body cell");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn table_emits_colgroup_widths_from_shared_core() {
+        let dir = fixture();
+        // people.csv: header name,age — widths come from view::table_col_widths so
+        // the web columns match the TUI's by construction.
+        let html = render_view(&dir.join("people.csv"), Some("table"), SortKey::Name, false, None);
+        assert!(html.contains("<colgroup>"), "colgroup present for column sizing:\n{html}");
+        // One <col> per header column, each a ch-based width.
+        let cols = html.matches("<col style=\"width:").count();
+        let expected = view::table_col_widths(
+            &["name".to_string(), "age".to_string()],
+            &[vec!["Alice".to_string(), "30".to_string()]],
+        );
+        assert_eq!(cols, 2, "two columns sized:\n{html}");
+        assert!(
+            html.contains(&format!("width:{}ch", expected[0])),
+            "name column carries the shared-core width {}:\n{html}",
+            expected[0]
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
