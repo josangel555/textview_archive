@@ -166,6 +166,23 @@ public struct SettingsView: View {
 
     private var terminalSection: some View {
         section("Terminal") {
+            // Pane DOCK edge (TSK-491): which shoulder the whole terminal pane
+            // lives in. The discoverable control for "move the terminal to the
+            // right" — distinct from the tab-strip position INSIDE the pane.
+            row("Pane placement") {
+                Picker("", selection: Binding(
+                    get: { model.terminalPane.paneEdge },
+                    set: { model.terminalPane.setPaneEdge($0) }
+                )) {
+                    Text("Bottom").tag(TerminalPaneEdge.bottom)
+                    Text("Left").tag(TerminalPaneEdge.left)
+                    Text("Right").tag(TerminalPaneEdge.right)
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 220)
+                .accessibilityIdentifier("mdv.settings.terminal.paneEdge")
+            }
             row("Tab strip position") {
                 Picker("", selection: Binding(
                     get: { model.terminalPane.tabPosition },
@@ -178,6 +195,7 @@ public struct SettingsView: View {
                 .labelsHidden()
                 .pickerStyle(.segmented)
                 .frame(maxWidth: 220)
+                .accessibilityIdentifier("mdv.settings.terminal.tabPosition")
             }
         }
     }
