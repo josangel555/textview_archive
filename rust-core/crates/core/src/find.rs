@@ -116,6 +116,43 @@ pub fn prev_index(matches: &[Match], cur: usize) -> Option<usize> {
     Some((cur % n + (n - 1)) % n)
 }
 
+/// One line of a file that contains at least one match — the unit of a
+/// cross-file "grep" results list. Carries the 0-based `line` index and the
+/// line's full CR-stripped text (so a front-end can show the hit in context and
+/// link to `?line=line+1`).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct LineHit {
+    /// 0-based line index of the matching line.
+    pub line: usize,
+    /// The matching line's full text (trailing `\r` stripped).
+    pub text: String,
+}
+
+/// The distinct lines of `text` containing `query`, in document order, capped at
+/// `max` hits (`0` = unlimited) — the shared per-file matcher behind every
+/// front-end's cross-file folder grep (the web `/grep` route, the TUI search-
+/// anywhere overlay). Built on [`find_matches`], so "what counts as a hit" is
+/// identical to the in-file find; a line with several matches appears once. An
+/// empty query yields no hits.
+#[must_use]
+pub fn grep_lines(text: &str, query: &str, case: Case, max: usize) -> Vec<LineHit> {
+    let lines: Vec<&str> = text.split('\n').collect();
+    let mut out: Vec<LineHit> = Vec::new();
+    let mut last: Option<usize> = None;
+    for m in find_matches(text, query, case) {
+        if last == Some(m.line) {
+            continue; // collapse multiple matches on the same line to one hit
+        }
+        if max != 0 && out.len() >= max {
+            break;
+        }
+        let raw = lines.get(m.line).copied().unwrap_or("");
+        out.push(LineHit { line: m.line, text: raw.strip_suffix('\r').unwrap_or(raw).to_string() });
+        last = Some(m.line);
+    }
+    out
+}
+
 /// ASCII-fold a string for case-insensitive comparison (no allocation when
 /// `Sensitive`). `to_ascii_lowercase` preserves every byte's length, so offsets
 /// into the folded string map 1:1 back onto the original.
@@ -132,6 +169,26 @@ mod tests {
 
     fn m(line: usize, start: usize, end: usize) -> Match {
         Match { line, start, end }
+    }
+
+    #[test]
+    fn grep_lines_returns_distinct_matching_lines_capped() {
+        let text = "alpha\nbeta beta\ngamma\nbeta end\n";
+        // Two lines contain "beta" (line 1 has two matches → one hit; line 3 → one).
+        let hits = grep_lines(text, "beta", Case::Insensitive, 0);
+        assert_eq!(hits.len(), 2, "distinct lines, multi-match line collapsed: {hits:?}");
+        assert_eq!(hits[0], LineHit { line: 1, text: "beta beta".to_string() });
+        assert_eq!(hits[1], LineHit { line: 3, text: "beta end".to_string() });
+        // Cap limits the hit count.
+        let capped = grep_lines(text, "beta", Case::Insensitive, 1);
+        assert_eq!(capped.len(), 1, "max caps the results");
+        assert_eq!(capped[0].line, 1);
+        // Case-insensitive folds; CRLF line keeps CR stripped.
+        let crlf = "Foo BAR\r\nbaz\r\n";
+        let h = grep_lines(crlf, "bar", Case::Insensitive, 0);
+        assert_eq!(h, vec![LineHit { line: 0, text: "Foo BAR".to_string() }]);
+        // Empty query → no hits.
+        assert!(grep_lines(text, "", Case::Insensitive, 0).is_empty());
     }
 
     #[test]

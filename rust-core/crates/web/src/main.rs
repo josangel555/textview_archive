@@ -211,6 +211,17 @@ fn route(req_line: &str, root: &Path) -> (&'static str, &'static str, String) {
                 None => ("404 Not Found", TEXT, "path is outside the served root".into()),
             }
         }
+        // Cross-file folder grep (TSK-214): recursively grep text files under the
+        // confined dir for `?q=<needle>` (case-insensitive literal, shared
+        // `find::grep_lines`), bounded by caps. `?path=` is the search root.
+        "/grep" => {
+            let dir = q.get("path").map_or_else(|| root.to_path_buf(), PathBuf::from);
+            let needle = q.get("q").map(String::as_str).unwrap_or("");
+            match confined(root, &dir) {
+                Some(d) => ("200 OK", HTML, render_grep(&d, root, needle, show_hidden)),
+                None => ("404 Not Found", TEXT, "path is outside the served root".into()),
+            }
+        }
         "/view" => match q.get("path").and_then(|p| confined(root, Path::new(p))) {
             Some(f) => {
                 // `?line=<n>` (1-based) jumps to a line: the target row gets an
@@ -279,7 +290,11 @@ fn render_browse(dir: &Path, sort: SortKey, show_hidden: bool, filter: &str) -> 
     page(
         &short(dir),
         &nav_html(dir, None, sort, show_hidden, filter),
-        &format!("<p class=\"hint\">Select a file to view its contents.</p>{}", controls_help()),
+        &format!(
+            "{}<p class=\"hint\">Select a file to view its contents.</p>{}",
+            grep_box(dir),
+            controls_help()
+        ),
     )
 }
 
@@ -297,6 +312,142 @@ fn controls_help() -> &'static str {
 <li><b>Filter</b> — the box above the list narrows it as you type.</li>\
 <li><b>In a file</b> — find (with match count + prev/next), go to line, show/hide whitespace, wrap / nowrap, and reload-from-disk.</li>\
 </ul></details>"
+}
+
+/// A GET form that greps the folder `dir` (the box on the browse page). Submits
+/// to `/grep` with the current dir as a hidden field so results stay scoped here.
+fn grep_box(dir: &Path) -> String {
+    format!(
+        "<form class=\"grep-box\" method=\"get\" action=\"/grep\">\
+<input type=\"hidden\" name=\"path\" value=\"{}\">\
+<input type=\"text\" name=\"q\" placeholder=\"grep this folder\u{2026}\">\
+<button>Search</button></form>",
+        esc(&dir.to_string_lossy())
+    )
+}
+
+/// Caps for the cross-file grep walk so a pathological tree can't hang the
+/// single-threaded server: files scanned, total hits returned, hits per file.
+const GREP_MAX_FILES: usize = 2000;
+const GREP_MAX_HITS: usize = 500;
+const GREP_PER_FILE: usize = 50;
+
+/// One file's grep results: its path + the matching lines (shared `find::LineHit`).
+struct GrepFile {
+    path: PathBuf,
+    hits: Vec<find::LineHit>,
+}
+
+/// Recursively grep readable text files under `dir` (confined to `root`) for
+/// `needle` (case-insensitive literal via the shared `find::grep_lines`). Skips
+/// dotfiles/dirs unless `show_hidden`, skips binary/empty files
+/// (`view::content_state`), guards against symlink loops (canonical visited set),
+/// and is bounded by the `GREP_*` caps. Returns (files-with-hits, total-hits,
+/// truncated).
+fn grep_walk(dir: &Path, root: &Path, needle: &str, show_hidden: bool) -> (Vec<GrepFile>, usize, bool) {
+    let mut out: Vec<GrepFile> = Vec::new();
+    let mut hits_total = 0usize;
+    let mut files_scanned = 0usize;
+    let mut truncated = false;
+    let mut visited: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    let mut stack: Vec<PathBuf> = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        if files_scanned >= GREP_MAX_FILES || hits_total >= GREP_MAX_HITS {
+            truncated = true;
+            break;
+        }
+        // Symlink-loop guard: never enter the same canonical dir twice.
+        if let Ok(canon) = d.canonicalize() {
+            if !visited.insert(canon) {
+                continue;
+            }
+        }
+        let Ok(rd) = fs::read_dir(&d) else { continue };
+        let mut entries: Vec<fs::DirEntry> = rd.filter_map(Result::ok).collect();
+        entries.sort_by_key(fs::DirEntry::file_name);
+        for e in entries {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if !nav::should_show(&name, show_hidden) {
+                continue;
+            }
+            let p = e.path();
+            if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                stack.push(p);
+                continue;
+            }
+            if files_scanned >= GREP_MAX_FILES {
+                truncated = true;
+                break;
+            }
+            files_scanned += 1;
+            let Some(cf) = confined(root, &p) else { continue };
+            let Ok((raw, _, _)) = read_capped(&cf, PREVIEW_CAP) else { continue };
+            if view::content_state(&raw) != view::ContentState::Readable {
+                continue; // empty or binary — not grep-able text
+            }
+            let remaining = GREP_MAX_HITS.saturating_sub(hits_total);
+            if remaining == 0 {
+                truncated = true;
+                break;
+            }
+            let text = String::from_utf8_lossy(&raw);
+            let per = GREP_PER_FILE.min(remaining);
+            let hits = find::grep_lines(&text, needle, find::Case::Insensitive, per);
+            if !hits.is_empty() {
+                hits_total += hits.len();
+                out.push(GrepFile { path: cf, hits });
+            }
+        }
+    }
+    (out, hits_total, truncated)
+}
+
+/// The cross-file grep results page (TSK-214): a summary line + per-file groups,
+/// each matching line a `/view?path=&line=` link (with a `#L<n>` fragment) so a
+/// click lands on the hit. An empty needle shows a hint; no matches says so.
+fn render_grep(dir: &Path, root: &Path, needle: &str, show_hidden: bool) -> String {
+    let nav = nav_html(dir, None, SortKey::Name, show_hidden, "");
+    let trimmed = needle.trim();
+    if trimmed.is_empty() {
+        return page(
+            &short(dir),
+            &nav,
+            "<p class=\"hint\">Enter a search term to grep this folder.</p>",
+        );
+    }
+    let (files, hits, truncated) = grep_walk(dir, root, trimmed, show_hidden);
+    let word = if hits == 1 { "match" } else { "matches" };
+    let trunc = if truncated { " · truncated (refine the query)" } else { "" };
+    let mut main = format!(
+        "<div class=\"bar\">{hits} {word} in {} file(s) for \u{201c}{}\u{201d}{trunc}</div>",
+        files.len(),
+        esc(trimmed)
+    );
+    if files.is_empty() {
+        main.push_str("<p class=\"hint\">No matches.</p>");
+        return page(&short(dir), &nav, &main);
+    }
+    main.push_str("<ul class=\"grep\">");
+    for f in &files {
+        let href = pct_encode(&f.path.to_string_lossy());
+        // Show the path relative to the searched dir (falls back to the leaf).
+        let rel = f.path.strip_prefix(dir).unwrap_or(&f.path).to_string_lossy().into_owned();
+        main.push_str(&format!(
+            "<li class=\"grepfile\"><a href=\"/view?path={href}\">{}</a><ul>",
+            esc(&rel)
+        ));
+        for h in &f.hits {
+            let line1 = h.line + 1;
+            main.push_str(&format!(
+                "<li><a href=\"/view?path={href}&line={line1}#L{line1}\">\
+<span class=\"ln\">{line1}</span> {}</a></li>",
+                esc(h.text.trim())
+            ));
+        }
+        main.push_str("</ul></li>");
+    }
+    main.push_str("</ul>");
+    page(&short(dir), &nav, &main)
 }
 
 fn render_view(
@@ -1073,6 +1224,14 @@ th{{background:#eef;position:sticky;top:0}}\
 .help{{margin:12px 0;font:13px -apple-system,Segoe UI,sans-serif;max-width:640px}}\
 .help summary{{cursor:pointer;color:#1a5fb4;user-select:none}}\
 .help ul{{margin:6px 0 0;padding-left:18px}} .help li{{margin:3px 0;color:#444}}\
+.grep-box{{display:flex;gap:6px;margin:0 0 12px;max-width:640px}}\
+.grep-box input[type=text]{{flex:1;font:13px -apple-system,Segoe UI,sans-serif;padding:4px 8px;border:1px solid #ccc;border-radius:4px}}\
+.grep-box button{{font:12px -apple-system,Segoe UI,sans-serif;padding:4px 10px;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer}}\
+ul.grep{{list-style:none;margin:8px 0;padding:0;font:13px -apple-system,Segoe UI,sans-serif}}\
+ul.grep ul{{list-style:none;margin:2px 0 8px;padding-left:16px}}\
+.grepfile>a{{font-weight:600;color:#1a5fb4;text-decoration:none}}\
+ul.grep li a{{text-decoration:none;color:#333}} ul.grep li a:hover{{background:#f0f4ff}}\
+ul.grep .ln{{display:inline-block;min-width:3em;color:#999;text-align:right;margin-right:8px;font:12px ui-monospace,Menlo,monospace}}\
 pre.diff{{line-height:1.4}}\
 pre.diff span{{display:block}}\
 .diff-file{{color:#1a5fb4;font-weight:600}}\
@@ -1594,6 +1753,30 @@ mod tests {
         // A normal readable text file → no banner.
         let ok = render_view(&dir.join("hello.txt"), Some("text"), SortKey::Name, false, None);
         assert!(!ok.contains("class=\"banner\""), "readable text gets no banner:\n{ok}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn grep_route_finds_matches_across_files_and_links_to_line() {
+        let dir = fixture();
+        // hello.txt has "hello <world>" on line 1; doc.md has "## Section A/B".
+        let root = dir.canonicalize().unwrap();
+        let base = pct_encode(&root.to_string_lossy());
+        // Search for "section" (case-insensitive) → hits in doc.md, linked to the line.
+        let (status, _, body) = route(&format!("GET /grep?path={base}&q=section HTTP/1.1"), &root);
+        assert_eq!(status, "200 OK");
+        assert!(body.contains("class=\"grep\""), "results list present:\n{body}");
+        assert!(body.contains("doc.md"), "the matching file is listed:\n{body}");
+        assert!(body.contains("&line=4"), "a hit links to its 1-based line:\n{body}");
+        assert!(body.contains("matches in"), "summary line present:\n{body}");
+        // A query with no hits reports cleanly (not an error).
+        let (st2, _, b2) = route(&format!("GET /grep?path={base}&q=zzzznotfound HTTP/1.1"), &root);
+        assert_eq!(st2, "200 OK");
+        assert!(b2.contains("No matches"), "empty result reported:\n{b2}");
+        // The browse page offers a grep box pointing at /grep.
+        let browse = render_browse(&root, SortKey::Name, false, "");
+        assert!(browse.contains("class=\"grep-box\""), "grep box on the browse page:\n{browse}");
+        assert!(browse.contains("action=\"/grep\""), "box submits to /grep:\n{browse}");
         let _ = fs::remove_dir_all(&dir);
     }
 
