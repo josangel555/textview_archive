@@ -3447,3 +3447,37 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   `fixed` SwiftUI UI cluster to validated.
 - No source change this tick (investigation + scoping). main @ `7dc9597`. Memory
   `reference_vm_plain_ssh_breaks_tests` already notes the GUI-session requirement.
+
+## LOG +116 (2026-06-08, autonomous tick — TSK-501 VALIDATED: VM heavy/UI lane now usable end-to-end)
+- **TSK-501 driven reported→…→validated.** The fix (commit `b3ec338`, prior tick) adds an additive
+  `MDV_VM_GUI_SESSION=1` path to `scripts/test-in-vm.sh`: `swift_test()` wraps `swift test` in
+  `sudo -S launchctl asuser $(stat -f %u /dev/console) /bin/bash -lc`, exporting cwd/`ulimit -n 8192`/
+  `TOOLCHAINS` INSIDE the spawned shell (asuser drops env from /usr/bin/env). **Default-off → the
+  headless `test` lane is byte-for-byte unchanged** (so the TSK-500 158→6 win can't regress).
+- **Full GUI-session VM validation run** (`MDV_VM_GUI_SESSION=1 … bash scripts/test-in-vm.sh test`,
+  959s, full 4220-test suite): the asuser path engaged (sudo `Password:` banner at the head of the
+  VM's `/tmp/mdv-test-output.txt`) and the **previously-occluded heavy UAT tiers EXECUTED real
+  windows** — `PreviewsUATTests.PV_07` ran **10.3s**, `SessionsUATTests.SESS01` ran **6.6s** (multi-
+  second = app spawned + scenario ran), vs the fast occlusion-fail over plain ssh. **Occlusion
+  resolved.** Validated with a `checks` artifact (the before/after).
+- **The full VM UI/pixel lane is now usable end-to-end:** TSK-500 (ulimit) fixed the headless flood,
+  TSK-501 (asuser) makes the heavy tiers realize windows. The autonomous loop can finally drive
+  rendered-behavior validation on the VM.
+- **Residual 6 failures are a DIFFERENT, non-occlusion set** — each triaged + filed:
+  - `TextToolsTests` base64 ×2 — **host-green** (re-confirmed 2/2 pass on host), VM-only Foundation
+    base64-of-invalid divergence → **TSK-503**.
+  - `TerminalTabStripVisualRegressionTests.chipComposites` fast-fails on screencapture "Bad file
+    descriptor" + `SourceViewVisualRegression` skips — both **Screen-Recording TCC** not granted to
+    xctest on the VM → **TSK-502** (the last gap to finish the T5 pixel lane).
+  - `PreviewsUATTests.PV_07` hex-fallback assertion → **TSK-504**.
+- **TSK-504 fully diagnosed (host code-read), advanced to `ack` + refined comment.** Most likely a
+  **STALE TEST assertion, not an app bug**: `DocumentModel.mountedPanes = MountedPanesLRU(capacity: 4)`
+  keeps up to 4 panes alive in the ContentView ZStack at opacity:0; the diagnostic dump is WHOLE-WINDOW
+  (`DiagnosticDump.swift:60/67`). PV_07 opens exactly 3 tabs (data.bin HEX, empty.bin HEX, code.txt) ≤
+  capacity 4, so the retained binary panes' HexViews are *legitimately* still mounted when code.txt is
+  active in Source — and `assertNoHexView`'s whole-window `hasViewClass("Hex")` trips on them. The
+  assertion is structurally guaranteed to fail regardless of code.txt's state. Fix = scope the assertion
+  to the ACTIVE pane (or close the bin tabs first); audit `LSPUATTests.assertNoHexView` for the same
+  hazard. A focused tick should do the scoped-fix + VM re-run (UAT is VM-only). NOT blind-fixed.
+- Filed **TSK-502 / TSK-503 / TSK-504** (follow-ups). main @ `b3ec338` (+ this doc log). Per the
+  no-blind-rendered-change rule, no app source touched this tick.

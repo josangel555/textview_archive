@@ -2396,3 +2396,37 @@ top use `## LOG 2026-06-07 (latest+NN)` DESCENDING (newest-on-top, tops out at +
 NEWER blocks are APPENDED AT THE BOTTOM as `## LOG +NN (date — …)` ASCENDING (+75, +76, …).
 The "latest+N" and the commit-message "tick +N" are different counters. To find the real
 latest entry, read the BOTTOM of the file, not the top. New entries append at the bottom.
+
+### The VM UI/pixel lane is finally complete: ulimit (TSK-500) + launchctl-asuser (TSK-501), 2026-06-08
+
+Two independent things made `ssh macOS15 'swift test'` look catastrophically red while `main` was
+healthy, and BOTH are now fixed in `scripts/test-in-vm.sh`:
+- **fd exhaustion (TSK-500):** the soft `ulimit -n` over a non-login ssh session is **256**; the full
+  single-process `swift test` (4220 tests) leaks fds past it → EMFILE "could not open temp file" →
+  ~158 false failures. Fix: `ulimit -n 8192` before `swift test` (hard limit is unlimited).
+- **heavy-tier occlusion (TSK-501):** `ssh … swift test` runs OUTSIDE the console Aqua session, so
+  T4/T5/UAT/VisualRegression windows never realize → occlusion failures. Fix: an additive
+  `MDV_VM_GUI_SESSION=1` path that wraps `swift test` in
+  `sudo -S launchctl asuser $(stat -f %u /dev/console) /bin/bash -lc "<cmd>"`, with cwd/ulimit/
+  `TOOLCHAINS` exported INSIDE the spawned shell (asuser strips env passed via /usr/bin/env — same
+  trick as vm-smoke.sh). Default-off so the headless `test` path is unchanged. Needs `MDV_VM_SUDO_PASS`.
+  PROOF it works: PreviewsUATTests.PV_07 ran 10.3s / SessionsUATTests.SESS01 ran 6.6s (windows realized)
+  vs fast occlusion-fail over plain ssh.
+- **GOTCHA — the captured ssh stdout is summary-only.** The background job's returned stdout had only
+  the per-suite "Executed N tests" lines, NOT the per-test-case "Test Case … failed" lines, and NO
+  `[GUI session]` banner. The authoritative full log is **`/tmp/mdv-test-output.txt` on the VM** (the
+  script `tee`s there). Always pull THAT to identify which tests failed; don't trust the thin host capture.
+
+### Whole-window `recursiveDescription` + retained-pane LRU = stale "no X view mounted" assertions (TSK-504)
+
+`DocumentModel.mountedPanes = MountedPanesLRU(capacity: 4)` keeps up to 4 panes alive simultaneously in
+the ContentView ZStack at `opacity:0` (intentional — keeps inactive WKWebViews from firing
+`visibilitychange`). The diagnostic dump (`DiagnosticDump.swift:60/67`) is the WHOLE window
+(`window.contentView` + `recursiveDescription`). So a UAT assertion like `assertNoHexView` doing a
+whole-window `hasViewClass("Hex")` is WRONG whenever ≤4 tabs are open and ANY retained (inactive) pane
+is legitimately a HexView — e.g. PreviewsUATTests.PV_07 opens data.bin (HEX) + empty.bin (HEX) + code.txt,
+all retained, so the assertion is structurally guaranteed to trip on the retained binary panes even when
+the ACTIVE pane is Source. The model state (`currentViewMode`/`currentStateKind`) is correct; only the
+assertion's scope is wrong. RULE: "no <kind> view present" assertions in the retained-pane world MUST be
+scoped to the ACTIVE pane subtree (opacity==1 / hit-testable / URL-matched), never the whole window.
+Audit siblings: `LSPUATTests.assertNoHexView` likely shares the hazard.
