@@ -3525,3 +3525,23 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - main @ `d9862f8` (+ this log). Sibling `assertNoHexView` copies in LSPUATTests/Cm6/SearchSurfaces share
   the hazard but only fail if their scenarios mount ≥2 panes incl. a binary one — not yet observed
   failing; left as-is (fix-on-demand).
+
+## LOG +119 (2026-06-08, autonomous tick — TSK-347 slice 1/2: file-checksum core; drained-queue → PARTIAL lane)
+- With the SwiftUI host-actionable lane done (503/504) and the PORT lane confirmed feature-complete-
+  pending-owner (TSK-235 is `waiting:human` — its own report says "the ONLY remaining [PORT] board work
+  is stateful and needs your call"), turned to the `[PARTIAL]` reported lane (owner-endorsed:
+  "uncovered-pure-logic backfill"). Picked **TSK-347 [PARTIAL] SHA** (SHA infra exists but isn't
+  user-surfaced).
+- **Landed slice 1/2 (commit `4ca006d`):** the host-completable file-checksum CORE — streamed
+  `FileChecksum.sha256Hex(ofFileAt:)` (chunked FileHandle reads folded into an incremental CryptoKit
+  `SHA256`, so a large file isn't slurped) + a `TextTools.sha256Hex(Data)` overload (the text version now
+  delegates to it). Host teeth-tests: 19/19 TextToolsTests green — NIST vectors via the file path,
+  **chunked-stream == one-shot** (`chunkSize:7` over 5000 bytes proves the fold), non-UTF-8 binary bytes
+  (which the text API can't represent), missing-file-throws. Headless gate PASSED.
+- **Slice 2/2 filed as TSK-505** (the user-facing surfacing: MetadataPanel checksum row, lazy + async
+  off-main, + a "Copy SHA-256 of Current File" command mirroring `tools.sha256`) — SwiftUI-rendered →
+  VM-validated. So the landed `FileChecksum` core has a documented, imminent consumer (not abandoned
+  infra). TSK-347 left at `progress` until the surfacing lands.
+- main @ `4ca006d` (+ this log). The board's actionable autonomous queue remains owner-gated beyond this
+  (PORT decisions, dep approvals, TSK-502 TCC, SwiftUI UI surfacing needing VM); the `[PARTIAL]`/`[BACKLOG]`
+  lane is the standing fallback for host-completable slices like this one.
