@@ -59,7 +59,7 @@ final class LSPMultiLanguageSmokeTests: XCTestCase {
             if requireSmoke() { XCTFail("initialize failed: \(error)") }
             throw XCTSkip("initialize failed: \(error)")
         }
-        defer { Task { await client.shutdown() } }
+        self.addTeardownBlock { await client.shutdown() }  // awaited reap, not fire-and-forget (TSK-485)
 
         try await client.didOpen(url: target, languageId: "typescript", text: text)
         // Probe hover on the identifier `x`. Lenient on *presence*: not
@@ -99,7 +99,7 @@ final class LSPMultiLanguageSmokeTests: XCTestCase {
             if requireSmoke() { XCTFail("initialize failed: \(error)") }
             throw XCTSkip("initialize failed: \(error)")
         }
-        defer { Task { await client.shutdown() } }
+        self.addTeardownBlock { await client.shutdown() }  // awaited reap, not fire-and-forget (TSK-485)
 
         try await client.didOpen(url: target, languageId: "python", text: text)
         // Decision (2026-05-29): restate. Same rationale as the TS test
@@ -138,7 +138,7 @@ final class LSPMultiLanguageSmokeTests: XCTestCase {
             if requireSmoke() { XCTFail("initialize failed: \(error)") }
             throw XCTSkip("initialize failed (jdtls cold-start often >30s): \(error)")
         }
-        defer { Task { await client.shutdown() } }
+        self.addTeardownBlock { await client.shutdown() }  // awaited reap, not fire-and-forget (TSK-485)
 
         try await client.didOpen(url: target, languageId: "java", text: text)
     }

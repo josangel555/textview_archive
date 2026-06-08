@@ -38,12 +38,16 @@ final class LSPPoolFakeServerTests: XCTestCase {
         binary: URL,
         scenario: String? = nil,
         hoverDelayMs: Int? = nil,
-        publishDiagnostics: Bool = false
+        publishDiagnostics: Bool = false,
+        shutdownDelayMs: Int? = nil,
+        shutdownLogPath: String? = nil
     ) -> LSPLanguageRegistry {
         var mutableEnv: [String: String] = ProcessInfo.processInfo.environment
         if let s = scenario { mutableEnv["MDV_FAKE_LSP_SCENARIO"] = s }
         if let d = hoverDelayMs { mutableEnv["MDV_FAKE_LSP_HOVER_DELAY_MS"] = "\(d)" }
         if publishDiagnostics { mutableEnv["MDV_FAKE_LSP_PUBLISH_DIAGNOSTICS"] = "1" }
+        if let sd = shutdownDelayMs { mutableEnv["MDV_FAKE_LSP_SHUTDOWN_DELAY_MS"] = "\(sd)" }
+        if let slp = shutdownLogPath { mutableEnv["MDV_FAKE_LSP_SHUTDOWN_LOG"] = slp }
         // Capture as immutable so the @Sendable serverLauncher closure
         // can reference it under Swift 6 strict concurrency.
         let env = mutableEnv
@@ -152,6 +156,86 @@ final class LSPPoolFakeServerTests: XCTestCase {
         } catch {
             XCTFail("expected LSPError.transportClosed, got \(error)")
         }
+    }
+
+    // MARK: - closeAll() shuts servers down CONCURRENTLY (TSK-485)
+
+    /// Proves `closeAll()` parallelizes per-client shutdown rather than
+    /// looping sequentially. Three live fake servers each delay inside the
+    /// `shutdown` request handler, bracketing the delay with START/END
+    /// markers appended (atomically) to one shared log. `LSPClient.shutdown()`
+    /// awaits the shutdown RESPONSE, so the delay lands on the awaited path.
+    ///
+    /// Concurrent teardown ⇒ all three handlers ENTER (START) before any of
+    /// them FINISHES (END): `START START START … END END END`. A sequential
+    /// loop would fully finish client 1 (END) before even sending client 2's
+    /// shutdown, interleaving `START END START END START END`. We assert the
+    /// last START precedes the first END — a pure ORDERING check, immune to
+    /// wall-clock flakiness on a loaded CI host (cf TSK-507's known-flaky
+    /// timing). Teeth: against the old sequential loop the first END lands at
+    /// index 1 while the last START is at index 4, so the assertion fails.
+    func test_closeAll_shutsDownServersConcurrently_notSequentially() async throws {
+        let binary = try FakeLSPServerHelper.locate()
+        let (rootA, fileA) = try makeTempFile()
+        let (rootB, fileB) = try makeTempFile()
+        let (rootC, fileC) = try makeTempFile()
+        defer {
+            try? FileManager.default.removeItem(at: rootA)
+            try? FileManager.default.removeItem(at: rootB)
+            try? FileManager.default.removeItem(at: rootC)
+        }
+
+        let logDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LSPCloseAll-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: logDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: logDir) }
+        let logFile = logDir.appendingPathComponent("markers.log")
+
+        // 400 ms shutdown delay: comfortably longer than the time to dispatch
+        // three concurrent shutdown requests + log three STARTs, so the
+        // ordering signal is unambiguous even under load.
+        let pool = LSPPool(
+            registry: makeRegistry(
+                binary: binary,
+                shutdownDelayMs: 400,
+                shutdownLogPath: logFile.path),
+            config: tightConfig())
+
+        _ = try await pool.client(for: fileA)
+        _ = try await pool.client(for: fileB)
+        _ = try await pool.client(for: fileC)
+        let preCount = await pool.snapshot().count
+        XCTAssertEqual(preCount, 3, "precondition: three live servers")
+
+        await pool.closeAll()
+
+        // closeAll contract still holds: all entries dropped, acquires reject.
+        let postCount = await pool.snapshot().count
+        XCTAssertEqual(postCount, 0, "closeAll should drop all entries")
+        do {
+            _ = try await pool.client(for: fileA)
+            XCTFail("client(for:) after closeAll should throw transportClosed")
+        } catch LSPError.transportClosed {
+            // expected
+        }
+
+        // `closeAll()` awaits every client.shutdown(), each of which awaits
+        // its server's response (written AFTER its END marker), so by the
+        // time we get here all six markers are on disk.
+        let contents = (try? String(contentsOf: logFile, encoding: .utf8)) ?? ""
+        let markers = contents.split(separator: "\n").map(String.init)
+        XCTAssertEqual(markers.filter { $0 == "START" }.count, 3,
+            "each of the three servers should log a START — got \(markers)")
+        XCTAssertEqual(markers.filter { $0 == "END" }.count, 3,
+            "each of the three servers should log an END — got \(markers)")
+        guard let firstEnd = markers.firstIndex(of: "END"),
+              let lastStart = markers.lastIndex(of: "START") else {
+            return XCTFail("expected both START and END markers — got \(markers)")
+        }
+        XCTAssertLessThan(lastStart, firstEnd,
+            "all STARTs must precede the first END (concurrent shutdown); a "
+            + "sequential loop would interleave START/END — got \(markers)")
     }
 
     // MARK: - fail_initialize: backoff + dead cooldown

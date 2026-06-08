@@ -36,11 +36,11 @@ final class LSPPoolSmokeTests: XCTestCase {
         }
 
         let pool = LSPPool()
-        defer {
-            // Best-effort teardown so the test doesn't leak a child
-            // process between runs.
-            Task { await pool.closeAll() }
-        }
+        // Await teardown synchronously (XCTest waits on the block) so the
+        // child LSP process is reaped before the next test — a detached
+        // `Task { await pool.closeAll() }` could outlive the test and leak
+        // the subprocess (TSK-485).
+        self.addTeardownBlock { await pool.closeAll() }
 
         let text = try String(contentsOf: target, encoding: .utf8)
         do {
@@ -114,7 +114,8 @@ final class LSPPoolSmokeTests: XCTestCase {
             throw XCTSkip("missing source file")
         }
         let pool = LSPPool()
-        defer { Task { await pool.closeAll() } }
+        // Awaited teardown — see the sibling test for the leak rationale (TSK-485).
+        self.addTeardownBlock { await pool.closeAll() }
 
         let text = try String(contentsOf: target, encoding: .utf8)
         do {

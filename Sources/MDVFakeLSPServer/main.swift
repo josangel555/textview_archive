@@ -17,6 +17,17 @@ import Foundation
 //   MDV_FAKE_LSP_HOVER_DELAY_MS    Per-hover artificial delay.
 //   MDV_FAKE_LSP_PUBLISH_DIAGNOSTICS=1   Push a publishDiagnostics with
 //                                        one .error diagnostic on `initialized`.
+//   MDV_FAKE_LSP_SHUTDOWN_DELAY_MS Artificial delay (ms) *inside* the
+//                                  `shutdown` request handler, before the
+//                                  response is written. Used to make the
+//                                  pool's concurrent-vs-sequential teardown
+//                                  observable (LSPPool.closeAll test).
+//   MDV_FAKE_LSP_SHUTDOWN_LOG      Path to a shared file each server appends
+//                                  "START"/"END" markers to (bracketing the
+//                                  shutdown delay) via a single atomic
+//                                  O_APPEND write — so a test can prove the
+//                                  shutdowns overlapped by line ORDER, not
+//                                  wall-clock.
 //
 // Canned response shapes are kept in lockstep with `LSPClient`'s
 // decoders (`decodeHover`, `decodeDefinition`, `decodeDocumentSymbol`,
@@ -35,6 +46,8 @@ final class FakeServer: @unchecked Sendable {
     let scenario: String
     let hoverDelayMs: Int
     let pushDiags: Bool
+    let shutdownDelayMs: Int
+    let shutdownLogPath: String?
     var buffer = Data()
     var shouldExit = false
 
@@ -43,6 +56,23 @@ final class FakeServer: @unchecked Sendable {
         self.scenario = env["MDV_FAKE_LSP_SCENARIO"] ?? "normal"
         self.hoverDelayMs = Int(env["MDV_FAKE_LSP_HOVER_DELAY_MS"] ?? "0") ?? 0
         self.pushDiags = env["MDV_FAKE_LSP_PUBLISH_DIAGNOSTICS"] == "1"
+        self.shutdownDelayMs = Int(env["MDV_FAKE_LSP_SHUTDOWN_DELAY_MS"] ?? "0") ?? 0
+        self.shutdownLogPath = env["MDV_FAKE_LSP_SHUTDOWN_LOG"]
+    }
+
+    /// Append a short marker line to the shared shutdown log (if one is
+    /// configured) with a single `O_APPEND` `write(2)`. POSIX guarantees
+    /// append-mode writes below `PIPE_BUF` are atomic across processes, so
+    /// concurrent fake-server children interleave whole lines rather than
+    /// shredding each other's bytes. Best-effort: any failure is silently
+    /// dropped (the marker log is a test-only diagnostic).
+    func appendShutdownMarker(_ token: String) {
+        guard let path = shutdownLogPath else { return }
+        let fd = open(path, O_WRONLY | O_APPEND | O_CREAT, 0o644)
+        if fd < 0 { return }
+        let bytes = Array("\(token)\n".utf8)
+        _ = bytes.withUnsafeBufferPointer { write(fd, $0.baseAddress, $0.count) }
+        close(fd)
     }
 
     // MARK: - Framing
@@ -214,6 +244,16 @@ final class FakeServer: @unchecked Sendable {
                 ] as [String: Any]))
 
         case "shutdown":
+            // Optional artificial delay, bracketed by START/END markers,
+            // so a test can prove `LSPPool.closeAll()` shut servers down
+            // concurrently (all STARTs precede the first END) vs
+            // sequentially (START/END interleave). `LSPClient.shutdown()`
+            // awaits this response, so the delay lands on the awaited path.
+            if shutdownDelayMs > 0 {
+                appendShutdownMarker("START")
+                Thread.sleep(forTimeInterval: Double(shutdownDelayMs) / 1000.0)
+                appendShutdownMarker("END")
+            }
             writeJSON(responseEnvelope(id: id, result: NSNull()))
 
         case "textDocument/hover":

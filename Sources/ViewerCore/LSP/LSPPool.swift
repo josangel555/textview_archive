@@ -158,8 +158,13 @@ public actor LSPPool {
     }
 
     /// Force shutdown of every live server and prevent any further
-    /// spawns. Idempotent. Awaitable: each client's `shutdown()` is
-    /// invoked sequentially.
+    /// spawns. Idempotent. Awaitable: each live client's `shutdown()` is
+    /// invoked CONCURRENTLY (via a `TaskGroup`), so total teardown time is
+    /// ≈ the slowest single shutdown rather than their sum. This matters
+    /// at app-quit: `LSPClient.shutdown()` costs up to ~2.4s (2s request
+    /// timeout + grace + SIGTERM poll), and a sequential loop over N live
+    /// servers blew past the bounded quit deadline once N≥2, reparenting
+    /// the un-shut clients to launchd (the leak TSK-485 fixes).
     ///
     /// `isClosed` is latched first so any `ensureLive` that wakes up
     /// mid-teardown bails (`client(for:)` guards on it). Because each
@@ -181,9 +186,23 @@ public actor LSPPool {
                 }
             }
             if live.isEmpty { break }
-            for (key, client) in live {
-                await client.shutdown()
-                entries.removeValue(forKey: key)
+            // Shut the live clients down CONCURRENTLY. Each child task only
+            // touches its own `client` (an actor → Sendable) and returns its
+            // `Key` (Sendable); the actor-isolated parent loop is the sole
+            // mutator of `entries`, so there's no shared-state race. The
+            // outer `while` still re-scans for any entry that went `.live`
+            // after the `isClosed` latch (a spawn past the guard), so this
+            // pass plus the loop keeps the no-leak drain guarantee.
+            await withTaskGroup(of: Key.self) { group in
+                for (key, client) in live {
+                    group.addTask {
+                        await client.shutdown()
+                        return key
+                    }
+                }
+                for await key in group {
+                    entries.removeValue(forKey: key)
+                }
             }
         }
         // Drop any residual non-live entries (cold/starting/dead) — no

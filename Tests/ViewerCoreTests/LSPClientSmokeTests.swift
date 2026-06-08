@@ -52,7 +52,9 @@ final class LSPClientSmokeTests: XCTestCase {
             if requireSmoke() { XCTFail("initialize failed: \(error)") }
             throw XCTSkip("initialize failed: \(error)")
         }
-        defer { Task { await client.shutdown() } }
+        // Awaited teardown so the LSP child is reaped before the next test
+        // rather than leaked by a detached Task (TSK-485).
+        self.addTeardownBlock { await client.shutdown() }
 
         let text = try String(contentsOf: target, encoding: .utf8)
         try await client.didOpen(url: target, languageId: "swift", text: text)
