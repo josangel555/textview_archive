@@ -104,4 +104,43 @@ final class MCPProtocolTests: XCTestCase {
             }
         }
     }
+
+    // TSK-145: a JSON number outside Int's range (e.g. 1e19) or with a
+    // fraction arrives as `.double`. `int(_:)` must NOT use the trapping
+    // `Int(d)` — that aborts the whole host from a single malformed
+    // tools/call. It must convert non-trappingly (`Int(exactly:)`) and
+    // throw `.invalidParams` instead. If this regresses to `Int(d)` the
+    // out-of-range case TRAPS, failing this test by crashing the run.
+    func test_int_outOfRangeDouble_throwsInsteadOfTrapping() {
+        let v: MCP.Value = .object(["big": .double(1e19)])
+        XCTAssertThrowsError(try v.int("big")) { error in
+            guard case .invalidParams = error as? MCPError else {
+                XCTFail("expected invalidParams for 1e19, got \(error)"); return
+            }
+        }
+    }
+
+    func test_int_fractionalDouble_throws() {
+        let v: MCP.Value = .object(["frac": .double(1.5)])
+        XCTAssertThrowsError(try v.int("frac")) { error in
+            guard case .invalidParams = error as? MCPError else {
+                XCTFail("expected invalidParams for 1.5, got \(error)"); return
+            }
+        }
+    }
+
+    func test_optionalInt_outOfRangeOrFractionalDouble_isNilNotTrap() {
+        // Same non-trapping contract on the optional path: unusable values
+        // map to nil (its "absent / unusable" signal), never a crash.
+        let v: MCP.Value = .object(["big": .double(1e19), "frac": .double(2.7)])
+        XCTAssertNil(v.optionalInt("big"))
+        XCTAssertNil(v.optionalInt("frac"))
+    }
+
+    func test_int_inRangeWholeDouble_isAccepted() {
+        // A whole-valued double within range is a legal integer (42.0 → 42).
+        let v: MCP.Value = .object(["n": .double(42)])
+        XCTAssertEqual(try v.int("n"), 42)
+        XCTAssertEqual(v.optionalInt("n"), 42)
+    }
 }
