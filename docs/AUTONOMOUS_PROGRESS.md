@@ -3000,3 +3000,21 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   4 owner-parked.** 12 audit findings validated across the last 9 ticks. Remaining
   `fixed`-state items are perf/race/infra (no behavior teeth) or process-exit
   (TSK-187) — correctly held for the human.
+
+## LOG +95 (2026-06-08, autonomous tick — TSK-179 Claude title cap; "cap" perf findings ARE teeth-able)
+- **Insight that re-opens the lane:** a perf/memory finding fixed via a CAP/bound
+  HAS behavior teeth — the cap firing is a testable behavior (long input →
+  truncated to cap; short input → preserved). So the "perf = no teeth" heuristic
+  was too broad; cap/bound fixes are validatable, unlike clone-vs-borrow ones.
+- **TSK-179** `[S3][perf] Claude session title stored unbounded (~4MB/session)`.
+  Fix: ClaudeSessionIndex caps the title at maxTitleChars=200 via clampTitle,
+  applied to first-prompt/custom/AI sources. ClaudeSessionIndexTitleCapAndEventCount
+  _Audit…Tests 5/5: long titles truncated to exactly 200, short preserved verbatim
+  — removing the clamp fails the count assert. Validated.
+- **Next-tick cap candidates** (perf/security with a bound → teeth-able): TSK-281
+  (SessionStore startup size cap), TSK-329 (ReviewStore.loadIndex maxReviewFileSize
+  — cap present at loadIndex, may need a test added), TSK-295 (MessagePack reserve
+  cap), TSK-273/274 (ReDoS wall-clock deadline).
+- main @ 0f4655e (no code change; board state only) + this doc. **Session
+  cumulative: 60 validated + 1 bug fixed + 4 owner-parked.** 13 audit findings
+  validated across the last 10 ticks.
