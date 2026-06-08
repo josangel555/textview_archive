@@ -3730,3 +3730,17 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - **Confirmed 5 more findings already-fixed-and-tested** (csv #316, msgpack #313, ReDoS #279/#293 in
   RegexComplexityGuardTests) → staleness ~18/18 across the session. Don't re-mine; work the teeth-able cluster.
 - Net: 2 validated, 1 held — board-state + doc only; `main` unchanged @ 13fda83, host gate green (LinkPolicy 40/40).
+
+## LOG +128 (2026-06-08, autonomous tick — validated TSK-195 .tsx grammar-routing contract)
+- Continued the teeth-able `fixed` lane. **Validated TSK-195** ([S4][contract] .tsx routed to plain TS
+  grammar; tsx grammar unreachable): fix landed (commit 71586a5 — `HighlightLanguage.tsx` +
+  `GrammarLoader.Grammar.tsx`, cSymbol `tree_sitter_tsx`), guarded by a pure-kernel golden test
+  `TreeSitterEngineGoldenTests.testTSX` — `MDV_HEADLESS_GATE=1 swift test --filter TreeSitterEngineGoldenTests`
+  → 13/13 green, ^EXIT=0. testTSX tokenizes a JSX-bearing `.tsx` snippet via `language:.tsx` and asserts
+  keyword/string runs; reverting the routing → empty/ERROR-polluted runs → fail = real teeth. Scoped to
+  the grammar-routing contract; JSX-specific COLORING is the separate TSK-410 predicate-eval engine bug.
+- The clean teeth-able candidates in the board `fixed` audit cluster (134–196) are thinning — remainder is
+  dominated by perf/leak/race/infra (no teeth → held for human) + findings that live only in the built-in
+  TaskList (#266–345, e.g. aspectFit #326 — has `AspectFitFiniteGuardTests` but no board TSK to validate).
+  Per [[project_audit_pending_list_stale]]: validate the pure-kernel BUG/SECURITY/contract findings that
+  have a board task + teeth test; hold the rest. No code change; `main` @ d3b8cac, host gate green.
