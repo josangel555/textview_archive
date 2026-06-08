@@ -2377,3 +2377,28 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   1 bug fixed + 2 shared-core modules + 2 follow-ups. Next PORT veins: breadcrumb
   nav (TSK-229/230), recently-opened/history (TSK-233/234), empty/error/too-large
   states (TSK-245/246), reload (TSK-239/240).
+
+## LOG +70 (2026-06-07, autonomous tick — breadcrumb path navigation, both front-ends)
+- **Shipped TSK-229 + TSK-230 [PORT][TUI/WEB] breadcrumb / clickable path nav**
+  (commit 72c2e50) off ONE new shared core helper:
+  - **core**: `nav::breadcrumbs(path) -> Vec<Crumb{label,path}>` — pure splitter:
+    absolute paths lead with a root crumb, empty segments (`//`/trailing `/`)
+    skipped, `.`/`..` kept verbatim, relative paths get no root crumb. 6 unit
+    tests + doctest (real merge-gate teeth).
+  - **web (TSK-230)**: `breadcrumb_html` replaces the plain nav path bar with a
+    `›`-separated trail — each ancestor is an esc/pct_encode `/browse?path=` link
+    carrying the sticky sort+hidden state; current dir is the plain-text leaf.
+    `.crumbs` CSS added. Test `browse_renders_clickable_breadcrumb_trail`.
+  - **tui (TSK-229)**: files-pane title shows the same `›`-separated trail;
+    extracted `cap_tail` (the TSK-497 tail-keeping cap) so the breadcrumb is
+    bounded and the ` · sort: … · hidden …` markers still fit. Tests:
+    `breadcrumb_trail_*`, `cap_tail_*`, `files_pane_title_shows_breadcrumb_trail`.
+  - web 50 (+1), tui 41 (+2, net of the short_path→cap_tail test rename), core
+    +6 unit +1 doctest; rust-core gate GATE_EXIT=0. Drove both reported→…→validated.
+- **One core, three front-ends** holds again: TUI + web breadcrumbs are identical
+  by construction (same `nav::breadcrumbs`). 5th shared-core module-or-helper this
+  session (meta, whitespace, breadcrumbs added to nav).
+- main @ 72c2e50 + this doc; gates green. Cumulative session: 28 validated +
+  1 bug fixed + shared-core helpers. Next PORT veins: recently-opened/history
+  (TSK-233/234), empty/error/too-large states (TSK-245/246), reload web (TSK-240),
+  table column-width parity (TSK-237/238).
