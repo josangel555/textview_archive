@@ -682,7 +682,15 @@ fn content_html(
     } else {
         ""
     };
-    format!("{modes}{bar}{state_banner}{ws_link}{wrap_link}{wrap_style}{outline_nav}{content}")
+    // Reload-from-disk link (TSK-240): the web tier re-reads the file on every
+    // request and has no file watcher, so this is the one-click way to pick up an
+    // on-disk change. Re-requests the current view preserving the active mode;
+    // shown for every file view (all modes), unlike the text-only toggles above.
+    let reload_link = format!(
+        "<div class=\"reload\"><a href=\"/view?path={href}&mode={}\">\u{21bb} reload</a></div>",
+        mode_str(v.mode)
+    );
+    format!("{modes}{bar}{state_banner}{reload_link}{ws_link}{wrap_link}{wrap_style}{outline_nav}{content}")
 }
 
 /// The go-to-line box: a JS-free GET form that reloads `/view` with `?line=<n>`.
@@ -1012,6 +1020,7 @@ main{{flex:1;overflow:auto;padding:12px}}\
 .crumbs a{{color:#1a5fb4;text-decoration:none}}\
 .crumbs .sep{{color:#bbb;margin:0 4px}} .crumbs .here{{color:#333;font-weight:600}}\
 .banner{{font:12px -apple-system,Segoe UI,sans-serif;color:#8a6d00;background:#fff8e1;border:1px solid #f0e0a0;border-radius:4px;padding:4px 8px;margin:0 0 8px}}\
+.reload{{font:11px -apple-system,Segoe UI,sans-serif;margin:0 0 8px}} .reload a{{color:#1a5fb4;text-decoration:none}}\
 .find{{display:flex;gap:4px;align-items:center;margin:0 0 6px;flex-wrap:wrap}}\
 .find input[type=text]{{flex:1;min-width:80px;font:12px -apple-system,Segoe UI,sans-serif;padding:3px 6px;border:1px solid #ccc;border-radius:4px}}\
 .find button{{font:11px -apple-system,Segoe UI,sans-serif;padding:3px 8px;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer}}\
@@ -1549,6 +1558,21 @@ mod tests {
         // A normal readable text file → no banner.
         let ok = render_view(&dir.join("hello.txt"), Some("text"), SortKey::Name, false, None);
         assert!(!ok.contains("class=\"banner\""), "readable text gets no banner:\n{ok}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn view_offers_reload_from_disk_link_in_all_modes() {
+        let dir = fixture();
+        // Text mode: a reload link that re-requests the current view, preserving mode.
+        let t = render_view(&dir.join("hello.txt"), Some("text"), SortKey::Name, false, None);
+        assert!(t.contains("class=\"reload\""), "reload control present in text view:\n{t}");
+        assert!(t.contains(">\u{21bb} reload</a>"), "reload link labelled:\n{t}");
+        assert!(t.contains("&mode=text"), "reload preserves the active mode:\n{t}");
+        // The link is unconditional (unlike the text-only ws/wrap toggles): HEX too.
+        let h = render_view(&dir.join("hello.txt"), Some("hex"), SortKey::Name, false, None);
+        assert!(h.contains("class=\"reload\""), "reload present in hex view too:\n{h}");
+        assert!(h.contains("&mode=hex"), "reload preserves hex mode:\n{h}");
         let _ = fs::remove_dir_all(&dir);
     }
 
