@@ -1335,6 +1335,7 @@ impl App {
                     ViewMode::Table => "table",
                     ViewMode::Diff => "diff",
                     ViewMode::Image => "image",
+                    ViewMode::Formatted => "formatted",
                 };
                 // While the go-to-line prompt is open the title becomes the live
                 // "goto: N" input so the user sees the number they're typing.
@@ -1586,6 +1587,8 @@ mod tests {
         fs::write(dir.join("hello.txt"), b"line one\nline two\n").unwrap();
         fs::write(dir.join("data.bin"), [0x00u8, 0x41, 0xff, 0x7f]).unwrap();
         fs::write(dir.join("people.csv"), b"name,age,city\nAlice,30,NYC\nBob,25,LA\n").unwrap();
+        // Compact JSON so the `Formatted` mode visibly re-indents it (TSK-217).
+        fs::write(dir.join("config.json"), br#"{"a":1,"b":[2,3]}"#).unwrap();
         // A dotfile + a dot-directory, hidden by default (see the `.` toggle).
         fs::write(dir.join(".secret"), b"hidden\n").unwrap();
         fs::create_dir_all(dir.join(".cache")).unwrap();
@@ -1830,6 +1833,37 @@ mod tests {
             "no-match status is hex-labelled: {:?}",
             app.status,
         );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn json_offers_formatted_mode_and_pretty_prints() {
+        // TSK-217: a .json file is classified Structured, so its mode set offers
+        // Formatted (Text → Formatted → Hex). Cycling to Formatted re-indents the
+        // compact source via the shared core pretty-printer.
+        let dir = fixture_dir();
+        let mut app = App::new(dir.clone());
+        select_name(&mut app, "config.json"); // {"a":1,"b":[2,3]}
+        app.enter();
+        let p = app.preview.as_ref().unwrap();
+        assert_eq!(p.kind, view::FileKind::Structured, "json is Structured");
+        assert_eq!(p.view.mode, ViewMode::Text, "opens in Text (the raw source)");
+        assert_eq!(
+            p.view.available_modes,
+            vec![ViewMode::Text, ViewMode::Formatted, ViewMode::Hex],
+            "Formatted is offered between Text and Hex",
+        );
+        // Raw Text mode shows the compact one-liner (no indentation).
+        let raw = render(&mut app);
+        assert!(raw.contains(r#"{"a":1,"b":[2,3]}"#), "Text shows compact source:\n{raw}");
+
+        // Cycle Text → Formatted; the body is now the pretty-printed JSON.
+        app.cycle_mode();
+        assert_eq!(app.preview.as_ref().unwrap().view.mode, ViewMode::Formatted);
+        let pretty = render(&mut app);
+        assert!(pretty.contains("formatted"), "title reflects formatted mode:\n{pretty}");
+        assert!(pretty.contains(r#"  "a": 1,"#), "2-space indented key:\n{pretty}");
+        assert!(pretty.contains(r#"    2,"#), "nested array element indented:\n{pretty}");
         let _ = fs::remove_dir_all(&dir);
     }
 

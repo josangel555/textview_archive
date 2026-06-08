@@ -32,6 +32,10 @@ pub enum ViewMode {
     /// A raster image (shown inline by the web tier, as a metadata card by the
     /// terminal tier).
     Image,
+    /// Pretty-printed structured text (JSON today; XML is a follow-up). The body
+    /// is `ViewBody::Text` of the reformatted document — a renderer draws it
+    /// exactly like `Text`; only `View.mode` distinguishes them.
+    Formatted,
 }
 
 /// What a file is, by name — drives the default mode and the mode set offered.
@@ -47,6 +51,9 @@ pub enum FileKind {
     Diff,
     /// A raster image (PNG/JPEG/GIF/BMP/WEBP) — leads with the `Image` mode.
     Image,
+    /// Structured text that supports pretty-print (`.json` today; `.xml` joins
+    /// when the XML formatter lands). Leads with `Text`, but offers `Formatted`.
+    Structured,
 }
 
 /// How a single diff display line should be colored. Derived purely from the
@@ -171,6 +178,11 @@ pub fn classify(name: &str) -> FileKind {
         FileKind::Diff
     } else if lower.ends_with(".csv") || lower.ends_with(".tsv") {
         FileKind::Tabular
+    } else if lower.ends_with(".json") {
+        // JSON gets the `Formatted` (pretty-print) mode. `.xml` joins here once
+        // the XML formatter lands (the deferred slice) — until then it stays
+        // `Plain` so we never offer a Formatted mode that no-ops.
+        FileKind::Structured
     } else {
         FileKind::Plain
     }
@@ -193,6 +205,9 @@ pub fn available_modes(kind: FileKind) -> Vec<ViewMode> {
         // An image's bytes are binary — `Text` would be garbage, so only the
         // `Image` card/preview and the `Hex` byte dump are offered.
         FileKind::Image => vec![ViewMode::Image, ViewMode::Hex],
+        // Structured (JSON): the raw `Text` leads (it's the source of truth);
+        // `Formatted` re-indents it; `Hex` as ever.
+        FileKind::Structured => vec![ViewMode::Text, ViewMode::Formatted, ViewMode::Hex],
         FileKind::Plain => vec![ViewMode::Text, ViewMode::Hex],
     }
 }
@@ -204,7 +219,7 @@ pub fn default_mode(kind: FileKind) -> ViewMode {
         FileKind::Diff => ViewMode::Diff,
         FileKind::Tabular => ViewMode::Table,
         FileKind::Image => ViewMode::Image,
-        FileKind::Plain => ViewMode::Text,
+        FileKind::Structured | FileKind::Plain => ViewMode::Text,
     }
 }
 
@@ -239,6 +254,7 @@ pub fn build(
         }
         ViewMode::Diff => ViewBody::Diff(diff_lines(&text)),
         ViewMode::Image => ViewBody::Image(image::identify(bytes)),
+        ViewMode::Formatted => ViewBody::Text(formatted_lines(&text)),
     };
     View { mode, body, indent, kind, available_modes: available_modes(kind) }
 }
@@ -304,6 +320,17 @@ fn diff_lines(text: &str) -> Vec<DiffLine> {
         .collect()
 }
 
+/// Pretty-print structured text for the `Formatted` mode. JSON is reformatted
+/// via [`crate::format::pretty_json`]; anything that isn't valid JSON (XML,
+/// malformed input) falls back to the raw `Text` shaping so the mode never shows
+/// an empty or garbled body. Capped at `MAX_TEXT_LINES` like `Text`.
+fn formatted_lines(text: &str) -> Vec<String> {
+    match crate::format::pretty_json(text) {
+        Some(pretty) => pretty.split('\n').take(MAX_TEXT_LINES).map(str::to_string).collect(),
+        None => text_lines(text),
+    }
+}
+
 fn text_lines(text: &str) -> Vec<String> {
     text.split('\n')
         .take(MAX_TEXT_LINES)
@@ -330,6 +357,16 @@ mod tests {
         assert_eq!(default_mode(FileKind::Tabular), ViewMode::Table);
         assert_eq!(default_mode(FileKind::Diff), ViewMode::Diff);
         assert_eq!(available_modes(FileKind::Plain), vec![ViewMode::Text, ViewMode::Hex]);
+        // structured (JSON): Text default, Formatted offered, Hex.
+        assert_eq!(default_mode(FileKind::Structured), ViewMode::Text);
+        assert_eq!(
+            available_modes(FileKind::Structured),
+            vec![ViewMode::Text, ViewMode::Formatted, ViewMode::Hex]
+        );
+        // structured cycle: Text → Formatted → Hex → Text
+        assert_eq!(cycle(ViewMode::Text, FileKind::Structured), ViewMode::Formatted);
+        assert_eq!(cycle(ViewMode::Formatted, FileKind::Structured), ViewMode::Hex);
+        assert_eq!(cycle(ViewMode::Hex, FileKind::Structured), ViewMode::Text);
         // plain cycle: Text → Hex → Text
         assert_eq!(cycle(ViewMode::Text, FileKind::Plain), ViewMode::Hex);
         assert_eq!(cycle(ViewMode::Hex, FileKind::Plain), ViewMode::Text);

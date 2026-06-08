@@ -660,6 +660,7 @@ fn parse_mode(param: Option<&str>, kind: FileKind) -> ViewMode {
         Some("table") if kind == FileKind::Tabular => ViewMode::Table,
         Some("diff") if kind == FileKind::Diff => ViewMode::Diff,
         Some("image") if kind == FileKind::Image => ViewMode::Image,
+        Some("formatted") if kind == FileKind::Structured => ViewMode::Formatted,
         _ => view::default_mode(kind),
     }
 }
@@ -671,6 +672,7 @@ fn mode_str(m: ViewMode) -> &'static str {
         ViewMode::Table => "table",
         ViewMode::Diff => "diff",
         ViewMode::Image => "image",
+        ViewMode::Formatted => "formatted",
     }
 }
 
