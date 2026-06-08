@@ -3152,3 +3152,26 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   not self-validated.
 - Two CSV slices now landed (TSK-303 find + TSK-302 cell-nav), both host-validated
   cores with the UI halves honestly flagged for VM. main @ `a12391c`, tree clean.
+
+## LOG +102 (2026-06-08, autonomous tick — TSK-310 Files-pane tree-filter CORE model shipped + tested)
+- Third model-first SwiftUI slice this run. **TSK-310** "[BACKLOG] A filter button on
+  Files pane … fuzzy [narrow the tree]" → **progress** (commit `654015b`). Board id
+  verified (`task_get` TSK-310 = the Files-pane filter task).
+- **Slice 1 (CORE, done + host-validated):** new `Sources/ViewerCore/FileTreeFilter.swift`
+  — pure enum, generic over the caller's node via closures (id/children/isMatch), so
+  matching stays decoupled (the existing `FuzzyMatcher` plugs in as `isMatch`). The
+  genuinely-missing piece was the narrowing RULE, not the matcher:
+  `visibleIDs(...) -> Set<ID>` keeps a node if it matches, OR an ancestor matches (a
+  matched folder reveals its whole subtree), OR a descendant matches (the path down to
+  each match stays); only real self/descendant matches propagate upward so siblings of a
+  matched folder aren't retained. Teeth: `FileTreeFilterTests` 7/7 — leaf match keeps
+  leaf+ancestors only, folder match keeps whole subtree, extension match across branches,
+  root match keeps its subtree, no-match empty, empty-roots, explicit match-all. (Caught a
+  Swift gotcha: `"x".contains("")` is FALSE — empty needle is NOT match-all; callers treat
+  empty query as no-filter upstream.) `swift build` + headless gate green.
+- **Slice 2 (LIVE, NOT done):** filter button/row on the Files header + bind query →
+  `FileTreeFilter.visibleIDs(isMatch: FuzzyMatcher.match(...) != nil)` → hide non-surviving
+  `SidebarModel` rows + focus/clear. SwiftUI render+focus path → `blocker: live-validation`,
+  VM/owner gate, not self-validated.
+- Run total: three host-validated model cores for filed SwiftUI features (TSK-303/302/310),
+  each with the UI half honestly flagged for VM. main @ `654015b`, tree clean.
