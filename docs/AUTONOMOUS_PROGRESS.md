@@ -3130,3 +3130,25 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - Verified the board id first (`task_get` TSK-303 = "Find support in table") before
   acting — applying the hardened rule after last tick's mis-map. main @ `e1dc879`,
   tree clean. Honest forward motion on a priority SwiftUI feature, host-validated half.
+
+## LOG +101 (2026-06-08, autonomous tick — TSK-302 CSV cell-cursor CORE model shipped + tested)
+- Continued the model-first SwiftUI lane (sibling of +100's CSVFind). **TSK-302**
+  "[BACKLOG] Make table as cells … arrow keys, Cmd+C copies whole cell" → **progress**
+  (commit `a12391c`). Verified board id first (`task_get` TSK-302 = the cell-nav task).
+- **Slice 1 (CORE, done + host-validated):** new `Sources/ViewerCore/CSVCellCursor.swift`
+  — pure `CSVCellCursor` over a rowCount×columnCount grid. Clamped NON-wrapping
+  movement (moveUp/Down/Left/Right, moveToRowStart/End = Home/End, moveToTop/Bottom,
+  clamped move(toRow:column:)); each mover returns whether it moved (view decides
+  consume-vs-scroll). init clamps start; zero-row OR zero-column grid is `isEmpty` and
+  every mover is a no-op (no crash). `cell(in: [[String]])` = SAFE bounded read (nil on
+  empty / ragged-short row / stale-short rows) — the Cmd-C payload. Teeth:
+  `CSVCellCursorTests` 13/13 (init clamp/default, empty grid incl negative counts,
+  vertical+horizontal edge clamp with moved-flag, Home/End + top/bottom preserving the
+  other axis, clamped jump + no-change, no-op-on-empty, bounded read incl ragged +
+  stale-rows nil, Equatable). `swift build` + headless gate green (4192 tests).
+- **Slice 2 (LIVE, NOT done):** SwiftUI wiring on `CSVTableView` — focused-cell
+  highlight, arrow/Home/End/Cmd-C key handling, pasteboard write of `cursor.cell(in:)`.
+  Render+key-event path, no host coverage → `blocker: live-validation`, VM/owner gate,
+  not self-validated.
+- Two CSV slices now landed (TSK-303 find + TSK-302 cell-nav), both host-validated
+  cores with the UI halves honestly flagged for VM. main @ `a12391c`, tree clean.
