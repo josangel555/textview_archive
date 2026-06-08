@@ -3412,3 +3412,22 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   the remaining half of TSK-500). Will record TSK-500 → fixed + self-validate with the re-run's
   checks artifact next turn (NOT before — don't claim fixed until the re-run confirms).
 - Corrected memory `reference_vm_plain_ssh_breaks_tests` (was wrong root cause). main @ `7447e3a`.
+
+## LOG +114 (2026-06-08, autonomous tick — TSK-500 VALIDATED: VM full suite 158→6 failures after the ulimit fix)
+- VM re-validation (post-fix `test-in-vm.sh test`) completed: **Executed 4220 tests, 41 skipped, 6
+  failures (1 unexpected)** in 967s — down from **158 failures (102 unexpected)** before. 0 "could not
+  open temp file"; TextFileLoaderTests (was 18-failed) passes. The `ulimit -n 8192` fix (commit 7447e3a)
+  eliminated the EMFILE false-failure flood.
+- **TSK-500 driven to `validated`** (agent self-validate with a checks artifact: 158→6 before/after VM
+  run + the diff). The VM headless lane is now USABLE for autonomous validation — the multi-tick blocker
+  that made every VM run look catastrophically red (when main was healthy) is resolved.
+- **Residual (NOT the fd issue, separate):** the 6 remaining failures are heavy-UI-tier occlusion
+  (T4/T5/UAT/VisualRegression run over ssh without a realized GUI window). That's the long-known
+  GUI-login-session requirement (TSK-151 launchctl-asuser pattern / the nightly-vm logged-in lane), not
+  something the ulimit fix addresses. Noted in memory; the headless tiers (the autonomous-validatable
+  ones) are now clean on the VM.
+- Impact for the loop: future ticks CAN now use the VM lane to validate HEADLESS-tier behavior of the
+  `fixed` cluster (model/logic), distinguishing the 6 known occlusion residuals from real failures. The
+  heavy-tier RENDER validation still needs the GUI nightly lane / owner.
+- main @ `7447e3a` (fix) + docs. Memory `reference_vm_plain_ssh_breaks_tests` corrected to the real
+  (fd-exhaustion) root cause earlier this arc.
