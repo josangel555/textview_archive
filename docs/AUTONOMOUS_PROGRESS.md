@@ -2315,3 +2315,20 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   (line-ending + encoding badge + metrics) — the one-core pattern compounding.
 - main @ 356e751 + this doc; gates green. Cumulative session: 22 validated +
   1 bug fixed + 1 shared-core module + 2 follow-ups.
+
+## LOG +66 (2026-06-07, autonomous tick — show-invisibles, TUI side)
+- **Shipped TSK-241 [PORT][TUI] show-invisibles / whitespace markers** (commit
+  49778c2): new no-dep `core::whitespace::reveal` (space→·, tab→→; 4 gated tests)
+  + TUI `i` toggle (`show_whitespace` bool) rendering each visible Text line
+  through it; help line shows `i ws`. core 216 (+4) / tui 38 (+1); gate
+  GATE_EXIT=0. Drove reported→…→validated.
+- **Gotcha noted in the test:** the shared `view` pre-expands tabs to spaces
+  upstream, so the front-end never receives a `\t` — in practice the toggle
+  reveals spaces as · (the `tab→→` branch of `reveal` is correct but unreached by
+  this path; kept as a general helper, covered by the core unit test). The TUI
+  test was corrected to assert the actual revealed form `a·b·c`.
+- **Next-tick follow-on:** TSK-242 [PORT][WEB] whitespace markers — needs a `?ws=`
+  param threaded through `content_html`'s call chain + a per-line reveal before
+  HTML-escape + a toggle link (deeper than the bar-append features, so split out).
+- main @ 49778c2 + this doc; gates green. Cumulative session: 23 validated +
+  1 bug fixed + 2 shared-core modules (meta, whitespace) + 2 follow-ups.
