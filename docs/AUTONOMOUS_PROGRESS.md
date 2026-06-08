@@ -3431,3 +3431,19 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   heavy-tier RENDER validation still needs the GUI nightly lane / owner.
 - main @ `7447e3a` (fix) + docs. Memory `reference_vm_plain_ssh_breaks_tests` corrected to the real
   (fd-exhaustion) root cause earlier this arc.
+
+## LOG +115 (2026-06-08, autonomous tick — TSK-500 residual scoped → TSK-501; VM GUI session confirmed present)
+- With TSK-500 validated (VM headless lane usable, 158→6), investigated the 6 heavy-tier occlusion
+  residuals. KEY FINDING: the VM HAS a live GUI/Aqua session — `who` = vm-tester on console (since Jun 5),
+  `launchctl print gui/501` exists, WindowServer up. So the occlusion is purely that `ssh … swift test`
+  runs OUTSIDE the Aqua session; it's fixable via `launchctl asuser 501`, NOT a VM-setup blocker.
+- The fix pattern is already proven in `scripts/vm-smoke.sh` (`sudo -S launchctl asuser "$GUI_UID"
+  /bin/sh -c '…'` + env-set-inside-the-shell trick + sudo-arg allowlist).
+- Filed **TSK-501** with the findings + a LOW-RISK additive design: add a SEPARATE heavy-tier invocation
+  to test-in-vm.sh that runs only the T4/T5/UAT/visual filters via asuser, leaving the now-working
+  headless `test` path untouched (so the 158→6 win can't regress). Deferred the wiring to a focused tick
+  (fiddly asuser/sudo/env incantation + ~16-min heavy re-validation — not safe to cram into this very
+  long session). Once TSK-501 lands, the FULL VM UI lane is usable → the autonomous loop can drive the
+  `fixed` SwiftUI UI cluster to validated.
+- No source change this tick (investigation + scoping). main @ `7dc9597`. Memory
+  `reference_vm_plain_ssh_breaks_tests` already notes the GUI-session requirement.
