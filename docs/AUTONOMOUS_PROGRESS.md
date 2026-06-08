@@ -2217,3 +2217,25 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - Cumulative this session: 9 audit findings validated (5 in +59, 4 in +60).
 - Still held (no host teeth): TSK-122/123 (HexView repaint / session_table clone —
   perf, VM or alloc-assert needed). main @ a51e4e6 + this doc; gates green.
+
+## LOG +61 (2026-06-07, autonomous tick — found+fixed a real TUI bug while draining PORT)
+- **Found a real red:** `cargo test -p mdvcore-tui` failed 2 tests
+  (`files_pane_shows_active_sort_and_s_cycles_it`, `dotfiles_hidden_by_default…`)
+  — the files-pane title clipped its `· sort: · hidden` state markers because
+  `short_path` only stripped `$HOME` and didn't bound length; a long macOS
+  `$TMPDIR` fills the 35%-width title. **Environment-dependent** (green on a short
+  TMPDIR). NOT caught by the merge gate: rust-core `default-members = [core, ffi]`
+  by design, so tui/web tests never gate a merge (corrected my earlier wrong
+  assumption that "rust gate green ⇒ tui green").
+- **Fixed (TSK-497, commit 5449b59):** bounded `short_path` to <=36 cols, tail-kept
+  with a leading `…`, so the state suffix always fits. Added a direct unit test.
+  mdvcore-tui now 35/0 (was 33/2). rust-core gate GATE_EXIT=0.
+- **Validated this tick:** TSK-497 (the fix, teeth = the 2 flipped tests + new
+  unit test), TSK-215 (TUI quick file find / `nav::filter_entries`), TSK-216 (web
+  `?filter=` quick find) — both PORT W1 features, crate now fully green.
+- **Gate-coverage gap noted (future task):** the tui/web front-end test suites
+  are outside the merge gate, so they rot silently. A nightly/explicit
+  `cargo test -p mdvcore-tui -p mdvcore-web` lane would catch this class. (Filed
+  mentally for a follow-up; the bug itself is fixed + the test is green.)
+- main @ 5449b59 + this doc; rust gate green. Cumulative session: 12 board items
+  validated + 1 real bug fixed.
