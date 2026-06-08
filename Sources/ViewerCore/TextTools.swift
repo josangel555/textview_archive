@@ -50,11 +50,42 @@ public enum TextTools {
         return String(data: data, encoding: .utf8)
     }
 
-    /// Lowercase hex SHA-256 of the UTF-8 bytes of `text` (64 hex chars).
-    public static func sha256Hex(_ text: String) -> String {
-        SHA256.hash(data: Data(text.utf8))
+    /// Lowercase hex SHA-256 of `data` (64 hex chars). The reusable core for
+    /// both text and file-bytes hashing.
+    public static func sha256Hex(_ data: Data) -> String {
+        SHA256.hash(data: data)
             .map { String(format: "%02x", $0) }
             .joined()
+    }
+
+    /// Lowercase hex SHA-256 of the UTF-8 bytes of `text` (64 hex chars).
+    public static func sha256Hex(_ text: String) -> String {
+        sha256Hex(Data(text.utf8))
+    }
+}
+
+/// File-level SHA-256 checksums (surfaced in the metadata panel / "Copy
+/// Checksum" actions). Distinct from `TextTools.sha256Hex(_ text:)` because a
+/// file's bytes are hashed verbatim — a binary or non-UTF-8 file has no faithful
+/// `String` form, and large files must not be slurped whole into memory.
+public enum FileChecksum {
+    /// Streamed lowercase-hex SHA-256 of the file's RAW bytes (64 hex chars).
+    /// Reads in bounded `chunkSize` chunks and folds them into an incremental
+    /// hasher, so peak memory stays ~`chunkSize` regardless of file size.
+    /// Throws if the file can't be opened/read (e.g. missing / unreadable).
+    public static func sha256Hex(ofFileAt url: URL, chunkSize: Int = 1 << 20) throws -> String {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while true {
+            // `read(upToCount:)` returns nil at EOF on some OS versions and an
+            // empty `Data` on others — treat both as end-of-file.
+            guard let chunk = try handle.read(upToCount: chunkSize), !chunk.isEmpty else {
+                break
+            }
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 }
 

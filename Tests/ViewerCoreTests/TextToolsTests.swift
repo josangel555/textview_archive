@@ -83,6 +83,65 @@ final class TextToolsTests: XCTestCase {
         XCTAssertNotNil(h.range(of: "^[0-9a-f]{64}$", options: .regularExpression))
     }
 
+    // MARK: File checksums (TSK-347)
+
+    func testSHA256_dataOverload_matchesTextAndVector() {
+        XCTAssertEqual(
+            TextTools.sha256Hex(Data("abc".utf8)),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+        XCTAssertEqual(
+            TextTools.sha256Hex(Data()),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+        // The text overload is exactly the data overload over UTF-8 bytes.
+        XCTAssertEqual(TextTools.sha256Hex("abc"), TextTools.sha256Hex(Data("abc".utf8)))
+    }
+
+    func testFileChecksum_knownVectors() throws {
+        let dir = FileManager.default.temporaryDirectory
+        let abc = dir.appendingPathComponent("mdv-sha-\(UUID().uuidString).txt")
+        try Data("abc".utf8).write(to: abc)
+        defer { try? FileManager.default.removeItem(at: abc) }
+        XCTAssertEqual(try FileChecksum.sha256Hex(ofFileAt: abc),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+
+        let empty = dir.appendingPathComponent("mdv-sha-\(UUID().uuidString).bin")
+        try Data().write(to: empty)
+        defer { try? FileManager.default.removeItem(at: empty) }
+        XCTAssertEqual(try FileChecksum.sha256Hex(ofFileAt: empty),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+    }
+
+    /// Chunked streaming must produce the SAME digest as one-shot hashing —
+    /// proves the incremental fold is correct across read boundaries. A tiny
+    /// `chunkSize` forces many iterations over a multi-KB file.
+    func testFileChecksum_streamsAcrossChunksIdenticalToOneShot() throws {
+        let bytes = Data((0..<5000).map { UInt8($0 % 256) })
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-sha-\(UUID().uuidString).bin")
+        try bytes.write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertEqual(try FileChecksum.sha256Hex(ofFileAt: url, chunkSize: 7),
+                       TextTools.sha256Hex(bytes))
+    }
+
+    /// File hashing handles raw non-UTF-8 bytes the text API can't represent.
+    func testFileChecksum_hashesNonUTF8Bytes() throws {
+        let bytes = Data([0xFF, 0x00, 0xFE, 0x80, 0x01])
+        XCTAssertNil(String(data: bytes, encoding: .utf8))   // not valid UTF-8
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-sha-\(UUID().uuidString).bin")
+        try bytes.write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertEqual(try FileChecksum.sha256Hex(ofFileAt: url),
+                       TextTools.sha256Hex(bytes))
+    }
+
+    func testFileChecksum_missingFileThrows() {
+        let missing = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-sha-missing-\(UUID().uuidString)")
+        XCTAssertThrowsError(try FileChecksum.sha256Hex(ofFileAt: missing))
+    }
+
     // MARK: Verb dispatcher (surface-agnostic)
 
     func testApply_dispatchesEachVerb() {
