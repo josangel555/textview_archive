@@ -26,31 +26,39 @@ public enum LineEnding: String, Sendable, Equatable {
 
 public enum LineEndingDetector {
 
-    /// Scan `text` and classify its line endings. O(n) over the scalar view.
-    public static func detect(in text: String) -> LineEnding {
+    /// Scan `text` and classify its line endings. Iterates the scalar view by
+    /// index (no full-array materialization). Pass `sampleScalars` to bound the
+    /// scan to a prefix — the status bar uses this so a multi-MB file doesn't
+    /// pay an O(N) scan on the body hot path (the classification of a prefix is
+    /// representative; a CRLF pair straddling the bound is counted as the pair).
+    public static func detect(in text: String, sampleScalars: Int? = nil) -> LineEnding {
         var sawLF = false      // a `\n` not part of a `\r\n`
         var sawCRLF = false    // a `\r\n` pair
         var sawCR = false      // a `\r` not followed by `\n`
 
         let cr: Unicode.Scalar = "\r"
         let lf: Unicode.Scalar = "\n"
-        let scalars = Array(text.unicodeScalars)
-        var i = 0
-        let n = scalars.count
+        let scalars = text.unicodeScalars
+        var idx = scalars.startIndex
+        var checked = 0
 
-        while i < n {
-            let u = scalars[i]
+        while idx < scalars.endIndex {
+            if let cap = sampleScalars, checked >= cap { break }
+            let u = scalars[idx]
             if u == cr {
-                if i + 1 < n, scalars[i + 1] == lf {
+                let next = scalars.index(after: idx)
+                if next < scalars.endIndex, scalars[next] == lf {
                     sawCRLF = true
-                    i += 2
+                    idx = scalars.index(after: next)
+                    checked += 2
                     continue
                 }
                 sawCR = true
             } else if u == lf {
                 sawLF = true
             }
-            i += 1
+            idx = scalars.index(after: idx)
+            checked += 1
         }
 
         let kinds = (sawLF ? 1 : 0) + (sawCRLF ? 1 : 0) + (sawCR ? 1 : 0)
@@ -62,7 +70,8 @@ public enum LineEndingDetector {
     }
 
     /// Convenience: the status-bar label for `text` (e.g. "LF", "CRLF", "—").
-    public static func displayString(in text: String) -> String {
-        detect(in: text).displayString
+    /// `sampleScalars` bounds the scan as in `detect(in:sampleScalars:)`.
+    public static func displayString(in text: String, sampleScalars: Int? = nil) -> String {
+        detect(in: text, sampleScalars: sampleScalars).displayString
     }
 }

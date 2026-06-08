@@ -367,7 +367,7 @@ struct StatusBar: View {
         let lineCount: Int
         let charCount: Int
         let byteCount: Int
-        let lineEndings: String  // "LF" / "CRLF" / "—"
+        let lineEndings: String  // LineEndingDetector: "LF" / "CRLF" / "CR" / "Mixed" / "—"
         let encodingShort: String
         let indent: String       // "Tabs" / "Spaces (2)" / "—"
         /// True only for text-backed documents (`.loaded`). Media/binary
@@ -475,7 +475,7 @@ struct StatusBar: View {
             lineCount: lineCount(in: f.contents),
             charCount: f.contents.utf16.count,
             byteCount: f.byteCount,
-            lineEndings: detectLineEndings(in: f.contents),
+            lineEndings: LineEndingDetector.displayString(in: f.contents, sampleScalars: 4096),
             encodingShort: encodingShort(f.encoding),
             indent: IndentDetector.detect(in: f.contents)
         )
@@ -563,25 +563,6 @@ struct StatusBar: View {
         for c in s.utf8 where c == 0x0A { n += 1 }
         if s.utf8.last == 0x0A { n -= 1 }
         return n
-    }
-
-    private static func detectLineEndings(in s: String) -> String {
-        // Sample the first ~4 KB rather than the whole file — saves
-        // O(N) on the body hot path for multi-MB files.
-        let bytes = s.utf8
-        var sawCR = false
-        var sawLF = false
-        var checked = 0
-        for b in bytes {
-            if b == 0x0D { sawCR = true }
-            if b == 0x0A { sawLF = true }
-            checked += 1
-            if checked >= 4096 { break }
-        }
-        if sawCR && sawLF { return "CRLF" }
-        if sawLF { return "LF" }
-        if sawCR { return "CR" }
-        return "—"
     }
 
     private static func encodingShort(_ enc: String.Encoding) -> String {

@@ -53,6 +53,25 @@ final class LineEndingDetectorTests: XCTestCase {
         XCTAssertEqual(d("a\rb"), .cr)
     }
 
+    // MARK: - sampleScalars bound (the StatusBar hot-path perf guard, TSK-510)
+
+    func test_sampleBound_classifiesFromPrefixOnly() {
+        // First 4 scalars are pure LF; a CR hidden past the bound is NOT seen.
+        XCTAssertEqual(LineEndingDetector.detect(in: "a\nb\n" + String(repeating: "x", count: 100) + "\r",
+                                                 sampleScalars: 4), .lf)
+    }
+
+    func test_sampleBound_zeroOrNegative_scansNothing() {
+        XCTAssertEqual(LineEndingDetector.detect(in: "a\r\nb", sampleScalars: 0), .none)
+    }
+
+    func test_unbounded_matchesNilSample() {
+        // The default (nil) and an over-large bound classify identically.
+        let s = "a\r\nb\nc"
+        XCTAssertEqual(LineEndingDetector.detect(in: s),
+                       LineEndingDetector.detect(in: s, sampleScalars: 10_000))
+    }
+
     func test_displayString_matchesRawValue() {
         XCTAssertEqual(LineEndingDetector.displayString(in: "a\r\nb"), "CRLF")
         XCTAssertEqual(LineEndingDetector.displayString(in: "a\nb"), "LF")
