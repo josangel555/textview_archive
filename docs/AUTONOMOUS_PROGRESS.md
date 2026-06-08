@@ -3794,3 +3794,32 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - Pattern holding: the `[BACKLOG]` cluster has many shipped-but-unclosed features; those with a pure
   ViewerCore/kernel layer are honestly validatable on host teeth (scope to the kernel, note UI-pixel as VM).
   No code change; `main` @ b9be9f7, host gate green.
+
+## LOG +132 (2026-06-08, autonomous tick — drained 3 more stale-but-built BACKLOG features; held 1 honestly)
+- Same lane (+130/+131). All four were already built in earlier waves; their board tasks sat at `fixed`
+  unvalidated. The three with a pure host kernel were validated on that kernel; the fourth has no teeth for
+  its actual change → held for the owner. No code change this tick; `main` @ 7e033dc, host gate green.
+- **TSK-299** ("Date enter like Notepad" — Insert Date & Time at caret) → **validated**. Host teeth at every
+  host-testable layer: `DateTimeStamp.string(for:locale:timeZone:)` (date-injected formatter, x3) +
+  `CMBridgeCodec` `.insertAtCursor` encode shape + v2-gate refusing a v1 peer (x2) + `EditorCoordinator.
+  insertIntoEditor`→`editorInsertRequest` plumbing (sets text, distinct nonce per call, empty no-op, x3).
+  `MDV_HEADLESS_GATE=1 swift test --filter 'DateTimeStampTests|CMBridgeV2Tests|EditorCoordinatorTests'` →
+  59 selected, 0 failures. Scoped to the host kernel; the live CM6 `replaceSelection` landing at the caret
+  is the VM visual, not claimed.
+- **TSK-371** ("red dot if file changed on disk") → **validated**. `Tab.DiskState.showsTabDot` /
+  `tabDotHelpTitle` / `tabDotHelpDescription` is a pure predicate/label map, 3 teeth (`TabDiskStateDotTests`):
+  fresh→no dot+nil labels, staleVsDisk/deleted→dot+distinct non-empty labels, dot iff non-fresh. Green.
+  The 7pt red `Circle` render in `TabBarItem` (a11y `mdv.tab.diskDot`) is the VM pixel, not claimed.
+- **TSK-263** ("mouse-over line hover highlight, separate from select") → **validated**. `SourceHoverGeometry.
+  lineAtPointer` / `lineViewportY` is a pure pointer↔line coordinate map (inverse of the gutter math),
+  6 teeth (`SourceHoverGeometryTests`): top-inset boundary, no-scroll stepping, scroll-offset mapping,
+  past-last nil, degenerate (0 line-height / 0 lines) nil, round-trip inverse. Green. The painted backdrop
+  (`SourceHoverHighlight` `.onContinuousHover`; CM6 `.cm-line:hover` CSS) is the mouse-driven VM visual.
+- **TSK-331** ("tabs shrink, do not overflow at all") → **HELD at `fixed`, owner decision** (board comment
+  left). The fix was a single floor-constant tweak (`minShrunkWidth 54→40`, e2dd381) so the strip packs more
+  tabs before scrolling; `TabBarWidthTests` is *deliberately relational* ("survive a constants tweak"), so
+  reverting 40→54 fails ZERO tests → no teeth for the actual change. Also the literal "do not overflow at all"
+  is only partially met (still scrolls past the floor; TSK-304 dropdown is the escape hatch) — accept the
+  dropdown-as-escape-hatch or require true never-scroll is an owner product call.
+- View-layout-only BACKLOG siblings (TSK-261 + button position, 262 trailing icon group, 268 last-tab
+  divider) correctly sit at `fixed` — no extractable host kernel, human/VM visual gate. Not churned.
