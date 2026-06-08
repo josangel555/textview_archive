@@ -29,6 +29,23 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-07 (latest+58) — self-review found + fixed a real crash in my own JSON formatter
+
+Autonomous tick. Instead of grabbing another PORT feature, reviewed THIS session's
+rust-core additions for problems before they spread — and found one. Commit `f47c7d3`.
+
+- **Bug:** `format::pretty_json` (shipped this session for TSK-217/218, already validated)
+  is recursive with NO depth bound. A balanced deeply-nested `.json` (`[[[[…]]]]`) overflows
+  the stack → `panic=abort` → whole-process crash. Shared core ⇒ reachable from every
+  front-end opening an untrusted file. Same class as the cmark deep-nesting SIGSEGV (TSK-126).
+- **Fix:** `MAX_DEPTH = 128` cap in `value()` (matches serde_json) → returns None past it →
+  raw-text fallback, no crash. Test `deeply_nested_input_is_bounded_not_overflowed` on
+  balanced 100k-deep input. **Teeth-proven:** neutering the cap aborts the test with SIGABRT;
+  restored → clean None. rust-core gate green.
+- Logged the durable lesson (LESSONS.md → "Recursive-descent parsers need a depth cap") +
+  commented the hardening on TSK-217. Reinforces: validated ≠ unimpeachable; a self-review
+  pass on freshly-shipped core code is worth a tick.
+
 ## LOG 2026-06-07 (latest+57) — TSK-239 DONE: TUI reload-current-file (`r` key)
 
 Autonomous tick. Real TUI feature (genuine gap — the preview was a one-shot read;

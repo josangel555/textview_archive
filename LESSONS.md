@@ -2312,3 +2312,26 @@ this many rounds again.
   right was never occluded), then restored. Make this a habit for any T5 pixel test.
 - Codified as a preventive rule in `CLAUDE.md` (Testing rules → "Compositor occlusion + the
   ImageRenderer false-green trap").
+
+### Recursive-descent parsers in `mdvcore-core` need an explicit depth cap (TSK-217, 2026-06-07)
+
+Shipped `format::pretty_json` (the JSON Formatted-mode reformatter) as a recursive
+descent — `value()` → `object()`/`array()` → `value()` — and forgot to bound the
+recursion. A balanced deeply-nested document (`[[[[…]]]]`, ~100k deep) overflows the
+stack and **aborts the whole process** (release profile is `panic = "abort"`, so it's
+not even a catchable panic). Because the core is shared by all three front-ends, that's
+a one-file-opens crash/DoS reachable from any untrusted `.json`.
+
+- This is the **same class** as the audited cmark deep-nesting SIGSEGV (TSK-126) — any
+  parser that recurses on attacker-supplied structure must cap depth, not just guard the
+  visitor/output stage.
+- Fix pattern: thread a `depth` counter (we already had one for indentation) and bail at
+  the top of the recursive fn — `if depth > MAX_DEPTH { return None; }` — so it degrades
+  to the raw-text fallback instead of crashing. `MAX_DEPTH = 128` matches `serde_json`'s
+  default; real documents never nest that deep. (commit f47c7d3)
+- **Teeth:** test on *balanced, valid* deep input (only the cap can reject it) and prove
+  it — neuter the cap and confirm the test aborts with SIGABRT, then restore. An
+  unbalanced deep string is a weaker test (it'd return None as malformed anyway).
+- Checklist for any new core module: does it recurse on input? cap it. Does it index a
+  slice? use `.get(..)?`. Does it allocate from an untrusted count/size? cap it. (The
+  ffi no-panic clippy gate catches the unwrap/index class but NOT unbounded recursion.)
