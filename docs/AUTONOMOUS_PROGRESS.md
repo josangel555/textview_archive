@@ -2491,3 +2491,22 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   1 bug fixed + 1 parked (TSK-243). Next PORT veins: keyboard help overlay
   (TSK-247/248), recently-opened/history (TSK-233/234 — web threads shared state),
   persistent session state (TSK-235/236), cross-file grep (TSK-213/214).
+
+## LOG +75 (2026-06-08, autonomous tick — keyboard help, both front-ends)
+- **Shipped TSK-247 + TSK-248 [PORT][TUI/WEB] keyboard help** (commit f37e840):
+  - **tui (TSK-247)**: `?` opens a centered modal help popup listing all 19
+    keybindings (key + action); ANY key dismisses it without firing that key's
+    command. Mirrors the outline overlay (centered_rect + Clear). Bottom help line
+    gains `? help`. Test `question_mark_opens_keyboard_help_overlay_and_any_key_closes`.
+  - **web (TSK-248)**: the landing page gains a collapsible `<details>` Controls &
+    navigation legend (`controls_help` + `.help` CSS) documenting the real
+    affordances. Honest framing — the web is link/form-driven with NO keyboard
+    shortcuts, so a literal "key legend" would be a lie; a controls legend isn't.
+    Test `browse_shows_controls_help_legend`.
+  - tui 43 (+1), web 55 (+1); rust-core gate GATE_EXIT=0; clippy clean. Drove both
+    reported→…→validated.
+- main @ f37e840 + this doc; gates green. Cumulative session: 36 validated +
+  1 bug fixed + 1 parked (TSK-243). Next PORT veins: recently-opened/history
+  (TSK-233/234 — web threads shared state), persistent session state (TSK-235/236),
+  cross-file grep (TSK-213/214), multi-file tabs/back-forward (TSK-249/250),
+  find minimap (TSK-253/254), git status (TSK-251/252).
