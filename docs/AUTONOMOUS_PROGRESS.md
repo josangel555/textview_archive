@@ -3951,3 +3951,20 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   and de-duplicated (one source of truth) rather than two divergent copies.
 - Encoding detector deliberately NOT built: `TextFile.encoding` + `StatusBar.encodingShort` already cover
   the Enc chip; a new byte-sniffer would be the same duplication trap. `main` @ 4a7be3a (+ this log).
+
+## LOG +139 (2026-06-08, autonomous tick — Markdown heading-outline model, grep-verified non-redundant)
+- Applied the +138 lesson: grepped ViewerCore AND ViewerUI first — confirmed NO navigable markdown TOC
+  exists (LSPOutlineSection is code-only / documentSymbol; `atxHeadingLevel` is a tree-sitter fold helper;
+  `HTMLRenderer.visitHeading` only emits HTML). So a heading-outline model is genuinely additive.
+- **TSK-511 → validated** (commit f702203): `Sources/ViewerCore/MarkdownOutline.swift` — pure no-dep scanner
+  `headings(in:) -> [MarkdownHeading{level 1-6, title, 1-based line}]` over the common subset: ATX
+  (space-required; trailing-`#` closing seq stripped only when space-preceded so `C#` keeps the `#`; all-`#`
+  body → empty); setext (`===`→h1 / `---`→h2 of the preceding paragraph line); fenced-code skip (```` ``` ````/`~~~`);
+  YAML front-matter skip (so closing `---` isn't a phantom setext). 14 host tests (MarkdownOutlineTests).
+- TEETH PROVED THEIR WORTH: the CRLF test went RED first — I'd used `String.split(separator: "\n")`, which
+  is Character-based, and `\r\n` is ONE grapheme, so the LF inside CRLF is never found (whole file → one
+  line) — the EXACT trap I keep citing. Fixed to split on the LF *scalar* before commit. `swift build` clean;
+  central headless gate PASSED on the committed commit.
+- Scope: scanner (structure) host-validated; the sidebar TOC view + click-to-scroll is phase 2 (view/VM),
+  not claimed. `main` @ f702203 (+ this log). Cadence holding: DotGraph (+136), LineEndingDetector (+137),
+  DRY fix (+138), MarkdownOutline (+139) — four no-dep, host-tested ViewerCore units while owner gates wait.
