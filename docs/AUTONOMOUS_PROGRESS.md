@@ -3932,3 +3932,22 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - Lane otherwise unchanged: validation/PORT/preview-tab-Phase-2 still owner-gated (see +135). `main` @
   c38b258 (+ this log). Two consecutive ticks of real no-dep feature cores (DotGraphParser, LineEndingDetector)
   while the owner-gated lanes wait on the parked decisions.
+
+## LOG +138 (2026-06-08, autonomous tick — self-corrected a duplication I introduced; DRY'd StatusBar EOL)
+- HONEST CATCH: while scouting the next feature I found the status bar ALREADY shows EOL + Enc + Lines/Chars
+  via `DocumentMetrics`, and `StatusBar.detectLineEndings` was an UNTESTED, APPROXIMATE byte scan
+  (any-CR + any-LF ⇒ "CRLF", no Mixed) — i.e. last tick's `LineEndingDetector` (TSK-509) had **duplicated**
+  existing logic. Rather than ship a 3rd new model on top, fixed my own mess.
+- **TSK-510 → validated** (commit 4a7be3a): deleted the StatusBar duplicate; routed the EOL chip through the
+  host-tested `LineEndingDetector` (single source of truth, now correctly distinguishing CR/Mixed instead of
+  blanket CRLF). Preserved the multi-MB hot-path guard by adding a `sampleScalars` bound to the detector +
+  replaced its full-array alloc with an index-based scalar scan (no behavior change unbounded). 3 new
+  sampled-bound tests (14 LineEndingDetectorTests total, green); `swift build` clean; central headless gate
+  PASSED on the committed commit. Scope: detection logic + de-dup host-validated; the EOL chip render is the
+  existing (unchanged) VM path, not claimed.
+- LESSON (also why this matters): before minting a new ViewerCore model, grep the VIEW layer (StatusBar /
+  DocumentMetrics) for an existing inline implementation — the app already surfaces EOL/Enc/indent/line/char,
+  so a "new" detector may be a duplicate. Net of +137/+138: the line-ending feature is now correct, tested,
+  and de-duplicated (one source of truth) rather than two divergent copies.
+- Encoding detector deliberately NOT built: `TextFile.encoding` + `StatusBar.encodingShort` already cover
+  the Enc chip; a new byte-sniffer would be the same duplication trap. `main` @ 4a7be3a (+ this log).
