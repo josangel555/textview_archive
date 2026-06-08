@@ -17,9 +17,17 @@ public final class SystemPasteboard: PasteboardIO {
         NSPasteboard.general.string(forType: .string)
     }
     public func writeString(_ s: String) {
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.setString(s, forType: .string)
+        // NSPasteboard is main-thread-affine. The clipboard text tools call this
+        // on the main thread; the file-checksum command hashes off-main (so a
+        // large file's disk read never blocks the UI) and then writes here from
+        // a background queue — hop to main in that case. Guard against
+        // main→main `sync` (deadlock) with the isMainThread check.
+        let work = {
+            let pb = NSPasteboard.general
+            pb.clearContents()
+            pb.setString(s, forType: .string)
+        }
+        if Thread.isMainThread { work() } else { DispatchQueue.main.sync(execute: work) }
     }
 }
 
@@ -46,5 +54,27 @@ public enum TextToolRunner {
         }
         pb.writeString(out)
         return "\(verb.title): result copied to clipboard"
+    }
+}
+
+/// Computes the SHA-256 of the CURRENT FILE's bytes and copies the hex digest
+/// to the pasteboard, returning a short human status (toast / status line).
+/// Surface-agnostic — palette command, menu item, and automation verb share
+/// this one tested entry point, mirroring `TextToolRunner`. Consumes the
+/// streamed `FileChecksum` core (TSK-347). On no-open-file or unreadable file
+/// it leaves the pasteboard untouched and returns a status describing why.
+public enum FileChecksumRunner {
+    @discardableResult
+    public static func copyChecksum(ofFileAt url: URL?, pasteboard pb: PasteboardIO) -> String {
+        guard let url else {
+            return "Copy SHA-256: no file open"
+        }
+        do {
+            let hex = try FileChecksum.sha256Hex(ofFileAt: url)
+            pb.writeString(hex)
+            return "SHA-256 of \(url.lastPathComponent): copied to clipboard"
+        } catch {
+            return "Copy SHA-256: couldn’t read \(url.lastPathComponent)"
+        }
     }
 }

@@ -303,6 +303,20 @@ public enum ScriptVerb {
         case "tools.sha256":        Self.runTextTool(.sha256)
         case "tools.base64Encode":  Self.runTextTool(.base64Encode)
         case "tools.base64Decode":  Self.runTextTool(.base64Decode)
+        case "tools.fileChecksum":
+            // SHA-256 of the CURRENT FILE → clipboard. Hash OFF-MAIN (a large
+            // file's disk read must not block the UI — cf. TSK-214); the
+            // pasteboard write inside the runner hops back to main. Read the
+            // @MainActor model.currentURL here (we're on main), capture it.
+            let checksumURL = model.currentURL
+            DispatchQueue.global(qos: .userInitiated).async {
+                let status = FileChecksumRunner.copyChecksum(
+                    ofFileAt: checksumURL, pasteboard: SystemPasteboard())
+                DispatchQueue.main.async {
+                    Obs.shared.emit(ObsEvent(
+                        level: .info, subsystem: "tools", message: status))
+                }
+            }
         case "open-as":
             // WAVE 2b item 6: "<category> <path>" — open a file forced to
             // a viewer category (sqlite/code/plainText/markdown/image/

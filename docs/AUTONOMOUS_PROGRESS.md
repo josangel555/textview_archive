@@ -3545,3 +3545,20 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - main @ `4ca006d` (+ this log). The board's actionable autonomous queue remains owner-gated beyond this
   (PORT decisions, dep approvals, TSK-502 TCC, SwiftUI UI surfacing needing VM); the `[PARTIAL]`/`[BACKLOG]`
   lane is the standing fallback for host-completable slices like this one.
+
+## LOG +120 (2026-06-08, autonomous tick — TSK-505 part A: "Copy SHA-256 of Current File" command)
+- Continued draining TSK-347's surfacing (TSK-505) — did **part A**, the host-completable user-facing
+  action, so the `FileChecksum` core (landed +119) now has a real production consumer (resolving the
+  dead-code concern) AND the "no Copy/Compute Hash action" half of the original TSK-347 gap.
+- **Added (consuming `FileChecksum`):** `FileChecksumRunner.copyChecksum(ofFileAt:pasteboard:)` (ViewerCore,
+  surface-agnostic, mirrors `TextToolRunner`) + a `tools.fileChecksum` CommandDescriptor "Copy SHA-256 of
+  Current File" + a `ScriptVerbDispatch` case that reads `model.currentURL` and hashes **OFF-MAIN**
+  (background queue — a large file's disk read must not block the UI, per TSK-214) then emits status on
+  main. Hardened `SystemPasteboard.writeString` to be main-thread-safe (`isMainThread` guard +
+  `DispatchQueue.main.sync`) so the off-main runner's pasteboard write is correct — a strict improvement
+  that also hardens the existing clipboard-tools path.
+- **Host teeth (FileChecksumRunnerTests, 3/3):** correct NIST hash written to an injected fake pasteboard
+  for a temp file; nil-URL → "no file open" + pasteboard UNTOUCHED (writeCount 0); unreadable file →
+  "couldn't read" + pasteboard untouched. Headless gate PASSED.
+- **Part B remains** (MetadataPanel checksum row, lazy + async) — SwiftUI-rendered, VM-validated; TSK-505
+  stays at `progress` until it lands. main @ (this commit).

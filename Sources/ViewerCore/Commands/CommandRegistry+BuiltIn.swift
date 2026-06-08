@@ -291,5 +291,8 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "tools.base64Decode", title: "Base64 Decode Clipboard", category: .edit,
             scriptVerb: "tools.base64Decode"),
+        CommandDescriptor(
+            id: "tools.fileChecksum", title: "Copy SHA-256 of Current File", category: .edit,
+            scriptVerb: "tools.fileChecksum"),
     ]
 }
