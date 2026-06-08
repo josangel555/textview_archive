@@ -127,12 +127,10 @@ public struct LSPNavigationPanel: View {
                     onSearchWorkspaceSymbols(symbolQuery)
                 }
             }
-            Button("References") {
-                // Switching to references mode is a no-op without an
-                // origin — the user reaches this mode via the context
-                // menu on the source view, not via the picker.
-            }
-            .disabled(true)
+            // No "References" entry: references mode requires an origin symbol,
+            // which only the source-view context menu ("Find References") can
+            // supply — a picker entry here was permanently disabled dead UI
+            // (TSK-468). The empty-state hint documents the real entry point.
         } label: {
             Text(store.mode == .references ? "Refs" : "Symbols")
                 .font(.system(size: uiSize(10)))
