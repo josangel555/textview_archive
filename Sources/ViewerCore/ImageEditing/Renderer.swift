@@ -255,6 +255,64 @@ public enum Renderer {
         return try normalized(cg)
     }
 
+    // MARK: - Histogram (analysis — never mutates the image)
+
+    /// Compute the per-channel intensity `Histogram` of `image`. Redraws into the
+    /// canonical premultiplied-RGBA8 sRGB context first, so the byte layout is
+    /// known and independent of the source `CGImage`'s format/bit-depth/color
+    /// space; then un-premultiplies each sample (true straight color, even with
+    /// transparency) and bins R/G/B plus a Rec.601 luma channel. O(width·height)
+    /// with four 256-int tally arrays — fine for an interactive readout.
+    ///
+    /// NOTE (perf follow-up): `vImageHistogramCalculation_ARGB8888` (Accelerate)
+    /// is the obvious fast path for large rasters — the working format is already
+    /// the 8-bit-per-channel layout vImage wants. Kept as an explicit, verifiable
+    /// loop for the PoC (and because vImage tallies premultiplied bytes without
+    /// the un-premultiply this does), mirroring the `resize` vImage note.
+    static func histogram(_ image: CGImage) throws -> Histogram {
+        let width = image.width
+        let height = image.height
+        guard width > 0, height > 0 else { throw ImageEditError.degenerateGeometry }
+        let ctx = try makeContext(width: width, height: height)
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let base = ctx.data else { throw ImageEditError.contextCreationFailed }
+
+        var red = [Int](repeating: 0, count: Histogram.binCount)
+        var green = [Int](repeating: 0, count: Histogram.binCount)
+        var blue = [Int](repeating: 0, count: Histogram.binCount)
+        var luma = [Int](repeating: 0, count: Histogram.binCount)
+        let bytesPerRow = ctx.bytesPerRow
+        let ptr = base.assumingMemoryBound(to: UInt8.self)
+
+        for y in 0..<height {
+            let row = y * bytesPerRow
+            for x in 0..<width {
+                let i = row + x * 4
+                // premultipliedFirst + byteOrder32Little ⇒ memory bytes B,G,R,A.
+                let b = ptr[i], g = ptr[i + 1], r = ptr[i + 2], a = ptr[i + 3]
+                let r8: Int, g8: Int, b8: Int
+                switch a {
+                case 0:   (r8, g8, b8) = (0, 0, 0)
+                case 255: (r8, g8, b8) = (Int(r), Int(g), Int(b))
+                default:
+                    // Un-premultiply: straight = premultiplied · 255 / alpha,
+                    // rounded (+af/2) and clamped to the 8-bit ceiling.
+                    let af = Int(a)
+                    r8 = min(255, (Int(r) * 255 + af / 2) / af)
+                    g8 = min(255, (Int(g) * 255 + af / 2) / af)
+                    b8 = min(255, (Int(b) * 255 + af / 2) / af)
+                }
+                red[r8] += 1
+                green[g8] += 1
+                blue[b8] += 1
+                // Rec.601 luma, integer-rounded (+500 of the /1000 scale).
+                luma[min(255, (r8 * 299 + g8 * 587 + b8 * 114 + 500) / 1000)] += 1
+            }
+        }
+        return Histogram(red: red, green: green, blue: blue, luma: luma,
+                         pixelCount: width * height)
+    }
+
     // MARK: - Context factory
 
     /// Build a premultiplied-RGBA8 sRGB bitmap context of the given pixel size,

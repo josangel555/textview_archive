@@ -223,6 +223,56 @@ final class ImageEditingTests: XCTestCase {
         XCTAssertEqual(round, doc, "colorControls op must round-trip through Codable")
     }
 
+    // MARK: - Histogram (analysis; TSK-344)
+
+    func test_histogram_solidColor_concentratesInExpectedBins() throws {
+        // A full-rect solid fill is byte-uniform (no anti-aliasing), so each
+        // channel collapses onto its fixture value. Distinct per-channel values
+        // (200/100/50) prove the R/G/B mapping — a red↔blue swap would fail.
+        let w = 40, h = 30
+        let img = solidImage(width: w, height: h, r: 200 / 255, g: 100 / 255, b: 50 / 255)
+        let hist = try Renderer.histogram(img)
+
+        XCTAssertEqual(hist.pixelCount, w * h)
+        // Structural: every pixel counted exactly once in every channel.
+        XCTAssertEqual(hist.red.reduce(0, +), w * h)
+        XCTAssertEqual(hist.green.reduce(0, +), w * h)
+        XCTAssertEqual(hist.blue.reduce(0, +), w * h)
+        XCTAssertEqual(hist.luma.reduce(0, +), w * h)
+
+        // All mass within ±2 of the expected bin (CG quantization slack), and
+        // the peak lands on the fixture color.
+        XCTAssertEqual(hist.red[198...202].reduce(0, +), w * h)
+        XCTAssertEqual(hist.green[98...102].reduce(0, +), w * h)
+        XCTAssertEqual(hist.blue[48...52].reduce(0, +), w * h)
+        XCTAssertLessThanOrEqual(abs(Histogram.peakBin(hist.red) - 200), 2)
+        XCTAssertLessThanOrEqual(abs(Histogram.peakBin(hist.green) - 100), 2)
+        XCTAssertLessThanOrEqual(abs(Histogram.peakBin(hist.blue) - 50), 2)
+        // Rec.601 luma of (200,100,50) = round(0.299·200+0.587·100+0.114·50)=124.
+        XCTAssertLessThanOrEqual(abs(Histogram.peakBin(hist.luma) - 124), 2)
+    }
+
+    func test_histogram_quadrants_exactBinSplit() throws {
+        // Pure 0/255 fills → exact bins (no rounding). Quadrants: red, green,
+        // blue, yellow — each side²/4 px. Per channel, count the 255-quadrants.
+        let side = 100
+        let total = side * side
+        let quad = total / 4
+        let hist = try Renderer.histogram(quadrantImage(side: side).image)
+
+        XCTAssertEqual(hist.pixelCount, total)
+        // Red is 255 in the red + yellow quadrants, 0 elsewhere.
+        XCTAssertEqual(hist.red[255], 2 * quad)
+        XCTAssertEqual(hist.red[0], 2 * quad)
+        XCTAssertEqual(hist.red[1...254].reduce(0, +), 0, "no intermediate red values")
+        // Green is 255 in the green + yellow quadrants.
+        XCTAssertEqual(hist.green[255], 2 * quad)
+        XCTAssertEqual(hist.green[0], 2 * quad)
+        // Blue is 255 only in the blue quadrant — a red↔blue swap would read 3·quad.
+        XCTAssertEqual(hist.blue[255], quad)
+        XCTAssertEqual(hist.blue[0], 3 * quad)
+    }
+
     // MARK: - Crop
 
     func test_crop_topLeftQuadrant_centerSampleMatchesColor() throws {
