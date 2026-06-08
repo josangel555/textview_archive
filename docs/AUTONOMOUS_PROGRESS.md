@@ -2553,3 +2553,37 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   1 bug fixed + 1 parked. Next veins: recently-opened/history (TSK-233/234 — web
   shared-state cost), persistent session state (TSK-235/236), find minimap
   (TSK-253/254), git status (TSK-251/252).
+
+## LOG +78 (2026-06-08, autonomous tick — find match minimap, both front-ends)
+- **Shipped the find match-minimap PAIR over one shared core helper** — TSK-254
+  [PORT][WEB] (commit 0f48dd3) + TSK-253 [PORT][TUI] (commit d1a2e33). Both
+  validated. A find's matches are bucketed into a FIXED number of slots so a user
+  sees WHERE matches cluster in the document + which one is current, at a glance.
+- **Core (0f48dd3):** added pure, panic-free `find::bucket_of(line, total,
+  buckets)` (clamped) and `find::match_minimap(match_lines, total, buckets) ->
+  Vec<usize>` (per-bucket hit counts). Both front-ends bucket IDENTICALLY by
+  construction. Core tests `bucket_of_maps_lines_into_clamped_buckets` +
+  `match_minimap_buckets_match_counts` (core 230).
+- **Web (0f48dd3):** find_box draws a 40-bucket `span.minimap` of `<i>` cells
+  after the "N of M" count — `class=hit` for buckets with matches, `class=cur`
+  for the current match's bucket; `.minimap` CSS in light + `prefers-color-scheme:
+  dark`. Test `in_file_find_renders_match_minimap` (markup present with an active
+  find, absent without) — web 57.
+- **TUI (d1a2e33):** `App::find_minimap()` builds a 24-bucket bracketed strip in
+  the find status line — `▮` current bucket, `▪` other hit bucket, `·` empty.
+  GLYPHS (not color) carry the signal so the COLORLESS snapshot has teeth. Test
+  `find_minimap_marks_match_buckets_and_current_and_renders_in_status` asserts
+  shape (26 chars), exactly one current marker, the marker tracks `find_sel` as
+  `n` advances, it's actually drawn in the rendered status line, and it vanishes
+  when the find clears — tui 45 (+1).
+- `bash scripts/rust-core-gate.sh` GREEN on the committed tree (clippy no-panic
+  denies + all crate tests + ffi no_panic gate + doctests). Drove both board tasks
+  reported→ack→triaged→progress→fixed→validated with checks artifacts.
+- **Numbering-trap note:** the web commit message says "TSK-419" — that was the
+  built-in Claude Code TaskList #419, NOT the board id. The real board task is
+  **TSK-254**; the board (system of record) now correctly links 0f48dd3 to it.
+  Always `task_get` a board id before acting (board TSK-### ≠ TaskList ####).
+- main @ d1a2e33 + this doc; gates green. Cumulative session: 40 validated +
+  1 bug fixed + 1 parked. Next veins: git status (TSK-251/252), status-bar
+  metrics (TSK-386/387), encoding/line-ending badge (TSK-388/389 — web half),
+  recently-opened/history + persistent session (web shared-state cost).
