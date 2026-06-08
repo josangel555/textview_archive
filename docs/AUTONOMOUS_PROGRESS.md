@@ -2840,3 +2840,26 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - main @ c9af964 + this doc. **Session cumulative: 48 validated + 1 bug fixed +
   4 owner-parked.** Next ticks: continue the fixed/review teeth-able cluster
   (TSK-135 security sibling-bypass, TSK-147/148 leaks w/ behavior teeth).
+
+## LOG +87 (2026-06-08, autonomous tick — TSK-135 validated w/ new teeth; selection rule held)
+- **Validated TSK-135** `[S3][security] MCPToolCatalog.validatedExistingURL
+  prefix-without-separator sibling bypass`. Fix present (ANCHORED containment:
+  `path == temp || hasPrefix(temp + "/")`, same for home; containment checked
+  before existence so no notFound/permissionDenied oracle; both operands
+  symlink-resolved) but the SPECIFIC sibling case was unpinned — existing
+  `test_openPath_pathOutsideHome` only used `/etc/hosts`. Added
+  `test_openPath_tempDirSiblingPrefix_throwsPermissionDenied` (commit 0e16101):
+  a path at `<temp>-evil/loot` is rejected with `.permissionDenied`. Real teeth —
+  a revert to a bare `hasPrefix(temp)` admits the sibling → it falls through to a
+  `notFound` existence probe, so the test (expecting `.permissionDenied`) fails.
+  MCPToolCatalogTests 28/28 green; claim→validate as claude-mdv.
+- **Selection rule held (skipped TSK-147).** `FileWatcher.attach()` reattach race
+  (re-check `_stopped` under the lock) IS fixed (FileWatcher.swift:160), but its
+  teeth are a non-deterministic timing window — `attach()` is private and the
+  reattach fires internally on rename, so a deterministic host test isn't feasible.
+  Existing `test_stop_preventsFurtherFires` covers the event-after-stop guard, not
+  the reattach-no-op. Correctly LEFT at `fixed` for the human (per the rule: skip
+  race/leak/perf where a correctness test can't fail on regression).
+- main @ 0e16101 + this doc. **Session cumulative: 49 validated + 1 bug fixed +
+  4 owner-parked.** Lane continues next tick (TSK-148 LSPPool closeFile teeth,
+  TSK-159/160 vm-smoke.sh script findings, etc.).
