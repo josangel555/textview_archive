@@ -3082,3 +3082,29 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   (it overclaims the UI). Verify+comment the backend; leave at review.
 - main @ `681d6c1` (TSK-188/333 = board state only, no code), tree clean, gates
   green. **Session cumulative: 62 validated + 1 bug fixed + 4 owner-parked.**
+
+## LOG +99 (2026-06-08, autonomous tick — PORT lane is done/duplicate; caught + retracted a board-id mis-park)
+- **Investigated the PORT lane** (owner: drain PORT when SwiftUI is gated). Finding:
+  the rust-core front-ends (TUI 3650 LOC, web 2380 LOC) already implement the ENTIRE
+  W1 PORT feature set via the shared `mdvcore_core::{view,nav,find,outline,whitespace,
+  hex,meta,git}` modules — in-file find (TUI 49 find tests; web `in_file_find_*`),
+  sort/hidden-toggle/fuzzy-filter/breadcrumbs (nav.rs fully built+tested), hex view
+  (`view_hex_uses_core`), image dimension card (TUI `ViewBody::Image` arm), outline,
+  etc. So nothing in the W1 PORT lane is actionable — it's all shipped.
+- **The board's reported PORT lane is TSK-197..258**, of which 197/198 are `fixed`
+  and 234/236/250 (W2) are owner-gated on persistence (TSK-235) and 256/258 are
+  DEPGATED (comrak/tree-sitter dep approval). All owner-gated; nothing agent-actionable.
+- **Board-id trap RE-BIT me (caught + corrected):** the reminder's built-in
+  `#362..423` `[PORT]` entries are NOT board tasks — board `TSK-362` is actually
+  "[PARTIAL] Editor syntax highlighting". I `task_park`ed TSK-362 with a PORT-duplicate
+  question derived from the reminder's #362 → WRONG task. Posted a retraction comment
+  asking the owner to clear the gate. Reinforced the HARD RULE in memory: `task_get` +
+  match TITLE before ANY mutating board call on a reminder-derived id.
+- **TSK-190** (TUI `--snapshot` `.expect()` → `io::Result`): fix present (`app.snapshot(
+  100,30)?` propagated, `main() -> io::Result`; all remaining `.expect()` are in
+  `#[cfg(test)]`). But the `io::Result` refactor has no triggerable error path
+  (TestBackend render never fails) → no behavior teeth to author → leave for human,
+  like the perf findings. Did NOT self-validate.
+- No code change this tick (investigation + board hygiene + memory). main unchanged
+  pre-log; tree clean. The agent-closeable host-validatable lane remains genuinely
+  worked-out — remaining board work needs owner decisions / dep approval / live-or-VM.
