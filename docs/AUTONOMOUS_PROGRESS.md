@@ -2815,3 +2815,28 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   TSK-243 TUI theme, TSK-498 front-end test gate, TSK-306 preview-tab Phase 2
   (parked this tick). All carry board human gates / pings. No code change this
   tick; main @ e9a869e, tree clean, gates green.
+
+## LOG +86 (2026-06-08, autonomous tick — TSK-145 validated w/ new teeth; found the fixed/review lane)
+- **Course-correction: the loop was NOT saturated.** Prior ticks leaned on
+  `task_next` (polluted by foreign `agent:forge` prio-0/1 tasks) and the `reported`
+  filter, which masked the real lane. `task_list {ready:true, sort:priority}`
+  surfaces ~20 markdown_viewer audit tasks **sitting at `fixed`/`review`** (board
+  TSK-122…161, claimed by prior `claude`/sess-autorun sessions, leases expired):
+  RECONCILED-as-already-fixed by an earlier wave but never driven to `validated`
+  (pre-2026-06-07 sessions couldn't agent-self-close). Driving these to validated
+  (verify-first + teeth) is genuine board progress.
+- **Validated TSK-145** `[S3][bug] MCP.Value.int/optionalInt trap on out-of-Int64
+  JSON numbers — a malformed tools/call crashes the host`. Fix present
+  (`Int(exactly:)` at MCPProtocol.swift:97/117) but the overflow case had NO
+  asserted test. Added 4 teeth (commit c9af964): out-of-range double → throws
+  `.invalidParams` (not trap), fractional → throws, optionalInt → nil, in-range
+  whole double → accepted. Real teeth — a revert to `Int(d)` aborts the run on the
+  1e19 case. MCPProtocolTests 14/14 green; claim→validate as claude-mdv.
+- **Selection rule:** only validate BUG/SECURITY findings with genuine behavior
+  teeth (malformed-input → no-crash/correct-output, fails on regression). SKIP
+  perf/leak/race (TSK-122/123/134/141/142/143/…) — clone-vs-borrow / O(n)-vs-O(1) /
+  zombie-reap produce identical output so a correctness test can't guard them; they
+  correctly sit at `review` for the human (prior session held TSK-122/123 for this).
+- main @ c9af964 + this doc. **Session cumulative: 48 validated + 1 bug fixed +
+  4 owner-parked.** Next ticks: continue the fixed/review teeth-able cluster
+  (TSK-135 security sibling-bypass, TSK-147/148 leaks w/ behavior teeth).
