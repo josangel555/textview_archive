@@ -29,6 +29,23 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-07 (latest+57) — TSK-239 DONE: TUI reload-current-file (`r` key)
+
+Autonomous tick. Real TUI feature (genuine gap — the preview was a one-shot read;
+`reload_dir` only refreshed the *directory* list, never the open file). Commit `ddc1da2`;
+TSK-239 → **validated**.
+
+- `Preview` gains a `path: PathBuf`; new `reload_current()` re-reads via `read_capped`,
+  rebuilds the view at the **current** mode (kind-default fallback if the file's type
+  changed on disk), clamps the saved scroll into the new length, preserves the table
+  filter, clears find matches, and sets status `reloaded <path>`. Bound to `r`; added to
+  the help line. File IO stays in the front-end (core is sans-IO), so this is TUI-only.
+- Test `r_reloads_current_file_from_disk` (host App + TestBackend): edit-on-disk →
+  stale-until-`r` (no auto-watcher) → `r` shows new content, mode preserved, status set.
+- **Queue note:** the autonomous-actionable queue remains `[PORT]`-lane only — SwiftUI
+  app tasks are all validated / owner-gated (TSK-202) / live-or-VM-blocked (TSK-252-254).
+  Flagging so the owner knows the SwiftUI-first priority is input-bound, not skipped.
+
 ## LOG 2026-06-07 (latest+56) — TSK-218 DONE: web JSON Formatted parity (test + validate)
 
 Autonomous tick. Finished TSK-218 (web Formatted). The actual wiring already landed with
