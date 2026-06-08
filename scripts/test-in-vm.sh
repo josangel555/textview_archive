@@ -173,18 +173,42 @@ if expected > parsed:
 PY
 }
 
+# Run `swift test …`. When MDV_VM_GUI_SESSION=1, run it INSIDE the console
+# user's Aqua/GUI session via `launchctl asuser` so the live-UI tiers
+# (T4 LiveAppTestCase / T5 PixelTestCase / *UATTests / VisualRegression) realize
+# real windows instead of occlusion-failing — the TSK-501 residual after the
+# ulimit fix. PROVEN: ViewModeMatrixSmokeTests went 3/3 via asuser vs occluded
+# over plain ssh. Default (env unset) is a direct call, so the headless `test`
+# path is byte-for-byte unchanged. The env/cwd/ulimit must be set INSIDE the
+# spawned shell (asuser drops env passed via /usr/bin/env — same trick as
+# vm-smoke.sh). Needs MDV_VM_SUDO_PASS for `sudo -S` (never hardcode the secret).
+swift_test() {
+  if [[ "${MDV_VM_GUI_SESSION:-0}" != "1" ]]; then
+    swift test "$@"
+    return $?
+  fi
+  local uid; uid=$(stat -f %u /dev/console)
+  local inner="cd $(printf '%q' "$ROOT_DIR") && ulimit -n 8192"
+  [[ -n "${TOOLCHAINS:-}" ]] && inner+=" && export TOOLCHAINS=$(printf '%q' "$TOOLCHAINS")"
+  inner+=" && exec swift test"
+  local a
+  for a in "$@"; do inner+=" $(printf '%q' "$a")"; done
+  printf '%s\n' "${MDV_VM_SUDO_PASS:?MDV_VM_GUI_SESSION=1 needs MDV_VM_SUDO_PASS}" \
+    | sudo -S launchctl asuser "$uid" /bin/bash -lc "$inner"
+}
+
 run_tests() {
   local filter=("$@")
   if [[ ${#filter[@]} -eq 0 ]]; then
-    log "swift test (all tests)"
+    log "swift test (all tests)${MDV_VM_GUI_SESSION:+ [GUI session]}"
     set +e
-    swift test 2>&1 | tee "$RESULTS_TXT"
+    swift_test 2>&1 | tee "$RESULTS_TXT"
     local rc=${PIPESTATUS[0]}
     set -e
   else
-    log "swift test ${filter[*]}"
+    log "swift test ${filter[*]}${MDV_VM_GUI_SESSION:+ [GUI session]}"
     set +e
-    swift test "${filter[@]}" 2>&1 | tee "$RESULTS_TXT"
+    swift_test "${filter[@]}" 2>&1 | tee "$RESULTS_TXT"
     local rc=${PIPESTATUS[0]}
     set -e
   fi
