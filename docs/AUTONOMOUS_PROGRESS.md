@@ -2755,3 +2755,41 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   4 owner-parked.** Remaining board work is owner-gated (comrak TSK-255,
   tree-sitter TSK-257, stateful-cluster TSK-235, web-palette TSK-409) or the
   bigger TSK-400 mdvcore-rpcd remote spike.
+
+## LOG +84 (2026-06-08, autonomous tick — TSK-337 verified-closed + audit-staleness HOLD)
+- **Verified-and-validated TSK-337 [PARTIAL] Custom LSP integration** (no code
+  change). The finding ("lsp.json initializationOptions parsed but not forwarded
+  into LSPClient.initialize()", audit vs main @ 1dbf1ca) is already fixed under
+  TSK-465 and regression-guarded end-to-end: parse (LSPWorkspaceOverrides) →
+  thread (LSPLanguageRegistry.overrideConfig, both trusted + discovered-fallback
+  branches) → emit (LSPClient.makeInitializeParams forwards verbatim, omits when
+  nil/malformed). 36/36 host tests green (LSPWorkspaceOverridesTests +
+  LSPInitializeParamsTests). Closed as already-fixed-with-teeth.
+- **Systemic finding — BOTH audits are comprehensively STALE** (the deep-audit
+  S1–S4 findings = built-in Claude-Code TaskList #266–345, AND the board's
+  feature-backlog-audit items TSK-259–382, all sourced wf_332394c9 vs `main @
+  1dbf1ca`). This tick re-sampled 3 more across lanes the prior 9 hadn't touched
+  — ALL already-fixed-with-teeth: TSK-337 (LSP initializationOptions, board
+  feature-backlog item), `diff::parse_coord` comma-led/empty-start (rust-core
+  diff.rs:669-672 asserts it), wire frame end-of-stream check (wire.rs:109-129 + 3
+  trailing-garbage tests). Cumulative **12/12 audit samples already resolved**.
+  The codebase has advanced far past the `main @ 1dbf1ca` baseline; re-validating
+  one-by-one is near-zero-yield churn (owner-flagged drift). Recommend bulk triage
+  or a fresh audit against current HEAD.
+  - NOTE / self-correction: I first posted the bulk-triage recommendation as a
+    comment on board TSK-265 assuming it was the deep-audit EPIC — but board
+    TSK-265 is "[BACKLOG] Multi window session support" (board↔TaskList ids do
+    NOT match; see memory reference_board_vs_tasklist_numbering). Retracted that
+    comment. The deep-audit EPIC's actual board id is unconfirmed; the finding is
+    recorded durably here + in memory project_audit_pending_list_stale.
+- **Queue state this firing (documented HOLD):** no-dep PORT feature lane is
+  complete (W1/W2 + palette + XML formatted = TSK-496 this session); ViewerUI/Core
+  pure-logic backfill drained (per memory, TSK-420…434); audit list stale; SwiftUI
+  backlog is render-path/live (no host self-validation, per owner policy) or
+  large/architectural (owner-decision). The only actionable items are OWNER-GATED:
+  **TSK-235** front-end persistence where/how (gates TSK-234/236/250), **TSK-255/257**
+  comrak/tree-sitter dep approval, **TSK-243** TUI theme, **TSK-498** front-end test
+  gate (nightly-vs-gate). All carry board human gates. Honoring the SOP: shipped a
+  real feature + a verified close, then HOLD rather than manufacture marginal churn.
+- main @ 6b14498 + this doc. **Session cumulative: 47 validated + 1 bug fixed +
+  4 owner-parked.**
