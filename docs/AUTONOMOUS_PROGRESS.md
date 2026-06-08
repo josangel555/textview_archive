@@ -29,6 +29,25 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-07 (latest+50) — TSK-101: theme-override persistence — closed the test gap, validated
+
+The Settings → Appearance → Theme fix (`40c7b5b`) was sitting in `review`. Before
+validating I checked whether its tests actually guard the bug — they didn't fully.
+Commit `4ef2f3e`; TSK-101 → **validated**.
+
+- **Gap found:** the 3 existing `PreferencesStoreTests` cover only the *storage*
+  round-trip (`themeOverrideRaw` survives a fresh store). The actual TSK-101 bug
+  was the WIRING — `DocumentModel.themeOverride` being in-memory-only. A
+  storage-only test stays green even if the `didSet` write-through or the `init`
+  restore is deleted, so it wouldn't catch a regression of the real fix.
+- **Closed it:** `Tests/ViewerUITests/ThemeOverridePersistenceTests.swift` (4
+  tests) drives `DocumentModel`↔`PreferencesStore` directly — didSet
+  write-through, init restore on relaunch (new model over same store), clear-to-
+  nil across relaunch, and unknown/stale raw → Follow System (no crash).
+- **Teeth proven:** neutered the `didSet` → 2 of 4 go red; restored. Headless
+  gate green (4169). Pattern reinforces the standing lesson: a "fixed" task isn't
+  validated until a test would FAIL on the regression — verify, don't assume.
+
 ## LOG 2026-06-07 (latest+49) — TSK-205: hex-byte search ported to the ratatui TUI front-end
 
 [PORT][TUI][W1] Hex search — front-end-only port over the already-complete
