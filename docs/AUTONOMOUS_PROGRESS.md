@@ -3712,3 +3712,21 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   self-validate the render-gated cluster (505-B/506/334/504/preview-tab/…) instead of leaving them for manual VM checks.
 - Net this tick: board-state + doc only; `main` unchanged @ 13fda83, rust-core gate GREEN. The highest-leverage
   unblocks are **TSK-502** (opens the whole render-validation lane) and **TSK-235** (opens 3 web features).
+
+## LOG +127 (2026-06-08, autonomous tick — corrected "input-bound": the teeth-able security cluster IS work)
+- Last tick over-concluded "loop input-bound." Re-checked: the `fixed` audit cluster has a SECURITY/test-gap
+  subset that IS agent-validatable (the backfilled host test = the regression guard), distinct from the
+  perf/leak subset (no teeth, correctly held). This matches the standing lane in
+  [[project_audit_pending_list_stale]] (validate teeth-able BUG/SECURITY at `fixed`; skip perf/leak/race).
+- **Validated TSK-175 + TSK-176** (editor nav-delegate scheme guard + its test-gap): the
+  `Audit_…_CodeMirrorEditorView_swift_LinkPolicyTests` pure `decide()`-kernel suite (40 tests green headless,
+  `MDV_HEADLESS_GATE=1 swift test --filter LinkPolicyTests`, ^EXIT=0) asserts javascript:/vbscript:/data:/http:/
+  custom + cross-doc-fragment CANCELLED, bootstrap + same-doc-fragment ALLOWED — real teeth (regress the guard →
+  the matching assert fails). These close the file:/data:/javascript: window.location-escape vector.
+- **Held TSK-178** (sidebar Claude-timeline redaction): fix present (`:181 redactedEvents(from:)` not `.events`)
+  but it's SwiftUI-VIEW wiring with no host test for the sidebar path (the only redaction test covers SEARCH) →
+  reverting it fails no test → not agent-validatable; commented + left for human/VM. **Refined rule:** "security"
+  alone ≠ validatable; the teeth must be a PURE-KERNEL test, not view-wiring.
+- **Confirmed 5 more findings already-fixed-and-tested** (csv #316, msgpack #313, ReDoS #279/#293 in
+  RegexComplexityGuardTests) → staleness ~18/18 across the session. Don't re-mine; work the teeth-able cluster.
+- Net: 2 validated, 1 held — board-state + doc only; `main` unchanged @ 13fda83, host gate green (LinkPolicy 40/40).
