@@ -2332,3 +2332,17 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   HTML-escape + a toggle link (deeper than the bar-append features, so split out).
 - main @ 49778c2 + this doc; gates green. Cumulative session: 23 validated +
   1 bug fixed + 2 shared-core modules (meta, whitespace) + 2 follow-ups.
+
+## LOG +67 (2026-06-07, autonomous tick — show-invisibles web side, completes the slice)
+- **Shipped TSK-242 [PORT][WEB] whitespace markers** (commit 306208d): threaded a
+  `?ws=1` flag through render_view_filtered → content_html, revealing each Text
+  line via the shared `core::whitespace::reveal` BEFORE the gutter_html HTML-escape
+  (Text mode only), plus a show/hide-whitespace bar toggle link that flips `?ws`
+  preserving path+mode. Updated the 5 existing render_view_filtered call sites for
+  the new arg. web 48 (+1); gate GATE_EXIT=0. Drove reported→…→validated.
+- **Whitespace markers now parity across TUI + web** off one `core::whitespace`.
+  Both `core::meta` (line-ending/encoding/metrics) and `core::whitespace` (reveal)
+  now back features in both front-ends.
+- main @ 306208d + this doc; gates green. Cumulative session: 24 validated +
+  1 bug fixed + 2 shared-core modules + 2 follow-ups. Next PORT veins: word-wrap
+  (TSK-231/232), breadcrumb nav (TSK-229/230), empty/error states (TSK-245/246).
