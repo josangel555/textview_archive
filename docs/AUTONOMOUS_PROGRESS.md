@@ -3175,3 +3175,30 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   VM/owner gate, not self-validated.
 - Run total: three host-validated model cores for filed SwiftUI features (TSK-303/302/310),
   each with the UI half honestly flagged for VM. main @ `654015b`, tree clean.
+
+## LOG +103 (2026-06-08, autonomous tick — board-integrity fix: offset trap corrupted TSK-326/276)
+- Looked for a host-COMPLETABLE item (to drive something to `validated`, not pile up more
+  VM-pending model slices). The audit lane is fixed+tested (confirmed aspectFit crash-guard
+  already has `AspectFitFiniteGuardTests`; no gap), and the reported lane is UI/owner-gated.
+- **Found real board corruption:** a prior `claude-mdv` session fell into the built-in-#NNN
+  ≠ board-TSK-NNN offset trap and recorded the wrong findings onto real tasks —
+  board **TSK-326** ("[PARTIAL] Omni search") is `fixed` with **aspectFit** work, and
+  **TSK-276** ("[BACKLOG] Debugger") is `fixed` with **IndentDetector** work. The findings
+  are genuinely fixed+tested in code, but on the WRONG ids, so TSK-326 (omni-invokability)
+  and TSK-276 (Debugger) FALSELY read as done. Posted board-integrity correction comments on
+  both recommending the owner reopen them; hardened memory (`reference_board_vs_tasklist_
+  numbering`) with the confirmed-corruption evidence.
+- **Deliberate non-action:** did NOT manufacture a 4th marginal model slice (the obvious
+  model-able SwiftUI features — CSV find/cell-nav, file-tree filter — are done this run), and
+  did NOT ship blind UI (the no-UI-on-host directive + the opening compositor lesson). Honest
+  call: the readily host-completable lane is worked out; remaining reported work is UI (needs
+  VM) or owner-gated.
+- **Owner-facing status:** three model cores (TSK-303/302/310) are VM-wiring-ready (each at
+  `progress`, `blocker: live-validation`); plus TSK-333 backend (review). A VM-wiring session
+  would convert these into shipped features. Board also needs a small audit pass to fix the
+  offset-corrupted TSK-326/276 (and check for other same-session mislabels).
+- No code change this tick (board hygiene + memory + log). main @ `654015b`, tree clean,
+  gate green from +102. **NEXT TICK plan:** build ONE UI slice (likely TSK-302 cell-cursor,
+  pure-SwiftUI CSVTableView, lowest compositor risk) WITH a VM T4/T5 test, leave at `review`
+  for the nightly VM lane — the documented "implement + VM test + leave for VM" path — to
+  actually move a feature toward done rather than add more model-only cores.
