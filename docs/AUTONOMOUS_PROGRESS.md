@@ -29,6 +29,32 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+66) — TSK-344: per-channel image Histogram analysis (fixed; second engine increment)
+
+Continued the image-engine vein (owner's standing "build PoCs: image editing" directive) with the
+Histogram — explicitly named in TSK-344's title and the purest host-testable piece left (raw pixel
+statistics, no CIFilter, no deps). Commit `728c7f5`, TSK-344 still **fixed** (two commits now:
+`a483c6a` colorControls, `728c7f5` histogram).
+
+`Renderer.histogram(CGImage) -> Histogram`: redraws into the canonical premultiplied-RGBA8 sRGB
+context (byte layout known + independent of the source CGImage's format), un-premultiplies each
+sample to true straight color, bins R/G/B + Rec.601 luma into 256 buckets. `Histogram` is a new
+`Sendable`/`Equatable` value type — read-only analysis, deliberately NOT an `EditOp` (changes no
+geometry/samples) so it can feed a live UI readout without polluting the lossless edit history.
+
+Host teeth (ImageEditingTests 20→22): (1) solid-color image concentrates each channel on its
+fixture value, with every-pixel-counted structural sums (each channel's 256 bins sum to pixelCount)
+and luma peak ≈124 for (200,100,50); (2) the 0/255 quadrant fixture asserts EXACT per-bin counts —
+red[255]=green[255]=2·quad, blue[255]=quad — which definitively catches an R↔B channel-read swap
+(it would read 3·quad). `vImageHistogramCalculation_ARGB8888` noted as the Accelerate perf
+follow-up (mirrors the resize vImage note).
+
+Honest ceiling = `fixed`: TSK-344's user-facing remainder (the editor panel that drives the tonal
+sliders + draws the histogram, tracked with TSK-253; plus the exposure/shadows/sharpness tonal ops)
+is SwiftUI render-path with no host coverage — VM/human gate. GATE NOTE: only gate failure was the
+documented `GrandchildPipeTests` process-global-fd flake (28→36 under the parallel suite; 3/3 in
+isolation), unrelated to this additive image-analysis change.
+
 ## LOG 2026-06-08 (latest+65) — TSK-344: image colorControls (brightness/contrast/saturation) edit op (fixed; tonal-op + histogram + UI remainder render-gated)
 
 Same `[PARTIAL]`-task-has-a-host-testable-engine-core move as +64: TSK-344 (Wishlist > Image —
