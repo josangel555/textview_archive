@@ -3108,3 +3108,25 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - No code change this tick (investigation + board hygiene + memory). main unchanged
   pre-log; tree clean. The agent-closeable host-validatable lane remains genuinely
   worked-out — remaining board work needs owner decisions / dep approval / live-or-VM.
+
+## LOG +100 (2026-06-08, autonomous tick — TSK-303 find-in-CSV-table CORE matcher shipped + tested)
+- Acted on last tick's direction: build a real SwiftUI feature's host-testable model
+  layer, leave the render path for VM. **TSK-303** "[BACKLOG] Find support in table"
+  (CSV grid Cmd-F highlight + next/prev jump) → **progress** (commit `e1dc879`).
+- **Slice 1 (CORE, done + host-validated):** new `Sources/ViewerCore/CSVFind.swift` —
+  pure `CSVFind` over `CSVParser.Result`: case-insensitive substring → matching CELL
+  coordinates (`Match{row,column}`, `row=-1`=header) in reading order (header first,
+  rows top-to-bottom, each left-to-right); `.all`/`.column(i)` scope (out-of-range →
+  none); `includeHeader`; `isEmpty` (truly-empty only → whitespace is a literal
+  search, unlike `CSVFilter`); `count()`; static `step(count:from:forward:)` next/prev
+  cursor with wraparound + stale-index clamp. Distinct from `CSVFilter` (row removal)
+  — find keeps the table, reports cells. Teeth: `CSVFindTests` 15/15 (reading order,
+  case, scope+OOB, header toggle, multi-match-per-row order, whitespace-literal, empty
+  table, full step() matrix). `swift build` + tests green.
+- **Slice 2 (LIVE, NOT done):** SwiftUI wiring — find bar → `CSVTableView`, cell
+  highlight, scroll-to-current, Cmd-F focus + prev/next. AppKit/SwiftUI render path,
+  no host coverage → recorded with `blocker: live-validation`; needs VM/owner pixel
+  validation per the no-UI-on-host directive. Did NOT self-validate.
+- Verified the board id first (`task_get` TSK-303 = "Find support in table") before
+  acting — applying the hardened rule after last tick's mis-map. main @ `e1dc879`,
+  tree clean. Honest forward motion on a priority SwiftUI feature, host-validated half.
