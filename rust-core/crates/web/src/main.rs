@@ -59,6 +59,69 @@ const SOCKET_TIMEOUT: Duration = Duration::from_secs(15);
 /// holding unbounded FDs — bounds the blast radius of a runaway local client.
 const MAX_INFLIGHT: usize = 128;
 
+/// Persisted web front-end session state (TSK-236), saved to
+/// `~/.textview/wui/config` and restored on launch. The web server's only
+/// server-side session state is the served ROOT dir — `sort`/`hidden`/`filter`
+/// are per-request URL params (client-side) and dark mode is CSS `@media`
+/// (TSK-244), so `root` is the complete persistable state. Hand-rolled
+/// `key=value` codec: no serde, no panics (the rust-core gate denies both),
+/// lenient to hand-edits. (Recents / back-forward — TSK-234/250 — would need
+/// cross-request global state, a separate owner decision.)
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+struct WebConfig {
+    root: Option<PathBuf>,
+}
+
+impl WebConfig {
+    fn to_config(&self) -> String {
+        match &self.root {
+            Some(r) => format!("root={}\n", r.display()),
+            None => String::new(),
+        }
+    }
+
+    /// Parse a `key=value` config; unknown keys ignored, blank/missing `root`
+    /// → `None`. Never panics, never errors.
+    fn from_config(text: &str) -> Self {
+        let mut c = WebConfig::default();
+        for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            if let Some((k, v)) = line.split_once('=') {
+                if k.trim() == "root" {
+                    let v = v.trim();
+                    c.root = if v.is_empty() { None } else { Some(PathBuf::from(v)) };
+                }
+            }
+        }
+        c
+    }
+}
+
+/// `~/.textview/wui/config` — owner-chosen per-front-end config location
+/// (TSK-235/236). `None` when `$HOME` is unset (then we run without persistence
+/// rather than guessing a path).
+fn config_path() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .map(|h| PathBuf::from(h).join(".textview").join("wui").join("config"))
+}
+
+/// Read + parse the config at `path`. `None` if absent / unreadable.
+fn load_config(path: &Path) -> Option<WebConfig> {
+    Some(WebConfig::from_config(&fs::read_to_string(path).ok()?))
+}
+
+/// Write the config to `path`, creating parent dirs. Best-effort — a write
+/// failure is swallowed so it never blocks startup.
+fn save_config(path: &Path, cfg: &WebConfig) {
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let _ = fs::write(path, cfg.to_config());
+}
+
 fn main() -> io::Result<()> {
     let mut port: u16 = 8765;
     let mut start: Option<PathBuf> = None;
@@ -72,10 +135,24 @@ fn main() -> io::Result<()> {
             start = Some(PathBuf::from(a));
         }
     }
+    // Persistent session state (TSK-236): with no path arg, restore the last
+    // served root from ~/.textview/wui/config (if it still exists); else cwd.
+    let cfg_path = config_path();
     let root = start
+        .or_else(|| {
+            cfg_path
+                .as_deref()
+                .and_then(load_config)
+                .and_then(|c| c.root)
+                .filter(|d| d.is_dir())
+        })
         .unwrap_or(std::env::current_dir()?)
         .canonicalize()
         .unwrap_or_else(|_| PathBuf::from("/"));
+    // Remember the resolved root for next launch (best-effort).
+    if let Some(p) = &cfg_path {
+        save_config(p, &WebConfig { root: Some(root.clone()) });
+    }
 
     let listener = TcpListener::bind(("127.0.0.1", port))?;
     eprintln!(
@@ -1655,6 +1732,34 @@ mod tests {
         png.extend_from_slice(&8u32.to_be_bytes());
         fs::write(dir.join("pixel.png"), &png).unwrap();
         dir
+    }
+
+    #[test]
+    fn web_config_roundtrips_and_is_lenient() {
+        // TSK-236: serialize→parse identity; unknown/blank/missing keys tolerated.
+        let c = WebConfig { root: Some(PathBuf::from("/tmp/some/root")) };
+        assert_eq!(WebConfig::from_config(&c.to_config()), c);
+        // unknown key ignored, blank root → None, comment + blank lines skipped.
+        assert_eq!(WebConfig::from_config("bogus=1\n# c\n\nroot=\n").root, None);
+        assert_eq!(
+            WebConfig::from_config("root=/a/b\n").root,
+            Some(PathBuf::from("/a/b"))
+        );
+        // empty config → default (no root).
+        assert_eq!(WebConfig::from_config(""), WebConfig::default());
+    }
+
+    #[test]
+    fn web_save_then_load_config_roundtrips_via_disk() {
+        // IO roundtrip through a TEMP path (never the real ~/.textview).
+        let dir = fixture();
+        let path = dir.join("wui").join("config"); // parent dirs auto-created
+        let c = WebConfig { root: Some(dir.clone()) };
+        save_config(&path, &c);
+        assert_eq!(load_config(&path), Some(c));
+        // absent file → None (not an error).
+        assert_eq!(load_config(&dir.join("absent").join("config")), None);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
