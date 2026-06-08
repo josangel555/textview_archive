@@ -840,7 +840,29 @@ fn content_html(
             let query = view::table_query(header, tfilter);
             let (_, shown) = filter::apply_rows(rows, &query);
             let box_html = table_filter_box(&href, mode_str(v.mode), tfilter, shown.len(), rows.len());
-            format!("{}{}", box_html, table_html(header, &shown, *truncated))
+            // Cell-find (TSK-499): run the shared `find_in_table` over the SHOWN
+            // (filtered) rows so coordinates line up with what's rendered, then
+            // highlight matching cells + show a count/prev-next box. `?find=` is
+            // the same param the text/hex view uses; `?fmatch=` selects current.
+            let hits = if find.is_empty() {
+                Vec::new()
+            } else {
+                find::find_in_table(header, &shown, find, find::Case::Insensitive, true, None)
+            };
+            let cur_coord = if hits.is_empty() {
+                None
+            } else {
+                hits.get(fmatch.min(hits.len() - 1)).map(|h| (h.row, h.col))
+            };
+            let hitset: std::collections::HashSet<(i64, usize)> =
+                hits.iter().map(|h| (h.row, h.col)).collect();
+            let find_nav = table_find_box(&href, mode_str(v.mode), tfilter, find, fmatch, hits.len());
+            format!(
+                "{}{}{}",
+                box_html,
+                find_nav,
+                table_html(header, &shown, *truncated, &hitset, cur_coord)
+            )
         }
         ViewBody::Diff(lines) => diff_html(lines),
         ViewBody::Image(info) => image_html(&name, &raw, *info, truncated),
@@ -1105,7 +1127,65 @@ fn table_filter_box(href: &str, mode: &str, tfilter: &str, shown: usize, total: 
     s
 }
 
-fn table_html(header: &[String], rows: &[Vec<String>], truncated: bool) -> String {
+/// The CSV cell-find box (TSK-499): a JS-free GET form that reloads `/view` with
+/// `?find=<query>` and highlights matching table cells (via `table_html` +
+/// `find::find_in_table`). Echoes the query, shows the `i of n` cell count, and
+/// renders wrapping prev/next links that bump `?fmatch=` and carry `#fcell` so
+/// the browser scrolls to the current matched cell natively (no JS). Preserves
+/// the active `?tfilter=` so find composes with the row filter. `href` is the
+/// percent-encoded path (as used by `goto_box`).
+fn table_find_box(href: &str, mode: &str, tfilter: &str, find: &str, fmatch: usize, n: usize) -> String {
+    let tf = pct_encode(tfilter);
+    let mut s = String::from("<form class=\"find\" method=\"get\" action=\"/view\">");
+    s.push_str(&format!("<input type=\"hidden\" name=\"path\" value=\"{}\">", esc(&pct_decode(href))));
+    s.push_str(&format!("<input type=\"hidden\" name=\"mode\" value=\"{}\">", esc(mode)));
+    s.push_str(&format!("<input type=\"hidden\" name=\"tfilter\" value=\"{}\">", esc(tfilter)));
+    s.push_str(&format!(
+        "<input type=\"text\" name=\"find\" value=\"{}\" placeholder=\"find in cells\">",
+        esc(find)
+    ));
+    s.push_str("<button type=\"submit\">find</button>");
+    if !find.is_empty() {
+        if n == 0 {
+            s.push_str("<span class=\"count\">no matches</span>");
+        } else {
+            let cur = fmatch.min(n - 1);
+            let fq = pct_encode(find);
+            let link = |idx: usize, label: &str| -> String {
+                format!(
+                    "<a class=\"jump\" href=\"/view?path={href}&mode={mode}&tfilter={tf}&find={fq}&fmatch={idx}#fcell\">{label}</a>"
+                )
+            };
+            s.push_str(&link((cur + n - 1) % n, "prev"));
+            s.push_str(&link((cur + 1) % n, "next"));
+            s.push_str(&format!("<span class=\"count\">{} of {n} cells</span>", cur + 1));
+        }
+    }
+    s.push_str("</form>");
+    s
+}
+
+fn table_html(
+    header: &[String],
+    rows: &[Vec<String>],
+    truncated: bool,
+    hits: &std::collections::HashSet<(i64, usize)>,
+    cur: Option<(i64, usize)>,
+) -> String {
+    // Cell-find highlight (TSK-499): `hits` holds the (row, col) coords of cells
+    // matching the active `?find=` (row == find::TABLE_HEADER_ROW for a header
+    // cell), computed by the shared `find::find_in_table` over the SAME rows
+    // passed here. The current match (`cur`) also gets `id="fcell"` so the
+    // find box's prev/next `#fcell` links scroll to it natively (no JS).
+    let cell_class = |coord: (i64, usize)| -> &'static str {
+        if Some(coord) == cur {
+            " class=\"hit cur\" id=\"fcell\""
+        } else if hits.contains(&coord) {
+            " class=\"hit\""
+        } else {
+            ""
+        }
+    };
     // PARSE-04: a clamped table (a row had more columns than the header, or the
     // row/col caps fired) must be flagged so it isn't read as the complete data
     // (TSK-155). Distinct from any byte-cap banner the caller may add.
@@ -1125,14 +1205,15 @@ fn table_html(header: &[String], rows: &[Vec<String>], truncated: bool) -> Strin
         s.push_str(&format!("<col style=\"width:{w}ch\">"));
     }
     s.push_str("</colgroup><thead><tr>");
-    for h in header {
-        s.push_str(&format!("<th>{}</th>", esc(h)));
+    for (j, h) in header.iter().enumerate() {
+        s.push_str(&format!("<th{}>{}</th>", cell_class((find::TABLE_HEADER_ROW, j)), esc(h)));
     }
     s.push_str("</tr></thead><tbody>");
-    for row in rows.iter().take(5000) {
+    for (i, row) in rows.iter().take(5000).enumerate() {
         s.push_str("<tr>");
-        for c in row {
-            s.push_str(&format!("<td>{}</td>", esc(c)));
+        let ri = i64::try_from(i).unwrap_or(i64::MAX);
+        for (j, c) in row.iter().enumerate() {
+            s.push_str(&format!("<td{}>{}</td>", cell_class((ri, j)), esc(c)));
         }
         s.push_str("</tr>");
     }
@@ -1270,6 +1351,7 @@ pre{{font:12px ui-monospace,Menlo,monospace;white-space:pre;overflow:auto;margin
 table{{border-collapse:collapse;font:12px ui-monospace,Menlo,monospace;table-layout:fixed}}\
 th,td{{border:1px solid #ddd;padding:2px 6px;text-align:left;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}\
 th{{background:#eef;position:sticky;top:0}}\
+th.hit,td.hit{{background:#fff3b0}} th.cur,td.cur{{background:#f0a020;color:#000;scroll-margin-top:40px}}\
 .hint{{color:#999}}\
 .help{{margin:12px 0;font:13px -apple-system,Segoe UI,sans-serif;max-width:640px}}\
 .help summary{{cursor:pointer;color:#1a5fb4;user-select:none}}\
@@ -2159,6 +2241,47 @@ mod tests {
         let c = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "age:Alice", "", 0, false, false);
         assert!(!c.contains("<td>Alice</td>"), "age-scoped search excludes the name col:\n{c}");
         assert!(c.contains("0/2 rows"), "no rows match age:Alice:\n{c}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn csv_table_cell_find_highlights_and_counts() {
+        // TSK-499: `?find=` over a table highlights matching CELLS (not row
+        // filter) via the shared find::find_in_table.
+        let dir = fixture(); // people.csv = name,age / Alice,30 / Bob,25
+        let csv = dir.join("people.csv");
+        // find "Alice" → exactly the one data cell; current match gets the
+        // `hit cur` class + `#fcell` anchor; a count is shown.
+        let h = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "", "Alice", 0, false, false);
+        assert!(h.contains("class=\"hit cur\" id=\"fcell\">Alice</td>"),
+                "the matched cell is highlighted + anchored:\n{h}");
+        assert!(h.contains("1 of 1 cells"), "cell count shown:\n{h}");
+        // Bob's cells (no match) carry no hit class.
+        assert!(h.contains("<td>Bob</td>"), "non-matching cell unhighlighted:\n{h}");
+        // The find box (a form) is present.
+        assert!(h.contains("name=\"find\""), "table find box present:\n{h}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn csv_table_cell_find_matches_header_and_is_case_insensitive() {
+        let dir = fixture();
+        let csv = dir.join("people.csv");
+        // "a" (case-insensitive): header "name"(-1,0) + "age"(-1,1) + "Alice"(0,0) = 3 cells.
+        let h = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "", "a", 0, false, false);
+        assert!(h.contains("of 3 cells"), "3 cells match 'a' (header + Alice):\n{h}");
+        // A header cell is highlighted (th with hit class).
+        assert!(h.contains("<th class=\"hit"), "header cell highlighted:\n{h}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn csv_table_cell_find_no_matches() {
+        let dir = fixture();
+        let csv = dir.join("people.csv");
+        let h = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "", "zzzz", 0, false, false);
+        assert!(h.contains("no matches"), "no-match state shown:\n{h}");
+        assert!(!h.contains("class=\"hit"), "no cells highlighted:\n{h}");
         let _ = fs::remove_dir_all(&dir);
     }
 
