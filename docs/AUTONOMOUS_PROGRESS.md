@@ -3223,3 +3223,22 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - Why not taper: this is a real, host-validated subsystem advancing a filed feature — different from the
   value-type model cores, and its behaviour (not just pixels) is regression-guarded on the host gate.
   main @ `c79a5af`, tree clean.
+
+## LOG +105 (2026-06-08, autonomous tick — TSK-499 rust-core find_in_table: host-COMPLETABLE [PORT] slice, drains the PORT lane)
+- Found the sustainable host-completable lane the owner authorized: **rust-core / front-end work is
+  fully host-validatable** (cargo + rust-core-gate, NO VM, NO blind UI) — unlike SwiftUI features.
+  (Also re-confirmed two more offset-corruption mislabels exist — board TSK-260 = a resolved shoulder
+  bug, not the FileKind classifier; `view::classify` is already shared by TUI+web.)
+- Filed **TSK-499** "[PORT] CSV table cell-find for TUI/web" (parity with the Swift CSV find TSK-303),
+  → **progress** (commit `37fc03d`). **Slice 1 (CORE, done + gate-green):** added `find_in_table`
+  + `TableHit`/`TABLE_HEADER_ROW` to `rust-core/.../find.rs` — case-sensitive/insensitive substring
+  cell-find over a parsed table, reading order (header-first then rows L-to-R), column scope (+OOB→none),
+  reusing the existing `fold`/`Case` + next_index/prev_index wraparound. Lint-clean under the core
+  crate's no-panic/no-index clippy denies (iterator-based, `try_from(...).unwrap_or(MAX)`, helper to
+  avoid a closure mutable-borrow; fixed an `identity_op` `0 + n` in a test). Teeth: 8 new cargo tests
+  (find suite 28/28); **rust-core-gate green** (clippy no-panic + tests + ffi no_panic + doctests).
+- **Slice 2 (follow-on, ALSO host-completable, no VM):** wire into the TUI table overlay (snapshot
+  test) + web `/view` table mode (HTML-handler test). This makes TSK-499 a task I can drive fully to
+  `validated` over the next 1-2 ticks entirely on the host — the sustainable lane I was hunting for.
+- main @ `37fc03d`, tree clean, gates green. Run total: 5 host-validated cores (TSK-303/302/310/301 +
+  499) + board-integrity fixes. **NEXT TICK:** TSK-499 slice 2 (front-end wiring, host-validatable).
