@@ -3865,3 +3865,33 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   remains at `fixed` is hijacked-understanding audit findings (perf/leak/race → human-gate) + view-layout
   BACKLOG (VM-visual) + big [PARTIAL]s needing owner decisions. Next ticks: either an owner unblock from
   DECISIONS NEEDED, or drain the rust-core [PORT] lane (TSK-362+, real implementation work) per SOP.
+
+## LOG +135 (2026-06-08, autonomous tick — verified the loop is owner-input-bound; the PORT fallback is gated too)
+- Followed +134's plan to fall back to the rust-core [PORT] lane. **Finding: the PORT lane is itself fully
+  owner-gated** — there is no unblocked PORT work to drain. Verified by pulling the board `reported` queue
+  (the genuine un-started set) + `task_next`:
+  - `task_next` head = **TSK-104** — a FOREIGN `agent:forge`/`sess-forge-03` task (CSV export, branch
+    `fix/csv-eof`, `regressed`). Not markdown_viewer → skipped ([[reference_tasked_board_is_shared_across_projects]]).
+  - Every reported **[PORT]** task is parked or transitively blocked: **TSK-235** (persistent session state)
+    carries an open owner *decision* (disk-persist location/format vs in-session-only) that also gates
+    **TSK-234/236/250** (web recents / web persistent / web back-forward — all need cross-request global
+    state); **TSK-243** (TUI dark-mode palette) parked (redundant vs terminal theme + colorless host
+    snapshots = no teeth); **TSK-255/257** (comrak / tree-sitter) parked dep-approvals gating **256/258**.
+    The handoff's "PoC feature-complete on the no-dep tier" holds — only stateful + DEPGATED remain, all
+    owner-gated.
+- **Preview-tab (TSK-306 + TSK-272):** Phase 1 model core shipped+validated (a37f861); **Phase 2** (sidebar
+  single/double-click + arrow-nav triggers + auto-promote-on-edit) is render-path/live and already PARKED on
+  TSK-306 (owner decision: VM lane / wire-and-leave-at-review / defer). TSK-272 is the keyboard half of the
+  same feature → commented as blocked-by-306 (no duplicate owner ping); left at `reported` (blocked), NOT
+  validated (its own deliverable is the gated arrow-nav trigger; the shared model core is counted under 306).
+- **Reported BACKLOG** = genuinely-unbuilt greenfield wishlist (debugger 276/277/278, photo-editor 320,
+  vector-store 288, AWS 289, archive-browsing 311/312, .dot 290, dependency-graph 280/319, JS-formatter 297
+  [dep-gated], font picker 259, render-FPS 275, multi-window 265, drag-files-to-Finder 284, undo-audit 330,
+  Claude-search/hook UI-wiring 335/336 [model done, view/live]) — each needs owner product scoping
+  (priority + whether to build) or is view/live-only with no host teeth. Building any blind = the risky
+  unsupervised change the SOP says to avoid.
+- **Net:** the agent-actionable-without-owner-input queue is genuinely drained. ~14 owner gates are already
+  parked/pinging (PORT 235/243/255/257, preview-tab 306, + SwiftUI 202/204/205, + the audit perf/leak/race
+  human-gate cluster, + greenfield triage). No code change this tick; `main` @ 866e622, host gate green.
+  The single highest-leverage unblock remains **TSK-502 VM Screen-Recording TCC** (would open the whole
+  render-path validation lane — preview-tab Phase 2, view-layout BACKLOG, TUI dark-mode pixels).
