@@ -2692,3 +2692,32 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   already parked for owner dep-approval (comrak / tree-sitter); (c) TUI dark mode
   (TSK-243) — parked earlier (color-only, no colorless-snapshot teeth). Parking
   TSK-235 as the keystone design decision for the stateful cluster.
+
+## LOG +82 (2026-06-08, autonomous tick — TUI command palette)
+- **Shipped TSK-408 [TUI] command palette** (commit 00031d4), validated. Found
+  via `task_next`/board scan after the no-dep PORT *feature* lane was declared
+  exhausted — TSK-408/409 are children of a NEW command-palette epic (TSK-407)
+  that the earlier PORT sweep didn't cover.
+- **Impl:** `p` opens a centered overlay; a static `Cmd` enum + `PALETTE` table
+  of 16 actions (find/grep/outline/recent/reload, next/prev/close tab, cycle
+  sort, toggle hidden/line-numbers/whitespace/wrap, top/bottom, help). Typing
+  fuzzy-filters via the SAME shared `nav::filter_entries` scorer the quick
+  file-find uses (no new matching logic); ↑/↓ select; Enter dispatches through
+  `run_palette_cmd` to the EXISTING action methods (zero behaviour duplicated);
+  ESC closes. Mirrors the outline/recents overlays. Help + status legend updated.
+- **Teeth:** `command_palette_lists_fuzzy_filters_and_runs_a_command` — opens,
+  empty query lists all 16, title rendered; types "hidden" → hits narrow to the
+  single toggle-hidden command; Enter flips `show_hidden` + closes; ESC closes
+  without running. tui 49 (+1); rust-core gate green.
+- **Parked TSK-409 [Web] command palette** (sibling): it carries an explicit
+  `blocker=dep-approval` and its core value is browser-rendered keyboard/fuzzy
+  behavior the host gate CAN'T validate (only server markup-emission is
+  host-testable, per the render-path policy). No new dep is actually needed (the
+  web already ships 11 inline `<script>` blocks) — asked the owner to confirm
+  "vanilla-JS, land at fixed/review for VM/manual validation" vs WONT-DO.
+- main @ 00031d4 + this doc. **Session cumulative: 45 validated + 1 bug fixed +
+  4 owner-parked** (comrak TSK-255, tree-sitter TSK-257, stateful-cluster
+  TSK-235, web-palette TSK-409). The TUI front-end now has: find+minimap, grep,
+  git-status, recents, multi-file tabs, AND a command palette — a genuinely
+  full-featured ratatui app over mdvcore-core. Remaining board work is all
+  owner-gated (4 parks) or the bigger TSK-400 mdvcore-rpcd remote spike.
