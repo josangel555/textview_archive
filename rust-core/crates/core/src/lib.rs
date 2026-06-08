@@ -30,6 +30,7 @@ pub mod format;
 pub mod hex;
 pub mod image;
 pub mod indent;
+pub mod meta;
 pub mod nav;
 pub mod outline;
 pub mod session;

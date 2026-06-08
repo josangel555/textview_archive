@@ -37,6 +37,7 @@ use mdvcore_core::nav::{self, SortKey};
 use mdvcore_core::outline::{self, Heading};
 use mdvcore_core::filter;
 use mdvcore_core::find;
+use mdvcore_core::meta;
 use mdvcore_core::hex::{self, HexSearchMode};
 use mdvcore_core::view::{self, DiffLineKind, FileKind, View, ViewBody, ViewMode};
 
@@ -1400,13 +1401,24 @@ impl App {
                 };
                 // While the go-to-line prompt is open the title becomes the live
                 // "goto: N" input so the user sees the number they're typing.
+                // Encoding + line-ending badge (shared `core::meta`) — only
+                // meaningful for the Text view; HEX shows raw bytes, so skip it.
+                let badge = if matches!(p.view.mode, ViewMode::Text) {
+                    format!(
+                        " · {} · {}",
+                        meta::encoding_label(&p.raw),
+                        meta::line_ending(&p.raw).as_str(),
+                    )
+                } else {
+                    String::new()
+                };
                 let title = if let Some(f) = &self.find {
                     format!(" {} · find: {f}▏ (↵ search · ESC cancel) ", p.name)
                 } else if let Some(g) = &self.goto {
                     format!(" {} · goto line: {g}▏ (↵ jump · ESC cancel) ", p.name)
                 } else {
                     format!(
-                        " {} · {mode} · indent: {} · {}{trunc} ",
+                        " {} · {mode} · indent: {} · {}{badge}{trunc} ",
                         p.name,
                         p.view.indent,
                         human_size(p.total),
@@ -2067,6 +2079,21 @@ mod tests {
         assert!(out.chars().count() <= 36, "capped to 36 cols, got {}: {out}", out.chars().count());
         assert!(out.starts_with('…'), "truncation marked with a leading ellipsis: {out}");
         assert!(out.ends_with("mdv-tui-test-1519"), "keeps the tail (current dir): {out}");
+    }
+
+    #[test]
+    fn text_view_title_shows_encoding_and_line_ending_badge() {
+        let dir = fixture_dir();
+        // A CRLF, no-BOM file written BEFORE App::new so it is in the listing.
+        // CRLF (not LF) proves the badge is computed from the bytes, not hardcoded.
+        fs::write(dir.join("crlf.txt"), b"a\r\nb\r\n").unwrap();
+        let mut app = App::new(dir.clone());
+        select_name(&mut app, "crlf.txt");
+        app.enter();
+        let out = app.snapshot(220, 24).expect("snapshot render");
+        assert!(out.contains("UTF-8"), "encoding label in the text-view title:\n{out}");
+        assert!(out.contains("CRLF"), "CRLF line-ending badge (from bytes, not hardcoded):\n{out}");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
