@@ -96,6 +96,17 @@ public enum EditOp: Sendable, Codable, Equatable {
     /// editor models exposure. Per-pixel, geometry-preserving; composes freely
     /// with the other ops.
     case exposure(ev: Double)
+    /// Shadow/highlight tone adjustment via Core Image's `CIHighlightShadowAdjust`
+    /// (TSK-344). Identity is `(shadow: 0, highlight: 1)`. `shadow` 0…1 LIFTS the
+    /// dark tones (brightens shadows) as it rises; `highlight` 1…0 PULLS DOWN the
+    /// bright tones (recovers blown highlights) as it falls. A local-tone operator
+    /// (not a flat per-pixel curve), geometry-preserving.
+    case shadowHighlight(shadow: Double, highlight: Double)
+    /// Luminance sharpening via Core Image's `CISharpenLuminance` (TSK-344).
+    /// Identity is `sharpness: 0` (no sharpening); higher values increase local
+    /// edge contrast (an unsharp-mask-style overshoot at edges). A no-op on flat
+    /// regions — only edges are affected. Geometry-preserving.
+    case sharpen(sharpness: Double)
 }
 
 extension EditOp {

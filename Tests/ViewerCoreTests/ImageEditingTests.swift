@@ -259,6 +259,115 @@ final class ImageEditingTests: XCTestCase {
         XCTAssertEqual(round, doc, "exposure op must round-trip through Codable")
     }
 
+    // MARK: - Shadow/highlight + Sharpen (TSK-344)
+
+    /// A left/right two-tone fixture with an INTERIOR vertical edge at x=width/2.
+    /// Distinct dark (left) and light (right) regions for shadow-lift and
+    /// edge-sharpen tests; the edge is interior so filter border effects don't
+    /// contaminate the samples.
+    private func verticalSplitImage(width: Int, height: Int,
+                                    left: (CGFloat, CGFloat, CGFloat),
+                                    right: (CGFloat, CGFloat, CGFloat)) -> CGImage {
+        let ctx = makeContext(width: width, height: height)
+        let half = width / 2
+        ctx.setFillColor(red: left.0, green: left.1, blue: left.2, alpha: 1)
+        ctx.fill(CGRect(x: 0, y: 0, width: half, height: height))
+        ctx.setFillColor(red: right.0, green: right.1, blue: right.2, alpha: 1)
+        ctx.fill(CGRect(x: half, y: 0, width: width - half, height: height))
+        return ctx.makeImage()!
+    }
+
+    func test_shadowHighlight_identity_preservesColor() throws {
+        let data = try Exporter.encode(
+            solidImage(width: 40, height: 40, r: 0.5, g: 0.5, b: 0.5),
+            ExportSpec(format: .png))
+        let plain = try Renderer.render(ImageDocument(data: data))
+        let same = try Renderer.render(
+            ImageDocument(data: data).appending(.shadowHighlight(shadow: 0, highlight: 1)))
+        let p = sampleRGBA(plain, x: 20, y: 20)
+        let s = sampleRGBA(same, x: 20, y: 20)
+        XCTAssertTrue(s.close(to: p, tol: 6), "identity (0,1) changed the color: \(p) -> \(s)")
+    }
+
+    func test_shadowHighlight_shadowLift_brightensDarkRegion() throws {
+        // Dark left / light right gives the tone-mapper a real shadow region.
+        // Lifting shadows must brighten the dark region (sampled away from the edge).
+        let img = verticalSplitImage(width: 80, height: 40, left: (0.12, 0.12, 0.12),
+                                     right: (0.7, 0.7, 0.7))
+        let data = try Exporter.encode(img, ExportSpec(format: .png))
+        let darkX = 20 // well inside the left (dark) region
+        let before = sampleRGBA(try Renderer.render(ImageDocument(data: data)), x: darkX, y: 20)
+        let after = sampleRGBA(
+            try Renderer.render(ImageDocument(data: data)
+                .appending(.shadowHighlight(shadow: 1, highlight: 1))),
+            x: darkX, y: 20)
+        XCTAssertGreaterThan(Int(after.r), Int(before.r) + 5,
+                             "shadow lift should brighten dark region (\(before.r) -> \(after.r))")
+    }
+
+    func test_shadowHighlight_survivesDocumentCodableRoundTrip() throws {
+        let doc = ImageDocument(data: Data([7, 8, 9]))
+            .appending(.shadowHighlight(shadow: 0.6, highlight: 0.4))
+        let round = try JSONDecoder().decode(
+            ImageDocument.self, from: JSONEncoder().encode(doc))
+        XCTAssertEqual(round, doc, "shadowHighlight op must round-trip through Codable")
+    }
+
+    func test_sharpen_identity_preservesColor() throws {
+        let data = try Exporter.encode(
+            solidImage(width: 40, height: 40, r: 0.45, g: 0.55, b: 0.35),
+            ExportSpec(format: .png))
+        let plain = try Renderer.render(ImageDocument(data: data))
+        let same = try Renderer.render(
+            ImageDocument(data: data).appending(.sharpen(sharpness: 0)))
+        XCTAssertEqual(same.width, 40)
+        XCTAssertEqual(same.height, 40, "sharpen must not change geometry")
+        let p = sampleRGBA(plain, x: 20, y: 20)
+        let s = sampleRGBA(same, x: 20, y: 20)
+        XCTAssertTrue(s.close(to: p, tol: 6), "sharpness 0 changed the color: \(p) -> \(s)")
+    }
+
+    func test_sharpen_flatRegion_isNoOp() throws {
+        // No edges ⇒ unsharp-mask overshoot is zero ⇒ a solid fill is unchanged
+        // even at high sharpness.
+        let data = try Exporter.encode(
+            solidImage(width: 40, height: 40, r: 0.5, g: 0.4, b: 0.6),
+            ExportSpec(format: .png))
+        let plain = sampleRGBA(try Renderer.render(ImageDocument(data: data)), x: 20, y: 20)
+        let sharp = sampleRGBA(
+            try Renderer.render(ImageDocument(data: data).appending(.sharpen(sharpness: 2))),
+            x: 20, y: 20)
+        XCTAssertTrue(sharp.close(to: plain, tol: 3),
+                      "sharpen on a flat region should be a no-op: \(plain) -> \(sharp)")
+    }
+
+    func test_sharpen_edge_increasesContrast() throws {
+        // At an edge, sharpening overshoots: the dark side just left of the edge
+        // darkens, the light side just right lightens ⇒ cross-edge contrast grows.
+        let w = 80
+        let img = verticalSplitImage(width: w, height: 40, left: (0.3, 0.3, 0.3),
+                                     right: (0.6, 0.6, 0.6))
+        let data = try Exporter.encode(img, ExportSpec(format: .png))
+        let half = w / 2
+        let plain = try Renderer.render(ImageDocument(data: data))
+        let sharp = try Renderer.render(
+            ImageDocument(data: data).appending(.sharpen(sharpness: 2)))
+        let beforeContrast = Int(sampleRGBA(plain, x: half, y: 20).r)
+            - Int(sampleRGBA(plain, x: half - 1, y: 20).r)
+        let afterContrast = Int(sampleRGBA(sharp, x: half, y: 20).r)
+            - Int(sampleRGBA(sharp, x: half - 1, y: 20).r)
+        XCTAssertGreaterThan(afterContrast, beforeContrast + 3,
+                             "sharpen should increase edge contrast (\(beforeContrast) -> \(afterContrast))")
+    }
+
+    func test_sharpen_survivesDocumentCodableRoundTrip() throws {
+        let doc = ImageDocument(data: Data([1, 1, 2, 3]))
+            .appending(.sharpen(sharpness: 0.8))
+        let round = try JSONDecoder().decode(
+            ImageDocument.self, from: JSONEncoder().encode(doc))
+        XCTAssertEqual(round, doc, "sharpen op must round-trip through Codable")
+    }
+
     // MARK: - Histogram (analysis; TSK-344)
 
     func test_histogram_solidColor_concentratesInExpectedBins() throws {

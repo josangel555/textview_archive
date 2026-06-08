@@ -113,6 +113,9 @@ public enum Renderer {
         case .colorControls(let b, let c, let s):
             return try colorControls(image, brightness: b, contrast: c, saturation: s)
         case .exposure(let ev):     return try exposure(image, ev: ev)
+        case .shadowHighlight(let s, let h):
+            return try shadowHighlight(image, shadow: s, highlight: h)
+        case .sharpen(let amount): return try sharpen(image, sharpness: amount)
         }
     }
 
@@ -267,6 +270,46 @@ public enum Renderer {
         guard let filter = CIFilter(name: "CIExposureAdjust", parameters: [
             kCIInputImageKey: input,
             kCIInputEVKey: ev,
+        ]), let output = filter.outputImage else {
+            throw ImageEditError.contextCreationFailed
+        }
+        let ciContext = CIContext(options: [.workingColorSpace: workingColorSpace])
+        guard let cg = ciContext.createCGImage(output, from: input.extent) else {
+            throw ImageEditError.contextCreationFailed
+        }
+        return try normalized(cg)
+    }
+
+    /// Lift shadows / recover highlights via Core Image's `CIHighlightShadowAdjust`.
+    /// Identity is `(shadow: 0, highlight: 1)`. A local-tone operator, so it's
+    /// applied at the input extent and re-normalized. Headless software render.
+    static func shadowHighlight(
+        _ image: CGImage, shadow: Double, highlight: Double
+    ) throws -> CGImage {
+        let input = CIImage(cgImage: image)
+        guard let filter = CIFilter(name: "CIHighlightShadowAdjust", parameters: [
+            kCIInputImageKey: input,
+            "inputShadowAmount": shadow,
+            "inputHighlightAmount": highlight,
+        ]), let output = filter.outputImage else {
+            throw ImageEditError.contextCreationFailed
+        }
+        let ciContext = CIContext(options: [.workingColorSpace: workingColorSpace])
+        guard let cg = ciContext.createCGImage(output, from: input.extent) else {
+            throw ImageEditError.contextCreationFailed
+        }
+        return try normalized(cg)
+    }
+
+    /// Sharpen luminance via Core Image's `CISharpenLuminance` (`inputSharpness`).
+    /// Identity is `sharpness: 0`. `CISharpenLuminance`'s output extent is
+    /// `infinite` (it samples a neighborhood), so we render from the ORIGINAL
+    /// `input.extent` — not `output.extent` — to keep the dimensions unchanged.
+    static func sharpen(_ image: CGImage, sharpness: Double) throws -> CGImage {
+        let input = CIImage(cgImage: image)
+        guard let filter = CIFilter(name: "CISharpenLuminance", parameters: [
+            kCIInputImageKey: input,
+            kCIInputSharpnessKey: sharpness,
         ]), let output = filter.outputImage else {
             throw ImageEditError.contextCreationFailed
         }
