@@ -2880,3 +2880,26 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   cumulative: 50 validated + 1 bug fixed + 4 owner-parked.** Lane continues
   (remaining clean-teeth fixed/review candidates thinning; next: re-scan
   `task_list {ready:true}` for any still at fixed/review with behavior teeth).
+
+## LOG +89 (2026-06-08, autonomous tick — TSK-194 doc-sync validated; clean-teeth review lane nearly drained)
+- **Validated TSK-194** `[S4][quality] exec-size sub-cap doc says 16 MB but is 26
+  MB`. Verify-and-validate (no code): CLAUDE.md:148 now reads "48 MB total + 26 MB
+  main-executable sub-cap", matching check-bundle-size.sh defaults BUDGET_MB=48 /
+  EXEC_BUDGET_MB=26 (lines 49-50); no stale 16/37/25 MB figure remains in the doc.
+  S4 doc-quality → validated by direct doc↔script factual comparison (a brittle
+  doc-lint test isn't worth the maintenance cost for a one-line prose sync).
+- **Held (correct) TSK-329 + TSK-333** — both `[PARTIAL]` FEATURE tasks at review.
+  Their headless model cores ARE done + teeth-tested (NewFileCreator typed-error
+  contract; BookmarksStore 20-deep undo — `BookmarkUndoTests` 9/9 green incl the
+  FIFO-evict-at-20 + restore-index-clamp edges). But the user-facing deliverable
+  is SwiftUI wiring (File>New menu / sidebar context-menu; Delete-key handler +
+  undo command) which is render-path → NOT host-self-validatable. Validating them
+  would falsely imply the feature is usable; correctly left at review for the
+  live/owner lane. (Distinction: the audit BUG/leak findings I validated had the
+  fix AS the substance; these features have the UI as the substance.)
+- **Lane status:** clean-teeth BUG/SECURITY/leak validate lane is now largely
+  drained at review — validated TSK-145/135/148/194 across the last 4 ticks; the
+  remainder is perf/race (122/123/147, no behavior teeth → human) or `[PARTIAL]`
+  features (UI-deferred → live/owner).
+- main @ 0e16101 (no code change; board state only) + this doc. **Session
+  cumulative: 51 validated + 1 bug fixed + 4 owner-parked.**
