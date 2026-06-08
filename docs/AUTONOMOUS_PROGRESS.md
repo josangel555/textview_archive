@@ -4005,3 +4005,24 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   — **TSK-502 (VM Screen-Recording TCC) remains the single highest-leverage unblock**, and the easy no-dep
   model lane is now near-exhausted (3 dup/already-fixed probes this tick). Future ticks likely need an owner
   unblock to keep delivering *user-facing* value rather than more unwired cores.
+
+## LOG +142 (2026-06-08, autonomous tick — DiffStat: DRY'd DiffView's untested inline +/− counter)
+- Grep-first (per +138): confirmed the only diff line-counter in the tree was `DiffView.stats(_ file:)`
+  — an UNTESTED inline `+added/−removed` loop in the SwiftUI view (same view-layer-duplication smell DRY'd
+  for StatusBar EOL in TSK-510); `GitClient` has no diff line-stat, so no redundancy. Shipped
+  **TSK-514 → validated** (commit b1c62f7): `Sources/ViewerCore/Git/DiffStat.swift` — pure
+  `UnifiedDiff.File.lineStats` (added/removed; context & noNewline excluded; binary/rename-only hunkless →
+  0/0) + `DiffStat(_ files:) {filesChanged, additions, deletions}` + `shortStat` (git-diff-shortstat string,
+  correct singular/plural, zero-clause omission, "no changes" for empty). `DiffView.stats(_:)` now delegates
+  to the tested `lineStats` — identical per-file "+N −M" output, single tested source of truth.
+- 6 host tests (`DiffStatTests`) feed real unified-diff text through `DiffParser.parse` end-to-end:
+  per-file add/remove with context excluded, multi-file aggregate + exact shortStat string, singular/plural,
+  deletions-only, binary (0/0 lines yet filesChanged=1), empty diff. `MDV_HEADLESS_GATE=1 swift test --filter
+  DiffStatTests` → 6/0; central `scripts/test-headless-gate.sh` PASSED on the committed commit
+  ("tier enforcement: OK"). Phase 2 (show the aggregate `shortStat` in the diff-tab header) = view/VM, deferred.
+- `main` @ b1c62f7 (+ this log). Seven no-dep host-tested ViewerCore units now (DotGraph/LineEnding/Markdown
+  Outline/AnnotationScanner/JSONSyntaxChecker/DiffStat + the StatusBar-EOL DRY fix). Standing note unchanged:
+  these are all phase-1 model cores; their user-facing phase-2 wiring (sidebar/menu/banner/diff-header display)
+  is blocked on the render-path validation gap — **TSK-502 (VM Screen-Recording TCC) is the single
+  highest-leverage unblock**. The easy no-dep model lane is near-exhausted; future ticks likely need an owner
+  unblock (TSK-502 / a dep approval / a parked decision) to deliver *user-facing* value, not more unwired cores.
