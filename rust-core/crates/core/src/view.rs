@@ -194,6 +194,71 @@ pub fn looks_tabular(name: &str) -> bool {
     classify(name) == FileKind::Tabular
 }
 
+/// The readability state of a file's *content* (its bytes), independent of the
+/// name-based [`FileKind`]. Front-ends use this to show an explicit banner —
+/// today an empty file renders as a blank pane and a binary file renders as
+/// garbled "text" with no hint why; this names those states so both front-ends
+/// surface them identically (the SwiftUI app shows the same idea natively).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ContentState {
+    /// Zero bytes on disk.
+    Empty,
+    /// Looks binary: a NUL byte, or a high ratio of control bytes in the sniffed
+    /// prefix — text/source rendering would be garbled, so the front-end should
+    /// say so (and prefer HEX).
+    Binary,
+    /// Ordinary readable content (the common case).
+    Readable,
+}
+
+/// Leading bytes inspected by [`content_state`] — a binary file reveals itself
+/// early, so a large readable file need not be rescanned in full.
+const CONTENT_SNIFF_BYTES: usize = 8192;
+/// Control-byte percentage (of the sniffed prefix) above which content is judged
+/// binary even without a NUL — catches latin-1 / other non-UTF-8 blobs.
+const BINARY_CONTROL_PCT: usize = 30;
+
+/// Classify the readability [`ContentState`] of `bytes`: empty → `Empty`; a NUL
+/// byte, or more than [`BINARY_CONTROL_PCT`]% control bytes (excluding
+/// tab/newline/CR) within the first [`CONTENT_SNIFF_BYTES`] → `Binary`;
+/// otherwise `Readable`. Pure, allocation-free, a single bounded pass that never
+/// indexes (lint-clean under the workspace `indexing_slicing` deny).
+#[must_use]
+pub fn content_state(bytes: &[u8]) -> ContentState {
+    if bytes.is_empty() {
+        return ContentState::Empty;
+    }
+    let prefix = bytes.get(..CONTENT_SNIFF_BYTES).unwrap_or(bytes);
+    let mut control = 0usize;
+    for &b in prefix {
+        if b == 0 {
+            return ContentState::Binary;
+        }
+        // Control chars except the common text whitespace (tab/LF/CR).
+        if b < 0x20 && b != b'\t' && b != b'\n' && b != b'\r' {
+            control += 1;
+        }
+    }
+    if control.saturating_mul(100) > prefix.len().saturating_mul(BINARY_CONTROL_PCT) {
+        ContentState::Binary
+    } else {
+        ContentState::Readable
+    }
+}
+
+/// The canonical one-line banner for a [`ContentState`], or `None` when the
+/// content is readable (no banner needed). Shared so the TUI status line and the
+/// web banner read identically; truncation (the byte-cap) is a separate signal
+/// each front-end already surfaces alongside this.
+#[must_use]
+pub fn content_state_banner(state: ContentState) -> Option<&'static str> {
+    match state {
+        ContentState::Empty => Some("empty file"),
+        ContentState::Binary => Some("binary file"),
+        ContentState::Readable => None,
+    }
+}
+
 /// The modes available for a file, in cycle order. The kind-specific mode leads
 /// (it's the most useful default there); `Text`/`Hex` always follow as the
 /// universal fallbacks.
@@ -395,6 +460,43 @@ mod tests {
         assert_eq!(classify("a.jpeg"), FileKind::Image);
         assert_eq!(classify("a.txt"), FileKind::Plain);
         assert_eq!(classify("patch"), FileKind::Plain);
+    }
+
+    #[test]
+    fn content_state_classifies_empty_binary_readable() {
+        // Empty bytes → Empty (banner says so).
+        assert_eq!(content_state(b""), ContentState::Empty);
+        assert_eq!(content_state_banner(ContentState::Empty), Some("empty file"));
+        // A NUL byte anywhere in the prefix → Binary.
+        assert_eq!(content_state(&[0x00, 0x41, 0xff]), ContentState::Binary);
+        assert_eq!(content_state_banner(ContentState::Binary), Some("binary file"));
+        // Ordinary UTF-8 text (with tab/newline/CR whitespace) → Readable, no banner.
+        assert_eq!(content_state(b"hello world\n\ttab\r\nok"), ContentState::Readable);
+        assert_eq!(content_state_banner(ContentState::Readable), None);
+        // Multi-byte UTF-8 (no control bytes) stays Readable.
+        assert_eq!(content_state("café — déjà".as_bytes()), ContentState::Readable);
+    }
+
+    #[test]
+    fn content_state_flags_control_heavy_blob_without_nul() {
+        // A blob that's >30% control bytes (no NUL) is still judged binary.
+        let mut blob = vec![0x01u8; 40];
+        blob.extend_from_slice(&[b'a'; 60]); // 40/100 = 40% control → Binary
+        assert_eq!(content_state(&blob), ContentState::Binary);
+        // Just under the threshold stays Readable (29 control / 100 bytes).
+        let mut ok = vec![0x01u8; 29];
+        ok.extend_from_slice(&[b'a'; 71]);
+        assert_eq!(content_state(&ok), ContentState::Readable);
+    }
+
+    #[test]
+    fn content_state_only_sniffs_a_bounded_prefix() {
+        // A binary byte AFTER the sniff window doesn't flip a large readable file.
+        let mut big = vec![b'a'; CONTENT_SNIFF_BYTES + 10];
+        if let Some(last) = big.last_mut() {
+            *last = 0x00;
+        }
+        assert_eq!(content_state(&big), ContentState::Readable, "byte past the sniff prefix is ignored");
     }
 
     #[test]

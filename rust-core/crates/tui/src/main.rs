@@ -1267,6 +1267,13 @@ impl App {
         };
 
         let trunc = if p.truncated { " · TRUNCATED" } else { "" };
+        // Empty/binary content banner (shared `view::content_state`): surfaces WHY
+        // a text pane is blank or garbled, where today the file just renders as an
+        // empty pane / noise with no explanation (TSK-245). Truncation above is a
+        // separate, already-surfaced signal.
+        let state = view::content_state_banner(view::content_state(&p.raw))
+            .map(|b| format!(" · {b}"))
+            .unwrap_or_default();
         match &p.view.body {
             // Table mode renders a real ratatui Table from the core-parsed CSV.
             ViewBody::Table { header, rows, truncated } => {
@@ -1437,7 +1444,7 @@ impl App {
                     format!(" {} · goto line: {g}▏ (↵ jump · ESC cancel) ", p.name)
                 } else {
                     format!(
-                        " {} · {mode} · indent: {} · {}{badge}{trunc} ",
+                        " {}{state} · {mode} · indent: {} · {}{badge}{trunc} ",
                         p.name,
                         p.view.indent,
                         human_size(p.total),
@@ -1738,6 +1745,33 @@ mod tests {
         let hex = render(&mut app);
         assert!(hex.contains("00000000"), "hex offset column shown:\n{hex}");
         assert!(hex.contains("· hex ·"), "title reflects hex mode:\n{hex}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn content_state_banner_flags_empty_and_binary_files() {
+        let dir = fixture_dir();
+        fs::write(dir.join("empty.txt"), b"").unwrap();
+        let mut app = App::new(dir.clone());
+        // data.bin (has a NUL) opens as Text (Plain default) — the title flags it
+        // binary so the garbled bytes aren't a mystery.
+        select_name(&mut app, "data.bin");
+        app.enter();
+        let bin = render(&mut app);
+        assert!(bin.contains("binary file"), "binary banner in content title:\n{bin}");
+        // An empty file → the title says so (the pane would otherwise be blank).
+        select_name(&mut app, "empty.txt");
+        app.enter();
+        let empty = render(&mut app);
+        assert!(empty.contains("empty file"), "empty banner in content title:\n{empty}");
+        // A normal text file shows neither banner.
+        select_name(&mut app, "hello.txt");
+        app.enter();
+        let ok = render(&mut app);
+        assert!(
+            !ok.contains("binary file") && !ok.contains("empty file"),
+            "readable text gets no state banner:\n{ok}"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 

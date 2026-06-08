@@ -580,6 +580,13 @@ fn content_html(
         badge,
         trunc
     );
+    // Empty/binary content banner (shared `view::content_state`, TSK-246): an
+    // explicit notice where today an empty file is a blank pane and a binary file
+    // renders as garbled bytes. The banner text is a fixed safe literal (no HTML
+    // metacharacters). Truncation above is the separate byte-cap signal.
+    let state_banner = view::content_state_banner(view::content_state(&raw))
+        .map(|b| format!("<div class=\"banner\">{b}</div>"))
+        .unwrap_or_default();
 
     // Markdown outline: for a `.md` file rendered as text, scan the RAW bytes
     // for headings (shared `outline::headings`) and offer a clickable TOC. Each
@@ -675,7 +682,7 @@ fn content_html(
     } else {
         ""
     };
-    format!("{modes}{bar}{ws_link}{wrap_link}{wrap_style}{outline_nav}{content}")
+    format!("{modes}{bar}{state_banner}{ws_link}{wrap_link}{wrap_style}{outline_nav}{content}")
 }
 
 /// The go-to-line box: a JS-free GET form that reloads `/view` with `?line=<n>`.
@@ -996,6 +1003,7 @@ main{{flex:1;overflow:auto;padding:12px}}\
 .crumbs{{font:12px ui-monospace,Menlo,monospace;color:#666;margin:6px 0;word-break:break-all}}\
 .crumbs a{{color:#1a5fb4;text-decoration:none}}\
 .crumbs .sep{{color:#bbb;margin:0 4px}} .crumbs .here{{color:#333;font-weight:600}}\
+.banner{{font:12px -apple-system,Segoe UI,sans-serif;color:#8a6d00;background:#fff8e1;border:1px solid #f0e0a0;border-radius:4px;padding:4px 8px;margin:0 0 8px}}\
 .find{{display:flex;gap:4px;align-items:center;margin:0 0 6px;flex-wrap:wrap}}\
 .find input[type=text]{{flex:1;min-width:80px;font:12px -apple-system,Segoe UI,sans-serif;padding:3px 6px;border:1px solid #ccc;border-radius:4px}}\
 .find button{{font:11px -apple-system,Segoe UI,sans-serif;padding:3px 8px;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer}}\
@@ -1516,6 +1524,23 @@ mod tests {
         assert!(html.contains("no matches"), "empty result reported:\n{html}");
         assert!(!html.contains("value=\"<script>\""), "raw query reflected unescaped:\n{html}");
         assert!(html.contains("&lt;script&gt;"), "query HTML-escaped in the box:\n{html}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn view_flags_empty_and_binary_content() {
+        let dir = fixture();
+        fs::write(dir.join("empty.txt"), b"").unwrap();
+        // data.bin (has a NUL) → binary banner, regardless of view mode.
+        let bin = render_view(&dir.join("data.bin"), Some("text"), SortKey::Name, false, None);
+        assert!(bin.contains("class=\"banner\""), "binary file shows a banner:\n{bin}");
+        assert!(bin.contains("binary file"), "banner text says binary:\n{bin}");
+        // An empty file → empty banner (the pane would otherwise be blank).
+        let empty = render_view(&dir.join("empty.txt"), Some("text"), SortKey::Name, false, None);
+        assert!(empty.contains("empty file"), "empty file banner:\n{empty}");
+        // A normal readable text file → no banner.
+        let ok = render_view(&dir.join("hello.txt"), Some("text"), SortKey::Name, false, None);
+        assert!(!ok.contains("class=\"banner\""), "readable text gets no banner:\n{ok}");
         let _ = fs::remove_dir_all(&dir);
     }
 
