@@ -3372,3 +3372,25 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   with no open bugs, SwiftUI feature halves VM/owner-gated. Outstanding owner parks (answering any one
   refills the queue): TSK-235 (persistence), TSK-255/257 (deps), TSK-306/272 (preview VM lane), TSK-243
   (TUI theme), TSK-332 (open-path mode re-resolution), TSK-362 (Editor langs). main @ `9691eff` (+ this log).
+
+## LOG +112 (2026-06-08, autonomous tick — ran the VM lane; root-caused "158 failures" as environmental, not regressions; filed TSK-500)
+- Broke the multi-tick HOLD by actually exercising the owner's standing VM ask: synced + ran
+  `test-in-vm.sh test` on macOS15 (Swift 6.3) in the background. It reported **158 failures / 102
+  unexpected** (exit masked to 0 — the #311/#162 JUnit-convert-is-last issue).
+- **Root-caused as ENVIRONMENTAL, not product regressions** (host headless gate remains authoritative + green):
+  (1) plain (non-login) ssh has no per-user Darwin temp dir → every temp-file test fails. XattrIOTests
+  SKIPS "could not open temp file" (guarded); unguarded classes FAIL: TextFileLoaderTests (18),
+  TrackedRepos*, Tab* persistence, Walkthrough loaders. PROOF: `TextFileLoaderTests` = 21/21 GREEN on
+  host (`MDV_BACKGROUND=1 swift test --filter`), 18-failed on VM. (2) heavy tiers (T4/T5/UAT/
+  VisualRegression/ViewModeMatrix) run over ssh without a realized GUI window → occlusion failures
+  (log: "GIT accordion NOT observed … occluded path", "LSP spawn NON-DETERMINISTIC").
+- **`main` is healthy** — the VM red is the harness env, not the code.
+- **High-value discovery:** this is WHY the autonomous VM-validation lane has been unusable — explaining
+  the multi-tick inability to drive the `fixed` SwiftUI cluster to `validated`. Filed **TSK-500**
+  ([infra][test] test-in-vm.sh over plain ssh): fix = run swift test inside a real login/GUI session
+  via `launchctl asuser <uid>` (TSK-151 pattern) + export TMPDIR, and stop masking the failing exit.
+  Once fixed, the VM lane becomes usable for autonomous UI validation. Saved durable memory
+  `reference_vm_plain_ssh_breaks_tests`.
+- main @ `2d7e062` (+ this log); no source change (the VM run was read-only validation). NEXT: TSK-500
+  (make the VM lane usable) is the highest-leverage unblock — host-editable script change, but its
+  validation needs a VM re-run, so a focused effort.
