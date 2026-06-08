@@ -29,6 +29,31 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+68) — TSK-344: shadowHighlight + sharpen — engine tonal set now 6/6 (fixed)
+
+Closed the engine side of TSK-344. Two final tonal ops, commit `eda47b5` (TSK-344 four commits total:
+`a483c6a` colorControls, `728c7f5` histogram, `cd0551c` exposure, `eda47b5` shadows+sharpen):
+- `EditOp.shadowHighlight(shadow:highlight:)` via `CIHighlightShadowAdjust` — identity
+  `(shadow:0, highlight:1)`; shadow 0…1 lifts darks, highlight 1…0 recovers brights.
+- `EditOp.sharpen(sharpness:)` via `CISharpenLuminance` — identity `0`; unsharp-mask edge overshoot.
+  IMPORTANT: `CISharpenLuminance`'s output extent is *infinite* (it samples a neighborhood), so it
+  renders from the ORIGINAL `input.extent`, not `output.extent`, to keep dimensions unchanged.
+
+These needed BEHAVIORAL teeth (not just identity), so added an interior-edge `verticalSplitImage`
+fixture (dark left / light right, edge at x=w/2). Teeth (ImageEditingTests 25→32): shadow-lift
+brightens the dark region (>+5); sharpen raises cross-edge contrast (>+3) AND is a verified no-op on
+a flat fill (no edges to overshoot); both identities + Codable round-trips. All passed first try.
+
+**TSK-344 ENGINE COMPLETE:** 6/6 named tonal adjustments (brightness/contrast/saturation/exposure/
+shadows/sharpness) + histogram + the pre-existing crop/resize/orient/PNG·JPEG·HEIC export — every
+piece host-tested (CoreImage/CoreGraphics run headless = REAL teeth). The ONLY remaining TSK-344
+deliverable is the editor-panel SwiftUI UI (sliders + live histogram readout) — render-gated with no
+host coverage (TSK-253, behind VM pixel lane TSK-502) → honest ceiling stays `fixed`.
+
+GATE NOTE (flaky): both gate failures were the CLAUDE.md-NAMED perf-bench flakes — `CrossFileSearchBench`
+(795ms) + `FoldBench` (297ms vs 250) — wall-clock asserts under machine load after ~6 back-to-back gate
+runs this session. Zero non-bench failures; an additive CoreImage op cannot affect search/fold benches.
+
 ## LOG 2026-06-08 (latest+67) — TSK-344: exposure (EV) tonal op (fixed; third engine increment, image vein closing)
 
 Third image-engine increment this session. `EditOp.exposure(ev:)` via Core Image `CIExposureAdjust`
