@@ -180,6 +180,49 @@ struct GrepHit {
 /// How many recently-opened files the in-session history keeps (TSK-233).
 const RECENT_CAP: usize = 20;
 
+/// A command-palette action (TSK-408). Copy so the static table + selection are
+/// trivially passed around; dispatched by `run_palette_cmd`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Cmd {
+    CycleSort,
+    ToggleHidden,
+    ToggleGutter,
+    ToggleWhitespace,
+    ToggleWrap,
+    Find,
+    Grep,
+    Outline,
+    Recent,
+    Reload,
+    NextTab,
+    PrevTab,
+    CloseTab,
+    Top,
+    Bottom,
+    Help,
+}
+
+/// The command palette's static action list: the label shown / fuzzy-matched, and
+/// the [`Cmd`] it runs. Declaration order is the empty-query display order.
+const PALETTE: &[(&str, Cmd)] = &[
+    ("find in file", Cmd::Find),
+    ("grep across files", Cmd::Grep),
+    ("outline (markdown headings)", Cmd::Outline),
+    ("recent files", Cmd::Recent),
+    ("reload file from disk", Cmd::Reload),
+    ("next tab", Cmd::NextTab),
+    ("previous tab", Cmd::PrevTab),
+    ("close tab", Cmd::CloseTab),
+    ("cycle sort order", Cmd::CycleSort),
+    ("toggle hidden files", Cmd::ToggleHidden),
+    ("toggle line numbers", Cmd::ToggleGutter),
+    ("toggle whitespace markers", Cmd::ToggleWhitespace),
+    ("toggle word-wrap", Cmd::ToggleWrap),
+    ("go to top", Cmd::Top),
+    ("go to bottom", Cmd::Bottom),
+    ("keyboard help", Cmd::Help),
+];
+
 struct App {
     cwd: PathBuf,
     /// Recently-opened files, newest-first, de-duplicated and capped at
@@ -190,6 +233,13 @@ struct App {
     recent_open: bool,
     /// Selected row in the recents overlay; indexes into `recent`.
     recent_sel: usize,
+    /// `Some(query)` while the command palette is open (TSK-408); the live fuzzy
+    /// query. `None` = closed.
+    palette: Option<String>,
+    /// Ranked `PALETTE` indices matching the current query (best-first).
+    palette_hits: Vec<usize>,
+    /// Selected row in the palette overlay; indexes into `palette_hits`.
+    palette_sel: usize,
     /// Git working-tree summary for `cwd` (branch + ahead/behind + dirty counts),
     /// refreshed by `reload_dir` via the shared `git::parse_status`. `None` when
     /// `cwd` isn't a git repo (or git isn't installed) — the title omits it.
@@ -307,6 +357,9 @@ impl App {
             recent: Vec::new(),
             recent_open: false,
             recent_sel: 0,
+            palette: None,
+            palette_hits: Vec::new(),
+            palette_sel: 0,
             git_status: None,
             entries: Vec::new(),
             list_rows: Vec::new(),
@@ -1176,6 +1229,107 @@ impl App {
         };
     }
 
+    // MARK: - Command palette (TSK-408)
+
+    /// Whether the command palette is open and capturing keys.
+    fn palette_active(&self) -> bool {
+        self.palette.is_some()
+    }
+
+    /// Open the palette (`p`): empty query, all commands listed, selection at top.
+    fn open_palette(&mut self) {
+        self.palette = Some(String::new());
+        self.palette_sel = 0;
+        self.recompute_palette();
+    }
+
+    /// Re-rank the command list against the live query via the SAME shared
+    /// subsequence scorer (`nav::filter_entries`) the quick file-find uses. An
+    /// empty query lists every command in declaration order.
+    fn recompute_palette(&mut self) {
+        let needle = self.palette.clone().unwrap_or_default();
+        self.palette_hits = if needle.is_empty() {
+            (0..PALETTE.len()).collect()
+        } else {
+            let names: Vec<&str> = PALETTE.iter().map(|(label, _)| *label).collect();
+            nav::filter_entries(&names, &needle, false).into_iter().map(|(pos, _)| pos).collect()
+        };
+        let max = self.palette_hits.len().saturating_sub(1);
+        self.palette_sel = self.palette_sel.min(max);
+    }
+
+    /// Extend / trim the palette query, re-narrowing live.
+    fn palette_push(&mut self, c: char) {
+        if let Some(q) = &mut self.palette {
+            q.push(c);
+            self.recompute_palette();
+        }
+    }
+    fn palette_backspace(&mut self) {
+        if let Some(q) = &mut self.palette {
+            q.pop();
+            self.recompute_palette();
+        }
+    }
+
+    /// Move the palette selection by `delta`, clamped to the matched-command count.
+    fn palette_move(&mut self, delta: isize) {
+        if self.palette_hits.is_empty() {
+            return;
+        }
+        let max = self.palette_hits.len() as isize - 1;
+        self.palette_sel = (self.palette_sel as isize + delta).clamp(0, max) as usize;
+    }
+
+    /// Run the selected command and close the palette.
+    fn commit_palette(&mut self) {
+        let cmd =
+            self.palette_hits.get(self.palette_sel).and_then(|&p| PALETTE.get(p)).map(|(_, c)| *c);
+        self.palette = None;
+        if let Some(cmd) = cmd {
+            self.run_palette_cmd(cmd);
+        }
+    }
+
+    /// Dispatch a palette [`Cmd`] to the same action methods the keymap uses, so
+    /// the palette is a discoverable front door to existing behaviour (no logic
+    /// duplicated).
+    fn run_palette_cmd(&mut self, cmd: Cmd) {
+        match cmd {
+            Cmd::CycleSort => self.cycle_sort(),
+            Cmd::ToggleHidden => self.toggle_hidden(),
+            Cmd::ToggleGutter => self.show_gutter = !self.show_gutter,
+            Cmd::ToggleWhitespace => self.show_whitespace = !self.show_whitespace,
+            Cmd::ToggleWrap => self.wrap = !self.wrap,
+            Cmd::Find => self.open_find(),
+            Cmd::Grep => self.open_grep(),
+            Cmd::Outline => self.toggle_outline(),
+            Cmd::Recent => self.open_recent(),
+            Cmd::Reload => self.reload_current(),
+            Cmd::NextTab => self.cycle_tab(1),
+            Cmd::PrevTab => self.cycle_tab(-1),
+            Cmd::CloseTab => self.close_tab(),
+            Cmd::Top => self.scroll_to(true),
+            Cmd::Bottom => self.scroll_to(false),
+            Cmd::Help => self.show_help = true,
+        }
+    }
+
+    /// Key handling while the palette is open: type to filter, ↑/↓ select, ↵ run,
+    /// ESC close. Never quits the app (printable keys are query text).
+    fn on_key_palette(&mut self, code: KeyCode) -> bool {
+        match code {
+            KeyCode::Esc => self.palette = None,
+            KeyCode::Enter => self.commit_palette(),
+            KeyCode::Down => self.palette_move(1),
+            KeyCode::Up => self.palette_move(-1),
+            KeyCode::Backspace => self.palette_backspace(),
+            KeyCode::Char(c) => self.palette_push(c),
+            _ => {}
+        }
+        false
+    }
+
     // MARK: - In-file content find (shared `find::find_matches`)
 
     /// Whether the find prompt is open and capturing the query.
@@ -1392,6 +1546,11 @@ impl App {
         if self.recent_active() {
             return self.on_key_recent(code);
         }
+        // The command palette captures typing + nav before the normal keymap so
+        // command keys become query text, not commands (TSK-408).
+        if self.palette_active() {
+            return self.on_key_palette(code);
+        }
         // The table-filter prompt captures text the same way — runs before the
         // normal keymap so typed needle chars don't fire command keys.
         if self.table_filtering() {
@@ -1458,6 +1617,8 @@ impl App {
             KeyCode::Char('X') => self.close_tab(),
             // `R` opens the recently-opened picker (TSK-233).
             KeyCode::Char('R') => self.open_recent(),
+            // `p` opens the command palette (TSK-408).
+            KeyCode::Char('p') => self.open_palette(),
             // `F` opens the cross-file "search anywhere" grep prompt (TSK-213).
             KeyCode::Char('F') => self.open_grep(),
             // `?` opens the keyboard-help overlay (any key then dismisses it).
@@ -1585,6 +1746,10 @@ impl App {
         // The recents picker floats over the content pane when open (TSK-233).
         if self.recent_open {
             self.draw_recent(frame, content);
+        }
+        // The command palette floats over the content pane when open (TSK-408).
+        if self.palette.is_some() {
+            self.draw_palette(frame, content);
         }
         // The cross-file grep prompt / results overlay floats over the content row.
         if self.grep_prompt.is_some() || !self.grep_results.is_empty() {
@@ -1941,6 +2106,34 @@ impl App {
         frame.render_widget(list, popup);
     }
 
+    /// Render the command palette (TSK-408): the live query in the title + the
+    /// fuzzy-matched command labels, the selection reversed, scrolled to keep it
+    /// visible. Mirrors the recents/outline overlays.
+    fn draw_palette(&self, frame: &mut Frame, area: Rect) {
+        let Some(query) = &self.palette else { return };
+        let popup = centered_rect(60, 70, area);
+        frame.render_widget(Clear, popup);
+        let inner_h = popup.height.saturating_sub(2) as usize;
+        let start = self.palette_sel.saturating_sub(inner_h.saturating_sub(1));
+        let items: Vec<ListItem> = self
+            .palette_hits
+            .iter()
+            .enumerate()
+            .skip(start)
+            .take(inner_h.max(1))
+            .filter_map(|(i, &p)| {
+                PALETTE.get(p).map(|(label, _)| {
+                    let style =
+                        if i == self.palette_sel { Style::new().reversed() } else { Style::new() };
+                    ListItem::new(Line::from(Span::styled(*label, style)))
+                })
+            })
+            .collect();
+        let title = format!(" command palette · {query}▏ · ↵ run · ESC close ");
+        let list = List::new(items).block(Block::bordered().title(title));
+        frame.render_widget(list, popup);
+    }
+
     /// Render the keyboard-help overlay (TSK-247) as a centered popup listing
     /// every keybinding (key on the left, action on the right). `Clear` wipes the
     /// cells underneath so the panes don't bleed through. Any key closes it (see
@@ -1965,6 +2158,7 @@ impl App {
             ("o", "markdown outline"),
             ("] / [", "next / prev tab"),
             ("X", "close active tab"),
+            ("p", "command palette"),
             ("R", "recently-opened files"),
             ("g / G", "jump to top / bottom"),
             ("PgUp/PgDn", "scroll by a page"),
@@ -2108,7 +2302,7 @@ impl App {
                 self.find_query,
             )
         } else {
-            "↑/↓ move · ↵ open · ⌫ up · x mode · 1-9 open-as · r reload · n nums · i ws · w wrap · s sort · . hidden · f file-find · F grep · / find · : goto · o outline · ]/[ tabs · X close · R recent · ? help · q quit".into()
+            "↑/↓ move · ↵ open · ⌫ up · x mode · 1-9 open-as · r reload · n nums · i ws · w wrap · s sort · . hidden · f file-find · F grep · / find · : goto · o outline · ]/[ tabs · X close · p palette · R recent · ? help · q quit".into()
         };
         let line = Line::from(vec![
             Span::styled(" mdv-tui ", Style::new().fg(Color::Black).bg(Color::Cyan).bold()),
@@ -2529,6 +2723,44 @@ mod tests {
         app.on_key(KeyCode::Esc);
         assert!(app.find_matches.is_empty(), "ESC clears the find");
         assert!(!render(&mut app).contains('▮'), "no minimap when no find is active");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn command_palette_lists_fuzzy_filters_and_runs_a_command() {
+        // TSK-408: `p` opens a palette listing actions; typing fuzzy-filters via
+        // the shared nav::filter_entries scorer; Enter runs the selected action
+        // (a real model outcome); ESC closes without running.
+        let dir = fixture_dir();
+        let mut app = App::new(dir.clone());
+
+        app.on_key(KeyCode::Char('p'));
+        assert!(app.palette_active(), "p opens the command palette");
+        let out = render(&mut app);
+        assert!(out.contains("command palette"), "palette titled:\n{out}");
+        assert!(out.contains("toggle hidden files"), "commands listed:\n{out}");
+        assert_eq!(app.palette_hits.len(), PALETTE.len(), "empty query lists every command");
+
+        // Fuzzy-narrow to the hidden-files command ("hidden" only subsequence-
+        // matches that one label).
+        for c in "hidden".chars() {
+            app.on_key(KeyCode::Char(c));
+        }
+        let top = app.palette_hits.first().and_then(|&p| PALETTE.get(p)).map(|(l, _)| *l);
+        assert_eq!(top, Some("toggle hidden files"), "fuzzy narrows to the hidden cmd: {:?}", app.palette_hits);
+
+        // Enter runs it → show_hidden flips and the palette closes.
+        let before = app.show_hidden;
+        app.on_key(KeyCode::Enter);
+        assert!(!app.palette_active(), "Enter closes the palette");
+        assert_ne!(app.show_hidden, before, "running 'toggle hidden files' flipped the model");
+
+        // ESC closes without running any command.
+        app.on_key(KeyCode::Char('p'));
+        let hidden = app.show_hidden;
+        app.on_key(KeyCode::Esc);
+        assert!(!app.palette_active(), "ESC closes the palette");
+        assert_eq!(app.show_hidden, hidden, "ESC ran nothing");
         let _ = fs::remove_dir_all(&dir);
     }
 
