@@ -3600,3 +3600,57 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   `fixed` (both A command + B row implemented); the T4 UAT is the VM gate.
 - Net: TSK-347's "surface SHA to the user" gap is now fully implemented (A: Copy-checksum command; B:
   MetadataPanel row), pending the row's VM-T4 visual confirmation.
+
+## LOG +123 (2026-06-08, autonomous tick — drain the PORT W1 `fixed`→`validated` lane, rigorously)
+- SwiftUI lane this tick is owner-gated (TSK-202 sessions-split decision; TSK-252/253/254 live PoCs;
+  TSK-505-B/506/334 await VM render gates). Per the owner's "drain the PORT lane rather than idling"
+  sanction, drove the rust-core/web **PORT W1** features from `fixed`→`validated`.
+- **Not a rubber-stamp.** Ran a FRESH `scripts/rust-core-gate.sh` (`^RCGATE_EXIT=0` — clippy no-panic +
+  `cargo test --workspace` + ffi no_panic gate + doctests all green) AND, for every task, grep-confirmed
+  the cited teeth-bearing tests physically exist in the tree before validating. The `tasked` board accepts
+  `validated` only with a hard artifact; each `task_validate` carries a `checks` artifact naming the gate +
+  the exact test file:line.
+- **Validated 14 (agent:claude-mdv):** TSK-198 (web in-file find — 4 HTML-assertion tests), TSK-200 (web
+  line-numbers gutter — core `gutter_width` + 2 web render tests), TSK-201 (TUI diff view — core
+  `classify_diff_line` x2), TSK-207/208 (file-nav sort — 8 core comparator tests on shared
+  `nav::sort_entries`/`cmp`), TSK-209/210 (hidden/dotfile — core `should_show` unit + doctest), TSK-212
+  (web go-to-line — `view_renders_goto_line_box_for_text`), TSK-219 (TUI open-as —
+  `open_as_number_keys_force_view_mode`), TSK-220 (web open-as — `mode_param_forces_view_mode_over_default`),
+  TSK-225/226 (image preview — 8 core `image.rs` dimension tests across PNG/GIF/BMP/JPEG/WebP + web
+  `image_defaults_to_card_and_inline_data_uri`), TSK-227/228 (outline/TOC — 8 core `outline.rs` heading
+  tests + 3 web outline tests). With the prior tick's 197/199/211, the clean rust-core/web PORT W1 wave is
+  now fully drained to `validated`.
+- **Carve-out basis:** these are pure rust-core/web behavior — the host-testable lane (cargo unit +
+  HTML-assertion/TestBackend tests), NOT SwiftUI-rendered — so host self-validation is legitimate
+  (unlike the VM-gated render parts above).
+- **Deliberately NOT touched:** the `[BACKLOG]` SwiftUI cluster (TSK-260–324, many VM-gated + several with
+  title≠understanding mismatches) and the audit cluster (TSK-134–196, bulk-reconciled `fixed` @ 1dbf1ca —
+  honest validation needs per-finding AUDIT_BUGS.md + teeth confirmation, a separate focused pass). No
+  code changes / no commits this tick — board-state validations only; `main` unchanged + gate-green.
+
+## LOG +124 (2026-06-08, autonomous tick — TSK-206: web HEX byte/ASCII search, end-to-end)
+- After draining the PORT `fixed` lane, picked the one cleanly-actionable NEW feature: **TSK-206**
+  ([PORT][WEB] hex search) — `triaged`, front-end-only, no-dep, host-validatable. It's the web twin of
+  the shipped TUI hex search (TSK-205) and completes the W1 hex-search pair. (All other actionable board
+  work is owner-gated: TSK-234/235/236/243/250/255–258 await decisions/dep-approval; TSK-266/267/282 are
+  VM-gated SwiftUI perf.)
+- **Built (commit pending), `rust-core/crates/web/src/main.rs` only — consumes the already-tested core
+  `hex::hex_search`:** new `?hexq=<query>&?hmatch=<i>` params on `/view`. In HEX mode the query is
+  auto-detected as whitespace-separated hex byte pairs or, failing that, a literal ASCII string — exact
+  **TUI parity** (`hex_search_parse(Hex)` non-empty ⇒ Hex, else Ascii). Each match's byte offset maps to
+  its dump ROW (`offset / 16`, the new `HEX_BYTES_PER_ROW` mirroring core `view::HEX_WIDTH`) and steers
+  the SAME `gutter_html` line-anchor + `.cur` machinery find / go-to-line already use — so a hex match
+  scrolls natively via `#L<n>` with ZERO new JS. New `hex_find_box` (mirrors `find_box`): query input +
+  `i of n` count + wrapping prev/next links bumping `?hmatch=`. HEX-mode-only (gated, so it can't collide
+  with the text content-find box). Hex search takes target precedence over find / go-to-line.
+- **Host teeth (5 new web tests, all green; web 61→66):** `hex_search_hex_pattern_anchors_matching_row_and_counts`
+  (2 `ab cd` matches at offsets 2/34 → rows 0/2 → `1 of 2` + `id="L1"` + `hexq=abcd`/`hmatch=1` nav),
+  `hex_search_hmatch_selects_the_second_match` (`2 of 2` + `id="L3"`), `hex_search_ascii_fallback_matches_text_bytes`
+  (`"NEEDLE"` → ASCII fallback, offset 20 → `id="L2"`), `hex_search_no_match_reports_state` (`no matches`),
+  `hex_search_box_is_hex_mode_only` (text mode must NOT surface the box). These are real teeth — without
+  the `hexq` handling `hex_nav` is empty, so the `hexfind` box, counts, and anchors all vanish and every
+  assert fails. **rust-core gate GREEN** (`^RCGATE_EXIT=0`): clippy no-panic + `cargo test --workspace`
+  + ffi no_panic + doctests.
+- Adding 2 params to `render_view_filtered`/`content_html` broke all 11 positional call sites (Rust has no
+  default args) — updated each (the [[reference_swift_defaulted_param_link_break]] lesson, Rust edition).
+  Net: TUI + web now at parity on hex search; the W1 hex-search pair (205 TUI + 206 web) is complete.

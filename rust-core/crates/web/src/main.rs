@@ -29,6 +29,7 @@ use std::{fs, thread};
 use mdvcore_core::filter;
 use mdvcore_core::find;
 use mdvcore_core::git;
+use mdvcore_core::hex::{self, HexSearchMode};
 use mdvcore_core::image::{self, ImageInfo};
 use mdvcore_core::meta;
 use mdvcore_core::nav::{self, SortKey};
@@ -39,6 +40,9 @@ use mdvcore_core::whitespace;
 /// Max bytes read into a view (parity with the TUI's preview cap). Per-mode
 /// shaping (text/hex/table) lives in the shared `mdvcore_core::view`.
 const PREVIEW_CAP: usize = 1024 * 1024;
+/// Bytes per HEX dump row — mirrors core `view::HEX_WIDTH` so a hex-search match
+/// at byte offset `o` maps to dump row `o / HEX_BYTES_PER_ROW` (TSK-206).
+const HEX_BYTES_PER_ROW: usize = 16;
 
 /// Hard ceiling on the bytes consumed parsing the request line + all headers.
 /// A client that streams without a terminating blank line (or a multi-GB header
@@ -244,6 +248,13 @@ fn route(req_line: &str, root: &Path) -> (&'static str, &'static str, String) {
                 let ws = q.get("ws").map(String::as_str) == Some("1");
                 // `?wrap=1` soft-wraps long lines in the Text view (default: no wrap).
                 let wrap = q.get("wrap").map(String::as_str) == Some("1");
+                // `?hexq=<query>` byte/ASCII search in the HEX view (TSK-206): the
+                // query is auto-detected as whitespace-separated hex byte pairs or,
+                // failing that, a literal ASCII string (same as the TUI's hex
+                // search); each match lands on its dump row. `?hmatch=<i>` (clamped)
+                // selects the current match. Ignored outside HEX mode.
+                let hexq = q.get("hexq").map(String::as_str).unwrap_or("");
+                let hmatch = q.get("hmatch").and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
                 (
                     "200 OK",
                     HTML,
@@ -258,6 +269,8 @@ fn route(req_line: &str, root: &Path) -> (&'static str, &'static str, String) {
                         fmatch,
                         ws,
                         wrap,
+                        hexq,
+                        hmatch,
                     ),
                 )
             }
@@ -459,7 +472,7 @@ fn render_view(
     show_hidden: bool,
     line: Option<usize>,
 ) -> String {
-    render_view_filtered(file, mode, sort, show_hidden, line, "", "", 0, false, false)
+    render_view_filtered(file, mode, sort, show_hidden, line, "", "", 0, false, false, "", 0)
 }
 
 /// `render_view` plus the active CSV table-filter needle (`?tfilter=`), threaded
@@ -477,6 +490,8 @@ fn render_view_filtered(
     fmatch: usize,
     ws: bool,
     wrap: bool,
+    hexq: &str,
+    hmatch: usize,
 ) -> String {
     let parent = file.parent().unwrap_or(file);
     let name = file_name(file);
@@ -486,7 +501,7 @@ fn render_view_filtered(
     page(
         &name,
         &nav_html(parent, Some(&name), sort, show_hidden, ""),
-        &content_html(file, mode, line, tfilter, find, fmatch, ws, wrap),
+        &content_html(file, mode, line, tfilter, find, fmatch, ws, wrap, hexq, hmatch),
     )
 }
 
@@ -721,6 +736,8 @@ fn content_html(
     fmatch: usize,
     ws: bool,
     wrap: bool,
+    hexq: &str,
+    hmatch: usize,
 ) -> String {
     let (raw, truncated, total) = match read_capped(file, PREVIEW_CAP) {
         Ok(x) => x,
@@ -809,9 +826,32 @@ fn content_html(
                 find::find_matches(&String::from_utf8_lossy(&raw), find, find::Case::Insensitive)
             };
             let find_nav = find_box(&href, mode_str(v.mode), find, fmatch, &matches, lines.len());
-            // An active find overrides `?line=` so the page centers on the match;
-            // otherwise honor the go-to-line target.
-            let target = if matches.is_empty() {
+            // Hex byte/ASCII search (TSK-206), HEX mode only: auto-detect the query
+            // as whitespace-separated hex byte pairs or, failing that, a literal
+            // ASCII string (TUI parity), then map each match's byte offset to its
+            // dump ROW (offset / 16) and steer the SAME line-anchor machinery find /
+            // go-to-line use. `?hmatch=` (clamped) selects the current match.
+            let hex_hits: Vec<usize> = if v.mode == ViewMode::Hex && !hexq.is_empty() {
+                let smode = match hex::hex_search_parse(hexq, HexSearchMode::Hex) {
+                    Some(b) if !b.is_empty() => HexSearchMode::Hex,
+                    _ => HexSearchMode::Ascii,
+                };
+                hex::hex_search(hexq, smode, &raw)
+            } else {
+                Vec::new()
+            };
+            let hex_nav = if v.mode == ViewMode::Hex {
+                hex_find_box(&href, mode_str(v.mode), hexq, hmatch, &hex_hits, lines.len())
+            } else {
+                String::new()
+            };
+            // Target precedence: an active hex search wins (it owns HEX mode), else
+            // an active content find centers on its match, else the explicit
+            // go-to-line target.
+            let target = if !hex_hits.is_empty() {
+                let hi = hmatch.min(hex_hits.len() - 1);
+                Some(view::clamp_line(hex_hits[hi] / HEX_BYTES_PER_ROW + 1, lines.len()))
+            } else if matches.is_empty() {
                 line.map(|n| view::clamp_line(n, lines.len()))
             } else {
                 let fi = fmatch.min(matches.len() - 1);
@@ -831,7 +871,7 @@ fn content_html(
             } else {
                 lines
             };
-            format!("{}{}{}", find_nav, goto, gutter_html(display, target, &anchors))
+            format!("{}{}{}{}", find_nav, hex_nav, goto, gutter_html(display, target, &anchors))
         }
         ViewBody::Table { header, rows, truncated } => {
             // Apply the active CSV filter (shared `view::table_query` + core
@@ -995,6 +1035,49 @@ fn find_box(
                 }
             }
             s.push_str("</span>");
+        }
+    }
+    s.push_str("</form>");
+    s
+}
+
+/// `?hexq=<query>` byte/ASCII search box for the HEX view (TSK-206), the web twin
+/// of the TUI's hex search. The query is auto-detected as whitespace-separated
+/// hex byte pairs (`"de ad be ef"`) or, failing that, a literal ASCII string
+/// (shared `hex::hex_search`); each match's byte offset maps to its dump ROW
+/// (`offset / 16`). This box echoes the query, shows the `i of n` count, and
+/// renders wrapping prev/next links that bump `?hmatch=` and carry the row's
+/// `#L<n>` fragment so the browser scrolls there natively (no JS) — the same
+/// line-anchor mechanism find / go-to-line use. Empty query → just the input.
+fn hex_find_box(href: &str, mode: &str, hexq: &str, hmatch: usize, offsets: &[usize], content_len: usize) -> String {
+    let mut s = String::from("<form class=\"find hexfind\" method=\"get\" action=\"/view\">");
+    s.push_str(&format!("<input type=\"hidden\" name=\"path\" value=\"{}\">", esc(&pct_decode(href))));
+    s.push_str(&format!("<input type=\"hidden\" name=\"mode\" value=\"{}\">", esc(mode)));
+    s.push_str(&format!(
+        "<input type=\"text\" name=\"hexq\" value=\"{}\" placeholder=\"hex bytes or text\">",
+        esc(hexq)
+    ));
+    s.push_str("<button type=\"submit\">hex search</button>");
+    if !hexq.is_empty() {
+        if offsets.is_empty() {
+            s.push_str("<span class=\"count\">no matches</span>");
+        } else {
+            let n = offsets.len();
+            let cur = hmatch.min(n - 1);
+            let hq = pct_encode(hexq);
+            // Each prev/next carries the target row's `#L<line>` (offset / 16, 1-based,
+            // clamped) so the browser jumps natively after the reload tags that row.
+            let link = |idx: usize, label: &str| -> String {
+                let line = view::clamp_line(offsets[idx] / HEX_BYTES_PER_ROW + 1, content_len);
+                format!(
+                    "<a class=\"jump\" href=\"/view?path={href}&mode={mode}&hexq={hq}&hmatch={idx}#L{line}\">{label}</a>"
+                )
+            };
+            let prev = (cur + n - 1) % n;
+            let next = (cur + 1) % n;
+            s.push_str(&link(prev, "prev"));
+            s.push_str(&link(next, "next"));
+            s.push_str(&format!("<span class=\"count\">{} of {n}</span>", cur + 1));
         }
     }
     s.push_str("</form>");
@@ -1830,7 +1913,7 @@ mod tests {
         assert!(plain.contains("show whitespace"), "toggle link offers to show:\n{plain}");
         // ?ws=1: spaces revealed as ·; the toggle now offers to hide.
         let revealed = render_view_filtered(
-            &dir.join("ws.txt"), Some("text"), SortKey::Name, false, None, "", "", 0, true, false,
+            &dir.join("ws.txt"), Some("text"), SortKey::Name, false, None, "", "", 0, true, false, "", 0,
         );
         assert!(revealed.contains("a·b·c"), "spaces revealed with ?ws=1:\n{revealed}");
         assert!(revealed.contains("hide whitespace"), "toggle link offers to hide:\n{revealed}");
@@ -1848,7 +1931,7 @@ mod tests {
         assert!(plain.contains(">wrap<"), "toggle link offers to wrap:\n{plain}");
         // ?wrap=1: inline override flips .src to soft-wrap; toggle now offers nowrap.
         let wrapped = render_view_filtered(
-            &dir.join("wrap.txt"), Some("text"), SortKey::Name, false, None, "", "", 0, false, true,
+            &dir.join("wrap.txt"), Some("text"), SortKey::Name, false, None, "", "", 0, false, true, "", 0,
         );
         assert!(wrapped.contains("white-space:pre-wrap"), "wrap override present with ?wrap=1:\n{wrapped}");
         assert!(wrapped.contains(">nowrap<"), "toggle link offers to stop wrapping:\n{wrapped}");
@@ -1863,7 +1946,7 @@ mod tests {
         // doc.md (as text) has "## Section A" on line 4 and "## Section B" on line 9.
         // find="Section", fmatch=0 → 2 matches, current is the first (line 4).
         let html = render_view_filtered(
-            &dir.join("doc.md"), Some("text"), SortKey::Name, false, None, "", "Section", 0, false, false,
+            &dir.join("doc.md"), Some("text"), SortKey::Name, false, None, "", "Section", 0, false, false, "", 0,
         );
         assert!(html.contains("class=\"find\""), "find box present:\n{html}");
         assert!(html.contains("1 of 2"), "match count shows current+total:\n{html}");
@@ -1881,7 +1964,7 @@ mod tests {
         // doc.md has two "Section" matches (lines 4 and 9) → the find bar shows a
         // minimap with marked buckets and a highlighted current-match bucket.
         let html = render_view_filtered(
-            &dir.join("doc.md"), Some("text"), SortKey::Name, false, None, "", "Section", 0, false, false,
+            &dir.join("doc.md"), Some("text"), SortKey::Name, false, None, "", "Section", 0, false, false, "", 0,
         );
         assert!(html.contains("class=\"minimap\""), "minimap bar present:\n{html}");
         assert!(html.contains("<i class=\"cur\">"), "current match's bucket highlighted:\n{html}");
@@ -1897,7 +1980,7 @@ mod tests {
         let dir = fixture();
         // fmatch=1 → the second "Section" (line 9) becomes current + anchored.
         let html = render_view_filtered(
-            &dir.join("doc.md"), Some("text"), SortKey::Name, false, None, "", "Section", 1, false, false,
+            &dir.join("doc.md"), Some("text"), SortKey::Name, false, None, "", "Section", 1, false, false, "", 0,
         );
         assert!(html.contains("2 of 2"), "second match is current:\n{html}");
         assert!(html.contains("id=\"L9\""), "second match's line (9) anchored:\n{html}");
@@ -1910,7 +1993,7 @@ mod tests {
         // hello.txt has no "<script>" → no matches, and the hostile query must be
         // HTML-escaped where it's reflected into the find-box input value.
         let html = render_view_filtered(
-            &dir.join("hello.txt"), Some("text"), SortKey::Name, false, None, "", "<script>", 0, false, false,
+            &dir.join("hello.txt"), Some("text"), SortKey::Name, false, None, "", "<script>", 0, false, false, "", 0,
         );
         assert!(html.contains("no matches"), "empty result reported:\n{html}");
         assert!(!html.contains("value=\"<script>\""), "raw query reflected unescaped:\n{html}");
@@ -1932,6 +2015,94 @@ mod tests {
         // A normal readable text file → no banner.
         let ok = render_view(&dir.join("hello.txt"), Some("text"), SortKey::Name, false, None);
         assert!(!ok.contains("class=\"banner\""), "readable text gets no banner:\n{ok}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hex_search_hex_pattern_anchors_matching_row_and_counts() {
+        // TSK-206: byte-pattern search in HEX mode. Two `ab cd` pairs at byte
+        // offsets 2 (row 0 → line 1) and 34 (row 2 → line 3) in a 48-byte buffer.
+        let dir = fixture();
+        let mut data = vec![0u8; 48];
+        data[2] = 0xAB;
+        data[3] = 0xCD;
+        data[34] = 0xAB;
+        data[35] = 0xCD;
+        fs::write(dir.join("hexsearch.bin"), &data).unwrap();
+        // ?hexq=abcd (hex pairs), fmatch=0 → 2 matches, current is the first.
+        let html = render_view_filtered(
+            &dir.join("hexsearch.bin"), Some("hex"), SortKey::Name, false, None, "", "", 0, false, false, "abcd", 0,
+        );
+        assert!(html.contains("class=\"find hexfind\""), "hex search box present:\n{html}");
+        assert!(html.contains("1 of 2"), "match count shows current+total:\n{html}");
+        // First match at offset 2 → dump row 0 → line 1 is the goto target/anchor.
+        assert!(html.contains("id=\"L1\""), "first match's row (line 1) anchored:\n{html}");
+        // prev/next links carry the query + a sibling hmatch.
+        assert!(html.contains("hexq=abcd"), "nav links carry the query:\n{html}");
+        assert!(html.contains("hmatch=1"), "nav links bump hmatch:\n{html}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hex_search_hmatch_selects_the_second_match() {
+        let dir = fixture();
+        let mut data = vec![0u8; 48];
+        data[2] = 0xAB;
+        data[3] = 0xCD;
+        data[34] = 0xAB;
+        data[35] = 0xCD;
+        fs::write(dir.join("hexsearch2.bin"), &data).unwrap();
+        // hmatch=1 → the second match (offset 34 → row 2 → line 3) is current.
+        let html = render_view_filtered(
+            &dir.join("hexsearch2.bin"), Some("hex"), SortKey::Name, false, None, "", "", 0, false, false, "abcd", 1,
+        );
+        assert!(html.contains("2 of 2"), "second match is current:\n{html}");
+        assert!(html.contains("id=\"L3\""), "second match's row (line 3) anchored:\n{html}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hex_search_ascii_fallback_matches_text_bytes() {
+        // A query that isn't valid hex pairs ('N'/'L' aren't hex digits) auto-falls
+        // back to an ASCII byte search (TUI parity) — the same shared core path.
+        let dir = fixture();
+        let mut data = vec![b'.'; 32];
+        data[20..26].copy_from_slice(b"NEEDLE"); // offset 20 → row 1 → line 2
+        fs::write(dir.join("ascii.bin"), &data).unwrap();
+        let html = render_view_filtered(
+            &dir.join("ascii.bin"), Some("hex"), SortKey::Name, false, None, "", "", 0, false, false, "NEEDLE", 0,
+        );
+        assert!(html.contains("1 of 1"), "ASCII pattern found once:\n{html}");
+        assert!(html.contains("id=\"L2\""), "ASCII match's row (line 2) anchored:\n{html}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hex_search_no_match_reports_state() {
+        let dir = fixture();
+        let data = vec![0u8; 32]; // no 0xFF anywhere
+        fs::write(dir.join("nomatch.bin"), &data).unwrap();
+        let html = render_view_filtered(
+            &dir.join("nomatch.bin"), Some("hex"), SortKey::Name, false, None, "", "", 0, false, false, "ffff", 0,
+        );
+        assert!(html.contains("class=\"find hexfind\""), "hex search box still present:\n{html}");
+        assert!(html.contains("no matches"), "empty result reported:\n{html}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hex_search_box_is_hex_mode_only() {
+        // The hex-search box (and its search) belong to HEX mode; a text view of the
+        // same file must not surface it, so the two searches don't collide.
+        let dir = fixture();
+        let mut data = vec![0u8; 48];
+        data[2] = 0xAB;
+        data[3] = 0xCD;
+        fs::write(dir.join("modegate.bin"), &data).unwrap();
+        let text = render_view_filtered(
+            &dir.join("modegate.bin"), Some("text"), SortKey::Name, false, None, "", "", 0, false, false, "abcd", 0,
+        );
+        assert!(!text.contains("hexfind"), "no hex search box in text mode:\n{text}");
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -2230,7 +2401,7 @@ mod tests {
         let dir = fixture(); // people.csv = name,age / Alice,30 / Bob,25
         let csv = dir.join("people.csv");
         // Global substring: any cell containing "Alice".
-        let g = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "Alice", "", 0, false, false);
+        let g = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "Alice", "", 0, false, false, "", 0);
         assert!(g.contains("class=\"find\""), "filter box present:\n{g}");
         assert!(g.contains("<td>Alice</td>"), "Alice row kept:\n{g}");
         assert!(!g.contains("<td>Bob</td>"), "Bob filtered out:\n{g}");
@@ -2238,7 +2409,7 @@ mod tests {
         // Column-scoped `age:Alice` matches NOTHING — "Alice" is in the name
         // column, not age — proving the scope restricts the search (global did
         // match it above).
-        let c = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "age:Alice", "", 0, false, false);
+        let c = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "age:Alice", "", 0, false, false, "", 0);
         assert!(!c.contains("<td>Alice</td>"), "age-scoped search excludes the name col:\n{c}");
         assert!(c.contains("0/2 rows"), "no rows match age:Alice:\n{c}");
         let _ = fs::remove_dir_all(&dir);
@@ -2252,7 +2423,7 @@ mod tests {
         let csv = dir.join("people.csv");
         // find "Alice" → exactly the one data cell; current match gets the
         // `hit cur` class + `#fcell` anchor; a count is shown.
-        let h = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "", "Alice", 0, false, false);
+        let h = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "", "Alice", 0, false, false, "", 0);
         assert!(h.contains("class=\"hit cur\" id=\"fcell\">Alice</td>"),
                 "the matched cell is highlighted + anchored:\n{h}");
         assert!(h.contains("1 of 1 cells"), "cell count shown:\n{h}");
@@ -2268,7 +2439,7 @@ mod tests {
         let dir = fixture();
         let csv = dir.join("people.csv");
         // "a" (case-insensitive): header "name"(-1,0) + "age"(-1,1) + "Alice"(0,0) = 3 cells.
-        let h = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "", "a", 0, false, false);
+        let h = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "", "a", 0, false, false, "", 0);
         assert!(h.contains("of 3 cells"), "3 cells match 'a' (header + Alice):\n{h}");
         // A header cell is highlighted (th with hit class).
         assert!(h.contains("<th class=\"hit"), "header cell highlighted:\n{h}");
@@ -2279,7 +2450,7 @@ mod tests {
     fn csv_table_cell_find_no_matches() {
         let dir = fixture();
         let csv = dir.join("people.csv");
-        let h = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "", "zzzz", 0, false, false);
+        let h = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "", "zzzz", 0, false, false, "", 0);
         assert!(h.contains("no matches"), "no-match state shown:\n{h}");
         assert!(!h.contains("class=\"hit"), "no cells highlighted:\n{h}");
         let _ = fs::remove_dir_all(&dir);
