@@ -74,6 +74,29 @@ fi
 # installing deps on the shared VM. The agent's job is just to produce real
 # Aqua-session pixels.
 log "CAPTURED: $scene -> $PNG"
+
+# AX tree read (out-of-process, while the app is still alive) — the semantic
+# complement to pixels. Best-effort: needs the Accessibility TCC grant for the
+# reader binary (System Settings → Privacy & Security → Accessibility). Without
+# it ax-reader exits 4 (empty tree) and we just note it; the capture still
+# passes. swiftc is on the VM; cache the compiled binary, rebuild if the source
+# changed.
+RUNNER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AX_SRC="$RUNNER_DIR/ax-reader.swift"
+AX_BIN="$JOB_DIR/ax-reader"
+if [ -f "$AX_SRC" ]; then
+  if [ ! -x "$AX_BIN" ] || [ "$AX_SRC" -nt "$AX_BIN" ]; then
+    swiftc -O "$AX_SRC" -o "$AX_BIN" 2>>"$RESULT" || log "ax: compile failed"
+  fi
+  if [ -x "$AX_BIN" ]; then
+    if "$AX_BIN" com.markdownviewer.MarkdownViewer > "$JOB_DIR/$scene.ax" 2>>"$RESULT"; then
+      log "ax: $(grep -c . "$JOB_DIR/$scene.ax" 2>/dev/null || echo 0) identifiers -> $scene.ax"
+    else
+      log "ax: read failed (rc=$?) — Accessibility not granted? (grant the reader binary)"
+    fi
+  fi
+fi
+
 mv "$RESULT" "$JOB_DIR/$scene.result"
 : > "$JOB_DIR/done"
 exit 0

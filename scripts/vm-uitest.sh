@@ -70,6 +70,10 @@ case "$cmd" in
     mkdir -p /tmp/mdv-vm-ui
     ssh "$HOST" "cat ~/.mdv-uitest/$scene.result" | tee "/tmp/mdv-vm-ui/$scene.result"
     scp -q "$HOST:.mdv-uitest/$scene.png" "/tmp/mdv-vm-ui/$scene.png" 2>/dev/null || true
+    scp -q "$HOST:.mdv-uitest/$scene.ax" "/tmp/mdv-vm-ui/$scene.ax" 2>/dev/null || true
+    if [ -s "/tmp/mdv-vm-ui/$scene.ax" ]; then
+      echo "AX identifiers (out-of-process tree read):"; sed 's/^/  /' "/tmp/mdv-vm-ui/$scene.ax"
+    fi
     grep -q '^CAPTURED' "/tmp/mdv-vm-ui/$scene.result" || { echo "FAIL: agent did not capture (Screen Recording denied? see result)"; exit 4; }
     # PIXEL EVAL on the HOST (has Pillow; the VM doesn't). A dense saturated
     # (accent-chip) block anywhere in the window-minus-status-bar band proves
