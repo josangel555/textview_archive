@@ -2168,3 +2168,35 @@ to avoid concurrent-build races). NEXT (on agent completion): build+gate their P
 then measure tab-switch view cost via InteractionProfileHarness, then implement perf
 Fix#1 (view retention) behind the mount-count guard. CANNOT run `swift test` until
 the writing agents finish (compile race). main @ d0c87da gate-green + reinstalled.
+
+## LOG +59 (2026-06-07, autonomous tick — owner re-scoped: "always tasks on the board, finish them all, park-if-stuck, move on")
+- **Cron updated.** Replaced the `<<autonomous-loop>>` sentinel cron (`8f1cc30d`)
+  with `86c7baa8` (same 10-min cadence) carrying an explicit directive: there are
+  ALWAYS board tasks → don't taper/hold; drive every task to validated with teeth;
+  PARK (`task_park`) anything genuinely blocked and MOVE ON. No more "PORT lane is
+  marginal, holding" tapering.
+- **Validated 5 audit findings (all real teeth, host-tested):**
+  - TSK-154 — `diff::parse_coord` comma-led/empty-start parity (rust-core;
+    `coord_comma_led_and_empty_start_omit_empty` + `coord_clamps_garbage`).
+  - TSK-155 — `view::build` propagates CSV PARSE-04 truncation
+    (`build_table_propagates_parse_truncation`).
+  - TSK-156 — HTMLSanitizer.stripElement quote-aware (XSS tail-leak)
+    (`QuoteAwareElementStripTests`, 13 probes).
+  - TSK-146 — MsgPackReader reserveCapacity clamp (OOM-abort)
+    (`MsgPackDecoderNegativeAuditTests` array32/map32 huge-count → .truncated).
+  - TSK-144 — ReDoS named-group classification + wall-clock bound (`ReDoSTests`).
+  - rust-core gate green @ 01c443d; targeted host `swift test` (window-free,
+    ViewerCore/ViewerKit/RustCore suites only) exit 0.
+- **Held (no teeth, NOT validated):** TSK-142 (session snapshot clone) + TSK-143
+  (filter cache dup) are perf/leak optimizations — functional tests pass with or
+  without the optimization, so no host teeth. Same discipline as TSK-122/123;
+  need a perf/alloc-count assert or VM lane to validate honestly.
+- **GOTCHA recorded:** the built-in Claude Code TaskList `#NNN` numbers in the
+  session reminder are a SEPARATE system from the tasked board `TSK-NNN` ids — they
+  do NOT correspond (board TSK-303/304 are backlog items, not the diff/view audit
+  findings the `#303/#304` reminder rows describe). Always `task_get` the board id
+  before acting. (→ memory `reference_board_vs_tasklist_numbering`.)
+- main @ 01c443d, headless/rust gates green. No source changes this tick (board
+  validations + this log). Next ticks: continue draining `fixed`/`review` audit
+  findings that have host teeth → validated; implement clean PORT TUI/web features;
+  park live/VM/owner-gated ones.
