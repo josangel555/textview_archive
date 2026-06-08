@@ -2346,3 +2346,18 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - main @ 306208d + this doc; gates green. Cumulative session: 24 validated +
   1 bug fixed + 2 shared-core modules + 2 follow-ups. Next PORT veins: word-wrap
   (TSK-231/232), breadcrumb nav (TSK-229/230), empty/error states (TSK-245/246).
+
+## LOG +68 (2026-06-07, autonomous tick — TUI word-wrap)
+- **Shipped TSK-231 [PORT][TUI] word-wrap toggle** (commit 4e0cd26): `wrap` bool
+  (on by default), `w` key — the Text-pane Paragraph soft-wraps long lines when on,
+  truncates at the pane edge when off; help shows `w wrap`. Test: a 200-char line
+  + TAIL shows the wrapped tail when on, hides it (truncated) when off. tui 39 (+1);
+  gate GATE_EXIT=0. Drove reported→…→validated.
+- Pure front-end render-flag (no core component) — ratatui `.wrap(Wrap)` is applied
+  conditionally. Default preserved (TUI already soft-wrapped).
+- **Next-tick follow-on:** TSK-232 [PORT][WEB] word-wrap — `?wrap=1` flag through
+  render_view_filtered → content_html (add `#[allow(too_many_arguments)]`; content_html
+  would hit 8 args) + an inline `.src{white-space:pre-wrap}` override + a bar toggle
+  link. Split out (the web side is deeper than a render flag).
+- main @ 4e0cd26 + this doc; gates green. Cumulative session: 25 validated +
+  1 bug fixed + 2 shared-core modules + 2 follow-ups.
