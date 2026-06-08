@@ -2946,3 +2946,21 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   test-gaps: TSK-169 (EditorRepublish assertion-tightening — needs care, the
   finding is the test was too lax), 182 (diff parity — needs Swift-parity study),
   184/186 (MCP stdout/index).
+
+## LOG +92 (2026-06-08, autonomous tick — 2 more validated; EditorRepublish + MCP dead-transport)
+- **TSK-169** `[S3][test-gap] EditorRepublishInvariant cursor-mirror assertion
+  (<= 1) permits the republish it forbids`. The lax assertion is already tightened:
+  EditorRepublishInvariantTests asserts `XCTAssertEqual(count, 0)` (cursor mirror
+  routes through SourceViewChannel, not @Published DocumentModel) — == 0 catches a
+  regression that re-routes the mirror onto DocumentModel.objectWillChange (the
+  per-cursor-move storm). 16/16 green. Validated.
+- **TSK-184** `[S4][bug] MCP stdout write failure swallowed; read loop spins`.
+  DeadTransportTests.test_writeFailure_firesOnExit 1/1 — a stdout write failure now
+  fires the server wind-down instead of swallow-and-spin (dead client/broken pipe
+  terminates the loop). Validated.
+- Examined **TSK-186** (MCP current_state 0-based vs select_tab 1-based off-by-one)
+  — needs a closer read of the index-convention contract test; deferred to a future
+  tick (didn't validate without confirming the round-trip teeth pin the convention).
+- main @ 431622d (no code change; board state only) + this doc. **Session
+  cumulative: 57 validated + 1 bug fixed + 4 owner-parked.** 10 fixed/review audit
+  findings validated across the last 7 ticks (145/135/148/194/167/168/165/166/169/184).
