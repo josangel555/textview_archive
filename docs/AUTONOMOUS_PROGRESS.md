@@ -2239,3 +2239,30 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   mentally for a follow-up; the bug itself is fixed + the test is green.)
 - main @ 5449b59 + this doc; rust gate green. Cumulative session: 12 board items
   validated + 1 real bug fixed.
+
+## LOG +62 (2026-06-07, autonomous tick — fixed-state audit drain, pure-logic teeth)
+- **Validated 6 more `fixed`-state audit findings** (dedicated audit suites, host
+  swift test green this tick, exit 0):
+  - TSK-136 — URLSchemePolicy/MCP path validators resolve symlinks before the
+    fence (SymlinkEscapeTests).
+  - TSK-137 — WalkthroughLoader fenced to a trustedRoot, not the attacker rootHint
+    (TrustedRootTests).
+  - TSK-149 — SidebarModel.clearCache invalidates the flatVisibleRows memo
+    (ClearCacheFlatMemoTests).
+  - TSK-152 — RustCoreFallback surfaces the bridge fault observably
+    (ObservabilityTests).
+  - TSK-158 — .svg removed from formatterExtensions; availableModes is the image
+    set (SVGFormatterTests).
+  - TSK-177 — aspectFit guards NaN/Inf box dims (no Int(NaN) SIGTRAP)
+    (AspectFitFiniteGuardTests).
+- **Also confirmed GREEN but NOT yet validated** (board id not at `fixed` — map
+  next tick): IndentDetector CRLF, CSVParser perf, EditorWriter EACCES, FindEngine
+  bounded-deadline, MCP visible_text truncation — their `Audit_*` suites all
+  passed this tick; need a review/reported-state board lookup to attach the right
+  TSK id before validating.
+- **Still NOT validated (teeth gap, leave at fixed):** TSK-141 (HexView HighlightKey,
+  perf), TSK-147/148 (FileWatcher/LSPPool leaks), TSK-150/151 (Git/fold races),
+  TSK-179/181 (perf/race) — leak/race/perf without a host teeth assert; VM or an
+  added alloc/timing assert needed.
+- main @ 5449b59 + this doc; gates green. Cumulative session: 18 board items
+  validated + 1 real bug fixed + 2 follow-up tasks filed.
