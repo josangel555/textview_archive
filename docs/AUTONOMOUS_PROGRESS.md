@@ -3018,3 +3018,21 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - main @ 0f4655e (no code change; board state only) + this doc. **Session
   cumulative: 60 validated + 1 bug fixed + 4 owner-parked.** 13 audit findings
   validated across the last 10 ticks.
+
+## LOG +96 (2026-06-08, autonomous tick — caught a board-id mis-claim; recorded the +149 offset)
+- Pursued more cap/bound findings (SessionStore-OOM, MessagePack-reserve). VERIFIED
+  both caps present + teeth green (SessionStore Audit tests 6/6: oversized index/
+  snapshot rejected; MsgPack negative tests 23/23: huge-declared-count → truncated,
+  no abort) — BUT both were ALREADY validated in earlier ticks (board TSK-132 +
+  TSK-146). No new validation.
+- **Caught + corrected a board-id mis-claim:** I assumed built-in TaskList #281
+  (SessionStore-OOM) == board TSK-281 and claimed TSK-281 — which is actually
+  "[BACKLOG] Tabs" (an unbuilt Terminal feature). Commented the correction; lease
+  lapses. The real finding is board TSK-132 (already validated).
+- **Durable fix:** derived + recorded the board↔TaskList offset — deep-audit
+  finding #M = board TSK-(M−149), verified 8/8 — into memory
+  reference_board_vs_tasklist_numbering (with the standing "still task_get + match
+  title before validating" caveat). Prevents the recurring mis-map trap.
+- Net: the deep-audit fixed/review cluster (TSK-122…194) is now essentially fully
+  validated; remaining items are perf/race/infra without behavior teeth. No code
+  change this tick; main @ 0f4655e, tree clean, gates green.
