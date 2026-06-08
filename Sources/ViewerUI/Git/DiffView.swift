@@ -134,15 +134,11 @@ struct DiffView: View {
     }
 
     private func stats(_ file: UnifiedDiff.File) -> String {
-        var added = 0, removed = 0
-        for hunk in file.hunks {
-            for line in hunk.lines {
-                if line.kind == .added   { added += 1 }
-                if line.kind == .removed { removed += 1 }
-            }
-        }
-        if added == 0 && removed == 0 { return "" }
-        return "+\(added) −\(removed)"
+        // Single source of truth: the host-tested UnifiedDiff.File.lineStats
+        // (TSK-514). Identical "+a −r" output; was an untested inline counter.
+        let s = file.lineStats
+        if s.added == 0 && s.removed == 0 { return "" }
+        return "+\(s.added) −\(s.removed)"
     }
 
     @ViewBuilder
