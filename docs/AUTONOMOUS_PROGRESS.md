@@ -3313,3 +3313,27 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - main @ `f68fbfd` (unchanged this tick), tree clean. No commit — triage-only. NEXT TICK: if the owner
   has answered any park, execute it; else the queue remains owner-gated (host-completable feature work
   is genuinely exhausted — avoid paper-cut test backfill on already-covered code per owner steer).
+
+## LOG +109 (2026-06-08, autonomous tick — TSK-447 lane fixed; TSK-332 investigated + parked with exact seam)
+- Dug past last tick's "drained" conclusion into the `progress`-state tasks. Two outcomes:
+- **TSK-447 → fixed.** The GP-10 stale-T4 fix was already landed (commit `541b3df`: renamed
+  `test_GP_10_untrackedInRepoOpensEmptyHistory` → `_untrackedInRepoFileHistoryNoOps`, asserting the
+  BUG-026 no-op — 1 tab, not hostedView, stays on hist.md) but the board lane was stuck at `progress`
+  with no commit recorded. Verified the renamed test (GitPanelUATTests.swift:214) matches current
+  `openFileHistory` behavior; recorded the commit + advanced to `fixed`. It's a T4 LiveApp test →
+  VM-lane validates (the lane that surfaced it); not host-self-validated per the no-UI-on-host directive.
+- **TSK-332 (unknown-ext readable-ASCII → HEX instead of text): investigated, parked with the exact
+  fix locus.** The resolution CORE is done + host-tested: `ViewModeOptions.defaultMode/availableModes`
+  already accept `isRenderableText` and additively upgrade the HEX-only default to `.source`
+  (ViewModeKitTests/ViewModeMediaDefaultTests, 11 refs). The remaining gap is WIRING and it's delicate:
+  view-mode is resolved from the EXTENSION *before* the file is read in BOTH paths (`openResolved`
+  ~3081 `initialMode`; `appendLazyTab` `safeMode`) — all 12 `defaultMode(`/`availableModes(` call sites
+  omit the hint. The real fix is post-load RE-resolution at the two completion seams (eager-open
+  completion + `materializeIfNeeded` ~3998, where `viewMode==.hex` + `.loaded` text currently just
+  kicks a hex load), gated to upgrade only a NO-HINT default hex (never an explicit user/persisted
+  HEX). That's a cross-cutting change in the CRITICAL open path (regression history TSK-206/213/217)
+  needing live/VM validation — not a safe autonomous host slice, so parked (kind=decision, default:
+  supervised/VM pass) rather than shipped blind. Workaround exists (Open-As / cycle to Source).
+- Confirmed the board↔built-in-TaskList offset persists (`task_next` again surfaced foreign forge
+  TSK-104); acted only on title-verified board ids per [[reference_board_vs_tasklist_numbering]].
+- main @ `f660343` (+ this log). No source change this tick — one lane advanced, one precisely parked.
