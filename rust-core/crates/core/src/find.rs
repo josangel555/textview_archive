@@ -203,7 +203,10 @@ pub const TABLE_HEADER_ROW: i64 = -1;
 /// (-1) marks a header cell; data cells carry their 0-based `rows` index.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct TableHit {
+    /// Row index: `TABLE_HEADER_ROW` (-1) for a header cell, else the 0-based
+    /// `rows` index of the matching data cell.
     pub row: i64,
+    /// 0-based column index of the matching cell within its row.
     pub col: usize,
 }
 
@@ -217,10 +220,14 @@ pub struct TableHit {
 /// Navigation reuses the existing wraparound: callers step with
 /// `(cur + 1) % hits.len()` (forward) / the [`prev_index`] pattern — the hit
 /// list is a flat `Vec`, so the same modulo math applies.
+/// Generic over the row type (`R: AsRef<[String]>`) so callers pass either owned
+/// rows (`&[Vec<String>]` — the web/core path) or borrowed rows
+/// (`&[&Vec<String>]` — the TUI's already-filtered `shown` slice) without a
+/// clone. `TableHit.row` indexes into the `rows` slice passed here.
 #[must_use]
-pub fn find_in_table(
+pub fn find_in_table<R: AsRef<[String]>>(
     header: &[String],
-    rows: &[Vec<String>],
+    rows: &[R],
     query: &str,
     case: Case,
     include_header: bool,
@@ -238,7 +245,7 @@ pub fn find_in_table(
         // A row index past i64::MAX is unreachable for any real table; saturate
         // rather than panic to stay lint-clean under the no-panic policy.
         let r = i64::try_from(i).unwrap_or(i64::MAX);
-        push_row_hits(&mut out, r, row, &needle, case, scope);
+        push_row_hits(&mut out, r, row.as_ref(), &needle, case, scope);
     }
     out
 }
@@ -531,8 +538,10 @@ mod tests {
         let h = hdr(&["Name"]);
         let r = cells(&[&["Alice"]]);
         assert!(find_in_table(&h, &r, "zzz", Case::Insensitive, true, None).is_empty());
-        // Empty table (no header, no rows) → no hits, no panic.
-        assert!(find_in_table(&[], &[], "x", Case::Insensitive, true, None).is_empty());
+        // Empty table (no header, no rows) → no hits, no panic. The empty `rows`
+        // slice needs a type now that `find_in_table` is generic over the row type.
+        let empty: &[Vec<String>] = &[];
+        assert!(find_in_table(&[], empty, "x", Case::Insensitive, true, None).is_empty());
     }
 
     #[test]

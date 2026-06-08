@@ -1363,6 +1363,45 @@ impl App {
         self.find_is_hex = false;
     }
 
+    /// Cell hits of the active find query within the current TABLE view's SHOWN
+    /// (filtered) rows, in reading order (header first), via the shared
+    /// `find::find_in_table` (TSK-499). Empty unless a find is active AND the
+    /// active view is a table. Recomputed on demand (cheap — tables are small and
+    /// already re-rendered per frame) so it always reflects the current row
+    /// filter, exactly matching what the table render highlights.
+    fn current_table_find_hits(&self) -> Vec<find::TableHit> {
+        if self.find_query.is_empty() {
+            return Vec::new();
+        }
+        let Some(p) = self.tabs.get(self.active) else { return Vec::new() };
+        if p.view.mode != ViewMode::Table {
+            return Vec::new();
+        }
+        let ViewBody::Table { header, rows, .. } = &p.view.body else { return Vec::new() };
+        let shown_idx = p.filtered_table_indices(header, rows);
+        let shown: Vec<&Vec<String>> =
+            shown_idx.iter().filter_map(|&i| rows.get(i as usize)).collect();
+        find::find_in_table(header, &shown, &self.find_query, find::Case::Insensitive, true, None)
+    }
+
+    /// Scroll the table so the current cell-hit's row is visible, only adjusting
+    /// when it's outside the body window (so a fully-visible table never jumps).
+    /// A header hit (`row == TABLE_HEADER_ROW`) brings the view to the top. The
+    /// table counterpart of `jump_to_current_match` — but it never changes the
+    /// view mode; cell-find stays in the table.
+    fn scroll_table_to_current_hit(&mut self, hits: &[find::TableHit]) {
+        let Some(hit) = hits.get(self.find_sel.min(hits.len().saturating_sub(1))) else { return };
+        let target = usize::try_from(hit.row).unwrap_or(0); // header row (-1) -> top
+        let visible = self.content_height.saturating_sub(1).max(1); // body rows (minus header)
+        if let Some(p) = self.tabs.get_mut(self.active) {
+            if target < p.scroll {
+                p.scroll = target;
+            } else if target >= p.scroll + visible {
+                p.scroll = target + 1 - visible;
+            }
+        }
+    }
+
     /// Append any character to the live query (printable keys), so the find box
     /// accepts the full text — unlike go-to-line, which only takes digits.
     fn find_push(&mut self, c: char) {
@@ -1391,6 +1430,34 @@ impl App {
             return;
         }
         let Some(p) = self.tabs.get(self.active) else { return };
+        // Table mode (TSK-499): CELL-find — locate + highlight matching cells and
+        // arm n/N cell-stepping, over the SHOWN (filtered) rows so coords line up
+        // with the render. Distinct from the `/` row FILTER (find never narrows),
+        // and it must NOT fall through to the text branch below — that would force
+        // Text mode via jump_to_current_match. Composes with the row filter.
+        if p.view.mode == ViewMode::Table {
+            let hits = if let ViewBody::Table { header, rows, .. } = &p.view.body {
+                let shown_idx = p.filtered_table_indices(header, rows);
+                let shown: Vec<&Vec<String>> =
+                    shown_idx.iter().filter_map(|&i| rows.get(i as usize)).collect();
+                find::find_in_table(header, &shown, &query, find::Case::Insensitive, true, None)
+            } else {
+                Vec::new()
+            };
+            if hits.is_empty() {
+                self.find_query.clear();
+                self.find_matches.clear();
+                self.find_is_hex = false;
+                self.status = format!("find: no matches for \"{query}\"");
+                return;
+            }
+            self.find_query = query;
+            self.find_matches.clear(); // a table find tracks cell hits, not line matches
+            self.find_is_hex = false;
+            self.find_sel = 0;
+            self.scroll_table_to_current_hit(&hits);
+            return;
+        }
         // HEX mode (TSK-205): search the raw BYTES for a byte/ASCII pattern via
         // the shared core `hex::hex_search`, and land each match on the dump ROW
         // it falls in (offset / 16). Distinct from the text find below.
@@ -1448,6 +1515,17 @@ impl App {
     /// Step to the next (`forward`) or previous match, wrapping, and jump to it.
     /// A no-op when no find is active.
     fn find_step(&mut self, forward: bool) {
+        // In a table view, n/N step the CELL hits (TSK-499) — recomputed over the
+        // current shown rows so the step stays aligned with the render (e.g. after
+        // a re-filter) — and never leave table mode. Elsewhere, the line matches.
+        let table_hits = self.current_table_find_hits();
+        if !table_hits.is_empty() {
+            let n = table_hits.len();
+            let cur = self.find_sel.min(n - 1);
+            self.find_sel = if forward { (cur + 1) % n } else { (cur + n - 1) % n };
+            self.scroll_table_to_current_hit(&table_hits);
+            return;
+        }
         if self.find_matches.is_empty() {
             return;
         }
@@ -1567,7 +1645,7 @@ impl App {
             // ESC dismisses an active find's highlight first; with no find up it
             // quits (preserving the historical ESC-to-quit for the common case).
             KeyCode::Esc => {
-                if self.find_matches.is_empty() {
+                if self.find_matches.is_empty() && self.current_table_find_hits().is_empty() {
                     return true;
                 }
                 self.clear_find();
@@ -1585,7 +1663,7 @@ impl App {
             // `n`/`N` step the find matches WHILE a find is active; with no
             // active find, `n` keeps its line-number-gutter toggle.
             KeyCode::Char('n') => {
-                if self.find_matches.is_empty() {
+                if self.find_matches.is_empty() && self.current_table_find_hits().is_empty() {
                     self.show_gutter = !self.show_gutter;
                 } else {
                     self.find_step(true);
@@ -1857,14 +1935,66 @@ impl App {
                     )
                 };
                 let widths = column_widths(header, rows);
-                let header_row = Row::new(header.iter().map(|h| Cell::from(h.clone())))
-                    .style(Style::new().fg(Color::Cyan).bold());
+                // Cell-find (TSK-499): when an in-file find is active, highlight
+                // matching CELLS via the shared `find::find_in_table` over the
+                // SHOWN (filtered) rows — so hit coords index straight into the
+                // displayed set (parity with the web table cell-find). The CURRENT
+                // match (find_sel-th in reading order) gets a distinct style so the
+                // n/N cell-stepping is visible. Find LOCATES; it never narrows —
+                // that's the `/` row filter, with which it composes.
+                let hl = Style::new().bg(Color::Yellow).fg(Color::Black);
+                let cur_hl = Style::new().bg(Color::Magenta).fg(Color::White).bold();
+                let hv = if self.find_query.is_empty() {
+                    Vec::new()
+                } else {
+                    find::find_in_table(header, &shown, &self.find_query, find::Case::Insensitive, true, None)
+                };
+                let cur = hv.get(self.find_sel.min(hv.len().saturating_sub(1))).map(|h| (h.row, h.col));
+                let hits: std::collections::HashSet<(i64, usize)> =
+                    hv.iter().map(|h| (h.row, h.col)).collect();
+                let style_for = |coord: (i64, usize)| -> Option<Style> {
+                    if Some(coord) == cur {
+                        Some(cur_hl)
+                    } else if hits.contains(&coord) {
+                        Some(hl)
+                    } else {
+                        None
+                    }
+                };
+                let header_row = Row::new(
+                    header
+                        .iter()
+                        .enumerate()
+                        .map(|(j, h)| {
+                            let cell = Cell::from(h.clone());
+                            match style_for((find::TABLE_HEADER_ROW, j)) {
+                                Some(s) => cell.style(s),
+                                None => cell,
+                            }
+                        })
+                        .collect::<Vec<_>>(),
+                )
+                .style(Style::new().fg(Color::Cyan).bold());
                 let start = p.scroll.min(shown.len().saturating_sub(1));
                 let body: Vec<Row> = shown
                     .iter()
+                    .enumerate()
                     .skip(start)
                     .take(inner_h.saturating_sub(1).max(1))
-                    .map(|r| Row::new(r.iter().map(|c| Cell::from(c.clone())).collect::<Vec<_>>()))
+                    .map(|(i, r)| {
+                        Row::new(
+                            r.iter()
+                                .enumerate()
+                                .map(|(j, c)| {
+                                    let cell = Cell::from(c.clone());
+                                    match style_for((i as i64, j)) {
+                                        Some(s) => cell.style(s),
+                                        None => cell,
+                                    }
+                                })
+                                .collect::<Vec<_>>(),
+                        )
+                    })
                     .collect();
                 let table = Table::new(body, widths)
                     .header(header_row)
@@ -2289,6 +2419,18 @@ impl App {
             "↑/↓ pick heading · ↵ jump to it · ESC / o close outline".into()
         } else if self.find_prompt_open() {
             "type to search this file · ↵ find + jump · ⌫ delete · ESC cancel".into()
+        } else if !self.current_table_find_hits().is_empty() {
+            // Table cell-find (TSK-499): position among matching CELLS in reading
+            // order; n/N step cells, / opens the row filter, ESC clears. Shown in
+            // place of the line-match readout because in a table the find tracks
+            // cells, not lines.
+            let hits = self.current_table_find_hits();
+            let n = hits.len();
+            let cur = self.find_sel.min(n.saturating_sub(1)) + 1;
+            format!(
+                "find: {cur} of {n} cells · \"{}\" · n/N next/prev cell · / filter · ESC clear",
+                self.find_query,
+            )
         } else if !self.find_matches.is_empty() {
             // Show the live match position so the count is visible (the `status`
             // line field is not rendered) — "find: i of n · …" / "hex: …" when
@@ -2640,6 +2782,104 @@ mod tests {
         let scoped = wide(&mut app);
         assert!(!scoped.contains("NYC") && !scoped.contains("LA"), "city-scoped Alice matches no rows:\n{scoped}");
         assert!(scoped.contains("0/2 rows"), "count shows zero matches:\n{scoped}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Render to a `TestBackend` and hand back the terminal so a test can inspect
+    /// per-cell STYLE (the `String` snapshot drops styling — needed to assert the
+    /// cell-find highlight, not just its text).
+    fn render_buf(app: &mut App, w: u16, h: u16) -> Terminal<TestBackend> {
+        let mut terminal = Terminal::new(TestBackend::new(w, h)).expect("backend");
+        terminal.draw(|f| app.draw(f)).expect("draw");
+        terminal
+    }
+
+    /// Background color of the first `word` occurring in the screen row that also
+    /// contains `marker`. Matched cell-by-cell (NOT by byte offset) so the table's
+    /// multi-byte border glyph `│` doesn't shift the column mapping. `None` if the
+    /// row/word isn't rendered.
+    fn bg_in_row(buf: &ratatui::buffer::Buffer, marker: &str, word: &str) -> Option<Color> {
+        let want: Vec<String> = word.chars().map(|c| c.to_string()).collect();
+        for y in 0..buf.area.height {
+            let syms: Vec<String> =
+                (0..buf.area.width).map(|x| buf[(x, y)].symbol().to_string()).collect();
+            if !syms.concat().contains(marker) {
+                continue;
+            }
+            for x in 0..syms.len() {
+                if x + want.len() <= syms.len() && (0..want.len()).all(|k| syms[x + k] == want[k]) {
+                    return Some(buf[(x as u16, y)].bg);
+                }
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn table_cell_find_highlights_current_steps_and_clears() {
+        // TSK-499 slice 2b: CSV table CELL-find on the rust-core TUI (parity with
+        // the web slice + Swift CSVFind). Reachable via the command palette ("find
+        // in file") since `/` is the row filter in table mode; highlights matching
+        // cells (the current one distinctly), n/N step the cells, ESC clears. This
+        // is a pixel-style assertion: it inspects the rendered buffer's per-cell bg
+        // — a layout-only "is rendered" check would miss the highlight entirely.
+        let dir = fixture_dir();
+        // "Paris" sits in TWO cells (row 0 col 0 and row 1 col 1) so stepping is
+        // non-degenerate; "xx"/"plan" tag the two body rows for the bg lookup.
+        fs::write(dir.join("cells.csv"), b"city,note\nParis,xx\nplan,Paris\n").unwrap();
+        let mut app = App::new(dir.clone());
+        select_name(&mut app, "cells.csv");
+        app.enter(); // CSV opens in Table mode
+        assert!(render(&mut app).contains("· table ·"), "opens as table");
+
+        // Drive the REAL trigger: the command palette (p → "find" → ↵ runs
+        // Cmd::Find → open_find), proving the feature is reachable without a
+        // dedicated key and that `/` stays the row filter.
+        app.on_key(KeyCode::Char('p'));
+        for c in "find".chars() {
+            app.on_key(KeyCode::Char(c));
+        }
+        app.on_key(KeyCode::Enter);
+        assert!(
+            app.find_prompt_open(),
+            "palette 'find in file' opens the find prompt while a table is showing"
+        );
+        for c in "par".chars() {
+            app.on_key(KeyCode::Char(c));
+        }
+        app.on_key(KeyCode::Enter); // commit: case-insensitive → hits (0,0) and (1,1)
+        assert_eq!(app.find_sel, 0, "first cell selected on commit");
+
+        // Current hit (row 0 "Paris", in the "xx" row) is magenta; the other hit
+        // (row 1 "Paris", in the "plan" row) is yellow; a non-match ("plan") has no
+        // highlight (default Reset bg).
+        let term = render_buf(&mut app, 100, 24);
+        let buf = term.backend().buffer();
+        assert_eq!(bg_in_row(buf, "xx", "Paris"), Some(Color::Magenta), "current cell is distinct");
+        assert_eq!(bg_in_row(buf, "plan", "Paris"), Some(Color::Yellow), "other hit highlighted");
+        assert_eq!(bg_in_row(buf, "plan", "plan"), Some(Color::Reset), "non-match not highlighted");
+        assert!(render(&mut app).contains("find: 1 of 2 cells"), "status shows the cell position");
+
+        // n steps to the second cell — the current marker moves to row 1's "Paris".
+        app.on_key(KeyCode::Char('n'));
+        assert_eq!(app.find_sel, 1, "n steps to the second cell");
+        let term2 = render_buf(&mut app, 100, 24);
+        let buf2 = term2.backend().buffer();
+        assert_eq!(bg_in_row(buf2, "plan", "Paris"), Some(Color::Magenta), "current moved to cell 2");
+        assert_eq!(bg_in_row(buf2, "xx", "Paris"), Some(Color::Yellow), "cell 1 is now a plain hit");
+        assert!(render(&mut app).contains("find: 2 of 2 cells"), "status advanced");
+
+        // n wraps back to the first cell.
+        app.on_key(KeyCode::Char('n'));
+        assert_eq!(app.find_sel, 0, "n wraps past the end to the first cell");
+
+        // ESC clears the find — nothing stays highlighted.
+        app.on_key(KeyCode::Esc);
+        assert!(app.find_query.is_empty(), "ESC clears the table find");
+        let term3 = render_buf(&mut app, 100, 24);
+        let buf3 = term3.backend().buffer();
+        assert_eq!(bg_in_row(buf3, "xx", "Paris"), Some(Color::Reset), "no highlight after clear");
+        assert_eq!(bg_in_row(buf3, "plan", "Paris"), Some(Color::Reset), "no highlight after clear");
         let _ = fs::remove_dir_all(&dir);
     }
 
