@@ -2964,3 +2964,22 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - main @ 431622d (no code change; board state only) + this doc. **Session
   cumulative: 57 validated + 1 bug fixed + 4 owner-parked.** 10 fixed/review audit
   findings validated across the last 7 ticks (145/135/148/194/167/168/165/166/169/184).
+
+## LOG +93 (2026-06-08, autonomous tick — TSK-186 MCP index off-by-one validated)
+- **TSK-186** `[S4][contract] MCP current_state 0-based selectedTabIndex vs
+  select_tab 1-based byIndex — off by one`. Fix makes both ends 1-based externally:
+  automationSelectTab does `index - 1` (DocumentModel+AutomationHost.swift:38);
+  automationCurrentState emits `selectedIndex + 1` (line 102). Verified fresh:
+  Audit_…DocumentModel_AutomationHost_swift_Tests 5/5 incl
+  test_selectedTabIndex_roundTripsThroughSelectTab (the crux — read current_state
+  index, feed back to select_tab, same tab stays selected; idx 1 and 2) +
+  emits1Based + noTabs_emitsNil (sentinel preserved). Exercises the REAL ±1
+  conversions (not a fake host). Validated.
+- **Lane thinning:** the clean-teeth `fixed`-state seam is nearly drained — the
+  remaining items are perf (TSK-170/171/172/173/183/290/291/292 — clone/alloc/O(n),
+  no behavior teeth), race (150/151/181/330 — non-deterministic), infra/script
+  (157/159/160/170/171), or need study (182 diff Swift-parity; 187 process-exit
+  path). Those correctly sit at fixed/review for the human or a dedicated effort.
+- main @ add6d85 (no code change; board state only) + this doc. **Session
+  cumulative: 58 validated + 1 bug fixed + 4 owner-parked.** 11 audit findings
+  validated across the last 8 ticks.
