@@ -29,6 +29,31 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-07 (latest+54) — core JSON pretty-print formatter (Formatted-mode foundation, TSK-217/218)
+
+Autonomous tick. Verify-sweep complete → shifted back to feature work. The `reported`
+lane had no actionable SwiftUI task (all `[PORT]` W2 + backlog), so per SOP took the
+`[PORT]` lane: TSK-217 (TUI JSON/XML pretty-print). Research found the core had NO
+formatter + no `ViewMode::Formatted` — so it's not front-end-only. Shipped the shared
+foundation slice; commit `77c170f`, rust-core gate green.
+
+- **New** `mdvcore_core::format::pretty_json(&str) -> Option<String>` — std-only, no-dep
+  recursive-descent JSON reformatter (2-space indent, matches SwiftUI `FormatViewer`).
+  Validates as it walks; malformed / trailing-garbage → `None` so the caller falls back
+  to raw text. String contents (escapes, braces-in-strings) preserved byte-for-byte;
+  only structural whitespace is rewritten. Uses `.get(..)?` slicing (no panic paths).
+- **7 cargo tests** — compact→indented, nesting, empty containers one-line, escape/brace
+  preservation, scalar round-trips, idempotent re-format, and a malformed-input battery
+  (unterminated, missing colon/value, trailing comma, non-string key, leading-zero,
+  trailing garbage, plain text → all `None`). One real bug caught + fixed mid-impl: the
+  comma separator was consumed but not emitted between items.
+- **Board:** TSK-217 reported→**triaged** with the decomposition (core DONE; remaining =
+  `ViewMode::Formatted` + `available_modes` + TUI render branch + snapshot test; XML is a
+  separate larger slice). TSK-218 (Web) commented — same core fn, front-end wiring remains.
+- This is feature progress (new shared capability), not test backfill. NOT self-validated
+  as a board "feature complete" — the port tickets stay open until the front-end wiring
+  lands; the core slice itself is fully covered + gate-green.
+
 ## LOG 2026-06-07 (latest+53) — audit verify-sweep COMPLETE: 8 more validated, 2 honestly held
 
 Autonomous tick. Finished the `1dbf1ca` audit-cluster verify-and-validate sweep. Each
