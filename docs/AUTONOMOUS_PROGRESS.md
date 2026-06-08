@@ -2472,3 +2472,22 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   in-memory recents list, web side threads shared state), dark-mode tokens
   (TSK-243/244 — web @media prefers-color-scheme is clean; TUI palette thin),
   keyboard help overlay (TSK-247/248), persistent session state (TSK-235/236).
+
+## LOG +74 (2026-06-08, autonomous tick — web dark mode + TUI dark-mode parked)
+- **Shipped TSK-244 [PORT][WEB] dark mode** (commit c335759): the page CSS gains a
+  `@media (prefers-color-scheme: dark)` override block so mdv-web follows the OS
+  appearance with no toggle. Dark values cover body/nav/links/inputs/table/diff/
+  gutter/current-line/outline/imgcard/banner; the light defaults stay (dark is a
+  pure override). web 54 (+1); gate GATE_EXIT=0; clippy clean. reported→…→validated.
+  Test `page_carries_prefers_color_scheme_dark_overrides` (browse + view).
+- **PARKED TSK-243 [PORT][TUI] dark mode** (kind=decision, pings owner): the TUI
+  half has NO host-test teeth — `app.snapshot` returns colorless text, so a ratatui
+  Color/palette change can't be proven on the merge gate (only palette SELECTION is
+  host-testable, not the applied color). Plus terminals already theme ratatui colors
+  via the user's emulator, so a built-in TUI palette is arguably redundant. Asked
+  the owner: skip / model-layer-only / VM-pixel-validated. Did NOT ship a blind,
+  untestable color change. Loop continues per SOP.
+- main @ c335759 + this doc; gates green. Cumulative session: 34 validated +
+  1 bug fixed + 1 parked (TSK-243). Next PORT veins: keyboard help overlay
+  (TSK-247/248), recently-opened/history (TSK-233/234 — web threads shared state),
+  persistent session state (TSK-235/236), cross-file grep (TSK-213/214).
