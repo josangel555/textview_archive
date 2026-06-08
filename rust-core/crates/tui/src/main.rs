@@ -61,12 +61,21 @@ fn main() -> io::Result<()> {
     // then exit. No TTY needed — for headless self-validation / demoing the UI
     // (mirrors the Swift app's --diagnose philosophy).
     let snapshot = args.iter().any(|a| a == "--snapshot");
+    // Persistent session state (TSK-235): load saved prefs from
+    // ~/.textview/tui/config. An explicit path arg wins; else fall back to the
+    // persisted cwd (if it still exists); else the current dir.
+    let cfg = config_path();
+    let persisted = cfg.as_deref().and_then(load_config);
     let start = args
         .iter()
         .find(|a| !a.starts_with("--"))
         .map(PathBuf::from)
+        .or_else(|| persisted.as_ref().and_then(|p| p.cwd.clone()).filter(|d| d.is_dir()))
         .unwrap_or(std::env::current_dir()?);
     let mut app = App::new(start);
+    if let Some(p) = &persisted {
+        app.apply_prefs(p);
+    }
     if snapshot {
         // Pre-open the first file so the content pane shows something.
         if let Some(i) = app.entries.iter().position(|e| !e.is_dir) {
@@ -79,6 +88,10 @@ fn main() -> io::Result<()> {
     let mut terminal = ratatui::init();
     let result = app.run(&mut terminal);
     ratatui::restore();
+    // Persist prefs on exit (TSK-235, best-effort — never blocks quit).
+    if let Some(path) = &cfg {
+        save_config(path, &app.persist_state());
+    }
     result
 }
 
@@ -233,6 +246,137 @@ enum ThemeMode {
     Adaptive,
     Dark,
     Light,
+}
+
+/// Persisted front-end session state (TSK-235), saved to `~/.textview/tui/config`
+/// on quit and restored on launch (owner-chosen `~/.textview/<frontend>` location;
+/// the web front-end uses `wui/`). App-global view/nav preferences only — last
+/// dir + sort + dotfile/wrap/gutter toggles + theme. Restoring the last OPEN file
+/// + scroll + per-file mode is a follow-up (it needs reopen logic for files that
+/// may have moved/changed). Hand-rolled `key=value` codec: no serde dep, no panics
+/// (the rust-core gate denies both), lenient to hand-edits.
+#[derive(Clone, PartialEq, Eq, Debug)]
+struct PersistState {
+    cwd: Option<PathBuf>,
+    sort: SortKey,
+    show_hidden: bool,
+    wrap: bool,
+    show_gutter: bool,
+    theme: ThemeMode,
+}
+
+impl Default for PersistState {
+    fn default() -> Self {
+        PersistState {
+            cwd: None,
+            sort: SortKey::Name,
+            show_hidden: false,
+            wrap: true,
+            show_gutter: true,
+            theme: ThemeMode::Adaptive,
+        }
+    }
+}
+
+impl PersistState {
+    /// Serialize to a `key=value` config (one per line).
+    fn to_config(&self) -> String {
+        let mut s = String::new();
+        if let Some(cwd) = &self.cwd {
+            s.push_str(&format!("cwd={}\n", cwd.display()));
+        }
+        s.push_str(&format!("sort={}\n", sort_token(self.sort)));
+        s.push_str(&format!("hidden={}\n", self.show_hidden));
+        s.push_str(&format!("wrap={}\n", self.wrap));
+        s.push_str(&format!("gutter={}\n", self.show_gutter));
+        s.push_str(&format!("theme={}\n", theme_token(self.theme)));
+        s
+    }
+
+    /// Parse a `key=value` config. Unknown keys are ignored, missing/malformed
+    /// values fall back to the default — never panics, never errors.
+    fn from_config(text: &str) -> Self {
+        let mut st = PersistState::default();
+        for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let Some((k, v)) = line.split_once('=') else { continue };
+            let (k, v) = (k.trim(), v.trim());
+            match k {
+                "cwd" => st.cwd = if v.is_empty() { None } else { Some(PathBuf::from(v)) },
+                "sort" => st.sort = sort_from_token(v).unwrap_or(st.sort),
+                "hidden" => st.show_hidden = parse_bool(v).unwrap_or(st.show_hidden),
+                "wrap" => st.wrap = parse_bool(v).unwrap_or(st.wrap),
+                "gutter" => st.show_gutter = parse_bool(v).unwrap_or(st.show_gutter),
+                "theme" => st.theme = theme_from_token(v).unwrap_or(st.theme),
+                _ => {}
+            }
+        }
+        st
+    }
+}
+
+fn parse_bool(v: &str) -> Option<bool> {
+    match v {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    }
+}
+fn sort_token(s: SortKey) -> &'static str {
+    match s {
+        SortKey::Name => "name",
+        SortKey::Modified => "modified",
+        SortKey::Size => "size",
+    }
+}
+fn sort_from_token(v: &str) -> Option<SortKey> {
+    match v {
+        "name" => Some(SortKey::Name),
+        "modified" => Some(SortKey::Modified),
+        "size" => Some(SortKey::Size),
+        _ => None,
+    }
+}
+fn theme_token(t: ThemeMode) -> &'static str {
+    match t {
+        ThemeMode::Adaptive => "adaptive",
+        ThemeMode::Dark => "dark",
+        ThemeMode::Light => "light",
+    }
+}
+fn theme_from_token(v: &str) -> Option<ThemeMode> {
+    match v {
+        "adaptive" => Some(ThemeMode::Adaptive),
+        "dark" => Some(ThemeMode::Dark),
+        "light" => Some(ThemeMode::Light),
+        _ => None,
+    }
+}
+
+/// `~/.textview/tui/config` — the owner-chosen per-front-end config location
+/// (TSK-235). `None` when `$HOME` is unset (we then run without persistence
+/// rather than guessing a path).
+fn config_path() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .map(|h| PathBuf::from(h).join(".textview").join("tui").join("config"))
+}
+
+/// Read + parse the config at `path`. `None` if it's absent / unreadable.
+fn load_config(path: &Path) -> Option<PersistState> {
+    let text = fs::read_to_string(path).ok()?;
+    Some(PersistState::from_config(&text))
+}
+
+/// Write the config to `path`, creating parent dirs. Best-effort — a write
+/// failure (read-only HOME, etc.) is swallowed so it never breaks the app.
+fn save_config(path: &Path, state: &PersistState) {
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let _ = fs::write(path, state.to_config());
 }
 
 struct App {
@@ -438,6 +582,31 @@ impl App {
         };
         let c = theme::Palette::for_mode(mode).color(role);
         Color::Rgb(c.r, c.g, c.b)
+    }
+
+    /// Capture the current app-global prefs for persistence (TSK-235).
+    fn persist_state(&self) -> PersistState {
+        PersistState {
+            cwd: Some(self.cwd.clone()),
+            sort: self.sort,
+            show_hidden: self.show_hidden,
+            wrap: self.wrap,
+            show_gutter: self.show_gutter,
+            theme: self.theme_mode,
+        }
+    }
+
+    /// Apply restored prefs (TSK-235): sort / dotfile / wrap / gutter / theme,
+    /// then re-list so the sort + hidden filter take effect. `cwd` is applied by
+    /// `main` (it picks the start dir BEFORE construction), so it's intentionally
+    /// not re-applied here.
+    fn apply_prefs(&mut self, p: &PersistState) {
+        self.sort = p.sort;
+        self.show_hidden = p.show_hidden;
+        self.wrap = p.wrap;
+        self.show_gutter = p.show_gutter;
+        self.theme_mode = p.theme;
+        self.reload_dir();
     }
 
     // MARK: - Directory navigation (the front-end owns IO; the core is sans-IO)
@@ -2955,6 +3124,79 @@ mod tests {
             Some(Color::Magenta),
             "cycles back to adaptive (ANSI magenta)"
         );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn persist_state_config_roundtrips() {
+        // TSK-235: serialize → parse is identity for a fully-populated state.
+        let st = PersistState {
+            cwd: Some(PathBuf::from("/tmp/some/dir")),
+            sort: SortKey::Size,
+            show_hidden: true,
+            wrap: false,
+            show_gutter: false,
+            theme: ThemeMode::Dark,
+        };
+        assert_eq!(PersistState::from_config(&st.to_config()), st);
+    }
+
+    #[test]
+    fn persist_config_is_lenient_to_missing_unknown_and_malformed() {
+        // Recognized key applies; unknown key ignored; malformed value + missing
+        // keys fall back to defaults — never panics (the gate denies panics).
+        let st = PersistState::from_config(
+            "sort=modified\nbogus=zzz\nwrap=notabool\n# a comment\n\ntheme=dark\n",
+        );
+        assert_eq!(st.sort, SortKey::Modified); // recognized
+        assert_eq!(st.theme, ThemeMode::Dark); // recognized
+        assert!(st.wrap); // malformed "notabool" → default (true)
+        assert!(!st.show_hidden); // missing → default (false)
+        assert!(st.show_gutter); // missing → default (true)
+        assert_eq!(st.cwd, None); // missing → None
+    }
+
+    #[test]
+    fn save_then_load_config_roundtrips_via_disk() {
+        // IO roundtrip through a TEMP path (never the real ~/.textview).
+        let dir = fixture_dir();
+        let path = dir.join("tui").join("config"); // parent dirs auto-created
+        let st = PersistState {
+            cwd: Some(dir.clone()),
+            sort: SortKey::Modified,
+            show_hidden: true,
+            wrap: false,
+            show_gutter: true,
+            theme: ThemeMode::Light,
+        };
+        save_config(&path, &st);
+        assert_eq!(load_config(&path), Some(st));
+        // Absent file → None (not an error).
+        assert_eq!(load_config(&dir.join("nope").join("config")), None);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn apply_prefs_sets_app_view_state() {
+        let dir = fixture_dir();
+        fs::write(dir.join("a.txt"), b"x\n").unwrap();
+        let mut app = App::new(dir.clone());
+        assert_eq!(app.sort, SortKey::Name); // defaults pre-apply
+        assert!(!app.show_hidden);
+        let p = PersistState {
+            cwd: None,
+            sort: SortKey::Size,
+            show_hidden: true,
+            wrap: false,
+            show_gutter: false,
+            theme: ThemeMode::Dark,
+        };
+        app.apply_prefs(&p);
+        assert_eq!(app.sort, SortKey::Size);
+        assert!(app.show_hidden);
+        assert!(!app.wrap);
+        assert!(!app.show_gutter);
+        assert_eq!(app.theme_mode, ThemeMode::Dark);
         let _ = fs::remove_dir_all(&dir);
     }
 
