@@ -3059,3 +3059,26 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   store's own encoder. ReviewStoreProjectLocalTests 10/10 green.
 - main @ `c21c1fa`, tree clean, headless gate path green (pure-logic ViewerCore
   test). **Session cumulative: 61 validated + 1 bug fixed + 4 owner-parked.**
+
+## LOG +98 (2026-06-08, autonomous tick — TSK-188 MsgPack end-of-stream validated; TSK-333 held honestly)
+- **TSK-188** [S4][quality] "Wire frame decode accepts trailing garbage (no
+  end-of-stream check)" (Swift `RustCore/MessagePack.swift`) → **validated**.
+  Fix present: `finish()` (line 114) throws `typeMismatch("trailing bytes")`
+  unless `pos == bytes.count`. Teeth in MsgPackDecoderNegativeAuditTests
+  (full-consume passes, trailing-byte rejected, unconsumed-body rejected).
+  **Teeth-proven:** neutering `finish()` to a no-op fails the two trailing-byte
+  tests (did-not-throw); restored → 23/23 green. Pure parser, no UI →
+  host-self-validatable. No code change (verify-and-validate of fixed lane).
+- **TSK-333** [PARTIAL] "Remove Bookmark via Delete + Undo" → **held at review**
+  (NOT self-validated). Headless backend IS teeth-covered (BookmarkUndoTests
+  9/9; FIFO-evict-at-20 proven biting by neutering BookmarksStore.swift:105 →
+  3 failures; restore-index clamp pinned). But the remaining work is the
+  user-facing UI wiring (Delete-key handler + Undo-Remove menu→undoLastRemoval)
+  = SwiftUI view wiring with no host coverage → VM/live gate, not an agent
+  host-self-close. Commented the status on-board.
+- **Selection-rule refinement:** `[PARTIAL]` feature-backlog items at `review`
+  (TSK-329/333) have host-testable BACKENDS but a UI-wiring remainder, so the
+  WHOLE task must NOT be agent-self-validated even when the backend teeth pass
+  (it overclaims the UI). Verify+comment the backend; leave at review.
+- main @ `681d6c1` (TSK-188/333 = board state only, no code), tree clean, gates
+  green. **Session cumulative: 62 validated + 1 bug fixed + 4 owner-parked.**
