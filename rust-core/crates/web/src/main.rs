@@ -512,14 +512,19 @@ fn content_html(
     modes.push_str("</div>");
 
     let trunc = if truncated { " · TRUNCATED" } else { "" };
-    // Encoding + line-ending badge (shared `core::meta`, same logic as the TUI) —
-    // Text mode only; HEX/table/image show raw bytes or structured data. The
-    // labels are a fixed safe set (no HTML metacharacters), so no escaping needed.
+    // Encoding + line-ending badge and file-metadata metrics (shared `core::meta`,
+    // same logic as the TUI) — Text mode only; HEX/table/image show raw bytes or
+    // structured data. The badge content is digits + a fixed safe label set (no
+    // HTML metacharacters), so no escaping is needed.
     let badge = if v.mode == ViewMode::Text {
+        let lossy = String::from_utf8_lossy(&raw);
+        let m = meta::text_metrics(&lossy);
         format!(
-            " · {} · {}",
+            " · {} · {} · {} lines · {} words",
             meta::encoding_label(&raw),
-            meta::line_ending(&raw).as_str()
+            meta::line_ending(&raw).as_str(),
+            m.lines,
+            m.words
         )
     } else {
         String::new()
@@ -1309,6 +1314,17 @@ mod tests {
         // HEX mode shows raw bytes, so the text badge is suppressed.
         let hex = render_view(&dir.join("crlf.txt"), Some("hex"), SortKey::Name, false, None);
         assert!(!hex.contains("CRLF"), "no line-ending badge in HEX mode:\n{hex}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn view_text_shows_file_metrics() {
+        let dir = fixture();
+        // 2 lines, 3 words — distinct counts so a lines/words swap would fail.
+        fs::write(dir.join("metrics.txt"), b"alpha beta\ngamma\n").unwrap();
+        let html = render_view(&dir.join("metrics.txt"), Some("text"), SortKey::Name, false, None);
+        assert!(html.contains("2 lines"), "line count in the /view bar:\n{html}");
+        assert!(html.contains("3 words"), "word count in the /view bar:\n{html}");
         let _ = fs::remove_dir_all(&dir);
     }
 

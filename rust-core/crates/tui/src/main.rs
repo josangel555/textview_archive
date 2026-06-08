@@ -1401,13 +1401,18 @@ impl App {
                 };
                 // While the go-to-line prompt is open the title becomes the live
                 // "goto: N" input so the user sees the number they're typing.
-                // Encoding + line-ending badge (shared `core::meta`) — only
-                // meaningful for the Text view; HEX shows raw bytes, so skip it.
+                // Encoding + line-ending badge and file-metadata metrics (shared
+                // `core::meta`) — only meaningful for the Text view; HEX shows raw
+                // bytes, so skip it.
                 let badge = if matches!(p.view.mode, ViewMode::Text) {
+                    let lossy = String::from_utf8_lossy(&p.raw);
+                    let m = meta::text_metrics(&lossy);
                     format!(
-                        " · {} · {}",
+                        " · {} · {} · {} lines · {} words",
                         meta::encoding_label(&p.raw),
                         meta::line_ending(&p.raw).as_str(),
+                        m.lines,
+                        m.words,
                     )
                 } else {
                     String::new()
@@ -2093,6 +2098,20 @@ mod tests {
         let out = app.snapshot(220, 24).expect("snapshot render");
         assert!(out.contains("UTF-8"), "encoding label in the text-view title:\n{out}");
         assert!(out.contains("CRLF"), "CRLF line-ending badge (from bytes, not hardcoded):\n{out}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn text_view_title_shows_file_metrics() {
+        let dir = fixture_dir();
+        // 2 lines, 3 words — distinct counts so a lines/words swap would fail.
+        fs::write(dir.join("metrics.txt"), b"alpha beta\ngamma\n").unwrap();
+        let mut app = App::new(dir.clone());
+        select_name(&mut app, "metrics.txt");
+        app.enter();
+        let out = app.snapshot(220, 24).expect("snapshot render");
+        assert!(out.contains("2 lines"), "line count in the title:\n{out}");
+        assert!(out.contains("3 words"), "word count in the title:\n{out}");
         let _ = fs::remove_dir_all(&dir);
     }
 

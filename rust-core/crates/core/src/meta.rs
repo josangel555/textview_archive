@@ -89,9 +89,41 @@ pub fn encoding_label(bytes: &[u8]) -> &'static str {
     }
 }
 
+/// Lightweight text-content metrics for a status bar / file-metadata readout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextMetrics {
+    /// Line count (see [`text_metrics`] for the exact definition).
+    pub lines: usize,
+    /// Whitespace-separated word count.
+    pub words: usize,
+    /// Unicode scalar count (NOT bytes).
+    pub chars: usize,
+}
+
+/// Count lines / words / characters in `text` for a metadata readout.
+///
+/// - `lines`: `0` for empty input; otherwise the number of `\n` plus one more
+///   when the text does not end in a newline — so `"a\nb\n"` and `"a\nb"` are
+///   both 2 lines and `"a"` is 1. (A trailing newline does not add a phantom
+///   empty line.)
+/// - `words`: maximal runs of non-whitespace (Unicode-aware, via
+///   [`str::split_whitespace`]).
+/// - `chars`: Unicode scalar values, not bytes (so `"世界"` is 2, not 6).
+#[must_use]
+pub fn text_metrics(text: &str) -> TextMetrics {
+    let chars = text.chars().count();
+    let words = text.split_whitespace().count();
+    let lines = if text.is_empty() {
+        0
+    } else {
+        text.bytes().filter(|&b| b == b'\n').count() + usize::from(!text.ends_with('\n'))
+    };
+    TextMetrics { lines, words, chars }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{encoding_label, line_ending, LineEnding};
+    use super::{encoding_label, line_ending, text_metrics, LineEnding};
 
     #[test]
     fn lf_only() {
@@ -144,5 +176,40 @@ mod tests {
         assert_eq!(encoding_label(&[0xFE, 0xFF, 0x00, 0x68]), "UTF-16 BE");
         assert_eq!(encoding_label(b"plain ascii"), "UTF-8");
         assert_eq!(encoding_label(b""), "UTF-8");
+    }
+
+    #[test]
+    fn metrics_empty() {
+        let m = text_metrics("");
+        assert_eq!((m.lines, m.words, m.chars), (0, 0, 0));
+    }
+
+    #[test]
+    fn metrics_single_line_no_newline() {
+        let m = text_metrics("hello world");
+        assert_eq!((m.lines, m.words, m.chars), (1, 2, 11));
+    }
+
+    #[test]
+    fn metrics_trailing_newline_no_phantom_line() {
+        // "a\nb\n" and "a\nb" are both 2 lines (a trailing \n does not add one).
+        assert_eq!(text_metrics("a\nb\n").lines, 2);
+        assert_eq!(text_metrics("a\nb").lines, 2);
+        assert_eq!(text_metrics("a").lines, 1);
+    }
+
+    #[test]
+    fn metrics_words_collapse_whitespace_runs() {
+        // Multiple spaces / tabs / newlines between words count as one separator.
+        let m = text_metrics("  a\t\tb \n c  ");
+        assert_eq!(m.words, 3);
+    }
+
+    #[test]
+    fn metrics_chars_are_unicode_scalars_not_bytes() {
+        // "héllo 世界" = 8 scalars (h é l l o SP 世 界), 2 words.
+        let m = text_metrics("héllo 世界");
+        assert_eq!(m.chars, 8);
+        assert_eq!(m.words, 2);
     }
 }
