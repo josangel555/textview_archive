@@ -164,6 +164,16 @@ impl Preview {
     }
 }
 
+/// One cross-file grep result (TSK-213): the file it's in, the 0-based matching
+/// line, and that line's text — the row the results overlay shows and the target
+/// Enter opens.
+#[derive(Clone)]
+struct GrepHit {
+    path: PathBuf,
+    line: usize,
+    text: String,
+}
+
 struct App {
     cwd: PathBuf,
     entries: Vec<Entry>,
@@ -209,6 +219,16 @@ struct App {
     /// over the panes — so the full shortcut set is discoverable without leaving
     /// the app or squinting at the truncated bottom help line.
     show_help: bool,
+    /// Cross-file grep prompt (TSK-213). `Some(needle)` means the `F` "search
+    /// anywhere" box is open and capturing text; Enter runs the recursive grep,
+    /// ESC cancels. `None` means closed.
+    grep_prompt: Option<String>,
+    /// Results of the last committed cross-file grep. Non-empty (with the prompt
+    /// closed) means the results overlay is open: ↑/↓ pick a hit, Enter opens that
+    /// file at the line, ESC closes. Cleared when a result is opened or dismissed.
+    grep_results: Vec<GrepHit>,
+    /// Selected row in the grep results overlay (index into `grep_results`).
+    grep_sel: usize,
     /// Go-to-line prompt state. `Some(digits)` means the `:` prompt is open and
     /// capturing a numeric line target; the content-pane title shows the live
     /// "goto: N" input. On Enter the (1-based) line is clamped via
@@ -273,6 +293,9 @@ impl App {
             show_whitespace: false,
             wrap: true,
             show_help: false,
+            grep_prompt: None,
+            grep_results: Vec::new(),
+            grep_sel: 0,
             goto: None,
             flash: None,
             outline: None,
@@ -702,6 +725,152 @@ impl App {
         self.flash = Some(line0);
     }
 
+    // MARK: - Cross-file folder grep (shared `find::grep_lines`, TSK-213)
+
+    /// Open the "search anywhere" prompt (`F`). Clears any prior results so the
+    /// box starts fresh; a no-op if it's already open.
+    fn open_grep(&mut self) {
+        if self.grep_prompt.is_none() {
+            self.grep_results.clear();
+            self.grep_sel = 0;
+            self.grep_prompt = Some(String::new());
+        }
+    }
+
+    /// Whether the grep results overlay is open (results present, prompt closed).
+    fn grep_overlay_open(&self) -> bool {
+        self.grep_prompt.is_none() && !self.grep_results.is_empty()
+    }
+
+    /// Key handling while the grep prompt is open: ESC cancels, Enter runs the
+    /// grep, Backspace trims, any printable char extends the needle.
+    fn on_key_grep_prompt(&mut self, code: KeyCode) -> bool {
+        match code {
+            KeyCode::Esc => self.grep_prompt = None,
+            KeyCode::Enter => {
+                if let Some(q) = self.grep_prompt.clone() {
+                    self.run_grep(&q);
+                }
+            }
+            KeyCode::Backspace => {
+                if let Some(q) = &mut self.grep_prompt {
+                    q.pop();
+                }
+            }
+            KeyCode::Char(c) => {
+                if let Some(q) = &mut self.grep_prompt {
+                    q.push(c);
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+
+    /// Key handling while the grep results overlay is open: ↑/↓ (or j/k) move the
+    /// selection, Enter opens the selected hit at its line, ESC/q close.
+    fn on_key_grep_results(&mut self, code: KeyCode) -> bool {
+        match code {
+            KeyCode::Esc | KeyCode::Char('q') => self.grep_results.clear(),
+            KeyCode::Down | KeyCode::Char('j') => {
+                if self.grep_sel + 1 < self.grep_results.len() {
+                    self.grep_sel += 1;
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => self.grep_sel = self.grep_sel.saturating_sub(1),
+            KeyCode::Enter => self.open_grep_result(),
+            _ => {}
+        }
+        false
+    }
+
+    /// Recursively grep readable text files under `cwd` for `needle`
+    /// (case-insensitive literal via the shared `find::grep_lines`). Skips
+    /// dotfiles unless `show_hidden`, skips binary/empty files
+    /// (`view::content_state`), guards against symlink loops, and is bounded by
+    /// the `GREP_*` caps so a huge tree can't hang the UI. Populates
+    /// `grep_results` and closes the prompt.
+    fn run_grep(&mut self, needle: &str) {
+        const GREP_MAX_FILES: usize = 2000;
+        const GREP_MAX_HITS: usize = 500;
+        const GREP_PER_FILE: usize = 50;
+        let needle = needle.trim();
+        self.grep_results.clear();
+        self.grep_sel = 0;
+        if needle.is_empty() {
+            self.grep_prompt = None;
+            return;
+        }
+        let mut visited: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+        let mut stack: Vec<PathBuf> = vec![self.cwd.clone()];
+        let mut files = 0usize;
+        let mut out: Vec<GrepHit> = Vec::new();
+        'walk: while let Some(d) = stack.pop() {
+            if files >= GREP_MAX_FILES || out.len() >= GREP_MAX_HITS {
+                break;
+            }
+            if let Ok(canon) = d.canonicalize() {
+                if !visited.insert(canon) {
+                    continue; // symlink loop — already scanned this dir
+                }
+            }
+            let Ok(rd) = fs::read_dir(&d) else { continue };
+            let mut entries: Vec<fs::DirEntry> = rd.filter_map(Result::ok).collect();
+            entries.sort_by_key(fs::DirEntry::file_name);
+            for e in entries {
+                let name = e.file_name().to_string_lossy().into_owned();
+                if !nav::should_show(&name, self.show_hidden) {
+                    continue;
+                }
+                let p = e.path();
+                if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                    stack.push(p);
+                    continue;
+                }
+                if files >= GREP_MAX_FILES {
+                    break;
+                }
+                files += 1;
+                let Ok((raw, _, _)) = read_capped(&p, PREVIEW_CAP) else { continue };
+                if view::content_state(&raw) != view::ContentState::Readable {
+                    continue; // empty or binary
+                }
+                let remaining = GREP_MAX_HITS.saturating_sub(out.len());
+                if remaining == 0 {
+                    break 'walk;
+                }
+                let text = String::from_utf8_lossy(&raw);
+                for h in find::grep_lines(&text, needle, find::Case::Insensitive, GREP_PER_FILE.min(remaining)) {
+                    out.push(GrepHit { path: p.clone(), line: h.line, text: h.text });
+                }
+            }
+        }
+        let n = out.len();
+        self.grep_results = out;
+        self.grep_prompt = None;
+        self.status = if n == 0 {
+            format!("grep: no matches for \"{needle}\"")
+        } else {
+            format!("grep: {n} hit(s) for \"{needle}\"")
+        };
+    }
+
+    /// Open the selected grep hit: load its file and center+flash the match line
+    /// (the same clamp+center path go-to-line uses). Closes the results overlay.
+    fn open_grep_result(&mut self) {
+        let Some(hit) = self.grep_results.get(self.grep_sel).cloned() else { return };
+        self.grep_results.clear();
+        self.open_file(&hit.path);
+        if let Some(p) = &mut self.preview {
+            let len = p.content_len();
+            let line0 = view::clamp_line(hit.line + 1, len).saturating_sub(1);
+            let half = self.content_height / 2;
+            let max_scroll = len.saturating_sub(1);
+            p.scroll = line0.saturating_sub(half).min(max_scroll);
+            self.flash = Some(line0);
+        }
+    }
+
     // MARK: - CSV table filter (shared `view::table_query` + `filter`)
 
     /// Whether the table-filter prompt is open (capturing keys).
@@ -1032,6 +1201,14 @@ impl App {
             self.show_help = false;
             return false;
         }
+        // The cross-file grep prompt captures text; its results overlay captures
+        // navigation. Both run before the normal keymap (TSK-213).
+        if self.grep_prompt.is_some() {
+            return self.on_key_grep_prompt(code);
+        }
+        if self.grep_overlay_open() {
+            return self.on_key_grep_results(code);
+        }
         // While the quick-find prompt is open it captures text input, so the
         // single-letter command keys (`x`/`s`/`q`/`hjkl`/…) become literal needle
         // characters instead. Arrow keys still navigate the narrowed list; ESC
@@ -1112,6 +1289,8 @@ impl App {
                 }
             }
             KeyCode::Char('o') => self.toggle_outline(),
+            // `F` opens the cross-file "search anywhere" grep prompt (TSK-213).
+            KeyCode::Char('F') => self.open_grep(),
             // `?` opens the keyboard-help overlay (any key then dismisses it).
             KeyCode::Char('?') => self.show_help = true,
             KeyCode::Char('g') => self.scroll_to(true),
@@ -1224,6 +1403,10 @@ impl App {
         // The outline overlay floats over the content pane when open.
         if self.outline.is_some() {
             self.draw_outline(frame, cols[1]);
+        }
+        // The cross-file grep prompt / results overlay floats over the content row.
+        if self.grep_prompt.is_some() || !self.grep_results.is_empty() {
+            self.draw_grep(frame, rows[0]);
         }
         // The keyboard-help overlay floats over the whole content row when open.
         if self.show_help {
@@ -1568,6 +1751,7 @@ impl App {
             ("s", "cycle sort (name/modified/size)"),
             (".", "toggle hidden (dot) files"),
             ("f", "quick file-find (type to narrow)"),
+            ("F", "grep across all files (search anywhere)"),
             ("/", "find in file (table filter in table mode)"),
             (":", "go to line"),
             ("o", "markdown outline"),
@@ -1597,6 +1781,45 @@ impl App {
         frame.render_widget(list, popup);
     }
 
+    /// Render the cross-file grep UI (TSK-213): the input box while the prompt is
+    /// open, otherwise the results overlay (one `path:line: text` row per hit,
+    /// selected row reversed, scrolled to keep the selection visible). `Clear`
+    /// wipes the cells underneath so the panes don't bleed through.
+    fn draw_grep(&self, frame: &mut Frame, area: Rect) {
+        if let Some(needle) = &self.grep_prompt {
+            let popup = centered_rect(60, 18, area);
+            frame.render_widget(Clear, popup);
+            let para = Paragraph::new(format!("{needle}▏")).block(
+                Block::bordered().title(" search anywhere · grep all files (↵ run · ESC cancel) "),
+            );
+            frame.render_widget(para, popup);
+            return;
+        }
+        if self.grep_results.is_empty() {
+            return;
+        }
+        let popup = centered_rect(85, 80, area);
+        frame.render_widget(Clear, popup);
+        let inner_h = popup.height.saturating_sub(2) as usize;
+        let start = self.grep_sel.saturating_sub(inner_h.saturating_sub(1));
+        let items: Vec<ListItem> = self
+            .grep_results
+            .iter()
+            .enumerate()
+            .skip(start)
+            .take(inner_h.max(1))
+            .map(|(i, h)| {
+                let rel = h.path.strip_prefix(&self.cwd).unwrap_or(&h.path).to_string_lossy();
+                let label = format!("{rel}:{}: {}", h.line + 1, h.text.trim());
+                let style = if i == self.grep_sel { Style::new().reversed() } else { Style::new() };
+                ListItem::new(Line::from(Span::styled(label, style)))
+            })
+            .collect();
+        let title = format!(" grep: {} hits · ↵ open · ESC close ", self.grep_results.len());
+        let list = List::new(items).block(Block::bordered().title(title));
+        frame.render_widget(list, popup);
+    }
+
     fn draw_status(&self, frame: &mut Frame, area: Rect) {
         // While the quick-find prompt is open, the command keys are captured as
         // needle text — show the prompt-specific bindings so the help isn't a lie.
@@ -1622,7 +1845,7 @@ impl App {
                 self.find_query,
             )
         } else {
-            "↑/↓ move · ↵ open · ⌫ up · x mode · 1-9 open-as · r reload · n nums · i ws · w wrap · s sort · . hidden · f file-find · / find · : goto · o outline · ? help · q quit".into()
+            "↑/↓ move · ↵ open · ⌫ up · x mode · 1-9 open-as · r reload · n nums · i ws · w wrap · s sort · . hidden · f file-find · F grep · / find · : goto · o outline · ? help · q quit".into()
         };
         let line = Line::from(vec![
             Span::styled(" mdv-tui ", Style::new().fg(Color::Black).bg(Color::Cyan).bold()),
@@ -2172,6 +2395,45 @@ mod tests {
         // Any key dismisses it (modal) — and does NOT also fire that key's command.
         app.on_key(KeyCode::Char('j'));
         assert!(!app.show_help, "any key closes the help overlay");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn capital_f_greps_across_files_and_enter_opens_hit_at_line() {
+        let dir = fixture_dir();
+        let mut app = App::new(dir.clone());
+        let big = |a: &mut App| a.snapshot(120, 30).expect("snapshot render");
+        // `F` opens the grep prompt; type a needle present in hello.txt ("line one/two").
+        app.on_key(KeyCode::Char('F'));
+        assert!(app.grep_prompt.is_some(), "F opens the grep prompt");
+        for c in "line".chars() {
+            app.on_key(KeyCode::Char(c));
+        }
+        app.on_key(KeyCode::Enter); // run the recursive grep
+        assert!(app.grep_prompt.is_none(), "Enter closes the prompt");
+        assert!(!app.grep_results.is_empty(), "grep found hits");
+        assert!(
+            app.grep_results.iter().all(|h| h.path.ends_with("hello.txt")),
+            "only hello.txt contains the needle: {:?}",
+            app.grep_results.iter().map(|h| h.path.clone()).collect::<Vec<_>>()
+        );
+        let out = big(&mut app);
+        assert!(out.contains("grep:"), "results overlay titled:\n{out}");
+        assert!(out.contains("hello.txt"), "matching file listed in the overlay:\n{out}");
+        // Enter on the selected hit opens that file and flashes the match line.
+        let target_line = app.grep_results[0].line;
+        app.on_key(KeyCode::Enter);
+        assert!(app.grep_results.is_empty(), "opening a hit closes the overlay");
+        assert!(app.preview.as_ref().is_some_and(|p| p.name == "hello.txt"), "hit's file opened");
+        assert_eq!(app.flash, Some(target_line), "the hit line is flashed");
+        // A no-match query reports cleanly and shows no overlay.
+        app.on_key(KeyCode::Char('F'));
+        for c in "zzzznotfound".chars() {
+            app.on_key(KeyCode::Char(c));
+        }
+        app.on_key(KeyCode::Enter);
+        assert!(app.grep_results.is_empty(), "no-match grep shows no overlay");
+        assert!(app.status.contains("no matches"), "no-match status: {}", app.status);
         let _ = fs::remove_dir_all(&dir);
     }
 
