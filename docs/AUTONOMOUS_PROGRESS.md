@@ -3654,3 +3654,27 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - Adding 2 params to `render_view_filtered`/`content_html` broke all 11 positional call sites (Rust has no
   default args) — updated each (the [[reference_swift_defaulted_param_link_break]] lesson, Rust edition).
   Net: TUI + web now at parity on hex search; the W1 hex-search pair (205 TUI + 206 web) is complete.
+
+## LOG +125 (2026-06-08, autonomous tick — audit-cluster teeth audit; the cluster is mostly NOT agent-validatable)
+- With the clean NEW-feature lanes owner-gated (TSK-235 persistence decision still unanswered → 234/236/250
+  blocked; 243/255–258 parked), turned to the `fixed` deep-audit cluster (TSK-134–196). Did NOT bulk-stamp
+  — examined teeth per finding (the [[feedback_workflow_central_gate]] discipline + owner self-validation bar).
+- **KEY FINDING (saves future ticks): the audit `fixed` cluster is mostly NOT agent-self-validatable.** They
+  are perf/leak/race/timeout findings whose fixes are LANDED + compile-clean, but whose regression is NOT
+  caught by any existing test: a perf finding (re-introduce a clone) or leak finding (re-retain a duplicate)
+  passes all OUTPUT-correctness tests identically, so there are no teeth for the optimization itself. Per the
+  owner bar ("confident automated tests catch any regression of THIS behavior"), an agent must NOT validate
+  these — they need the human gate, or a perf/alloc/timing-assertion backfill (a [test-gap]). This reinforces
+  [[project_audit_pending_list_stale]]: don't mine the audit cluster finding-by-finding.
+- **Validated TSK-174** (mdv-web DoS hardening) — the ONE with real behavioral teeth: its PRIMARY vector
+  (unbounded request-line/header read → memory exhaustion) is guarded by `oversized_request_head_is_rejected_400`
+  (sends a header 2× MAX_HEADER_BYTES, asserts HTTP 400; remove the `take(MAX_HEADER_BYTES)` cap → test fails).
+  Validated with HONEST scoping: the thread-cap (MAX_INFLIGHT=128) + slow-loris socket timeout (SOCKET_TIMEOUT)
+  are code-present/gate-compiled but have no dedicated timing test (noted in the artifact, not overclaimed).
+- **Held TSK-142/143** (CsvSession snapshot clone / unfiltered retained-dup) at `fixed` with honest comments:
+  fix landed + output-correct, but perf/leak with no regression-catching test → not agent-validatable.
+- **Parked TSK-476** (NSSelectorFromString→#selector cleanup) as a WONT-DO decision: the 3 selectors target
+  @objc AppDelegate actions in the EXE target, dispatched via NSApp.sendAction to the first responder; the
+  call sites are in the ViewerUI FRAMEWORK, which can't import the exe — so #selector is impossible across
+  that module boundary. Not a defect; only the owner can close to wont-do.
+- No code changes this tick — board-state only; `main` unchanged @ 13fda83, rust-core gate GREEN.
