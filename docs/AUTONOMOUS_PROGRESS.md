@@ -29,6 +29,31 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-07 (latest+49) — TSK-205: hex-byte search ported to the ratatui TUI front-end
+
+[PORT][TUI][W1] Hex search — front-end-only port over the already-complete
+`mdvcore_core::hex` (no core/FFI change). Commit `0f7e607`; TSK-205 →
+**validated** (self, host cargo test).
+
+- **What:** in HEX view, `/` now searches the raw bytes. The query parses as a
+  hex-byte pattern first (`"41"`, `"ff 7f"`, `"deadbeef"`) via
+  `hex::hex_search_parse(.., Hex)`, falling back to ASCII when it isn't valid
+  hex. Each match offset maps to its dump row (`offset / 16`) and the jump
+  **STAYS in Hex** — unlike the text find, which forces Text mode (rows there
+  index source lines). Status/help bar shows a `hex:`/`find:` label.
+- **New field** `App.find_is_hex` gates the mode-force skip + the label; reset in
+  `clear_find` and on every no-match. `HEX_BYTES_PER_ROW = 16` const documents
+  the row math (must track `hex::render_all`).
+- **Test** `hex_search_in_hex_mode_matches_bytes_and_stays_in_hex` exercises the
+  whole path via the in-memory `App` + `render()` snapshot (no real terminal):
+  `data.bin` (`00 41 ff 7f`) → `/41` → 1 match on row 0, view stays `Hex`,
+  status renders `hex: 1 of 1`; then `/0000` → empty matches + hex-labelled
+  model status. Has teeth: fails on wrong row math, mode-force, or missing label.
+- **Honesty note:** the no-match status lives in `App.status` (the bottom bar
+  falls back to browse help on a miss — same as the text find), so that
+  assertion checks the model field, not `render()`. `cargo test -p mdvcore-tui
+  hex` → 4 pass; `scripts/rust-core-gate.sh` green.
+
 ## LOG 2026-06-07 (latest+48) — TSK-488 REAL FIX: terminal tabs were compositor-occluded (validated w/ real pixels)
 
 The recurring "I see a gap before the terminal but no tabs" — finally root-caused and fixed with REAL
