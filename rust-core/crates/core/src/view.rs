@@ -224,10 +224,17 @@ pub fn classify(name: &str) -> FileKind {
         FileKind::Diff
     } else if lower.ends_with(".csv") || lower.ends_with(".tsv") {
         FileKind::Tabular
-    } else if lower.ends_with(".json") {
-        // JSON gets the `Formatted` (pretty-print) mode. `.xml` joins here once
-        // the XML formatter lands (the deferred slice) — until then it stays
-        // `Plain` so we never offer a Formatted mode that no-ops.
+    } else if lower.ends_with(".json")
+        || lower.ends_with(".xml")
+        || lower.ends_with(".svg")
+        || lower.ends_with(".plist")
+        || lower.ends_with(".xib")
+        || lower.ends_with(".storyboard")
+    {
+        // Structured text that supports pretty-print (`Formatted` mode): JSON via
+        // format::pretty_json, XML-family via format::pretty_xml (TSK-496). Both
+        // validate-as-they-go and fall back to raw text on malformed input, so a
+        // Formatted mode is only ever shown when it can actually reformat.
         FileKind::Structured
     } else {
         FileKind::Plain
@@ -431,12 +438,13 @@ fn diff_lines(text: &str) -> Vec<DiffLine> {
         .collect()
 }
 
-/// Pretty-print structured text for the `Formatted` mode. JSON is reformatted
-/// via [`crate::format::pretty_json`]; anything that isn't valid JSON (XML,
-/// malformed input) falls back to the raw `Text` shaping so the mode never shows
-/// an empty or garbled body. Capped at `MAX_TEXT_LINES` like `Text`.
+/// Pretty-print structured text for the `Formatted` mode. Tries JSON
+/// ([`crate::format::pretty_json`]) then XML/HTML ([`crate::format::pretty_xml`],
+/// TSK-496) — both validate as they go; anything neither parses cleanly falls
+/// back to the raw `Text` shaping so the mode never shows an empty or garbled
+/// body. Capped at `MAX_TEXT_LINES` like `Text`.
 fn formatted_lines(text: &str) -> Vec<String> {
-    match crate::format::pretty_json(text) {
+    match crate::format::pretty_json(text).or_else(|| crate::format::pretty_xml(text)) {
         Some(pretty) => pretty.split('\n').take(MAX_TEXT_LINES).map(str::to_string).collect(),
         None => text_lines(text),
     }
@@ -506,6 +514,25 @@ mod tests {
         assert_eq!(classify("a.jpeg"), FileKind::Image);
         assert_eq!(classify("a.txt"), FileKind::Plain);
         assert_eq!(classify("patch"), FileKind::Plain);
+        // Structured (pretty-print-able): JSON + XML family (TSK-496).
+        assert_eq!(classify("a.json"), FileKind::Structured);
+        assert_eq!(classify("a.XML"), FileKind::Structured);
+        assert_eq!(classify("icon.svg"), FileKind::Structured);
+        assert_eq!(classify("Info.plist"), FileKind::Structured);
+    }
+
+    #[test]
+    fn formatted_mode_reindents_xml_via_shared_core() {
+        // A .xml file builds Structured (Formatted offered); the Formatted body
+        // is the pretty_xml reflow, not the raw text.
+        let raw = b"<a><b>hi</b></a>";
+        let v = build(raw, "doc.xml", raw.len(), false, ViewMode::Formatted);
+        match v.body {
+            ViewBody::Text(lines) => {
+                assert_eq!(lines, vec!["<a>", "  <b>hi</b>", "</a>"]);
+            }
+            _ => unreachable!("formatted xml → text body"),
+        }
     }
 
     #[test]
