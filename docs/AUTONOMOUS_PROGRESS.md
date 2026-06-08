@@ -3394,3 +3394,21 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - main @ `2d7e062` (+ this log); no source change (the VM run was read-only validation). NEXT: TSK-500
   (make the VM lane usable) is the highest-leverage unblock — host-editable script change, but its
   validation needs a VM re-run, so a focused effort.
+
+## LOG +113 (2026-06-08, autonomous tick — TSK-500 root-caused to fd-exhaustion + fixed; validation re-run in flight)
+- Worked TSK-500 (the VM-lane unusability that's been blocking autonomous UI validation). CORRECTED last
+  tick's wrong guess: the ~158 VM failures are NOT "ssh has no temp dir" (disproven — a fresh ssh session
+  writes NSTemporaryDirectory() fine, mktemp works). REAL root cause = **file-descriptor exhaustion**:
+  VM soft `ulimit -n`=256 (hard=unlimited); the full suite runs as ONE `swift test` process over ~4220
+  tests; leaky fd sites (FileWatcher sources, LSP/PTY/plugin pipes) accumulate until >256 → EMFILE →
+  "could not open temp file" cascade. PROOF: XattrIOTests SKIPS in the full run but PASSES 5/5 in
+  isolation on the VM; TextFileLoaderTests 21/21 green on host AND on VM in isolation; `ulimit -n 8192`
+  succeeds on the VM.
+- **FIX landed (commit 7447e3a):** `scripts/test-in-vm.sh` now raises `ulimit -n 8192` (fallback 4096)
+  before any `swift test`, with a logged limit line. Syntax-checked (`bash -n`). Synced to the VM.
+- **Validation re-run in flight** (background job b0ow56msa: `test-in-vm.sh test`, capturing the limit
+  line + suite summary + any residual "could not open temp"). Expect the ~158 file-IO failures to
+  collapse; any residue should be only the heavy UI tiers (occlusion — they need a GUI login session,
+  the remaining half of TSK-500). Will record TSK-500 → fixed + self-validate with the re-run's
+  checks artifact next turn (NOT before — don't claim fixed until the re-run confirms).
+- Corrected memory `reference_vm_plain_ssh_breaks_tests` (was wrong root cause). main @ `7447e3a`.
