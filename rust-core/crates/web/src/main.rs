@@ -1088,6 +1088,8 @@ mod tests {
         fs::write(dir.join("hello.txt"), b"hello <world>\nsecond line\n").unwrap();
         fs::write(dir.join("people.csv"), b"name,age\nAlice,30\nBob,25\n").unwrap();
         fs::write(dir.join("data.bin"), [0x00u8, 0x41, 0xff]).unwrap();
+        // Compact JSON so the `Formatted` mode visibly re-indents it (TSK-218).
+        fs::write(dir.join("config.json"), br#"{"a":1,"b":[2,3]}"#).unwrap();
         // A markdown file with ATX headings + a fenced `#` decoy, for the outline.
         fs::write(
             dir.join("doc.md"),
@@ -1495,6 +1497,28 @@ mod tests {
         let h = render_view(&csv, Some("hex"), SortKey::Name, false, None);
         assert!(h.contains("<b>hex</b>"), "hex override active:\n{h}");
         assert!(!h.contains("<table>"), "hex override suppresses the table:\n{h}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn json_offers_formatted_mode_and_pretty_prints() {
+        // TSK-218: a .json file is Structured, so the mode switcher offers a
+        // `mode=formatted` link, and `?mode=formatted` pretty-prints via the
+        // shared core formatter. (Quotes render HTML-escaped as &quot;.)
+        let dir = fixture();
+        let json = dir.join("config.json"); // {"a":1,"b":[2,3]}
+
+        // Default open (Text): the Formatted link is offered; body is compact.
+        let def = render_view(&json, None, SortKey::Name, false, None);
+        assert!(def.contains("&mode=formatted"), "Formatted mode link offered:\n{def}");
+        assert!(def.contains("<b>text</b>"), "json defaults to Text:\n{def}");
+        assert!(def.contains("{&quot;a&quot;:1"), "Text shows compact source:\n{def}");
+
+        // `?mode=formatted` re-indents it (2-space; `: ` colon-space is unique to
+        // the pretty output — compact has `:1` with no space).
+        let f = render_view(&json, Some("formatted"), SortKey::Name, false, None);
+        assert!(f.contains("<b>formatted</b>"), "formatted is the active mode:\n{f}");
+        assert!(f.contains("&quot;a&quot;: 1,"), "2-space pretty key/value:\n{f}");
         let _ = fs::remove_dir_all(&dir);
     }
 
