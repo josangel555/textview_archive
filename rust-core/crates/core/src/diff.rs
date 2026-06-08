@@ -636,6 +636,32 @@ mod tests {
     }
 
     #[test]
+    fn git_paths_strategy4_leading_space_splits_like_swift() {
+        // Strategy (4) fallback: no quoted form, no ` b/` marker at all, so the
+        // path pair is recovered by splitting at the first space. TSK-182: Swift's
+        // `split(maxSplits: 1, omittingEmptySubsequences: true)` collapses a
+        // LEADING space-run WITHOUT spending its single split, so the rust port
+        // trims leading spaces before `splitn` to match. A leading-space input
+        // must therefore NOT degenerate to (rest, rest).
+        let (a, b) = parse_diff_git_paths("  alpha beta");
+        assert_eq!(a, "alpha", "leading spaces collapsed; first token is alpha");
+        assert_eq!(b, "beta");
+
+        // A whitespace RUN between the two tokens: only the first space is the
+        // split point; the trailing remainder is trimmed by strip_path_prefix.
+        let (c, d) = parse_diff_git_paths("foo   qux");
+        assert_eq!((c.as_str(), d.as_str()), ("foo", "qux"));
+
+        // Fewer than two non-empty tokens → fall back to the ORIGINAL
+        // (untrimmed) `rest` on BOTH sides, matching Swift's untrimmed return.
+        let (e, f) = parse_diff_git_paths("solo");
+        assert_eq!((e.as_str(), f.as_str()), ("solo", "solo"));
+        let (g, h) = parse_diff_git_paths("   ");
+        assert_eq!((g.as_str(), h.as_str()), ("   ", "   "),
+            "all-spaces yields the untrimmed original, not the trimmed empty");
+    }
+
+    #[test]
     fn path_quoted_form() {
         let (a, b) = parse_diff_git_paths("\"a/wei\\303\\237.txt\" \"b/wei\\303\\237.txt\"");
         assert_eq!(a, "wei\\303\\237.txt");
