@@ -26,6 +26,7 @@ pub mod csv;
 pub mod diff;
 pub mod filter;
 pub mod find;
+pub mod format;
 pub mod hex;
 pub mod image;
 pub mod indent;
