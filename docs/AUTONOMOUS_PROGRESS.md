@@ -3968,3 +3968,21 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - Scope: scanner (structure) host-validated; the sidebar TOC view + click-to-scroll is phase 2 (view/VM),
   not claimed. `main` @ f702203 (+ this log). Cadence holding: DotGraph (+136), LineEndingDetector (+137),
   DRY fix (+138), MarkdownOutline (+139) — four no-dep, host-tested ViewerCore units while owner gates wait.
+
+## LOG +140 (2026-06-08, autonomous tick — TODO/annotation scanner; grep-first averted a broken TOC)
+- First considered a TOC renderer (headings → markdown TOC string) atop +139's MarkdownOutline. Grep-first
+  (per +138) found `HTMLVisitor.uniqueSlug` already slugifies heading PLAINTEXT (inline markdown stripped),
+  whereas MarkdownOutline.title keeps raw inline syntax — so a TOC built from raw titles would emit anchors
+  that MISMATCH the rendered headings for any formatted heading (`# **Bold**`). Correctness trap → DROPPED
+  the TOC idea rather than ship subtly-broken anchors. (Grep-first paid off again.)
+- Instead shipped **TSK-512 → validated** (commit 26e41cc): `Sources/ViewerCore/SourceAnnotationScanner.swift`
+  — pure no-dep `scan(_:maxLines:) -> [SourceAnnotation{kind,message,line}]` for TODO/FIXME/HACK/XXX/NOTE/BUG
+  (the VS Code TODO-tree idea). Whole-word + case-sensitive guards (TODOS/aTODO/lowercase don't match),
+  optional `:` separator, first-per-line, CRLF-safe (LF-scalar split), maxLines bound. 11 host tests
+  (SourceAnnotationScannerTests). swift build clean; central gate PASSED on the committed commit. Verified
+  non-redundant first (no existing scanner; FindEngine/CrossFileSearch are generic search). Phase 2 (sidebar
+  Annotations jump-list) = view/VM, not in scope.
+- `main` @ 26e41cc (+ this log). Five no-dep host-tested ViewerCore units now (DotGraph/LineEnding/Markdown
+  Outline/AnnotationScanner + the DRY fix). NOTE for future ticks/owner: these are all phase-1 model cores
+  with phase-2 (sidebar/menu wiring) blocked on the render-path validation gap (TSK-502 VM Screen-Recording).
+  The no-dep model lane is productive but the user-facing payoff needs those phase-2 wirings unblocked.
