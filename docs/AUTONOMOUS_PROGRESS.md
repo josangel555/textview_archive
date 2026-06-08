@@ -3917,3 +3917,18 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   `main` @ d4c8977 (+ this log). The `.dot` parser is the kind of no-dep, self-contained forward motion
   available without an owner unblock; deeper features (render, stateful PORT, view-wiring) still need the
   parked decisions answered.
+
+## LOG +137 (2026-06-08, autonomous tick — shipped line-ending detector, the IndentDetector sibling)
+- Continued the no-dep model-core cadence. Shipped + validated **TSK-509** (self-filed): `Sources/ViewerCore/
+  LineEndingDetector.swift` — pure classifier `LineEnding{LF,CRLF,CR,Mixed,—}` via a scalar-level scan
+  (NOT grapheme — `\r\n` is one cluster, the exact trap IndentDetector documents). Counts CRLF pairs / lone
+  CR / lone LF → 0 kinds=none, 1=that, ≥2=mixed. **11 host tests** (LineEndingDetectorTests) pin it incl.
+  the load-bearing CRLF cases (blank CRLF line stays CRLF not mixed; lone-CR-before-non-LF is CR not CRLF;
+  mixed combos). Commit c38b258; `swift build` clean; **central headless gate PASSED on the committed
+  commit** (tier-clean). Drove reported→ack→triaged→progress→fixed→validated. Phase 2 (status-bar chip
+  next to the indent chip = view/VM) is follow-up, not in scope.
+- This is the standard editor "LF/CRLF" readout (VS Code parity) and the obvious companion to the existing
+  indent chip (TSK-113) — a genuine, complete, zero-risk model unit. Same shape as the +136 `.dot` parser.
+- Lane otherwise unchanged: validation/PORT/preview-tab-Phase-2 still owner-gated (see +135). `main` @
+  c38b258 (+ this log). Two consecutive ticks of real no-dep feature cores (DotGraphParser, LineEndingDetector)
+  while the owner-gated lanes wait on the parked decisions.
