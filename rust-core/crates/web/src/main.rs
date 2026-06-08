@@ -22,7 +22,7 @@ use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, UNIX_EPOCH};
 use std::{fs, thread};
 
@@ -59,14 +59,21 @@ const SOCKET_TIMEOUT: Duration = Duration::from_secs(15);
 /// holding unbounded FDs — bounds the blast radius of a runaway local client.
 const MAX_INFLIGHT: usize = 128;
 
+/// Cap on the in-memory recently-opened list the web front-end keeps for the
+/// `/recent` view (TSK-234). A single-user localhost server → one global MRU,
+/// bounded so it can never grow without limit.
+const RECENT_CAP: usize = 50;
+
 /// Persisted web front-end session state (TSK-236), saved to
 /// `~/.textview/wui/config` and restored on launch. The web server's only
 /// server-side session state is the served ROOT dir — `sort`/`hidden`/`filter`
 /// are per-request URL params (client-side) and dark mode is CSS `@media`
 /// (TSK-244), so `root` is the complete persistable state. Hand-rolled
 /// `key=value` codec: no serde, no panics (the rust-core gate denies both),
-/// lenient to hand-edits. (Recents / back-forward — TSK-234/250 — would need
-/// cross-request global state, a separate owner decision.)
+/// lenient to hand-edits. (The recently-opened MRU added in TSK-234 is
+/// deliberately IN-MEMORY only — session-scoped, not persisted — so `root`
+/// remains the complete *persistable* state. Back-forward / TSK-250 is still
+/// open.)
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 struct WebConfig {
     root: Option<PathBuf>,
@@ -160,6 +167,9 @@ fn main() -> io::Result<()> {
         root.display()
     );
     let root = Arc::new(root);
+    // Single global recently-opened MRU shared across connection threads
+    // (TSK-234) — single-user localhost server, so one list is the right scope.
+    let recents: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let inflight = Arc::new(AtomicUsize::new(0));
     for stream in listener.incoming().flatten() {
         // Reserve a slot; if we're already at the cap, answer 503 and drop the
@@ -170,9 +180,10 @@ fn main() -> io::Result<()> {
             continue;
         }
         let root = Arc::clone(&root);
+        let recents = Arc::clone(&recents);
         let inflight = Arc::clone(&inflight);
         thread::spawn(move || {
-            let _ = handle_conn(stream, &root);
+            let _ = handle_conn(stream, &root, &recents);
             inflight.fetch_sub(1, Ordering::AcqRel);
         });
     }
@@ -193,7 +204,7 @@ fn refuse_overloaded(mut stream: TcpStream) -> io::Result<()> {
     stream.flush()
 }
 
-fn handle_conn(mut stream: TcpStream, root: &Path) -> io::Result<()> {
+fn handle_conn(mut stream: TcpStream, root: &Path, recents: &Mutex<Vec<String>>) -> io::Result<()> {
     // Bound stalled reads/writes so a slow-loris / hung client can't park this
     // worker thread (and its two FDs) indefinitely — the read returns an error,
     // the thread unwinds, and both FDs drop (AUDIT S3 DoS hardening).
@@ -203,7 +214,18 @@ fn handle_conn(mut stream: TcpStream, root: &Path) -> io::Result<()> {
     // (or giant) header stream is cut off here instead of growing to OOM.
     let mut reader = BufReader::new(stream.try_clone()?.take(MAX_HEADER_BYTES));
     let (status, ctype, body) = match read_request_head(&mut reader) {
-        Ok((req_line, host)) if host_allowed(&host) => route(&req_line, root),
+        Ok((req_line, host)) if host_allowed(&host) => {
+            // Record a successfully-confined /view into the recents MRU, then
+            // either serve the /recent page or fall through to the pure router.
+            if let Some(p) = viewed_path(&req_line, root) {
+                record_recent(recents, &p);
+            }
+            if is_recent_route(&req_line) {
+                ("200 OK", "text/html; charset=utf-8", recent_page(recents))
+            } else {
+                route(&req_line, root)
+            }
+        }
         Ok(_) => {
             // A browser ALWAYS sends Host; a non-loopback Host is a cross-origin
             // / DNS-rebind attempt — refuse so a malicious page can't reach the
@@ -355,6 +377,89 @@ fn route(req_line: &str, root: &Path) -> (&'static str, &'static str, String) {
         },
         _ => ("404 Not Found", TEXT, "not found".into()),
     }
+}
+
+// MARK: - Recently-opened (TSK-234)
+//
+// A single global MRU of files the user has `/view`ed this server session,
+// rendered at `/recent`. The list is the server's only mutable cross-request
+// state; it holds nothing the server doesn't already serve (paths that passed
+// `confined()`), is bounded by `RECENT_CAP`, and is rendered HTML-escaped.
+
+/// Extract the confined `/view` target file from a request line, or `None` for
+/// any other route / a non-GET / an out-of-root / a missing path. Reuses the
+/// SAME `confined()` fence the `/view` route uses, so a path recorded into the
+/// recents list is always one the server would actually serve — never an
+/// arbitrary or `..`-escaping FS path.
+fn viewed_path(req_line: &str, root: &Path) -> Option<PathBuf> {
+    let mut parts = req_line.split_whitespace();
+    let method = parts.next().unwrap_or("");
+    let target = parts.next().unwrap_or("/");
+    if method != "GET" {
+        return None;
+    }
+    let (path, query) = target.split_once('?').unwrap_or((target, ""));
+    if path != "/view" {
+        return None;
+    }
+    parse_query(query)
+        .get("path")
+        .and_then(|p| confined(root, Path::new(p)))
+}
+
+/// Whether a request line targets the `/recent` page.
+fn is_recent_route(req_line: &str) -> bool {
+    let target = req_line.split_whitespace().nth(1).unwrap_or("/");
+    let (path, _) = target.split_once('?').unwrap_or((target, ""));
+    path == "/recent"
+}
+
+/// Record a just-viewed file at the front of the shared MRU (de-duped, capped)
+/// via the shared `mdvcore_core::history::push`. Poison-tolerant (recovers the
+/// guard) so a panicked sibling worker can't wedge the list, and never panics
+/// (the rust-core gate denies unwrap/expect/panic).
+fn record_recent(recents: &Mutex<Vec<String>>, path: &Path) {
+    let mut list = recents.lock().unwrap_or_else(|e| e.into_inner());
+    *list = mdvcore_core::history::push(
+        std::mem::take(&mut *list),
+        path.display().to_string(),
+        RECENT_CAP,
+    );
+}
+
+/// Render the recently-opened list as a page body: newest-first `/view` links,
+/// each path HTML-escaped (XSS) and percent-encoded in the href. Pure — the
+/// caller passes a snapshot so it's unit-testable without touching the lock.
+fn render_recent(recent: &[String]) -> String {
+    let mut s = String::from("<h2>Recently opened</h2>");
+    if recent.is_empty() {
+        s.push_str(
+            "<p class=\"hint\">No files opened yet this session. \
+             Open a file from the browser and it'll appear here.</p>",
+        );
+        return s;
+    }
+    s.push_str("<ul class=\"grep\">");
+    for p in recent {
+        let href = pct_encode(p);
+        s.push_str(&format!(
+            "<li><a href=\"/view?path={href}\">{}</a></li>",
+            esc(&short(Path::new(p)))
+        ));
+    }
+    s.push_str("</ul>");
+    s
+}
+
+/// `/recent` page: snapshot the shared MRU under the lock (poison-tolerant),
+/// then render it inside the standard page chrome with a back-to-browse nav.
+fn recent_page(recents: &Mutex<Vec<String>>) -> String {
+    let snapshot = {
+        let guard = recents.lock().unwrap_or_else(|e| e.into_inner());
+        guard.clone()
+    };
+    let nav = "<div class=\"dir\"><a href=\"/\">browse</a></div>";
+    page("Recent", nav, &render_recent(&snapshot))
 }
 
 /// Reject a present Host header whose host-part isn't loopback. An ABSENT Host is
@@ -1552,7 +1657,7 @@ th,td{{border-color:#3a3a3a}} th{{background:#2d2d3a}}\
 .minimap i{{background:#3a3a3a}} .minimap i.hit{{background:#5a9cf5}} .minimap i.cur{{background:#f0a020}}\
 .gitstatus.clean{{color:#7ee787;background:#16291b}} .gitstatus.dirty{{color:#e3b341;background:#2b2410}}\
 }}\
-</style></head><body><div class=\"app\"><nav>{nav}</nav><main>{main_html}</main></div></body></html>",
+</style></head><body><div class=\"app\"><nav><div class=\"reload\"><a href=\"/recent\">\u{2605} Recent</a></div>{nav}</nav><main>{main_html}</main></div></body></html>",
         t = esc(title)
     )
 }
@@ -2575,8 +2680,9 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         let root = dir.clone();
         let h = thread::spawn(move || {
+            let recents = std::sync::Mutex::new(Vec::new());
             if let Ok((stream, _)) = listener.accept() {
-                let _ = handle_conn(stream, &root);
+                let _ = handle_conn(stream, &root, &recents);
             }
         });
         let mut conn = TcpStream::connect(("127.0.0.1", port)).unwrap();
@@ -2669,7 +2775,8 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         let root = dir.clone();
         let h = thread::spawn(move || {
-            if let Ok((stream, _)) = listener.accept() { let _ = handle_conn(stream, &root); }
+            let recents = std::sync::Mutex::new(Vec::new());
+            if let Ok((stream, _)) = listener.accept() { let _ = handle_conn(stream, &root, &recents); }
         });
         let mut conn = TcpStream::connect(("127.0.0.1", port)).unwrap();
         conn.write_all(b"GET / HTTP/1.1\r\nHost: rebind.evil.com\r\n\r\n").unwrap();
@@ -2715,6 +2822,96 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    // --- TSK-234: recently-opened (/recent) ---
+
+    #[test]
+    fn viewed_path_records_only_confined_view_targets() {
+        let dir = fixture().canonicalize().unwrap();
+        let file = dir.join("hello.txt");
+        // A real /view of a confined file → recorded.
+        let got = viewed_path(&format!("GET /view?path={} HTTP/1.1", file.display()), &dir);
+        assert_eq!(got.map(|p| p.file_name().unwrap().to_owned()),
+                   Some(std::ffi::OsString::from("hello.txt")),
+                   "a confined /view target is recorded");
+        // Non-/view routes never record.
+        assert!(viewed_path("GET /browse?path=/ HTTP/1.1", &dir).is_none(), "/browse not recorded");
+        assert!(viewed_path("GET / HTTP/1.1", &dir).is_none(), "index not recorded");
+        // Missing ?path= → nothing.
+        assert!(viewed_path("GET /view HTTP/1.1", &dir).is_none(), "missing path not recorded");
+        // SECURITY: an out-of-root / traversal target is rejected by confined(),
+        // so it can never enter the recents list.
+        assert!(viewed_path("GET /view?path=/etc/passwd HTTP/1.1", &dir).is_none(),
+                "absolute out-of-root path refused");
+        assert!(viewed_path("GET /view?path=../../../../etc/passwd HTTP/1.1", &dir).is_none(),
+                "..-traversal refused");
+        // Non-GET never records.
+        assert!(viewed_path(&format!("POST /view?path={} HTTP/1.1", file.display()), &dir).is_none(),
+                "non-GET not recorded");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn is_recent_route_matches_only_recent() {
+        assert!(is_recent_route("GET /recent HTTP/1.1"));
+        assert!(is_recent_route("GET /recent?x=1 HTTP/1.1"));
+        assert!(!is_recent_route("GET /view?path=/x HTTP/1.1"));
+        assert!(!is_recent_route("GET / HTTP/1.1"));
+        assert!(!is_recent_route("GET /recentish HTTP/1.1"));
+    }
+
+    #[test]
+    fn render_recent_empty_state() {
+        let html = render_recent(&[]);
+        assert!(html.contains("No files opened yet"), "empty-state hint shown:\n{html}");
+        assert!(!html.contains("<li>"), "no list items when empty");
+    }
+
+    #[test]
+    fn render_recent_escapes_paths_and_keeps_order() {
+        // The list is newest-first; render must preserve that order and HTML-escape
+        // every path (a crafted filename must not inject markup — XSS teeth).
+        let list = vec![
+            "/tmp/proj/<script>.txt".to_string(),
+            "/tmp/proj/notes.md".to_string(),
+        ];
+        let html = render_recent(&list);
+        assert!(html.contains("&lt;script&gt;"), "hostile path HTML-escaped:\n{html}");
+        assert!(!html.contains("<script>"), "raw <script> must NOT appear:\n{html}");
+        assert!(html.contains("/view?path="), "entries link to /view");
+        // Newest-first: the first list element appears before the second.
+        let i_first = html.find("script").expect("first entry present");
+        let i_second = html.find("notes").expect("second entry present");
+        assert!(i_first < i_second, "render preserves newest-first order:\n{html}");
+    }
+
+    #[test]
+    fn record_recent_dedupes_bumps_and_serves_via_recent_route() {
+        // End-to-end through the pure layer: record a few views (with a repeat),
+        // then render /recent. Proves MRU semantics + that the /recent page lists them.
+        let dir = fixture().canonicalize().unwrap();
+        let file = dir.join("hello.txt");
+        let recents: Mutex<Vec<String>> = Mutex::new(Vec::new());
+        let req = format!("GET /view?path={} HTTP/1.1", file.display());
+        // Record the same file twice + the fixture's other file once.
+        if let Some(p) = viewed_path(&req, &dir) { record_recent(&recents, &p); }
+        let sub = dir.join("sub");
+        let _ = fs::write(dir.join("a.txt"), b"x");
+        let reqa = format!("GET /view?path={} HTTP/1.1", dir.join("a.txt").display());
+        if let Some(p) = viewed_path(&reqa, &dir) { record_recent(&recents, &p); }
+        if let Some(p) = viewed_path(&req, &dir) { record_recent(&recents, &p); } // re-view hello → bump
+        let _ = sub; // (sub dir exists in the fixture; unused here)
+        let list = recents.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        // De-duped to 2 entries, hello.txt bumped to the front (most-recent first).
+        assert_eq!(list.len(), 2, "deduped to two distinct files: {list:?}");
+        assert!(list[0].ends_with("hello.txt"), "re-viewed file bumped to front: {list:?}");
+        // The /recent page lists both.
+        let page = recent_page(&recents);
+        assert!(page.contains("hello.txt"), "recent page lists hello.txt");
+        assert!(page.contains("a.txt"), "recent page lists a.txt");
+        assert!(page.contains("Recently opened"), "recent page has the heading");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn route_browse_subdir_lists_it() {
         let root = fixture().canonicalize().unwrap();
@@ -2757,8 +2954,9 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         let root = dir.clone();
         let h = thread::spawn(move || {
+            let recents = std::sync::Mutex::new(Vec::new());
             if let Ok((stream, _)) = listener.accept() {
-                let _ = handle_conn(stream, &root);
+                let _ = handle_conn(stream, &root, &recents);
             }
         });
         let mut conn = TcpStream::connect(("127.0.0.1", port)).unwrap();
