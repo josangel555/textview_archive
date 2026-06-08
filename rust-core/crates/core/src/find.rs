@@ -153,6 +153,37 @@ pub fn grep_lines(text: &str, query: &str, case: Case, max: usize) -> Vec<LineHi
     out
 }
 
+/// Which of `buckets` equal slices of a `total_lines` document the 0-based
+/// `line` falls into (clamped to `0..buckets`). The shared mapping behind every
+/// front-end's find minimap / scroll-position indicator, so a match lands in the
+/// same bucket in the TUI column and the web bar by construction. `buckets` and
+/// `total_lines` of `0` are treated as `1` (no divide-by-zero; everything maps to
+/// bucket `0`).
+#[must_use]
+pub fn bucket_of(line: usize, total_lines: usize, buckets: usize) -> usize {
+    let b = buckets.max(1);
+    let total = total_lines.max(1);
+    (line.saturating_mul(b) / total).min(b - 1)
+}
+
+/// Per-bucket match counts for a find minimap: `match_lines` (0-based line
+/// indices, any order) distributed across `buckets` equal slices of a
+/// `total_lines` document via [`bucket_of`]. The result always has exactly
+/// `buckets.max(1)` entries; a non-zero entry means that slice of the document
+/// holds at least one match (a front-end marks it on the minimap/scrollbar).
+/// Pure, allocation-light.
+#[must_use]
+pub fn match_minimap(match_lines: &[usize], total_lines: usize, buckets: usize) -> Vec<usize> {
+    let b = buckets.max(1);
+    let mut out = vec![0usize; b];
+    for &line in match_lines {
+        if let Some(c) = out.get_mut(bucket_of(line, total_lines, b)) {
+            *c += 1;
+        }
+    }
+    out
+}
+
 /// ASCII-fold a string for case-insensitive comparison (no allocation when
 /// `Sensitive`). `to_ascii_lowercase` preserves every byte's length, so offsets
 /// into the folded string map 1:1 back onto the original.
@@ -169,6 +200,32 @@ mod tests {
 
     fn m(line: usize, start: usize, end: usize) -> Match {
         Match { line, start, end }
+    }
+
+    #[test]
+    fn bucket_of_maps_lines_into_clamped_buckets() {
+        // First line → bucket 0; last line → last bucket; midpoint → middle.
+        assert_eq!(bucket_of(0, 100, 10), 0);
+        assert_eq!(bucket_of(99, 100, 10), 9);
+        assert_eq!(bucket_of(50, 100, 10), 5);
+        // Out-of-range line clamps to the last bucket; zero total/buckets are safe.
+        assert_eq!(bucket_of(999, 100, 10), 9);
+        assert_eq!(bucket_of(5, 0, 0), 0);
+        assert_eq!(bucket_of(0, 10, 1), 0);
+    }
+
+    #[test]
+    fn match_minimap_buckets_match_counts() {
+        // 3 matches across a 90-line doc into 9 buckets: lines 0, 45, 89.
+        let mm = match_minimap(&[0, 45, 89], 90, 9);
+        assert_eq!(mm.len(), 9, "one entry per bucket");
+        assert_eq!(mm[0], 1, "line 0 → bucket 0");
+        assert_eq!(mm[4], 1, "line 45 → bucket 4");
+        assert_eq!(mm[8], 1, "line 89 → bucket 8");
+        assert_eq!(mm.iter().sum::<usize>(), 3, "every match counted once");
+        // Two matches in the same bucket accumulate; no matches → all zero.
+        assert_eq!(match_minimap(&[1, 2], 10, 2)[0], 2);
+        assert!(match_minimap(&[], 10, 5).iter().all(|&c| c == 0));
     }
 
     #[test]

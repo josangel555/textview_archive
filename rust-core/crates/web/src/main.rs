@@ -928,6 +928,25 @@ fn find_box(
             s.push_str(&link(prev, "prev"));
             s.push_str(&link(next, "next"));
             s.push_str(&format!("<span class=\"count\">{} of {n}</span>", cur + 1));
+            // Match minimap / scroll-position indicator (TSK-419): a compact bar of
+            // buckets across the document; buckets holding a match are marked, and
+            // the current match's bucket is highlighted — via the shared
+            // `find::match_minimap` / `find::bucket_of` (same mapping the TUI uses).
+            const MINIMAP_BUCKETS: usize = 40;
+            let lines: Vec<usize> = matches.iter().map(|m| m.line).collect();
+            let counts = find::match_minimap(&lines, content_len, MINIMAP_BUCKETS);
+            let cur_bucket = find::bucket_of(matches[cur].line, content_len, MINIMAP_BUCKETS);
+            s.push_str("<span class=\"minimap\" title=\"match positions\">");
+            for (i, &c) in counts.iter().enumerate() {
+                if i == cur_bucket {
+                    s.push_str("<i class=\"cur\"></i>");
+                } else if c > 0 {
+                    s.push_str("<i class=\"hit\"></i>");
+                } else {
+                    s.push_str("<i></i>");
+                }
+            }
+            s.push_str("</span>");
         }
     }
     s.push_str("</form>");
@@ -1193,6 +1212,9 @@ main{{flex:1;overflow:auto;padding:12px}}\
 .find button{{font:11px -apple-system,Segoe UI,sans-serif;padding:3px 8px;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer}}\
 .find .clear{{font:11px -apple-system,Segoe UI,sans-serif;color:#1a5fb4;text-decoration:none}}\
 .find .count{{font:11px ui-monospace,Menlo,monospace;color:#888;margin-left:4px}}\
+.minimap{{display:inline-flex;gap:1px;align-items:center;height:14px;margin-left:6px}}\
+.minimap i{{width:3px;height:12px;background:#e6e6e6;border-radius:1px}}\
+.minimap i.hit{{background:#1a5fb4}} .minimap i.cur{{background:#f0a020}}\
 .sort{{font:11px -apple-system,Segoe UI,sans-serif;color:#888;margin:0 0 4px}}\
 .sort a{{color:#1a5fb4;margin-right:6px}} .sort b{{margin-right:6px;color:#333}}\
 .hidden-toggle{{font:11px -apple-system,Segoe UI,sans-serif;margin:0 0 8px}}\
@@ -1257,6 +1279,7 @@ th,td{{border-color:#3a3a3a}} th{{background:#2d2d3a}}\
 .diff-add{{color:#7ee2a8;background:#16301f}}\
 .diff-del{{color:#ff9aa2;background:#3a1f22}}\
 .diff-ctx{{color:#bbb}} .diff-file{{color:#5a9cf5}}\
+.minimap i{{background:#3a3a3a}} .minimap i.hit{{background:#5a9cf5}} .minimap i.cur{{background:#f0a020}}\
 }}\
 </style></head><body><div class=\"app\"><nav>{nav}</nav><main>{main_html}</main></div></body></html>",
         t = esc(title)
@@ -1710,6 +1733,23 @@ mod tests {
         // prev/next links carry the query + a sibling fmatch.
         assert!(html.contains("find=Section"), "nav links carry the query:\n{html}");
         assert!(html.contains("fmatch=1"), "nav links bump fmatch:\n{html}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn in_file_find_renders_match_minimap() {
+        let dir = fixture();
+        // doc.md has two "Section" matches (lines 4 and 9) → the find bar shows a
+        // minimap with marked buckets and a highlighted current-match bucket.
+        let html = render_view_filtered(
+            &dir.join("doc.md"), Some("text"), SortKey::Name, false, None, "", "Section", 0, false, false,
+        );
+        assert!(html.contains("class=\"minimap\""), "minimap bar present:\n{html}");
+        assert!(html.contains("<i class=\"cur\">"), "current match's bucket highlighted:\n{html}");
+        assert!(html.contains("<i class=\"hit\">"), "the other match's bucket marked:\n{html}");
+        // No find → no minimap (the bar only appears with active matches).
+        let plain = render_view(&dir.join("doc.md"), Some("text"), SortKey::Name, false, None);
+        assert!(!plain.contains("class=\"minimap\""), "no minimap without an active find:\n{plain}");
         let _ = fs::remove_dir_all(&dir);
     }
 
