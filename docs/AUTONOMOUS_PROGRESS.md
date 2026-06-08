@@ -3583,3 +3583,20 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - Pattern this arc (347→505→334): land the host-completable pure-logic CORE with teeth, file the
   SwiftUI/VM render as the part-B follow-up. Keeps `main` green + moves real features forward without
   shipping unvalidated rendered UI from the host.
+
+## LOG +122 (2026-06-08, autonomous tick — TSK-505 part B: MetadataPanel SHA-256 checksum row)
+- KEY DISTINCTION that unblocked a render part: a text ROW renders as an introspectable NSTextField in
+  the recursiveDescription/T4 dump (UNLIKE a Canvas, which composites to one CALayer — that's why TSK-506's
+  treemap is pixel/TSK-502-gated). So TSK-505-B (the checksum row) is **T4-validatable WITHOUT the
+  Screen-Recording TCC** — a genuinely-actionable, non-gated render part.
+- **Built part B (commit pending):** added a "Checksum" section to `MetadataPanel` — a lazy
+  **Compute SHA-256** button (a large file isn't auto-hashed) that hashes **off-main** (detached child
+  captures only the Sendable URL; `@State` mutation stays on the main actor — Swift-6-clean) via the
+  tested `FileChecksum` core, then shows the hash row + a **Copy** button; resets on file change; a11y ids
+  `mdv.metadata.computeChecksum` / `mdv.metadata.copyChecksum`. `swift build` clean.
+- **Validation:** the SHA compute is host-tested (FileChecksum/FileChecksumRunner). The row's
+  render+interaction is SwiftUI → the remaining gate is a VM **T4** UAT (open a preview file → tap Compute
+  → assert the `SHA-256` row text appears) — T4-introspectable, so NOT TSK-502-gated. Recorded TSK-505 at
+  `fixed` (both A command + B row implemented); the T4 UAT is the VM gate.
+- Net: TSK-347's "surface SHA to the user" gap is now fully implemented (A: Copy-checksum command; B:
+  MetadataPanel row), pending the row's VM-T4 visual confirmation.

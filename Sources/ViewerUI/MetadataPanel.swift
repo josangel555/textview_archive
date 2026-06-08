@@ -19,6 +19,14 @@ struct MetadataPanel: View {
     @State private var rows: [Row] = []
     @State private var loadTask: Task<Void, Never>?
 
+    /// Lazy file SHA-256 (TSK-505 part B). Computed only on demand — a large
+    /// file isn't auto-hashed — and OFF the main thread (cf. TSK-214). Resets
+    /// when the displayed file changes.
+    private enum ChecksumState: Equatable {
+        case idle, computing, done(String), failed
+    }
+    @State private var checksum: ChecksumState = .idle
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
@@ -30,6 +38,7 @@ struct MetadataPanel: View {
                         ForEach(rows) { row($0) }
                     }
                 }
+                section("Checksum") { checksumContent }
             }
             .padding(12)
         }
@@ -46,9 +55,59 @@ struct MetadataPanel: View {
             // scope. Track + cancel them explicitly so rapid tab
             // flips don't pile up AVAsset / ImageIO work.
             loadTask?.cancel()
+            checksum = .idle   // new file ⇒ drop any prior hash
             loadTask = Task { await loadTypeMetadata() }
             await loadTask?.value
         }
+    }
+
+    // MARK: - Checksum (lazy, off-main) — TSK-505 part B
+
+    @ViewBuilder
+    private var checksumContent: some View {
+        switch checksum {
+        case .idle:
+            Button("Compute SHA-256") { computeChecksum() }
+                .font(.system(size: 10 * uiScale))
+                .buttonStyle(.link)
+                .accessibilityIdentifier("mdv.metadata.computeChecksum")
+        case .computing:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Computing SHA-256…")
+                    .font(.system(size: 10 * uiScale))
+                    .foregroundStyle(.secondary)
+            }
+        case .done(let hex):
+            VStack(alignment: .leading, spacing: 4) {
+                row(Row("SHA-256", hex))
+                Button("Copy") { SystemPasteboard().writeString(hex) }
+                    .font(.system(size: 10 * uiScale))
+                    .buttonStyle(.link)
+                    .accessibilityIdentifier("mdv.metadata.copyChecksum")
+            }
+        case .failed:
+            Text("Couldn’t read file")
+                .font(.system(size: 10 * uiScale))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func computeChecksum() {
+        checksum = .computing
+        let target = url
+        // Hash OFF the main thread (a large file's disk read must not block the
+        // UI — cf. TSK-214); the detached child captures only the Sendable URL.
+        Task {
+            let hex = await Self.hashOffMain(target)
+            checksum = hex.map(ChecksumState.done) ?? .failed
+        }
+    }
+
+    nonisolated private static func hashOffMain(_ url: URL) async -> String? {
+        await Task.detached(priority: .userInitiated) {
+            try? FileChecksum.sha256Hex(ofFileAt: url)
+        }.value
     }
 
     // MARK: - Filesystem rows (always present)
