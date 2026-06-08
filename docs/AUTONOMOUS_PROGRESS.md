@@ -3895,3 +3895,25 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   human-gate cluster, + greenfield triage). No code change this tick; `main` @ 866e622, host gate green.
   The single highest-leverage unblock remains **TSK-502 VM Screen-Recording TCC** (would open the whole
   render-path validation lane — preview-tab Phase 2, view-layout BACKLOG, TUI dark-mode pixels).
+
+## LOG +136 (2026-06-08, autonomous tick — shipped a real feature: no-dep Graphviz .dot parser, TSK-290 phase 1)
+- Per owner's "keep shipping" directive, instead of a 3rd owner-bound report I built a self-contained,
+  zero-risk, host-testable feature core. First re-verified the audit cluster is genuinely done (aspectFit
+  #326 NaN guard present; MessagePack #295 OOM guards present; wire negative-path coverage #313 already
+  exists — `MsgPackDecoderNegative_Audit_*Tests.swift`). So no un-hardened bug there. Then shipped:
+- **TSK-290 phase 1 → validated** (commit d4c8977). `Sources/ViewerCore/DotGraph.swift`: a pure,
+  dependency-free Graphviz `.dot` parser — `DotGraphParser.parse(_:) -> DotGraph?{isDirected,name,nodes,
+  edges}` over the common subset (strict?/graph|digraph header; node + edge-chain statements `a -> b -> c`
+  / `a -- b`; quoted + bare ids incl. leading-`-` numerals; `//`,`#`,`/* */` comments preserved inside
+  quotes; subgraph/`{}` flattening; `node`/`edge`/`graph`/`key=value` skipped; HTML `<…>` labels skipped;
+  first-seen deduped node order; nil for non-DOT). Mirrors the DiffParser/IndentDetector pattern: pure,
+  no UI, no dep. **14 host tests** (`DotGraphTests`) pin exact node/edge output; `swift build` clean; the
+  **central headless gate PASSED on the committed commit** (4249 tests, tier-clean). Zero-risk: a brand-new
+  file touching nothing existing. Scope: the PARSER is validated; layout/render is phase 2.
+- Filed **TSK-508** ([BACKLOG] Digraph phase 2 — render) `owner-decision`-gated: outline-only (no-dep,
+  recommended first) vs graphical layout (needs a layout-engine dep + approval), plus the VM/manual
+  validation path. So the render half is tracked, not lost.
+- Lane unchanged otherwise: validation lane + PORT lane + preview-tab Phase 2 remain owner-gated (see +135).
+  `main` @ d4c8977 (+ this log). The `.dot` parser is the kind of no-dep, self-contained forward motion
+  available without an owner unblock; deeper features (render, stateful PORT, view-wiring) still need the
+  parked decisions answered.
