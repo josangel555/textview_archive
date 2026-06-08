@@ -279,8 +279,24 @@ fn render_browse(dir: &Path, sort: SortKey, show_hidden: bool, filter: &str) -> 
     page(
         &short(dir),
         &nav_html(dir, None, sort, show_hidden, filter),
-        "<p class=\"hint\">Select a file to view its contents.</p>",
+        &format!("<p class=\"hint\">Select a file to view its contents.</p>{}", controls_help()),
     )
+}
+
+/// A collapsible controls/navigation legend (TSK-248) for the landing page. The
+/// web tier is link/form-driven (no keyboard shortcuts), so this documents the
+/// actual affordances rather than inventing key bindings. Static, escaping-free
+/// (all literal text).
+fn controls_help() -> &'static str {
+    "<details class=\"help\"><summary>Controls &amp; navigation</summary><ul>\
+<li><b>Open</b> — click a file to view it; click a folder to descend.</li>\
+<li><b>Breadcrumb</b> — click any ancestor in the path bar to jump up.</li>\
+<li><b>View mode</b> — switch text / table / hex / diff / formatted / image via the mode links.</li>\
+<li><b>Sort</b> — order the list by name / modified / size.</li>\
+<li><b>Hidden</b> — show or hide dotfiles.</li>\
+<li><b>Filter</b> — the box above the list narrows it as you type.</li>\
+<li><b>In a file</b> — find (with match count + prev/next), go to line, show/hide whitespace, wrap / nowrap, and reload-from-disk.</li>\
+</ul></details>"
 }
 
 fn render_view(
@@ -1054,6 +1070,9 @@ table{{border-collapse:collapse;font:12px ui-monospace,Menlo,monospace;table-lay
 th,td{{border:1px solid #ddd;padding:2px 6px;text-align:left;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}\
 th{{background:#eef;position:sticky;top:0}}\
 .hint{{color:#999}}\
+.help{{margin:12px 0;font:13px -apple-system,Segoe UI,sans-serif;max-width:640px}}\
+.help summary{{cursor:pointer;color:#1a5fb4;user-select:none}}\
+.help ul{{margin:6px 0 0;padding-left:18px}} .help li{{margin:3px 0;color:#444}}\
 pre.diff{{line-height:1.4}}\
 pre.diff span{{display:block}}\
 .diff-file{{color:#1a5fb4;font-weight:600}}\
@@ -1575,6 +1594,18 @@ mod tests {
         // A normal readable text file → no banner.
         let ok = render_view(&dir.join("hello.txt"), Some("text"), SortKey::Name, false, None);
         assert!(!ok.contains("class=\"banner\""), "readable text gets no banner:\n{ok}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn browse_shows_controls_help_legend() {
+        let dir = fixture();
+        // The landing page offers a collapsible controls/navigation legend (TSK-248).
+        let html = render_browse(&dir, SortKey::Name, false, "");
+        assert!(html.contains("class=\"help\""), "controls legend present:\n{html}");
+        assert!(html.contains("Controls &amp; navigation"), "legend has a summary:\n{html}");
+        assert!(html.contains("Breadcrumb"), "legend documents breadcrumb nav:\n{html}");
+        assert!(html.contains("reload-from-disk"), "legend documents the in-file controls:\n{html}");
         let _ = fs::remove_dir_all(&dir);
     }
 

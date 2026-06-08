@@ -204,6 +204,11 @@ struct App {
     /// Whether the Text content pane soft-wraps long lines (on by default) or —
     /// when off — truncates them at the pane edge. Toggled with `w`.
     wrap: bool,
+    /// Whether the keyboard-help overlay is open (TSK-247). Toggled with `?`;
+    /// any key dismisses it. A centered popup listing every keybinding, drawn
+    /// over the panes — so the full shortcut set is discoverable without leaving
+    /// the app or squinting at the truncated bottom help line.
+    show_help: bool,
     /// Go-to-line prompt state. `Some(digits)` means the `:` prompt is open and
     /// capturing a numeric line target; the content-pane title shows the live
     /// "goto: N" input. On Enter the (1-based) line is clamped via
@@ -267,6 +272,7 @@ impl App {
             show_gutter: true,
             show_whitespace: false,
             wrap: true,
+            show_help: false,
             goto: None,
             flash: None,
             outline: None,
@@ -1020,6 +1026,12 @@ impl App {
 
     /// Handle a key. Returns `true` to quit.
     fn on_key(&mut self, code: KeyCode) -> bool {
+        // The keyboard-help overlay (TSK-247) is modal: while it's up, ANY key
+        // dismisses it and nothing else fires. Runs before every other handler.
+        if self.show_help {
+            self.show_help = false;
+            return false;
+        }
         // While the quick-find prompt is open it captures text input, so the
         // single-letter command keys (`x`/`s`/`q`/`hjkl`/…) become literal needle
         // characters instead. Arrow keys still navigate the narrowed list; ESC
@@ -1100,6 +1112,8 @@ impl App {
                 }
             }
             KeyCode::Char('o') => self.toggle_outline(),
+            // `?` opens the keyboard-help overlay (any key then dismisses it).
+            KeyCode::Char('?') => self.show_help = true,
             KeyCode::Char('g') => self.scroll_to(true),
             KeyCode::Char('G') => self.scroll_to(false),
             KeyCode::PageDown => self.scroll_by(page),
@@ -1210,6 +1224,10 @@ impl App {
         // The outline overlay floats over the content pane when open.
         if self.outline.is_some() {
             self.draw_outline(frame, cols[1]);
+        }
+        // The keyboard-help overlay floats over the whole content row when open.
+        if self.show_help {
+            self.draw_help(frame, rows[0]);
         }
         self.draw_status(frame, rows[1]);
     }
@@ -1532,6 +1550,53 @@ impl App {
         frame.render_widget(list, popup);
     }
 
+    /// Render the keyboard-help overlay (TSK-247) as a centered popup listing
+    /// every keybinding (key on the left, action on the right). `Clear` wipes the
+    /// cells underneath so the panes don't bleed through. Any key closes it (see
+    /// `on_key`). The bindings here mirror the live keymap in `on_key`.
+    fn draw_help(&self, frame: &mut Frame, area: Rect) {
+        const BINDINGS: &[(&str, &str)] = &[
+            ("↑/↓ j/k", "move selection"),
+            ("↵ → l", "open file / enter dir"),
+            ("⌫ ← h", "go to parent dir"),
+            ("x", "cycle view mode (text/table/hex/…)"),
+            ("1-9", "open-as: force the Nth view mode"),
+            ("r", "reload current file from disk"),
+            ("n / N", "next / prev find match (else n: line numbers)"),
+            ("i", "toggle whitespace markers"),
+            ("w", "toggle word-wrap"),
+            ("s", "cycle sort (name/modified/size)"),
+            (".", "toggle hidden (dot) files"),
+            ("f", "quick file-find (type to narrow)"),
+            ("/", "find in file (table filter in table mode)"),
+            (":", "go to line"),
+            ("o", "markdown outline"),
+            ("g / G", "jump to top / bottom"),
+            ("PgUp/PgDn", "scroll by a page"),
+            ("?", "this help (any key closes)"),
+            ("q / ESC", "quit"),
+        ];
+        let popup = centered_rect(70, 80, area);
+        frame.render_widget(Clear, popup);
+        let inner_h = popup.height.saturating_sub(2) as usize; // minus borders
+        // Left-pad the key column to a common width so the actions align.
+        let keyw = BINDINGS.iter().map(|(k, _)| k.chars().count()).max().unwrap_or(0);
+        let items: Vec<ListItem> = BINDINGS
+            .iter()
+            .take(inner_h.max(1))
+            .map(|(k, desc)| {
+                let line = Line::from(vec![
+                    Span::styled(format!("{k:<keyw$}"), Style::new().fg(Color::Cyan).bold()),
+                    Span::raw("  "),
+                    Span::raw(*desc),
+                ]);
+                ListItem::new(line)
+            })
+            .collect();
+        let list = List::new(items).block(Block::bordered().title(" keyboard help · any key closes "));
+        frame.render_widget(list, popup);
+    }
+
     fn draw_status(&self, frame: &mut Frame, area: Rect) {
         // While the quick-find prompt is open, the command keys are captured as
         // needle text — show the prompt-specific bindings so the help isn't a lie.
@@ -1557,7 +1622,7 @@ impl App {
                 self.find_query,
             )
         } else {
-            "↑/↓ move · ↵ open · ⌫ up · x mode · 1-9 open-as · r reload · n nums · i ws · w wrap · s sort · . hidden · f file-find · / find · : goto · o outline · q quit".into()
+            "↑/↓ move · ↵ open · ⌫ up · x mode · 1-9 open-as · r reload · n nums · i ws · w wrap · s sort · . hidden · f file-find · / find · : goto · o outline · ? help · q quit".into()
         };
         let line = Line::from(vec![
             Span::styled(" mdv-tui ", Style::new().fg(Color::Black).bg(Color::Cyan).bold()),
@@ -2088,6 +2153,25 @@ mod tests {
         assert!(wide.contains('\u{203a}'), "pane title shows a breadcrumb separator:\n{wide}");
         let leaf = dir.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
         assert!(wide.contains(&leaf), "breadcrumb tail is the current dir name:\n{wide}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn question_mark_opens_keyboard_help_overlay_and_any_key_closes() {
+        let dir = fixture_dir();
+        let mut app = App::new(dir.clone());
+        assert!(!app.show_help, "help is closed by default");
+        // Render wide+tall so the centered help popup isn't clipped.
+        let big = |a: &mut App| a.snapshot(120, 30).expect("snapshot render");
+        app.on_key(KeyCode::Char('?'));
+        assert!(app.show_help, "? opens the help overlay");
+        let out = big(&mut app);
+        assert!(out.contains("keyboard help"), "overlay is titled:\n{out}");
+        assert!(out.contains("cycle view mode"), "a binding action is listed:\n{out}");
+        assert!(out.contains("go to line"), "another binding action is listed:\n{out}");
+        // Any key dismisses it (modal) — and does NOT also fire that key's command.
+        app.on_key(KeyCode::Char('j'));
+        assert!(!app.show_help, "any key closes the help overlay");
         let _ = fs::remove_dir_all(&dir);
     }
 
