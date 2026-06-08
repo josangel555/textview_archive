@@ -29,6 +29,29 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+61) — board reconciliation: TSK-140 validated (raw finding my closeAll fix remediated); queue-drain finding
+
+Next tick. `task_next` for project `markdown_viewer` returns `null`, and `task_next` on the real
+board project (`tasked`, shared with `forge`/`wx_site`) heads on a FOREIGN forge seed (TSK-104,
+`sess-forge-03`) — skipped. A priority-sorted `task_list{ready}` confirms: **the markdown_viewer
+new-implementation queue is drained** — every non-foreign actionable task is already `fixed`/
+`review`/`validated` or owner/VM-gated (deps TSK-247/248/249, parked TSK-502). The remaining
+backlog is the deep-audit findings (TSK-122..190) sitting at `fixed`/`review` ("landed @ 1dbf1ca
+with regression tests"), which per the owner's anti-drift flag I'm pacing rather than binge-
+validating.
+
+Reconciled the two raw [S3] findings that THIS session's `6703798` (TSK-485) remediated:
+- **TSK-140** ([S3][leak] applicationWillTerminate closeAll 2s budget) → **validated**. Beyond the
+  prior 15s-budget reconciliation, `6703798` fixed the root cause (concurrent `withTaskGroup`
+  teardown) with a deterministic regression test (3 servers, all STARTs precede first END; proven
+  red on the sequential loop). Cross-referenced TSK-485.
+- **TSK-139** ([S3][leak] LSP test fire-and-forget teardown) → commented + left at `fixed`. The 3
+  smoke-test sites were swapped to awaited `addTeardownBlock` in `6703798`, but it's test-infra
+  hygiene with no standalone regression-bite test, so it doesn't meet the self-validation bar —
+  flagged for the owner to dismiss-as-dup-of-485 or close on the diff.
+
+No code change this tick (board reconciliation only); `main` unchanged, gate-green.
+
 ## LOG 2026-06-08 (latest+60) — verify-and-validate: TSK-486 (terminal typing latency) + TSK-484 (Walkthrough containment)
 
 Same tick as +59. Two loose-ends tasks were sitting at `fixed` from a prior tick with real,
