@@ -29,6 +29,28 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-07 (latest+55) — TSK-217 DONE: JSON Formatted view mode end-to-end (TUI + core + web)
+
+Autonomous tick. Finished TSK-217 on top of last tick's core slice; commit `0f20fb5`;
+TSK-217 → **validated** (host cargo test). XML split out as a new task **TSK-496**.
+
+- **Core view-model:** `ViewMode::Formatted` + `FileKind::Structured` (`.json`).
+  `available_modes(Structured)=[Text,Formatted,Hex]` (Text default); `build()` routes
+  Formatted→`format::pretty_json` with a raw-text fallback, reusing `ViewBody::Text` so
+  **no new body type** — renderers draw it like Text; only `View.mode` distinguishes.
+  `classify(.json)→Structured` (`.xml` deliberately stays Plain until the XML slice, so
+  no no-op Formatted is ever offered).
+- **TUI:** cycles into Formatted via the existing `x`/cycle (available_modes drives it) and
+  renders through the Text body path; mode label "formatted". **Web** wired for parity
+  (`?mode=formatted` accepted for Structured; `mode_str`).
+- **Gotcha logged:** adding a `ViewMode` variant breaks every exhaustive match across the
+  three front-ends — TUI `mode` label + web `mode_str` both needed the new arm (web
+  `parse_mode` had a `_` fallback so it only needed the offer arm). A stale incremental
+  `cargo build` reported false success once; `touch`+rebuild surfaced the real E0004.
+- **Test:** `json_offers_formatted_mode_and_pretty_prints` (in-memory App + TestBackend,
+  host-safe like TSK-205) — Structured classification, mode set, and cycle→Formatted
+  rendering 2-space pretty JSON. core view::tests 13 + format::tests 7 green; rust gate green.
+
 ## LOG 2026-06-07 (latest+54) — core JSON pretty-print formatter (Formatted-mode foundation, TSK-217/218)
 
 Autonomous tick. Verify-sweep complete → shifted back to feature work. The `reported`
