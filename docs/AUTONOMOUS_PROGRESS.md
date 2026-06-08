@@ -2793,3 +2793,25 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   real feature + a verified close, then HOLD rather than manufacture marginal churn.
 - main @ 6b14498 + this doc. **Session cumulative: 47 validated + 1 bug fixed +
   4 owner-parked.**
+
+## LOG +85 (2026-06-08, autonomous tick — preview-tab Phase 2 parked; queue re-verified owner-bound)
+- **Parked TSK-306 (preview-tab) for the owner** — it was sitting `in progress`
+  with Phase 1 (model core) shipped but no host-completable path: Phase 2 (sidebar
+  single/double-click + arrow-nav triggers, auto-promote-on-edit) is render-path/
+  CM6-WebView-signal driven, which per the owner testing directive has no host
+  self-validation, and wiring the editor-republish→promote hook blind on an
+  autonomous tick is the risky unsupervised change the SOP says to avoid. Parked
+  with a 3-way decision (authorize VM UI-test lane / wire-and-leave-at-fixed /
+  defer). Converts a silently-stuck in-progress task into an explicit owner gate.
+- **Re-verified the queue is owner-bound (3rd consecutive confirmation).** Fresh
+  probes this tick: `task_next` → foreign `agent:forge` TSK-104 (skip, shared
+  board); TUI `--snapshot` panic (#339) → already `io::Result` (test-only
+  `.expect()`); encoding/line-ending badge (#388/#389) → already shipped in TUI
+  (`text_view_title_shows_encoding_and_line_ending_badge`) + web
+  (`view_text_shows_encoding_and_line_ending_badge`). Core `meta::line_ending`/
+  `encoding_label` present + 13 tests.
+- **Owner-gated decisions outstanding (loop is input-bound):** TSK-235 front-end
+  persistence (gates 234/236/250), TSK-255/257 comrak/tree-sitter dep approval,
+  TSK-243 TUI theme, TSK-498 front-end test gate, TSK-306 preview-tab Phase 2
+  (parked this tick). All carry board human gates / pings. No code change this
+  tick; main @ e9a869e, tree clean, gates green.
