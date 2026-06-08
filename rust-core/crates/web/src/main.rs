@@ -32,6 +32,7 @@ use mdvcore_core::meta;
 use mdvcore_core::nav::{self, SortKey};
 use mdvcore_core::outline::{self, Heading};
 use mdvcore_core::view::{self, DiffLine, DiffLineKind, FileKind, ViewBody, ViewMode};
+use mdvcore_core::whitespace;
 
 /// Max bytes read into a view (parity with the TUI's preview cap). Per-mode
 /// shaping (text/hex/table) lives in the shared `mdvcore_core::view`.
@@ -226,6 +227,8 @@ fn route(req_line: &str, root: &Path) -> (&'static str, &'static str, String) {
                 // the page centers + anchors on (see `content_html` / `find_box`).
                 let find = q.get("find").map(String::as_str).unwrap_or("");
                 let fmatch = q.get("fmatch").and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
+                // `?ws=1` reveals whitespace (spaces/tabs → markers) in the Text view.
+                let ws = q.get("ws").map(String::as_str) == Some("1");
                 (
                     "200 OK",
                     HTML,
@@ -238,6 +241,7 @@ fn route(req_line: &str, root: &Path) -> (&'static str, &'static str, String) {
                         tfilter,
                         find,
                         fmatch,
+                        ws,
                     ),
                 )
             }
@@ -283,7 +287,7 @@ fn render_view(
     show_hidden: bool,
     line: Option<usize>,
 ) -> String {
-    render_view_filtered(file, mode, sort, show_hidden, line, "", "", 0)
+    render_view_filtered(file, mode, sort, show_hidden, line, "", "", 0, false)
 }
 
 /// `render_view` plus the active CSV table-filter needle (`?tfilter=`), threaded
@@ -299,6 +303,7 @@ fn render_view_filtered(
     tfilter: &str,
     find: &str,
     fmatch: usize,
+    ws: bool,
 ) -> String {
     let parent = file.parent().unwrap_or(file);
     let name = file_name(file);
@@ -308,7 +313,7 @@ fn render_view_filtered(
     page(
         &name,
         &nav_html(parent, Some(&name), sort, show_hidden, ""),
-        &content_html(file, mode, line, tfilter, find, fmatch),
+        &content_html(file, mode, line, tfilter, find, fmatch, ws),
     )
 }
 
@@ -486,6 +491,7 @@ fn content_html(
     tfilter: &str,
     find: &str,
     fmatch: usize,
+    ws: bool,
 ) -> String {
     let (raw, truncated, total) = match read_capped(file, PREVIEW_CAP) {
         Ok(x) => x,
@@ -579,7 +585,17 @@ fn content_html(
             // Anchor every heading line (not just the goto target) so the outline
             // links resolve; the set is empty for non-markdown / non-text views.
             let anchors: Vec<usize> = headings.iter().map(|h| h.line).collect();
-            format!("{}{}{}", find_nav, goto, gutter_html(lines, target, &anchors))
+            // Show-invisibles (TSK-242): reveal spaces/tabs as markers via the
+            // shared core, Text mode only (HEX shows raw bytes). Build the revealed
+            // lines only when the toggle is on to avoid cloning otherwise.
+            let revealed: Vec<String>;
+            let display: &[String] = if ws && v.mode == ViewMode::Text {
+                revealed = lines.iter().map(|l| whitespace::reveal(l)).collect();
+                &revealed
+            } else {
+                lines
+            };
+            format!("{}{}{}", find_nav, goto, gutter_html(display, target, &anchors))
         }
         ViewBody::Table { header, rows, truncated } => {
             // Apply the active CSV filter (shared `view::table_query` + core
@@ -593,7 +609,18 @@ fn content_html(
         ViewBody::Diff(lines) => diff_html(lines),
         ViewBody::Image(info) => image_html(&name, &raw, *info, truncated),
     };
-    format!("{modes}{bar}{outline_nav}{content}")
+    // Whitespace-markers toggle link (Text mode only): flips `?ws=` and preserves
+    // the path + mode. Labels reflect the current state.
+    let ws_link = if v.mode == ViewMode::Text {
+        let (label, next) = if ws { ("hide whitespace", "0") } else { ("show whitespace", "1") };
+        format!(
+            "<div class=\"wstoggle\"><a href=\"/view?path={href}&mode={}&ws={next}\">{label}</a></div>",
+            mode_str(v.mode)
+        )
+    } else {
+        String::new()
+    };
+    format!("{modes}{bar}{ws_link}{outline_nav}{content}")
 }
 
 /// The go-to-line box: a JS-free GET form that reloads `/view` with `?line=<n>`.
@@ -1329,12 +1356,29 @@ mod tests {
     }
 
     #[test]
+    fn view_text_ws_param_reveals_whitespace() {
+        let dir = fixture();
+        fs::write(dir.join("ws.txt"), b"a b c\n").unwrap();
+        // Default: raw spaces, no markers; the toggle link offers to show them.
+        let plain = render_view(&dir.join("ws.txt"), Some("text"), SortKey::Name, false, None);
+        assert!(!plain.contains("a·b·c"), "no whitespace markers without ?ws:\n{plain}");
+        assert!(plain.contains("show whitespace"), "toggle link offers to show:\n{plain}");
+        // ?ws=1: spaces revealed as ·; the toggle now offers to hide.
+        let revealed = render_view_filtered(
+            &dir.join("ws.txt"), Some("text"), SortKey::Name, false, None, "", "", 0, true,
+        );
+        assert!(revealed.contains("a·b·c"), "spaces revealed with ?ws=1:\n{revealed}");
+        assert!(revealed.contains("hide whitespace"), "toggle link offers to hide:\n{revealed}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn in_file_find_shows_count_and_anchors_first_match() {
         let dir = fixture();
         // doc.md (as text) has "## Section A" on line 4 and "## Section B" on line 9.
         // find="Section", fmatch=0 → 2 matches, current is the first (line 4).
         let html = render_view_filtered(
-            &dir.join("doc.md"), Some("text"), SortKey::Name, false, None, "", "Section", 0,
+            &dir.join("doc.md"), Some("text"), SortKey::Name, false, None, "", "Section", 0, false,
         );
         assert!(html.contains("class=\"find\""), "find box present:\n{html}");
         assert!(html.contains("1 of 2"), "match count shows current+total:\n{html}");
@@ -1351,7 +1395,7 @@ mod tests {
         let dir = fixture();
         // fmatch=1 → the second "Section" (line 9) becomes current + anchored.
         let html = render_view_filtered(
-            &dir.join("doc.md"), Some("text"), SortKey::Name, false, None, "", "Section", 1,
+            &dir.join("doc.md"), Some("text"), SortKey::Name, false, None, "", "Section", 1, false,
         );
         assert!(html.contains("2 of 2"), "second match is current:\n{html}");
         assert!(html.contains("id=\"L9\""), "second match's line (9) anchored:\n{html}");
@@ -1364,7 +1408,7 @@ mod tests {
         // hello.txt has no "<script>" → no matches, and the hostile query must be
         // HTML-escaped where it's reflected into the find-box input value.
         let html = render_view_filtered(
-            &dir.join("hello.txt"), Some("text"), SortKey::Name, false, None, "", "<script>", 0,
+            &dir.join("hello.txt"), Some("text"), SortKey::Name, false, None, "", "<script>", 0, false,
         );
         assert!(html.contains("no matches"), "empty result reported:\n{html}");
         assert!(!html.contains("value=\"<script>\""), "raw query reflected unescaped:\n{html}");
@@ -1572,7 +1616,7 @@ mod tests {
         let dir = fixture(); // people.csv = name,age / Alice,30 / Bob,25
         let csv = dir.join("people.csv");
         // Global substring: any cell containing "Alice".
-        let g = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "Alice", "", 0);
+        let g = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "Alice", "", 0, false);
         assert!(g.contains("class=\"find\""), "filter box present:\n{g}");
         assert!(g.contains("<td>Alice</td>"), "Alice row kept:\n{g}");
         assert!(!g.contains("<td>Bob</td>"), "Bob filtered out:\n{g}");
@@ -1580,7 +1624,7 @@ mod tests {
         // Column-scoped `age:Alice` matches NOTHING — "Alice" is in the name
         // column, not age — proving the scope restricts the search (global did
         // match it above).
-        let c = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "age:Alice", "", 0);
+        let c = render_view_filtered(&csv, Some("table"), SortKey::Name, false, None, "age:Alice", "", 0, false);
         assert!(!c.contains("<td>Alice</td>"), "age-scoped search excludes the name col:\n{c}");
         assert!(c.contains("0/2 rows"), "no rows match age:Alice:\n{c}");
         let _ = fs::remove_dir_all(&dir);
