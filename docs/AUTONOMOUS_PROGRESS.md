@@ -29,6 +29,43 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+59) — TSK-485 VALIDATED: LSPPool.closeAll() parallelized + deterministic teeth
+
+SwiftUI/ViewerCore tick (SwiftUI lane first per SOP). Picked up the executable spec I left
+on TSK-485 last tick and shipped it. Commit `6703798`, board TSK-485 → **validated**.
+
+The leak: `LSPPool.closeAll()` shut live clients down SEQUENTIALLY; each `LSPClient.shutdown()`
+costs up to ~2.4s, so with N≥2 live servers (sourcekit-lsp + a TS server, say) teardown was
+N×2.4s and blew past the bounded app-quit deadline — un-shut servers got reparented to launchd.
+
+Three-part fix, all in `6703798`:
+- **`LSPPool.closeAll()`** — sequential `for` → `await withTaskGroup(of: Key.self)`: children call
+  `client.shutdown()` and return their `Sendable` `Key`; the actor-isolated parent is the sole
+  mutator of `entries`. Outer drain-while loop preserved (catches a late `.live` spawn past the
+  `isClosed` latch). Teardown is now ≈ slowest single shutdown, not the sum.
+- **app-quit** (`MarkdownViewer/main.swift`) — the 15s budget was already widened in a prior
+  in-file patch; with parallel closeAll it's now a pure safety ceiling (8s) and **logs a warning
+  on timeout** instead of silently leaking (the finding's explicit ask). The stale "can't
+  parallelize from here" comment updated.
+- **test teardown** — 4 LSP smoke tests' fire-and-forget `defer { Task { await …closeAll()/shutdown() } }`
+  → awaited `self.addTeardownBlock { … }` so child LSP processes are reaped synchronously between
+  tests (the second merged finding — leaked children during test runs).
+
+Deterministic teeth (no flaky wall-clock, despite the known-flaky LSP subsystem cf TSK-507):
+added `MDV_FAKE_LSP_SHUTDOWN_DELAY_MS` + `MDV_FAKE_LSP_SHUTDOWN_LOG` knobs to `MDVFakeLSPServer`
+(shutdown handler brackets the delay with `START`/`END` markers via one atomic `O_APPEND` write;
+`LSPClient.shutdown()` awaits the shutdown response, so the delay lands on the awaited path). New
+test: 3 live servers @ 400ms delay, assert all 3 STARTs precede the first END — pure ORDERING.
+**Teeth proven:** reverted closeAll to sequential → test FAILED red (`lastStart 4 !< firstEnd 1`,
+markers `[START,END,START,END,START,END]`, 8.04s vs 0.65s parallel), then restored.
+
+Validation: LSPPoolFakeServerTests 18 passed; LSP smoke tests pass (real sourcekit reaped
+synchronously); `bash scripts/test-headless-gate.sh` → headless gate PASSED + tier enforcement OK
+(4311 tests). Self-validated (actor behavior, host-testable, teeth-proven). Honest scope note on
+the validation: the app-quit timeout *warning-log* branch is app-code with no host coverage for
+the timeout path itself, but it's a trivial log on an already-bounded wait and the leak it guards
+is eliminated at the source by the test-proven concurrency.
+
 ## LOG 2026-06-07 (latest+58) — self-review found + fixed a real crash in my own JSON formatter
 
 Autonomous tick. Instead of grabbing another PORT feature, reviewed THIS session's
