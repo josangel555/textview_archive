@@ -3036,3 +3036,26 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - Net: the deep-audit fixed/review cluster (TSK-122…194) is now essentially fully
   validated; remaining items are perf/race/infra without behavior teeth. No code
   change this tick; main @ 0f4655e, tree clean, gates green.
+
+## LOG +97 (2026-06-08, autonomous tick — TSK-180 ReviewStore.loadIndex _index.json cap teeth)
+- **TSK-180** [S3][security] "ReviewStore.loadIndex (_index.json) is the one Review
+  read with no size cap" → **validated** (commit `c21c1fa`). The cap IS present
+  (`ReviewStore.swift:199-201` reads `_index.json` with `maxSize: maxReviewFileSize`
+  = 10 MiB) but the index-tab boot path had NO teeth — the only oversize test
+  (`test_oversizeFile_isRefused_inProjectLocalDir`) guards the per-review
+  `<id>.json` read, not `_index.json`. Add-the-teeth opportunity, not a code fix.
+- **New test** `test_oversizeIndex_isRefused_listFallsBackToScan`: writes a VALID,
+  >10 MiB `_index.json` (encoded with the store's OWN `JSONFileStore.encoder` so
+  the ISO-8601 dates make it genuinely decodable — a default `JSONEncoder` epoch-
+  double fixture fails to decode for an UNRELATED reason, masking the cap), whose
+  single cached summary shares the real review's id (so the `Set(cached.id) ==
+  onDiskIDs` consistency check would ACCEPT it) but carries a bogus 11 MiB title.
+  Asserts `list()` returns the REAL on-disk title → proves `loadIndex` refused the
+  oversized index and `list()` fell back to rebuild-by-scan, no unbounded read.
+- **Teeth demonstrated:** with `maxSize` forced to `Int.max` the test goes RED
+  (returns the bogus `AAAA…` title); restored to `maxReviewFileSize` → green.
+  Gotcha logged: the first fixture used a bare `JSONEncoder` and the teeth DIDN'T
+  bite (decode failed on date format regardless of cap) — had to encode via the
+  store's own encoder. ReviewStoreProjectLocalTests 10/10 green.
+- main @ `c21c1fa`, tree clean, headless gate path green (pure-logic ViewerCore
+  test). **Session cumulative: 61 validated + 1 bug fixed + 4 owner-parked.**
