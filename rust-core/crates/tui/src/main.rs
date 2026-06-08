@@ -37,7 +37,13 @@ use mdvcore_core::nav::{self, SortKey};
 use mdvcore_core::outline::{self, Heading};
 use mdvcore_core::filter;
 use mdvcore_core::find;
+use mdvcore_core::hex::{self, HexSearchMode};
 use mdvcore_core::view::{self, DiffLineKind, FileKind, View, ViewBody, ViewMode};
+
+/// Bytes per hex-dump row (must match `mdvcore_core::hex::render_all`). A hex
+/// search match at byte offset `o` lands on dump row `o / HEX_BYTES_PER_ROW`.
+/// (TSK-205)
+const HEX_BYTES_PER_ROW: usize = 16;
 
 /// Max bytes read into a preview (keeps the TUI snappy; larger files truncate).
 /// The per-mode shaping (text/hex/table caps) lives in `mdvcore_core::view`.
@@ -225,6 +231,10 @@ struct App {
     /// Index into `find_matches` of the current match (the one centered+flashed).
     /// Stepped by `n`/`N`; meaningless when `find_matches` is empty.
     find_sel: usize,
+    /// True when the active matches came from a HEX byte/ASCII search (TSK-205)
+    /// instead of the text find — each `.line` is a hex-dump ROW (byte/16), so
+    /// the jump stays in Hex mode rather than forcing Text.
+    find_is_hex: bool,
 }
 
 impl App {
@@ -251,6 +261,7 @@ impl App {
             find_query: String::new(),
             find_matches: Vec::new(),
             find_sel: 0,
+            find_is_hex: false,
         };
         app.reload_dir();
         app
@@ -793,6 +804,7 @@ impl App {
         self.find_query.clear();
         self.find_matches.clear();
         self.find_sel = 0;
+        self.find_is_hex = false;
     }
 
     /// Append any character to the live query (printable keys), so the find box
@@ -823,11 +835,47 @@ impl App {
             return;
         }
         let Some(p) = &self.preview else { return };
+        // HEX mode (TSK-205): search the raw BYTES for a byte/ASCII pattern via
+        // the shared core `hex::hex_search`, and land each match on the dump ROW
+        // it falls in (offset / 16). Distinct from the text find below.
+        if p.view.mode == ViewMode::Hex {
+            // Prefer a hex-byte reading ("41", "ff 7f", "deadbeef"); fall back to
+            // ASCII when the query isn't valid hex (odd-length / non-hex token).
+            let mode = match hex::hex_search_parse(&query, HexSearchMode::Hex) {
+                Some(b) if !b.is_empty() => HexSearchMode::Hex,
+                _ => HexSearchMode::Ascii,
+            };
+            let pat_len = hex::hex_search_parse(&query, mode).map_or(1, |b| b.len().max(1));
+            let offsets = hex::hex_search(&query, mode, &p.raw);
+            if offsets.is_empty() {
+                self.find_query.clear();
+                self.find_matches.clear();
+                self.find_is_hex = false;
+                self.status = format!("hex: no matches for \"{query}\"");
+                return;
+            }
+            let matches: Vec<find::Match> = offsets
+                .iter()
+                .map(|&o| find::Match {
+                    line: o / HEX_BYTES_PER_ROW,
+                    start: o % HEX_BYTES_PER_ROW,
+                    end: (o % HEX_BYTES_PER_ROW) + pat_len,
+                })
+                .collect();
+            let from_row = p.scroll;
+            self.find_sel = find::first_from(&matches, from_row, 0).unwrap_or(0);
+            self.find_query = query;
+            self.find_matches = matches;
+            self.find_is_hex = true;
+            self.jump_to_current_match();
+            return;
+        }
         let text = String::from_utf8_lossy(&p.raw);
         let matches = find::find_matches(&text, &query, find::Case::Insensitive);
         if matches.is_empty() {
             self.find_query.clear();
             self.find_matches.clear();
+            self.find_is_hex = false;
             self.status = format!("find: no matches for \"{query}\"");
             return;
         }
@@ -837,6 +885,7 @@ impl App {
         self.find_sel = find::first_from(&matches, from_line, 0).unwrap_or(0);
         self.find_query = query;
         self.find_matches = matches;
+        self.find_is_hex = false;
         self.jump_to_current_match();
     }
 
@@ -862,17 +911,21 @@ impl App {
     /// path as go-to-line / outline) and update the "find: i of n" status.
     fn jump_to_current_match(&mut self) {
         let Some(target) = self.find_matches.get(self.find_sel).map(|m| m.line) else { return };
-        // Matches index the SOURCE lines — ensure Text mode so the jump lands on
-        // a real line (hex/table rows don't map to source line numbers).
-        if let Some(p) = &mut self.preview {
-            if p.view.mode != ViewMode::Text {
-                p.view = view::build(&p.raw, &p.name, p.total, p.truncated, ViewMode::Text);
-                p.scroll = 0;
+        if !self.find_is_hex {
+            // Text matches index the SOURCE lines — ensure Text mode so the jump
+            // lands on a real line (table rows don't map to source line numbers).
+            // HEX matches index dump ROWS, so we STAY in Hex (TSK-205).
+            if let Some(p) = &mut self.preview {
+                if p.view.mode != ViewMode::Text {
+                    p.view = view::build(&p.raw, &p.name, p.total, p.truncated, ViewMode::Text);
+                    p.scroll = 0;
+                }
             }
         }
         let i = self.find_sel + 1;
         let n = self.find_matches.len();
         let q = self.find_query.clone();
+        let label = if self.find_is_hex { "hex" } else { "find" };
         let Some(p) = &mut self.preview else { return };
         let len = p.content_len();
         let line0 = view::clamp_line(target + 1, len).saturating_sub(1); // 0-based → 1-based → clamp → 0-based
@@ -880,7 +933,7 @@ impl App {
         let max_scroll = len.saturating_sub(1);
         p.scroll = line0.saturating_sub(half).min(max_scroll);
         self.flash = Some(line0);
-        self.status = format!("find: {i} of {n} · \"{q}\"");
+        self.status = format!("{label}: {i} of {n} · \"{q}\"");
     }
 
     // MARK: - Event loop
@@ -1390,9 +1443,11 @@ impl App {
             "type to search this file · ↵ find + jump · ⌫ delete · ESC cancel".into()
         } else if !self.find_matches.is_empty() {
             // Show the live match position so the count is visible (the `status`
-            // line field is not rendered) — "find: i of n · …".
+            // line field is not rendered) — "find: i of n · …" / "hex: …" when
+            // the query parsed as a hex byte pattern (TSK-205 parity).
             format!(
-                "find: {} of {} \"{}\" · n/N next/prev · / new · ESC clear",
+                "{}: {} of {} \"{}\" · n/N next/prev · / new · ESC clear",
+                if self.find_is_hex { "hex" } else { "find" },
                 self.find_sel + 1,
                 self.find_matches.len(),
                 self.find_query,
@@ -1723,6 +1778,58 @@ mod tests {
         let gutter = app.show_gutter;
         app.on_key(KeyCode::Char('n'));
         assert_ne!(app.show_gutter, gutter, "with no find, n toggles the gutter again");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hex_search_in_hex_mode_matches_bytes_and_stays_in_hex() {
+        // TSK-205: `/` in HEX mode searches the raw BYTES via the shared
+        // `core::hex::hex_search` and lands on the dump ROW, staying in Hex
+        // (not forced to Text like the text find).
+        let dir = fixture_dir();
+        let mut app = App::new(dir.clone());
+        select_name(&mut app, "data.bin"); // bytes: 00 41 ff 7f
+        app.enter();
+        app.cycle_mode(); // → Hex (per hex_of_binary_uses_core_render)
+        assert_eq!(app.preview.as_ref().unwrap().view.mode, ViewMode::Hex, "in hex mode");
+        let _ = render(&mut app); // populate content_height (centering needs it)
+
+        // Hex-byte query "41" → byte 0x41 at offset 1 → dump row 0.
+        app.on_key(KeyCode::Char('/'));
+        assert!(app.find_prompt_open(), "/ opens find in hex mode");
+        for c in "41".chars() {
+            app.on_key(KeyCode::Char(c));
+        }
+        app.on_key(KeyCode::Enter);
+        assert!(app.find_is_hex, "match came from the hex byte search");
+        assert_eq!(app.find_matches.len(), 1, "one 0x41 byte in data.bin");
+        assert_eq!(app.find_matches[0].line, 0, "offset 1 → dump row 0");
+        assert_eq!(
+            app.preview.as_ref().unwrap().view.mode,
+            ViewMode::Hex,
+            "hex search STAYS in Hex view (not forced to Text)"
+        );
+        assert!(render(&mut app).contains("hex: 1 of 1"), "status shows the hex match position");
+
+        // A pattern absent from the file → no matches + a hex-labelled status.
+        app.on_key(KeyCode::Char('/'));
+        for _ in 0..8 {
+            app.on_key(KeyCode::Backspace); // clear the seeded prior query
+        }
+        for c in "0000".chars() {
+            app.on_key(KeyCode::Char(c));
+        }
+        app.on_key(KeyCode::Enter);
+        assert!(app.find_matches.is_empty(), "no 00 00 byte pair in data.bin");
+        assert!(!app.find_is_hex, "no-match resets the hex flag");
+        // The bottom bar falls back to the browse help on a miss (the `status`
+        // field is not rendered — see in_file_find_no_match_reports_*), so the
+        // hex-labelled report lives in the model field; assert it there.
+        assert!(
+            app.status.starts_with("hex: no matches"),
+            "no-match status is hex-labelled: {:?}",
+            app.status,
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
