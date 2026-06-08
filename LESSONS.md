@@ -2335,3 +2335,30 @@ a one-file-opens crash/DoS reachable from any untrusted `.json`.
 - Checklist for any new core module: does it recurse on input? cap it. Does it index a
   slice? use `.get(..)?`. Does it allocate from an untrusted count/size? cap it. (The
   ffi no-panic clippy gate catches the unwrap/index class but NOT unbounded recursion.)
+
+### Adding a `ViewMode`/`FileKind` variant breaks every front-end's exhaustive match (TSK-217, 2026-06-07)
+
+`mdvcore_core::view::ViewMode` (and `FileKind`) are matched **exhaustively** in all three
+front-ends — the TUI status-label match (`crates/tui/src/main.rs`), the web `mode_str` +
+`parse_mode` (`crates/web/src/main.rs`), and any FFI mapping. Adding a variant
+(`ViewMode::Formatted`, `FileKind::Structured`) compiles in `core` but breaks the others
+with `E0004 non-exhaustive`. After adding a core enum variant, **`cargo build --workspace`**
+and fix each match. (web `parse_mode` had a `_` fallback so only needed the offer arm;
+TUI label + web `mode_str` were exhaustive and each needed the new arm.)
+
+- **Stale-incremental-build false success:** during this I hit a `cargo build` that printed
+  `Finished … 0.13s` and looked green while a downstream crate actually had an E0004 — the
+  earlier failed build left stale artifacts and the no-op rebuild didn't recompile the
+  broken bin. `touch <file> && cargo build -p <crate>` (or `cargo build --workspace`) to
+  force a real recompile and see the true error. Don't trust a suspiciously-fast "Finished".
+
+### "One core, three front-ends" features land in layers — wire the switcher generically (TSK-217/218)
+
+Adding a view mode end-to-end = (1) core: the transform (`format::pretty_json`) + the
+`ViewMode` + `available_modes()`/`default_mode()`/`classify()` entry + a `view::build` arm
+(reuse an existing `ViewBody` where the render shape matches — `Formatted` reuses
+`ViewBody::Text`, so renderers need NO new body type); (2) each front-end just handles the
+new variant in its label/parse matches — both the TUI (`x`/cycle) and web (mode links from
+`available_modes`) pick it up *by construction* because they iterate `available_modes`
+rather than hard-coding the set. Classify conservatively: `.json`→Structured now, `.xml`
+left `Plain` until the XML formatter lands (TSK-496) so no no-op Formatted is ever offered.

@@ -863,3 +863,21 @@ bundle (main kept CrossSearchPanel) — resurrect or abandon. **DECISION owed.**
 - **tasked MCP gaps reported to owner (2026-06-07):** (1) no free-text/substring `task_list` search;
   (2) no `task_update` (edit title/report/type/prio post-create); (3) no agent dismiss for already-fixed/
   wontfix/duplicate/foreign — relevant since the board is shared across projects.
+
+## 2026-06-07 — Rust-core Formatted mode + autonomous queue state
+
+- **TSK-496 — XML/HTML pretty-print (`format::pretty_xml`)** — the deferred half of the
+  JSON/XML Formatted feature. JSON shipped (`format::pretty_json`, validated TSK-217/218);
+  XML was split out because mixed-content/CDATA/comment/attribute rules are a much larger
+  no-dep parser than JSON. Then extend `view::classify` so `.xml` (and maybe `.svg`/`.html`)
+  → `FileKind::Structured` and have `formatted_lines` try `pretty_json` then `pretty_xml`
+  then raw. Medium confidence (XML correctness is the risk). REMEMBER the depth-cap lesson —
+  the XML parser must bound recursion too.
+- **Autonomous queue is `[PORT]`-lane-bound (owner steer needed).** As of this session the
+  actionable autonomous queue is front-end `[PORT]` tasks only. Every SwiftUI app board task
+  is `validated`, owner-gated (**TSK-202** Sessions god-object split — owner decision), or
+  live/VM-blocked (**TSK-252/253/254** — need a VM UI-test lane). To point autonomous ticks
+  back at the owner-prioritised SwiftUI lane, unblock one of those. Otherwise remaining PORT
+  work is increasingly marginal polish (TSK-241 whitespace markers, TSK-247 keyboard-help
+  overlay, TSK-243 theme tokens, …); the high-value W1/W2 items (JSON-formatted / reload /
+  hex-search) are done + validated.
