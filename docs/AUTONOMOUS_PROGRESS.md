@@ -3761,3 +3761,20 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   re-scan it finding-by-finding (it's ~18/18 stale + the teeth-able 4 are validated). The remaining `fixed`
   items need the owner/VM gate. Real new work requires an owner unblock — the `DECISIONS NEEDED` block
   (TSK-235 persistence, 255/257 deps, 502 Screen-Recording TCC, 243 theme, …) is the lever. No code change.
+
+## LOG +130 (2026-06-08, autonomous tick — validated TSK-281 terminal tabs; found the stale-BACKLOG lane)
+- Checked owner decisions (12 still `waiting=human`, none answered). Then found a NEW productive lane:
+  the `[BACKLOG]` feature tasks aren't all muddled — some are REAL features **already built but still
+  marked `reported`/"not implemented"** (same staleness as the audit cluster; the feature-backlog-audit
+  snapshot lags current code).
+- **Validated TSK-281** ("[BACKLOG] Tabs" = multi-session terminal tabs): board said "single-pane, no
+  tabs" but `TerminalPaneStore` already has full tabs — `tabs:[TerminalTab]`/`selectedTabID` +
+  `addTab`/`selectTab`/`cycleTab(forward:)`/`closeTab` with correct invariants (close-last→close-pane +
+  reset numbering, close-selected→neighbor, cycle wraps, single-tab no-op, per-tab foreground-sync).
+  Walked reported→ack→triaged→progress→fixed→validated on host **model** teeth: `MDV_HEADLESS_GATE=1 swift
+  test --filter TerminalPaneStoreTests` → 27 tests, 0 failures, ^EXIT=0 (`TerminalModel()` forks no shell
+  at init → list ops host-safe). Scoped to the model; tab-strip PIXELS (TerminalTabStripRenderTests + a11y)
+  are the VM/render concern, not claimed.
+- **Lane for future ticks ([[project_audit_pending_list_stale]]):** for each `[BACKLOG]`/`[PARTIAL]` feature
+  task, grep Sources/ for its model type FIRST — many shipped in later waves but the tasks were never closed;
+  if built + host-model-teeth-tested, walk to `validated`. No code change; `main` @ b9be9f7, host gate green.
