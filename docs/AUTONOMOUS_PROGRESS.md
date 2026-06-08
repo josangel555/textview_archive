@@ -3562,3 +3562,24 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   "couldn't read" + pasteboard untouched. Headless gate PASSED.
 - **Part B remains** (MetadataPanel checksum row, lazy + async) — SwiftUI-rendered, VM-validated; TSK-505
   stays at `progress` until it lands. main @ (this commit).
+
+## LOG +121 (2026-06-08, autonomous tick — TSK-334 part A: squarified treemap layout core)
+- Another `[PARTIAL]` host-completable slice: **TSK-334** (folder-stats wants a webpack-bundle-analyzer
+  treemap; only proportional bars exist). Landed **part A** — the pure-geometry layout core.
+- **Added:** `ViewerCore/TreemapLayout.swift` — `TreemapLayout.squarify(items:in:)` (Bruls/Huizing/van Wijk
+  squarified treemap): weighted items + a `CGRect` → size-proportional, low-aspect-ratio, non-overlapping
+  `TreemapTile`s that exactly tile the bounds. Pure (`import CoreGraphics` only), no AppKit/render.
+- **Host teeth (TreemapLayoutTests, 6/6):** area ∝ weight (within tolerance), tiles stay in-bounds, **no
+  pairwise overlap** (intersection area ≈ 0), **area conservation** (Σ tile areas == bounds area), count
+  preserved, single-item fills bounds, empty/zero/negative/NaN weights → dropped/[]. These are strong
+  teeth — any geometry bug breaks conservation or overlap. Headless gate: TreemapLayoutTests 6/6 green;
+  the full-gate run flaked on `PluginSubprocessHostTests` (2 subprocess-spawn `timedOut` at 8.4s under the
+  session's heavy concurrent load) — CONFIRMED flaky/unrelated: that suite passes 21/21 in isolation (2.8s)
+  and my change is pure CoreGraphics geometry (can't affect subprocess timing). Filed the flaky timeout as
+  a follow-up (TSK-507).
+- **Part B filed as TSK-506** (the SwiftUI Canvas render in the folder-stats card, consuming the layout +
+  the existing file-type/size aggregation) — SwiftUI-rendered, VM-validated. So the layout core has a
+  documented consumer. TSK-334 stays at `progress` until the render lands.
+- Pattern this arc (347→505→334): land the host-completable pure-logic CORE with teeth, file the
+  SwiftUI/VM render as the part-B follow-up. Keeps `main` green + moves real features forward without
+  shipping unvalidated rendered UI from the host.
