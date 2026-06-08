@@ -4099,3 +4099,20 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   persist, TSK-236 web persist). The no-dep PORT lane is now essentially exhausted: what remains is dep-gated
   (TSK-247/248/249/255/257 comrak/regex/serde/tree-sitter), global-state-gated (TSK-234/250), or owner-wishlist
   ([PAINT]/image-editor/[PARTIAL]) — and the SwiftUI render-path lane is owner-gated on TSK-502 (parked).
+
+## LOG +147 (2026-06-08, autonomous tick — mis-validation caught+corrected; TSK-468 dead-UI removal)
+- **ERROR + correction (board-TSK ≠ TaskList-# trap, recurred):** I mis-read the per-turn reminder's built-in
+  `#262` ("[PORT][WEB] web diff/search") as board TSK-262 and pushed a `task_validate` citing web diff/find/grep
+  tests. Board **TSK-262 is unrelated** (a SwiftUI "session-tab Settings/File-search/Omni icons" feature). Agents
+  can't un-validate, so I posted a correction comment + `task_park{review}` asking the owner to REVOKE it, and
+  reinforced [[reference_board_vs_tasklist_numbering]] with the incident + an absolute rule (task_get+title-match
+  is the FIRST call on any board id, every time). No other validations affected (TSK-243/235/236 stand).
+  → OWNER ACTION: revoke the TSK-262 validation.
+- **TSK-468 → fixed** (commit c21f311, blocker=live-validation): removed the permanently-`.disabled(true)` dead
+  "References" item from the LSPNavigationPanel modePicker Menu (empty action; references mode needs an origin
+  symbol only the source-view "Find References" context menu supplies; empty-state hint documents the real entry).
+  `swift build` clean; central headless gate PASSED on the committed commit (main green). NOT agent-validated on
+  purpose: pure SwiftUI view change, no host-testable behavior — visual confirmation is the VM/human gate
+  (same render-path lane gated behind TSK-502). Honest ceiling = `fixed`, awaiting live validation.
+- `main` @ c21f311 (+ this log). The self-validatable lane stays exhausted; the productive frontier remains
+  owner-input-bound (deps 247/248/249, web global-state 234/250, render-path/VM behind parked TSK-502).
