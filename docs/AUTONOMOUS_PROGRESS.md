@@ -3337,3 +3337,26 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - Confirmed the board↔built-in-TaskList offset persists (`task_next` again surfaced foreign forge
   TSK-104); acted only on title-verified board ids per [[reference_board_vs_tasklist_numbering]].
 - main @ `f660343` (+ this log). No source change this tick — one lane advanced, one precisely parked.
+
+## LOG +110 (2026-06-08, autonomous tick — documented HOLD: ready:true lane is skip-dominated, audit confirmed ~100% stale)
+- Checked the `task_list {ready:true, sort:priority}` lane (the productive lane per
+  project_audit_pending_list_stale memory). It now returns ONLY: (a) forge foreign tasks
+  (TSK-102/103/104 — skip, not markdown_viewer); (b) perf/leak/race findings at fixed/review
+  (TSK-122/123/134/138-143/147/150/151/170) — SKIP per the standing rule: identical output means a
+  correctness teeth test can't guard them, they correctly await human judgment; (c) bash/build-script
+  bug/security/contract (TSK-157/159/160/161/162/163) — NOT host-teeth-able (no bash test harness; the
+  behavior is VM/build/sign-time). The teeth-able host-validatable BUG/SECURITY cluster
+  (TSK-145/180/188) was drained in prior ticks.
+- Freshly verified (not from memory) 4 more deep-audit findings ALREADY fixed-in-code: `diff::parse_coord`
+  (Swift-parity mirror), `csv.rs` quote-state-machine (PARSE-04 test section), `view::build_table_
+  propagates_parse_truncation`, and `MCP.Value.int`/`optionalInt` (both already use non-trapping
+  `Int(exactly:)` with an explicit comment). The audit list is ~100% stale — STOP sampling it.
+- Per memory guidance (teeth-able lane exhausted + no actionable host-validatable feature surfaced across
+  ticks +106…+110): **documented HOLD**, no source change, main stays gate-green. NOT manufacturing
+  paper-cut tests on already-covered code, NOT shipping a risky blind change into the delicate open path,
+  NOT churning perf/leak/race lanes that need the human.
+- The loop is owner-gated across every remaining lane. Outstanding parks that unblock real work:
+  TSK-235 (front-end persistence — gates 234/236/250), TSK-255/257 (comrak/tree-sitter dep approval),
+  TSK-306/272 (preview-tab Phase 2 — VM UI lane), TSK-243 (TUI theme), TSK-332 (open-path mode
+  re-resolution — supervised), TSK-362 (Editor language packs — dep+VM). Answering any one refills the
+  actionable queue. main @ `a54d752` (+ this log).
