@@ -143,6 +143,57 @@ final class ReviewStoreProjectLocalTests: XCTestCase {
         XCTAssertNil(store.load(id: id))
     }
 
+    /// Teeth for TSK-180 ([S3][security]): `loadIndex()` reads `_index.json`
+    /// — the index-tab boot path — and that read MUST be size-capped, exactly
+    /// like the per-review-file read. The dir is user-writable, so a
+    /// tampered/runaway `_index.json` would otherwise inflate unbounded into
+    /// memory on every `list()`.
+    ///
+    /// Distinct from `test_oversizeFile_isRefused_inProjectLocalDir`, which
+    /// guards the per-review `<id>.json` read. This writes a *valid but
+    /// oversized* `_index.json` whose single cached summary shares the real
+    /// review's id (so the consistency check `Set(cached.id) == onDiskIDs`
+    /// would PASS) but carries a bogus title. With the cap, `loadIndex`
+    /// returns nil → `list()` falls back to rebuild-by-scan and returns the
+    /// REAL on-disk title. Without the cap (regression), `list()` would
+    /// trust the oversized cache and return the bogus title — so this assert
+    /// goes red the moment the `maxSize:` is dropped.
+    func test_oversizeIndex_isRefused_listFallsBackToScan() throws {
+        let store = ReviewStore.projectLocal(repoRoot: repoRoot, environment: [:])
+        let real = makeReview(id: "01HF7QABCDEFGHJKMNPQRSTVWX", title: "Real on-disk title")
+        XCTAssertTrue(store.save(real))  // writes <id>.json AND _index.json
+
+        // Overwrite _index.json with a VALID [ReviewSummary] that is >10 MiB:
+        // one entry, same id (so the consistency check would accept it),
+        // bogus 11 MiB title.
+        let bogusTitle = String(repeating: "A", count: 11 * 1024 * 1024)
+        let oversized = [ReviewSummary(
+            id: real.id, title: bogusTitle, state: .draft,
+            updatedAt: t0, commentCount: 0, unresolvedCount: 0
+        )]
+        // Encode with the store's OWN encoder (ISO-8601 dates) so the index
+        // is genuinely decodable — otherwise `loadIndex` fails to decode for
+        // an unrelated reason and the cap isn't what's being exercised.
+        let encoded = try JSONFileStore.encoder.encode(oversized)
+        XCTAssertGreaterThan(
+            encoded.count, ReviewStore.maxReviewFileSize,
+            "test fixture must exceed the cap or it proves nothing"
+        )
+        let indexURL = repoRoot.appendingPathComponent(".textview/reviews/_index.json")
+        try encoded.write(to: indexURL)
+
+        // The cap refuses the oversized index → scan path wins → real title.
+        // Compare via a bool so a regression doesn't dump the 11 MiB bogus
+        // title into the failure log.
+        let list = store.list()
+        XCTAssertEqual(list.count, 1)
+        XCTAssertEqual(list.first?.id, real.id)
+        XCTAssertTrue(
+            list.first?.title == "Real on-disk title",
+            "list() returned the oversized _index.json's cached entry instead of rebuilding from disk — the size cap on loadIndex was bypassed"
+        )
+    }
+
     func test_corruptJSON_loadsAsNil_listSurvives() throws {
         let store = ReviewStore.projectLocal(repoRoot: repoRoot, environment: [:])
         let good = makeReview()
