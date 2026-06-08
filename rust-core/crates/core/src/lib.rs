@@ -36,4 +36,5 @@ pub mod outline;
 pub mod session;
 pub mod trace;
 pub mod view;
+pub mod whitespace;
 pub mod wire;

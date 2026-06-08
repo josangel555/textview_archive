@@ -40,6 +40,7 @@ use mdvcore_core::find;
 use mdvcore_core::meta;
 use mdvcore_core::hex::{self, HexSearchMode};
 use mdvcore_core::view::{self, DiffLineKind, FileKind, View, ViewBody, ViewMode};
+use mdvcore_core::whitespace;
 
 /// Bytes per hex-dump row (must match `mdvcore_core::hex::render_all`). A hex
 /// search match at byte offset `o` lands on dump row `o / HEX_BYTES_PER_ROW`.
@@ -196,6 +197,10 @@ struct App {
     /// Toggled with `n`; on by default. Table mode is unaffected (rows aren't
     /// line-numbered).
     show_gutter: bool,
+    /// Whether the Text content pane renders whitespace as visible markers
+    /// (spaces → ·, tabs → →) via the shared `whitespace::reveal`. Toggled with
+    /// `i`; off by default. Text mode only (HEX/table are unaffected).
+    show_whitespace: bool,
     /// Go-to-line prompt state. `Some(digits)` means the `:` prompt is open and
     /// capturing a numeric line target; the content-pane title shows the live
     /// "goto: N" input. On Enter the (1-based) line is clamped via
@@ -257,6 +262,7 @@ impl App {
             filter: None,
             filtered: Vec::new(),
             show_gutter: true,
+            show_whitespace: false,
             goto: None,
             flash: None,
             outline: None,
@@ -1071,6 +1077,8 @@ impl App {
                 }
             }
             KeyCode::Char('N') => self.find_step(false),
+            // Toggle show-invisibles (whitespace markers) for the Text view.
+            KeyCode::Char('i') => self.show_whitespace = !self.show_whitespace,
             KeyCode::Char('s') => self.cycle_sort(),
             KeyCode::Char('.') => self.toggle_hidden(),
             KeyCode::Char('f') => self.open_filter(),
@@ -1436,6 +1444,7 @@ impl App {
                 // number is the original 1-based line index (`start+offset+1`).
                 let gw = view::gutter_width(lines.len());
                 let gutter = self.show_gutter;
+                let show_ws = self.show_whitespace;
                 let flash = self.flash;
                 let visible: Vec<Line> = lines
                     .iter()
@@ -1449,6 +1458,8 @@ impl App {
                         let is_flash = flash == Some(idx);
                         let content_style =
                             if is_flash { Style::new().reversed() } else { Style::new() };
+                        // Show-invisibles: spaces/tabs → markers via shared core.
+                        let text = if show_ws { whitespace::reveal(s) } else { s.clone() };
                         if gutter {
                             let n = idx + 1;
                             // Right-align to `gw`, then a thin "│ " separator;
@@ -1457,10 +1468,10 @@ impl App {
                             Line::from(vec![
                                 Span::styled(label, Style::new().fg(Color::DarkGray)),
                                 Span::styled("│ ", Style::new().fg(Color::DarkGray)),
-                                Span::styled(s.clone(), content_style),
+                                Span::styled(text, content_style),
                             ])
                         } else {
-                            Line::from(Span::styled(s.clone(), content_style))
+                            Line::from(Span::styled(text, content_style))
                         }
                     })
                     .collect();
@@ -1532,7 +1543,7 @@ impl App {
                 self.find_query,
             )
         } else {
-            "↑/↓ move · ↵ open · ⌫ up · x mode · 1-9 open-as · r reload · n nums · s sort · . hidden · f file-find · / find · : goto · o outline · q quit".into()
+            "↑/↓ move · ↵ open · ⌫ up · x mode · 1-9 open-as · r reload · n nums · i ws · s sort · . hidden · f file-find · / find · : goto · o outline · q quit".into()
         };
         let line = Line::from(vec![
             Span::styled(" mdv-tui ", Style::new().fg(Color::Black).bg(Color::Cyan).bold()),
@@ -2112,6 +2123,32 @@ mod tests {
         let out = app.snapshot(220, 24).expect("snapshot render");
         assert!(out.contains("2 lines"), "line count in the title:\n{out}");
         assert!(out.contains("3 words"), "word count in the title:\n{out}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn i_toggles_whitespace_markers_in_text_view() {
+        let dir = fixture_dir();
+        // The shared view expands tabs to spaces upstream, so the front-end sees
+        // spaces; the `i` toggle reveals every space as `·`. (Assert on the
+        // content substring "a·b", NOT a bare "·" — the pane title bars use "·"
+        // as a separator regardless of this toggle.)
+        fs::write(dir.join("ws.txt"), b"a b c\n").unwrap();
+        let mut app = App::new(dir.clone());
+        select_name(&mut app, "ws.txt");
+        app.enter();
+        // Off by default: raw spaces are shown, no markers.
+        let before = app.snapshot(120, 24).expect("render");
+        assert!(before.contains("a b c"), "raw spaces shown before toggle:\n{before}");
+        assert!(!before.contains("a·b"), "no space marker before toggle:\n{before}");
+        // `i` reveals whitespace: spaces → ·.
+        app.on_key(KeyCode::Char('i'));
+        assert!(app.show_whitespace, "i turns show_whitespace on");
+        let after = app.snapshot(120, 24).expect("render");
+        assert!(after.contains("a·b·c"), "spaces revealed as markers after toggle:\n{after}");
+        // `i` again turns it back off.
+        app.on_key(KeyCode::Char('i'));
+        assert!(!app.show_whitespace, "i toggles back off");
         let _ = fs::remove_dir_all(&dir);
     }
 
