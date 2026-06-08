@@ -25,6 +25,11 @@ final class IndentDetectABTests: XCTestCase {
             ("\tx\n    y\n", 1),                 // window=1 → first indented line (tab) → "Tabs"
             ("func f() {\n    return 1\n}\n", 50), // realistic 4-space code
             ("def f():\n\treturn 1\n", 50),     // realistic tab code
+            // CRLF parity (the gap that let the Rust-port trailing-CR bug slip):
+            ("    a\r\n    b\r\n", 50),          // 4-space CRLF
+            ("\tfoo\r\n\tbar\r\n", 50),         // tab CRLF
+            ("\tfoo\r\n  \r\n\tbar\r\n", 50),   // tab file w/ a whitespace-only CRLF line → must stay "Tabs"
+            ("    a\r\n  \r\n    b\r\n  \r\n    c\r\n", 50), // 4-space + blank "  \r" lines → must stay "Spaces (4)"
         ]
     }
 

@@ -20,6 +20,12 @@ pub fn detect(text: &str, sample_lines: usize) -> String {
         if checked >= sample_lines {
             break;
         }
+        // Strip a trailing CR so CRLF-authored files match `IndentDetector.swift`
+        // (which treats a trailing CR as terminator noise). Without this, a
+        // whitespace-only CRLF line like "  \r" fails the all-whitespace skip
+        // below (the CR isn't space/tab) and is miscounted as a 2-space indent —
+        // polluting the width histogram and breaking A/B parity on Windows files.
+        let line = line.strip_suffix('\r').unwrap_or(line);
         // A blank or all-whitespace line (incl. empty) carries no indent signal.
         if line.chars().all(|c| c == ' ' || c == '\t') {
             continue;
@@ -114,5 +120,27 @@ mod tests {
     fn sample_window_bounds_work() {
         // Only the first indented line is sampled; it's tabs → "Tabs".
         assert_eq!(detect("\tx\n    y\n", 1), "Tabs");
+    }
+
+    #[test]
+    fn crlf_whitespace_only_line_is_blank_not_indent() {
+        // "  \r" is a blank line in a CRLF file (trailing spaces). It must NOT
+        // count as a 2-space indent — a tab file with such a line stays "Tabs",
+        // not "Mixed". Without the trailing-CR strip this returns "Mixed".
+        assert_eq!(detect("\tfoo\r\n  \r\n\tbar\r\n", 50), "Tabs");
+    }
+
+    #[test]
+    fn crlf_indented_lines_detected() {
+        // Trailing CR on content lines is ignored; 4-space CRLF → "Spaces (4)".
+        assert_eq!(detect("    a\r\n    b\r\n", 50), "Spaces (4)");
+    }
+
+    #[test]
+    fn crlf_blank_space_lines_do_not_pollute_width() {
+        // 4-space indents interleaved with blank "  \r" lines must still detect
+        // 4, not 2. Without the fix the spurious width-2 lines outscore width-4
+        // (2 divides 4) and this returns "Spaces (2)" — the teeth on the bug.
+        assert_eq!(detect("    a\r\n  \r\n    b\r\n  \r\n    c\r\n", 50), "Spaces (4)");
     }
 }
