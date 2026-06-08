@@ -2863,3 +2863,20 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
 - main @ 0e16101 + this doc. **Session cumulative: 49 validated + 1 bug fixed +
   4 owner-parked.** Lane continues next tick (TSK-148 LSPPool closeFile teeth,
   TSK-159/160 vm-smoke.sh script findings, etc.).
+
+## LOG +88 (2026-06-08, autonomous tick — TSK-148 LSPPool leak validated, verify-and-validate)
+- **Validated TSK-148** `[S3][leak] LSPPool retains per-file state forever — no
+  didClose path`. Verify-and-validate (no new code): the didClose path the finding
+  said was missing exists at `DocumentModel.swift:4390`
+  (`Task { for url in closed { await pool.closeFile(fileURL: url) } }`), and the
+  eviction mechanism is regression-guarded by 3 teeth in `LSPPoolCloseFile_Audit…
+  Tests` (3/3 green this tick): closeFile drops the per-file version entry (not just
+  resets) while keeping the warm server; reopen re-seeds version 1 (proves
+  openedFiles pruned); closeFile-on-untracked + double-close are no-ops. Honest
+  caveat noted in the validate artifact: the one-line DocumentModel close→closeFile
+  hook is integration wiring (not separately unit-tested); the prune mechanism it
+  drives is fully guarded.
+- main @ 0e16101 (no code change; board state only) + this doc. **Session
+  cumulative: 50 validated + 1 bug fixed + 4 owner-parked.** Lane continues
+  (remaining clean-teeth fixed/review candidates thinning; next: re-scan
+  `task_list {ready:true}` for any still at fixed/review with behavior teeth).
