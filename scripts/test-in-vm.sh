@@ -41,6 +41,18 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 ROOT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 cd "$ROOT_DIR"
 
+# Raise the open-files soft limit before any `swift test` (TSK-500). The default
+# macOS soft limit in a non-login ssh session is 256; a single-process full-suite
+# run (4220 tests) accumulates file descriptors across the run — leaky sources /
+# child processes (FileWatcher DispatchSources, LSP/PTY/plugin pipes) pile up
+# until temp-file creation fails with EMFILE ("could not open temp file"),
+# cascading into ~158 FALSE file-IO failures while the code is actually fine
+# (the same classes pass in isolation, e.g. XattrIOTests/TextFileLoaderTests).
+# The hard limit is `unlimited`, so bump the soft limit high. Best-effort — never
+# abort the run if a platform refuses the raise.
+ulimit -n 8192 2>/dev/null || ulimit -n 4096 2>/dev/null || true
+printf "==> open-files soft limit: %s\n" "$(ulimit -n)"
+
 # Track results separately from the test runner so we can produce JUnit
 # regardless of mode.
 RESULTS_TXT="/tmp/mdv-test-output.txt"
