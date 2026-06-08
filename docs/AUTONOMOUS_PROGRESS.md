@@ -2287,3 +2287,18 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   over the same `core::meta` (add to the web /view header).
 - main @ 18c1fb4 + this doc; gates green. Cumulative session: 19 validated +
   1 bug fixed + 1 new shared-core feature module + 2 follow-ups filed.
+
+## LOG +64 (2026-06-07, autonomous tick — completed the encoding-badge parity slice)
+- **Shipped TSK-224 [PORT][WEB] encoding / line-ending badge** (commit 2c63475):
+  a thin wire over the `core::meta` helper landed in +63 — the web `/view` content
+  bar now renders ` · UTF-8 · CRLF` for Text mode (HEX/table/image suppress it).
+  Web test asserts a CRLF no-BOM file shows the distinctive `UTF-8 · CRLF` form
+  (CRLF proves byte-derived; the combined form can't collide with the head's
+  lowercase `charset=utf-8`) and that HEX mode omits it. Web 46 (+1); gate
+  GATE_EXIT=0. Drove reported→…→validated.
+- **One core, both front-ends:** the encoding/line-ending feature now lands
+  identically in the TUI (TSK-223) and web (TSK-224) from a single gated
+  `core::meta` — the "one core, three front-ends" pattern paying off (a Swift
+  badge would be the same call if/when wanted).
+- main @ 2c63475 + this doc; gates green. Cumulative session: 20 validated +
+  1 bug fixed + 1 shared-core module (now used by 2 front-ends) + 2 follow-ups.
