@@ -29,6 +29,28 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-07 (latest+52) — verify-and-validate sweep cont'd: 4 more audit findings validated (ReDoS/cmark/EACCES)
+
+Autonomous tick. Ran ALL 24 per-finding `Audit_*` regression suites in one batch —
+**144 tests, 0 failures** — confirming the `1dbf1ca` audit-resolution fixes are present
+and green. Then deep-read 3 more suites for teeth (ReDoS, cmark, EACCES) — pattern is
+consistent: each asserts the exact audit failure case, not a tautology. Validated 4:
+
+- **TSK-124** [S2][sec] HighlightedText ReDoS cap was dead code → off-thread wall-clock
+  deadline; ReDoSTests proves catastrophic input returns < 1.0s (7/7).
+- **TSK-130** [S2][test-gap] catastrophic-regex test only covered the capturing form →
+  now classifies + bounds non-capturing `(?:a+)+`, doubly-nested, named-group (same suite).
+- **TSK-126** [S2][bug] cmark-gfm parse SIGSEGV on ~6k nested `>` → input-side
+  `exceedsLeadingBlockNesting` guard; HTMLRendererTests feeds 10k-nested-`>` → truncation
+  marker, not a crash (11/11).
+- **TSK-128** [S2][bug] EditorWriter 0600→world-readable on EACCES → lstat-recover +
+  replay mode/owner; EaccesTests chmods 0200, confirms the EACCES branch fires, asserts
+  0200 preserved (2/2).
+
+Running tally of the sweep: TSK-101/119/127/124/130/126/128 validated (+TSK-205 TUI).
+Remaining review-lane audit cluster (suites green in the batch, pending per-task teeth
+read): TSK-118/120/121/122/123/125/129/131/132/133. No code change this tick.
+
 ## LOG 2026-06-07 (latest+51) — verify-and-validate sweep: TSK-127 (CRLF) + TSK-119 (temp-sibling) confirmed regression-guarded
 
 Autonomous tick. Continued the `review`-lane verify-and-validate sweep — for each, confirm
