@@ -2402,3 +2402,30 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   1 bug fixed + shared-core helpers. Next PORT veins: recently-opened/history
   (TSK-233/234), empty/error/too-large states (TSK-245/246), reload web (TSK-240),
   table column-width parity (TSK-237/238).
+
+## LOG +71 (2026-06-08, autonomous tick — empty/binary content-state banner, both front-ends)
+- **Shipped TSK-245 + TSK-246 [PORT][TUI/WEB] empty/binary states** off ONE new
+  shared core classifier (commit f86a97c):
+  - **core**: `view::content_state(bytes) -> ContentState{Empty,Binary,Readable}`
+    + `content_state_banner(state)`. Heuristic: empty → Empty; NUL byte or >30%
+    control bytes (excl tab/LF/CR) in the first 8 KiB → Binary; else Readable.
+    Pure, bounded sniff, never indexes (lint-clean). 3 unit tests (empty/binary/
+    readable, control-heavy-no-NUL, bounded-prefix).
+  - **tui (TSK-245)**: content-pane title flags `· empty file` / `· binary file`
+    right after the filename (never clips behind the long encoding badge). Test
+    `content_state_banner_flags_empty_and_binary_files`.
+  - **web (TSK-246)**: `content_html` emits a `<div class="banner">` (empty file /
+    binary file) above the content + a `.banner` CSS rule. Test
+    `view_flags_empty_and_binary_content`.
+  - tui 42 (+1), web 51 (+1), core +3; rust-core gate GATE_EXIT=0. Drove both
+    reported→…→validated.
+- **Scope honesty:** delivered the NEW states (empty + binary) that neither
+  front-end surfaced. The byte-cap *truncation* signal was already surfaced per
+  front-end (TUI `· TRUNCATED`, web `· TRUNCATED` in the bar); unreadable/IO
+  *error* is already shown (web `cannot read:` hint). "too-large" == the existing
+  PREVIEW_CAP truncation. So the pair's title is fully covered across old+new.
+- **One core, three front-ends** holds: 6th shared-core helper this run
+  (meta, whitespace, nav::breadcrumbs, view::content_state).
+- main @ f86a97c + this doc; gates green. Cumulative session: 30 validated +
+  1 bug fixed. Next PORT veins: recently-opened/history (TSK-233/234), reload web
+  (TSK-240), table column-width parity (TSK-237/238), dark mode (TSK-243/244).
