@@ -2721,3 +2721,37 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   git-status, recents, multi-file tabs, AND a command palette — a genuinely
   full-featured ratatui app over mdvcore-core. Remaining board work is all
   owner-gated (4 parks) or the bigger TSK-400 mdvcore-rpcd remote spike.
+
+## LOG +83 (2026-06-08, autonomous tick — core XML/HTML pretty-print)
+- **Shipped TSK-496 [PORT] XML/HTML pretty-print** (commit ddecc1d), validated.
+  The deferred half of the Formatted-mode slice (JSON landed in TSK-217); this
+  completes XML parity with the SwiftUI FormatViewer.
+- **Impl (all in `crates/core`, no new dep):** `format::pretty_xml(&str)->
+  Option<String>` — a hand-rolled tokenizer (`Tok::Open/Close/Leaf/Other/Text`)
+  → depth-balancer → iterative emitter reusing the existing 2-space `INDENT`.
+  Rules: xml-decl / comments / CDATA / DOCTYPE kept **verbatim**; tag-end scan is
+  quote-aware so `>` inside an attribute value doesn't end the tag; DOCTYPE scan
+  is bracket+quote-aware; a single text-or-other child is **inlined**
+  (`<b>hi</b>`, `<d><![CDATA[..]]></d>`); self-closing tags don't open a level;
+  unbalanced/malformed input → `None` (caller falls back to raw text). All using
+  `.get()`/no-indexing per the core crate's no-panic clippy denies.
+- **Wiring:** `view::classify` now maps `.xml/.svg/.plist/.xib/.storyboard` →
+  `FileKind::Structured` (so Formatted is offered); `formatted_lines` does
+  `pretty_json.or_else(pretty_xml)`. No front-end changes — `ViewMode::Formatted`
+  is already generic in TUI/web. This also un-deadens the `.svg` formatted-mode
+  path flagged by deep-audit TSK-307.
+- **Teeth:** 9 `format::tests::xml_*` cases (nesting+inline-leaf, attrs+self-close,
+  `>`-in-attr, decl/comment/CDATA verbatim, empty-inline, per-level indent, svg,
+  idempotent, malformed→None) + `view::tests::formatted_mode_reindents_xml_via_
+  shared_core` (build `doc.xml` Formatted → the reflow, not raw) + classify
+  assertions. Each asserts exact output so any reflow regression fails. core 253
+  passed/0 failed; rust-core gate exit 0; `cargo build --workspace` green.
+- **Gate fix during this tick:** initial test used `let ... else { panic!() }`,
+  which the core `clippy::panic` deny rejected (cargo test alone passed — the
+  gate's stricter lints caught it). Switched to the `match { .. _ => unreachable!() }`
+  pattern the existing view tests use (`unreachable!` isn't flagged by
+  `clippy::panic`).
+- main @ ddecc1d + this doc. **Session cumulative: 46 validated + 1 bug fixed +
+  4 owner-parked.** Remaining board work is owner-gated (comrak TSK-255,
+  tree-sitter TSK-257, stateful-cluster TSK-235, web-palette TSK-409) or the
+  bigger TSK-400 mdvcore-rpcd remote spike.
