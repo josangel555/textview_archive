@@ -2302,3 +2302,16 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   badge would be the same call if/when wanted).
 - main @ 2c63475 + this doc; gates green. Cumulative session: 20 validated +
   1 bug fixed + 1 shared-core module (now used by 2 front-ends) + 2 follow-ups.
+
+## LOG +65 (2026-06-07, autonomous tick — file-metadata metrics across both front-ends)
+- **Shipped TSK-221 (TUI) + TSK-222 (WEB) status-bar file-metadata metrics**
+  (commit 356e751): extended `core::meta` with `text_metrics(&str) -> {lines,
+  words, chars}` (5 gated unit tests: trailing-newline = no phantom line,
+  whitespace-run collapse, unicode-scalar chars) and surfaced ` · N lines · M
+  words` in BOTH content bars (Text mode only). Front-end tests use a 2-line /
+  3-word fixture so a lines/words swap fails. core 212 (+5) / tui 37 (+1) /
+  web 47 (+1); gate GATE_EXIT=0. Drove both reported→…→validated.
+- `core::meta` now backs THREE shipped features across two front-ends
+  (line-ending + encoding badge + metrics) — the one-core pattern compounding.
+- main @ 356e751 + this doc; gates green. Cumulative session: 22 validated +
+  1 bug fixed + 1 shared-core module + 2 follow-ups.
