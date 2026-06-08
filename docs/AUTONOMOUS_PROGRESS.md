@@ -29,6 +29,30 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+69) — TSK-516: rust-core indent CRLF A/B-parity bug — found + fixed + VALIDATED
+
+A genuinely-new rust-core bug found by chasing a lead (NOT another already-fixed audit finding).
+Probing board TSK-276 confirmed the numbering trap again (board TSK-276 = "[BACKLOG] Debugger", not
+the IndentDetector finding — already flagged for owner), but it pointed at a real question: the SWIFT
+IndentDetector handles CRLF (fixed long ago) — does the RUST port? It did NOT.
+
+`mdvcore-core::indent::detect` splits on `'\n'` but kept the trailing `'\r'`, so a whitespace-only
+CRLF line `"  \r"` failed the all-whitespace skip (CR isn't space/tab) and was miscounted as a
+2-space indent. Concrete A/B divergence from the shipping Swift detector: `detect("\tfoo\n  \r\n",50)`
+→ Rust `"Mixed"` vs Swift `"Tabs"`; a 4-space CRLF file with blank `"  \r"` lines mis-detected as
+`"Spaces (2)"` (spurious width-2 lines outscore width-4 since 2 divides 4). **Root cause it slipped:
+the `IndentDetectABTests` A/B corpus had ZERO CRLF cases.**
+
+Fix (commit `15af4eb`): one-line `strip_suffix('\r')` per line + 3 Rust unit teeth + 4 CRLF cases
+added to the A/B corpus. Filed as **TSK-516** (new), walked reported→…→**validated** (agent
+self-validate — pure-logic rust-core + FFI A/B is host-testable, no VM). Teeth DEMONSTRATED red→green:
+reverted the strip → 2 of 3 Rust tests went red (`"Mixed"`, `"Spaces (2)"`) → restored → green.
+rust-core gate green; FFI `.a` rebuilt; Swift A/B parity green.
+
+LESSON: the "deep-audit findings are mostly-already-fixed" pattern holds for the SWIFT side, but a
+fixed-in-Swift finding can still be LIVE in the Rust port — check both sides of an A/B pair. And an
+A/B parity test only guards what its corpus covers (the CRLF gap here).
+
 ## LOG 2026-06-08 (latest+68) — TSK-344: shadowHighlight + sharpen — engine tonal set now 6/6 (fixed)
 
 Closed the engine side of TSK-344. Two final tonal ops, commit `eda47b5` (TSK-344 four commits total:
