@@ -2587,3 +2587,42 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   1 bug fixed + 1 parked. Next veins: git status (TSK-251/252), status-bar
   metrics (TSK-386/387), encoding/line-ending badge (TSK-388/389 — web half),
   recently-opened/history + persistent session (web shared-state cost).
+
+## LOG +79 (2026-06-08, autonomous tick — git status summary, both front-ends)
+- **Shipped the git working-tree status PAIR over one new shared core module** —
+  TSK-251 [PORT][TUI] (commit 3fb2178) + TSK-252 [PORT][WEB] (commit a05315e).
+  Both validated. The status SUMMARY slice; working-tree diff overlay is an
+  explicit deferred follow-on.
+- **Core (3fb2178):** new pure, sans-IO `git` module. `git::parse_status(&str)`
+  parses `git status --porcelain=v1 --branch` into `RepoStatus{branch, ahead,
+  behind, staged, modified, untracked, conflicted}` with `is_clean()` +
+  `summary()` (e.g. `main ↑1 ↓2 +3 ~1 ?4 !1` / `main ✓`). NO process spawning in
+  the core (front-ends own the `git` IO and hand it the bytes); panic-free under
+  the clippy no-panic denies. 8 parser tests: clean tracking branch, distinct
+  staged/modified/untracked/conflicted counts, fresh-repo `No commits yet`,
+  detached HEAD, ahead/behind-only, empty/garbage no-panic, all 7 unmerged codes.
+- **TUI (3fb2178):** `git_status_for(dir)` spawns `git --no-optional-locks` for
+  the cwd (None when not a repo / git absent), refreshed per directory change in
+  `reload_dir`; `files_title()` appends ` · git: <summary>` to the files-pane
+  title. Teeth: `files_title_shows_git_branch_and_dirty_summary_for_a_repo`
+  stands up a throwaway repo + untracked file, asserts parsed `untracked==1` and
+  the rendered title carries `git:`+`?1` (git_status_for → parse_status → title).
+  tui 46 (+1).
+- **Web (a05315e):** `git_status_html(dir)` (same git invocation, empty when not
+  a repo) renders a `<div class="gitstatus clean|dirty">git: <summary></div>`
+  after the breadcrumb in `nav_html`; `.gitstatus` CSS clean-green / dirty-amber
+  in light + `prefers-color-scheme: dark`. Teeth:
+  `browse_shows_git_status_badge_for_a_repo_and_omits_it_elsewhere` — throwaway
+  repo shows the dirty badge (`git:`+`?1`), a non-git directory shows NO badge
+  (no false positive). web 58 (+1).
+- `bash scripts/rust-core-gate.sh` GREEN on the committed tree both times. Drove
+  TSK-251 then TSK-252 reported→ack→triaged→progress→fixed→validated with checks
+  artifacts. The parse logic lives once in core; TUI + web render identical
+  summaries by construction (one core, three front-ends).
+- main @ a05315e + this doc; gates green. Cumulative session: 42 validated +
+  1 bug fixed + 1 parked. **Remaining PORT veins are stateful or dep-gated:**
+  recents/history (TSK-233/234), persistent session (TSK-235/236), multi-file
+  tabs / back-forward (TSK-249/250) — the WEB halves are awkward on the stateless
+  per-connection server; the DEPGATED markdown-render / syntax-highlight pairs
+  (TSK-255–258) need owner dep-approval (comrak / tree-sitter). The clean next
+  TUI-side slice is recents/history backed by a pure core MRU helper.
