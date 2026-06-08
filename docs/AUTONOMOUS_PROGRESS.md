@@ -29,6 +29,28 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+62) — full `reported` lane walked: every unworked task is gated; parked PORT-W2 web-recents decision (TSK-234)
+
+Next tick. Walked the entire `reported` lane (project `tasked`, priority-sorted) to test the
+"there are always tasks" premise. Finding: **every unworked task is gated**, in four buckets:
+- **SwiftUI features needing an owner decision** — TSK-259 (font picker), TSK-264 (Sessions opt-out, marked [D]), TSK-265 (multi-window), TSK-277/278 (Java/Chrome debugger), TSK-280 (dep graph), TSK-286 (image layers), TSK-308 (DocumentModel SRP split), TSK-309 (bookmark TOCTOU) — big/architectural/product calls.
+- **Live/VM-gated SwiftUI UI** — TSK-272 (arrow-nav opens current tab; phase-1 model already landed), TSK-284 (draggable files → Finder, NSItemProvider), TSK-313/314 (session-tab double-click / ~ prefill), TSK-275 (render-FPS jank meter, needs CADisplayLink). Render/event paths → VM-only validation.
+- **Dep-gated PORT** — TSK-255–258 (comrak / tree-sitter; see dep asks TSK-247/248/249).
+- **Design-gated PORT-W2** — TSK-234 (web recents) + TSK-250 (web back-forward).
+
+Action: **parked TSK-234** (`kind:decision`, 3 options) — scoping found the core MRU is already
+done+tested (`core/src/history.rs::push`, 5 tests) but the web wiring needs cross-request
+server-side state added to the deliberately-stateless, security-hardened HTTP server, which a
+PRIOR session explicitly deferred as an owner decision (comment at `web/src/main.rs:68`). Didn't
+unilaterally override that at high context depth on a security-sensitive component; surfaced the
+in-memory-vs-persist-vs-skip fork instead. TSK-250 rides the same decision.
+
+Net: the agent-autonomous-with-host-teeth queue is exhausted — remaining work needs an owner
+decision, a dep approval, or live/VM validation. Key unblocks already on the owner's plate:
+TSK-234 (PORT-W2 web state, NEW this tick), TSK-247/248/249 (deps), TSK-502 (VM Screen-Recording
+grant — unblocks all SwiftUI pixel validation), TSK-202 (Sessions split). No code change this
+tick; `main` unchanged, gate-green.
+
 ## LOG 2026-06-08 (latest+61) — board reconciliation: TSK-140 validated (raw finding my closeAll fix remediated); queue-drain finding
 
 Next tick. `task_next` for project `markdown_viewer` returns `null`, and `task_next` on the real
