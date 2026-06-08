@@ -3744,3 +3744,20 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   TaskList (#266–345, e.g. aspectFit #326 — has `AspectFitFiniteGuardTests` but no board TSK to validate).
   Per [[project_audit_pending_list_stale]]: validate the pure-kernel BUG/SECURITY/contract findings that
   have a board task + teeth test; hold the rest. No code change; `main` @ d3b8cac, host gate green.
+
+## LOG +129 (2026-06-08, autonomous tick — board `fixed` audit cluster fully triaged; teeth-able subset DRAINED)
+- Enumerated every `fixed` BUG/SECURITY/contract finding (jq over the board) and mapped validatability.
+  **Definitive accounting of the board `fixed` audit cluster (so future ticks stop re-mining it):**
+  - **Validated-with-teeth (done over recent ticks):** TSK-174 (mdv-web header-cap DoS), TSK-175 (editor
+    nav scheme guard), TSK-176 (nav-policy test-gap), TSK-195 (.tsx grammar routing). These had pure-kernel
+    host teeth.
+  - **Human/VM-gate (verified fix-present, NOT agent-teeth-validatable — commented on the tasks):** TSK-178
+    (sidebar redaction — SwiftUI view-wiring), TSK-190 (TUI --snapshot io::Result — OK-path tested, panic
+    path not injectable), TSK-142/143 (perf/leak clone — no perf teeth), and by category: TSK-157 (dylib
+    signing/infra), TSK-159/160/191 (vm-smoke shell scripts), TSK-185 (FileWatcher construction failure =
+    DocumentModel god-object handling), TSK-187 (--auto-snapshot lifecycle exit). All perf/leak/race/script/
+    infra/lifecycle/view-wiring → no pure-kernel teeth a regression would fail → correctly held for the human.
+- **Net: the agent-validatable teeth subset of the board `fixed` cluster is DRAINED.** Future ticks: do NOT
+  re-scan it finding-by-finding (it's ~18/18 stale + the teeth-able 4 are validated). The remaining `fixed`
+  items need the owner/VM gate. Real new work requires an owner unblock — the `DECISIONS NEEDED` block
+  (TSK-235 persistence, 255/257 deps, 502 Screen-Recording TCC, 243 theme, …) is the lever. No code change.
