@@ -3242,3 +3242,18 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   `validated` over the next 1-2 ticks entirely on the host — the sustainable lane I was hunting for.
 - main @ `37fc03d`, tree clean, gates green. Run total: 5 host-validated cores (TSK-303/302/310/301 +
   499) + board-integrity fixes. **NEXT TICK:** TSK-499 slice 2 (front-end wiring, host-validatable).
+
+## LOG +106 (2026-06-08, autonomous tick — TSK-499 slice 2a: web CSV cell-find wired + host-tested)
+- Drove TSK-499 forward on the host-completable PORT lane (web front-end = pure request→HTML, fully
+  cargo-testable, no VM). **TSK-499 → progress** (commit `7f43701`); core + web now done, TUI remains.
+- **Web cell-find:** in `mdv-web` `/view` Table mode, `?find=` runs the shared `find::find_in_table`
+  over the SHOWN (filtered) rows and (1) highlights each matching cell — `table_html` gained a hit-set
+  + current-coord param emitting `<td class="hit">`/`<th class="hit">` and `class="hit cur" id="fcell"`
+  for the current match; (2) renders a `table_find_box` (count "i of n cells" + wrapping prev/next
+  `#fcell` links, preserving `?tfilter=` so find composes with the row filter); (3) CSS for
+  `th.hit/td.hit` (light + dark) + `.cur`. find runs over shown rows so coords match what's rendered.
+- **Teeth:** 3 new web tests (`csv_table_cell_find_highlights_and_counts` / `_matches_header_and_is_
+  case_insensitive` / `_no_matches`); full web suite 61/61; `cargo clippy -p mdvcore-web` clean. Web is
+  outside the central rust-core gate (TSK-498), so validated directly via cargo.
+- **REMAINING (slice 2b):** wire `find_in_table` into the TUI table overlay (ratatui snapshot test) —
+  also host-completable, no VM. Then TSK-499 is fully done → validated. main @ `7f43701`, tree clean.
