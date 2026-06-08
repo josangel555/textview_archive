@@ -112,6 +112,7 @@ public enum Renderer {
         case .orient(let o):        return try orient(image, orientation: o)
         case .colorControls(let b, let c, let s):
             return try colorControls(image, brightness: b, contrast: c, saturation: s)
+        case .exposure(let ev):     return try exposure(image, ev: ev)
         }
     }
 
@@ -245,6 +246,27 @@ public enum Renderer {
             kCIInputBrightnessKey: brightness,
             kCIInputContrastKey: contrast,
             kCIInputSaturationKey: saturation,
+        ]), let output = filter.outputImage else {
+            throw ImageEditError.contextCreationFailed
+        }
+        let ciContext = CIContext(options: [.workingColorSpace: workingColorSpace])
+        guard let cg = ciContext.createCGImage(output, from: input.extent) else {
+            throw ImageEditError.contextCreationFailed
+        }
+        return try normalized(cg)
+    }
+
+    /// Apply an exposure adjustment in photographic stops via Core Image's
+    /// `CIExposureAdjust` (`inputEV`). Identity is `ev = 0`. Scales in linear
+    /// light (`output = input · 2^EV`), so it brightens/darkens like a camera's
+    /// exposure dial rather than `colorControls`'s additive brightness. Headless
+    /// (software `CIContext`), geometry-preserving, re-normalized to the canonical
+    /// raster for downstream ops. Degrades to a throw on any Core Image failure.
+    static func exposure(_ image: CGImage, ev: Double) throws -> CGImage {
+        let input = CIImage(cgImage: image)
+        guard let filter = CIFilter(name: "CIExposureAdjust", parameters: [
+            kCIInputImageKey: input,
+            kCIInputEVKey: ev,
         ]), let output = filter.outputImage else {
             throw ImageEditError.contextCreationFailed
         }

@@ -223,6 +223,42 @@ final class ImageEditingTests: XCTestCase {
         XCTAssertEqual(round, doc, "colorControls op must round-trip through Codable")
     }
 
+    // MARK: - Exposure (EV; TSK-344)
+
+    func test_exposure_identity_preservesColor() throws {
+        let data = try Exporter.encode(
+            solidImage(width: 48, height: 32, r: 0.4, g: 0.5, b: 0.6),
+            ExportSpec(format: .png))
+        let plain = try Renderer.render(ImageDocument(data: data))
+        let adjusted = try Renderer.render(
+            ImageDocument(data: data).appending(.exposure(ev: 0)))
+        XCTAssertEqual(adjusted.width, 48)
+        XCTAssertEqual(adjusted.height, 32, "exposure must not change geometry")
+        let p = sampleRGBA(plain, x: 24, y: 16)
+        let a = sampleRGBA(adjusted, x: 24, y: 16)
+        XCTAssertTrue(a.close(to: p, tol: 6), "ev 0 changed the color: \(p) -> \(a)")
+    }
+
+    func test_exposure_positiveEV_lightens() throws {
+        // +1 EV ≈ doubling light in linear space — a mid-tone must get brighter.
+        let base = solidImage(width: 32, height: 32, r: 0.3, g: 0.3, b: 0.3)
+        let data = try Exporter.encode(base, ExportSpec(format: .png))
+        let before = sampleRGBA(try Renderer.render(ImageDocument(data: data)), x: 16, y: 16)
+        let after = sampleRGBA(
+            try Renderer.render(ImageDocument(data: data).appending(.exposure(ev: 1))),
+            x: 16, y: 16)
+        XCTAssertGreaterThan(Int(after.r), Int(before.r) + 10,
+                             "+1 EV should lighten (\(before.r) -> \(after.r))")
+    }
+
+    func test_exposure_survivesDocumentCodableRoundTrip() throws {
+        let doc = ImageDocument(data: Data([4, 5, 6]))
+            .appending(.exposure(ev: -1.5))
+        let round = try JSONDecoder().decode(
+            ImageDocument.self, from: JSONEncoder().encode(doc))
+        XCTAssertEqual(round, doc, "exposure op must round-trip through Codable")
+    }
+
     // MARK: - Histogram (analysis; TSK-344)
 
     func test_histogram_solidColor_concentratesInExpectedBins() throws {

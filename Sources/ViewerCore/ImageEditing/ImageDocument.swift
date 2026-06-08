@@ -89,6 +89,13 @@ public enum EditOp: Sendable, Codable, Equatable {
     /// Pure per-pixel color transform — geometry (dimensions) is unchanged, so
     /// it composes freely before/after crop/resize/orient.
     case colorControls(brightness: Double, contrast: Double, saturation: Double)
+    /// Exposure adjustment in **photographic stops (EV)** via Core Image's
+    /// `CIExposureAdjust` (TSK-344). Identity is `ev: 0`. Unlike
+    /// `colorControls`'s additive `brightness`, this scales in *linear* light —
+    /// `+1` EV ≈ doubling the light, `−1` ≈ halving — which is how a camera/photo
+    /// editor models exposure. Per-pixel, geometry-preserving; composes freely
+    /// with the other ops.
+    case exposure(ev: Double)
 }
 
 extension EditOp {
