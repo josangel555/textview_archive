@@ -23,6 +23,7 @@ use std::fs;
 use std::io;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::UNIX_EPOCH;
 
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind};
@@ -37,6 +38,7 @@ use mdvcore_core::nav::{self, SortKey};
 use mdvcore_core::outline::{self, Heading};
 use mdvcore_core::filter;
 use mdvcore_core::find;
+use mdvcore_core::git;
 use mdvcore_core::meta;
 use mdvcore_core::hex::{self, HexSearchMode};
 use mdvcore_core::view::{self, DiffLineKind, FileKind, View, ViewBody, ViewMode};
@@ -176,6 +178,10 @@ struct GrepHit {
 
 struct App {
     cwd: PathBuf,
+    /// Git working-tree summary for `cwd` (branch + ahead/behind + dirty counts),
+    /// refreshed by `reload_dir` via the shared `git::parse_status`. `None` when
+    /// `cwd` isn't a git repo (or git isn't installed) — the title omits it.
+    git_status: Option<git::RepoStatus>,
     entries: Vec<Entry>,
     /// Pre-formatted file-list rows, rebuilt in `reload_dir` (1:1 with
     /// `entries`) and reused by `draw_files` so per-frame work is viewport-
@@ -279,6 +285,7 @@ impl App {
         let cwd = start.canonicalize().unwrap_or(start);
         let mut app = App {
             cwd,
+            git_status: None,
             entries: Vec::new(),
             list_rows: Vec::new(),
             list: ListState::default(),
@@ -352,7 +359,24 @@ impl App {
             }
             Err(e) => self.status = format!("cannot read dir: {e}"),
         }
+        // Refresh the git summary for the new cwd (front-end owns the IO; the
+        // core only parses). Cheap enough to do per directory change.
+        self.git_status = git_status_for(&self.cwd);
         self.rebuild_rows(entries);
+    }
+
+    /// The files-pane title for the normal (non-filter) state: breadcrumb + sort
+    /// key + dotfile state, plus the git working-tree summary when `cwd` is a
+    /// repo. Extracted so the composition is host-testable independent of ratatui
+    /// block clipping (a narrow pane truncates the tail on screen).
+    fn files_title(&self) -> String {
+        let hidden = if self.show_hidden { " · hidden shown" } else { " · . shows hidden" };
+        let git = self
+            .git_status
+            .as_ref()
+            .map(|g| format!(" · git: {}", g.summary()))
+            .unwrap_or_default();
+        format!(" {} · sort: {}{hidden}{git} ", breadcrumb_trail(&self.cwd), self.sort.as_str())
     }
 
     /// Re-sort the already-loaded entries by the active key (no `read_dir`),
@@ -1423,11 +1447,8 @@ impl App {
         let title = if let Some(needle) = &self.filter {
             format!(" find: {needle}▏ · {} hits ", self.filtered.len())
         } else {
-            // Surface the dotfile state: a clear "hidden shown" marker when on,
-            // and a "(. shows hidden)" affordance when suppressing — so the user
-            // knows dotfiles are filtered and how to reveal them.
-            let hidden = if self.show_hidden { " · hidden shown" } else { " · . shows hidden" };
-            format!(" {} · sort: {}{hidden} ", breadcrumb_trail(&self.cwd), self.sort.as_str())
+            // Path + sort key + dotfile state + git summary (see `files_title`).
+            self.files_title()
         };
         // Reuse the labels formatted once in `reload_dir`; per frame we only
         // borrow them into a `Span` (zero string allocs). When filtering we walk
@@ -1920,6 +1941,24 @@ fn mtime_secs(meta: &fs::Metadata) -> Option<u64> {
         .map(|d| d.as_secs())
 }
 
+/// Working-tree git summary for `dir`, or `None` when it isn't a git repo / git
+/// isn't installed. The front-end owns this IO (spawns `git`); the core only
+/// parses the porcelain output via `git::parse_status`. `--no-optional-locks`
+/// keeps it read-only-friendly (no index-lock churn) and the non-zero exit on a
+/// non-repo path maps cleanly to `None` (no panic, no error spew).
+fn git_status_for(dir: &Path) -> Option<git::RepoStatus> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["--no-optional-locks", "status", "--porcelain=v1", "--branch"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(git::parse_status(&String::from_utf8_lossy(&out.stdout)))
+}
+
 /// Read up to `cap` bytes; returns (bytes, truncated, total-file-size).
 fn read_capped(path: &Path, cap: usize) -> io::Result<(Vec<u8>, bool, usize)> {
     let file = fs::File::open(path)?;
@@ -2278,6 +2317,33 @@ mod tests {
         app.on_key(KeyCode::Esc);
         assert!(app.find_matches.is_empty(), "ESC clears the find");
         assert!(!render(&mut app).contains('▮'), "no minimap when no find is active");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn files_title_shows_git_branch_and_dirty_summary_for_a_repo() {
+        // TSK-251: a git working tree's summary (branch + dirty counts) appears
+        // in the files-pane title, parsed by the shared `git::parse_status`. The
+        // front-end owns the `git` invocation; here we stand up a real throwaway
+        // repo so the IO wiring (git_status_for → parse_status → title) is
+        // exercised end to end, not mocked. (cargo runs tests in threads within
+        // one process, so the pid-named dir is unique to this test.)
+        let dir = std::env::temp_dir().join(format!("mdv-tui-git-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("mk tmp repo dir");
+        let init = Command::new("git").arg("-C").arg(&dir).arg("init").output().expect("spawn git");
+        assert!(init.status.success(), "git init failed: {init:?}");
+        fs::write(dir.join("scratch.txt"), b"hi").expect("write untracked file");
+
+        let app = App::new(dir.clone());
+        let st = app.git_status.as_ref().expect("cwd is a git repo ⇒ Some status");
+        assert_eq!(st.untracked, 1, "one untracked file");
+        assert!(!st.is_clean(), "an untracked file makes the tree dirty");
+
+        let title = app.files_title();
+        assert!(title.contains("git: "), "title carries the git segment: {title}");
+        assert!(title.contains("?1"), "title shows the untracked count: {title}");
+
         let _ = fs::remove_dir_all(&dir);
     }
 
