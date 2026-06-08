@@ -4047,3 +4047,23 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   audit #276 (IndentDetector CRLF) confirmed ALREADY-FIXED on the Swift side (LF-scalar split in place).
   Net: the host-side SwiftUI bug queue is confirmed exhausted/stale/VM-gated across 4 probes; the productive
   frontier is now the owner-gated TSK-502 pixel-lane unblock (parked) and the dep-/owner-gated PORT lane.
+
+## LOG +144 (2026-06-08, autonomous tick — TSK-243 TUI dark-mode/theme palette, owner-greenlit; + footer 2-row split)
+- Owner RESOLVED the TSK-243 park with "c" (build the core palette + apply to the TUI + validate the actual
+  colors via a pixel test). Shipped **TSK-243 → validated** (commit 72a3af7): NEW `rust-core/crates/core/src/
+  theme.rs` — `Rgb`, `Mode{Light,Dark}`, `Role{Accent,Header,Muted,HighlightBg,CurrentBg,OnHighlight,Added,
+  Removed,Hunk,Context}`, `Palette::for_mode(mode).color(role)` (One Dark/One Light values) + panic-free
+  `parse_hex` (no `unwrap` → passes the gate's clippy no-panic deny). TUI gains `ThemeMode{Adaptive,Dark,Light}`
+  (Adaptive default = today's EXACT ANSI colors → zero default-behavior change), cycled by `t`, with a
+  `tc(role, adaptive)` router applied to the find-highlight, status badge, active-tab chip, and muted chrome.
+- Validation honored "c" on the HOST: a TestBackend per-cell color test asserts the find-highlight cell's
+  ACTUAL bg `Color` flips Adaptive(Magenta) → Dark(Rgb c678dd) → Light(Rgb a626a4) → back. Per
+  [[reference_tui_testbackend_pixel_teeth]] this IS the TUI's pixel tier (ratatui retains cell fg/bg) — no VM,
+  unlike SwiftUI; a VM terminal-screencap would be weaker AND blocked by the parked TSK-502 TCC gap. core
+  theme 6/6, full TUI suite 51/51, rust-core gate green (clippy no-panic + all crates + ffi + doctests).
+- OWNER ASK mid-tick (footer): split the TUI footer help into two lines. Done in the same commit — `draw`'s
+  footer is now `Length(2)` and `draw_status` soft-wraps (`Wrap{trim:false}`) so the (now longer, with
+  `t theme`) key legend flows onto a 2nd row instead of truncating. Default look otherwise unchanged.
+- `main` @ 72a3af7 (+ this log). Drained a PORT-lane item to validated while the SwiftUI render-path lane is
+  owner-gated (TSK-502 parked). Unrouted TUI color sites (diff lines, file-nav entries) stay Adaptive — safe
+  (they keep the ANSI colors) and routable incrementally in a follow-up.
