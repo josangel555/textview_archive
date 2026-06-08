@@ -29,6 +29,31 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-07 (latest+53) — audit verify-sweep COMPLETE: 8 more validated, 2 honestly held
+
+Autonomous tick. Finished the `1dbf1ca` audit-cluster verify-and-validate sweep. Each
+validated finding had its teeth-bearing test spot-read + re-run green this tick:
+
+- **TSK-120** [leak] PTYProcess restart respawns a live shell (childPID sentinel reset) — LifecycleTests 4/4.
+- **TSK-121** [perf] CSVParser 64K-cell parses < 1000ms (was O(n²) ~2.35s) — PerfTests 3/3.
+- **TSK-125** [sec] FindEngine routed through bounded matcher + deadline — BoundedTests 5/5.
+- **TSK-129** [quality] MCP visible_text truncates at exact byte cap, drops partial code point — 4/4.
+- **TSK-132** [sec] SessionStore rejects oversized index/snapshot (.corrupt), normal loads — 6/6.
+- **TSK-133** [leak] Plugin grandchild-held pipe doesn't hang + no fd leak across repeats — 3/3.
+- **TSK-118** [sec] mdv-web /view+/browse confine to root (`/etc/hosts`→404) — route_confines_path_to_root.
+- **TSK-131** [test-gap] rust-core gate enforces ffi no-panic + unsafe-hygiene denies — no_panic gate 2/2.
+
+**Held at review (honest non-validation), commented why:**
+- **TSK-122** [perf] HexView O(2) repaint — LIVE NSViewController render path; no host coverage and
+  a re-introduced full repaint wouldn't fail any host test. Needs a VM latency test or a model-level
+  "step doesn't invalidate the full highlight set" assertion.
+- **TSK-123** [perf] session_table encode_frame borrow-not-clone — correctness tested, but a
+  re-introduced clone is byte-identical so the perf property is unguarded. Needs a perf/alloc assert.
+
+Sweep total across 4 ticks: **15 audit findings validated** (101/119/127/124/130/126/128/120/121/125/
+129/132/133/118/131) + TSK-205 TUI; 2 held with reasons. All 144 `Audit_*` tests green. No code change
+these last ticks — the work was confirming teeth + closing board state honestly.
+
 ## LOG 2026-06-07 (latest+52) — verify-and-validate sweep cont'd: 4 more audit findings validated (ReDoS/cmark/EACCES)
 
 Autonomous tick. Ran ALL 24 per-finding `Audit_*` regression suites in one batch —
