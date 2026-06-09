@@ -29,6 +29,27 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+80) — TSK-342: ImageEditorView — the visible image-editor PoC, wired into the image preview
+
+Third TSK-342 increment (commit `097a5ff`): the VISIBLE editor. `ImageEditorView` (SwiftUI) binds to the
+host-tested `ImageEditorViewModel` — left WYSIWYG preview + right panel (7 tonal sliders via a render-on-set
+Binding, Rotate/Undo, Reset/Revert, Save-a-Copy via `NSSavePanel`→`vm.export`). Wired into `ImagePreview`
+as a control-bar **Edit** toggle (`slider.horizontal.3`) that overlays the editor. a11y ids
+`mdv.imageEditor.*` + `mdv.imagePreview.editButton` for VM AX/pixel validation.
+
+**Compositor-occlusion mitigation applied up front** (the sibling-blank trap that recurred 4×): the opaque
+`ImageScrollHost` `NSViewRepresentable` is dropped from the tree entirely (`if !editing`) while the editor
+overlay is up, so its CALayer can't composite over the SwiftUI editor. The non-editing path is byte-for-byte
+unchanged → the shipping image viewer is safe; the edit path is opt-in + isolated. `swift build` clean.
+
+HONEST STATUS — **render-gated, NOT validated.** The editor's on-screen visibility + slider interaction are
+SwiftUI render-path with NO host teeth (no ViewInspector). VM validation is non-trivial: the Edit toggle is
+local `@State` (not script-reachable, same class as the TSK-505 MetadataPanel button) and tapping a SwiftUI
+`Button` needs real AX/CGEvents. **Next increment to validate:** add a debug flag (e.g.
+`MDV_START_IMAGE_EDIT=1`) so a T5 `PixelTestCase` launches straight into edit mode and asserts the
+right-panel composites (slider variety) + the preview renders — then drive TSK-342 to validated. The model +
+export underneath are already host-tested; this view is the render-gated remainder.
+
 ## LOG 2026-06-08 (latest+79) — TSK-342: ImageEditorViewModel export wiring — editor MODEL layer now complete
 
 Second TSK-342 increment (commit `ef09e82`): the editor's save flow over the tested `Exporter` —
