@@ -29,6 +29,22 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+120) — VM stabilized enough: rsync'd main + launched DETACHED forward-compat build (in flight)
+
+VM link held this tick: the retried `rsync … macOS15:markdown_viewer/` COMPLETED (RSYNC_OK) — current main (incl. the
+session's Swift changes) is now on the VM. Given the link is still flaky-ish, launched the validation **detached on the VM**
+(`nohup … > /tmp/vmbuild.log; touch /tmp/vmbuild.done`) so it survives ssh drops, rather than holding one long ssh session:
+
+- **Forward-compat `swift build` (VM default Swift 6.1.2)** — the stricter-than-host toolchain that caught the TSK-401
+  default-actor-isolation skew; validates main compiles under it. Confirmed progressing cleanly at poll time ([113/127],
+  TreeSitter grammars + tree linking). Detached PID writes EXIT=N to /tmp/vmbuild.log + touches /tmp/vmbuild.done on finish.
+
+NEXT-TICK CUE (poll first): `ssh macOS15 'test -f /tmp/vmbuild.done && tail -30 /tmp/vmbuild.log'`. If EXIT=0 → forward-compat
+green (note it; the GitLogTab dead-code deletion + main compile under 6.1.2). THEN, if the link is stable, escalate to the
+heavy render lane: launch `test-in-vm.sh test` the SAME detached way (nohup + done-flag poll) to exercise T4/T5/WebView on
+real pixels (owner standing ask) — do NOT hold a foreground ssh for a 20-min run on a flaky link. If EXIT!=0, read the
+error (likely a 6.1.2-only concurrency skew on main) and fix it host-side.
+
 ## LOG 2026-06-09 (latest+119) — VM is waking but FLAKY (intermittent); heavy validation run not yet feasible
 
 VM transitioned from fully-down (+117/+118) to INTERMITTENTLY reachable: `ssh macOS15 'echo'` + a quick state probe BOTH
