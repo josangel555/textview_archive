@@ -29,6 +29,34 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+95) — board reconciliation: TSK-344 + TSK-349 host-engines → validated; answered owner Q on TSK-362
+
+After TSK-521 landed, swept the `fixed` lane for host-complete+tested work conservatively left unvalidated, and
+reconciled two to `validated` (no new code — ran the existing teeth green this tick, then self-validated the
+host-completable portion; the render-gated UI half of each is a SEPARATE task, not over-claimed):
+- **TSK-344** (image tonal engine) → validated. All four tonal `EditOp`s (colorControls/exposure/shadowHighlight/
+  sharpen) + Histogram are implemented through Core Image in `Renderer.apply` and host-tested headless via
+  `CIContext` — `ImageEditingTests` 32/0 this tick, with effect-direction teeth (e.g. +1 EV lightens, saturation 0
+  grays, shadow-lift brightens, sharpen raises edge contrast). The editor-PANEL SwiftUI UI is the render-gated
+  remainder = **TSK-253**, not claimed here. (commits a483c6a/728c7f5/cd0551c/eda47b5)
+- **TSK-349** (worktree create/remove) → validated. `GitClient.worktreeAdd/worktreeRemove/worktreePrune` shell-out
+  service methods, host-tested via the temp-repo harness — `GitClientTests/testWorktree*` 2/0 this tick
+  (add→list-shows→remove→list-clears; bogus remove returns false, no throw). The Git-panel UI button is the
+  render-gated remainder. (commit 60fbede)
+- **TSK-505** (Copy SHA-256 command) left at `fixed` deliberately — its scope INCLUDES the MetadataPanel checksum
+  row (render-gated, in-scope), so host-validating would over-claim; `blocker=live-validation` is correct. Command
+  half is host-tested (`FileChecksumRunnerTests` 3/0 this tick).
+
+**Answered the owner's open question on TSK-362** (Editor syntax-highlighting; owner asked "can't we use treesitter
+and our own highlighting?" then set `wontdo`): yes — drive CM6 Editor highlighting from the TreeSitter engine we
+already ship via a native→CM6 `Decoration.mark` bridge (serialize TS token ranges to JSON, push as decorations).
+**Zero new deps** (their minimal-deps preference), parity with Source mode's ~15 languages, host-testable at the
+serialization layer / VM-validated at the WebView. Left it `wontdo` (only answered, didn't reopen) — owner's call.
+
+Board state: clean host-completable user-reachable SwiftUI feature lane is genuinely drained (TSK-521 was the last);
+remaining SwiftUI work is owner-gated decisions or render-gated UI (model-increment + VM-validate split is the only
+autonomous path). PORT board lane (TSK-197..258) done/validated; built-in-TaskList #362..423 are duplicates-of-done.
+
 ## LOG 2026-06-09 (latest+94) — TSK-521: LSP textDocument/didSave wired on editor save (host-validated)
 
 Filed + landed **TSK-521** (`feature`, loose-ends/lsp) — the one genuinely-remaining host-testable, non-gated
