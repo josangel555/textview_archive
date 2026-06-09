@@ -53,9 +53,15 @@ public struct AudioExportSpec: Equatable, Sendable {
 
 public enum AudioExportError: Error, Equatable {
     case emptyBuffer
-    /// AVFoundation can DECODE but not ENCODE MP3 on macOS — encoding needs an
-    /// external encoder (e.g. LAME), a new dependency that is an owner decision.
-    case mp3RequiresExternalEncoder
+    /// MP3 export is requested but no `ffmpeg` executable was found on the host
+    /// (and none was supplied in Settings) — the feature is disabled. WAV/AAC
+    /// are unaffected. (AVFoundation can decode but not encode MP3 on macOS;
+    /// per the owner decision MP3 is encoded via an external host `ffmpeg`,
+    /// best-effort located, never bundled or vendored.)
+    case mp3FFmpegNotFound
+    /// `ffmpeg` was found and run but exited non-zero (carries the exit code) —
+    /// e.g. the build lacks `libmp3lame`, or the args were rejected.
+    case ffmpegFailed(Int32)
     case writeFailed
 }
 
@@ -69,9 +75,18 @@ public enum AudioExportError: Error, Equatable {
 /// the requested container / bit depth / bit rate.
 public enum AudioExporter {
 
-    public static func encode(_ buffer: AudioPCMBuffer, spec: AudioExportSpec, to url: URL) throws {
+    public static func encode(
+        _ buffer: AudioPCMBuffer,
+        spec: AudioExportSpec,
+        to url: URL,
+        ffmpegOverride: String? = nil
+    ) throws {
         guard buffer.frameCount > 0, buffer.channelCount > 0 else { throw AudioExportError.emptyBuffer }
-        if spec.format == .mp3 { throw AudioExportError.mp3RequiresExternalEncoder }
+        if spec.format == .mp3 {
+            try encodeMP3(buffer, spec: spec, to: url,
+                          ffmpeg: FFmpegLocator.resolve(override: ffmpegOverride))
+            return
+        }
 
         let rate = buffer.sampleRate
         let channelCount = buffer.channelCount
@@ -107,7 +122,7 @@ public enum AudioExporter {
             settings[AVFormatIDKey] = kAudioFormatMPEG4AAC
             settings[AVEncoderBitRateKey] = spec.bitRate
         case .mp3:
-            throw AudioExportError.mp3RequiresExternalEncoder   // handled above; defensive
+            throw AudioExportError.mp3FFmpegNotFound   // handled above; defensive
         }
 
         do {
@@ -115,6 +130,57 @@ public enum AudioExporter {
             try file.write(from: pcm)
         } catch {
             throw AudioExportError.writeFailed
+        }
+    }
+
+    // MARK: - MP3 (external host ffmpeg)
+
+    /// Encode `buffer` to MP3 at `url` via the resolved host `ffmpeg`. We first
+    /// write a lossless intermediate WAV with our own PCM encoder, then transcode
+    /// it with `ffmpeg -codec:a libmp3lame`. `ffmpeg == nil` ⇒ feature disabled.
+    /// Internal (not private) so the not-found path is host-testable deterministically.
+    static func encodeMP3(
+        _ buffer: AudioPCMBuffer,
+        spec: AudioExportSpec,
+        to url: URL,
+        ffmpeg: URL?
+    ) throws {
+        guard let ffmpeg else { throw AudioExportError.mp3FFmpegNotFound }
+
+        let tempWav = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-mp3src-\(UUID().uuidString).wav")
+        defer { try? FileManager.default.removeItem(at: tempWav) }
+        try encode(buffer, spec: AudioExportSpec(format: .wav, sampleFormat: .int16), to: tempWav)
+
+        let kbps = max(8, spec.bitRate / 1000)
+        try runFFmpeg(ffmpeg, [
+            "-y", "-hide_banner", "-loglevel", "error",
+            "-i", tempWav.path,
+            "-codec:a", "libmp3lame", "-b:a", "\(kbps)k",
+            "-f", "mp3", url.path,
+        ])
+    }
+
+    /// Run `ffmpeg` with an explicit args array (NO shell — paths can't inject)
+    /// and a minimal environment, mirroring `GitClient.run`. Throws on spawn
+    /// failure or a non-zero exit.
+    private static func runFFmpeg(_ exe: URL, _ args: [String]) throws {
+        let p = Process()
+        p.executableURL = exe
+        p.arguments = args
+        p.standardInput = FileHandle.nullDevice
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        // Pass only a tiny env allowlist (don't leak the app's *_TOKEN/_SECRET).
+        let src = ProcessInfo.processInfo.environment
+        var env: [String: String] = [:]
+        for key in ["PATH", "HOME", "TMPDIR", "LANG"] where src[key] != nil { env[key] = src[key] }
+        p.environment = env
+
+        do { try p.run() } catch { throw AudioExportError.writeFailed }
+        p.waitUntilExit()
+        guard p.terminationStatus == 0 else {
+            throw AudioExportError.ffmpegFailed(p.terminationStatus)
         }
     }
 }

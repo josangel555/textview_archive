@@ -71,11 +71,39 @@ final class AudioExporterTests: XCTestCase {
         XCTAssertGreaterThan(peak, 0.05, "decoded AAC must not be silent")
     }
 
-    func test_mp3_isRefused_ownerDepGap() {
+    func test_mp3_disabledWhenFFmpegMissing() {
+        // The not-found path is forced deterministically (ffmpeg: nil) regardless
+        // of whether the host actually has ffmpeg.
         let src = sineBuffer(freq: 440, rate: 8000, frames: 100)
-        XCTAssertThrowsError(try AudioExporter.encode(src, spec: .init(format: .mp3), to: tmp("mp3"))) {
-            XCTAssertEqual($0 as? AudioExportError, .mp3RequiresExternalEncoder)
+        XCTAssertThrowsError(
+            try AudioExporter.encodeMP3(src, spec: .init(format: .mp3), to: tmp("mp3"), ffmpeg: nil)
+        ) {
+            XCTAssertEqual($0 as? AudioExportError, .mp3FFmpegNotFound)
         }
+    }
+
+    func test_mp3_encodesViaFFmpegWhenAvailable() throws {
+        // Best-effort: only runs where a host ffmpeg (with libmp3lame) exists;
+        // skips elsewhere (e.g. CI without ffmpeg) — the feature is host-tool-gated.
+        guard FFmpegLocator.resolve() != nil else {
+            throw XCTSkip("no ffmpeg on host — MP3 export feature disabled here")
+        }
+        let src = sineBuffer(freq: 440, rate: 44100, frames: 44100)   // ~1s, non-silent
+        let url = tmp("mp3")
+        try AudioExporter.encode(src, spec: .init(format: .mp3, bitRate: 128_000), to: url)
+
+        let bytes = try Data(contentsOf: url)
+        XCTAssertGreaterThan(bytes.count, 0)
+        // MP3 starts with an ID3 tag ("ID3") or an MPEG frame sync (0xFF 0xEx/0xFx).
+        let head = [UInt8](bytes.prefix(3))
+        let isID3 = head == Array("ID3".utf8)
+        let isFrameSync = head.count >= 2 && head[0] == 0xFF && (head[1] & 0xE0) == 0xE0
+        XCTAssertTrue(isID3 || isFrameSync, "output is not an MP3 stream (head=\(head))")
+
+        // And it decodes back to roughly the same duration, non-silent.
+        let back = try AudioDecoder.decode(contentsOf: url)
+        XCTAssertGreaterThan(back.frameCount, 40000)
+        XCTAssertGreaterThan(back.channels[0].map(abs).max() ?? 0, 0.05)
     }
 
     func test_emptyBuffer_throws() {
