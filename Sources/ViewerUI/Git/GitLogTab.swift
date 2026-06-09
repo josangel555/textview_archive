@@ -157,18 +157,6 @@ struct GitLogTab: View {
         return parts.joined(separator: " · ")
     }
 
-    private func relativeTime(_ unix: Int) -> String {
-        let then = Date(timeIntervalSince1970: TimeInterval(unix))
-        let diff = Date().timeIntervalSince(then)
-        switch diff {
-        case ..<60:        return "just now"
-        case ..<3600:      return "\(Int(diff / 60)) min ago"
-        case ..<86_400:    return "\(Int(diff / 3600)) h ago"
-        case ..<604_800:   return "\(Int(diff / 86_400)) d ago"
-        default:           return "\(Int(diff / 604_800)) wk ago"
-        }
-    }
-
     /// Show a synthetic commit-diff tab. v1: writes `git show` output
     /// to a .diff file (same trick as Status tab). Task #131 replaces
     /// this with a proper in-app DiffView.
