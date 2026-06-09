@@ -29,6 +29,32 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+78) — TSK-342: ImageEditorViewModel — host-testable editor model layer (image PoC UI enablement)
+
+Rotated off test-sweeping to real product work (owner's "build PoCs: image editing" directive). The
+image-editing ENGINE was already complete + host-tested (TSK-344: ImageDocument op-list + Renderer with
+crop/resize/orient/colorControls/exposure/shadowHighlight/sharpen + histogram + export, 32/0) but had NO UI
+wiring — the explicit "v0 spine" gap (TSK-342). Delivered the host-testable model layer any editor view
+binds to (commit `46c662a`): `ImageEditorViewModel` (@MainActor ObservableObject, `Sources/ViewerUI/`).
+
+Design that earns real host teeth despite the UI being render-gated:
+- Live tonal sliders are STATE (brightness/contrast/saturation/exposure/shadow/highlight/sharpness), folded
+  into ONE op each at render time via the `document` computed property — a slider drag mutates a single
+  derived op, never spamming the lossless history. Identity sliders contribute nothing (pristine = source).
+- Geometry ops (crop/resize/orient) commit to the lossless history with `undoGeometry()`.
+- Republishes the rendered preview `CGImage` + `Histogram`; renders headless via Core Image (no window).
+- Made `Renderer.histogram` public (the editor needs it, like the already-public `render`).
+
+Host teeth (7 tests, ImageEditorViewModelTests, all green): pristine init; brightness lightens the pixel AND
+folds to exactly one colorControls op (re-drag does NOT append — the no-spam guard); saturation 0 greys out
+(R≈G≈B); geometry resize halves dims + undo restores; resetTonal returns the pixel to pristine while keeping
+geometry; revertAll clears both; identity sliders add no ops. These exercise the real slider→op→pixel path
+through the tested engine — a regression (op-spam, wrong direction, broken undo) trips them.
+
+TSK-342 stays at `fixed`: the SwiftUI editor view that draws the preview + sliders + histogram is the
+render-gated remainder (VM/human gate via the now-unblocked TSK-502 pixel lane). NEXT image increment: that
+thin view + a VM pixel/AX test.
+
 ## LOG 2026-06-08 (latest+77) — Render-validation lane FULLY SWEPT CLEAN (WebView suites green) — stale-test arc closed
 
 Completed the stale-test sweep arc opened by the TSK-502 VM-pixel-lane unblock. Ran the 5 in-process
