@@ -2927,7 +2927,22 @@ public final class DocumentModel: ObservableObject {
     /// forced-type tab offers the override's lenses.
     public var availableViewModes: [ViewMode] {
         ViewModeOptions.availableModes(
-            for: currentURL, forcedCategory: tabs.selected?.categoryOverride)
+            for: currentURL, forcedCategory: tabs.selected?.categoryOverride,
+            isRenderableText: Self.renderableTextHint(tabs.selected?.state))
+    }
+
+    /// Derive the `isRenderableText` content hint (TSK-332) from a loaded
+    /// document state. `.loaded` is the loader's verdict that the bytes
+    /// decoded as text (it rejects on NUL/undecodable), so an unknown- or
+    /// binary-EXTENSION file that actually IS text upgrades from HEX-only to
+    /// Source. Returns `nil` (NOT `false`) for every other state so the
+    /// extension-driven default is left untouched: only `.loaded` is a
+    /// positive text signal — `.binary`/`.preview`/`.loading`/`.empty` must
+    /// not assert "renderable text" (a `.loading` tab hasn't decided yet, and
+    /// `availableViewModes` re-derives once it lands `.loaded`).
+    nonisolated static func renderableTextHint(_ state: DocumentState?) -> Bool? {
+        if case .loaded = state { return true }
+        return nil
     }
 
     /// How the toolbar should render itself for the current mode (which
@@ -3105,45 +3120,6 @@ public final class DocumentModel: ObservableObject {
         let openToken = PerfSignpost.begin(.open, "DocumentModel.openResolved")
         defer { PerfSignpost.end(openToken) }
         let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
-        // Pick the per-extension default mode: .table for CSV/TSV,
-        // .rendered for markdown, .source for everything else. The
-        // "carry current mode" branch below overrides for the common
-        // "user is in HEX, opens another file" workflow.
-        let initialMode = ViewModeOptions.defaultMode(for: resolved)
-        let carryMode: ViewMode = {
-            if forceNewTab { return initialMode }
-            // If the active tab has a non-default mode the user
-            // explicitly picked (e.g. HEX, Format), carry it. Otherwise
-            // use the new file's natural default.
-            if let cur = tabs.selected, cur.viewMode != .rendered, cur.viewMode != .source {
-                // Only carry a mode the DESTINATION file actually offers.
-                // `.preview` is valid only for native-preview categories
-                // (image/audio/video/pdf/sqlite); carrying it onto a text
-                // file — or `.table`/`.diff` onto a file that doesn't
-                // support them — would leave the picker selecting a mode
-                // that isn't in `availableModes`, desyncing picker vs pane.
-                // Falling back to the destination's natural default keeps
-                // the carry useful for shared modes (e.g. HEX→HEX,
-                // image→image preview) without smuggling an invalid one.
-                //
-                // SC-CHROME-02: `availableModes` membership alone is NOT
-                // enough for native-preview destinations. Those expose
-                // `[.preview, .hex]`, so a carried `.hex` passes the
-                // membership test — but the loader returns a `.preview`
-                // document state and the HEX-load block below correctly
-                // skips it, so the pane stays the native lens while the
-                // picker reads HEX (picker↔pane desync). A native-preview
-                // file renders ONLY through `.preview`; carrying anything
-                // but `.preview` onto it is a guaranteed desync, so fall
-                // back to its natural default (`.preview`) instead.
-                if ViewModeOptions.availableModes(for: resolved).contains(cur.viewMode),
-                   !(isNativePreviewDestination(resolved) && cur.viewMode != .preview) {
-                    return cur.viewMode
-                }
-            }
-            return initialMode
-        }()
-
         // Off-main eager open for large text files. `controller.open`
         // reads + decodes the entire file synchronously; for a few-
         // hundred-MB log that is a multi-hundred-ms main-thread stall
@@ -3153,21 +3129,32 @@ public final class DocumentModel: ObservableObject {
         // without a read), open the tab in `.loading(URL)` and read off-
         // main — reusing the exact `materializeIfNeeded` identity-guard
         // pattern (Task.isCancelled + re-find-by-id) so a slow read
-        // never lands in the wrong or closed tab.
+        // never lands in the wrong or closed tab. The TSK-332 content
+        // hint needs the sync decode (skipped here), so resolve the mode
+        // WITHOUT it; the async load lands a `.loaded` state and
+        // `availableViewModes` re-derives the hint once it does.
         if shouldDeferOpenOffMain(resolved) {
-            openLargeFileOffMain(resolved, forceNewTab: forceNewTab, viewMode: carryMode, preview: preview)
+            let mode = resolveOpenMode(resolved, forceNewTab: forceNewTab, isRenderableText: nil)
+            openLargeFileOffMain(resolved, forceNewTab: forceNewTab, viewMode: mode, preview: preview)
             return
         }
 
         let state = controller.open(url: resolved)
+        // TSK-332: feed the loader's text/binary verdict back into mode
+        // resolution so an unknown-/binary-EXTENSION file that decoded as
+        // text (`.loaded`) opens as Source instead of the extension-only
+        // HEX default (and offers Source in the picker).
+        let mode = resolveOpenMode(
+            resolved, forceNewTab: forceNewTab,
+            isRenderableText: Self.renderableTextHint(state))
         if forceNewTab {
-            tabCoordinator.append(Tab(url: resolved, state: state, viewMode: initialMode))
+            tabCoordinator.append(Tab(url: resolved, state: state, viewMode: mode))
         } else if preview {
             // Preview slot: reuse the one ephemeral tab (or reveal an existing
             // permanent one). See `openPreview(url:)` / `TabsState.openPreview`.
-            tabCoordinator.openPreview(url: resolved, state: state, viewMode: carryMode)
+            tabCoordinator.openPreview(url: resolved, state: state, viewMode: mode)
         } else {
-            tabCoordinator.openOrReveal(url: resolved, state: state, viewMode: carryMode)
+            tabCoordinator.openOrReveal(url: resolved, state: state, viewMode: mode)
         }
         // Carry HEX mode across file switch: if the active tab now
         // shows a different file in HEX, but the underlying state is
@@ -3196,6 +3183,50 @@ public final class DocumentModel: ObservableObject {
         // item9: follow-mode reveal for opens (open doesn't route through
         // selectTab). Select + expand within the current root only.
         followActiveTabIfNeeded()
+    }
+
+    /// Resolve the view mode a freshly-opened tab should land in. New tabs
+    /// (`forceNewTab`) take the file's natural default; otherwise the active
+    /// tab's explicitly-picked non-default mode (e.g. HEX, Format) is CARRIED
+    /// forward when the destination actually offers it. `isRenderableText` is
+    /// the TSK-332 content hint threaded through both the default and the
+    /// carry-membership check so an unknown-extension text file resolves to —
+    /// and offers — Source rather than the extension-only HEX default.
+    private func resolveOpenMode(
+        _ resolved: URL, forceNewTab: Bool, isRenderableText: Bool?
+    ) -> ViewMode {
+        let initialMode = ViewModeOptions.defaultMode(
+            for: resolved, isRenderableText: isRenderableText)
+        if forceNewTab { return initialMode }
+        // If the active tab has a non-default mode the user explicitly picked
+        // (e.g. HEX, Format), carry it. Otherwise use the new file's default.
+        if let cur = tabs.selected, cur.viewMode != .rendered, cur.viewMode != .source {
+            // Only carry a mode the DESTINATION file actually offers.
+            // `.preview` is valid only for native-preview categories
+            // (image/audio/video/pdf/sqlite); carrying it onto a text file —
+            // or `.table`/`.diff` onto a file that doesn't support them —
+            // would leave the picker selecting a mode that isn't in
+            // `availableModes`, desyncing picker vs pane. Falling back to the
+            // destination's natural default keeps the carry useful for shared
+            // modes (e.g. HEX→HEX, image→image preview) without smuggling an
+            // invalid one.
+            //
+            // SC-CHROME-02: `availableModes` membership alone is NOT enough
+            // for native-preview destinations. Those expose `[.preview, .hex]`,
+            // so a carried `.hex` passes the membership test — but the loader
+            // returns a `.preview` document state and the HEX-load block in
+            // `openResolved` correctly skips it, so the pane stays the native
+            // lens while the picker reads HEX (picker↔pane desync). A native-
+            // preview file renders ONLY through `.preview`; carrying anything
+            // but `.preview` onto it is a guaranteed desync, so fall back to
+            // its natural default (`.preview`) instead.
+            if ViewModeOptions.availableModes(
+                for: resolved, isRenderableText: isRenderableText).contains(cur.viewMode),
+               !(isNativePreviewDestination(resolved) && cur.viewMode != .preview) {
+                return cur.viewMode
+            }
+        }
+        return initialMode
     }
 
     /// True when `openResolved` should route the file read off the main
