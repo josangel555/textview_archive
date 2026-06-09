@@ -29,6 +29,41 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+104) — GET-TO-DONE: 3 more closed with re-run teeth (TSK-479 MsgPack OOM, TSK-203/204 CSV filter); held-lane taxonomy clarified
+
+Continued the owner's "get all tickets to done" sweep. Closed **3** `fixed`→`done`, each with a FRESH re-run of
+a genuine failing-on-regression test (re-ran, did not trust the stale claim — owner directive):
+- **TSK-479** ([S3][contract] Swift MessagePack reserves capacity from untrusted count — OOM-abort) → **done**.
+  `MessagePack.swift` array(_:):143 + map(_:):153 clamp `reserveCapacity(min(n, max(0, bytes.count - pos)))`.
+  Genuine teeth: `MsgPackDecoderNegativeAuditTests` `test_array32/map32_hugeDeclaredCount_shortBody_throwsTruncated_doesNotAbort`
+  — an `array32` declaring 0xFFFFFFFF elems + 1-byte body must throw `.truncated`, not abort. Reverting the clamp
+  drives reserveCapacity(4.29e9)→~34 GB→host abort = test process dies. Re-ran full suite: 23/0.
+- **TSK-203** ([PORT][TUI] CSV table filtering) → **done**. Landed e/commit `1acd42c`; re-ran
+  `mdvcore-tui::table_filter_narrows_rows_and_scopes_columns` → 1/0 (asserts narrowed cells + N/M count + col-scoping).
+- **TSK-204** ([PORT][WEB] CSV table filtering) → **done**. Same commit; re-ran
+  `mdv_web::csv_table_filter_global_and_per_column_scoping` → 1/0 (global Alice 1/2; col-scoped `age:Alice` 0/2 proves scope).
+
+**KEY PATTERN** — the `[PORT]` features stuck at `fixed` are honestly closeable: the rust-core gate *forces* cargo
+tests, so each shipped with a named regression test; they only sat at `fixed` because the deep-audit-era flow stopped
+there (never ran `task_validate`). Discriminator for the rest of the lane: a close-note that cites a SPECIFIC named
+test → closeable; a note citing only the fix *location* (the reconciliation boilerplate) → no dedicated teeth → hold.
+
+**HONEST HOLDS this tick** (NOT closed — would be false-green per owner policy):
+- **TSK-173** ([S3][perf] MsgPack transient `[UInt8]` per token) — rewrite present (`uintN` inline loop / `str`
+  `String(decoding:as:)`), but it's a PERF finding: the existing tests prove CORRECTNESS only; reverting to an
+  allocating path keeps them green. No alloc-counter teeth → hold.
+- **TSK-185** ([S4][bug] FileWatcher construction-failure signal) — fix present (`liveReloadUnavailable=true` +
+  `Obs.emit` in both `catch` and `onLost`), flag is `@Published`, but the failure path (`O_EVTONLY` open throw /
+  reattach exhaustion) isn't deterministically inducible on the host without fd-exhaustion/a mock seam → flaky → hold.
+- **TSK-272** ([BACKLOG] arrow Up/Down scrubs preview tab) — model boundary host-tested (`DocumentModelPreviewTests`
+  7/0), but the render-path (does the arrow keypress reach `previewSelectedFile`) is VM-only and shares TSK-306's
+  PARKED owner decision on the validation bar. Render-untested → hold (as the prior session correctly left it).
+- **TSK-134** ([S2][perf] Monitor open-once) — same perf-no-host-teeth class as TSK-173.
+
+No source changed this tick (all three closes validated already-landed commits) → tree clean, HEAD `3adea13`, gate
+state unchanged. The remaining `fixed` lane is overwhelmingly perf/leak/race/build reconciliations (no clean host
+teeth) + render/VM-gated items → human/VM-gate territory, not agent-self-closeable without manufacturing brittle teeth.
+
 ## LOG 2026-06-09 (latest+103) — GET-TO-DONE: TSK-178 security redaction — extracted teeth + driven fixed→done
 
 Converted a HELD reconciliation into a properly-guarded fix + closed it (the model for the rest of the held lane):
