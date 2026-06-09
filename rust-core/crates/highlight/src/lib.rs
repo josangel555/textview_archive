@@ -50,6 +50,15 @@ pub enum Lang {
     Json,
     Rust,
     JavaScript,
+    TypeScript,
+    Tsx,
+    Java,
+    C,
+    Cpp,
+    CSharp,
+    Swift,
+    Kotlin,
+    Lua,
 }
 
 impl Lang {
@@ -60,6 +69,15 @@ impl Lang {
             "json" => Some(Self::Json),
             "rs" => Some(Self::Rust),
             "js" | "mjs" | "cjs" | "jsx" => Some(Self::JavaScript),
+            "ts" | "mts" | "cts" => Some(Self::TypeScript),
+            "tsx" => Some(Self::Tsx),
+            "java" => Some(Self::Java),
+            "c" | "h" => Some(Self::C),
+            "cpp" | "cc" | "cxx" | "hpp" | "hh" | "hxx" => Some(Self::Cpp),
+            "cs" => Some(Self::CSharp),
+            "swift" => Some(Self::Swift),
+            "kt" | "kts" => Some(Self::Kotlin),
+            "lua" => Some(Self::Lua),
             _ => None,
         }
     }
@@ -69,29 +87,116 @@ impl Lang {
             Self::Json => "json",
             Self::Rust => "rust",
             Self::JavaScript => "javascript",
+            Self::TypeScript => "typescript",
+            Self::Tsx => "tsx",
+            Self::Java => "java",
+            Self::C => "c",
+            Self::Cpp => "cpp",
+            Self::CSharp => "c_sharp",
+            Self::Swift => "swift",
+            Self::Kotlin => "kotlin",
+            Self::Lua => "lua",
         }
     }
 
-    /// `(grammar language, highlights query source)` for this language.
-    /// Note the JS grammar names its query `HIGHLIGHT_QUERY` (singular) while
-    /// json/rust use `HIGHLIGHTS_QUERY`.
-    fn grammar(self) -> (tree_sitter::Language, &'static str) {
+    /// `(grammar language, highlights query source)` for this language. The
+    /// query const name is NOT uniform across grammars — most expose
+    /// `HIGHLIGHTS_QUERY`, but js/c/cpp use `HIGHLIGHT_QUERY` (singular).
+    ///
+    /// The query is returned OWNED because `tree-sitter-typescript` ships its
+    /// query as a TS-only OVERLAY that `; inherits: javascript` — and
+    /// tree-sitter-highlight does NOT resolve `inherits`, so we concatenate the
+    /// JS base query with the TS overlay (the TS grammar is a superset of JS, so
+    /// every JS pattern still resolves). Per-call `to_string()` is cheap — the
+    /// front-ends cache the highlight result, so `grammar()` runs once per file.
+    fn grammar(self) -> (tree_sitter::Language, String) {
         match self {
             Self::Json => (
                 tree_sitter_json::LANGUAGE.into(),
-                tree_sitter_json::HIGHLIGHTS_QUERY,
+                tree_sitter_json::HIGHLIGHTS_QUERY.to_string(),
             ),
             Self::Rust => (
                 tree_sitter_rust::LANGUAGE.into(),
-                tree_sitter_rust::HIGHLIGHTS_QUERY,
+                tree_sitter_rust::HIGHLIGHTS_QUERY.to_string(),
             ),
             Self::JavaScript => (
                 tree_sitter_javascript::LANGUAGE.into(),
-                tree_sitter_javascript::HIGHLIGHT_QUERY,
+                tree_sitter_javascript::HIGHLIGHT_QUERY.to_string(),
+            ),
+            Self::TypeScript => (
+                tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+                format!(
+                    "{}\n{}",
+                    tree_sitter_javascript::HIGHLIGHT_QUERY,
+                    tree_sitter_typescript::HIGHLIGHTS_QUERY
+                ),
+            ),
+            Self::Tsx => (
+                tree_sitter_typescript::LANGUAGE_TSX.into(),
+                format!(
+                    "{}\n{}",
+                    tree_sitter_javascript::HIGHLIGHT_QUERY,
+                    tree_sitter_typescript::HIGHLIGHTS_QUERY
+                ),
+            ),
+            Self::Java => (
+                tree_sitter_java::LANGUAGE.into(),
+                tree_sitter_java::HIGHLIGHTS_QUERY.to_string(),
+            ),
+            Self::C => (
+                tree_sitter_c::LANGUAGE.into(),
+                tree_sitter_c::HIGHLIGHT_QUERY.to_string(),
+            ),
+            // C++ `; inherits: c` — concat the C base query (tree-sitter-highlight
+            // doesn't resolve inherits; the cpp grammar is a superset of c).
+            Self::Cpp => (
+                tree_sitter_cpp::LANGUAGE.into(),
+                format!(
+                    "{}\n{}",
+                    tree_sitter_c::HIGHLIGHT_QUERY,
+                    tree_sitter_cpp::HIGHLIGHT_QUERY
+                ),
+            ),
+            Self::CSharp => (
+                tree_sitter_c_sharp::LANGUAGE.into(),
+                tree_sitter_c_sharp::HIGHLIGHTS_QUERY.to_string(),
+            ),
+            Self::Swift => (
+                tree_sitter_swift::LANGUAGE.into(),
+                tree_sitter_swift::HIGHLIGHTS_QUERY.to_string(),
+            ),
+            // `tree-sitter-kotlin-ng` ships the grammar but NO highlights query,
+            // so we vendor a minimal one (below). `highlight()` returns an empty
+            // span list if a query fails to compile, so this degrades gracefully.
+            Self::Kotlin => (tree_sitter_kotlin_ng::LANGUAGE.into(), KOTLIN_HIGHLIGHTS.to_string()),
+            Self::Lua => (
+                tree_sitter_lua::LANGUAGE.into(),
+                tree_sitter_lua::HIGHLIGHTS_QUERY.to_string(),
             ),
         }
     }
 }
+
+/// Minimal hand-vendored highlights query for Kotlin — `tree-sitter-kotlin-ng`
+/// ships the grammar but no query. Captures only nodes confirmed present in the
+/// grammar's node-types plus the common keyword tokens; if any token were
+/// unknown the query would fail to compile and `highlight()` would simply return
+/// no spans (graceful — Kotlin renders unstyled).
+const KOTLIN_HIGHLIGHTS: &str = r#"
+(line_comment) @comment
+(block_comment) @comment
+(string_literal) @string
+(character_literal) @string
+(number_literal) @number
+(float_literal) @number
+[
+  "fun" "val" "var" "class" "object" "interface" "if" "else" "when" "for"
+  "while" "do" "return" "import" "package" "private" "public" "internal"
+  "protected" "override" "open" "abstract" "sealed" "data" "enum" "companion"
+  "init" "constructor" "this" "super" "in" "is" "as" "by" "throw" "try"
+  "catch" "finally" "typealias" "suspend"
+] @keyword
+"#;
 
 /// The capture names we configure the highlighter with. A grammar capture not
 /// in this list emits no highlight (the source stays unstyled / `Other`).
@@ -162,7 +267,7 @@ fn kind_for_name(name: &str) -> TokenKind {
 #[must_use]
 pub fn highlight(src: &str, lang: Lang) -> Vec<Span> {
     let (language, query) = lang.grammar();
-    let mut config = match HighlightConfiguration::new(language, lang.name(), query, "", "") {
+    let mut config = match HighlightConfiguration::new(language, lang.name(), &query, "", "") {
         Ok(c) => c,
         Err(_) => return Vec::new(),
     };
@@ -281,7 +386,45 @@ mod tests {
         assert_eq!(Lang::from_extension("json"), Some(Lang::Json));
         assert_eq!(Lang::from_extension("RS"), Some(Lang::Rust));
         assert_eq!(Lang::from_extension("mjs"), Some(Lang::JavaScript));
+        assert_eq!(Lang::from_extension("ts"), Some(Lang::TypeScript));
+        assert_eq!(Lang::from_extension("TSX"), Some(Lang::Tsx));
+        assert_eq!(Lang::from_extension("java"), Some(Lang::Java));
+        assert_eq!(Lang::from_extension("c"), Some(Lang::C));
+        assert_eq!(Lang::from_extension("hpp"), Some(Lang::Cpp));
+        assert_eq!(Lang::from_extension("cs"), Some(Lang::CSharp));
+        assert_eq!(Lang::from_extension("swift"), Some(Lang::Swift));
+        assert_eq!(Lang::from_extension("kt"), Some(Lang::Kotlin));
+        assert_eq!(Lang::from_extension("lua"), Some(Lang::Lua));
         assert_eq!(Lang::from_extension("txt"), None);
+    }
+
+    /// Every grammar in the owner-approved full set tokenises a small sample:
+    /// a representative token classifies as expected (and the query compiles —
+    /// a failed compile would yield no spans, failing the first assert).
+    #[test]
+    fn full_grammar_set_each_language_highlights() {
+        let cases: &[(Lang, &str, &str, TokenKind)] = &[
+            (Lang::TypeScript, "const x: number = 1;", "const", TokenKind::Keyword),
+            (Lang::Tsx, "const e = <div/>;", "const", TokenKind::Keyword),
+            (Lang::Java, "class A { int x = 2; }", "class", TokenKind::Keyword),
+            (Lang::C, "int main() { return 0; }", "return", TokenKind::Keyword),
+            (Lang::Cpp, "auto f() { return 1; }", "return", TokenKind::Keyword),
+            (Lang::CSharp, "class A { void M() {} }", "class", TokenKind::Keyword),
+            (Lang::Swift, "let s = \"hi\"", "\"hi\"", TokenKind::String),
+            (Lang::Lua, "local x = 1 -- note", "-- note", TokenKind::Comment),
+            // Kotlin uses the hand-vendored query (the crate ships no query).
+            (Lang::Kotlin, "val s = \"hi\" // note", "// note", TokenKind::Comment),
+            (Lang::Kotlin, "fun f() {}", "fun", TokenKind::Keyword),
+        ];
+        for (lang, src, needle, kind) in cases {
+            let spans = highlight(src, *lang);
+            assert!(!spans.is_empty(), "{lang:?} produced no spans for {src:?}");
+            assert_eq!(
+                kind_at(&spans, src, needle),
+                Some(*kind),
+                "{lang:?}: {needle:?} should be {kind:?}",
+            );
+        }
     }
 
     #[test]
