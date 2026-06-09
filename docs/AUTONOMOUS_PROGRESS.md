@@ -5625,3 +5625,20 @@ confirmed every one is already-done or non-actionable, hardening the LOG +151 co
   requires the owner to unblock the VM pixel lane (TSK-502 — drains the large fixed-but-unvalidated render-path
   backlog: TSK-300/302/303/310 + image/monitor UI + the Code-Review/audio UI siblings), answer a parked dep
   decision (MP3 TSK-528 / comrak TSK-256 / 247–249), or scope a big wishlist feature. `main` @ 1f13105, gate-green.
+
+## LOG +153 (2026-06-09, autonomous tick — PORT lane also verified DONE; built-in #362–423 list is stale)
+Took the "drain the PORT lane" directive at face value and verified the rust-core front-end state FRESH (not from
+recollection). Result: the PORT lane is also exhausted.
+- **rust-core core modules — all built:** `whitespace, nav, outline, theme, meta, history, session, find, filter,
+  hex, diff, csv, format, image, git, indent, …` all present in `crates/core/src/`. The PORT *core* layer is complete.
+- **TUI/web front-end wiring — already done:** the supposedly-pending PORT items are implemented — TUI `main.rs`
+  wires `Cmd::ToggleWhitespace`/`show_whitespace` (18 refs; web 16), plus line-number gutter, word-wrap, hidden/
+  dotfile toggle, sort modes, in-file find, theme tokens, keyboard-help overlay, and persistent session state.
+  The built-in Claude-Code TaskList `#362–423` ([PORT]…) is a STALE planning list — the actual front-ends are far
+  ahead of it (same #NNN≠board-TSK-NNN / stale-list pattern as the deep audit).
+- **NET (conclusive across LOG +151/+152/+153):** every host-completable lane — SwiftUI feature cores (Code-Review
+  + media), rust-core core modules, rust-core TUI/web wiring, deep-audit findings — is built/done. The only
+  genuinely-open work is VM-gated UI, owner-gated decisions, or large unscoped wishlist features. The loop is
+  input-bound; further "work" would mean re-doing done items or shipping marginal/risky change the owner
+  deprioritized. Unblocks unchanged: VM pixel lane (TSK-502) ≫ parked deps (TSK-528/256/247–249) ≫ wishlist scoping.
+  `main` @ 0757b61, gate-green.
