@@ -29,6 +29,24 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+115) — terminal cluster: TSK-460 DONE (pure model), TSK-461 validated (model; key-event live remainder)
+
+Mined the terminal `fixed`-lane cluster (TSK-456-461) — mostly mixed model+UI. Applied the selection rule: pure-model →
+done; model+UI-surface → validated:
+
+- **TSK-460 → done** — scrollback batched-trim in TerminalScreen (pure ViewerCore model, no UI): grow to cap+slack(256)
+  then trim to cap in one batch (~256x fewer memmoves than removeFirst(1)/line). Behavioral teeth, NOT a perf-timing:
+  TerminalScreenTests 27/0 incl. test_scrollback_isBounded_withinCapPlusSlack + test_scrollback_doesNotTrimBeforeOverflowingSlack
+  (reverting to removeFirst-at-cap fails no-trim-within-slack). A [perf] task that's done-able BECAUSE the fix changed an
+  observable, asserted bound contract — distinct from the identical-output perf findings that stay held.
+- **TSK-461 → validated** — Ctrl-Tab/Ctrl-Shift-Tab cycling. cycleTab(forward:) wrap-around is host-teeth-tested
+  (TerminalPaneStoreTests 27/0: test_cycleTab_wrapsForwardAndBackward + _singleTab_isNoOp). The performKeyEquivalent
+  key-event interception (first-responder-scoped) is AppKit, not host-testable → owner/VM confirms keystroke routing.
+
+Not touched: TSK-458 (multiple tabs) model overlaps the already-validated TSK-281 — skipped to avoid double-claim;
+TSK-456/457 (copy-paste menu / scroll-wheel) + TSK-459 (SwiftUI version-bump suppression) have no clean host teeth (UI /
+observation) → held. No code change — verify-and-validate closures.
+
 ## LOG 2026-06-09 (latest+114) — bug/contract cluster: TSK-438 + TSK-465 DONE, TSK-437 validated
 
 Mined the `fixed`-lane bug/contract cluster (per +113's next-step). Verified each fix against current code + ran teeth fresh:
