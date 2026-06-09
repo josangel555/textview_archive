@@ -29,6 +29,28 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+90) — TSK-306 VM render-validation: preview tab COMPOSITES on real pixels; teeth-demo bounds the claim
+
+Drove TSK-306's owner-authorised VM validation as far as is honestly automatable, then parked the bar-judgment.
+- **Added `MDV_UI_SCENE=preview`** (Diagnostics.swift) — drives the live model's ephemeral preview slot
+  (`openPreview` on `MDV_PREVIEW_FILE`) so the render state is reproducible without event-synthesising a SwiftUI
+  gesture. Commit `d2e7584`.
+- **Added `PreviewTabVisualRegressionTests` (T5)** — ran it on the VM disclaim lane (rsync → `chown .build dist`
+  → `TOOLCHAINS=org.swift.630202603201a build-app.sh debug` → `launchctl asuser 501` + `MDV_VM_GUI_SESSION=1`
+  + `ulimit -n 8192`). First launch SKIPPED on the documented cold window-ID race; **warm re-run PASSED** on real
+  WindowServer pixels → the preview tab + content composite on screen (the compositor-blank pathology that bit
+  this app 4× is retired for the preview render path).
+- **Teeth-demo bounded the claim (the important part):** neutered `openPreview` in the scene → rebuilt → re-ran;
+  the T5 **stayed GREEN** (a blank tab also composites). So the T5 guards the *compositor-blank class*, NOT the
+  preview-specific affordances. Updated its doc to say so (commit `05b041f`) — no false-green guard. The preview
+  BEHAVIOUR teeth live in the host model tests (`DocumentModelPreviewTests` 7/0, demoed red).
+- **Honest residual:** the italic slant (sub-pixel, can't pixel-diff above AA noise) and the click/arrow →
+  `openPreview` EVENT routing (SwiftUI gesture synthesis is VM-infeasible) have NO automated teeth. Per the strict
+  self-validate rule I did NOT self-validate; **PARKED TSK-306** (kind=decision) asking the owner whether
+  logic-teeth + render-composite coverage meets the `validated` bar or they'll eyeball it live (~30s). Loop moves on.
+- NOTE: the VM is left on the neutered teeth-demo `dist` build (an rsync mirror; harmless — a re-sync + rebuild
+  restores it; `dist` is a build artifact, never committed). `main` is headless-gate-green.
+
 ## LOG 2026-06-09 (latest+89) — TSK-306/272 preview-tab Phase 2+3 landed (sidebar single-click/arrow → ephemeral slot)
 
 Wired the owner-authorised VSCode-style **preview tab** into the SwiftUI layer over the landed Phase-1 model core
