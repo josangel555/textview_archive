@@ -29,6 +29,26 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+74) — TSK-518 ROOT-CAUSED: stale probe, NOT a regression (bridge now wired unconditionally)
+
+Diagnosed the lone UAT-sweep failure (TSK-518). NOT a product regression. Root cause via git:
+commit `5b9d82e` (2026-06-03, "uat-fix(BUG-008)") added `sessions.wireLifecycle()` UNCONDITIONALLY at
+`main.swift:238` (extracted from the MDV_SKIP_WORKSPACE_RESTORE-gated `bootstrap()`), so the
+SessionsCoordinator lifecycle bridge is now wired even under the harness clean-room flag. The probe
+`test_SESS01_tabAndSidebar_doNotSwitch_probe` PINS the OLD behavior (bridge nil → session façade does
+NOT swap), so it correctly tripped on a LANDED IMPROVEMENT — exactly as its own doc predicted ("a future
+change that DOES wire the bridge under the flag trips this test"). It diverged silently while the VM lane
+was blocked (TSK-447 class). The other 95 UAT tests pass (incl. scripted file-open + tab checks), so
+scripted `open` works generally — the probe's 0-tabs is specific to its NON-swap expectation under the
+new per-session mount/hydrate.
+
+FIX (scoped, next focused step — NOT blind-fixed, false-green risk): instrument the probe to dump
+tab/session/sidebar JSON, run once on the VM disclaim lane to OBSERVE the real post-bridge behavior, then
+(1) retire the obsolete NON-swap probe, (2) add POSITIVE SESS-01 façade-swap hard asserts (tabs restore
+per-session on switch + sidebar re-roots — the author's documented follow-up), (3) fix the now-stale
+suite doc (still cites the obsolete "bridge nil / main.swift:215" caveat). TSK-518 at `triaged` with the
+full root cause recorded.
+
 ## LOG 2026-06-08 (latest+73) — Full VM UAT sweep: 95/97 GREEN (live UI suite healthy post-unblock); 1 divergence filed
 
 Ran the entire `*UATTests` suite (all T4 LiveApp UAT classes) on the VM under the GUI session
