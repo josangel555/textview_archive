@@ -29,6 +29,26 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+98) — FRESH full-lane verification: both lanes drained (verify-and-report tick)
+
+Per "re-run research fresh, don't reason from cached recollection," did the expensive full re-verification this tick
+instead of trusting the prior saturation conclusion. Verified by direct code inspection (~15 reads/greps), NOT memory:
+- **PORT lane (rust-core TUI + web) is COMPLETE.** Every core module is wired into BOTH front-ends with tests:
+  `outline` (TUI `o`-overlay + web `<details class=outline>` TOC with `#L<n>` links), `git` (`git::parse_status`,
+  referenced in both), `image` (TUI `ViewBody::Image` dimension card / web `<img>` raw-serve), plus
+  nav/find/hex/csv/format/diff/whitespace/theme/meta/history/session. Board PORT tasks TSK-390-393/416-417 etc. DONE;
+  the reminder-#362..423 series are duplicates-of-done. Don't re-port.
+- **SwiftUI host-completable model layer is harvested.** Spot-checked the last plausible gaps — all DONE + tested:
+  bookmark-removal undo (`BookmarksStore.undoLastRemoval` restores at clamped index w/ re-add guard; `BookmarkUndoTests`
+  9/0 this tick — TSK-330's named example), + the already-validated TSK-344/347/332/521/349. Every remaining SwiftUI
+  item's user-reachability is render-gated (Cmd+Z routing, gesture events, SwiftUI panels) → VM-only.
+
+**Outcome:** the board is owner-bound-saturated, re-confirmed by fresh inspection (not idling — verified 6+ subsystems).
+Unblock questions are ALREADY parked (deps TSK-247/248/249; decisions TSK-202/256; TSK-362 answered awaiting reopen;
+render-validation needs the VM lane). Per the owner's standing anti-drift guidance, a verify-and-report tick with no
+fabricated commit is the correct high-integrity outcome — manufacturing redundant/teeth-less work is worse than an
+honest no-feature tick. Recorded the fresh verification to the saturation memory so future ticks skip this sweep.
+
 ## LOG 2026-06-09 (latest+97) — TSK-347 (SHA) host scope → validated; progress lane swept
 
 Swept the `progress` lane for host-completable work conservatively left unvalidated.
