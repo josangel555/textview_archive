@@ -75,9 +75,17 @@ final class TerminalTabStripVisualRegressionTests: PixelTestCase {
     func test_rightDockedPane_terminalComposites_andContentNotBlank() throws {
         let cg = try captureSceneCGImage("terminal-paneright")
         let w = cg.width, h = cg.height
-        // (1) accent chip block in the RIGHT column band.
+        // (1) accent chip block in the RIGHT-docked terminal column. The column
+        // occupies roughly the right third of the window and its vertical tab
+        // strip sits at the column's LEFT edge (~0.74·w in the real windowid
+        // capture) — NOT the far-right edge. The band starts at 0.65·w to cover
+        // it (verified via MDV_PIXEL_DEBUG_DIR capture, TSK-517); the only dense
+        // saturated block in the right third is the terminal's accent chip, so
+        // this stays specific (no false green). The earlier 0.82 was tuned for
+        // the Aqua full-screen lane and never ran via the windowid path until
+        // the TSK-502 disclaim fix made T5 runnable.
         let chip = Self.denseSaturatedBlock(
-            in: cg, xRange: Int(Double(w) * 0.82) ..< w,
+            in: cg, xRange: Int(Double(w) * 0.65) ..< w,
             yRange: Int(Double(h) * 0.10) ..< Int(Double(h) * 0.55))
         XCTAssertNotNil(chip,
             "right-docked terminal chip didn't composite in the right column (TSK-491)")
@@ -196,6 +204,14 @@ final class TerminalTabStripVisualRegressionTests: PixelTestCase {
                 "screencapture unavailable / Screen Recording denied. On macOS 15+, " +
                 "grant Screen Recording to both Terminal AND " +
                 "/Applications/Xcode.app/Contents/Developer/usr/bin/xctest.")
+        }
+        // Debug aid (TSK-517): when MDV_PIXEL_DEBUG_DIR is set, keep a copy of
+        // each scene's real capture under <dir>/<scene>.png so band geometry can
+        // be eyeballed against the actual window pixels. Off by default.
+        if let dbg = ProcessInfo.processInfo.environment["MDV_PIXEL_DEBUG_DIR"], !dbg.isEmpty {
+            let dest = URL(fileURLWithPath: dbg).appendingPathComponent("\(scene).png")
+            try? fm.removeItem(at: dest)
+            try? fm.copyItem(at: pngURL, to: dest)
         }
         return cg
     }
