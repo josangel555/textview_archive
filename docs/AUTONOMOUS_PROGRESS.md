@@ -29,6 +29,36 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+75) — TSK-518 VALIDATED: stale probe retired → positive SESS-01 façade-swap asserts (VM-observed, teeth-proven)
+
+Closed TSK-518 (commit `01b6d7a`, test-only; VM-validated → `validated`). Followed the no-blind-re-pin
+rule: instrumented the probe with an `NSLog` dump loop, ran it on the VM disclaim lane, and read the REAL
+post-bridge behaviour before writing any assertion. Observed timeline (even idx = verbs):
+
+```
+idx0 open-folder projA → 1 tab (argv arg.txt), sidebar=projA
+idx2 open a1           → 2 tabs
+idx4 open a2           → 3 tabs, active a2.txt, sidebar=projA
+idx6 open-folder projB → SWAP: fresh projB session, 0 tabs, active=projB, sidebar re-roots projB
+idx8 activate 1 (back) → SWAP BACK: projA restored — 3 tabs, active=projA, sidebar=projA, file a2.txt
+```
+
+This is textbook per-session façade persistence (the SFB-10 fix). Correction to the original report's
+framing: scripted `open` was NEVER broken (idx4 = 3 tabs as expected) — the failing assertion was the
+SWITCH one (`tabCount(afterSwitchToB)` = 0, the new correct swap), not the sanity one. Retired
+`test_SESS01_tabAndSidebar_doNotSwitch_probe`; added `test_SESS01_facadeSwapsPerSession_onSwitch` with
+positive hard asserts (3→0→3 tabs, sidebar projA→projB→projA, active file restored). Rewrote the obsolete
+F-SESS-1 suite doc (it still cited the retired nil-bridge regime + a wrong `main.swift:215` ref → 238).
+
+**Teeth (model-state test):** the retired inverse probe FAILED on this exact dist build (2 failures,
+observed twice); the new test asserts its logical negation, so it cannot be vacuously green — under the
+pre-SFB-10 no-swap build (where the inverse probe was green for weeks) these positive asserts read 3/false
+→ red. New test PASSES on VM (8.757s, 0 failures). Host headless gate PASSED on `01b6d7a` (clean re-run;
+the first run flaked on an unrelated FileWatcher-reattach 2s timeout + a CrossFileSearch perf bench under
+concurrent VM load — both cleared on the unloaded re-run). The SessionsUAT VM suite is now fully green
+(97/97). This is the stale-test sweep working end-to-end: the unblocked lane surfaced a real
+correctness-doc divergence, and it's now fixed + guarded.
+
 ## LOG 2026-06-08 (latest+74) — TSK-518 ROOT-CAUSED: stale probe, NOT a regression (bridge now wired unconditionally)
 
 Diagnosed the lone UAT-sweep failure (TSK-518). NOT a product regression. Root cause via git:
