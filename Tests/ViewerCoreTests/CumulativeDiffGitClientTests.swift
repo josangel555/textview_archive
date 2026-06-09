@@ -96,4 +96,16 @@ final class CumulativeDiffGitClientTests: XCTestCase {
         XCTAssertEqual(ch.added, ["3"])               // empty-tree → c3 = full add of final content
         XCTAssertTrue(ch.removed.isEmpty)
     }
+
+    // TSK-523: single-commit diff (click a commit → its patch), root-safe.
+    func test_commitDiff_isSingleCommitPatch_andRootSafe() throws {
+        let repo = try makeRepo()
+        try commit("1", in: repo); try commit("2", in: repo)
+        let gc = GitClient(repoRoot: repo)
+        let log = gc.graphLog()                       // [c2(0), c1(1, root)]
+        let newest = changes(gc.commitDiff(sha: log[0].sha))   // c2: 1→2
+        XCTAssertEqual(newest.added, ["2"]); XCTAssertEqual(newest.removed, ["1"])
+        let root = changes(gc.commitDiff(sha: log[1].sha))     // c1: root, all-add
+        XCTAssertEqual(root.added, ["1"]); XCTAssertTrue(root.removed.isEmpty)
+    }
 }
