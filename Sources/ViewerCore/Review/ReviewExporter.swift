@@ -18,6 +18,22 @@ import Foundation
 /// `ReviewExporter.export(...)` and get `Data` back.
 public enum ReviewExporter {
 
+    /// Whether the export carries the verbatim code snippets (the per-comment
+    /// `context` block: hunk header + surrounding diff lines) or just the
+    /// comments + line anchors. TSK-204.
+    ///
+    /// `.withoutCode` is for when the receiver already has the source (it can
+    /// resolve each comment from `anchor.{side,startLine,endLine}` against the
+    /// scope diff) or when the source shouldn't leave the machine — a leaner,
+    /// lower-footprint payload. The comment counts and per-file `+N −M` tallies
+    /// (aggregate numbers, not source) are kept in both modes.
+    public enum ExportMode: Sendable, CaseIterable {
+        case withCode      // default — each comment carries its frozen hunk context
+        case withoutCode   // comments + anchors only; the `context` block is omitted
+
+        var includesCode: Bool { self == .withCode }
+    }
+
     /// Default instructions string. Editable in the export menu before
     /// emission; the design's recommended template.
     public static let defaultInstructions: String = """
@@ -33,12 +49,14 @@ public enum ReviewExporter {
     public static func export(
         _ review: Review,
         instructions: String? = nil,
+        mode: ExportMode = .withCode,
         exportedAt: Date = Date()
     ) throws -> Data {
         let dto = buildDTO(
             review,
             instructions: instructions ?? defaultInstructions,
-            exportedAt: exportedAt
+            exportedAt: exportedAt,
+            mode: mode
         )
         return try JSONFileStore.encoder.encode(dto)
     }
@@ -48,9 +66,10 @@ public enum ReviewExporter {
     public static func exportAsString(
         _ review: Review,
         instructions: String? = nil,
+        mode: ExportMode = .withCode,
         exportedAt: Date = Date()
     ) throws -> String {
-        let data = try export(review, instructions: instructions, exportedAt: exportedAt)
+        let data = try export(review, instructions: instructions, mode: mode, exportedAt: exportedAt)
         return String(decoding: data, as: UTF8.self)
     }
 
@@ -60,7 +79,8 @@ public enum ReviewExporter {
     static func buildDTO(
         _ review: Review,
         instructions: String,
-        exportedAt: Date
+        exportedAt: Date,
+        mode: ExportMode = .withCode
     ) -> ExportDTO {
         // Group comments by file path. Threaded replies (parentId != nil)
         // are flattened: the parent's body gets a "Thread:" suffix with
@@ -89,7 +109,7 @@ public enum ReviewExporter {
                 return nil  // §3: zero-comment files are omitted
             }
             let exportComments = comments.map { c in
-                buildExportComment(c, replies: repliesByParent[c.id] ?? [])
+                buildExportComment(c, replies: repliesByParent[c.id] ?? [], mode: mode)
             }
             return ExportFile(
                 path: path,
@@ -118,6 +138,7 @@ public enum ReviewExporter {
             schemaVersion: Review.currentSchema,
             kind: "textview.code-review",
             exportedAt: exportedAt,
+            includesCode: mode.includesCode,
             review: reviewDTO,
             instructions: instructions,
             files: files
@@ -126,7 +147,8 @@ public enum ReviewExporter {
 
     private static func buildExportComment(
         _ c: ReviewComment,
-        replies: [ReviewComment]
+        replies: [ReviewComment],
+        mode: ExportMode
     ) -> ExportComment {
         let anchorRange = c.anchor.startLine...c.anchor.endLine
         let lines: [ExportContextLine] = (
@@ -153,6 +175,13 @@ public enum ReviewExporter {
             body = s
         }
 
+        // `.withoutCode` drops the verbatim snippet (hunk header + diff lines);
+        // the anchor's line numbers stay so the receiver can still locate the
+        // comment in the source it already has.
+        let context: ExportHunkContext? = mode.includesCode
+            ? ExportHunkContext(hunkHeader: c.hunkContext.hunkHeader, lines: lines)
+            : nil
+
         return ExportComment(
             severity: c.severity,
             resolved: c.resolved,
@@ -162,10 +191,7 @@ public enum ReviewExporter {
                 endLine: c.anchor.endLine
             ),
             body: body,
-            context: ExportHunkContext(
-                hunkHeader: c.hunkContext.hunkHeader,
-                lines: lines
-            )
+            context: context
         )
     }
 
@@ -227,6 +253,10 @@ struct ExportDTO: Codable, Equatable, Sendable {
     let schemaVersion: Int
     let kind: String
     let exportedAt: Date
+    /// True when each comment carries its `context` snippet; false for a
+    /// `.withoutCode` export. Lets the receiver tell "code deliberately
+    /// withheld" from "context capture failed". TSK-204.
+    let includesCode: Bool
     let review: ExportReview
     let instructions: String
     let files: [ExportFile]
@@ -363,7 +393,10 @@ struct ExportComment: Codable, Equatable, Sendable {
     let resolved: Bool
     let anchor: ExportAnchor
     let body: String
-    let context: ExportHunkContext
+    /// The frozen code snippet. Present in `.withCode` exports; omitted
+    /// (nil ⇒ absent key) in `.withoutCode` ones. Synthesized Codable
+    /// `encodeIfPresent`/`decodeIfPresent` keeps the with-code shape identical.
+    let context: ExportHunkContext?
 }
 
 struct ExportAnchor: Codable, Equatable, Sendable {

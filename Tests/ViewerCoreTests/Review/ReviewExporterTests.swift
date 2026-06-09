@@ -409,6 +409,59 @@ final class ReviewExporterTests: XCTestCase {
         XCTAssertEqual(stats?["commentCount"] as? Int, 1)
     }
 
+    // MARK: - Export modes (TSK-204)
+
+    func testDefaultModeIsWithCode_includesCodeTrue_contextPresent() throws {
+        let r = makeGoldenReview()
+        let data = try ReviewExporter.export(r, exportedAt: exportedAt)
+        let dto = try JSONFileStore.decoder.decode(ExportDTO.self, from: data)
+        XCTAssertTrue(dto.includesCode)
+        // every comment carries its context block in the default mode
+        for file in dto.files {
+            for c in file.comments {
+                XCTAssertNotNil(c.context, "withCode export must keep the snippet")
+                XCTAssertFalse(try XCTUnwrap(c.context).lines.isEmpty)
+            }
+        }
+    }
+
+    func testWithoutCodeMode_omitsContext_butKeepsCommentsAndAnchors() throws {
+        let r = makeGoldenReview()
+        let data = try ReviewExporter.export(r, mode: .withoutCode, exportedAt: exportedAt)
+
+        // Top-level signal flips.
+        let dto = try JSONFileStore.decoder.decode(ExportDTO.self, from: data)
+        XCTAssertFalse(dto.includesCode)
+
+        // Same files + comments + anchors survive; only the code is gone.
+        XCTAssertEqual(dto.files.map(\.path).sorted(),
+                       ["docs/hex-format.md", "src/components/HexView.tsx"])
+        let hex = try XCTUnwrap(dto.files.first { $0.path == "src/components/HexView.tsx" })
+        XCTAssertEqual(hex.comments.count, 2)
+        XCTAssertEqual(hex.comments[0].anchor.startLine, 56)   // anchors retained
+        XCTAssertEqual(hex.comments[1].severity, .blocker)     // metadata retained
+        XCTAssertFalse(hex.comments[1].body.isEmpty)           // the feedback itself stays
+        for c in hex.comments {
+            XCTAssertNil(c.context, "withoutCode export must drop the snippet")
+        }
+
+        // The verbatim source text must NOT appear anywhere in the payload.
+        let json = String(decoding: data, as: UTF8.self)
+        XCTAssertFalse(json.contains("const groups = bytesPerRow"),
+                       "no source line content should leak in withoutCode mode")
+        XCTAssertFalse(json.contains("\"context\""),
+                       "the context key itself is omitted")
+    }
+
+    func testWithoutCodeMode_keepsAggregateFileStats() throws {
+        // The +N −M tally is a count, not source — it stays in both modes.
+        let r = makeGoldenReview()
+        let data = try ReviewExporter.export(r, mode: .withoutCode, exportedAt: exportedAt)
+        let dto = try JSONFileStore.decoder.decode(ExportDTO.self, from: data)
+        let hex = try XCTUnwrap(dto.files.first { $0.path == "src/components/HexView.tsx" })
+        XCTAssertGreaterThan(hex.stats.added, 0)
+    }
+
     // MARK: - Golden JSON
 
     /// Inline-golden — full snapshot of the design's worked example.
@@ -469,9 +522,11 @@ final class ReviewExporterTests: XCTestCase {
         XCTAssertEqual(hex.comments[1].anchor.startLine, 82)
         XCTAssertEqual(hex.comments[1].severity, .blocker)
 
-        // Blocker hunkHeader is preserved verbatim.
+        // Blocker hunkHeader is preserved verbatim (default mode = withCode,
+        // so context is present).
+        let blockerContext = try XCTUnwrap(hex.comments[1].context)
         XCTAssertEqual(
-            hex.comments[1].context.hunkHeader,
+            blockerContext.hunkHeader,
             "@@ -79,3 +81,10 @@ export function HexView(...)"
         )
 
@@ -480,7 +535,7 @@ final class ReviewExporterTests: XCTestCase {
         // packaged in anchoredLines because we hand-built the fixture
         // that way) — verify the anchored flag truly tracks the
         // anchor range, not the slot in HunkContext.
-        let blockerLines = hex.comments[1].context.lines
+        let blockerLines = blockerContext.lines
         let line82 = blockerLines.first { $0.new == 82 }
         let line81 = blockerLines.first { $0.new == 81 }
         XCTAssertEqual(line82?.anchored, true)
