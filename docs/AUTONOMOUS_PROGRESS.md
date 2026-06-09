@@ -29,6 +29,30 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+71) — TSK-517 VALIDATED: first render-path fix driven on the newly-unblocked pixel lane
+
+First end-to-end use of the now-working disclaim pixel lane (TSK-502) to drive a real render-path item to
+`validated` — proof the unblock is usable, not just demonstrable. Commit `8d463d0`.
+
+`test_rightDockedPane_terminalComposites` failed on its FIRST-EVER `swift test` run (it had always skipped
+on TCC before the disclaim fix; TSK-491 was validated via the separate Aqua lane). Added an
+`MDV_PIXEL_DEBUG_DIR` hook to `captureSceneCGImage` (saves each scene's real capture), pulled the
+terminal-paneright + passing terminal-right PNGs, and EYEBALLED them: the right-docked terminal column's
+vertical tab strip composites at the column's LEFT edge (~0.74·w), but the chip-search band started at
+0.82·w (tuned for the Aqua full-screen lane). Widened to 0.65·w — still specific to the right third (only
+the terminal chip is saturated there, no false green). VM-validated fail→PASS (7.5s); both chip +
+content-not-blank assertions hold. Walked reported→…→**validated** with VM teeth. Host build clean.
+
+NOT a product regression. **Side-observation (filed mentally, not yet a task):** DESIGN.md in Render mode
+shows a BLANK center in BOTH scenes' captures (the WKWebView markdown render hadn't painted by the 2.5s
+capture, OR a slow-load) — but it's present in the PASSING terminal-right too, so it's not right-dock-
+specific; could be capture-timing or a real slow-markdown-render worth a look on the pixel lane later.
+
+LANE NOTE: the windowid `screencapture -l<id>` capture is intermittently flaky (one run XCTSkipped on a
+transient "could not create image from window" race; the test correctly SKIPs rather than fails). Re-run
+to get a clean capture. The test's own waitForWindowID+activate+sleep timing handles it better than
+ad-hoc repro.
+
 ## LOG 2026-06-08 (latest+70) — TSK-502 VALIDATED: VM pixel lane UNBLOCKED via TCC-disclaim (the big one)
 
 **The "owner-only" blocker I'd reported as gating the whole SwiftUI render/pixel lane for ~5 ticks is
