@@ -29,6 +29,27 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+105) — BUILT: TSK-515 TUI session-restore phase 2 (open tabs + scroll + per-file mode) → done; TSK-498 parked
+
+Real feature work this tick (SwiftUI lane owner-gated/saturated; `task_next` wedged on foreign forge TSK-104 — skipped per shared-board rule; drained the PORT lane per SOP).
+
+- **TSK-515** ([PORT][TUI] persistent session phase 2) → **done** (commit `bac7030`, rust-core TUI). Phase 1 (TSK-235)
+  persisted only app-global prefs; phase 2 now persists + restores the **open buffers**: each tab's path, scroll
+  offset, and per-file view mode, plus the active index. `PersistState` gained `tabs: Vec<OpenTab{path,scroll,mode}>`
+  + `active`; codec emits `tab=<mode> <scroll> <path>` (path = rest-of-line so spaces survive) + `active=`;
+  `parse_tab` is lenient (unknown mode / missing field skipped, non-numeric scroll→0). New `restore_tabs`/`open_restored`
+  re-open best-effort on launch: **missing files skipped, scroll clamped to content_len, saved mode honored if still
+  offered else the kind's default, active clamped** to the count re-opened. Reuses `view::classify/build/available_modes/
+  default_mode` — no new core surface. **3 host tests** (codec roundtrip incl. a spaced path; leniency; restore-roundtrip
+  over temp fixtures), full TUI suite 60/0, clippy clean. **TEETH demoed red**: removing the scroll clamp fails the
+  restore test (left 9999 != right 3). Self-validated `fixed→done` (pure codec + restore logic, host-testable; no render gate).
+- **TSK-498** ([PORT][ci] tui/web tests outside the merge gate) → **parked** (owner decision). Verified: rust-core-gate.sh
+  runs `cargo test`/`clippy` WITHOUT `--workspace`, and `default-members=[core,ffi]`, so the tui/web suites never gate a
+  PR (front-end teeth like TSK-203/204's can rot). Wiring them in is a real CI-policy call — per-PR gate dep-tree creep vs
+  a new runner (the VM nightly lane has NO Rust toolchain, so the obvious "add to nightly" is blocked). Asked gate-vs-new-
+  runner-vs-manual-script; pinged owner. NOTE: `task_next` keeps returning foreign **TSK-104** (agent:forge, regressed
+  prio-0) — it's not markdown_viewer; the ranker is wedged on it until the owner clears it.
+
 ## LOG 2026-06-09 (latest+104) — GET-TO-DONE: 3 more closed with re-run teeth (TSK-479 MsgPack OOM, TSK-203/204 CSV filter); held-lane taxonomy clarified
 
 Continued the owner's "get all tickets to done" sweep. Closed **3** `fixed`→`done`, each with a FRESH re-run of
