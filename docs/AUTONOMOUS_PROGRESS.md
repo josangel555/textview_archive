@@ -29,6 +29,27 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+94) — TSK-521: LSP textDocument/didSave wired on editor save (host-validated)
+
+Filed + landed **TSK-521** (`feature`, loose-ends/lsp) — the one genuinely-remaining host-testable, non-gated
+SwiftUI-lane gap. **Corrects the +93 "didSave is moot" read:** the loose-ends README said "didSave exists but
+uncalled"; +93 checked, found no `didSave` method, and concluded *moot*. Wrong inference — the **absence** of
+didSave IS the gap. LSP doc-sync wired `didOpen`+`didChange` but never `textDocument/didSave`, so on-save server
+behaviour (format-on-save, lint-on-save, build/index triggers) never fired on a save.
+
+- **Impl (commit `9016087`):** `LSPClient.didSave(url:text:)` (notify, guarded on `initialized`, mirrors
+  `didChange`; `text` included only when non-nil per `DidSaveTextDocumentParams`) + `LSPPool.didSave(fileURL:text:)`
+  forwarder (same open/live guards as `didChange`, **no version bump** — a save carries no new content version) +
+  `DocumentModel.notifyLSPDidSave(url)` fired fire-and-forget from **both** editor-save success paths
+  (`saveActiveEditor` + `saveEditor(forTabID:)`, alongside the existing `repoFocus.refreshRepo`).
+- **Host teeth (no VM, no deps):** the response-less notification is proven sent+parsed via a new
+  `MDVFakeLSPServer` `notify_on_save` scenario that echoes receipt as a `publishDiagnostics` carrying the saved URI.
+  `LSPClientFakeServerTests`: round-trip (echo carries `saved.swift` URI + `SAVED001` + "didSave received") +
+  before-initialize throws `notInitialized`. **Teeth demoed red:** suppressing `notify()` → 4 failing asserts.
+- Headless gate green (exit 0; first run flaked only on the known `PluginSubprocessHostTests` subprocess-timeout
+  under load, clean on re-run). Board: `reported`→…→`fixed`→**`validated`** (self-validated — host-testable
+  LSP-protocol behaviour, regression-guarded, not render-gated).
+
 ## LOG 2026-06-09 (latest+93) — loose-ends cleanup batch EXHAUSTED (verified) + TSK-272 reconciled to fixed
 
 Swept the board (`task_list` triaged/reported/blocker=none) + the loose-ends-audit README for clean host-actionable
