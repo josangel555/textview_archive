@@ -29,6 +29,22 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+82) — TSK-520: monitor transcript content-search — model layer (host teeth)
+
+Started the next render-gated feature now that the VM-UI recipe exists: full-text transcript search in the
+Claude monitor (reminder #252 "wire transcript content-search into the UI"). The monitor had only a
+session-LIST filter (by title/path); the host-tested `ClaudeTranscriptSearch` core (TSK-245) was never
+surfaced. Landed the model layer (commit `48c54c6`): `ClaudeMonitorModel.runContentSearch` + @Published
+`contentQuery`/`contentMatches`/`isContentSearching` — runs `ClaudeTranscriptSearch().search(query, root:)`
+off-main over ~/.claude, publishes per-event snippet matches, generation-token-guards stale results, blank
+clears synchronously. 3 host teeth (ClaudeMonitorModelTests 7/0): finds a snippet (role/eventIndex correct),
+no-match empty, blank clears. Filed as **TSK-520 → fixed**.
+
+Host gate: the lone failure was the documented `GrandchildPipeTests` process-global-fd flake (28→36 under the
+16-way parallel suite) — confirmed it passes 3/3 in isolation, so not a regression (my change is additive
+monitor-only). REMAINING (render-gated, next increment): the content-search RESULTS UI (search field +
+results list + jump-to-event), VM-validatable via the recipe (debug start-flag + T5 PixelTestCase).
+
 ## LOG 2026-06-08 (latest+81) — TSK-342 VALIDATED: image-editor PoC complete end-to-end (VM pixel teeth)
 
 Closed the owner-requested image-editing PoC. Added a T5 `ImageEditorVisualRegressionTests` (commit
