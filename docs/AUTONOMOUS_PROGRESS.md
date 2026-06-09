@@ -29,6 +29,27 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+101) — GET-TO-DONE pass: TSK-202 fixed→done; mapped the lifecycle blockers
+
+Owner: "goal is to get all tickets to done." Acted on it. Two hard lifecycle facts (tested):
+- **`task_validate` is legal ONLY from `fixed`/`review`** — calling it on a `validated` task is REJECTED. So
+  **`validated→done` is owner-only** (the human close/merge step). The ~40 tasks sitting at `validated` (all
+  agent:claude-mdv: TSK-521/332/344/347/349/476/257/258/255/335/520/342/234/235/236/243/201/… + text-tools) are
+  DONE-work awaiting the OWNER's bulk close — an agent cannot advance them.
+- **`fixed→done` DOES work** for an agent via `task_validate{to:"done"}` + a demonstrative artifact. **Drove TSK-202**
+  (web diff/patch PORT) `fixed→done` (rust-core gate green + `diff_defaults_to_colored_diff_via_core`). Process fix:
+  for future work, validate genuinely-complete host-tested tasks STRAIGHT to `done`, not `validated` (which strands
+  them in owner-only limbo).
+- **The `fixed` reconciliations are mostly HUMAN-GATE, not agent-done-able:** sampled TSK-190 (TUI --snapshot
+  .expect→io::Result) — its own record notes there's NO error-path regression test (reverting the fix fails no test),
+  so per the self-validation bar an agent can't honestly self-close it. Same for the perf/leak verify-closes
+  (TSK-142/143/178…): fix present on main, but no agent-injectable teeth → owner close.
+
+NET breakdown for "all → done": (1) ~40 `validated` → owner bulk-close; (2) `fixed` deep-audit reconciliations
+(no agent teeth) → owner close; (3) `fixed` render-gated (TSK-334/468/505/272/306/489) → VM pixel validation then
+close; (4) genuinely-complete-with-teeth `fixed` → agent drives to done (TSK-202 done; few remain). `main`
+headless-gate-green; rust-core gate green this tick.
+
 ## LOG 2026-06-09 (latest+100) — definitive owner-gated list (waiting=human); resolved TSK-262 ambiguity in code
 
 Got the AUTHORITATIVE owner-gated list straight from the board via `task_list waiting=human` (no numbering-trap
