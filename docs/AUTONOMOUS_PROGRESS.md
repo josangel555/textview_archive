@@ -5604,3 +5604,24 @@ Reconnaissance + one real host-completable feature:
   large unscoped wishlist (Debugger, Photo-editor, Vector-store, Layers, multi-window, archive-browsing). To
   re-open the productive lane the owner needs to: unblock the VM pixel lane (TSK-502), answer a parked dep
   decision, or greenlight one of the big wishlist features. Parked items + this state are surfaced on the board.
+
+## LOG +152 (2026-06-09, autonomous tick — frontier re-verified drained; 3 more "findings" confirmed stale/done)
+Reconnaissance tick (no code change — correctly, not idly). Re-checked the candidate host-completable items and
+confirmed every one is already-done or non-actionable, hardening the LOG +151 conclusion:
+- **`diff::parse_coord` (built-in TaskList #303)** — ALREADY FIXED + TESTED: rust-core `diff.rs` parse_coord
+  explicitly mirrors Swift's `split(omittingEmptySubsequences:true)` via `.filter(|p| !p.is_empty())`, with
+  asserts for `",3"→(3,1)`, `"5,"→(5,1)`, `","→(0,1)`, big-number clamp. Not a divergence.
+- **XML/HTML pretty-print (TSK-496)** — ALREADY VALIDATED (commit ddecc1d, 12 behavior tests): `format::pretty_xml`
+  + `.xml/.svg/.plist/.xib/.storyboard → FileKind::Structured` + `formatted_lines = pretty_json.or_else(pretty_xml)`.
+  The Formatted view mode (JSON **and** XML) is complete across all front-ends. (My handoff note that XML was
+  "deferred" was stale.)
+- **IndentDetector CRLF (built-in #276)** — ALREADY FIXED + TESTED (re-confirmed from LOG-era): splits on the LF
+  scalar with CR handling; CRLFTests + IndentDetectABTests cover it.
+- **`#NNN`-trap reminder:** built-in TaskList `#303` (parse_coord) ≠ board TSK-303 (CSV find-in-table, UI parked on
+  VM); `#276` (IndentDetector) ≠ board TSK-276 (mislabeled "Debugger"). NEVER mine deep-audit by the reminder's
+  `#NNN` — `task_get` + title-match first ([[reference_board_vs_tasklist_numbering]]). The deep-audit pending list
+  remains stale ([[project_audit_pending_list_stale]]).
+- **NET:** the host-completable lane is verified-exhausted. The loop is genuinely input-bound — productive work
+  requires the owner to unblock the VM pixel lane (TSK-502 — drains the large fixed-but-unvalidated render-path
+  backlog: TSK-300/302/303/310 + image/monitor UI + the Code-Review/audio UI siblings), answer a parked dep
+  decision (MP3 TSK-528 / comrak TSK-256 / 247–249), or scope a big wishlist feature. `main` @ 1f13105, gate-green.
