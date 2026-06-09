@@ -243,8 +243,11 @@ struct SidebarView: View {
                 isActive: sidebar.isVisible && !model.isPalettePresented
             ) { key in
                 switch key {
-                case .up:    sidebar.selectPrevious()
-                case .down:  sidebar.selectNext()
+                // TSK-272: arrowing the highlight also opens the newly-selected
+                // FILE into the preview slot (Up/Down "changes current tab
+                // content"); directories just move the highlight.
+                case .up:    sidebar.selectPrevious(); previewSelectedFile()
+                case .down:  sidebar.selectNext();     previewSelectedFile()
                 case .left:  sidebar.collapseOrFocusParent()
                 case .right: sidebar.expandOrFocusFirstChild()
                 case .ret:
@@ -263,6 +266,19 @@ struct SidebarView: View {
                 return true
             }
         )
+    }
+
+    /// TSK-272: open the currently-highlighted sidebar FILE into the ephemeral
+    /// preview slot (Up/Down "changes current tab content"). A directory just
+    /// moves the highlight — never previews. Mirrors the `.ret` file/dir guard;
+    /// the `model.openPreview` slot-reuse keeps arrowing from spawning a tab
+    /// per row. See `docs/PREVIEW_TAB_DESIGN.md`.
+    private func previewSelectedFile() {
+        guard let url = sidebar.selectedURL else { return }
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir),
+              !isDir.boolValue else { return }
+        model.openPreview(url: url)
     }
 
     // MARK: - Accordion stack (visibility-aware divider placement)
@@ -1171,7 +1187,11 @@ private struct FileRowView: View {
         if node.isDirectory {
             sidebar.toggleExpansion(node.url)
         } else {
-            model.open(url: node.url)
+            // Single-click opens into the ONE ephemeral preview slot (TSK-306):
+            // a second click on the same row (double-click) finds it already
+            // open and promotes it to a permanent tab, as does Enter / editing.
+            // See `docs/PREVIEW_TAB_DESIGN.md`.
+            model.openPreview(url: node.url)
         }
     }
 

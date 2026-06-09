@@ -2110,6 +2110,12 @@ public final class DocumentModel: ObservableObject {
     /// Forwarder. New code should call `editor.updateEditorText(...)`.
     public func updateEditorText(_ newText: String, forTabID id: UUID) {
         editor.updateEditorText(newText, forTabID: id)
+        // Editing a preview tab commits it: a dirty buffer must not be
+        // silently discarded by the next single-click reusing the slot, so
+        // promote it to a permanent tab (VSCode parity — TSK-306 §2.2). No-op
+        // for a non-preview tab. Cheap: `previewTabID` is one scan of the tab
+        // list, only equal when there IS a preview and it's the edited tab.
+        if tabs.previewTabID == id { tabCoordinator.promoteTab(id: id) }
         // Recompute folds against the edited text (TSK-466). Only for the
         // selected tab — a background tab's editor isn't on screen.
         if tabs.selected?.id == id { refreshEditorFolds() }
@@ -3064,13 +3070,24 @@ public final class DocumentModel: ObservableObject {
         openResolved(url, forceNewTab: false)
     }
 
+    /// Opens `url` into the ONE ephemeral *preview* slot (VSCode-style): a
+    /// single-click / arrow-nav in the sidebar reuses this slot instead of
+    /// spawning a tab per file (TSK-306 / TSK-272). An explicit commit —
+    /// `open(url:)` (Enter / double-click), opening the same file again, or
+    /// editing the buffer — promotes it to a permanent tab. If `url` is already
+    /// open in any tab it is simply revealed (never previewed, never
+    /// duplicated). See `docs/PREVIEW_TAB_DESIGN.md`.
+    public func openPreview(url: URL) {
+        openResolved(url, forceNewTab: false, preview: true)
+    }
+
     /// Always opens a new tab — does NOT reuse an existing tab that shows
     /// the same URL or a blank tab. Used by "Open in New Tab" context menu.
     public func openInNewTab(_ url: URL) {
         openResolved(url, forceNewTab: true)
     }
 
-    private func openResolved(_ url: URL, forceNewTab: Bool) {
+    private func openResolved(_ url: URL, forceNewTab: Bool, preview: Bool = false) {
         let openToken = PerfSignpost.begin(.open, "DocumentModel.openResolved")
         defer { PerfSignpost.end(openToken) }
         let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
@@ -3124,13 +3141,17 @@ public final class DocumentModel: ObservableObject {
         // pattern (Task.isCancelled + re-find-by-id) so a slow read
         // never lands in the wrong or closed tab.
         if shouldDeferOpenOffMain(resolved) {
-            openLargeFileOffMain(resolved, forceNewTab: forceNewTab, viewMode: carryMode)
+            openLargeFileOffMain(resolved, forceNewTab: forceNewTab, viewMode: carryMode, preview: preview)
             return
         }
 
         let state = controller.open(url: resolved)
         if forceNewTab {
             tabCoordinator.append(Tab(url: resolved, state: state, viewMode: initialMode))
+        } else if preview {
+            // Preview slot: reuse the one ephemeral tab (or reveal an existing
+            // permanent one). See `openPreview(url:)` / `TabsState.openPreview`.
+            tabCoordinator.openPreview(url: resolved, state: state, viewMode: carryMode)
         } else {
             tabCoordinator.openOrReveal(url: resolved, state: state, viewMode: carryMode)
         }
@@ -3207,7 +3228,7 @@ public final class DocumentModel: ObservableObject {
     /// state only if it is still `.loading` for the same URL. Post-open
     /// bookkeeping (history / recents / sidebar root / watcher) runs on
     /// completion via `recordOpenedFile`, matching the sync path.
-    private func openLargeFileOffMain(_ resolved: URL, forceNewTab: Bool, viewMode: ViewMode) {
+    private func openLargeFileOffMain(_ resolved: URL, forceNewTab: Bool, viewMode: ViewMode, preview: Bool = false) {
         let loading: DocumentState = .loading(resolved)
         let tabID: UUID
         if forceNewTab {
@@ -3215,9 +3236,12 @@ public final class DocumentModel: ObservableObject {
             tabCoordinator.append(tab)
             tabID = tab.id
         } else {
-            let idx = tabCoordinator.openOrReveal(
-                url: resolved, state: loading, viewMode: viewMode
-            )
+            // Preview opens reuse the ephemeral slot just like the sync path;
+            // the off-main read still lands by tab id (the materialize guard
+            // below is identity-based, so promote-during-load is safe).
+            let idx = preview
+                ? tabCoordinator.openPreview(url: resolved, state: loading, viewMode: viewMode)
+                : tabCoordinator.openOrReveal(url: resolved, state: loading, viewMode: viewMode)
             tabID = tabs.tabs.indices.contains(idx) ? tabs.tabs[idx].id : UUID()
         }
         updateDerived()
