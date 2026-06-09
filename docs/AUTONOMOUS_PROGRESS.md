@@ -29,6 +29,25 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+121) — VM render-lane validation LAUNCHED (detached test-in-vm.sh); poll /tmp/vmtest.done
+
+Escalated to the real VM validation within the same tick. The +120 forward-compat `swift build` finished EXIT=1 but it was
+a STALE-.build TOOLCHAIN MISMATCH, NOT a code error: the VM's `.build/` held a `ViewerKit.swiftmodule` compiled with Swift
+**6.3** (from a prior test-in-vm.sh run) that the default **6.1.2** compiler refuses to import. (My only Swift change this
+session is the GitLogTab dead-code deletion — can't introduce a forward-compat skew anyway, so the 6.1.2 check was low-value.)
+
+So cleaned `.build` and launched the proper render-lane validation **detached** (`nohup`, survives ssh drops):
+`rm -rf .build && nohup bash scripts/test-in-vm.sh test > /tmp/vmtest.log; touch /tmp/vmtest.done`. test-in-vm.sh auto-selects
+the 6.3 toolchain (consistent, no mismatch) and — with the GUI session present (uid 501) — runs the T4 LiveApp + T5 Pixel +
+WebView tiers on real pixels. This is the owner standing ask ("run the suite on the VM as validation"), executing now that
+the VM is up. Expected ~25-30 min (clean build + ~4000 tests + heavy tiers).
+
+NEXT-TICK CUE (poll the NEW target): `ssh macOS15 'test -f /tmp/vmtest.done && tail -40 /tmp/vmtest.log'`. If EXIT=0 →
+render lane GREEN on current main (no compositor/render regressions across this session's accumulated changes); note it +
+this clears the owner's VM-validation ask. If EXIT!=0, read the failing tier (T4/T5/WebView name) from the tail — a real
+render regression to fix host-side. If `/tmp/vmtest.done` is absent, still building/running — let it run (do NOT relaunch).
+The render-gated cluster still ALSO needs the owner to answer the parks (built-core wiring decisions) to reach done.
+
 ## LOG 2026-06-09 (latest+120) — VM stabilized enough: rsync'd main + launched DETACHED forward-compat build (in flight)
 
 VM link held this tick: the retried `rsync … macOS15:markdown_viewer/` COMPLETED (RSYNC_OK) — current main (incl. the
