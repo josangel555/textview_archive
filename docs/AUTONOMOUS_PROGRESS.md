@@ -29,6 +29,24 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+100) — definitive owner-gated list (waiting=human); resolved TSK-262 ambiguity in code
+
+Got the AUTHORITATIVE owner-gated list straight from the board via `task_list waiting=human` (no numbering-trap
+guessing). Five genuinely-parked tasks, all already pinging the owner: **TSK-306** (preview-tab validation bar),
+**TSK-256** (web markdown engine), **TSK-250** (web back-forward won't-do), **TSK-262** (revoke a mis-validation),
+**TSK-301** (local-history privacy policy; STORE engine built+tested commit c79a5af, 10/10).
+
+Productive action: **resolved the owner's parked ambiguity on TSK-262** — they asked "re-check whether the
+session-tab Settings/File-search/Omni icon group actually exists." It DOES: SessionTabBar.swift:93-119 is the trailing
+HStack (gearshape→AppMenuActions.showSettings, magnifyingglass→model.showCrossSearch, command→model.showPalette, all
+with a11y ids). The report's "not implemented" is stale (@1dbf1ca); the prior `fixed` was correct, only the
+validation *evidence* was wrong (numbering trap). Left a correction comment so that after the owner revokes, it lands
+at `fixed` (built; action layer host-coverable; pixels=VM), not "not implemented".
+
+Also corrected the running record: board TSK-202 = web-diff PORT (fixed), NOT "Sessions split"; TSK-246-249 =
+validated PORT features, NOT pending deps — the dep-gated rust-core slices are reminder-#NNN-only, not board tasks.
+No code change; `main` stays headless-gate-green at f148f18. Board remains owner-bound-saturated.
+
 ## LOG 2026-06-09 (latest+99) — fresh security audit (ReDoS hardened) + correction to the +98 unblock menu
 
 Two corrections this tick (both genuine verification, not churn):
