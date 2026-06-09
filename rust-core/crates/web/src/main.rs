@@ -36,6 +36,7 @@ use mdvcore_core::nav::{self, SortKey};
 use mdvcore_core::outline::{self, Heading};
 use mdvcore_core::view::{self, DiffLine, DiffLineKind, FileKind, ViewBody, ViewMode};
 use mdvcore_core::whitespace;
+use mdvcore_highlight::{Lang, Segment, TokenKind};
 
 /// Max bytes read into a view (parity with the TUI's preview cap). Per-mode
 /// shaping (text/hex/table) lives in the shared `mdvcore_core::view`.
@@ -1053,7 +1054,26 @@ fn content_html(
             } else {
                 lines
             };
-            format!("{}{}{}{}", find_nav, hex_nav, goto, gutter_html(display, target, &anchors))
+            // Syntax highlighting (TSK-257): Text mode + a recognised language +
+            // NOT whitespace-reveal (reveal rewrites the text, breaking span
+            // alignment). Segments are computed from the SAME lines we display
+            // (`display == lines` here, since reveal disables highlighting), so
+            // the spans line up with the rendered columns.
+            let ext = name.rsplit_once('.').map_or("", |(_, e)| e);
+            let hl: Option<Vec<Vec<Segment>>> =
+                if v.mode == ViewMode::Text && !ws {
+                    Lang::from_extension(ext)
+                        .map(|lang| mdvcore_highlight::highlight_lines(&lines.join("\n"), lang))
+                } else {
+                    None
+                };
+            format!(
+                "{}{}{}{}",
+                find_nav,
+                hex_nav,
+                goto,
+                gutter_html(display, target, &anchors, hl.as_deref())
+            )
         }
         ViewBody::Table { header, rows, truncated } => {
             // Apply the active CSV filter (shared `view::table_query` + core
@@ -1309,12 +1329,50 @@ fn mode_str(m: ViewMode) -> &'static str {
 /// `#L<line>` fragment from the outline TOC scrolls to the heading natively (no
 /// JS). The goto `target`, when set, already anchors+highlights its own row;
 /// an anchor that coincides with the target is subsumed by it (no duplicate id).
-fn gutter_html(lines: &[String], target: Option<usize>, anchors: &[usize]) -> String {
+/// CSS class suffix for a syntax [`TokenKind`] (TSK-257) — `None` leaves the
+/// segment unstyled (structural tokens: punctuation, operators, plain vars).
+fn token_class(kind: TokenKind) -> Option<&'static str> {
+    match kind {
+        TokenKind::Keyword => Some("kw"),
+        TokenKind::String => Some("str"),
+        TokenKind::Number | TokenKind::Constant => Some("num"),
+        TokenKind::Comment => Some("com"),
+        TokenKind::Function => Some("fn"),
+        TokenKind::Type => Some("ty"),
+        TokenKind::Property | TokenKind::Attribute => Some("at"),
+        TokenKind::Tag => Some("tag"),
+        TokenKind::Variable | TokenKind::Operator | TokenKind::Punctuation | TokenKind::Other => None,
+    }
+}
+
+/// Render one line's highlight segments to HTML: each segment's text is escaped,
+/// and coloured kinds are wrapped in `<span class="tok-…">`. Concatenated, the
+/// segments reproduce the line, so the output is exactly the escaped line plus
+/// span wrappers (no content added or dropped).
+fn highlight_line_html(segs: &[Segment]) -> String {
+    let mut s = String::new();
+    for seg in segs {
+        let text = esc(&seg.text);
+        match token_class(seg.kind) {
+            Some(cls) => s.push_str(&format!("<span class=\"tok-{cls}\">{text}</span>")),
+            None => s.push_str(&text),
+        }
+    }
+    s
+}
+
+fn gutter_html(
+    lines: &[String],
+    target: Option<usize>,
+    anchors: &[usize],
+    hl: Option<&[Vec<Segment>]>,
+) -> String {
     let gw = view::gutter_width(lines.len());
     // Build the gutter column (numbers, newline-joined) and the content column
     // (the lines, newline-joined + escaped) as two parallel `<pre>` blocks. Both
     // are pre-escaped per-segment; the only raw markup injected is the static
-    // `<span>` wrappers around the (escaped) target / anchored rows.
+    // `<span>` wrappers around the (escaped) target / anchored rows + the
+    // syntax-highlight `tok-…` spans (their text is escaped in highlight_line_html).
     let mut nums = String::new();
     let mut src = String::new();
     for (i, raw_line) in lines.iter().enumerate() {
@@ -1325,7 +1383,10 @@ fn gutter_html(lines: &[String], target: Option<usize>, anchors: &[usize]) -> St
         // 1-based, right-aligned to the gutter width (decimal digits).
         let n = i + 1;
         let label = esc(&format!("{n:>gw$}"));
-        let line = esc(raw_line);
+        let line = match hl.and_then(|h| h.get(i)) {
+            Some(segs) => highlight_line_html(segs),
+            None => esc(raw_line),
+        };
         if target == Some(n) {
             // Anchor + highlight the target row. The id lives in the gutter so a
             // `#L<n>` fragment scrolls here; both panes get the `.cur` highlight.
@@ -1613,6 +1674,9 @@ pre{{font:12px ui-monospace,Menlo,monospace;white-space:pre;overflow:auto;margin
 .gutter{{-webkit-user-select:none;user-select:none;text-align:right;color:#999;padding-right:10px;border-right:1px solid #eee;margin-right:10px;overflow:visible;flex:none}}\
 .src{{flex:1}}\
 .code .cur{{background:#fff3b0;scroll-margin-top:12px}}\
+.tok-kw{{color:#a626a4}} .tok-str{{color:#50a14f}} .tok-num{{color:#b76b01}}\
+.tok-com{{color:#a0a1a7;font-style:italic}} .tok-fn{{color:#4078f2}} .tok-ty{{color:#c18401}}\
+.tok-at{{color:#0184bc}} .tok-tag{{color:#4078f2}}\
 table{{border-collapse:collapse;font:12px ui-monospace,Menlo,monospace;table-layout:fixed}}\
 th,td{{border:1px solid #ddd;padding:2px 6px;text-align:left;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}\
 th{{background:#eef;position:sticky;top:0}}\
@@ -1649,6 +1713,9 @@ input,textarea,.find button,.goto button{{background:#2d2d2d;border-color:#444;c
 .outline,.imgcard{{background:#252526;border-color:#3a3a3a;color:#bbb}}\
 .banner{{background:#3a3320;border-color:#6b5e2a;color:#e6d48a}}\
 .gutter{{color:#777;border-right-color:#333}} .code .cur{{background:#5a4b00}}\
+.tok-kw{{color:#c678dd}} .tok-str{{color:#98c379}} .tok-num{{color:#d19a66}}\
+.tok-com{{color:#7f848e}} .tok-fn{{color:#61afef}} .tok-ty{{color:#e5c07b}}\
+.tok-at{{color:#56b6c2}} .tok-tag{{color:#61afef}}\
 th,td{{border-color:#3a3a3a}} th{{background:#2d2d3a}}\
 .diff-hunk{{color:#c8a6ff;background:#2a2336}}\
 .diff-add{{color:#7ee2a8;background:#16301f}}\
@@ -2088,6 +2155,34 @@ mod tests {
     }
 
     #[test]
+    fn view_rust_source_is_syntax_highlighted() {
+        let dir = fixture();
+        fs::write(dir.join("snippet.rs"), b"fn main() {\n    let s = \"hi\";\n}\n").unwrap();
+        let html = render_view(&dir.join("snippet.rs"), Some("text"), SortKey::Name, false, None);
+        // Keyword + string token spans (TSK-257) — present only if tree-sitter ran.
+        assert!(html.contains("<span class=\"tok-kw\">fn</span>"), "fn keyword span:\n{html}");
+        assert!(html.contains("<span class=\"tok-kw\">let</span>"), "let keyword span");
+        assert!(html.contains("<span class=\"tok-str\">"), "string literal span");
+        // The colour rule ships in the page stylesheet so the spans actually paint.
+        assert!(html.contains(".tok-kw{color:"), "tok-kw CSS rule present");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn view_plain_text_and_hex_are_not_highlighted() {
+        let dir = fixture();
+        fs::write(dir.join("snippet.rs"), b"fn main() {}\n").unwrap();
+        // `.txt` has no grammar → no token SPANS (lang gate). Note the `.tok-kw`
+        // CSS rule is on every page, so assert on the span markup, not substrings.
+        let txt = render_view(&dir.join("hello.txt"), Some("text"), SortKey::Name, false, None);
+        assert!(!txt.contains("class=\"tok-"), "plain text not highlighted:\n{txt}");
+        // HEX shares the render path but is gated off (mode gate).
+        let hex = render_view(&dir.join("snippet.rs"), Some("hex"), SortKey::Name, false, None);
+        assert!(!hex.contains("class=\"tok-"), "hex not highlighted:\n{hex}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn view_text_shows_encoding_and_line_ending_badge() {
         let dir = fixture();
         // CRLF, no-BOM — CRLF (not LF) proves the badge is computed from the bytes.
@@ -2420,7 +2515,7 @@ mod tests {
     fn gutter_width_pads_numbers_to_decimal_digits() {
         // 12 lines → 2-digit gutter: line 1 is right-padded (" 1"), line 12 is "12".
         let lines: Vec<String> = (1..=12).map(|i| format!("line {i}")).collect();
-        let html = gutter_html(&lines, None, &[]);
+        let html = gutter_html(&lines, None, &[], None);
         assert!(html.contains(" 1\n 2"), "single-digit numbers right-padded to width 2:\n{html}");
         assert!(html.contains("12"), "two-digit number present:\n{html}");
         let _ = lines;
@@ -2596,7 +2691,14 @@ mod tests {
         let def = render_view(&json, None, SortKey::Name, false, None);
         assert!(def.contains("&mode=formatted"), "Formatted mode link offered:\n{def}");
         assert!(def.contains("<b>text</b>"), "json defaults to Text:\n{def}");
-        assert!(def.contains("{&quot;a&quot;:1"), "Text shows compact source:\n{def}");
+        // Text mode now syntax-highlights JSON (TSK-257): the key string is in a
+        // `tok-str` span, immediately followed by `:` with NO space — which proves
+        // BOTH that highlighting ran AND that the source is compact (pretty would
+        // be `: ` colon-space, and Formatted mode isn't highlighted).
+        assert!(
+            def.contains("<span class=\"tok-str\">&quot;a&quot;</span>:"),
+            "Text shows compact, highlighted source:\n{def}"
+        );
 
         // `?mode=formatted` re-indents it (2-space; `: ` colon-space is unique to
         // the pretty output — compact has `:1` with no space).
