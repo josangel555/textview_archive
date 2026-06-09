@@ -29,6 +29,24 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+106) — FIXED: TSK-507 PluginSubprocessHost gate-flake → done (teeth: suite green + kill-path intact)
+
+- **TSK-507** ([test][flaky] PluginSubprocessHostTests false-red under load) → **done** (commit `cac7227`). Root cause: the
+  immediate-echo fixture scripts passed a tight `timeoutMs:3000` to `host.call`; on a saturated runner the child is
+  CPU-starved and the 3s per-call deadline elapses before it completes → host terminates it → timeout outcome → XCTFail
+  (`test_happy_path`/`test_nonzero_exit` observed at ~8.4s on 2026-06-08, cost a gate re-run). Fix: a single documented
+  `safeTimeoutMs = 15_000` constant replaces every immediate-echo case's `3000` (14 sites) — it's a **ceiling, not a
+  sleep**, so zero cost on a healthy run (echo finishes in ms); 15s < host `maxTimeoutMs`(30s) so no clamp.
+  `test_timeout_kills_runaway` KEEPS its deliberate `200ms` budget. Verified: full suite **21/21** green in 5.3s incl.
+  the kill-path test (0.49s — the SIGTERM/SIGKILL mechanism still fires, so the bump didn't neuter the timeout). This is
+  the exact flake that's intermittently reddened my own headless-gate runs — it improves merge-gate reliability.
+
+- Re-verified (fresh) the SwiftUI + PORT lanes are genuinely owner-gated: `task_list waiting=human` = TSK-250 (web
+  back-forward won't-do), TSK-256 (web markdown engine), TSK-262 (session-tab icons mis-validation revoke), TSK-301
+  (local-history policy), TSK-306 (preview-tab validation bar), TSK-498 (tui/web gate CI policy). All parked, awaiting owner.
+- `task_next` STILL wedged on foreign **TSK-104** (agent:forge, regressed prio-0, CSV export — not markdown_viewer);
+  ranker can't surface this project's queue until the owner clears it. Picked work directly per the shared-board rule.
+
 ## LOG 2026-06-09 (latest+105) — BUILT: TSK-515 TUI session-restore phase 2 (open tabs + scroll + per-file mode) → done; TSK-498 parked
 
 Real feature work this tick (SwiftUI lane owner-gated/saturated; `task_next` wedged on foreign forge TSK-104 — skipped per shared-board rule; drained the PORT lane per SOP).
