@@ -29,6 +29,28 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+83) — TSK-520 VALIDATED: monitor content-search RESULTS UI (VM pixel teeth)
+
+Landed the render-gated half of the monitor content-search and **VM-validated** it — **TSK-520 → validated**
+(commit `3f266fc`). The UI: a **Sessions / Content** segmented mode picker atop the master pane; in Content
+mode a `text.magnifyingglass` field bound to `contentQuery` (runs `runContentSearch` on submit + on clear,
+spinner while searching); a results `List` of per-event matches, each a **coloured role badge**
+(User/Asst/Think/Tool/Result) + monospaced session key + 2-line snippet. Selecting a result →
+`selectMatch(_:)` selects the owning session AND scrolls the detail transcript to + highlights the matching
+event (`ScrollViewReader` + `pendingEventIndex`, accent border/fill). Model adds `searchMode` /
+`pendingEventIndex` / `selectMatch` + `applyLaunchEnvironment(MDV_MONITOR_CONTENT_QUERY seed)` +
+`nonisolated defaultRoot(MDV_MONITOR_ROOT override)`; `main.swift` now publishes the `--claude-monitor`
+window's `windowid` so the T5 lane can capture it.
+
+Validation — **host model teeth (ClaudeMonitorModelTests 13/0)**: selectMatch selects session + sets
+pendingEventIndex; unknown-session no-op; selectSession clears the highlight; launch-env seed forces content
+mode; defaultRoot env override. **VM T5 PixelTestCase** (`ClaudeMonitorVisualRegressionTests`, GUI session
+via launchctl asuser + disclaimed screencapture): launches `--claude-monitor` over a fixture `~/.claude`
+(`MDV_MONITOR_ROOT`) seeded to `BANANA` → the LEFT results region composites ≥3-colour variety → **PASS
+(7.7s)**. **Teeth demonstrated**: same test with a non-matching token → empty list → region uniform →
+**FAIL (8.5s)**, then restored. Host headless gate green (`^EXIT=0`). This was reminder #252's
+"[BLOCKED:live] wire transcript content-search into the UI" — now unblocked + done via the VM-UI recipe.
+
 ## LOG 2026-06-08 (latest+82) — TSK-520: monitor transcript content-search — model layer (host teeth)
 
 Started the next render-gated feature now that the VM-UI recipe exists: full-text transcript search in the
