@@ -58,4 +58,32 @@ public struct AudioPCMBuffer: Equatable, Sendable {
             return out
         }
     }
+
+    /// The largest absolute sample value across all channels (0 for silence /
+    /// empty). The headroom reference for a level meter or normalize op.
+    public func peakAmplitude() -> Float {
+        var peak: Float = 0
+        for ch in channels {
+            for s in ch {
+                let a = abs(s)
+                if a > peak { peak = a }
+            }
+        }
+        return peak
+    }
+
+    /// Root-mean-square amplitude across all channels (0 for silence / empty) —
+    /// the loudness reference a VU/RMS meter draws.
+    public func rmsAmplitude() -> Float {
+        var sumSquares: Double = 0
+        var count = 0
+        for ch in channels {
+            for s in ch {
+                sumSquares += Double(s) * Double(s)
+                count += 1
+            }
+        }
+        guard count > 0 else { return 0 }
+        return Float((sumSquares / Double(count)).squareRoot())
+    }
 }

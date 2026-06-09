@@ -22,6 +22,15 @@ public enum AudioEditOp: Sendable, Equatable, Codable {
     /// samples, so silence stays silent and the op composes with others.
     case fade(startFrame: Int, endFrame: Int, direction: FadeDirection, shape: FadeShape)
 
+    /// Scale every sample by a constant gain of `decibels` dB (×10^(dB/20)) —
+    /// the audio amplitude "scale". 0 dB is identity; +6 dB ≈ ×2, −6 dB ≈ ×0.5.
+    case gain(decibels: Double)
+
+    /// Peak-normalize: scale the whole buffer so its loudest sample sits at
+    /// `targetPeakDB` dBFS (0 dBFS = full scale). A no-op on silence (nothing to
+    /// scale). Composes after trim/fade like any other op.
+    case normalize(targetPeakDB: Double)
+
     public enum FadeDirection: String, Sendable, Equatable, Codable, CaseIterable {
         case `in`, out
     }
@@ -34,7 +43,7 @@ public enum AudioEditOp: Sendable, Equatable, Codable {
     }
 
     /// Gain at normalised position `p ∈ [0, 1]` across the fade range.
-    static func gain(at p: Double, direction: FadeDirection, shape: FadeShape) -> Float {
+    static func fadeGain(at p: Double, direction: FadeDirection, shape: FadeShape) -> Float {
         let clamped = Swift.min(Swift.max(p, 0), 1)
         switch (direction, shape) {
         case (.in,  .linear):     return Float(clamped)
@@ -70,7 +79,7 @@ public enum AudioEditOp: Sendable, Equatable, Codable {
             var env = [Float](repeating: 0, count: len)
             for i in 0..<len {
                 let p = len > 1 ? Double(i) / Double(len - 1) : 1.0
-                env[i] = AudioEditOp.gain(at: p, direction: direction, shape: shape)
+                env[i] = AudioEditOp.fadeGain(at: p, direction: direction, shape: shape)
             }
 
             let faded = buffer.channels.map { channel -> [Float] in
@@ -79,7 +88,24 @@ public enum AudioEditOp: Sendable, Equatable, Codable {
                 return out
             }
             return AudioPCMBuffer(sampleRate: buffer.sampleRate, channels: faded)
+
+        case let .gain(decibels):
+            return AudioEditOp.scaled(buffer, by: Float(pow(10.0, decibels / 20.0)))
+
+        case let .normalize(targetPeakDB):
+            let peak = buffer.peakAmplitude()
+            guard peak > 0 else { return buffer }   // silence: nothing to normalise
+            let targetLinear = Float(pow(10.0, targetPeakDB / 20.0))
+            return AudioEditOp.scaled(buffer, by: targetLinear / peak)
         }
+    }
+
+    /// Multiply every sample of every channel by `factor`.
+    private static func scaled(_ buffer: AudioPCMBuffer, by factor: Float) -> AudioPCMBuffer {
+        AudioPCMBuffer(
+            sampleRate: buffer.sampleRate,
+            channels: buffer.channels.map { $0.map { $0 * factor } }
+        )
     }
 }
 
