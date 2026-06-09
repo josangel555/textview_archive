@@ -29,6 +29,26 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+93) — loose-ends cleanup batch EXHAUSTED (verified) + TSK-272 reconciled to fixed
+
+Swept the board (`task_list` triaged/reported/blocker=none) + the loose-ends-audit README for clean host-actionable
+work after landing TSK-476 last tick. Findings:
+- **The loose-ends `cleanup` batch is fully done.** Verified each cited item against current code:
+  `NSSelectorFromString`→`#selector` = **TSK-476** (landed/validated last tick); LSP `initializationOptions`
+  parsed-but-dropped = **already threaded** (LSPClient.swift:567-569,584 build the `initialize` param); the
+  `byteString`/`readXattrs` triplicate-helper dedups = **gone** (single impls); `isSameDocumentFragment` =
+  **already a shared `URLFragmentPolicy.swift`**; `relativeTime` = single (GitLogTab); LSP `didSave()` = **moot**
+  (no such method exists anymore — the README's "exists but uncalled" evidence drifted). DON'T re-probe these.
+- **The remaining loose-ends items are render-gated or owner-gated**: backend-not-surfaced UI (image-editor view,
+  LSP completion autocomplete, CM6 indentGuides/foldingRanges, References-button), Tier-A plugin placeholder, zoom
+  split (#228 owner-gated). The `reported` lane is `[BACKLOG]` feature requests (multi-window, vector store, AWS,
+  Java/Chrome debuggers, draggable files) — large/owner-gated/render-gated.
+- **TSK-272 reconciled `reported`→`fixed`** (commit `e7c712d`): its deliverable — "Up/Down on file nav changes
+  current tab content" — is genuinely IMPLEMENTED (SidebarKeyMonitor .up/.down → `previewSelectedFile()` →
+  `model.openPreview`, the preview-slot scrub) + host-tested at the model boundary (DocumentModelPreviewTests 7/0).
+  The board had it at `reported` (understating reality). Render-path key-event routing shares TSK-306's parked
+  VM-validation gate. No new commit (cites the existing e7c712d); board-accuracy progress per the SOP.
+
 ## LOG 2026-06-09 (latest+92) — TSK-476 VALIDATED (compile-checked #selector) + corrected the saturation read
 
 Real actionable work found — by querying the BOARD directly (`task_list state=triaged`/`progress`) instead of the
