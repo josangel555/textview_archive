@@ -13,6 +13,15 @@ public struct ReviewComment: Codable, Equatable, Sendable, Identifiable {
     /// Matches what `DiffParser` produces.
     public let filePath: String
 
+    /// Which commit's diff this comment is anchored to, when the comment was
+    /// placed on a specific commit's patch (the "click any commit in the Git
+    /// Log and comment" flow). `nil` ⇒ the comment belongs to the review's own
+    /// scope-diff (working-tree / range / branch), i.e. the legacy file-review
+    /// behaviour. OPTIONAL and additive: pre-`commitSha` review JSON on disk
+    /// decodes this to `nil`, so existing reviews load unchanged (no schema
+    /// bump). See `CommitDiffAnchor` for the commit-partition + staleness logic.
+    public let commitSha: String?
+
     /// Anchor — see anchor model below.
     public let anchor: LineAnchor
 
@@ -43,6 +52,7 @@ public struct ReviewComment: Codable, Equatable, Sendable, Identifiable {
         id: String,
         parentId: String? = nil,
         filePath: String,
+        commitSha: String? = nil,
         anchor: LineAnchor,
         severity: Severity,
         body: String,
@@ -54,6 +64,7 @@ public struct ReviewComment: Codable, Equatable, Sendable, Identifiable {
         self.id = id
         self.parentId = parentId
         self.filePath = filePath
+        self.commitSha = commitSha
         self.anchor = anchor
         self.severity = severity
         self.body = body
