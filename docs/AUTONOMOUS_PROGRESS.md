@@ -29,6 +29,24 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+113) — drained the Omni-invokable scriptVerb cluster: TSK-411–414 DONE
+
+Continued the `fixed`-lane verify-and-validate lane. The scriptVerb-gap cluster ("make X Omni-invokable + automatable")
+all sat at `fixed` with dedicated verb→model dispatch test suites already landed; ran them fresh (all green) + validated:
+
+- **TSK-411 Reload** → `reload` verb (ScriptVerbDispatch:161 → reloadCurrentFile); ReloadVerbTests green.
+- **TSK-412 split + move-tab** → move-tab-left/right + toggle/swap-split verbs (:107-120 → model methods); SplitAndMoveTabVerbTests green.
+- **TSK-413 Git Panel + Line Bookmark** → show-git-panel + toggle-line-bookmark verbs (:171-172); GitPanelAndLineBookmarkVerbTests 4/0 (incl. test_bothCommands_arePaletteInvokable — the exact Omni contract).
+- **TSK-414 Show File History** → no-arg git-file-history verb (:173 → openFileHistory on current file); GitFileHistoryVerbTests green.
+
+These are genuine behavioral teeth (regress the verb registration/routing → suite fails), and the deliverable (verb is
+registered + dispatches + palette-invokable) is exactly what the tests assert. No code change — verify-and-validate closures.
+
+**`fixed`-lane progress so far (this session):** dedup cluster (TSK-471/472/473/475), test-backfill cluster (TSK-415–434,
+20), scriptVerb cluster (TSK-411–414). Remaining `fixed` = held categories (perf/leak/race no-teeth; UI-wiring VM-gated)
++ bug/contract items (TSK-435–461 cluster, TSK-465/466/487 backend-not-surfaced, TSK-468/482) — mine those carefully next,
+watching for completable residuals (TSK-474 pattern) vs genuinely-VM-gated.
+
 ## LOG 2026-06-09 (latest+112) — drained the test-backfill cluster: TSK-415–434 (20 tasks) DONE
 
 Continued the `fixed`-lane verify-and-validate lane. The test-backfill cluster ("[TEST-GAP] X was untested" / "Test
