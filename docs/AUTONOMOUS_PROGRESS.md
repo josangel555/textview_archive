@@ -29,6 +29,32 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+86) — TSK-257 increment 2: TUI source view is syntax-highlighted (TestBackend fg teeth)
+
+Wired the highlight engine into the **TUI source view** (commit `06db6b5`). Two parts:
+- **Engine `highlight_lines(src, lang) -> Vec<Vec<Segment>>`** — projects the byte-range spans onto LINES (one
+  `Vec<Segment>` per `\n`-split line), gaps emitted as `TokenKind::Other` so a line's segments reconstruct it
+  exactly. The byte→line mapping lives here (host-testable), so front-ends stay thin. 3 new engine teeth: line
+  alignment + 1-per-line count; segment-reconstruct invariant incl. a UTF-8 multibyte string (`"café ☕"`);
+  empty/blank lines.
+- **TUI `ViewBody::Text` arm** maps each line's segments to ratatui `Color` via a `token_color` palette
+  (keyword→Magenta, string→Green, number/const→Yellow, comment→DarkGray, fn/tag→Blue, type/prop/attr→Cyan;
+  structural tokens uncoloured), composed with the existing line-number gutter. **Gated** to Text mode + a
+  recognised extension + NOT whitespace-reveal/flash, so HEX (shares the arm), plain text, and the reveal/flash
+  overlays are untouched. **Alignment fix that matters:** the core's display lines are tab-expanded + `\r`-stripped,
+  so raw-byte offsets would mis-align — the TUI feeds `lines.join("\n")` (the displayed text) to the engine.
+  **Perf:** highlight computed once per file into a `RefCell` cache on `Preview` (200k-line file cap → no
+  per-frame reparse).
+
+**Teeth (TestBackend per-cell fg — the host pixel coverage the SwiftUI render path lacks):** a `.rs` fixture's
+letters carry Magenta(keyword) + Green(string); a `.txt` file and HEX mode carry neither (lang gate + mode gate).
+**Teeth demonstrated:** neutering `token_color` to always-None turns the highlight test red
+(`{Black,Reset,DarkGray,Cyan}` — no Magenta/Green), then restored. `mdvcore-highlight` 8/0, `mdvcore-tui` 57/0;
+rust-core merge gate green (highlight + tui stay scoped out of it via `default-members`).
+
+**REMAINING** (TSK-257 still `progress`): (3) web wiring — `TokenKind`→CSS class over the same
+`highlight_lines` primitive; (4) expand grammars json/rust/js → the full 11.
+
 ## LOG 2026-06-08 (latest+85) — TSK-257 increment 1: mdvcore-highlight tree-sitter engine (owner-approved dep, host teeth)
 
 Started the owner-approved tree-sitter syntax-highlighting feature (TSK-257, park resolved "Approve tree-sitter +
