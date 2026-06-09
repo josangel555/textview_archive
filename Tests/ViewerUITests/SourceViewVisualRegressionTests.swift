@@ -103,10 +103,11 @@ final class SourceViewVisualRegressionTests: PixelTestCase {
         Thread.sleep(forTimeInterval: 1.5)
         let pngURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("mdv-meta-broken-\(UUID().uuidString).png")
-        let res = try shell([
-            "/usr/sbin/screencapture", "-l\(windowID)", "-x", "-o", pngURL.path
-        ])
-        guard res.exit == 0,
+        // TSK-502: disclaim xctest's TCC responsibility so the already-granted
+        // /bin/bash is the screencapture responsible process on the VM.
+        let capExit = runDisclaimedShell(
+            "/usr/sbin/screencapture -l\(windowID) -x -o '\(pngURL.path)'")
+        guard capExit == 0,
               let image = NSImage(contentsOf: pngURL),
               let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
               cg.width > 200 else {
@@ -206,13 +207,14 @@ final class SourceViewVisualRegressionTests: PixelTestCase {
         // 6. screencapture -l<id> -x → PNG.
         let pngURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("mdv-visual-regression-\(UUID().uuidString).png")
-        let res = try shell([
-            "/usr/sbin/screencapture", "-l\(windowID)", "-x", "-o", pngURL.path
-        ])
-        guard res.exit == 0, fm.fileExists(atPath: pngURL.path) else {
+        // TSK-502: disclaim xctest's TCC responsibility so the already-granted
+        // /bin/bash is the screencapture responsible process on the VM.
+        let capExit = runDisclaimedShell(
+            "/usr/sbin/screencapture -l\(windowID) -x -o '\(pngURL.path)'")
+        guard capExit == 0, fm.fileExists(atPath: pngURL.path) else {
             throw XCTSkip(
                 "screencapture failed (likely Screen Recording permission). " +
-                "exit=\(res.exit). On macOS 15+, grant Screen Recording to " +
+                "exit=\(capExit). On macOS 15+, grant Screen Recording to " +
                 "both Terminal AND " +
                 "/Applications/Xcode.app/Contents/Developer/usr/bin/xctest."
             )

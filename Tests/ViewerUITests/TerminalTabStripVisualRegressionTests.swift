@@ -183,11 +183,12 @@ final class TerminalTabStripVisualRegressionTests: PixelTestCase {
 
         let pngURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("mdv-term-\(scene)-\(UUID().uuidString).png")
-        let res = try shell([
-            "/usr/sbin/screencapture", "-l\(windowID)", "-x", "-o", pngURL.path,
-        ])
+        // TSK-502: disclaim xctest's TCC responsibility so the already-granted
+        // /bin/bash is the screencapture responsible process on the VM.
+        let capExit = runDisclaimedShell(
+            "/usr/sbin/screencapture -l\(windowID) -x -o '\(pngURL.path)'")
         defer { try? fm.removeItem(at: pngURL) }
-        guard res.exit == 0, fm.fileExists(atPath: pngURL.path),
+        guard capExit == 0, fm.fileExists(atPath: pngURL.path),
               let image = NSImage(contentsOf: pngURL),
               let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
               cg.width > 200, cg.height > 200 else {
