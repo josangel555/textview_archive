@@ -29,6 +29,21 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+79) — TSK-342: ImageEditorViewModel export wiring — editor MODEL layer now complete
+
+Second TSK-342 increment (commit `ef09e82`): the editor's save flow over the tested `Exporter` —
+`exportData(format:quality:) -> Data` + `export(format:quality:to:)` (atomic write). Both encode the current
+edited `document` (geometry history + live tonal state), so they export the WYSIWYG preview, never the
+untouched source. 3 host teeth (ImageEditorViewModelTests now 10/0): PNG export after a resize decodes at
+20px not the 40px source (proves it encodes the EDITED doc); JPEG round-trips to source dims; `export(to:)`
+writes an atomic file that decodes at the edited size.
+
+**The image-editor MODEL layer is now COMPLETE** — live tonal sliders (no history spam) + geometry/undo +
+render + histogram + export, every bit host-tested. The only image work left is the render-gated SwiftUI
+VIEW (sliders/preview/histogram/save wired into the app) + its VM pixel/AX test. NOTE: where the editor
+view LIVES in the app (new tab vs tool-window vs image-preview "edit mode") is a UX placement call worth a
+quick owner steer before building the integration — otherwise default to an image-preview edit-mode toggle.
+
 ## LOG 2026-06-08 (latest+78) — TSK-342: ImageEditorViewModel — host-testable editor model layer (image PoC UI enablement)
 
 Rotated off test-sweeping to real product work (owner's "build PoCs: image editing" directive). The
