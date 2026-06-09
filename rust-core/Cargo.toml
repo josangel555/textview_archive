@@ -13,7 +13,7 @@
 
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/ffi", "crates/tui", "crates/web"]
+members = ["crates/core", "crates/ffi", "crates/tui", "crates/web", "crates/highlight"]
 # The CI gate (scripts/rust-core-gate.sh) and the Swift staticlib build operate
 # on the DEFAULT members only — core + ffi. The front-end bins (`tui`, a ratatui
 # TUI; `web`, a std-only HTTP server) are built explicitly
