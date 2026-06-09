@@ -29,6 +29,25 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+117) — VM unreachable → render-validation lane blocked; board is input/VM-bound (honest hold)
+
+Acted on +116's next-step (drive the render-gated remainder to DONE via the VM). Checked VM reachability first:
+`ssh -o ConnectTimeout=8 macOS15` → **connect timed out (<vm-ip>:22 down/asleep)**. So the VM render-validation lane —
+the only path to `done` for the UI-remainder cluster (TSK-456/457/458/466/468/489/505 + the 4 parked built-core features
+TSK-300/302/303/310) — is BLOCKED this tick, independent of agent work. TSK-502 unblocked the lane *in code*, but it needs
+the VM actually running.
+
+Re-checked the board fresh: `waiting=human` = the SAME 12 parks (TSK-300/302/303/310/452/498/262/306/256/250/301),
+unchanged timestamps, NONE answered since last tick. `task_next` still wedged on foreign TSK-104 (agent:forge). No new
+`reported` markdown_viewer task.
+
+NET — genuinely input/VM-bound: (a) host done-able clean vein harvested this session (dedup/test-backfill/scriptVerb/
+pure-model-bug clusters all closed); (b) render-gated remainder needs the VM, which is DOWN; (c) 12 parks need owner input.
+Honest hold — no manufactured closes (per the quality bar). NEXT-TICK CUE: **re-test `ssh macOS15` reachability first**;
+if the VM is back, drive the UI-remainder cluster + the 4 parked built-core features to `done` via `bash scripts/test-in-vm.sh`
+/ T5 pixel lane. If still down + no park answered, a brief honest hold is correct. OWNER: bringing the UTM VM back up
+unblocks the entire render-validation lane (the bulk of remaining board work).
+
 ## LOG 2026-06-09 (latest+116) — TSK-487 validated (CodeMirror indentGuides model+bridge); fixed-lane done-able vein now drained
 
 - **TSK-487 → validated** — CodeMirror indentGuides wired end-to-end at the model+bridge layer (PreferencesStore.editorIndentGuides
