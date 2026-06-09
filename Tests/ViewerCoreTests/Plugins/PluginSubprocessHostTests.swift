@@ -11,6 +11,17 @@ final class PluginSubprocessHostTests: XCTestCase {
     private var auditURL: URL!
     private var host: PluginSubprocessHost!
 
+    /// Per-call wall-clock budget for the immediate-completing fixture scripts
+    /// (TSK-507). This is a CEILING, not a sleep — on a healthy host the echo
+    /// script finishes in tens of ms, so raising it has ZERO cost on a normal
+    /// run; it only prevents a FALSE timeout when a saturated CI runner starves
+    /// the child of CPU and a tight 3s budget elapses before the child is even
+    /// scheduled (`test_happy_path` / `test_nonzero_exit` flaked at ~8.4s under
+    /// concurrent gate/build/VM load on 2026-06-08). 15s is well under the
+    /// host's `maxTimeoutMs` (30s) so it isn't clamped. The runaway-timeout test
+    /// keeps its own deliberately-short budget to exercise the kill path.
+    private let safeTimeoutMs = 15_000
+
     override func setUp() {
         super.setUp()
         let tmp = FileManager.default.temporaryDirectory
@@ -48,7 +59,7 @@ final class PluginSubprocessHostTests: XCTestCase {
         """)
         let result = host.call(
             pluginID: "test.ok", pluginFolder: pluginDir,
-            bin: bin, args: [], timeoutMs: 3000,
+            bin: bin, args: [], timeoutMs: safeTimeoutMs,
             request: .init(kind: "listRows")
         )
         if case .ok(let resp) = result.outcome {
@@ -72,7 +83,7 @@ final class PluginSubprocessHostTests: XCTestCase {
         """)
         let result = host.call(
             pluginID: "test.echo", pluginFolder: pluginDir,
-            bin: bin, args: [], timeoutMs: 3000,
+            bin: bin, args: [], timeoutMs: safeTimeoutMs,
             request: .init(kind: "listRows",
                            invocationID: "INV-1",
                            args: ["foo": "bar"])
@@ -123,7 +134,7 @@ final class PluginSubprocessHostTests: XCTestCase {
         """)
         let result = host.call(
             pluginID: "test.flood", pluginFolder: pluginDir,
-            bin: bin, args: [], timeoutMs: 3000,
+            bin: bin, args: [], timeoutMs: safeTimeoutMs,
             request: .init(kind: "listRows")
         )
         if case .stdoutOverflow = result.outcome {} else {
@@ -140,7 +151,7 @@ final class PluginSubprocessHostTests: XCTestCase {
         """)
         let result = host.call(
             pluginID: "test.fail", pluginFolder: pluginDir,
-            bin: bin, args: [], timeoutMs: 3000,
+            bin: bin, args: [], timeoutMs: safeTimeoutMs,
             request: .init(kind: "listRows")
         )
         if case .nonZeroExit(let code, let tail) = result.outcome {
@@ -159,7 +170,7 @@ final class PluginSubprocessHostTests: XCTestCase {
         """)
         let result = host.call(
             pluginID: "test.garbage", pluginFolder: pluginDir,
-            bin: bin, args: [], timeoutMs: 3000,
+            bin: bin, args: [], timeoutMs: safeTimeoutMs,
             request: .init(kind: "listRows")
         )
         if case .decodeFailed = result.outcome {} else {
@@ -170,7 +181,7 @@ final class PluginSubprocessHostTests: XCTestCase {
     func test_missing_bin_returns_spawnFailed() {
         let result = host.call(
             pluginID: "test.nope", pluginFolder: pluginDir,
-            bin: "does-not-exist.sh", args: [], timeoutMs: 3000,
+            bin: "does-not-exist.sh", args: [], timeoutMs: safeTimeoutMs,
             request: .init(kind: "listRows")
         )
         if case .spawnFailed(let msg) = result.outcome {
@@ -183,7 +194,7 @@ final class PluginSubprocessHostTests: XCTestCase {
     func test_path_traversal_in_bin_rejected() {
         let result = host.call(
             pluginID: "test.traverse", pluginFolder: pluginDir,
-            bin: "../../etc/passwd", args: [], timeoutMs: 3000,
+            bin: "../../etc/passwd", args: [], timeoutMs: safeTimeoutMs,
             request: .init(kind: "listRows")
         )
         if case .spawnFailed(let msg) = result.outcome {
@@ -215,7 +226,7 @@ final class PluginSubprocessHostTests: XCTestCase {
 
         let result = host.call(
             pluginID: "test.symlink", pluginFolder: pluginDir,
-            bin: "tool.sh", args: [], timeoutMs: 3000,
+            bin: "tool.sh", args: [], timeoutMs: safeTimeoutMs,
             request: .init(kind: "listRows")
         )
         if case .spawnFailed(let msg) = result.outcome {
@@ -239,7 +250,7 @@ final class PluginSubprocessHostTests: XCTestCase {
 
         let result = host.call(
             pluginID: "test.symlink.ok", pluginFolder: pluginDir,
-            bin: "alias.sh", args: [], timeoutMs: 3000,
+            bin: "alias.sh", args: [], timeoutMs: safeTimeoutMs,
             request: .init(kind: "listRows")
         )
         if case .ok = result.outcome {} else {
@@ -267,7 +278,7 @@ final class PluginSubprocessHostTests: XCTestCase {
         """)
         _ = host.call(
             pluginID: "test.perms", pluginFolder: pluginDir,
-            bin: bin, args: [], timeoutMs: 3000,
+            bin: bin, args: [], timeoutMs: safeTimeoutMs,
             request: .init(kind: "listRows")
         )
         let attrs = try FileManager.default.attributesOfItem(atPath: auditURL.path)
@@ -290,7 +301,7 @@ final class PluginSubprocessHostTests: XCTestCase {
         """)
         _ = host.call(
             pluginID: "test.chmod", pluginFolder: pluginDir,
-            bin: bin, args: [], timeoutMs: 3000,
+            bin: bin, args: [], timeoutMs: safeTimeoutMs,
             request: .init(kind: "listRows")
         )
         let attrs = try FileManager.default.attributesOfItem(atPath: auditURL.path)
@@ -315,7 +326,7 @@ final class PluginSubprocessHostTests: XCTestCase {
         """)
         let result = host.call(
             pluginID: "test.decode", pluginFolder: pluginDir,
-            bin: bin, args: [], timeoutMs: 3000,
+            bin: bin, args: [], timeoutMs: safeTimeoutMs,
             request: .init(kind: "listRows")
         )
         guard case .decodeFailed(let msg) = result.outcome else {
@@ -364,7 +375,7 @@ final class PluginSubprocessHostTests: XCTestCase {
     func test_spawnFailed_audit_records_bin_basename() throws {
         _ = host.call(
             pluginID: "test.spawnaudit", pluginFolder: pluginDir,
-            bin: "nested/dir/missing.sh", args: [], timeoutMs: 3000,
+            bin: "nested/dir/missing.sh", args: [], timeoutMs: safeTimeoutMs,
             request: .init(kind: "listRows")
         )
         let log = try String(contentsOf: auditURL, encoding: .utf8)
@@ -396,7 +407,7 @@ final class PluginSubprocessHostTests: XCTestCase {
             [.posixPermissions: 0o644], ofItemAtPath: nonExec.path)
         _ = host.call(
             pluginID: "test.spawnaudit.nonexec", pluginFolder: pluginDir,
-            bin: "not-exec.sh", args: [], timeoutMs: 3000,
+            bin: "not-exec.sh", args: [], timeoutMs: safeTimeoutMs,
             request: .init(kind: "listRows")
         )
         let log = try String(contentsOf: auditURL, encoding: .utf8)
@@ -435,12 +446,12 @@ final class PluginSubprocessHostTests: XCTestCase {
         """)
         _ = host.call(
             pluginID: "test.audit.1", pluginFolder: pluginDir,
-            bin: bin, args: [], timeoutMs: 3000,
+            bin: bin, args: [], timeoutMs: safeTimeoutMs,
             request: .init(kind: "listRows")
         )
         _ = host.call(
             pluginID: "test.audit.2", pluginFolder: pluginDir,
-            bin: bin, args: [], timeoutMs: 3000,
+            bin: bin, args: [], timeoutMs: safeTimeoutMs,
             request: .init(kind: "listRows")
         )
         let log = try String(contentsOf: auditURL, encoding: .utf8)
@@ -467,7 +478,7 @@ final class PluginSubprocessHostTests: XCTestCase {
         """)
         _ = host.call(
             pluginID: "test.audit.fail", pluginFolder: pluginDir,
-            bin: bin, args: [], timeoutMs: 3000,
+            bin: bin, args: [], timeoutMs: safeTimeoutMs,
             request: .init(kind: "listRows")
         )
         let log = try String(contentsOf: auditURL, encoding: .utf8)
