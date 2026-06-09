@@ -185,6 +185,28 @@ extension AppDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self else { return }
             let parts = scene.split(separator: "-").map(String.init)
+            // Preview-tab scenes (TSK-306 / TSK-272): drive the ONE ephemeral
+            // preview slot so the tab strip shows an italic preview tab + the
+            // content pane shows the previewed file — the render path the
+            // sidebar single-click / arrow-nav exercises (which can't be
+            // event-synthesised headlessly). `MDV_PREVIEW_FILE` names the file;
+            // `preview-promoted` then promotes it to a permanent (upright) tab.
+            if parts.first == "preview" {
+                guard let f = env["MDV_PREVIEW_FILE"], !f.isEmpty else {
+                    FileHandle.standardError.write(
+                        Data("ui-scene: 'preview' needs MDV_PREVIEW_FILE\n".utf8))
+                    return
+                }
+                let url = URL(fileURLWithPath: f)
+                self.model.openPreview(url: url)
+                if parts.contains("promoted") {
+                    // Promote-to-permanent (the Enter / double-click commit path).
+                    self.model.open(url: url)
+                }
+                FileHandle.standardError.write(Data(
+                    "ui-scene: applied '\(scene)' tabs=\(self.model.tabs.tabs.count) preview=\(self.model.tabs.previewTabID != nil)\n".utf8))
+                return
+            }
             guard parts.first == "terminal" else {
                 FileHandle.standardError.write(Data("ui-scene: unknown scene '\(scene)'\n".utf8))
                 return
