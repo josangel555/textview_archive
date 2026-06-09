@@ -123,10 +123,11 @@ final class SourceViewVisualRegressionTests: PixelTestCase {
             )
         }
         defer { try? fm.removeItem(at: pngURL) }
-        let scaleY = max(1, Int(Double(cg.height) / 900.0))
+        let scaleY = Self.capturedBackingScale(windowID: windowID, imagePixelWidth: cg.width)
         let titleBarPx = 28 * scaleY
         let tabBar = Region(x: 0, y: titleBarPx, w: cg.width, h: 32 * scaleY, name: "TabBar")
-        let modeBar = Region(x: 0, y: titleBarPx + 32 * scaleY, w: cg.width, h: 32 * scaleY, name: "ModeBar")
+        // 48pt-tall ModeBar band — see the main test's note (TSK-519).
+        let modeBar = Region(x: 0, y: titleBarPx + 32 * scaleY, w: cg.width, h: 48 * scaleY, name: "ModeBar")
         // Either TabBar OR ModeBar should be blank (uniform) when the
         // bug is active. We assert one or the other to insulate
         // ourselves from minor window-layout shifts.
@@ -244,16 +245,22 @@ final class SourceViewVisualRegressionTests: PixelTestCase {
         //    we sample MULTIPLE bands and require each. The TabBar
         //    band covers logical y=20-50; ModeBar y=50-80; StatusBar
         //    is the bottom 22 logical = 44 px.
-        let scaleY = max(1, Int(Double(h) / 900.0))   // approx 2 on Retina
+        let scaleY = Self.capturedBackingScale(windowID: windowID, imagePixelWidth: w)
         let titleBarPx = 28 * scaleY
         let tabBarStrip = Region(
             x: 0, y: titleBarPx,
             w: w, h: 32 * scaleY,
             name: "TabBar"
         )
+        // ModeBar band is 48pt tall (not 32) so it reaches past the thin
+        // toolbar row into the top content rows: on a healthy window that
+        // gives a robust colour margin (≈13 distinct vs the marginal 3 a
+        // 32pt band caught straddling chrome padding — TSK-519), while a
+        // real compositor blank still zeroes it (the whole SwiftUI sibling
+        // region goes uniform, not a thin strip).
         let modeBarStrip = Region(
             x: 0, y: titleBarPx + 32 * scaleY,
-            w: w, h: 32 * scaleY,
+            w: w, h: 48 * scaleY,
             name: "ModeBar"
         )
         let statusBarStrip = Region(
@@ -291,6 +298,33 @@ final class SourceViewVisualRegressionTests: PixelTestCase {
         let w: Int
         let h: Int
         let name: String
+    }
+
+    /// True device-pixels-per-point of the captured window — i.e. the
+    /// Retina backing scale of whichever display the window sits on.
+    /// Derived from the window's on-screen CG bounds (POINTS) vs the
+    /// captured image width (DEVICE px), so it is correct on 1× and 2×
+    /// displays alike.
+    ///
+    /// Replaces the prior `max(1, Int(imageHeight / 900))` guess, which
+    /// returned 1 for a 1600px-tall 2× capture (TSK-519): every sample
+    /// band then collapsed into the top ~92px of window chrome, so the
+    /// ModeBar strip landed on a flat title-bar strip and false-fired the
+    /// "appears uniform" compositor-regression assertion on a perfectly
+    /// healthy window. Falls back to the main screen's backing scale,
+    /// then 1.
+    static func capturedBackingScale(windowID: Int, imagePixelWidth: Int) -> Int {
+        if let arr = CGWindowListCopyWindowInfo(
+                [.optionIncludingWindow], CGWindowID(windowID)) as? [[String: Any]],
+           let boundsDict = arr.first?[kCGWindowBounds as String] as? NSDictionary,
+           let rect = CGRect(dictionaryRepresentation: boundsDict as CFDictionary),
+           rect.width > 0 {
+            return max(1, Int((CGFloat(imagePixelWidth) / rect.width).rounded()))
+        }
+        if let s = NSScreen.main?.backingScaleFactor, s > 0 {
+            return max(1, Int(s.rounded()))
+        }
+        return 1
     }
 
     /// Returns true if the region in `cgImage` contains 3+ distinct
