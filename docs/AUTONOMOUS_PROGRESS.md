@@ -29,6 +29,29 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+112) — drained the test-backfill cluster: TSK-415–434 (20 tasks) DONE
+
+Continued the `fixed`-lane verify-and-validate lane. The test-backfill cluster ("[TEST-GAP] X was untested" / "Test
+backfill: X") all sat at `fixed` — each had landed a host test suite in a prior wave but was never driven to `validated`.
+Mapped each to its test file, ran the suites fresh (all green), and validated to `done` (the added suite IS the deliverable):
+
+- **20 → done:** TSK-415 TerminalScreen grid (TerminalScreenTests 27/0), TSK-416 ReviewSidecar (ReviewSidecarTests),
+  TSK-417 TerminalCell SGR (TerminalCellTests 15/0), TSK-418 ClaudeLogParser system-records
+  (ClaudeLogParserSystemRecordsTests), TSK-419 RustCoreFallback router (RustCoreFallbackTests), TSK-420 LSPMarkdownRenderer
+  (LSPMarkdownRendererTests), TSK-421 #298 SidebarModel clearCache pin (ClearCacheFlatMemoTests), TSK-422 ByteFormat
+  (ByteFormatTests 6/0), TSK-423 LSPRequestID (LSPRequestIDTests), TSK-424 CommandCategory (CommandCategoryTests),
+  TSK-425 LogTimestamp (LogTimestampTests), TSK-426 CMIndentation (CMIndentationTests), TSK-427 jsEscape SECURITY
+  (MarkdownJSEscapeTests), TSK-428 computedTabWidth (TabBarWidthTests), TSK-429 repoRelativePath (RepoRelativePathTests),
+  TSK-430 shortDate (FileHistoryShortDateTests), TSK-431 safeURL SECURITY (HTMLRendererSafeURLTests), TSK-432 uniqueSlug
+  (HTMLVisitorSlugTests), TSK-433 atxHeadingLevel (ATXHeadingLevelTests), TSK-434 eventCounts (ClaudeMonitorAggregationTests).
+- **Mapping traps caught** (the verify-not-trust discipline mattered): TerminalCellTests is all SGR/cell-attrs → it covers
+  TSK-417 NOT TSK-415 (TerminalScreen grid lives in the separate TerminalScreenTests); the ClaudeLogParser grep first
+  hit an unrelated file before the precise ClaudeLogParserSystemRecordsTests. Verified each test file's actual contents.
+
+No code change this tick — all 20 suites already landed; these were verify-and-validate closures (fresh-run, 0 failures).
+**The test-backfill cluster is now fully drained from `fixed` → do NOT revisit it.** The `fixed` lane still holds the
+held categories (perf/leak/race with no teeth; UI-wiring VM-gated; bug/contract items — some may have completable residuals).
+
 ## LOG 2026-06-09 (latest+111) — harvested the `[redundant]` dedup cluster from the `fixed` lane: TSK-471/472/473 DONE, TSK-475 validated
 
 Worked the verify-and-validate lane found in +110. The `[redundant]` dedup family (siblings of TSK-474) all sat at
