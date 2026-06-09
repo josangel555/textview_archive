@@ -334,6 +334,22 @@ public actor LSPPool {
         entries[key] = fresh
     }
 
+    /// Notify the server that `fileURL` was just saved to disk (caller is the
+    /// editor-save success path). No-op when the file isn't currently open
+    /// (`ensureOpened` hasn't run) or the language has no LSP — same guards as
+    /// `didChange`, minus the version/hash bookkeeping (a save carries no new
+    /// content version; the server already has the latest via `didChange`).
+    /// Unblocks on-save server behaviour (format/lint/index-on-save).
+    public func didSave(fileURL: URL, text: String? = nil) async throws {
+        guard let entry = registry.language(for: fileURL) else { return }
+        guard let root = entry.rootFinder(fileURL) else { return }
+        let key = Key(language: entry.language, workspaceRoot: root)
+        guard let e = entries[key],
+              case .live(let client, let opened) = e.state,
+              opened.contains(fileURL) else { return }
+        try await client.didSave(url: fileURL, text: text)
+    }
+
     /// Forget all per-file state the pool tracks for `fileURL`: removes
     /// it from the live entry's `openedFiles` set and prunes the
     /// `fileVersions` / `fileHashes` dictionaries. Idempotent and a

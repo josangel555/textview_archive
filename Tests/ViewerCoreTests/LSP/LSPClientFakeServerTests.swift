@@ -336,6 +336,48 @@ final class LSPClientFakeServerTests: XCTestCase {
         await client.shutdown()
     }
 
+    // MARK: - didSave notification (TSK-521)
+
+    /// `textDocument/didSave` is a response-less notification, so we prove it
+    /// was SENT + its params PARSED indirectly: the `notify_on_save` fake
+    /// server echoes receipt as a `publishDiagnostics` carrying the saved URI.
+    func test_didSave_notification_reachesServerAndRoundTripsURI() async throws {
+        let (cfg, root) = try FakeLSPServerHelper.makeConfig(scenario: "notify_on_save")
+        defer { FakeLSPServerHelper.cleanup(root) }
+        let client = try LSPClient(config: cfg)
+        let sink = DiagnosticsSink()
+        await client.setOnDiagnostics { uri, diags in
+            Task { await sink.append(uri: uri, diags: diags) }
+        }
+        try await client.initialize()
+        let url = URL(fileURLWithPath: "/fake/saved.swift")
+        try await client.didSave(url: url, text: "let x = 1\n")
+        let got = await sink.waitForFirst(seconds: 2)
+        XCTAssertTrue(got, "didSave should trigger the notify_on_save echo within 2s")
+        let snap = await sink.snapshot()
+        XCTAssertTrue(snap.first?.uri.absoluteString.contains("saved.swift") ?? false,
+            "echoed diagnostic must carry the SAVED file's URI (didSave params round-trip): \(String(describing: snap.first?.uri))")
+        XCTAssertEqual(snap.first?.diags.first?.message, "didSave received")
+        XCTAssertEqual(snap.first?.diags.first?.code, "SAVED001")
+        await client.shutdown()
+    }
+
+    /// didSave before `initialize()` must throw `notInitialized` (mirrors
+    /// didOpen/didChange) — never silently drop the save notification.
+    func test_didSave_beforeInitialize_throwsNotInitialized() async throws {
+        let (cfg, root) = try FakeLSPServerHelper.makeConfig(scenario: "notify_on_save")
+        defer { FakeLSPServerHelper.cleanup(root) }
+        let client = try LSPClient(config: cfg)
+        let url = URL(fileURLWithPath: "/fake/saved.swift")
+        do {
+            try await client.didSave(url: url)
+            XCTFail("didSave before initialize should throw notInitialized")
+        } catch LSPError.notInitialized {
+            // expected
+        }
+        await client.shutdown()
+    }
+
     // MARK: - Shutdown idempotency
 
     func test_shutdown_twice_is_safe() async throws {

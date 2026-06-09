@@ -2134,7 +2134,10 @@ public final class DocumentModel: ObservableObject {
             // Sibling: refresh the tracked repo's badge status against
             // the new on-disk state (deterministic; doesn't wait on the
             // FSEvents debounce).
-            if let url = currentURL { repoFocus.refreshRepo(enclosing: url) }
+            if let url = currentURL {
+                repoFocus.refreshRepo(enclosing: url)
+                notifyLSPDidSave(url)
+            }
         }
         return ok
     }
@@ -2148,9 +2151,20 @@ public final class DocumentModel: ObservableObject {
             refreshDiffMarks()
             if let url = tabs.tabs.first(where: { $0.id == id })?.url {
                 repoFocus.refreshRepo(enclosing: url)
+                notifyLSPDidSave(url)
             }
         }
         return ok
+    }
+
+    /// Fire a `textDocument/didSave` to the LSP server after a successful
+    /// editor write so on-save server behaviour (format/lint/index-on-save)
+    /// triggers — `didChange` alone never does. Fire-and-forget like
+    /// `ensureOpened`/`closeFile`; the pool no-ops when the file isn't open or
+    /// the language has no LSP. (TSK-521.)
+    private func notifyLSPDidSave(_ url: URL) {
+        let pool = self.lspPool
+        Task { try? await pool.didSave(fileURL: url) }
     }
 
     /// Forwarder. New code should call `editor.discardEditorBuffer(...)`.

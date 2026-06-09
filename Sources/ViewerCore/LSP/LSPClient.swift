@@ -630,6 +630,22 @@ public actor LSPClient {
         try notify(method: "textDocument/didChange", params: params)
     }
 
+    /// Send `textDocument/didSave` after the editor writes the file to disk.
+    /// Unblocks on-save server behaviour (format-on-save, lint-on-save,
+    /// build/index triggers) which `didChange` alone never triggers. `text` is
+    /// the just-saved contents and is included only when non-nil — a server
+    /// that didn't request `includeText` in its save registration simply
+    /// ignores the field (per LSP `DidSaveTextDocumentParams`). No-op until
+    /// initialized.
+    public func didSave(url: URL, text: String? = nil) throws {
+        guard initialized else { throw LSPError.notInitialized }
+        var params: [String: Any] = [
+            "textDocument": ["uri": url.absoluteString]
+        ]
+        if let text { params["text"] = text }
+        try notify(method: "textDocument/didSave", params: params)
+    }
+
     public func hover(
         url: URL, line: Int, character: Int,
         token: LSPCancellationToken? = nil

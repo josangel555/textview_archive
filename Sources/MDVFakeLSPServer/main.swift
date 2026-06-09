@@ -199,6 +199,26 @@ final class FakeServer: @unchecked Sendable {
                         ] as [String: Any]
                     ])
                 }
+            case "textDocument/didSave":
+                // notify_on_save: echo receipt as a publishDiagnostics so a
+                // host test can prove the (response-less) didSave notification
+                // was sent + its params parsed. The diagnostic carries the
+                // saved file's URI, so the test asserts the round-trip.
+                if scenario == "notify_on_save",
+                   let p = params as? [String: Any],
+                   let td = p["textDocument"] as? [String: Any],
+                   let uri = td["uri"] as? String {
+                    let diag: [String: Any] = [
+                        "range": canonicalRange(),
+                        "severity": 1, "code": "SAVED001",
+                        "source": "mdv-fake", "message": "didSave received"
+                    ]
+                    writeJSON([
+                        "jsonrpc": "2.0",
+                        "method": "textDocument/publishDiagnostics",
+                        "params": ["uri": uri, "diagnostics": [diag]] as [String: Any]
+                    ])
+                }
             case "exit":
                 shouldExit = true
             default:
