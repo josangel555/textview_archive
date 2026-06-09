@@ -29,6 +29,29 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+111) — harvested the `[redundant]` dedup cluster from the `fixed` lane: TSK-471/472/473 DONE, TSK-475 validated
+
+Worked the verify-and-validate lane found in +110. The `[redundant]` dedup family (siblings of TSK-474) all sat at
+`fixed` reconciled-but-unvalidated; ground-truthed each against current code (close-notes proved unreliable on TSK-474,
+so verified, not trusted) and closed the genuinely-complete ones:
+
+- **TSK-473 → done** — xattr read/apply: canonical `ViewerCore/XattrIO.swift`; both buffers route to it (EditorBuffer
+  :365/:397, HexEditBuffer :294/:300); no `readXattrs`/`readOneXattr` dup remains; `XattrIOTests` 5/0.
+- **TSK-472 → done** — `isSameDocumentFragment`: canonical `ViewerCore/URLFragmentPolicy.isSameDocument`; no private
+  copy remains (only a doc-comment reference); `URLFragmentPolicyTests` 5/0.
+- **TSK-471 → done** — `byteString`/MB-string: canonical `ByteFormat` (TabMemoryProxy.swift:48); MemoryView routes to
+  `ByteFormat.mib/.human`; no `byteString` dup remains; `ByteFormatTests` 6/0.
+- **TSK-475 → validated (not done)** — open-coded pasteboard copy: both flagged sites route to canonical
+  `Pasteboard.copy` (ReviewExport:34, LogsView:220); only terminal paste-READS + the separate injectable
+  `SystemPasteboard` automation abstraction remain (both legitimate). Stopped at `validated`: the canonical helper is a
+  trivial untestable AppKit wrapper with no behavioral teeth — won't manufacture test-backfill for it (owner closes).
+
+No code change this tick — all four dedups had already landed in prior commits; these were verify-and-validate closures
+(grep-confirmed structural completion + fresh-run teeth). **SELECTION RULE refined:** validate-to-`done` only when a
+behavioral teeth test guards the dedup (ByteFormat/URLFragmentPolicy/XattrIO); a structural-only dedup with no testable
+behavior (a thin wrapper) stops at `validated`. The `fixed`-lane lane remains productive — keep ground-truthing
+bug/refactor/contract items there (NOT the perf/leak/race/UI majority).
+
 ## LOG 2026-06-09 (latest+110) — TSK-474 DONE (real code): completed the relativeTime dedup; found the `fixed`-lane verify-and-complete lane
 
 Shipped a genuine code change + drove it to `done`, and surfaced a productive lane prior ticks had missed:
