@@ -29,6 +29,30 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+76) — TSK-519: VisualRegression ModeBar false-positive fixed (Retina scale heuristic) — stale-test sweep #2
+
+The T5 pixel VisualRegression sweep (second use of the TSK-502-unblocked lane) flagged
+`SourceViewVisualRegressionTests.test_allUIStripsCompositeAfterOpeningSourceFile`: "Region 'ModeBar'
+appears uniform — the SwiftUI sibling-blank compositor regression has likely returned." Given CLAUDE.md's
+4×-recurrence warning on that exact class, I treated it as possibly-real and went to the pixels: pulled the
+surviving `.fail.png` (2200×1600) off the VM and viewed it — **the app composites perfectly** (tab bar,
+Editor/HEX/View-Only ModeBar, sidebar, syntax-highlighted source, terminal, status bar all present). NOT a
+regression.
+
+Root cause (PIL-confirmed on the screenshot): `scaleY = max(1, Int(h/900))` returns **1** for the VM's
+1600px-tall **2×** capture, so all three sample bands collapse into the top ~92px of window chrome; the
+ModeBar band (y60..92) lands on a flat title-bar strip → 1 distinct colour → false "uniform". TabBar and
+StatusBar passed by luck (title text / bottom edge). Same class as TSK-517 (geometry drift while the lane
+was TCC-blocked).
+
+Fix (commit `4c033d6`, test-only): `capturedBackingScale()` derives the true device-px-per-point from the
+window's `CGWindowBounds` (points) vs the captured pixel width — correct on 1×/2× alike — replacing both
+`Int(h/900)` sites; widened the ModeBar band 32→48pt so it reaches the content rows (robust 13-colour
+margin vs the marginal 3). VM-validated on the disclaim lane: BOTH tests pass — main (healthy) 8.314s +
+meta-teeth (broken-ruler) 5.385s. **Teeth:** the buggy scale made the main test RED (the very sweep that
+surfaced this); the meta-teeth test was previously passing TRIVIALLY (always-uniform ModeBar) and now
+detects the injected blank for the right reason. TSK-519 reported→…→fixed; validating on host-gate green.
+
 ## LOG 2026-06-08 (latest+75) — TSK-518 VALIDATED: stale probe retired → positive SESS-01 façade-swap asserts (VM-observed, teeth-proven)
 
 Closed TSK-518 (commit `01b6d7a`, test-only; VM-validated → `validated`). Followed the no-blind-re-pin
