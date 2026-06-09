@@ -137,4 +137,80 @@ final class ClaudeMonitorModelTests: XCTestCase {
         model.searchText = "   "
         XCTAssertEqual(model.filteredSessions.count, 2)
     }
+
+    // MARK: runContentSearch — full-text transcript search across sessions
+
+    @MainActor
+    private func waitForContentSearch(_ model: ClaudeMonitorModel) {
+        let exp = expectation(description: "content search settled")
+        func poll() {
+            if !model.isContentSearching {
+                exp.fulfill()
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.02, execute: poll)
+            }
+        }
+        poll()
+        wait(for: [exp], timeout: 5)
+    }
+
+    @MainActor
+    func test_runContentSearch_findsSnippetInTranscript() throws {
+        let root = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let proj = try makeProjectDir(in: root, name: "search-proj")
+        _ = try writeJSONL([
+            #"{"type":"user","uuid":"u1","timestamp":"2026-06-04T10:00:00Z","message":{"role":"user","content":"the quick brown fox jumps"}}"#,
+            #"{"type":"assistant","uuid":"a1","message":{"role":"assistant","content":[{"type":"text","text":"a lazy dog reply"}]}}"#,
+        ], to: proj, stem: "trans")
+
+        let model = ClaudeMonitorModel(root: root)
+        model.contentQuery = "quick"
+        model.runContentSearch()
+        waitForContentSearch(model)
+
+        XCTAssertEqual(model.contentMatches.count, 1, "exactly the user event contains 'quick'")
+        let match = try XCTUnwrap(model.contentMatches.first)
+        XCTAssertTrue(match.snippet.lowercased().contains("quick"), "snippet carries the hit")
+        XCTAssertEqual(match.role, "user")
+        XCTAssertEqual(match.eventIndex, 0)
+    }
+
+    @MainActor
+    func test_runContentSearch_noMatch_isEmpty() throws {
+        let root = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let proj = try makeProjectDir(in: root, name: "p")
+        _ = try writeJSONL([
+            #"{"type":"user","uuid":"u1","message":{"role":"user","content":"hello world"}}"#,
+        ], to: proj, stem: "t")
+
+        let model = ClaudeMonitorModel(root: root)
+        model.contentQuery = "zzzznotpresent"
+        model.runContentSearch()
+        waitForContentSearch(model)
+        XCTAssertTrue(model.contentMatches.isEmpty)
+    }
+
+    @MainActor
+    func test_runContentSearch_blankQuery_clearsResults() throws {
+        let root = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let proj = try makeProjectDir(in: root, name: "p")
+        _ = try writeJSONL([
+            #"{"type":"user","uuid":"u1","message":{"role":"user","content":"findme token"}}"#,
+        ], to: proj, stem: "t")
+
+        let model = ClaudeMonitorModel(root: root)
+        model.contentQuery = "findme"
+        model.runContentSearch()
+        waitForContentSearch(model)
+        XCTAssertFalse(model.contentMatches.isEmpty, "precondition: a hit exists")
+
+        // A blank query synchronously clears (no async round-trip).
+        model.contentQuery = "   "
+        model.runContentSearch()
+        XCTAssertTrue(model.contentMatches.isEmpty)
+        XCTAssertFalse(model.isContentSearching)
+    }
 }

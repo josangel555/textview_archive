@@ -40,6 +40,18 @@ final class ClaudeMonitorModel: ObservableObject {
     @Published private(set) var detailNotice: String?
     @Published var searchText: String = ""
 
+    // MARK: Transcript content search (full-text, across all sessions)
+
+    /// The full-text query. Distinct from `searchText` (which filters the
+    /// session LIST by title/path); this searches transcript CONTENT via the
+    /// host-tested `ClaudeTranscriptSearch` and yields per-event snippet matches.
+    @Published var contentQuery: String = ""
+    /// Most recent content-search results (each a session/event + snippet).
+    @Published private(set) var contentMatches: [ClaudeTranscriptSearch.Match] = []
+    @Published private(set) var isContentSearching = false
+    /// Generation token so a stale content-search can't clobber a newer one.
+    private var contentGeneration = 0
+
     /// Monotonic token so a stale detail-load (user clicked away fast)
     /// can't clobber the events of a newer selection when it finishes.
     private var detailGeneration = 0
@@ -97,6 +109,34 @@ final class ClaudeMonitorModel: ObservableObject {
                     self.events = []
                     self.detailNotice = nil
                 }
+            }
+        }
+    }
+
+    /// Run a full-text search over EVERY transcript under `root` (the
+    /// content-search counterpart to `filteredSessions`' title/path filter),
+    /// off-main, then publish `contentMatches`. A blank query clears results.
+    /// Re-entrant-safe: a generation token drops a stale search that finishes
+    /// after a newer one was kicked off.
+    func runContentSearch() {
+        let query = contentQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        contentGeneration += 1
+        let generation = contentGeneration
+        guard !query.isEmpty else {
+            contentMatches = []
+            isContentSearching = false
+            return
+        }
+        isContentSearching = true
+        let root = self.root
+        Task.detached(priority: .userInitiated) {
+            // ClaudeTranscriptSearch streams line-by-line + caps matches, so
+            // it's safe over a directory of large transcripts.
+            let matches = (try? ClaudeTranscriptSearch().search(query, root: root)) ?? []
+            await MainActor.run {
+                guard generation == self.contentGeneration else { return }
+                self.contentMatches = matches
+                self.isContentSearching = false
             }
         }
     }
