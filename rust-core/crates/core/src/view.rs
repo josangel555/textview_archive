@@ -514,6 +514,14 @@ mod tests {
         assert_eq!(classify("a.jpeg"), FileKind::Image);
         assert_eq!(classify("a.txt"), FileKind::Plain);
         assert_eq!(classify("patch"), FileKind::Plain);
+        // Markdown renders as SOURCE (Plain → Text), per owner decision on the
+        // DEPGATED rendered-view (TSK-255): the TUI shows `.md` source, no
+        // `comrak` rendered mode. Guards against a future mis-route into a
+        // (non-existent) rendered FileKind.
+        assert_eq!(classify("README.md"), FileKind::Plain);
+        assert_eq!(classify("a.markdown"), FileKind::Plain);
+        assert_eq!(available_modes(classify("README.md")),
+                   vec![ViewMode::Text, ViewMode::Hex]);
         // Structured (pretty-print-able): JSON + XML family (TSK-496).
         assert_eq!(classify("a.json"), FileKind::Structured);
         assert_eq!(classify("a.XML"), FileKind::Structured);
