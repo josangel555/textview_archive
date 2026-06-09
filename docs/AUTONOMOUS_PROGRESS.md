@@ -29,6 +29,29 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+81) — TSK-342 VALIDATED: image-editor PoC complete end-to-end (VM pixel teeth)
+
+Closed the owner-requested image-editing PoC. Added a T5 `ImageEditorVisualRegressionTests` (commit
+`58b5bfc`) + the `MDV_START_IMAGE_EDIT=1` flag so the app launches straight into edit mode (the Edit toggle
+is local `@State`, not script-reachable — so a pixel test, not a `--script` verb, is the way to validate it).
+The test launches on a 4-colour fixture and asserts BOTH the editor's left PREVIEW and right CONTROLS panel
+composite (≥3 distinct colours) — proving the editor renders on real WindowServer pixels and the
+compositor-occlusion mitigation holds.
+
+**VM validation PASSED (8.51s)** on the disclaim lane after rebuilding `dist/TextView.app` on the VM. Stack
+now fully validated: engine (TSK-344, 32 host tests) → model layer (ImageEditorViewModel, 10 host tests) →
+view (VM pixel teeth). TSK-342 → **validated**.
+
+**VM-BUILD GOTCHA (durable):** `bash scripts/build-app.sh debug` on the VM FAILS with "module compiled with
+Swift 6.3 cannot be imported by the Swift 6.1.2 compiler: ViewerKit.swiftmodule" — the `.build` cache holds
+6.3 modules (from `test-in-vm.sh`, which forces the 6.3 toolchain) but `build-app.sh` defaults to the VM's
+6.1.2. FIX: build dist with the SAME toolchain as the tests — `TOOLCHAINS=org.swift.630202603201a bash
+scripts/build-app.sh debug` (+ `chown -R vm-tester .build dist` first if a prior sudo run left root files).
+build-app.sh ad-hoc-signs when the local cert is absent (fine for direct-exec test spawns). Recipe to
+VM-validate ANY new SwiftUI UI: rsync → build dist on VM with TOOLCHAINS=6.3 → run the T5 PixelTestCase on
+the disclaim lane (launch into the feature via a debug env flag since SwiftUI controls aren't
+script-reachable).
+
 ## LOG 2026-06-08 (latest+80) — TSK-342: ImageEditorView — the visible image-editor PoC, wired into the image preview
 
 Third TSK-342 increment (commit `097a5ff`): the VISIBLE editor. `ImageEditorView` (SwiftUI) binds to the
