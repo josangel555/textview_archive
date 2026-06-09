@@ -1311,11 +1311,11 @@ struct EmptyStateView: View {
                 .font(.title2)
             HStack(spacing: 12) {
                 Button("Open File…") {
-                    NSApp.sendAction(NSSelectorFromString("openDocument:"), to: nil, from: nil)
+                    NSApp.sendAction(#selector(AppMenuActions.openDocument(_:)), to: nil, from: nil)
                 }
                 .keyboardShortcut("o", modifiers: [.command])
                 Button("Open Folder…") {
-                    NSApp.sendAction(NSSelectorFromString("openFolder:"), to: nil, from: nil)
+                    NSApp.sendAction(#selector(AppMenuActions.openFolder(_:)), to: nil, from: nil)
                 }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
             }

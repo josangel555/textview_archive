@@ -8,7 +8,7 @@ import ViewerKit
 import WebKit
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation, AppMenuActions {
     let model = DocumentModel()
     /// Phase-1 session machinery. Owns the value-level
     /// `SessionsCoordinator` + the active `SessionState` façade over

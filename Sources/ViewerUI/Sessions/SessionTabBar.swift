@@ -98,7 +98,7 @@ struct SessionTabBar: View {
                 sessionActionButton(symbol: "gearshape", title: "Settings",
                                     help: "Open Settings",
                                     id: "mdv.sessionTab.settings") {
-                    NSApp.sendAction(NSSelectorFromString("showSettings:"), to: nil, from: nil)
+                    NSApp.sendAction(#selector(AppMenuActions.showSettings(_:)), to: nil, from: nil)
                 }
                 sessionActionButton(symbol: "magnifyingglass", title: "Search Files",
                                     help: "Search across files in this session",
