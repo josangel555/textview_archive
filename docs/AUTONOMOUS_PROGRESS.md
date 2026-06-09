@@ -29,6 +29,26 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+97) — TSK-347 (SHA) host scope → validated; progress lane swept
+
+Swept the `progress` lane for host-completable work conservatively left unvalidated.
+- **TSK-347 "[PARTIAL] SHA"** → **validated**. The task's OWN plan scoped it to the host-completable compute+command
+  layer (deferring the MetadataPanel row as the live follow-up = TSK-505 part B). That layer is done + teeth-tested:
+  `FileChecksum.sha256Hex(ofFileAt:chunkSize:)` streams the file's bytes through CryptoKit (commit `4ca006d`);
+  `FileChecksumRunner.copyChecksum` is the user-invokable "Copy SHA-256 of Current File" command (commits
+  `ec568d2`/`fcee601`). Host teeth green this tick: `TextToolsTests` 19/0 incl. `testFileChecksum_knownVectors`
+  (NIST sha256(abc)+sha256(empty)), `_streamsAcrossChunksIdenticalToOneShot` (chunked==one-shot, no boundary bug),
+  `_hashesNonUTF8Bytes`, `_missingFileThrows`; `FileChecksumRunnerTests` 3/0 (hash→pasteboard / no-file / unreadable).
+  The MetadataPanel checksum ROW (SwiftUI-rendered) stays TSK-505b at fixed/live-validation — not claimed here.
+- **Untouched (deliberately):** the `progress` lane's remaining markdown_viewer items are stale-claimed UMBRELLA PoCs
+  (TSK-109 quick-wins / TSK-110 image-editing / TSK-111 agent-monitoring) whose deliverables already shipped as
+  VALIDATED granular tasks (image engine TSK-342/344; monitor search TSK-520/335; plain-text-default TSK-332). Closing
+  the umbrellas is board hygiene for the owner (mislabel-trap risk); not self-advanced. TSK-103/106 are foreign forge.
+
+Board state unchanged from +95/+96: the clean host-completable USER-REACHABLE SwiftUI feature lane is harvested
+(TSK-521 + TSK-332 were the last two real ones); every other SwiftUI item is owner-gated or render-gated (model
+increment + VM-validate split). PORT board lane (TSK-197..258) validated. The real unblock is owner input.
+
 ## LOG 2026-06-09 (latest+96) — TSK-332: unknown-extension ASCII files open as Source, not HEX (host-validated)
 
 Picked **TSK-332** from the `progress` lane (a real host-completable SwiftUI-core gap, stale-claimed by a prior
