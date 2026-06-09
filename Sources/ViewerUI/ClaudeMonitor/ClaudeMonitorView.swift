@@ -27,6 +27,14 @@ import ViewerCore
 @MainActor
 final class ClaudeMonitorModel: ObservableObject {
 
+    /// Which search the master pane is driving: the session-LIST title/path
+    /// filter (`searchText`) or the full-text transcript CONTENT search
+    /// (`contentQuery` → `contentMatches`).
+    enum SearchMode: String, CaseIterable, Sendable {
+        case sessions
+        case content
+    }
+
     /// Root scanned for transcripts (`~/.claude`).
     let root: URL
 
@@ -42,6 +50,8 @@ final class ClaudeMonitorModel: ObservableObject {
 
     // MARK: Transcript content search (full-text, across all sessions)
 
+    /// Master-pane search mode (session-list filter vs full-text content).
+    @Published var searchMode: SearchMode = .sessions
     /// The full-text query. Distinct from `searchText` (which filters the
     /// session LIST by title/path); this searches transcript CONTENT via the
     /// host-tested `ClaudeTranscriptSearch` and yields per-event snippet matches.
@@ -52,6 +62,12 @@ final class ClaudeMonitorModel: ObservableObject {
     /// Generation token so a stale content-search can't clobber a newer one.
     private var contentGeneration = 0
 
+    /// When a content-search result is chosen, the event index within the
+    /// now-selected session's transcript the detail pane should reveal +
+    /// highlight. The transcript view scrolls to it once events finish loading;
+    /// a manual session selection (`selectSession`) clears it.
+    @Published var pendingEventIndex: Int?
+
     /// Monotonic token so a stale detail-load (user clicked away fast)
     /// can't clobber the events of a newer selection when it finishes.
     private var detailGeneration = 0
@@ -60,9 +76,35 @@ final class ClaudeMonitorModel: ObservableObject {
     /// unbounded SwiftUI list. Real sessions are < 10k events.
     private let maxDetailEvents = 20_000
 
-    init(root: URL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude", isDirectory: true)) {
+    init(root: URL = ClaudeMonitorModel.defaultRoot()) {
         self.root = root
+        applyLaunchEnvironment()
+    }
+
+    /// Root for the production (no-arg) launch: `MDV_MONITOR_ROOT` if set
+    /// (lets the VM pixel lane point the monitor at a fixture `~/.claude`),
+    /// else the real `~/.claude`. Tests pass an explicit `root` and bypass this.
+    nonisolated static func defaultRoot(
+        _ env: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
+        if let path = env["MDV_MONITOR_ROOT"], !path.isEmpty {
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude", isDirectory: true)
+    }
+
+    /// Debug seed for VM pixel validation: `MDV_MONITOR_CONTENT_QUERY` forces
+    /// content-search mode + seeds the query so the results UI composites on
+    /// launch without a script-synthesized field edit (SwiftUI controls aren't
+    /// script-reachable — same recipe as the image editor's `MDV_START_IMAGE_EDIT`).
+    func applyLaunchEnvironment(
+        _ env: [String: String] = ProcessInfo.processInfo.environment
+    ) {
+        if let query = env["MDV_MONITOR_CONTENT_QUERY"], !query.isEmpty {
+            searchMode = .content
+            contentQuery = query
+        }
     }
 
     /// Filtered + most-recent-first session list driving the master pane.
@@ -141,11 +183,26 @@ final class ClaudeMonitorModel: ObservableObject {
         }
     }
 
+    /// Select the session owning a content-search `match` and request the
+    /// detail pane reveal + highlight the matching event. A no-op if the
+    /// match's session vanished from the current scan (stale results vs a
+    /// re-scan). Setting the scroll target AFTER `selectSession` matters —
+    /// `selectSession` clears `pendingEventIndex`, so the order preserves it.
+    func selectMatch(_ match: ClaudeTranscriptSearch.Match) {
+        guard let summary = sessions.first(where: { $0.key == match.sessionKey })
+        else { return }
+        if selectedKey != summary.key {
+            selectSession(summary)
+        }
+        pendingEventIndex = match.eventIndex
+    }
+
     /// Load (and redact) the transcript for `summary` off-main, then publish.
     func selectSession(_ summary: ClaudeSessionSummary) {
         selectedKey = summary.key
         events = []
         detailNotice = nil
+        pendingEventIndex = nil
         isLoadingEvents = true
         detailGeneration += 1
         let generation = detailGeneration
@@ -272,10 +329,14 @@ final class ClaudeMonitorModel: ObservableObject {
 public struct ClaudeMonitorView: View {
     @StateObject private var model: ClaudeMonitorModel
 
-    /// Default root is `~/.claude`. The override is for tests / screenshots
-    /// that point at a fixture tree.
-    public init(root: URL = FileManager.default.homeDirectoryForCurrentUser
-                    .appendingPathComponent(".claude", isDirectory: true)) {
+    /// Production launch: the root resolves `MDV_MONITOR_ROOT` (VM pixel-lane
+    /// fixture) then falls back to `~/.claude` (via `ClaudeMonitorModel.init`).
+    public init() {
+        _model = StateObject(wrappedValue: ClaudeMonitorModel())
+    }
+
+    /// Explicit-root init for tests / screenshots that point at a fixture tree.
+    init(root: URL) {
         _model = StateObject(wrappedValue: ClaudeMonitorModel(root: root))
     }
 
@@ -289,7 +350,14 @@ public struct ClaudeMonitorView: View {
         }
         .frame(minWidth: 760, minHeight: 460)
         .background(Palette.windowBackground)
-        .onAppear { model.loadSessions() }
+        .onAppear {
+            model.loadSessions()
+            // Debug seed (VM pixel lane): if launched into content mode with a
+            // query, run it now so the results region composites on first paint.
+            if model.searchMode == .content && !model.contentQuery.isEmpty {
+                model.runContentSearch()
+            }
+        }
         .accessibilityIdentifier("mdv.claudeMonitor")
     }
 
@@ -297,33 +365,60 @@ public struct ClaudeMonitorView: View {
 
     private var sessionList: some View {
         VStack(spacing: 0) {
-            searchField
+            modePicker
             Divider()
-            if model.isLoadingSessions && model.sessions.isEmpty {
-                centeredHint("Scanning \(model.root.path)…")
-            } else if model.filteredSessions.isEmpty {
-                centeredHint(model.sessions.isEmpty
-                    ? "No Claude sessions found under \(model.root.path)."
-                    : "No sessions match the filter.")
+            if model.searchMode == .content {
+                contentSearchField
+                Divider()
+                contentResults
             } else {
-                List(selection: Binding(
-                    get: { model.selectedKey },
-                    set: { newKey in
-                        if let key = newKey,
-                           let s = model.sessions.first(where: { $0.key == key }) {
-                            model.selectSession(s)
-                        }
-                    }
-                )) {
-                    ForEach(model.filteredSessions) { session in
-                        sessionRow(session)
-                            .tag(session.key)
-                    }
-                }
-                .listStyle(.sidebar)
+                searchField
+                Divider()
+                sessionRows
             }
         }
         .background(Palette.controlBackground)
+    }
+
+    /// Toggles the master pane between the session-list filter and the
+    /// full-text transcript content search.
+    private var modePicker: some View {
+        Picker("", selection: $model.searchMode) {
+            Text("Sessions").tag(ClaudeMonitorModel.SearchMode.sessions)
+            Text("Content").tag(ClaudeMonitorModel.SearchMode.content)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .accessibilityIdentifier("mdv.claudeMonitor.searchMode")
+    }
+
+    @ViewBuilder
+    private var sessionRows: some View {
+        if model.isLoadingSessions && model.sessions.isEmpty {
+            centeredHint("Scanning \(model.root.path)…")
+        } else if model.filteredSessions.isEmpty {
+            centeredHint(model.sessions.isEmpty
+                ? "No Claude sessions found under \(model.root.path)."
+                : "No sessions match the filter.")
+        } else {
+            List(selection: Binding(
+                get: { model.selectedKey },
+                set: { newKey in
+                    if let key = newKey,
+                       let s = model.sessions.first(where: { $0.key == key }) {
+                        model.selectSession(s)
+                    }
+                }
+            )) {
+                ForEach(model.filteredSessions) { session in
+                    sessionRow(session)
+                        .tag(session.key)
+                }
+            }
+            .listStyle(.sidebar)
+        }
     }
 
     private var searchField: some View {
@@ -348,6 +443,102 @@ public struct ClaudeMonitorView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
+    }
+
+    // MARK: Content search (full-text across all transcripts)
+
+    private var contentSearchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "text.magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Search transcript content", text: $model.contentQuery)
+                .textFieldStyle(.plain)
+                .onSubmit { model.runContentSearch() }
+                .accessibilityIdentifier("mdv.claudeMonitor.contentQuery")
+            if model.isContentSearching {
+                ProgressView()
+                    .controlSize(.small)
+            } else if !model.contentQuery.isEmpty {
+                Button(action: {
+                    model.contentQuery = ""
+                    model.runContentSearch()
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+    }
+
+    @ViewBuilder
+    private var contentResults: some View {
+        if model.isContentSearching && model.contentMatches.isEmpty {
+            centeredHint("Searching transcripts…")
+        } else if model.contentQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            centeredHint("Type to search across every transcript's content.")
+        } else if model.contentMatches.isEmpty {
+            centeredHint("No transcript content matches “\(model.contentQuery)”.")
+        } else {
+            List {
+                ForEach(model.contentMatches) { match in
+                    contentMatchRow(match)
+                        .contentShape(Rectangle())
+                        .onTapGesture { model.selectMatch(match) }
+                }
+            }
+            .listStyle(.plain)
+            .accessibilityIdentifier("mdv.claudeMonitor.contentResults")
+        }
+    }
+
+    private func contentMatchRow(_ m: ClaudeTranscriptSearch.Match) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text(roleLabel(m.role))
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(roleColor(m.role))
+                    .clipShape(Capsule())
+                Text(m.sessionKey)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Text(m.snippet)
+                .font(.system(size: 11))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 3)
+    }
+
+    private func roleLabel(_ role: String) -> String {
+        switch role {
+        case "user":        return "User"
+        case "assistant":   return "Asst"
+        case "thinking":    return "Think"
+        case "tool":        return "Tool"
+        case "tool_result": return "Result"
+        default:            return role.isEmpty ? "?" : role
+        }
+    }
+
+    private func roleColor(_ role: String) -> Color {
+        switch role {
+        case "user":        return .blue
+        case "assistant":   return .green
+        case "thinking":    return .purple
+        case "tool":        return .orange
+        case "tool_result": return .gray
+        default:            return .secondary
+        }
     }
 
     private func sessionRow(_ s: ClaudeSessionSummary) -> some View {
@@ -420,17 +611,39 @@ public struct ClaudeMonitorView: View {
     }
 
     private var transcript: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 8) {
-                ForEach(model.events) { event in
-                    eventCard(event)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array(model.events.enumerated()), id: \.offset) { idx, event in
+                        eventCard(event, isHighlighted: idx == model.pendingEventIndex)
+                            .id(idx)
+                    }
                 }
+                .padding(12)
             }
-            .padding(12)
+            // Scroll to a content-search target once its events are loaded, and
+            // again if the target changes while the session stays open.
+            .onChange(of: model.isLoadingEvents) { _, loading in
+                if !loading { scrollToPending(proxy) }
+            }
+            .onChange(of: model.pendingEventIndex) { _, _ in
+                scrollToPending(proxy)
+            }
+            .onAppear { scrollToPending(proxy) }
         }
     }
 
-    private func eventCard(_ event: ClaudeEvent) -> some View {
+    /// Center the pending content-search event if one is set and in range.
+    private func scrollToPending(_ proxy: ScrollViewProxy) {
+        guard let idx = model.pendingEventIndex,
+              idx >= 0, idx < model.events.count
+        else { return }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            proxy.scrollTo(idx, anchor: .center)
+        }
+    }
+
+    private func eventCard(_ event: ClaudeEvent, isHighlighted: Bool) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 Image(systemName: kindGlyph(event.kind))
@@ -453,8 +666,14 @@ public struct ClaudeMonitorView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(8)
-        .background(Palette.sidebarPanelBackground)
+        .background(isHighlighted
+            ? Color.accentColor.opacity(0.18)
+            : Palette.sidebarPanelBackground)
         .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.accentColor, lineWidth: isHighlighted ? 2 : 0)
+        )
     }
 
     // MARK: Event rendering helpers

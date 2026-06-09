@@ -2088,6 +2088,15 @@ extension AppDelegate {
         }
         showWindow(window)
         self.window = window
+        // Publish the WindowServer windowNumber (same contract as the main
+        // document window) so the T5 pixel lane can `screencapture -l<id>`
+        // this monitor window — see ClaudeMonitorVisualRegressionTests.
+        if let identifier = Bundle.main.bundleIdentifier {
+            let url = ArtifactDir.url
+                .appendingPathComponent("\(identifier).windowid")
+            try? "\(window.windowNumber)".write(
+                to: url, atomically: true, encoding: .utf8)
+        }
         activateIfForeground()
     }
 }

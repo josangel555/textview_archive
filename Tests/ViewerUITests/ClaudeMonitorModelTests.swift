@@ -213,4 +213,117 @@ final class ClaudeMonitorModelTests: XCTestCase {
         XCTAssertTrue(model.contentMatches.isEmpty)
         XCTAssertFalse(model.isContentSearching)
     }
+
+    // MARK: selectMatch — jump from a content result to its session + event
+
+    @MainActor
+    private func waitForSessions(_ model: ClaudeMonitorModel, count: Int) {
+        let exp = expectation(description: "sessions loaded")
+        func poll() {
+            if !model.isLoadingSessions && model.sessions.count == count {
+                exp.fulfill()
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.02, execute: poll)
+            }
+        }
+        poll()
+        wait(for: [exp], timeout: 5)
+    }
+
+    @MainActor
+    func test_selectMatch_selectsSessionAndSetsPendingEventIndex() throws {
+        let root = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let proj = try makeProjectDir(in: root, name: "jump-proj")
+        _ = try writeJSONL([
+            #"{"type":"user","uuid":"u1","timestamp":"2026-06-04T10:00:00Z","message":{"role":"user","content":"first line"}}"#,
+            #"{"type":"assistant","uuid":"a1","message":{"role":"assistant","content":[{"type":"text","text":"the needle is here"}]}}"#,
+        ], to: proj, stem: "sess")
+
+        let model = ClaudeMonitorModel(root: root)
+        model.loadSessions()
+        waitForSessions(model, count: 1)
+
+        model.contentQuery = "needle"
+        model.runContentSearch()
+        waitForContentSearch(model)
+        let match = try XCTUnwrap(model.contentMatches.first)
+        XCTAssertEqual(match.eventIndex, 1, "the needle is the 2nd event")
+
+        model.selectMatch(match)
+        XCTAssertEqual(model.selectedKey, match.sessionKey,
+                       "selecting a match selects its owning session")
+        XCTAssertEqual(model.pendingEventIndex, 1,
+                       "the detail pane is asked to reveal the matching event")
+    }
+
+    @MainActor
+    func test_selectMatch_unknownSession_isNoOp() throws {
+        let root = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = ClaudeMonitorModel(root: root)   // no sessions loaded
+        let orphan = ClaudeTranscriptSearch.Match(
+            sessionKey: "ghost", path: "/nope/ghost.jsonl", eventIndex: 3,
+            role: "user", snippet: "x", timestamp: nil)
+        model.selectMatch(orphan)
+        XCTAssertNil(model.selectedKey)
+        XCTAssertNil(model.pendingEventIndex,
+                     "a match whose session vanished must not arm a stale jump")
+    }
+
+    @MainActor
+    func test_selectSession_clearsPendingEventIndex() throws {
+        let root = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let projA = try makeProjectDir(in: root, name: "a-proj")
+        _ = try writeJSONL([
+            #"{"type":"user","uuid":"u1","timestamp":"2026-06-04T10:00:00Z","message":{"role":"user","content":"alpha needle"}}"#,
+        ], to: projA, stem: "aaaa")
+        let projB = try makeProjectDir(in: root, name: "b-proj")
+        _ = try writeJSONL([
+            #"{"type":"user","uuid":"u2","timestamp":"2026-06-04T11:00:00Z","message":{"role":"user","content":"beta line"}}"#,
+        ], to: projB, stem: "bbbb")
+
+        let model = ClaudeMonitorModel(root: root)
+        model.loadSessions()
+        waitForSessions(model, count: 2)
+        model.contentQuery = "needle"
+        model.runContentSearch()
+        waitForContentSearch(model)
+        model.selectMatch(try XCTUnwrap(model.contentMatches.first))
+        XCTAssertNotNil(model.pendingEventIndex, "precondition: jump armed")
+
+        // A manual session pick (list click) drops the highlight.
+        let other = try XCTUnwrap(model.sessions.first { $0.key != model.selectedKey })
+        model.selectSession(other)
+        XCTAssertNil(model.pendingEventIndex)
+    }
+
+    // MARK: launch-env seed + root override (VM pixel-lane recipe)
+
+    @MainActor
+    func test_applyLaunchEnvironment_seedsContentModeAndQuery() {
+        let model = ClaudeMonitorModel(root: FileManager.default.temporaryDirectory)
+        XCTAssertEqual(model.searchMode, .sessions)
+        model.applyLaunchEnvironment(["MDV_MONITOR_CONTENT_QUERY": "banana"])
+        XCTAssertEqual(model.searchMode, .content)
+        XCTAssertEqual(model.contentQuery, "banana")
+    }
+
+    @MainActor
+    func test_applyLaunchEnvironment_emptyQuery_leavesDefaults() {
+        let model = ClaudeMonitorModel(root: FileManager.default.temporaryDirectory)
+        model.applyLaunchEnvironment(["MDV_MONITOR_CONTENT_QUERY": ""])
+        XCTAssertEqual(model.searchMode, .sessions)
+        XCTAssertTrue(model.contentQuery.isEmpty)
+    }
+
+    func test_defaultRoot_honorsEnvOverrideElseClaudeHome() {
+        let overridden = ClaudeMonitorModel.defaultRoot(["MDV_MONITOR_ROOT": "/tmp/fixture-claude"])
+        XCTAssertEqual(overridden.path, "/tmp/fixture-claude")
+
+        let fallback = ClaudeMonitorModel.defaultRoot([:])
+        XCTAssertTrue(fallback.path.hasSuffix("/.claude"),
+                      "no override → real ~/.claude, got \(fallback.path)")
+    }
 }
