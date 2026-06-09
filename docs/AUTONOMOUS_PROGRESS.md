@@ -29,6 +29,24 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+73) — Full VM UAT sweep: 95/97 GREEN (live UI suite healthy post-unblock); 1 divergence filed
+
+Ran the entire `*UATTests` suite (all T4 LiveApp UAT classes) on the VM under the GUI session
+(launchctl asuser 501, MDV_VM_GUI_SESSION=1, `ulimit -n 8192` for the TSK-500 fd fix) — the systematic
+stale-test sweep enabled by the TSK-502 disclaim unblock. **Result: 97 tests, 95 pass, 1 fail (771s).**
+This is a strong health signal: after the VM UI lane was blocked for a long stretch, the live UI suite
+is broadly intact — only ONE test diverged (vs the many a long-blocked suite could have accumulated).
+
+The one failure: `SessionsUATTests.test_SESS01_tabAndSidebar_doNotSwitch_probe` — an explicit OBSERVATION
+PROBE that pins scripted-run session-façade behavior. It tripped on its SANITY pre-condition
+(`tabCount == 3` after scripted opens → now reads 0): scripted `open` no longer appends tabs to the model
+the dump reads under the clean-room flag. Filed **TSK-518** with full triage (stale-probe re-pin vs a real
+scripted-`open`/session-tab regression — needs a git-bisect of the open/ScriptVerbDispatch/Sessions-flag
+path; host-buildable, VM-validatable). Did NOT blind-edit the probe (false-green risk).
+
+LESSON: the full VM UAT sweep is now a cheap, high-value periodic check (catches silent test divergence
+like TSK-447/TSK-518). ~13 min wall-clock for 97 live tests. Re-run after substantive Sources/ changes.
+
 ## LOG 2026-06-08 (latest+72) — TSK-447 VALIDATED on the VM (T4 LiveApp lane confirmed working too)
 
 Using the now-working VM lane to clear `fixed`+`live-validation` items. TSK-447 (stale GP-10 git-panel
