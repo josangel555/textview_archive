@@ -19,6 +19,18 @@ import XCTest
 /// VM-infeasible). Then captures the real window and asserts the TabBar (the
 /// italic preview tab) and the content pane both composited.
 ///
+/// SCOPE (honest — verified by a teeth-demo on the VM 2026-06-09): this guards
+/// the **compositor-blank class** for the preview-tab render path — i.e. that
+/// driving the new openPreview→view branch doesn't blank the SwiftUI region.
+/// It does NOT have teeth for the preview-SPECIFIC affordances (the italic
+/// title / single-slot reuse): neutering `openPreview` in the scene leaves a
+/// blank tab whose chrome + content still composite, so this test stays green.
+/// Italic is sub-pixel-fragile and slot-reuse is model state — both are
+/// teeth-guarded on the host instead (`DocumentModelPreviewTests` 7/0, all three
+/// promote gestures demoed red). Treat this as the render-composite smoke that
+/// retires the dominant SwiftUI render risk here, paired with the host model
+/// teeth — not as a standalone preview-behaviour guard.
+///
 /// Self-skips when: no dist build / no Screen-Recording / `MDV_HEADLESS_GATE`.
 /// Runs for real only on the VM / nightly lane (PixelTestCase). The teeth for
 /// the `regionHasVariety` mechanism itself are demonstrated by
