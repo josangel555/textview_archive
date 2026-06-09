@@ -29,6 +29,26 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+77) — Render-validation lane FULLY SWEPT CLEAN (WebView suites green) — stale-test arc closed
+
+Completed the stale-test sweep arc opened by the TSK-502 VM-pixel-lane unblock. Ran the 5 in-process
+live-WKWebView suites on the VM (`MDV_RUN_WEBVIEW_TESTS=1`, one-per-invocation to dodge the #192
+WebContent-exhaustion cross-suite crash): **ComponentVisualTests 10, ContentViewHostingTests 6,
+DiagnosticDumpTests 8, MermaidHostingTests 1, RenderedFindBarTests 2 — 27 tests, 0 failures.** (Mermaid
+showed no line in the batch grep due to an incremental-rebuild race; re-ran alone → passes 0.665s.)
+
+NET: the whole render-validation lane is now swept and GREEN post-unblock — UAT (97), SourceView +
+TerminalTabStrip pixel suites, and the 5 WebView suites. The sweep found exactly TWO real divergences
+across the whole lane (TSK-518 stale Sessions probe, TSK-519 VisualRegression scale heuristic), both fixed
++ validated this session; everything else was already-correct. The stale-test-drift vein (tests silently
+diverging while the VM lane was TCC-blocked) is now **exhausted** — no commit this checkpoint (honest: no
+divergence to fix; not manufacturing test-backfill per owner anti-drift guidance).
+
+NEXT VEIN (rotate off test-sweeping): the owner's standing "build PoCs: image editing" directive →
+**TSK-344 image-engine increments** (`Sources/ViewerCore/ImageEditing/`, CoreImage runs headless = real
+host teeth, NOT render-gated; only the editor-panel UI is gated behind TSK-253). Remaining engine slices
+per memory: shadows/highlights (`CIHighlightShadowAdjust`) + sharpness (`CISharpenLuminance`).
+
 ## LOG 2026-06-08 (latest+76) — TSK-519: VisualRegression ModeBar false-positive fixed (Retina scale heuristic) — stale-test sweep #2
 
 The T5 pixel VisualRegression sweep (second use of the TSK-502-unblocked lane) flagged
