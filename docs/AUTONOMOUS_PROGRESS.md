@@ -29,6 +29,29 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+116) — TSK-487 validated (CodeMirror indentGuides model+bridge); fixed-lane done-able vein now drained
+
+- **TSK-487 → validated** — CodeMirror indentGuides wired end-to-end at the model+bridge layer (PreferencesStore.editorIndentGuides
+  persisted default-OFF → DocumentModel → ContentView:615 passes the prop → CM bridge setIndentGuides). Owner-decision resolved
+  conservatively (default OFF). Verified the close-note's "4 host tests" against code (verify-don't-trust): PreferencesStoreTests
+  default/roundtrip + CMBridgeV2Tests.testEncodeSetIndentGuides (wire codec) + DocumentModelTests wiring. Stopped at validated:
+  the codemirror.html guide-line RENDER is WebView/VM, not host-testable.
+- **Killall safety cluster (TSK-435/436/454) verified-but-held:** grep confirms NO bare `killall MarkdownViewer` remains as a
+  live command in Tests/Sources (test spawns use AppLauncher.killTestInstances tag-based; the remaining hits are deliberate
+  user-run reset/smoke scripts + comments). But the reaping safety invariant has no injectable behavioral teeth → held for the
+  human gate (the TSK-190 pattern), NOT agent-done.
+
+**STATE — the `fixed`-lane done-able vein is now drained.** This session harvested every clean cluster: dedup (TSK-471/472/473/475),
+test-backfill (TSK-415–434, 20), scriptVerb (TSK-411–414), pure-model/wire bugs (TSK-438/465/460), + TSK-402/474. The REMAINING
+`fixed` lane is now three held buckets, none agent-done-able on host:
+1. **UI-remainder → validated-not-done** (model/bridge teeth done, visual/interaction surface VM-gated): TSK-437/461/487 already
+   at validated; TSK-456/457/458/466/468/489/505 are the same shape (validate-to-validated possible but they pile up owner/VM eyeballs).
+2. **perf/leak/race → held** (identical output, no teeth): TSK-482 etc.
+3. **safety/infra no-teeth → held** (process-reaping, codesign, VM-specific): TSK-435/436/454/446/449/451.
+NEXT-TICK GUIDANCE: the highest-leverage move is no longer more host validated-not-done closes (diminishing — they queue for the
+owner) — it's either (a) actual VM-validation runs to drive the UI-remainder cluster to DONE (VM lane unblocked via TSK-502), or
+(b) owner input on the parked decisions. Do NOT manufacture marginal closes; a thin honest tick is correct here.
+
 ## LOG 2026-06-09 (latest+115) — terminal cluster: TSK-460 DONE (pure model), TSK-461 validated (model; key-event live remainder)
 
 Mined the terminal `fixed`-lane cluster (TSK-456-461) — mostly mixed model+UI. Applied the selection rule: pure-model →
