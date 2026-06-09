@@ -29,6 +29,27 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+110) — TSK-474 DONE (real code): completed the relativeTime dedup; found the `fixed`-lane verify-and-complete lane
+
+Shipped a genuine code change + drove it to `done`, and surfaced a productive lane prior ticks had missed:
+
+- **TSK-474 → done (commit 0d3d0e7).** The `[redundant] Duplicate relativeTime` task was at `fixed` claiming "replaces
+  the two private copies", but re-verifying against current code showed the dedup was only HALF done: GitStashTab routed
+  to the shared `GitRelativeTime` (bug fixed) but `GitLogTab` still carried its own private `relativeTime` (lines 160-170)
+  — now dead code, since GitLogTab's row already renders via `GitRelativeTime.format(unix:)` at line 96. Deleted the
+  orphaned 11-line method. Both Git tabs now use the single ViewerCore helper; zero dups remain. Build clean;
+  `GitRelativeTimeTests` 4/0 (incl. the `test_fiveDays_isDaysAgo_notYesterday` stash-bug regression guard). Headless gate:
+  only the documented flaky `CrossFileSearchBench` wall-clock failure (re-ran isolated → 3/3, speedup 1.006x, no regression,
+  unrelated). Drove fixed→validated→done with a checks+code artifact (pure ViewerCore logic, host-teeth-guarded, no VM).
+- **METHOD FINDING — the `fixed` lane (122 tasks) is a real verify-and-complete lane.** This session had only ever queried
+  `fixed`/`review` with the WRONG project key (`markdown_viewer` → empty); with the correct key (`tasked`) the `fixed`
+  lane holds 122 tasks. Most are correctly held (perf/leak/race with no teeth; UI-wiring VM-gated), BUT some — like TSK-474
+  — are "fixed" with an INCOMPLETE or addable-teeth residual that re-verification exposes and the agent can genuinely
+  finish + validate host-side. LANE for future ticks: spot-check `fixed`-lane bug/refactor/contract items (NOT perf/leak/
+  race/UI), re-verify the close-note against current code, and complete+validate any with a residual + host teeth.
+- `TSK-467` (HEX View-Only) examined + left at `fixed` — its own close-note flags a VM-gated end-to-end byte-write, so
+  validating the whole task would overclaim (gating logic is host-tested; the live write needs VM).
+
 ## LOG 2026-06-09 (latest+109) — TSK-402 reconciliation validated; 4 built-core features PARKED on the VM-wiring decision
 
 Two ticks of board hygiene (system-of-record advanced, no code commit — nothing un-gated left to build):
