@@ -5542,3 +5542,24 @@ this run, each behind teeth, each with the VM-gated UI slice honestly deferred:
   DiffView multi-select, inline commit-diff add-comment, export mode picker) is all VM-gated UI on the same render
   lane behind TSK-502. Next host-completable frontier = the audio-editing greenfield cores (TSK-525 decode+waveform
   peaks, 526 FFT, 527 trim/fade, 528 encoders) + image Save-As-spec fields (TSK-524).
+
+## LOG +149 (2026-06-09, autonomous tick — media editing: audio greenfield cores, two tickets to DONE)
+Owner's "next major need is media editing → audio". New `Sources/ViewerCore/Audio/` subsystem (greenfield), two
+fully-host-testable cores closed end-to-end (these have NO UI in scope — the render is the separate TSK-529 — so the
+host teeth fully cover the deliverable and self-validation to `done` is in-policy):
+- **TSK-525 → DONE** (commit cc07205): `AudioPCMBuffer` (deinterleaved float PCM + `monoSamples()` downmix),
+  `AudioDecoder.decode` via `AVAudioFile` (system framework — headless file I/O, no `AVAudioSession`/hardware/new
+  deps; bounded by `maxFrames`), `WaveformReducer.reduce` (N samples → `width` (min,max) columns over a clamped zoom
+  window, ≥1 frame/column when zoomed in). 19 teeth incl. a REAL CAF write→decode round-trip + silence/full-scale/
+  window-clamp/zoom-in DSP asserts.
+- **TSK-526 → DONE** (commit 4d99a1c): `SpectrumAnalyzer.analyze` — Hann-windowed real FFT via Accelerate/vDSP
+  (`vDSP_fft_zrip`, system framework, no new deps) → per-bin dB magnitude + bin-frequency map; `peakBin`/
+  `binResolution`. 7 teeth: sine peaks map to the bin of its frequency (8k@1k, 44.1k@5k), DC→bin 0, silence→floor,
+  non-power-of-two→nil.
+- **Gate flakes (two different ones this run, both documented-class, both confirmed sole-failure + isolated-pass):**
+  TSK-525's gate failed only on `GrandchildPipeTests` (plugin-subprocess fd-accounting under parallel load → 28→36,
+  boundary miss; passes isolated). TSK-526's gate failed only on `FoldBenchTests.testCold10KLineJSONUnder250ms`
+  (394ms vs 250ms — the perf-bench flake CLAUDE.md explicitly calls out). Neither touches audio.
+- `main` @ 4d99a1c (+ this log). Remaining audio host cores: TSK-527 (trim/fade ops on AudioPCMBuffer — pure,
+  host-testable, next) and TSK-528 (WAV/AAC encoders — host-testable; MP3 ENCODE is unsupported by AVFoundation →
+  needs an owner dep decision). The audio viz UI (TSK-529) + image Save-As UI (TSK-524) are VM-gated.
