@@ -5642,3 +5642,21 @@ recollection). Result: the PORT lane is also exhausted.
   input-bound; further "work" would mean re-doing done items or shipping marginal/risky change the owner
   deprioritized. Unblocks unchanged: VM pixel lane (TSK-502) ≫ parked deps (TSK-528/256/247–249) ≫ wishlist scoping.
   `main` @ 0757b61, gate-green.
+
+## LOG +154 (2026-06-09, autonomous tick — OWNER UNBLOCKED MP3; TSK-528 encoder set completed → validated)
+The owner answered the parked MP3 dep decision: "ffmpeg approved, but it's a host dependency, neither a dependency
+or vendored. Do best effort to find it in host, also add a setting for user to provide ffmpeg. Disable the feature
+if ffmpeg not found." Delivered exactly that (commit 4b707d4):
+- **`FFmpegLocator`** (new) — `resolve(override:environment:commonPaths:fileManager:)`: Settings-override → `PATH` →
+  common install dirs (`/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin`, `/usr/bin`) → `nil` (⇒ MP3 disabled).
+  Pure + injectable, 6 deterministic teeth.
+- **`AudioExporter.encode(.mp3)`** — writes a lossless temp WAV via the existing PCM encoder, then transcodes with
+  `ffmpeg -codec:a libmp3lame -b:a <kbps>k` (Process **args array, no shell, minimal env** — mirrors `GitClient`).
+  Errors `.mp3FFmpegNotFound` / `.ffmpegFailed(code)`. The REAL ffmpeg encode→decode round-trip RAN on host
+  (ffmpeg 7.1.1 + libmp3lame at /opt/homebrew/bin) and passed; XCTSkips where ffmpeg absent.
+- **TSK-528 → VALIDATED.** Full encoder set (WAV/AIFF/CAF + AAC + MP3) host-complete + tested (19 teeth). NOT `done`:
+  the Save-As panel + the Settings ffmpeg-path field are VM-gated SwiftUI (the `ffmpegOverride` param is host-done;
+  the UserDefaults persistence + NSSavePanel sheet is the live slice). Durable decision saved to memory
+  ([[project_ffmpeg_external_host_tool]]).
+- `main` @ 4b707d4, gate-green (only the documented FoldBench/Grandchild flake). The ffmpeg-as-best-effort-host-tool
+  pattern is the precedent for any future external CLI integration. Still owner/VM-bound otherwise (VM lane TSK-502).
