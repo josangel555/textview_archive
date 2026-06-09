@@ -15,6 +15,9 @@ path = "src/main.rs"
 
 [dependencies]
 mdvcore-core = { path = "../core" }
+# Source syntax highlighting (TSK-257, owner-approved tree-sitter). Lives in its
+# own crate so the unsafe grammar FFI never enters core/ffi or the merge gate.
+mdvcore-highlight = { path = "../highlight" }
 # Pinned exactly (minimal-deps posture). ratatui re-exports crossterm, so we
 # don't add a second terminal-backend crate. Cross-platform (macOS + Linux).
 ratatui = "=0.29.0"

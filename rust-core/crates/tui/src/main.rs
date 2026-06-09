@@ -19,6 +19,7 @@
 //! file, ↑/↓ pick a heading, ↵ jumps to it, ESC/o closes) · g/G top/bottom ·
 //! PgUp/PgDn scroll · q quit.
 
+use std::cell::RefCell;
 use std::fs;
 use std::io;
 use std::io::Read;
@@ -45,6 +46,7 @@ use mdvcore_core::hex::{self, HexSearchMode};
 use mdvcore_core::view::{self, DiffLineKind, FileKind, View, ViewBody, ViewMode};
 use mdvcore_core::whitespace;
 use mdvcore_core::theme::{self, Role};
+use mdvcore_highlight::{Lang, Segment, TokenKind};
 
 /// Bytes per hex-dump row (must match `mdvcore_core::hex::render_all`). A hex
 /// search match at byte offset `o` lands on dump row `o / HEX_BYTES_PER_ROW`.
@@ -152,9 +154,39 @@ struct Preview {
     /// the live (uncommitted) needle so results update as you type. `None` = the
     /// prompt is closed and `table_filter` (the committed needle) is in effect.
     table_filter_editing: Option<String>,
+    /// Lazily-computed syntax-highlight spans (TSK-257), one `Vec<Segment>` per
+    /// Text line. Filled on first Text render with a recognised language and
+    /// reused for the file's life (the bytes are immutable per Preview; a reload
+    /// builds a fresh Preview → fresh cache). `RefCell` so it can memoise during
+    /// the `&self` render without a parsing pass every frame (files cap at 200k
+    /// lines, so per-frame re-parse would be far too slow).
+    hl_cache: RefCell<Option<Vec<Vec<Segment>>>>,
 }
 
 impl Preview {
+    /// The highlight language for this file, by extension (`None` = unsupported
+    /// → plain rendering).
+    fn lang(&self) -> Option<Lang> {
+        let ext = self.name.rsplit_once('.').map(|(_, e)| e)?;
+        Lang::from_extension(ext)
+    }
+
+    /// Per-line highlight segments for the given DISPLAY lines, computing +
+    /// caching on first call. `lines` is the Text body (tab-expanded /
+    /// `\r`-stripped) — we join with `\n` and let the engine split, so segment
+    /// boundaries line up with the rendered columns. Returns `None` when the
+    /// language is unsupported.
+    fn highlighted_lines(&self, lines: &[String]) -> Option<std::cell::Ref<'_, Vec<Vec<Segment>>>> {
+        let lang = self.lang()?;
+        if self.hl_cache.borrow().is_none() {
+            let src = lines.join("\n");
+            *self.hl_cache.borrow_mut() = Some(mdvcore_highlight::highlight_lines(&src, lang));
+        }
+        Some(std::cell::Ref::map(self.hl_cache.borrow(), |o| {
+            o.as_ref().expect("just filled above")
+        }))
+    }
+
     /// Scrollable item count for the current mode (lines, table rows, or the
     /// FILTERED table-row count when a CSV filter is active).
     fn content_len(&self) -> usize {
@@ -886,6 +918,7 @@ impl App {
                     scroll: 0,
                     table_filter: String::new(),
                     table_filter_editing: None,
+                    hl_cache: RefCell::new(None),
                 });
                 self.active = self.tabs.len() - 1;
                 self.flash = None;
@@ -944,6 +977,7 @@ impl App {
                     scroll: 0,
                     table_filter,
                     table_filter_editing: None,
+                    hl_cache: RefCell::new(None),
                 };
                 // Clamp the old scroll into the (possibly shorter) new content.
                 let max_scroll = next.content_len().saturating_sub(1);
@@ -2361,6 +2395,15 @@ impl App {
                 let gutter = self.show_gutter;
                 let show_ws = self.show_whitespace;
                 let flash = self.flash;
+                // Syntax highlighting (TSK-257): only in Text mode (HEX shares
+                // this arm but its "lines" are byte dumps), only for a known
+                // language, and only when NOT revealing whitespace (reveal
+                // rewrites the text, breaking the spans' column alignment).
+                let hl = if matches!(p.view.mode, ViewMode::Text) && !show_ws {
+                    p.highlighted_lines(lines)
+                } else {
+                    None
+                };
                 let visible: Vec<Line> = lines
                     .iter()
                     .skip(start)
@@ -2373,20 +2416,39 @@ impl App {
                         let is_flash = flash == Some(idx);
                         let content_style =
                             if is_flash { Style::new().reversed() } else { Style::new() };
-                        // Show-invisibles: spaces/tabs → markers via shared core.
-                        let text = if show_ws { whitespace::reveal(s) } else { s.clone() };
+                        // Highlighted segments win unless the line is flashed or
+                        // whitespace-reveal is on; otherwise a single plain span.
+                        let line_segs = hl
+                            .as_deref()
+                            .filter(|_| !is_flash)
+                            .and_then(|all| all.get(idx));
+                        let content_spans: Vec<Span> = match line_segs {
+                            Some(segs) => segs
+                                .iter()
+                                .map(|seg| match token_color(seg.kind) {
+                                    Some(c) => Span::styled(seg.text.clone(), Style::new().fg(c)),
+                                    None => Span::raw(seg.text.clone()),
+                                })
+                                .collect(),
+                            None => {
+                                // Show-invisibles: spaces/tabs → markers (shared core).
+                                let text = if show_ws { whitespace::reveal(s) } else { s.clone() };
+                                vec![Span::styled(text, content_style)]
+                            }
+                        };
                         if gutter {
                             let n = idx + 1;
                             // Right-align to `gw`, then a thin "│ " separator;
                             // the gutter is DIM so the content stays primary.
                             let label = format!("{n:>gw$} ");
-                            Line::from(vec![
+                            let mut spans = vec![
                                 Span::styled(label, Style::new().fg(Color::DarkGray)),
                                 Span::styled("│ ", Style::new().fg(Color::DarkGray)),
-                                Span::styled(text, content_style),
-                            ])
+                            ];
+                            spans.extend(content_spans);
+                            Line::from(spans)
                         } else {
-                            Line::from(Span::styled(text, content_style))
+                            Line::from(content_spans)
                         }
                     })
                     .collect();
@@ -2780,6 +2842,21 @@ fn human_size(bytes: usize) -> String {
     }
 }
 
+/// Map a syntax [`TokenKind`] to a terminal colour (TSK-257). `None` = leave the
+/// default foreground (structural tokens like punctuation/operators/plain
+/// variables stay uncoloured so the highlight reads as accents, not a rainbow).
+fn token_color(kind: TokenKind) -> Option<Color> {
+    match kind {
+        TokenKind::Keyword => Some(Color::Magenta),
+        TokenKind::String => Some(Color::Green),
+        TokenKind::Number | TokenKind::Constant => Some(Color::Yellow),
+        TokenKind::Comment => Some(Color::DarkGray),
+        TokenKind::Function | TokenKind::Tag => Some(Color::Blue),
+        TokenKind::Type | TokenKind::Property | TokenKind::Attribute => Some(Color::Cyan),
+        TokenKind::Variable | TokenKind::Operator | TokenKind::Punctuation | TokenKind::Other => None,
+    }
+}
+
 /// A rect `pct_x`% wide × `pct_y`% tall, centered inside `area` — the geometry
 /// for the floating outline popup. Percentages are clamped to `1..=100`.
 fn centered_rect(pct_x: u16, pct_y: u16, area: Rect) -> Rect {
@@ -2878,6 +2955,63 @@ mod tests {
         let hex = render(&mut app);
         assert!(hex.contains("00000000"), "hex offset column shown:\n{hex}");
         assert!(hex.contains("· hex ·"), "title reflects hex mode:\n{hex}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Distinct foreground colours of the rendered ALPHABETIC cells — host
+    /// "pixel" coverage for syntax highlighting (TSK-257). A keyword colours its
+    /// letters Magenta and a string Green; neither appears among letters unless
+    /// tree-sitter highlighting actually ran, so this is teeth, not a snapshot.
+    fn letter_fg_colors(app: &mut App, w: u16, h: u16) -> std::collections::HashSet<Color> {
+        let mut terminal = Terminal::new(TestBackend::new(w, h)).expect("backend");
+        terminal.draw(|f| app.draw(f)).expect("draw");
+        let buf = terminal.backend().buffer();
+        let mut set = std::collections::HashSet::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                let cell = &buf[(x, y)];
+                if cell.symbol().chars().next().is_some_and(|c| c.is_ascii_alphabetic()) {
+                    set.insert(cell.fg);
+                }
+            }
+        }
+        set
+    }
+
+    #[test]
+    fn rust_source_view_is_syntax_highlighted() {
+        let dir = fixture_dir();
+        fs::write(dir.join("snippet.rs"), b"fn main() {\n    let s = \"hi\";\n}\n").unwrap();
+        let mut app = App::new(dir.clone());
+        select_name(&mut app, "snippet.rs");
+        app.enter();
+        let colors = letter_fg_colors(&mut app, 100, 24);
+        // `fn`/`let` → Keyword → Magenta; the `hi` string → String → Green.
+        assert!(colors.contains(&Color::Magenta), "keyword highlight present: {colors:?}");
+        assert!(colors.contains(&Color::Green), "string highlight present: {colors:?}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn plain_text_and_hex_are_not_highlighted() {
+        let dir = fixture_dir();
+        fs::write(dir.join("snippet.rs"), b"fn main() {}\n").unwrap();
+        let mut app = App::new(dir.clone());
+        // `.txt` has no grammar → no keyword colour (the lang gate).
+        select_name(&mut app, "hello.txt");
+        app.enter();
+        assert!(
+            !letter_fg_colors(&mut app, 100, 24).contains(&Color::Magenta),
+            "plain text must not be highlighted",
+        );
+        // HEX shares the render arm but must stay uncoloured (the mode gate).
+        select_name(&mut app, "snippet.rs");
+        app.enter();
+        app.cycle_mode(); // Text → HEX
+        assert!(
+            !letter_fg_colors(&mut app, 100, 24).contains(&Color::Magenta),
+            "hex view must not be highlighted",
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 

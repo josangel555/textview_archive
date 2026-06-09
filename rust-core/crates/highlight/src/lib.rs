@@ -203,6 +203,66 @@ pub fn highlight(src: &str, lang: Lang) -> Vec<Span> {
     spans
 }
 
+/// One contiguous run of a single line, tagged with its [`TokenKind`].
+/// Unhighlighted gaps are emitted as [`TokenKind::Other`] so concatenating a
+/// line's segments reproduces the line text exactly — front-ends can render
+/// every segment without tracking the gaps themselves.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Segment {
+    pub text: String,
+    pub kind: TokenKind,
+}
+
+/// Highlight `src` and project the spans onto LINES: returns one
+/// `Vec<Segment>` per line (split on `\n`), each covering the whole line.
+///
+/// Front-ends pass the text they actually DISPLAY (e.g. the TUI's
+/// `lines.join("\n")`, already tab-expanded / `\r`-stripped) so the segment
+/// boundaries line up with the rendered columns — running tree-sitter on the
+/// raw bytes instead would mis-align (a tab is one source byte but four display
+/// columns). Whitespace-only transforms don't change token structure, so the
+/// kinds stay correct.
+#[must_use]
+pub fn highlight_lines(src: &str, lang: Lang) -> Vec<Vec<Segment>> {
+    let spans = highlight(src, lang);
+    let mut out = Vec::new();
+    let mut si = 0usize; // first span that may still be relevant
+    let mut line_start = 0usize;
+    for line in src.split('\n') {
+        let line_end = line_start + line.len();
+        let mut segs: Vec<Segment> = Vec::new();
+        let mut cursor = line_start;
+        // Drop spans that ended at/before this line begins.
+        while si < spans.len() && spans[si].end <= line_start {
+            si += 1;
+        }
+        let mut k = si;
+        while k < spans.len() && spans[k].start < line_end {
+            let sp = spans[k];
+            let s = sp.start.max(line_start);
+            let e = sp.end.min(line_end);
+            if s > cursor {
+                segs.push(Segment { text: src[cursor..s].to_string(), kind: TokenKind::Other });
+            }
+            if e > s {
+                segs.push(Segment { text: src[s..e].to_string(), kind: sp.kind });
+                cursor = e;
+            }
+            // A span crossing into the next line stays for that line to clip.
+            if sp.end > line_end {
+                break;
+            }
+            k += 1;
+        }
+        if cursor < line_end {
+            segs.push(Segment { text: src[cursor..line_end].to_string(), kind: TokenKind::Other });
+        }
+        out.push(segs);
+        line_start = line_end + 1; // step past the '\n'
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -271,5 +331,49 @@ mod tests {
     fn empty_source_yields_no_spans() {
         assert!(highlight("", Lang::Json).is_empty());
         assert!(highlight("", Lang::Rust).is_empty());
+    }
+
+    // MARK: highlight_lines — per-line segment projection
+
+    /// Concatenating a line's segments must reproduce that line exactly.
+    fn assert_segments_reconstruct(src: &str, lang: Lang) {
+        let lines = highlight_lines(src, lang);
+        let rebuilt: Vec<String> = lines
+            .iter()
+            .map(|segs| segs.iter().map(|s| s.text.as_str()).collect::<String>())
+            .collect();
+        assert_eq!(rebuilt, src.split('\n').collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn highlight_lines_one_vec_per_line_and_reconstructs() {
+        let src = "fn main() {\n    let x = 7;\n}\n";
+        let lines = highlight_lines(src, Lang::Rust);
+        // split('\n') on a trailing-newline string yields a final empty line.
+        assert_eq!(lines.len(), 4);
+        assert_segments_reconstruct(src, Lang::Rust);
+        // Line 1 carries the `fn` keyword segment.
+        assert!(lines[0].iter().any(|s| s.text == "fn" && s.kind == TokenKind::Keyword));
+        // Line 2 carries the number as a Constant (rust convention).
+        assert!(lines[1].iter().any(|s| s.text == "7" && s.kind == TokenKind::Constant));
+    }
+
+    #[test]
+    fn highlight_lines_reconstructs_with_multibyte_and_json() {
+        // A unicode string value must not split a char mid-byte.
+        let src = "{\n  \"name\": \"café ☕\",\n  \"n\": 3\n}";
+        assert_segments_reconstruct(src, Lang::Json);
+        let lines = highlight_lines(src, Lang::Json);
+        assert!(lines[1].iter().any(|s| s.text.contains("café ☕") && s.kind == TokenKind::String));
+        assert!(lines[2].iter().any(|s| s.text == "3" && s.kind == TokenKind::Number));
+    }
+
+    #[test]
+    fn highlight_lines_empty_and_blank_lines() {
+        assert_eq!(highlight_lines("", Lang::Json), vec![vec![]]);
+        // A blank middle line yields an empty segment list for that line.
+        let lines = highlight_lines("1\n\n2", Lang::Json);
+        assert_eq!(lines.len(), 3);
+        assert!(lines[1].is_empty());
     }
 }
