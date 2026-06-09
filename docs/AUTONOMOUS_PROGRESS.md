@@ -5513,3 +5513,32 @@ the writing agents finish (compile race). main @ d0c87da gate-green + reinstalle
   (same render-path lane gated behind TSK-502). Honest ceiling = `fixed`, awaiting live validation.
 - `main` @ c21f311 (+ this log). The self-validatable lane stays exhausted; the productive frontier remains
   owner-input-bound (deps 247/248/249, web global-state 234/250, render-path/VM behind parked TSK-502).
+
+## LOG +148 (2026-06-09, autonomous tick — owner's #1 priority: nailing Code Review, host cores)
+Per the owner directive "focus on nailing the Code review feature" — three host-completable Code-Review cores
+this run, each behind teeth, each with the VM-gated UI slice honestly deferred:
+- **TSK-522 (multi-select commits → cumulative diff), slices 1+2** (commits d09e631, 306452e, 435a8af):
+  `CumulativeDiffSelection` pure range resolver (selected commits → `git diff base..tip`, root→empty-tree base,
+  contiguous-vs-spanned gap accounting) + `GitClient.cumulativeDiff(baseRef:tipRef:)` + confirmed the existing
+  `commitDiff(sha:)` producer (root-safe `git show`). Fixture teeth prove cumulative ≠ per-commit (intermediate
+  state collapses). Slice 3 (GitLogTab multi-select + cumulative DiffView + "includes N intermediate" banner) = VM-gated.
+- **TSK-523 (click any commit → diff + comments), slice 2** (commit d04c2e6): extended the FILE-scoped review-comment
+  model to a COMMIT-DIFF context — additive optional `ReviewComment.commitSha` (absent key decodes to nil ⇒ existing
+  on-disk reviews load unchanged, no Review schema bump) + `CommitDiffAnchor` pure resolver (partition by commit,
+  per-commit counts, distinct commented-commits, `blobRev(side:commitSha:firstParent:)` bridging to `AnchorStaleness`,
+  root→empty-tree). 10 teeth incl. the backward-compat decode guard. Slice 3 (inline DiffView-on-select + gutter→
+  composer→save) = VM-gated, overlaps TSK-205.
+- **TSK-530 (NEW ticket — two export modes, with/without code)** (commit 9e6ae99): `ReviewExporter.ExportMode`;
+  `.withoutCode` drops each comment's `context` (the only source-bearing field) + sets top-level `includesCode=false`;
+  with-code output byte-identical (context now optional, encodeIfPresent). 3 teeth incl. a no-source-leak assertion.
+  Slice 2 (mode picker in the export sheet) = VM-gated. NOTE: board TSK-204 is a DIFFERENT (done, CSV-filtering) task —
+  the built-in TaskList #204 was the export-modes item; filed the missing board ticket (TSK-530) per "create tickets if missing".
+- **Gate:** TSK-523's commit passed the host headless gate clean (EXIT=0). TSK-530's gate run's ONLY failure was
+  `FileWatcherTests.test_deletedThenRecreated_watcherReattaches` — an FSEvents async-delivery flake under parallel
+  machine load (PASSES isolated, 0.108s; zero interaction with Review code). The appended `echo` masked the gate's
+  real EXIT=1 (the exit-masking footgun [[reference_vm_plain_ssh_breaks_tests]]) — read the in-log `==>` marker, not
+  the wrapper exit.
+- `main` @ 9e6ae99 (+ this log). Code-Review host cores are landing fast; the remaining Code-Review work (cumulative
+  DiffView multi-select, inline commit-diff add-comment, export mode picker) is all VM-gated UI on the same render
+  lane behind TSK-502. Next host-completable frontier = the audio-editing greenfield cores (TSK-525 decode+waveform
+  peaks, 526 FFT, 527 trim/fade, 528 encoders) + image Save-As-spec fields (TSK-524).
