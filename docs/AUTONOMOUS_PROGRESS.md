@@ -29,6 +29,22 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+108) — VERIFIED: rust-core PORT lane is FEATURE-COMPLETE (no actionable item left); board owner-bound
+
+Followed "drain the PORT lane, don't idle" — but verified by reading the code that the PORT front-end features are
+ALREADY built, so there's no clean actionable item to build (rebuilding = the churn the owner forbids):
+- **TSK-496** (XML/HTML pretty-print) is already `validated` (commit ddecc1d, 12 tests) — done-work awaiting owner close.
+- Encoding/line-ending badge (TUI main.rs:2522 + web:956), document outline/TOC (TUI `o` + web `outline_html`), CSV
+  filter, session restore, find/hex-search/sort/hidden/goto/grep/recents/whitespace/wrap/theme/help/metrics/image-dims/
+  reload/formatted-JSON — all confirmed present + tested. The reminder's `#362–423` are stale TaskList items (shipped,
+  never ticked), NOT board tasks. The only un-built PORT items are dep-gated (comrak/tree-sitter; owner-approval).
+- Captured the verified-done inventory in memory (project_board_saturated_owner_bound +108) so future ticks skip the
+  re-scan loop.
+
+**Board is owner-bound end-to-end** (unchanged from +107): SwiftUI owner/render-gated; PORT feature-complete-or-dep-gated;
+deep-audit findings TaskList-only or held-without-host-teeth; ~40 validated awaiting owner close; 7 parked `waiting=human`
+(TSK-250/256/262/301/306/452/498); `task_next` wedged on foreign TSK-104. No code commit (nothing un-gated to build).
+
 ## LOG 2026-06-09 (latest+107) — PARKED TSK-452 (statusbar, owner-clarification); host-completable lane exhausted — board needs owner unblock
 
 No code commit this tick — the clean host-completable-to-`done` lane is genuinely drained (recent ticks harvested
