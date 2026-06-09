@@ -29,6 +29,25 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+103) — GET-TO-DONE: TSK-178 security redaction — extracted teeth + driven fixed→done
+
+Converted a HELD reconciliation into a properly-guarded fix + closed it (the model for the rest of the held lane):
+- **TSK-178** ([S3][security] sidebar Claude-timeline redaction bypass) → **done**. The redaction barrier
+  (`redactedEvents`, never `events`) was correct but buried inline in a `Task.detached` closure with NO testable
+  seam — reverting it failed no host test (hence the prior hold). FIX (commit 7470984): extracted
+  `ClaudeTimelineSection.timelineEvents(from:parser:cap:)` (nonisolated, pure) and pinned it with
+  `ClaudeTimelineRedactionTests` (3/0): a secret in a redacted tool-input key (`headers`) must NOT survive into any
+  rendered `event.summary`; benign content still surfaces; reverse-chrono + cap pinned. **Teeth demoed red**
+  (swap kernel → `parser.events` → 2 failing asserts, raw secret leaks). Headless gate green on the clean run
+  (earlier exit-1s = known PluginSubprocessHostTests/FoldBench parallel-load flakes).
+
+**PATTERN for the remaining held `fixed` reconciliations** (TSK-142/143 CsvSession leak/perf, TSK-122/123 HexView/
+session_table perf, etc.): they're "fix-present-but-unguarded" → NOT honestly done-able as-is, BUT extracting a
+testable kernel + adding teeth (as done here for TSK-178) converts them to done. The perf ones need a structural/
+alloc assertion (harder); the security/correctness ones are tractable. Future ticks: harvest these one at a time.
+
+Running done-drives this arc: TSK-202, TSK-112, TSK-115, **TSK-178**. The ~40 `validated` remain owner-only to close.
+
 ## LOG 2026-06-09 (latest+102) — GET-TO-DONE: TSK-112 + TSK-115 driven review→done (artifact-backed)
 
 Continued the get-to-done sweep (agents CAN reach `done` from `fixed`/`review` with a demonstrative artifact):
