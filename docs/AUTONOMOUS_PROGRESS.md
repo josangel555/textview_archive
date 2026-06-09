@@ -29,6 +29,24 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+119) — VM is waking but FLAKY (intermittent); heavy validation run not yet feasible
+
+VM transitioned from fully-down (+117/+118) to INTERMITTENTLY reachable: `ssh macOS15 'echo'` + a quick state probe BOTH
+succeeded (GUI session present uid 501, Swift 6.3 toolchain, repo present) — so the lane looked open — but the `rsync`
+(larger/longer transfer) and a 3× ping stability check FAILED 2/3 (ssh timeout). So the VM is waking/unstable, not stably
+up. A `test-in-vm.sh` run (rsync + ~20-min VM build + T4/T5/WebView) needs a connection that holds the whole time; on a
+~1/3-success link it would die mid-build — NOT launched (a doomed heavy run is worse than waiting).
+
+Also confirmed the render-gated cluster is not purely VM-blocked: most of it ALSO needs owner input even with a stable VM —
+the 4 built-core features (TSK-300/302/303/310) are parked awaiting the "write the UI wiring?" decision (can't VM-validate
+un-written wiring); TSK-306/487 need a subjective owner EYEBALL (their T5 only guards compositor-blank, not the affordances);
+TSK-262 needs the owner to revoke the mis-validation. So VM-up alone unblocks little without the parks being answered.
+
+NEXT-TICK CUE: retry `rsync … macOS15:markdown_viewer/` first (VM may have stabilized); if it completes, launch
+`bash scripts/test-in-vm.sh test` in the BACKGROUND to validate the session's Swift changes + render lane on real pixels
+(owner standing ask). If the link is still flaky, honest hold. Highest-leverage owner action remains: answer the parks
+(esp. the 4 built-core-feature decisions) + keep the VM stably up.
+
 ## LOG 2026-06-09 (latest+118) — TSK-113 DONE (owner-resolved+implemented decision, finally closed); VM still down
 
 VM re-checked: `ssh macOS15` STILL times out (2nd consecutive tick) — render lane remains blocked, can't start the owner's UTM
