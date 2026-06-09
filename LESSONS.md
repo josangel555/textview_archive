@@ -5,6 +5,19 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## `FileWatcherTests.test_deletedThenRecreated_watcherReattaches` is a load-flaky FSEvents test (2026-06-09)
+- The headless gate (`swift test --parallel`, ~4400 tests) intermittently RED-HERRINGS on this one test:
+  `Asynchronous wait failed: Exceeded timeout of 2 seconds, with unfulfilled expectations: "post-recreate
+  write event"`. It is an FSEvents async-DELIVERY timing issue: under the parallel gate's machine load the
+  coalesced delete→recreate→write event can land after the 2 s `XCTestExpectation` deadline. Re-run it
+  ISOLATED (`swift test --filter ViewerCoreTests.FileWatcherTests/test_deletedThenRecreated_watcherReattaches`)
+  — it passes in ~0.1 s. It is NOT in the perf-bench flake family the CLAUDE.md note covers, so it's easy to
+  mistake for a real regression. Before chasing a gate RED, confirm the failing test(s) aren't just this one +
+  re-run isolated. (A durable fix would bump the expectation timeout / poll for the event; low priority.)
+- Tripwire reminder: `bash gate.sh > log 2>&1; echo "EXIT=$?" >> log` MASKS the gate's real exit — the wrapper
+  exits 0 because `echo` succeeded. Trust the in-log `==> headless gate PASSED/FAILED` marker, not the
+  background-task "exit code 0". Same exit-0-masking family as #311/#162.
+
 ## Terminal "typing is slow": a purely trailing-edge render throttle (2026-06-06)
 
 **Symptom.** Owner: "Terminal is very slow — typing, pressing Enter."
