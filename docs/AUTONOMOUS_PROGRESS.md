@@ -29,6 +29,17 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+84) — PORT-lane reconciliation: TSK-335 + TSK-255 validated, owner deps actioned (256 parked, 257 unblocked)
+
+With both render-gated SwiftUI PoCs done, drained the PORT lane per the owner directive — and found it owner-bound, so reconciled it honestly:
+- **TSK-335 "[PARTIAL] Claude Session search" → validated**: the backlog PARENT of the monitor content-search I shipped as TSK-520. Its report named the exact gap (engine existed, not surfaced in UI). Dedup-reconciled to validated with the same evidence (commits `48c54c6`+`3f266fc`, 13 host teeth + VM T5).
+- **Owner had resolved two DEPGATED parks** (caught by reading the board, not the reminder TaskList — board TSK-247 is "Keyboard help", already validated, NOT the reminder's "#247 regex" — numbering trap):
+  - **TSK-255 (TUI markdown) → validated**: owner said *"TUI just render source of md"*. The TUI already classifies `.md`/`.markdown` → `FileKind::Plain` → `[Text, Hex]`, default Text (source). Pinned with `classify_by_extension` assertions (commit `cffcc5f`, rust-core gate green). No comrak.
+  - **TSK-256 (web markdown) → parked (decision)**: owner asked *"can't we reuse the SwiftUI one?"*. Researched: the SwiftUI app uses `swift-markdown` (wraps `cmark-gfm` C) + a custom Swift `HTMLRenderer` — NOT Rust-linkable. Only the `cmark-gfm` C lib is shareable. Parked with 3 options (comrak pure-Rust / vendor cmark-gfm C / web-source-only) + a recommendation (comrak for a portable web server).
+  - **TSK-257 (syntax highlighting) → triaged, UNBLOCKED**: owner approved *"tree-sitter + full grammar set"*. Found the architecture constraint: highlight CANNOT live in `mdvcore-core` (`#![forbid(unsafe_code)]`; tree-sitter grammars need unsafe FFI) — so a NEW `mdvcore-highlight` crate (out of the merge gate, like tui/web) feeds both front-ends. Restated + triaged with the full design + pinned-grammar plan; implementation is a focused next pass (incremental grammar waves + TestBackend fg teeth).
+
+`main` gate-green (host headless + rust-core). The actionable non-owner-gated queue is genuinely drained; the live vein is now the owner-approved tree-sitter feature (TSK-257) + the two render-gated low-value parks.
+
 ## LOG 2026-06-08 (latest+83) — TSK-520 VALIDATED: monitor content-search RESULTS UI (VM pixel teeth)
 
 Landed the render-gated half of the monitor content-search and **VM-validated** it — **TSK-520 → validated**
