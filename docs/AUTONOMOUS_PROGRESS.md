@@ -29,6 +29,29 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+91) — saturation re-verified (honest no-fabrication tick); the queue is owner-bound
+
+Searched hard for actionable work (SwiftUI first, then PORT) and re-confirmed the board is saturated for
+autonomous host-testable work. To save future ticks re-probing the same ground:
+- **PORT lane is feature-complete** — probed 10 features, ALL already in BOTH front-ends: diff view
+  (`ViewBody::Diff`/`diff_html`), markdown outline (`outline::headings`/`outline_html`/TUI `o` overlay), image
+  preview (`image_html` + TUI dimensions card), breadcrumb (`breadcrumb_html`/`breadcrumb_trail`), content search,
+  hex search, find **minimap** (`find::match_minimap`, TSK-419), sort/hidden/wrap. The DEPGATED PORT tasks map to
+  TSK-255 (done, source-only) / TSK-256 (parked) / TSK-257+258 (validated last week) — not new work.
+- **Deep-audit list still stale** — 3 MORE confirmed already-fixed this tick (do NOT re-check these):
+  `HexView repaints-all-matches` → `HighlightFingerprint` + O(2) repaint fast path (audit-S2 comment);
+  `HighlightKey O(matches) equality` → same fingerprint; `MCP current_state vs select_tab off-by-one` →
+  `automationCurrentState` emits `selectedTabIndex` 1-based (`$0+1`) to match `select_tab`'s 1-based `byIndex`.
+  Running tally: ~8 audit findings verified stale across recent ticks, 0 real. The list is already-fixed.
+- **Standing PoCs done** — image-editing, agent-monitor, AND the "research Claude Code hooks" item
+  (`docs/research/autorun-2026-06-04/hooks.md`, complete with a drop-in monitor-log.sh + config). The follow-up
+  (a ClaudeMonitor view over hook-event logs) is owner-gated: the owner's `~/.claude/settings.json` has no hooks
+  wired, so the data doesn't exist yet, and wiring their personal config is an owner action.
+- **DECISIONS NEEDED (the queue refills when these are answered):** TSK-256 (web markdown engine — comrak? parked),
+  TSK-306 (preview-tab validation bar — parked this session), deps TSK-247/248/249 (regex / serde_json / comrak),
+  TSK-202 (Sessions god-object split, supervised). Per the owner's own anti-drift rule I did NOT fabricate a
+  commit; honestly reporting the gated state beats manufacturing teeth-less work. `main` stays headless-gate-green.
+
 ## LOG 2026-06-09 (latest+90) — TSK-306 VM render-validation: preview tab COMPOSITES on real pixels; teeth-demo bounds the claim
 
 Drove TSK-306's owner-authorised VM validation as far as is honestly automatable, then parked the bar-judgment.
