@@ -212,6 +212,16 @@ public final class GitClient: Sendable {
         (try? run(["diff", "--no-color", "HEAD", "--", path])) ?? ""
     }
 
+    /// `git diff <baseRef> <tipRef>` — the unified diff between two commit-ish
+    /// refs. This is the CUMULATIVE patch for a range resolved by
+    /// `CumulativeDiffSelection` (base = the oldest selected commit's parent, or
+    /// the empty-tree SHA for a root; tip = the newest selected commit): the NET
+    /// change across the range, so intermediate states collapse. Returns "" on
+    /// error. Parse with `DiffParser` for the structured form (TSK-522 slice 2).
+    public func cumulativeDiff(baseRef: String, tipRef: String) -> String {
+        (try? run(["diff", "--no-color", baseRef, tipRef])) ?? ""
+    }
+
     // MARK: - log
 
     public struct LogEntry: Equatable, Sendable {
