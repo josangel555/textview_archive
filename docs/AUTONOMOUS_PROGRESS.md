@@ -29,6 +29,26 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+107) — PARKED TSK-452 (statusbar, owner-clarification); host-completable lane exhausted — board needs owner unblock
+
+No code commit this tick — the clean host-completable-to-`done` lane is genuinely drained (recent ticks harvested
+TSK-203/204/479/515/507). Routed the one remaining actionable bug to the owner and surveyed what's left:
+- **TSK-452** ([BUG][statusbar] stats not updating on tab change) → **parked** (review). The HOST layer is verified done
+  (selection-tracking test passes; loading-blank fixed @1615b98); the only remainder is a live SwiftUI re-body question
+  (does StatusBar re-render on the tabCoordinator selection publish between two already-loaded tabs) with no
+  host-observable seam — needs the owner's live repro confirmation. Asked: does it still repro post-1615b98?
+- **TSK-444** (delete-empty-project / zz_probe) is FOREIGN — created by agent:claude-builder, a feature for the tasked
+  BOARD APP itself (guarded project-deletion), not markdown_viewer. Skipped per the shared-board rule.
+- **TSK-463** (LSP autocomplete not wired to CM6) is the highest-value SwiftUI feature left but effort=L +
+  CM6-WebView-render-gated; its cited wiring file (LSPHoverAttachment.swift) no longer exists (LSP↔editor refactored
+  since 2026-06-06) → needs re-scoping before a responsible build. Recommended as the next substantive SwiftUI build.
+
+**Board state for the owner (loop is input-bound):** 7 tasks parked `waiting=human` (TSK-250/256/262/301/306/452/498).
+`task_next` is STILL wedged on foreign **TSK-104** (agent:forge, regressed prio-0, CSV export — not markdown_viewer) —
+it monopolizes the ranked head; clearing/dismissing it would let the ranker surface this project's queue. The remaining
+markdown_viewer board work is render/VM-gated (TSK-440/455/462/463/464/493/253/254/272/306/334), dep-gated
+(TSK-246-249/256/399/420-423), owner-decision, or held perf/leak reconciliations without clean host teeth.
+
 ## LOG 2026-06-09 (latest+106) — FIXED: TSK-507 PluginSubprocessHost gate-flake → done (teeth: suite green + kill-path intact)
 
 - **TSK-507** ([test][flaky] PluginSubprocessHostTests false-red under load) → **done** (commit `cac7227`). Root cause: the
