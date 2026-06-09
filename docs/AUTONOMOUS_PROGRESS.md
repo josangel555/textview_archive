@@ -29,6 +29,24 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+102) — GET-TO-DONE: TSK-112 + TSK-115 driven review→done (artifact-backed)
+
+Continued the get-to-done sweep (agents CAN reach `done` from `fixed`/`review` with a demonstrative artifact):
+- **TSK-112** (Claude-hooks research + passive monitor logger) → **done**. Deliverables verified on disk
+  (docs/research/autorun-2026-06-04/hooks.md 14.9KB + scripts/hooks/monitor-log.sh + ViewerCore/ClaudeMonitorLog),
+  reader host-tested (ClaudeMonitorLogTests 15/0 this tick). No render gate.
+- **TSK-115** (rust-core migration plan + no-dep interface prep) → **done**. Plan docs shipped
+  (RUST_MIGRATION_PLAN_2026-06-04 / RUST_CORE_MIGRATION / FEATURE_PORT_PLAN) and the prep is exercised by the now-real
+  rust-core (gate green this tick; planned slices TSK-198/238-242/255-258 done). DocumentModel restructure was
+  out-of-scope (owner-gated).
+- **Left (NOT honestly agent-done-able):** TSK-329 (File New) + TSK-333 (bookmark Delete+undo) — core done+tested but
+  the menu/Delete-key UI is render-gated (VM/owner); TSK-122/123 (HexView/session_table perf) — no regression teeth
+  (revert fails no test) → human-gate; TSK-114 (board dogfood feedback) — pure feedback, no demonstrative artifact →
+  owner-close; TSK-102 — foreign forge.
+
+Running done-drives this arc: TSK-202 (web diff), TSK-112 (hooks), TSK-115 (migration plan). The ~40 `validated`
+tasks remain OWNER-ONLY to close (validated→done is the human step). rust-core gate green; `main` headless-gate-green.
+
 ## LOG 2026-06-09 (latest+101) — GET-TO-DONE pass: TSK-202 fixed→done; mapped the lifecycle blockers
 
 Owner: "goal is to get all tickets to done." Acted on it. Two hard lifecycle facts (tested):
