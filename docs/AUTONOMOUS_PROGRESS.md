@@ -29,6 +29,28 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+118) — TSK-113 DONE (owner-resolved+implemented decision, finally closed); VM still down
+
+VM re-checked: `ssh macOS15` STILL times out (2nd consecutive tick) — render lane remains blocked, can't start the owner's UTM
+VM from here. But instead of idling, scanned the `ready=true` head and found a productive seam: **stale old-`claude`/
+`sess-0604` tasks with expired leases** (from the 2026-06-04/05 run) cluttering the queue, never driven to done/parked.
+
+- **TSK-113 → done** — "DECISION: WebView teardown vs keep-alive." Was NOT an open decision: the OWNER already resolved it on
+  the board (event seq 409, 2026-06-05: "d: accept baseline"), and it was realized as BOUNDED keep-alive (MountedPanesLRU
+  cap-4, commit 39925fd) — inactive panes stay mounted at opacity:0 (instant tab-switch), LRU bounds retained-WebView memory.
+  It had sat at `fixed` unclosed ever since. Validated to done on the realized-decision teeth (run fresh): MountedPanesLRUTests
+  12/0 (cap clamp / MRU / overflow-evicts-LRU) + MountedPanesWiringTests capacity-bounded. (WebView mount-COUNTING probes
+  #192-skip; the pure LRU model is fully host-guarded.) Demonstrative artifact = owner resolution + commit + LRU teeth.
+
+OTHER STALE `ready`-queue items (old `claude`/sess-0604, expired leases) — noted, NOT closed (avoid over-reach):
+TSK-108 (perf cluster, fixed — the impl-sibling of TSK-113's decision; overlaps the supervised TSK-254 MountedPanesLRU
+wiring), TSK-109 (quick-wins, progress — mixed core/UI), TSK-110 (image PoC, progress — UI overlaps parked TSK-253),
+TSK-111 (monitor PoC, progress — UI overlaps parked TSK-252). All core-done/UI-or-live-gated; their UI surfaces need the VM.
+
+NEXT-TICK CUE: re-test `ssh macOS15` first (still down → render lane blocked). The `ready` queue's remaining markdown_viewer
+items (TSK-108/109/110/111) are stale-claimed but UI/live-gated; their pure-model halves are largely already covered by the
+parked siblings + this session's closures. Honest hold remains correct until the VM is up or a park is answered.
+
 ## LOG 2026-06-09 (latest+117) — VM unreachable → render-validation lane blocked; board is input/VM-bound (honest hold)
 
 Acted on +116's next-step (drive the render-gated remainder to DONE via the VM). Checked VM reachability first:
