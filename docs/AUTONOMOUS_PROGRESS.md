@@ -29,6 +29,33 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+88) — TSK-257 + TSK-258 VALIDATED: syntax highlighting COMPLETE (full 12-grammar set)
+
+Increment 4 landed (commit `1590bf8`): `mdvcore-highlight` now carries the **full owner-approved grammar set** —
+json, rust, javascript, typescript, tsx, java, c, cpp, c-sharp, swift, kotlin, lua (12 `Lang` variants). Both
+rust-core front-ends (TUI + web) light up source views for all of them. **Both board tasks now `validated`** on
+host teeth (TSK-257 TUI, TSK-258 web) — no VM needed, these front-ends have GENUINE host pixel/markup coverage.
+- **Three tree-sitter nuances solved** (each cost a red build first):
+  - **`; inherits:` is NOT auto-resolved by tree-sitter-highlight.** TS/TSX `; inherits: javascript` and C++
+    `; inherits: c` only ship the *overlay* query. Fix: `grammar()` returns an owned `String` and CONCATENATES the
+    base query + overlay (`format!("{}\n{}", js::HIGHLIGHT_QUERY, ts::HIGHLIGHTS_QUERY)`); the superset grammar
+    resolves the base patterns. Without this, TS `const` / C++ `return` mis-classified.
+  - **Per-grammar const-name variance:** most expose `HIGHLIGHTS_QUERY`, but js/c/cpp use `HIGHLIGHT_QUERY`
+    (singular); `tree-sitter-typescript` ships TWO languages (`LANGUAGE_TYPESCRIPT` + `LANGUAGE_TSX`, one shared
+    query). Verified each crate's exact API.
+  - **`tree-sitter-kotlin-ng` ships NO highlights query** (only `LANGUAGE` + `NODE_TYPES`). Vendored a minimal
+    `KOTLIN_HIGHLIGHTS` const. Trap: `true`/`false`/`null` are NAMED nodes (boolean_literal/null_literal), not
+    anonymous token strings — including them as `@constant.builtin` string-literals fails the WHOLE query (one bad
+    pattern poisons it); removed them. Confirmed against `node-types.json`.
+- **Self-validated on host** (policy: these paths have real host coverage, unlike SwiftUI render): engine `9/0`
+  (per-language token-kind assertions incl. Swift string + Kotlin keyword), TUI `mdvcore-tui` `57/0` (TestBackend
+  per-cell `.fg`), web `mdvcore-web` `75/0` (HTML `<span class="tok-…">`). rust-core merge gate `^EXIT=0` with
+  highlight + grammar deps confirmed ABSENT from it (scoped out of `default-members`, like ratatui). Teeth shown
+  red by neutering the colour map, then restored.
+- **Minimal-deps posture honoured:** all 14 new crates are owner-approved (the TSK-257 park "Approve tree-sitter +
+  full grammar set"), pinned EXACTLY, and live in the out-of-gate `mdvcore-highlight` crate so they never touch the
+  core/ffi merge gate nor the macOS app bundle. The owner-approved feature is now fully delivered + validated.
+
 ## LOG 2026-06-09 (latest+87) — TSK-257 increment 3: WEB source view is syntax-highlighted (HTML-span teeth)
 
 Wired highlighting into the **web** front-end (commit `1b57b93`), reusing the engine's `highlight_lines()` — so
