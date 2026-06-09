@@ -77,6 +77,9 @@ fn main() -> io::Result<()> {
     let mut app = App::new(start);
     if let Some(p) = &persisted {
         app.apply_prefs(p);
+        // TSK-515: re-open last session's buffers (path + scroll + per-file mode),
+        // best-effort (missing files skipped, scroll clamped, mode falls back).
+        app.restore_tabs(&p.tabs, p.active);
     }
     if snapshot {
         // Pre-open the first file so the content pane shows something.
@@ -295,6 +298,23 @@ struct PersistState {
     wrap: bool,
     show_gutter: bool,
     theme: ThemeMode,
+    /// Open file buffers to restore (TSK-515 phase 2), in tab order. Empty =
+    /// nothing was open / nothing to restore.
+    tabs: Vec<OpenTab>,
+    /// Index of the active tab among `tabs` on restore, clamped to the number
+    /// actually re-opened. Meaningless when `tabs` is empty.
+    active: usize,
+}
+
+/// One persisted open buffer (TSK-515): the file path, its saved scroll
+/// offset, and the view mode it was last shown in. Restored best-effort on
+/// launch — skipped if the file vanished, scroll clamped to the file's current
+/// length, mode falling back to the kind's default if no longer offered.
+#[derive(Clone, PartialEq, Eq, Debug)]
+struct OpenTab {
+    path: PathBuf,
+    scroll: usize,
+    mode: ViewMode,
 }
 
 impl Default for PersistState {
@@ -306,6 +326,8 @@ impl Default for PersistState {
             wrap: true,
             show_gutter: true,
             theme: ThemeMode::Adaptive,
+            tabs: Vec::new(),
+            active: 0,
         }
     }
 }
@@ -322,6 +344,22 @@ impl PersistState {
         s.push_str(&format!("wrap={}\n", self.wrap));
         s.push_str(&format!("gutter={}\n", self.show_gutter));
         s.push_str(&format!("theme={}\n", theme_token(self.theme)));
+        // Open buffers (TSK-515): one `tab=<mode> <scroll> <path>` line each, in
+        // tab order, then the active index. Mode + scroll are the first two
+        // space-delimited fields; the path is the rest (so spaces in paths
+        // survive). Only emitted when something is open — a prefs-only state
+        // stays byte-identical to phase 1.
+        for t in &self.tabs {
+            s.push_str(&format!(
+                "tab={} {} {}\n",
+                mode_token(t.mode),
+                t.scroll,
+                t.path.display()
+            ));
+        }
+        if !self.tabs.is_empty() {
+            s.push_str(&format!("active={}\n", self.active));
+        }
         s
     }
 
@@ -343,10 +381,60 @@ impl PersistState {
                 "wrap" => st.wrap = parse_bool(v).unwrap_or(st.wrap),
                 "gutter" => st.show_gutter = parse_bool(v).unwrap_or(st.show_gutter),
                 "theme" => st.theme = theme_from_token(v).unwrap_or(st.theme),
+                // TSK-515: each well-formed `tab=` line appends a buffer to
+                // restore; malformed/unknown-mode lines are skipped (lenient).
+                "tab" => {
+                    if let Some(t) = parse_tab(v) {
+                        st.tabs.push(t);
+                    }
+                }
+                "active" => st.active = v.parse().unwrap_or(st.active),
                 _ => {}
             }
         }
         st
+    }
+}
+
+/// Parse a `tab` config value `"<mode> <scroll> <path>"` (TSK-515). Mode + scroll
+/// are the first two space-delimited fields; the REST is the path verbatim, so a
+/// path containing spaces round-trips. `None` (skip the tab) when the mode token
+/// is unknown or a field is missing; a non-numeric scroll degrades to 0. Never
+/// panics — the rust-core gate denies that.
+fn parse_tab(v: &str) -> Option<OpenTab> {
+    let mut it = v.splitn(3, ' ');
+    let mode = mode_from_token(it.next()?)?;
+    let scroll = it.next()?.parse::<usize>().unwrap_or(0);
+    let path = it.next()?;
+    if path.is_empty() {
+        return None;
+    }
+    Some(OpenTab {
+        path: PathBuf::from(path),
+        scroll,
+        mode,
+    })
+}
+
+fn mode_token(m: ViewMode) -> &'static str {
+    match m {
+        ViewMode::Text => "text",
+        ViewMode::Hex => "hex",
+        ViewMode::Table => "table",
+        ViewMode::Diff => "diff",
+        ViewMode::Image => "image",
+        ViewMode::Formatted => "formatted",
+    }
+}
+fn mode_from_token(v: &str) -> Option<ViewMode> {
+    match v {
+        "text" => Some(ViewMode::Text),
+        "hex" => Some(ViewMode::Hex),
+        "table" => Some(ViewMode::Table),
+        "diff" => Some(ViewMode::Diff),
+        "image" => Some(ViewMode::Image),
+        "formatted" => Some(ViewMode::Formatted),
+        _ => None,
     }
 }
 
@@ -616,7 +704,8 @@ impl App {
         Color::Rgb(c.r, c.g, c.b)
     }
 
-    /// Capture the current app-global prefs for persistence (TSK-235).
+    /// Capture the current app-global prefs + open buffers for persistence
+    /// (TSK-235 prefs; TSK-515 open tabs — path + scroll + per-file view mode).
     fn persist_state(&self) -> PersistState {
         PersistState {
             cwd: Some(self.cwd.clone()),
@@ -625,7 +714,74 @@ impl App {
             wrap: self.wrap,
             show_gutter: self.show_gutter,
             theme: self.theme_mode,
+            tabs: self
+                .tabs
+                .iter()
+                .map(|t| OpenTab {
+                    path: t.path.clone(),
+                    scroll: t.scroll,
+                    mode: t.view.mode,
+                })
+                .collect(),
+            active: self.active,
         }
+    }
+
+    /// Restore the persisted open buffers (TSK-515) best-effort, in tab order:
+    /// each saved file that still exists is re-read + re-shaped in its saved
+    /// mode (or the kind's default if that mode is no longer offered), scrolled
+    /// to its clamped saved offset. Files that vanished / became unreadable are
+    /// silently skipped (the user just lands on the file nav for those), so the
+    /// restored `active` is clamped to however many tabs actually re-opened.
+    fn restore_tabs(&mut self, tabs: &[OpenTab], active: usize) {
+        for t in tabs {
+            self.open_restored(&t.path, t.mode, t.scroll);
+        }
+        if !self.tabs.is_empty() {
+            self.active = active.min(self.tabs.len() - 1);
+        }
+    }
+
+    /// Open `path` into a NEW tab in `mode` (falling back to the kind's default
+    /// when `mode` isn't offered for the file's type), scrolled to `scroll`
+    /// clamped to the file's current content length. Silently returns if the
+    /// file can't be read — the restore path must never abort startup (TSK-515).
+    fn open_restored(&mut self, path: &Path, mode: ViewMode, scroll: usize) {
+        let Ok((raw, truncated, total)) = read_capped(path, PREVIEW_CAP) else {
+            return;
+        };
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string());
+        let kind = view::classify(&name);
+        // The file may have changed type since last launch; only honor the saved
+        // mode if it's still offered for the (re-classified) kind.
+        let mode = if view::available_modes(kind).contains(&mode) {
+            mode
+        } else {
+            view::default_mode(kind)
+        };
+        let v = view::build(&raw, &name, total, truncated, mode);
+        let mut p = Preview {
+            path: path.to_path_buf(),
+            name,
+            total,
+            truncated,
+            raw,
+            kind,
+            view: v,
+            scroll: 0,
+            table_filter: String::new(),
+            table_filter_editing: None,
+            hl_cache: RefCell::new(None),
+        };
+        // Clamp the saved scroll into the (possibly grown/shrunk) content.
+        let max_scroll = p.content_len().saturating_sub(1);
+        p.scroll = scroll.min(max_scroll);
+        self.tabs.push(p);
+        self.recent =
+            history::push(std::mem::take(&mut self.recent), path.to_path_buf(), RECENT_CAP);
     }
 
     /// Apply restored prefs (TSK-235): sort / dotfile / wrap / gutter / theme,
@@ -3271,6 +3427,8 @@ mod tests {
             wrap: false,
             show_gutter: false,
             theme: ThemeMode::Dark,
+            tabs: Vec::new(),
+            active: 0,
         };
         assert_eq!(PersistState::from_config(&st.to_config()), st);
     }
@@ -3302,6 +3460,8 @@ mod tests {
             wrap: false,
             show_gutter: true,
             theme: ThemeMode::Light,
+            tabs: Vec::new(),
+            active: 0,
         };
         save_config(&path, &st);
         assert_eq!(load_config(&path), Some(st));
@@ -3324,6 +3484,8 @@ mod tests {
             wrap: false,
             show_gutter: false,
             theme: ThemeMode::Dark,
+            tabs: Vec::new(),
+            active: 0,
         };
         app.apply_prefs(&p);
         assert_eq!(app.sort, SortKey::Size);
@@ -3331,6 +3493,101 @@ mod tests {
         assert!(!app.wrap);
         assert!(!app.show_gutter);
         assert_eq!(app.theme_mode, ThemeMode::Dark);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn persist_state_roundtrips_open_tabs() {
+        // TSK-515: the codec round-trips open buffers (path + scroll + per-file
+        // mode) + the active index. A path WITH A SPACE proves the
+        // mode/scroll/path field split keeps the path intact.
+        let st = PersistState {
+            cwd: Some(PathBuf::from("/tmp/some/dir")),
+            sort: SortKey::Name,
+            show_hidden: false,
+            wrap: true,
+            show_gutter: true,
+            theme: ThemeMode::Adaptive,
+            tabs: vec![
+                OpenTab {
+                    path: PathBuf::from("/tmp/my dir/file name.txt"),
+                    scroll: 42,
+                    mode: ViewMode::Hex,
+                },
+                OpenTab {
+                    path: PathBuf::from("/tmp/data.csv"),
+                    scroll: 0,
+                    mode: ViewMode::Table,
+                },
+            ],
+            active: 1,
+        };
+        assert_eq!(PersistState::from_config(&st.to_config()), st);
+    }
+
+    #[test]
+    fn tab_config_is_lenient_to_malformed_lines() {
+        // TSK-515: each well-formed `tab=` appends a buffer; unknown-mode and
+        // missing-field lines are skipped; a non-numeric scroll degrades to 0;
+        // a path with spaces survives — never panics.
+        let st = PersistState::from_config(
+            "tab=text 5 /a.txt\n\
+             tab=bogusmode 1 /skip-me.txt\n\
+             tab=hex\n\
+             tab=table notanum /spaced path.csv\n\
+             active=1\n",
+        );
+        assert_eq!(st.tabs.len(), 2, "unknown-mode + field-less lines skipped");
+        assert_eq!(st.tabs[0].mode, ViewMode::Text);
+        assert_eq!(st.tabs[0].scroll, 5);
+        assert_eq!(st.tabs[0].path, PathBuf::from("/a.txt"));
+        assert_eq!(st.tabs[1].mode, ViewMode::Table);
+        assert_eq!(st.tabs[1].scroll, 0, "non-numeric scroll → 0");
+        assert_eq!(st.tabs[1].path, PathBuf::from("/spaced path.csv"));
+        assert_eq!(st.active, 1);
+    }
+
+    #[test]
+    fn restore_tabs_reopens_saved_files_with_mode_and_clamped_scroll() {
+        // TSK-515: restore re-opens each saved file in tab order, skips ones that
+        // vanished, clamps an over-large scroll to the content, honors the saved
+        // mode, and clamps `active` to the count actually re-opened.
+        let dir = fixture_dir();
+        fs::write(dir.join("a.txt"), b"l1\nl2\nl3\n").unwrap();
+        fs::write(dir.join("data.csv"), b"name,age\nAlice,30\nBob,25\n").unwrap();
+        let mut app = App::new(dir.clone());
+        let tabs = vec![
+            OpenTab {
+                path: dir.join("a.txt"),
+                scroll: 9999, // huge → must clamp to content
+                mode: ViewMode::Text,
+            },
+            OpenTab {
+                path: dir.join("gone.txt"), // missing → skipped
+                scroll: 0,
+                mode: ViewMode::Text,
+            },
+            OpenTab {
+                path: dir.join("data.csv"),
+                scroll: 0,
+                mode: ViewMode::Table,
+            },
+        ];
+        app.restore_tabs(&tabs, 2);
+
+        assert_eq!(app.tabs.len(), 2, "the missing file is skipped");
+        assert_eq!(app.tabs[0].path, dir.join("a.txt"));
+        assert_eq!(app.tabs[0].view.mode, ViewMode::Text);
+        assert_eq!(
+            app.tabs[0].scroll,
+            app.tabs[0].content_len().saturating_sub(1),
+            "an over-large saved scroll clamps to the content's last line"
+        );
+        assert_eq!(app.tabs[1].path, dir.join("data.csv"));
+        assert_eq!(app.tabs[1].view.mode, ViewMode::Table, "saved Table mode honored for a CSV");
+        // active was 2 (the missing tab's intended slot); only 2 tabs re-opened
+        // so it clamps to the last valid index.
+        assert_eq!(app.active, 1);
         let _ = fs::remove_dir_all(&dir);
     }
 
