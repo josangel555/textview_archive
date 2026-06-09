@@ -29,6 +29,24 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+99) — fresh security audit (ReDoS hardened) + correction to the +98 unblock menu
+
+Two corrections this tick (both genuine verification, not churn):
+- **Fresh security code-audit of the regex/ReDoS find path → verified HARDENED.** `FindEngine.searchBounded` routes
+  match enumeration through `RegexComplexityGuard.boundedMatches` (SEC-006): captures `start`, stops when
+  `now-start >= budgetNanos` (a real CUMULATIVE wall-clock deadline, default 0.25s), and propagates `timedOut`;
+  the compile-time `RegexComplexityGuard.reject` catches exponential ReDoS shapes. So the audit "ReDoS cap is dead
+  code / no wall-clock deadline" concerns are STALE — correct defense-in-depth is in place.
+- **Correction to the +98 unblock menu:** I'd cited rust-core dep approvals as "TSK-247/248/249" — that was the
+  recurring numbering-trap. Board TSK-246-249 are VALIDATED [PORT] features (TSK-247 = "[PORT][TUI] Keyboard help",
+  commit f37e840 — NOT "FindEngine needs regex"). The reminder-#246-249 dep-blocked slices are reminder-TaskList-only,
+  NOT board tasks. So there is NO pending board dep-approval to action. The REAL owner-gated board items are just
+  TSK-202 (Sessions split), TSK-256 (web markdown engine), TSK-362 (reopen Editor TreeSitter-highlight), + the
+  render-gated `fixed` items needing the VM pixel lane (TSK-253/505/monitor UI).
+
+`task_next` head is still the foreign forge TSK-104 (skip). Board remains owner-bound-saturated; no native actionable
+task. No code change — `main` stays headless-gate-green at f148f18.
+
 ## LOG 2026-06-09 (latest+98) — FRESH full-lane verification: both lanes drained (verify-and-report tick)
 
 Per "re-run research fresh, don't reason from cached recollection," did the expensive full re-verification this tick
