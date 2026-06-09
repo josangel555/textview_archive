@@ -88,12 +88,21 @@ struct ImagePreview: View {
     /// Memo for currentIndex — computed once per (siblings, url) pair
     /// rather than O(N) per body re-eval.
     @State private var currentIndex: Int = 0
+    /// Image-editor PoC (TSK-342): toggled from the control bar; overlays the
+    /// non-destructive editor on top of the viewer.
+    @State private var editing = false
     @FocusState private var focused: Bool
 
     var body: some View {
         ZStack {
             Palette.windowBackground
                 .ignoresSafeArea()
+            // Drop the opaque NSViewRepresentable from the tree entirely
+            // while editing — its CALayer would otherwise composite OVER the
+            // SwiftUI editor overlay (the recurring sibling-blank pathology;
+            // see LESSONS.md / CLAUDE.md). With it gone, the editor overlay
+            // has nothing to be occluded by.
+            if !editing {
             ImageScrollHost(url: url,
                             magnification: magnification,
                             onLoad: { size in
@@ -120,10 +129,17 @@ struct ImagePreview: View {
                                 // % HUD (binds to `magnification`) honest.
                                 magnification = fitMag
                             })
+            }
             VStack {
                 Spacer()
                 controlBar
                     .padding(.bottom, 12)
+            }
+        }
+        .overlay {
+            if editing {
+                ImageEditorView(url: url) { editing = false }
+                    .transition(.opacity)
             }
         }
         .focusable()
@@ -200,6 +216,13 @@ struct ImagePreview: View {
                     .font(.system(size: MediaPreviewView.infoFontSize(uiScale: uiScale), design: .monospaced))
                     .foregroundStyle(.tertiary)
             }
+            Divider().frame(height: 14)
+            Button(action: { editing = true }) {
+                Image(systemName: "slider.horizontal.3")
+            }
+            .buttonStyle(.borderless)
+            .helpInfo(title: "Edit image", description: "Adjust tone, rotate, and export a copy")
+            .accessibilityIdentifier("mdv.imagePreview.editButton")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
