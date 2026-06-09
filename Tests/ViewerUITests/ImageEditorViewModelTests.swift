@@ -154,4 +154,42 @@ final class ImageEditorViewModelTests: XCTestCase {
         XCTAssertTrue(vm.document.isPristine, "identity sliders contribute no ops")
         XCTAssertNil(vm.lastError)
     }
+
+    /// Decode encoded image bytes back to its pixel dimensions (nil if undecodable).
+    private func decodedDims(_ data: Data) -> (w: Int, h: Int)? {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil),
+              let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
+        return (img.width, img.height)
+    }
+
+    func test_exportData_png_reflectsGeometryEdit() throws {
+        let vm = try makeVM()
+        vm.commitGeometry(.resize(width: 20, height: 15))
+        let data = try vm.exportData(format: .png)
+        let dims = decodedDims(data)
+        XCTAssertEqual(dims?.w, 20, "export encodes the EDITED document, not the 40px source")
+        XCTAssertEqual(dims?.h, 15)
+    }
+
+    func test_exportData_jpeg_isDecodable() throws {
+        let vm = try makeVM()
+        let data = try vm.exportData(format: .jpeg, quality: 0.6)
+        XCTAssertFalse(data.isEmpty)
+        let dims = decodedDims(data)
+        XCTAssertEqual(dims?.w, 40)
+        XCTAssertEqual(dims?.h, 30, "JPEG export round-trips to the source dims")
+    }
+
+    func test_export_writesAtomicFile() throws {
+        let vm = try makeVM()
+        vm.brightness = 0.3   // ensure an edit is present
+        vm.render()
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-editor-export-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try vm.export(format: .png, to: url)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        let onDisk = try Data(contentsOf: url)
+        XCTAssertEqual(decodedDims(onDisk)?.w, 40, "written PNG decodes at the edited document's size")
+    }
 }

@@ -1,5 +1,6 @@
 import Combine
 import CoreGraphics
+import Foundation
 import ViewerCore
 
 /// Host-testable model layer for the image editor (TSK-342 UI enablement over
@@ -129,6 +130,22 @@ public final class ImageEditorViewModel: ObservableObject {
     public func revertAll() {
         base = base.reverted()
         resetTonal()   // re-renders
+    }
+
+    // MARK: - Export
+
+    /// Encode the current edited `document` (geometry history + live tonal
+    /// state) to image bytes in the given format. `quality` is clamped to 0…1
+    /// and ignored for the lossless PNG format. This is the editor's "Export"
+    /// flow — it re-derives from `source + ops`, so it always exports the WYSIWYG
+    /// preview, never the untouched source.
+    public func exportData(format: ExportSpec.Format, quality: Double = 0.9) throws -> Data {
+        try Exporter.export(document, ExportSpec(format: format, quality: quality))
+    }
+
+    /// Encode the current edited `document` and write it atomically to `url`.
+    public func export(format: ExportSpec.Format, quality: Double = 0.9, to url: URL) throws {
+        try exportData(format: format, quality: quality).write(to: url, options: .atomic)
     }
 }
 
