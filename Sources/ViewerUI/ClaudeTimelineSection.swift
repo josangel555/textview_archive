@@ -172,21 +172,36 @@ struct ClaudeTimelineSection: View {
             // about the active session.
             var parsed: [ClaudeEvent] = []
             if let latest = jsonls.first {
-                let parser = ClaudeLogParser()
-                // Surface only through the redaction barrier — this sidebar
-                // renders event.summary / event.detail directly (rows + .help),
-                // so it must honor the same redaction contract as the monitor
-                // window and transcript search. `events(from:)` is the
-                // non-redacting path and must NOT feed a surfacing consumer.
-                parsed = (try? parser.redactedEvents(from: latest)) ?? []
-                // Reverse-chrono: most recent first.
-                parsed.reverse()
-                if parsed.count > 200 { parsed = Array(parsed.prefix(200)) }
+                // Load through the testable redaction kernel (see `timelineEvents`).
+                parsed = Self.timelineEvents(from: latest)
             }
             await MainActor.run {
                 self.events = parsed
                 self.transcriptCount = count
             }
         }
+    }
+
+    /// Pure, host-testable kernel that loads the timeline's events for a
+    /// transcript at `url`: parse through the MANDATORY redaction barrier
+    /// (`redactedEvents`, NEVER the non-redacting `events`), then reverse-chrono
+    /// + cap. Extracted from the inline `refresh()` closure so the redaction
+    /// contract is regression-guarded by a host test (TSK-178).
+    ///
+    /// SECURITY (TSK-178): this sidebar renders `event.summary` directly (rows +
+    /// `.help` tooltips), so it must surface ONLY redacted content — same
+    /// contract as the monitor window and transcript search. Reverting to
+    /// `parser.events(from:)` here would leak raw secrets (e.g. a tool-call
+    /// `headers` value) into the UI; `ClaudeTimelineRedactionTests` fails if it
+    /// does.
+    nonisolated static func timelineEvents(
+        from url: URL,
+        parser: ClaudeLogParser = ClaudeLogParser(),
+        cap: Int = 200
+    ) -> [ClaudeEvent] {
+        var parsed = (try? parser.redactedEvents(from: url)) ?? []
+        parsed.reverse()                                    // most recent first
+        if parsed.count > cap { parsed = Array(parsed.prefix(cap)) }
+        return parsed
     }
 }
