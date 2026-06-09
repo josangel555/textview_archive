@@ -29,6 +29,35 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+109) — TSK-402 reconciliation validated; 4 built-core features PARKED on the VM-wiring decision
+
+Two ticks of board hygiene (system-of-record advanced, no code commit — nothing un-gated left to build):
+
+- **TSK-402 (board reconciliation chore) → validated.** Ran the pass: a fresh `task_list{state:reported,
+  sort:created ASC}` shows the deep-audit finding tail is FULLY drained from `reported` (oldest reported =
+  TSK-256+ feature-backlog items; zero TSK-1xx severity findings remain). Spot-checked the 3 it cited:
+  TSK-167 validated, TSK-190 fixed/held (no injectable teeth), and the perf finding it flagged maybe-open —
+  #270 `CSVParser.appendToField` O(n²) — is ALREADY fixed (`CSVParser.swift:188` keeps an incremental
+  `fieldScalarCount`, O(1)/char, no `.count` rescan; `RustCSVGate` defaults OFF so the Swift parser is the
+  live path). Validated with a board-state checks artifact. Reconciliation complete — do NOT re-run it.
+- **TSK-300/302/303/310 (4 progress-lane features) → PARKED (waiting=human, decision).** All four have
+  committed + host-tested CORE slices (Save-a-Copy engine+verb 6c2fc9e/SaveCopyTests; CSV cell-cursor
+  a12391c; find-in-table e1dc879; Files fuzzy-filter 654015b) but were sitting silently at `progress` —
+  each blocked on the SAME gate: the remaining SwiftUI/AppKit UI wiring (menu/NSSavePanel/key-handlers/
+  filter-row) is host-untestable (no-UI-on-host) and needs VM pixel validation. Since the VM render lane is
+  now UNBLOCKED (TSK-502, d0999c6), parked them with the genuine fork for the owner: write the UI wiring +
+  VM-validate (drive to done), or hold/deprioritize. Per the "park stuck tasks, don't stall the loop" directive.
+- **PORT lane re-verified feature-complete (fresh, per anti-staleness):** TUI `main.rs` confirms in-file find
+  (`/`), cross-file grep (`F`, TSK-213), hex search, CSV filtering, `ViewMode::Diff`, formatted mode all
+  present. Remaining PORT gaps are dep-gated only (comrak/tree-sitter, owner-approval).
+- **Process note:** the board PROJECT KEY is `tasked` (prefix TSK), NOT `markdown_viewer` — querying the
+  latter returns empty (a false "drained" signal). `task_next` stays wedged on foreign TSK-104 (agent:forge);
+  pull via `task_list{project:"tasked"}` directly. Captured in memory.
+
+**Net board state:** `progress` lane cleaned (only stale old PoCs TSK-109/110/111 + foreign TSK-103 remain);
+~12 parks `waiting=human` (prior 8 + the 4 new built-core features); reported = owner-design-gated backlog +
+dep-gated. No host-completable, non-fabricated, un-gated work remains — the board is owner/VM-bound.
+
 ## LOG 2026-06-09 (latest+108) — VERIFIED: rust-core PORT lane is FEATURE-COMPLETE (no actionable item left); board owner-bound
 
 Followed "drain the PORT lane, don't idle" — but verified by reading the code that the PORT front-end features are
