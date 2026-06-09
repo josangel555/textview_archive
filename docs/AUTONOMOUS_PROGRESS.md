@@ -29,6 +29,28 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+92) — TSK-476 VALIDATED (compile-checked #selector) + corrected the saturation read
+
+Real actionable work found — by querying the BOARD directly (`task_list state=triaged`/`progress`) instead of the
+reminder TaskList. **KEY LESSON: the built-in reminder `#NNN` numbering is a TOTALLY different system from the
+board `TSK-NNN`** — e.g. reminder "#261 parity harness" = board TSK-261 "move the + tab icon" (already fixed);
+reminder "#263 paging" = board TSK-263 "Source line-hover highlight" (validated). My last two "saturation" ticks
+partly conflated the two. The board's `triaged` lane still has genuinely-open, host-actionable items.
+- **TSK-476 (compile-checked `#selector`) — landed + validated (commit `3eb544d`).** The 3
+  `NSSelectorFromString("openDocument:")`/openFolder/showSettings sites (silent failure on rename) now use
+  `#selector(AppMenuActions.x(_:))`. Cross-module wrinkle: the `@objc` action methods are on `AppDelegate` in the
+  top `MarkdownViewer` module, which `ViewerUI` (the call sites) can't import — so a new `@MainActor @objc protocol
+  AppMenuActions` in ViewerUI names the 3 responder-chain actions, the call sites reference them, and `AppDelegate`
+  conforms → a rename breaks the build at BOTH the `#selector` site and the conformance (end-to-end compile safety).
+  Teeth: the build itself (the references only compile if the protocol declares each method) + `AppMenuActionsTests`
+  (host 2/0) pinning each `#selector == ` the original ObjC string (behaviour-preserving; bites signature drift) +
+  a conformer `responds(to:)` check. Headless gate green. The 4th `NSSelectorFromString` (DiagnosticDump
+  `recursiveDescription`) is a private AppKit method we don't declare → correctly out of scope.
+- **Board has more triaged work** (host-actionable, found this tick but not done): TSK-266/267 (tab-close / 1MB-HEX
+  slowness — perf, but `blocker: live-validation`, need Instruments not headless), TSK-282/310 (sidebar fuzzy
+  filter — core done, UI render-gated), TSK-106 (forge SSE — foreign, skip). Many `progress`-state tasks have a
+  host-tested core slice landed + a render-gated UI half (TSK-300/302/303/334/347).
+
 ## LOG 2026-06-09 (latest+91) — saturation re-verified (honest no-fabrication tick); the queue is owner-bound
 
 Searched hard for actionable work (SwiftUI first, then PORT) and re-confirmed the board is saturated for
