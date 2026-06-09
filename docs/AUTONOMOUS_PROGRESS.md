@@ -29,6 +29,32 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+85) — TSK-257 increment 1: mdvcore-highlight tree-sitter engine (owner-approved dep, host teeth)
+
+Started the owner-approved tree-sitter syntax-highlighting feature (TSK-257, park resolved "Approve tree-sitter +
+full grammar set"). Landed **increment 1 — the engine** (commit `6cfd047`): a NEW `mdvcore-highlight` crate.
+- **Placement (the architecture call):** NOT in `default-members` → excluded from the merge gate + the macOS
+  SwiftUI app build (verified: `grep -c mdvcore-highlight|tree-sitter` on the rust-core-gate log = 0). It links C
+  grammars via `unsafe` FFI, so it can't live in `#![forbid(unsafe_code)]` `mdvcore-core`. Same scoping as
+  ratatui/crossterm in the tui crate.
+- **API:** `highlight(src, lang) -> Vec<Span{start, end, TokenKind}>` over `tree-sitter-highlight` — runs the
+  grammar's highlights query, collapses nested captures to the innermost on a stack, folds tree-sitter capture
+  names to a normalised `TokenKind` (Keyword/String/Number/Comment/Function/Type/Constant/Variable/Property/
+  Operator/Punctuation/Tag/Attribute/Other) the front-ends colour. `Lang::from_extension`.
+- **Deps (pinned exactly):** `tree-sitter =0.25.10`, `tree-sitter-highlight =0.25.10`, grammars
+  `tree-sitter-json =0.24.8` / `tree-sitter-rust =0.24.0` / `tree-sitter-javascript =0.25.0` (the remaining 8 of
+  the SwiftUI app's set follow as increments). Grammars are ABI-decoupled via `tree-sitter-language`.
+- **Host teeth (cargo test -p mdvcore-highlight 5/0):** extension mapping; json string/number/property; rust
+  keyword/`@constant.builtin`-literal/comment/string/fn-name; js keyword/string; empty→no spans. Verified the
+  rust-vs-json number classing (rust integer literals are `@constant.builtin`, not `number`) against REAL grammar
+  output (an `examples/` probe), not assumed — then corrected the test to the true behaviour.
+- rust-core merge gate **green** and the new crate confirmed **absent** from it.
+
+**REMAINING increments** (TSK-257 stays `progress`): (2) TUI wiring — `TokenKind`→ratatui `Color` on the
+`ViewBody::Text` arm (needs a byte-offset→line map + coexistence with whitespace-reveal/wrap/gutter/flash + UTF-8
+boundary span-splitting) + TestBackend per-cell fg teeth; (3) web wiring — `TokenKind`→CSS class; (4) expand to
+the full 11-grammar set. Increment 2 is the clean next pass (careful render integration, not a tail-of-tick rush).
+
 ## LOG 2026-06-08 (latest+84) — PORT-lane reconciliation: TSK-335 + TSK-255 validated, owner deps actioned (256 parked, 257 unblocked)
 
 With both render-gated SwiftUI PoCs done, drained the PORT lane per the owner directive — and found it owner-bound, so reconciled it honestly:
