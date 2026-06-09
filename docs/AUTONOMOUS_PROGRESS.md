@@ -29,6 +29,29 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+87) — TSK-257 increment 3: WEB source view is syntax-highlighted (HTML-span teeth)
+
+Wired highlighting into the **web** front-end (commit `1b57b93`), reusing the engine's `highlight_lines()` — so
+the feature now works in BOTH rust-core front-ends (TUI inc.2 + web inc.3) over json/rust/js, each host-teeth-tested.
+- `content_html` computes per-line segments (Text mode + recognised ext + NOT whitespace-reveal) and threads them
+  into `gutter_html`, which wraps coloured kinds in `<span class="tok-…">`. The segment text is escaped via the
+  existing `esc()` so the output is exactly the escaped line PLUS span wrappers — **XSS-safe** (no raw user bytes
+  reach the span markup). `token_class` maps `TokenKind`→a CSS suffix; `.tok-*` colour rules added to the page
+  stylesheet (light + dark, OneDark-ish palette). HEX / Formatted / plain-text untouched (mode + lang gates).
+- Host teeth (`mdvcore-web` 75/0): a `.rs` view carries `<span class="tok-kw">fn</span>` + a `tok-str` string span
+  + the `.tok-kw` CSS rule; `.txt` + HEX carry NO token spans (gates). **Teeth demonstrated:** neutering
+  `token_class` drops the spans → the `.rs` test goes red, then restored. Updated the pre-existing JSON Text-mode
+  assertion to the highlighted-compact form (`<span class="tok-str">&quot;a&quot;</span>:` proves highlight + compact).
+- rust-core merge gate **green**; web + highlight confirmed **absent** from it (scoped out via `default-members`).
+
+**These rust front-ends have GENUINE host coverage** (TUI TestBackend per-cell fg; web HTML span assertions) —
+unlike the SwiftUI render path, so TSK-257 is **self-validatable on the host, no VM**. **REMAINING:** increment 4
+— expand grammars json/rust/js → the owner-approved full set (ts/tsx/java/c/cpp/c-sharp/swift/kotlin/lua) in
+`mdvcore-highlight` (add crates + `Lang` variants + `grammar()` arms + `from_extension` + a teeth case each), then
+self-validate TSK-257 with the host-teeth artifact. NOTE per-grammar query-const name varies
+(`HIGHLIGHTS_QUERY` vs `HIGHLIGHT_QUERY`) and tree-sitter-typescript ships TWO languages (`LANGUAGE_TYPESCRIPT` /
+`LANGUAGE_TSX`) — verify each crate's exact API when adding.
+
 ## LOG 2026-06-08 (latest+86) — TSK-257 increment 2: TUI source view is syntax-highlighted (TestBackend fg teeth)
 
 Wired the highlight engine into the **TUI source view** (commit `06db6b5`). Two parts:
