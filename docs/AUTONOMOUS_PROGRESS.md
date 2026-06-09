@@ -29,6 +29,31 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+89) — TSK-306/272 preview-tab Phase 2+3 landed (sidebar single-click/arrow → ephemeral slot)
+
+Wired the owner-authorised VSCode-style **preview tab** into the SwiftUI layer over the landed Phase-1 model core
+(commit `e7c712d`). The owner resolved the Phase-2 park on 2026-06-07 ("Authorize a VM UI-test lane for Phase 2").
+- **DocumentModel.openPreview(url:)** threads a `preview` flag through `openResolved` + `openLargeFileOffMain` →
+  `tabCoordinator.openPreview` (reuse the ONE ephemeral slot) instead of `openOrReveal`. The `preview=false`
+  default path is byte-identical to before — no behaviour change to existing opens.
+- **Auto-promote-on-edit**: editing a preview tab (`updateEditorText`) calls `promoteTab` so a dirty buffer can't
+  be silently scrubbed by the next single-click. Cheap guard (`tabs.previewTabID == id`).
+- **SidebarView**: single-click (`activate`) opens into the preview slot; a second click / Enter / edit promotes
+  it (the 2nd click finds it already-open → `openPreview` routes to `openOrReveal` → rebuild drops `isPreview` =
+  promote, for free — no finicky double-click gesture needed). Arrow **Up/Down** previews the newly-highlighted
+  FILE (TSK-272), directories just move the highlight.
+- **TabBar**: italic title for the ephemeral preview tab (Phase 3 affordance, `.italic(tab.isPreview)`).
+- **Host teeth** (`DocumentModelPreviewTests` 7/0, window-free): openPreview reuses ONE slot across files; all
+  THREE commit gestures promote (re-open/double-click, `open()`/Enter, edit); already-permanent file is revealed
+  not demoted; never-two-previews invariant. Edit-promote teeth **demonstrated red** by neutering the hook,
+  restored. Headless gate **PASSED** (two intermittent fails — PluginSubprocessHost timeout + FoldBench wall-clock
+  — are the documented load-flake classes; both pass in isolation, unrelated to this change; re-run green).
+- **HONEST STATE = `fixed`, not `validated`.** The SwiftUI gesture/arrow routing + the italic pixel are the
+  VM-only render layer (per the testing directive, SwiftUI view wiring has NO host coverage). This lands the
+  host-testable boundary beneath them; the remaining step is a VM T4/T5 scene that drives a real sidebar
+  click/arrow and asserts the preview tab (owner-authorised Phase-2 VM lane). TSK-306 → `fixed` (commit `e7c712d`),
+  TSK-272 commented (shares the same VM-validation gate).
+
 ## LOG 2026-06-09 (latest+88) — TSK-257 + TSK-258 VALIDATED: syntax highlighting COMPLETE (full 12-grammar set)
 
 Increment 4 landed (commit `1590bf8`): `mdvcore-highlight` now carries the **full owner-approved grammar set** —
