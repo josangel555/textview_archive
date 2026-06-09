@@ -29,6 +29,26 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+114) — bug/contract cluster: TSK-438 + TSK-465 DONE, TSK-437 validated
+
+Mined the `fixed`-lane bug/contract cluster (per +113's next-step). Verified each fix against current code + ran teeth fresh:
+
+- **TSK-438 → done** — Session index.json empty-clobber (root cause of #330). Fix is entirely in the SessionStore layer
+  (no UI): guard (bf395f9) refuses to persist an empty index while liveSnapshotIDs() is non-empty; recovery (38cf3e6)
+  rebuilds the index from orphaned live snapshots on restore (selective, deduped-by-root, capped 24). SessionIndexClobberGuardTests
+  5/0. Fully host-validatable → done.
+- **TSK-465 → done** — [backend-not-surfaced] LSP initializationOptions parsed from lsp.json but dropped before the
+  initialize request. Threaded through Config + initialize params (pure wire logic, no UI). LSPInitializeParamsTests 32/0 +
+  LSPWorkspaceOverridesTests 4/0 = 36 tests assert overrides parse + appear in emitted initializeParams.
+- **TSK-437 → validated (not done)** — File→Reset feature. The AppCacheReset ENGINE (recoverable move-to-_reset-backups,
+  never-delete, relaunch-bypass-flush) is the substantive/risky part and is teeth-tested (AppCacheResetTests 5/0). The
+  remaining surface is the File→Reset NSMenu wiring (AppKit UI, not host-testable) → owner closes validated→done after eyeball.
+
+No code change — verify-and-validate closures. **SELECTION RULE reaffirmed:** a bug fix that lives entirely in a
+model/store/wire layer (TSK-438/465) is done-able on host teeth; a feature whose deliverable includes an NSMenu/UI surface
+(TSK-437) stops at validated even when its engine is fully tested. `fixed`-lane bug/contract mining continues next tick
+(terminal model tasks TSK-456-461 are MIXED model+UI — validate only the genuinely model-scoped ones; TSK-482 perf = held).
+
 ## LOG 2026-06-09 (latest+113) — drained the Omni-invokable scriptVerb cluster: TSK-411–414 DONE
 
 Continued the `fixed`-lane verify-and-validate lane. The scriptVerb-gap cluster ("make X Omni-invokable + automatable")
