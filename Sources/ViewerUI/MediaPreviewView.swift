@@ -89,8 +89,12 @@ struct ImagePreview: View {
     /// rather than O(N) per body re-eval.
     @State private var currentIndex: Int = 0
     /// Image-editor PoC (TSK-342): toggled from the control bar; overlays the
-    /// non-destructive editor on top of the viewer.
-    @State private var editing = false
+    /// non-destructive editor on top of the viewer. `MDV_START_IMAGE_EDIT=1`
+    /// opens straight into edit mode so a T5 pixel test can validate the editor
+    /// without synthesizing a button tap (the toggle is local @State, not
+    /// script-reachable).
+    @State private var editing =
+        ProcessInfo.processInfo.environment["MDV_START_IMAGE_EDIT"] == "1"
     @FocusState private var focused: Bool
 
     var body: some View {
