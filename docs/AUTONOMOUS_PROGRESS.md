@@ -5584,3 +5584,23 @@ and lossless+AAC export:
   VM-gated UI (waveform/spectrum render + transport TSK-529; trim-handle/fade-curve drag) or the parked MP3 dep.
   The whole media-editing + Code-Review host-core frontier is now owner/VM-bound; image Save-As UI (TSK-524) is
   also VM-gated. Next host-completable work, if any, is back in the rust-core [PORT] lane or net-new core asks.
+
+## LOG +151 (2026-06-09, autonomous tick — board host-frontier drained; one net-new audio core: gain/normalize)
+Reconnaissance + one real host-completable feature:
+- **Board state check:** the `reported` lane is now entirely large wishlist features (Debugger, Photo editor,
+  Vector store, Layers, AWS console, Front-picker, …) or PARTIAL items whose only remaining gap is VM-gated UI;
+  no clean host-completable rust-core [PORT] task remains there either. Verified board TSK-276 = mislabeled
+  "[BACKLOG] Debugger" (the IndentDetector-CRLF work it carries is genuinely already fixed+tested; a prior session
+  flagged the #NNN-vs-TSK-NNN mislabel for owner reopen). So the owner-priority host frontier is genuinely drained.
+- **TSK-531 → DONE (NEW, net-new audio core)** (commit 1f13105): the most basic missing audio edit — amplitude
+  control. `AudioEditOp.gain(decibels:)` (×10^(dB/20)) + `.normalize(targetPeakDB:)` (peak→target dBFS, silence
+  no-op) on the op-list, + `AudioPCMBuffer.peakAmplitude()/rmsAmplitude()` metering. 13 teeth (26/26 with the
+  trim/fade suite — the internal fadeGain rename is regression-free). Squarely in the owner's "basic audio editing
+  … scale" ask; pure float DSP, zero deps. Gate's only failure = the documented FoldBench perf flake (486ms vs
+  250ms under load); no non-bench failures.
+- `main` @ 1f13105 (+ this log). HONEST STATE: the host-completable frontier for the owner's stated priorities is
+  exhausted — further audio/image additions would be gold-plating, and everything left on the board is VM-gated UI
+  (render lane behind parked TSK-502), an owner decision (MP3 dep TSK-528; comrak TSK-256; deps 247–249), or a
+  large unscoped wishlist (Debugger, Photo-editor, Vector-store, Layers, multi-window, archive-browsing). To
+  re-open the productive lane the owner needs to: unblock the VM pixel lane (TSK-502), answer a parked dep
+  decision, or greenlight one of the big wishlist features. Parked items + this state are surfaced on the board.
