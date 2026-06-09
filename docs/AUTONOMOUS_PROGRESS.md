@@ -5563,3 +5563,24 @@ host teeth fully cover the deliverable and self-validation to `done` is in-polic
 - `main` @ 4d99a1c (+ this log). Remaining audio host cores: TSK-527 (trim/fade ops on AudioPCMBuffer — pure,
   host-testable, next) and TSK-528 (WAV/AAC encoders — host-testable; MP3 ENCODE is unsupported by AVFoundation →
   needs an owner dep decision). The audio viz UI (TSK-529) + image Save-As UI (TSK-524) are VM-gated.
+
+## LOG +150 (2026-06-09, autonomous tick — audio edit-ops DONE + encoders fixed, MP3 parked)
+Audio host-core wave continued — the ViewerCore/Audio subsystem now covers decode→PCM, waveform, FFT, edit ops,
+and lossless+AAC export:
+- **TSK-527 → DONE** (commit e33f5e2): non-destructive `AudioEditOp{trim,fade(linear|equalPower,in|out)}` +
+  `AudioDocument(source+ops)` (rendered/undo/revert), mirroring the ImageDocument op-list pattern. 13 teeth
+  (trim range/clamp/invert; fade-in 0→1 linear-mid 0.5 / equalPower-mid 0.707=-3dB; fade-out symmetric;
+  range-isolation; silence-stays-silent; doc replay+undo+revert; op Codable). Gate PASSED clean (no flake).
+- **TSK-528 → fixed + PARKED** (commit 1ad4c92): `AudioExportSpec` + `AudioExporter.encode` — WAV/AIFF/CAF
+  (lossless PCM, selectable bit depth) + AAC (lossy, bitrate) via `AVAudioFile` (system framework, no deps).
+  6 teeth (WAV int16+float32 round-trip through our decoder, bit-depth honored, AAC→non-empty decodable .m4a,
+  empty-guard). **MP3 encode is NOT supported by AVFoundation on macOS** → `.mp3` throws
+  `.mp3RequiresExternalEncoder`; PARKED the MP3 external-encoder dep as an owner decision (options: drop MP3 +
+  ship AAC [recommended] / bundle LAME / shell out to ffmpeg). The WAV+AAC half is host-complete.
+- **Gate flake (recurring, documented):** TSK-528's gate failed only on `GrandchildPipeTests` (plugin-subprocess
+  fd-accounting, 32→40 grew exactly 8 under parallel load) — same one TSK-525 hit; passes isolated, audio spawns
+  no subprocesses. No real failures.
+- `main` @ 1ad4c92 (+ this log). The audio HOST-CORE wave is essentially drained: every remaining audio piece is
+  VM-gated UI (waveform/spectrum render + transport TSK-529; trim-handle/fade-curve drag) or the parked MP3 dep.
+  The whole media-editing + Code-Review host-core frontier is now owner/VM-bound; image Save-As UI (TSK-524) is
+  also VM-gated. Next host-completable work, if any, is back in the rust-core [PORT] lane or net-new core asks.
