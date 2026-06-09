@@ -334,7 +334,7 @@ public enum Renderer {
     /// the 8-bit-per-channel layout vImage wants. Kept as an explicit, verifiable
     /// loop for the PoC (and because vImage tallies premultiplied bytes without
     /// the un-premultiply this does), mirroring the `resize` vImage note.
-    static func histogram(_ image: CGImage) throws -> Histogram {
+    public static func histogram(_ image: CGImage) throws -> Histogram {
         let width = image.width
         let height = image.height
         guard width > 0, height > 0 else { throw ImageEditError.degenerateGeometry }
