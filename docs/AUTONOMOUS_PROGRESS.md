@@ -29,6 +29,27 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+96) — TSK-332: unknown-extension ASCII files open as Source, not HEX (host-validated)
+
+Picked **TSK-332** from the `progress` lane (a real host-completable SwiftUI-core gap, stale-claimed by a prior
+session). Bug: an unknown-EXTENSION file whose bytes are renderable ASCII opened in the HEX byte-grid and offered
+only HEX, because view-mode resolution was extension-only and never consulted the loader's text/binary verdict.
+
+- The `isRenderableText` hint already existed on `ViewModeOptions.{defaultMode,availableModes}` (unit-tested in
+  `ViewModeMediaDefaultTests`) — the gap was that NO DocumentModel call site threaded it.
+- **Fix (commit `9a66c77`):** `DocumentModel.renderableTextHint(_:)` derives the hint from `DocumentState`
+  (`.loaded` ⇒ true; every other state ⇒ nil, leaving the extension default). Factored the carry-mode logic out of
+  `openResolved`'s inline closure into `resolveOpenMode(_:forceNewTab:isRenderableText:)` so BOTH the default and the
+  carry-membership check honor the hint. `openResolved` now resolves the mode AFTER the sync load and threads
+  `renderableTextHint(state)`; `availableViewModes` threads it from `tabs.selected?.state`. The off-main large-file
+  path resolves un-hinted (no sync read) and self-corrects via `availableViewModes` once the async load lands
+  `.loaded`. The lazy/session-restore append (`.empty` state) correctly passes no hint.
+- **Host teeth:** `DocumentModelRenderableTextModeTests` (3/0) — a real `.xyzzy` ASCII file opens as `.source` +
+  offers `[Source,HEX]`; a NUL-byte `.xyzzy` stays `.hex`-only (content-driven, not blanket unknown→source); the
+  state→hint derivation. **Demoed red** (suppress the hint → opens HEX). Headless gate green on the committed tree.
+- **Fully host-validatable** (no render-gated remainder): the bug was mode RESOLUTION; Source rendering is
+  pre-existing tested behavior, so the model-state outcome IS the feature. Self-validated → `validated`.
+
 ## LOG 2026-06-09 (latest+95) — board reconciliation: TSK-344 + TSK-349 host-engines → validated; answered owner Q on TSK-362
 
 After TSK-521 landed, swept the `fixed` lane for host-complete+tested work conservatively left unvalidated, and
