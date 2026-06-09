@@ -13,32 +13,31 @@ import Foundation
 ///
 /// ## Observability reality for THIS group (probed against a live dump)
 ///
-/// The session **value layer** (list, active pointer, dedup, LRU, rename
-/// guards, close pipeline) is fully observable from a scripted run and is
-/// asserted hard below. The session **mount/façade layer** (per-session tab
-/// capture & restore, sidebar re-root on switch, split/expansion/hidden reset,
-/// panel layout, watcher pause/resume) is **NOT observable** from this harness,
-/// and that is the headline finding (F-SESS-1).
+/// Both the session **value layer** (list, active pointer, dedup, LRU, rename
+/// guards, close pipeline) AND the session **mount/façade layer** (per-session
+/// tab capture & restore, sidebar re-root on switch) are now fully observable
+/// from a scripted run and are asserted hard below.
 ///
-/// **Root cause (verified, `main.swift:215`)**: the lifecycle bridge that the
-/// Phase-1 façade swap rides on (`SessionsCoordinator.setLifecycle` → tab
-/// reset + `hydrate` + sidebar re-root + watcher pause) is wired EXCLUSIVELY
-/// inside `SessionsAppCoordinator.bootstrap()`. `bootstrap()` is gated behind
-/// `MDV_SKIP_WORKSPACE_RESTORE != "1"` — and the test harness
-/// (`AppLauncher.runScript`) ALWAYS sets `MDV_SKIP_WORKSPACE_RESTORE=1` so each
-/// scenario starts clean. Net: in every scripted run the coordinator's
-/// `lifecycle` stays `nil`, so `openFolder`/`activate`'s `lifecycle?.mount(snap)`
-/// is a no-op. The session **list + activeID** update correctly (those are pure
-/// value-layer), but the **model never re-hydrates** — tabs don't swap, the
-/// sidebar never re-roots off the argv file's parent, nothing pauses.
+/// **History (F-SESS-1, RESOLVED 2026-06-03 by commit 5b9d82e / SFB-10):** the
+/// façade layer used to be un-observable here because the lifecycle bridge
+/// (`SessionsCoordinator.setLifecycle` → tab reset + `hydrate` + sidebar
+/// re-root) was wired EXCLUSIVELY inside `SessionsAppCoordinator.bootstrap()`,
+/// which is gated behind `MDV_SKIP_WORKSPACE_RESTORE != "1"` — and the harness
+/// (`AppLauncher.runScript`) always sets `MDV_SKIP_WORKSPACE_RESTORE=1`. So the
+/// coordinator's `lifecycle` stayed `nil` and `openFolder`/`activate`'s
+/// `lifecycle?.mount(snap)` was a no-op (tabs didn't swap, sidebar didn't
+/// re-root). SFB-10 hoisted `wireLifecycle()` OUT of `bootstrap()` and calls it
+/// UNCONDITIONALLY at `main.swift:238`; only the disk-restore (`bootstrap()`)
+/// stays behind the flag. Net: scripted session switches now perform the real
+/// per-session façade swap, and `test_SESS01_facadeSwapsPerSession_onSwitch`
+/// pins it with positive hard asserts (observed on the VM disclaim lane, TSK-518).
 ///
-/// Consequence: SESS-01 steps 5-6 (tab restore on switch), SESS-05 (per-session
-/// split/expansion/hidden), SESS-06 (global-vs-per-session zoom across switch),
-/// SESS-08 (watcher pause), SESS-09 (panel layout), and ALL relaunch-restore
-/// halves (SESS-03 step 4, SESS-07, SESS-10) are un-automatable here and are
-/// enumerated in the run log as manual/VM-lane gaps. They need either a
-/// foreground VM session WITHOUT the skip flag, or a future test hook that
-/// wires the lifecycle bridge under the clean-room flag.
+/// Still VM-lane / manual (not reachable from this model-state dump): SESS-05
+/// (per-session split/expansion/hidden), SESS-06 (global-vs-per-session zoom),
+/// SESS-08 (watcher pause), SESS-09 (panel layout), and the relaunch-restore
+/// halves (SESS-03 step 4, SESS-07, SESS-10) — those need a foreground VM
+/// session WITHOUT the skip flag (real disk restore) or surfaces this projection
+/// doesn't carry (split state, zoom-per-session, watcher status).
 ///
 /// TIER-JUSTIFY: T4 — the observable is the assembled bundle's real
 /// cross-process AppDelegate↔SessionsAppCoordinator↔SessionsCoordinator↔
@@ -358,18 +357,23 @@ final class SessionsUATTests: MultiScenarioTestCase {
         ])
     }
 
-    // MARK: - F-SESS-1 — façade-swap NON-observability probe (the headline)
+    // MARK: - SESS-01 — per-session façade swap on switch (the headline)
 
-    /// OBSERVATION PROBE (non-fatal logging via assertions that PIN the
-    /// CURRENT scripted-run behaviour): demonstrates that under the harness's
-    /// clean-room flag the session list/active pointer update, but the per-
-    /// session FAÇADE (tabs, sidebar root) does NOT swap on session change —
-    /// because the lifecycle bridge is nil (see suite doc + F-SESS-1 in the run
-    /// log). This is the un-observability proof, NOT a product bug assertion:
-    /// the live UI (foreground, restore enabled) DOES swap. We pin the scripted
-    /// behaviour so a future change that DOES wire the bridge under the flag
-    /// trips this test and prompts moving SESS-01/05/06/08/09 to hard asserts.
-    func test_SESS01_tabAndSidebar_doNotSwitch_probe() throws {
+    /// SESS-01 façade-swap HARD ASSERT. With the lifecycle bridge wired
+    /// unconditionally (SFB-10, `main.swift:238` — see suite doc), a scripted
+    /// session switch performs the real per-session façade swap: the tab list
+    /// and sidebar root are CAPTURED for the leaving session and RESTORED for
+    /// the entering one. Pinned against values observed on the VM disclaim lane
+    /// (TSK-518). Supersedes the old F-SESS-1 non-observability probe, which
+    /// asserted the inverse (no swap) under the now-retired nil-bridge regime.
+    ///
+    /// Script timeline (even indices = verbs, odd = settle delays):
+    ///   0 open-folder projA → 1 tab (argv arg.txt), sidebar=projA
+    ///   2 open a1           → 2 tabs
+    ///   4 open a2           → 3 tabs, active file a2.txt
+    ///   6 open-folder projB → SWAP: fresh projB session, 0 tabs, sidebar=projB
+    ///   8 activate 1        → SWAP BACK: projA restored — 3 tabs, a2.txt, sidebar=projA
+    func test_SESS01_facadeSwapsPerSession_onSwitch() throws {
         let projA = try harness.makeDir("projA")
         let projB = try harness.makeDir("projB")
         let a1 = try harness.writeFile("projA/a1.md", "# a1\n")
@@ -390,42 +394,58 @@ final class SessionsUATTests: MultiScenarioTestCase {
         """
         try runScenarios([
             Scenario(
-                name: "facade-noswap-probe",
+                name: "facade-swap",
                 argFile: arg,
                 script: script,
                 assert: { [self] dumps, file, line in
                     // 0 openA,2 open a1,4 open a2,6 openB(switch),8 activate 1
                     XCTAssertGreaterThanOrEqual(dumps.count, 9, file: file, line: line)
-                    let afterTwoTabs = dumps[4]
+                    let afterThreeTabs = dumps[4]
                     let afterSwitchToB = dumps[6]
                     let afterBackToA = dumps[8]
-                    // Sanity: opening files appended tabs to the shared model
-                    // (argv arg.txt + a1 + a2 = 3).
-                    XCTAssertEqual(tabCount(afterTwoTabs), 3,
-                        "opening a1+a2 (plus argv) → 3 tabs in the shared model",
+
+                    // In projA: argv arg.txt + a1 + a2 accumulate to 3 tabs,
+                    // a2.txt is the active file, sidebar rooted at projA.
+                    XCTAssertEqual(tabCount(afterThreeTabs), 3,
+                        "opening a1+a2 (plus argv) → 3 tabs in projA's façade",
                         file: file, line: line)
-                    // PROBE: switching to projB does NOT empty/swap the tab list
-                    // (façade nil-lifecycle). Pin the current behaviour.
-                    XCTAssertEqual(tabCount(afterSwitchToB), tabCount(afterTwoTabs),
-                        "F-SESS-1: scripted session switch does NOT reset tabs "
-                        + "(lifecycle bridge nil under clean-room flag)",
+                    XCTAssertEqual(activeName(afterThreeTabs), "projA",
+                        "active session is projA before the switch",
+                        file: file, line: line)
+                    XCTAssertTrue(sidebarRoot(afterThreeTabs).hasSuffix("/projA/"),
+                        "sidebar rooted at projA (got \(sidebarRoot(afterThreeTabs)))",
+                        file: file, line: line)
+
+                    // SWAP to projB: a FRESH session → façade resets to 0 tabs,
+                    // active pointer flips to projB, sidebar re-roots to projB.
+                    XCTAssertEqual(tabCount(afterSwitchToB), 0,
+                        "SESS-01: switching to fresh projB swaps the façade to 0 tabs "
+                        + "(projA's 3 tabs captured, not carried over)",
                         file: file, line: line)
                     XCTAssertEqual(activeName(afterSwitchToB), "projB",
-                        "but the active-session POINTER does flip (value layer ok)",
+                        "active session flips to projB on switch", file: file, line: line)
+                    XCTAssertTrue(sidebarRoot(afterSwitchToB).hasSuffix("/projB/"),
+                        "SESS-01: sidebar re-roots to projB on switch "
+                        + "(got \(sidebarRoot(afterSwitchToB)))",
                         file: file, line: line)
-                    // PROBE: switching back to projA does NOT restore projA's
-                    // tabs either — tab list is unchanged.
-                    XCTAssertEqual(tabCount(afterBackToA), tabCount(afterTwoTabs),
-                        "F-SESS-1: switch back does NOT restore per-session tabs",
+
+                    // SWAP BACK to projA (1-based activate 1): projA's façade is
+                    // RESTORED — 3 tabs return, a2.txt is active again, sidebar
+                    // re-roots back to projA. This is per-session persistence.
+                    XCTAssertEqual(tabCount(afterBackToA), 3,
+                        "SESS-01: switching back to projA RESTORES its 3 tabs "
+                        + "(per-session tab persistence)",
                         file: file, line: line)
                     XCTAssertEqual(activeName(afterBackToA), "projA",
-                        "active pointer flips back to projA", file: file, line: line)
-                    // PROBE: the sidebar never re-roots off the argv file's
-                    // parent (the temp scratch dir) on a session change.
-                    let rootB = sidebarRoot(afterSwitchToB)
-                    XCTAssertFalse(rootB.hasSuffix("/projB") || rootB.hasSuffix("/projB/"),
-                        "F-SESS-1: sidebar does NOT re-root to projB on switch "
-                        + "(stays at argv parent: \(rootB))",
+                        "active session flips back to projA", file: file, line: line)
+                    XCTAssertTrue(sidebarRoot(afterBackToA).hasSuffix("/projA/"),
+                        "SESS-01: sidebar re-roots back to projA "
+                        + "(got \(sidebarRoot(afterBackToA)))",
+                        file: file, line: line)
+                    XCTAssertTrue(
+                        ((model(afterBackToA)["currentURL"] as? String) ?? "")
+                            .hasSuffix("a2.txt"),
+                        "SESS-01: the active file (a2.txt) is restored on switch-back",
                         file: file, line: line)
                 })
         ])
