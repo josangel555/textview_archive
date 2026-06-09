@@ -29,6 +29,20 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-08 (latest+72) — TSK-447 VALIDATED on the VM (T4 LiveApp lane confirmed working too)
+
+Using the now-working VM lane to clear `fixed`+`live-validation` items. TSK-447 (stale GP-10 git-panel
+test that asserted pre-BUG-026 behavior; renamed test_GP_10_untrackedInRepoFileHistoryNoOps, commit
+541b3df) — ran it on the VM (launchctl asuser 501, MDV_VM_GUI_SESSION=1): **PASSED 8.4s** → `validated`.
+It's a `GitPanelUATTests` T4 LiveAppTestCase, so this confirms the **T4 LiveApp lane** works on the VM,
+not just T5 pixel. No code change this tick — a pre-existing teeth-bearing test run on the authorized lane.
+
+REMAINING `fixed`+`live-validation` items need NEW VM tests to validate honestly (next-tick work):
+TSK-505 (MetadataPanel SHA-256 row — Copy-command half host-tested; the row needs a pixel/AX test),
+TSK-468 (dead References-button removal — needs an assert-absent check, weak teeth). Also worth a tick:
+a FULL VM UI suite sweep — the lane was blocked for ages, so other tests may have silently diverged like
+TSK-447 did (TSK-500's ulimit fix makes the full single-process run viable).
+
 ## LOG 2026-06-08 (latest+71) — TSK-517 VALIDATED: first render-path fix driven on the newly-unblocked pixel lane
 
 First end-to-end use of the now-working disclaim pixel lane (TSK-502) to drive a real render-path item to
