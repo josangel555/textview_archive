@@ -41,4 +41,23 @@ cargo clippy --manifest-path "$RUST_DIR/Cargo.toml" --workspace --all-targets
 echo "==> cargo test --workspace (all five crates incl. tui/web/highlight)"
 cargo test --manifest-path "$RUST_DIR/Cargo.toml" --workspace
 
+# Header-drift check (audit TSK-539): the clippy/test runs above just re-ran
+# the ffi build script, so crates/ffi/include/mdvcore.h is freshly generated.
+# If the copy SwiftPM actually compiles against (Sources/CMdvCore/mdvcore.h,
+# staged by build-rust-core.sh) differs, Swift is reading the ABI through a
+# stale header — the cross-language memory-corruption setup this gate exists
+# to catch. (Skip when the staged copy doesn't exist yet: fresh clone, Rust-
+# only checkout.)
+GEN_HEADER="$RUST_DIR/crates/ffi/include/mdvcore.h"
+STAGED_HEADER="$ROOT_DIR/Sources/CMdvCore/mdvcore.h"
+if [[ -f "$STAGED_HEADER" && -f "$GEN_HEADER" ]]; then
+  if ! cmp -s "$GEN_HEADER" "$STAGED_HEADER"; then
+    echo "==> FAILED: ABI header drift — $STAGED_HEADER does not match the" >&2
+    echo "    freshly generated $GEN_HEADER. Run scripts/build-rust-core.sh" >&2
+    echo "    to restage before relying on any Swift build." >&2
+    exit 1
+  fi
+  echo "==> header-drift check: OK (staged header matches generated)"
+fi
+
 echo "==> Rust-core gate green."
