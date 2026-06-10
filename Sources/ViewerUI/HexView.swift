@@ -325,7 +325,9 @@ private struct HexTextRepresentable: NSViewControllerRepresentable {
 
 // MARK: - NSViewController
 
-private final class HexTextController: NSViewController {
+// Internal (not private) so HexFixedGridFrameTests can pin the fixed-grid
+// configuration headlessly — the perf contract TSK-267 depends on.
+final class HexTextController: NSViewController {
     let scrollView: NSScrollView
     let textView: HexNSTextView
     /// Latest file bytes so the mouse handler can derive the
@@ -1370,7 +1372,7 @@ enum HexGridMetrics {
 
 // MARK: - NSTextView subclass for click-to-highlight
 
-private final class HexNSTextView: NSTextView {
+final class HexNSTextView: NSTextView {
     weak var controller: HexTextController?
     private var dragStartOffset: Int?
     /// Set by the controller when ViewOnly is off (#234). Arms keystroke
