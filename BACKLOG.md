@@ -881,3 +881,20 @@ bundle (main kept CrossSearchPanel) — resurrect or abandon. **DECISION owed.**
   work is increasingly marginal polish (TSK-241 whitespace markers, TSK-247 keyboard-help
   overlay, TSK-243 theme tokens, …); the high-value W1/W2 items (JSON-formatted / reload /
   hex-search) are done + validated.
+
+## 2026-06-09 — rust-core audit Phase 0 remainder (tracker = source of truth)
+
+The production-readiness audit landed (see `docs/research/rust-core-audit-2026-06-09/synthesis.md`,
+epic **TSK-538**, tag `rust-core-audit`, 39 tickets TSK-539..577). Five Phase-0 items shipped
+at `02a10e7` + `dd6d345` (TSK-549/542/553/569/555 → fixed). Remaining Phase-0, in rough order —
+all already tracked on the board, listed here only as the resume pointer:
+- TSK-550 workspace-wide gate lane · TSK-576/565 hunk_marks i64 clamp + top-of-file Deleted
+  mark (parity-lock with Swift) · TSK-540 hex_render width clamp · TSK-539 cbindgen
+  rerun-if-changed + header-drift gate · TSK-551 web slot RAII guard · TSK-556 request
+  deadline · TSK-558 dir-listing cap · TSK-557 CSV byte cap · TSK-566 string_slice deny ·
+  TSK-567 dead render_view removal · TSK-575 clippy warning sweep.
+- Dep adoptions (memchr, cargo-fuzz, proptest, cargo-deny, cargo-audit, Miri lane) are
+  **owner-gated** — parked on their tickets, do not adopt without approval.
+- T5 VM pixel lane: bump `waitForWindowID(timeout: 2.5)` → ~20 s in the visual-regression
+  tests (root cause proven 2026-06-09: apps publish the windowid slowly under the root
+  asuser context; see LESSONS).

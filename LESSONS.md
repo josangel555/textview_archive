@@ -2492,3 +2492,35 @@ Two durable VM gotchas found finishing the T5/VisualRegression pixel lane:
   Also recall the standing vm-smoke caveat: macOS 15 "Screen Capture Privacy" can redact windows of
   `launchctl asuser`-bridged processes regardless of grant; the durable fix may be running the app as a
   GUI-session-owned LaunchAgent. Parked as TSK-502 (decision).
+
+## Session 2026-06-09 — rust-core production audit, Phase-0 fixes, VM GUI-lane forensics
+
+- **`git checkout -- <file>` during a teeth check WIPES uncommitted work.** Demonstrating
+  test teeth means mutating the code under test (revert the fix), watching the test go red,
+  then restoring. If the fix itself is still uncommitted, `git checkout` restores the
+  *committed* state and destroys the fix AND the new test. Undo deliberate teeth-check
+  mutations with the inverse Edit, never with git, until the work is committed.
+- **Bumping `rust-version` re-arms MSRV-aware clippy lints.** Raising `rust-version`
+  1.85→1.88 made `collapsible_if` (deny via workspace lints) fire on 10 pre-existing
+  nested-if sites, because let-chains became suggestible at 1.88. The gate goes red on a
+  "comment-only" manifest change. Fix is mechanical:
+  `cargo clippy --fix -p <crate> --all-targets --allow-dirty`.
+- **`sudo launchctl asuser <uid> bash -lc` runs the payload as ROOT, not the uid's user.**
+  `asuser` only adopts the *bootstrap namespace*; uid/euid stay root. Consequences on the VM
+  GUI lane: xctest and every spawned app run as root, `FileManager.temporaryDirectory`
+  resolves to root's `/var/folders/zz/...`, so windowid handshake files are invisible to
+  non-sudo `find`s and TCC grants must attach to the right responsible process. The T5
+  windowid timeout (2.5s) is also too short there — apps DO publish (window 1588 proven),
+  just slowly; bump `waitForWindowID(timeout:)` for VM runs.
+- **`MDV_VM_GUI_SESSION=1 scripts/test-in-vm.sh` silently no-ops without `MDV_VM_SUDO_PASS`.**
+  The sudo wrapper prints "a password is required" into the log and the sweep "passes"
+  having run nothing. Always pass `MDV_VM_SUDO_PASS=<vm-sudo-password>` with the GUI lane.
+- **A bare `cargo` run inside the repo grew a 2.8 GB `rust-core/target` in the iCloud-synced
+  tree** (sync thrash + xattr re-stamping — same class as the codesign breakage). Now
+  self-enforcing: `rust-core/.cargo/config.toml` pins `target-dir = /private/tmp/mdv-rust-target`
+  for every cargo invocation at or below `rust-core/`; `CARGO_TARGET_DIR` still overrides.
+- **iCloud can make `rm -rf` fail with "Directory not empty"** mid-walk (file provider
+  re-materializes entries). Just run it a second time.
+- **Workflow verdict salvage:** when a multi-agent run dies at a usage limit, verdict-null
+  entries are *unprocessed*, not refuted — distinguish by the missing `reasoning` field
+  before counting. Resume with `resumeFromRunId` to reuse the cached prefix.
