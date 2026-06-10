@@ -26,23 +26,61 @@ struct DiffView: View {
     /// cost. @State + .onChange recomputes only when `text` changes.
     @State private var files: [UnifiedDiff.File] = []
 
+    init(text: String, doc: DocumentModel, reviewSession: ReviewSession? = nil) {
+        self.text = text
+        self.doc = doc
+        self.reviewSession = reviewSession
+    }
+
+    /// Test seam: seed the parsed files directly so layout tests can render
+    /// the populated branch without depending on `.onAppear` firing in a
+    /// window-free/ImageRenderer context. Behavior is otherwise identical.
+    internal init(
+        text: String, doc: DocumentModel, reviewSession: ReviewSession?,
+        initialFiles: [UnifiedDiff.File]
+    ) {
+        self.text = text
+        self.doc = doc
+        self.reviewSession = reviewSession
+        self._files = State(initialValue: initialFiles)
+    }
+
     var body: some View {
         Group {
             if files.isEmpty {
                 empty
             } else {
-                ScrollView([.horizontal, .vertical]) {
-                    LazyVStack(alignment: .leading, spacing: 16, pinnedViews: []) {
-                        ForEach(Array(files.enumerated()), id: \.offset) { _, file in
-                            fileBlock(file)
-                        }
+                // TSK-593: a two-axis ScrollView CENTERS content smaller than
+                // the viewport. Propose at least the viewport size to the
+                // stack and anchor it topLeading so short/narrow diffs pin to
+                // the top-left like every other panel; oversized diffs still
+                // scroll both axes unchanged.
+                GeometryReader { geo in
+                    ScrollView([.horizontal, .vertical]) {
+                        scrollBody(viewport: geo.size)
                     }
-                    .padding(.vertical, 8)
                 }
             }
         }
         .onAppear { files = DiffParser.parse(text) }
         .onChange(of: text) { _, newText in files = DiffParser.parse(newText) }
+    }
+
+    /// The scroll content: file blocks expanded to AT LEAST the viewport,
+    /// anchored topLeading (TSK-593). Internal so the headless layout test
+    /// can render this exact tree with ImageRenderer — ScrollView itself is
+    /// opaque to every headless oracle (renders nothing), so the alignment
+    /// contract is pinned here, one level below it.
+    internal func scrollBody(viewport: CGSize) -> some View {
+        LazyVStack(alignment: .leading, spacing: 16, pinnedViews: []) {
+            ForEach(Array(files.enumerated()), id: \.offset) { _, file in
+                fileBlock(file)
+            }
+        }
+        .padding(.vertical, 8)
+        .frame(minWidth: viewport.width,
+               minHeight: viewport.height,
+               alignment: .topLeading)
     }
 
     private var empty: some View {
