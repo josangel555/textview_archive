@@ -84,6 +84,14 @@ public final class SidebarSectionRegistry {
         entries.removeAll { $0.pluginID == id }
     }
 
+    /// The currently-registered entries contributed by one plugin.
+    /// Used by `PluginRegistry.setEnabled` to stash a bundled plugin's
+    /// sections before dropping them, so re-enabling can re-register
+    /// without re-running the plugin's launch hook (TSK-614).
+    public func entries(forPlugin id: String) -> [Entry] {
+        entries.filter { $0.pluginID == id }
+    }
+
     /// Calls the provider inside a defensive shell. The PoC's "fail
     /// isolation" for in-process bundled plugins is intentionally
     /// shallow — Swift has no in-process panic boundary, so a

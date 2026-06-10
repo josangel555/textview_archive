@@ -85,16 +85,22 @@ public struct PluginsSettingsView: View {
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 6) {
+                // TSK-614: bundled plugins are toggleable too — this is
+                // the re-show path after "Hide Section" dismisses a
+                // bundled sidebar section (e.g. ROW COUNTS). The state
+                // is persisted by the registry. Revoke stays
+                // third-party-only (bundled plugins have no grants).
+                Toggle("", isOn: Binding(
+                    get: { row.enabled },
+                    set: { newValue in
+                        PluginRegistry.shared.setEnabled(row.id, enabled: newValue)
+                        tick += 1
+                    }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .accessibilityIdentifier("mdv.pluginToggle.\(row.id)")
                 if !row.isBundled {
-                    Toggle("", isOn: Binding(
-                        get: { row.enabled },
-                        set: { newValue in
-                            PluginRegistry.shared.setEnabled(row.id, enabled: newValue)
-                            tick += 1
-                        }
-                    ))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
                     Button("Revoke") { revoke(row) }
                         .font(.system(size: 10))
                         .help("Forget user decisions; the plugin will re-prompt on next load")

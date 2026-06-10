@@ -64,9 +64,39 @@ public final class PluginRegistry {
     }
     private(set) public var loaded: [String: LoadedPlugin] = [:]
 
-    public init(grantStore: PluginGrantStore = PluginGrantStore()) {
+    public init(
+        grantStore: PluginGrantStore = PluginGrantStore(),
+        defaults: UserDefaults = .standard
+    ) {
         self.grantStore = grantStore
+        self.defaults = defaults
     }
+
+    // MARK: - Persisted disabled set (TSK-614)
+
+    /// Backing store for the persisted disabled-plugin set. Injectable
+    /// so tests use a throwaway suite instead of `.standard`.
+    private let defaults: UserDefaults
+
+    private static let disabledIDsKey = "MarkdownViewer.disabledPluginIDs"
+
+    /// Plugin ids the user has disabled, surviving relaunch. Drives the
+    /// "Hide Section" dismiss affordance for bundled plugins (TSK-614 —
+    /// the always-on ROW COUNTS section had no way off the screen).
+    public var persistedDisabledIDs: Set<String> {
+        Set(defaults.stringArray(forKey: Self.disabledIDsKey) ?? [])
+    }
+
+    private func persistDisabled(_ id: String, disabled: Bool) {
+        var ids = persistedDisabledIDs
+        if disabled { ids.insert(id) } else { ids.remove(id) }
+        defaults.set(ids.sorted(), forKey: Self.disabledIDsKey)
+    }
+
+    /// A bundled plugin's sections, parked while the plugin is disabled
+    /// so `setEnabled(true)` can re-register them without re-running the
+    /// plugin's launch hook.
+    private var dormantSidebarEntries: [String: [SidebarSectionRegistry.Entry]] = [:]
 
     /// Test seam: swap the subprocess host with a fixture (e.g. one
     /// that returns canned rows without spawning).
@@ -87,6 +117,14 @@ public final class PluginRegistry {
         manifest: PluginManifest,
         entry: SidebarSectionRegistry.Entry
     ) {
+        // TSK-614: honor a persisted user dismissal across relaunch —
+        // the plugin still appears in Settings → Plugins (so it can be
+        // re-enabled) but its section stays off the sidebar.
+        if persistedDisabledIDs.contains(manifest.id) {
+            loaded[manifest.id] = LoadedPlugin(manifest: manifest, folder: nil, enabled: false)
+            dormantSidebarEntries[manifest.id, default: []].append(entry)
+            return
+        }
         loaded[manifest.id] = LoadedPlugin(manifest: manifest, folder: nil, enabled: true)
         sidebarSections.register(entry)
     }
@@ -323,6 +361,7 @@ public final class PluginRegistry {
 
     public func unload(_ id: String) {
         sidebarSections.dropAll(forPlugin: id)
+        dormantSidebarEntries[id] = nil
         loaded[id] = nil
     }
 
@@ -334,21 +373,33 @@ public final class PluginRegistry {
     }
 
     /// Toggle enabled state. Disabled plugins keep their grant but
-    /// drop their contributions. Used by Settings → Plugins.
+    /// drop their contributions. Used by Settings → Plugins and the
+    /// sidebar section header's "Hide Section" (TSK-614). The decision
+    /// is PERSISTED so a dismissal survives relaunch.
     public func setEnabled(_ id: String, enabled: Bool) {
         guard var entry = loaded[id] else { return }
         if entry.enabled == enabled { return }
+        persistDisabled(id, disabled: !enabled)
         if enabled {
-            // Re-register by re-loading the folder. Bundled plugins
-            // (folder == nil) are unconditionally registered at app
-            // launch and aren't toggleable in v1.
             guard let folder = entry.folder else {
+                // Bundled: re-register the sections parked when the
+                // plugin was disabled (or registered-while-disabled).
+                for parked in dormantSidebarEntries.removeValue(forKey: id) ?? [] {
+                    sidebarSections.register(parked)
+                }
                 entry.enabled = true
                 loaded[id] = entry
                 return
             }
+            // Third-party: re-register by re-loading the folder.
             _ = reloadOne(folder: folder)
         } else {
+            // Bundled sections are parked (not lost) so enable can
+            // restore them without re-running the launch hook.
+            if entry.folder == nil {
+                dormantSidebarEntries[id, default: []]
+                    .append(contentsOf: sidebarSections.entries(forPlugin: id))
+            }
             sidebarSections.dropAll(forPlugin: id)
             entry.enabled = false
             loaded[id] = entry

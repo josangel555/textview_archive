@@ -20,6 +20,12 @@ struct PluginSidebarSections: View {
     /// Local expand/collapse state per section, keyed by section id.
     @State private var expanded: [String: Bool] = [:]
 
+    /// Bumped after a registry mutation (Hide Section) so the body
+    /// re-reads `entries` — the registry itself is unobserved by
+    /// design (see header comment). Same pattern as
+    /// `PluginsSettingsView.tick`.
+    @State private var registryTick = 0
+
     var body: some View {
         VStack(spacing: 0) {
             ForEach(entries, id: \.sectionID) { entry in
@@ -27,6 +33,7 @@ struct PluginSidebarSections: View {
                     .sidebarSectionContainer()
             }
         }
+        .id(registryTick)
     }
 
     private var entries: [SidebarSectionRegistry.Entry] {
@@ -57,6 +64,17 @@ struct PluginSidebarSections: View {
                 .sidebarHeaderRow(uiSize: model.uiSize)
             }
             .buttonStyle(.plain)
+            // TSK-614: the dismiss affordance the always-on section
+            // lacked. Hiding disables the contributing plugin (state
+            // PERSISTED by the registry); re-enable lives in
+            // Settings → Plugins.
+            .contextMenu {
+                Button("Hide Section") {
+                    PluginRegistry.shared.setEnabled(entry.pluginID, enabled: false)
+                    registryTick += 1
+                }
+                Text("Re-enable in Settings → Plugins")
+            }
             if isExpanded {
                 let snapshot = SidebarSectionRegistry.Snapshot(
                     openFileContents: openFileContents
