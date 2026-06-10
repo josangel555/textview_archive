@@ -25,7 +25,12 @@ struct ImageEditorView: View {
     var body: some View {
         HStack(spacing: 0) {
             preview
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // The floor matters: in a panel-crowded narrow window the
+                // flexible preview otherwise collapses to ~0pt while the
+                // fixed-width controls survive — an "editor with no image"
+                // (TSK-618). Better to overflow/clip the controls edge than
+                // to silently hide the document being edited.
+                .frame(minWidth: 160, maxWidth: .infinity, maxHeight: .infinity)
                 .background(Palette.windowBackground)
             Divider()
             controls

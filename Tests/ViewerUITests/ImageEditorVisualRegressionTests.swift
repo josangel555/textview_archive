@@ -55,6 +55,11 @@ final class ImageEditorVisualRegressionTests: PixelTestCase {
         env["MDV_SKIP_WORKSPACE_RESTORE"] = "1"
         env["MDV_TEST_INSTANCE"] = "1"
         env["MDV_START_IMAGE_EDIT"] = "1"
+        // TSK-618: deterministic chrome. Without this, terminal-pane /
+        // zoom / frame state persisted by EARLIER spawns (shared user
+        // defaults) crowds the window until the flexible preview
+        // collapses and the fractional bands read the wrong panels.
+        env["MDV_PRISTINE_CHROME"] = "1"
         p.environment = env
         p.standardOutput = FileHandle.standardError
         p.standardError = FileHandle.standardError

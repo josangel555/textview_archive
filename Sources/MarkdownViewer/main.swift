@@ -152,9 +152,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // there's no saved frame yet.
         let autosaveName = "MainWindow"
         let savedFrameKey = "NSWindow Frame \(autosaveName)"
-        _ = window.setFrameAutosaveName(autosaveName)
-        if UserDefaults.standard.string(forKey: savedFrameKey) == nil {
+        if PristineChrome.isActive {
+            // TSK-618: harness spawns must get the deterministic default
+            // frame — no restore from, and no save to, the shared
+            // `NSWindow Frame MainWindow` key (AppKit persists frames to
+            // .standard regardless of our own stores).
             window.center()
+        } else {
+            _ = window.setFrameAutosaveName(autosaveName)
+            if UserDefaults.standard.string(forKey: savedFrameKey) == nil {
+                window.center()
+            }
         }
         // After restoring the autosaved frame, defend against two cases
         // where the user can be left with a useless window:

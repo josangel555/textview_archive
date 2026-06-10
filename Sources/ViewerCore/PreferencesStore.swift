@@ -35,7 +35,13 @@ public final class PreferencesStore: @unchecked Sendable {
         static let previewMetadataVisible = "MarkdownViewer.previewMetadataVisible"
     }
 
-    public init(defaults: UserDefaults = .standard) {
+    /// Defaults to the pristine-aware store (TSK-618): `.standard`
+    /// normally, an emptied process suite under `MDV_PRISTINE_CHROME=1`
+    /// so harness spawns get factory-default chrome and their writes
+    /// can't pollute the next spawn or the user's real preferences.
+    /// Everything chrome-stateful chains off this (`TerminalPaneStore`,
+    /// `PanelLayoutStore` via `preferences.defaults`).
+    public init(defaults: UserDefaults = PristineChrome.launchDefaults()) {
         self.defaults = defaults
     }
 
