@@ -216,4 +216,45 @@ final class PreferencesStoreTests: XCTestCase {
         let store = PreferencesStore(defaults: defaults)
         XCTAssertEqual(store.hexBytesPerRow, 64) // clamped up via HexLayout
     }
+
+    // MARK: Audio ffmpeg path (MP3 export, TSK-528)
+
+    func test_audioFFmpegPath_defaultsToNil() {
+        XCTAssertNil(PreferencesStore(defaults: defaults).audioFFmpegPath)
+    }
+
+    func test_audioFFmpegPath_roundTrips() {
+        let store = PreferencesStore(defaults: defaults)
+        store.audioFFmpegPath = "/opt/homebrew/bin/ffmpeg"
+        let other = PreferencesStore(defaults: defaults)
+        XCTAssertEqual(other.audioFFmpegPath, "/opt/homebrew/bin/ffmpeg")
+    }
+
+    func test_audioFFmpegPath_trimsWhitespace() {
+        let store = PreferencesStore(defaults: defaults)
+        store.audioFFmpegPath = "  /usr/local/bin/ffmpeg \n"
+        XCTAssertEqual(store.audioFFmpegPath, "/usr/local/bin/ffmpeg")
+    }
+
+    func test_audioFFmpegPath_emptyOrWhitespace_clearsToNil() {
+        let store = PreferencesStore(defaults: defaults)
+        store.audioFFmpegPath = "/x/ffmpeg"
+        store.audioFFmpegPath = "   "          // whitespace clears
+        XCTAssertNil(store.audioFFmpegPath)
+        XCTAssertNil(PreferencesStore(defaults: defaults).audioFFmpegPath)
+    }
+
+    func test_audioFFmpegPath_nilClears() {
+        let store = PreferencesStore(defaults: defaults)
+        store.audioFFmpegPath = "/x/ffmpeg"
+        store.audioFFmpegPath = nil
+        XCTAssertNil(store.audioFFmpegPath)
+    }
+
+    func test_audioFFmpegPath_staleWhitespaceStored_readsAsNil() {
+        // A directly-written whitespace value degrades to auto-discovery, not a
+        // bogus override fed to FFmpegLocator.
+        defaults.set("   ", forKey: "MarkdownViewer.audioFFmpegPath")
+        XCTAssertNil(PreferencesStore(defaults: defaults).audioFFmpegPath)
+    }
 }

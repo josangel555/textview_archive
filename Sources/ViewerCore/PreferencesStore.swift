@@ -29,6 +29,8 @@ public final class PreferencesStore: @unchecked Sendable {
         /// don't survive an app relaunch on purpose; this default
         /// does).
         static let hexBytesPerRow = "MarkdownViewer.hexBytesPerRow"
+        /// User-provided path to an `ffmpeg` executable for MP3 audio export.
+        static let audioFFmpegPath = "MarkdownViewer.audioFFmpegPath"
     }
 
     public init(defaults: UserDefaults = .standard) {
@@ -159,6 +161,34 @@ public final class PreferencesStore: @unchecked Sendable {
             return HexLayout.clampWidth(raw)
         }
         set { defaults.set(HexLayout.clampWidth(newValue), forKey: Key.hexBytesPerRow) }
+    }
+
+    // MARK: Audio — ffmpeg path (MP3 export)
+
+    /// User-provided path to an `ffmpeg` executable for MP3 audio export
+    /// (Settings → Audio). `nil`/empty ⇒ auto-discover on `PATH` + common
+    /// install locations (`FFmpegLocator`); if neither resolves an executable
+    /// the MP3 export option is simply disabled. Callers pass this value as
+    /// `AudioExporter.encode(…, ffmpegOverride:)`. Owner decision 2026-06-09:
+    /// ffmpeg is an EXTERNAL host tool, never bundled/vendored.
+    ///
+    /// Stored as a raw string (primitives-only store); a whitespace/empty value
+    /// reads back as `nil` so it degrades cleanly to auto-discovery rather than
+    /// feeding `FFmpegLocator` a bogus override. Mirrors `themeOverrideRaw`.
+    public var audioFFmpegPath: String? {
+        get {
+            let raw = defaults.string(forKey: Key.audioFFmpegPath)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return (raw?.isEmpty == false) ? raw : nil
+        }
+        set {
+            let trimmed = newValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let trimmed, !trimmed.isEmpty {
+                defaults.set(trimmed, forKey: Key.audioFFmpegPath)
+            } else {
+                defaults.removeObject(forKey: Key.audioFFmpegPath)
+            }
+        }
     }
 
     // MARK: Last open folder
