@@ -39,6 +39,24 @@ final class DocumentModelTests: XCTestCase {
         )
     }
 
+    // MARK: Audio ffmpeg path (TSK-528/535 — Settings → Audio proxy)
+
+    func test_audioFFmpegPath_proxiesPreferences_andSeedsOnInit() {
+        let model = makeModel()
+        XCTAssertNil(model.audioFFmpegPath, "defaults to auto-detect (nil)")
+
+        model.audioFFmpegPath = "/opt/homebrew/bin/ffmpeg"
+        // didSet persists through PreferencesStore…
+        XCTAssertEqual(PreferencesStore(defaults: defaults).audioFFmpegPath,
+                       "/opt/homebrew/bin/ffmpeg")
+        // …and a fresh model over the same defaults seeds from it on init.
+        XCTAssertEqual(makeModel().audioFFmpegPath, "/opt/homebrew/bin/ffmpeg")
+
+        model.audioFFmpegPath = nil   // clearing reverts to auto-detect
+        XCTAssertNil(PreferencesStore(defaults: defaults).audioFFmpegPath)
+        XCTAssertNil(makeModel().audioFFmpegPath)
+    }
+
     @discardableResult
     private func writeFile(_ name: String, _ contents: String = "x") throws -> URL {
         let url = tmpDir.appendingPathComponent(name)

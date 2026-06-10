@@ -167,6 +167,15 @@ public final class DocumentModel: ObservableObject {
     }
     public func toggleEditorIndentGuides() { editorIndentGuides.toggle() }
 
+    /// User-provided path to an `ffmpeg` executable for MP3 audio export
+    /// (Settings → Audio). `nil`/empty ⇒ auto-discover on PATH + common
+    /// locations via `FFmpegLocator`; if neither resolves, MP3 export is
+    /// disabled. Proxies `PreferencesStore.audioFFmpegPath`; consumed by
+    /// `AudioExporter.encode(…, ffmpegOverride:)` (TSK-528 / TSK-535).
+    @Published public var audioFFmpegPath: String? {
+        didSet { preferences.audioFFmpegPath = audioFFmpegPath }
+    }
+
     /// Helper for view code: scale a base font size by the unified
     /// zoom factor. Used by sidebar / tabs / status bar / mode bar so
     /// chrome grows with the same Cmd++/Cmd+− / Settings slider that
@@ -321,6 +330,7 @@ public final class DocumentModel: ObservableObject {
         self.sourceWordWrap = preferences.sourceWordWrap
         self.showInvisibleChars = preferences.showInvisibleChars
         self.editorIndentGuides = preferences.editorIndentGuides
+        self.audioFFmpegPath = preferences.audioFFmpegPath
         // Restore the persisted theme override (TSK-101). An unknown/stale raw
         // (e.g. a renamed theme) maps to nil = Follow System, never a crash.
         self.themeOverride = preferences.themeOverrideRaw.flatMap(SyntaxTheme.Name.init(rawValue:))

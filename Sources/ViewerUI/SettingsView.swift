@@ -38,6 +38,8 @@ public struct SettingsView: View {
                     Divider()
                     viewerSection
                     Divider()
+                    audioSection
+                    Divider()
                     privacySection
                     Divider()
                     pluginsSection
@@ -219,6 +221,44 @@ public struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 44, alignment: .leading)
             }
+        }
+    }
+
+    /// Audio export (MP3) needs an external `ffmpeg`. The field overrides
+    /// auto-discovery; the status line resolves it live via `FFmpegLocator`
+    /// so the user sees whether MP3 export will actually work (TSK-528/535).
+    private var audioSection: some View {
+        section("Audio") {
+            row("ffmpeg path") {
+                TextField("auto-detect", text: Binding(
+                    get: { model.audioFFmpegPath ?? "" },
+                    set: { model.audioFFmpegPath = $0.isEmpty ? nil : $0 }
+                ))
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 260)
+                .accessibilityIdentifier("mdv.settings.audio.ffmpegPath")
+            }
+            ffmpegStatusRow
+            Text("MP3 export needs an external ffmpeg (not bundled). Leave blank to auto-detect on PATH and common install locations; set a path to override. WAV / AIFF / CAF / AAC don't need it.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 4)
+        }
+    }
+
+    @ViewBuilder private var ffmpegStatusRow: some View {
+        if let url = FFmpegLocator.resolve(override: model.audioFFmpegPath) {
+            Label("MP3 available — \(url.path)", systemImage: "checkmark.circle")
+                .font(.caption2)
+                .foregroundStyle(.green)
+                .padding(.leading, 4)
+                .accessibilityIdentifier("mdv.settings.audio.ffmpegStatus")
+        } else {
+            Label("ffmpeg not found — MP3 export disabled", systemImage: "exclamationmark.triangle")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 4)
+                .accessibilityIdentifier("mdv.settings.audio.ffmpegStatus")
         }
     }
 
