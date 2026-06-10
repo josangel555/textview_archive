@@ -148,6 +148,7 @@ final class InteractionUATTests: MultiScenarioTestCase {
         let (repo, shas) = try makeRepoFixture()
         let script = """
         show-git-panel
+        git-panel-tab log
         delay 2.5
         git-log-cmd-click \(shas[0])
         git-log-cmd-click \(shas[2])
@@ -170,12 +171,13 @@ final class InteractionUATTests: MultiScenarioTestCase {
                         "REAL cmd-click closures must build the multi-selection; "
                         + "gitLog=\(git)", file: file, line: line)
                     let current = (model(last)["currentURL"] as? String) ?? ""
+                    let trace = (last["gitLogTrace"] as? String) ?? "<no trace>"
                     XCTAssertTrue(current.hasSuffix(".diff"),
-                        "cumulative diff must open a .diff tab; currentURL=\(current)",
-                        file: file, line: line)
+                        "cumulative diff must open a .diff tab; currentURL=\(current) "
+                        + "trace=\(trace)", file: file, line: line)
                     XCTAssertTrue(current.contains(".."),
-                        "the cumulative tab is the base..tip net diff; \(current)",
-                        file: file, line: line)
+                        "the cumulative tab is the base..tip net diff; \(current) "
+                        + "trace=\(trace)", file: file, line: line)
                 })
         ])
     }
@@ -184,6 +186,7 @@ final class InteractionUATTests: MultiScenarioTestCase {
         let (repo, shas) = try makeRepoFixture()
         let script = """
         show-git-panel
+        git-panel-tab log
         delay 2.5
         git-log-click \(shas[0])
         delay 1.0
@@ -202,9 +205,11 @@ final class InteractionUATTests: MultiScenarioTestCase {
                         "REAL click closure must select the row; gitLog=\(git)",
                         file: file, line: line)
                     let current = (model(last)["currentURL"] as? String) ?? ""
+                    let trace = (last["gitLogTrace"] as? String) ?? "<no trace>"
                     XCTAssertTrue(current.hasSuffix("\(shas[0]).diff"),
                         "the commit's structured diff tab must be OPEN and "
-                        + "selected; currentURL=\(current)", file: file, line: line)
+                        + "selected; currentURL=\(current) trace=\(trace)",
+                        file: file, line: line)
                 })
         ])
     }

@@ -276,6 +276,18 @@ public enum ScriptVerb {
         // call). The panel model is a view-local @StateObject, resolved
         // through GitPanelModel.live; `show-git-panel` (plus a settle)
         // must have mounted it first or these are loud no-ops.
+        case "git-panel-tab":
+            // The panel's tab-switch closure (same `selectTab` the segmented
+            // control calls) — needed before the log verbs: the panel
+            // defaults to Status and `refreshCurrent` loads only the
+            // VISIBLE tab, so `logEntries` stays empty until Log shows.
+            guard let panel = GitPanelModel.live,
+                  let tab = GitPanelModel.Tab(rawValue: arg) else {
+                FileHandle.standardError.write(Data(
+                    "script: git-panel-tab needs a mounted panel and a tab name\n".utf8))
+                return true
+            }
+            panel.selectTab(tab)
         case "git-log-click", "git-log-cmd-click", "git-log-shift-click":
             guard let panel = GitPanelModel.live, !arg.isEmpty else {
                 FileHandle.standardError.write(Data(

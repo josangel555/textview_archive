@@ -14,6 +14,12 @@ import ViewerCore
 @MainActor
 public enum GitLogDiffActions {
 
+    /// Trace of the most recent action — embedded in the step dump
+    /// (`gitLogTrace`) so a failing VM scenario shows WHICH link of the
+    /// chain (root → range → git body → cache write → tab open) broke,
+    /// instead of a silent no-op. Same pattern as `UIEventSynth.lastTrace`.
+    public private(set) static var lastTrace: String = ""
+
     /// What a click on a log row does, modifier-dispatched: cmd toggles
     /// the SHA in the multi-selection, shift extends the range
     /// (TSK-522), a plain click opens the commit's diff (TSK-523).
@@ -35,25 +41,45 @@ public enum GitLogDiffActions {
     public static func showCommit(sha: String,
                                   panel: GitPanelModel,
                                   doc: DocumentModel) {
-        guard let root = panel.repoRoot else { return }
+        guard let root = panel.repoRoot else {
+            lastTrace = "showCommit(\(sha)): NO repoRoot"
+            return
+        }
         panel.selectLogCommit(sha: sha)
         let client = GitClient(repoRoot: root)
         let body = client.commitDiff(sha: sha)
-        guard let out = writeDiffFile(body, name: "\(sha).diff") else { return }
+        guard let out = writeDiffFile(body, name: "\(sha).diff") else {
+            lastTrace = "showCommit(\(sha)): cache WRITE FAILED (body=\(body.count)B)"
+            return
+        }
         doc.openInNewTab(out)
+        lastTrace = "showCommit(\(sha)): root=\(root.lastPathComponent) "
+            + "body=\(body.count)B out=\(out.path) tabs=\(doc.tabs.tabs.count)"
     }
 
     /// TSK-522: open the cumulative (net) diff for the multi-selection —
     /// `git diff base tip` via `GitClient.cumulativeDiff`.
     public static func showCumulativeDiff(panel: GitPanelModel,
                                           doc: DocumentModel) {
-        guard let root = panel.repoRoot,
-              let range = panel.cumulativeLogSelectionRange else { return }
+        guard let root = panel.repoRoot else {
+            lastTrace = "cumulativeDiff: NO repoRoot"
+            return
+        }
+        guard let range = panel.cumulativeLogSelectionRange else {
+            lastTrace = "cumulativeDiff: NO range (selected=\(panel.selectedLogSHAs.count) "
+                + "logEntries=\(panel.logEntries.count))"
+            return
+        }
         let client = GitClient(repoRoot: root)
         let body = client.cumulativeDiff(baseRef: range.baseRef, tipRef: range.tipRef)
         guard let out = writeDiffFile(
-            body, name: "\(range.baseRef)..\(range.tipRef).diff") else { return }
+            body, name: "\(range.baseRef)..\(range.tipRef).diff") else {
+            lastTrace = "cumulativeDiff: cache WRITE FAILED (body=\(body.count)B)"
+            return
+        }
         doc.openInNewTab(out)
+        lastTrace = "cumulativeDiff(\(range.baseRef)..\(range.tipRef)): "
+            + "body=\(body.count)B out=\(out.path) tabs=\(doc.tabs.tabs.count)"
     }
 
     private static func writeDiffFile(_ body: String, name: String) -> URL? {

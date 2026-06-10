@@ -201,6 +201,11 @@ extension AppDelegate {
         if !UIEventSynth.lastTrace.isEmpty {
             enriched["uiClickTrace"] = UIEventSynth.lastTrace
         }
+        // TSK-522/523: same self-describing-failure channel for the Git
+        // Log action closures (root → range → git body → write → tab).
+        if !GitLogDiffActions.lastTrace.isEmpty {
+            enriched["gitLogTrace"] = GitLogDiffActions.lastTrace
+        }
         if let data = try? JSONSerialization.data(
             withJSONObject: enriched,
             options: [.prettyPrinted, .sortedKeys]
