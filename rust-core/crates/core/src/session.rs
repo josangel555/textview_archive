@@ -288,6 +288,37 @@ mod tests {
         assert_eq!(snap.version, 1);
     }
 
+    /// TSK-142/143 — the filter cache must hold INDICES ONLY, never a
+    /// second copy of the row data. The audited leak was a resident
+    /// `Vec<Vec<String>>` duplicate of `table.rows` living in the cache
+    /// for the session lifetime (verbatim on the unfiltered fast path),
+    /// plus per-snapshot deep clones of the full filtered rowset. The
+    /// size assertion fails if row storage is reintroduced into
+    /// `CachedView`; referencing `.indices` fails to COMPILE if the
+    /// field is replaced by row storage under another name.
+    #[test]
+    fn cache_is_indices_only_no_resident_row_copy() {
+        assert_eq!(
+            core::mem::size_of::<CachedView>(),
+            core::mem::size_of::<u64>() + core::mem::size_of::<Vec<u32>>(),
+            "CachedView grew beyond {{for_version, indices}} — a resident row copy was reintroduced?"
+        );
+        let mut s = CsvSession::open(CSV.as_bytes()).unwrap();
+        s.set_filter(Query {
+            text: "par".into(),
+            scope: Scope::All,
+        });
+        let snap_a = s.snapshot();
+        let snap_b = s.snapshot(); // repeated pulls must serve from the cache
+        assert_eq!(snap_a.indices, snap_b.indices);
+        let cached = s.cached.as_ref().expect("snapshot populates the cache");
+        assert_eq!(cached.for_version, s.version());
+        assert_eq!(
+            cached.indices, snap_a.indices,
+            "cache must hold exactly the surviving original-row indices"
+        );
+    }
+
     #[test]
     fn set_filter_changes_visible_rows() {
         let mut s = CsvSession::open(CSV.as_bytes()).unwrap();
