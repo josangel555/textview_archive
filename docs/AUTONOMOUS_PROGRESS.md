@@ -6351,3 +6351,20 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   option selected (seq 3845, empty payload). Interpreted as cleared-not-approved — the
   supervised WebView-hot-zone session stays ungated work I will NOT start without an
   explicit approval (race history #213/#217).
+
+## LOG +167 (2026-06-10, autonomous tick — TSK-618 triaged: not a regression; test-determinism gap + filter-passthrough harness fix)
+- **Verdict: the image-editor T5 failure is NOT an app compositing regression.** The kept
+  failure PNG (sudo-pulled from root's `/var/folders`) shows the editor controls fully
+  composited but the PREVIEW absent — with a terminal pane open and a narrow window:
+  persisted chrome from the SHARED VM UserDefaults (harness/diagnose runs + in-suite
+  spawns persist `TerminalPaneLayout` keys + the autosaved frame; `MDV_SKIP_WORKSPACE_RESTORE`
+  doesn't cover them). `ImageEditorView` is `HStack{ preview(flex); controls(260pt) }` —
+  crowded window ⇒ the flex preview collapses to ~0 while fixed controls survive. The app
+  rendered its (polluted) state faithfully; the test's full-width band assumptions broke.
+- **Isolated GUI-lane run PASSES** (6.0s, real execution) — only possible after fixing a
+  silent harness hole: `test-in-vm.sh test --filter X` NEVER forwarded the filter (the
+  dispatch called `run_tests` without args) and ran the FULL suite every time (`fd195b5`).
+- **Fix plan (on the ticket):** `MDV_PRISTINE_CHROME=1` launch env skipping persisted
+  chrome reads (terminal pane layout, frame autosave, tool windows) for deterministic T5
+  spawns + a `minWidth` floor on the editor preview (the flex-collapse is also a real UX
+  nit). Teeth: polluted-defaults fixture → assert pristine chrome.
