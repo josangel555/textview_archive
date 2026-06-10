@@ -6815,3 +6815,16 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   `--filter ViewerCoreTests.FileWatcherTests`, `--filter LSPPoolFakeServerTests`,
   `cargo test -p mdvcore-core --lib session::` / `filter::` (rust-core manifest).
 - Next drain ticks: build TSK-622's guards (1-2 per tick), then validate the six.
+
+## LOG +192 (2026-06-10, autonomous tick — TSK-622 guard 1/4 built: HexView fingerprint pinned; TSK-141 VALIDATED)
+- **TSK-141 (S3, HexView O(matches) highlight equality) VALIDATED** via the first TSK-622
+  guard (commit 49c5ce2): `HexHighlightFingerprintTests` pins the O(1) summary contract on
+  `HexTextController.HighlightFingerprint` (private→internal seam) — equal when
+  count/first/last/pattern/width match despite differing MIDDLE offsets (match + click
+  sets), per-field discrimination, and the ⌘G `differsOnlyByActiveMatch` fast-path
+  predicate. Teeth = the exact audited regression (full-array field re-added → synthesized
+  == compares all offsets) → 2 RED with self-explaining failure text; restored → 3/3.
+  Gate PASSED on 49c5ce2. Duplicate TSK-482 is pinned by the same suite.
+- TSK-622 remaining guards: PTY reap ESRCH (TSK-138), FileWatcher stop-races-reattach
+  (TSK-147), rust-core indices-only cache structural pin (TSK-142/143) — next ticks.
+  TSK-139 awaits owner dismiss (no regression-bite test possible by nature).
