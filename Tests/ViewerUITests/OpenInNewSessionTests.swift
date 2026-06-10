@@ -91,6 +91,69 @@ final class OpenInNewSessionTests: XCTestCase {
         XCTAssertEqual(model.sidebar.rootURL?.path, sub.path)
     }
 
+    // MARK: - New-session intent (TSK-600)
+
+    /// The `+`-button entry point shows the prompt with
+    /// `newSessionIntent: true`. Confirming a folder via the DEFAULT
+    /// Open path (newSession: false — plain Return) must then still
+    /// spawn a new session instead of re-rooting the current one.
+    func test_commitGoToPath_underNewSessionIntent_defaultOpen_routesToNewSession() throws {
+        let sub = tmpDir.appendingPathComponent("sub")
+        try FileManager.default.createDirectory(
+            at: sub, withIntermediateDirectories: true)
+        let model = DocumentModel()
+        var newSessionCalls: [URL] = []
+        model.openFolderInNewSession = { newSessionCalls.append($0) }
+
+        model.showGoToPath(newSessionIntent: true)
+        model.commitGoToPath(sub.path, newSession: false)
+
+        XCTAssertEqual(newSessionCalls.count, 1,
+            "default Open under new-session intent must spawn a session (TSK-600)")
+        XCTAssertNil(model.sidebar.rootURL,
+            "the current session must NOT be re-rooted (the reported 'flash')")
+        XCTAssertFalse(model.goToPathNewSessionIntent,
+            "the intent is one-shot — cleared on dismiss")
+    }
+
+    /// The plain ⇧⌘G invocation keeps today's behavior: default Open on
+    /// a folder mutates the ACTIVE session, no new-session call.
+    func test_commitGoToPath_withoutIntent_defaultOpen_staysInCurrentSession() throws {
+        let sub = tmpDir.appendingPathComponent("sub")
+        try FileManager.default.createDirectory(
+            at: sub, withIntermediateDirectories: true)
+        let model = DocumentModel()
+        var newSessionCalls: [URL] = []
+        model.openFolderInNewSession = { newSessionCalls.append($0) }
+
+        model.showGoToPath()
+        model.commitGoToPath(sub.path, newSession: false)
+
+        XCTAssertTrue(newSessionCalls.isEmpty,
+            "plain Go-to-path must not hijack the open into a new session")
+        XCTAssertEqual(model.sidebar.rootURL?.path, sub.path,
+            "default Open on a folder re-roots the active session")
+    }
+
+    /// Cancelling the prompt consumes the intent: a later plain
+    /// invocation must not inherit it.
+    func test_dismissGoToPath_clearsNewSessionIntent() throws {
+        let sub = tmpDir.appendingPathComponent("sub")
+        try FileManager.default.createDirectory(
+            at: sub, withIntermediateDirectories: true)
+        let model = DocumentModel()
+        var newSessionCalls: [URL] = []
+        model.openFolderInNewSession = { newSessionCalls.append($0) }
+
+        model.showGoToPath(newSessionIntent: true)
+        model.dismissGoToPath()   // user hits Escape
+        model.showGoToPath()      // later: plain ⇧⌘G
+        model.commitGoToPath(sub.path, newSession: false)
+
+        XCTAssertTrue(newSessionCalls.isEmpty,
+            "a cancelled + intent must not leak into the next plain invocation")
+    }
+
     func test_commitGoToPath_newSession_missingPath_setsErrorAndDoesNotInvoke() {
         let missing = tmpDir.appendingPathComponent("does-not-exist")
         let model = DocumentModel()

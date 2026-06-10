@@ -1375,7 +1375,11 @@ private struct FirstPaintGoToBridge: View {
             .onChange(of: sessionsApp.firstPaintGoToToken) { _, token in
                 guard token != nil else { return }
                 if sessionsApp.consumeFirstPaintGoTo() {
-                    model.showGoToPath()
+                    // The gate only arms from the new-session entry
+                    // points (`+` button / session.new command), so a
+                    // folder confirm must spawn a session, not re-root
+                    // the current one (TSK-600).
+                    model.showGoToPath(newSessionIntent: true)
                 }
             }
     }

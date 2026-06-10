@@ -744,7 +744,16 @@ public final class DocumentModel: ObservableObject {
         return ScriptVerb.apply(verb: verb, to: self, sessions: sessions)
     }
 
-    public func showGoToPath() {
+    /// True while the visible Go-to-path prompt was invoked as the
+    /// empty-session entry point (the SessionTabBar `+` button via the
+    /// first-paint gate). A folder confirmed under this intent must
+    /// spawn a NEW session — including on the default Return/Open path,
+    /// which otherwise mutates the active session (TSK-600: picking `~`
+    /// after `+` re-rooted the current tab and created nothing).
+    public private(set) var goToPathNewSessionIntent: Bool = false
+
+    public func showGoToPath(newSessionIntent: Bool = false) {
+        goToPathNewSessionIntent = newSessionIntent
         isGoToPathPresented = true
         // Clear stale error state from a previous attempt so the dump
         // reflects only the current invocation.
@@ -752,6 +761,7 @@ public final class DocumentModel: ObservableObject {
     }
     public func dismissGoToPath() {
         isGoToPathPresented = false
+        goToPathNewSessionIntent = false
         lastGoToError = ""
     }
 
@@ -781,7 +791,7 @@ public final class DocumentModel: ObservableObject {
             lastGoToError = Self.userMessage(for: err)
         case .success(let url):
             recordGoToPath(url.path)
-            if newSession,
+            if newSession || goToPathNewSessionIntent,
                GoToPathExpansion.isDirectory(url.path),
                let openInNew = openFolderInNewSession {
                 openInNew(url)

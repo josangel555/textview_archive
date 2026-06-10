@@ -196,7 +196,11 @@ struct GoToPathPrompt: View {
         case .success(let url):
             // Persist the expanded absolute path for history.
             model.recordGoToPath(url.path)
-            if newSession,
+            // `goToPathNewSessionIntent`: the prompt was invoked from the
+            // SessionTabBar `+` (empty-session entry point), so a folder
+            // confirm spawns a new session even on the default Return
+            // path (TSK-600).
+            if newSession || model.goToPathNewSessionIntent,
                GoToPathExpansion.isDirectory(url.path),
                let openInNew = model.openFolderInNewSession {
                 openInNew(url)
