@@ -5946,3 +5946,16 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   (`RenderedHTMLAsyncFillTests`) with demonstrated teeth (store disabled → red → restored); headless gate
   green on the committed commit; release bundle reinstalled. Render-path spinner→fill is VM-lane for visual
   validation — held at `fixed`, not self-validated.
+
+## LOG +137 (2026-06-10, autonomous tick — TSK-592 system-wide capture: WebContent hypothesis REFUTED; parked to owner)
+- **Harness:** `vm-profile.sh` gained a `system` scope (`--all-processes`, commit 713caea) — recorder starts
+  first under sudo, app launches separately in the GUI session; for sampling XPC peers the app-scoped
+  trace is blind to. Trace at `/tmp/mdv-592-resize-sys.trace` (29MB).
+- **Measured:** sweep window (7-12s, anchored by app sample density): MarkdownViewer **61%** /
+  WindowServer **10%** / WebContent **idle (~1-2 samples/s)** — WebKit throttles resize relayout; the
+  WebContent-repaint hypothesis for resize jank is REFUTED. Bonus: WebContent spent only ~0.11 core·s
+  building the whole page → the 3.4s loadToFinish (TSK-598) is LATENCY (IPC/first-paint scheduling), not
+  CPU — strengthens MountedPanesLRU (avoid the reload) as the only lever there.
+- **TSK-592 parked (decision):** two captures, no app-side pathology under programmatic resize. Owner asked
+  to pick: (a) live-drag CGEvent driver (needs one-time VM TCC grant), (b) repro specifics, or (c) close as
+  not-reproducible post-TSK-611. inLiveResize caveat stands. LESSONS.md updated with both refutations.

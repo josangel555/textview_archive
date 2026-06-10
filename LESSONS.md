@@ -2588,3 +2588,15 @@ Two durable VM gotchas found finishing the T5/VisualRegression pixel lane:
   a side effect (close auto-selecting a neighbor) must run the same
   incoming-tab duties as an explicit select (`materializeIfNeeded` +
   staleness refresh) or lazy tabs sit blank (5336262).
+
+- **2026-06-10 (TSK-592 system-scope capture):** Two WebKit perf intuitions refuted by
+  measurement. (1) **WebContent does NOT relayout per resize frame** — during a 4s
+  setFrame sweep (~30Hz) over a rendered-MD tab, the WebContent process logged ~1-2
+  samples/s (idle); WebKit throttles/coalesces resize repaints. Don't attribute resize
+  jank to the web view without sampling it. (2) **`WKWebView.loadToFinish` (3.4s VM) is
+  latency, not CPU** — system-wide sampling shows only ~0.11 core·s of WebContent work
+  building the whole LESSONS.md page; the wall-clock is IPC/first-paint scheduling.
+  CPU-side optimizations can't shrink it; only avoiding the reload (MountedPanesLRU)
+  can. Recipe: `bash scripts/vm-profile.sh <file> 30 resize release system` → per-process
+  aggregation, sweep window anchored by the app's own sample density (no signposts in
+  system scope).
