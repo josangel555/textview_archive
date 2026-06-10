@@ -6197,3 +6197,18 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   + a search-guard pin in GitLogSearchModelTests. Teeth: shift-range→anchor-only +
   topoIndex→0 mutation = 9/10 red; restore → 29/29 across the git-log suites. Gate green on
   2190fdb; reinstall kicked. Bar pixels + real modifier clicks = VM lane (held at fixed).
+## LOG +158 (2026-06-10, autonomous tick — TSK-523 fixed: Review Commit from the Git Log, end-to-end)
+- **(c7d75f4):** the missing piece was WIRING, not machinery — ReviewTabView (review-aware
+  DiffView with add-comment + comment sidebar) had zero presentation sites, and Review.scope
+  already handled `.commit(sha)` (git show → DiffParser). Landed: `openCommitReview(sha:)`
+  find-or-creates the commit-scoped review in `.textview/reviews/` and activates it
+  (idempotent per (repo,sha)); Log row context menu "Review Commit…"; ReviewIndexTab now
+  presents ReviewTabView for the active session (first-ever wiring; back = mdv.review.back)
+  and index rows click-to-open; `ReviewSession.addComment` stamps `commitSha` from the scope
+  (the slice-2 field was dormant); `GitClient.configuredAuthor()` for authorship.
+- **Tests:** 7 CommitReviewLaunchTests (real repo: persist+diff+tab-select, idempotency,
+  per-sha distinctness, reopen/close, repo-switch clear, stamp + store round-trip, nil for
+  workingTree). Teeth: always-create + nil-stamp mutations → 4/7 red; restore → 21/21 across
+  the review suites. Gate green on c7d75f4; reinstall kicked. Accordion layout/pixels = VM lane.
+- **P1 set status:** 266/267/313/314/363/522/523 all fixed; 359 parked (owner decision);
+  remaining: TSK-327 ([PARTIAL] tool-window drag/snap).
