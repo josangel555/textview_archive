@@ -181,20 +181,23 @@ public final class SessionsAppCoordinator: ObservableObject {
     /// the just-opened session (bug2). Removed.
     ///
     /// TCC-protected roots (`~/Documents`, `~/Desktop`, `~/Downloads`,
-    /// `~/Pictures`, iCloud Drive) silently no-op here — matching the
-    /// documented sessions contract (`isUnderTCCProtectedRoot`) that
-    /// nothing under those roots is ever re-rooted or persisted. Touching
-    /// them implicitly would trigger a per-launch TCC prompt; for an
-    /// ad-hoc-signed dev build it repeats on every rebuild. The single
-    /// chokepoint is here (not in `core.openFolder`) because the predicate
-    /// lives on `DocumentModel` in `ViewerUI` and `ViewerCore` can't import
-    /// it — and every session-open path (scripts, sidebar context menu,
-    /// Go-to-path, bootstrap seed) routes through this method or the
-    /// already-guarded `bootstrap()` seed.
+    /// `~/Pictures`, iCloud Drive) ARE allowed here (TSK-599). Every call
+    /// into this method is an explicit user gesture — sidebar/bookmark
+    /// context menu, the open panel, a script verb, Go-to-path — so a TCC
+    /// prompt, if one fires at all, is user-attributable and one-time (the
+    /// bundle is signed with a stable identity, so the grant sticks).
+    /// The 2026-06-03 blanket guard (SESS-01 harvest) silently swallowed
+    /// every open under these roots, which made "Open in New Session" a
+    /// total no-op for any workspace under `~/Documents` — no session, no
+    /// feedback. The `isUnderTCCProtectedRoot` guard now applies only to
+    /// IMPLICIT launch-time touches, where prompting without a gesture is
+    /// hostile: the `bootstrap()` prefs seed (guarded above) and
+    /// `DocumentModel.restorePreviousFolderIfAvailable`. A session the
+    /// user explicitly created under a TCC root persists and restores
+    /// like any other — that is the user's standing opt-in.
     public func openFolder(_ url: URL,
                            forceNew: Bool = false,
                            kind: SessionKind? = nil) {
-        guard !DocumentModel.isUnderTCCProtectedRoot(url) else { return }
         core.openFolder(url, forceNew: forceNew, kind: kind)
     }
 

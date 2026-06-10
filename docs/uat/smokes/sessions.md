@@ -54,9 +54,14 @@ GLOBAL-vs-per-session zoom) only surface when surfaces interact.
 
 All fixture folders/files MUST live under `FileManager.default.temporaryDirectory`
 (`/var/folders/...`). **Never** seed sessions rooted at `~/Documents`, `~/Desktop`,
-`~/Downloads` — those are TCC-protected and the coordinator deliberately refuses
-to re-root or persist them (`isUnderTCCProtectedRoot`); a smoke pointed there will
-silently no-op and look like a bug.
+`~/Downloads` — those are TCC-protected, and touching the real user's folders
+from a smoke is forbidden hygiene-wise. Note the policy since TSK-599
+(2026-06-10): an **explicit** `openFolder` (context menu / open panel / script
+verb) DOES open + persist a session under those roots — the user's gesture is
+the opt-in; only the **implicit** launch-time paths (`bootstrap()` prefs seed,
+`restorePreviousFolderIfAvailable`) still refuse them
+(`isUnderTCCProtectedRoot`). A smoke must still never point there — it would
+enumerate the real folder and can trigger a TCC prompt on the runner.
 
 > NOTE — `/var/folders` is a symlink twin of `/private/var/folders`. The
 > coordinator standardizes + resolves symlinks for its session-dedup key, so
@@ -491,8 +496,10 @@ with session count; copy-path / reveal hidden when a session has no root.
   (split, sidebar root, expansion, include-hidden, panel layout all reset-or-restore
   on switch).
 - **Resolved-path dedup**: same physical folder = one session unless `forceNew`.
-- **TCC-safe**: nothing under `~/Documents`/`~/Desktop`/`~/Downloads` is ever
-  re-rooted or persisted.
+- **TCC-safe**: no *implicit* (launch-time) path ever re-roots or persists
+  anything under `~/Documents`/`~/Desktop`/`~/Downloads`. Explicit user
+  gestures (context menu, open panel, script verbs) may — that's the user's
+  opt-in (TSK-599, 2026-06-10).
 - **Persistence is best-effort + non-destructive**: corrupt/newer-schema/missing
   inputs degrade to skip+notice, never crash, never clobber a newer on-disk schema.
 - **No window opens during headless gate runs** — these are live-app (T4) smokes;
