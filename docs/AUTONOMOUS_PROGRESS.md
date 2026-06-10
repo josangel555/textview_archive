@@ -42,9 +42,15 @@ The earlier `test-in-vm.sh all` died on **`No space left on device`** (Data volu
 Relaunched the full validation lane DETACHED: `MDV_VM_GUI_SESSION=1 bash scripts/test-in-vm.sh all` (6.3 toolchain
 confirmed, building). This is the render-path verification clearer: dist build + full suite + T4/T5/WebView tiers in the
 GUI session — covers the audio-waveform T5 (TSK-529) and the whole render-gated `fixed` backlog.
-NEXT-TICK CUE (replaces the +122 cue): `ssh macOS15 'test -f /tmp/vmval.done && tail -30 /tmp/vmval.log'`. EXIT=0 → log the
-green + advance the render-gated fixed items it covers (per TASK_WORKFLOW §4 evidence rules). EXIT≠0 → read the failing
-tier/test and fix host-side. If no `.done`, it's still running — do NOT relaunch.
+UPDATE (same evening): the first run EXITed 1 WITHOUT running the main sweep — `MDV_VM_GUI_SESSION=1` requires
+`MDV_VM_SUDO_PASS` (the script needs sudo for the console-session launchctl); only the WebView lane ran (45 cases, JUnit
+written, no failures). RELAUNCHED with `MDV_VM_SUDO_PASS=<vm-sudo-password>`. NEXT-TICK CUE (current): `ssh macOS15 'test -f
+/tmp/vmval2.done && tail -30 /tmp/vmval2.log'`. EXIT=0 → log the green + advance the render-gated fixed items it covers
+(per TASK_WORKFLOW §4 evidence rules). EXIT≠0 → read the failing tier/test and fix host-side. If no `.done`, still
+running — do NOT relaunch. (Lesson: always pass MDV_VM_SUDO_PASS with MDV_VM_GUI_SESSION.)
+ALSO IN FLIGHT: the rust-core production-readiness audit workflow (wf_6b6443d9-5c6, 9 Fable-5 reviewers + adversarial
+verify + synthesis). On completion: write docs/research/rust-core-audit-2026-06-09/ + file board tickets tagged
+`rust-core-audit` (owner ask) — one per confirmed finding/accepted proposal.
 Also this session: cron re-added (ca191b03, :03/:13/… — session-only, re-add on session restart) with a doc-first prompt;
 `docs/TASK_WORKFLOW.md` updated with the owner's lane-goal SOP (commit c5baad4).
 
