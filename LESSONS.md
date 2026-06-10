@@ -5,6 +5,26 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## UTM VM: "flaky ssh" is memory-pressure bufferbloat, and NEVER `rm -rf .build` on it (2026-06-09)
+- **Diagnosis of the recurring "VM ssh keeps timing out".** The VM is **8 vCPU / 4 GiB RAM**. A Swift build
+  (TreeSitter grammars have high peak RSS) + the ~4000-test suite pushes 4 GiB into heavy swap/compression
+  (`vm_stat`: 100k+ swapouts, 190k+ compressor pages). When it swaps, processes block on page-in and the
+  **virtio-net queue stalls** → `ping` shows **0 % loss but multi-second RTT, draining ~1 s/step** (textbook
+  CPU/mem-starved-guest bufferbloat). SSH "Operation timed out" is just the handshake missing its window during
+  a stall. So the VM is fine when idle and "vanishes" exactly when a build/test hammers it. The cure is owner-side:
+  **bump RAM 4→8 GiB in UTM**. Mitigation: `~/.ssh/config` `macOS15` now has `ServerAliveInterval 15` /
+  `ServerAliveCountMax 8` / `ConnectTimeout 30` / `TCPKeepAlive yes` so sessions ride out the stalls.
+- **The VM is an OFFLINE rsync mirror — NEVER `rm -rf .build` on it.** SwiftPM deps (the tree-sitter grammars,
+  swift-cmark) live in `.build/{checkouts,repositories}` (~1 GB). The standard sync EXCLUDES `.build/`, so once
+  wiped the VM cannot repopulate them — a clean `swift build` tries to refetch from github and dies with
+  `Could not resolve host` (the VM has no/limited internet; e.g. when the host VPN is down). Restore path if it
+  ever gets wiped: `rsync -az .build/checkouts .build/repositories Package.resolved macOS15:markdown_viewer/.build/`
+  from the host (arch-independent git content), then `swift package resolve` re-creates the working copies offline.
+  `test-in-vm.sh` / `vm-smoke.sh` do NOT wipe `.build` — only an agent doing `rm -rf .build` does. Don't.
+- **Reap hung `xctest` orphans.** `test-in-vm.sh` can leave a child `xctest` alive after it writes `/tmp/vmtest.done`
+  — seen lingering 2.5 h, leaking RAM on the 4 GiB box and compounding the pressure above. Targeted `kill <pid>`
+  of the `xctest` runner is safe (NOT `killall` — that family reaps the owner's app per CLAUDE.md).
+
 ## `FileWatcherTests.test_deletedThenRecreated_watcherReattaches` is a load-flaky FSEvents test (2026-06-09)
 - The headless gate (`swift test --parallel`, ~4400 tests) intermittently RED-HERRINGS on this one test:
   `Asynchronous wait failed: Exceeded timeout of 2 seconds, with unfulfilled expectations: "post-recreate
