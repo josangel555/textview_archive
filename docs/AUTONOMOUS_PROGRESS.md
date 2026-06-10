@@ -6165,3 +6165,12 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - **Tests:** 3 SessionOpenHomeTests (new+active session at ~, prior untouched; always
   force-new; GoTo gate NOT armed). Teeth: forceNew dropped → red. Gate green; reinstall
   kicked. Next P1: TSK-327 ([PARTIAL] tool-window drag/snap) + remaining bumped set states.
+## LOG +155 (2026-06-10, autonomous tick — TSK-314 fixed: new-session prompt prefilled with ~)
+- **(a8f3ccf):** `showGoToPath(newSessionIntent: true)` sets `goToPathPrefill = "~"`; the
+  prompt seeds an untouched field from it on appear — bare Enter after `+` opens home via
+  the TSK-600 intent plumbing. Regular in-session Go To keeps the deliberate empty
+  match-Finder field; dismiss clears the prefill; seeding never clobbers typing.
+- Pairs with TSK-313: strip double-click = instant ~ session; `+` = prompt prefilled ~.
+- **Tests:** 3 new in OpenInNewSessionTests (prefill set / nil per flow / cleared on
+  dismiss); the 7 existing intent-routing tests double as the commit-path guard.
+  Gate green; reinstall kicked.
