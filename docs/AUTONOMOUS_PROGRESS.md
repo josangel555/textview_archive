@@ -1,5 +1,16 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-10 (latest+127) — web hardening trio landed (TSK-551/556/558); Phase 0 down to 3 hygiene items
+
+Commit `c10cf4b`, one batch, all teeth-demonstrated (mutate→red→restore ×3), gate green (78 web tests):
+- **TSK-551** RAII `SlotGuard` — in-flight slot releases on EVERY worker exit incl. panic unwind
+  (old post-call decrement was skipped on unwind; 128 leaks = permanent 503).
+- **TSK-556** `REQUEST_HEAD_DEADLINE` (10 s total) across the header-read loop — the per-read
+  socket timeout couldn't stop a 1-byte drip pinning a slot for tens of hours.
+- **TSK-558** `MAX_DIR_ENTRIES=5000` cap on listings (cap-parameterized for a 5-file unit test).
+Epic TSK-538 now 14 fixed. Phase 0 remainder: TSK-557 (CSV byte cap), TSK-566 (string_slice deny),
+TSK-567 (dead render_view), TSK-575 (warning sweep).
+
 ## LOG 2026-06-10 (latest+126) — TSK-548 stopgap: TooLarge gets its own identity end-to-end (LAST open S2)
 
 Commit `051eadf`: `WireFault::TooLarge` on encode_frame overflow (decode keeps `Framing` for hostile
