@@ -148,6 +148,7 @@ final class InteractionUATTests: MultiScenarioTestCase {
         let (repo, shas) = try makeRepoFixture()
         let script = """
         show-git-panel
+        git-panel-root
         git-panel-tab log
         delay 2.5
         git-log-cmd-click \(shas[0])
@@ -186,6 +187,7 @@ final class InteractionUATTests: MultiScenarioTestCase {
         let (repo, shas) = try makeRepoFixture()
         let script = """
         show-git-panel
+        git-panel-root
         git-panel-tab log
         delay 2.5
         git-log-click \(shas[0])

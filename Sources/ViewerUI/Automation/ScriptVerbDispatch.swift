@@ -276,6 +276,27 @@ public enum ScriptVerb {
         // call). The panel model is a view-local @StateObject, resolved
         // through GitPanelModel.live; `show-git-panel` (plus a settle)
         // must have mounted it first or these are loud no-ops.
+        case "git-panel-root":
+            // The header repo-picker's EXACT closure (`pickRepoRoot`).
+            // Focus-follow doesn't bind in a headless harness launch
+            // (proven by the it13 trace: "NO repoRoot"), so scenarios pin
+            // the root explicitly — by default the opened sidebar root,
+            // which the script can't name (the launcher rewrites paths
+            // for the cross-user hand-off).
+            guard let panel = GitPanelModel.live else {
+                FileHandle.standardError.write(Data(
+                    "script: git-panel-root needs a mounted git panel\n".utf8))
+                return true
+            }
+            let rootURL = arg.isEmpty
+                ? model.sidebar.rootURL
+                : URL(fileURLWithPath: arg)
+            if let rootURL {
+                panel.pickRepoRoot(rootURL)
+            } else {
+                FileHandle.standardError.write(Data(
+                    "script: git-panel-root — no sidebar root to pin\n".utf8))
+            }
         case "git-panel-tab":
             // The panel's tab-switch closure (same `selectTab` the segmented
             // control calls) — needed before the log verbs: the panel
