@@ -6174,3 +6174,15 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - **Tests:** 3 new in OpenInNewSessionTests (prefill set / nil per flow / cleared on
   dismiss); the 7 existing intent-routing tests double as the commit-path guard.
   Gate green; reinstall kicked.
+## LOG +156 (2026-06-10, autonomous tick — TSK-363 fixed: show-hidden toggle removed, hidden always shown)
+- **(84d0245):** the eye/eye.slash header button (`mdv.sidebar.showHidden`) is GONE —
+  hidden files are always shown. The critical edge wasn't the button: `SessionState.hydrate`
+  used to restore `sidebarIncludeHidden ?? false`, so any stale persisted `false` (or
+  plain nil from an old session) would strand the user with dotfiles invisible and no
+  control left to recover. Hydrate now force-trues; `makeSnapshot` writes the field as
+  nil unconditionally (Codable field kept for pre-removal JSON decode only).
+  `SidebarModel.includeHidden` (default true) survives as engine plumbing.
+- **Tests:** 3 new SessionStateTests pins (stale false neutralized / nil lands true /
+  snapshot never persists) + SessionIsolationTests rewritten from "include-hidden is
+  per-session" to "always true". Teeth: compiling mutation restoring the old hydrate +
+  persist behavior → all 4 red; restored → green. Gate green on 84d0245; reinstall kicked.
