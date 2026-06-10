@@ -6242,3 +6242,18 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   first-layout, re-render cascade). TSK-455 blocked_by TSK-598 (MountedPanesLRU — now carrying
   four data-backed symptoms); no HEX-side code change would move the felt second, so none was made.
   Traces: /tmp/mdv-455-hex.trace (cold), /tmp/mdv-455-hex-nav.trace (warm). Evidence on both tickets.
+## LOG +161 (2026-06-10, autonomous tick — TSK-440 fixed: sidebar tool-window resize/fill overhaul)
+- **(5cccd93):** all three entangled bugs, headless-first. (A) lone-FILES gap root-caused:
+  BoundedAccordionScroll conflated "unmeasured" with "measured EMPTY" — an empty accordion
+  framed itself at the cap (~62% of the sidebar). New pure `AccordionHeightResolver`:
+  measured-empty → 0 (FILES flex-fills), unmeasured → cap (first-pass behavior kept).
+  (B) `SidebarSectionPlanner.FullPlan` adds the FILES↔accordion boundary divider (drawn
+  whenever FILES is expanded + ≥1 tool visible) — FILES+1 tool now has a draggable boundary;
+  it drives the first tool inversely (FILES is the flex). (C) pair dividers now drive BOTH
+  neighbors via pure `SidebarResize.redistribute` — sum-preserving, floored both sides,
+  delta clamped; the above-only/FILES-absorbs-slack model is gone.
+- **Tests:** 15 new SidebarResizeTests + all adjacent layout suites green (planner 8,
+  heights 14, bounding 3). Teeth: triple compiling mutation → 7/15 red; restored → green.
+  Gate green on 5cccd93. VM full suite kicked as validation (regression-prone zone
+  #100/#133/#211/#215); live drag feel + pixels stay VM/owner-lane — held at fixed with
+  blocker live-validation. Install follows the VM result.
