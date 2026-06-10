@@ -2713,3 +2713,21 @@ Continuation of "the five constraints" above; these three close every remaining 
   pixel hit-area routing — entitled synthesis (XCUITest L4 / owner AX grant) territory.
   Don't spend VM iterations rediscovering this: for any future SwiftUI-interaction
   ticket, go STRAIGHT to exact-closure verbs + rendered-outcome dump assertions.
+
+## 2026-06-10 (Git-panel harness bindings — TSK-522/523 VM scenarios)
+- **`GitPanelModel` focus-follow does NOT bind in a harness launch** — opening a repo
+  folder + `show-git-panel` leaves `panel.repoRoot` nil (trace: "NO repoRoot"). Scenarios
+  must pin the root via the header picker's exact closure (`git-panel-root` verb →
+  `pickRepoRoot`, defaulting to the opened sidebar root since the launcher rewrites
+  paths for the cross-user hand-off).
+- **The panel boots on the Status tab and `refreshCurrent` loads only the VISIBLE tab** —
+  `logEntries` stays empty (cumulative-diff range = nil) until the Log tab is selected
+  (`git-panel-tab log`, the segmented control's `selectTab` closure) + a settle.
+- **Cross-user git fixtures need a chown**: git ≥2.35 refuses root-owned repos ("dubious
+  ownership") when the console-user app shells git against the /tmp copy — AppLauncher
+  chowns the run dir to the spawn user; folder args get 0755 (a blanket 0644 kills
+  directory traversal).
+- **Self-describing action traces pay for themselves AGAIN**: `GitLogDiffActions.lastTrace`
+  (root → range → git body bytes → cache write → tab count) named the exact broken link
+  ("NO repoRoot") in ONE run — the same pattern as the ui-click v4 trace. Give every
+  multi-link harness action a trace channel up front.

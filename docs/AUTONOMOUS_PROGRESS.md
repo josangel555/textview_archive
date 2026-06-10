@@ -6571,3 +6571,21 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   `session-new-via-goto` verb, nsTextField dump channel.
 - **Remaining on TSK-620**: TSK-522/523 (git-log selection bar + modifier clicks) via the
   same exact-closure pattern — git fixture + row-click verbs; checkpoint comment seq 4026.
+
+## LOG +179 (2026-06-10, autonomous tick — TSK-522 + TSK-523 VALIDATED; TSK-620 VALIDATED: the whole held-P1 quartet is closed)
+- **TSK-522 validated** (multi-select commits → cumulative diff) and **TSK-523 validated**
+  (click commit → inline structured diff): InteractionUATTests 4/4 green on the VM GUI
+  lane (iteration 14, dist of 0e94e10) — the row/toolbar EXACT closures (hoisted to
+  GitLogDiffActions, fa5a42d, so view buttons and verbs run identical code) driven
+  cross-process against a real fixture repo; dump asserts the multi-selection set and the
+  opened base..tip / <sha>.diff tabs. Host layer: GitLogDiffActionsTests (4, real git
+  repo, mutation-checked teeth). Demonstrably capable of failing: iterations 12–13 were
+  red on real defects — the panel root never binds via focus-follow in harness launches,
+  and logEntries load only when the Log tab is visible — fixed via the picker/tab exact
+  closures as verbs (git-panel-root / git-panel-tab, dd3a710 + 0e94e10).
+- **TSK-620 validated and closed**: interaction layer + VM suite delivered; all four
+  target tickets (313/314/522/523) validated off its evidence; the 8-constraint
+  impossibility proof for in-process SwiftUI event synthesis is in LESSONS so no future
+  ticket burns VM iterations rediscovering it.
+- Today's validated total now includes the ENTIRE bumped P1 set that was held for live
+  evidence: TSK-267, 313, 314, 363, 455, 522, 523, 617, 620.
