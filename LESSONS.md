@@ -2600,3 +2600,11 @@ Two durable VM gotchas found finishing the T5/VisualRegression pixel lane:
   can. Recipe: `bash scripts/vm-profile.sh <file> 30 resize release system` → per-process
   aggregation, sweep window anchored by the app's own sample density (no signposts in
   system scope).
+
+## 2026-06-10 (autonomous run, later)
+- **Never run teeth mutations while a background `build-app.sh` is in flight on the same
+  tree.** SwiftPM hard-fails with "input file ... was modified during the build" — the
+  TSK-314 install raced a teeth mutate/restore cycle on `DocumentModel.swift` and died with
+  exit 1 (build correctness is preserved; only the run is lost). Order per item: teeth →
+  restore → commit → gate → THEN kick the install. If the install must overlap other work,
+  only overlap it with non-mutating steps (board updates, docs, trace parsing).
