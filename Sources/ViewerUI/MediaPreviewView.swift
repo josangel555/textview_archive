@@ -665,7 +665,62 @@ private extension Comparable {
     }
 }
 
-private struct AudioPreview: NSViewRepresentable {
+/// Audio preview: the system transport (AVPlayerView) plus a control bar with a
+/// "waveform" affordance that opens the `AudioEditorView` visualization (TSK-529).
+/// While editing we DROP the opaque `AudioPlayerHost` representable entirely —
+/// the editor draws its own SwiftUI `Canvas` waveform and runs its own
+/// `AVAudioPlayer` transport — so the representable's CALayer can't composite
+/// OVER the editor (the recurring sibling-blank pathology; see LESSONS.md). Same
+/// guard ImagePreview uses for its image editor.
+private struct AudioPreview: View {
+    let url: URL
+    /// `MDV_START_AUDIO_EDIT=1` opens straight into the visualization so a T5
+    /// pixel test can validate the editor without synthesizing a button tap
+    /// (the toggle is local @State, not script-reachable). Mirrors
+    /// `MDV_START_IMAGE_EDIT`.
+    @State private var editing =
+        ProcessInfo.processInfo.environment["MDV_START_AUDIO_EDIT"] == "1"
+
+    var body: some View {
+        ZStack {
+            Palette.windowBackground.ignoresSafeArea()
+            if !editing {
+                AudioPlayerHost(url: url)
+                VStack {
+                    Spacer()
+                    controlBar.padding(.bottom, 12)
+                }
+            }
+        }
+        .overlay {
+            if editing {
+                AudioEditorView(url: url) { editing = false }
+                    .transition(.opacity)
+            }
+        }
+        .accessibilityIdentifier("mdv.audioPreview")
+    }
+
+    private var controlBar: some View {
+        HStack(spacing: 8) {
+            Button(action: { editing = true }) {
+                Image(systemName: "waveform")
+            }
+            .buttonStyle(.borderless)
+            .helpInfo(title: "Waveform & editing",
+                      description: "Show the waveform with zoom, scale, and transport")
+            .accessibilityIdentifier("mdv.audioPreview.editButton")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().stroke(Palette.separator, lineWidth: 0.5))
+    }
+}
+
+/// AppKit hosting layer for the system audio transport. Opaque representable —
+/// kept out of the SwiftUI tree while the editor overlay is up (see AudioPreview).
+private struct AudioPlayerHost: NSViewRepresentable {
     let url: URL
     func makeNSView(context: Context) -> AVPlayerView {
         let v = AVPlayerView()
