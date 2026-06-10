@@ -75,7 +75,35 @@ ensure_tools() {
     exit 1
   fi
   select_toolchain
+  check_toolchain_marker
   log "swift: $(swift --version | head -1)"
+}
+
+# TSK-616: the shared .build must be SINGLE-TOOLCHAIN. A build with the
+# default 6.1.2 (e.g. a pre-fix vm-profile.sh run) leaves modules the 6.3
+# test compile cannot import — and the failure used to surface as a buried
+# compile error behind an exit-0 wrapper. Each run stamps the selected
+# toolchain into `.build/.mdv-toolchain`; a mismatch on the next run fails
+# LOUDLY up front with the remediation, instead of 100 lines into a build.
+check_toolchain_marker() {
+  local marker=".build/.mdv-toolchain"
+  local current="${TOOLCHAINS:-xcode-default}"
+  if [[ -d .build/arm64-apple-macosx && -f "$marker" ]]; then
+    local prev
+    prev=$(cat "$marker")
+    if [[ "$prev" != "$current" ]]; then
+      echo "ERROR: .build was last built with toolchain '$prev' but this run selects '$current'." >&2
+      echo "       Mixed-toolchain modules break the test compile (TSK-616)." >&2
+      echo "       Remediate: bash scripts/test-in-vm.sh clean" >&2
+      exit 2
+    fi
+  elif [[ -d .build/arm64-apple-macosx && ! -f "$marker" ]]; then
+    log "WARNING: .build has products of unknown toolchain provenance (no marker)."
+    log "         If the build fails with 'module compiled with Swift X cannot be"
+    log "         imported', run: bash scripts/test-in-vm.sh clean"
+  fi
+  mkdir -p .build
+  printf '%s' "$current" > "$marker"
 }
 
 # TSK-439: the VM's default Xcode `swift` (6.1.2) is STRICTER than the host on
@@ -241,6 +269,18 @@ run_webview_tests() {
 }
 
 case "$MODE" in
+  clean)
+    # TSK-616: targeted remediation of a toolchain-poisoned .build.
+    # Removes ONLY the compiled products + the index store (which
+    # `swift package clean` does NOT touch and which can keep serving
+    # stale-toolchain modules). `checkouts/` and `repositories/` are
+    # PRESERVED — the VM is an offline rsync mirror and cannot re-fetch
+    # dependencies if they are lost. NEVER rm -rf the whole .build here.
+    log "removing .build/arm64-apple-macosx + .build/index-build (+ toolchain marker)"
+    rm -rf .build/arm64-apple-macosx .build/index-build .build/.mdv-toolchain
+    log "kept: $(ls .build 2>/dev/null | tr '\n' ' ')"
+    log "clean done in ${SECONDS}s"
+    ;;
   build)
     ensure_tools
     build_all
