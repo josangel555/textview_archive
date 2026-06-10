@@ -6411,3 +6411,13 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - **TSK-590 epic groomed to ack** with the full child rollup: 14 fixed/validated +
   6 follow-ons, 3 wontdo, 4 parked on the owner (591/592/598/601). Everything
   agent-actionable under the epic is done; it stays open for the parked four.
+
+## LOG +171 (2026-06-10, autonomous tick — TSK-274 fixed: drag tabs onto session pills)
+- **TSK-274 (eb63137):** dragging a document tab onto a session pill MOVES the file into
+  that session. `SessionsAppCoordinator.moveTab(withID:toSessionID:)` resolves the dragged
+  tab id at DROP time (close source tab → activate target → open file; same-session/
+  unknown-target/stale-id/untitled are clean no-ops). `SessionTabDropDelegate` on every
+  pill consumes the tab strip's existing drag payload; the `"mdv-tab:"` wire format is now
+  a shared `TabDragPayload` codec (two hand-rolled parsers collapsed — drift-proof).
+  Tests 6/6: codec round-trip/rejection + move-across-sessions w/ rehydrate round-trip +
+  the no-op trio. Host gate green @ eb63137. Hover visuals deliberately VM-lane scope.
