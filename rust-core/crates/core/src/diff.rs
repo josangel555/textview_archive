@@ -195,24 +195,22 @@ fn flush(files: &mut Vec<File>, partial: &mut Option<PartialFile>) {
 /// Swift 4-strategy splitter.
 fn parse_diff_git_paths(rest: &str) -> (String, String) {
     // (1) Quoted form: `"a/…" "b/…"`.
-    if rest.starts_with('"') {
-        if let Some(mid) = rest.find("\" \"") {
+    if rest.starts_with('"')
+        && let Some(mid) = rest.find("\" \"") {
             let a = &rest[..mid];
             let b = &rest[mid + 3..];
             let bs = b.strip_suffix('"').unwrap_or(b);
             return (strip_path_prefix(&format!("{a}\"")), strip_path_prefix(bs));
         }
-    }
     // (2) Equal-prefix same-file case: a ` b/` where the prefix is `a/PATH` and
     // the suffix equals `PATH`.
     for (idx, _) in rest.match_indices(" b/") {
         let a_part = &rest[..idx];
         let b_part = &rest[idx + 3..];
-        if let Some(a_path) = a_part.strip_prefix("a/") {
-            if a_path == b_part {
+        if let Some(a_path) = a_part.strip_prefix("a/")
+            && a_path == b_part {
                 return (a_path.to_string(), b_part.to_string());
             }
-        }
     }
     // (3) Rename / asymmetric — fall back to the LAST ` b/`.
     if let Some(idx) = rest.rfind(" b/") {
@@ -469,11 +467,10 @@ pub fn hunk_marks(diff: &str) -> BTreeMap<i64, DiffMark> {
             // without that terminator leaves line_in_new unchanged).
             if let Some(plus) = line.find('+') {
                 let rest = &line[plus + 1..];
-                if let Some(end) = rest.find([' ', ',']) {
-                    if let Ok(n) = rest[..end].parse::<i64>() {
+                if let Some(end) = rest.find([' ', ','])
+                    && let Ok(n) = rest[..end].parse::<i64>() {
                         line_in_new = n - 1; // bumped before each consumed line
                     }
-                }
             }
             pending_deletion = false;
             continue;
@@ -725,7 +722,7 @@ mod tests {
         // A blank body line counts as a context line (content "").
         let d = "diff --git a/f b/f\n@@ -1,2 +1,2 @@\n a\n\n";
         let lines = &parse(d)[0].hunks[0].lines;
-        assert_eq!(lines[1], Line { kind: LineKind::Context, old_line_no: Some(2), new_line_no: Some(2), content: "".into() });
+        assert_eq!(lines[1], Line { kind: LineKind::Context, old_line_no: Some(2), new_line_no: Some(2), content: String::new() });
     }
 
     #[test]

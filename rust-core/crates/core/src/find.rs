@@ -261,11 +261,10 @@ fn push_row_hits(
     scope: Option<usize>,
 ) {
     for (col, cell) in cells.iter().enumerate() {
-        if let Some(only) = scope {
-            if only != col {
+        if let Some(only) = scope
+            && only != col {
                 continue;
             }
-        }
         if fold(cell, case).contains(needle) {
             out.push(TableHit { row, col });
         }
@@ -460,10 +459,10 @@ mod tests {
     // MARK: - find_in_table (CSV cell-find, parity with Swift CSVFind)
 
     fn cells(rows: &[&[&str]]) -> Vec<Vec<String>> {
-        rows.iter().map(|r| r.iter().map(|s| s.to_string()).collect()).collect()
+        rows.iter().map(|r| r.iter().map(std::string::ToString::to_string).collect()).collect()
     }
     fn hdr(names: &[&str]) -> Vec<String> {
-        names.iter().map(|s| s.to_string()).collect()
+        names.iter().map(std::string::ToString::to_string).collect()
     }
     fn th(row: i64, col: usize) -> TableHit {
         TableHit { row, col }

@@ -222,7 +222,7 @@ mod tests {
         }
     }
 
-    /// The OLD encode_frame implementation: encode body via `to_vec_named`,
+    /// The OLD `encode_frame` implementation: encode body via `to_vec_named`,
     /// then build a second `Vec` of `[u32 LE len][body]`. Kept here as the
     /// byte-identity oracle for the single-allocation rewrite.
     fn legacy_encode_frame<T: Serialize>(value: &T) -> Vec<u8> {

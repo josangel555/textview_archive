@@ -1,0 +1,7 @@
+# Build artifacts must live OUTSIDE the iCloud-synced worktree (workspace
+# mandate; audit TSK-555 found a 2.8 GB rust-core/target after one bare cargo
+# run — iCloud sync thrash + xattr re-stamping, the same class that breaks
+# codesign in this repo). This makes the mandate self-enforcing for every
+# cargo invocation in or below rust-core/; CARGO_TARGET_DIR still overrides.
+[build]
+target-dir = "/private/tmp/mdv-rust-target"

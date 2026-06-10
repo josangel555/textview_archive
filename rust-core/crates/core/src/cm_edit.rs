@@ -1,7 +1,7 @@
-//! CodeMirror incremental-edit reducer — the Rust port of the Swift
+//! `CodeMirror` incremental-edit reducer — the Rust port of the Swift
 //! `CMEditApplier` (migration plan slice #2). Pure, sans-IO, no deps.
 //!
-//! **UTF-16 semantics are load-bearing.** CodeMirror 6 indexes
+//! **UTF-16 semantics are load-bearing.** `CodeMirror` 6 indexes
 //! `EditorState.doc` in UTF-16 code units, and the edit `from`/`to` offsets are
 //! in those units. Rust `str` is UTF-8, so we operate on a `Vec<u16>`
 //! (`encode_utf16`) to match CM's indexing exactly — the same reason the Swift
@@ -18,7 +18,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// One CodeMirror change: replace the UTF-16 range `[from, to)` with `insert`.
+/// One `CodeMirror` change: replace the UTF-16 range `[from, to)` with `insert`.
 /// `from`/`to` are signed to faithfully reject a negative offset from a buggy
 /// encoder (mirrors the Swift `e.from < 0` guard).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,11 +38,12 @@ impl CmEdit {
     }
 }
 
-/// Apply `edits` to `base` (a UTF-16-indexed CodeMirror doc mirror), returning
+/// Apply `edits` to `base` (a UTF-16-indexed `CodeMirror` doc mirror), returning
 /// the resulting string or `None` if any edit is out of bounds, overlaps a
 /// prior one, or yields ill-formed UTF-16. A non-`None` result is byte-identical
 /// to what CM6 produces from the same batch — the parity contract the A/B test
 /// pins against the Swift `CMEditApplier`.
+#[must_use] 
 pub fn apply(base: &str, edits: &[CmEdit]) -> Option<String> {
     if edits.is_empty() {
         return Some(base.to_owned());
@@ -73,19 +74,17 @@ pub fn apply(base: &str, edits: &[CmEdit]) -> Option<String> {
     let mut out: Vec<u16> = Vec::with_capacity(base_units.len());
     let mut cursor: i64 = 0;
     for e in &sorted {
-        if e.from > cursor {
-            if let Some(slice) = base_units.get(cursor as usize..e.from as usize) {
+        if e.from > cursor
+            && let Some(slice) = base_units.get(cursor as usize..e.from as usize) {
                 out.extend_from_slice(slice);
             }
-        }
         out.extend(e.insert.encode_utf16());
         cursor = e.to;
     }
-    if cursor < base_len {
-        if let Some(slice) = base_units.get(cursor as usize..base_len as usize) {
+    if cursor < base_len
+        && let Some(slice) = base_units.get(cursor as usize..base_len as usize) {
             out.extend_from_slice(slice);
         }
-    }
 
     // Validating decode: `String::from_utf16` errors on a lone surrogate (it
     // does NOT substitute U+FFFD), so a split-surrogate edit returns None and

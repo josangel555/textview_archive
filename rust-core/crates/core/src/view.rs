@@ -251,7 +251,7 @@ pub fn looks_tabular(name: &str) -> bool {
 /// name-based [`FileKind`]. Front-ends use this to show an explicit banner —
 /// today an empty file renders as a blank pane and a binary file renders as
 /// garbled "text" with no hint why; this names those states so both front-ends
-/// surface them identically (the SwiftUI app shows the same idea natively).
+/// surface them identically (the `SwiftUI` app shows the same idea natively).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ContentState {
     /// Zero bytes on disk.

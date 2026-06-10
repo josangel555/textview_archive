@@ -173,11 +173,10 @@ fn score_match(name: &str, needle: &str, case_sensitive: bool) -> Option<i32> {
     for (hi, &hb) in hay.iter().enumerate() {
         let Some(&pb) = pat.get(pi) else { break };
         if fold(hb) == fold(pb) {
-            if let Some(prev) = last_match {
-                if hi == prev + 1 {
+            if let Some(prev) = last_match
+                && hi == prev + 1 {
                     score += ADJACENT_BONUS;
                 }
-            }
             if first_match.is_none() {
                 first_match = Some(hi);
             }

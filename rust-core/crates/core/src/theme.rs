@@ -19,6 +19,7 @@ pub struct Rgb {
 }
 
 impl Rgb {
+    #[must_use] 
     pub const fn new(r: u8, g: u8, b: u8) -> Self {
         Rgb { r, g, b }
     }
@@ -68,10 +69,12 @@ pub struct Palette {
 
 impl Palette {
     /// The palette for `mode`.
+    #[must_use] 
     pub const fn for_mode(mode: Mode) -> Self {
         Palette { mode }
     }
 
+    #[must_use] 
     pub const fn mode(&self) -> Mode {
         self.mode
     }
@@ -79,6 +82,7 @@ impl Palette {
     /// The RGB for `role` in this palette's mode. Values are One Dark / One
     /// Light derived — distinct per role and per mode so a front-end mapping
     /// and a pixel test can both tell them apart.
+    #[must_use] 
     pub const fn color(&self, role: Role) -> Rgb {
         match self.mode {
             Mode::Dark => match role {
@@ -113,6 +117,7 @@ impl Palette {
 /// `None` for any malformed input (wrong length, non-hex digits, empty) — never
 /// panics. Offered for front-ends / future user theme config; the built-in
 /// palettes use `Rgb` literals directly.
+#[must_use] 
 pub fn parse_hex(s: &str) -> Option<Rgb> {
     let body = s.strip_prefix('#').unwrap_or(s);
     if body.len() != 6 || !body.bytes().all(|b| b.is_ascii_hexdigit()) {

@@ -148,12 +148,11 @@ fn parse_branch_header(rest: &str, st: &mut RepoStatus) {
     }
     // Ahead/behind live inside the trailing "[...]" bracket; absent on a tracking
     // branch with no divergence (or a branch with no upstream).
-    if let Some(open) = rest.find('[') {
-        if let Some(seg) = rest.get(open..) {
+    if let Some(open) = rest.find('[')
+        && let Some(seg) = rest.get(open..) {
             st.ahead = bracket_count(seg, "ahead ");
             st.behind = bracket_count(seg, "behind ");
         }
-    }
 }
 
 /// Extract the integer following `key` (e.g. `"ahead "`) within the bracket

@@ -41,9 +41,10 @@ indexing_slicing = "deny"
 panic = "deny"
 
 [dependencies]
+# Wire encode/decode lives entirely in mdvcore-core; this crate only moves
+# opaque frame bytes across the C boundary (audit TSK-569 removed the unused
+# serde/rmp-serde declarations so the manifest states the true supply chain).
 mdvcore-core = { path = "../core" }
-serde = { workspace = true }
-rmp-serde = { workspace = true }
 
 [build-dependencies]
 cbindgen = { workspace = true }

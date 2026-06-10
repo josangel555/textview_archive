@@ -5,7 +5,7 @@
 //!
 //! It deliberately reads only the leading header bytes, so it works on the
 //! capped preview read the front-ends already do. Format coverage: PNG, GIF,
-//! JPEG (baseline + progressive SOFn), BMP, WEBP (VP8 / VP8L / VP8X). SVG is
+//! JPEG (baseline + progressive `SOFn`), BMP, WEBP (VP8 / VP8L / VP8X). SVG is
 //! intentionally excluded — it's text/XML, not a raster format.
 
 /// A recognized raster image format.

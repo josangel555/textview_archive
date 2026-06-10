@@ -1,5 +1,5 @@
 //! Pretty-print (the "Formatted" view mode) — the pure reformatter shared by
-//! every front-end (the SwiftUI app's `FormatViewer`, the ratatui TUI's
+//! every front-end (the `SwiftUI` app's `FormatViewer`, the ratatui TUI's
 //! Formatted mode, the web tier). Given a file's text it returns a re-indented
 //! copy so the front-ends render identical formatting *by construction* instead
 //! of each shelling out to `jq`/`xmllint` or re-deriving the layout.
@@ -19,7 +19,7 @@
 //! separate follow-up slice — its mixed-content / CDATA / attribute rules are a
 //! different, much larger problem and deliberately not folded in here.
 
-/// Two spaces per nesting level — matches the SwiftUI `FormatViewer` default.
+/// Two spaces per nesting level — matches the `SwiftUI` `FormatViewer` default.
 const INDENT: &str = "  ";
 
 /// Max container nesting the recursive walk will descend before bailing. The
@@ -456,20 +456,18 @@ fn xml_emit(toks: &[Tok]) -> String {
                     Some(Tok::Text(x) | Tok::Other(x)) => Some(x.as_str()),
                     _ => None,
                 };
-                if let (Some(x), Some(Tok::Close { name: cn })) = (inline_child, toks.get(i + 2)) {
-                    if cn == name {
+                if let (Some(x), Some(Tok::Close { name: cn })) = (inline_child, toks.get(i + 2))
+                    && cn == name {
                         push_line(&mut out, depth, &format!("{raw}{x}</{name}>"));
                         i += 3;
                         continue;
                     }
-                }
-                if let Some(Tok::Close { name: cn }) = toks.get(i + 1) {
-                    if cn == name {
+                if let Some(Tok::Close { name: cn }) = toks.get(i + 1)
+                    && cn == name {
                         push_line(&mut out, depth, &format!("{raw}</{name}>"));
                         i += 2;
                         continue;
                     }
-                }
                 push_line(&mut out, depth, raw);
                 depth += 1;
                 i += 1;

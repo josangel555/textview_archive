@@ -24,7 +24,10 @@ default-members = ["crates/core", "crates/ffi"]
 
 [workspace.package]
 edition = "2024"
-rust-version = "1.85"
+# 1.88 is the real MSRV: core uses let-chains (stabilized 1.88). An understated
+# floor lets a 1.85-1.87 toolchain pass cargo's check then die on E0658 instead
+# of a clean "toolchain too old" diagnostic (audit TSK-553).
+rust-version = "1.88"
 version = "0.0.0"
 publish = false
 license = "MIT"
