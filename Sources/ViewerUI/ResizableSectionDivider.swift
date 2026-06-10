@@ -68,7 +68,23 @@ struct ResizableSectionDivider: View {
     /// once. See UIRESP-10 below.
     @State private var pushedResizeCursor = false
 
+    /// Which drag mode this divider instance is wired for — the realized-
+    /// presence probe label (TSK-440): a wiring slip that drops a divider
+    /// from `sidebarBody` (or constructs it with the wrong bindings) flips
+    /// the per-role body-eval count `SidebarDividerWiringTests` pins.
+    var role: String {
+        switch (heightAbove != nil, heightBelow != nil) {
+        case (true, true): return "pair"
+        case (true, false): return "aboveOnly"
+        case (false, true): return "boundary"
+        case (false, false): return "inert"
+        }
+    }
+
     var body: some View {
+        #if DEBUG
+        let _ = BodyProbe.tick("ResizableSectionDivider.\(role)")
+        #endif
         ZStack {
             // The hairline. Matches a stock `Divider()` in colour
             // and weight; rendered as the literal Divider so the
@@ -156,7 +172,11 @@ struct ResizableSectionDivider: View {
     ///   * above only → legacy clamp (above grows as you drag down)
     ///   * below only → FILES boundary: drag down grows the flex FILES
     ///                  panel above by SHRINKING the fixed panel below
-    private func apply(delta: CGFloat) {
+    /// Internal (not private) as the exact-closure test seam: the drag
+    /// gesture's `onChanged` is exactly `apply(delta:)` after origin
+    /// capture, so `SidebarDividerWiringTests` exercises the IDENTICAL
+    /// routing the live drag drives.
+    func apply(delta: CGFloat) {
         switch (heightAbove, heightBelow) {
         case let (above?, below?):
             let baseA = dragStartAbove ?? above.wrappedValue
