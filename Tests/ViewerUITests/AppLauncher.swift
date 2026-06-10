@@ -83,8 +83,22 @@ enum AppLauncher {
             scriptURL = shared.appendingPathComponent("script.txt")
             argURL = shared.appendingPathComponent(fileArg.lastPathComponent)
             try? FileManager.default.copyItem(at: fileArg, to: argURL)
+            var isDir: ObjCBool = false
+            _ = FileManager.default.fileExists(atPath: argURL.path, isDirectory: &isDir)
             try? FileManager.default.setAttributes(
-                [.posixPermissions: 0o644], ofItemAtPath: argURL.path)
+                [.posixPermissions: isDir.boolValue ? 0o755 : 0o644],
+                ofItemAtPath: argURL.path)
+            // Root-owned files are unreadable-enough for git: a copied
+            // .git repo trips `fatal: detected dubious ownership` when the
+            // console-user app shells git against it. Hand the whole run
+            // dir to the spawn user (we are root here; direct chown).
+            if let user = spawnUser {
+                let chown = Process()
+                chown.executableURL = URL(fileURLWithPath: "/usr/sbin/chown")
+                chown.arguments = ["-R", user, shared.path]
+                try? chown.run()
+                chown.waitUntilExit()
+            }
         }
         try? FileManager.default.createDirectory(
             at: artifacts, withIntermediateDirectories: true)

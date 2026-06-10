@@ -103,6 +103,112 @@ final class InteractionUATTests: MultiScenarioTestCase {
         ])
     }
 
+    // MARK: - TSK-522/523 — Git Log row actions in the live app
+
+    /// Build a 3-commit repo under the harness tmpdir and return
+    /// (folder, short SHAs newest-first — graphLog's `%h` format, which
+    /// is what the row closures receive).
+    private func makeRepoFixture() throws -> (URL, [String]) {
+        let repo = harness.tmpDir.appendingPathComponent("repo", isDirectory: true)
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        func git(_ args: String...) throws -> String {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            p.arguments = args
+            p.currentDirectoryURL = repo
+            let pipe = Pipe()
+            p.standardOutput = pipe
+            p.standardError = FileHandle.nullDevice
+            try p.run()
+            let out = (try? pipe.fileHandleForReading.readToEnd()) ?? Data()
+            p.waitUntilExit()
+            XCTAssertEqual(p.terminationStatus, 0, "git \(args.joined(separator: " "))")
+            return String(data: out, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        }
+        _ = try git("init", "-q", "-b", "main")
+        _ = try git("config", "user.email", "t@t")
+        _ = try git("config", "user.name", "t")
+        for (i, body) in ["one\n", "one\ntwo\n", "one\ntwo\nthree\n"].enumerated() {
+            try body.write(to: repo.appendingPathComponent("f.txt"),
+                           atomically: true, encoding: .utf8)
+            _ = try git("add", "f.txt")
+            _ = try git("commit", "-q", "-m", "c\(i + 1)")
+        }
+        let shas = try git("log", "--pretty=%h").split(whereSeparator: \.isNewline).map(String.init)
+        XCTAssertEqual(shas.count, 3)
+        return (repo, shas)
+    }
+
+    private func gitLog(_ dump: [String: Any]) -> [String: Any] {
+        (model(dump)["gitLog"] as? [String: Any]) ?? [:]
+    }
+
+    func test_TSK522_cmdClickMultiSelect_thenCumulativeDiff() throws {
+        let (repo, shas) = try makeRepoFixture()
+        let script = """
+        show-git-panel
+        delay 2.5
+        git-log-cmd-click \(shas[0])
+        git-log-cmd-click \(shas[2])
+        git-log-cumulative-diff
+        delay 1.0
+        """
+        try runScenarios([
+            Scenario(
+                name: "git-log-multiselect-cumulative",
+                argFile: repo,
+                script: script,
+                assert: { [self] dumps, file, line in
+                    guard let last = dumps.last else {
+                        XCTFail("no dumps", file: file, line: line); return
+                    }
+                    let git = gitLog(last)
+                    XCTAssertEqual(
+                        (git["selectedLogSHAs"] as? [String])?.sorted(),
+                        [shas[0], shas[2]].sorted(),
+                        "REAL cmd-click closures must build the multi-selection; "
+                        + "gitLog=\(git)", file: file, line: line)
+                    let current = (model(last)["currentURL"] as? String) ?? ""
+                    XCTAssertTrue(current.hasSuffix(".diff"),
+                        "cumulative diff must open a .diff tab; currentURL=\(current)",
+                        file: file, line: line)
+                    XCTAssertTrue(current.contains(".."),
+                        "the cumulative tab is the base..tip net diff; \(current)",
+                        file: file, line: line)
+                })
+        ])
+    }
+
+    func test_TSK523_plainClick_opensCommitDiffTab() throws {
+        let (repo, shas) = try makeRepoFixture()
+        let script = """
+        show-git-panel
+        delay 2.5
+        git-log-click \(shas[0])
+        delay 1.0
+        """
+        try runScenarios([
+            Scenario(
+                name: "git-log-click-commit-diff",
+                argFile: repo,
+                script: script,
+                assert: { [self] dumps, file, line in
+                    guard let last = dumps.last else {
+                        XCTFail("no dumps", file: file, line: line); return
+                    }
+                    let git = gitLog(last)
+                    XCTAssertEqual(git["selectedLogSHA"] as? String, shas[0],
+                        "REAL click closure must select the row; gitLog=\(git)",
+                        file: file, line: line)
+                    let current = (model(last)["currentURL"] as? String) ?? ""
+                    XCTAssertTrue(current.hasSuffix("\(shas[0]).diff"),
+                        "the commit's structured diff tab must be OPEN and "
+                        + "selected; currentURL=\(current)", file: file, line: line)
+                })
+        ])
+    }
+
     // MARK: - Dump accessors
 
     private func model(_ dump: [String: Any]) -> [String: Any] {
