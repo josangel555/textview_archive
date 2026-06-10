@@ -2640,3 +2640,45 @@ Two durable VM gotchas found finishing the T5/VisualRegression pixel lane:
   propagate the remote build's exit code (vm-profile.sh fixed, b1849c4). Symptom checklist
   before trusting any VM artifact: binary mtime vs fix time, `nm` for a new symbol, build
   log exit marker.
+
+## 2026-06-10 (in-process event synthesis — TSK-620 half B, the five constraints)
+Empirically mapped while building `ui-click`/`ui-double-click` (UIEventSynth). Each one
+cost an iteration; together they bound what an IN-PROCESS click harness can ever do:
+- **(1) `sendEvent` down/up pairs cannot satisfy NSControl tracking loops** — an
+  `NSButton.mouseDown` runs a modal tracking loop that pulls its mouse-up from the EVENT
+  QUEUE via `nextEvent`; a directly-sent up never arrives there. Queue-post
+  (`NSApp.postEvent`) for AppKit controls.
+- **(2) Queued events cannot route to an un-ordered window** — a window that was never
+  ordered in has no window device (`windowNumber <= 0`); posted events are dropped on
+  dequeue. End-to-end delivery is only observable in a live ordered window (VM lane);
+  headless tests pin everything up to delivery (`UIEventSynth.events`).
+- **(3) A click on a non-key window is swallowed as the activating click** — under
+  `MDV_BACKGROUND` the window is never key; SwiftUI views default
+  `acceptsFirstMouse == false`, so the first click activates and is consumed. The verb
+  must `NSApp.activate` + `makeKeyAndOrderFront` first (e692846).
+- **(4) SwiftUI controls inside an NSHostingView are NOT NSViews** — their
+  `.accessibilityIdentifier(_:)` never lands on any NSView; an NSView-tree walk cannot
+  find them. Ids appear on hosting NSViews only at hosting BOUNDARIES (which is why
+  DiagnosticDump works).
+- **(5) The in-process accessibility tree is EMPTY** — `contentView.accessibilityChildren()`
+  returns 0 children at the root (proven live: `axRootChildren=0`). SwiftUI materializes
+  AX elements lazily for EXTERNAL AX clients only, and AX TCC for xctest is owner-only
+  (SIP blocks agent INSERT). An in-process AX walk is a dead end, period.
+  ⇒ Consequence: clicking arbitrary SwiftUI controls in-process requires the controls to
+  PUBLISH their own frames (a `.uiClickTarget("id")` modifier → ClickTargetRegistry), or
+  an external XCUITest runner (testmanagerd synthesizes entitled real events). Design on
+  TSK-620.
+- **Versioned NOT-FOUND traces pay for themselves**: tagging the failure trace with a
+  resolver version (`click[v4](…): NOT FOUND; axRootChildren=…`) plus an AX-id sample
+  distinguishes "stale binary" / "AX tree empty" / "ids live elsewhere" in ONE VM run
+  instead of three.
+
+## 2026-06-10 (VM + commit hygiene, recurring)
+- **chown `.build` EVERY VM cycle, not once** — every sudo'd asuser GUI test run
+  re-poisons `.build` with root-owned files; the NEXT build fails "Operation not
+  permitted". Make `sudo chown -R vm-tester .build` an unconditional step of the cycle
+  (rsync → chown → build → test), not a one-time repair (TSK-502 class).
+- **Never `;`-chain `git commit` after a remote/long build** — `ssh vm build; git commit`
+  commits even when the build FAILED (af8bd21 landed non-compiling code). Gate with `&&`
+  on the build's REAL exit, or run the steps as separate sequential calls and read the
+  exit first.

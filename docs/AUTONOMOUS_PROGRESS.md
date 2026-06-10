@@ -6523,3 +6523,28 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   driving TSK-313 (strip double-click → ~ session), TSK-314 (+ → prefilled prompt; needs an
   NSTextField describe in DiagnosticDump first), TSK-522/523 (cmd-click log rows → selection
   bar + model), then validate all four off its evidence.
+
+## LOG +177 (2026-06-10, autonomous tick — TSK-620 half B: in-process click delivery hits the AX wall; checkpoint + next design)
+- **Verdict (decisive, from a verified-fresh binary):** in-process synthesis CANNOT reach
+  SwiftUI controls by accessibility id. The versioned trace from VM run uat6 —
+  `click[v4](mdv.sessionTab.new): NOT FOUND; axRootChildren=0 axIdsSample=[]` — proves the
+  in-process accessibility tree is EMPTY: SwiftUI materializes AX elements only for
+  external AX clients, and xctest AX TCC is owner-only (SIP blocks agent INSERT). Five
+  constraints mapped en route (sendEvent vs tracking loops; unordered-window routing;
+  non-key click swallowing; NSHostingView ids not on NSViews; empty in-process AX tree) —
+  full entries in LESSONS.md "in-process event synthesis".
+- **What landed and stays (gate PASSED on db1cec1):** the verbs + strict `UIClickSpec`
+  grammar (6 tests), `UIEventSynth` with host-pinned `events()` builder (3 tests),
+  activate/makeKey delivery fix (e692846), versioned self-describing NOT-FOUND trace with
+  AX sample (db1cec1), `uiClickTrace` step-dump channel, `nsTextField` dump node (proven
+  on the VM: real rendered field values), and `InteractionUATTests` — the ready acceptance
+  harness for whichever delivery mechanism wins.
+- **Checkpoint on the board (TSK-620 comment, seq 4022) with the NEXT DESIGN:** SwiftUI-side
+  click-target registration — a `.uiClickTarget("mdv.x")` modifier publishing each opted-in
+  control's global frame into a `ClickTargetRegistry` (onGeometryChange), consulted by
+  `resolveTargetRect` BEFORE the NSView walk; coordinates feed the existing event builder
+  unchanged. Fallback: the external XCUITest L4 target (testmanagerd synthesizes entitled
+  events). TSK-313/314/522/523 stay correctly held at `fixed` pending that evidence.
+- Process: af8bd21 briefly landed non-compiling code via a `;`-chained commit after a
+  remote build — fixed in db1cec1; rule (gate commits on the build's REAL exit) added to
+  LESSONS.
