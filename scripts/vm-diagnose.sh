@@ -43,7 +43,11 @@ ssh macOS15 'bash -s' -- "$PASSWORD" "$GUI_UID" "$SCENE" "$FILE_REL" "$MODE" <<'
   # Reap any stray TAGGED test instance from a prior run — a second live
   # instance confuses window ownership. NEVER killall by exec name (the
   # owner-app footgun); match the dist path, which only test spawns use.
-  pkill -f "markdown_viewer/dist/TextView.app/Contents/MacOS/MarkdownViewer" 2>/dev/null || true
+  # Match the RELATIVE launch path too (instances started after `cd` use
+  # `dist/TextView.app/...` and the absolute pattern misses them). MUST be
+  # sudo'd: the sudo'd asuser bridge spawns the app as ROOT, so a plain
+  # pkill gets "Operation not permitted" and the `|| true` masks it.
+  echo "$PASSWORD" | sudo -S pkill -f "dist/TextView.app/Contents/MacOS/MarkdownViewer" 2>/dev/null || true
   # Clear the AppKit autosaved window frame (vm-smoke.sh lesson): a prior
   # off-screen frame overrides center() and yields a windowless capture.
   defaults delete com.markdownviewer.MarkdownViewer 'NSWindow Frame MainWindow' 2>/dev/null || true
@@ -64,8 +68,8 @@ ssh macOS15 'bash -s' -- "$PASSWORD" "$GUI_UID" "$SCENE" "$FILE_REL" "$MODE" <<'
     echo "$PASSWORD" | sudo -S launchctl asuser "$GUI_UID" \
       /usr/sbin/screencapture -x /tmp/mdv-diagnose.png
     # Reap ONLY the tagged test instance (never killall by exec name).
-    pkill -f "MDV_TEST_INSTANCE=1" 2>/dev/null || \
-      pkill -f "dist/TextView.app/Contents/MacOS/MarkdownViewer" 2>/dev/null || true
+    # Sudo'd for the same reason as the pre-launch reap (root-owned spawns).
+    echo "$PASSWORD" | sudo -S pkill -f "dist/TextView.app/Contents/MacOS/MarkdownViewer" 2>/dev/null || true
     ls -l /tmp/mdv-diagnose.png
   else
     # asuser drops env passed via /usr/bin/env but keeps env set INSIDE the
