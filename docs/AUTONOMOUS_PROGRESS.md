@@ -5971,3 +5971,16 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   vs Edit, whole-UI freeze vs late colors). CAVEAT recorded: captures set MDV_SKIP_WORKSPACE_RESTORE=1 —
   cold-launch session restore is the main unmeasured path. Three perf parks now pending owner
   (TSK-592/598/601); answers can come together.
+
+## LOG +139 (2026-06-10, autonomous tick — TSK-593 fixed: diff window pins top-left)
+- **Root cause:** the diff tab's two-axis `ScrollView` centers content smaller than the viewport —
+  nothing anchored it (the #133 side-panel fix never covered this container). **Fix (b198275):**
+  GeometryReader feeds the viewport into `DiffView.scrollBody`, which expands the file-block stack to
+  at least viewport size anchored `.topLeading`; large diffs scroll unchanged.
+- **Oracle lesson (also in the test header):** `ScrollView` is opaque to EVERY headless oracle — a
+  window-free NSHostingView frame-walk realizes zero NSViews for SwiftUI-drawn rows, and ImageRenderer
+  draws nothing through ScrollView. The contract is therefore pinned one level below it: ImageRenderer
+  renders the extracted `scrollBody` tree and asserts the non-transparent pixel bounding box hugs the
+  top-left. ImageRenderer is legitimate HERE (pure-SwiftUI geometry, no representable, no on-screen
+  visibility claim — distinct from the banned TSK-488 false-green class). Teeth demonstrated
+  (alignment dropped → red). Gate green on the committed commit; bundle reinstall kicked.
