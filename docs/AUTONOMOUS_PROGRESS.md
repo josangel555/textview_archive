@@ -6761,3 +6761,22 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   failures — the documented bench-flake-under-load class; two consecutive clean re-runs).
 - **Fixed-lane P1s fully drained** (TSK-266 last tick, TSK-440 this tick). Drain continues
   next into the June 4-5 S3/S4 + BACKLOG series (~50 tickets).
+
+## LOG +189 (2026-06-10, autonomous tick — drain batch 1 of the June 4-5 fixed series: 134 + 181 validated, 150 held with named gap)
+- **Drain finding:** the June 4-5 `fixed` series are mostly ALREADY-FIXED reconciliations
+  (no commits; evidence = code-reading pointers). Validation therefore requires: code
+  evidence re-confirmed on current main + a NAMED test that pins the behavior, re-run fresh.
+- **TSK-134 (S2, monitor detail O(N) reopens) VALIDATED** — code evidence current
+  (single FileHandle streaming pass); pinned by the per-finding audit suite
+  `Audit_..._ClaudeMonitorView_swift_StreamingLoadTests` 5/5 + ClaudeMonitorModelTests
+  13/13, fresh.
+- **TSK-181 (S3, saveSync vs enqueueSave race) VALIDATED** — code evidence current
+  (writeQueue.sync + coalesceLock pending-clear); pinned BY NAME:
+  `testSaveSyncWinsOverPendingCoalescedEnqueue` + index twin in
+  `Audit_..._SessionStore_swift_Tests` 6/6 + SessionStoreTests 26/26, fresh.
+- **TSK-150 (S3, loadMoreLog stale-append race) HELD at fixed — gap found:** the logGen +
+  repoRoot guard is present (GitPanelModel.swift:415-428) but NO test pins it — dropping
+  the guard stays green everywhere (GitLogSearchModelTests covers only the search-mode
+  no-op). Closure path on the ticket: in-flight-page test that wholesale-replaces the log
+  before the append lands and asserts the stale page is dropped. Next drain build item.
+- Drain tally so far: 266, 440, 134, 181 validated; 150 held honest. ~47 fixed remain.
