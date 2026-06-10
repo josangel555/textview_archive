@@ -5868,3 +5868,18 @@ First firing under the 2026-06-10 USER-FACING-first directive; cron loop recreat
   bundle installed. HONEST RESIDUE: any remaining felt latency when the neighbor was already loaded is the
   single-mounted content-view rebuild — the parked SUPERVISED MountedPanesLRU work (TSK-254 class) which needs
   live Instruments; owner to confirm felt latency on the new build. `main` @ 5336262.
+
+## LOG +132 (2026-06-10, autonomous tick — TSK-591 hover-lag triage + diagnostics; RELEASE build installed)
+- **TSK-591 (file-nav hover lag) → investigated, instrumented, flagged live-validation (868207e).** Code-trace
+  RULED OUT: row hover state (row-local `@State`), HelpSink/TooltipPresenter (narrow observables with dedupe).
+  THREE live candidates remain: (1) per-row tracking-area density (`.onHover` + native `.help(path)` per row —
+  AppKit mouse-moved walks all of them); (2) re-body amplification (`FileRowView` observes DocumentModel +
+  SidebarModel + TrackedReposChannel PER ROW — any concurrent publish re-bodies every visible row);
+  (3) norm-cache thrash (`TrackedReposChannel.norm()` does symlink-resolving lstat chains on miss; wipe-on-
+  overflow at cap 2048 thrashes on big trees). Landed `normCacheMisses`/`normCacheResets` + Obs counters
+  (`trackedRepos.norm.miss`/`.reset`) so (3) is checkable in the live app without Instruments; 2 headless tests
+  pin the accounting. Live checklist is on the ticket. No blind fix shipped (SOP: risky-blind forbidden).
+- **Owner ask: production build.** `bash scripts/build-app.sh release --install` → SUCCESS; installed at
+  `/Applications/TextView.app` (release config, 44M — under the 48M cap; `codesign --verify --deep` OK). The
+  release bundle carries all five of today's user-facing fixes (TSK-599/600/609/266 + TSK-591 diagnostics).
+  `main` @ 868207e.
