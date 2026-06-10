@@ -241,6 +241,24 @@ public final class SessionsAppCoordinator: ObservableObject {
         openFolder(FileManager.default.homeDirectoryForCurrentUser, forceNew: true)
     }
 
+    /// TSK-315: tab context menu "Open in New Session" / "Move to New
+    /// Session". Creates a NEW session rooted at the file's parent folder
+    /// and opens the file in it. With `removingFromCurrent`, the file's
+    /// tab is closed in the CURRENT session FIRST, so the outgoing
+    /// session's detach-time snapshot no longer contains it — a true
+    /// move; the default leaves the source session untouched (a copy-
+    /// like open). Explicit user gesture, so the TSK-599 explicit-open
+    /// TCC contract applies.
+    public func openFileInNewSession(_ fileURL: URL,
+                                     removingFromCurrent: Bool = false) {
+        if removingFromCurrent,
+           let idx = model.tabs.tabs.firstIndex(where: { $0.url == fileURL }) {
+            model.closeTab(at: idx)
+        }
+        _ = core.openFolder(fileURL.deletingLastPathComponent(), forceNew: true)
+        model.openPath(fileURL)
+    }
+
     /// Consume the gate (read+clear). Returns `true` exactly once
     /// after each arm. Exposed for the view layer's `onChange` hook.
     public func consumeFirstPaintGoTo() -> Bool {

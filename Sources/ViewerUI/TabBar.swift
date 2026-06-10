@@ -313,6 +313,22 @@ private struct TabContextMenu: View {
             Button("Reveal in Sidebar") {
                 model.revealInSidebar(url)
             }
+            Divider()
+            // TSK-315: spawn a session rooted at the file's folder with
+            // the file open. "Move" also closes this session's tab so the
+            // file lives in exactly one session afterwards. Routed through
+            // the model's weak coordinator handle (same dispatch surface
+            // as the palette verbs) — disabled when no coordinator is
+            // attached (standalone/test hosts).
+            Button("Open in New Session") {
+                model.sessionsCoordinator?.openFileInNewSession(url)
+            }
+            .disabled(model.sessionsCoordinator == nil)
+            Button("Move to New Session") {
+                model.sessionsCoordinator?.openFileInNewSession(
+                    url, removingFromCurrent: true)
+            }
+            .disabled(model.sessionsCoordinator == nil)
         }
     }
 }
