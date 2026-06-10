@@ -912,3 +912,18 @@ all already tracked on the board, listed here only as the resume pointer:
 - **Gate-flake hardening** (load-tolerant deadlines + retry-once for PTY/LSP
   suites) — owner asked "any way to fix?"; options offered, not yet ticketed.
 - 2026-06-09 entry below remains valid for the audit context/pointers.
+
+## 2026-06-10 (later) — measurement-session follow-ups
+- TSK-592 resize capture: when the in-flight VM run lands, parse main-thread
+  Time Profiler samples inside the sweep window (export table schema
+  `time-profile`; aggregate top frames) — the parse step isn't scripted yet;
+  candidate: fold a `--report` step into `scripts/vm-profile.sh` (small).
+- `resize-sweep` drives setFrame, not a real interactive drag — it misses
+  `NSWindow.inLiveResize`-gated paths. If the jank only reproduces under a
+  true drag, the driver needs a CGEvent/AX variant (Accessibility TCC on the
+  VM; medium).
+- TSK-591 hover lag: live counter read still pending (10s hover →
+  `trackedRepos.norm.miss`/`.reset` in the observability projection).
+- MountedPanesLRU supervised session: parked on TSK-598 with measurement
+  backing (WebKit loadToFinish 3.46s = 94% of MD open); clears TSK-598 +
+  TSK-266 residue + tab-switch lag in one move once approved.

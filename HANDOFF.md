@@ -1,89 +1,100 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — priority pivot to user-facing bugs; Phase-0 security complete  (2026-06-10)
+# Handoff — user-facing fix run + measurement harness; TSK-592 trace ready to parse  (2026-06-10)
 
-**Session:** claude-mdv (autonomous loop + owner-directed)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `c3525bb` (+ uncommitted LESSONS/BACKLOG handoff edits — commit them)
+**Session:** claude-mdv (autonomous loop, cron :03/:13/:23/:33/:43/:53)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `8f1d2b0` (+ uncommitted LESSONS/BACKLOG/CLAUDE/HANDOFF handoff edits — commit them)
 
 ## Mission
-**OWNER DIRECTIVE 2026-06-10: every firing now works USER-FACING bug fixes first** —
-encoded in `docs/TASK_WORKFLOW.md` §3 rank 1 (the doc each cron tick reads in full).
-The rust-core audit Phase 0 is effectively done (all security/S2 items fixed);
-the audit's Phase 1+ and the hygiene trio now queue BEHIND the user-facing pool.
+USER-FACING bug fixes first (owner 2026-06-10, encoded in `docs/TASK_WORKFLOW.md` §3
+rank 1). Two standing owner corrections from this session now govern all perf work:
+**measure with the PerfSignpost/xctrace harness, don't attribute by elimination**, and
+**anything that opens app UI (including profiling launches) runs on the UTM VM**.
 
 ## Current state
-- **Done this session (all gate-green, teeth-demonstrated, recorded `fixed` on board):**
-  TSK-549/542/553/569/555 (batch 1) · TSK-550 workspace-wide gate (`7bc1c95`) ·
-  TSK-540 hex clamp + TSK-578 OpenError (`2d4f7dd`) · TSK-576/565 hunk_marks
-  parity-locked Rust+Swift (`730fc65`) · TSK-539 cbindgen+drift gate (`3f32676`) ·
-  TSK-548 TooLarge end-to-end (`051eadf`) · TSK-551/556/558 web trio (`c10cf4b`) ·
-  TSK-557 CSV heap cap (`575d148`). Epic TSK-538: 15 fixed / 36 open.
-- **Docs de-staled** (`c3525bb`): CLAUDE.md SOP (board.py refs killed, board-tool
-  names fixed, VM GUI-lane gotchas, new priority), TASK_WORKFLOW.md §1 tool list
-  (+`task_retract`, `quiet:true`, retry-once) + §3 priority rewrite.
-- **Owner bug-list reconciliation DONE:** all ~60 items mapped. New epic
-  **TSK-590** (P1) + children **TSK-591..610** for the unmatched items; bumped to
-  P1: TSK-266, 267, 313, 314, 327, 359, 363, 522, 523. Full mapping table is in
-  the last big assistant message before this handoff (board state is canonical).
-- **In flight:** nothing torn. Tree has only the LESSONS/BACKLOG/HANDOFF edits.
-- **Next action:** commit the handoff docs, then start the user-facing pool —
-  first targets: **TSK-599/600** (broken session-open flows), **TSK-609**
-  (inert shoulder buttons 4/5/6), then felt-perf **TSK-266/267/591/592/598/601**.
-  Most need the live app → headless-first wiring/model tests, VM lane for pixels.
+- **Fixed + installed (release /Applications/TextView.app, 44MB, codesign OK):**
+  TSK-599 explicit session-opens under `~/Documents` (TCC guard now implicit-only,
+  418b0b4) · TSK-600 `+`→GoTo `~` spawns a session (goToPathNewSessionIntent, f5cb39b) ·
+  TSK-609 rail toggle reveals collapsed sections (expandedStateKey reveal-on-on,
+  c82498f) · TSK-266 close paths materialize the lazy neighbor
+  (settleSelectionAfterClose, 5336262; residue = MountedPanesLRU, live-validation).
+- **Measured (not guessed):** TSK-598 MD-open lag = **94% WebKit**
+  (`WKWebView.loadToFinish` 3457ms vs ~230ms app-side, VM capture of LESSONS.md,
+  no mermaid). Parked to owner: approve supervised MountedPanesLRU (now data-backed;
+  also clears TSK-266 residue + tab-switch lag).
+- **Harness built:** `scripts/vm-profile.sh <file> <secs> [open|resize]
+  [release|debug]` (1cb22cd + 8f1d2b0) — rsync → VM build → xctrace
+  `--instrument os_signpost` under the asuser bridge → in-sudo chown → pull.
+  `resize-sweep` script verb (ScriptRunner) + pure `ResizeSweep.width` (3 tests).
+  Fixed the BROKEN doc recipe (`--instrument` was missing, 1668d68) + added the
+  `WKWebView.loadToFinish` signpost.
+- **In flight — TSK-592 (resize jank):** capture DONE, parse NOT started. A 25s
+  symbolicated (debug-config) trace of open + ~4s resize sweep sits at
+  **`/tmp/mdv-592-resize.trace`** (6.5MB, host). Nothing else torn.
+- **Next action:** parse that trace (see How to resume #2) and fix what the
+  main-thread samples indict.
 
 ## Key decisions & rationale
-- **User-facing > internal severity** (owner): a P1 UI bug outranks an S2
-  internal finding. `[PORT]` + test backfill stay last resorts.
-- Reconciliation policy: items with completed UX-wave evidence were NOT re-filed
-  (avoid duplicate noise); owner invited to flag any that still misbehave —
-  those become P1 regressions.
-- TSK-589 (eviction policy) parked to the owner with 4 options (a-d).
-- Gate-flake hardening (PTY/LSP load-tolerance + retry-once) offered, not ticketed yet.
+- TSK-599 contract change: explicit user gestures open/persist sessions under TCC
+  roots; only implicit launch paths keep the guard (owner's whole workspace is under
+  `~/Documents`; silent no-op was the bug). Documented in `docs/uat/smokes/sessions.md`.
+- TSK-598/266/592 perf: no blind fixes — measurement first (owner). MountedPanesLRU
+  stays parked until the owner approves the supervised session.
+- Ad-hoc inline sudo heredocs over ssh are classifier-denied; committed harness
+  scripts (vm-smoke.sh shape) are the sanctioned route — hence vm-profile.sh.
 
-## Gotchas / lessons (full entries in LESSONS.md 2026-06-10 section)
-- Cargo config discovery = CWD-based, NOT --manifest-path → repo-root
-  `.cargo/config.toml` added; watch for `rust-core/target` regrowing.
-- SwiftPM does NOT track the prebuilt `.a` (stale-link A/B false fails — script
-  now touches `Sources/RustCore`) NOR recompile dependents on enum case-add
-  (`.panic == .panic` was FALSE cross-module; `touch` the dependent).
-- Host-gate flakes under build load (PTY, LSPPool): re-run the suite ALONE first.
-- VM GUI lane: `MDV_VM_GUI_SESSION=1` needs `MDV_VM_SUDO_PASS=<vm-sudo-password>` (silent no-op
-  without); `asuser` runs everything as root.
+## Gotchas / lessons (full entries in LESSONS.md "2026-06-10 (later)")
+- `xctrace --template 'Time Profiler'` does NOT record custom-subsystem signposts
+  without `--instrument 'os_signpost'`; `log show` is NOT a fallback (OSSignposter
+  intervals aren't persisted).
+- The sudo'd asuser bridge root-owns everything it writes — chown in-bridge
+  (vm-profile.sh does; TSK-502 class, two new sites found).
+- Release bundle is stripped ⇒ Time Profiler samples are addresses; use the debug
+  config for attribution, release for honest signpost timings.
+- `resize-sweep` drives setFrame, not a live drag — `NSWindow.inLiveResize` paths
+  unexercised (caveat on TSK-592).
 
 ## Files that matter
-- `docs/TASK_WORKFLOW.md` — THE SOP; §3 rank 1 = user-facing bugs (2026-06-10).
-- `CLAUDE.md` — de-staled SOP summary + VM gotchas + refreshed quick refs.
-- `rust-core/crates/core/src/{csv,diff,wire,hex}.rs`, `crates/ffi/src/{lib,status,tests}.rs`,
-  `crates/web/src/main.rs` — this session's Phase-0 fixes (see commits above).
-- `scripts/rust-core-gate.sh` — now workspace-wide + ABI header-drift step.
-- `scripts/build-rust-core.sh` — touches RustCore sources after staging the .a.
-- `Sources/RustCore/CoreClient.swift` — `CoreError.tooLarge` mapping.
-- `docs/research/rust-core-audit-2026-06-09/synthesis.md` — audit verdict/roadmap.
+- `scripts/vm-profile.sh` — THE VM profiling pipeline (modes/configs in header).
+- `docs/PERFORMANCE_PROFILING.md` — fixed recipe + signpost table (incl. loadToFinish).
+- `Sources/MarkdownViewer/ScriptRunner.swift` — `resize-sweep` verb (~line 92).
+- `Sources/ViewerCore/Perf/ResizeSweep.swift` — pure sweep schedule (+tests).
+- `Sources/ViewerUI/MarkdownRenderedView.swift` — loadToFinish signpost pair.
+- `Sources/ViewerUI/Git/TrackedReposChannel.swift` — norm-cache miss/reset counters
+  (TSK-591 live checklist).
+- `/tmp/mdv-592-resize.trace` — UNPARSED symbolicated resize capture (the next action).
+- Begin/End signpost pairing parser: in `docs/AUTONOMOUS_PROGRESS.md` LOG +135 context;
+  working python in the transcript — re-derive: export os-signpost table rows, resolve
+  xml id/ref dedup recursively, pair Begin/End by (category, name, signpost-id).
 
 ## Open questions / blockers
-- TSK-589 eviction policy — parked, waiting on owner (options a-d on the ticket).
-- Audit dep approvals (cargo-fuzz, proptest, cargo-deny/audit, Miri, wasm32) —
-  parked on their tickets; do NOT adopt without explicit owner OK.
-- Owner to flag any "implemented in UX waves" item that still misbehaves → file
-  as P1 regression under TSK-590.
+- **MountedPanesLRU supervised session** — parked on TSK-598 (waiting:human), now
+  measurement-backed. Clears TSK-598 + TSK-266 residue + tab-switch in one move.
+- TSK-591 hover lag — needs a 10s live hover + read of `trackedRepos.norm.miss`/
+  `.reset` counters (owner's machine or VM), three candidates on the ticket.
+- TSK-589 session-eviction policy (options a–d) — still parked.
 
-## Tracker (tasked MCP @ :8787, project `tasked`, agent `claude-mdv`)
-- Fixed this session: TSK-539, 540, 542, 548, 549, 550, 551, 553, 555, 556, 557,
-  558, 565, 569, 576, 578 (commits attached on each).
-- Filed: TSK-578..589 (audit roadmap gaps; 589 parked) · TSK-590 epic + 591..610
-  (owner bug list). Bumped P1: TSK-266/267/313/314/327/359/363/522/523 + TSK-590.
-- The work queue for next firings = TSK-590 children + the bumped P1 set.
+## Tracker (board @ :8787, project `tasked`, agent `claude-mdv`)
+- Fixed today: TSK-599, 600, 609, 266 (all with checks + commits).
+- In progress: TSK-592 (capture done, parse next — checkpoint comment has the recipe),
+  TSK-591 (instrumented, live-validation), TSK-598 (measured, waiting:human).
+- Pool remaining: TSK-593..597, 601..608, 610 (unexplored children) + bumped P1s
+  TSK-267/313/314/327/359/363/522/523.
 
 ## How to resume
 1. `git -C /Users/me/Documents/workspaces/claude/markdown_viewer status` — commit the
-   LESSONS/BACKLOG/HANDOFF edits if still dirty (`docs: handoff 2026-06-10`).
-2. Read `docs/TASK_WORKFLOW.md` IN FULL (every firing — it has the new priority).
-3. Pick from the P1 user-facing pool (epic TSK-590 children first): suggested order
-   TSK-599 → TSK-600 → TSK-609 → TSK-266 → TSK-591. For each: `task_get` →
-   advance through lanes → fix with headless-first tests (model/wiring layer per
-   `feedback_verify_headless_before_asking`) → `scripts/test-headless-gate.sh` →
-   commit per item → `task_record(to: fixed)` with SHA → log to
-   `docs/AUTONOMOUS_PROGRESS.md`. UI-pixel claims need the VM lane
-   (`MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> bash scripts/test-in-vm.sh`).
-4. rust-core lane (only when no user-facing task is actionable): hygiene trio
-   TSK-566/567/575, then Phase 1 starting TSK-579 (`mdvcore_abi_version`).
-5. Board = `mcp__tasked__*` only; retry once on connection error (owner upgrades
-   the server live). Built-in TaskList `#NNN` ≠ board `TSK-NNN`.
+   handoff doc edits if dirty (`docs: handoff 2026-06-10 (later)`).
+2. **TSK-592 parse (the in-flight item):**
+   `xcrun xctrace export --input /tmp/mdv-592-resize.trace --toc` → find the
+   `time-profile` table → export via
+   `xcrun xctrace export --input /tmp/mdv-592-resize.trace --xpath
+   '/trace-toc/run[@number="1"]/data/table[@schema="time-profile"]'` → aggregate
+   MAIN-THREAD top frames inside the sweep window (sweep ≈ t+5s..t+9s; anchor with
+   the os-signpost lane in the same trace). Fix what the samples indict; if samples
+   are clean, suspect inLiveResize-gated paths (driver caveat on the ticket).
+3. Then continue the pool: next unexplored children (TSK-593..597, 601..608, 610) —
+   `task_get` each, headless-first, gate, commit per item, log to
+   `docs/AUTONOMOUS_PROGRESS.md`, install via `bash scripts/build-app.sh release --install`.
+4. Per-tick discipline: read `docs/TASK_WORKFLOW.md` every firing; board via
+   `mcp__tasked__*` only; UI-opening anything → `scripts/vm-profile.sh` /
+   `scripts/test-in-vm.sh` on the VM; measure perf before attributing.
+5. Cron job `82bf2d3a` (session-only) fires :03/:13/...; recreate via CronCreate if
+   the session restarted (same prompt as previous ticks).

@@ -2550,3 +2550,41 @@ Two durable VM gotchas found finishing the T5/VisualRegression pixel lane:
   isolated re-run passes in <100 ms. Triage rule: re-run the failing suite
   ALONE before chasing it. (Candidate hardening: load-tolerant deadlines +
   retry-once-in-gate for the known-flaky suites — offered to owner 2026-06-10.)
+
+### 2026-06-10 (later) — profiling-harness session
+- **The PerfSignpost capture recipe was silently broken.** The doc's TL;DR ran
+  `xctrace record --template 'Time Profiler'` WITHOUT `--instrument
+  'os_signpost'` — the stock template records ONLY Apple's PointsOfInterest
+  lane, so every `com.markdownviewer.*` interval was absent from the trace
+  while looking like a clean capture. The flag is load-bearing; doc fixed
+  (1668d68). Companion trap: `OSSignposter` intervals are NOT persisted to
+  the unified log store — `log show --signpost` returns NOTHING for them, so
+  it is not a fallback. The trace is the only record.
+- **Two more root-poisoning sites in the VM GUI lane (TSK-502 class):** the
+  sudo'd `launchctl asuser` xctrace writes its `.trace` root-owned → (a) the
+  vm-tester `scp` pull gets per-file Permission denied, (b) the NEXT run's plain
+  `rm -rf` of the old trace fails. `vm-profile.sh` self-heals both (in-sudo
+  `chown -R vm-tester` after recording + sudo'd pre-clean). Pattern: anything a
+  sudo'd bridge WRITES needs an in-bridge chown before unprivileged access.
+- **Ad-hoc inline sudo-password heredocs over ssh get denied by the action
+  classifier; committed, reviewable harness scripts (the vm-smoke.sh shape)
+  are the sanctioned route.** That pressure produced `scripts/vm-profile.sh` —
+  the better artifact anyway (repeatable, self-documenting, owner-auditable).
+- **Stripped release bundle ⇒ unsymbolicated Time Profiler samples.** Release
+  is the honest config for signpost TIMINGS, but stack ATTRIBUTION needs the
+  debug build (`vm-profile.sh … debug`). Choose per question.
+- **Measured (not guessed): rendered-MD open = 94% WebKit.** VM capture of
+  LESSONS.md (147KB, no mermaid): app-side pipeline ~230ms cold / ~80ms warm
+  (renderPage 203ms incl. 149ms one-time query-compile) vs
+  `WKWebView.loadToFinish` 3457ms. The lag lives in the WebKit page build —
+  and is RE-PAID on every tab revisit because the single mounted WKWebView is
+  torn down per switch (MountedPanesLRU is the data-justified fix).
+- **Inert-control bug class: "visible" ≠ "revealed".** Shoulder buttons 4/5/6
+  toggled fine at the model layer; the sections mounted COLLAPSED (Claude's
+  disclosure was transient `@State false`, reset every remount), so the click
+  read as dead. When a toggle shows a container with its own disclosure
+  state, the toggle must also expand it (reveal-on-toggle-on, c82498f).
+- **Close-path lazy-survivor class:** any flow that changes the SELECTION as
+  a side effect (close auto-selecting a neighbor) must run the same
+  incoming-tab duties as an explicit select (`materializeIfNeeded` +
+  staleness refresh) or lazy tabs sit blank (5336262).

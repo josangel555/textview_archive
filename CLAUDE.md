@@ -285,6 +285,12 @@ continue", document blockers and move on):
 - `BACKLOG.md` — pending work, decisions, and audit follow-ups.
 - `LESSONS.md` — institutional knowledge (compositor bug, perf wins,
   signing, VM screen-capture privacy notes, SwiftPM staleness traps).
+- `docs/PERFORMANCE_PROFILING.md` + `scripts/vm-profile.sh` — perf
+  measurement harness (PerfSignpost / xctrace). MEASURE, don't guess
+  (owner directive 2026-06-10): `--instrument 'os_signpost'` is
+  load-bearing; UI-opening captures run on the UTM VM via the script
+  (modes open|resize, configs release|debug — debug for symbolicated
+  stacks).
 - `MANUAL_TESTING.md` — checklist for features without automation.
 - `DESIGN.md` — top-level architecture.
 - `docs/TRACKER_FEEDBACK.md` — feedback queue for the `tasked` tool itself
