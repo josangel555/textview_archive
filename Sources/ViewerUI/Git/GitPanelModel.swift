@@ -89,6 +89,12 @@ public final class GitPanelModel: ObservableObject {
     /// not a git command).
     @Published public var reviewCount: Int?
 
+    /// TSK-523: the review currently open in the Review tab. Non-nil makes
+    /// `ReviewIndexTab` present the review-aware `ReviewTabView` (inline
+    /// structured diff + add-comment) instead of the index list. Cleared on
+    /// repo switch — a session's store/git are bound to the old root.
+    @Published public private(set) var activeReviewSession: ReviewSession?
+
     @Published public var isRefreshing: Bool = false
     @Published public var lastRefreshed: [Tab: Date] = [:]
 
@@ -192,6 +198,65 @@ public final class GitPanelModel: ObservableObject {
         if selectedLogSHA != nil { selectedLogSHA = nil }
     }
 
+    // MARK: - Commit review (TSK-523)
+
+    /// "Review Commit…" from the Log tab: find-or-create the `.commit(sha)`
+    /// review in the repo's project-local store, activate its session, and
+    /// switch to the Review tab. Idempotent per (repo, sha) — re-invoking
+    /// reopens the SAME review (comments accumulate; no duplicates).
+    public func openCommitReview(sha: String) {
+        guard let root = repoRoot else { return }
+        let store = ReviewStore.projectLocal(repoRoot: root)
+        let git = GitClient(repoRoot: root)
+        let review: Review
+        if let existing = store.list()
+            .compactMap({ store.load(id: $0.id) })
+            .first(where: { $0.scope == .commit(sha: sha) }) {
+            review = existing
+        } else {
+            let author = git.configuredAuthor() ?? ("Unknown", "")
+            let now = Date()
+            review = Review(
+                id: ReviewID.generate(now: now),
+                createdAt: now,
+                updatedAt: now,
+                title: "Review of \(sha)",
+                scope: .commit(sha: sha),
+                repoRoot: root.path,
+                // base = the commit's (first) parent so `.old`-side anchors
+                // resolve; a root commit's "sha^" fails rev-parse → blobSha
+                // nil → staleness degrades to .unknown (documented).
+                baseSha: "\(sha)^",
+                headSha: sha,
+                author: ReviewAuthor(name: author.name, email: author.email)
+            )
+            _ = store.save(review)
+        }
+        let session = ReviewSession(review: review, store: store, git: git)
+        session.reload()
+        activeReviewSession = session
+        selectTab(.review)
+    }
+
+    /// Open an existing review from the index list (Stage 3 row click).
+    public func openReview(id: String) {
+        guard let root = repoRoot else { return }
+        let store = ReviewStore.projectLocal(repoRoot: root)
+        guard let review = store.load(id: id) else { return }
+        let session = ReviewSession(review: review, store: store,
+                                    git: GitClient(repoRoot: root))
+        session.reload()
+        activeReviewSession = session
+        selectTab(.review)
+    }
+
+    /// Back from the open review to the index list. Flushes the debounced
+    /// save so a just-typed comment isn't lost with the session.
+    public func closeActiveReview() {
+        activeReviewSession?.flush()
+        activeReviewSession = nil
+    }
+
     /// TSK-522: the `git diff base tip` range for the current
     /// multi-selection, or nil when fewer than two commits are selected.
     /// `topoIndex` = position in the loaded log, which IS topo order
@@ -219,6 +284,7 @@ public final class GitPanelModel: ObservableObject {
         head = nil
         clearLogSelection()
         clearLogSearch()
+        closeActiveReview()
         logLoadedCount = 0
         logGen &+= 1
         loadMoreTask?.cancel()

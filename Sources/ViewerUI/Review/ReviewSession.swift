@@ -168,9 +168,15 @@ public final class ReviewSession: ObservableObject {
         hunkContext: HunkContext
     ) -> String {
         let ts = now()
+        // TSK-523: a comment left on a commit-scoped review is anchored to
+        // that commit — stamp it so `CommitDiffAnchor` can partition and
+        // staleness-bridge commit-diff comments. File-scoped reviews keep nil.
+        let commitSha: String?
+        if case .commit(let sha) = review.scope { commitSha = sha } else { commitSha = nil }
         let comment = ReviewComment(
             id: ReviewID.generate(now: ts),
             filePath: filePath,
+            commitSha: commitSha,
             anchor: anchor,
             severity: severity,
             body: body,

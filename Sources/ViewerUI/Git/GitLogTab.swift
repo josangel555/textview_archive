@@ -222,6 +222,11 @@ struct GitLogTab: View {
         }
         .buttonStyle(.plain)
         .help("\(c.sha) — \(c.subject)")
+        // TSK-523: start (or reopen) a commit-scoped review — inline
+        // structured diff with the add-comment affordance, in the Review tab.
+        .contextMenu {
+            Button("Review Commit…") { model.openCommitReview(sha: c.sha) }
+        }
     }
 
     private func chip(_ text: String, color: Color) -> some View {

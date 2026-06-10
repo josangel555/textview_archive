@@ -15,13 +15,36 @@ struct ReviewIndexTab: View {
 
     var body: some View {
         Group {
-            if model.repoRoot == nil {
+            // TSK-523: an active session takes over the tab — the
+            // review-aware DiffView (inline structured diff + comments).
+            if let session = model.activeReviewSession {
+                VStack(spacing: 0) {
+                    HStack {
+                        Button {
+                            model.closeActiveReview()
+                            reload()
+                        } label: {
+                            Label("Reviews", systemImage: "chevron.left")
+                                .font(.system(size: doc.uiSize(11)))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("mdv.review.back")
+                        Spacer()
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    Divider()
+                    ReviewTabView(doc: doc, session: session)
+                }
+            } else if model.repoRoot == nil {
                 placeholder("Open a file in a git repository to start a review.")
             } else if summaries.isEmpty {
                 placeholder("No reviews yet.\nStart one from a diff or a commit.")
             } else {
                 List(summaries) { s in
                     ReviewSummaryRow(summary: s, doc: doc)
+                        .contentShape(Rectangle())
+                        .onTapGesture { model.openReview(id: s.id) }
                 }
                 .listStyle(.inset)
             }

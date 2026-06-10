@@ -222,6 +222,19 @@ public final class GitClient: Sendable {
         (try? run(["diff", "--no-color", baseRef, tipRef])) ?? ""
     }
 
+    // MARK: - identity
+
+    /// `git config user.name` / `user.email` — the identity reviews are
+    /// authored under (TSK-523). nil when neither is configured.
+    public func configuredAuthor() -> (name: String, email: String)? {
+        let name = (try? run(["config", "user.name"]))?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let email = (try? run(["config", "user.email"]))?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if name.isEmpty && email.isEmpty { return nil }
+        return (name, email)
+    }
+
     // MARK: - log
 
     public struct LogEntry: Equatable, Sendable {
