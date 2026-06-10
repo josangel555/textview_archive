@@ -6006,3 +6006,13 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - **Git-diff trio COMPLETE:** TSK-593 (top-left pin) ✓, TSK-594 (selectable + copy) ✓, TSK-595
   (selected-row highlight) ✓ — all installed. Epic remainder: TSK-596/597 (log search, find-in-diff,
   features), TSK-602..608/610 unexplored; 3 measurement-backed parks await owner (592/598/601).
+
+## LOG +142 (2026-06-10, autonomous tick — TSK-604 fixed: SQLite table widths now rescale with zoom)
+- **Root cause (d933eb8):** SQLite browser fonts/row-heights already track the unified zoom, but the
+  result table's column widths are @State computed ONCE — zooming with a table open grew the text
+  into stale, clipping columns (reads as "SQLite doesn't scale"). **Fix:** `.onChange(of: uiScale)`
+  rescales widths proportionally via pure `rescaledWidths(_:from:to:)` — user-dragged ratios kept,
+  degenerate scales no-op.
+- **Tests:** +3 in the existing SQLiteWidthTests (16 green); teeth (rescale disabled → 2 red).
+  Gate green on committed commit; reinstall kicked. If the owner's complaint includes fonts not
+  scaling at all, that wiring was verified intact — noted on the ticket to re-test on the new build.
