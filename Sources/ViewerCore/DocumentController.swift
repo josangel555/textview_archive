@@ -119,6 +119,18 @@ public struct DocumentController: Sendable {
                 return .binary(bin)
             }
             // Fall through to the text path on a binary-load failure.
+        case .unknown where forcedCategory == nil:
+            // An EMPTY unknown-type file defeats the NUL-byte sniff (zero
+            // bytes decode as valid empty text), so the text path would land
+            // it in Source mode. Contract (UAT VM-04var): 0-byte unknown →
+            // HEX. Non-empty unknowns keep text-first; the sniff routes real
+            // binaries to HEX below.
+            let size = (try? FileManager.default.attributesOfItem(
+                atPath: url.resolvingSymlinksInPath().path))?[.size] as? Int
+            if size == 0, let bin = try? binaryLoader.load(url: url) {
+                PerfSignpost.event(.load, "route:empty-unknown-hex")
+                return .binary(bin)
+            }
         default:
             break
         }

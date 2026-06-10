@@ -25,6 +25,58 @@ final class DocumentControllerTests: XCTestCase {
         XCTAssertEqual(file.url, url)
     }
 
+    /// TSK-617 — UAT VM-04var contract: a 0-byte file of UNKNOWN type
+    /// opens in HEX. An empty file defeats the NUL-byte binary sniff (it
+    /// decodes as valid empty text), so without the explicit route the
+    /// text loader claims it and the app lands in Source mode.
+    func test_openEmptyUnknownFile_returnsBinaryHex() throws {
+        let url = tmpDir.appendingPathComponent("empty.bin")
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        let state = DocumentController().open(url: url)
+        guard case .binary(let bin) = state else {
+            return XCTFail("expected .binary (HEX), got \(state)")
+        }
+        XCTAssertEqual(bin.byteCount, 0)
+        XCTAssertFalse(bin.isTruncated)
+    }
+
+    /// Empty files of KNOWN text-shaped types keep the historical text
+    /// path — only unknown-category empties reroute to HEX.
+    func test_openEmptyKnownTextFile_staysLoaded() throws {
+        for name in ["empty.txt", "empty.md"] {
+            let url = tmpDir.appendingPathComponent(name)
+            FileManager.default.createFile(atPath: url.path, contents: nil)
+            let state = DocumentController().open(url: url)
+            guard case .loaded(let file) = state else {
+                return XCTFail("[\(name)] expected .loaded, got \(state)")
+            }
+            XCTAssertEqual(file.contents, "", "[\(name)]")
+        }
+    }
+
+    /// A NON-empty unknown-type file keeps text-first behavior (the NUL
+    /// sniff still routes real binaries to HEX downstream).
+    func test_openNonEmptyUnknownTextFile_staysLoaded() throws {
+        let url = tmpDir.appendingPathComponent("notes.bin")
+        try "plain text in a .bin".write(to: url, atomically: true, encoding: .utf8)
+        let state = DocumentController().open(url: url)
+        guard case .loaded(let file) = state else {
+            return XCTFail("expected .loaded, got \(state)")
+        }
+        XCTAssertEqual(file.contents, "plain text in a .bin")
+    }
+
+    /// Forcing a text category on an empty unknown file must BYPASS the
+    /// empty→HEX route ("Open As… Source" wins over auto-detection).
+    func test_openEmptyUnknown_forcedText_staysLoaded() throws {
+        let url = tmpDir.appendingPathComponent("forced.bin")
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        let state = DocumentController().open(url: url, forcedCategory: .plainText)
+        guard case .loaded = state else {
+            return XCTFail("expected .loaded, got \(state)")
+        }
+    }
+
     func test_openMissingFile_returnsErrorWithUserMessage() {
         let url = tmpDir.appendingPathComponent("nope.txt")
         let state = DocumentController().open(url: url)
