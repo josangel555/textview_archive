@@ -5660,3 +5660,11 @@ if ffmpeg not found." Delivered exactly that (commit 4b707d4):
   ([[project_ffmpeg_external_host_tool]]).
 - `main` @ 4b707d4, gate-green (only the documented FoldBench/Grandchild flake). The ffmpeg-as-best-effort-host-tool
   pattern is the precedent for any future external CLI integration. Still owner/VM-bound otherwise (VM lane TSK-502).
+
+## LOG +155 (2026-06-09, autonomous tick — ffmpeg-path SETTING storage host-done; TSK-528 fully host-complete)
+Closed the host-completable half of the owner's "add a setting for user to provide ffmpeg" (commit c0796ad):
+`PreferencesStore.audioFFmpegPath` — UserDefaults-backed, trimmed, empty/whitespace→nil (degrades to
+`FFmpegLocator` auto-discovery); the export action passes it as `AudioExporter.encode(ffmpegOverride:)`. 6 host teeth
+(PreferencesStoreTests 31/31). Gate green modulo the documented GrandchildPipe fd flake. TSK-528 is now FULLY
+host-complete at the model/encoder/preference layer (validated); the ONLY remainder is pure VM-gated SwiftUI: the
+Settings→Audio text field bound to `audioFFmpegPath` + the Save-As format/bitrate picker sheet. `main` @ c0796ad.
