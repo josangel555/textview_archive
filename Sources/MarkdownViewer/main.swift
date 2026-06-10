@@ -318,6 +318,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             if a.hasPrefix("--") { continue }
             pathArgs.append(a)
         }
+        // TSK-620: LaunchServices-launched harness runs (`open -a … --env`)
+        // carry the script + file via ENVIRONMENT because LS drops
+        // `--`-prefixed argv. An LS launch is the only way a harness app
+        // can genuinely self-activate on macOS 14+ (fork/exec'd processes
+        // are denied cooperative activation), and real activation is what
+        // synthesized SwiftUI clicks require. argv wins when both are set.
+        let environment = ProcessInfo.processInfo.environment
+        if scriptPath == nil, let envScript = environment["MDV_SCRIPT_PATH"] {
+            scriptPath = envScript
+        }
+        if pathArgs.isEmpty, let envFile = environment["MDV_OPEN_FILE"] {
+            pathArgs.append(envFile)
+        }
         // CORR-10: open EVERY positional path, not just the first. The
         // first opens via `openPath` (reuses/replaces the initial blank
         // tab and detects folder-vs-file); subsequent paths each get

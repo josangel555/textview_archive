@@ -125,7 +125,8 @@ final class LaunchHarness {
         _ script: String,
         with fileArg: URL,
         timeout: TimeInterval = 30,
-        scriptFileName: String = "script.txt"
+        scriptFileName: String = "script.txt",
+        viaOpen: Bool = false
     ) throws -> [[String: Any]] {
         try AppLauncher.runScript(
             appBundlePath: appBundlePath,
@@ -136,7 +137,8 @@ final class LaunchHarness {
             // #193: the harness's per-instance scratch dir doubles as the
             // run-scoped artifact dir so parallel scenarios don't collide
             // on `mdv-step-NN.json`.
-            artifactDir: tmpDir
+            artifactDir: tmpDir,
+            viaOpen: viaOpen
         )
     }
 

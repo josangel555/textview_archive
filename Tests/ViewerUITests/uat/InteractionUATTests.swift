@@ -21,6 +21,11 @@ final class InteractionUATTests: MultiScenarioTestCase {
 
     override class var harnessLabel: String { "InteractionUAT" }
     override class var defaultScenarioTimeout: TimeInterval { 60 }
+    /// Real-input suite: LS launch so the app can self-activate — the
+    /// `ui-click` verbs need a genuinely KEY window for sendEvent
+    /// delivery to SwiftUI gestures (every in-process workaround was
+    /// probed and disproven; see LESSONS "in-process event synthesis").
+    override class var launchViaOpen: Bool { true }
 
     // MARK: - TSK-313 — double-click the empty strip area → instant ~ session
 

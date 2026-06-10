@@ -50,7 +50,8 @@ enum AppLauncher {
         fileArg: URL,
         timeout: TimeInterval = 30,
         existingProcessName: String = "MarkdownViewer",
-        artifactDir: URL? = nil
+        artifactDir: URL? = nil,
+        viaOpen: Bool = false
     ) throws -> [[String: Any]] {
         // #193: run-scoped artifact dir. When the caller threads a unique
         // per-test directory we point the spawned app at it via
@@ -73,7 +74,7 @@ enum AppLauncher {
         // per-user tmpdir is 700, unreadable by the target user, so the
         // run's script/arg/artifacts move to a world-accessible /tmp dir.
         let spawnUser: String? = geteuid() == 0 ? consoleUser : nil
-        if spawnUser != nil {
+        if spawnUser != nil || viaOpen {
             let shared = URL(fileURLWithPath: "/tmp/mdv-uat-\(UUID().uuidString)")
             try FileManager.default.createDirectory(
                 at: shared, withIntermediateDirectories: true,
@@ -120,7 +121,35 @@ enum AppLauncher {
             "MDV_ARTIFACT_DIR=\(artifacts.path)",
         ]
         let p = Process()
-        if let user = spawnUser {
+        if viaOpen {
+            // LaunchServices launch — the ONLY way the app can genuinely
+            // self-activate on macOS 14+ (fork/exec'd processes are denied
+            // cooperative activation), and real activation → real key
+            // window is what synthesized SwiftUI clicks require (probed:
+            // sendEvent's non-key suppression cannot be faked away, and
+            // SwiftUI's gesture system ignores direct responder dispatch).
+            // LS drops `--`-prefixed argv, so the script + file ride in
+            // env vars (`open --env`, read back in main.swift). NO
+            // MDV_BACKGROUND here — activation is the point; this mode is
+            // for the VM GUI lane where focus-stealing doesn't matter.
+            // `-W` makes `open` wait for the app's exit, so the existing
+            // poll loop tracks the run; `-n` forces a fresh instance.
+            let openEnv = [
+                "MDV_SKIP_WORKSPACE_RESTORE=1",
+                "MDV_TEST_INSTANCE=1",
+                "MDV_ARTIFACT_DIR=\(artifacts.path)",
+                "MDV_SCRIPT_PATH=\(scriptURL.path)",
+                "MDV_OPEN_FILE=\(argURL.path)",
+            ]
+            var argv = ["/usr/bin/open", "-n", "-W"]
+            for pair in openEnv { argv += ["--env", pair] }
+            argv += ["-a", appBundlePath]
+            if let user = spawnUser {
+                argv = ["/usr/bin/sudo", "-n", "-u", user] + argv
+            }
+            p.executableURL = URL(fileURLWithPath: argv[0])
+            p.arguments = Array(argv.dropFirst())
+        } else if let user = spawnUser {
             // Root → console user, env threaded through /usr/bin/env
             // (sudo's env_reset strips the caller's; HOME comes from the
             // target user's record, which is exactly what "~" must mean).
@@ -157,10 +186,13 @@ enum AppLauncher {
             p.terminate()
             Thread.sleep(forTimeInterval: 0.5)
             if p.isRunning { kill(p.processIdentifier, SIGKILL); p.waitUntilExit() }
+            // In viaOpen mode `p` is /usr/bin/open, not the app — reap the
+            // app itself by its test-instance marker on timeout.
+            if viaOpen { killTestInstances(named: existingProcessName) }
         }
 
         let dumps = collectStepDumps(from: artifacts)
-        if spawnUser != nil {
+        if spawnUser != nil || viaOpen {
             // The /tmp run dir was created solely for the cross-user
             // hand-off; reap it once the dumps are in memory.
             try? FileManager.default.removeItem(at: artifacts)

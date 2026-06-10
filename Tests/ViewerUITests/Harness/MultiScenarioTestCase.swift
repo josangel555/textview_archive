@@ -36,6 +36,15 @@ class MultiScenarioTestCase: LiveAppTestCase {
     /// override. Override per-class for long flows.
     open class var defaultScenarioTimeout: TimeInterval { 30 }
 
+    /// When true, the app is launched via LaunchServices (`open --env`)
+    /// instead of a direct spawn — the only launch mode in which the app
+    /// can genuinely self-activate (macOS 14+ denies activation to
+    /// fork/exec'd processes), which real-input suites (`ui-click`)
+    /// require for key-window event delivery. Leave false for dump-only
+    /// suites: LS launch brings the app frontmost, which would steal
+    /// focus if anything ever ran these on a desktop in use.
+    open class var launchViaOpen: Bool { false }
+
     override func setUp() async throws {
         try await super.setUp()
         await MainActor.run {
@@ -72,7 +81,8 @@ class MultiScenarioTestCase: LiveAppTestCase {
                         scenario.script,
                         with: scenario.argFile,
                         timeout: scenario.timeout ?? Self.defaultScenarioTimeout,
-                        scriptFileName: "script-\(safeFilename(scenario.name)).txt"
+                        scriptFileName: "script-\(safeFilename(scenario.name)).txt",
+                        viaOpen: Self.launchViaOpen
                     )
                     scenario.assert(dumps, file, line)
                 } catch {

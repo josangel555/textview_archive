@@ -135,4 +135,12 @@ final class ClickTargetRegistryTests: XCTestCase {
         XCTAssertEqual(events[0].locationInWindow.x, 65, accuracy: 1)
         XCTAssertEqual(events[0].locationInWindow.y, 265, accuracy: 1)
     }
+
+    // NOTE (TSK-620): a "fake key" HarnessWindow (isKeyWindow override)
+    // was tried and DISPROVEN here — NSWindow.sendEvent's non-key
+    // suppression is not keyed on the overridable property (a probed
+    // AppKit subview's mouseDown never arrived either), and SwiftUI's
+    // gesture system refuses direct responder dispatch. Genuine key
+    // status via a LaunchServices launch (`open --env`) is the only
+    // route; see AppLauncher.runScript(viaOpen:) and LESSONS.md.
 }

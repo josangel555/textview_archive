@@ -187,20 +187,22 @@ public enum UIEventSynth {
                 collectAXIdentifiers(element: root, into: &seen, limit: 15)
             }
             let rootKids = (window.contentView?.accessibilityChildren() ?? []).count
-            lastTrace = "click[v6](\(spec.identifier)): NOT FOUND; "
+            lastTrace = "click[v8](\(spec.identifier)): NOT FOUND; "
                 + "registryIds=\(ClickTargetRegistry.shared.identifiers) "
                 + "axRootChildren=\(rootKids) axIdsSample=\(seen)"
             return false
         }
         // Delivery: `window.sendEvent` is the full pipeline (hit-testing +
-        // gesture recognizers + responder chain) — but it ALSO runs
-        // NSWindow's click-through suppression, which eats a mouseDown on
-        // a NON-key window (acceptsFirstMouse == false for SwiftUI
-        // content). When the harness couldn't get key status (root app in
-        // a user GUI session; accessory policy), fall back to dispatching
-        // straight to the hit-tested view's responder methods — bypassing
-        // the window-level suppression. One path or the other, never both
-        // (both working would double-fire the action).
+        // gesture recognizers + responder chain) — but it suppresses a
+        // mouseDown on a NON-key window, and the suppression is NOT keyed
+        // on the overridable `isKeyWindow` (probed: a fake-key subclass
+        // changed nothing, even for plain AppKit subviews). Real key
+        // status requires real activation, which only a LaunchServices
+        // launch can grant on macOS 14+ — AppLauncher's `open --env`
+        // route. For a window that isn't key, fall back to direct
+        // responder dispatch (drives AppKit views, not SwiftUI gestures —
+        // best effort). One path only, never two (both working would
+        // double-fire the action).
         let via: String
         if window.isKeyWindow {
             via = "sendEvent"
@@ -218,9 +220,9 @@ public enum UIEventSynth {
                 }
             }
         }
-        lastTrace = "click[v6](\(spec.identifier)): rect=\(rect) "
+        lastTrace = "click[v8](\(spec.identifier)): rect=\(rect) "
             + "point=\(sequence[0].locationInWindow) "
-            + "count=\(spec.clickCount) via=\(via) key=\(window.isKeyWindow) "
+            + "count=\(spec.clickCount) via=\(via) "
             + "active=\(NSApp.isActive)"
         return true
     }
