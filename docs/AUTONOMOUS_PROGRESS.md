@@ -6156,3 +6156,12 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   Parked owner-gated: 591 (live counter read), 592 (resize repro), 598 (MountedPanesLRU
   supervised — case now 3×-measured), 601 (swift-open repro), 589 (eviction policy).
   Open residual: TSK-615 (distributed SwiftUI re-eval audit). Next: bumped P1 set.
+## LOG +154 (2026-06-10, autonomous tick — TSK-313 fixed: strip double-click opens a session at ~)
+- **Browser idiom (7158054):** double-clicking the EMPTY session-tab-strip area spawns a
+  fresh session rooted at home immediately — no GoTo prompt (the `+` keeps the prompt flow).
+  Gesture + new `session-open-home` script verb both call exactly
+  `SessionsAppCoordinator.openHomeSession()` (`openFolder(home, forceNew: true)`; explicit
+  gesture ⇒ TSK-599 TCC contract). Tab clicks/+/close unaffected (hit-chain precedence).
+- **Tests:** 3 SessionOpenHomeTests (new+active session at ~, prior untouched; always
+  force-new; GoTo gate NOT armed). Teeth: forceNew dropped → red. Gate green; reinstall
+  kicked. Next P1: TSK-327 ([PARTIAL] tool-window drag/snap) + remaining bumped set states.
