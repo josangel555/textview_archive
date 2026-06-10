@@ -24,6 +24,34 @@ final class RowCounterPluginTests: XCTestCase {
         XCTAssertEqual(RowCounterPlugin.lineCount(of: "a\nb"), 2)
     }
 
+    /// TSK-612: the old grapheme loop compared each Character to "\n";
+    /// "\r\n" is ONE grapheme that is not equal to "\n", so a CRLF file
+    /// collapsed to 1 line. The UTF-8 byte scan counts it correctly.
+    func test_lineCount_crlf_countsEveryLine() {
+        XCTAssertEqual(RowCounterPlugin.lineCount(of: "a\r\nb\r\nc\r\n"), 3)
+        XCTAssertEqual(RowCounterPlugin.lineCount(of: "a\r\nb"), 2)
+    }
+
+    /// TSK-612: the provider runs inside the sidebar's SwiftUI body on
+    /// every re-evaluation — unchanged contents must NOT be rescanned.
+    func test_rows_memoizesUnchangedContents() {
+        let url = URL(fileURLWithPath: "/tmp/memo.txt")
+        let snap = SidebarSectionRegistry.Snapshot(openFileContents: [url: "a\nb\nc"])
+
+        RowCounterPlugin.coldCountComputations = 0
+        _ = RowCounterPlugin.rows(for: snap)
+        XCTAssertEqual(RowCounterPlugin.coldCountComputations, 1, "first call counts")
+
+        _ = RowCounterPlugin.rows(for: snap)
+        XCTAssertEqual(RowCounterPlugin.coldCountComputations, 1,
+                       "re-render with unchanged contents must hit the memo")
+
+        let changed = SidebarSectionRegistry.Snapshot(openFileContents: [url: "a\nb\nc\nd"])
+        let rows = RowCounterPlugin.rows(for: changed)
+        XCTAssertEqual(RowCounterPlugin.coldCountComputations, 2, "changed contents recount")
+        XCTAssertEqual(rows[0].detail, "4 lines")
+    }
+
     // Provider is pure: same snapshot in → same rows out, in sorted
     // order. Sorting matters because the host iterates a dict.
     func test_rows_are_sorted_by_path() {
