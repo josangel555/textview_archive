@@ -6398,3 +6398,16 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   blocking poll would starve the resolution it waits for) — an async `wait-mode` verb is
   the future harness investment if fixed settles keep flaking. Residue: confirm in the
   next VM full-suite run. Host gate green @ fca2114.
+
+## LOG +170 (2026-06-10, autonomous tick — TSK-315 fixed: tab → Open/Move to New Session; TSK-590 epic groomed)
+- **TSK-315 (4389207):** tab context menu gains "Open in New Session" (session rooted at
+  the file's parent, file open; source untouched) and "Move to New Session" (also closes
+  the source session's tab BEFORE the swap so its detach-time snapshot omits it — the file
+  lives in exactly one session after). Reuses the TSK-599/600 seams:
+  `SessionsAppCoordinator.openFileInNewSession` → `core.openFolder(parent, forceNew:)` →
+  `model.openPath(file)`; menu routes through the weak `model.sessionsCoordinator` handle.
+  `TabToNewSessionTests` 2/2 exercise the exact menu closure incl. the detach-persist →
+  rehydrate round-trip (opposite-outcome teeth on the flag). Host gate green @ 4389207.
+- **TSK-590 epic groomed to ack** with the full child rollup: 14 fixed/validated +
+  6 follow-ons, 3 wontdo, 4 parked on the owner (591/592/598/601). Everything
+  agent-actionable under the epic is done; it stays open for the parked four.
