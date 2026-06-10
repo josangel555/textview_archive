@@ -6257,3 +6257,16 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   Gate green on 5cccd93. VM full suite kicked as validation (regression-prone zone
   #100/#133/#211/#215); live drag feel + pixels stay VM/owner-lane — held at fixed with
   blocker live-validation. Install follows the VM result.
+## LOG +162 (2026-06-10, autonomous tick — TSK-616 filed+half-fixed: VM .build toolchain poisoning)
+- **Found running TSK-440's VM validation:** `test-in-vm.sh test` failed with "module compiled
+  with Swift 6.1.2 cannot be imported by the Swift 6.3 compiler" (ViewerKit.swiftmodule) — and
+  the wrapper exit-masked it as 0 (#311/#162 class; caught by reading the log, not the exit).
+  ROOT CAUSE: `vm-profile.sh` built on the VM with NO TOOLCHAINS export → default 6.1.2 modules
+  in the SHARED .build; the 6.3 test lane then chokes. `swift package clean` did NOT clear the
+  residue on retry (suspect index-build/, untouched by clean).
+- **Prevention landed (this commit):** vm-profile.sh's remote build now selects the same newest
+  swift-6.*-RELEASE toolchain as test-in-vm.sh — single-toolchain .build invariant. REMAINING
+  (TSK-616): targeted VM remediation (NOT rm -rf .build — offline mirror; remove
+  arm64-apple-macosx + index-build only, or per-toolchain --scratch-path), loud mismatch
+  detection in test-in-vm.sh, then re-run the sweep (TSK-440's pending VM validation).
+- TSK-440 install completed — the sidebar resize overhaul build is live on the host.

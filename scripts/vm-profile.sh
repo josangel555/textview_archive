@@ -91,7 +91,12 @@ rsync -az --delete \
   "$ROOT_DIR/" macOS15:markdown_viewer/
 
 echo "==> Build dist/TextView.app ($CONFIG) on VM"
-ssh macOS15 "cd markdown_viewer && bash scripts/build-app.sh $CONFIG 2>&1 | tail -2"
+# TSK-616: select the SAME newest swift-6.* toolchain test-in-vm.sh uses
+# before building. A bare build here uses the VM's default Swift 6.1.2 and
+# poisons the shared .build with 6.1.2 modules that the 6.3 test compile
+# then cannot import ("module compiled with Swift 6.1.2 cannot be imported
+# by the Swift 6.3 compiler") — the single-toolchain .build invariant.
+ssh macOS15 "cd markdown_viewer && tc=\$(ls -d /Library/Developer/Toolchains/swift-6.*-RELEASE.xctoolchain 2>/dev/null | sort -V | tail -1); if [[ -n \"\$tc\" ]]; then export TOOLCHAINS=\$(plutil -extract CFBundleIdentifier raw \"\$tc/Info.plist\"); fi; bash scripts/build-app.sh $CONFIG 2>&1 | tail -2"
 
 echo "==> Record xctrace signpost profile in the GUI session (${SECONDS_ARG}s)"
 # Quoted heredoc: nothing from the host expands into the remote body.
