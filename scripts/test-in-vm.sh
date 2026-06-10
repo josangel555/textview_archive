@@ -296,7 +296,11 @@ case "$MODE" in
     ;;
   test)
     ensure_tools
-    run_tests
+    # Forward everything after the mode word (e.g. `test --filter Suite`)
+    # to `swift test`. run_tests already handled a filter list — the
+    # dispatch just never passed it, so filters were silently ignored
+    # and every `test --filter X` ran the FULL suite (TSK-618 triage).
+    run_tests "${@:2}"
     log "test done in ${SECONDS}s"
     ;;
   smoke)
