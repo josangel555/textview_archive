@@ -171,6 +171,19 @@ public enum DiagnosticDump {
         if let tv = view as? NSTextView {
             d["nsTextView"] = describeTextView(tv, redactContent: redactContent)
         }
+        if let tf = view as? NSTextField {
+            // TSK-620: lets a UAT assert a SwiftUI TextField's RENDERED text
+            // (e.g. the GoTo prompt's "~" prefill, TSK-314) — the model layer
+            // can't prove what the field actually shows. Same redaction
+            // posture as the NSTextView head: persisted dumps never embed
+            // user content.
+            d["nsTextField"] = [
+                "stringValue": redactContent
+                    ? "<redacted>" : String(tf.stringValue.prefix(120)),
+                "placeholder": tf.placeholderString ?? "",
+                "isEditable": tf.isEditable,
+            ]
+        }
         if let sv = view as? NSScrollView {
             d["nsScrollView"] = describeScrollView(sv)
         }
