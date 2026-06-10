@@ -640,6 +640,14 @@ private final class HexTextController: NSViewController {
                                        totalByteCount: file.totalByteCount,
                                        isTruncated: file.isTruncated,
                                        width: width)
+        // Fix the document frame ARITHMETICALLY before any content lands
+        // (TSK-267 step 4). With a self-sizing text view TK2 must lay out
+        // the entire document to answer height queries (measured: 2.12s
+        // CA-commit stall on a 1MB dump via textContainerOrigin →
+        // ensureLayoutForRange over ~65k rows). The grid is uniform, so
+        // the exact size is rows×lineHeight / cols×charAdvance — set it
+        // and turn self-sizing off; TK2 then lays out viewport-only.
+        applyFixedGridFrame(plan: plan, fontSize: fontSize)
         if plan.rowCount == 0 && plan.headerCharCount == 0 {
             storage.beginEditing()
             storage.setAttributedString(NSAttributedString())
@@ -751,6 +759,34 @@ private final class HexTextController: NSViewController {
                 strongSelf.finishBuild(generation: generation)
             }
         }
+    }
+
+    /// Pin the text view's frame to the grid's ARITHMETIC size and turn
+    /// self-sizing off (TSK-267 step 4). Self-sizing is what forced TK2
+    /// to lay out the whole document (textContainerOrigin →
+    /// ensureLayoutForRange over every row — the measured 2.12s CA-commit
+    /// stall on 1MB). Line height + char advance come from a one-shot TK2
+    /// measurement (`HexGridMetrics`) so the arithmetic can't drift from
+    /// the engine; `HexGridGeometryTK2Tests` pins the equality headlessly.
+    private func applyFixedGridFrame(plan: HexDumpBuilder.Plan,
+                                     fontSize: CGFloat) {
+        let m = HexGridMetrics.measure(fontSize: fontSize)
+        let lines = HexGridGeometry.lineCount(
+            newlineCount: HexGridGeometry.newlineCount(
+                rowCount: plan.rowCount,
+                hasHeader: plan.headerCharCount > 0))
+        let inset = textView.textContainerInset
+        let pad = textView.textContainer?.lineFragmentPadding ?? 0
+        let h = HexGridGeometry.textHeight(lineCount: lines,
+                                           lineHeight: m.lineHeight)
+            + Double(inset.height) * 2
+        let w = HexGridGeometry.textWidth(perRowChars: plan.perRowChars,
+                                          charAdvance: m.charAdvance)
+            + Double(pad) * 2 + Double(inset.width) * 2
+        textView.isVerticallyResizable = false
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = []
+        textView.setFrameSize(NSSize(width: ceil(w), height: ceil(h)))
     }
 
     /// Append a chunk to the text storage on the main actor. Returns
@@ -1270,6 +1306,58 @@ enum HexAccessibility {
                 + "of \(totalByteCount) bytes"
         }
         return "Hex dump, \(byteCount) bytes"
+    }
+}
+
+// MARK: - TK2 grid metrics (TSK-267 step 4)
+
+/// Measures TextKit 2's EXACT per-line height and monospace character
+/// advance for a font by laying out tiny samples with the same engine
+/// `NSTextView` uses (`NSTextLayoutManager` + `NSTextContentStorage`).
+/// Measuring — rather than deriving from `NSFont` metrics — guarantees
+/// the arithmetic frame in `HexGridGeometry` cannot drift from what the
+/// live view actually typesets. Cached per font size; each measurement
+/// lays out ≤2 short lines (microseconds).
+enum HexGridMetrics {
+    struct Metrics {
+        let lineHeight: Double
+        let charAdvance: Double
+    }
+
+    @MainActor
+    private static var cache: [CGFloat: Metrics] = [:]
+
+    @MainActor
+    static func measure(fontSize: CGFloat) -> Metrics {
+        if let hit = cache[fontSize] { return hit }
+        let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        // Two samples one line apart: their usage-height delta is the
+        // engine's true line stride (immune to any constant baseline /
+        // first-line padding).
+        let h1 = usage(of: "0000000000\n", font: font)
+        let h2 = usage(of: "0000000000\n0000000000\n", font: font)
+        let m = Metrics(
+            lineHeight: h2.height - h1.height,
+            charAdvance: h1.width / 10.0)
+        cache[fontSize] = m
+        return m
+    }
+
+    @MainActor
+    private static func usage(of sample: String, font: NSFont) -> CGSize {
+        let content = NSTextContentStorage()
+        let layout = NSTextLayoutManager()
+        content.addTextLayoutManager(layout)
+        let container = NSTextContainer(size: CGSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude))
+        container.lineFragmentPadding = 0
+        layout.textContainer = container
+        content.attributedString = NSAttributedString(
+            string: sample, attributes: [.font: font])
+        layout.ensureLayout(for: layout.documentRange)
+        let b = layout.usageBoundsForTextContainer
+        return CGSize(width: b.width, height: b.height)
     }
 }
 
