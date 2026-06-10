@@ -2608,3 +2608,18 @@ Two durable VM gotchas found finishing the T5/VisualRegression pixel lane:
   exit 1 (build correctness is preserved; only the run is lost). Order per item: teeth →
   restore → commit → gate → THEN kick the install. If the install must overlap other work,
   only overlap it with non-mutating steps (board updates, docs, trace parsing).
+
+## 2026-06-10 (VM live-app validation traps — TSK-617)
+- **`test-in-vm.sh test` does NOT rebuild `dist/` and `dist/` is rsync-excluded** — after
+  landing a fix, a VM T4/UAT rerun spawns the PRE-FIX `dist/TextView.app` and fails
+  identically, masquerading as "fix didn't work". Always check the dist binary's mtime
+  against the fix and rebuild on the VM (`ssh macOS15 'cd markdown_viewer && bash
+  scripts/build-app.sh debug'`) before any live-app rerun.
+- **VM dist build (default Swift 6.1.2) and test build (script-selected 6.3) share
+  `.build/arm64-apple-macosx/debug` and clobber each other** — the next `swift test` dies
+  with "module compiled with Swift 6.1.2 cannot be imported by the Swift 6.3 compiler".
+  Cure: `rm -rf .build/arm64-apple-macosx/debug` ONLY (never `.build/checkouts` /
+  `.build/repositories` — the VM is an offline rsync mirror and cannot re-fetch).
+- **Empty files defeat NUL-byte binary sniffing** — 0 bytes decode as valid empty UTF-8,
+  so content-based binary detection passes them to the text path. Any "unknown type →
+  HEX" contract needs an explicit size==0 route (`DocumentController.open`, c3e6e5b).

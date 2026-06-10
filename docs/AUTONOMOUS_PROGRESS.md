@@ -6432,3 +6432,24 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   a shared `TabDragPayload` codec (two hand-rolled parsers collapsed — drift-proof).
   Tests 6/6: codec round-trip/rejection + move-across-sessions w/ rehydrate round-trip +
   the no-op trio. Host gate green @ eb63137. Hover visuals deliberately VM-lane scope.
+
+## LOG +172 (2026-06-10, autonomous tick — TSK-617 VALIDATED: emptyFileHex was a real routing bug, not a flake)
+- **TSK-617 (both halves) → validated.** The emptyFileHex UAT "timing flake" was a REAL
+  user-facing bug: a 0-byte file defeats the NUL-byte binary sniff (empty input decodes as
+  valid empty UTF-8), so `DocumentController.open`'s text path claimed it and the app landed
+  in **Source** mode; the UAT contract is 0-byte unknown → **HEX**. The 3.0s settle bump
+  (fca2114) failing identically refuted the timing hypothesis. Fix (c3e6e5b): auto-detected
+  `.unknown` + size==0 routes to the binary loader before the text decode; forced "Open As…"
+  categories bypass; non-empty unknowns keep text-first. 4 host behavior tests with a teeth
+  demo (fix stashed → red → restored). Gate green @ c3e6e5b (first run's FoldBench 263ms was
+  the known under-load bench flake; clean re-run, zero non-bench failures).
+- **Two VM-lane traps burned this validation, both now codified:** (1) the post-fix VM rerun
+  STILL failed because `test-in-vm.sh test` doesn't rebuild `dist/` and `dist/` is
+  rsync-excluded — the T4 UAT spawned a PRE-FIX app (binary mtime predated the fix). Rebuild
+  `dist` on the VM (`build-app.sh debug`) before any live-app rerun. (2) That rebuild uses the
+  VM's default Swift **6.1.2** while `test-in-vm.sh` selects **6.3**; they share
+  `.build/arm64-apple-macosx/debug`, so the next test compile died on "module compiled with
+  Swift 6.1.2 cannot be imported by the Swift 6.3 compiler". Cure: `rm -rf
+  .build/arm64-apple-macosx/debug` ONLY (never checkouts/repositories — offline mirror).
+  After both: `test_VM_04var_emptyFileHex` PASSED (6.7s) against the fixed bundle.
+- Owner app refreshed via `build-app.sh release --install`.
