@@ -40,6 +40,14 @@ ssh macOS15 'bash -s' -- "$PASSWORD" "$GUI_UID" "$SCENE" "$FILE_REL" "$MODE" <<'
   PASSWORD="$1"; GUI_UID="$2"; SCENE="$3"; FILE_REL="$4"; MODE="$5"
   # sudo'd asuser writes these root-owned (TSK-502 class) — clean via sudo.
   echo "$PASSWORD" | sudo -S rm -f /tmp/mdv-diagnose.json /tmp/mdv-diagnose.err /tmp/mdv-diagnose.png
+  # Reap any stray TAGGED test instance from a prior run — a second live
+  # instance confuses window ownership. NEVER killall by exec name (the
+  # owner-app footgun); match the dist path, which only test spawns use.
+  pkill -f "markdown_viewer/dist/TextView.app/Contents/MacOS/MarkdownViewer" 2>/dev/null || true
+  # Clear the AppKit autosaved window frame (vm-smoke.sh lesson): a prior
+  # off-screen frame overrides center() and yields a windowless capture.
+  defaults delete com.markdownviewer.MarkdownViewer 'NSWindow Frame MainWindow' 2>/dev/null || true
+  sleep 1
   if [ "$MODE" = "--capture" ]; then
     # Pixel mode (the visibility check): launch with the scene, let it
     # settle, screencapture the whole screen, reap by test-instance tag.
