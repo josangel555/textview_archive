@@ -96,6 +96,27 @@ extension AppDelegate {
                 frame.size = NSSize(width: dims[0], height: dims[1])
                 win.setFrame(frame, display: true, animate: false)
             }
+        case "resize-sweep":
+            // "minW maxW N" — oscillate the window width minW → maxW → minW
+            // in N setFrame increments at ~30 Hz, ALL inside this one verb
+            // so the per-step snapshot doesn't pollute a profiling capture
+            // (TSK-592). Fire-and-forget: pair with a `delay SECS` line
+            // covering the sweep duration (~N/30 s). Programmatic setFrame
+            // drives the same SwiftUI/AppKit layout as a live drag, modulo
+            // NSWindow.inLiveResize-gated paths — caveat noted on the ticket.
+            let p = arg.split(separator: " ").compactMap { Int($0) }
+            if p.count == 3, let win = self.window {
+                let (minW, maxW, steps) = (Double(p[0]), Double(p[1]), max(1, p[2]))
+                Task { @MainActor in
+                    for i in 0...steps {
+                        var f = win.frame
+                        f.size.width = ResizeSweep.width(
+                            at: i, minW: minW, maxW: maxW, steps: steps)
+                        win.setFrame(f, display: true, animate: false)
+                        try? await Task.sleep(nanoseconds: 33_000_000)
+                    }
+                }
+            }
         case "diagnostic-window":
             // WAVE 2b item 4: open the diagnostic tool window (gated).
             showDiagnosticWindow(nil)

@@ -9,8 +9,16 @@
 # asuser bridge, but the launch runs under
 # `xctrace record --instrument 'os_signpost'` instead of screencapture.
 #
-# Usage: bash scripts/vm-profile.sh [file-to-open] [seconds]
-#        (defaults: LESSONS.md, 20s)
+# Usage: bash scripts/vm-profile.sh [file-to-open] [seconds] [mode] [config]
+#        modes:  open   — launch with the file as argv (default)
+#                resize — launch with a --script that opens the file, then
+#                         runs `resize-sweep 700 1400 120` (~4s oscillation)
+#                         while the trace records (TSK-592)
+#        config: release (default) | debug — debug keeps symbols, use it
+#                when you need SYMBOLICATED Time Profiler stacks (the
+#                release bundle is stripped; its timings are honest but
+#                its samples are addresses).
+#        (defaults: LESSONS.md, 20s, open, release)
 # Output: $TMPDIR/mdv-vm-profile.trace on the HOST. Read intervals with:
 #        xcrun xctrace export --input <trace> --toc
 set -euo pipefail
@@ -26,6 +34,8 @@ GUI_UID=501
 
 FILE_ARG_HOST="${1:-$ROOT_DIR/LESSONS.md}"
 SECONDS_ARG="${2:-20}"
+MODE="${3:-open}"
+CONFIG="${4:-release}"
 if [[ ! -f "$FILE_ARG_HOST" ]]; then
   echo "Error: file not found on host: $FILE_ARG_HOST" >&2
   exit 1
@@ -34,6 +44,10 @@ if [[ ! "$SECONDS_ARG" =~ ^[0-9]+$ ]]; then
   echo "Error: seconds must be an integer: $SECONDS_ARG" >&2
   exit 1
 fi
+case "$MODE" in open|resize) ;; *)
+  echo "Error: mode must be open|resize: $MODE" >&2; exit 1 ;; esac
+case "$CONFIG" in release|debug) ;; *)
+  echo "Error: config must be release|debug: $CONFIG" >&2; exit 1 ;; esac
 
 # Host → VM path translation (same rule as vm-smoke.sh).
 if [[ "$FILE_ARG_HOST" == "$ROOT_DIR"* ]]; then
@@ -59,30 +73,45 @@ rsync -az --delete \
   --exclude='dist/' --exclude='.git/objects/pack/' \
   "$ROOT_DIR/" macOS15:markdown_viewer/
 
-echo "==> Build dist/TextView.app (release) on VM"
-ssh macOS15 'cd markdown_viewer && bash scripts/build-app.sh release 2>&1 | tail -2'
+echo "==> Build dist/TextView.app ($CONFIG) on VM"
+ssh macOS15 "cd markdown_viewer && bash scripts/build-app.sh $CONFIG 2>&1 | tail -2"
 
 echo "==> Record xctrace signpost profile in the GUI session (${SECONDS_ARG}s)"
 # Quoted heredoc: nothing from the host expands into the remote body.
 # PASSWORD/GUI_UID/path/seconds ride as positional args (vm-smoke.sh
 # pattern) so an untrusted filename can't break out of the sudo'd sh -c.
-ssh macOS15 'bash -s' -- "$PASSWORD" "$GUI_UID" "$FILE_ARG_VM" "$SECONDS_ARG" <<'REMOTE'
+ssh macOS15 'bash -s' -- "$PASSWORD" "$GUI_UID" "$FILE_ARG_VM" "$SECONDS_ARG" "$MODE" <<'REMOTE'
   set -e
-  PASSWORD="$1"; GUI_UID="$2"; FILE_ARG_VM="$3"; SECS="$4"
+  PASSWORD="$1"; GUI_UID="$2"; FILE_ARG_VM="$3"; SECS="$4"; MODE="$5"
   pkill MarkdownViewer 2>/dev/null || true
   # sudo'd: a prior run's trace may be root-owned (xctrace runs under
   # the sudo'd asuser bridge) — a plain rm can't delete it.
   echo "$PASSWORD" | sudo -S rm -rf /tmp/mdv-vm-profile.trace
+  if [ "$MODE" = "resize" ]; then
+    # Driver script: open the doc, settle, then oscillate the window
+    # width inside ONE verb (resize-sweep) while the trace records.
+    # 120 steps @ ~30Hz ≈ 4s of continuous relayout (TSK-592). The
+    # runner exits 0 after the last step, ending the recording cleanly.
+    cat > /tmp/mdv-resize-driver.txt <<SCRIPT
+open $FILE_ARG_VM
+delay 4
+resize-sweep 700 1400 120
+delay 6
+SCRIPT
+    LAUNCH_ARGS="--script /tmp/mdv-resize-driver.txt"
+  else
+    LAUNCH_ARGS="$FILE_ARG_VM"
+  fi
   # asuser drops env passed via /usr/bin/env but propagates env set
-  # inside the spawned shell; the file path stays a positional arg.
+  # inside the spawned shell; launch args stay positional.
   echo "$PASSWORD" | sudo -S launchctl asuser "$GUI_UID" /bin/sh -c '
     cd /Users/vm-tester/markdown_viewer &&
     xcrun xctrace record --template "Time Profiler" --instrument "os_signpost" \
       --env MDV_SIGNPOSTS=1 --env MDV_SKIP_WORKSPACE_RESTORE=1 \
       --time-limit "$2"s --output /tmp/mdv-vm-profile.trace \
-      --launch -- dist/TextView.app/Contents/MacOS/MarkdownViewer "$1" \
+      --launch -- dist/TextView.app/Contents/MacOS/MarkdownViewer $1 \
       2>&1 | tail -3
-  ' _ "$FILE_ARG_VM" "$SECS"
+  ' _ "$LAUNCH_ARGS" "$SECS"
   pkill MarkdownViewer 2>/dev/null || true
   # The sudo'd xctrace writes the trace as ROOT — chown it back so the
   # vm-tester scp pull can read it (same class as the TSK-502 root-owned
