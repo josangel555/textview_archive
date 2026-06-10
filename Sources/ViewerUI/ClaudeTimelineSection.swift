@@ -18,7 +18,12 @@ struct ClaudeTimelineSection: View {
     /// despite there being no transcripts. Renders a placeholder instead of
     /// `EmptyView()` so the toggle visibly works (bug4).
     var forcedShown: Bool = false
-    @State private var isExpanded = false  // collapsed by default; logs can be huge
+    // Collapsed by default (logs can be huge) but PERSISTED (TSK-609):
+    // as transient @State it reset to collapsed on every remount, and the
+    // rail's reveal-on-toggle write had nothing to land on — the panel
+    // toggle looked inert. Key = SidebarPanelKind.claudeTimeline.expandedStateKey.
+    @AppStorage("MarkdownViewer.sidebar.claudeTimeline.expanded")
+    private var isExpanded = false
     @State private var events: [ClaudeEvent] = []
     @State private var refreshTask: Task<Void, Never>?
     @State private var transcriptCount: Int = 0

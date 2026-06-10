@@ -99,6 +99,15 @@ public final class PanelLayoutStore: ObservableObject {
         let visible = isVisible(k, dataPresent: dataPresent)
         overrides.toggle(k, currentlyVisible: visible)
         overrides.save(to: defaults)
+        // REVEAL (TSK-609): flipping a panel ON must also EXPAND its
+        // section. Git/Claude keep their own disclosure state, so a
+        // rail click used to mount only a collapsed header — visually
+        // indistinguishable from "the button does nothing". Sections
+        // read this key via @AppStorage, so an already-mounted collapsed
+        // section expands live and a fresh mount starts expanded.
+        if !visible {
+            defaults.set(true, forKey: k.expandedStateKey)
+        }
     }
 
     /// Set an explicit override directly (e.g. a future context-menu

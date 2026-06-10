@@ -53,6 +53,22 @@ public enum SidebarPanelKind: String, CaseIterable, Sendable, Codable, Identifia
         }
     }
 
+    /// `UserDefaults` key for the section's expanded/collapsed disclosure
+    /// state. The rail toggle writes `true` here when it flips a panel ON
+    /// (TSK-609): several sections (Git, Claude) keep their own collapse
+    /// state, so "show the panel" used to mount only a thin collapsed
+    /// header — which read as the rail button doing nothing. Sections that
+    /// persist their disclosure read the SAME key via `@AppStorage`.
+    ///
+    /// `git` reuses its pre-existing legacy key so stored layouts survive.
+    /// Pinned by test — never derive-and-change.
+    public var expandedStateKey: String {
+        switch self {
+        case .git: return "MarkdownViewer.sidebar.gitExpanded"
+        default:   return "MarkdownViewer.sidebar.\(rawValue).expanded"
+        }
+    }
+
     /// Default uncollapsed height for the panel's scrollable body.
     /// Matches the previous fixed `SidebarConstants.sectionBodyHeight`
     /// (220) for parity with the pre-resize layout.

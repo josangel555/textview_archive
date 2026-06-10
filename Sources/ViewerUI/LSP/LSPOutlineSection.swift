@@ -100,7 +100,11 @@ public struct LSPOutlineSection: View {
     /// to identity for call sites without a document model. Not
     /// `@Sendable` — the host's `uiSize` is `@MainActor`-isolated.
     let uiSize: (CGFloat) -> CGFloat
-    @State private var isExpanded: Bool = true
+    // Persisted disclosure (TSK-609): the rail's reveal-on-toggle writes
+    // this key (SidebarPanelKind.lspOutline.expandedStateKey) so showing
+    // the panel always reveals its body, even if previously collapsed.
+    @AppStorage("MarkdownViewer.sidebar.lspOutline.expanded")
+    private var isExpanded: Bool = true
     @Environment(\.sidebarSectionBodyHeight) private var bodyHeight
 
     public init(

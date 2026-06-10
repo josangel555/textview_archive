@@ -191,6 +191,46 @@ final class PanelLayoutResolutionTests: XCTestCase {
         XCTAssertFalse(store.isVisible(.git, dataPresent: true))
     }
 
+    // MARK: - reveal-on-toggle-on expands the section (TSK-609)
+
+    /// Flipping a panel ON via the rail must also EXPAND its section:
+    /// Git/Claude keep their own disclosure state (`@AppStorage` on
+    /// `expandedStateKey`), and a click that only mounts a collapsed
+    /// header reads as "the button does nothing" — the owner-reported
+    /// inert buttons 4/5/6 (git / claudeTimeline / lspOutline).
+    func test_toggleOn_writesExpandedState_forCollapsedSections() {
+        let store = makeStore()
+        for kind in [SidebarPanelKind.git, .claudeTimeline, .lspOutline] {
+            // Simulate the section having been collapsed by the user.
+            defaults.set(false, forKey: kind.expandedStateKey)
+            store.toggle(kind, dataPresent: false)   // OFF (auto+no data) → ON
+            XCTAssertTrue(defaults.bool(forKey: kind.expandedStateKey),
+                "toggling \(kind) ON must expand its section, not mount a collapsed header")
+        }
+    }
+
+    /// Toggling a panel OFF must NOT touch the disclosure state — a
+    /// hidden section keeps whatever expansion it had for the next show.
+    func test_toggleOff_leavesExpandedStateAlone() {
+        let store = makeStore()
+        defaults.set(false, forKey: SidebarPanelKind.git.expandedStateKey)
+        store.toggle(.git, dataPresent: true)   // visible-by-data → .hidden
+        XCTAssertEqual(store.override(for: .git), .hidden)
+        XCTAssertFalse(defaults.bool(forKey: SidebarPanelKind.git.expandedStateKey),
+            "hiding a panel must not rewrite its collapsed/expanded state")
+    }
+
+    /// The disclosure keys are persisted contracts: `git` must keep its
+    /// legacy key (existing user layouts), the rest derive stably.
+    func test_expandedStateKeys_areStable() {
+        XCTAssertEqual(SidebarPanelKind.git.expandedStateKey,
+                       "MarkdownViewer.sidebar.gitExpanded")
+        XCTAssertEqual(SidebarPanelKind.claudeTimeline.expandedStateKey,
+                       "MarkdownViewer.sidebar.claudeTimeline.expanded")
+        XCTAssertEqual(SidebarPanelKind.lspOutline.expandedStateKey,
+                       "MarkdownViewer.sidebar.lspOutline.expanded")
+    }
+
     // MARK: - moving a panel off .left changes which rail it shows on
 
     func test_setEdge_movesPanelBetweenRails() {
