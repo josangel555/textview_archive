@@ -6490,3 +6490,18 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   settles ~16.7s post-launch before argv files open; use ≥25s windows.
 - HEX-perf cluster status: TSK-267 (1MB) validated, TSK-455 (6KB) validated — both
   owner-felt HEX slowness complaints closed with measured evidence in one cycle.
+
+## LOG +175 (2026-06-10, autonomous tick — P1 validation sweep: TSK-363 validated; rest correctly VM-gated)
+- **TSK-363 (always show hidden) → validated.** The user-facing contract is model-layer and
+  fully host-pinned with teeth (hydrate force-trues a stale persisted false; snapshot never
+  persists the field; isolation suite rewritten to the always-true contract) — and a UI
+  REMOVAL has no rendered-but-invisible risk class. Evidence on the ticket (84d0245).
+- **Held at `fixed` deliberately (policy-correct, NOT stalled):** TSK-313 (strip double-click
+  gesture hit-area), TSK-314 (GoTo prompt field seeding on appear), TSK-522/523 (Git Log
+  selection-bar rendering + real modifier clicks). Each has its model/state machine fully
+  host-pinned with teeth; the residual is SwiftUI-RENDERED behavior or real-event input,
+  which self-validation policy routes to the VM UI lane. Follow-up idea filed mentally for
+  a future tick: ONE VM T4 interaction suite (CGEvent real clicks + field reads) could
+  unlock all four to validated in a single run.
+- TSK-266/440 remain `fixed` on live-validation; TSK-266's residue rides the parked
+  MountedPanesLRU owner decision (TSK-598).
