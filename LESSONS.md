@@ -2623,3 +2623,20 @@ Two durable VM gotchas found finishing the T5/VisualRegression pixel lane:
 - **Empty files defeat NUL-byte binary sniffing** — 0 bytes decode as valid empty UTF-8,
   so content-based binary detection passes them to the text path. Any "unknown type →
   HEX" contract needs an explicit size==0 route (`DocumentController.open`, c3e6e5b).
+
+## 2026-06-10 (TextKit 2 large-document traps — TSK-267)
+- **A self-sizing (`isVerticallyResizable`) NSTextView defeats TK2 viewport layout**: any
+  height query (`textContainerOrigin`, triggered by `layoutViewport` and `renewGState`)
+  runs `ensureLayoutForRange` over the WHOLE document. For uniform grids, pin the frame
+  arithmetically (engine-measured line height × rows) and override `textContainerOrigin`
+  to return the inset. Measure line height from a tiny NSTextLayoutManager sample, never
+  font metrics — and pin formula == `usageBoundsForTextContainer` in a host test so an OS
+  metrics change goes red (HexGridGeometryTK2Tests).
+- **Do NOT bound the NSTextContainer to make height queries cheap** — a finite container
+  makes TK2 lay out in-bounds content EAGERLY (measured: chunked build blew up). Keep the
+  container unbounded; fix the frame and the origin instead.
+- **`ssh vm 'build | tail -N'` masks build failures** (exit code is tail's) → the harness
+  profiles/tests a STALE binary and "refutes" a fix that was never in the build. Always
+  propagate the remote build's exit code (vm-profile.sh fixed, b1849c4). Symptom checklist
+  before trusting any VM artifact: binary mtime vs fix time, `nm` for a new symbol, build
+  log exit marker.

@@ -6453,3 +6453,28 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   .build/arm64-apple-macosx/debug` ONLY (never checkouts/repositories — offline mirror).
   After both: `test_VM_04var_emptyFileHex` PASSED (6.7s) against the fixed bundle.
 - Owner app refreshed via `build-app.sh release --install`.
+
+## LOG +173 (2026-06-10, autonomous tick — TSK-267 VALIDATED: 1MB HEX stall measured, fixed, regression-guarded)
+- **TSK-267 → validated.** The "1MB HEX extremely slow" stall was TextKit 2 full-document
+  layout of ~65k rows, measured on the VM signpost/Time-Profiler harness at every step.
+  Fix chain (commits dbf155c, ab52c3e, c0e80bd, 92b5129): scoped highlight clear
+  (`HexHighlightPlan`, no more O(document) removeAttribute per search edit) · ≤256KB sync
+  one-shot dump build (kills the 6KB-class per-open machinery) · arithmetic grid frame
+  (rows×TK2-measured lineHeight, self-sizing off) · `textContainerOrigin` override
+  returning the inset (the default impl derives it from usage = full ensureLayout,
+  re-triggered from layoutViewport AND renewGState). Verified-build trace: ensureLayout
+  samples 1322→1, textContainerOrigin 1311→0, main-thread busy 2111→592 in the open
+  window; chunkedBuild 1.82s→663ms debug / 261ms release. Guards on every host gate:
+  HexFixedGridFrameTests + HexGridGeometryTK2Tests (formula == TK2 usage EXACTLY) +
+  HexHighlightPlanTests, teeth demonstrated. VM ViewModesUATTests 13/13.
+- **Dead end kept for the record:** bounding the text container (30fdc32) defeats TK2's
+  lazy layout for in-bounds content — reverted in c0e80bd; the container must stay
+  unbounded while the FRAME is pinned.
+- **Measurement-integrity catch:** three "after" captures profiled STALE binaries —
+  `vm-profile.sh` piped the VM build through `| tail`, masking a failure on root-owned
+  `.build` debris. Fixed (b1849c4): the script now propagates the build's real exit code
+  and refuses to profile. The trace that "refuted" the origin override was the stale one;
+  the verified rebuild proved the override works.
+- Minor UX note on the ticket: the hex text view's frame is now exactly grid-sized, so a
+  click in blank space right of a narrow grid no longer clears the click-highlight (ESC
+  still does). Flagged for the owner on the ticket rather than guessed at.
