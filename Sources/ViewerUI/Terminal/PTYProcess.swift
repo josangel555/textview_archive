@@ -33,7 +33,10 @@ public final class PTYProcess: @unchecked Sendable {
 
     private let lock = NSLock()
     private var masterFD: Int32 = -1
-    private var childPID: pid_t = -1
+    /// Internal getter (TSK-138 test seam): the zombie-reap pin reads
+    /// the spawned pid to assert the child is actually COLLECTED after
+    /// terminate() (kill(pid,0) → ESRCH), not merely signalled.
+    private(set) var childPID: pid_t = -1
     private var readSource: DispatchSourceRead?
     private var didExit = false
     private let readQueue = DispatchQueue(label: "com.markdownviewer.pty.read")
