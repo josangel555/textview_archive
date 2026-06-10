@@ -150,6 +150,15 @@ extension AppDelegate {
                     Data("script: \(cmd) with no window\n".utf8))
                 return
             }
+            // The harness launches with MDV_BACKGROUND (no activation), so
+            // the window is never KEY — and a click on a non-key window is
+            // consumed as an activating click (SwiftUI views default
+            // acceptsFirstMouse == false), i.e. silently swallowed (found
+            // empirically: both first VM scenarios clicked nothing). Make
+            // the window key before posting; script-path only, and the VM
+            // GUI lane is precisely where activation is permitted.
+            NSApp.activate(ignoringOtherApps: true)
+            win.makeKeyAndOrderFront(nil)
             if !UIEventSynth.click(spec: spec, in: win) {
                 FileHandle.standardError.write(
                     Data("script: \(cmd) target '\(spec.identifier)' not found\n".utf8))
