@@ -777,16 +777,26 @@ private final class HexTextController: NSViewController {
                 hasHeader: plan.headerCharCount > 0))
         let inset = textView.textContainerInset
         let pad = textView.textContainer?.lineFragmentPadding ?? 0
-        let h = HexGridGeometry.textHeight(lineCount: lines,
-                                           lineHeight: m.lineHeight)
-            + Double(inset.height) * 2
-        let w = HexGridGeometry.textWidth(perRowChars: plan.perRowChars,
-                                          charAdvance: m.charAdvance)
-            + Double(pad) * 2 + Double(inset.width) * 2
+        let textH = HexGridGeometry.textHeight(lineCount: lines,
+                                               lineHeight: m.lineHeight)
+        let textW = HexGridGeometry.textWidth(perRowChars: plan.perRowChars,
+                                              charAdvance: m.charAdvance)
+            + Double(pad) * 2
         textView.isVerticallyResizable = false
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = []
-        textView.setFrameSize(NSSize(width: ceil(w), height: ceil(h)))
+        // The container must be FINITE too: with an unbounded container,
+        // `textContainerOrigin` still derives the effective height from
+        // usage — i.e. full layout — even when the frame is fixed
+        // (measured: the ensureLayoutForRange samples survived the
+        // frame-only fix). Width gets +2pt fp headroom (NEVER undersize —
+        // that would wrap the grid); height gets one spare line.
+        textView.textContainer?.containerSize = NSSize(
+            width: ceil(textW) + 2,
+            height: ceil(textH + m.lineHeight))
+        textView.setFrameSize(NSSize(
+            width: ceil(textW + Double(inset.width) * 2),
+            height: ceil(textH + Double(inset.height) * 2)))
     }
 
     /// Append a chunk to the text storage on the main actor. Returns
