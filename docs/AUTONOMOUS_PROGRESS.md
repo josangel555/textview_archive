@@ -6122,3 +6122,15 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   is distributed SwiftUI re-evaluation with no app frame above ~20ms → filed **TSK-615**
   (audit remaining wide @ObservedObject channels; FileRowState snapshot pattern reusable).
 - Numbers + caveats (debug VM noise) recorded on TSK-613/598; traces /tmp/mdv613-*.xml.
+## LOG +151 (2026-06-10, autonomous tick — TSK-596 fixed: Git Log full-message search)
+- **Why git-backed:** the loaded GraphCommit list is subject-only and paged — a client-side
+  filter could never match commit DESCRIPTIONS or unloaded history. `GitClient.grepLog` runs
+  `git log --grep --fixed-strings --regexp-ignore-case` (literal, case-insensitive, full
+  message), sharing graphLog's record format via the extracted static `parseGraphLog`.
+- **Model (074a104):** debounced generation-guarded search task (loadMoreLog staleness
+  contract: gen + repo + cancellation re-checked post-shell-out); `displayedLogEntries`
+  switches the Log tab between match set and paged log; pagination disabled while searching;
+  repo switch clears. UI: pinned field + match count + clear button.
+- **Tests:** 6 GitClientGrepLogTests (incl. body-only match + fixed-strings metacharacters)
+  + 4 GitLogSearchModelTests (state machine) + 25-test git regression sweep on the
+  refactored parser. Teeth: ignore-case flag dropped → red. Gate green; reinstall kicked.
