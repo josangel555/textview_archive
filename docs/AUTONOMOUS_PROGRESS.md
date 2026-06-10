@@ -6725,3 +6725,21 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   601 waiting-human, 608 three-option ask). Spin-offs noted (613/615/620/621). The
   2026-06-10 owner bug list is fully reconciled agent-side; what remains is the owner's
   call on the 4 gated children + epic close.
+
+## LOG +187 (2026-06-10, autonomous tick — validation drain begins per new SOP rank 1.5: TSK-266 validated; TSK-440 hold ratified with closure path)
+- **TSK-266 (P1, tab close ~1s) VALIDATED** — both structural causes are now landed and
+  guarded, evidence re-run fresh: (1) lazy-neighbor materialize fix (5336262) —
+  CloseTabMaterializeTests 3/3 (one per close path; fix-time teeth: stripping the 3 call
+  sites → all 3 red); (2) the fix-time honest residue (content-view teardown on close)
+  was eliminated by the MountedPanesLRU retention validated yesterday (TSK-108/621) —
+  MountedPanesWiringTests 5/5 + RepublishCountTests 2/2 fresh, VM probe evidence on
+  record. The live-validation blocker predated the retention landing; both halves are
+  now automated-test-pinned host+VM.
+- **TSK-440 (P1, sidebar resize/fill) HOLD RATIFIED — correctly stays at fixed.** Model
+  half fully guarded (SidebarResizeTests 15/15, triple-mutation teeth, full VM sweep);
+  what's missing is render-half guards: realized-tree presence of the new FILES↔accordion
+  divider + drag-closure routing through SidebarResize.redistribute. Closure path
+  documented on the ticket (T2' presence test + exact-closure drag test, TSK-620
+  pattern) — next drain tick's build item.
+- Fixed-lane drain remaining: ~50 tickets (deep-audit S3/S4 series TSK-134..196 +
+  BACKLOG series TSK-261..334); P1s now all resolved or honestly held.
