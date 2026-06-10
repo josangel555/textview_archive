@@ -5914,3 +5914,17 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - **NEXT TICK:** VM capture per the corrected recipe (rsync → release build on VM → xctrace in the GUI
   session → export interval durations for open/load/HTMLRenderer.render/loadToFinish) → fix what the
   numbers indict. MountedPanesLRU park question now measurement-gated. `main` @ 1668d68, gate green.
+
+## LOG +135 (2026-06-10, autonomous tick — TSK-598 MEASURED on the VM: WebKit loadToFinish = 94% of MD open)
+- **VM signpost capture done** (new `scripts/vm-profile.sh`, 1cb22cd): release build + xctrace
+  `--instrument os_signpost` under the launchctl-asuser GUI bridge, LESSONS.md (147KB, 17 fences, NO mermaid):
+  `openResolved` 25.5ms · `DocumentController.open` 1.1ms · `HTMLRenderer.render` 203.3ms (149ms of that =
+  one-time cold `ts.query-compile`) · **`WKWebView.loadToFinish` 3456.6ms — 94% of the open**. App-side
+  pipeline ≈230ms cold / ~80ms warm; WebKit page-build IS the lag. Mermaid conditional injection confirmed
+  (no runtime injected). VM absolutes are inflated vs the owner's host — the ratio is the finding.
+- **Implication:** repeat cost dominates the felt lag (every tab revisit re-pays the full WebKit pass because
+  the single mounted WKWebView is torn down per switch) → MountedPanesLRU is now DATA-JUSTIFIED, not a
+  hypothesis. The parked owner question on TSK-598 stands, upgraded with numbers.
+- **Harness gotchas captured in-script:** sudo'd xctrace writes the trace root-owned → in-sudo `chown vm-tester`
+  before the scp pull AND sudo'd `rm` of the prior run's trace (the TSK-502 root-poisoning class, two new sites).
+  Owner offered manual chown/chmod — not needed, script self-heals. `main` @ 1cb22cd.
