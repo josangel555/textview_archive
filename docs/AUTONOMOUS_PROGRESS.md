@@ -5895,17 +5895,28 @@ First firing under the 2026-06-10 USER-FACING-first directive; cron loop recreat
   consolidated owner ask: approve a supervised MountedPanesLRU session (option b: 30-min Instruments pre-check).
   Probe deleted (no wall-clock asserts kept — bench-flake policy); tree clean; no code change this item.
 
-### DECISIONS NEEDED (consolidated, 2026-06-10)
-- **MountedPanesLRU supervised session** — now the dominant lever for MD-open lag (TSK-598), tab-close residue
-  (TSK-266), tab-switch lag, AND the HEX ~1s open (TSK-455, measured 2026-06-10: HEX frames 0.09% of the
-  tab-walk burn; 43% is generic per-switch sizeThatFits rebuild). Parked on TSK-598 with options.
-  One supervised session likely clears all FOUR symptoms.
-- TSK-589 session-eviction policy (options a–d, parked earlier).
-- TSK-591 hover lag — needs a 10s live counter read (`trackedRepos.norm.miss`/`.reset`) or a 30s Instruments trace.
-- **TSK-327 tool-window "Main tab" docking** (parked 2026-06-10): L/R/B drag-snap is fully shipped; the
-  center-tab arm forks on architecture — (a) real fileless-tab refactor (bundle with TSK-202, supervised),
-  (b) center-overlay approximation (~1-2 ticks, recommended v1), (c) close by-design at three rails, (d) other.
-- TSK-359 source-view invisibles color (parked earlier: accept OS grey / NSLayoutManager-rule conflict).
+### DECISIONS NEEDED (consolidated, 2026-06-10 — refreshed end-of-day)
+- **MountedPanesLRU supervised session (TSK-598)** — now carries FIVE measured symptoms:
+  MD-open repeat cost (94% WKWebView loadToFinish re-paid per revisit), tab-switch lag
+  (43% sizeThatFits teardown; SourceTextController.apply ~199ms/switch), TSK-266
+  close residue, TSK-455 HEX ~1s, and TSK-592 resize jank (27ms main-thread per resize
+  frame, ~32% full-tree re-layout scaling with mounted panes). One supervised session
+  likely clears all five. NOTE: the earlier park was resolved with NO option selected —
+  treated as cleared-not-approved; awaiting an explicit go (WebView hot zone, #213/#217
+  race history).
+- **TSK-592 resize jank** — parked with the trace data attached; recommended folding its
+  resolution into the TSK-598 approval rather than a resize-specific patch.
+- **TSK-327 tool-window "Main tab" docking** — center-tab arm forks on architecture:
+  (a) fileless-tab refactor (bundle w/ TSK-202, supervised), (b) center-overlay v1
+  (~1-2 ticks, recommended), (c) close by-design at three rails, (d) other.
+- **TSK-284 "Dragable files"** (parked this tick) — one-line ticket, direction ambiguous:
+  (a) drag OUT to Finder/apps [recommended, ~1 day on the new TabDragPayload infra],
+  (b) sidebar→tab-strip drag-open, (c) drag-to-move between folders (mutates disk), (d) combo.
+- TSK-601 Swift-source open lag — parked asking for repro specifics (file size / cold-warm).
+- TSK-591 hover lag — needs a 10s live counter read (`trackedRepos.norm.miss`/`.reset`).
+- TSK-589 session-eviction policy (options a–d).
+- TSK-452 status-bar file stats not updating on tab change — parked asking for repro.
+- TSK-359 source-view invisibles color (accept OS grey / NSLayoutManager-rule conflict).
 
 ## LOG +134 (2026-06-10, autonomous tick — TSK-598: measure-don't-guess; harness gap found + fixed)
 Owner corrections this tick: (1) "we did have some harness to do profiling etc. measure don't guess";
