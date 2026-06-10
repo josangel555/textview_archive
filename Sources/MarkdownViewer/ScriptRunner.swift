@@ -31,6 +31,10 @@ extension AppDelegate {
     ///   show-palette / dismiss-palette
     ///   delay SECS              pause without action
     ///   snapshot                explicit snapshot (otherwise done after each command)
+    ///   ui-click ID [cmd] [shift] [at FX FY]
+    ///                           REAL click on the view with accessibility
+    ///                           id ID (FX/FY = bounds fractions, default
+    ///                           center); ui-double-click for count 2
     func runScript(at path: String) {
         guard let data = try? String(contentsOfFile: path, encoding: .utf8) else {
             FileHandle.standardError.write(Data("script: cannot read \(path)\n".utf8))
@@ -129,6 +133,27 @@ extension AppDelegate {
                 #selector(NSTextView.performFindPanelAction(_:)),
                 to: nil, from: nil
             )
+        case "ui-click", "ui-double-click":
+            // REAL-event interaction layer (UIEventSynth): locate a view
+            // by accessibility id and drive NSEvents through the window's
+            // sendEvent — full hit-testing + responder chain + SwiftUI
+            // gesture routing. Grammar: <ax-id> [cmd] [shift] [at FX FY].
+            // Failures are LOUD on stderr so an assertion harness can
+            // refuse a run that clicked nothing.
+            guard let spec = UIClickSpec.parse(verb: cmd, arg: arg) else {
+                FileHandle.standardError.write(
+                    Data("script: bad \(cmd) syntax '\(line)'\n".utf8))
+                return
+            }
+            guard let win = self.window else {
+                FileHandle.standardError.write(
+                    Data("script: \(cmd) with no window\n".utf8))
+                return
+            }
+            if !UIEventSynth.click(spec: spec, in: win) {
+                FileHandle.standardError.write(
+                    Data("script: \(cmd) target '\(spec.identifier)' not found\n".utf8))
+            }
         default:
             FileHandle.standardError.write(
                 Data("script: unknown command '\(cmd)'\n".utf8))
