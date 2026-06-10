@@ -6186,3 +6186,14 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   snapshot never persists) + SessionIsolationTests rewritten from "include-hidden is
   per-session" to "always true". Teeth: compiling mutation restoring the old hydrate +
   persist behavior → all 4 red; restored → green. Gate green on 84d0245; reinstall kicked.
+## LOG +157 (2026-06-10, autonomous tick — TSK-522 fixed: Git Log multi-select → cumulative diff)
+- **(2190fdb):** slice 3 lands on the already-shipped resolver (slice 1) + GitClient.cumulativeDiff
+  (slice 2): Cmd-click toggles, Shift-click extends a contiguous run from the anchor, plain click
+  keeps the single-commit diff. ≥2 selected → selection bar with View Diff (writes the
+  `git diff base tip` net patch to a .diff tab) and an "+N in-between" warning when the selection
+  has gaps (CumulativeDiffSelection.isContiguous). Multi-select is inert during grep search —
+  the match set's row adjacency isn't commit adjacency, so contiguity math would lie (pinned).
+- **Tests:** 10 GitLogMultiSelectTests (state machine + range math incl. empty-tree root base)
+  + a search-guard pin in GitLogSearchModelTests. Teeth: shift-range→anchor-only +
+  topoIndex→0 mutation = 9/10 red; restore → 29/29 across the git-log suites. Gate green on
+  2190fdb; reinstall kicked. Bar pixels + real modifier clicks = VM lane (held at fixed).
