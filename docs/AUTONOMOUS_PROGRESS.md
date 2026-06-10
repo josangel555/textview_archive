@@ -6843,3 +6843,17 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - TSK-622 progress: guards 1-2 of 4 done (HexView fingerprint, rust cache). Remaining:
   PTY reap ESRCH (TSK-138), FileWatcher stop-races-reattach (TSK-147); TSK-139 awaits
   owner dismiss.
+
+## LOG +194 (2026-06-10, autonomous tick — TSK-622 guard 3/4: FileWatcher race window pinned deterministically; TSK-147 VALIDATED)
+- **TSK-147 (S3, FileWatcher stop-races-reattach fd leak) VALIDATED** via guard 3
+  (commit 0a42e5f): a DEBUG-only `attachWindowHook` seam fires INSIDE the FW-S3 window
+  (post-resume, pre-commit-lock), turning the race into a deterministic interleaving.
+  `FileWatcherStopRaceTests`: in-window stop() → watcher stopped, fd back to process
+  baseline (the leak observable), handler never fires; control test pins the happy path.
+- **Teeth**: deleting the FW-S3 guard block → RED "fd not released — the fresh source
+  leaked into the stopped watcher" (fd 5 > baseline 4); restored → 2/2 + FileWatcherTests
+  8/8. Gate PASSED on 0a42e5f. Production delta = the #if DEBUG seam only
+  (nonisolated(unsafe) static, test-thread-only, coalesceLock precedent).
+- TSK-622: guards 1-3 of 4 done (HexView fingerprint, rust cache, FileWatcher window).
+  Remaining: PTY reap ESRCH (TSK-138) + the PTY suite foreground-sandbox flake; TSK-139
+  awaits owner dismiss. Drain tally: 17 validated.
