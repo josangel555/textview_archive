@@ -5900,6 +5900,10 @@ First firing under the 2026-06-10 USER-FACING-first directive; cron loop recreat
   (TSK-266), and tab-switch lag. Parked on TSK-598 with options. One supervised session likely clears all three.
 - TSK-589 session-eviction policy (options a–d, parked earlier).
 - TSK-591 hover lag — needs a 10s live counter read (`trackedRepos.norm.miss`/`.reset`) or a 30s Instruments trace.
+- **TSK-327 tool-window "Main tab" docking** (parked 2026-06-10): L/R/B drag-snap is fully shipped; the
+  center-tab arm forks on architecture — (a) real fileless-tab refactor (bundle with TSK-202, supervised),
+  (b) center-overlay approximation (~1-2 ticks, recommended v1), (c) close by-design at three rails, (d) other.
+- TSK-359 source-view invisibles color (parked earlier: accept OS grey / NSLayoutManager-rule conflict).
 
 ## LOG +134 (2026-06-10, autonomous tick — TSK-598: measure-don't-guess; harness gap found + fixed)
 Owner corrections this tick: (1) "we did have some harness to do profiling etc. measure don't guess";
@@ -6212,3 +6216,15 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   the review suites. Gate green on c7d75f4; reinstall kicked. Accordion layout/pixels = VM lane.
 - **P1 set status:** 266/267/313/314/363/522/523 all fixed; 359 parked (owner decision);
   remaining: TSK-327 ([PARTIAL] tool-window drag/snap).
+## LOG +159 (2026-06-10, autonomous tick — TSK-327 parked (owner fork); TSK-455 HEX capture in flight)
+- **TSK-327 triaged + parked (decision):** drag/snap for Left/Right/Bottom verified fully shipped
+  (PanelDropZone + mdvPanelDrag UTI, UX-E). The remaining "Main tab" position is NOT a small
+  extension: PanelEdge documents a deliberate three-rail product direction, and center-tab
+  hosting requires the fileless Tab/DocumentState arm that ReviewTabView.swift:7 explicitly
+  defers — intersecting the owner-gated Sessions split (TSK-202). Parked with options
+  (real refactor / center-overlay v1 [recommended] / close by-design); see DECISIONS NEEDED.
+- **TSK-455 claimed (HEX ~1s for 6KB):** chunk path was already ruled out headlessly; per
+  measure-don't-guess, a symbolicated (debug-config) VM capture of opening a new deterministic
+  6KiB binary fixture (`scripts/perf-fixtures/hex-6kb.bin`, 0x00..0xFF×24 — null bytes force the
+  binary/HEX classification) is recording via `scripts/vm-profile.sh ... 15 open debug app`.
+  Next: parse main-thread samples in the open window, attribute, fix what they indict.
