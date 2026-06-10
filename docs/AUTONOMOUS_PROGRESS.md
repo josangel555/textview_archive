@@ -1,5 +1,27 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-09 (latest+124) — rust-core audit landed (17 tickets TSK-539–555 under epic TSK-538) + VM full-suite verdict
+
+**rust-core audit (wf_6b6443d9-5c6, 81 agents):** review phase complete (all 9 dimensions); ~26 verifications + synthesis
+hit the SESSION USAGE LIMIT (resets 10:40pm Toronto). Salvaged: per-dimension reports written to
+`docs/research/rust-core-audit-2026-06-09/` (commit 056cbba; README distinguishes confirmed / refuted / UNVERIFIED-on-limit);
+**17 adversarially-CONFIRMED findings filed as TSK-539–TSK-555** (parent TSK-538, tag `rust-core-audit`). Highlights:
+cbindgen stale-header ABI-drift hole (S2), 16 MiB wire ceiling breaks mid-size CSVs (S2), `git status` on untrusted dirs
+without config neutralization = command exec (S2), web root fails OPEN to `/` (S3), tui/web/highlight have zero CI (S3).
+NEXT-TICK CUE (after 10:40pm): resume `Workflow({scriptPath: ".../rust-core-poc-audit-wf_6b6443d9-5c6.js",
+resumeFromRunId: "wf_6b6443d9-5c6"})` — completed agents cached; re-runs the ~26 dead verifies + synthesis; then file any
+newly-confirmed findings under TSK-538 and write synthesis.md.
+
+**VM full-suite run #2 (/tmp/vmval2.log): 4489 tests, 17 failures (12 unexpected), 48 skips, 2916s.** Classification:
+15/17 = Core Image tonal-filter tests (ImageEditingTests/ImageEditorViewModelTests exposure/sharpen/shadowHighlight/
+saturation) — HOST-GREEN, fail only on the VM's virtualized GPU ⇒ environment delta, not regressions; 1 = terminal-chip T5
+died on `Bad file descriptor` (fd/infra class, 0.13s, not a pixel verdict); 1 = ViewModesUATTests emptyFileHex (timing
+class, needs a look). CRITICAL CAVEAT: the T5 pixel tests largely SELF-SKIPPED ("App didn't publish windowNumber within
+2.5s") — the spawned app couldn't come up on the loaded 4 GiB VM, so the render-path pixel validations (incl. the
+TSK-529 audio-waveform T5) did NOT actually execute. Pixel proof still pending ⇒ run the individual T5s on an IDLE VM
+(`swift test --filter ...VisualRegressionTests` one at a time), or after the owner's RAM bump. Board cleanup earlier this
+session: 11 dismissals incl. forge seeds (task_next fixed — now heads TSK-108), epics TSK-537/538, 12 reprios, INT-106/107/108 filed.
+
 > 🧭 **EVERY FIRING, READ `docs/TASK_WORKFLOW.md` FIRST AND FOLLOW IT.** The project tracker is the
 > **`tasked` board** (`http://localhost:8787/mcp`) — the system of record, not this file or
 > `BACKLOG.md`. Each firing: query the board → pick the highest-value REAL task (features/bugs/perf
