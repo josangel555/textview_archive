@@ -5900,3 +5900,17 @@ First firing under the 2026-06-10 USER-FACING-first directive; cron loop recreat
   (TSK-266), and tab-switch lag. Parked on TSK-598 with options. One supervised session likely clears all three.
 - TSK-589 session-eviction policy (options a–d, parked earlier).
 - TSK-591 hover lag — needs a 10s live counter read (`trackedRepos.norm.miss`/`.reset`) or a 30s Instruments trace.
+
+## LOG +134 (2026-06-10, autonomous tick — TSK-598: measure-don't-guess; harness gap found + fixed)
+Owner corrections this tick: (1) "we did have some harness to do profiling etc. measure don't guess";
+(2) "pls use utm for tests that require UI to open".
+- **Harness gap FOUND + FIXED (1668d68):** the documented capture recipe in `docs/PERFORMANCE_PROFILING.md`
+  was broken — its TL;DR omitted `--instrument 'os_signpost'`, so the stock Time Profiler template recorded
+  ONLY Apple's PointsOfInterest lane; every `com.markdownviewer.*` interval was silently absent. Verified
+  against a real 15s capture (host, ran before the UTM directive landed; future captures → VM, which has
+  xctrace 16.0). Also verified `log show` is NOT a fallback (OSSignposter intervals aren't persisted).
+- **Instrumentation completed:** new `render | WKWebView.loadToFinish` signpost (loadHTMLString → didFinish)
+  closes the one unmeasured span of a rendered-MD open; doc table updated (doc-coupled contract).
+- **NEXT TICK:** VM capture per the corrected recipe (rsync → release build on VM → xctrace in the GUI
+  session → export interval durations for open/load/HTMLRenderer.render/loadToFinish) → fix what the
+  numbers indict. MountedPanesLRU park question now measurement-gated. `main` @ 1668d68, gate green.
