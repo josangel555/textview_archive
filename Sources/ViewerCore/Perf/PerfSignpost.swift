@@ -58,6 +58,12 @@ public enum PerfSignpost {
         /// string + layout), `HTMLRenderer`, the CM6 editor bootstrap, the
         /// SQLite/CSV view population.
         case render     = "render"
+        /// Scripted navigation interactions (`NavSweep`: tab switch /
+        /// sidebar toggle / view-mode toggle). The intervals are ANCHORS
+        /// for a Time Profiler capture — they bound the synchronous model
+        /// call; the SwiftUI re-render they trigger lands in the samples
+        /// immediately AFTER each interval (TSK-603).
+        case interact   = "interact"
     }
 
     /// Set once at first touch from `MDV_SIGNPOSTS`. `nonisolated(unsafe)`:

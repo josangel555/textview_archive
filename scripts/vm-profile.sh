@@ -14,6 +14,11 @@
 #                resize — launch with a --script that opens the file, then
 #                         runs `resize-sweep 700 1400 120` (~4s oscillation)
 #                         while the trace records (TSK-592)
+#                nav    — open the file + a fixed mixed-type set of repo
+#                         files (md/swift/json/csv, lazy-appended like a
+#                         workspace restore), then run `nav-sweep 2`
+#                         (tab walk + sidebar/view toggles, signpost-
+#                         anchored in the `interact` category) (TSK-603)
 #        config: release (default) | debug — debug keeps symbols, use it
 #                when you need SYMBOLICATED Time Profiler stacks (the
 #                release bundle is stripped; its timings are honest but
@@ -54,8 +59,8 @@ if [[ ! "$SECONDS_ARG" =~ ^[0-9]+$ ]]; then
   echo "Error: seconds must be an integer: $SECONDS_ARG" >&2
   exit 1
 fi
-case "$MODE" in open|resize) ;; *)
-  echo "Error: mode must be open|resize: $MODE" >&2; exit 1 ;; esac
+case "$MODE" in open|resize|nav) ;; *)
+  echo "Error: mode must be open|resize|nav: $MODE" >&2; exit 1 ;; esac
 case "$CONFIG" in release|debug) ;; *)
   echo "Error: config must be release|debug: $CONFIG" >&2; exit 1 ;; esac
 case "$SCOPE" in app|system) ;; *)
@@ -111,6 +116,26 @@ resize-sweep 700 1400 120
 delay 6
 SCRIPT
     LAUNCH_ARGS="--script /tmp/mdv-resize-driver.txt"
+  elif [ "$MODE" = "nav" ]; then
+    # Driver script: open the target + a fixed mixed-type set of repo
+    # files. The extras are LAZY-appended (open-lazy) — the exact shape
+    # a workspace restore produces — so the sweep's tab walk exercises
+    # the materializeIfNeeded path a real user hits. Then run the whole
+    # interaction sweep in ONE verb (nav-sweep; TSK-603). 2 cycles ×
+    # (6 tabs + 4 toggles) ≈ 20 interactions ≈ 3s @ ~6.7/s.
+    cat > /tmp/mdv-nav-driver.txt <<SCRIPT
+open $FILE_ARG_VM
+delay 3
+open-lazy /Users/vm-tester/markdown_viewer/README.md
+open-lazy /Users/vm-tester/markdown_viewer/Package.swift
+open-lazy /Users/vm-tester/markdown_viewer/Sources/ViewerUI/DocumentModel.swift
+open-lazy /Users/vm-tester/markdown_viewer/scripts/codemirror-build/package-lock.json
+open-lazy /Users/vm-tester/markdown_viewer/docs/AUTONOMOUS_PROGRESS.md
+delay 2
+nav-sweep 2
+delay 8
+SCRIPT
+    LAUNCH_ARGS="--script /tmp/mdv-nav-driver.txt"
   else
     LAUNCH_ARGS="$FILE_ARG_VM"
   fi

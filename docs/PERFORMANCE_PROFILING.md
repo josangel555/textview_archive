@@ -75,6 +75,7 @@ subsystem and you'll see one row per category.
 | `render`         | `SourceTextController.apply`     | `ViewerUI/TextDisplayView.swift`      | NSTextView attributed-string set + layout (the source-view paint). UI thread. |
 | `render`         | `HTMLRenderer.render`            | `ViewerCore/HTMLRenderer.swift`       | Markdown → HTML visit (incl. per-code-fence tokenize). |
 | `render`         | `WKWebView.loadToFinish`         | `ViewerUI/MarkdownRenderedView.swift` | The WebKit half of a rendered-MD open: `loadHTMLString` hand-off → WebContent parse/layout → `didFinish`. Spans processes; stitched by signpost ID. |
+| `interact`       | `navSweep.tabSwitch` / `navSweep.sidebarToggle` / `navSweep.viewToggle` | `ViewerUI/Perf/NavSweep.swift` | Scripted navigation interactions (TSK-603; `nav-sweep` verb / `vm-profile.sh … nav`). The interval bounds the synchronous model call only — it is an ANCHOR; the SwiftUI re-render it triggers lands in the Time Profiler samples immediately after the interval. |
 
 ### Reading a source-file open
 

@@ -350,6 +350,20 @@ public enum ScriptVerb {
             case "off": model.folderStatsExpanded = false
             default:    model.folderStatsExpanded.toggle()
             }
+        case "nav-sweep":
+            // "CYCLES" — run the whole navigation-interaction sweep
+            // (NavSweep: tab walk + sidebar toggle + view-mode toggle,
+            // each signpost-anchored) inside ONE verb so per-step
+            // snapshots don't pollute a profiling capture (TSK-603;
+            // resize-sweep precedent). Fire-and-forget: pair with a
+            // `delay SECS` line covering ~interactions×0.15s.
+            let cycles = max(1, Int(arg) ?? 1)
+            Task { @MainActor in
+                let n = await NavSweep.run(model: model, cycles: cycles)
+                Obs.shared.emit(ObsEvent(
+                    level: .info, subsystem: "perf",
+                    message: "nav-sweep: \(n) interactions over \(cycles) cycles"))
+            }
         case "delay":
             // No model effect. The actual pause is the caller's sleep: the
             // VM `--script` runner parses the arg as seconds (see
