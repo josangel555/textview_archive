@@ -1,5 +1,19 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-10 (latest+126) — TSK-548 stopgap: TooLarge gets its own identity end-to-end (LAST open S2)
+
+Commit `051eadf`: `WireFault::TooLarge` on encode_frame overflow (decode keeps `Framing` for hostile
+prefixes) → `MdvStatus::TooLarge = 5` (additive; header regen guarded by the TSK-539 drift gate) →
+`CoreError.tooLarge` in Swift. FFI maps via unit-tested `wire_status()` across all six error arms.
+Tests with teeth both languages (revert→FAILED→restore on the wire test). Both gates GREEN.
+The ceiling itself (windowed snapshots) remains TSK-559/Phase-1 — but a >16 MiB CSV pull now reads
+"too large" instead of a codec-bug-shaped WireError, so the Swift fallback is diagnosable.
+**New SwiftPM staleness lesson (2nd of the family):** adding a case to the public Equatable
+`CoreError` left a dependent module compiled against the OLD case tags — `.panic == .panic` was
+FALSE across modules (RustCoreFallback escalation test red). Touch the dependent to force recompile;
+same family as the untracked-prebuilt-.a relink hole fixed in 730fc65. Gate flakes re-run isolated:
+PTY lifecycle + LSPPoolSmoke (both known classes, both pass alone). Epic TSK-538: 11 fixed.
+
 ## LOG 2026-06-10 (latest+125) — audit ticket-coverage gap closed (TSK-578..589) + ALL S2 criticals fixed (9 Phase-0 items total)
 
 **Owner asks this block:** "did we file all the tickets for these? if not file and fix the critical issues."
