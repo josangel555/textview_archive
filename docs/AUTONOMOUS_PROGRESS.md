@@ -6712,3 +6712,16 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - **TSK-108 validated** on the fresh all-green chain — with today's catch as live proof the
   guards have teeth. **TSK-621 validated** with two-level evidence (host + VM, both
   teeth-demonstrated).
+
+## LOG +186 (2026-06-10, autonomous tick — held trio validated fresh; TSK-590 epic rolled up to review)
+- **TSK-599 / TSK-600 / TSK-609 validated** — the three children still at `fixed` were
+  re-verified with FRESH host runs on current main (post-af5e6dd): 599 = SessionTCCGuard +
+  OpenInNewSession* 18/18 (teeth: guard re-add → 5 red, demonstrated at fix time);
+  600 = OpenInNewSessionTests 10/10 (incl. the intent-routing teeth test) +
+  SessionOpenHomeTests 4/4 + the TSK-314 VM live render evidence; 609 =
+  PanelLayoutResolutionTests 12/12 (incl. the 3-kind expanded-state reveal test).
+- **TSK-590 epic → review (agent ceiling) with full rollup**: 13 validated, 3 wontdo,
+  4 owner-gated (591 hover counters, 592 resize residual, 598 supervised-LRU approval,
+  601 waiting-human, 608 three-option ask). Spin-offs noted (613/615/620/621). The
+  2026-06-10 owner bug list is fully reconciled agent-side; what remains is the owner's
+  call on the 4 gated children + epic close.
