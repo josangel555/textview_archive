@@ -36,16 +36,36 @@ pub struct Limits {
     pub max_total_cells: usize,
     /// Max scalars consumed from the input (coarse overall-size backstop).
     pub max_input_scalars: usize,
+    /// Max ESTIMATED heap bytes for the parsed table (audit TSK-557). The
+    /// cell-count caps don't model memory: each cell costs `String` header +
+    /// allocator slack and each row a `Vec` of the same, so ~4 MB of bare
+    /// newlines amplifies to ~480 MB resident under the count caps alone.
+    /// Accounting = content bytes + [`CELL_HEAP_OVERHEAD`]/cell +
+    /// [`ROW_HEAP_OVERHEAD`]/row; a trip flips `truncated` and stops the
+    /// parse, making worst-case memory O(this cap). Rust-only field (not in
+    /// the Swift mirror yet — the Swift parser's own caps are tracked by the
+    /// deep-audit Swift tickets).
+    pub max_estimated_heap_bytes: usize,
 }
+
+/// Estimated per-cell heap overhead: `String` header (24 B on 64-bit) plus
+/// allocator slack for the smallest bucket. An estimate, not an exact model —
+/// the cap is a blast-radius guard, not an allocator audit.
+pub const CELL_HEAP_OVERHEAD: usize = 48;
+
+/// Estimated per-row heap overhead: the row `Vec` header plus slack.
+pub const ROW_HEAP_OVERHEAD: usize = 48;
 
 impl Default for Limits {
     fn default() -> Self {
-        // Same defaults as the Swift parser.
+        // Count caps match the Swift parser; the heap cap is Rust-only (see
+        // its field doc) and sized to the same scale as `max_input_scalars`.
         Self {
             max_cell_chars: 64 * 1024,
             max_cells_per_row: 4096,
             max_total_cells: 32_000_000,
             max_input_scalars: 256 * 1024 * 1024,
+            max_estimated_heap_bytes: 256 * 1024 * 1024,
         }
     }
 }
@@ -138,6 +158,9 @@ pub fn parse_with(text: &str, delimiter: char, limits: Limits) -> Table {
     let mut total_cells = 0usize;
     let mut scalars_consumed = 0usize;
     let mut field_capped = false;
+    // Running estimate of the parsed table's heap footprint (audit TSK-557):
+    // content bytes + per-cell/per-row overhead. See the Limits field doc.
+    let mut estimated_heap = 0usize;
 
     let mut chars = text.chars().peekable();
 
@@ -161,6 +184,7 @@ pub fn parse_with(text: &str, delimiter: char, limits: Limits) -> Table {
     macro_rules! commit_field {
         () => {{
             if row.len() < limits.max_cells_per_row {
+                estimated_heap += field.len() + CELL_HEAP_OVERHEAD;
                 row.push(core::mem::take(&mut field));
             } else {
                 truncated = true;
@@ -178,6 +202,10 @@ pub fn parse_with(text: &str, delimiter: char, limits: Limits) -> Table {
             break;
         }
         if total_cells >= limits.max_total_cells {
+            truncated = true;
+            break;
+        }
+        if estimated_heap >= limits.max_estimated_heap_bytes {
             truncated = true;
             break;
         }
@@ -210,12 +238,14 @@ pub fn parse_with(text: &str, delimiter: char, limits: Limits) -> Table {
         if c == '\n' {
             commit_field!();
             total_cells += 1;
+            estimated_heap += ROW_HEAP_OVERHEAD;
             rows.push(core::mem::take(&mut row));
             continue;
         }
         if c == '\r' {
             commit_field!();
             total_cells += 1;
+            estimated_heap += ROW_HEAP_OVERHEAD;
             rows.push(core::mem::take(&mut row));
             // Swallow a following LF so CRLF doesn't make an empty row.
             if chars.peek() == Some(&'\n') {
@@ -419,6 +449,30 @@ mod tests {
         };
         let t = parse_with("a,b,c\n1,2,3\n4,5,6\n", ',', limits);
         assert!(t.truncated);
+    }
+
+    #[test]
+    fn estimated_heap_cap_bounds_newline_flood() {
+        // TSK-557: a newline flood costs ~1 input byte per cell+row but
+        // ~96 estimated heap bytes — the count caps never see the
+        // amplification; the heap cap must. 10k newlines under a 16 KiB cap
+        // stops after ~170 rows instead of materializing all 10k.
+        let flood = "\n".repeat(10_000);
+        let limits = Limits {
+            max_estimated_heap_bytes: 16 * 1024,
+            ..Limits::default()
+        };
+        let t = parse_with(&flood, ',', limits);
+        assert!(t.truncated, "heap cap must flip truncated");
+        let cap_rows = limits.max_estimated_heap_bytes / (CELL_HEAP_OVERHEAD + ROW_HEAP_OVERHEAD);
+        assert!(
+            t.rows.len() <= cap_rows + 1,
+            "rows must be bounded by the heap cap (got {})",
+            t.rows.len()
+        );
+        // The default cap leaves normal input untouched.
+        let normal = parse_with("a,b\n1,2\n", ',', Limits::default());
+        assert!(!normal.truncated);
     }
 
     #[test]
