@@ -427,7 +427,12 @@ final class HexTextController: NSViewController {
     /// `currentMatch` zeroed out, used to detect the common "only the
     /// active match index moved" case (⌘G / arrow step) so we can take
     /// the O(2) repaint fast path instead of a full re-paint (audit S2).
-    private struct HighlightFingerprint: Equatable {
+    /// Internal (not private) as the TSK-141 test seam: the O(1)
+    /// summary-equality semantics (equal when count/first/last/pattern/
+    /// width match even if MIDDLE offsets differ) are the audited
+    /// contract — `HexHighlightFingerprintTests` fails if equality
+    /// reverts to an O(matches) full-array compare.
+    struct HighlightFingerprint: Equatable {
         let matchCount: Int
         let matchFirst: Int?
         let matchLast: Int?
