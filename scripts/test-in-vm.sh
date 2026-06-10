@@ -276,6 +276,14 @@ case "$MODE" in
     # stale-toolchain modules). `checkouts/` and `repositories/` are
     # PRESERVED — the VM is an offline rsync mirror and cannot re-fetch
     # dependencies if they are lost. NEVER rm -rf the whole .build here.
+    # Self-heal root-owned residue first — the TSK-502 class: sudo'd
+    # launchctl-asuser runs (xctrace profiling, GUI-lane tests) write
+    # root-owned index files into .build, which an unprivileged rm then
+    # can't remove. Same in-sudo chown remediation vm-profile.sh uses.
+    if find .build -not -user "$(whoami)" -print -quit 2>/dev/null | grep -q .; then
+      log "root-owned files in .build (TSK-502 class) — chown -R $(whoami) via sudo"
+      printf '%s\n' "${MDV_VM_SUDO_PASSWORD:-<vm-sudo-password>}" | sudo -S chown -R "$(whoami)" .build
+    fi
     log "removing .build/arm64-apple-macosx + .build/index-build (+ toolchain marker)"
     rm -rf .build/arm64-apple-macosx .build/index-build .build/.mdv-toolchain
     log "kept: $(ls .build 2>/dev/null | tr '\n' ' ')"
