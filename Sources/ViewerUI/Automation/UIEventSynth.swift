@@ -37,22 +37,54 @@ public enum UIEventSynth {
         return nil
     }
 
+    /// Walk the ACCESSIBILITY element tree for `identifier` and return
+    /// its frame in SCREEN coordinates. This is how SwiftUI controls are
+    /// found: a whole SwiftUI hierarchy lives inside ONE NSHostingView —
+    /// its buttons/strips are NOT NSViews, so their
+    /// `.accessibilityIdentifier(_:)` exists ONLY as AX elements
+    /// (discovered live on the VM: `mdv.sessionTab.new` is unfindable by
+    /// the NSView walk).
+    public static func findAXFrame(identifier: String, element: Any) -> NSRect? {
+        guard let obj = element as? any NSAccessibilityProtocol else { return nil }
+        if obj.accessibilityIdentifier() == identifier {
+            return obj.accessibilityFrame()
+        }
+        for child in obj.accessibilityChildren() ?? [] {
+            if let hit = findAXFrame(identifier: identifier, element: child) {
+                return hit
+            }
+        }
+        return nil
+    }
+
+    /// Resolve the target's rect in WINDOW coordinates: NSView walk first
+    /// (hosted AppKit views carry the id directly), then the AX tree
+    /// (SwiftUI controls).
+    public static func resolveTargetRect(identifier: String,
+                                         in window: NSWindow) -> NSRect? {
+        guard let root = window.contentView else { return nil }
+        if let view = findView(identifier: identifier, under: root) {
+            return view.convert(view.bounds, to: nil)
+        }
+        if let screenRect = findAXFrame(identifier: identifier, element: root) {
+            return window.convertFromScreen(screenRect)
+        }
+        return nil
+    }
+
     /// Build the event sequence for `spec` against `window`'s view tree,
     /// or `nil` when the target id is not in the realized tree. Split
     /// from delivery so the lookup + coordinate + sequence logic is
     /// host-testable: an UN-ordered window has no window device
     /// (`windowNumber <= 0`), so queued events cannot route back to it —
     /// end-to-end delivery is only observable in the live app (the VM T4
-    /// suite), but everything up to the queue is pinned headlessly.
+    /// suite), but everything up to delivery is pinned headlessly.
     public static func events(spec: UIClickSpec, in window: NSWindow) -> [NSEvent]? {
-        guard let root = window.contentView,
-              let target = findView(identifier: spec.identifier, under: root)
+        guard let rect = resolveTargetRect(identifier: spec.identifier, in: window)
         else { return nil }
 
-        let b = target.bounds
-        let local = NSPoint(x: b.minX + b.width * spec.fx,
-                            y: b.minY + b.height * spec.fy)
-        let inWindow = target.convert(local, to: nil)
+        let inWindow = NSPoint(x: rect.minX + rect.width * spec.fx,
+                               y: rect.minY + rect.height * spec.fy)
 
         var flags: NSEvent.ModifierFlags = []
         if spec.command { flags.insert(.command) }
@@ -98,8 +130,7 @@ public enum UIEventSynth {
     /// "passes" by clicking nothing.
     @discardableResult
     public static func click(spec: UIClickSpec, in window: NSWindow) -> Bool {
-        guard let root = window.contentView,
-              let target = findView(identifier: spec.identifier, under: root),
+        guard let rect = resolveTargetRect(identifier: spec.identifier, in: window),
               let sequence = events(spec: spec, in: window)
         else {
             lastTrace = "click(\(spec.identifier)): target NOT FOUND"
@@ -108,8 +139,8 @@ public enum UIEventSynth {
         for event in sequence {
             window.sendEvent(event)
         }
-        lastTrace = "click(\(spec.identifier)): view=\(type(of: target)) "
-            + "frame=\(target.frame) point=\(sequence[0].locationInWindow) "
+        lastTrace = "click(\(spec.identifier)): rect=\(rect) "
+            + "point=\(sequence[0].locationInWindow) "
             + "count=\(spec.clickCount) key=\(window.isKeyWindow)"
         return true
     }
