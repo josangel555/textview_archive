@@ -246,6 +246,33 @@ public final class TreeSitterEngine: @unchecked Sendable {
         }
     }
 
+    // MARK: - Cache warm-up (TSK-619)
+
+    /// Precompile (language, query) bundles so a later synchronous
+    /// caller hits a warm cache. The first `Query(language:data:)`
+    /// compile for a grammar costs hundreds of ms (measured: ~400ms
+    /// debug / ~130ms release for swift) and the HTMLRenderer fence
+    /// path tokenizes SYNCHRONOUSLY on the main actor — so an unwarmed
+    /// first MD open stalls main for the whole compile. Calling this
+    /// from a background task at launch moves that cost off the user's
+    /// first open. Safe from any thread: `bundle(for:)` is what the
+    /// concurrent first-touch path already runs, and a racing real
+    /// caller simply blocks on the per-language compile lock for the
+    /// remainder of the in-flight compile instead of paying it all.
+    public func warm(_ languages: [HighlightLanguage]) {
+        for lang in languages where lang != .plainText {
+            _ = bundle(for: lang)
+        }
+    }
+
+    /// True when `language`'s bundle is compiled and cached (a
+    /// subsequent `tokenize` will not pay the query compile).
+    public func isWarm(_ language: HighlightLanguage) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cache[language] != nil
+    }
+
     /// Per-language compile lock. Lazily allocated so we don't pay for
     /// languages the user never touches. Caller must hold `self.lock`.
     private func compileLock(for lang: HighlightLanguage) -> NSLock {

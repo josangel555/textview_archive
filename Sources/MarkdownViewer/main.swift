@@ -94,6 +94,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // app launch must not block on it.
         Task { await model.lspPool.start() }
 
+        // TSK-619: precompile TreeSitter highlight queries off-main.
+        // The first tokenize of a language pays a multi-hundred-ms
+        // Query compile, and the HTMLRenderer code-fence path runs it
+        // SYNCHRONOUSLY on the main actor — an unwarmed first MD open
+        // stalls main for the whole compile (measured ~400ms debug).
+        // Warming every grammar at utility priority finishes well
+        // before a human reaches their first file; a racing open only
+        // waits out the remainder of the one compile it needs.
+        Task.detached(priority: .utility) {
+            TreeSitterEngine.shared.warm(HighlightLanguage.allCases)
+        }
+
         // CRITICAL: use NSHostingController.view (not a bare NSHostingView
         // set as contentView). The controller's view installs auto-layout
         // constraints that pin it to fill the window's contentView, so when
