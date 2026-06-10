@@ -171,54 +171,16 @@ struct GitLogTab: View {
                      layoutRow: GraphLayout.Row?,
                      maxLane: Int) -> some View {
         Button(action: { rowClicked(c) }) {
-            HStack(alignment: .top, spacing: 8) {
-                if let r = layoutRow {
-                    GitGraphColumn(row: r, maxLane: maxLane, isHead: isHead(c))
-                        .frame(minHeight: doc.uiSize(38))
-                }
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 6) {
-                        Text(c.sha)
-                            .font(.system(size: doc.uiSize(10), design: .monospaced))
-                            .foregroundStyle(Color.accentColor)
-                        if isHead(c) {
-                            chip("HEAD", color: .accentColor)
-                        }
-                        ForEach(branchRefs(c), id: \.self) { ref in
-                            Text("⎇ \(ref)")
-                                .font(.system(size: doc.uiSize(9)))
-                                .foregroundStyle(Color.accentColor)
-                        }
-                        Spacer(minLength: 4)
-                        Text(GitRelativeTime.format(unix: c.timestamp))
-                            .font(.system(size: doc.uiSize(9)))
-                            .foregroundStyle(.tertiary)
-                    }
-                    Text(c.subject)
-                        .font(.system(size: doc.uiSize(12),
-                                      weight: c.isMerge ? .regular : .medium))
-                        .foregroundStyle(c.isMerge ? Color.secondary : Color.primary)
-                        .lineLimit(2)
-                    Text(authorLine(c))
-                        .font(.system(size: doc.uiSize(10)))
-                        .foregroundStyle(.tertiary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(.horizontal, doc.uiSize(10))
-            .padding(.vertical, doc.uiSize(4))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            // TSK-595: strong selected state for the row whose diff is
-            // shown. Explicit accent fill — NOT the system unemphasized
-            // selection color, which renders grey and invisible (the
-            // TSK-488 selectedContentBackgroundColor lesson).
-            .background(
-                model.selectedLogSHAs.contains(c.sha) || c.sha == model.selectedLogSHA
-                    ? Color.accentColor.opacity(0.28)
-                    : Color.clear,
-                in: RoundedRectangle(cornerRadius: 4)
-            )
+            GitLogRowLabel(
+                commit: c,
+                layoutRow: layoutRow,
+                maxLane: maxLane,
+                isHead: isHead(c),
+                branchRefs: branchRefs(c),
+                authorLine: authorLine(c),
+                isSelected: model.selectedLogSHAs.contains(c.sha)
+                    || c.sha == model.selectedLogSHA,
+                uiSize: doc.uiSize)
         }
         .buttonStyle(.plain)
         .help("\(c.sha) — \(c.subject)")
