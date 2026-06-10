@@ -1,5 +1,40 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-10 (latest+125) — audit ticket-coverage gap closed (TSK-578..589) + ALL S2 criticals fixed (9 Phase-0 items total)
+
+**Owner asks this block:** "did we file all the tickets for these? if not file and fix the critical issues."
+
+**Coverage gap found + closed:** the 39 audit tickets covered every FINDING, but several accepted
+ROADMAP items from synthesis.md were never ticketed. Filed TSK-578..589 (tagged `rust-core-audit`,
+parent TSK-538): OpenError exhaustive match (P0), abi_version+wire-version (P1), thin-waist envelope
+(P1), poison tri-state (P1), FFI misuse-test matrix (P1), CoreRuntime registry/DocId (P2), fuzz lane /
+property lane / golden corpus / WASM tier-1 / perf-ratchet+mutants (P3), eviction policy (OWNER-DECISION,
+**parked with options — pings owner**). Epic now 51 children.
+
+**Criticals fixed this block (every S2 from the audit now closed):**
+- TSK-540 `fixed` @ 2d4f7dd — hex_render width clamp (`MAX_HEX_WIDTH=512`) kills the 17 GiB alloc-abort;
+  `rendered_row_length` made total. Teeth: clamp removed → test FAILED → restored.
+- TSK-578 `fixed` @ 2d4f7dd — OpenError exhaustive match (compiler-enforced; unblocks TSK-557's new variant).
+- TSK-576+565 `fixed` @ 730fc65 — hunk_marks hostile-header clamp + top-of-file Deleted tick → line 1,
+  PARITY-LOCKED Rust+Swift in one commit (Swift side was WORSE: Int.min-1 TRAPS). Teeth: both tests
+  red on mutation, reproducing the live overflow panic.
+- TSK-539 `fixed` @ 3f32676 — cbindgen `rerun-if-changed=src`, fail-hard on header-gen failure,
+  gate-time ABI header-drift check. Teeth: mutated staged header → gate exit 1 "ABI header drift".
+
+**Two NEW infra bugs found & fixed in flight:**
+- `.cargo/config.toml` at repo ROOT (2d4f7dd): cargo config discovery walks up from CWD not
+  --manifest-path — the rust-core-local config didn't cover repo-root invocations and a 246 MB
+  `rust-core/target` regrew in the iCloud tree (deleted again).
+- **SwiftPM does NOT track the prebuilt `libmdvcore_ffi.a` as a build input** (730fc65): the A/B
+  parity suite silently ran STALE Rust against new Swift — caught live when DiffHunkMarksABTests
+  failed with exactly the one-side-fixed signature. `build-rust-core.sh` now touches
+  `Sources/RustCore/*.swift` after staging so the next SwiftPM build relinks.
+
+**Gates:** rust-core gate green at every commit (now incl. header-drift step); Swift headless gate
+PASSED (one PTY lifecycle flake under build load — re-ran isolated, 4/4 in 80 ms, known class).
+Phase-0 remaining (all S3): TSK-548-stopgap (TooLarge status), web trio TSK-551/556/558, CSV cap
+TSK-557, hygiene TSK-566/567/575. Epic TSK-538 rollup: 10 fixed / 41 open.
+
 ## LOG 2026-06-09 (latest+124) — rust-core audit landed (17 tickets TSK-539–555 under epic TSK-538) + VM full-suite verdict
 
 **rust-core audit (wf_6b6443d9-5c6, 81 agents):** review phase complete (all 9 dimensions); ~26 verifications + synthesis
