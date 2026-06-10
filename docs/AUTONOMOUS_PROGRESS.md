@@ -6099,3 +6099,15 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   via compiling `, false` mutation → 2 red → restored green. Gate green on f212ccd; held at
   `fixed` (context-menu/Settings rendering = VM lane). If the owner confirms this is the
   intended "row-count tool window" dismissal, TSK-608's validation rides this fix.
+## LOG +149 (2026-06-10, autonomous tick — TSK-613 fixed: sidebar rows skip re-body via Equatable snapshot)
+- **Root cause (measured, TSK-603 capture):** FileRowView held @ObservedObject on
+  DocumentModel + SidebarModel + TrackedReposChannel — every visible row re-evaluated on
+  every model republish (144ms inclusive per 4s sweep).
+- **Fix (5bf9005):** rows take an Equatable `FileRowState` snapshot computed by the parent
+  enumeration and are `.equatable()` — SwiftUI skips bodies whose snapshot didn't change,
+  so a tab switch re-bodies ~3 rows instead of all. Object refs stay as UNOBSERVED lets for
+  action closures + the lazy context menu; the "every body read goes through the snapshot"
+  contract is documented and pinned TWO-SIDED by FileRowStateTests (uninvolved rows EQUAL =
+  the skip; affected rows DIFFERENT = the stale-UI guard). Teeth via factory mutation.
+- Gate green on 5bf9005; reinstall kicked; AFTER nav-sweep VM capture in flight to quantify
+  vs the 144ms baseline (numbers to TSK-613 when pulled).
