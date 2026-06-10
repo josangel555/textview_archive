@@ -5883,3 +5883,20 @@ First firing under the 2026-06-10 USER-FACING-first directive; cron loop recreat
   `/Applications/TextView.app` (release config, 44M — under the 48M cap; `codesign --verify --deep` OK). The
   release bundle carries all five of today's user-facing fixes (TSK-599/600/609/266 + TSK-591 diagnostics).
   `main` @ 868207e.
+
+## LOG +133 (2026-06-10, autonomous tick — TSK-598 MD-open lag: headless attribution complete, parked to owner)
+- **TSK-598 (MD open laggy) → attributed headlessly, parked (waiting:human).** Measured the app-side pipeline with
+  a throwaway probe on real fence-heavy repo docs: `renderPage` = 2.8–55ms warm (LESSONS.md 147KB/17 fences = 55ms),
+  HTML output modest (205KB / 568 spans — no span bloat), WKWebView process pool ALREADY shared, mermaid.js
+  conditionally injected (install/evict state machine; not loaded for plain MD). The app-side MD pipeline is NOT
+  the regression. Remaining cost = live WebView lifecycle (single-mounted pane teardown/rebuild + loadHTMLString +
+  WebKit layout + find-runtime injection per open/switch) — exactly the parked SUPERVISED MountedPanesLRU work,
+  which now blocks THREE felt-perf complaints (TSK-598, TSK-266 residue, tab-switch). Parked TSK-598 with the
+  consolidated owner ask: approve a supervised MountedPanesLRU session (option b: 30-min Instruments pre-check).
+  Probe deleted (no wall-clock asserts kept — bench-flake policy); tree clean; no code change this item.
+
+### DECISIONS NEEDED (consolidated, 2026-06-10)
+- **MountedPanesLRU supervised session** — now the dominant lever for MD-open lag (TSK-598), tab-close residue
+  (TSK-266), and tab-switch lag. Parked on TSK-598 with options. One supervised session likely clears all three.
+- TSK-589 session-eviction policy (options a–d, parked earlier).
+- TSK-591 hover lag — needs a 10s live counter read (`trackedRepos.norm.miss`/`.reset`) or a 30s Instruments trace.
