@@ -6646,3 +6646,24 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   path named), 603, 604, 607, 609, 614; parked owner-gated 591, 592, 598, 601, 608;
   wontdo 605, 606, 610. Next substantive build item: the TSK-602 WebView parity test
   (getComputedStyle vs SyntaxTheme hex, MDV_RUN_WEBVIEW_TESTS lane) and child TSK-613.
+
+## LOG +183 (2026-06-10, autonomous tick — TSK-602 VALIDATED: WebView painted-color parity suite landed)
+- **TSK-602 validated** (ViewOnly↔Editor highlight parity): the closure path named on
+  the ticket is now real. New `EditorThemeParityTests` (commit 5b35979) boots the REAL
+  `codemirror.html` host in a bare WKWebView, drives it through the PRODUCTION bridge
+  encoding (`window.cmDispatch(CMBridgeCodec.encodeOutboundJSON(...))` — byte-identical
+  to `Coordinator.dispatch`), then reads back `getComputedStyle(span).color` for
+  keyword/string/comment/number (spans located by TEXT CONTENT — lezer classes are
+  hashed) + the editor background, asserting EXACT equality with `SyntaxTheme.cmPalette`
+  hexes. Two tests: light paint + the light→dark setTheme RECONFIGURE (proves the theme
+  compartment replaces, not appends).
+- **Ran on the UTM VM** (WebView suites never on the host): 2/2 PASSED (6.3 toolchain,
+  `MDV_RUN_WEBVIEW_TESTS=1`). **Teeth demonstrated against the PRODUCTION host**: mutated
+  `paletteExtensions` keyword spec → `palette.comment`, VM run went RED naming the exact
+  wrong hex (`keyword painted #53716A (comment) ≠ #AD3DA4`); restored → green.
+- Suite wired into BOTH WebView-lane filter lists (`scripts/test-in-vm.sh`
+  `run_webview_tests` + `.github/workflows/nightly-vm.yml`) so nightly actually runs it.
+  Host headless gate PASSED on committed 5b35979.
+- The TSK-590 epic is now FULLY closed for agent-actionable children — 602 was the last
+  held one. Remaining pool: child TSK-613 is validated; TSK-615 (open child of 603)
+  unexamined; owner-parked 591/592/598/601/608.
