@@ -758,28 +758,61 @@ public struct ContentView: View {
             if isActive && model.isRenderedFindBarPresented {
                 MarkdownFindBar(find: model.find, uiSize: model.uiSize)
             }
-            MarkdownRenderedView(
-                html: model.renderedHTML(
-                    forTabID: tabID,
-                    file: file,
-                    contents: renderedContents,
-                    renderer: renderer,
-                    stylesheet: stylesheet
-                ),
-                baseURL: file.url.deletingLastPathComponent(),
-                zoom: model.zoom,
-                findQuery: isActive ? model.renderedFindQuery : "",
-                findCaseSensitive: model.renderedFindCaseSensitive,
-                findNextNonce: model.renderedFindNextRequest,
-                findPrevNonce: model.renderedFindPrevRequest,
-                onFindResult: { matched in
-                    Task { @MainActor in model.renderedFindMatched = matched }
-                },
-                onFindSummary: { summary in
-                    Task { @MainActor in model.setRenderedFindMatchSummary(summary) }
+            // TSK-611: body only READS the rendered-HTML cache. The cold
+            // render (markdown→HTML + TreeSitter grammar query compiles
+            // for code fences) measured 927ms of main-thread hang when it
+            // ran inline here during a layout pass — it now runs off-main
+            // via requestRenderedHTML, and this branch shows a spinner
+            // until the cache fills (one republish, one WebView load).
+            if let html = model.renderedHTMLIfCached(forTabID: tabID, file: file) {
+                markdownWebView(html: html, file: file, isActive: isActive)
+            } else {
+                ZStack {
+                    Color.clear
+                    ProgressView()
+                        .controlSize(.small)
                 }
-            )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("mdv.renderedMarkdownPending")
+                // .task(id:) refires when the key changes (file reloads
+                // with new mtime while this pane stays mounted), unlike
+                // .onAppear.
+                .task(id: DocumentModel.RenderedHTMLKey(
+                    tabID: tabID,
+                    byteCount: file.byteCount,
+                    modifiedTime: file.modifiedTime
+                )) {
+                    model.requestRenderedHTML(
+                        forTabID: tabID,
+                        file: file,
+                        contents: renderedContents,
+                        renderer: renderer,
+                        stylesheet: stylesheet
+                    )
+                }
+            }
         }
+    }
+
+    /// The WKWebView leg of the rendered-markdown branch, extracted so the
+    /// cache-hit and pending forks above stay readable.
+    @ViewBuilder
+    private func markdownWebView(html: String, file: TextFile, isActive: Bool) -> some View {
+        MarkdownRenderedView(
+            html: html,
+            baseURL: file.url.deletingLastPathComponent(),
+            zoom: model.zoom,
+            findQuery: isActive ? model.renderedFindQuery : "",
+            findCaseSensitive: model.renderedFindCaseSensitive,
+            findNextNonce: model.renderedFindNextRequest,
+            findPrevNonce: model.renderedFindPrevRequest,
+            onFindResult: { matched in
+                Task { @MainActor in model.renderedFindMatched = matched }
+            },
+            onFindSummary: { summary in
+                Task { @MainActor in model.setRenderedFindMatchSummary(summary) }
+            }
+        )
     }
 }
 

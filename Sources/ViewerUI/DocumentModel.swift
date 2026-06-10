@@ -2761,6 +2761,73 @@ public final class DocumentModel: ObservableObject {
             stylesheet: stylesheet,
             extraStylesheet: MermaidBundle.shimCSS
         )
+        storeRenderedHTML(key: key, html: html)
+        return html
+    }
+
+    /// Cache-only read for SwiftUI bodies: a dict lookup, never a render.
+    /// `nil` means "not rendered yet" — the body shows a placeholder and
+    /// kicks `requestRenderedHTML` instead of rendering inline (TSK-611:
+    /// the inline cold render — markdown→HTML plus the per-language
+    /// TreeSitter `ts_query_new` compile for code fences — blocked the
+    /// main thread for ~927ms inside a layout pass at file open).
+    public func renderedHTMLIfCached(forTabID tabID: UUID, file: TextFile) -> String? {
+        renderedHTMLCache[RenderedHTMLKey(
+            tabID: tabID,
+            byteCount: file.byteCount,
+            modifiedTime: file.modifiedTime
+        )]
+    }
+
+    /// Keys with a background render in flight; dedupes the request storm
+    /// from repeated body evaluations while the first render runs.
+    private var renderedHTMLInFlight: Set<RenderedHTMLKey> = []
+
+    /// Kick a background render for `key` unless cached or already in
+    /// flight. The render (and any cold TreeSitter grammar query compile
+    /// it triggers) runs off-main; the result lands on the MainActor,
+    /// fills the cache, and republishes so bodies re-evaluate onto the
+    /// cached HTML. Returns the task for tests; `nil` when nothing was
+    /// kicked (cache hit or duplicate).
+    ///
+    /// A result whose tab has been closed by the time it lands is
+    /// dropped — `purgeCaches(forTabID:)` already evicted that tab and a
+    /// late store would resurrect a dead entry.
+    @discardableResult
+    public func requestRenderedHTML(
+        forTabID tabID: UUID,
+        file: TextFile,
+        contents: String,
+        renderer: HTMLRenderer,
+        stylesheet: String
+    ) -> Task<Void, Never>? {
+        let key = RenderedHTMLKey(
+            tabID: tabID,
+            byteCount: file.byteCount,
+            modifiedTime: file.modifiedTime
+        )
+        guard renderedHTMLCache[key] == nil,
+              !renderedHTMLInFlight.contains(key) else { return nil }
+        renderedHTMLInFlight.insert(key)
+        return Task.detached(priority: .userInitiated) { [weak self] in
+            let html = renderer.renderPage(
+                contents,
+                stylesheet: stylesheet,
+                extraStylesheet: MermaidBundle.shimCSS
+            )
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.renderedHTMLInFlight.remove(key)
+                guard self.tabs.tabs.contains(where: { $0.id == tabID }) else { return }
+                self.storeRenderedHTML(key: key, html: html)
+                self.objectWillChange.send()
+            }
+        }
+    }
+
+    /// Shared insert + S2-G insertion-order eviction for the rendered-HTML
+    /// cache (sync body path and async request path).
+    private func storeRenderedHTML(key: RenderedHTMLKey, html: String) {
         if renderedHTMLCache[key] == nil {
             renderedHTMLCacheOrder.append(key)
         }
@@ -2775,7 +2842,6 @@ public final class DocumentModel: ObservableObject {
             }
             renderedHTMLCacheOrder.removeFirst(toDrop.count)
         }
-        return html
     }
 
     // MARK: Derived from current tab
