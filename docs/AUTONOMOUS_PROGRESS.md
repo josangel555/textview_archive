@@ -6857,3 +6857,19 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - TSK-622: guards 1-3 of 4 done (HexView fingerprint, rust cache, FileWatcher window).
   Remaining: PTY reap ESRCH (TSK-138) + the PTY suite foreground-sandbox flake; TSK-139
   awaits owner dismiss. Drain tally: 17 validated.
+
+## LOG +195 (2026-06-10, autonomous tick — TSK-622 guard 4/4: PTY zombie-reap pinned; TSK-138 VALIDATED. Guard batch COMPLETE)
+- **TSK-138 (S3, PTY terminate() zombie leak) VALIDATED** via the final TSK-622 guard
+  (commit 8480367): `PTYReapTests.test_terminate_collectsChild_noZombie` spawns a real
+  shell, terminates, and polls `kill(pid, 0)` for ESRCH — collection (pid gone) vs the
+  audited zombie (kill keeps succeeding) is a clean discriminator the prior lifecycle
+  suite lacked (it only asserted prompt return). Seam: `childPID` private→private(set).
+- **Teeth = the exact audited bug**: reverting reapChild to a single immediate WNOHANG
+  (no grace poll / no SIGKILL escalation / no blocking wait) → RED "child still exists
+  after terminate() … a ZOMBIE was left unreaped"; restored → green (collection in 63ms).
+  Gate PASSED on 8480367. New test passes FOREGROUND — the recon's flake lives in the
+  sibling test (S2 childPID-reset pin), still tracked on TSK-622.
+- **TSK-622 guard batch COMPLETE (4/4)**: HexView fingerprint (49c5ce2→TSK-141),
+  rust indices-only cache (a58eda9→TSK-142/143), FileWatcher FW-S3 window
+  (0a42e5f→TSK-147), PTY reap (8480367→TSK-138). Drain tally: 19 validated.
+  TSK-622 residue: the sibling-test foreground flake + TSK-139 owner-dismiss.
