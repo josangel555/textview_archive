@@ -5959,3 +5959,15 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - **TSK-592 parked (decision):** two captures, no app-side pathology under programmatic resize. Owner asked
   to pick: (a) live-drag CGEvent driver (needs one-time VM TCC grant), (b) repro specifics, or (c) close as
   not-reproducible post-TSK-611. inLiveResize caveat stands. LESSONS.md updated with both refutations.
+
+## LOG +138 (2026-06-10, autonomous tick — TSK-601 .swift-open measured: engine exonerated, not reproducible, parked with repro ask)
+- **Host bench** (223KB DocumentModel.swift): `TreeSitterEngine.tokenize` 588ms cold (one-time
+  ts_query_new) / 222ms warm, linear scaling; runs detached, never blocks open.
+- **VM signpost capture** of opening that exact file (`vm-profile.sh ... open debug`,
+  `/tmp/mdv-601-swiftopen.trace`): ZERO hangs; `open` 10ms; highlight done in 620ms off-main. The
+  2026-06-01 in-place-recolor second-paint fix is intact. No persisted editor-mode .swift tabs in the
+  owner's session state (Sessions/*.json: source/rendered/preview only).
+- **Parked (decision)** with four repro questions (file size/repo, cold-launch vs every-open, ViewOnly
+  vs Edit, whole-UI freeze vs late colors). CAVEAT recorded: captures set MDV_SKIP_WORKSPACE_RESTORE=1 —
+  cold-launch session restore is the main unmeasured path. Three perf parks now pending owner
+  (TSK-592/598/601); answers can come together.
