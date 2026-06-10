@@ -64,8 +64,7 @@ public enum UIEventSynth {
                                             limit: Int) {
         guard out.count < limit,
               let obj = element as? any NSAccessibilityProtocol else { return }
-        let id = obj.accessibilityIdentifier()
-        if !id.isEmpty { out.append(id) }
+        if let id = obj.accessibilityIdentifier(), !id.isEmpty { out.append(id) }
         for child in obj.accessibilityChildren() ?? [] {
             collectAXIdentifiers(element: child, into: &out, limit: limit)
         }
