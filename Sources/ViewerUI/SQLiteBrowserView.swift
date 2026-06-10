@@ -341,6 +341,13 @@ internal struct ResultTableView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear(perform: ensureWidths)
         .onChange(of: result.columns) { _, _ in recomputeWidths() }
+        // TSK-604: fonts and row height read `uiScale` live, but the
+        // widths are @State computed once — a zoom change while a table
+        // is open grew the text into stale, clipping columns. Rescale
+        // proportionally so user-dragged widths keep their ratio.
+        .onChange(of: uiScale) { old, new in
+            columnWidths = Self.rescaledWidths(columnWidths, from: old, to: new)
+        }
     }
 
     /// Bump font height to a stable line height across header + cells
@@ -486,5 +493,17 @@ internal struct ResultTableView: View {
     /// columns track the larger font.
     internal static func approxTextWidth(_ s: String, uiScale: CGFloat = 1.0) -> CGFloat {
         CGFloat(s.count) * 7 * uiScale
+    }
+
+    /// Proportional width rescale for a zoom change (TSK-604). Keeps
+    /// user-dragged column ratios instead of recomputing from samples.
+    /// Degenerate scales (zero/negative/unchanged) return the input
+    /// untouched so a transient bad value can't wipe the widths.
+    internal static func rescaledWidths(
+        _ widths: [CGFloat], from old: CGFloat, to new: CGFloat
+    ) -> [CGFloat] {
+        guard old > 0, new > 0, old != new, !widths.isEmpty else { return widths }
+        let ratio = new / old
+        return widths.map { $0 * ratio }
     }
 }

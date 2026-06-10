@@ -153,3 +153,30 @@ final class SQLiteWidthTests: XCTestCase {
     }
 }
 
+
+// MARK: - TSK-604: proportional width rescale on zoom change
+
+extension SQLiteWidthTests {
+
+    func test_rescaledWidths_scalesProportionally() {
+        let out = ResultTableView.rescaledWidths([100, 240, 80], from: 1.0, to: 2.0)
+        XCTAssertEqual(out, [200, 480, 160])
+    }
+
+    func test_rescaledWidths_preservesUserDraggedRatio_onZoomOut() {
+        // A user-dragged 300pt column at 2.0× comes back to 150pt at 1.0×.
+        let out = ResultTableView.rescaledWidths([300, 100], from: 2.0, to: 1.0)
+        XCTAssertEqual(out, [150, 50])
+    }
+
+    func test_rescaledWidths_degenerateScales_returnInputUntouched() {
+        XCTAssertEqual(ResultTableView.rescaledWidths([100], from: 0, to: 2.0), [100],
+                       "zero old scale must not divide")
+        XCTAssertEqual(ResultTableView.rescaledWidths([100], from: 1.0, to: 0), [100],
+                       "zero new scale must not wipe widths")
+        XCTAssertEqual(ResultTableView.rescaledWidths([100], from: 1.5, to: 1.5), [100],
+                       "unchanged scale is a no-op")
+        XCTAssertEqual(ResultTableView.rescaledWidths([], from: 1.0, to: 2.0), [],
+                       "empty widths stay empty")
+    }
+}
