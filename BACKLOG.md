@@ -898,3 +898,17 @@ all already tracked on the board, listed here only as the resume pointer:
 - T5 VM pixel lane: bump `waitForWindowID(timeout: 2.5)` → ~20 s in the visual-regression
   tests (root cause proven 2026-06-09: apps publish the windowid slowly under the root
   asuser context; see LESSONS).
+
+## 2026-06-10 — priority pivot + reconciliation (tracker = source of truth)
+
+- **OWNER PRIORITY (2026-06-10): user-facing bug fixes first** — encoded in
+  `docs/TASK_WORKFLOW.md` §3 rank 1. The work pool: epic **TSK-590** (children
+  TSK-591..610, owner bug-list reconciliation) + bumped P1s TSK-266/267/313/314/
+  327/359/363/522/523. Start with broken flows (TSK-599/600 sessions, TSK-609
+  shoulder buttons) and felt-perf (TSK-266/267/591/592/598/601).
+- **rust-core Phase 0: COMPLETE except hygiene trio** TSK-566 (string_slice deny),
+  TSK-567 (dead render_view), TSK-575 (warning sweep) — now BEHIND user-facing
+  work per the pivot. Phase 1 (TSK-579 abi_version first) follows.
+- **Gate-flake hardening** (load-tolerant deadlines + retry-once for PTY/LSP
+  suites) — owner asked "any way to fix?"; options offered, not yet ticketed.
+- 2026-06-09 entry below remains valid for the audit context/pointers.

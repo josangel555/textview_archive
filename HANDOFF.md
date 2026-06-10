@@ -1,97 +1,89 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — rust-core audit Phase 0 + VM lane forensics  (2026-06-09)
+# Handoff — priority pivot to user-facing bugs; Phase-0 security complete  (2026-06-10)
 
-**Session:** claude-mdv (autonomous loop + owner-directed)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `5bcfedf`
+**Session:** claude-mdv (autonomous loop + owner-directed)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `c3525bb` (+ uncommitted LESSONS/BACKLOG handoff edits — commit them)
 
 ## Mission
-Owner-directed arc this session: (1) fix all VM infrastructure issues, (2) run a
-"sky-is-the-limit" multi-agent production-readiness audit of `rust-core/` (all Fable 5,
-ultracode workflows), (3) ticket every finding under a new tag, (4) **implement the
-priority (Phase 0) fixes from the audit** — that last one is the active work stream.
-The standing autonomous-loop SOP (cron, `docs/TASK_WORKFLOW.md`) continues underneath.
+**OWNER DIRECTIVE 2026-06-10: every firing now works USER-FACING bug fixes first** —
+encoded in `docs/TASK_WORKFLOW.md` §3 rank 1 (the doc each cron tick reads in full).
+The rust-core audit Phase 0 is effectively done (all security/S2 items fixed);
+the audit's Phase 1+ and the hygiene trio now queue BEHIND the user-facing pool.
 
 ## Current state
-- **Done — audit (complete):** 9-dimension Fable-5 review fleet + 2 blank-slate explorers
-  over `rust-core/`; every S1–S3 finding adversarially verified (43 confirmed / 0 refuted),
-  27 proposals critique-judged. Reports in `docs/research/rust-core-audit-2026-06-09/`
-  (read `synthesis.md` first — verdict: **build on it, do not rewrite, fix the FFI
-  contract before freezing**; Phase 0–3 roadmap inside). All findings ticketed: epic
-  **TSK-538**, children TSK-539..577, tag `rust-core-audit`.
-- **Done — Phase 0 batch 1 (5 of ~16):** TSK-549 (git `core.fsmonitor`/`core.hooksPath`
-  neutralization in BOTH front-end spawns + teeth-demonstrated hostile-repo test),
-  TSK-542 (web serve-root canonicalize fails closed, no `/` fallback), TSK-553 (true
-  MSRV `rust-version = "1.88"`), TSK-569 (unused `serde`/`rmp-serde` removed from ffi
-  manifest), TSK-555 (self-enforcing `rust-core/.cargo/config.toml` →
-  `target-dir = /private/tmp/mdv-rust-target`; 2.8 GB in-tree `target/` deleted).
-  Commits `02a10e7`, `dd6d345`, `5bcfedf` (lockfile). `bash scripts/rust-core-gate.sh`
-  GREEN. All five recorded `fixed` on the board with commits.
-- **Done — VM infra (earlier):** ssh flakiness root-caused (4 GiB memory-pressure
-  bufferbloat), disk reclaimed (~6.1 GB free after owner deleted the redundant 6.1.2
-  toolchain), `ulimit -n 8192` fd fix, full-suite verdict (4489 tests, 17 fails — 15 are
-  virtual-GPU Core Image deltas, host-green). T5 windowid root cause PROVEN: under
-  `sudo launchctl asuser` everything runs as **root** (temp dir = root's `/var/folders`),
-  apps publish the windowid but slower than the 2.5 s timeout.
-- **In flight:** nothing torn — tree clean, gate green, every touched task at a terminal
-  or honest intermediate state.
-- **Next action:** continue Phase 0 in roadmap order (see Tracker below / the epic
-  comment on TSK-538): **TSK-550** (workspace-wide gate lane — currently the gate only
-  covers default-members) is first.
+- **Done this session (all gate-green, teeth-demonstrated, recorded `fixed` on board):**
+  TSK-549/542/553/569/555 (batch 1) · TSK-550 workspace-wide gate (`7bc1c95`) ·
+  TSK-540 hex clamp + TSK-578 OpenError (`2d4f7dd`) · TSK-576/565 hunk_marks
+  parity-locked Rust+Swift (`730fc65`) · TSK-539 cbindgen+drift gate (`3f32676`) ·
+  TSK-548 TooLarge end-to-end (`051eadf`) · TSK-551/556/558 web trio (`c10cf4b`) ·
+  TSK-557 CSV heap cap (`575d148`). Epic TSK-538: 15 fixed / 36 open.
+- **Docs de-staled** (`c3525bb`): CLAUDE.md SOP (board.py refs killed, board-tool
+  names fixed, VM GUI-lane gotchas, new priority), TASK_WORKFLOW.md §1 tool list
+  (+`task_retract`, `quiet:true`, retry-once) + §3 priority rewrite.
+- **Owner bug-list reconciliation DONE:** all ~60 items mapped. New epic
+  **TSK-590** (P1) + children **TSK-591..610** for the unmatched items; bumped to
+  P1: TSK-266, 267, 313, 314, 327, 359, 363, 522, 523. Full mapping table is in
+  the last big assistant message before this handoff (board state is canonical).
+- **In flight:** nothing torn. Tree has only the LESSONS/BACKLOG/HANDOFF edits.
+- **Next action:** commit the handoff docs, then start the user-facing pool —
+  first targets: **TSK-599/600** (broken session-open flows), **TSK-609**
+  (inert shoulder buttons 4/5/6), then felt-perf **TSK-266/267/591/592/598/601**.
+  Most need the live app → headless-first wiring/model tests, VM lane for pixels.
 
 ## Key decisions & rationale
-- **Audit verdict adopted: evolve the PoC, don't rewrite.** The sans-IO core +
-  single-unsafe-crate layering is sound; the gaps are contract hardening (FFI header
-  drift, frame caps), web-tier robustness, and missing fuzz/property lanes.
-- **Dep adoptions from the audit are ALL owner-gated** (memchr, cargo-fuzz, proptest,
-  cargo-deny, cargo-audit, Miri CI lane) — parked on their tickets; do NOT adopt without
-  explicit approval (standing minimal-deps rule).
-- **`-c core.fsmonitor= -c core.hooksPath=/dev/null` as args, not env** — keeps the
-  neutralization visible at the spawn site and unaffected by inherited env.
-- **MSRV bump piggybacked the let-chain collapses** — clippy's MSRV-aware
-  `collapsible_if` made them mandatory once `rust-version` said 1.88 (gate denies).
-- **TSK-549 left at `fixed`, not self-validated to `done`** — policy allows
-  self-validation with the teeth-proven test artifact; deferred to do remaining Phase-0
-  security items as one validation sweep.
+- **User-facing > internal severity** (owner): a P1 UI bug outranks an S2
+  internal finding. `[PORT]` + test backfill stay last resorts.
+- Reconciliation policy: items with completed UX-wave evidence were NOT re-filed
+  (avoid duplicate noise); owner invited to flag any that still misbehave —
+  those become P1 regressions.
+- TSK-589 (eviction policy) parked to the owner with 4 options (a-d).
+- Gate-flake hardening (PTY/LSP load-tolerance + retry-once) offered, not ticketed yet.
 
-## Gotchas / lessons (full entries in LESSONS.md, 2026-06-09 section)
-- `git checkout -- <file>` during a teeth check **wiped uncommitted fix+test** once —
-  undo deliberate test mutations with the inverse Edit until work is committed.
-- Bumping `rust-version` re-arms MSRV-gated clippy lints → gate goes red on a
-  "manifest-only" change; `cargo clippy --fix` is the mechanical cure.
-- `sudo launchctl asuser` payloads run as **root** (uid stays 0) — windowid/temp
-  artifacts land in root's `/var/folders/zz/...`; T5's 2.5 s `waitForWindowID` is too
-  short on the VM.
-- `MDV_VM_GUI_SESSION=1` without `MDV_VM_SUDO_PASS=<vm-sudo-password>` silently runs **nothing**.
-- iCloud `rm -rf` can fail "Directory not empty" — run it twice.
-- Workflow died at usage limit: verdict-null = unprocessed (not refuted); resume with
-  `resumeFromRunId` reuses the cached prefix.
+## Gotchas / lessons (full entries in LESSONS.md 2026-06-10 section)
+- Cargo config discovery = CWD-based, NOT --manifest-path → repo-root
+  `.cargo/config.toml` added; watch for `rust-core/target` regrowing.
+- SwiftPM does NOT track the prebuilt `.a` (stale-link A/B false fails — script
+  now touches `Sources/RustCore`) NOR recompile dependents on enum case-add
+  (`.panic == .panic` was FALSE cross-module; `touch` the dependent).
+- Host-gate flakes under build load (PTY, LSPPool): re-run the suite ALONE first.
+- VM GUI lane: `MDV_VM_GUI_SESSION=1` needs `MDV_VM_SUDO_PASS=<vm-sudo-password>` (silent no-op
+  without); `asuser` runs everything as root.
 
 ## Files that matter
-- `docs/research/rust-core-audit-2026-06-09/synthesis.md` — roadmap + verdict; per-dimension reports beside it.
-- `rust-core/crates/web/src/main.rs` — `git_status_html` neutralized spawn (TSK-549) + fail-closed serve root (TSK-542).
-- `rust-core/crates/tui/src/main.rs` (~line 2954) — `git_status_for` neutralized spawn + teeth test `git_status_never_executes_repo_local_fsmonitor_command`.
-- `rust-core/Cargo.toml` — `rust-version = "1.88"`; `rust-core/crates/ffi/Cargo.toml` — deps now `mdvcore-core` only.
-- `rust-core/.cargo/config.toml` — out-of-tree target dir (NEW, self-enforcing).
-- `docs/TASK_WORKFLOW.md` — the cron-read SOP incl. §3.5 lane goals (owner directive 2026-06-09).
-- `docs/AUTONOMOUS_PROGRESS.md` — narrative log (+122..+124); `docs/TRACKER_FEEDBACK.md` — tasked-tool feedback (INT-106/107/108 open).
+- `docs/TASK_WORKFLOW.md` — THE SOP; §3 rank 1 = user-facing bugs (2026-06-10).
+- `CLAUDE.md` — de-staled SOP summary + VM gotchas + refreshed quick refs.
+- `rust-core/crates/core/src/{csv,diff,wire,hex}.rs`, `crates/ffi/src/{lib,status,tests}.rs`,
+  `crates/web/src/main.rs` — this session's Phase-0 fixes (see commits above).
+- `scripts/rust-core-gate.sh` — now workspace-wide + ABI header-drift step.
+- `scripts/build-rust-core.sh` — touches RustCore sources after staging the .a.
+- `Sources/RustCore/CoreClient.swift` — `CoreError.tooLarge` mapping.
+- `docs/research/rust-core-audit-2026-06-09/synthesis.md` — audit verdict/roadmap.
 
 ## Open questions / blockers
-- **Owner-gated dep adoptions** (above) — each parked on its ticket.
-- **VM RAM 4→8 GiB** UTM bump still recommended (owner-side, cures the ssh bufferbloat).
-- T5 pixel lane needs the `waitForWindowID(timeout:)` bump (~20 s) in
-  `Tests/ViewerUITests/*VisualRegressionTests.swift` — small, unticketed-as-of-handoff;
-  listed in BACKLOG.md 2026-06-09 block.
+- TSK-589 eviction policy — parked, waiting on owner (options a-d on the ticket).
+- Audit dep approvals (cargo-fuzz, proptest, cargo-deny/audit, Miri, wasm32) —
+  parked on their tickets; do NOT adopt without explicit owner OK.
+- Owner to flag any "implemented in UX waves" item that still misbehaves → file
+  as P1 regression under TSK-590.
 
 ## Tracker (tasked MCP @ :8787, project `tasked`, agent `claude-mdv`)
-- Epic **TSK-538** (rollup 5 fixed / 34 reported); Phase-0 status comment left on it 2026-06-09.
-- Fixed this session: **TSK-549, TSK-542, TSK-553, TSK-569, TSK-555** (commits attached).
-- Remaining Phase 0 order: TSK-550 → TSK-576/565 → TSK-540 → TSK-539 → TSK-551/556/558/557 → TSK-566/567/575.
-- Other open earlier threads: TSK-529 (waveform — needs VM pixel evidence), TSK-535
-  (Save-As sheet), board-hygiene work done (epics/parents/dismissals landed).
-- Internal tracker-feedback project: INT-106/107/108 filed.
+- Fixed this session: TSK-539, 540, 542, 548, 549, 550, 551, 553, 555, 556, 557,
+  558, 565, 569, 576, 578 (commits attached on each).
+- Filed: TSK-578..589 (audit roadmap gaps; 589 parked) · TSK-590 epic + 591..610
+  (owner bug list). Bumped P1: TSK-266/267/313/314/327/359/363/522/523 + TSK-590.
+- The work queue for next firings = TSK-590 children + the bumped P1 set.
 
 ## How to resume
-1. `git -C /Users/me/Documents/workspaces/claude/markdown_viewer log --oneline -5` — confirm `5bcfedf` HEAD, tree clean.
-2. Read `docs/research/rust-core-audit-2026-06-09/synthesis.md` §roadmap, then `mcp__tasked__task_get TSK-550`.
-3. Loop per ticket: restate → triage → claim → implement → test (teeth where security/behavioral) → `bash scripts/rust-core-gate.sh` (must end `==> Rust-core gate green.`) → commit (one-line subject, TSK id) → `task_record(to: fixed)` with commit. Cargo runs build to `/private/tmp/mdv-rust-target` now.
-4. Board = `mcp__tasked__*` ONLY (never the built-in TaskList numbering, never board.py). Cron SOP = `docs/TASK_WORKFLOW.md` — read it every firing.
-5. VM runs: rsync recipe in CLAUDE.md; GUI lane needs `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password>`; never `rm -rf .build` on the VM.
+1. `git -C /Users/me/Documents/workspaces/claude/markdown_viewer status` — commit the
+   LESSONS/BACKLOG/HANDOFF edits if still dirty (`docs: handoff 2026-06-10`).
+2. Read `docs/TASK_WORKFLOW.md` IN FULL (every firing — it has the new priority).
+3. Pick from the P1 user-facing pool (epic TSK-590 children first): suggested order
+   TSK-599 → TSK-600 → TSK-609 → TSK-266 → TSK-591. For each: `task_get` →
+   advance through lanes → fix with headless-first tests (model/wiring layer per
+   `feedback_verify_headless_before_asking`) → `scripts/test-headless-gate.sh` →
+   commit per item → `task_record(to: fixed)` with SHA → log to
+   `docs/AUTONOMOUS_PROGRESS.md`. UI-pixel claims need the VM lane
+   (`MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> bash scripts/test-in-vm.sh`).
+4. rust-core lane (only when no user-facing task is actionable): hygiene trio
+   TSK-566/567/575, then Phase 1 starting TSK-579 (`mdvcore_abi_version`).
+5. Board = `mcp__tasked__*` only; retry once on connection error (owner upgrades
+   the server live). Built-in TaskList `#NNN` ≠ board `TSK-NNN`.

@@ -2524,3 +2524,29 @@ Two durable VM gotchas found finishing the T5/VisualRegression pixel lane:
 - **Workflow verdict salvage:** when a multi-agent run dies at a usage limit, verdict-null
   entries are *unprocessed*, not refuted — distinguish by the missing `reasoning` field
   before counting. Resume with `resumeFromRunId` to reuse the cached prefix.
+
+## Session 2026-06-10 — Phase-0 fixes: three distinct staleness traps + flake pattern
+
+- **Cargo config discovery walks up from CWD, not `--manifest-path`.** The
+  `rust-core/.cargo/config.toml` target-dir redirect silently did NOT apply to
+  `cargo --manifest-path rust-core/Cargo.toml …` run from the repo root — a
+  246 MB `rust-core/target` regrew in the iCloud tree within hours of the
+  "fix". Cure: a second `.cargo/config.toml` at the REPO root (commit 2d4f7dd).
+- **SwiftPM does NOT track the prebuilt `libmdvcore_ffi.a` as a build input.**
+  Rebuilding the staticlib alone does not relink already-built test bundles —
+  the A/B parity suite ran STALE Rust against new Swift and failed with a
+  one-side-fixed signature (caught live in 730fc65). `build-rust-core.sh` now
+  `touch`es `Sources/RustCore/*.swift` after staging so the next SwiftPM build
+  relinks. If an A/B test fails right after a Rust change, suspect the link
+  before the code.
+- **SwiftPM stale incremental compile on enum case-add = cross-module case-tag
+  skew.** Adding `case tooLarge` before `.panic` in the public Equatable
+  `CoreError` left ViewerCore compiled against the OLD tag order:
+  `.panic == .panic` evaluated FALSE across modules (escalation test red, fix
+  invisible). `touch` the dependent source to force recompile. Same family as
+  the untracked-.a hole — SwiftPM trusts its incremental state too much.
+- **Host-gate flake pattern under build load:** PTY lifecycle + LSPPool tests
+  use 2.5–8 s waits that time out while cargo/swiftc saturate the machine;
+  isolated re-run passes in <100 ms. Triage rule: re-run the failing suite
+  ALONE before chasing it. (Candidate hardening: load-tolerant deadlines +
+  retry-once-in-gate for the known-flaky suites — offered to owner 2026-06-10.)
