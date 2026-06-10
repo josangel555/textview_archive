@@ -6052,3 +6052,18 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   grep said "0 failed" = FALSE no-teeth signal; redone with a compiling no-op
   (`didSet { _ = showPreviewMetadataPanel }`) → red → restored → green. Teeth mutations
   must compile. Gate green on 39755c5; reinstall kicked.
+## LOG +146 (2026-06-10, autonomous tick — TSK-602 fixed: ViewOnly↔Editor highlight parity via shared SyntaxTheme palette)
+- **Root cause:** two unrelated palettes — source view paints TreeSitter runs with
+  `SyntaxTheme` (Xcode hex constants); the CM6 editor used CodeMirror's stock pairing
+  (`oneDark` dark / `defaultHighlightStyle` light). Same file, different colors per lens.
+- **Fix (4a2d307):** SyntaxTheme is now the single source of truth. `SyntaxTheme.cmPalette`
+  (TokenKind + chrome keys → #RRGGBB) rides the `setTheme` bridge message; the JS host
+  builds `HighlightStyle.define` from it (token kinds mapped onto lezer tags) + an
+  `EditorView.theme` for background/caret/gutters, swapped via the existing
+  themeCompartment. nil/absent palette → legacy fallback (rolling-upgrade compat).
+- **Bundle:** rebuilt from the PINNED lockfile to re-export `HighlightStyle` + `tags` —
+  both already compiled into the shipped bundle (no new npm package; +66 bytes).
+- **Tests:** 5 SyntaxThemeCMPaletteTests (completeness, hex format, full parity vs the
+  source-view colors), palette encoding pair, bundle/HTML wiring needles. Teeth ×2
+  (cssHex channel swap → 8 red; encoder palette-drop → red). Gate green on 4a2d307;
+  release reinstall kicked. Pixel-level confirmation = VM lane; held at `fixed`.
