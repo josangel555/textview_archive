@@ -63,6 +63,7 @@ jobs:
             --filter ViewerUITests.FindBarTests \
             --filter ViewerUITests.FormatToggleTests \
             --filter ViewerUITests.MermaidHostingTests \
+            --filter ViewerUITests.PaneRetentionMountProbeTests \
             --filter ViewerUITests.RenderedFindBarTests
 
       - name: Upload test results

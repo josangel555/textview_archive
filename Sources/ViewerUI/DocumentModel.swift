@@ -2844,21 +2844,37 @@ public final class DocumentModel: ObservableObject {
 
     /// Shared insert + S2-G insertion-order eviction for the rendered-HTML
     /// cache (sync body path and async request path).
+    ///
+    /// MOUNTED-AWARE eviction (TSK-621): since TSK-611 the rendered body
+    /// READS this cache only — evicting an entry whose tab is still in
+    /// `MountedPanesLRU` flips that pane's branch webview→spinner, which
+    /// DISMANTLES a retained WKWebView and re-renders it (the exact
+    /// reload churn TSK-108's pane retention removed; the 5th markdown
+    /// open used to tear down 2 retained panes). So: never evict a
+    /// mounted tab's entry; evict the oldest NON-mounted first, and only
+    /// down to capacity (the old drop-to-2/3 hysteresis amplified the
+    /// over-eviction and is pointless now that eviction is rare). The
+    /// cache may transiently exceed the cap by the mounted count — that
+    /// is bounded by the pane LRU's own capacity (4).
     private func storeRenderedHTML(key: RenderedHTMLKey, html: String) {
         if renderedHTMLCache[key] == nil {
             renderedHTMLCacheOrder.append(key)
         }
         renderedHTMLCache[key] = html
-        if renderedHTMLCache.count > Self.renderedHTMLCacheMax {
-            // S2-G: evict by insertion order, oldest first. Drop down
-            // to ~2/3 of the cap so we don't churn on every insert.
-            let dropCount = renderedHTMLCache.count - Self.renderedHTMLCacheMax * 2 / 3
-            let toDrop = renderedHTMLCacheOrder.prefix(dropCount)
-            for k in toDrop {
+        guard renderedHTMLCache.count > Self.renderedHTMLCacheMax else { return }
+        let mounted = Set(mountedPanes.ids)
+        var overflow = renderedHTMLCache.count - Self.renderedHTMLCacheMax
+        var keep: [RenderedHTMLKey] = []
+        keep.reserveCapacity(renderedHTMLCacheOrder.count)
+        for k in renderedHTMLCacheOrder {
+            if overflow > 0, !mounted.contains(k.tabID) {
                 renderedHTMLCache.removeValue(forKey: k)
+                overflow -= 1
+            } else {
+                keep.append(k)
             }
-            renderedHTMLCacheOrder.removeFirst(toDrop.count)
         }
+        renderedHTMLCacheOrder = keep
     }
 
     // MARK: Derived from current tab

@@ -261,6 +261,7 @@ run_webview_tests() {
     --filter ViewerUITests.FindBarTests \
     --filter ViewerUITests.FormatToggleTests \
     --filter ViewerUITests.MermaidHostingTests \
+    --filter ViewerUITests.PaneRetentionMountProbeTests \
     --filter ViewerUITests.RenderedFindBarTests \
     2>&1 | tee "$WEBVIEW_TXT"
   local rc=${PIPESTATUS[0]}

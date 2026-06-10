@@ -149,4 +149,54 @@ final class RenderedHTMLAsyncFillTests: HeadlessUITestCase {
             renderer: renderer, stylesheet: ""),
             "sync render already cached this key — request must no-op")
     }
+
+    /// TSK-621 — cache eviction must NEVER drop an entry for a tab still
+    /// in `MountedPanesLRU`: since TSK-611 the rendered body reads this
+    /// cache only, so evicting a mounted tab's entry flips its retained
+    /// pane webview→spinner — a WKWebView teardown + re-render (the exact
+    /// reload churn TSK-108's retention removed; the 5th markdown open
+    /// used to dismantle 3 panes instead of the 1 evicted tail).
+    func test_cacheEviction_neverDropsMountedTabs() async throws {
+        // Open 5 markdown files: the pane LRU (cap 4) retains tabs 1-4
+        // and evicts tab 0.
+        var urls: [URL] = []
+        for i in 0..<5 {
+            let url = tmpDir.appendingPathComponent("m\(i).md")
+            try "# Doc \(i)\n\nbody \(i)\n".write(to: url, atomically: true, encoding: .utf8)
+            urls.append(url)
+        }
+        let m = makeModel()
+        for u in urls { m.open(url: u) }
+        let tabs = m.tabs.tabs
+        XCTAssertEqual(tabs.count, 5)
+        let mounted = Set(m.mountedPanes.ids)
+        XCTAssertEqual(mounted.count, 4, "pane LRU should retain 4 of 5")
+        XCTAssertFalse(mounted.contains(tabs[0].id), "tab 0 is the evicted tail")
+
+        // Fill the cache in open order — the 5th store overflows the
+        // cache cap (4) and must evict ONLY the non-mounted tab 0 entry.
+        let renderer = HTMLRenderer()
+        var files: [UUID: TextFile] = [:]
+        for tab in tabs {
+            guard case .loaded(let file) = tab.state else {
+                throw XCTSkip("open did not load — environment problem")
+            }
+            files[tab.id] = file
+            _ = m.renderedHTML(forTabID: tab.id, file: file,
+                               contents: file.contents,
+                               renderer: renderer, stylesheet: "")
+        }
+
+        for tab in tabs {
+            let cached = m.renderedHTMLIfCached(forTabID: tab.id, file: files[tab.id]!)
+            if mounted.contains(tab.id) {
+                XCTAssertNotNil(cached,
+                    "MOUNTED tab \(tab.id) lost its cache entry — its retained "
+                    + "WebView pane would be dismantled and re-rendered")
+            } else {
+                XCTAssertNil(cached,
+                    "the non-mounted tab is the one entry eviction should drop")
+            }
+        }
+    }
 }
