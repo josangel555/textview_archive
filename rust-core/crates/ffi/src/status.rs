@@ -26,6 +26,10 @@ pub enum MdvStatus {
     Busy = 3,
     /// A wire (MessagePack encode/decode or framing) error occurred.
     WireError = 4,
+    /// The result is real but its encoded frame exceeds the wire cap (audit
+    /// TSK-548 stopgap) — distinct from [`MdvStatus::WireError`] so the host
+    /// can react (window / fall back) instead of diagnosing a codec bug.
+    TooLarge = 5,
     /// A Rust panic was caught at the boundary (recoverable: the process did
     /// NOT crash, but the handle's state may be suspect — drop & recreate it).
     Panic = 98,

@@ -62,6 +62,19 @@ pub use buf::MdvBuf;
 pub use handle::SessionHandle;
 pub use status::MdvStatus;
 
+/// Map a wire-layer fault to its C status (audit TSK-548 stopgap): an
+/// encode-side `TooLarge` keeps its identity so the host can react (window the
+/// request, fall back) instead of diagnosing a codec bug; every other fault
+/// stays the generic [`MdvStatus::WireError`].
+fn wire_status(fault: &wire::WireFault) -> MdvStatus {
+    match fault {
+        wire::WireFault::TooLarge(_) => MdvStatus::TooLarge,
+        wire::WireFault::Encode(_) | wire::WireFault::Decode(_) | wire::WireFault::Framing(_) => {
+            MdvStatus::WireError
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Stage 0 smoke: a trivial extern fn proving the codegen/cbindgen/link path.
 // ---------------------------------------------------------------------------
@@ -143,7 +156,7 @@ pub unsafe extern "C" fn mdvcore_cm_apply(
                 unsafe { *out_buf = MdvBuf::from_vec(frame) };
                 MdvStatus::Ok
             }
-            Err(_) => MdvStatus::WireError,
+            Err(e) => wire_status(&e),
         }
     })
 }
@@ -189,7 +202,7 @@ pub unsafe extern "C" fn mdvcore_diff_parse(
                 unsafe { *out_buf = MdvBuf::from_vec(frame) };
                 MdvStatus::Ok
             }
-            Err(_) => MdvStatus::WireError,
+            Err(e) => wire_status(&e),
         }
     })
 }
@@ -234,7 +247,7 @@ pub unsafe extern "C" fn mdvcore_diff_hunk_marks(
                 unsafe { *out_buf = MdvBuf::from_vec(frame) };
                 MdvStatus::Ok
             }
-            Err(_) => MdvStatus::WireError,
+            Err(e) => wire_status(&e),
         }
     })
 }
@@ -358,7 +371,7 @@ pub unsafe extern "C" fn mdvcore_hex_search(
                 unsafe { *out_buf = MdvBuf::from_vec(frame) };
                 MdvStatus::Ok
             }
-            Err(_) => MdvStatus::WireError,
+            Err(e) => wire_status(&e),
         }
     })
 }
@@ -505,7 +518,7 @@ pub unsafe extern "C" fn mdvcore_session_table(
                     unsafe { *out_buf = MdvBuf::from_vec(frame) };
                     MdvStatus::Ok
                 }
-                Err(_) => MdvStatus::WireError,
+                Err(e) => wire_status(&e),
             }
         })
         .unwrap_or(MdvStatus::Busy)
@@ -597,7 +610,7 @@ pub unsafe extern "C" fn mdvcore_session_snapshot(
                     unsafe { *out_buf = MdvBuf::from_vec(frame) };
                     MdvStatus::Ok
                 }
-                Err(_) => MdvStatus::WireError,
+                Err(e) => wire_status(&e),
             }
         })
         .unwrap_or(MdvStatus::Busy)

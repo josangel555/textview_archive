@@ -1,5 +1,6 @@
 import XCTest
 
+import CMdvCore
 @testable import RustCore
 
 /// Cross-language tests: Swift calling the ACTUAL Rust `extern "C"` symbols via
@@ -24,6 +25,15 @@ final class BridgeTests: XCTestCase {
         XCTAssertEqual(mdvCoreForcePanic(), .panic)
         // Still alive:
         XCTAssertEqual(mdvCoreAdd(1, 1), 2)
+    }
+
+    func testTooLargeStatusMapsToDistinctError() {
+        // TSK-548 stopgap: the encode-side overflow status must surface as
+        // .tooLarge (caller can window / fall back), NOT the generic
+        // .wireError that reads as a codec bug.
+        XCTAssertEqual(CoreError(status: MDV_STATUS_TOO_LARGE), .tooLarge)
+        XCTAssertNotEqual(CoreError(status: MDV_STATUS_TOO_LARGE), .wireError)
+        XCTAssertEqual(CoreError(status: MDV_STATUS_WIRE_ERROR), .wireError)
     }
 
     func testOpenAndTableRoundTrip() throws {

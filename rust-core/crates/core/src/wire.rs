@@ -82,6 +82,13 @@ pub enum WireFault {
     /// The frame's declared length exceeds [`MAX_FRAME_LEN`] or the buffer is
     /// shorter than the prefix claims.
     Framing(String),
+    /// The ENCODED result legitimately exceeds [`MAX_FRAME_LEN`] (audit
+    /// TSK-548 stopgap). Distinct from [`WireFault::Framing`], which is the
+    /// decode-side hostile/corrupt-prefix guard: this one means "your data is
+    /// real but too big for one frame" — the caller can react (window the
+    /// request, fall back) instead of treating it as a codec bug. The real fix
+    /// is windowed snapshots (TSK-559).
+    TooLarge(String),
 }
 
 impl core::fmt::Display for WireFault {
@@ -90,6 +97,7 @@ impl core::fmt::Display for WireFault {
             WireFault::Encode(m) => write!(f, "wire encode error: {m}"),
             WireFault::Decode(m) => write!(f, "wire decode error: {m}"),
             WireFault::Framing(m) => write!(f, "wire framing error: {m}"),
+            WireFault::TooLarge(m) => write!(f, "wire result too large: {m}"),
         }
     }
 }
@@ -145,7 +153,7 @@ pub fn decode<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> Result<T, WireFault
 ///
 /// # Errors
 /// Returns [`WireFault::Encode`] on serialization failure, or
-/// [`WireFault::Framing`] if the encoded body exceeds [`MAX_FRAME_LEN`].
+/// [`WireFault::TooLarge`] if the encoded body exceeds [`MAX_FRAME_LEN`].
 pub fn encode_frame<T: Serialize>(value: &T) -> Result<Vec<u8>, WireFault> {
     // Reserve a 4-byte placeholder for the length prefix; the body is appended
     // after it by the serializer (`Vec<u8>: io::Write` appends).
@@ -161,7 +169,7 @@ pub fn encode_frame<T: Serialize>(value: &T) -> Result<Vec<u8>, WireFault> {
         .checked_sub(4)
         .ok_or_else(|| WireFault::Framing("frame buffer shorter than length prefix".to_string()))?;
     if body_len > MAX_FRAME_LEN {
-        return Err(WireFault::Framing(format!(
+        return Err(WireFault::TooLarge(format!(
             "frame body {body_len} exceeds max {MAX_FRAME_LEN}"
         )));
     }
@@ -233,6 +241,24 @@ mod tests {
         out.extend_from_slice(&len.to_le_bytes());
         out.extend_from_slice(&body);
         out
+    }
+
+    #[test]
+    fn encode_frame_oversize_is_too_large_not_framing() {
+        // TSK-548 stopgap: a REAL result exceeding the cap must carry its own
+        // identity (TooLarge) so the host can window/fall back; Framing stays
+        // the decode-side hostile-prefix verdict.
+        #[derive(Serialize)]
+        struct Big {
+            s: String,
+        }
+        let big = Big { s: "x".repeat(MAX_FRAME_LEN + 1) };
+        let r = encode_frame(&big);
+        assert!(
+            matches!(r, Err(WireFault::TooLarge(_))),
+            "expected TooLarge, got {:?}",
+            r.map(|v| v.len())
+        );
     }
 
     #[test]

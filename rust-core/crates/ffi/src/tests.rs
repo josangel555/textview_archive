@@ -204,6 +204,17 @@ fn buf_double_free_in_place_is_safe() {
 }
 
 #[test]
+fn wire_status_maps_too_large_distinctly() {
+    // TSK-548 stopgap: the encode-side overflow keeps its identity across the
+    // boundary; every other wire fault stays the generic WireError.
+    use mdvcore_core::wire::WireFault;
+    assert_eq!(wire_status(&WireFault::TooLarge("x".into())), MdvStatus::TooLarge);
+    assert_eq!(wire_status(&WireFault::Framing("x".into())), MdvStatus::WireError);
+    assert_eq!(wire_status(&WireFault::Encode("x".into())), MdvStatus::WireError);
+    assert_eq!(wire_status(&WireFault::Decode("x".into())), MdvStatus::WireError);
+}
+
+#[test]
 fn hex_render_clamps_hostile_width_to_max() {
     // TSK-540: an unclamped width drives a width-proportional row allocation
     // (u32::MAX → ~17 GiB) whose failure ABORTS past the panic guard. The edge

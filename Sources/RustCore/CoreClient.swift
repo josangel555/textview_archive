@@ -25,6 +25,11 @@ public enum CoreError: Error, Equatable {
     /// Single-writer contract violated: another call held the handle lock.
     case busy
     case wireError
+    /// The result is real but its encoded frame exceeds the core's wire cap
+    /// (16 MiB) — e.g. the table/snapshot of a large CSV. Distinct from
+    /// `.wireError` so callers fall back / window instead of diagnosing a
+    /// codec bug (audit TSK-548 stopgap; windowed snapshots are the real fix).
+    case tooLarge
     /// A Rust panic was caught at the FFI boundary. The session's state may be
     /// suspect; the wrapper dead-flags the handle so no further call touches it.
     case panic
@@ -43,6 +48,7 @@ public enum CoreError: Error, Equatable {
         case MDV_STATUS_BAD_UTF8: self = .badUTF8
         case MDV_STATUS_BUSY: self = .busy
         case MDV_STATUS_WIRE_ERROR: self = .wireError
+        case MDV_STATUS_TOO_LARGE: self = .tooLarge
         case MDV_STATUS_PANIC: self = .panic
         case MDV_STATUS_INTERNAL: self = .internalError
         default: self = .unknown(status.rawValue)
