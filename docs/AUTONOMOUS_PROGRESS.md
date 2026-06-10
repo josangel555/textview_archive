@@ -6623,3 +6623,26 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   MDV_RUN_WEBVIEW_TESTS-gated in-process editor test reading getComputedStyle(token)
   back against SyntaxTheme hex (VM/nightly lane) — future tick.
 - Remaining fixed children to review: 603, 604, 607, 608, 614.
+
+## LOG +182 (2026-06-10, autonomous tick — sweep complete: 603/604/607/614 validated; 608 parked on one crisp owner ask)
+- **TSK-604 validated** (SQLite zoom): the diagnosed defect — column widths @State-stale on
+  zoom — pinned by SQLiteWidthTests 16/16 with teeth; font wiring verified present; the
+  record's bounce-back note preserved (regressed lane is the channel if a different
+  symptom flavor persists).
+- **TSK-607 validated** (crash-safe flush): pure persistence behavior, zero rendered
+  residue — scroll-only drift reaches disk via the 30s equality-guarded safety net with
+  no quit and no publisher tick; idle ticks provably write nothing; teeth demonstrated.
+- **TSK-603 validated** (nav-perf umbrella): its deliverable was measure+split — done with
+  hard artifacts (20/20 signpost-anchored interact windows, 60–99% main-thread-busy
+  finding, contributors named) and a repeatable NavSweep harness in the gate. Open
+  children (613 sidebar re-body breadth, 615) proceed independently.
+- **TSK-614 validated** (ROW COUNTS dismiss/re-show): visibility state machine fully
+  pinned (4 tests + compiling-mutation teeth); both affordances call the tested
+  setEnabled seam.
+- **TSK-608 PARKED (owner decision)**: both candidate surfaces are fixed+tested; the only
+  open question is which one the owner meant — one crisp ask with three options pinged.
+- **Epic sweep DONE.** All agent-actionable TSK-590 children are now validated or
+  correctly held: validated 593–597, 599, 600, 602(held: WebView render class, closure
+  path named), 603, 604, 607, 609, 614; parked owner-gated 591, 592, 598, 601, 608;
+  wontdo 605, 606, 610. Next substantive build item: the TSK-602 WebView parity test
+  (getComputedStyle vs SyntaxTheme hex, MDV_RUN_WEBVIEW_TESTS lane) and child TSK-613.
