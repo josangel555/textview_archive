@@ -6311,3 +6311,25 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   .test_imageEditor_previewAndControls_composite` failed on what is likely its FIRST real
   execution (it self-skips windowless); failure PNG kept root-side. Host gate green on
   549308c (4625 tests); one earlier gate run flaked under load (exit 1, clean on re-run).
+
+## LOG +165 (2026-06-10, autonomous tick — TSK-592 trace PARSED: 27ms/frame resize cost, 5th symptom onto TSK-598)
+- **The "sweep can't repro it" paradox is resolved by arithmetic, not a new driver.** The
+  symbolicated `/tmp/mdv-592-resize.trace` (sweep window t=8.5–13.9s, anchored on 128
+  AppKit `SetFrameCommon` signposts) shows the main thread 62% BUSY: 3416×1ms samples /
+  128 resize frames ≈ **27ms of main-thread work per frame**. The programmatic sweep steps
+  at ~23.7fps (42ms budget) → absorbs it silently; a live 60Hz drag has 16.7ms → felt jank.
+- **Attribution (deepest semantic frames):** ~32% full-tree SwiftUI layout re-passes per
+  frame (`StackLayout`/`_ZStackLayout`/`UnaryLayoutEngine.sizeThatFits` under
+  `ViewRendererHost.sizeThatFits` ×691 — cost scales with EVERY mounted pane → recorded as
+  TSK-598's **fifth** measured symptom); AG dirty-propagation; `SidebarView.body`
+  re-evaluated per resize frame (height-cap dependence; `accordionHeight(for:)` at leaf);
+  `TerminalNSView.draw` full-grid redraw 2.5% (minor). No single app hotspot — it's the
+  distributed re-layout (TSK-615's subject). Caveat: setFrame driver, `inLiveResize`
+  paths unexercised; the 27ms floor stands regardless.
+- TSK-592 stays parked (waiting:human) with the data attached; recommended folding the
+  resolution into the TSK-598 MountedPanesLRU approval. App-side signpost bonus from the
+  same trace: open-time `ts.query-compile` = 399ms of the 403ms first `tokenize` (one-time
+  grammar query compile on MAIN at first open) — candidate precompile/off-main item.
+- Also this tick: fresh `549308c` release installed to `/Applications/TextView.app`;
+  root-owned `.build/ModuleCache` residue from the sudo'd GUI suite run broke the next VM
+  build (`CMdvCore .pcm: Operation not permitted`) — chown self-heal, dist rebuilt clean.
