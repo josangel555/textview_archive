@@ -1,5 +1,15 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-10 (latest+128) — TSK-557 CSV heap-accounted cap: last SECURITY item of Phase 0
+
+Commit `575d148`: `Limits.max_estimated_heap_bytes` (default 256 MiB) accounted in the tokenizer
+(content bytes + 48 B/cell + 48 B/row overhead estimates) — trip flips `truncated` and stops the
+parse, so the mdvcore_session_open-reachable amplification (4 MB of newlines → ~480 MB resident)
+is now bounded at O(cap). Rust-only Limits field (divergence from the Swift mirror documented).
+Teeth: check disabled → newline-flood test FAILED → restored. Gate green.
+Epic TSK-538: 15 fixed. Phase 0 remainder is pure hygiene: TSK-566 (string_slice deny),
+TSK-567 (dead render_view), TSK-575 (warning sweep) — then Phase 1 (TSK-579 abi_version first).
+
 ## LOG 2026-06-10 (latest+127) — web hardening trio landed (TSK-551/556/558); Phase 0 down to 3 hygiene items
 
 Commit `c10cf4b`, one batch, all teeth-demonstrated (mutate→red→restore ×3), gate green (78 web tests):
