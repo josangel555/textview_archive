@@ -64,6 +64,32 @@ final class UIEventSynthTests: XCTestCase {
             "synthesized location must hit-test to the addressed view")
     }
 
+    /// The non-key fallback: a headless window can never be key, so
+    /// `click` must dispatch straight to the hit-tested view's responder
+    /// methods — the path the VM harness takes when WindowServer refuses
+    /// key status (root app in a user GUI session). Pins that the target
+    /// view actually RECEIVES the down/up pair.
+    func test_click_nonKeyWindow_dispatchesToResponder() throws {
+        final class RecordingView: NSView {
+            var downs = 0, ups = 0
+            override func mouseDown(with event: NSEvent) { downs += 1 }
+            override func mouseUp(with event: NSEvent) { ups += 1 }
+        }
+        let win = makeWindow()
+        defer { win.close() }
+        let target = RecordingView(frame: NSRect(x: 40, y: 60, width: 120, height: 80))
+        target.setAccessibilityIdentifier("mdv.test.recorder")
+        win.contentView?.addSubview(target)
+        XCTAssertFalse(win.isKeyWindow, "headless window must not be key")
+
+        let spec = try XCTUnwrap(UIClickSpec.parse(verb: "ui-click", arg: "mdv.test.recorder"))
+        XCTAssertTrue(UIEventSynth.click(spec: spec, in: win))
+        XCTAssertEqual(target.downs, 1, "responder fallback must deliver mouseDown")
+        XCTAssertEqual(target.ups, 1, "responder fallback must deliver mouseUp")
+        XCTAssertTrue(UIEventSynth.lastTrace.contains("via=responder"),
+            "trace must say which delivery path ran: \(UIEventSynth.lastTrace)")
+    }
+
     func test_click_missingTarget_sendsNothing_returnsFalse() throws {
         let win = makeWindow()
         defer { win.close() }

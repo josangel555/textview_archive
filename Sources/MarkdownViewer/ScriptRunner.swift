@@ -154,11 +154,17 @@ extension AppDelegate {
             // the window is never KEY — and a click on a non-key window is
             // consumed as an activating click (SwiftUI views default
             // acceptsFirstMouse == false), i.e. silently swallowed (found
-            // empirically: both first VM scenarios clicked nothing). Make
-            // the window key before posting; script-path only, and the VM
-            // GUI lane is precisely where activation is permitted.
-            NSApp.activate(ignoringOtherApps: true)
-            win.makeKeyAndOrderFront(nil)
+            // empirically: both first VM scenarios clicked nothing). Two
+            // refinements from the second VM run (key was STILL false):
+            // `NSApp.activate` is ASYNCHRONOUS — pump the run loop until
+            // key status actually lands — and `.accessory` policy can deny
+            // key outright, so escalate to `.regular` for the click.
+            // Script-path only; the VM GUI lane is precisely where
+            // activation is permitted. (If key never lands — root app in a
+            // user GUI session can be refused by WindowServer —
+            // UIEventSynth falls back to direct responder dispatch and the
+            // trace says which path ran.)
+            UIEventSynth.makeWindowKey(win)
             if !UIEventSynth.click(spec: spec, in: win) {
                 FileHandle.standardError.write(
                     Data("script: \(cmd) target '\(spec.identifier)' not found\n".utf8))

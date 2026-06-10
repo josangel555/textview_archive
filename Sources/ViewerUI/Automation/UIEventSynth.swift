@@ -138,6 +138,32 @@ public enum UIEventSynth {
     /// resolved and WHERE the events went instead of a silent no-op.
     public private(set) static var lastTrace: String = ""
 
+    /// Drive `window` to KEY status for real-event delivery, escalating as
+    /// needed. `NSApp.activate` is ASYNCHRONOUS — key status lands on a
+    /// later run-loop turn, so each rung pumps the loop until it sticks or
+    /// times out. The `.accessory` policy (MDV_BACKGROUND) can deny key
+    /// outright, so the second rung escalates to `.regular` — acceptable
+    /// in the script harness, which only runs on the VM GUI lane.
+    /// Best-effort: callers check `isKeyWindow` afterwards and fall back
+    /// to direct responder dispatch when key never landed.
+    public static func makeWindowKey(_ window: NSWindow,
+                                     timeoutPerRung: TimeInterval = 1.5) {
+        func pump(until deadline: Date) -> Bool {
+            while !window.isKeyWindow, Date() < deadline {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            }
+            return window.isKeyWindow
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        if pump(until: Date().addingTimeInterval(timeoutPerRung)) { return }
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        window.orderFrontRegardless()
+        window.makeKeyAndOrderFront(nil)
+        _ = pump(until: Date().addingTimeInterval(timeoutPerRung))
+    }
+
     /// Synthesize the click described by `spec`: deliver its event
     /// sequence through `window.sendEvent` — the call that drives
     /// NSWindow-level routing INCLUDING gesture recognizers, which is
@@ -161,17 +187,41 @@ public enum UIEventSynth {
                 collectAXIdentifiers(element: root, into: &seen, limit: 15)
             }
             let rootKids = (window.contentView?.accessibilityChildren() ?? []).count
-            lastTrace = "click[v5](\(spec.identifier)): NOT FOUND; "
+            lastTrace = "click[v6](\(spec.identifier)): NOT FOUND; "
                 + "registryIds=\(ClickTargetRegistry.shared.identifiers) "
                 + "axRootChildren=\(rootKids) axIdsSample=\(seen)"
             return false
         }
-        for event in sequence {
-            window.sendEvent(event)
+        // Delivery: `window.sendEvent` is the full pipeline (hit-testing +
+        // gesture recognizers + responder chain) — but it ALSO runs
+        // NSWindow's click-through suppression, which eats a mouseDown on
+        // a NON-key window (acceptsFirstMouse == false for SwiftUI
+        // content). When the harness couldn't get key status (root app in
+        // a user GUI session; accessory policy), fall back to dispatching
+        // straight to the hit-tested view's responder methods — bypassing
+        // the window-level suppression. One path or the other, never both
+        // (both working would double-fire the action).
+        let via: String
+        if window.isKeyWindow {
+            via = "sendEvent"
+            for event in sequence {
+                window.sendEvent(event)
+            }
+        } else {
+            via = "responder"
+            let target = window.contentView?.hitTest(sequence[0].locationInWindow)
+            for event in sequence {
+                switch event.type {
+                case .leftMouseDown: target?.mouseDown(with: event)
+                case .leftMouseUp: target?.mouseUp(with: event)
+                default: break
+                }
+            }
         }
-        lastTrace = "click(\(spec.identifier)): rect=\(rect) "
+        lastTrace = "click[v6](\(spec.identifier)): rect=\(rect) "
             + "point=\(sequence[0].locationInWindow) "
-            + "count=\(spec.clickCount) key=\(window.isKeyWindow)"
+            + "count=\(spec.clickCount) via=\(via) key=\(window.isKeyWindow) "
+            + "active=\(NSApp.isActive)"
         return true
     }
 
