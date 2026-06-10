@@ -369,8 +369,6 @@ version = "0.0.0"
 dependencies = [
  "cbindgen",
  "mdvcore-core",
- "rmp-serde",
- "serde",
 ]
 
 [[package]]
