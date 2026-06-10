@@ -5984,3 +5984,14 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   top-left. ImageRenderer is legitimate HERE (pure-SwiftUI geometry, no representable, no on-screen
   visibility claim — distinct from the banned TSK-488 false-green class). Teeth demonstrated
   (alignment dropped → red). Gate green on the committed commit; bundle reinstall kicked.
+
+## LOG +140 (2026-06-10, autonomous tick — TSK-594 fixed: diff text selectable + Copy Hunk/File actions)
+- **Fix (fe1bd21), two layers:** diff content `Text` now `.textSelection(.enabled)` (in-place select/
+  copy); guaranteed multi-line copy via right-click **Copy Hunk** / **Copy File Diff** writing
+  `UnifiedDiff.{Hunk,File}.clipboardText` — faithful unified-diff reconstruction (prefix chars incl.
+  the `\` no-newline marker, `@@` banner, `---/+++` with `/dev/null` sides, binary one-liner) through
+  a pasteboard-injectable `DiffView.copyToPasteboard`.
+- **Tests:** 5 ViewerCore goldens + 3 ViewerUI tests exercising the exact menu closure against a
+  private named pasteboard (real right-click = VM lane, per directive #5's exact-closure rule).
+  Teeth: prefix dropped → 3 red → restored. Gate green on committed commit; reinstall kicked.
+- Git-diff trio: TSK-593 ✓, TSK-594 ✓ — TSK-595 (selected log-row highlight) next.
