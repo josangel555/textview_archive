@@ -207,6 +207,11 @@ public enum DiagnosticDump {
             // file never embeds a slice of the user's content (OBS-1).
             "string_head": redactContent ? "<redacted>" : String(tv.string.prefix(120)),
             "drawsBackground": tv.drawsBackground,
+            // TextKit engine actually live at runtime (TSK-267): non-nil
+            // textLayoutManager ⇒ TK2 viewport layout; nil ⇒ TK1 (something
+            // — e.g. a `layoutManager` access — forced the downgrade).
+            // Reading `textLayoutManager` does NOT itself downgrade.
+            "usesTextKit2": tv.textLayoutManager != nil,
             "isEditable": tv.isEditable,
             "isSelectable": tv.isSelectable,
             "isRichText": tv.isRichText,

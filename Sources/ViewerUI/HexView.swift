@@ -342,6 +342,13 @@ private final class HexTextController: NSViewController {
     /// dump rebuild, so the fast path is not eligible.
     private var lastPaintedMatches: [Int]?
     private var lastActiveMatchIndex: Int?
+    /// Pattern lengths + click set that produced the painted highlights,
+    /// so the next full paint can clear EXACTLY the painted ranges via
+    /// `HexHighlightPlan` instead of an O(document) `removeAttribute`
+    /// over the whole storage (TSK-267 step 2).
+    private var lastPaintedMatchPatternLength: Int = 0
+    private var lastPaintedClickOffsets: [Int]?
+    private var lastPaintedClickPatternLength: Int = 0
     private var rowLength: Int = 0
     private var headerCharCount: Int = 0
     private var currentWidth: Int = HexLayout.defaultWidth
@@ -359,6 +366,9 @@ private final class HexTextController: NSViewController {
     /// `finishBuild()`.
     private var isStreaming: Bool = false
     private var pendingHighlightKey: PendingHighlightKey?
+    /// Open `HexView.chunkedBuild` signpost interval, ended in
+    /// `finishBuild` (or when a newer build supersedes this one).
+    private var buildSignpostToken: PerfSignpost.Token?
     /// First row index in the streaming build for which we've already
     /// pushed a chunk. Used to know whether the placeholder is still
     /// in the storage and needs replacing.
@@ -570,6 +580,9 @@ private final class HexTextController: NSViewController {
             lastHighlightFingerprint = nil
             lastPaintedMatches = nil
             lastActiveMatchIndex = nil
+            lastPaintedMatchPatternLength = 0
+            lastPaintedClickOffsets = nil
+            lastPaintedClickPatternLength = 0
         }
 
         // Toggle editability. The byte grid stays SELECTABLE either way
@@ -620,15 +633,9 @@ private final class HexTextController: NSViewController {
         }()
 
         guard let storage = textView.textStorage else { return }
-        // Show the placeholder immediately so the user sees a hint
-        // before the first body chunk lands.
-        storage.beginEditing()
-        storage.setAttributedString(placeholder)
-        storage.endEditing()
-        textView.scrollToBeginningOfDocument(nil)
 
-        // Empty body — nothing more to do, but make sure the storage
-        // is empty so character indices line up with the layout math.
+        // Empty body — make sure the storage is empty so character
+        // indices line up with the layout math.
         let plan = HexDumpBuilder.plan(byteCount: file.byteCount,
                                        totalByteCount: file.totalByteCount,
                                        isTruncated: file.isTruncated,
@@ -643,6 +650,44 @@ private final class HexTextController: NSViewController {
             return
         }
 
+        // Small-file fast path (TSK-267 step 3): below the threshold the
+        // dump string builds in single-digit ms, so render it in ONE
+        // synchronous shot — no placeholder flash, no detached task, no
+        // per-chunk main.sync round-trips. Kills the fixed per-open
+        // overhead that dominated small files (#218: 6 KB ≈ 1 s).
+        if HexRenderPlan.useSyncBuild(renderedByteCount: file.byteCount) {
+            PerfSignpost.withInterval(.render, "HexView.syncBuild") {
+                let text = HexDumpBuilder.buildAll(file: file, width: width)
+                storage.beginEditing()
+                storage.setAttributedString(NSAttributedString(
+                    string: text,
+                    attributes: [
+                        .font: font,
+                        .foregroundColor: NSColor.labelColor,
+                    ]))
+                storage.endEditing()
+            }
+            textView.scrollToBeginningOfDocument(nil)
+            headerCharCount = plan.headerCharCount
+            isStreaming = false
+            streamingHasPlaceholder = false
+            // Same post-build fixups finishBuild() does for the async path.
+            if editable, let buf = editBuffer, buf.isDirty {
+                for idx in buf.dirtyByteIndices { repaintByte(idx, in: buf) }
+                syncSelectionToCaret()
+            }
+            return
+        }
+
+        // Show the placeholder immediately so the user sees a hint
+        // before the first body chunk lands.
+        storage.beginEditing()
+        storage.setAttributedString(placeholder)
+        storage.endEditing()
+        textView.scrollToBeginningOfDocument(nil)
+
+        buildSignpostToken.map(PerfSignpost.end)
+        buildSignpostToken = PerfSignpost.begin(.render, "HexView.chunkedBuild")
         isStreaming = true
         streamingHasPlaceholder = true
         headerCharCount = plan.headerCharCount
@@ -735,6 +780,8 @@ private final class HexTextController: NSViewController {
     @MainActor
     private func finishBuild(generation: Int) {
         guard generation == buildGeneration else { return }
+        buildSignpostToken.map(PerfSignpost.end)
+        buildSignpostToken = nil
         isStreaming = false
         streamingHasPlaceholder = false
         if let pending = pendingHighlightKey {
@@ -804,9 +851,20 @@ private final class HexTextController: NSViewController {
         lastHighlightFingerprint = key
 
         guard let storage = textView.textStorage else { return }
+        PerfSignpost.withInterval(.highlight, "HexView.fullPaint") {
         storage.beginEditing()
-        let full = NSRange(location: 0, length: storage.length)
-        storage.removeAttribute(.backgroundColor, range: full)
+        // Clear EXACTLY the ranges the previous paint touched (TSK-267
+        // step 2) — a whole-storage removeAttribute is an O(document)
+        // attribute walk on every search edit, the dominant per-keystroke
+        // cost on a multi-MB dump. The planner shares HexLayout's offset
+        // math with `paint(...)` below, so clear and paint cannot drift.
+        clearPaintedHighlights(in: storage)
+        // The scoped clear can wipe the orange "modified byte" tint where
+        // a highlight overlapped an edited byte — restore tints before the
+        // new paint so search highlights still win ties (paint-last).
+        if editable, let buf = editBuffer, buf.isDirty {
+            for idx in buf.dirtyByteIndices { repaintByte(idx, in: buf) }
+        }
 
         // Click-highlight first; search-match wins ties by painting last.
         if !clickOffsets.isEmpty, clickPatternLength > 0 {
@@ -826,9 +884,14 @@ private final class HexTextController: NSViewController {
         }
 
         storage.endEditing()
+        }
 
-        // Record what we painted so the next step can take the fast path.
+        // Record what we painted so the next step can take the fast path
+        // and the next full paint can clear only these ranges.
         lastPaintedMatches = (matchPatternLength > 0) ? matches : nil
+        lastPaintedMatchPatternLength = matchPatternLength
+        lastPaintedClickOffsets = (clickPatternLength > 0) ? clickOffsets : nil
+        lastPaintedClickPatternLength = clickPatternLength
         lastActiveMatchIndex = currentMatch
 
         if let idx = currentMatch, matches.indices.contains(idx) {
@@ -865,6 +928,33 @@ private final class HexTextController: NSViewController {
                   color: Self.matchColor(active: true), in: storage)
         }
         storage.endEditing()
+    }
+
+    /// Remove `.backgroundColor` from exactly the ranges the previous full
+    /// paint touched (search matches + click occurrences). No-op right
+    /// after a dump rebuild (nothing painted yet) — which also means the
+    /// FIRST paint after a rebuild no longer walks the whole document.
+    private func clearPaintedHighlights(in storage: NSTextStorage) {
+        var ranges: [NSRange] = []
+        if let painted = lastPaintedMatches, lastPaintedMatchPatternLength > 0 {
+            ranges += HexHighlightPlan.clearRanges(
+                offsets: painted,
+                patternLength: lastPaintedMatchPatternLength,
+                width: currentWidth,
+                headerCharCount: headerCharCount,
+                byteCount: byteCount)
+        }
+        if let clicks = lastPaintedClickOffsets, lastPaintedClickPatternLength > 0 {
+            ranges += HexHighlightPlan.clearRanges(
+                offsets: clicks,
+                patternLength: lastPaintedClickPatternLength,
+                width: currentWidth,
+                headerCharCount: headerCharCount,
+                byteCount: byteCount)
+        }
+        for r in ranges where NSMaxRange(r) <= storage.length {
+            storage.removeAttribute(.backgroundColor, range: r)
+        }
     }
 
     private func paint(offset: Int, length: Int,
