@@ -599,7 +599,13 @@ final class ViewModesUATTests: MultiScenarioTestCase {
             Scenario(
                 name: "empty-file-hex",
                 argFile: empty,
-                script: "delay 0.9\n",
+                // 3.0s, was 0.9: the 0-byte classification → HEX mode
+                // resolution is async and the loaded VM missed the window
+                // ("source" ≠ "hex", TSK-617). ScriptRunner has no
+                // wait-until verb (steps run on main; a blocking poll would
+                // starve the resolution it waits for), so a wider fixed
+                // settle is the honest fix. VM-lane-only cost.
+                script: "delay 3.0\n",
                 assert: { [self] dumps, file, line in
                     guard let last = dumps.last else {
                         XCTFail("no dumps", file: file, line: line); return

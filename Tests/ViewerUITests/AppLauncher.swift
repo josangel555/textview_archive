@@ -206,7 +206,13 @@ enum AppLauncher {
         if p.isRunning { p.terminate(); p.waitUntilExit() }
         var out: String? = nil
         if let pipe = outPipe {
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            // TSK-617: readDataToEndOfFile() raises an UNCATCHABLE ObjC
+            // NSFileHandleOperationException ("Bad file descriptor") when the
+            // pipe fd is dead (terminated child / fd exhaustion in the big VM
+            // suite), crashing the whole xctest process instead of letting the
+            // caller self-skip. readToEnd() reports the same condition as a
+            // catchable Swift error — a dead pipe degrades to nil stdout.
+            let data = (try? pipe.fileHandleForReading.readToEnd()) ?? Data()
             out = String(data: data, encoding: .utf8)
         }
         return ShellResult(exit: p.terminationStatus, stdout: out)
