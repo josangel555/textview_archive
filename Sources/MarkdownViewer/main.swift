@@ -338,7 +338,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         applyUISceneIfRequested()
 
         if diagnoseMode {
-            runDiagnoseAndExit(forceSource: forceSource)
+            // TSK-493: MDV_DIAGNOSE_DELAY sequences the dump AFTER an
+            // MDV_UI_SCENE apply (scene delay default 0.6s) — without it
+            // the dump fires two run-loop ticks after launch and can never
+            // capture a scene-driven state.
+            let delay = DiagnoseSchedule.delay(
+                ProcessInfo.processInfo.environment["MDV_DIAGNOSE_DELAY"])
+            if delay > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    self?.runDiagnoseAndExit(forceSource: forceSource)
+                }
+            } else {
+                runDiagnoseAndExit(forceSource: forceSource)
+            }
         }
         if autoSnapshotDelay >= 0 {
             scheduleAutoSnapshot(after: autoSnapshotDelay, forceSource: forceSource)
