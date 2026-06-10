@@ -6026,3 +6026,14 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - **Proof landed (16c058b):** `BinaryFileAffordanceTests` — 4 headless tests against a REAL
   SQLite-magic .bak and NUL-laden garbage. Gate green. Both tickets dismissed `already-fixed` with
   checks; dismissal notes invite reopen-with-specifics if the INSTALLED build still shows otherwise.
+
+## LOG +144 (2026-06-10, autonomous tick — TSK-607 fixed: periodic flush closes the scroll-drift crash-loss gap)
+- **Finding first:** the debounced crash-recovery autosave already exists (bf43bd2, 2026-05-31) —
+  tabs/selection/root/zoom/wrap/theme hit disk ~500ms after change. The REAL gap matching the report:
+  scroll rides `SourceViewChannel` (REPUB-1) and never ticks the subscribed publishers, so
+  scroll-then-crash lost the position.
+- **Fix (f44675b):** 30s periodic safety-net timer → the SAME equality-guarded `fireAutosave`
+  (scroll sample + single coalescing write queue; TSK-330 not widened). Idle tick = no-op compare.
+  Arms/disarms with the autosave subscriptions; `<=0` interval disables for tests.
+- **Tests:** scroll-only drift persisted via `periodicFlushTick` with zero publisher ticks + idle
+  no-write guard; teeth (tick no-op'd → red). Gate green; reinstall kicked.
