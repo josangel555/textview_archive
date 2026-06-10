@@ -58,6 +58,10 @@ public final class GitPanelModel: ObservableObject {
 
     @Published public var statusEntries: [GitClient.StatusEntry] = []
     @Published public var logEntries: [GitClient.GraphCommit] = []
+    /// SHA of the log commit whose diff is currently shown (TSK-595).
+    /// Drives the Log tab's selected-row highlight; reset on repo switch
+    /// so a stale SHA never matches a row in an unrelated repository.
+    @Published public private(set) var selectedLogSHA: String?
     @Published public var stashEntries: [GitClient.StashEntry] = []
     @Published public var worktreeEntries: [GitClient.WorktreeEntry] = []
     @Published public var remoteEntries: [GitClient.RemoteEntry] = []
@@ -122,6 +126,13 @@ public final class GitPanelModel: ObservableObject {
         refreshCurrent()
     }
 
+    /// Record which log commit's diff is being shown (TSK-595). The Log
+    /// tab calls this from its row action; rows compare their SHA against
+    /// `selectedLogSHA` for the selected-row highlight.
+    public func selectLogCommit(sha: String) {
+        selectedLogSHA = sha
+    }
+
     public func setRepoRoot(_ url: URL?) {
         guard url != repoRoot else { return }
         repoRoot = url
@@ -132,6 +143,7 @@ public final class GitPanelModel: ObservableObject {
         worktreeEntries = []
         remoteEntries = []
         head = nil
+        selectedLogSHA = nil
         logLoadedCount = 0
         logGen &+= 1
         loadMoreTask?.cancel()

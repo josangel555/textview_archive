@@ -112,6 +112,16 @@ struct GitLogTab: View {
             .padding(.vertical, doc.uiSize(4))
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
+            // TSK-595: strong selected state for the row whose diff is
+            // shown. Explicit accent fill — NOT the system unemphasized
+            // selection color, which renders grey and invisible (the
+            // TSK-488 selectedContentBackgroundColor lesson).
+            .background(
+                c.sha == model.selectedLogSHA
+                    ? Color.accentColor.opacity(0.28)
+                    : Color.clear,
+                in: RoundedRectangle(cornerRadius: 4)
+            )
         }
         .buttonStyle(.plain)
         .help("\(c.sha) — \(c.subject)")
@@ -162,6 +172,7 @@ struct GitLogTab: View {
     /// this with a proper in-app DiffView.
     private func showCommit(_ c: GitClient.GraphCommit) {
         guard let root = model.repoRoot else { return }
+        model.selectLogCommit(sha: c.sha)
         let client = GitClient(repoRoot: root)
         let body = client.commitDiff(sha: c.sha)
         let cache = FileManager.default
