@@ -6589,3 +6589,21 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   ticket burns VM iterations rediscovering it.
 - Today's validated total now includes the ENTIRE bumped P1 set that was held for live
   evidence: TSK-267, 313, 314, 363, 455, 522, 523, 617, 620.
+
+## LOG +180 (2026-06-10, autonomous tick — validation sweep over the TSK-590 epic's fixed children: 593/594/595 validated)
+- **TSK-593 validated** (diff tab pins top-left): ImageRenderer geometry oracle with teeth
+  (the bug class IS SwiftUI layout) + the live diff-tab integration now exercised by the
+  TSK-523 VM scenario.
+- **TSK-594 validated** (copy text from diff window): the guaranteed copy path is fully
+  pinned (5 unified-diff reconstruction goldens + 3 exact-menu-closure pasteboard tests,
+  teeth); `.textSelection(.enabled)` in-place selection is platform behavior whose
+  regression degrades to the guarded menu path; the literal drag gesture is the
+  entitled-synthesis class.
+- **TSK-595 validated** (selected log row highlight) — with a NEW pixel guard closing its
+  render gap (commit 669b40a): the row label extracted to `GitLogRowLabel` (pure
+  code-motion; ScrollView is opaque to headless oracles — the TSK-593 discovery) and
+  ImageRenderer-rendered selected-vs-unselected, asserting the accent fill changes >30%
+  of sampled pixels. Teeth: fill dropped → red → restored. Before this, NOTHING went red
+  if the `.background` fill was removed — the state machine alone was pinned.
+- Epic status: remaining fixed children to review next (596, 597, 602, 603, 604, 607,
+  608, 614); parked owner-gated: 591, 592, 598, 601.
