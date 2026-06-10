@@ -2952,7 +2952,12 @@ fn mtime_secs(meta: &fs::Metadata) -> Option<u64> {
 /// keeps it read-only-friendly (no index-lock churn) and the non-zero exit on a
 /// non-repo path maps cleanly to `None` (no panic, no error spew).
 fn git_status_for(dir: &Path) -> Option<git::RepoStatus> {
+    // SECURITY (TSK-549): browsed directories are untrusted. Repo-local config
+    // can make a bare `git status` EXECUTE attacker-chosen commands
+    // (core.fsmonitor) or honor hostile hook paths — neutralize both with `-c`
+    // overrides (they take precedence over the repo's own config).
     let out = Command::new("git")
+        .args(["-c", "core.fsmonitor=", "-c", "core.hooksPath=/dev/null"])
         .arg("-C")
         .arg(dir)
         .args(["--no-optional-locks", "status", "--porcelain=v1", "--branch"])
@@ -3905,6 +3910,41 @@ mod tests {
         let title = app.files_title();
         assert!(title.contains("git: "), "title carries the git segment: {title}");
         assert!(title.contains("?1"), "title shows the untracked count: {title}");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn git_status_never_executes_repo_local_fsmonitor_command() {
+        // SECURITY teeth (TSK-549): a browsed repo's local config can point
+        // core.fsmonitor at an arbitrary command, which a bare `git status`
+        // EXECUTES. Our spawn must neutralize it with `-c core.fsmonitor=`.
+        // Stand up a repo whose fsmonitor would drop a marker file; the status
+        // call must succeed WITHOUT the marker appearing. Reverting the `-c`
+        // overrides makes this test fail (marker created) — teeth demonstrated
+        // 2026-06-09 (revert → FAILED → restore).
+        let dir = std::env::temp_dir().join(format!("mdv-tui-fsmon-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("mk tmp repo dir");
+        let init = Command::new("git").arg("-C").arg(&dir).arg("init").output().expect("spawn git");
+        assert!(init.status.success(), "git init failed: {init:?}");
+        let marker = dir.join("PWNED");
+        // The fsmonitor hook protocol doesn't matter here — we only care
+        // whether git RAN the command (marker exists) or not.
+        let hostile = format!("touch {}", marker.display());
+        let cfg = Command::new("git")
+            .arg("-C").arg(&dir)
+            .args(["config", "core.fsmonitor", &hostile])
+            .output().expect("spawn git config");
+        assert!(cfg.status.success(), "git config failed: {cfg:?}");
+        fs::write(dir.join("scratch.txt"), b"hi").expect("write untracked file");
+
+        let st = git_status_for(&dir).expect("status still works with fsmonitor neutralized");
+        assert_eq!(st.untracked, 1, "status output parsed normally");
+        assert!(
+            !marker.exists(),
+            "repo-local core.fsmonitor command MUST NOT execute (marker file was created)"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }

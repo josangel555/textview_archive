@@ -156,7 +156,13 @@ fn main() -> io::Result<()> {
         })
         .unwrap_or(std::env::current_dir()?)
         .canonicalize()
-        .unwrap_or_else(|_| PathBuf::from("/"));
+        // SECURITY (TSK-542): fail CLOSED. The served root is the web tier's
+        // one path-confinement boundary; a canonicalize failure must refuse to
+        // start, never silently widen the served scope to the whole filesystem.
+        .map_err(|e| {
+            eprintln!("mdv-web: cannot resolve serve root: {e}");
+            e
+        })?;
     // Remember the resolved root for next launch (best-effort).
     if let Some(p) = &cfg_path {
         save_config(p, &WebConfig { root: Some(root.clone()) });
@@ -819,7 +825,12 @@ fn filter_box(dir: &Path, sort: SortKey, show_hidden: bool, filter: &str) -> Str
 /// read-only-friendly; a non-repo exits non-zero and yields no badge. The summary
 /// text is `esc`-escaped (a branch name can contain markup-significant chars).
 fn git_status_html(dir: &Path) -> String {
+    // SECURITY (TSK-549): a browsed directory is untrusted content. Repo-local
+    // config can make a bare `git status` EXECUTE attacker-chosen commands
+    // (core.fsmonitor) or pick up hostile hook paths — neutralize both before
+    // any repo config is honored. `-c` overrides apply over repo config.
     let Ok(out) = Command::new("git")
+        .args(["-c", "core.fsmonitor=", "-c", "core.hooksPath=/dev/null"])
         .arg("-C")
         .arg(dir)
         .args(["--no-optional-locks", "status", "--porcelain=v1", "--branch"])
