@@ -6111,3 +6111,14 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   the skip; affected rows DIFFERENT = the stale-UI guard). Teeth via factory mutation.
 - Gate green on 5bf9005; reinstall kicked; AFTER nav-sweep VM capture in flight to quantify
   vs the 144ms baseline (numbers to TSK-613 when pulled).
+## LOG +150 (2026-06-10, autonomous tick — TSK-613 after-capture: sidebar fixes verified; residual filed as TSK-615)
+- **Before/after (same nav-sweep recipe, debug VM):** FileRowView.body 144→3ms (-98%),
+  RowCounterPlugin.lineCount 249→15ms (-94%), PluginSidebarSections.section 258→20ms (-92%).
+  The TSK-612/613 fixes did exactly what they claimed.
+- **Honest residual:** total main-thread busy across the sweep is UNCHANGED (~3.3→3.6s;
+  windows still 24–93% busy). Largest remaining NAMED frame: `SourceTextController.apply`
+  ~199ms per tab switch — the pane-remount class. THREE independent measurements now point
+  at the parked MountedPanesLRU lever (TSK-598 case strengthened on the ticket). The rest
+  is distributed SwiftUI re-evaluation with no app frame above ~20ms → filed **TSK-615**
+  (audit remaining wide @ObservedObject channels; FileRowState snapshot pattern reusable).
+- Numbers + caveats (debug VM noise) recorded on TSK-613/598; traces /tmp/mdv613-*.xml.
