@@ -27,6 +27,7 @@
     findNext, findPrevious, replaceNext, replaceAll,
     setSearchQuery, SearchQuery, getSearchQuery,
     syntaxHighlighting, defaultHighlightStyle, bracketMatching,
+    HighlightStyle, tags,
     foldKeymap, foldGutter, indentOnInput, foldAll, unfoldAll,
     indentUnit, EditorStateTabSize,
     linter, lintGutter, setDiagnostics, forEachDiagnostic,
@@ -961,10 +962,63 @@
     view.dispatch({ effects: langCompartment.reconfigure(languageFor(currentLanguage)) });
   }
 
+  // TSK-602 ViewOnly↔Editor color parity. Swift ships the SyntaxTheme
+  // palette (TokenKind rawValue / chrome key → "#RRGGBB") inside
+  // setTheme; we build a HighlightStyle + chrome theme from it so the
+  // editor colors EQUAL the source view's. Falls back to the legacy
+  // oneDark/default pairing when no palette arrives (older Swift) or
+  // the bundle predates the HighlightStyle/tags re-exports.
+  let currentPalette = null;
+
+  function paletteExtensions(palette, dark) {
+    if (!palette || !HighlightStyle || !tags) return dark ? [oneDark] : [];
+    const t = tags;
+    const specs = [
+      { tag: [t.keyword, t.moduleKeyword, t.controlKeyword,
+              t.operatorKeyword, t.definitionKeyword], color: palette.keyword },
+      { tag: [t.string, t.special(t.string), t.docString, t.character],
+        color: palette.string },
+      { tag: t.escape, color: palette.escape },
+      { tag: t.regexp, color: palette.regex },
+      { tag: [t.comment, t.lineComment, t.blockComment, t.docComment],
+        color: palette.comment },
+      { tag: [t.number, t.integer, t.float], color: palette.number },
+      { tag: [t.typeName, t.className, t.namespace], color: palette.type },
+      { tag: [t.function(t.variableName), t.function(t.propertyName),
+              t.macroName, t.labelName], color: palette.function },
+      { tag: [t.variableName, t.propertyName, t.name], color: palette.variable },
+      { tag: [t.annotation, t.meta], color: palette.attribute },
+      { tag: t.operator, color: palette.operator },
+      { tag: [t.punctuation, t.separator, t.bracket], color: palette.punctuation },
+      { tag: [t.standard(t.variableName), t.self, t.atom], color: palette.builtin },
+      { tag: [t.constant(t.variableName), t.bool, t.null], color: palette.constant },
+      { tag: t.heading, color: palette.heading, fontWeight: "bold" },
+      { tag: [t.link, t.url], color: palette.link, textDecoration: "underline" },
+      { tag: t.emphasis, color: palette.emphasis, fontStyle: "italic" },
+      { tag: t.strong, color: palette.strong, fontWeight: "bold" },
+      { tag: t.tagName, color: palette.tag },
+      { tag: t.attributeName, color: palette.tagAttribute },
+    ].filter((s) => typeof s.color === "string");
+    const chrome = EditorView.theme({
+      "&": { backgroundColor: palette.background, color: palette.defaultText },
+      ".cm-content": { caretColor: palette.defaultText },
+      ".cm-gutters": {
+        backgroundColor: palette.gutterBackground,
+        color: palette.gutterText,
+        border: "none",
+      },
+    }, { dark: dark });
+    return [chrome, syntaxHighlighting(HighlightStyle.define(specs))];
+  }
+
   function applySetTheme(msg) {
     currentThemeDark = (msg.name === "dark");
+    currentPalette = (msg.palette && typeof msg.palette === "object") ? msg.palette : null;
     document.body.className = currentThemeDark ? "dark" : "light";
-    view.dispatch({ effects: themeCompartment.reconfigure(currentThemeDark ? [oneDark] : []) });
+    view.dispatch({
+      effects: themeCompartment.reconfigure(
+        paletteExtensions(currentPalette, currentThemeDark)),
+    });
   }
 
   function applySetFontSize(msg) {

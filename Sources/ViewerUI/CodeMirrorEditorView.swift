@@ -374,7 +374,13 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             guard isReady, let webView = webView else { return }
             if let dark = pendingDark, dark != lastSentDark {
                 lastSentDark = dark
-                dispatch(.setTheme(name: dark ? "dark" : "light"), webView: webView)
+                // TSK-602: ship the SyntaxTheme palette so the editor
+                // colors match the ViewOnly source view exactly. The two
+                // shipped themes are appearance-keyed, same as the source
+                // view's `SyntaxTheme.resolved(forAppearance:)`.
+                let theme = SyntaxTheme.named(dark ? .xcodeDark : .xcodeLight)
+                dispatch(.setTheme(name: dark ? "dark" : "light",
+                                   palette: theme.cmPalette), webView: webView)
             }
             if let lang = pendingLanguage, lang != lastSentLanguage {
                 lastSentLanguage = lang

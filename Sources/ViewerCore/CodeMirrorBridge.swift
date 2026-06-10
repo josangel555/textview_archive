@@ -156,7 +156,11 @@ public enum CMOutboundMessage: Equatable, Sendable {
     case appendText(text: String)
     case replaceRange(from: Int, to: Int, insert: String, version: Int)
     case setLanguage(String)
-    case setTheme(name: String)
+    /// `palette` (TSK-602) carries the SyntaxTheme-derived token→hex map
+    /// so the CM6 editor colors match the ViewOnly source view exactly.
+    /// `nil` keeps the JS host's built-in fallback (oneDark / CM default)
+    /// — also what a stale pre-palette bundle sees.
+    case setTheme(name: String, palette: [String: String]?)
     case setFontSize(Int)
     case setWordWrap(Bool)
     case setReadOnly(Bool)
@@ -497,9 +501,12 @@ public enum CMBridgeCodec {
         case .setLanguage(let lang):
             dict["type"] = "setLanguage"
             dict["lang"] = lang
-        case .setTheme(let name):
+        case .setTheme(let name, let palette):
             dict["type"] = "setTheme"
             dict["name"] = name
+            if let palette {
+                dict["palette"] = palette
+            }
         case .setFontSize(let px):
             dict["type"] = "setFontSize"
             dict["px"] = px

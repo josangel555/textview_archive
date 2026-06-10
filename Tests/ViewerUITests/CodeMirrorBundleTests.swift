@@ -66,6 +66,25 @@ final class CodeMirrorBundleTests: XCTestCase {
         }
     }
 
+    /// TSK-602 ViewOnly↔Editor color parity: the HTML host must carry the
+    /// palette→HighlightStyle builder, and the JS bundle must export the
+    /// symbols it needs (`HighlightStyle`, `tags`). A bundle rebuilt from a
+    /// stale entry.js, or an HTML edit that drops the wiring, trips here.
+    func testThemePaletteParityWiringSurvivesBuild() throws {
+        let htmlURL = try XCTUnwrap(CodeMirrorResources.hostHTMLURL)
+        let html = try String(contentsOf: htmlURL, encoding: .utf8)
+        for needle in ["paletteExtensions", "msg.palette", "HighlightStyle.define"] {
+            XCTAssertTrue(html.contains(needle),
+                          "codemirror.html missing TSK-602 palette wiring: \(needle)")
+        }
+        let jsURL = try XCTUnwrap(CodeMirrorResources.jsBundleURL)
+        let js = String(data: try Data(contentsOf: jsURL), encoding: .utf8) ?? ""
+        for needle in ["HighlightStyle:", "tags:"] {
+            XCTAssertTrue(js.contains(needle),
+                          "codemirror.js missing TSK-602 export: \(needle)")
+        }
+    }
+
     func testJSBundleExportsLintAndSearchAPIs() throws {
         let url = try XCTUnwrap(CodeMirrorResources.jsBundleURL)
         let data = try Data(contentsOf: url)

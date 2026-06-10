@@ -73,9 +73,22 @@ final class CMOutboundEncodingTests: XCTestCase {
     }
 
     func testEncodeSetTheme() {
-        let d = encodeAndParse(.setTheme(name: "dark"))
+        let d = encodeAndParse(.setTheme(name: "dark", palette: nil))
         XCTAssertEqual(d["type"] as? String, "setTheme")
         XCTAssertEqual(d["name"] as? String, "dark")
+        XCTAssertNil(d["palette"], "nil palette must omit the key (stale-bundle compat)")
+    }
+
+    /// TSK-602: the SyntaxTheme-derived palette rides setTheme so the
+    /// CM6 editor colors match the ViewOnly source view.
+    func testEncodeSetTheme_withPalette() {
+        let d = encodeAndParse(.setTheme(
+            name: "light",
+            palette: ["keyword": "#AD3DA4", "background": "#FFFFFF"]))
+        XCTAssertEqual(d["type"] as? String, "setTheme")
+        let palette = d["palette"] as? [String: String]
+        XCTAssertEqual(palette?["keyword"], "#AD3DA4")
+        XCTAssertEqual(palette?["background"], "#FFFFFF")
     }
 
     func testEncodeSetFontSize() {

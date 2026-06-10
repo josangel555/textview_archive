@@ -38,7 +38,14 @@ import {
   foldKeymap, foldGutter, indentOnInput,
   indentUnit, foldAll, unfoldAll,
   foldService,
+  HighlightStyle,
 } from "@codemirror/language";
+// TSK-602 ViewOnly↔Editor color parity: the HTML host builds a
+// HighlightStyle from the Swift SyntaxTheme palette, which needs the
+// lezer tag objects. @lezer/highlight is ALREADY in the bundle (it
+// defines defaultHighlightStyle + oneDark in terms of these tags) —
+// re-exporting `tags` adds no new package, just surfaces it on window.CM.
+import { tags } from "@lezer/highlight";
 import {
   linter, lintGutter, setDiagnostics, forEachDiagnostic, Diagnostic,
 } from "@codemirror/lint";
@@ -68,6 +75,7 @@ export {
   findNext, findPrevious, replaceNext, replaceAll,
   setSearchQuery, SearchQuery, getSearchQuery,
   syntaxHighlighting, defaultHighlightStyle, bracketMatching,
+  HighlightStyle, tags,
   foldKeymap, foldGutter, indentOnInput,
   indentUnit, foldAll, unfoldAll, EditorStateTabSize,
   foldService,
