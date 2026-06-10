@@ -6067,3 +6067,20 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   source-view colors), palette encoding pair, bundle/HTML wiring needles. Teeth ×2
   (cssHex channel swap → 8 red; encoder palette-drop → red). Gate green on 4a2d307;
   release reinstall kicked. Pixel-level confirmation = VM lane; held at `fixed`.
+## LOG +147 (2026-06-10, autonomous tick — TSK-603 umbrella measured + split; TSK-612 sidebar line-count hotspot fixed)
+- **Capture:** 30s VM nav-sweep (debug, signpost-anchored; harness aaeaf8f). All 20 interactions
+  recorded; the synchronous model calls are 0.7–3.7ms — but EVERY window (tab switch, sidebar
+  toggle, view toggle) leaves the main thread **60–99% busy** for its full 150–300ms gap.
+  The user-felt "navigation is slow" is broad SwiftUI re-evaluation, not one hotspot.
+- **Named contributors:** RowCounterPlugin line counting inside the sidebar body (~256ms/sweep)
+  → **TSK-612, FIXED (97998b2)**: per-URL memo keyed by the contents string (CoW `==` fast
+  path) + UTF-8 byte-scan cold count — which also fixes CRLF files counting as 1 line.
+  FileRowView.body 144ms (every row re-bodies per republish) → child **TSK-613**.
+  SourceTextController.apply 166ms per tab switch → known MountedPanesLRU residue (TSK-598,
+  parked). TrackedRepos git-root ~45ms → TSK-591 (instrumented).
+- **Bonus finding:** the always-on "ROW COUNTS" plugin section is the likely REAL surface of
+  TSK-608's "row-count tool window" (not the preview MetadataPanel gated in 39755c5) — filed
+  **TSK-614** (dismiss/hide affordance) + evidence comment on TSK-608.
+- **Tests:** 9 RowCounterPluginTests (CRLF golden + memo-behavior via coldCountComputations
+  seam); teeth (memo defeated via compiling `, false` mutation → red). Gate green on 97998b2;
+  TSK-603 → fixed (umbrella deliverable = measurement + children), TSK-612 → fixed.
