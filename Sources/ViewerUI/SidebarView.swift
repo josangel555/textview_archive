@@ -119,6 +119,9 @@ struct SidebarView: View {
     }
 
     var body: some View {
+        #if DEBUG
+        let _ = BodyProbe.tick("SidebarView")   // TSK-615 re-eval width probe
+        #endif
         sidebarBody
             .walkthroughAnchor(.sidebar)
     }

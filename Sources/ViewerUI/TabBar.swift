@@ -60,6 +60,9 @@ struct TabBar: View {
     @State private var availableWidth: CGFloat = 0
 
     var body: some View {
+        #if DEBUG
+        let _ = BodyProbe.tick("TabBar")   // TSK-615 re-eval width probe
+        #endif
         let tabWidth = Self.computedTabWidth(
             available: availableWidth,
             count: model.tabs.tabs.count,

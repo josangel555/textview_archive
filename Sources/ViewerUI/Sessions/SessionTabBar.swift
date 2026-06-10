@@ -44,6 +44,9 @@ struct SessionTabBar: View {
     private var rowHeight: CGFloat { model.uiSize(46) }
 
     var body: some View {
+        #if DEBUG
+        let _ = BodyProbe.tick("SessionTabBar")   // TSK-615 re-eval width probe
+        #endif
         HStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 0) {

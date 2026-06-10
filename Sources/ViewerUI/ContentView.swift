@@ -76,6 +76,9 @@ public struct ContentView: View {
     }
 
     public var body: some View {
+        #if DEBUG
+        let _ = BodyProbe.tick("ContentView")   // TSK-615 re-eval width probe
+        #endif
         ZStack {
             VStack(spacing: 0) {
                 if let sessionsApp {

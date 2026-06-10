@@ -21,6 +21,9 @@ struct BottomAttributesBar: View {
     @ObservedObject var model: DocumentModel
 
     var body: some View {
+        #if DEBUG
+        let _ = BodyProbe.tick("BottomAttributesBar")   // TSK-615 re-eval width probe
+        #endif
         HStack(spacing: model.uiSize(12)) {
             // Text-rendering toggles. These control the NSTextView source /
             // editor rendering, so they're only meaningful for the text

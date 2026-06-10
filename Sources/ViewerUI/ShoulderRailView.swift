@@ -57,6 +57,9 @@ struct ShoulderRailView: View {
     }
 
     var body: some View {
+        #if DEBUG
+        let _ = BodyProbe.tick("ShoulderRailView")   // TSK-615 re-eval width probe
+        #endif
         let panels = panelLayout.railPanels(on: edge)
         let pres = presence
         Group {

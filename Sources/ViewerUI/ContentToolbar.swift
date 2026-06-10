@@ -30,6 +30,9 @@ struct ContentToolbar: View {
     @ObservedObject var model: DocumentModel
 
     var body: some View {
+        #if DEBUG
+        let _ = BodyProbe.tick("ContentToolbar")   // TSK-615 re-eval width probe
+        #endif
         HStack(spacing: model.uiSize(10)) {
             PathBreadcrumbView(model: model)
                 .layoutPriority(-1)   // breadcrumb yields width first

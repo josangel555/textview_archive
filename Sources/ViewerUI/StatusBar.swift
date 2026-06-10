@@ -42,6 +42,9 @@ struct StatusBar: View {
     @ObservedObject var helpSink: HelpSink = .shared
 
     var body: some View {
+        #if DEBUG
+        let _ = BodyProbe.tick("StatusBar")   // TSK-615 re-eval width probe
+        #endif
         HStack(spacing: 12) {
             // UX-C (#225): git chip on the LEFT — `repo · branch` for the
             // focused file's repo. Label is built from `SessionGitInfo`
