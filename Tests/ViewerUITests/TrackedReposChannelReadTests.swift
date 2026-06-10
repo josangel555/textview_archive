@@ -182,3 +182,39 @@ final class TrackedReposChannelReadTests: XCTestCase {
             "rootIcon cache stays bounded under churn")
     }
 }
+
+// MARK: - Norm-cache diagnostics (TSK-591)
+
+/// Pins the miss/hit/reset accounting added for the file-nav hover-lag
+/// investigation: a repeated lookup must be a cache HIT (no second
+/// miss), and overflowing `cacheCap` distinct URLs must record a reset
+/// (the wipe-on-overflow policy under suspicion for big-tree thrash).
+@MainActor
+final class TrackedReposNormCacheDiagnosticsTests: XCTestCase {
+
+    func test_repeatLookup_isHit_notSecondMiss() {
+        let channel = TrackedReposChannel(store: TrackedReposStore())
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("norm-diag-\(UUID().uuidString).md")
+
+        XCTAssertEqual(channel.normCacheMisses, 0)
+        _ = channel._testNormalize(url)
+        XCTAssertEqual(channel.normCacheMisses, 1, "first lookup is a miss")
+        _ = channel._testNormalize(url)
+        XCTAssertEqual(channel.normCacheMisses, 1,
+            "repeat lookup must be served from the cache")
+    }
+
+    func test_overflow_recordsReset() {
+        let channel = TrackedReposChannel(store: TrackedReposStore())
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent("norm-diag-\(UUID().uuidString)", isDirectory: true)
+        // cacheCap is 2048; push past it with distinct URLs (no FS access
+        // needed — normalize works on non-existent paths).
+        for i in 0...2050 {
+            _ = channel._testNormalize(base.appendingPathComponent("f\(i).md"))
+        }
+        XCTAssertGreaterThanOrEqual(channel.normCacheResets, 1,
+            "overflowing the cap must record at least one wipe")
+    }
+}

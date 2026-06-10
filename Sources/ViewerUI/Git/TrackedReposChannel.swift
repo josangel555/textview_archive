@@ -193,13 +193,28 @@ public final class TrackedReposChannel: ObservableObject {
     public var _testRootIconCacheCount: Int { rootIconCache.count }
     public func _testNormalize(_ url: URL) -> URL { norm(url) }
 
+    /// Diagnostics for the norm cache (TSK-591). `normalize` resolves
+    /// symlinks — an lstat chain per path component — so a MISS is a
+    /// syscall burst from inside a SwiftUI body. On trees with more than
+    /// `cacheCap` distinct row URLs the wipe-on-overflow policy thrashes
+    /// (every overflow wipes ALL entries), and row re-evals degrade to
+    /// per-body syscalls. These counters (plus the Obs counters of the
+    /// same names) let a live session confirm or rule that out without
+    /// Instruments. Plain vars, deliberately NOT `@Published`.
+    public private(set) var normCacheMisses: UInt64 = 0
+    public private(set) var normCacheResets: UInt64 = 0
+
     // MARK: - Private
 
     private func norm(_ url: URL) -> URL {
         if let hit = normCache[url] { return hit }
+        normCacheMisses &+= 1
+        Obs.shared.counter("trackedRepos.norm.miss")
         let resolved = TrackedReposReducer.normalize(url)
         if normCache.count > Self.cacheCap {
             normCache.removeAll(keepingCapacity: true)
+            normCacheResets &+= 1
+            Obs.shared.counter("trackedRepos.norm.reset")
         }
         normCache[url] = resolved
         return resolved
