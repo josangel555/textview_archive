@@ -131,6 +131,13 @@ on the host — it just exercises the headless tiers and skips T4/T5.
     `swift test` uses the default 6.1.2 and will NOT compile the test target —
     prefer the script (see the toolchain note above).
   - Smoke (build + run + screencap): `bash scripts/vm-smoke.sh`
+  - GUI/pixel lane (T4/T5): `MDV_VM_GUI_SESSION=1 bash scripts/test-in-vm.sh …`
+    REQUIRES `MDV_VM_SUDO_PASS=<vm-sudo-password>` — without it the sudo wrapper silently
+    runs NOTHING ("a password is required" buried in the log). Note the
+    `launchctl asuser` bridge runs xctest + spawned apps as ROOT, so windowid/
+    temp artifacts land in root's `/var/folders/zz/...`. (`test-in-vm.sh`
+    raises `ulimit -n 8192` itself — TSK-500 fixed the fd-exhaustion false
+    failures.)
   - The VM has **no Rust toolchain**: it links the host-built
     `rust-core/link/libmdvcore_ffi.a` (build it on the host first if Rust
     changed; the rsync ships it since `rust-core/` isn't excluded). Never
@@ -200,8 +207,10 @@ generously and keep the board honest:
   decision (a dep approval, a risky supervised refactor) is filed as a
   `pending` task with `blocker` set AND appended to the `DECISIONS NEEDED`
   section of `docs/AUTONOMOUS_PROGRESS.md` — then move on to other work.
-- **Check `TaskList` before creating** to avoid duplicates; **read the latest
-  with `TaskGet` before updating** (staleness).
+- **Check `mcp__tasked__task_list` before creating** to avoid duplicates;
+  **read the latest with `mcp__tasked__task_get` before updating** (staleness).
+  (These are the BOARD tools — not the built-in Claude Code TaskList, whose
+  `#NNN` numbering is a different system from board `TSK-NNN`.)
 - This complements the durable docs (`AUTONOMOUS_PROGRESS.md` for the autonomous
   run log, `BACKLOG.md` for the standing queue) — the task board is the live
   per-item state; the docs are the narrative that survives compaction.
@@ -212,20 +221,24 @@ Standing operating procedure for autonomous/heartbeat runs (the screen is the
 agent's until the owner says stop; work in waves, don't stop to ask "should I
 continue", document blockers and move on):
 
-- **Each firing:** read `docs/AUTONOMOUS_PROGRESS.md` (current wave + first
-  unchecked item). If substantive work is already in flight this turn, treat the
-  nudge as a no-op. A fresh/compacted session reads the latest
-  `docs/HANDOFF_<date>.md` first.
-- **Pick work from the `tasked` board** (`http://localhost:8787/mcp` JSON-RPC —
-  the SYSTEM OF RECORD, NOT the built-in Claude Code TaskList). Helper:
-  `python3 /tmp/board.py <tool> '<json>'`; agent `claude-mdv`; ids `TSK-###`.
-  The board is **shared across projects** — grep this repo before acting on a
-  task; skip foreign `agent:forge`/`sess-forge-*` tasks.
-- **Priority:** SwiftUI app (`Sources/`) features/fixes FIRST each firing; fall
-  back to the Rust TUI/web `[PORT]` lane only if no SwiftUI task is actionable.
-  Prefer real features/bugs/perf over paper-cut test backfill (owner flagged that
-  drift) — but DON'T ship a risky blind change; if it needs the screen/owner,
-  file it and move on.
+- **Each firing: read `docs/TASK_WORKFLOW.md` IN FULL and follow it** — it is
+  the single operating procedure (lane goals, prioritization, lifecycle,
+  validation policy) and the authoritative copy where this summary drifts.
+  If substantive work is already in flight this turn, treat the nudge as a
+  no-op. A fresh/compacted session reads `HANDOFF.md` (repo root) first.
+- **Pick work from the `tasked` board** (`http://localhost:8787/mcp` —
+  the SYSTEM OF RECORD, NOT the built-in Claude Code TaskList). Drive it ONLY
+  via the **`mcp__tasked__*` MCP tools** (agent `claude-mdv`; ids `TSK-###`);
+  the old `python3 /tmp/board.py` helper and the human REST endpoint are
+  RETIRED — never recreate or spoof them. The board is **shared across
+  projects** — grep this repo before acting on a task; skip foreign
+  `agent:forge`/`sess-forge-*` tasks.
+- **Priority (owner directive 2026-06-10): USER-FACING bug fixes first** —
+  bugs the owner hits in the running app (open/view/edit/navigation/render
+  glitches, perf the user feels) outrank internal-quality work. Then other
+  real bugs/perf/security, then features; the Rust TUI/web `[PORT]` lane and
+  test backfill are last resorts. DON'T ship a risky blind change; if it needs
+  the screen/owner, file it and move on.
 - **Lifecycle lanes:** `reported → ack → triaged → progress → fixed → review →
   validated → done`. Drive via the **`mcp__tasked__*` tools** (NOT the retired
   `python3 /tmp/board.py`); `task_advance` auto-walks lanes to `fixed`/`review`.
@@ -267,10 +280,16 @@ continue", document blockers and move on):
 
 ## Quick references
 
+- `docs/TASK_WORKFLOW.md` — THE autonomous-loop SOP (lane goals,
+  prioritization, lifecycle, validation policy); read every firing.
 - `BACKLOG.md` — pending work, decisions, and audit follow-ups.
 - `LESSONS.md` — institutional knowledge (compositor bug, perf wins,
-  signing, VM screen-capture privacy notes).
+  signing, VM screen-capture privacy notes, SwiftPM staleness traps).
 - `MANUAL_TESTING.md` — checklist for features without automation.
 - `DESIGN.md` — top-level architecture.
+- `docs/TRACKER_FEEDBACK.md` — feedback queue for the `tasked` tool itself
+  (file new items as INT-### tickets in the `internal` project).
+- `docs/research/rust-core-audit-2026-06-09/` — the rust-core production
+  audit (synthesis.md = verdict + Phase 0-3 roadmap; epic TSK-538).
 - `docs/` — feature design docs (Mermaid impl, Walkthrough v2, Code
   Review, Sessions, LSP, Plugins v2, etc.).

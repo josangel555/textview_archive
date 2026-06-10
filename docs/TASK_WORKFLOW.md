@@ -28,9 +28,14 @@ Claude Code TaskList (`#NNN` ≠ board `TSK-NNN`); always `task_get` a board id 
 
 **Tools:** `task_next {agent}` (ranked head — but see §2, it does NOT project-filter), `task_list
 {project, state?, ...}`, `task_get {id}`, `task_create {project, agent, title, report, type,
-confidence}`, `task_advance {id, agent, to, understanding, note, summary}` (one-shot walks
-reported→fixed), `task_record` (to progress/fixed/review), `task_validate` (evidence-gated close,
-see §4), `task_park` (owner gate + ping), `task_flag`. Agent name: `claude-mdv`.
+confidence}` / `task_create_many`, `task_advance {id, agent, to, understanding, note, summary}`
+(one-shot walks reported→fixed), `task_record` (to progress/fixed/review), `task_validate`
+(evidence-gated close, see §4), `task_park` (owner gate + ping), `task_dismiss` (already-fixed/
+wontfix/duplicate/invalid/foreign — already-fixed needs demonstrative proof), `task_retract`,
+`task_flag`, plus grooming tools (`task_restate`, `task_triage`, `task_claim`, `task_comment`,
+`task_link`, `task_set_parent`, `task_tag`, `task_block`/`task_unblock`). Most accept
+`quiet: true` for ~90%-smaller echoes. Agent name: `claude-mdv`. The server occasionally restarts
+during owner-side upgrades — on a connection error, retry once before assuming it's down.
 
 markdown_viewer tasks live under **project `tasked`** (prefix `TSK`).
 
@@ -49,20 +54,26 @@ grep this repo for the symbols/feature it names** — if they don't exist here, 
 
 Rank order each firing:
 
-1. **Owner priority (2026-06-05): SwiftUI app (`Sources/`) features & fixes** over the Rust
-   TUI/web ports. `[PORT]`-tagged tasks are deprioritized — only fall to them if nothing else
-   is actionable.
-2. **Real bugs / perf / security** (`type: bug|perf|security|leak|race|contract`) over features,
-   features over **test/quality paper cuts**. Loudest current pain = the **perf cluster**
-   (TSK-108/266/267/270/273: tab close/switch/open ~1s, HEX slow).
-3. **Headless-actionable now** vs **live-gated**. Decide honestly:
+1. **Owner priority (2026-06-10): USER-FACING bug fixes first.** Bugs the owner hits in the
+   running app — open/view/edit/navigation behavior, rendering glitches, perf the user FEELS
+   (tab open/close/switch latency, HEX slow, Editor→HEX flash), data-loss/state bugs. These
+   outrank internal-quality work (gates, lint walls, contract hardening) even when the internal
+   item is "more severe" on paper. The deep-audit `[S2]/[S3]` user-visible bug/perf tickets and
+   owner-reported `BUG:` tickets are the richest pool.
+2. **Then other real bugs / perf / security** (`type: bug|perf|security|leak|race|contract`)
+   over features, features over **test/quality paper cuts**.
+3. *(superseded 2026-06-05 ranking, kept for context: SwiftUI app over the Rust `[PORT]` lane —
+   still true as a tiebreak; `[PORT]` remains the last-resort lane.)*
+4. **Headless-actionable now** vs **live-gated**. Decide honestly:
    - *Headless* (land it): pure logic in `ViewerCore`/`ViewerKit`, model layer, parsers, FFI
      decode, security guards, correctness bugs. Validate with `scripts/test-headless-gate.sh`.
    - *Live-gated* (needs a window): anything in the SwiftUI view tree, layout/chrome, view-mode
-     switching, perf you can only feel on screen. The VM can't build (TSK-401), so live = a
-     **supervised host** `bash scripts/build-app.sh debug` (T4 ViewModeMatrix gate).
-4. **Owner-decision-gated** (a UX/format/algorithm call): don't guess — append to the
-   `DECISIONS NEEDED` block in `docs/AUTONOMOUS_PROGRESS.md`, then pick a different actionable task.
+     switching, perf you can only feel on screen. **UI validation runs on the UTM VM**
+     (`scripts/test-in-vm.sh`; GUI/pixel lane needs `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password>`)
+     — the VM builds + tests fine now (TSK-401/439/500 all fixed); never run UI tiers on the host.
+5. **Owner-decision-gated** (a UX/format/algorithm call): don't guess — `task_park` the ticket
+   (pings the owner) and/or append to `DECISIONS NEEDED` in `docs/AUTONOMOUS_PROGRESS.md`, then
+   pick a different actionable task.
 
 **Anti-paper-cut rule:** test backfill / coverage is allowed ONLY when no real bug/feature/perf
 task is headless-actionable. Never let it become the per-firing default. If you've done it 2+
