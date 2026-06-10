@@ -1,0 +1,106 @@
+# testing — rust-core audit 2026-06-09
+
+## Proposals (critique-judged)
+
+### Fuzzing lane for the wire decoder and text parsers (cargo-fuzz — dep approval needed)  — verdict: **sound-with-caveats** (effort medium)
+- **Critique:** PROBLEM STATEMENT: verified accurate. No fuzzing exists anywhere (`rust-core/fuzz/` absent; zero hits for libfuzzer/afl/arbitrary in `rust-core/Cargo.lock`). The cited line numbers are exact: `decode` at `rust-core/crates/core/src/wire.rs:118-134`, `decode_frame` at `wire.rs:187-210`. The inward-decode claim is real, not hypothetical: `cm_edit::apply_wire` (`crates/core/src/cm_edit.rs:131-140`) and diff's ParseRequest seams (`crates/core/src/diff.rs:433`, `diff.rs:548`) decode MessagePack frames arriving through the FFI shims (`crates/ffi/src/lib.rs:119` `mdvcore_cm_apply`, `:165` `mdvcore_dif
+- **Improvements:** 1. Re-rank targets by actual risk: add (a) a `crates/highlight` tree-sitter fuzz target with ASAN — the only memory-unsafety surface parsing attacker files — and (b) `crates/web` `read_request_head`/percent-decode (raw network bytes). Demote fuzz_wire_decode to defense-in-depth/future-WASM rationale. 2. Strengthen oracles beyond no-panic: cm_edit vs a naive reference splice + "output is valid UTF-
+
+### Property-based round-trip and op-replay laws (proptest — dep approval; or hand-rolled PRNG generators)  — verdict: **sound-with-caveats** (effort medium)
+- **Critique:** PROBLEM IS REAL — verified. Wire round-trip coverage is exactly one hand-built shape per type: `sample_table()` plus one Snapshot/WireError/empty-Table literal (rust-core/crates/core/src/wire.rs:216-283, round-trips at :295-302, :335-339). csv.rs has 22 example tests on hand-picked strings (csv.rs:293-477). Session coverage is one fixed 3-data-row CSV constant replayed with 1-2 op sequences (session.rs:265, tests/Audit_rust_core_crates_core_src_session_rs_snapshot_frame.rs:18). A repo-wide grep confirms ZERO existing proptest/quickcheck/fuzz/PRNG test infrastructure in rust-core (only incident
+- **Improvements:** 1. Fix property (4) before anything else: generate pre-normalized tables (non-empty header, every row len == header.len(), exclude the terminal-single-empty-cell-row shape that csv.rs:241-247 deliberately drops — or emit a trailing newline strategy that sidesteps it), always-quote cells in the emitter, and round-trip via `parse_with(text, delim, Limits::default())` with the known delimiter, not au
+
+### Shared golden corpus files to replace the hand-synced triplicated parity corpora  — verdict: **sound-with-caveats** (effort medium)
+- **Critique:** PROBLEM IS REAL — VERIFIED. The triplication is exactly as claimed: `Tests/RustCoreTests/ABTests.swift:20-35` (`sharedCases`) re-types the cases pinned in `rust-core/crates/core/src/csv.rs:294-413` (basic_comma, semicolon, pipe, quoted-delimiter, escaped quotes, quote-aware detection, CRLF, bare-CR, ragged, header-only, empty — near 1:1). `Tests/RustCoreTests/DiffParseABTests.swift:13-14` says lock-step with `DiffParserTests` is maintained "so a parity gap surfaces the same inputs" — pure convention, nothing enforces it. And the rot it predicts is arguably already present: `crates/core/src/dif
+- **Improvements:** 1. Replace SwiftPM resources with the repo's existing `#filePath` walk-up pattern (`InfoPlistTests.swift:9`, `LSPClientSmokeTests.swift:29-31`) — no Package.swift change, no symlinks under iCloud, no copy step, works on host gate and VM. Drop the copy-step fallback entirely; it recreates the desync.
+2. Solve the case-encoding problem explicitly: keep raw byte-exact `.in` files for csv/diff (string
+
+### Complete the FFI contract-test matrix: misuse tests for all 16 exports + deterministic Busy and poison-recovery tests  — verdict: **strong** (effort small)
+- **Critique:** The proposal's factual claims check out almost entirely, and the design is mechanically sound.
+
+VERIFIED CLAIMS:
+1. Zero Rust-side tests for the six stateless exports — TRUE. `crates/ffi/src/tests.rs` contains no reference to `mdvcore_cm_apply` (lib.rs:119), `mdvcore_diff_parse` (lib.rs:165), `mdvcore_diff_hunk_marks` (lib.rs:210), `mdvcore_hex_render` (lib.rs:259), `mdvcore_hex_search` (lib.rs:307), or `mdvcore_indent_detect` (lib.rs:369). Each has hand-written null-check/slice-construction/UTF-8/status branches (e.g. the `(data.is_null() && data_len != 0) || (query.is_null() && query_len != 
+- **Improvements:** 1. Correct the scope numbers: 14 exports (not 16); new misuse rows = 6 stateless exports + 3 untested session-surface gaps (null out_buf on table/snapshot lib.rs:477/565; null-query-with-qlen>0 on set_filter lib.rs:517). State expected statuses per row: WireError (not "decode error") for garbage frames; hex_render has only the NullArg rows.
+2. Replace the bogus timeout mitigation: libtest has no p
+
+### Gate the un-gated crates: highlight into the merge gate, tui/web tests into a scheduled lane  — verdict: **sound-with-caveats** (effort small)
+- **Critique:** THE STRUCTURAL PROBLEM IS REAL AND VERIFIED. `scripts/rust-core-gate.sh:34,37` runs `cargo clippy --all-targets` / `cargo test` against the workspace root with no `-p`/`--workspace`, so both honor `default-members = ["crates/core", "crates/ffi"]` (`rust-core/Cargo.toml:23`; the manifest comment at lines 17-22 even says so explicitly). `.github/workflows/pr.yml:90-98` invokes only `build-rust-core.sh` + `rust-core-gate.sh` for Rust, and `nightly-vm.yml` runs no cargo at all. I ran the three crates: mdvcore-highlight 9 passed, mdvcore-tui 60 passed, mdvcore-web 75 passed — exactly 144 tests that
+- **Improvements:** 1. Drop or correct the TSK-410 motivation — cite it accurately as "the same subsystem class has a known predicate bug on the Swift side (LESSONS.md:2029); the Rust highlight crate has zero CI" rather than misplacing the bug in `crates/highlight`. The proposal will not survive adversarial review with that claim in it.
+2. Give the highlight clippy step teeth: add a local `[lints.clippy] all = { leve
+
+### Miri + LeakSanitizer lane for the unsafe FFI crate  — verdict: **sound-with-caveats** (effort small)
+- **Critique:** PROBLEM IS REAL — verified. `scripts/rust-core-gate.sh` runs only `cargo clippy --all-targets` + `cargo test`; nothing anywhere runs Miri or a sanitizer. The test suite itself defers to exactly this lane: `crates/ffi/src/tests.rs:207-215` ("a leak/double-free would surface under Miri / ASan. Here we just prove the loop is stable"). The unsafe surface is as described: `Box::into_raw`/`from_raw` handle lifecycle (`crates/ffi/src/handle.rs:62-93`), the `Vec::from_raw_parts` malloc-style hand-off (`crates/ffi/src/buf.rs:38-64`), caller-chosen-lifetime `as_ref` (`handle.rs:74-80`), and `unsafe impl
+- **Improvements:** 1. **Rebrand and restructure the sanitizer half.** Drop "LeakSanitizer" from the lane's identity: on aarch64-apple-darwin run ASan for UAF/overflow only (`-Zsanitizer=address`, no `detect_leaks`), and rely on Miri's leak check for leaks. If genuine LSan coverage is wanted later, add a `ubuntu-latest` job — `mdvcore-ffi` is pure Rust/std and runs anywhere; Linux is also where `-Zsanitizer=leak` and
+
+### Periodic mutation-testing audit with cargo-mutants (tool approval needed)  — verdict: **sound-with-caveats** (effort small)
+- **Critique:** PROBLEM IS REAL — every factual claim checks out against the tree. Module sizes and test counts match exactly: `crates/core/src/view.rs` is 807 LoC with 19 `#[test]`s, `format.rs` 633/17, `outline.rs` 447/21, `trace.rs` 200/2 (verified by wc/grep). There is no mutation or teeth-measurement tooling anywhere in `scripts/` or the rust-core config (grep for mutants/mutation: zero hits). The gate (`scripts/rust-core-gate.sh:33-37`) is clippy-deny + `cargo test` — it proves tests PASS, never that they can FAIL. The project's own TEETH rule (CLAUDE.md, TSK-488 section: "a green that has never been sh
+- **Improvements:** 1. Name the execution venue explicitly: NOT nightly-vm.yml (VM has no Rust toolchain). Either (a) a new GH-hosted scheduled workflow — and since mdvcore-core is pure/sans-IO/platform-independent, propose ubuntu-latest over macos-15 to avoid the macOS runner-minute multiplier for an hours-long job (verify core compiles/tests on Linux once), or (b) a host-side manual/cron audit ritual documented in 
+
+### Perf regression floor for the core hot paths (hand-rolled bench gate in the scheduled lane)  — verdict: **sound-with-caveats** (effort medium)
+- **Critique:** PROBLEM IS REAL — every factual claim verified against the tree:
+
+- Zero bench infrastructure: no `benches/` dir anywhere under `/Users/me/Documents/workspaces/claude/markdown_viewer/rust-core/crates/`, and `grep -c criterion rust-core/Cargo.lock` returns 0.
+- The perf-motivated change with no perf guard exists exactly as claimed: `rust-core/crates/core/src/wire.rs:149-170` is the `encode_frame` single-allocation rewrite (serialize behind a 4-byte placeholder, backfill the prefix), and its only test is a byte-identity oracle (`wire.rs:227-239`, "byte-identity oracle for the single-allocation 
+- **Improvements:** 1. Fix the placement: add a new scheduled workflow (or a job in a host-capable lane) on a Rust-capable runner — `nightly-vm.yml` (self-hosted macos-vm) cannot run cargo. If GitHub-hosted `macos-15` is chosen, accept run-to-run hardware variance and design for it (see 2).
+
+2. Replace hard-coded absolute floors with one of: (a) a ratchet against the previous run's JSON artifact (fail only on >3x vs 
+
+### Differential parity fuzzing Rust-vs-Swift (stretch, builds on the corpus + fuzz proposals)  — verdict: **sound-with-caveats** (effort medium)
+- **Critique:** THE PROBLEM IS REAL. `rust-core/crates/core/src/csv.rs:1-22` states outright that the Rust parser is a hand-mirror of the shipping Swift `CSVParser` — two independently maintained state machines that must agree forever. The current parity evidence is exactly what the proposal says: 14 hand-picked strings in `Tests/RustCoreTests/ABTests.swift:20-35` (and ~14 diffs in `Tests/RustCoreTests/DiffParseABTests.swift:15-152`). The state machines have several razor-edge branches that were already bug sources: the `field.is_empty()` quote-open gate (`csv.rs:201` vs `Sources/ViewerCore/CSVParser.swift:24
+- **Improvements:** 1. Resolve the seed policy explicitly: a small FIXED seed set (e.g. 4 seeds x 1k cases) in the host headless gate; a varying seed (date-derived or `MDV_FUZZ_SEED=random`) only in the nightly VM lane, with nightly divergences filed as board tasks rather than failing the merge gate. 2. Add a limits-aware FFI open (or a test-only knob) so the truncation/cap state machine (`csv.rs:144-171`) is fuzzabl
+
+---
+
+## Full reviewer report
+
+# rust-core Testing + Verification Strategy Audit (2026-06-09)
+
+Scope: `/Users/me/Documents/workspaces/claude/markdown_viewer/rust-core/` only. Dimension: testing + verification rigor for a production-grade reusable core.
+
+## 1. Inventory — what exists
+
+**Rust-side tests (inline `#[cfg(test)]` per module + 3 integration files):**
+
+| Crate | Tests | Gated in CI? |
+|---|---|---|
+| `mdvcore-core` (21 modules, 7.6k LoC) | ~280 `#[test]` inline (csv 22, find 28, nav 33, outline 21, diff 19, view 19, format 17, cm_edit 15, hex 13, meta 13, filter 12, wire 10, indent 10, … trace 2) + 2 integration tests (`tests/Audit_*_split_parity.rs`, `tests/Audit_*_snapshot_frame.rs`) | YES — merge gate |
+| `mdvcore-ffi` | 17 boundary tests (`src/tests.rs`) + manifest-lint gate test (`tests/no_panic_lints_gate_*.rs`) | YES — merge gate |
+| `mdvcore-highlight` (unsafe tree-sitter FFI) | 9 tests | **NO** |
+| `mdvcore-tui` | 60 tests | **NO** |
+| `mdvcore-web` | 75 tests | **NO** |
+
+**Gate** (`/Users/me/Documents/workspaces/claude/markdown_viewer/scripts/rust-core-gate.sh`): `cargo clippy --all-targets` (deny-level no-panic lints: `unwrap_used`/`expect_used`/`indexing_slicing`/`panic`) + `cargo test` — both honoring `default-members = [crates/core, crates/ffi]` (`rust-core/Cargo.toml:24`). CI (`/Users/me/Documents/workspaces/claude/markdown_viewer/.github/workflows/pr.yml:91,98`) runs `build-rust-core.sh` then the gate. Doctests run via `cargo test` for core+ffi.
+
+**Swift-side cross-language tests** (`/Users/me/Documents/workspaces/claude/markdown_viewer/Tests/RustCoreTests/`, a host-headless XCTest target, in the merge gate): A/B parity vs the shipping Swift implementations for csv (`ABTests.swift`), diff parse (`DiffParseABTests.swift`, 14-case corpus), diff hunk marks, hex render/search, indent detect, cm_edit apply; `BridgeTests.swift` pins panic→`.panic` status mapping end-to-end through the dist-profile staticlib; `MsgPackDecoderNegative_*` covers Swift decoder hostile inputs; `SessionPanicDeadFlag_*` covers the dead-handle contract. CI rebuilds `libmdvcore_ffi.a` fresh before Swift tests, so the A/B genuinely tests current Rust source (on the VM it links the rsynced prebuilt — acceptable, documented).
+
+**Notably good practice found (credit where due):** the wire single-alloc rewrite keeps the legacy implementation in-tree as a byte-identity oracle (`crates/core/src/wire.rs:228-283`); trailing-garbage and framing-bound negative tests exist (`wire.rs:305-374`); `build-rust-core.sh` hard-rejects linking the `panic=abort` profile into the GUI host; the manifest-text gate test (`crates/ffi/tests/no_panic_lints_gate_*.rs`) is a legitimate meta-test guarding a real lint-coverage hole, with an honest writeup of why a manifest assertion is the right probe.
+
+**What does NOT exist:** fuzzing (no fuzz dir, no libfuzzer/afl/arbitrary in `Cargo.lock`), property-based testing (no proptest/quickcheck), Miri/sanitizers, benches (no criterion, no benches/), mutation testing, shared golden corpus files (all parity corpora are inline string literals duplicated per language).
+
+## 2. Findings
+
+**F1 [S2] ~144 tests across three crates never run in any CI lane; the crates are never clippy-linted.** `rust-core-gate.sh` operates on default-members only (core+ffi); `mdvcore-highlight` (9 tests), `mdvcore-tui` (60), `mdvcore-web` (75) are outside it, and no other workflow runs them (`pr.yml` greps confirm only `build-rust-core.sh` + the gate). Evidence: `rust-core/Cargo.toml:24` (`default-members`), `scripts/rust-core-gate.sh:40-44`, `crates/highlight/Cargo.toml` (\"NOT in default-members, so it never enters the merge gate\"). The highlight crate is exactly where the known TSK-410 mis-highlight bug lives (tree-sitter `#match?`/`#eq?` predicates never evaluated — `crates/highlight/src/lib.rs` query handling) — an undertested unsafe-C-binding crate shipping in both front-end binaries. Fix: proposal 5.
+
+**F2 [S3 — TEST LIE] `single_writer_busy_under_contention` cannot fail for the behavior its name claims.** `crates/ffi/src/tests.rs:217-233`: the test name promises Busy-under-contention; the body takes the lock once on one thread, asserts the happy-path `Ok`, and its own comment admits \"To actually test contention we need a concurrently-held guard, so we grab the raw mutex below instead. This branch just sanity-checks the happy path\" — and there is no \"below\"; the contention machinery was never written. Compounding it, the real concurrency test (`concurrent_calls_are_serialized_or_rejected_never_ub`, tests.rs:236-287) treats Busy as merely *permitted* (`busy` counter may be 0 and the test still passes). Net: **the `MdvStatus::Busy` path (handle.rs:110 `WouldBlock → None`) has zero deterministic coverage anywhere**, and the lock-poison recovery branch (`crates/ffi/src/handle.rs:104-109`) has zero coverage of any kind. Fix sketch: barrier-held-lock test asserting Busy exactly, plus a panic-inside-`with` test asserting the handle remains usable (proposal 4).
+
+**F3 [S3] Six of sixteen `extern \"C\"` exports have no Rust-side FFI tests at all.** `mdvcore_cm_apply`, `mdvcore_diff_parse`, `mdvcore_diff_hunk_marks`, `mdvcore_hex_render`, `mdvcore_hex_search`, `mdvcore_indent_detect` (`crates/ffi/src/lib.rs:119,165,210,259,307,369`) appear nowhere in `crates/ffi/src/tests.rs` (grep returns zero hits). The deliberate-misuse matrix (null pointers, null-data-with-nonzero-len, bad UTF-8, garbage frames) exists only for the `session_*` family (tests.rs:84-115,163-178). The Swift A/B tests exercise these exports' happy paths cross-language, which softens this to S3 — but the misuse contract (the part that protects against UB at the C ABI) is untested for 6/16 of the surface. Fix: proposal 4.
+
+**F4 [S3] No fuzzing of any boundary-crossing decoder; no Miri/sanitizer on the only unsafe crate.** `wire::decode_frame` (`crates/core/src/wire.rs:187-210`) parses length-prefixed bytes received across the FFI; `csv::parse`, `diff`, `hex`, `cm_edit` parse arbitrary user files — none fuzzed (no fuzz harness exists anywhere in the workspace). The FFI's own test admits the gap: \"a leak/double-free would surface under Miri / ASan. Here we just prove the loop is stable\" (`crates/ffi/src/tests.rs:208-209`) — and no CI lane runs Miri or any sanitizer. The no-panic clippy wall is static and cannot see panics inside `rmp-serde` internals, debug-overflow arithmetic, or allocation blowups. Fix: proposals 1, 6.
+
+**F5 [S3] Cross-language parity corpora are triplicated by hand with no enforcement.** `DiffParseABTests.swift:13-14`: corpus \"kept in lock-step with `DiffParserTests`\" — by convention only. `ABTests.swift:20-35` re-types the `csv.rs` test cases as Swift string literals. Three copies of truth (Rust unit tests, Swift parser tests, Swift A/B corpus) that drift silently: an edge case added to one is invisible to the others, defeating the purpose of a parity suite. No shared golden corpus files exist anywhere. Fix: proposal 3.
+
+**F6 [S4] Panic-path coverage is single-profile and single-site.** All tests run under the default `panic=unwind` test profile; `mdvcore_force_panic` (tests.rs:65-71, BridgeTests.swift:20-24) panics in a no-lock, no-state path only. There is no test of a panic *while holding the session lock* (the poison path, see F2), and `panic=abort` (`release` profile) behavior is never executed by any test — mitigated decently by the `build-rust-core.sh:43-53` profile rejection guard and the manifest gate test, so this stays S4.
+
+**F7 [S4] No performance regression guard in rust-core.** Zero benches (no criterion in Cargo.lock, no benches/ dir). The Swift `ABTests` measures the parse ratio but only *logs* it (\"ratio logged\", ABTests.swift header) — nothing asserts. The wire.rs single-allocation rewrite shows perf work is happening with no floor under it. Fix: proposal 8.
+
+## 3. Mutation-resistance sampling (would the suite catch real regressions?)
+
+- **csv.rs (477 LoC / 22 tests): STRONG.** Quote-state-machine edges (unterminated quote, escaped quotes, quote-aware detection), all three line-ending regimes, all four caps each individually tripped with exact-output asserts (`abcde…` marker), ragged-row normalization pinned both directions. Most realistic mutants (off-by-one in cap, wrong tie-break in detection — the comma-wins-ties rule is explicitly pinned) die.
+- **wire.rs (375 LoC / 10 tests): STRONG.** Byte-identity against the retained legacy implementation is a brutal oracle — nearly any encode mutation dies; decode negatives (trailing garbage at both layers, truncation, hostile 4 GiB prefix, short buffer) kill the decode mutants. Weakness: only one fixed shape per type (no map16/str16 width boundaries) — proposal 2.
+- **session.rs (347 LoC / 7 tests + 4 integration): GOOD.** Version monotonicity, idempotent set_filter (version frozen), level-triggered stability, and the snapshot_frame-vs-owned byte equivalence across filtered/empty/refilter states (`tests/Audit_*_snapshot_frame.rs:21-109`) pin the contract tightly for its size.
+- **ffi (929 LoC): SPLIT.** Session surface well-defended (null/UTF-8/double-free/1000-handle/8-thread tests); the six stateless exports have zero Rust-side mutants-catchable coverage (F3); Busy/poison branches uncovered (F2).
+- **highlight (522 LoC / 9 tests): MOOT — never executed in CI (F1).** Tests themselves are reasonable (per-language classification, segment reconstruction with multibyte) but a regression there is currently invisible to every gate, and TSK-410 demonstrates a real shipped mis-classification the suite didn't block.
+
+## 4. Bottom line
+
+The core+ffi merge gate is genuinely well-built for a PoC — deny-lint wall with a meta-test guarding the lint config, a byte-identity oracle, honest negative tests, real cross-language A/B through the actual staticlib. What separates it from a production core is the **absence of every adversarial-input discipline** (fuzzing, properties, Miri/sanitizers, mutation measurement), **three crates' tests dead in CI** including the unsafe grammar-FFI crate, **a hand-synced triplicated parity corpus**, and two concrete coverage holes at the FFI contract (6 untested exports; the Busy/poison paths — plus one misleadingly-named test that can't fail for what it claims). Proposals 4 and 5 are small, zero-dependency, and close the worst holes immediately; 1, 2, 6 are the production-grade backbone and need owner dep/toolchain approval; 3 and 9 fix the parity strategy structurally.
