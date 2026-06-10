@@ -57,6 +57,20 @@ public enum UIEventSynth {
         return nil
     }
 
+    /// Collect a bounded sample of the accessibility identifiers visible
+    /// from `element` — failure-trace fodder.
+    public static func collectAXIdentifiers(element: Any,
+                                            into out: inout [String],
+                                            limit: Int) {
+        guard out.count < limit,
+              let obj = element as? any NSAccessibilityProtocol else { return }
+        let id = obj.accessibilityIdentifier()
+        if !id.isEmpty { out.append(id) }
+        for child in obj.accessibilityChildren() ?? [] {
+            collectAXIdentifiers(element: child, into: &out, limit: limit)
+        }
+    }
+
     /// Resolve the target's rect in WINDOW coordinates: NSView walk first
     /// (hosted AppKit views carry the id directly), then the AX tree
     /// (SwiftUI controls).
@@ -133,7 +147,16 @@ public enum UIEventSynth {
         guard let rect = resolveTargetRect(identifier: spec.identifier, in: window),
               let sequence = events(spec: spec, in: window)
         else {
-            lastTrace = "click(\(spec.identifier)): target NOT FOUND"
+            // Self-describing failure: WHICH resolver version ran and what
+            // the AX walk could actually see — distinguishes "stale binary"
+            // from "AX tree empty" from "ids elsewhere" in one trace.
+            var seen: [String] = []
+            if let root = window.contentView {
+                collectAXIdentifiers(element: root, into: &seen, limit: 15)
+            }
+            let rootKids = (window.contentView?.accessibilityChildren() ?? []).count
+            lastTrace = "click[v4](\(spec.identifier)): NOT FOUND; "
+                + "axRootChildren=\(rootKids) axIdsSample=\(seen)"
             return false
         }
         for event in sequence {
