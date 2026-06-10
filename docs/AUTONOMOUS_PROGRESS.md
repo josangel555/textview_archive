@@ -29,6 +29,25 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+123) — VM disk fixed (119 MB → 6.1 GB free); FULL validation lane relaunched — poll /tmp/vmval.done
+
+The earlier `test-in-vm.sh all` died on **`No space left on device`** (Data volume 99 %). Root causes + fixes, with the owner:
+- Reclaimed regenerable build products (`.build/arm64-apple-macosx`, 730 MB) — NOT the restored `checkouts`/`repositories` deps.
+- Identified `/Library/Developer/Toolchains/swift-6.1.2-RELEASE.xctoolchain` (5.2 GB) as REDUNDANT — the VM's default
+  `swift` is Xcode's bundled 6.1.2 (`XcodeDefault.xctoolchain`), and `test-in-vm.sh` globs the newest `swift-6.*-RELEASE`
+  (6.3 stays). **Owner deleted it.** `swift-latest` symlink already pointed at 6.3. Result: **6.1 GiB free (85 %)**.
+- Owner also confirmed the earlier `Could not resolve host` was a host **the VPN client crash** (network path), since recovered;
+  the rsync'd dep restore made the VM offline-buildable again regardless.
+
+Relaunched the full validation lane DETACHED: `MDV_VM_GUI_SESSION=1 bash scripts/test-in-vm.sh all` (6.3 toolchain
+confirmed, building). This is the render-path verification clearer: dist build + full suite + T4/T5/WebView tiers in the
+GUI session — covers the audio-waveform T5 (TSK-529) and the whole render-gated `fixed` backlog.
+NEXT-TICK CUE (replaces the +122 cue): `ssh macOS15 'test -f /tmp/vmval.done && tail -30 /tmp/vmval.log'`. EXIT=0 → log the
+green + advance the render-gated fixed items it covers (per TASK_WORKFLOW §4 evidence rules). EXIT≠0 → read the failing
+tier/test and fix host-side. If no `.done`, it's still running — do NOT relaunch.
+Also this session: cron re-added (ca191b03, :03/:13/… — session-only, re-add on session restart) with a doc-first prompt;
+`docs/TASK_WORKFLOW.md` updated with the owner's lane-goal SOP (commit c5baad4).
+
 ## LOG 2026-06-09 (latest+122) — Audio visualization v1 SHIPPED (TSK-529): Canvas waveform + zoom/scale + transport on the audio preview
 
 VM came back this tick → picked the **top owner-priority SwiftUI task**, TSK-529 ("[MEDIA][audio] Visualization + transport
