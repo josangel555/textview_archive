@@ -326,17 +326,45 @@ public final class GitClient: Sendable {
         public var isMerge: Bool { parents.count > 1 }
     }
 
+    /// Record sep + field sep so commit subjects (which may contain
+    /// newlines) round-trip. Shared by `graphLog` and `grepLog` so both
+    /// feed the same parser.
+    static let graphLogFormat = "--pretty=format:\u{1E}%h\u{1F}%p\u{1F}%an\u{1F}%ct\u{1F}%d\u{1F}%s"
+
     public func graphLog(maxEntries: Int = 100, skip: Int = 0) -> [GraphCommit] {
-        // Record sep + field sep so commit subjects (which may contain
-        // newlines) round-trip.
-        let rs = "\u{1E}"  // record separator
-        let fs = "\u{1F}"  // unit separator
-        let format = "--pretty=format:\(rs)%h\(fs)%p\(fs)%an\(fs)%ct\(fs)%d\(fs)%s"
         let args = [
-            "log", "--topo-order", "--shortstat", format,
+            "log", "--topo-order", "--shortstat", Self.graphLogFormat,
             "-n", "\(maxEntries)", "--skip", "\(skip)",
         ]
         guard let out = try? run(args) else { return [] }
+        return Self.parseGraphLog(out)
+    }
+
+    /// TSK-596: full-message search over the branch history — `--grep`
+    /// matches the WHOLE commit message (subject + body/description),
+    /// which the loaded `GraphCommit` list can't offer (it only carries
+    /// `%s`). `--fixed-strings` treats the query as a literal (no regex
+    /// surprises; the arg is exec'd, never shell-interpolated, so
+    /// special characters are data); `--regexp-ignore-case` makes it
+    /// case-insensitive. Empty/whitespace query returns [].
+    public func grepLog(query: String, maxEntries: Int = 500) -> [GraphCommit] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+        let args = [
+            "log", "--topo-order", "--shortstat", Self.graphLogFormat,
+            "-n", "\(maxEntries)",
+            "--fixed-strings", "--regexp-ignore-case", "--grep=\(q)",
+        ]
+        guard let out = try? run(args) else { return [] }
+        return Self.parseGraphLog(out)
+    }
+
+    /// Parse the `graphLogFormat` + `--shortstat` output. Static + pure
+    /// so the record/field-separator contract is unit-testable without
+    /// a repo.
+    static func parseGraphLog(_ out: String) -> [GraphCommit] {
+        let rs = "\u{1E}"  // record separator
+        let fs = "\u{1F}"  // unit separator
         var result: [GraphCommit] = []
         // Records are RS-prefixed; split and skip the leading empty piece.
         let records = out.components(separatedBy: rs).dropFirst()

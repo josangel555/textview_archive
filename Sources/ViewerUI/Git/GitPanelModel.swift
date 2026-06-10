@@ -62,6 +62,15 @@ public final class GitPanelModel: ObservableObject {
     /// Drives the Log tab's selected-row highlight; reset on repo switch
     /// so a stale SHA never matches a row in an unrelated repository.
     @Published public private(set) var selectedLogSHA: String?
+    /// TSK-596: full-message log search. `nil` = no search active (the
+    /// Log tab shows the normal paged `logEntries`); non-nil = the
+    /// `git log --grep` match set currently displayed. Bodies are
+    /// searched too — that's why this is git-backed rather than a
+    /// client-side filter over the (subject-only, paged) loaded list.
+    @Published public private(set) var logSearchResults: [GitClient.GraphCommit]?
+    /// The live search-field text. The Log tab binds its TextField here
+    /// and calls `runLogSearch` on change.
+    @Published public var logSearchQuery: String = ""
     @Published public var stashEntries: [GitClient.StashEntry] = []
     @Published public var worktreeEntries: [GitClient.WorktreeEntry] = []
     @Published public var remoteEntries: [GitClient.RemoteEntry] = []
@@ -88,6 +97,15 @@ public final class GitPanelModel: ObservableObject {
     /// can detect it and discard its (now stale / cross-repo) result instead
     /// of appending it onto a different list.
     private var logGen: Int = 0
+
+    /// In-flight grep-log search (TSK-596). Generation-guarded like
+    /// `loadMoreLog` so a stale result can't land after a newer query /
+    /// a clear / a repo switch.
+    private var logSearchTask: Task<Void, Never>?
+    private var logSearchGen: Int = 0
+    /// Debounce before shelling out per keystroke. Internal so tests
+    /// can zero it.
+    var logSearchDebounceNanos: UInt64 = 250_000_000
 
     private var timer: Timer?
     private var refreshTask: Task<Void, Never>?
@@ -144,6 +162,7 @@ public final class GitPanelModel: ObservableObject {
         remoteEntries = []
         head = nil
         selectedLogSHA = nil
+        clearLogSearch()
         logLoadedCount = 0
         logGen &+= 1
         loadMoreTask?.cancel()
@@ -254,6 +273,7 @@ public final class GitPanelModel: ObservableObject {
     /// user scrolls to the bottom).
     public func loadMoreLog() {
         guard let root = repoRoot,
+              logSearchResults == nil,  // TSK-596: search view isn't paged
               logLoadedCount > 0,
               logLoadedCount < logHardCap else { return }
         let skip = logLoadedCount
@@ -301,6 +321,53 @@ public final class GitPanelModel: ObservableObject {
         if let r = p.remotes, remoteEntries != r { remoteEntries = r }
         lastRefreshed[tab] = Date()
         if isRefreshing { isRefreshing = false }
+    }
+
+    // MARK: - Log search (TSK-596)
+
+    /// The list the Log tab renders: the search match set while a
+    /// search is active, the normal paged log otherwise.
+    public var displayedLogEntries: [GitClient.GraphCommit] {
+        logSearchResults ?? logEntries
+    }
+
+    public var isLogSearchActive: Bool { logSearchResults != nil }
+
+    /// Debounced full-message search over the repo's history. Empty /
+    /// whitespace query clears the search and restores the paged log.
+    public func runLogSearch(_ rawQuery: String) {
+        let q = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        logSearchTask?.cancel()
+        logSearchGen &+= 1
+        guard let root = repoRoot, !q.isEmpty else {
+            clearLogSearch()
+            return
+        }
+        let gen = logSearchGen
+        let debounce = logSearchDebounceNanos
+        logSearchTask = Task { @MainActor [weak self] in
+            if debounce > 0 {
+                try? await Task.sleep(nanoseconds: debounce)
+            }
+            guard let self, !Task.isCancelled, self.logSearchGen == gen else { return }
+            let hits = await Task.detached(priority: .utility) {
+                GitClient(repoRoot: root).grepLog(query: q)
+            }.value
+            // Same staleness contract as loadMoreLog: the query, repo,
+            // and generation must all still be the ones we searched for.
+            guard !Task.isCancelled,
+                  self.logSearchGen == gen,
+                  self.repoRoot == root else { return }
+            self.logSearchResults = hits
+        }
+    }
+
+    public func clearLogSearch() {
+        logSearchTask?.cancel()
+        logSearchTask = nil
+        logSearchGen &+= 1
+        if logSearchResults != nil { logSearchResults = nil }
+        if !logSearchQuery.isEmpty { logSearchQuery = "" }
     }
 
     // MARK: - Counts for tab-strip badges

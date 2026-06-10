@@ -16,12 +16,64 @@ struct GitLogTab: View {
     @State private var layout: GraphLayout.Layout? = nil
     @Environment(\.sidebarSectionBodyHeight) private var bodyHeight
 
+    /// The rows the tab renders — search match set while a search is
+    /// active (TSK-596), the normal paged log otherwise.
+    private var entries: [GitClient.GraphCommit] { model.displayedLogEntries }
+
     var body: some View {
-        if model.logEntries.isEmpty {
-            ScrollView {
-                SidebarEmptyPlaceholder(message: "No commits in this repository yet.")
+        // TSK-596: the search field stays pinned above the list; the
+        // VStack owns the section's fixed height so adding the field
+        // doesn't overflow the accordion slot.
+        VStack(spacing: 0) {
+            searchField
+            listContent
+        }
+        .frame(height: bodyHeight)
+    }
+
+    /// Full-message search over commit messages + descriptions —
+    /// git-backed (`git log --grep`), so it covers bodies and history
+    /// beyond the loaded pages.
+    private var searchField: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: doc.uiSize(9)))
+                .foregroundStyle(.secondary)
+            TextField("Search messages", text: $model.logSearchQuery)
+                .textFieldStyle(.plain)
+                .font(.system(size: doc.uiSize(11)))
+                .onChange(of: model.logSearchQuery) { _, q in
+                    model.runLogSearch(q)
+                }
+                .accessibilityIdentifier("mdv.gitLog.searchField")
+            if model.isLogSearchActive {
+                Text("\(entries.count)")
+                    .font(.system(size: doc.uiSize(9), design: .monospaced))
+                    .foregroundStyle(.secondary)
+                Button(action: { model.clearLogSearch() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: doc.uiSize(10)))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("mdv.gitLog.searchClear")
             }
-            .frame(height: bodyHeight)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(Palette.windowBackground.opacity(0.3))
+        .overlay(alignment: .bottom) { Divider() }
+    }
+
+    @ViewBuilder
+    private var listContent: some View {
+        if entries.isEmpty {
+            ScrollView {
+                SidebarEmptyPlaceholder(message: model.isLogSearchActive
+                    ? "No commits match \u{201C}\(model.logSearchQuery)\u{201D}."
+                    : "No commits in this repository yet.")
+            }
+            .frame(maxHeight: .infinity)
             .onAppear { layout = nil }
         } else {
             let lay = layout
@@ -34,7 +86,7 @@ struct GitLogTab: View {
                             .padding(.horizontal, 10)
                             .padding(.top, 4)
                     }
-                    ForEach(Array(model.logEntries.enumerated()), id: \.offset) { idx, c in
+                    ForEach(Array(entries.enumerated()), id: \.offset) { idx, c in
                         // `lay` is a cached @State layout that can momentarily
                         // lag `model.logEntries` on append/refresh: SwiftUI
                         // evaluates this body (with the NEW entries) BEFORE the
@@ -45,12 +97,15 @@ struct GitLogTab: View {
                         let layoutRow = lay.flatMap { idx < $0.rows.count ? $0.rows[idx] : nil }
                         row(c, layoutRow: layoutRow, maxLane: lay?.maxLane ?? -1)
                             .onAppear {
-                                if c.sha == model.logEntries.last?.sha {
+                                // Pagination only applies to the normal
+                                // log — the search match set is complete.
+                                if !model.isLogSearchActive,
+                                   c.sha == entries.last?.sha {
                                     model.loadMoreLog()
                                 }
                             }
                     }
-                    if model.logLoadedCount >= model.logHardCap {
+                    if !model.isLogSearchActive, model.logLoadedCount >= model.logHardCap {
                         Text("Showing first \(model.logHardCap) commits — use the terminal for the full history.")
                             .font(.system(size: doc.uiSize(10)))
                             .foregroundStyle(.tertiary)
@@ -59,15 +114,16 @@ struct GitLogTab: View {
                     }
                 }
             }
-            .frame(height: bodyHeight)
+            .frame(maxHeight: .infinity)
             .onAppear { recomputeLayout() }
-            .onChange(of: model.logEntries.count) { _, _ in recomputeLayout() }
-            .onChange(of: model.logEntries.first?.sha) { _, _ in recomputeLayout() }
+            .onChange(of: entries.count) { _, _ in recomputeLayout() }
+            .onChange(of: entries.first?.sha) { _, _ in recomputeLayout() }
+            .onChange(of: model.isLogSearchActive) { _, _ in recomputeLayout() }
         }
     }
 
     private func recomputeLayout() {
-        layout = GraphLayout.layout(model.logEntries, maxLanes: 4)
+        layout = GraphLayout.layout(entries, maxLanes: 4)
     }
 
     private func row(_ c: GitClient.GraphCommit,
