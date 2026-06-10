@@ -6743,3 +6743,21 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   pattern) — next drain tick's build item.
 - Fixed-lane drain remaining: ~50 tickets (deep-audit S3/S4 series TSK-134..196 +
   BACKLOG series TSK-261..334); P1s now all resolved or honestly held.
+
+## LOG +188 (2026-06-10, autonomous tick — TSK-440 render-half guards built; VALIDATED. Both fixed-lane P1s now drained)
+- **TSK-440 (P1, sidebar resize/fill) VALIDATED** after building the closure path named
+  last tick (commit 3bab1d3): new `SidebarDividerWiringTests` (5 tests) hosts the REAL
+  SidebarView and pins (1) realized PRESENCE per divider role — `ResizableSectionDivider`
+  now ticks BodyProbe with its role (pair/aboveOnly/boundary/inert); boundary divider
+  realized for files+1-tool (THE bug-B config), boundary+pair for files+2, none for lone
+  FILES — and (2) drag ROUTING via the exact action closure (`apply(delta:)` exposed as
+  the test seam = the gesture's onChanged after origin capture): pair drags follow
+  `SidebarResize.redistribute` verbatim (sum-preserving), boundary drags drive the below
+  panel inversely.
+- **Teeth**: reconstructing the boundary divider without its `heightBelow` binding (the
+  exact feared sidebarBody slip) → RED naming the degradation ("roles seen:
+  [ResizableSectionDivider.inert: 1]"); restored → 5/5 green. SidebarResizeTests 15/15
+  re-run fresh. Gate PASSED on 3bab1d3 (one intervening run failed with ZERO named test
+  failures — the documented bench-flake-under-load class; two consecutive clean re-runs).
+- **Fixed-lane P1s fully drained** (TSK-266 last tick, TSK-440 this tick). Drain continues
+  next into the June 4-5 S3/S4 + BACKLOG series (~50 tickets).
