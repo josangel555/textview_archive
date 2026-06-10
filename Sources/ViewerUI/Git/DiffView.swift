@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import ViewerCore
 
@@ -125,6 +126,14 @@ struct DiffView: View {
                 .stroke(Color.secondary.opacity(0.25), lineWidth: 0.5)
         )
         .padding(.horizontal, 8)
+        // TSK-594: guaranteed multi-line copy regardless of SwiftUI text-
+        // selection limits — the file block offers its whole unified-diff
+        // text; hunkBlock offers the per-hunk variant.
+        .contextMenu {
+            Button("Copy File Diff") {
+                Self.copyToPasteboard(file.clipboardText)
+            }
+        }
     }
 
     private func fileHeader(_ file: UnifiedDiff.File) -> some View {
@@ -209,6 +218,21 @@ struct DiffView: View {
                 }
             }
         }
+        .contextMenu {
+            Button("Copy Hunk") {
+                Self.copyToPasteboard(hunk.clipboardText)
+            }
+        }
+    }
+
+    /// Pasteboard write behind the Copy Hunk / Copy File Diff menu items.
+    /// Injectable pasteboard so tests exercise the exact closure the menu
+    /// invokes without touching the user's general pasteboard.
+    internal static func copyToPasteboard(
+        _ text: String, pasteboard: NSPasteboard = .general
+    ) {
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
     }
 
     /// New-path is what `ReviewComment.filePath` is keyed on (post-change
@@ -263,10 +287,13 @@ struct DiffView: View {
                 .font(.system(size: doc.uiSize(11), design: .monospaced))
                 .foregroundStyle(prefixColor(line.kind))
                 .frame(width: 14, alignment: .center)
-            // Content
+            // Content. Selectable in place (TSK-594) — per-Text on older
+            // macOS; the guaranteed multi-line path is the right-click
+            // Copy Hunk / Copy File Diff on the enclosing blocks.
             Text(line.content.isEmpty ? " " : line.content)
                 .font(.system(size: doc.uiSize(11), design: .monospaced))
                 .foregroundStyle(contentColor(line.kind))
+                .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.trailing, 8)
         }
