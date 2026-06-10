@@ -125,7 +125,10 @@ public final class GitPanelModel: ObservableObject {
     /// In-flight `loadMoreLog` pagination task — tracked so it can be cancelled
     /// when the log is reset/refreshed under it (the generation guard is the
     /// correctness backstop; cancellation just avoids the wasted shell-out).
-    private var loadMoreTask: Task<Void, Never>?
+    /// Internal (not private) as the TSK-150 test seam: the stale-page
+    /// guard test captures this task before invalidating the list
+    /// identity, then awaits it to assert the page was dropped.
+    private(set) var loadMoreTask: Task<Void, Never>?
     /// Cache freshness threshold — anything older than this on tab-switch
     /// triggers an immediate refresh. Matches the user-stated 60 s cadence.
     private let cacheTTL: TimeInterval = 60
