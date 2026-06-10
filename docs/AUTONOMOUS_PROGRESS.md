@@ -5668,3 +5668,13 @@ Closed the host-completable half of the owner's "add a setting for user to provi
 (PreferencesStoreTests 31/31). Gate green modulo the documented GrandchildPipe fd flake. TSK-528 is now FULLY
 host-complete at the model/encoder/preference layer (validated); the ONLY remainder is pure VM-gated SwiftUI: the
 Settings→Audio text field bound to `audioFFmpegPath` + the Save-As format/bitrate picker sheet. `main` @ c0796ad.
+
+## LOG +156 (2026-06-09, autonomous tick — literal "multiple comments → cumulative diff" core)
+Re-read the owner's Code-Review ask literally: "select multiple comments and see cumulative diff" — distinct from the
+multiple-COMMITS cumulative diff (TSK-522, done). Built the COMMENTS reading (TSK-532 → validated, commit 4ce7b40):
+`CommentDiffSelection.regions(from: [ReviewComment]) -> [Region{filePath, side, ranges}]` — groups selected comments
+by (filePath, anchor side), merges overlapping/adjacent line ranges into the minimal set a "diff of everything I
+flagged" view reveals; old/new sides kept separate (distinct coordinate systems); reversed bounds normalised;
+deterministic ordering. 9 host teeth; **headless gate PASSED clean (no flake this run)**. The multi-select gesture +
+region-scoped DiffView is the VM-gated UI slice. `main` @ 4ce7b40, gate-green. (If "comments" was a typo for
+"commits", no harm — combined-diff-of-commented-regions is a genuinely useful review workflow regardless.)
