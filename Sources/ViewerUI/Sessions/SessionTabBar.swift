@@ -90,6 +90,13 @@ struct SessionTabBar: View {
                     .accessibilityLabel("Open Folder in New Session")
                 }
             }
+            // TSK-313: double-click the EMPTY strip area = new session at ~
+            // (browser idiom). Buttons/tab cells sit above this in the hit
+            // chain, so clicks on tabs / + / close are unaffected.
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) {
+                sessionsApp.openHomeSession()
+            }
             // TSK-262: persistent trailing action icons pinned at the far
             // right of the session-tab row — Settings, File search, Omni.
             // (The "+" sits beside the last tab inside the scroll content;

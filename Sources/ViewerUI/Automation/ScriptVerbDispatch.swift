@@ -268,6 +268,9 @@ public enum ScriptVerb {
             }
         case "session-close-active":
             sessions.closeActive()
+        case "session-open-home":
+            // TSK-313: the strip double-click action — new session at ~.
+            sessions.openHomeSession()
         case "session-next":     sessions.nextSession()
         case "session-prev":     sessions.previousSession()
         case "session-rename":

@@ -231,6 +231,16 @@ public final class SessionsAppCoordinator: ObservableObject {
         firstPaintGoToToken = UUID()
     }
 
+    /// TSK-313: double-clicking the empty session-tab-strip area opens a
+    /// new session ROOTED AT THE USER'S HOME immediately — the browser
+    /// "double-click the strip = new tab" idiom, with ~ as the neutral
+    /// starting root (no GoTo prompt; the `+` button keeps the prompt
+    /// flow for users who want to type a path). Explicit user gesture,
+    /// so the TSK-599 explicit-open TCC contract applies.
+    public func openHomeSession() {
+        openFolder(FileManager.default.homeDirectoryForCurrentUser, forceNew: true)
+    }
+
     /// Consume the gate (read+clear). Returns `true` exactly once
     /// after each arm. Exposed for the view layer's `onChange` hook.
     public func consumeFirstPaintGoTo() -> Bool {
