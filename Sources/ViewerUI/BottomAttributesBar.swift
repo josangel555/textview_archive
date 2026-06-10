@@ -64,6 +64,20 @@ struct BottomAttributesBar: View {
                 .accessibilityIdentifier("mdv.htmlJSToggle")
             }
 
+            // TSK-608: preview-mode metadata panel toggle — the dismiss
+            // affordance the always-on panel previously lacked. Persisted
+            // via PreferencesStore.previewMetadataVisible.
+            if model.currentViewMode == .preview {
+                Toggle("Info", isOn: $model.showPreviewMetadataPanel)
+                    .toggleStyle(.checkbox)
+                    .controlSize(.mini)
+                    .font(.system(size: model.uiSize(11)))
+                    .helpInfo(title: "Info panel",
+                              description: "Show the metadata side panel (file info, "
+                              + "dimensions, table/row counts) next to the preview.")
+                    .accessibilityIdentifier("mdv.previewInfoToggle")
+            }
+
             Spacer(minLength: 8)
 
             // Unified type control (OpenAs viewer + syntax language). One

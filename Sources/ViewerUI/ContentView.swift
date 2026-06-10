@@ -553,7 +553,11 @@ public struct ContentView: View {
                     uiScale: CGFloat(model.zoom)
                 )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                MetadataPanel(url: url, category: cat, uiScale: CGFloat(model.zoom))
+                // TSK-608: dismissible via the BottomAttributesBar "Info"
+                // toggle — this panel previously rendered unconditionally.
+                if model.showPreviewMetadataPanel {
+                    MetadataPanel(url: url, category: cat, uiScale: CGFloat(model.zoom))
+                }
             }
         }
     }

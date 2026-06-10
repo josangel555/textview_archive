@@ -31,6 +31,8 @@ public final class PreferencesStore: @unchecked Sendable {
         static let hexBytesPerRow = "MarkdownViewer.hexBytesPerRow"
         /// User-provided path to an `ffmpeg` executable for MP3 audio export.
         static let audioFFmpegPath = "MarkdownViewer.audioFFmpegPath"
+        /// Preview mode's metadata side panel visibility (TSK-608).
+        static let previewMetadataVisible = "MarkdownViewer.previewMetadataVisible"
     }
 
     public init(defaults: UserDefaults = .standard) {
@@ -73,6 +75,15 @@ public final class PreferencesStore: @unchecked Sendable {
     public var sourceWordWrap: Bool {
         get { defaults.object(forKey: Key.sourceWordWrap) as? Bool ?? false }
         set { defaults.set(newValue, forKey: Key.sourceWordWrap) }
+    }
+
+    /// Whether preview mode shows the metadata side panel (file info,
+    /// image dimensions, SQLite table/row counts). Default ON — the
+    /// pre-TSK-608 behavior; the BottomAttributesBar "Info" toggle is
+    /// the dismiss affordance the panel previously lacked.
+    public var previewMetadataVisible: Bool {
+        get { defaults.object(forKey: Key.previewMetadataVisible) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: Key.previewMetadataVisible) }
     }
 
     /// Render invisible characters (spaces · tabs → · returns ¶) in the

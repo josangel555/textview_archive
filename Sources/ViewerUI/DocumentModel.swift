@@ -151,6 +151,14 @@ public final class DocumentModel: ObservableObject {
     }
     public func toggleSourceWordWrap() { sourceWordWrap.toggle() }
 
+    /// Preview mode's metadata side panel (file info, image dimensions,
+    /// SQLite table/row counts). It used to render unconditionally with
+    /// no dismiss affordance (TSK-608); the BottomAttributesBar "Info"
+    /// toggle drives this. Persisted; default ON (prior behavior).
+    @Published public var showPreviewMetadataPanel: Bool {
+        didSet { preferences.previewMetadataVisible = showPreviewMetadataPanel }
+    }
+
     /// When on, NSLayoutManager renders dots for spaces, arrows for
     /// tabs, pilcrows for paragraph breaks. Persisted.
     @Published public var showInvisibleChars: Bool {
@@ -328,6 +336,7 @@ public final class DocumentModel: ObservableObject {
         self.sidebarWidth = preferences.sidebarWidth
         self.zoom = preferences.zoom
         self.sourceWordWrap = preferences.sourceWordWrap
+        self.showPreviewMetadataPanel = preferences.previewMetadataVisible
         self.showInvisibleChars = preferences.showInvisibleChars
         self.editorIndentGuides = preferences.editorIndentGuides
         self.audioFFmpegPath = preferences.audioFFmpegPath
