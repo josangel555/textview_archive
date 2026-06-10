@@ -21,31 +21,16 @@ ignoring the board or mis-prioritizing — re-query and re-read §3.
 
 ## 1. Query the board (recipe)
 
-A helper usually lives at `/tmp/board.py`. `/tmp` is ephemeral — if it's gone, recreate it:
-
-```python
-# /tmp/board.py — minimal tasked-board caller.  Usage: board.py <tool> '<json-args>'
-import sys, json, urllib.request
-tool = sys.argv[1]; args = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
-body = json.dumps({"jsonrpc":"2.0","id":1,"method":"tools/call",
-                   "params":{"name":tool,"arguments":args}}).encode()   # NB: arguments, not params
-req = urllib.request.Request("http://localhost:8787/mcp", data=body,
-        headers={"Content-Type":"application/json","Accept":"application/json, text/event-stream"})
-raw = urllib.request.urlopen(req, timeout=20).read().decode()
-for line in raw.splitlines():                                           # unwrap optional SSE framing
-    if line.strip().startswith("data:"): raw = line.strip()[5:].strip(); break
-d = json.loads(raw)
-print(d["error"] if "error" in d else d["result"]["content"][0]["text"])  # result text is double-encoded JSON
-```
-
-Gotchas (these have bitten before): args go under **`arguments`** (standard MCP, not `params`);
-responses may be **SSE-framed** (strip the `data:` line); `result.content[0].text` is a **JSON
-string** you decode again.
+**Drive the board ONLY via the `mcp__tasked__*` MCP tools** (the server at
+`http://localhost:8787/mcp` is already connected). The old `/tmp/board.py` helper and the human
+REST endpoint are **retired** — never recreate or spoof them. These tickets are NOT the built-in
+Claude Code TaskList (`#NNN` ≠ board `TSK-NNN`); always `task_get` a board id before acting on it.
 
 **Tools:** `task_next {agent}` (ranked head — but see §2, it does NOT project-filter), `task_list
 {project, state?, ...}`, `task_get {id}`, `task_create {project, agent, title, report, type,
 confidence}`, `task_advance {id, agent, to, understanding, note, summary}` (one-shot walks
-reported→fixed), `task_flag`, `task_record`, `task_park`. Agent name: `claude-mdv`.
+reported→fixed), `task_record` (to progress/fixed/review), `task_validate` (evidence-gated close,
+see §4), `task_park` (owner gate + ping), `task_flag`. Agent name: `claude-mdv`.
 
 markdown_viewer tasks live under **project `tasked`** (prefix `TSK`).
 
@@ -86,11 +71,46 @@ instead (one crisp ask in DECISIONS NEEDED) rather than manufacturing marginal t
 
 ---
 
+## 3.5 Lane goals (OWNER DIRECTIVE 2026-06-09 — what each lane MEANS)
+
+Each lane is a distinct kind of work, not just a status. Drive every ticket left-to-right:
+
+- **Reported** — intake. New issues land here (owner or agent files them: feature requests,
+  bugs, findings). Filing is cheap; file generously.
+- **Acknowledged (`ack`)** — preliminary research. Understand the issue; determine what it
+  needs: a design? HLD/LLD? missing information? debugging? a refactor? Restate the
+  understanding on the ticket (`task_restate`).
+- **Triaged** — make it implementable. Research, break down into sub-tasks, write design docs,
+  debug, groom: implementation plan, LLD, dependencies, prerequisite checks, testing plan,
+  validation plan, acceptance criteria. A ticket leaving triage should be executable without
+  re-deriving any of this.
+- **In progress (`progress`)** — work that generates artifacts: code, tests, docs, commits.
+- **Fixed / review / validated / done** — built → evidence attached → regression-guarded →
+  closed. See the lifecycle rules below.
+
+**Blocked by owner?** Update the ticket asking for the feedback/approval (`task_park` — kind +
+question + context, pings the owner) and MOVE ON to the next available task. Never idle on a gate.
+
+**The goal is every task at Done.** There is always something to work on — the question is only
+prioritization, consolidation, strategic ordering. If one lane is gated, work another lane of the
+same ticket (triage/groom/design) or another ticket.
+
+**Validation is automated — the human is not in the loop.** Use the whole testing pyramid: unit →
+integration → headless → UI tests → screenshots/smoke. Screenshots/smoke are acceptable for
+*validation* but a **last resort for verification** — prefer simpler, more reliable automated
+tests (model/state assertions, behavior tests) to verify changes; use pixels only where nothing
+cheaper can prove the behavior (compositor/occlusion class). Disturb the human only if you must.
+
+---
+
 ## 4. Work the task (lifecycle + discipline)
 
-- **Lifecycle:** `reported → ack → triaged → progress → fixed`. **The agent only reaches
-  `fixed`.** A human gates `review → validated → done`. Use `task_advance` to walk it, with an
-  honest `understanding` / `note` / `summary` (include the commit SHA).
+- **Lifecycle:** `reported → ack → triaged → progress → fixed → review → validated → done`.
+  Use `task_advance` to walk it, with an honest `understanding` / `note` / `summary` (include the
+  commit SHA). **Self-validation policy (owner, 2026-06-07):** the agent MAY close its own work via
+  `task_validate` (to `validated`/`done`) — but ONLY with a `checks` artifact proving an automated
+  test that exercises the actual behavior and would fail on regression. Host-testable logic →
+  self-validate; rendered-pixels behavior → needs the VM lane evidence first (or hold at `fixed`).
 - **Mark `progress` before starting; `fixed` only when fully done AND validated** (gate green).
   Never `fixed` on a partial/failing change. If blocked mid-way, leave it open and file the blocker.
 - **Commit per item.** One-line subject. Land on `main` as a fast-forward (no merge bubbles).
