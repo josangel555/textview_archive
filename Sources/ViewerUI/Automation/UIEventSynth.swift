@@ -81,16 +81,36 @@ public enum UIEventSynth {
         return out
     }
 
-    /// Synthesize the click described by `spec`: post its event sequence
-    /// to the app's queue. Returns `false` (nothing posted) when the
-    /// target id is not in the realized tree — callers surface that
-    /// loudly so a test never "passes" by clicking nothing.
+    /// Trace of the most recent `click` — embedded in the step dump by
+    /// `captureStepArtifacts` so a failing VM scenario shows WHAT was
+    /// resolved and WHERE the events went instead of a silent no-op.
+    public private(set) static var lastTrace: String = ""
+
+    /// Synthesize the click described by `spec`: deliver its event
+    /// sequence through `window.sendEvent` — the call that drives
+    /// NSWindow-level routing INCLUDING gesture recognizers, which is
+    /// what SwiftUI taps/double-taps hang off. (Queue posting was tried
+    /// first: it satisfies AppKit control tracking loops, but queue
+    /// dispatch order/routing in the harness context proved unreliable
+    /// for SwiftUI targets; direct sendEvent is synchronous and
+    /// deterministic.) Returns `false` when the target id is not in the
+    /// realized tree — callers surface that loudly so a test never
+    /// "passes" by clicking nothing.
     @discardableResult
     public static func click(spec: UIClickSpec, in window: NSWindow) -> Bool {
-        guard let sequence = events(spec: spec, in: window) else { return false }
-        for event in sequence {
-            NSApplication.shared.postEvent(event, atStart: false)
+        guard let root = window.contentView,
+              let target = findView(identifier: spec.identifier, under: root),
+              let sequence = events(spec: spec, in: window)
+        else {
+            lastTrace = "click(\(spec.identifier)): target NOT FOUND"
+            return false
         }
+        for event in sequence {
+            window.sendEvent(event)
+        }
+        lastTrace = "click(\(spec.identifier)): view=\(type(of: target)) "
+            + "frame=\(target.frame) point=\(sequence[0].locationInWindow) "
+            + "count=\(spec.clickCount) key=\(window.isKeyWindow)"
         return true
     }
 

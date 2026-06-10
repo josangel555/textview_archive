@@ -190,6 +190,11 @@ extension AppDelegate {
         // in `ScriptVerb.modelStateDump` (ViewerUI) so the in-process
         // `HeadlessHarness` emits a byte-identical `model` dict.
         enriched["model"] = ScriptVerb.modelStateDump(model: model, sessions: sessions)
+        // TSK-620: surface the last ui-click resolution in the dump so a
+        // failing interaction scenario shows what was clicked and where.
+        if !UIEventSynth.lastTrace.isEmpty {
+            enriched["uiClickTrace"] = UIEventSynth.lastTrace
+        }
         if let data = try? JSONSerialization.data(
             withJSONObject: enriched,
             options: [.prettyPrinted, .sortedKeys]

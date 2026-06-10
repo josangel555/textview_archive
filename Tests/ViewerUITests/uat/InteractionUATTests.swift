@@ -83,10 +83,14 @@ final class InteractionUATTests: MultiScenarioTestCase {
                     XCTAssertNotNil(field,
                         "REAL + click must present the GoTo prompt with the "
                         + "field rendering the ~ prefill; fields seen: "
-                        + "\(allTextFieldValues(last))",
+                        + "\(allTextFieldValues(last)) trace=\(dumpTrace(last))",
                         file: file, line: line)
                 })
         ])
+    }
+
+    private func dumpTrace(_ dump: [String: Any]) -> String {
+        (dump["uiClickTrace"] as? String) ?? "<no trace>"
     }
 
     // MARK: - Dump accessors
