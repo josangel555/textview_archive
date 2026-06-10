@@ -3724,8 +3724,23 @@ public final class DocumentModel: ObservableObject {
         if let id = tabCoordinator.closeTab(at: index) {
             purgeCaches(forURL: closedURL, tabID: id)
         }
+        settleSelectionAfterClose()
         updateDerived()
         startWatchingCurrentFile()
+    }
+
+    /// Post-close selection settle (TSK-266): closing a tab makes the
+    /// coordinator auto-select a NEIGHBOR, but unlike `selectTab` none
+    /// of the close paths ran the incoming-tab duties — so a LAZY
+    /// survivor (`.empty` with url: multi-open / workspace-restore tabs)
+    /// stayed unmaterialized and the content pane sat blank until the
+    /// user re-clicked the tab, which reads as "closing a tab takes a
+    /// second". Mirror `selectTab`: kick the lazy read and refresh the
+    /// staleness signal for the now-active file.
+    private func settleSelectionAfterClose() {
+        guard let i = tabs.selectedIndex else { return }
+        materializeIfNeeded(at: i)
+        refreshDiskStateForActiveTab()
     }
 
     public func closeCurrentTab() {
@@ -3767,6 +3782,7 @@ public final class DocumentModel: ObservableObject {
         for id in closedIDs {
             purgeCaches(forURL: doomedURLsByID[id] ?? nil, tabID: id)
         }
+        settleSelectionAfterClose()
         updateDerived()
         startWatchingCurrentFile()
     }
@@ -3804,6 +3820,7 @@ public final class DocumentModel: ObservableObject {
         for id in closedIDs {
             purgeCaches(forURL: doomedURLsByID[id] ?? nil, tabID: id)
         }
+        settleSelectionAfterClose()
         updateDerived()
         startWatchingCurrentFile()
     }
