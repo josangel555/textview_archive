@@ -6667,3 +6667,25 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - The TSK-590 epic is now FULLY closed for agent-actionable children — 602 was the last
   held one. Remaining pool: child TSK-613 is validated; TSK-615 (open child of 603)
   unexamined; owner-parked 591/592/598/601/608.
+
+## LOG +184 (2026-06-10, autonomous tick — TSK-615 VALIDATED: chrome re-eval width measured by COUNTS; hypothesis falsified, pins landed)
+- **TSK-615 validated** (distributed re-eval residual, branch (b)): built the missing
+  instrument — `BodyProbe` (DEBUG-only body-eval counter, MountProbe sibling) ticked at
+  the top of all 8 top-level chrome bodies — plus `ChromeBodyEvalCountTests` (a9de107),
+  which hosts the REAL ContentView offscreen (InteractionProfileHarness pattern, text
+  tabs only — runs in the bare host gate) and pins per-view body-eval bounds per
+  republish kind.
+- **Measured ranking (counts, not wall-clock):** warm tab switch = every chrome view
+  exactly 1× (ShoulderRailView 3× = its 3 edge instances); find keystroke = ContentView
+  1× only, chrome strip 0; sidebar recency tick = sidebar+rails only, content chrome 0;
+  panel toggle = rails+sidebar only, bottom chrome 0; zoom = everything (by design).
+- **Conclusion: the wide-channel hypothesis is FALSE at the chrome level.** The
+  REPUB-1/coordinator splits hold; nothing to narrow. The suite converts that from
+  assumption to guard — the prior invariant tests pinned the PUBLISHER side
+  (objectWillChange counts); this pins the VIEW side (who re-bodies). The live-sweep
+  residual therefore attributes to (a) the owner-parked TSK-598 pane-remount
+  (`SourceTextController.apply` ~199ms/switch — the remaining named lever) + within-
+  content re-eval, NOT chrome fan-out.
+- **Teeth**: re-added the historical sidebar→DocumentModel forwarding sink → the
+  zero-bound test went RED naming all four widened chrome views; reverted → 6/6 green.
+  Gate PASSED on a9de107.
