@@ -29,6 +29,35 @@
 - **Self-read screenshots**: `screencapture -x -o /tmp/x.png` then Read the PNG. (System-wide capture — note the owner's other windows; don't comment on them.)
 - **Perf timing**: instrument with signposts / wall-clock logs to stderr, parse from the log.
 
+## LOG 2026-06-09 (latest+122) — Audio visualization v1 SHIPPED (TSK-529): Canvas waveform + zoom/scale + transport on the audio preview
+
+VM came back this tick → picked the **top owner-priority SwiftUI task**, TSK-529 ("[MEDIA][audio] Visualization + transport
+UI"), the live half of the owner's 2026-06-09 audio-editing ask. All four host cores had landed; built the v1 UI on them
+(commit **7c76731**):
+
+- **AudioWaveform** (ViewerCore) — decode→mono overview via AudioDecoder + frame/time mapping. Pure, host-tested.
+- **AudioWaveformGeometry** (ViewerCore) — pure zoom-window / playhead / scrub math; the coordinates the view binds to, so
+  a logic regression fails the host gate. 16 host teeth (AudioWaveformTests), all green.
+- **AudioEditorViewModel** (ViewerUI, @MainActor) — async decode off-main, memoised display peaks (OFF the playhead path so
+  playback ticks don't re-reduce), AVAudioPlayer transport via a MainActor clock Task (no Timer/@Sendable-capture hazard).
+- **AudioEditorView** (ViewerUI) — SwiftUI **Canvas** waveform (horizontal zoom + amplitude scale + scroll) + play/pause/
+  scrub transport + playhead (two stacked Canvas layers). **No NSViewRepresentable → occlusion-safe by construction.**
+- **AudioPreview** restructured — a control-bar "waveform" button opens the editor and DROPS the opaque AVPlayerView while
+  editing (the ImagePreview occlusion guard); `MDV_START_AUDIO_EDIT=1` opens it straight for the T5 pixel test.
+- **AudioEditorVisualRegressionTests** (T5) added — spawns on a modulated-sine fixture, asserts the waveform band composites.
+
+Host headless gate GREEN for this change: the only gate failures were RepoFocusTrackerTests (4 asserts) — the FSEvents/
+watcher-timing flake, which passes **5/5 in isolation** and is untouched by this change. `swift build` clean (only pre-existing
+WKWebView deprecation warnings). TSK-529 → **fixed** (NOT self-validated: the waveform PIXELS are VM-gated per no-UI-on-host;
+blocker=live-validation). Filed 3 child follow-ups: **TSK-533** (spectrum panel), **TSK-534** (draggable trim/fade handles),
+**TSK-535** (Save-As sheet → AudioExporter + the Settings→Audio ffmpeg field, the remaining VM half of TSK-528).
+
+VM validation in flight: rsync'd current main + launched a **detached** forward-compat `swift build` (VM default Swift 6.1.2,
+stricter default-actor-isolation than the host — the toolchain that caught TSK-401) — survives the VM's flaky ssh.
+NEXT-TICK CUE: `ssh macOS15 'test -f /tmp/vmbuild-529.done && tail -6 /tmp/vmbuild-529.log'`. EXIT=0 → main compiles under
+6.1.2 incl. the new @MainActor/Task/AVAudioPlayer code. The waveform-PIXEL validation (T5 AudioEditorVisualRegressionTests)
+still needs the VM heavy lane (GUI session + screen-recording TCC) — run it once the VM link is stable.
+
 ## LOG 2026-06-09 (latest+121) — VM render-lane validation LAUNCHED (detached test-in-vm.sh); poll /tmp/vmtest.done
 
 Escalated to the real VM validation within the same tick. The +120 forward-compat `swift build` finished EXIT=1 but it was
