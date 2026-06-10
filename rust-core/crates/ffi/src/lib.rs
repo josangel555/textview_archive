@@ -55,7 +55,7 @@ use mdvcore_core::diff;
 use mdvcore_core::filter::{Query, Scope};
 use mdvcore_core::hex;
 use mdvcore_core::indent;
-use mdvcore_core::session::CsvSession;
+use mdvcore_core::session::{CsvSession, OpenError};
 use mdvcore_core::wire;
 
 pub use buf::MdvBuf;
@@ -246,8 +246,8 @@ pub unsafe extern "C" fn mdvcore_diff_hunk_marks(
 /// benefit; the result is one opaque string). Caller MUST call
 /// [`mdvcore_buf_free`] on `out_buf`.
 ///
-/// `width` is bytes-per-row; `total_byte_count` / `is_truncated` drive the
-/// "Showing first N of M bytes" header.
+/// `width` is bytes-per-row, clamped to [`MAX_HEX_WIDTH`]; `total_byte_count` /
+/// `is_truncated` drive the "Showing first N of M bytes" header.
 ///
 /// # Returns
 /// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], or [`MdvStatus::Panic`].
@@ -255,6 +255,10 @@ pub unsafe extern "C" fn mdvcore_diff_hunk_marks(
 /// # Safety
 /// `bytes` must point to `len` valid bytes (or be null with `len == 0`).
 /// `out_buf` must be a valid, writable pointer.
+/// Upper bound on `mdvcore_hex_render`'s bytes-per-row. Out-of-range widths
+/// clamp rather than error so the render stays total for any input.
+pub const MAX_HEX_WIDTH: u32 = 512;
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn mdvcore_hex_render(
     bytes: *const u8,
@@ -280,7 +284,13 @@ pub unsafe extern "C" fn mdvcore_hex_render(
             // SAFETY: caller guarantees bytes/len describe valid bytes (len != 0).
             unsafe { core::slice::from_raw_parts(bytes, len) }
         };
-        let width = usize::try_from(width).unwrap_or(usize::MAX);
+        // Clamp width at the edge (audit TSK-540): the row buffer is
+        // width-proportional, so a hostile/buggy u32 (u32::MAX → ~17 GiB for
+        // ONE row) drives an allocation whose failure calls handle_alloc_error
+        // → abort(), which ffi_guard!'s catch_unwind cannot intercept. 512
+        // bytes-per-row is far beyond any real UI (Swift uses 16). width == 0
+        // stays 0 → empty dump, per the render_all contract.
+        let width = usize::try_from(width.min(MAX_HEX_WIDTH)).unwrap_or(0);
         let total = usize::try_from(total_byte_count).unwrap_or(usize::MAX);
         let dump = hex::render_all(slice, width, total, is_truncated);
         // SAFETY: out_buf validated non-null above.
@@ -456,7 +466,10 @@ pub unsafe extern "C" fn mdvcore_session_open(
                 unsafe { *out_handle = raw };
                 MdvStatus::Ok
             }
-            Err(_) => MdvStatus::BadUtf8,
+            // Exhaustive on purpose (audit TSK-578): a future OpenError
+            // variant must force a decision here at compile time instead of
+            // silently mis-reporting as BadUtf8.
+            Err(OpenError::BadUtf8 { .. }) => MdvStatus::BadUtf8,
         }
     })
 }

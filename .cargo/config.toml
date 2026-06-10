@@ -1,0 +1,9 @@
+# Build artifacts must live OUTSIDE the iCloud-synced worktree (see
+# rust-core/.cargo/config.toml for the full rationale — audit TSK-555).
+# Cargo discovers config by walking UP from the CURRENT directory, not from
+# --manifest-path, so the rust-core copy alone does not cover
+# `cargo <cmd> --manifest-path rust-core/Cargo.toml` run from the repo root —
+# that exact invocation regrew a 246 MB rust-core/target on 2026-06-09.
+# CARGO_TARGET_DIR still overrides (the gate and build scripts set their own).
+[build]
+target-dir = "/private/tmp/mdv-rust-target"

@@ -204,6 +204,46 @@ fn buf_double_free_in_place_is_safe() {
 }
 
 #[test]
+fn hex_render_clamps_hostile_width_to_max() {
+    // TSK-540: an unclamped width drives a width-proportional row allocation
+    // (u32::MAX → ~17 GiB) whose failure ABORTS past the panic guard. The edge
+    // clamps to MAX_HEX_WIDTH, so MAX+1 must render exactly like MAX. Uses
+    // MAX+1 (not u32::MAX) so the PRE-fix failure mode is a fast wrong-output
+    // assert, not an OOM.
+    let data = b"hello hex";
+    let mut clamped = MdvBuf::empty();
+    let st = unsafe {
+        mdvcore_hex_render(
+            data.as_ptr(),
+            data.len(),
+            MAX_HEX_WIDTH + 1,
+            data.len() as u64,
+            false,
+            &mut clamped,
+        )
+    };
+    assert_eq!(st, MdvStatus::Ok);
+    let expected = mdvcore_core::hex::render_all(data, MAX_HEX_WIDTH as usize, data.len(), false);
+    let got = unsafe { core::slice::from_raw_parts(clamped.data, clamped.len) };
+    assert_eq!(got, expected.as_bytes());
+    unsafe { mdvcore_buf_free(&mut clamped) };
+}
+
+#[test]
+fn hex_render_width_zero_is_empty_not_underflow() {
+    // Companion to the clamp: width 0 keeps the documented empty-dump
+    // contract (and rendered_row_length(0) is total, not an underflow panic).
+    let data = b"abc";
+    let mut buf = MdvBuf::empty();
+    let st = unsafe {
+        mdvcore_hex_render(data.as_ptr(), data.len(), 0, data.len() as u64, false, &mut buf)
+    };
+    assert_eq!(st, MdvStatus::Ok);
+    assert_eq!(buf.len, 0);
+    unsafe { mdvcore_buf_free(&mut buf) };
+}
+
+#[test]
 fn handle_lifecycle_many_open_free_no_leak_smoke() {
     // Open/free many handles; a leak/double-free would surface under Miri /
     // ASan. Here we just prove the loop is stable.

@@ -20,11 +20,16 @@
 //! `NSTextView` incrementally) stays in Swift `HexDumpBuilder.build`.
 
 /// Per-row character count in the rendered dump (mirrors
-/// `HexLayout.renderedRowLength`). `width` must be `> 0`.
+/// `HexLayout.renderedRowLength`). Total: `width == 0` (no row can exist) → 0,
+/// and absurd widths saturate instead of overflowing (audit TSK-540).
 #[must_use]
 pub fn rendered_row_length(width: usize) -> usize {
     // 8 offset + 2 spaces + (width*3 - 1) hex/sep + 2 spaces + width ascii + \n
-    8 + 2 + (width * 3 - 1) + 2 + width + 1
+    // = width*4 + 12; the subtraction form underflows at width == 0.
+    if width == 0 {
+        return 0;
+    }
+    width.saturating_mul(4).saturating_add(12)
 }
 
 /// Row count for a byte buffer at the given width (mirrors `HexLayout.rowCount`).
@@ -235,6 +240,14 @@ mod tests {
         assert_eq!(row_count(16, 16), 1);
         assert_eq!(row_count(17, 16), 2);
         assert_eq!(row_count(10, 0), 0);
+    }
+
+    #[test]
+    fn rendered_row_length_is_total() {
+        // TSK-540: width 0 used to underflow (width*3 - 1); absurd widths
+        // used to overflow. Both must now be defined.
+        assert_eq!(rendered_row_length(0), 0);
+        assert_eq!(rendered_row_length(usize::MAX), usize::MAX); // saturates
     }
 
     #[test]
