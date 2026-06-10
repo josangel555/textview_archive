@@ -279,6 +279,50 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
         onResize?(rows, cols)
     }
 
+    // MARK: - Diagnostics (TSK-493)
+
+    /// Runtime grid evidence for the `--diagnose` dump. The "terminal shows
+    /// ~1 line in a 320pt band" class of bug is invisible to frame checks
+    /// alone — the NSView frame can be correct while the EMULATOR grid is
+    /// wrong (stale 1-row grid after a degenerate mount transient) or the
+    /// content sits in the wrong rows. Emits the live grid vs the grid the
+    /// current bounds imply, plus blank/non-blank row occupancy (no cell
+    /// CONTENT — safe for redacted dumps).
+    func diagnosticGridInfo() -> [String: Any] {
+        var firstNonBlank = -1
+        var lastNonBlank = -1
+        var nonBlankCount = 0
+        for r in 0..<screen.rows {
+            let blank = screen.line(r)
+                .trimmingCharacters(in: .whitespaces).isEmpty
+            if !blank {
+                if firstNonBlank == -1 { firstNonBlank = r }
+                lastNonBlank = r
+                nonBlankCount += 1
+            }
+        }
+        let expectedCols = cellWidth > 0
+            ? max(1, Int(floor(bounds.width / cellWidth))) : -1
+        let expectedRows = cellHeight > 0
+            ? max(1, Int(floor(bounds.height / cellHeight))) : -1
+        return [
+            "grid_rows": screen.rows,
+            "grid_cols": screen.cols,
+            "cursor_row": screen.cursor.row,
+            "cursor_col": screen.cursor.col,
+            "cell_size": String(format: "%.1fx%.1f", cellWidth, cellHeight),
+            "bounds_expected_rows": expectedRows,
+            "bounds_expected_cols": expectedCols,
+            "gridMatchesBounds": screen.rows == expectedRows
+                && screen.cols == expectedCols,
+            "scrollback_count": screen.scrollback.count,
+            "scrollOffset": scrollOffset,
+            "firstNonBlankRow": firstNonBlank,
+            "lastNonBlankRow": lastNonBlank,
+            "nonBlankRowCount": nonBlankCount
+        ]
+    }
+
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {

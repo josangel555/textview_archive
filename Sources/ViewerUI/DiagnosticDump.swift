@@ -177,6 +177,11 @@ public enum DiagnosticDump {
         if let web = view as? WKWebView {
             d["wkWebView"] = describeWebView(web)
         }
+        if let term = view as? TerminalNSView {
+            // TSK-493: emulator grid vs bounds — a correct frame can still
+            // hide a stale 1-row grid; the dump is the cheap arbiter.
+            d["terminal"] = term.diagnosticGridInfo()
+        }
 
         if !view.subviews.isEmpty {
             d["subviews"] = view.subviews.map {
