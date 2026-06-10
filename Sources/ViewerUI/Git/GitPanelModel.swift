@@ -62,6 +62,13 @@ public final class GitPanelModel: ObservableObject {
     /// Drives the Log tab's selected-row highlight; reset on repo switch
     /// so a stale SHA never matches a row in an unrelated repository.
     @Published public private(set) var selectedLogSHA: String?
+    /// TSK-522: the multi-selected log commits (Cmd/Shift-click) feeding
+    /// the cumulative diff. A plain click (`selectLogCommit`) resets this
+    /// to the single clicked commit, so row highlight = membership here.
+    @Published public private(set) var selectedLogSHAs: Set<String> = []
+    /// Shift-range anchor — the most recently plain- or Cmd-selected
+    /// commit. Not published: it only matters at the next shift-click.
+    private var logSelectionAnchor: String?
     /// TSK-596: full-message log search. `nil` = no search active (the
     /// Log tab shows the normal paged `logEntries`); non-nil = the
     /// `git log --grep` match set currently displayed. Bodies are
@@ -149,6 +156,55 @@ public final class GitPanelModel: ObservableObject {
     /// `selectedLogSHA` for the selected-row highlight.
     public func selectLogCommit(sha: String) {
         selectedLogSHA = sha
+        selectedLogSHAs = [sha]
+        logSelectionAnchor = sha
+    }
+
+    /// TSK-522: modified-click multi-select. Cmd toggles membership;
+    /// Shift extends a contiguous run from the anchor in log order. Only
+    /// the normal paged log participates — the grep match set (search
+    /// mode) is a filtered view whose row adjacency is NOT commit
+    /// adjacency, so range/contiguity math over it would lie.
+    public func logRowClicked(sha: String, command: Bool = false, shift: Bool = false) {
+        guard !isLogSearchActive else { return }
+        if command {
+            if selectedLogSHAs.contains(sha) {
+                selectedLogSHAs.remove(sha)
+                if logSelectionAnchor == sha { logSelectionAnchor = selectedLogSHAs.first }
+            } else {
+                selectedLogSHAs.insert(sha)
+                logSelectionAnchor = sha
+            }
+        } else if shift,
+                  let anchor = logSelectionAnchor,
+                  let aIdx = logEntries.firstIndex(where: { $0.sha == anchor }),
+                  let tIdx = logEntries.firstIndex(where: { $0.sha == sha }) {
+            selectedLogSHAs = Set(logEntries[min(aIdx, tIdx)...max(aIdx, tIdx)].map(\.sha))
+        } else {
+            selectLogCommit(sha: sha)
+        }
+    }
+
+    /// Drop the whole log selection (the selection bar's ✕, repo switch).
+    public func clearLogSelection() {
+        if !selectedLogSHAs.isEmpty { selectedLogSHAs = [] }
+        logSelectionAnchor = nil
+        if selectedLogSHA != nil { selectedLogSHA = nil }
+    }
+
+    /// TSK-522: the `git diff base tip` range for the current
+    /// multi-selection, or nil when fewer than two commits are selected.
+    /// `topoIndex` = position in the loaded log, which IS topo order
+    /// (`graphLog` passes `--topo-order`). A selected SHA that fell out
+    /// of the list (wholesale log refresh) just drops out of the math.
+    public var cumulativeLogSelectionRange: CumulativeDiffSelection.Range? {
+        guard selectedLogSHAs.count > 1 else { return nil }
+        let commits = logEntries.enumerated().compactMap { idx, c in
+            selectedLogSHAs.contains(c.sha)
+                ? CumulativeDiffSelection.Commit(sha: c.sha, topoIndex: idx, parents: c.parents)
+                : nil
+        }
+        return CumulativeDiffSelection.resolve(commits)
     }
 
     public func setRepoRoot(_ url: URL?) {
@@ -161,7 +217,7 @@ public final class GitPanelModel: ObservableObject {
         worktreeEntries = []
         remoteEntries = []
         head = nil
-        selectedLogSHA = nil
+        clearLogSelection()
         clearLogSearch()
         logLoadedCount = 0
         logGen &+= 1

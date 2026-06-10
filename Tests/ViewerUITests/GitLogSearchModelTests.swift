@@ -105,6 +105,21 @@ final class GitLogSearchModelTests: XCTestCase {
                        "a stale match set must never survive into another repo")
     }
 
+    func test_modifiedClicks_areNoOpsWhileSearchActive() async {
+        // TSK-522: the grep match set is a filtered view — row adjacency
+        // is not commit adjacency, so multi-select range/contiguity math
+        // over it would lie. Cmd/Shift clicks must be inert during search.
+        let m = makeModel()
+        m.runLogSearch("waveform")
+        await waitForSearch(m)
+        XCTAssertTrue(m.isLogSearchActive)
+
+        m.logRowClicked(sha: "abc1234", command: true)
+        m.logRowClicked(sha: "abc1234", shift: true)
+        XCTAssertTrue(m.selectedLogSHAs.isEmpty,
+                      "multi-select is disabled while a search is active")
+    }
+
     func test_loadMoreLog_isNoOpWhileSearchActive() async {
         let m = makeModel()
         m.runLogSearch("waveform")

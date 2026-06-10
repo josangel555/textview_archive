@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import ViewerCore
 
@@ -26,9 +27,49 @@ struct GitLogTab: View {
         // doesn't overflow the accordion slot.
         VStack(spacing: 0) {
             searchField
+            if model.selectedLogSHAs.count > 1 {
+                selectionBar
+            }
             listContent
         }
         .frame(height: bodyHeight)
+    }
+
+    /// TSK-522: shown while ≥2 commits are multi-selected (Cmd/Shift-
+    /// click). Offers the cumulative diff and warns when the selection
+    /// has gaps — the base..tip patch necessarily sweeps the unselected
+    /// in-between commits in.
+    private var selectionBar: some View {
+        HStack(spacing: 6) {
+            Text("\(model.selectedLogSHAs.count) selected")
+                .font(.system(size: doc.uiSize(10), weight: .medium))
+            if let range = model.cumulativeLogSelectionRange, !range.isContiguous {
+                Text("+\(range.spannedCount - range.selectedCount) in-between")
+                    .font(.system(size: doc.uiSize(9)))
+                    .foregroundStyle(.orange)
+                    .help("The selection has gaps — the cumulative diff spans \(range.spannedCount) commits including unselected ones in between.")
+                    .accessibilityIdentifier("mdv.gitLog.nonContiguousBanner")
+            }
+            Spacer(minLength: 4)
+            Button(action: { showCumulativeDiff() }) {
+                Text("View Diff")
+                    .font(.system(size: doc.uiSize(10), weight: .medium))
+                    .foregroundStyle(Color.accentColor)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("mdv.gitLog.viewCumulativeDiff")
+            Button(action: { model.clearLogSelection() }) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: doc.uiSize(10)))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("mdv.gitLog.selectionClear")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 3)
+        .background(Color.accentColor.opacity(0.08))
+        .overlay(alignment: .bottom) { Divider() }
     }
 
     /// Full-message search over commit messages + descriptions —
@@ -129,7 +170,7 @@ struct GitLogTab: View {
     private func row(_ c: GitClient.GraphCommit,
                      layoutRow: GraphLayout.Row?,
                      maxLane: Int) -> some View {
-        Button(action: { showCommit(c) }) {
+        Button(action: { rowClicked(c) }) {
             HStack(alignment: .top, spacing: 8) {
                 if let r = layoutRow {
                     GitGraphColumn(row: r, maxLane: maxLane, isHead: isHead(c))
@@ -173,7 +214,7 @@ struct GitLogTab: View {
             // selection color, which renders grey and invisible (the
             // TSK-488 selectedContentBackgroundColor lesson).
             .background(
-                c.sha == model.selectedLogSHA
+                model.selectedLogSHAs.contains(c.sha) || c.sha == model.selectedLogSHA
                     ? Color.accentColor.opacity(0.28)
                     : Color.clear,
                 in: RoundedRectangle(cornerRadius: 4)
@@ -221,6 +262,39 @@ struct GitLogTab: View {
             parts.append("+\(c.insertions) −\(c.deletions)")
         }
         return parts.joined(separator: " · ")
+    }
+
+    /// TSK-522: route a row click by the live modifier flags. Cmd/Shift
+    /// go to the model's multi-select state machine (headless-tested via
+    /// `logRowClicked` — the exact closure this calls); a plain click
+    /// keeps the single-commit diff behavior.
+    private func rowClicked(_ c: GitClient.GraphCommit) {
+        let flags = NSApp.currentEvent?.modifierFlags ?? []
+        if flags.contains(.command) {
+            model.logRowClicked(sha: c.sha, command: true)
+        } else if flags.contains(.shift) {
+            model.logRowClicked(sha: c.sha, shift: true)
+        } else {
+            showCommit(c)
+        }
+    }
+
+    /// TSK-522: open the cumulative (net) diff for the multi-selection —
+    /// `git diff base tip` via `GitClient.cumulativeDiff`, written to a
+    /// .diff file and opened like the single-commit path below.
+    private func showCumulativeDiff() {
+        guard let root = model.repoRoot,
+              let range = model.cumulativeLogSelectionRange else { return }
+        let client = GitClient(repoRoot: root)
+        let body = client.cumulativeDiff(baseRef: range.baseRef, tipRef: range.tipRef)
+        let cache = FileManager.default
+            .urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        let dir = cache.appendingPathComponent("MarkdownViewer/diffs", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let out = dir.appendingPathComponent("\(range.baseRef)..\(range.tipRef).diff")
+        try? body.write(to: out, atomically: true, encoding: .utf8)
+        doc.openInNewTab(out)
     }
 
     /// Show a synthetic commit-diff tab. v1: writes `git show` output
