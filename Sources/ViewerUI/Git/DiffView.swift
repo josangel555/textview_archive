@@ -27,6 +27,14 @@ struct DiffView: View {
     /// cost. @State + .onChange recomputes only when `text` changes.
     @State private var files: [UnifiedDiff.File] = []
 
+    // TSK-597 — find-in-diff. The match set + current index are pure
+    // DiffFind output; the view renders tints and scrolls to the
+    // current match. Recomputed when the query or the parsed tree
+    // changes.
+    @State private var findQuery: String = ""
+    @State private var findMatches: [DiffFind.Match] = []
+    @State private var findIndex: Int?
+
     init(text: String, doc: DocumentModel, reviewSession: ReviewSession? = nil) {
         self.text = text
         self.doc = doc
@@ -56,15 +64,92 @@ struct DiffView: View {
                 // stack and anchor it topLeading so short/narrow diffs pin to
                 // the top-left like every other panel; oversized diffs still
                 // scroll both axes unchanged.
-                GeometryReader { geo in
-                    ScrollView([.horizontal, .vertical]) {
-                        scrollBody(viewport: geo.size)
+                VStack(spacing: 0) {
+                    findBar
+                    GeometryReader { geo in
+                        ScrollViewReader { proxy in
+                            ScrollView([.horizontal, .vertical]) {
+                                scrollBody(viewport: geo.size)
+                            }
+                            .onChange(of: findIndex) { _, idx in
+                                if let idx, findMatches.indices.contains(idx) {
+                                    withAnimation(.easeInOut(duration: 0.15)) {
+                                        proxy.scrollTo(findMatches[idx], anchor: .center)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
         .onAppear { files = DiffParser.parse(text) }
         .onChange(of: text) { _, newText in files = DiffParser.parse(newText) }
+        .onChange(of: findQuery) { _, q in recomputeFind(query: q) }
+        .onChange(of: files) { _, _ in recomputeFind(query: findQuery) }
+    }
+
+    // MARK: - Find-in-diff (TSK-597)
+
+    private func recomputeFind(query: String) {
+        findMatches = DiffFind.matches(in: files, query: query)
+        // A fresh/changed search jumps to the first match (or none).
+        findIndex = DiffFind.next(after: nil, count: findMatches.count)
+    }
+
+    private var findBar: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: doc.uiSize(9)))
+                .foregroundStyle(.secondary)
+            TextField("Find in diff", text: $findQuery)
+                .textFieldStyle(.plain)
+                .font(.system(size: doc.uiSize(11)))
+                .accessibilityIdentifier("mdv.diff.findField")
+            if !findQuery.trimmingCharacters(in: .whitespaces).isEmpty {
+                Text(findMatches.isEmpty
+                     ? "0 matches"
+                     : "\((findIndex ?? 0) + 1) of \(findMatches.count)")
+                    .font(.system(size: doc.uiSize(9), design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("mdv.diff.findCount")
+                Button(action: {
+                    findIndex = DiffFind.previous(before: findIndex, count: findMatches.count)
+                }) {
+                    Image(systemName: "chevron.up").font(.system(size: doc.uiSize(9)))
+                }
+                .buttonStyle(.plain)
+                .disabled(findMatches.isEmpty)
+                .accessibilityIdentifier("mdv.diff.findPrev")
+                Button(action: {
+                    findIndex = DiffFind.next(after: findIndex, count: findMatches.count)
+                }) {
+                    Image(systemName: "chevron.down").font(.system(size: doc.uiSize(9)))
+                }
+                .buttonStyle(.plain)
+                .disabled(findMatches.isEmpty)
+                .accessibilityIdentifier("mdv.diff.findNext")
+                Button(action: { findQuery = "" }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: doc.uiSize(10)))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("mdv.diff.findClear")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(Palette.windowBackground.opacity(0.3))
+        .overlay(alignment: .bottom) { Divider() }
+    }
+
+    /// Per-row find state, O(1) via the match set.
+    private var findMatchSet: Set<DiffFind.Match> { Set(findMatches) }
+
+    private var currentFindMatch: DiffFind.Match? {
+        guard let findIndex, findMatches.indices.contains(findIndex) else { return nil }
+        return findMatches[findIndex]
     }
 
     /// The scroll content: file blocks expanded to AT LEAST the viewport,
@@ -74,8 +159,8 @@ struct DiffView: View {
     /// contract is pinned here, one level below it.
     internal func scrollBody(viewport: CGSize) -> some View {
         LazyVStack(alignment: .leading, spacing: 16, pinnedViews: []) {
-            ForEach(Array(files.enumerated()), id: \.offset) { _, file in
-                fileBlock(file)
+            ForEach(Array(files.enumerated()), id: \.offset) { fi, file in
+                fileBlock(file, fileIndex: fi)
             }
         }
         .padding(.vertical, 8)
@@ -98,7 +183,7 @@ struct DiffView: View {
     }
 
     @ViewBuilder
-    private func fileBlock(_ file: UnifiedDiff.File) -> some View {
+    private func fileBlock(_ file: UnifiedDiff.File, fileIndex: Int) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             fileHeader(file)
             if file.isBinary {
@@ -114,8 +199,9 @@ struct DiffView: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
             } else {
-                ForEach(Array(file.hunks.enumerated()), id: \.offset) { _, hunk in
-                    hunkBlock(hunk, filePath: filePath(of: file))
+                ForEach(Array(file.hunks.enumerated()), id: \.offset) { hi, hunk in
+                    hunkBlock(hunk, filePath: filePath(of: file),
+                              fileIndex: fileIndex, hunkIndex: hi)
                 }
             }
         }
@@ -189,7 +275,8 @@ struct DiffView: View {
     }
 
     @ViewBuilder
-    private func hunkBlock(_ hunk: UnifiedDiff.Hunk, filePath: String) -> some View {
+    private func hunkBlock(_ hunk: UnifiedDiff.Hunk, filePath: String,
+                           fileIndex: Int, hunkIndex: Int) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             // Hunk header banner — like "@@ -10,3 +12,5 @@ func foo()"
             HStack(spacing: 6) {
@@ -209,8 +296,9 @@ struct DiffView: View {
             .padding(.vertical, 3)
             .background(Color.accentColor.opacity(0.06))
 
-            ForEach(Array(hunk.lines.enumerated()), id: \.offset) { _, line in
-                lineRow(line)
+            ForEach(Array(hunk.lines.enumerated()), id: \.offset) { li, line in
+                lineRow(line, coordinate: DiffFind.Match(
+                    file: fileIndex, hunk: hunkIndex, line: li))
                 // Review affordances — entirely gated on a session being
                 // present. The nil (read-only) path renders only `lineRow`.
                 if reviewSession != nil {
@@ -278,7 +366,8 @@ struct DiffView: View {
         "@@ -\(h.oldStart),\(h.oldCount) +\(h.newStart),\(h.newCount) @@"
     }
 
-    private func lineRow(_ line: UnifiedDiff.Line) -> some View {
+    private func lineRow(_ line: UnifiedDiff.Line,
+                         coordinate: DiffFind.Match) -> some View {
         HStack(spacing: 0) {
             lineNoCell(line.oldLineNo)
             lineNoCell(line.newLineNo)
@@ -299,6 +388,20 @@ struct DiffView: View {
         }
         .frame(minHeight: 17)
         .background(rowBackground(line.kind))
+        // TSK-597: match tints layer OVER the +/- row color so both read
+        // at once; the current match is the stronger tint. The id makes
+        // the row a scrollTo target for next/prev.
+        .overlay(
+            (findMatchSet.contains(coordinate)
+                ? (coordinate == currentFindMatch
+                    ? Color.orange.opacity(0.28)
+                    : Color.yellow.opacity(0.18))
+                : Color.clear)
+                // Tint only — never swallow the row's text-selection
+                // clicks (TSK-594).
+                .allowsHitTesting(false)
+        )
+        .id(coordinate)
     }
 
     private func lineNoCell(_ n: Int?) -> some View {
