@@ -497,14 +497,26 @@ struct SidebarView: View {
                                     parentNavRow
                                 }
                                 ForEach(rows) { row in
+                                    // TSK-613: `.equatable()` + the value
+                                    // snapshot means a model republish only
+                                    // re-bodies rows whose snapshot changed
+                                    // (selection / current / git status...),
+                                    // not every visible row.
                                     FileRowView(
                                         node: row.node,
                                         depth: row.depth,
+                                        state: FileRowState.make(
+                                            node: row.node,
+                                            model: model,
+                                            sidebar: sidebar,
+                                            trackedRepos: trackedRepos,
+                                            recencyMode: recencyMode
+                                        ),
                                         sidebar: sidebar,
                                         model: model,
-                                        trackedRepos: trackedRepos,
-                                        recencyMode: recencyMode
+                                        trackedRepos: trackedRepos
                                     )
+                                    .equatable()
                                 }
                             }
                             .padding(.vertical, 4)
@@ -990,17 +1002,79 @@ struct GitStatusBadge: View {
     }
 }
 
-private struct FileRowView: View {
+/// Everything a `FileRowView` body reads, extracted to an Equatable
+/// value (TSK-613). The rows used to observe DocumentModel / SidebarModel
+/// / TrackedReposChannel directly, so EVERY visible row re-evaluated on
+/// EVERY model republish — 144ms inclusive per 4s nav sweep in the
+/// TSK-603 capture. The parent enumeration (which already observes all
+/// three objects) now computes this snapshot per row and the row is
+/// `.equatable()`: SwiftUI skips the body for rows whose snapshot didn't
+/// change, so a tab switch re-bodies ~3 rows instead of all of them.
+///
+/// CONTRACT: every model/sidebar/trackedRepos read inside the row's body
+/// MUST come through this struct (or `@State` local to the row). A read
+/// that bypasses it renders stale because nothing re-bodies the row.
+struct FileRowState: Equatable, Sendable {
+    let isCurrent: Bool
+    let isSelected: Bool
+    let isOpenInOtherTab: Bool
+    let isBookmarked: Bool
+    let isExpanded: Bool
+    let gitStatus: GitStatusEntry.Status?
+    let repoRootKind: RepoRootKind
+    let isTrackedRoot: Bool
+    let zoom: Double
+    let recencyMode: FileTreeRecency.RecencyMode
+    let recencyVersion: Int
+
+    /// One row's snapshot. `internal` so the skip contract is testable
+    /// headlessly: unrelated model changes must produce an EQUAL state.
+    @MainActor
+    static func make(
+        node: FileNode,
+        model: DocumentModel,
+        sidebar: SidebarModel,
+        trackedRepos: TrackedReposChannel,
+        recencyMode: FileTreeRecency.RecencyMode
+    ) -> FileRowState {
+        let kind: RepoRootKind = node.isDirectory
+            ? trackedRepos.repoRootKind(node.url) : .none
+        return FileRowState(
+            isCurrent: model.currentURL == node.url,
+            isSelected: sidebar.selectedURL == node.url,
+            isOpenInOtherTab: !node.isDirectory
+                && model.openTabURLs.contains(node.url)
+                && node.url != model.currentURL,
+            isBookmarked: model.bookmarksStore.contains(node.url),
+            isExpanded: sidebar.isExpanded(node.url),
+            gitStatus: trackedRepos.status(for: node.url),
+            repoRootKind: kind,
+            isTrackedRoot: kind != .none && trackedRepos.isTrackedRoot(node.url),
+            zoom: model.zoom,
+            recencyMode: recencyMode,
+            recencyVersion: sidebar.recencyVersion
+        )
+    }
+}
+
+private struct FileRowView: View, Equatable {
     let node: FileNode
     let depth: Int
-    @ObservedObject var sidebar: SidebarModel
-    @ObservedObject var model: DocumentModel
-    @ObservedObject var trackedRepos: TrackedReposChannel
-    /// Active recency mode — chosen via the FILES header dropdown,
-    /// stored in `@AppStorage` on the parent. Threaded through here
-    /// so every child row paints stripes in the same mode without
-    /// each row touching `@AppStorage` independently.
-    let recencyMode: FileTreeRecency.RecencyMode
+    let state: FileRowState
+    /// UNOBSERVED references — used only inside action closures and the
+    /// lazily-built context menu, never read in the body (TSK-613; see
+    /// `FileRowState`'s contract). `model.uiSize` is the one body-time
+    /// call: it reads `zoom`, which is mirrored in `state.zoom` so a
+    /// zoom change still re-bodies the row.
+    let sidebar: SidebarModel
+    let model: DocumentModel
+    let trackedRepos: TrackedReposChannel
+
+    /// SwiftUI skips the body when this returns true (`.equatable()` at
+    /// the call site). The object references are deliberately excluded.
+    nonisolated static func == (lhs: FileRowView, rhs: FileRowView) -> Bool {
+        lhs.node == rhs.node && lhs.depth == rhs.depth && lhs.state == rhs.state
+    }
 
     /// Cached file attributes (mtime + ctime) for this row's URL.
     /// Loaded once on `.onAppear` via the bounded LRU in
@@ -1050,18 +1124,18 @@ private struct FileRowView: View {
                             .font(.system(size: model.uiSize(9), weight: .semibold))
                             .frame(width: model.uiSize(12))
                             .foregroundStyle(.secondary)
-                            .rotationEffect(.degrees(sidebar.isExpanded(node.url) ? 90 : 0))
+                            .rotationEffect(.degrees(state.isExpanded ? 90 : 0))
                             .animation(.easeInOut(duration: 0.15),
-                                       value: sidebar.isExpanded(node.url))
+                                       value: state.isExpanded)
                     } else {
                         Spacer().frame(width: model.uiSize(12))
                     }
                     FileIconView(
                         url: node.url,
                         isDirectory: node.isDirectory,
-                        isExpanded: sidebar.isExpanded(node.url),
-                        isGitRoot: repoRootKind == .repo,
-                        isNestedRoot: repoRootKind == .nested,
+                        isExpanded: state.isExpanded,
+                        isGitRoot: state.repoRootKind == .repo,
+                        isNestedRoot: state.repoRootKind == .nested,
                         size: .tree,
                         scale: CGFloat(model.zoom)
                     )
@@ -1073,7 +1147,7 @@ private struct FileRowView: View {
                     // actively being observed). Lets the user see WHICH
                     // repo roots are live vs merely on-disk.
                     .overlay(alignment: .bottomTrailing) {
-                        if repoRootKind != .none && trackedRepos.isTrackedRoot(node.url) {
+                        if state.isTrackedRoot {
                             Circle()
                                 .fill(Color.accentColor)
                                 .frame(width: model.uiSize(4), height: model.uiSize(4))
@@ -1086,10 +1160,10 @@ private struct FileRowView: View {
                         // visible tab — matches the bold treatment in
                         // the tab bar so the "current document" is
                         // obvious in both surfaces.
-                        .font(.system(size: model.uiSize(12), weight: isCurrent ? .semibold : .regular))
+                        .font(.system(size: model.uiSize(12), weight: state.isCurrent ? .semibold : .regular))
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    if model.bookmarksStore.contains(node.url) {
+                    if state.isBookmarked {
                         Image(systemName: "star.fill")
                             .font(.system(size: model.uiSize(8)))
                             .foregroundStyle(.yellow)
@@ -1097,7 +1171,7 @@ private struct FileRowView: View {
                             .accessibilityLabel("Bookmarked")
                     }
                     Spacer(minLength: 0)
-                    if let status = trackedRepos.status(for: node.url) {
+                    if let status = state.gitStatus {
                         GitStatusBadge(status: status, uiSize: model.uiSize)
                     }
                 }  // inner HStack(spacing: 4)
@@ -1130,7 +1204,7 @@ private struct FileRowView: View {
         // entry for this URL was already invalidated by the bump source,
         // so this re-read sees fresh mtime/ctime. Cheap: cache-hit unless
         // *this* URL was the one that changed.
-        .onChange(of: sidebar.recencyVersion) { _, _ in
+        .onChange(of: state.recencyVersion) { _, _ in
             recencyAttrs = FileTreeRecencyCache.attributes(for: node.url)
         }
         // UIRESP-01/13: pointer affordance for file rows. Hover updates
@@ -1176,7 +1250,7 @@ private struct FileRowView: View {
     /// flash is invisible at scroll speeds and avoids a synchronous
     /// stat during the SwiftUI body re-eval.
     private var currentRecencyTier: FileTreeRecency.RecencyTier {
-        guard let date = recencyAttrs?.date(for: recencyMode) else {
+        guard let date = recencyAttrs?.date(for: state.recencyMode) else {
             return .older
         }
         return FileTreeRecency.tier(for: date)
@@ -1200,10 +1274,9 @@ private struct FileRowView: View {
     /// at a glance: which row is about to be activated by ↵, which
     /// file is in front, and which other files are already open.
     private var rowBackground: Color {
-        let isSelected = sidebar.selectedURL == node.url
-        if isCurrent  { return Color.accentColor.opacity(0.22) }
-        if isSelected { return Color(nsColor: .alternateSelectedControlColor).opacity(0.25) }
-        if isOpenInOtherTab {
+        if state.isCurrent  { return Color.accentColor.opacity(0.22) }
+        if state.isSelected { return Color(nsColor: .alternateSelectedControlColor).opacity(0.25) }
+        if state.isOpenInOtherTab {
             return Color.accentColor.opacity(0.08)
         }
         // UIRESP-01/13: faint hover tint, strictly below the
@@ -1216,42 +1289,20 @@ private struct FileRowView: View {
         return Color.clear
     }
 
-    /// True if this file is loaded in some tab other than the current
-    /// one. Lets us mark "you have this open elsewhere" without
-    /// stealing the stronger highlight from the actually-current tab.
-    /// Reads from `model.openTabURLs` (O(1) Set lookup) instead of
-    /// scanning `model.tabs.tabs` per row per body re-eval.
-    private var isOpenInOtherTab: Bool {
-        guard !node.isDirectory else { return false }
-        return model.openTabURLs.contains(node.url)
-            && node.url != model.currentURL
-    }
 
     private var accessibilityLabel: String {
         var parts: [String] = []
         if node.isDirectory {
-            parts.append(sidebar.isExpanded(node.url) ? "Folder expanded" : "Folder collapsed")
+            parts.append(state.isExpanded ? "Folder expanded" : "Folder collapsed")
         } else {
             parts.append("File")
         }
         parts.append(node.name)
-        if let s = trackedRepos.status(for: node.url) {
+        if let s = state.gitStatus {
             parts.append("git: \(s.rawValue)")
         }
-        if isCurrent { parts.append("currently open") }
+        if state.isCurrent { parts.append("currently open") }
         return parts.joined(separator: ", ")
-    }
-
-    private var isCurrent: Bool {
-        model.currentURL == node.url
-    }
-
-    /// Repo-root classification for this row's directory (cheap cached
-    /// `.git`-existence stat, NOT git status). `.none` for files and
-    /// ordinary folders. Drives the folder glyph.
-    private var repoRootKind: RepoRootKind {
-        guard node.isDirectory else { return .none }
-        return trackedRepos.repoRootKind(node.url)
     }
 
 }
