@@ -6134,3 +6134,13 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - **Tests:** 6 GitClientGrepLogTests (incl. body-only match + fixed-strings metacharacters)
   + 4 GitLogSearchModelTests (state machine) + 25-test git regression sweep on the
   refactored parser. Teeth: ignore-case flag dropped → red. Gate green; reinstall kicked.
+## LOG +152 (2026-06-10, autonomous tick — TSK-597 fixed: find-in-diff with count + wrapping next/prev)
+- **Engine (e959865):** pure `DiffFind` in ViewerCore — case-insensitive literal match over
+  EVERY hunk line (added/removed/context), document-ordered (file,hunk,line) coordinates,
+  wrapping next/prev (fresh search seeds first; reverse seeds last). Headless-pinned by 6
+  DiffFindTests; teeth via a wrap→clamp mutation.
+- **View:** pinned find bar (field, "N of M", chevrons, clear); yellow match tint + orange
+  current tint layered over the +/- row colors via a NON-hit-testable overlay (a Color
+  overlay would otherwise swallow the TSK-594 text-selection clicks); next/prev scrolls via
+  per-line coordinate ids under ScrollViewReader. DiffViewLayout/Copy suites confirm the
+  TSK-593/594 contracts survived the body restructure. Gate green; reinstall kicked.
