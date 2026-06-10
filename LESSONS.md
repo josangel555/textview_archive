@@ -2682,3 +2682,34 @@ cost an iteration; together they bound what an IN-PROCESS click harness can ever
   commits even when the build FAILED (af8bd21 landed non-compiling code). Gate with `&&`
   on the build's REAL exit, or run the steps as separate sequential calls and read the
   exit first.
+
+## 2026-06-10 (in-process event synthesis — TSK-620 endgame, constraints 6–8: the matrix is CLOSED)
+Continuation of "the five constraints" above; these three close every remaining channel.
+- **(6) WindowServer refuses activation/key status to a root-uid app in a user's GUI
+  session** — even `.regular` policy + `NSApp.activate` + run-loop pumping never lands
+  key. Cure for the harness: spawn the app AS the console user (`sudo -n -u vm-tester`)
+  from the root xctest (AppLauncher does this whenever `geteuid()==0`); root's per-user
+  tmpdir is 700, so the cross-user hand-off moves script/arg/artifacts to a 0777 /tmp dir.
+- **(7) A fork/exec'd app on macOS 14+ can NEVER self-activate** (cooperative activation)
+  — correct uid does not help. The ONLY route to genuine activation is a LaunchServices
+  launch: `open -n -W --env K=V … -a App` (`--env` exists and works; LS drops
+  `--`-prefixed argv, so `--script`/file ride in env vars `MDV_SCRIPT_PATH` /
+  `MDV_OPEN_FILE`, read back in main.swift). AppLauncher `viaOpen:` mode; PROVEN: the
+  trace flipped to `active=true` + key window. Also disproven en route: FAKING
+  `isKeyWindow` (window subclass) changes nothing — `sendEvent`'s non-key suppression is
+  not keyed on the overridable property (a probed plain-AppKit subview's `mouseDown`
+  never arrived either), so don't try that again.
+- **(8) Synthesized NSEvents do not drive SwiftUI gestures EVEN on a genuinely key +
+  active window** (iteration 10: LS-launched, `via=sendEvent active=true`, action never
+  fired; SwiftUI attaches zero public NSGestureRecognizers and ignores direct responder
+  dispatch). SwiftUI's gesture pipeline evidently requires WindowServer-backed (CGEvent)
+  input — which requires the owner-only AX TCC grant. ⇒ In-process real-event synthesis
+  for SwiftUI controls is IMPOSSIBLE, full stop.
+- **The sanctioned endgame**: the testing mandate's own fallback — "exercise the exact
+  action closure the control is wired to" — as a script verb in the LIVE app, asserting
+  the cross-process outcome incl. RENDERED text via the `nsTextField` dump channel
+  (`session-open-home`, `session-new-via-goto`; InteractionUATTests green 2/2 on the VM
+  after 5 demonstrably-red iterations). The only residue this leaves uncovered is literal
+  pixel hit-area routing — entitled synthesis (XCUITest L4 / owner AX grant) territory.
+  Don't spend VM iterations rediscovering this: for any future SwiftUI-interaction
+  ticket, go STRAIGHT to exact-closure verbs + rendered-outcome dump assertions.

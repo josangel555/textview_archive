@@ -6548,3 +6548,26 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - Process: af8bd21 briefly landed non-compiling code via a `;`-chained commit after a
   remote build — fixed in db1cec1; rule (gate commits on the build's REAL exit) added to
   LESSONS.
+
+## LOG +178 (2026-06-10, autonomous tick — TSK-313 + TSK-314 VALIDATED; the synthesis question closed for good)
+- **TSK-313 validated** (strip double-click → instant ~ session) and **TSK-314 validated**
+  (+ → GoTo prompt RENDERING "~"): InteractionUATTests 2/2 green on the VM GUI lane
+  (dist of 7da75a7), driving each control's EXACT action closure cross-process and
+  asserting dump outcomes — session created+activated at resolved home (313), realized
+  NSTextField stringValue == "~" (314, the render half the ticket was held for). Teeth
+  are not theoretical: the same assertions were RED for five VM iterations until the
+  closures actually ran. Host gate PASSED on every commit in the chain
+  (eeb92e4 → 838e330 → 8da1d6f → 2442841 → 7da75a7).
+- **The TSK-620 investigation closed the in-process synthesis question permanently** —
+  constraints 6–8 landed in LESSONS: root apps are refused key status in a user session
+  (cure: console-user spawn, now in AppLauncher); fork/exec'd apps can never self-activate
+  on macOS 14+ (cure: `open --env` LS launch, now AppLauncher `viaOpen:`); and the final
+  word — synthesized NSEvents do not drive SwiftUI gestures even on a key+active window
+  (WindowServer/CGEvent-backed input required ⇒ owner-only AX grant). Future SwiftUI
+  interaction tickets go straight to exact-closure verbs + rendered-outcome assertions.
+- **Kept infrastructure** (all host-tested): ClickTargetRegistry + `.uiClickTarget`
+  (SwiftUI frames → ui-click, works end-to-end for resolution), ui-click/ui-double-click
+  verbs (full delivery for AppKit-backed targets), console-user spawn, LS-launch mode,
+  `session-new-via-goto` verb, nsTextField dump channel.
+- **Remaining on TSK-620**: TSK-522/523 (git-log selection bar + modifier clicks) via the
+  same exact-closure pattern — git fixture + row-click verbs; checkpoint comment seq 4026.
