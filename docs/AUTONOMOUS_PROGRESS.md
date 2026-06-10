@@ -6689,3 +6689,26 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - **Teeth**: re-added the historical sidebar→DocumentModel forwarding sink → the
   zero-bound test went RED naming all four widened chrome views; reverted → 6/6 green.
   Gate PASSED on a9de107.
+
+## LOG +185 (2026-06-10, autonomous tick — fresh validation of TSK-108 CAUGHT a live regression; fixed as TSK-621; both validated)
+- **TSK-108 (P1, ~1s tab close/switch/open) picked off `task_next` at `fixed`** — re-ran its
+  whole evidence chain FRESH instead of trusting the 2026-06-06 claims. Host suites green
+  (MountedPanesWiringTests 5/5, RepublishCountTests 2/2, MountedPanesLRU 12/12) — but the VM
+  real-view-tree probe FAILED: `test_lruOverflow_evictsExactlyTheTail` got **3 WKWebView
+  dismantles, expected 1** (A→B→A=0 still held).
+- **Root cause (TSK-621, filed + fixed this tick):** TSK-611 (7cdf833, this morning) made the
+  rendered body cache-read-only — so rendered-HTML cache eviction = WebView teardown for
+  mounted panes. The cache's drop-to-⅔ hysteresis dropped 3 oldest entries on the 5th open,
+  2 of them for tabs still in MountedPanesLRU → their retained panes flipped webview→spinner
+  and were dismantled+re-rendered (the exact reload churn TSK-108 eliminated).
+- **Fix (af5e6dd):** mounted-aware eviction in `storeRenderedHTML` — never evict a mounted
+  tab's entry, evict oldest non-mounted only, hysteresis dropped (evict to capacity). New
+  bare-gate test `test_cacheEviction_neverDropsMountedTabs` (RED against the old eviction,
+  naming both mounted victims); VM probe back to 2/2. Gate PASSED on af5e6dd; release bundle
+  rebuilt + installed to `/Applications/TextView.app`.
+- **Why it shipped silently: PaneRetentionMountProbeTests was in NO WebView-lane filter list**
+  — the gated suite ran nowhere (the #312 false-green class). Now wired into both
+  `scripts/test-in-vm.sh` `run_webview_tests` and `.github/workflows/nightly-vm.yml`.
+- **TSK-108 validated** on the fresh all-green chain — with today's catch as live proof the
+  guards have teeth. **TSK-621 validated** with two-level evidence (host + VM, both
+  teeth-demonstrated).

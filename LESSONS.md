@@ -2731,3 +2731,24 @@ Continuation of "the five constraints" above; these three close every remaining 
   (root → range → git body bytes → cache write → tab count) named the exact broken link
   ("NO repoRoot") in ONE run — the same pattern as the ui-click v4 trace. Give every
   multi-link harness action a trace channel up front.
+
+## 2026-06-10 (later still) — gated suites must be IN a lane list, and caches that views read-only are lifecycle-coupled
+
+- **A gated test suite that is in NO lane's filter list runs NOWHERE — and its
+  green history means nothing.** `PaneRetentionMountProbeTests` self-gates on
+  `MDV_RUN_WEBVIEW_TESTS` but was never added to `test-in-vm.sh
+  run_webview_tests` or `nightly-vm.yml`, so TSK-611 broke the pane-retention
+  contract it guards (3 dismantles on LRU overflow instead of 1) and nothing
+  went red for days. When adding an env-gated suite, wiring it into the lane
+  list IS part of the change (same class as #312). Corollary: when validating
+  an old `fixed` ticket, RE-RUN its evidence fresh — this exact re-run is what
+  caught the regression.
+- **A cache that a SwiftUI body reads READ-ONLY becomes part of the view
+  lifecycle: evicting an entry is equivalent to tearing the view down.** After
+  TSK-611, `renderedHTMLIfCached` nil → spinner branch → the retained
+  WKWebView pane is dismantled. So the rendered-HTML cache eviction must be
+  MOUNTED-AWARE (never evict a `MountedPanesLRU` member's entry), and
+  drop-to-⅔ hysteresis on such a cache amplifies one eviction into several
+  teardowns. General rule: any cache consulted in `body` to DECIDE WHETHER A
+  SUBTREE EXISTS must align its eviction policy with the retention policy of
+  that subtree (TSK-621, af5e6dd).
