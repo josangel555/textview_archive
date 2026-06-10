@@ -38,7 +38,8 @@ echo "==> Diagnose on VM: scene=$SCENE file=$FILE_REL mode=${MODE:-json}"
 ssh macOS15 'bash -s' -- "$PASSWORD" "$GUI_UID" "$SCENE" "$FILE_REL" "$MODE" <<'REMOTE'
   set -e
   PASSWORD="$1"; GUI_UID="$2"; SCENE="$3"; FILE_REL="$4"; MODE="$5"
-  rm -f /tmp/mdv-diagnose.json /tmp/mdv-diagnose.err /tmp/mdv-diagnose.png
+  # sudo'd asuser writes these root-owned (TSK-502 class) — clean via sudo.
+  echo "$PASSWORD" | sudo -S rm -f /tmp/mdv-diagnose.json /tmp/mdv-diagnose.err /tmp/mdv-diagnose.png
   if [ "$MODE" = "--capture" ]; then
     # Pixel mode (the visibility check): launch with the scene, let it
     # settle, screencapture the whole screen, reap by test-instance tag.
