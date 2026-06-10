@@ -6797,3 +6797,21 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   corruption — assert at the corruption window, not after convergence.
 - Gate PASSED on 1f41c2a. Drain tally: 266, 440, 134, 181, 150 validated (+ the earlier
   599/600/609/602/108/621 wave). ~46 fixed remain.
+
+## LOG +191 (2026-06-10, autonomous tick — drain batch 2 via delegated recon: 6/6 HOLD, all honest; TSK-622 filed as the unblock)
+- **Delegated read-only recon over TSK-138/139/141/142/143/147** (the next six fixed-lane
+  audit reconciliations): code evidence CONFIRMED CURRENT for all six, nearby suites
+  green (PTY 4/4-bg, LSP FakeServer 18/18, FileWatcher 8/8×3, cargo session:: 7/7 +
+  filter:: 12/12) — but **none has a test that fails if its fix reverts**. Uniform
+  verdict: HOLD. The drain bar (behavior pinned, fresh) is doing its job — no rubber
+  stamps.
+- **TSK-622 filed**: the 4-test build list that unblocks the batch (PTY reap ESRCH
+  assertion; HexView HighlightFingerprint short-circuit test; FileWatcher
+  stop-races-reattach window test; rust-core indices-only-cache structural guard) +
+  TSK-139 recommended owner-dismiss (no regression-bite test possible by nature) +
+  the PTY `test_start_afterSelfExit_respawns` foreground-sandbox flake (red 3/3
+  foreground, green background — must be resolved before that suite gates anything).
+- Run recipes: `swift test --filter Audit_Sources_ViewerUI_Terminal_PTYProcess_swift_LifecycleTests`,
+  `--filter ViewerCoreTests.FileWatcherTests`, `--filter LSPPoolFakeServerTests`,
+  `cargo test -p mdvcore-core --lib session::` / `filter::` (rust-core manifest).
+- Next drain ticks: build TSK-622's guards (1-2 per tick), then validate the six.
