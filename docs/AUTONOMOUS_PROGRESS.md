@@ -6384,3 +6384,17 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   suite-emptying + write-isolation mechanism on the host gate. Host gate green @ e82dae1;
   T5 green on the rebuilt VM dist. Board: validated.
 - TSK-618 also surfaced and fixed `test-in-vm.sh` filter pass-through (fd195b5, prior log).
+
+## LOG +169 (2026-06-10, autonomous tick — TSK-617 fixed: uncatchable dead-pipe crash + emptyFileHex settle)
+- **The VM suite's false-failure pair is closed (fca2114).** `AppLauncher.runShell` read
+  pipes via `readDataToEndOfFile()` — an UNCATCHABLE ObjC `NSFileHandleOperationException`
+  on a dead fd (fd pressure in the 4600-test process) crashed ALL of xctest at
+  `AppLauncher.swift:209` instead of self-skipping. Now `readToEnd()`: same condition,
+  catchable error, dead pipe → nil stdout → existing skip paths.
+  `AppLauncherPipeSafetyTests` has BUILT-IN teeth: it closes the fd then reads — under
+  the old API the test process crashes (the exact pre-fix failure mode).
+- **emptyFileHex:** async 0-byte→HEX resolution missed the 0.9s settle on the loaded VM;
+  widened to 3.0s. No wait-until verb exists and ScriptRunner steps run on main (a
+  blocking poll would starve the resolution it waits for) — an async `wait-mode` verb is
+  the future harness investment if fixed settles keep flaking. Residue: confirm in the
+  next VM full-suite run. Host gate green @ fca2114.
