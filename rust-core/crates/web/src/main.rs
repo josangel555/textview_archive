@@ -60,6 +60,13 @@ const SOCKET_TIMEOUT: Duration = Duration::from_secs(15);
 /// holding unbounded FDs — bounds the blast radius of a runaway local client.
 const MAX_INFLIGHT: usize = 128;
 
+/// Total wall-clock budget for reading one request head (audit TSK-556).
+/// `SOCKET_TIMEOUT` bounds each individual read, NOT the whole head: a client
+/// dripping one header byte per 14 s never trips it and pins a worker slot for
+/// tens of hours (× MAX_INFLIGHT = full capacity from one laptop). A real
+/// browser sends the entire head in one segment; 10 s is generous.
+const REQUEST_HEAD_DEADLINE: Duration = Duration::from_secs(10);
+
 /// Cap on the in-memory recently-opened list the web front-end keeps for the
 /// `/recent` view (TSK-234). A single-user localhost server → one global MRU,
 /// bounded so it can never grow without limit.
@@ -180,21 +187,55 @@ fn main() -> io::Result<()> {
     let inflight = Arc::new(AtomicUsize::new(0));
     for stream in listener.incoming().flatten() {
         // Reserve a slot; if we're already at the cap, answer 503 and drop the
-        // socket instead of spawning an unbounded thread / leaking FDs.
-        if inflight.fetch_add(1, Ordering::AcqRel) >= MAX_INFLIGHT {
-            inflight.fetch_sub(1, Ordering::AcqRel);
+        // socket instead of spawning an unbounded thread / leaking FDs. The
+        // guard's Drop releases the slot on EVERY exit path.
+        let slot = SlotGuard::acquire(&inflight);
+        if slot.over(MAX_INFLIGHT) {
+            drop(slot);
             let _ = refuse_overloaded(stream);
             continue;
         }
         let root = Arc::clone(&root);
         let recents = Arc::clone(&recents);
-        let inflight = Arc::clone(&inflight);
         thread::spawn(move || {
+            // Moving the guard in means a PANICKING handler still releases its
+            // slot during unwind (audit TSK-551 — the old post-call decrement
+            // was skipped on unwind; each leaked slot was a permanent step
+            // toward all-503). Under a panic=abort profile the process dies
+            // loudly instead — explicit failure, never silent degradation.
+            let _slot = slot;
             let _ = handle_conn(stream, &root, &recents);
-            inflight.fetch_sub(1, Ordering::AcqRel);
         });
     }
     Ok(())
+}
+
+/// RAII in-flight slot (audit TSK-551): increments on acquire, decrements in
+/// `Drop` — so the count is balanced on every exit path, including a worker
+/// panic unwinding past the handler.
+struct SlotGuard {
+    inflight: Arc<AtomicUsize>,
+    /// Count BEFORE this acquire (what `fetch_add` returned).
+    prior: usize,
+}
+
+impl SlotGuard {
+    fn acquire(inflight: &Arc<AtomicUsize>) -> Self {
+        let prior = inflight.fetch_add(1, Ordering::AcqRel);
+        Self { inflight: Arc::clone(inflight), prior }
+    }
+
+    /// True when the acquire OVERSHOT the cap (the caller should refuse and
+    /// drop the guard, which undoes the reservation).
+    fn over(&self, cap: usize) -> bool {
+        self.prior >= cap
+    }
+}
+
+impl Drop for SlotGuard {
+    fn drop(&mut self) {
+        self.inflight.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
 /// Best-effort 503 for a connection refused at the concurrency cap. Failures to
@@ -220,7 +261,7 @@ fn handle_conn(mut stream: TcpStream, root: &Path, recents: &Mutex<Vec<String>>)
     // Cap the bytes consumed parsing the request line + headers so an endless
     // (or giant) header stream is cut off here instead of growing to OOM.
     let mut reader = BufReader::new(stream.try_clone()?.take(MAX_HEADER_BYTES));
-    let (status, ctype, body) = match read_request_head(&mut reader) {
+    let (status, ctype, body) = match read_request_head(&mut reader, REQUEST_HEAD_DEADLINE) {
         Ok((req_line, host)) if host_allowed(&host) => {
             // Record a successfully-confined /view into the recents MRU, then
             // either serve the /recent page or fall through to the pure router.
@@ -260,7 +301,14 @@ fn handle_conn(mut stream: TcpStream, root: &Path, recents: &Mutex<Vec<String>>)
 /// — we surface that as `InvalidData` so the caller answers 400 instead of
 /// silently treating a truncated head as complete. `host` is captured for the
 /// anti-DNS-rebinding check (AUDIT S1).
-fn read_request_head<R: BufRead>(reader: &mut R) -> io::Result<(String, String)> {
+///
+/// `deadline` bounds the TOTAL wall-clock spent on the head (audit TSK-556):
+/// the per-read socket timeout cannot stop a slow drip that delivers one byte
+/// per read. A trip answers `TimedOut` → 400, releasing the worker slot.
+/// Parameterized (production passes [`REQUEST_HEAD_DEADLINE`]) so the test can
+/// trip it without a multi-second sleep.
+fn read_request_head<R: BufRead>(reader: &mut R, deadline: Duration) -> io::Result<(String, String)> {
+    let start = std::time::Instant::now();
     let mut req_line = String::new();
     if reader.read_line(&mut req_line)? == 0 {
         return Err(io::Error::new(io::ErrorKind::InvalidData, "empty request"));
@@ -272,6 +320,9 @@ fn read_request_head<R: BufRead>(reader: &mut R) -> io::Result<(String, String)>
     }
     let mut host = String::new();
     loop {
+        if start.elapsed() > deadline {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "request head deadline exceeded"));
+        }
         let mut h = String::new();
         let n = reader.read_line(&mut h)?;
         if n == 0 {
@@ -700,11 +751,31 @@ fn render_view_filtered(
 /// TUI's `f` prompt). An empty `filter` is the no-narrowing fast path: the
 /// listing is returned in pure sort order.
 fn read_entries(dir: &Path, sort: SortKey, show_hidden: bool, filter: &str) -> Vec<nav::Entry> {
+    read_entries_capped(dir, sort, show_hidden, filter, MAX_DIR_ENTRIES)
+}
+
+/// Cap on directory entries materialized for one listing (audit TSK-558) —
+/// the same order of magnitude as the 5000-row table cap, so a runaway
+/// directory (build artifacts, node_modules, a tmpfs gone wild) can't balloon
+/// the listing's memory or the rendered HTML. The cap applies in raw FS order
+/// BEFORE sort/filter: this is a blast-radius guard, not pagination.
+const MAX_DIR_ENTRIES: usize = 5000;
+
+/// [`read_entries`] with the entry cap as a parameter, so the cap behavior is
+/// unit-testable without creating 5000 fixture files.
+fn read_entries_capped(
+    dir: &Path,
+    sort: SortKey,
+    show_hidden: bool,
+    filter: &str,
+    cap: usize,
+) -> Vec<nav::Entry> {
     let Ok(rd) = fs::read_dir(dir) else {
         return Vec::new();
     };
     let mut items: Vec<nav::Entry> = rd
         .filter_map(Result::ok)
+        .take(cap)
         .map(|e| {
             let meta = e.metadata().ok();
             let is_dir = meta.as_ref().map(fs::Metadata::is_dir).unwrap_or(false);
@@ -1873,6 +1944,63 @@ mod tests {
     use super::*;
     use std::io::Read;
     use std::net::TcpStream;
+
+    #[test]
+    fn inflight_slot_released_when_handler_panics() {
+        // TSK-551: the old post-call decrement was skipped when the worker
+        // panicked — each leaked slot was a permanent step toward all-503.
+        // The RAII guard must release during unwind.
+        let inflight = Arc::new(AtomicUsize::new(0));
+        let slot = SlotGuard::acquire(&inflight);
+        assert!(!slot.over(MAX_INFLIGHT));
+        assert_eq!(inflight.load(Ordering::Acquire), 1);
+        let worker = thread::spawn(move || {
+            let _slot = slot;
+            // An unwinding panic without `panic!` (denied outside tests in
+            // some lint configs): unwrap on None is allowed in tests.
+            #[allow(clippy::unnecessary_literal_unwrap)]
+            let _: () = None::<()>.unwrap();
+        });
+        assert!(worker.join().is_err(), "worker must have panicked");
+        assert_eq!(
+            inflight.load(Ordering::Acquire),
+            0,
+            "slot must be released on panic unwind"
+        );
+    }
+
+    #[test]
+    fn request_head_deadline_trips_on_slow_drip() {
+        // TSK-556: the per-read socket timeout cannot stop a 1-byte drip; the
+        // TOTAL deadline must. Deadline ZERO models a drip that has already
+        // out-waited any budget — no real sleep needed.
+        let head = b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        let mut slow = io::Cursor::new(head.to_vec());
+        let err = read_request_head(&mut slow, Duration::ZERO).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::TimedOut);
+        // The same head parses fine under the real (generous) budget.
+        let mut ok = io::Cursor::new(head.to_vec());
+        let (line, host) = read_request_head(&mut ok, REQUEST_HEAD_DEADLINE).unwrap();
+        assert!(line.starts_with("GET /"));
+        assert_eq!(host, "localhost");
+    }
+
+    #[test]
+    fn read_entries_cap_bounds_runaway_directory() {
+        // TSK-558: a runaway directory must not balloon the listing. Cap-
+        // parameterized so the test doesn't need 5000 fixture files.
+        let dir = std::env::temp_dir().join(format!("mdv-web-cap-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        for i in 0..5 {
+            fs::write(dir.join(format!("f{i}.txt")), b"x").unwrap();
+        }
+        let capped = read_entries_capped(&dir, SortKey::Name, false, "", 3);
+        assert_eq!(capped.len(), 3, "cap must bound the listing");
+        let all = read_entries_capped(&dir, SortKey::Name, false, "", 100);
+        assert_eq!(all.len(), 5, "a generous cap returns everything");
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     fn fixture() -> PathBuf {
         // Unique per call (pid + atomic counter) so parallel tests never share
