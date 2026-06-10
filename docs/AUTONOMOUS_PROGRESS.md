@@ -6333,3 +6333,21 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - Also this tick: fresh `549308c` release installed to `/Applications/TextView.app`;
   root-owned `.build/ModuleCache` residue from the sudo'd GUI suite run broke the next VM
   build (`CMdvCore .pcm: Operation not permitted`) — chown self-heal, dist rebuilt clean.
+
+## LOG +166 (2026-06-10, autonomous tick — TSK-619 fixed: launch-time grammar warm-up kills the first-open main stall)
+- **Root cause:** `HTMLRenderer`'s fence path tokenizes SYNCHRONOUSLY on the main actor
+  (`HTMLRenderer.swift:261` via the `renderPage` memo), so the first fence of each language
+  paid the one-time `Query` compile on main — 403ms debug / ~130ms release for swift
+  (measured in the TSK-592/598 captures, not guessed).
+- **Fix (1466331):** `TreeSitterEngine.warm(_:)`/`isWarm(_:)` + a utility-priority
+  `Task.detached` in `applicationDidFinishLaunching` precompiling all grammars. The
+  engine's per-language compile locks already serialize concurrent first-touch, so the
+  background warm is the designed-for path; a racing open waits only the remainder of the
+  single compile it needs. `TreeSitterWarmupTests` (3, fresh-engine both-polarity) + golden
+  tokenization parity; host gate green on the committed commit. Board: fixed,
+  live-validation residue (the main.swift invocation itself has no headless guard — next
+  `vm-profile.sh` open capture should show `ts.query-compile` gone from the open path).
+- **Board hygiene note:** the owner RESOLVED the TSK-598 MountedPanesLRU park with no
+  option selected (seq 3845, empty payload). Interpreted as cleared-not-approved — the
+  supervised WebView-hot-zone session stays ungated work I will NOT start without an
+  explicit approval (race history #213/#217).
