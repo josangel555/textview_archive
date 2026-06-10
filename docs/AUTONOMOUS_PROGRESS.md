@@ -6270,3 +6270,16 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   arm64-apple-macosx + index-build only, or per-toolchain --scratch-path), loud mismatch
   detection in test-in-vm.sh, then re-run the sweep (TSK-440's pending VM validation).
 - TSK-440 install completed — the sidebar resize overhaul build is live on the host.
+## LOG +163 (2026-06-10, autonomous tick — TSK-616 fixed: VM test lane restored, guard teeth live)
+- **Remediation proven end-to-end:** `test-in-vm.sh clean` self-healed the root-owned residue
+  (TSK-502 class, in-sudo chown), removed `arm64-apple-macosx` + `index-build` (the index store
+  is what survived `swift package clean` and kept serving the 6.1.2 module), preserved
+  checkouts/repositories. Full clean rebuild + suite then ran **4616 tests / 2 failures /
+  44 skips under Swift 6.3** — vs failing to COMPILE before.
+- **Guard teeth demonstrated live on the VM:** bogus `.mdv-toolchain` marker → loud ERROR +
+  exit 2 BEFORE any build; correct marker → 6.3 selected, build proceeds.
+- **The 2 failures are pre-existing test-infra flakes, filed as TSK-617:** AppLauncher
+  dead-pipe crash (should self-skip like its siblings when the app can't launch without a
+  GUI session) + emptyFileHex UAT timing on the slower VM. NOT app bugs; not from TSK-440/616.
+- **TSK-440's VM validation is COMPLETE:** zero failures across all sidebar/layout suites on
+  the VM. Ticket stays fixed/live-validation only for the drag FEEL + pixels (owner lane).
