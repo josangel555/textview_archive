@@ -6037,3 +6037,18 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   Arms/disarms with the autosave subscriptions; `<=0` interval disables for tests.
 - **Tests:** scroll-only drift persisted via `periodicFlushTick` with zero publisher ticks + idle
   no-write guard; teeth (tick no-op'd → red). Gate green; reinstall kicked.
+## LOG +145 (2026-06-10, autonomous tick — TSK-608 fixed: preview Info panel gets a persisted dismiss toggle)
+- **Identification (medium confidence):** the "row-count tool window" = the preview-mode
+  `MetadataPanel` (file info / image dimensions / SQLite table+row counts) rendered
+  UNCONDITIONALLY in ContentView's `.preview` branch — no shoulder button, no dismiss.
+  If the owner meant a different surface, reopen with a screenshot and retarget.
+- **Fix (39755c5):** gate on `DocumentModel.showPreviewMetadataPanel` (@Published, didSet
+  write-through) persisted via `PreferencesStore.previewMetadataVisible` (default ON =
+  prior behavior); new BottomAttributesBar "Info" checkbox shown only in preview mode
+  (`mdv.previewInfoToggle`). Minimal persisted toggle chosen over full SidebarPanelKind
+  shoulder-rail integration — smaller blast radius, same user outcome.
+- **Tests:** 3 PreviewMetadataToggleTests (default-on, off-persists-and-restores,
+  re-enable persists). Teeth lesson: first mutation BROKE COMPILATION → 0 tests ran →
+  grep said "0 failed" = FALSE no-teeth signal; redone with a compiling no-op
+  (`didSet { _ = showPreviewMetadataPanel }`) → red → restored → green. Teeth mutations
+  must compile. Gate green on 39755c5; reinstall kicked.
