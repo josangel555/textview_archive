@@ -5856,3 +5856,15 @@ First firing under the 2026-06-10 USER-FACING-first directive; cron loop recreat
   disclosure moved to `@AppStorage` on those keys so the reveal lands live and persists. 3 new headless teeth
   (reveal-on-on ×3 kinds, off-leaves-alone, key stability); mutation-checked red; host gate green; bundle
   installed. VM-lane residue: pixel proof the expanded body paints. `main` @ c82498f.
+
+## LOG +131 (2026-06-10, autonomous tick — TSK-266 tab-close: lazy survivor left dormant on every close path)
+- **TSK-266 → fixed (5336262), held at fixed (blocker=live-validation).** Fresh trace (per the re-run-fresh rule)
+  found a concrete defect the earlier spike missed: `selectTab` runs `materializeIfNeeded` for the incoming tab,
+  but NONE of the three close paths did — closing the active tab auto-selects a neighbor, and if that neighbor is
+  a LAZY `.empty` tab (every multi-open non-last tab + every workspace-restored tab) it never starts loading; the
+  pane sits blank until re-clicked. New `settleSelectionAfterClose()` mirrors `selectTab`'s incoming-tab duties
+  (materialize + disk-staleness refresh) on `closeTab`/`closeOtherTabs`/`closeTabsToRight`. 3 headless teeth
+  (one per path), mutation-checked (stripping the calls reproduces the dormant `.empty` survivor); gate green;
+  bundle installed. HONEST RESIDUE: any remaining felt latency when the neighbor was already loaded is the
+  single-mounted content-view rebuild — the parked SUPERVISED MountedPanesLRU work (TSK-254 class) which needs
+  live Instruments; owner to confirm felt latency on the new build. `main` @ 5336262.
