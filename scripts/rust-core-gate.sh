@@ -13,7 +13,12 @@
 #   * `cargo clippy` exits non-zero on the DENY-level lints (the no-panic
 #     policy) but 0 on the pedantic WARN-level nits — exactly the right
 #     enforcement boundary, no flag-juggling needed.
-#   * `cargo test` runs every workspace crate's tests (core + ffi).
+#   * `cargo test` runs every workspace crate's tests.
+#
+# --workspace is load-bearing (audit TSK-550): without it cargo honors
+# default-members (core + ffi only) and the tui/web/highlight crates — two
+# shipping front-ends and the highlighting engine, ~8,300 lines with real test
+# suites — never gate a merge. A core API change that breaks them sails through.
 #
 # Build dir lives OUTSIDE the worktree (worktree hygiene) via CARGO_TARGET_DIR,
 # matching build-rust-core.sh.
@@ -30,10 +35,10 @@ if ! command -v cargo >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "==> cargo clippy --all-targets (enforces the workspace no-panic deny lints)"
-cargo clippy --manifest-path "$RUST_DIR/Cargo.toml" --all-targets
+echo "==> cargo clippy --workspace --all-targets (enforces the workspace no-panic deny lints)"
+cargo clippy --manifest-path "$RUST_DIR/Cargo.toml" --workspace --all-targets
 
-echo "==> cargo test (all workspace crates)"
-cargo test --manifest-path "$RUST_DIR/Cargo.toml"
+echo "==> cargo test --workspace (all five crates incl. tui/web/highlight)"
+cargo test --manifest-path "$RUST_DIR/Cargo.toml" --workspace
 
 echo "==> Rust-core gate green."
