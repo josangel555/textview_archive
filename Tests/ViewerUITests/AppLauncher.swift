@@ -58,7 +58,33 @@ enum AppLauncher {
         // each other's `mdv-step-NN.json`. When nil we fall back to the
         // shared per-user tmpdir — matching the app's own fallback — so a
         // direct `AppLauncher.runScript(...)` caller keeps working.
-        let artifacts = artifactDir ?? tmpDir
+        var artifacts = artifactDir ?? tmpDir
+        var scriptURL = URL(fileURLWithPath: scriptPath)
+        var argURL = fileArg
+
+        // TSK-620 constraint 6: on the VM GUI lane xctest runs as ROOT
+        // (the sudo'd `launchctl asuser` bridge), and WindowServer never
+        // grants activation/key status to a root-spawned app in the user's
+        // Aqua session — so synthesized clicks on SwiftUI controls are
+        // swallowed (gesture recognizers run off `sendEvent`, which
+        // suppresses mouseDown on a non-key window). Spawning the app AS
+        // the console user (same bootstrap namespace, correct uid) makes
+        // it a first-class session citizen that CAN become key. Root's
+        // per-user tmpdir is 700, unreadable by the target user, so the
+        // run's script/arg/artifacts move to a world-accessible /tmp dir.
+        let spawnUser: String? = geteuid() == 0 ? consoleUser : nil
+        if spawnUser != nil {
+            let shared = URL(fileURLWithPath: "/tmp/mdv-uat-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(
+                at: shared, withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o777])
+            artifacts = shared
+            scriptURL = shared.appendingPathComponent("script.txt")
+            argURL = shared.appendingPathComponent(fileArg.lastPathComponent)
+            try? FileManager.default.copyItem(at: fileArg, to: argURL)
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o644], ofItemAtPath: argURL.path)
+        }
         try? FileManager.default.createDirectory(
             at: artifacts, withIntermediateDirectories: true)
         for n in 1...99 {
@@ -68,37 +94,50 @@ enum AppLauncher {
             try? FileManager.default.removeItem(
                 at: artifacts.appendingPathComponent("mdv-step-\(s).png"))
         }
-        try scriptContents.write(
-            to: URL(fileURLWithPath: scriptPath),
-            atomically: true, encoding: .utf8
-        )
+        try scriptContents.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o644], ofItemAtPath: scriptURL.path)
         // Reap any leaked PRIOR TEST instance — never the developer's
         // normally-launched app (it shares this exec name; a blanket
         // `killall` used to kill it, making the gate/live-smoke destructive).
         killTestInstances(named: existingProcessName)
         Thread.sleep(forTimeInterval: 0.3)
 
-        // Direct spawn — argv is preserved exactly.
         let exePath = appBundlePath + "/Contents/MacOS/" + existingProcessName
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: exePath)
-        p.arguments = ["--script", scriptPath, fileArg.path]
         // MDV_BACKGROUND=1 tells main.swift to run in accessory mode:
         // window appears but doesn't take key focus, and we skip the
         // osascript activate below. Without this, every test run
-        // grabs whatever the user is typing into.
-        var env = ProcessInfo.processInfo.environment
-        env["MDV_BACKGROUND"] = "1"
-        env["MDV_SKIP_WORKSPACE_RESTORE"] = "1"
-        // Mark this as a TEST-spawned instance so `killTestInstances` can
-        // reap leaked test runs WITHOUT touching the developer's normally-
-        // launched app (which shares this executable name). See the helper.
-        env["MDV_TEST_INSTANCE"] = "1"
-        // #193: tell the app to write its per-step dumps + `.windowid`
-        // into this run's private directory rather than the shared
-        // per-user tmpdir.
-        env["MDV_ARTIFACT_DIR"] = artifacts.path
-        p.environment = env
+        // grabs whatever the user is typing into. (The `ui-click` verb
+        // escalates to key status itself when a script needs real input.)
+        // MDV_TEST_INSTANCE=1 marks this as a TEST-spawned instance so
+        // `killTestInstances` can reap leaked runs WITHOUT touching the
+        // developer's normally-launched app. MDV_ARTIFACT_DIR (#193)
+        // points per-step dumps at this run's private directory.
+        let mdvEnv = [
+            "MDV_BACKGROUND=1",
+            "MDV_SKIP_WORKSPACE_RESTORE=1",
+            "MDV_TEST_INSTANCE=1",
+            "MDV_ARTIFACT_DIR=\(artifacts.path)",
+        ]
+        let p = Process()
+        if let user = spawnUser {
+            // Root → console user, env threaded through /usr/bin/env
+            // (sudo's env_reset strips the caller's; HOME comes from the
+            // target user's record, which is exactly what "~" must mean).
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+            p.arguments = ["-n", "-u", user, "/usr/bin/env"] + mdvEnv
+                + [exePath, "--script", scriptURL.path, argURL.path]
+        } else {
+            // Direct spawn — argv is preserved exactly.
+            p.executableURL = URL(fileURLWithPath: exePath)
+            p.arguments = ["--script", scriptURL.path, argURL.path]
+            var env = ProcessInfo.processInfo.environment
+            for pair in mdvEnv {
+                let kv = pair.split(separator: "=", maxSplits: 1)
+                env[String(kv[0])] = String(kv[1])
+            }
+            p.environment = env
+        }
         p.standardOutput = FileHandle(forWritingAtPath: "/dev/null")
         p.standardError  = FileHandle(forWritingAtPath: "/dev/null")
         try p.run()
@@ -120,7 +159,31 @@ enum AppLauncher {
             if p.isRunning { kill(p.processIdentifier, SIGKILL); p.waitUntilExit() }
         }
 
-        return collectStepDumps(from: artifacts)
+        let dumps = collectStepDumps(from: artifacts)
+        if spawnUser != nil {
+            // The /tmp run dir was created solely for the cross-user
+            // hand-off; reap it once the dumps are in memory.
+            try? FileManager.default.removeItem(at: artifacts)
+        }
+        return dumps
+    }
+
+    /// Owner of /dev/console — the user whose Aqua session is on screen.
+    static var consoleUser: String? {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: "/dev/console")
+        return attrs?[.ownerAccountName] as? String
+    }
+
+    /// HOME of the user the app is actually spawned as. Tests asserting
+    /// "~"-rooted behavior must use THIS, not the harness's own home:
+    /// under the root asuser bridge the app runs as the console user
+    /// (`/Users/<console>`), while the test process's home is /var/root.
+    static var spawnUserHome: URL {
+        if geteuid() == 0, let user = consoleUser,
+           let pw = getpwnam(user) {
+            return URL(fileURLWithPath: String(cString: pw.pointee.pw_dir))
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
     }
 
     /// Returns the PID of a running process with the given name, or nil.

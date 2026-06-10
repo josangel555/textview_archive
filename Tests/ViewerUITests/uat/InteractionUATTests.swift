@@ -43,7 +43,9 @@ final class InteractionUATTests: MultiScenarioTestCase {
                         XCTFail("no dumps", file: file, line: line); return
                     }
                     let roots = sessionRoots(last)
-                    let home = FileManager.default.homeDirectoryForCurrentUser
+                    // The APP's home, not the harness's: under the root
+                    // asuser bridge the app is spawned as the console user.
+                    let home = AppLauncher.spawnUserHome
                         .resolvingSymlinksInPath().path
                     XCTAssertTrue(roots.contains(home),
                         "REAL double-click on the strip must create a session "
