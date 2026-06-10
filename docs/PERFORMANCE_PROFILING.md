@@ -15,8 +15,15 @@ bash scripts/build-app.sh                       # -> dist/TextView.app
 
 # 2. Record a trace with signposts enabled. MDV_SIGNPOSTS=1 turns the
 #    PerfSignpost facility on (it is a no-op otherwise).
+# NOTE the explicit --instrument 'os_signpost': the stock Time Profiler
+# template records ONLY Apple's PointsOfInterest signpost lane — without
+# this flag your com.markdownviewer.* intervals are silently absent from
+# the trace (verified 2026-06-10, TSK-598). Also: OSSignposter intervals
+# are NOT persisted to the unified log store by default, so `log show`
+# is NOT a fallback — the trace is the only record.
 xcrun xctrace record \
   --template 'Time Profiler' \
+  --instrument 'os_signpost' \
   --env MDV_SIGNPOSTS=1 \
   --launch -- dist/TextView.app/Contents/MacOS/MarkdownViewer \
   /path/to/file/to/open.swift
@@ -67,6 +74,7 @@ subsystem and you'll see one row per category.
 | `highlight`      | `ts.paintOver`                   | "                                     | Sweep-line overlap resolution (O(K log K) in run count). |
 | `render`         | `SourceTextController.apply`     | `ViewerUI/TextDisplayView.swift`      | NSTextView attributed-string set + layout (the source-view paint). UI thread. |
 | `render`         | `HTMLRenderer.render`            | `ViewerCore/HTMLRenderer.swift`       | Markdown → HTML visit (incl. per-code-fence tokenize). |
+| `render`         | `WKWebView.loadToFinish`         | `ViewerUI/MarkdownRenderedView.swift` | The WebKit half of a rendered-MD open: `loadHTMLString` hand-off → WebContent parse/layout → `didFinish`. Spans processes; stitched by signpost ID. |
 
 ### Reading a source-file open
 

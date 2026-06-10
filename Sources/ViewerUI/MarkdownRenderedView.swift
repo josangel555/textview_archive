@@ -187,6 +187,12 @@ public struct MarkdownRenderedView: NSViewRepresentable {
             // `window.location = 'file://…'` escape. The flag is consumed
             // (cleared) by the next `.other` policy decision.
             coord.expectingProgrammaticLoad = true
+            // TSK-598 attribution: the WebKit half of an MD open
+            // (HTML hand-off → parse/layout → didFinish) was the one
+            // unmeasured span in docs/PERFORMANCE_PROFILING.md. Begin
+            // here, end in the Coordinator's didFinish.
+            coord.loadToFinishToken = PerfSignpost.begin(
+                .render, "WKWebView.loadToFinish")
             webView.loadHTMLString(html, baseURL: baseURL)
             coord.lastHTML = html
         }
@@ -359,6 +365,10 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         /// is allowed and the flag is cleared; an UNexpected post-load
         /// `.other` file:/data: is a script escape and is cancelled.
         var expectingProgrammaticLoad: Bool = false
+        /// In-flight `render | WKWebView.loadToFinish` signpost interval
+        /// (TSK-598): begun at `loadHTMLString`, ended in `didFinish`.
+        /// Hollow token when `MDV_SIGNPOSTS` is unset — zero overhead.
+        var loadToFinishToken: PerfSignpost.Token?
         /// Holds the webView weakly so `webView(_:didFinish:)` can
         /// re-run any find that was queued before the page was ready.
         weak var pendingFindWebView: WKWebView?
@@ -440,6 +450,10 @@ public struct MarkdownRenderedView: NSViewRepresentable {
             _ webView: WKWebView,
             didFinish navigation: WKNavigation!
         ) {
+            if let token = loadToFinishToken {
+                PerfSignpost.end(token)
+                loadToFinishToken = nil
+            }
             documentReady = true
             // WV-4: from here on, any top-level `.other` navigation to
             // file:/data: is an in-page script escape, not the bootstrap
