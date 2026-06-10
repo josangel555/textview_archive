@@ -271,6 +271,15 @@ public enum ScriptVerb {
         case "session-open-home":
             // TSK-313: the strip double-click action — new session at ~.
             sessions.openHomeSession()
+        case "session-new-via-goto":
+            // TSK-314: the strip "+" button's EXACT action closure —
+            // spawn a session whose first paint opens the GoTo prompt
+            // prefilled with "~". (In-process real-event synthesis for
+            // SwiftUI controls is impossible — 8 constraints, LESSONS
+            // "in-process event synthesis" — so the mandate's sanctioned
+            // fallback applies: exercise the exact closure, assert the
+            // RENDERED outcome in the dump.)
+            sessions.requestNewSessionViaGoTo()
         case "session-next":     sessions.nextSession()
         case "session-prev":     sessions.previousSession()
         case "session-rename":

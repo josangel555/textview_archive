@@ -2,40 +2,47 @@ import XCTest
 @testable import ViewerUI
 import ViewerCore
 
-/// TSK-620 half B — REAL-event validation of the gesture/render halves
-/// that hold TSK-313 / TSK-314 at `fixed`. These scenarios drive the
-/// `ui-click` / `ui-double-click` verbs (UIEventSynth: genuine NSEvents
-/// posted to the app's event queue) against the live bundle and assert
-/// the cross-process outcome from the step dumps.
+/// TSK-620 — live-app validation of the gesture/render halves that held
+/// TSK-313 / TSK-314 at `fixed`.
 ///
-/// TIER-JUSTIFY: T4 — the observables are (1) SwiftUI GESTURE ROUTING in
-/// the realized window: the strip's `.onTapGesture(count: 2)` and the +
-/// button's tap must fire from real queued mouse events through AppKit
-/// hit-testing (headless exact-closure tests prove the ACTIONS, not the
-/// hit-area wiring), and (2) the RENDERED text of the GoTo prompt's
-/// TextField (`nsTextField.stringValue` in the dump) — the on-appear
-/// seed from `goToPathPrefill` has no host-observable. Self-skips on the
-/// headless gate; runs on the VM GUI lane.
+/// These scenarios exercise the controls' EXACT action closures via
+/// script verbs (`session-open-home` == the strip's double-click action,
+/// `session-new-via-goto` == the "+" button's action) in the REAL
+/// spawned app, then assert the cross-process outcome from the step
+/// dumps — including the RENDERED text of the GoTo prompt's NSTextField,
+/// the on-screen evidence TSK-314 was held for.
+///
+/// Why closures and not synthesized clicks: in-process real-event
+/// synthesis for SwiftUI controls is IMPOSSIBLE — eight constraints
+/// mapped empirically (queue routing, sendEvent non-key suppression,
+/// un-fakeable key status, empty in-process AX tree, hosting-boundary
+/// ids, denied activation for fork/exec'd and root processes, SwiftUI
+/// ignoring responder dispatch, and finally: synthesized NSEvents do not
+/// drive SwiftUI gestures even on a genuinely key+active LS-launched
+/// window — the gesture pipeline wants WindowServer-backed events, which
+/// need the owner-only AX grant). See LESSONS "in-process event
+/// synthesis". The testing mandate's fallback for exactly this case:
+/// "exercising the exact action closure the control is wired to."
+/// Residual not covered here: the literal hit-area routing (does the
+/// pixel under the cursor reach this control) — that requires entitled
+/// event synthesis (XCUITest L4 / owner AX grant).
+///
+/// TIER-JUSTIFY: T4 — the observables are the live cross-process
+/// coordinator outcome (session creation/activation in the spawned app)
+/// and the RENDERED `nsTextField.stringValue` of the GoTo prompt, which
+/// has no host observable (host tests cover the model layer only).
 @MainActor
 final class InteractionUATTests: MultiScenarioTestCase {
 
     override class var harnessLabel: String { "InteractionUAT" }
     override class var defaultScenarioTimeout: TimeInterval { 60 }
-    /// Real-input suite: LS launch so the app can self-activate — the
-    /// `ui-click` verbs need a genuinely KEY window for sendEvent
-    /// delivery to SwiftUI gestures (every in-process workaround was
-    /// probed and disproven; see LESSONS "in-process event synthesis").
-    override class var launchViaOpen: Bool { true }
 
-    // MARK: - TSK-313 — double-click the empty strip area → instant ~ session
+    // MARK: - TSK-313 — strip double-click action → instant ~ session
 
-    func test_TSK313_doubleClickStripEmptyArea_opensHomeSession() throws {
+    func test_TSK313_openHomeAction_createsAndActivatesHomeSession() throws {
         let arg = try harness.writeFile("arg.txt", "scratch\n")
-        // 0.7 of the strip width: with the clean-room baseline (no pills)
-        // that point is the strip's empty background, the surface the
-        // double-click gesture owns (tab cells / + sit above it).
         let script = """
-        ui-double-click mdv.sessionTabBar at 0.7 0.5
+        session-open-home
         delay 1.0
         """
         try runScenarios([
@@ -53,27 +60,27 @@ final class InteractionUATTests: MultiScenarioTestCase {
                     let home = AppLauncher.spawnUserHome
                         .resolvingSymlinksInPath().path
                     XCTAssertTrue(roots.contains(home),
-                        "REAL double-click on the strip must create a session "
+                        "the double-click action must create a session "
                         + "rooted at resolved home; roots=\(roots)",
                         file: file, line: line)
                     XCTAssertEqual(activeRoot(last), home,
                         "the ~ session must be ACTIVE", file: file, line: line)
-                    // Differentiates the gesture from a stray + click: the
-                    // home session opens IMMEDIATELY, no GoTo prompt.
+                    // Differentiates this action from the + flow: the home
+                    // session opens IMMEDIATELY, no GoTo prompt.
                     XCTAssertNil(firstTextField(last, withValue: "~"),
-                        "double-click must NOT open the GoTo prompt",
+                        "the home action must NOT open the GoTo prompt",
                         file: file, line: line)
                 })
         ])
     }
 
-    // MARK: - TSK-314 — + button → GoTo prompt with the field RENDERING "~"
+    // MARK: - TSK-314 — "+" action → GoTo prompt RENDERING "~"
 
-    func test_TSK314_plusButton_rendersPromptPrefilledWithTilde() throws {
+    func test_TSK314_plusAction_rendersPromptPrefilledWithTilde() throws {
         let arg = try harness.writeFile("arg.txt", "scratch\n")
         let script = """
-        ui-click mdv.sessionTab.new
-        delay 0.6
+        session-new-via-goto
+        delay 1.0
         """
         try runScenarios([
             Scenario(
@@ -88,16 +95,12 @@ final class InteractionUATTests: MultiScenarioTestCase {
                     // realized NSTextField inside the GoTo panel SHOWS "~".
                     let field = firstTextField(last, withValue: "~")
                     XCTAssertNotNil(field,
-                        "REAL + click must present the GoTo prompt with the "
+                        "the + action must present the GoTo prompt with the "
                         + "field rendering the ~ prefill; fields seen: "
-                        + "\(allTextFieldValues(last)) trace=\(dumpTrace(last))",
+                        + "\(allTextFieldValues(last))",
                         file: file, line: line)
                 })
         ])
-    }
-
-    private func dumpTrace(_ dump: [String: Any]) -> String {
-        (dump["uiClickTrace"] as? String) ?? "<no trace>"
     }
 
     // MARK: - Dump accessors

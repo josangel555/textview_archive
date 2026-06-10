@@ -40,6 +40,26 @@ final class SessionOpenHomeTests: XCTestCase {
         FileManager.default.homeDirectoryForCurrentUser.path
     }
 
+    /// TSK-314/620 — the `session-new-via-goto` script verb must invoke
+    /// exactly `requestNewSessionViaGoTo()` (exact-closure rule): arming
+    /// the first-paint GoTo gate WITHOUT creating a session yet. The
+    /// rendered prompt ("~" in the realized NSTextField) is the VM lane.
+    func test_scriptVerb_sessionNewViaGoto_armsFirstPaintGate() {
+        let coord = makeCoordinator()
+        let model = DocumentModel()
+        let sessionsBefore = coord.core.sessions.count
+        XCTAssertNil(coord.firstPaintGoToToken)
+
+        XCTAssertTrue(ScriptVerb.apply(
+            verb: "session-new-via-goto", to: model, sessions: coord),
+            "the verb must be recognised by the shared dispatch")
+
+        XCTAssertNotNil(coord.firstPaintGoToToken,
+            "the + action arms the first-paint GoTo gate (token published)")
+        XCTAssertEqual(coord.core.sessions.count, sessionsBefore,
+            "no session is created until the user picks a folder")
+    }
+
     func test_opensNewSessionRootedAtHome_andActivatesIt() throws {
         let coord = makeCoordinator()
         let existing = tmp.appendingPathComponent("proj", isDirectory: true)
