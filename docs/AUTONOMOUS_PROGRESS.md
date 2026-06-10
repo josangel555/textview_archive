@@ -6828,3 +6828,18 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - TSK-622 remaining guards: PTY reap ESRCH (TSK-138), FileWatcher stop-races-reattach
   (TSK-147), rust-core indices-only cache structural pin (TSK-142/143) — next ticks.
   TSK-139 awaits owner dismiss (no regression-bite test possible by nature).
+
+## LOG +193 (2026-06-10, autonomous tick — TSK-622 guard 2/4: rust-core indices-only cache pinned; TSK-142 + TSK-143 VALIDATED)
+- **TSK-142 + TSK-143 (S3, CSV session cache clone/leak pair) VALIDATED** via one shared
+  guard (commit a58eda9): `cache_is_indices_only_no_resident_row_copy` in session.rs pins
+  the indices-only design three ways — size assertion (CachedView == {u64, Vec<u32>}
+  exactly, named failure message), compile-time pin (referencing `.indices`), and
+  behavior (repeated pulls serve identical indices; cache holds exactly the surviving
+  original-row indices for the current version).
+- **Teeth**: re-adding a `rows_copy: Vec<Vec<String>>` field (the audited resident-
+  duplicate shape) → RED "CachedView grew beyond {for_version, indices}"; restored →
+  session:: 8/8. **Bonus: the rust gate's clippy wall caught my first draft's
+  `unnecessary_cast` (exit 101)** — fixed, gate EXIT=0 on committed a58eda9.
+- TSK-622 progress: guards 1-2 of 4 done (HexView fingerprint, rust cache). Remaining:
+  PTY reap ESRCH (TSK-138), FileWatcher stop-races-reattach (TSK-147); TSK-139 awaits
+  owner dismiss.
