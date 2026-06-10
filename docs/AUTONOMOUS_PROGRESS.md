@@ -5824,3 +5824,23 @@ flagged" view reveals; old/new sides kept separate (distinct coordinate systems)
 deterministic ordering. 9 host teeth; **headless gate PASSED clean (no flake this run)**. The multi-select gesture +
 region-scoped DiffView is the VM-gated UI slice. `main` @ 4ce7b40, gate-green. (If "comments" was a typo for
 "commits", no harm — combined-diff-of-commented-regions is a genuinely useful review workflow regardless.)
+
+## LOG +129 (2026-06-10, autonomous tick — user-facing pool opened: TSK-599 + TSK-600 session-open flows fixed)
+First firing under the 2026-06-10 USER-FACING-first directive; cron loop recreated post-compaction (:03/:13/…).
+- **TSK-599 → fixed (418b0b4).** Right-click folder → "Open in New Session" was a TOTAL silent no-op for anything
+  under `~/Documents` (= the owner's whole workspace): the 2026-06-03 SESS-01 harvest (7c11d94) put a blanket
+  `isUnderTCCProtectedRoot` guard in `SessionsAppCoordinator.openFolder` — swallowing every EXPLICIT open, including
+  the open-panel pick (which explains the "opens the Open dialog / no new session" framing). Policy revised: explicit
+  user gestures (context menu / open panel / script verbs / Go-to-path) proceed; the TCC guard now applies ONLY to
+  implicit launch-time touches (bootstrap prefs seed, `restorePreviousFolderIfAvailable`). Contract updated in
+  `docs/uat/smokes/sessions.md`; `SessionTCCGuardTests` rewritten to pin both directions; teeth shown (re-adding the
+  guard → 5 red asserts).
+- **TSK-600 → fixed (f5cb39b).** SessionTabBar `+` → Go-to-path → picking `~` with plain Return "flashed" the current
+  tab and created nothing: the ContentView first-paint bridge presented the prompt with no memory of WHY, so default
+  Open ran `model.openPath` (active-session re-root = the flash). New one-shot `DocumentModel.goToPathNewSessionIntent`
+  set by the gate bridge, honored by both submit twins (`GoToPathPrompt.submit` + headless `commitGoToPath`), cleared
+  on dismiss; plain ⇧⌘G unchanged. 3 new headless teeth incl. an assert that reproduces the flash itself (sidebar
+  re-root) on the broken build.
+- Both recorded `fixed` on the board with checks artifacts; host gate green on each committed SHA; fresh bundle built +
+  installed to `/Applications/TextView.app` (owner: relaunch to pick it up). RESIDUE for the VM lane: menu-item
+  visibility + the SwiftUI onChange bridge are render-path; model layers fully pinned. `main` @ f5cb39b.
