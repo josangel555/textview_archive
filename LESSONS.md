@@ -2752,3 +2752,27 @@ Continuation of "the five constraints" above; these three close every remaining 
   teardowns. General rule: any cache consulted in `body` to DECIDE WHETHER A
   SUBTREE EXISTS must align its eviction policy with the retention policy of
   that subtree (TSK-621, af5e6dd).
+
+## 2026-06-10 (validation drain) — patterns that emerged across 19 validations
+
+- **Re-run fixed-ticket evidence FRESH before validating; it is regression detection,
+  not bookkeeping.** The TSK-108 re-run caught TSK-621 (shipped regression); the
+  TSK-138..147 recon found 6/6 "fix real, teeth missing". The June 4-5 reconciliation
+  wave verified code by reading, authored no tests — assume the rest of that lane
+  splits the same way.
+- **Assert at the corruption window, not after convergence.** Twice a later wholesale
+  replace masked an intermediate leak (TSK-621 cache eviction; TSK-150 stale page —
+  first teeth run stayed green until the assertion moved to the instant the in-flight
+  task completed). If a state machine converges, a final-state assert can't see the
+  mid-flight violation.
+- **Deterministic race tests want an in-window seam, not a stress loop.** The
+  `attachWindowHook` pattern (FileWatcher FW-S3, 0a42e5f): a DEBUG-only hook invoked
+  inside the race window turns the interleaving into a plain sequential test. Pair
+  with an OS-level observable (fd-count baseline, kill(pid,0)→ESRCH) so the assert
+  bites without internal state access.
+- **Cheap struct-shape pins are legitimate teeth for "never re-add storage" classes:**
+  size_of equality + a field reference (compile-time) caught the rust CachedView
+  row-copy re-add immediately (a58eda9). Brittle on purpose — that's the point.
+- **Small visibility seams (`private`→`private(set)`/internal) are the standing way
+  to make guards testable**: loadMoreTask, childPID, HighlightFingerprint, apply(delta:),
+  attachWindowHook. Document each as "TSK-NNN test seam" at the declaration.
