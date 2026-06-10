@@ -70,12 +70,19 @@ public enum UIEventSynth {
         }
     }
 
-    /// Resolve the target's rect in WINDOW coordinates: NSView walk first
-    /// (hosted AppKit views carry the id directly), then the AX tree
-    /// (SwiftUI controls).
+    /// Resolve the target's rect in WINDOW coordinates: the
+    /// ClickTargetRegistry first (SwiftUI controls publish their own
+    /// frames — the ONLY in-process channel that can see them; LESSONS
+    /// "the five constraints"), then the NSView walk (hosted AppKit
+    /// views carry the id directly), then the AX tree (dead in-process,
+    /// kept for external-client parity).
     public static func resolveTargetRect(identifier: String,
                                          in window: NSWindow) -> NSRect? {
         guard let root = window.contentView else { return nil }
+        if let global = ClickTargetRegistry.shared.frame(for: identifier) {
+            return ClickTargetRegistry.windowRect(fromSwiftUIGlobal: global,
+                                                  contentView: root)
+        }
         if let view = findView(identifier: identifier, under: root) {
             return view.convert(view.bounds, to: nil)
         }
@@ -154,7 +161,8 @@ public enum UIEventSynth {
                 collectAXIdentifiers(element: root, into: &seen, limit: 15)
             }
             let rootKids = (window.contentView?.accessibilityChildren() ?? []).count
-            lastTrace = "click[v4](\(spec.identifier)): NOT FOUND; "
+            lastTrace = "click[v5](\(spec.identifier)): NOT FOUND; "
+                + "registryIds=\(ClickTargetRegistry.shared.identifiers) "
                 + "axRootChildren=\(rootKids) axIdsSample=\(seen)"
             return false
         }

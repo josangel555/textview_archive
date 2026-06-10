@@ -92,6 +92,7 @@ struct SessionTabBar: View {
                               description: "Open a folder in a new session")
                     .padding(.horizontal, 4)
                     .accessibilityIdentifier("mdv.sessionTab.new")
+                    .uiClickTarget("mdv.sessionTab.new")
                     .accessibilityLabel("Open Folder in New Session")
                 }
             }
@@ -128,6 +129,7 @@ struct SessionTabBar: View {
         .frame(height: rowHeight)
         .background(Palette.windowBackground)
         .accessibilityIdentifier("mdv.sessionTabBar")
+        .uiClickTarget("mdv.sessionTabBar")
     }
 
     /// One pinned trailing action icon for the session-tab row (TSK-262).
