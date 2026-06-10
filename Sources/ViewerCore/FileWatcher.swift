@@ -102,6 +102,15 @@ public final class FileWatcher: @unchecked Sendable {
         return _stopped
     }
 
+    #if DEBUG
+    /// TSK-147 — see the seam call in `attach()`. Test-only; nil in
+    /// production DEBUG runs. `nonisolated(unsafe)`: set/cleared on the
+    /// test thread before/after a single synchronous construction — no
+    /// concurrent mutation by design (same justification as
+    /// SessionStore.coalesceLock).
+    nonisolated(unsafe) public static var attachWindowHook: ((FileWatcher) -> Void)?
+    #endif
+
     // MARK: - Private
 
     private func attach() throws {
@@ -148,6 +157,12 @@ public final class FileWatcher: @unchecked Sendable {
         }
         src.setCancelHandler { [fd] in close(fd) }
         src.resume()
+        #if DEBUG
+        // TSK-147 test seam: invoked INSIDE the FW-S3 race window (after
+        // resume, before the commit lock) so the stop-races-reattach
+        // guard below is deterministically testable.
+        Self.attachWindowHook?(self)
+        #endif
         lock.lock()
         // FW-S3: a stop() racing this reattach may have already cancelled
         // the old source, nil'd _source, and set _stopped — and returned.
