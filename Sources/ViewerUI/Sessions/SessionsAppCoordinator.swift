@@ -259,6 +259,22 @@ public final class SessionsAppCoordinator: ObservableObject {
         model.openPath(fileURL)
     }
 
+    /// TSK-274: drag a document tab onto a session pill — MOVE the file
+    /// into that EXISTING session. Resolves the dragged tab id at DROP
+    /// time (ids survive reorders; a tab closed mid-drag is a clean
+    /// no-op, as is a same-session drop or an untitled tab with no url).
+    /// Order matters: close the source tab BEFORE the session swap so
+    /// the outgoing session's detach-time snapshot omits it.
+    public func moveTab(withID tabID: UUID, toSessionID target: UUID) {
+        guard target != core.activeID,
+              core.sessions.contains(where: { $0.id == target }),
+              let idx = model.tabs.tabs.firstIndex(where: { $0.id == tabID }),
+              let url = model.tabs.tabs[idx].url else { return }
+        model.closeTab(at: idx)
+        activate(id: target)
+        model.openPath(url)
+    }
+
     /// Consume the gate (read+clear). Returns `true` exactly once
     /// after each arm. Exposed for the view layer's `onChange` hook.
     public func consumeFirstPaintGoTo() -> Bool {

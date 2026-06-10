@@ -83,6 +83,45 @@ final class TabToNewSessionTests: XCTestCase {
             "OPEN must leave the source session's tab in place")
     }
 
+    /// TSK-274 — drag a tab onto an EXISTING session pill. Same fixture;
+    /// the drop delegate calls exactly this coordinator method.
+    func test_moveTab_toExistingSession_movesFileAndActivatesTarget() throws {
+        let (coord, file, _, sessionA) = try makeFixture()
+        // A second, pre-existing session to drop onto.
+        let rootC = tmpRoot.appendingPathComponent("rootC")
+        try FileManager.default.createDirectory(at: rootC, withIntermediateDirectories: true)
+        let sessionC = coord.core.openFolder(rootC, forceNew: true).id
+        coord.activate(id: sessionA)
+        let tabID = try XCTUnwrap(
+            coord.model.tabs.tabs.first { $0.url == file }?.id)
+
+        coord.moveTab(withID: tabID, toSessionID: sessionC)
+
+        XCTAssertEqual(coord.core.activeID, sessionC, "target session must activate")
+        XCTAssertTrue(coord.model.tabs.tabs.contains { $0.url == file },
+            "the file must be open in the target session")
+        coord.activate(id: sessionA)
+        XCTAssertFalse(coord.model.tabs.tabs.contains { $0.url == file },
+            "the source session must lose the moved tab")
+    }
+
+    /// Same-session drops and stale ids are clean no-ops — the tab stays.
+    func test_moveTab_sameSessionOrUnknownTarget_isNoOp() throws {
+        let (coord, file, _, sessionA) = try makeFixture()
+        let tabID = try XCTUnwrap(
+            coord.model.tabs.tabs.first { $0.url == file }?.id)
+        let tabCount = coord.model.tabs.tabs.count
+
+        coord.moveTab(withID: tabID, toSessionID: sessionA)       // same session
+        coord.moveTab(withID: tabID, toSessionID: UUID())         // unknown session
+        coord.moveTab(withID: UUID(), toSessionID: sessionA)      // stale tab id
+
+        XCTAssertEqual(coord.core.activeID, sessionA, "no-ops must not switch sessions")
+        XCTAssertEqual(coord.model.tabs.tabs.count, tabCount,
+            "no-ops must not close or open tabs")
+        XCTAssertTrue(coord.model.tabs.tabs.contains { $0.url == file })
+    }
+
     func test_moveToNewSession_removesTabFromSourceSession() throws {
         let (coord, file, _, sessionA) = try makeFixture()
 

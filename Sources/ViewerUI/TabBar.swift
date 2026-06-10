@@ -92,7 +92,7 @@ struct TabBar: View {
                                 // move) between drag-start and drop, which
                                 // would move the wrong tab. The id is
                                 // resolved back to a live index at drop time.
-                                NSItemProvider(object: NSString(string: "mdv-tab:\(tab.id.uuidString)"))
+                                NSItemProvider(object: NSString(string: TabDragPayload.encode(tab.id)))
                             }
                             .onDrop(
                                 of: [.plainText],
@@ -245,8 +245,7 @@ private struct TabDropDelegate: DropDelegate {
         guard let provider = info.itemProviders(for: [.plainText]).first else { return false }
         _ = provider.loadObject(ofClass: NSString.self) { obj, _ in
             guard let str = obj as? String,
-                  str.hasPrefix("mdv-tab:"),
-                  let srcID = UUID(uuidString: String(str.dropFirst("mdv-tab:".count))) else { return }
+                  let srcID = TabDragPayload.tabID(from: str) else { return }
             Task { @MainActor in
                 Self.reorder(model: self.model, srcID: srcID, targetID: self.targetID)
             }

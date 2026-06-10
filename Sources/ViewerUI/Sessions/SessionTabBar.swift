@@ -68,6 +68,11 @@ struct SessionTabBar: View {
                                 onRequestRename: { renamingID = snap.id }
                             )
                         }
+                        // TSK-274: a document tab dragged from the tab
+                        // strip drops onto a session pill to MOVE the
+                        // file into that session.
+                        .onDrop(of: [.plainText], delegate: SessionTabDropDelegate(
+                            sessionsApp: sessionsApp, targetSessionID: snap.id))
                         // B4-adjacent: a full top-to-bottom divider reads
                         // cleaner between a taller two-line cell than the old
                         // 16pt stub did. (B4 proper is a separate item.)
@@ -364,5 +369,28 @@ public enum SessionTabLabel {
         let prefix = trimmed.prefix(head)
         let suffix = trimmed.suffix(tail)
         return "\(prefix)…\(suffix)"
+    }
+}
+
+/// TSK-274: drop target on a session pill for a dragged document tab
+/// (payload: `TabDragPayload`, the same wire format the tab strip's
+/// reorder delegate consumes). Resolution to a live tab + the move
+/// itself happen in `SessionsAppCoordinator.moveTab` at drop time.
+private struct SessionTabDropDelegate: DropDelegate {
+    let sessionsApp: SessionsAppCoordinator
+    let targetSessionID: UUID
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let provider = info.itemProviders(for: [.plainText]).first else {
+            return false
+        }
+        _ = provider.loadObject(ofClass: NSString.self) { obj, _ in
+            guard let str = obj as? String,
+                  let tabID = TabDragPayload.tabID(from: str) else { return }
+            Task { @MainActor in
+                sessionsApp.moveTab(withID: tabID, toSessionID: targetSessionID)
+            }
+        }
+        return true
     }
 }
