@@ -6478,3 +6478,15 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - Minor UX note on the ticket: the hex text view's frame is now exactly grid-sized, so a
   click in blank space right of a narrow grid no longer clears the click-highlight (ESC
   still does). Flagged for the owner on the ticket rather than guessed at.
+
+## LOG +174 (2026-06-10, autonomous tick — TSK-455 VALIDATED: 6KB HEX ~1s confirmed gone; HEX-perf cluster closed)
+- **TSK-455 → validated** off the TSK-267 fix chain, no new code. VM release capture
+  (6KB random .bin, verified build): `HexView.syncBuild` **13.45ms**, `fullPaint` 21.5µs,
+  zero CA stalls, zero chunked machinery — the ~1s was the per-open machinery + TK2
+  layout triggers, both gone. The ticket's `supervised` blocker was obsolete: the
+  vm-profile.sh harness replaced the Instruments-on-owner-machine session it assumed.
+  Guards: HexHighlightPlanTests asserts the 6KB case takes the sync path by name.
+- Capture quirk recorded: a 15s vm-profile window MISSES the file open — the VM app
+  settles ~16.7s post-launch before argv files open; use ≥25s windows.
+- HEX-perf cluster status: TSK-267 (1MB) validated, TSK-455 (6KB) validated — both
+  owner-felt HEX slowness complaints closed with measured evidence in one cycle.
