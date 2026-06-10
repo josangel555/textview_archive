@@ -6016,3 +6016,13 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - **Tests:** +3 in the existing SQLiteWidthTests (16 green); teeth (rescale disabled → 2 red).
   Gate green on committed commit; reinstall kicked. If the owner's complaint includes fonts not
   scaling at all, that wiring was verified intact — noted on the ticket to re-test on the new build.
+
+## LOG +143 (2026-06-10, autonomous tick — TSK-605/606 verified already-fixed; regression guards landed)
+- **Both binary-file affordance reports already work in the current build** (the reports predate the
+  UX-A unified chip #136/#224 + TSK-332 content-sniff + TSK-467 era): (605) the type chip mounts for
+  any URL, `openAsCategories` is universal, and the magic-byte sniff floats SQLite first for
+  `mydb.db.bak`, with the override routing to the SQLite preview lens; (606) a true binary offers
+  `[.hex]` only — Editor/Render primaries hidden (`ViewModeControl.showsEditor/showsRender`).
+- **Proof landed (16c058b):** `BinaryFileAffordanceTests` — 4 headless tests against a REAL
+  SQLite-magic .bak and NUL-laden garbage. Gate green. Both tickets dismissed `already-fixed` with
+  checks; dismissal notes invite reopen-with-specifics if the INSTALLED build still shows otherwise.
