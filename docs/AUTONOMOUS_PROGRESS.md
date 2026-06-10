@@ -5995,3 +5995,14 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   private named pasteboard (real right-click = VM lane, per directive #5's exact-closure rule).
   Teeth: prefix dropped → 3 red → restored. Gate green on committed commit; reinstall kicked.
 - Git-diff trio: TSK-593 ✓, TSK-594 ✓ — TSK-595 (selected log-row highlight) next.
+
+## LOG +141 (2026-06-10, autonomous tick — TSK-595 fixed: git log selected-row highlight; diff trio complete)
+- **Fix (4c3cf28):** `GitPanelModel.selectedLogSHA` records which commit's diff is shown (set from the
+  row action, cleared on repo switch — stale SHA must never match an unrelated repo's log; same-root
+  no-op keeps it). The matching row renders an explicit `accentColor.opacity(0.28)` fill — NOT the
+  system unemphasized selection color (grey/invisible, the TSK-488 lesson).
+- **Tests:** 3 headless state-machine tests with teeth (reset removed → red); picker suite intact.
+  Gate green on committed commit; reinstall kicked. Visual accent = VM lane.
+- **Git-diff trio COMPLETE:** TSK-593 (top-left pin) ✓, TSK-594 (selectable + copy) ✓, TSK-595
+  (selected-row highlight) ✓ — all installed. Epic remainder: TSK-596/597 (log search, find-in-diff,
+  features), TSK-602..608/610 unexplored; 3 measurement-backed parks await owner (592/598/601).
