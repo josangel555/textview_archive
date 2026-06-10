@@ -785,18 +785,15 @@ private final class HexTextController: NSViewController {
         textView.isVerticallyResizable = false
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = []
-        // The container must be FINITE too: with an unbounded container,
-        // `textContainerOrigin` still derives the effective height from
-        // usage — i.e. full layout — even when the frame is fixed
-        // (measured: the ensureLayoutForRange samples survived the
-        // frame-only fix). Width gets +2pt fp headroom (NEVER undersize —
-        // that would wrap the grid); height gets one spare line.
-        textView.textContainer?.containerSize = NSSize(
-            width: ceil(textW) + 2,
-            height: ceil(textH + m.lineHeight))
+        // NOTE: the container stays INFINITE. Bounding it was tried
+        // (30fdc32) and measured WORSE — a finite container defeats TK2's
+        // lazy layout for content inside the bounds (debug chunked build
+        // 267ms → 4.5s). The remaining usage-derived cost lives in
+        // `textContainerOrigin`, which HexNSTextView overrides instead.
         textView.setFrameSize(NSSize(
             width: ceil(textW + Double(inset.width) * 2),
             height: ceil(textH + Double(inset.height) * 2)))
+        textView.usesFixedGridOrigin = true
     }
 
     /// Append a chunk to the text storage on the main actor. Returns
@@ -1380,6 +1377,19 @@ private final class HexNSTextView: NSTextView {
     /// interception for overwrite editing + click-to-place-caret. When
     /// false, every path below is byte-identical to the read-only viewer.
     var isEditingArmed: Bool = false
+    /// Armed by `applyFixedGridFrame` (TSK-267): the grid is top-left
+    /// aligned in a frame the controller sizes arithmetically, so the
+    /// container origin is exactly the inset. The DEFAULT implementation
+    /// derives the origin from usage bounds — a full TK2 layout of every
+    /// row (measured: ~1.5s of ensureLayoutForRange on a 1MB dump,
+    /// re-triggered from layoutViewport and renewGState).
+    var usesFixedGridOrigin: Bool = false
+
+    override var textContainerOrigin: NSPoint {
+        guard usesFixedGridOrigin else { return super.textContainerOrigin }
+        return NSPoint(x: textContainerInset.width,
+                       y: textContainerInset.height)
+    }
 
     override var acceptsFirstResponder: Bool { true }
 
