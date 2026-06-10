@@ -5928,3 +5928,21 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - **Harness gotchas captured in-script:** sudo'd xctrace writes the trace root-owned → in-sudo `chown vm-tester`
   before the scp pull AND sudo'd `rm` of the prior run's trace (the TSK-502 root-poisoning class, two new sites).
   Owner offered manual chown/chmod — not needed, script self-heals. `main` @ 1cb22cd.
+
+## LOG +136 (2026-06-10, autonomous tick — TSK-592 trace parsed; TSK-611 found+fixed: 927ms open hang was render-in-body)
+- **TSK-592 resize trace parsed** (/tmp/mdv-592-resize.trace, sweep window 8.0–13.5s anchored via AppKit
+  Window events): **ZERO hangs ≥250ms during the sweep**; main thread ~58% busy in generic full-tree SwiftUI
+  layout (updateViewGraph 59%, Stack/ZStack sizeThatFits ~32%); top app-side symbol = SidebarView body
+  re-eval per frame (~2-4%, marginal). Two blind spots recorded on the ticket: time-profile was target-pid
+  only (the WKWebView **WebContent process is unsampled** — leading suspect for the felt jank, per TSK-598's
+  94%-WebKit ratio) and setFrame ≠ live drag (inLiveResize paths unexercised). NEXT on 592: --all-processes
+  capture; if WebContent dominates → snapshot-during-live-resize mitigation on the WKWebView.
+- **TSK-611 (filed + FIXED, commit 7cdf833):** the trace's ONLY hang (927ms at t=3.24s, the file OPEN) was
+  `DocumentModel.renderedHTML` running INSIDE ContentView's body during a layout pass — 68% of hang-window
+  samples, 409/708 inside `ts_query_new` (TreeSitter grammar query compile for code-fence languages; C code,
+  release pays it too). Fix: body reads `renderedHTMLIfCached` only; cold miss shows a spinner and kicks
+  `requestRenderedHTML` — keyed, deduped, `Task.detached` render off-main, stores + republishes once on
+  MainActor, drops results for closed tabs. WebView still loads exactly once. 4 behavior tests
+  (`RenderedHTMLAsyncFillTests`) with demonstrated teeth (store disabled → red → restored); headless gate
+  green on the committed commit; release bundle reinstalled. Render-path spinner→fill is VM-lane for visual
+  validation — held at `fixed`, not self-validated.
