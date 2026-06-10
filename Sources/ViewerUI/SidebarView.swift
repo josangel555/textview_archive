@@ -740,24 +740,10 @@ struct SidebarView: View {
                         ? "Sidebar follows the active tab — click to stop"
                         : "Reveal the active tab's file in the sidebar on every tab switch")
             .accessibilityIdentifier("mdv.sidebar.followActiveTab")
-            // Show-hidden toggle (J2). Replaces the former "Show hidden"
-            // checkbox in the header; mirrors the lock/pin icon-button
-            // styling. eye = hidden files visible, eye.slash = filtered out.
-            Button(action: { sidebar.includeHidden.toggle() }) {
-                Image(systemName: sidebar.includeHidden ? "eye" : "eye.slash")
-                    .font(.system(size: model.uiSize(10)))
-                    .foregroundStyle(sidebar.includeHidden
-                                     ? Color.accentColor
-                                     : .secondary)
-                    .frame(width: model.uiSize(18), height: model.uiSize(18))
-            }
-            .buttonStyle(IconHoverButtonStyle(cornerRadius: model.uiSize(4),
-                                              isSelected: sidebar.includeHidden))
-            .helpInfo(title: sidebar.includeHidden ? "Hiding nothing" : "Show hidden files",
-                      description: sidebar.includeHidden
-                        ? "Hidden files (starting with '.') are shown — click to hide"
-                        : "Show files starting with '.'")
-            .accessibilityIdentifier("mdv.sidebar.showHidden")
+            // TSK-363: the former show-hidden eye toggle is gone — hidden
+            // files are ALWAYS shown (`SidebarModel.includeHidden` stays
+            // true for the app's lifetime; session restore no longer
+            // flips it).
         }
         // Cluster hugs its content so the `ViewThatFits` measurement is the
         // cluster's intrinsic width (not a stretched one).

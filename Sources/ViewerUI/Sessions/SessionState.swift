@@ -157,7 +157,9 @@ public final class SessionState: ObservableObject {
             openTabs: openTabs,
             selectedTabIndex: selectedIndex,
             sidebarExpandedPaths: expandedPaths.isEmpty ? nil : expandedPaths,
-            sidebarIncludeHidden: model.sidebar.includeHidden ? true : nil,
+            // TSK-363: no longer persisted (hidden files are always shown);
+            // the Codable field survives only to decode pre-removal JSON.
+            sidebarIncludeHidden: nil,
             splitURL: model.tabCoordinator.splitURL?.path,
             sessionType: sessionType?.rawValue,
             panelLayout: model.panelLayout.snapshot(),
@@ -246,18 +248,13 @@ public final class SessionState: ObservableObject {
                 model.sidebar.setRoot(url)
             }
         }
-        // Include-hidden BEFORE expansion so re-loading expanded dirs
-        // picks up dotfiles when the session had hidden files shown.
-        //
-        // FAÇADE LEAK GUARD: set explicitly (not just on `true`) so a
-        // switch from a hidden-shown session to a hidden-off one resets
-        // the shared model's toggle instead of leaking. `includeHidden`'s
-        // didSet is value-blind-safe: Bool assignment of the same value
-        // still fires its cache-clear, but that's cheap and only on
-        // switch. Persisted as `true`-or-nil, so nil ⇒ false.
-        let wantHidden = snapshot.sidebarIncludeHidden ?? false
-        if model.sidebar.includeHidden != wantHidden {
-            model.sidebar.includeHidden = wantHidden
+        // TSK-363: hidden files are ALWAYS shown — the eye toggle is gone,
+        // so a persisted `sidebarIncludeHidden: false` from a pre-removal
+        // session MUST NOT be honored (there is no button left to undo
+        // it). Force-true on hydrate, ignoring the snapshot field; the
+        // Codable field survives only for old-JSON decode compat.
+        if !model.sidebar.includeHidden {
+            model.sidebar.includeHidden = true
         }
         // Restore the per-session shoulder-rail panel layout.
         //

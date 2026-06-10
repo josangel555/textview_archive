@@ -248,6 +248,46 @@ final class SessionStateTests: XCTestCase {
         XCTAssertEqual(model.tabs.tabs.count, 2)
     }
 
+    // MARK: include-hidden is always ON (TSK-363) ---------------------
+
+    /// The show-hidden eye toggle is GONE — hidden files are always
+    /// shown. A pre-removal session persisted `sidebarIncludeHidden:
+    /// false`; honoring it would strand the user (hidden files invisible
+    /// with no button left to recover). Hydrate must force-true.
+    func testHydrateIgnoresStalePersistedIncludeHiddenFalse() {
+        model.sidebar.includeHidden = false   // simulate stale shared-model state
+        let snap = SessionSnapshot(
+            id: state.id, displayName: "TestSession",
+            createdAt: Date(), lastActiveAt: Date(),
+            sidebarRootPath: tmpDir.path,
+            sidebarIncludeHidden: false   // stale pre-removal persisted value
+        )
+        state.hydrate(from: snap)
+        XCTAssertTrue(model.sidebar.includeHidden,
+            "stale persisted false must be neutralized — hidden files are always shown (TSK-363)")
+    }
+
+    func testHydrateNilIncludeHiddenAlsoLandsTrue() {
+        model.sidebar.includeHidden = false
+        let snap = SessionSnapshot(
+            id: state.id, displayName: "TestSession",
+            createdAt: Date(), lastActiveAt: Date(),
+            sidebarRootPath: tmpDir.path,
+            sidebarIncludeHidden: nil
+        )
+        state.hydrate(from: snap)
+        XCTAssertTrue(model.sidebar.includeHidden,
+            "nil (the only value written going forward) must land true, not the legacy nil⇒false")
+    }
+
+    /// The field is no longer persisted: snapshots write nil regardless
+    /// of model state, so the legacy value can never be re-minted.
+    func testMakeSnapshotNeverPersistsIncludeHidden() {
+        model.sidebar.includeHidden = true
+        XCTAssertNil(state.makeSnapshot().sidebarIncludeHidden,
+            "sidebarIncludeHidden is decode-compat only — never written (TSK-363)")
+    }
+
     // MARK: default display name -------------------------------------
 
     func testDefaultDisplayNameFromURL() {

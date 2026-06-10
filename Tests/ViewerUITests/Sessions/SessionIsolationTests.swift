@@ -91,31 +91,27 @@ final class SessionIsolationTests: XCTestCase {
             "B's expansion must not bleed into A")
     }
 
-    // MARK: include-hidden is per-session ------------------------------
+    // MARK: include-hidden is ALWAYS ON (TSK-363) -----------------------
 
-    func test_switchSessions_preservesIncludeHidden_independently() {
+    func test_switchSessions_includeHidden_alwaysTrue() {
         let coord = makeCoordinator()
         let folderA = makeWorkspace(named: "A")
         let folderB = makeWorkspace(named: "B")
 
         coord.openFolder(folderA, forceNew: true)
-        coord.model.sidebar.includeHidden = true
         let aID = coord.core.activeID!
 
+        // Simulate stale state (the eye toggle is gone — nothing in the UI
+        // can do this anymore, but a pre-removal session could have).
+        coord.model.sidebar.includeHidden = false
+
         coord.openFolder(folderB, forceNew: true)
-        // Leak guard: B starts with include-hidden reset to false.
-        XCTAssertFalse(coord.model.sidebar.includeHidden,
-            "B must start with include-hidden off; A's true must not leak")
+        XCTAssertTrue(coord.model.sidebar.includeHidden,
+            "hydrate must force include-hidden back ON — there is no button left to recover")
 
         coord.activate(id: aID)
         XCTAssertTrue(coord.model.sidebar.includeHidden,
-            "switching back to A must restore include-hidden = true")
-
-        // And back to B keeps B's false.
-        let bID = coord.core.sessions.first { $0.id != aID }!.id
-        coord.activate(id: bID)
-        XCTAssertFalse(coord.model.sidebar.includeHidden,
-            "B keeps its own include-hidden = false")
+            "A restores with include-hidden ON regardless of what it had before")
     }
 
     // MARK: split pane is per-session ----------------------------------
@@ -211,12 +207,11 @@ final class SessionIsolationTests: XCTestCase {
         let folderA = makeWorkspace(named: "A", subdirs: ["src"], files: ["a1.md", "a2.md"])
         let folderB = makeWorkspace(named: "B", subdirs: ["lib"], files: ["b1.md"])
 
-        // Session A: tab + split + expansion + include-hidden + panel override.
+        // Session A: tab + split + expansion + panel override.
         coord.openFolder(folderA, forceNew: true)
         coord.model.appendLazyTab(url: folderA.appendingPathComponent("a1.md"), viewMode: .source)
         coord.model.openInSplit(folderA.appendingPathComponent("a2.md"))
         coord.model.sidebar.toggleExpansion(folderA.appendingPathComponent("src"))
-        coord.model.sidebar.includeHidden = true
         coord.model.panelLayout.setOverride(.git, .shown)
         let aID = coord.core.activeID!
 
@@ -225,8 +220,9 @@ final class SessionIsolationTests: XCTestCase {
         coord.model.appendLazyTab(url: folderB.appendingPathComponent("b1.md"), viewMode: .source)
 
         // B should be a clean slate for every per-session field.
+        // (include-hidden is NOT per-session anymore — always true, TSK-363.)
         XCTAssertNil(coord.model.splitURL)
-        XCTAssertFalse(coord.model.sidebar.includeHidden)
+        XCTAssertTrue(coord.model.sidebar.includeHidden)
         XCTAssertFalse(coord.model.sidebar.isExpanded(folderA.appendingPathComponent("src")))
         XCTAssertTrue(coord.model.panelLayout.snapshot().isDefault)
         XCTAssertEqual(coord.model.tabs.tabs.compactMap { $0.url?.lastPathComponent }, ["b1.md"])
