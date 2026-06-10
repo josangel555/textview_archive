@@ -271,6 +271,29 @@ public enum ScriptVerb {
         case "session-open-home":
             // TSK-313: the strip double-click action — new session at ~.
             sessions.openHomeSession()
+        // TSK-522/523: the Git Log row/toolbar EXACT action closures
+        // (GitLogDiffActions — the same functions GitLogTab's buttons
+        // call). The panel model is a view-local @StateObject, resolved
+        // through GitPanelModel.live; `show-git-panel` (plus a settle)
+        // must have mounted it first or these are loud no-ops.
+        case "git-log-click", "git-log-cmd-click", "git-log-shift-click":
+            guard let panel = GitPanelModel.live, !arg.isEmpty else {
+                FileHandle.standardError.write(Data(
+                    "script: \(cmd) needs a mounted git panel and a SHA arg\n".utf8))
+                return true
+            }
+            GitLogDiffActions.rowClicked(
+                sha: arg,
+                command: cmd == "git-log-cmd-click",
+                shift: cmd == "git-log-shift-click",
+                panel: panel, doc: model)
+        case "git-log-cumulative-diff":
+            guard let panel = GitPanelModel.live else {
+                FileHandle.standardError.write(Data(
+                    "script: \(cmd) needs a mounted git panel\n".utf8))
+                return true
+            }
+            GitLogDiffActions.showCumulativeDiff(panel: panel, doc: model)
         case "session-new-via-goto":
             // TSK-314: the strip "+" button's EXACT action closure —
             // spawn a session whose first paint opens the GoTo prompt
@@ -485,6 +508,18 @@ public enum ScriptVerb {
             "lastGoToError": model.lastGoToError,
             "sessions": sessionSummaries,
             "activeSessionID": sessions.core.activeID?.uuidString ?? "",
+            // TSK-522/523: Git Log selection projection (via the live
+            // panel registry — empty dict when the panel isn't mounted).
+            // Lets the UAT scenarios assert multi-select/cumulative-diff
+            // outcomes cross-process.
+            "gitLog": GitPanelModel.live.map { panel in
+                [
+                    "repoRoot": panel.repoRoot?.path ?? "",
+                    "selectedLogSHA": panel.selectedLogSHA ?? "",
+                    "selectedLogSHAs": Array(panel.selectedLogSHAs).sorted(),
+                    "logCount": panel.logEntries.count,
+                ] as [String: Any]
+            } ?? [:],
             // Nested sidebar projection. SidebarPage reads
             // `model.sidebar.rootURL` from here; without it the
             // sidebar-set-root regression guard (InteractionDeepTests)

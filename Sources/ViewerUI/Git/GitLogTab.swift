@@ -273,50 +273,21 @@ struct GitLogTab: View {
     /// go to the model's multi-select state machine (headless-tested via
     /// `logRowClicked` — the exact closure this calls); a plain click
     /// keeps the single-commit diff behavior.
+    // The actual behaviors live in `GitLogDiffActions` so the `--script`
+    // harness verbs (`git-log-click` / `git-log-cmd-click` /
+    // `git-log-shift-click` / `git-log-cumulative-diff`) exercise the
+    // IDENTICAL closures these buttons call (exact-closure rule). The
+    // view's only residue is reading the modifier flags off the event.
     private func rowClicked(_ c: GitClient.GraphCommit) {
         let flags = NSApp.currentEvent?.modifierFlags ?? []
-        if flags.contains(.command) {
-            model.logRowClicked(sha: c.sha, command: true)
-        } else if flags.contains(.shift) {
-            model.logRowClicked(sha: c.sha, shift: true)
-        } else {
-            showCommit(c)
-        }
+        GitLogDiffActions.rowClicked(
+            sha: c.sha,
+            command: flags.contains(.command),
+            shift: flags.contains(.shift),
+            panel: model, doc: doc)
     }
 
-    /// TSK-522: open the cumulative (net) diff for the multi-selection —
-    /// `git diff base tip` via `GitClient.cumulativeDiff`, written to a
-    /// .diff file and opened like the single-commit path below.
     private func showCumulativeDiff() {
-        guard let root = model.repoRoot,
-              let range = model.cumulativeLogSelectionRange else { return }
-        let client = GitClient(repoRoot: root)
-        let body = client.cumulativeDiff(baseRef: range.baseRef, tipRef: range.tipRef)
-        let cache = FileManager.default
-            .urls(for: .cachesDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        let dir = cache.appendingPathComponent("MarkdownViewer/diffs", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let out = dir.appendingPathComponent("\(range.baseRef)..\(range.tipRef).diff")
-        try? body.write(to: out, atomically: true, encoding: .utf8)
-        doc.openInNewTab(out)
-    }
-
-    /// Show a synthetic commit-diff tab. v1: writes `git show` output
-    /// to a .diff file (same trick as Status tab). Task #131 replaces
-    /// this with a proper in-app DiffView.
-    private func showCommit(_ c: GitClient.GraphCommit) {
-        guard let root = model.repoRoot else { return }
-        model.selectLogCommit(sha: c.sha)
-        let client = GitClient(repoRoot: root)
-        let body = client.commitDiff(sha: c.sha)
-        let cache = FileManager.default
-            .urls(for: .cachesDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        let dir = cache.appendingPathComponent("MarkdownViewer/diffs", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let out = dir.appendingPathComponent("\(c.sha).diff")
-        try? body.write(to: out, atomically: true, encoding: .utf8)
-        doc.openInNewTab(out)
+        GitLogDiffActions.showCumulativeDiff(panel: model, doc: doc)
     }
 }

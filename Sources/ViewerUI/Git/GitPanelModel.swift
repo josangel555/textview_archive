@@ -130,7 +130,18 @@ public final class GitPanelModel: ObservableObject {
     /// triggers an immediate refresh. Matches the user-stated 60 s cadence.
     private let cacheTTL: TimeInterval = 60
 
-    public init() {}
+    public init() {
+        // TSK-620: the panel is a view-local @StateObject, so the
+        // `--script` harness verbs (`git-log-click` family) and the
+        // diagnostic dump cannot be handed the instance — they resolve it
+        // through this weak registry instead. Weak: a dismounted panel
+        // must not linger; the newest mounted panel wins (the app shows one).
+        Self.live = self
+    }
+
+    /// The live (most recently constructed) panel instance — the
+    /// exact-closure bridge for script verbs and the dump projection.
+    public private(set) static weak var live: GitPanelModel?
 
     // MARK: - Lifecycle
 
