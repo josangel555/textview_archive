@@ -6283,3 +6283,31 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   GUI session) + emptyFileHex UAT timing on the slower VM. NOT app bugs; not from TSK-440/616.
 - **TSK-440's VM validation is COMPLETE:** zero failures across all sidebar/layout suites on
   the VM. Ticket stays fixed/live-validation only for the drag FEEL + pixels (owner lane).
+
+## LOG +164 (2026-06-10, autonomous tick — TSK-493 VALIDATED: terminal 1-line symptom refuted at every layer; emulator-grid evidence channel shipped)
+- **Verdict: fixed-by-prior-work (TSK-488/489/491 zone), proven not assumed.** On the exact
+  repro scene (`MDV_UI_SCENE=terminal-left`, height=320, VM GUI session) the evidence stack
+  reads healthy end-to-end: model height=320 (scene log) → realized `TerminalNSView` frame
+  975.5×320 (`--diagnose` dump) → **emulator grid 20×119 == bounds-implied, cursor row 0,
+  prompt TOP-anchored** (new dump field) → real WindowServer pixels green
+  (`TerminalTabStripVisualRegressionTests` 4/4, skipped=0, in the GUI-session lane). The
+  symptom requires a stale 1-row grid; the dump refutes it. Board: validated w/ checks.
+- **New evidence channel (549308c):** `--diagnose` now emits a `terminal` node per
+  `TerminalNSView` — `grid_rows/cols` vs bounds-implied (`gridMatchesBounds`), cursor,
+  blank/non-blank row occupancy (content-free, redaction-safe). 6 host tests pin the
+  contract incl. BOTH polarities of the health bit (`TerminalDiagnosticInfoTests`). This is
+  the reusable arbiter for any future "frame right, paint wrong" terminal report.
+- **Harness root-cause found+fixed (611c728):** the sudo'd asuser bridge spawns apps as
+  ROOT, so every non-sudo `pkill` reap in `vm-diagnose.sh` was a silent no-op behind
+  `|| true` — 6 stray instances had piled up. Both reap sites now sudo'd. Related: the
+  GUI-session suite run root-owned `.build/ModuleCache` files (TSK-502 class), breaking the
+  next plain build (`CMdvCore .pcm: Operation not permitted`) — chown self-heal applied.
+- **Confirmed live:** macOS 15 REDACTS asuser-spawned app windows from external
+  `screencapture -x` (two byte-identical wallpaper-only PNGs while the app reported
+  isVisible:true). External captures are NOT a validation route; T5 in-test windowid
+  capture is the only pixel authority (TSK-492 Layer 3).
+- **Full-suite GUI-session sweep (4619 tests): 2 failures** — the known TSK-617 flake
+  (emptyFileHex) + **TSK-618 filed**: `ImageEditorVisualRegressionTests
+  .test_imageEditor_previewAndControls_composite` failed on what is likely its FIRST real
+  execution (it self-skips windowless); failure PNG kept root-side. Host gate green on
+  549308c (4625 tests); one earlier gate run flaked under load (exit 1, clean on re-run).
