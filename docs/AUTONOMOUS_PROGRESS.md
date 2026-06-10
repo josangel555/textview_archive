@@ -6144,3 +6144,15 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   overlay would otherwise swallow the TSK-594 text-selection clicks); next/prev scrolls via
   per-line coordinate ids under ScrollViewReader. DiffViewLayout/Copy suites confirm the
   TSK-593/594 contracts survived the body restructure. Gate green; reinstall kicked.
+## LOG +153 (2026-06-10, autonomous tick — TSK-610 dismissed already-fixed; TSK-590 pool swept)
+- **TSK-610 (session tab height + git metadata): already shipped** in d3d2993 ("taller
+  session row + git badge"): SessionTabBar rows are two-line at uiSize(46) (vs the old
+  30pt single line) with an arrow.triangle.branch + branch sub-line via SessionGitInfo —
+  a subprocess-free .git/HEAD reader (worktree "gitdir:" indirection handled). Proof:
+  19/19 SessionGitInfoTests fresh on main + code evidence on the ticket. Dismissal note
+  invites reopen with specific fields if the owner wants MORE metadata (dirty dot, etc.).
+- **TSK-590 pool status:** every child TSK-591..610 is now fixed/dismissed/parked.
+  Landed today: 596, 597, 599, 600, 602, 607, 608, 609, 611, 612, 613, 614 (+ 266).
+  Parked owner-gated: 591 (live counter read), 592 (resize repro), 598 (MountedPanesLRU
+  supervised — case now 3×-measured), 601 (swift-open repro), 589 (eviction policy).
+  Open residual: TSK-615 (distributed SwiftUI re-eval audit). Next: bumped P1 set.
