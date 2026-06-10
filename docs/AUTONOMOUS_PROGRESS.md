@@ -6368,3 +6368,19 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   chrome reads (terminal pane layout, frame autosave, tool windows) for deterministic T5
   spawns + a `minWidth` floor on the editor preview (the flex-collapse is also a real UX
   nit). Teeth: polluted-defaults fixture → assert pristine chrome.
+
+## LOG +168 (2026-06-10, autonomous tick — TSK-618 VALIDATED: MDV_PRISTINE_CHROME deterministic T5 spawns, shield demonstrated live)
+- **Fix (e82dae1), one choke point:** all chrome stores chain off `PreferencesStore.defaults`
+  (`TerminalPaneStore`, `PanelLayoutStore`, zoom/prefs) — its default param is now
+  `PristineChrome.launchDefaults()`: `.standard` normally; under `MDV_PRISTINE_CHROME=1`
+  an EMPTIED process suite (reads = factory chrome, writes die with the suite — also
+  protects the OWNER's real prefs from host-side test spawns). The AppKit frame autosave
+  (persists to `.standard` regardless) is skipped under pristine → centered 900×650.
+  Plus `ImageEditorView` preview `minWidth: 160` — the silent flex-collapse beside the
+  fixed 260pt controls was a real UX nit, not just a test artifact.
+- **Shield demonstrated against the live failure recipe:** with the VM's
+  `NSWindow Frame MainWindow` deliberately polluted to 700×500, the T5 test STILL passes
+  (5.4s real execution); pollution removed after. `PristineChromeTests` 3/3 pin the
+  suite-emptying + write-isolation mechanism on the host gate. Host gate green @ e82dae1;
+  T5 green on the rebuilt VM dist. Board: validated.
+- TSK-618 also surfaced and fixed `test-in-vm.sh` filter pass-through (fd195b5, prior log).
