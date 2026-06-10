@@ -6505,3 +6505,21 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   unlock all four to validated in a single run.
 - TSK-266/440 remain `fixed` on live-validation; TSK-266's residue rides the parked
   MountedPanesLRU owner decision (TSK-598).
+
+## LOG +176 (2026-06-10, autonomous tick — TSK-620 half A: the ui-click real-event interaction layer lands)
+- **The harness gap behind all four VM-held P1s is closed** (522576a, gate green): new
+  `ui-click` / `ui-double-click` script verbs locate a view by accessibility id on the
+  realized NSView tree, build the genuine AppKit event sequence (down/up pairs, clickCounts,
+  cmd/shift flags, bounds-fraction positioning) and POST it to the app's event queue — the
+  channel real input arrives on. `UIClickSpec` (ViewerCore) is strict: a typo'd modifier
+  fails the parse instead of degrading into an unmodified click. Host tests 9/9.
+- **Two constraints the tests themselves discovered, now documented in code:** (1) a
+  `sendEvent` down/up pair can NEVER satisfy an NSControl tracking loop — `mouseDown` pulls
+  the mouse-up from the QUEUE via `nextEvent` (first implementation went red on exactly
+  this); (2) an unordered window has no window device (`windowNumber <= 0`), so queued
+  events can't route to it — end-to-end delivery proof is VM-only BY CONSTRUCTION, which is
+  precisely the lane those four tickets are held for.
+- TSK-620 filed/triaged/in-progress on the board with the half-B plan: one VM T4 suite
+  driving TSK-313 (strip double-click → ~ session), TSK-314 (+ → prefilled prompt; needs an
+  NSTextField describe in DiagnosticDump first), TSK-522/523 (cmd-click log rows → selection
+  bar + model), then validate all four off its evidence.
