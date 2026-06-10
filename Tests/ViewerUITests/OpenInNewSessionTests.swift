@@ -167,4 +167,28 @@ final class OpenInNewSessionTests: XCTestCase {
         XCTAssertFalse(model.lastGoToError.isEmpty,
             "the user-facing error must be surfaced")
     }
+
+    // MARK: - TSK-314: ~ prefill for the new-session prompt
+
+    func test_showGoToPath_newSessionIntent_prefillsTilde() {
+        let model = DocumentModel()
+        model.showGoToPath(newSessionIntent: true)
+        XCTAssertEqual(model.goToPathPrefill, "~",
+            "the + flow opens prefilled with ~ so a bare Enter opens home")
+    }
+
+    func test_showGoToPath_regularFlow_staysEmpty() {
+        let model = DocumentModel()
+        model.showGoToPath(newSessionIntent: false)
+        XCTAssertNil(model.goToPathPrefill,
+            "the in-session Go To keeps its deliberate empty-field (match-Finder) behavior")
+    }
+
+    func test_dismiss_clearsPrefill() {
+        let model = DocumentModel()
+        model.showGoToPath(newSessionIntent: true)
+        model.dismissGoToPath()
+        XCTAssertNil(model.goToPathPrefill,
+            "a stale prefill must not leak into the next regular Go To")
+    }
 }

@@ -68,6 +68,14 @@ struct GoToPathPrompt: View {
                             .strokeBorder(Color.primary.opacity(0.18), lineWidth: 0.5)
                     )
                     .accessibilityIdentifier("mdv.goto.field")
+                    // TSK-314: the new-session flow opens prefilled with
+                    // "~" (model-driven) so Enter immediately opens home.
+                    // Seed only an untouched field — never clobber typing.
+                    .onAppear {
+                        if path.isEmpty, let prefill = model.goToPathPrefill {
+                            path = prefill
+                        }
+                    }
 
                 if let errorMessage {
                     Text(errorMessage)

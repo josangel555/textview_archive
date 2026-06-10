@@ -761,8 +761,15 @@ public final class DocumentModel: ObservableObject {
     /// after `+` re-rooted the current tab and created nothing).
     public private(set) var goToPathNewSessionIntent: Bool = false
 
+    /// TSK-314: initial text for the prompt's path field. "~" for the
+    /// new-session flow (the + button) so a bare Enter opens home and a
+    /// typed path starts from a sensible anchor; nil (empty, "match
+    /// Finder") for the regular in-session Go To.
+    public private(set) var goToPathPrefill: String?
+
     public func showGoToPath(newSessionIntent: Bool = false) {
         goToPathNewSessionIntent = newSessionIntent
+        goToPathPrefill = newSessionIntent ? "~" : nil
         isGoToPathPresented = true
         // Clear stale error state from a previous attempt so the dump
         // reflects only the current invocation.
@@ -771,6 +778,7 @@ public final class DocumentModel: ObservableObject {
     public func dismissGoToPath() {
         isGoToPathPresented = false
         goToPathNewSessionIntent = false
+        goToPathPrefill = nil
         lastGoToError = ""
     }
 
