@@ -60,8 +60,19 @@ Rank order each firing:
    outrank internal-quality work (gates, lint walls, contract hardening) even when the internal
    item is "more severe" on paper. The deep-audit `[S2]/[S3]` user-visible bug/perf tickets and
    owner-reported `BUG:` tickets are the richest pool.
+1.5. **VALIDATION DRAIN (added 2026-06-10 board review): when no P1 user-facing bug is
+   actionable, drain the `fixed` lane before starting NEW work.** ~56 tickets sat at `fixed`
+   pre-dating the 2026-06-07 self-validation policy. Re-running a fixed ticket's evidence
+   FRESH is not bookkeeping — the TSK-108 re-validation caught a live regression (TSK-621)
+   that had already shipped to the owner's installed app. Per ticket: re-run the named suites
+   on current `main` (host + the VM lane it claims), then `task_validate` on green, or file
+   the regression and bounce the ticket to `progress` on red. Never validate off stale
+   fix-time claims.
 2. **Then other real bugs / perf / security** (`type: bug|perf|security|leak|race|contract`)
-   over features, features over **test/quality paper cuts**.
+   over features, features over **test/quality paper cuts**. With the 2026-06-10 user-facing
+   epic (TSK-590) reconciled, the groomed default pools are: the `TSK-538` rust-core epic's
+   P1 children (579/581/582 — headless, real), then the backend-not-surfaced UI items
+   (TSK-463/464/469 — user-visible, mostly built).
 3. *(superseded 2026-06-05 ranking, kept for context: SwiftUI app over the Rust `[PORT]` lane —
    still true as a tiebreak; `[PORT]` remains the last-resort lane.)*
 4. **Headless-actionable now** vs **live-gated**. Decide honestly:
@@ -79,6 +90,17 @@ Rank order each firing:
 task is headless-actionable. Never let it become the per-firing default. If you've done it 2+
 firings running, stop and re-read this section — surface the live-gated blocker to the owner
 instead (one crisp ask in DECISIONS NEEDED) rather than manufacturing marginal tests.
+
+**Board hygiene (added 2026-06-10 board review — cheap, fold into any firing):**
+- **Stale leases**: a `progress` ticket whose lease expired days ago under a retired agent name
+  is a zombie — reconcile it (re-scope, dismiss-as-superseded with proof, or re-claim and
+  finish), don't let it squat in the lane.
+- **Dedupe before acting**: the audit fleets filed overlapping findings (e.g. TSK-552≡545).
+  Before working a finding, search the board for its twin; `task_link`/`task_dismiss` the dup.
+- **Gated suites must be IN a lane list**: when a fix adds an env-gated test suite
+  (`MDV_RUN_WEBVIEW_TESTS` etc.), wiring it into `test-in-vm.sh` + `nightly-vm.yml` filter
+  lists IS part of the change — a gated suite in no lane list runs NOWHERE and its green
+  history means nothing (how TSK-621 shipped silently).
 
 ---
 
