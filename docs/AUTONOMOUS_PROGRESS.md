@@ -6084,3 +6084,18 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
 - **Tests:** 9 RowCounterPluginTests (CRLF golden + memo-behavior via coldCountComputations
   seam); teeth (memo defeated via compiling `, false` mutation → red). Gate green on 97998b2;
   TSK-603 → fixed (umbrella deliverable = measurement + children), TSK-612 → fixed.
+## LOG +148 (2026-06-10, autonomous tick — TSK-614 fixed: plugin sidebar sections get a persisted Hide Section dismiss)
+- **The corrected TSK-608 surface.** The always-on "ROW COUNTS" section had no way off the
+  screen because four gaps compounded: bundled plugins registered unconditionally at launch,
+  `setEnabled(true)` for bundled was a no-op flag-flip (no re-registration path), enabled
+  state never persisted, and Settings hid the toggle for bundled rows.
+- **Fix (f212ccd):** persisted disabled set (`MarkdownViewer.disabledPluginIDs`, injectable
+  defaults) gates launch registration; disabled bundled sections PARK in a dormant stash so
+  re-enable restores them without re-running the launch hook; "Hide Section" context menu on
+  the section header; Settings → Plugins shows the toggle for bundled plugins as the re-show
+  path. Both UI surfaces call exactly `PluginRegistry.setEnabled` — the tested seam.
+- **Tests:** 4 PluginSectionVisibilityTests (hide+persist, dormant re-enable, relaunch
+  honors dismissal then re-enables, idempotent disable). Teeth: registration guard defeated
+  via compiling `, false` mutation → 2 red → restored green. Gate green on f212ccd; held at
+  `fixed` (context-menu/Settings rendering = VM lane). If the owner confirms this is the
+  intended "row-count tool window" dismissal, TSK-608's validation rides this fix.
