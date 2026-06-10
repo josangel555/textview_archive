@@ -6607,3 +6607,19 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   if the `.background` fill was removed — the state machine alone was pinned.
 - Epic status: remaining fixed children to review next (596, 597, 602, 603, 604, 607,
   608, 614); parked owner-gated: 591, 592, 598, 601.
+
+## LOG +181 (2026-06-10, autonomous tick — sweep continues: 596/597 validated; 602 held with a named closure path)
+- **TSK-596 validated** (Git Log full-message search): substance fully pinned against a
+  real repo — git-backed grep incl. BODY-only matches, fixed-strings literalness, the
+  debounced generation-guarded state machine — with a compiling-mutation teeth check.
+  Residue (search-field chrome pixels) is the entitled-pixels class.
+- **TSK-597 validated** (find-in-diff): the deliverable (match + count + wrap-around
+  next/prev) pinned by DiffFindTests with a wrap→clamp mutation check; the TSK-593/594
+  neighbor contracts confirmed intact after the body restructure. Residue (tint pixels +
+  scroll motion) is presentation, not the deliverable.
+- **TSK-602 HELD at fixed — correctly**: the parity claim (same colors in both lenses)
+  lives in WKWebView-rendered CM6 pixels — no host oracle exists, and tag-mapping
+  fidelity is live-only per its own record. Named the closure path on the ticket: an
+  MDV_RUN_WEBVIEW_TESTS-gated in-process editor test reading getComputedStyle(token)
+  back against SyntaxTheme hex (VM/nightly lane) — future tick.
+- Remaining fixed children to review: 603, 604, 607, 608, 614.
