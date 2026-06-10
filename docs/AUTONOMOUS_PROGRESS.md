@@ -5844,3 +5844,15 @@ First firing under the 2026-06-10 USER-FACING-first directive; cron loop recreat
 - Both recorded `fixed` on the board with checks artifacts; host gate green on each committed SHA; fresh bundle built +
   installed to `/Applications/TextView.app` (owner: relaunch to pick it up). RESIDUE for the VM lane: menu-item
   visibility + the SwiftUI onChange bridge are render-path; model layers fully pinned. `main` @ f5cb39b.
+
+## LOG +130 (2026-06-10, autonomous tick — TSK-609 inert shoulder buttons 4/5/6: reveal-on-toggle-on)
+- **TSK-609 → fixed (c82498f).** Diagnosis ruled out dead wiring: the toggle model was already test-pinned
+  green, and the owner's LIVE defaults (`panelOverrides`) show six panels successfully forced `:hidden` —
+  the buttons work. The "inert" trio (4=git, 5=claudeTimeline, 6=lspOutline) are exactly the sections with
+  their OWN disclosure state: flipping one ON mounted a thin COLLAPSED header (Claude was transient
+  `@State` collapsed-by-default, resetting every remount; Git's persisted `gitExpanded` could be stale-false)
+  — visually "nothing happened". Fix: `PanelLayoutStore.toggle` now writes `true` to the new
+  `SidebarPanelKind.expandedStateKey` when flipping a panel ON (git reuses its legacy key); Claude + Outline
+  disclosure moved to `@AppStorage` on those keys so the reveal lands live and persists. 3 new headless teeth
+  (reveal-on-on ×3 kinds, off-leaves-alone, key stability); mutation-checked red; host gate green; bundle
+  installed. VM-lane residue: pixel proof the expanded body paints. `main` @ c82498f.
