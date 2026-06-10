@@ -5897,7 +5897,9 @@ First firing under the 2026-06-10 USER-FACING-first directive; cron loop recreat
 
 ### DECISIONS NEEDED (consolidated, 2026-06-10)
 - **MountedPanesLRU supervised session** — now the dominant lever for MD-open lag (TSK-598), tab-close residue
-  (TSK-266), and tab-switch lag. Parked on TSK-598 with options. One supervised session likely clears all three.
+  (TSK-266), tab-switch lag, AND the HEX ~1s open (TSK-455, measured 2026-06-10: HEX frames 0.09% of the
+  tab-walk burn; 43% is generic per-switch sizeThatFits rebuild). Parked on TSK-598 with options.
+  One supervised session likely clears all FOUR symptoms.
 - TSK-589 session-eviction policy (options a–d, parked earlier).
 - TSK-591 hover lag — needs a 10s live counter read (`trackedRepos.norm.miss`/`.reset`) or a 30s Instruments trace.
 - **TSK-327 tool-window "Main tab" docking** (parked 2026-06-10): L/R/B drag-snap is fully shipped; the
@@ -6228,3 +6230,15 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   6KiB binary fixture (`scripts/perf-fixtures/hex-6kb.bin`, 0x00..0xFF×24 — null bytes force the
   binary/HEX classification) is recording via `scripts/vm-profile.sh ... 15 open debug app`.
   Next: parse main-thread samples in the open window, attribute, fix what they indict.
+## LOG +160 (2026-06-10, autonomous tick — TSK-455 MEASURED: HEX renderer innocent; 4th symptom pinned on MountedPanesLRU)
+- **Two symbolicated VM captures** (debug config, `scripts/vm-profile.sh`, 6KiB deterministic
+  binary fixture): COLD (file as argv): `open` signpost 8ms; the ~0.94s busy is dyld/objc/ICU/
+  first-window LAUNCH cost — main thread idle from t=3s, HEX render invisible at 1ms sampling.
+  WARM (nav-mode 20-tab interact-signposted walk incl. the .bin): every selectTab 1–3ms sync;
+  Hex* frames = 3/3267 main-thread samples (0.09%); the walk's ~70%-busy main thread is 43%
+  generic SwiftUI sizeThatFits + 7% CA commit + 5% TextKit — the per-switch pane teardown/rebuild
+  that hits EVERY view mode.
+- **Disposition:** all HEX-specific hypotheses refuted (chunk path, unbounded-container TextKit
+  first-layout, re-render cascade). TSK-455 blocked_by TSK-598 (MountedPanesLRU — now carrying
+  four data-backed symptoms); no HEX-side code change would move the felt second, so none was made.
+  Traces: /tmp/mdv-455-hex.trace (cold), /tmp/mdv-455-hex-nav.trace (warm). Evidence on both tickets.
