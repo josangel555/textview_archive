@@ -36,20 +36,32 @@ import ViewerCore
 //     drives a local `@State` and a parent binding mirror; the
 //     final commit + clamp lands in `.onEnded`.
 struct ResizableSectionDivider: View {
-    /// Binding for the height of the section directly above this
-    /// divider. Drag deltas are mirrored through here in real time
-    /// (wrapped in a no-animation transaction) so the section
-    /// resizes as the user drags.
-    @Binding var heightAbove: CGFloat
+    /// Height binding for the section directly above this divider, or
+    /// nil when the panel above is the flex-fill FILES tree (which owns
+    /// no height key — it absorbs whatever the fixed panels release).
+    /// Drag deltas are mirrored in real time (wrapped in a no-animation
+    /// transaction) so the sections resize as the user drags.
+    var heightAbove: Binding<CGFloat>?
+    /// TSK-440: height binding for the section directly BELOW. When both
+    /// bindings are present the drag is SUM-PRESERVING — height moves
+    /// between the adjacent pair (`SidebarResize.redistribute`) instead
+    /// of the old above-only mutation that let the flex FILES panel
+    /// absorb the slack and made multi-panel resize feel erratic.
+    /// With only `heightAbove` the legacy clamp behavior applies; with
+    /// only `heightBelow` (the FILES↔accordion boundary) the drag drives
+    /// the below panel inversely — drag down grows FILES, shrinks the
+    /// tool window.
+    var heightBelow: Binding<CGFloat>? = nil
     /// True when the section above is collapsed (header-only). The
     /// drag handle is still drawn (so the visual divider is uniform)
     /// but interaction is disabled — there's nothing meaningful to
     /// resize when only a header is showing.
     var isAboveCollapsed: Bool = false
 
-    /// Drag origin (the height the section had when the user
-    /// first pressed). Nil between drags.
-    @State private var dragStartHeight: CGFloat? = nil
+    /// Drag origins (the heights the adjacent sections had when the
+    /// user first pressed). Nil between drags.
+    @State private var dragStartAbove: CGFloat? = nil
+    @State private var dragStartBelow: CGFloat? = nil
 
     /// Tracks whether this divider has an outstanding `NSCursor.push()`
     /// on the global cursor stack, so hover-out / disappear pop exactly
@@ -108,31 +120,59 @@ struct ResizableSectionDivider: View {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
                 guard !isAboveCollapsed else { return }
-                if dragStartHeight == nil {
-                    dragStartHeight = heightAbove
+                if dragStartAbove == nil {
+                    dragStartAbove = heightAbove?.wrappedValue
+                    dragStartBelow = heightBelow?.wrappedValue
                 }
-                let base = dragStartHeight ?? heightAbove
-                let next = SidebarPanelHeights.clamp(
-                    base + value.translation.height
-                )
+                let delta = value.translation.height
                 // No-animation transaction: the dominant cause of
                 // jank was implicit interpolation on the height
                 // binding, not the UserDefaults write itself. Each
-                // delta now mutates the height in a single render
-                // pass with no spring smoothing.
+                // delta mutates the heights in a single render pass
+                // with no spring smoothing.
                 withTransaction(noAnimationTransaction()) {
-                    heightAbove = next
+                    apply(delta: delta)
                 }
             }
             .onEnded { _ in
-                // Re-clamp + final commit so the persisted value is
+                // Re-clamp + final commit so the persisted values are
                 // always inside the legal range, regardless of any
                 // floating-point drift across deltas.
                 withTransaction(noAnimationTransaction()) {
-                    heightAbove = SidebarPanelHeights.clamp(heightAbove)
+                    if let above = heightAbove {
+                        above.wrappedValue = SidebarPanelHeights.clamp(above.wrappedValue)
+                    }
+                    if let below = heightBelow {
+                        below.wrappedValue = SidebarPanelHeights.clamp(below.wrappedValue)
+                    }
                 }
-                dragStartHeight = nil
+                dragStartAbove = nil
+                dragStartBelow = nil
             }
+    }
+
+    /// TSK-440 — route the drag by which neighbors own a height:
+    ///   * pair       → sum-preserving redistribution between the two
+    ///   * above only → legacy clamp (above grows as you drag down)
+    ///   * below only → FILES boundary: drag down grows the flex FILES
+    ///                  panel above by SHRINKING the fixed panel below
+    private func apply(delta: CGFloat) {
+        switch (heightAbove, heightBelow) {
+        case let (above?, below?):
+            let baseA = dragStartAbove ?? above.wrappedValue
+            let baseB = dragStartBelow ?? below.wrappedValue
+            let next = SidebarResize.redistribute(above: baseA, below: baseB, delta: delta)
+            above.wrappedValue = next.above
+            below.wrappedValue = next.below
+        case let (above?, nil):
+            let base = dragStartAbove ?? above.wrappedValue
+            above.wrappedValue = SidebarPanelHeights.clamp(base + delta)
+        case let (nil, below?):
+            let base = dragStartBelow ?? below.wrappedValue
+            below.wrappedValue = SidebarPanelHeights.clamp(base - delta)
+        case (nil, nil):
+            break
+        }
     }
 }
 

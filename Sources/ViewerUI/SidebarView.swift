@@ -147,6 +147,20 @@ struct SidebarView: View {
             // (`maxHeight: .infinity`) behaviour, so it absorbs
             // any leftover vertical space.
             filesPanel
+            // TSK-440 bug (B): the FILES↔accordion boundary gets a
+            // resizable divider whenever FILES is expanded and at least
+            // one tool window is visible below it — previously FILES +
+            // one tool produced ZERO draggable boundaries. FILES owns no
+            // height key (it's the flex-fill), so the divider drives the
+            // FIRST tool window inversely: drag down grows FILES by
+            // shrinking the tool below.
+            if let fullPlan = filesBoundaryPlan, fullPlan.drawFilesDivider,
+               let first = fullPlan.entries.first {
+                ResizableSectionDivider(
+                    heightAbove: nil,
+                    heightBelow: heightBinding(for: first.panel)
+                )
+            }
             // P1 — TOOL-WINDOW BOUNDING. The accordion run + plugin
             // sections live inside a BOUNDED, scrollable region so their
             // summed height can NEVER exceed the sidebar band and push the
@@ -329,6 +343,17 @@ struct SidebarView: View {
         )
     }
 
+    /// TSK-440: the full divider plan including the FILES boundary —
+    /// nil when there's no folder open or FILES is collapsed (a
+    /// header-only FILES row has nothing meaningful to resize against).
+    private var filesBoundaryPlan: SidebarSectionPlanner.FullPlan? {
+        guard sidebar.rootURL != nil, filesExpanded else { return nil }
+        return SidebarSectionPlanner.plan(
+            filesVisible: true,
+            accordion: panelVisibility
+        )
+    }
+
     private var panelVisibility: [(panel: SidebarPanelKind, isVisible: Bool)] {
         let presence = SidebarDataPresence.evaluate(presenceInputs)
         let accordionOrder: [SidebarPanelKind] = [
@@ -351,10 +376,17 @@ struct SidebarView: View {
     @ViewBuilder
     private var accordionStack: some View {
         let plan = SidebarSectionPlanner.plan(panelVisibility)
-        ForEach(plan, id: \.panel) { entry in
+        ForEach(Array(plan.enumerated()), id: \.element.panel) { idx, entry in
             panelView(for: entry.panel)
-            if entry.drawTrailingDivider {
-                divider(below: entry.panel)
+            // TSK-440: a divider between two fixed-height panels drives
+            // BOTH of them (sum-preserving redistribution) — dragging it
+            // moves height between the adjacent pair instead of the old
+            // above-only mutation that let FILES absorb the slack.
+            if entry.drawTrailingDivider, idx + 1 < plan.count {
+                ResizableSectionDivider(
+                    heightAbove: heightBinding(for: entry.panel),
+                    heightBelow: heightBinding(for: plan[idx + 1].panel)
+                )
             }
         }
         // Claude-transcript presence now lives on `SidebarModel`
@@ -409,27 +441,22 @@ struct SidebarView: View {
         }
     }
 
-    @ViewBuilder
-    private func divider(below kind: SidebarPanelKind) -> some View {
+    /// TSK-440: the clamped height binding for a resizable accordion
+    /// panel, or nil for the kinds that own no height key (FILES is the
+    /// flex-fill; pluginSections self-manages). Centralised so the pair
+    /// dividers and the FILES boundary divider read one mapping.
+    private func heightBinding(for kind: SidebarPanelKind) -> Binding<CGFloat>? {
         switch kind {
-        case .bookmarks:
-            ResizableSectionDivider(heightAbove: heightBinding($bookmarksHeight))
-        case .searchAnywhere:
-            ResizableSectionDivider(heightAbove: heightBinding($searchHeight))
-        case .git:
-            ResizableSectionDivider(heightAbove: heightBinding($gitHeight))
-        case .claudeTimeline:
-            ResizableSectionDivider(heightAbove: heightBinding($claudeHeight))
-        case .lspOutline:
-            ResizableSectionDivider(heightAbove: heightBinding($lspHeight))
-        case .lspNavigation:
-            ResizableSectionDivider(heightAbove: heightBinding($lspNavHeight))
-        case .lspProblems:
-            ResizableSectionDivider(heightAbove: heightBinding($lspProblemsHeight))
-        case .recentlyOpened:
-            ResizableSectionDivider(heightAbove: heightBinding($recentsHeight))
+        case .bookmarks:      return heightBinding($bookmarksHeight)
+        case .searchAnywhere: return heightBinding($searchHeight)
+        case .git:            return heightBinding($gitHeight)
+        case .claudeTimeline: return heightBinding($claudeHeight)
+        case .lspOutline:     return heightBinding($lspHeight)
+        case .lspNavigation:  return heightBinding($lspNavHeight)
+        case .lspProblems:    return heightBinding($lspProblemsHeight)
+        case .recentlyOpened: return heightBinding($recentsHeight)
         case .files, .pluginSections:
-            EmptyView()
+            return nil
         }
     }
 
@@ -1426,6 +1453,9 @@ private struct BoundedAccordionScroll<Content: View>: View {
     /// Measured natural height of the accordion content, so the scroll
     /// region can hug it when it fits under the ceiling.
     @State private var contentHeight: CGFloat = 0
+    /// TSK-440: whether a real measurement has landed — distinguishes
+    /// "not measured yet" from "measured empty" in the resolver.
+    @State private var hasMeasured = false
 
     private var ceiling: CGFloat? {
         guard availableHeight.isFinite, availableHeight > 0 else { return nil }
@@ -1438,13 +1468,17 @@ private struct BoundedAccordionScroll<Content: View>: View {
         // (cap == nil) or content fits, the frame is just the content
         // height (no behavioral change). When content exceeds the cap,
         // the frame is the cap and the inner ScrollView scrolls.
-        let resolved: CGFloat? = {
-            guard let cap else {
-                return contentHeight > 0 ? contentHeight : nil
-            }
-            guard contentHeight > 0 else { return cap }
-            return min(contentHeight, cap)
-        }()
+        // TSK-440 bug (A): resolution now lives in the pure
+        // `AccordionHeightResolver` (ViewerCore) — the load-bearing fix is
+        // distinguishing "not measured yet" (→ cap, the first-pass
+        // behavior) from "measured EMPTY" (→ 0). The old `contentHeight >
+        // 0` guard conflated them, so a lone FILES panel sat above an
+        // empty scroll region frozen at ~62% of the sidebar.
+        let resolved = AccordionHeightResolver.resolve(
+            contentHeight: contentHeight,
+            hasMeasured: hasMeasured,
+            cap: cap
+        )
 
         ScrollView(.vertical, showsIndicators: true) {
             VStack(spacing: 0) {
@@ -1453,7 +1487,10 @@ private struct BoundedAccordionScroll<Content: View>: View {
             .background(
                 GeometryReader { geo in
                     Color.clear
-                        .onAppear { contentHeight = geo.size.height }
+                        .onAppear {
+                            contentHeight = geo.size.height
+                            hasMeasured = true
+                        }
                         .onChange(of: geo.size.height) { _, h in
                             // EPSILON-GUARD (PERF — accordion measure feedback):
                             // the measured natural height feeds `resolved` →

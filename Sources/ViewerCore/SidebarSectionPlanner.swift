@@ -48,4 +48,34 @@ public enum SidebarSectionPlanner {
             )
         }
     }
+
+    /// TSK-440 — the full sidebar divider plan, INCLUDING the boundary
+    /// between the flex-fill FILES panel and the accordion. The old
+    /// accordion-only plan drew dividers only BETWEEN adjacent tool
+    /// windows, so FILES + one tool produced ZERO draggable boundaries
+    /// (bug B) and FILES + two tools produced one in a misleading place
+    /// (bug C). The FILES divider exists exactly when FILES is shown AND
+    /// at least one accordion panel is visible below it.
+    public struct FullPlan: Equatable, Sendable {
+        /// Draw a resizable divider between FILES and the accordion.
+        public let drawFilesDivider: Bool
+        /// The accordion run — same semantics as `plan(_:)`.
+        public let entries: [Entry]
+
+        public init(drawFilesDivider: Bool, entries: [Entry]) {
+            self.drawFilesDivider = drawFilesDivider
+            self.entries = entries
+        }
+    }
+
+    public static func plan(
+        filesVisible: Bool,
+        accordion: [(panel: SidebarPanelKind, isVisible: Bool)]
+    ) -> FullPlan {
+        let entries = plan(accordion)
+        return FullPlan(
+            drawFilesDivider: filesVisible && !entries.isEmpty,
+            entries: entries
+        )
+    }
 }
