@@ -6780,3 +6780,20 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   no-op). Closure path on the ticket: in-flight-page test that wholesale-replaces the log
   before the append lands and asserts the stale page is dropped. Next drain build item.
 - Drain tally so far: 266, 440, 134, 181 validated; 150 held honest. ~47 fixed remain.
+
+## LOG +190 (2026-06-10, autonomous tick — TSK-150 guard test built; VALIDATED. Teeth iteration taught an assertion-design lesson)
+- **TSK-150 (S3, loadMoreLog stale-append race) VALIDATED** after building the missing
+  guard test (commit 1f41c2a): `GitLogStalePageGuardTests` — 210-commit repo A (so page 2
+  is a real 110-commit payload) + 1-commit repo B; the test kicks page 2, captures the
+  in-flight task via a new `loadMoreTask` private→private(set) seam, switches repos, and
+  asserts repo A's page-2 fingerprint never lands. Control test pins the non-vacuous
+  fixture (100→210 append without interference).
+- **Teeth iteration (lesson):** the first mutation run stayed GREEN because the
+  assertion only ran after settling repo B — whose wholesale list replace MASKED the
+  leaked append. Fix: assert at the instant the captured stale task completes, using the
+  page-2 commit subjects as a fingerprint. Re-run mutated (all 3 protection layers
+  stripped) → RED naming the leak (count 110); restored → 2/2 green. Same masking class
+  as the TSK-621 cache lesson: a later wholesale replace can hide an intermediate
+  corruption — assert at the corruption window, not after convergence.
+- Gate PASSED on 1f41c2a. Drain tally: 266, 440, 134, 181, 150 validated (+ the earlier
+  599/600/609/602/108/621 wave). ~46 fixed remain.
