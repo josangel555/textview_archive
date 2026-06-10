@@ -9,15 +9,18 @@
 # under the launchctl-asuser bridge (vm-smoke.sh pattern) because the
 # window must realize in a real GUI session.
 #
-# Usage: bash scripts/vm-diagnose.sh [scene] [file-rel-to-vm-repo]
+# Usage: bash scripts/vm-diagnose.sh [scene] [file-rel-to-vm-repo] [--capture]
 #        (defaults: terminal-left, DESIGN.md)
-# Output: /tmp/mdv-diagnose.json on the HOST.
+# Output: /tmp/mdv-diagnose.json on the HOST — or, with --capture, a real
+#         WindowServer screenshot at /tmp/mdv-diagnose.png (the visibility
+#         check the JSON tree cannot provide; TSK-492 false-green lesson).
 #
 # PRE-REQ: dist/TextView.app built on the VM (bash scripts/test-in-vm.sh build).
 set -euo pipefail
 
 SCENE="${1:-terminal-left}"
 FILE_REL="${2:-DESIGN.md}"
+MODE="${3:-}"
 PASSWORD="${MDV_VM_SUDO_PASSWORD:-<vm-sudo-password>}"
 GUI_UID=501
 OUT="/tmp/mdv-diagnose.json"
@@ -29,30 +32,57 @@ if [[ ! "$SCENE" =~ ^[a-z0-9-]+$ ]]; then
   exit 2
 fi
 
-echo "==> Diagnose dump on VM: scene=$SCENE file=$FILE_REL"
+echo "==> Diagnose on VM: scene=$SCENE file=$FILE_REL mode=${MODE:-json}"
 # Quoted heredoc: nothing host-side expands inside. Untrusted-ish values
 # travel as positional args into the remote shell, then into the inner sh.
-ssh macOS15 'bash -s' -- "$PASSWORD" "$GUI_UID" "$SCENE" "$FILE_REL" <<'REMOTE'
+ssh macOS15 'bash -s' -- "$PASSWORD" "$GUI_UID" "$SCENE" "$FILE_REL" "$MODE" <<'REMOTE'
   set -e
-  PASSWORD="$1"; GUI_UID="$2"; SCENE="$3"; FILE_REL="$4"
-  rm -f /tmp/mdv-diagnose.json /tmp/mdv-diagnose.err
-  # asuser drops env passed via /usr/bin/env but keeps env set INSIDE the
-  # spawned sh. Scene applies at +0.3s; dump fires at +2.0s — strictly after.
-  echo "$PASSWORD" | sudo -S launchctl asuser "$GUI_UID" /bin/sh -c '
-    cd /Users/vm-tester/markdown_viewer &&
-    MDV_SKIP_WORKSPACE_RESTORE=1 \
-    MDV_TEST_INSTANCE=1 \
-    MDV_UI_SCENE="$1" \
-    MDV_UI_SCENE_DELAY=0.3 \
-    MDV_DIAGNOSE_DELAY=2.0 \
-    dist/TextView.app/Contents/MacOS/MarkdownViewer --diagnose "$2" \
-      > /tmp/mdv-diagnose.json 2> /tmp/mdv-diagnose.err
-  ' _ "$SCENE" "$FILE_REL" || true
-  echo "--- stderr (scene log expected here):"
-  cat /tmp/mdv-diagnose.err || true
-  ls -l /tmp/mdv-diagnose.json
+  PASSWORD="$1"; GUI_UID="$2"; SCENE="$3"; FILE_REL="$4"; MODE="$5"
+  rm -f /tmp/mdv-diagnose.json /tmp/mdv-diagnose.err /tmp/mdv-diagnose.png
+  if [ "$MODE" = "--capture" ]; then
+    # Pixel mode (the visibility check): launch with the scene, let it
+    # settle, screencapture the whole screen, reap by test-instance tag.
+    echo "$PASSWORD" | sudo -S launchctl asuser "$GUI_UID" /bin/sh -c '
+      cd /Users/vm-tester/markdown_viewer &&
+      MDV_SKIP_WORKSPACE_RESTORE=1 \
+      MDV_TEST_INSTANCE=1 \
+      MDV_UI_SCENE="$1" \
+      MDV_UI_SCENE_DELAY=0.3 \
+      dist/TextView.app/Contents/MacOS/MarkdownViewer "$2" \
+        2> /tmp/mdv-diagnose.err &
+    ' _ "$SCENE" "$FILE_REL"
+    sleep 6
+    echo "$PASSWORD" | sudo -S launchctl asuser "$GUI_UID" \
+      /usr/sbin/screencapture -x /tmp/mdv-diagnose.png
+    # Reap ONLY the tagged test instance (never killall by exec name).
+    pkill -f "MDV_TEST_INSTANCE=1" 2>/dev/null || \
+      pkill -f "dist/TextView.app/Contents/MacOS/MarkdownViewer" 2>/dev/null || true
+    ls -l /tmp/mdv-diagnose.png
+  else
+    # asuser drops env passed via /usr/bin/env but keeps env set INSIDE the
+    # spawned sh. Scene applies at +0.3s; dump fires at +2.0s — strictly after.
+    echo "$PASSWORD" | sudo -S launchctl asuser "$GUI_UID" /bin/sh -c '
+      cd /Users/vm-tester/markdown_viewer &&
+      MDV_SKIP_WORKSPACE_RESTORE=1 \
+      MDV_TEST_INSTANCE=1 \
+      MDV_UI_SCENE="$1" \
+      MDV_UI_SCENE_DELAY=0.3 \
+      MDV_DIAGNOSE_DELAY=2.0 \
+      dist/TextView.app/Contents/MacOS/MarkdownViewer --diagnose "$2" \
+        > /tmp/mdv-diagnose.json 2> /tmp/mdv-diagnose.err
+    ' _ "$SCENE" "$FILE_REL" || true
+    echo "--- stderr (scene log expected here):"
+    cat /tmp/mdv-diagnose.err || true
+    ls -l /tmp/mdv-diagnose.json
+  fi
 REMOTE
 
-echo "==> Pull JSON back to host"
-scp -q macOS15:/tmp/mdv-diagnose.json "$OUT"
-echo "==> Done: $OUT ($(wc -c < "$OUT") bytes)"
+if [[ "$MODE" == "--capture" ]]; then
+  echo "==> Pull PNG back to host"
+  scp -q macOS15:/tmp/mdv-diagnose.png /tmp/mdv-diagnose.png
+  echo "==> Done: /tmp/mdv-diagnose.png ($(wc -c < /tmp/mdv-diagnose.png) bytes)"
+else
+  echo "==> Pull JSON back to host"
+  scp -q macOS15:/tmp/mdv-diagnose.json "$OUT"
+  echo "==> Done: $OUT ($(wc -c < "$OUT") bytes)"
+fi
