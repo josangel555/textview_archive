@@ -140,3 +140,65 @@ final class SessionAutosaveTests: XCTestCase {
             "a real change after a no-op must still persist")
     }
 }
+
+// MARK: - TSK-607: periodic safety-net flush (scroll-only drift)
+
+extension SessionAutosaveTests {
+
+    /// Scroll position deliberately never ticks the autosave publishers
+    /// (REPUB-1), so before TSK-607 a "scroll, then crash" lost it. The
+    /// periodic tick must capture and persist it with NO publisher tick
+    /// and NO quit.
+    func test_periodicFlush_persistsScrollOnlyDrift() throws {
+        let folder = try makeFolder("ProjScroll")
+        let file = try makeFile(folder, "long.md",
+                                Array(repeating: "line", count: 300).joined(separator: "\n"))
+        let storeDir = tmp.appendingPathComponent("store-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: storeDir, withIntermediateDirectories: true)
+        let store = SessionStore(directory: storeDir)
+        let coord = SessionsAppCoordinator(model: DocumentModel(),
+                                           store: store,
+                                           initialRoot: nil,
+                                           autosaveDebounce: 0,
+                                           periodicFlushInterval: 0)  // tick driven by hand
+        coord.bootstrap()
+        coord.openFolder(folder, forceNew: false)
+        coord.model.open(url: file)
+        coord.flushAutosaveNow()
+        coord.flushForTermination()   // baseline on disk, scroll at top
+        let id = coord.active!.id
+
+        // Scroll-only mutation: rides SourceViewChannel, ticks nothing.
+        coord.model.sourceView.sourceScrollState = SourceScrollState(
+            offsetY: 1280, viewportHeight: 600, lineHeight: 16,
+            lineCount: 300, topInset: 10)
+
+        coord.periodicFlushTick()
+        store.flushSync()
+
+        let snap = store.load(id: id)
+        let line = snap?.openTabs.first?.scrollTopLine ?? 0
+        XCTAssertGreaterThan(line, 0,
+            "the periodic flush must capture + persist scroll-only drift "
+            + "(no publisher tick, no quit) — got scrollTopLine=\(line)")
+    }
+
+    /// An idle tick (nothing changed since the last write) must not write —
+    /// the periodic timer reuses the same equality guard as the debounce.
+    func test_periodicFlush_idleTick_doesNotWrite() throws {
+        let folder = try makeFolder("ProjIdle")
+        let file = try makeFile(folder, "a.md", "# a")
+        let (coord, store) = makeBootedCoordinator(root: folder)
+        let id = coord.active!.id
+
+        coord.model.open(url: file)
+        coord.flushAutosaveNow()
+        store.flushSync()
+        let savedAtAfterChange = store.load(id: id)?.savedAt
+
+        coord.periodicFlushTick()
+        store.flushSync()
+        XCTAssertEqual(store.load(id: id)?.savedAt, savedAtAfterChange,
+                       "an idle periodic tick must be equality-guarded to a no-op write")
+    }
+}

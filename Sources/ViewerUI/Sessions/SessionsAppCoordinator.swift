@@ -85,16 +85,28 @@ public final class SessionsAppCoordinator: ObservableObject {
     private var lastPersistedContent: [UUID: SessionSnapshot] = [:]
     /// Debounce window. Injectable so tests can drive it to ~0.
     private let autosaveDebounce: TimeInterval
+    /// Periodic safety-net flush (TSK-607). The publisher-driven autosave
+    /// above only fires when a SUBSCRIBED field changes — scroll position
+    /// deliberately rides the high-frequency `SourceViewChannel` (REPUB-1)
+    /// and never ticks it, so "scroll for a while, then crash" lost the
+    /// position. This timer runs the SAME equality-guarded `fireAutosave`
+    /// every interval, so scroll-only drift reaches disk within one period
+    /// while an idle app costs one no-op snapshot+compare per tick.
+    /// `<= 0` disables the timer (tests drive `periodicFlushTick()` directly).
+    private let periodicFlushInterval: TimeInterval
+    private var periodicFlushTimer: Timer?
 
     public init(model: DocumentModel,
                 store: SessionStore = SessionStore(),
                 initialRoot: URL? = nil,
-                autosaveDebounce: TimeInterval = 0.5) {
+                autosaveDebounce: TimeInterval = 0.5,
+                periodicFlushInterval: TimeInterval = 30) {
         self.model = model
         self.store = store
         self.core = SessionsCoordinator(store: store)
         self.initialRoot = initialRoot
         self.autosaveDebounce = autosaveDebounce
+        self.periodicFlushInterval = periodicFlushInterval
     }
 
     /// Wire the lifecycle bridge so the value-level coordinator's
@@ -315,6 +327,31 @@ public final class SessionsAppCoordinator: ObservableObject {
         // same protection that suppresses any later equal-value re-publish.
         .sink { [weak self] _ in self?.scheduleAutosave() }
         .store(in: &autosaveCancellables)
+
+        // TSK-607: periodic safety-net flush for state that never ticks a
+        // subscribed publisher (scroll position rides SourceViewChannel).
+        // Same equality-guarded fire — an idle period costs one snapshot
+        // compare and zero writes.
+        periodicFlushTimer?.invalidate()
+        if periodicFlushInterval > 0 {
+            let timer = Timer.scheduledTimer(
+                withTimeInterval: periodicFlushInterval, repeats: true
+            ) { [weak self] _ in
+                Task { @MainActor in self?.periodicFlushTick() }
+            }
+            // .common so it fires while menus / drags are active (same
+            // rationale as GitPanelModel's refresh timer).
+            RunLoop.main.add(timer, forMode: .common)
+            periodicFlushTimer = timer
+        }
+    }
+
+    /// One periodic safety-net fire (TSK-607). Split from the timer so
+    /// tests can drive it without wall-clock waits. Routes through the
+    /// SAME `fireAutosave` (scroll sample + equality guard + the single
+    /// coalescing write queue) — no parallel writer.
+    func periodicFlushTick() {
+        fireAutosave()
     }
 
     /// Cancel the debounce + drop subscriptions. Called on detach / switch.
@@ -323,6 +360,8 @@ public final class SessionsAppCoordinator: ObservableObject {
         autosavePending = false
         autosaveCancellables.removeAll()
         autosaveBoundSessionID = nil
+        periodicFlushTimer?.invalidate()
+        periodicFlushTimer = nil
     }
 
     /// (Re)schedule the single debounce timer. Coalesces a burst of ticks
