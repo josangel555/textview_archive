@@ -21,6 +21,27 @@ final class DiffHunkParserTests: XCTestCase {
         XCTAssertEqual(DiffHunkParser.parse(diff), [:])
     }
 
+    func test_hostile_header_clamps_instead_of_trapping() {
+        // TSK-576: an Int.min new-side start used to TRAP on `n - 1`
+        // (process crash on attacker-controlled diff text). PARITY-LOCKED
+        // with the Rust hunk_marks_hostile_header_clamps_not_panics test.
+        let diff = "@@ -1 +-9223372036854775808,0 @@\n-gone\n"
+        XCTAssertEqual(DiffHunkParser.parse(diff)[1], .deleted)
+        let diffMax = "@@ -1 +9223372036854775807,0 @@\n-gone\n"
+        let marks = DiffHunkParser.parse(diffMax)
+        XCTAssertTrue(marks.keys.allSatisfy { $0 >= 1 && $0 <= 1_000_000_001 })
+    }
+
+    func test_top_of_file_deletion_marks_line_one() {
+        // TSK-565: "@@ -1,2 +0,0 @@" (delete the first two lines, add nothing)
+        // used to put the tick on line 0 — invisible in the 1-based gutter.
+        // PARITY-LOCKED with the Rust hunk_marks_top_of_file_deletion test.
+        let diff = "@@ -1,2 +0,0 @@\n-a\n-b\n"
+        let marks = DiffHunkParser.parse(diff)
+        XCTAssertEqual(marks[1], .deleted)
+        XCTAssertNil(marks[0])
+    }
+
     func test_pure_addition() {
         let diff = """
         @@ -0,0 +1,3 @@

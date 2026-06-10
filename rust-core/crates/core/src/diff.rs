@@ -469,7 +469,11 @@ pub fn hunk_marks(diff: &str) -> BTreeMap<i64, DiffMark> {
                 let rest = &line[plus + 1..];
                 if let Some(end) = rest.find([' ', ','])
                     && let Ok(n) = rest[..end].parse::<i64>() {
-                        line_in_new = n - 1; // bumped before each consumed line
+                        // Clamp like parse_coord (TSK-576): the header is
+                        // attacker-controlled, and an unclamped i64::MIN
+                        // overflows the `- 1` (panic in dev, wrap in release).
+                        // PARITY-LOCKED with Swift DiffHunkParser.
+                        line_in_new = n.clamp(0, MAX_COORD) - 1; // bumped before each consumed line
                     }
             }
             pending_deletion = false;
@@ -511,7 +515,11 @@ pub fn hunk_marks(diff: &str) -> BTreeMap<i64, DiffMark> {
                 pending_deletion = true;
                 // Land the tick on the successor line; don't clobber an existing
                 // mark (a later '+' upgrades to Modified via the insert above).
-                marks.entry(line_in_new + 1).or_insert(DiffMark::Deleted);
+                // `.max(1)` (TSK-565): a deletion at the very top of the file
+                // (new-side start 0) would otherwise mark line 0 — keys are
+                // 1-based, so the tick was invisible in the gutter. PARITY-
+                // LOCKED with Swift DiffHunkParser.
+                marks.entry((line_in_new + 1).max(1)).or_insert(DiffMark::Deleted);
             }
             // "\ No newline…" and any unknown marker: skip silently.
             _ => {}
@@ -755,6 +763,30 @@ mod tests {
         let m = hunk_marks(d);
         assert_eq!(m.get(&1), Some(&DiffMark::Modified));
         assert_eq!(m.len(), 1);
+    }
+
+    #[test]
+    fn hunk_marks_hostile_header_clamps_not_panics() {
+        // TSK-576: an i64::MIN new-side start used to overflow `n - 1`
+        // (panic in dev/test, silent wrap in release).
+        let d = "@@ -1 +-9223372036854775808,0 @@\n-gone\n";
+        let m = hunk_marks(d);
+        assert_eq!(m.get(&1), Some(&DiffMark::Deleted));
+        // i64::MAX side: clamped to MAX_COORD, key stays in range.
+        let d2 = "@@ -1 +9223372036854775807,0 @@\n-gone\n";
+        let m2 = hunk_marks(d2);
+        assert!(m2.keys().all(|k| (1..=MAX_COORD).contains(k)));
+    }
+
+    #[test]
+    fn hunk_marks_top_of_file_deletion_lands_on_line_1() {
+        // TSK-565: "@@ -1,2 +0,0 @@" (delete the first two lines, add nothing)
+        // used to put the tick on line 0 — invisible in the 1-based gutter.
+        // PARITY-LOCKED with Swift DiffHunkParserTests.
+        let d = "@@ -1,2 +0,0 @@\n-a\n-b\n";
+        let m = hunk_marks(d);
+        assert_eq!(m.get(&1), Some(&DiffMark::Deleted));
+        assert!(!m.contains_key(&0));
     }
 
     #[test]

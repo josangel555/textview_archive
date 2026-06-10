@@ -35,7 +35,10 @@ public enum DiffHunkParser {
                    let space = line[plus.upperBound...].firstIndex(where: { $0 == " " || $0 == "," }) {
                     let numStr = line[plus.upperBound..<space]
                     if let n = Int(numStr) {
-                        lineInNew = n - 1  // we'll bump before each consumed line
+                        // Clamp (TSK-576): the header is attacker-controlled,
+                        // and Int.min - 1 TRAPS. PARITY-LOCKED with the Rust
+                        // hunk_marks (same clamp ceiling as its MAX_COORD).
+                        lineInNew = min(max(n, 0), 1_000_000_000) - 1  // bumped before each consumed line
                     }
                 }
                 pendingDeletion = false
@@ -77,8 +80,13 @@ public enum DiffHunkParser {
                 // surface the change. If the next event is `+` we'll
                 // upgrade to `.modified` above.
                 pendingDeletion = true
-                if marks[lineInNew + 1] == nil {
-                    marks[lineInNew + 1] = .deleted
+                // max(…, 1) (TSK-565): a deletion at the very top of the file
+                // (new-side start 0) would otherwise mark line 0 — keys are
+                // 1-based, so the tick was invisible in the gutter. PARITY-
+                // LOCKED with the Rust hunk_marks.
+                let tick = max(lineInNew + 1, 1)
+                if marks[tick] == nil {
+                    marks[tick] = .deleted
                 }
             case "\\":
                 // "\ No newline at end of file" — not a content line.

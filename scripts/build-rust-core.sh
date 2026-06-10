@@ -121,6 +121,13 @@ cp "$STATICLIB" "$LINK_DIR/libmdvcore_ffi.a"
 cp "$HEADER_SRC" "$LINK_DIR/mdvcore.h"
 cp "$HEADER_SRC" "$CMOD_DIR/mdvcore.h"
 
+# SwiftPM does NOT track the prebuilt .a as a build input: with no Swift source
+# change in the RustCore target, an incremental `swift build`/`swift test`
+# reuses the previously linked binaries and silently keeps running OLD Rust
+# code (caught 2026-06-10: an A/B parity test compared stale Rust against new
+# Swift). Touch the bridge sources so the next SwiftPM build relinks.
+find "$ROOT_DIR/Sources/RustCore" -name '*.swift' -exec touch {} +
+
 echo "==> staged:"
 echo "    $LINK_DIR/libmdvcore_ffi.a   ($(/usr/bin/du -h "$LINK_DIR/libmdvcore_ffi.a" | awk '{print $1}'))"
 echo "    $CMOD_DIR/mdvcore.h"
