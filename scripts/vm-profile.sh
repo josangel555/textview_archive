@@ -96,7 +96,13 @@ echo "==> Build dist/TextView.app ($CONFIG) on VM"
 # poisons the shared .build with 6.1.2 modules that the 6.3 test compile
 # then cannot import ("module compiled with Swift 6.1.2 cannot be imported
 # by the Swift 6.3 compiler") — the single-toolchain .build invariant.
-ssh macOS15 "cd markdown_viewer && tc=\$(ls -d /Library/Developer/Toolchains/swift-6.*-RELEASE.xctoolchain 2>/dev/null | sort -V | tail -1); if [[ -n \"\$tc\" ]]; then export TOOLCHAINS=\$(plutil -extract CFBundleIdentifier raw \"\$tc/Info.plist\"); fi; bash scripts/build-app.sh $CONFIG 2>&1 | tail -2"
+# Capture the build's REAL exit code — `| tail` would substitute tail's
+# exit 0 and let a failed build profile a STALE dist binary (it did:
+# TSK-267's after-captures profiled torn builds until this bit).
+ssh macOS15 "cd markdown_viewer && tc=\$(ls -d /Library/Developer/Toolchains/swift-6.*-RELEASE.xctoolchain 2>/dev/null | sort -V | tail -1); if [[ -n \"\$tc\" ]]; then export TOOLCHAINS=\$(plutil -extract CFBundleIdentifier raw \"\$tc/Info.plist\"); fi; bash scripts/build-app.sh $CONFIG > /tmp/mdv-profile-build.log 2>&1; ec=\$?; tail -3 /tmp/mdv-profile-build.log; exit \$ec" || {
+  echo "Error: VM dist build FAILED — refusing to profile a stale binary" >&2
+  exit 1
+}
 
 echo "==> Record xctrace signpost profile in the GUI session (${SECONDS_ARG}s)"
 # Quoted heredoc: nothing from the host expands into the remote body.
