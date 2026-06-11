@@ -244,6 +244,15 @@ continue", document blockers and move on):
   real bugs/perf/security, then features; the Rust TUI/web `[PORT]` lane and
   test backfill are last resorts. DON'T ship a risky blind change; if it needs
   the screen/owner, file it and move on.
+- **Migration policy (owner directive 2026-06-11, full text TASK_WORKFLOW §2.5):
+  Swift engines with an approved Rust port take USER-FACING BUGFIXES ONLY** —
+  no perf work, refactors, features, or test backfill on the Swift twin
+  (find TSK-630, markdown TSK-631, transcript parse TSK-632, fuzzy TSK-633;
+  CSV/diff/hex already ported). Matching audit findings get re-tagged
+  `port-superseded`, fixed once in Rust. Engine ports + the Phase 1 contract
+  work (windowed snapshot, error v2, envelope, TSK-634 FFI codegen) rank ABOVE
+  Swift internal-quality work. New Rust deps land `default-features = false`
+  with an explicit minimal feature list (owner rider, TSK-629).
 - **Lifecycle lanes:** `reported → ack → triaged → progress → fixed → review →
   validated → done`. Drive via the **`mcp__tasked__*` tools** (NOT the retired
   `python3 /tmp/board.py`); `task_advance` auto-walks lanes to `fixed`/`review`.
