@@ -7337,3 +7337,17 @@ Session drain tally: 39 validated. Remaining: VM-toolchain 401/439/616, singles 
 Gates: headless gate PASSED on both commits. Session drain tally: **42 validated**.
 Remaining: VM-toolchain 401/439/616, singles 324/477/482/622/365/468; visual-holds 261/268/331
 (next batched VM GUI run); owner queue unchanged (270/372 parked + decisions).
+
+## LOG +216 (2026-06-11 tick — VM-toolchain trio validated on tonight's live VM runs)
+
+- **TSK-439 → validated** — tonight's test-in-vm.sh test lane COMPILED the full test target on
+  the VM (select_toolchain → 6.3, propagated into the asuser GUI shell) and ran 6/6 — the exact
+  pre-fix compile failure absent.
+- **TSK-616 → validated** — vm-profile.sh:102 now selects the newest 6.x toolchain (unified with
+  the test lane); tonight's interleaved sequence (profile build → 6.3 test lane → profile build)
+  showed no .build poisoning.
+- **TSK-401 → validated** — three VM builds tonight, all green; the 6.1.2 strict-concurrency
+  sites are fixed in-tree AND lane toolchain unification closes the skew class by construction.
+
+Session drain tally: **45 validated**. Remaining singles: 324/477/482/622/365/468;
+visual-holds 261/268/331 (need the next batched VM GUI run); owner queue unchanged.
