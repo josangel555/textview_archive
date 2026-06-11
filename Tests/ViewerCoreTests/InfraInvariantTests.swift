@@ -1,4 +1,5 @@
 import XCTest
+import ViewerCore
 
 /// Textual pins for build/CI-infra invariants that have no runnable
 /// surface on the host — the cheapest guard that still BITES when the
@@ -48,5 +49,23 @@ final class InfraInvariantTests: XCTestCase {
                       "build-app.sh smoke gate is no longer opt-in — every "
                       + "build would open a window on the host (TSK-171 + "
                       + "the 2026-06-06 no-UI-on-host directive)")
+    }
+
+    /// TSK-191 — vm-smoke.sh's pre-launch reset must clear the directory
+    /// SessionStore ACTUALLY writes. The audited bug reset a retired
+    /// subdir name, so launches restored stale state the script believed
+    /// it had wiped. PARITY pin: computes the real store directory and
+    /// requires the script to reference the same path — if the store
+    /// ever moves, this fails and forces the script update.
+    func test_vmSmokeReset_targetsTheRealSessionsDir() throws {
+        let env = ProcessInfo.processInfo.environment
+        try XCTSkipIf(env["MDV_SESSIONS_DIR"] != nil || env["MDV_APP_SUPPORT"] != nil,
+                      "store redirected by harness env — parity unverifiable")
+        let canonical = "Application Support/MarkdownViewer/Sessions"
+        XCTAssertTrue(SessionStore.defaultDirectory().path.hasSuffix(canonical),
+                      "SessionStore moved — update this pin AND vm-smoke.sh together")
+        let smoke = try contents("scripts/vm-smoke.sh")
+        XCTAssertTrue(smoke.contains(canonical),
+                      "vm-smoke.sh resets a path SessionStore does not use (TSK-191)")
     }
 }
