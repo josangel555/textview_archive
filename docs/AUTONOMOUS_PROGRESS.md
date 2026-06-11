@@ -7057,3 +7057,24 @@ Board: 1× validated, 2× held-with-gap. Remaining fixed lane: ~36.
 
 Board: 1× validated, 1× held, 1× bounced. Remaining fixed lane: ~33.
 Visual-hold cluster for the batched VM pixel run so far: TSK-261, TSK-268.
+
+## LOG +204 (2026-06-10, drain wave 13 — a validation, a park, and a THIRD mislabel)
+
+- **TSK-274 validated** — drag-tab-onto-session-pill (eb63137): both named suites
+  re-run fresh (TabDragPayloadTests 2/2, TabToNewSessionTests 4/4 — move-across with
+  rehydrate round-trip + the no-op trio). Hover visuals deliberately out of scope.
+- **TSK-276 bounced + PARKED (owner decision)** — "Debugger" was mislabeled-as-fixed
+  via the #NNN trap (IndentDetector work filed here); genuinely unbuilt. Parked with
+  3 options: backlog-low-prio / design-doc-first / dismiss.
+- **TSK-279 corrected + bounced** — NEW mislabel catch (third instance): recorded
+  work is the catastrophic-regex non-capturing fix (built-in #279, real fix c7a9bb8
+  under TSK-293); board TSK-279 = "LSP MCP" bridge, re-confirmed unbuilt (zero LSP
+  references in Sources/ViewerCore/Automation/). Returned to progress.
+
+**PATTERN ALERT: three numbering-trap mislabels found in the 261..334 band**
+(TSK-326, 276, 279 — all "fixed" by work on the built-in TaskList's same-numbered
+item). NEXT TICK: dedicated mislabel sweep — for every remaining fixed-lane ticket
+in the band, compare the recorded understanding text against the board title before
+any validation; bounce mismatches. The fixed-lane count is inflated by these.
+
+Board: 1× validated, 2× bounced (1 parked). Remaining fixed lane: ~30 (pre-sweep).
