@@ -7569,3 +7569,26 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   `MDV_PIXEL_DEBUG_DIR`/`MDV_RUN_WEBVIEW_TESTS`-class knobs before.
 - Host headless gate green on both commits; `TabBar.swift` byte-identical to pre-wave state
   (mutations fully restored, verified via `git diff`).
+
+## LOG +229 (2026-06-11 tick — TSK-505 validated: MetadataPanel checksum proven in the live app; loop PAUSED by owner)
+
+- **TSK-505 → validated** (commit 997faa6). The fixed-lane hold's named gap — VM evidence for
+  the MetadataPanel "Compute SHA-256" section — is closed via the sanctioned closure-verb
+  pattern (in-process SwiftUI event synthesis is impossible; same shape as InteractionUATTests):
+  - Checksum @State lifted into **`MetadataChecksumModel`** (ObservableObject with a
+    `GitPanelModel.live`-style weak-static seam). The split made the idle→computing→done/failed
+    machine HOST-testable AND surfaced a **latent race, now fixed**: an in-flight hash finishing
+    after a file switch landed the OLD file's hash (no identity guard). The model guards on URL
+    identity; teeth shown (guard muted → host test red with `done(old-hash) ≠ idle`).
+  - New `metadata-compute-checksum` script verb invokes the EXACT `compute()` the button is
+    wired to; the model dump projects `metadataChecksum{state,hash}` (empty unless a panel is
+    truly mounted).
+  - **Host**: `MetadataChecksumModelTests` 6/6 (NIST vector, unreadable-fail, no-URL no-op,
+    reset/keep semantics, stale-drop, verb+projection e2e). **VM T4 (GUI lane)**:
+    `MetadataChecksumUATTests` opens a PNG in the real spawned app, runs the verb, and asserts
+    cross-process `done` + hash equal to the TEST process's independent FileChecksum of the
+    same bytes — green; teeth shown (verb no-op mutant → red `idle`/`nil`, restored → green).
+  - Host headless gate PASSED on 997faa6 (one earlier gate run flaked, clean re-run 0 failures).
+- **Owner directive (mid-tick): loop paused** — cron stopped after this item; resume on owner
+  signal ("tomorrow night"). Remaining drain queue unchanged: TSK-468 (References-removal VM
+  confirm), TSK-619/334/529 (live-validation holds), TSK-626, TSK-463, owner-queue parks.
