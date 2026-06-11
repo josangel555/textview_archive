@@ -9,6 +9,56 @@ import ViewerKit
 /// Right-rail metadata panel shown for files that don't have a Source
 /// view (images, audio, video, PDFs, generic binaries). Surfaces basic
 /// filesystem attributes plus type-specific details fetched lazily.
+/// Observable state for the panel's lazy SHA-256 section (TSK-505 part B).
+/// Split out of the view so (1) the idle→computing→done/failed machine is
+/// HOST-testable without rendering, and (2) the live instance is reachable
+/// by the script harness (`metadata-compute-checksum`), which invokes the
+/// EXACT `compute()` the panel's button is wired to — the testing mandate's
+/// sanctioned fallback where in-process SwiftUI event synthesis is
+/// impossible (LESSONS "in-process event synthesis"; same shape as
+/// `GitPanelModel.live`).
+@MainActor
+final class MetadataChecksumModel: ObservableObject {
+    enum State: Equatable {
+        case idle, computing, done(String), failed
+    }
+    @Published private(set) var state: State = .idle
+    private(set) var url: URL?
+
+    /// Most recently mounted panel's model — the script-verb seam.
+    private(set) static weak var live: MetadataChecksumModel?
+    init() { Self.live = self }
+
+    /// New file ⇒ drop any prior hash. Idempotent for the same URL so a
+    /// re-render doesn't clear a computed hash.
+    func configure(url: URL) {
+        guard url != self.url else { return }
+        self.url = url
+        state = .idle
+    }
+
+    /// The "Compute SHA-256" button's action. Hashes OFF the main thread
+    /// (a large file's disk read must not block the UI — cf. TSK-214). The
+    /// URL-identity guard drops a STALE completion: without it an in-flight
+    /// hash finishing after a file switch would overwrite the new file's
+    /// `.idle` with the OLD file's hash.
+    func compute() {
+        guard let target = url else { return }
+        state = .computing
+        Task { [weak self] in
+            let hex = await Self.hashOffMain(target)
+            guard let self, self.url == target else { return }
+            self.state = hex.map(State.done) ?? .failed
+        }
+    }
+
+    nonisolated private static func hashOffMain(_ url: URL) async -> String? {
+        await Task.detached(priority: .userInitiated) {
+            try? FileChecksum.sha256Hex(ofFileAt: url)
+        }.value
+    }
+}
+
 struct MetadataPanel: View {
     let url: URL
     let category: FileCategory
@@ -19,13 +69,8 @@ struct MetadataPanel: View {
     @State private var rows: [Row] = []
     @State private var loadTask: Task<Void, Never>?
 
-    /// Lazy file SHA-256 (TSK-505 part B). Computed only on demand — a large
-    /// file isn't auto-hashed — and OFF the main thread (cf. TSK-214). Resets
-    /// when the displayed file changes.
-    private enum ChecksumState: Equatable {
-        case idle, computing, done(String), failed
-    }
-    @State private var checksum: ChecksumState = .idle
+    /// Lazy file SHA-256 (TSK-505 part B) — see `MetadataChecksumModel`.
+    @StateObject private var checksumModel = MetadataChecksumModel()
 
     var body: some View {
         ScrollView {
@@ -55,7 +100,7 @@ struct MetadataPanel: View {
             // scope. Track + cancel them explicitly so rapid tab
             // flips don't pile up AVAsset / ImageIO work.
             loadTask?.cancel()
-            checksum = .idle   // new file ⇒ drop any prior hash
+            checksumModel.configure(url: url)   // new file ⇒ drop any prior hash
             loadTask = Task { await loadTypeMetadata() }
             await loadTask?.value
         }
@@ -65,9 +110,9 @@ struct MetadataPanel: View {
 
     @ViewBuilder
     private var checksumContent: some View {
-        switch checksum {
+        switch checksumModel.state {
         case .idle:
-            Button("Compute SHA-256") { computeChecksum() }
+            Button("Compute SHA-256") { checksumModel.compute() }
                 .font(.system(size: 10 * uiScale))
                 .buttonStyle(.link)
                 .accessibilityIdentifier("mdv.metadata.computeChecksum")
@@ -91,23 +136,6 @@ struct MetadataPanel: View {
                 .font(.system(size: 10 * uiScale))
                 .foregroundStyle(.secondary)
         }
-    }
-
-    private func computeChecksum() {
-        checksum = .computing
-        let target = url
-        // Hash OFF the main thread (a large file's disk read must not block the
-        // UI — cf. TSK-214); the detached child captures only the Sendable URL.
-        Task {
-            let hex = await Self.hashOffMain(target)
-            checksum = hex.map(ChecksumState.done) ?? .failed
-        }
-    }
-
-    nonisolated private static func hashOffMain(_ url: URL) async -> String? {
-        await Task.detached(priority: .userInitiated) {
-            try? FileChecksum.sha256Hex(ofFileAt: url)
-        }.value
     }
 
     // MARK: - Filesystem rows (always present)

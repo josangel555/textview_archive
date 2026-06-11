@@ -194,6 +194,18 @@ public enum ScriptVerb {
             // verb stays for explicit-path automation). No-op off-repo /
             // untracked, exactly like the menu action.
             if let u = model.currentURL { model.openFileHistory(for: u) }
+        case "metadata-compute-checksum":
+            // TSK-505: invoke the EXACT action the MetadataPanel
+            // "Compute SHA-256" button is wired to (in-process SwiftUI event
+            // synthesis is impossible — LESSONS; same fallback as the
+            // session-strip verbs). Needs a mounted panel: a preview-category
+            // file open with the Info toggle on.
+            guard let checksums = MetadataChecksumModel.live else {
+                FileHandle.standardError.write(Data(
+                    "script: metadata-compute-checksum needs a mounted MetadataPanel\n".utf8))
+                return true
+            }
+            checksums.compute()
         case "show-cross-search":    model.showCrossSearch()
         case "dismiss-cross-search": model.dismissCrossSearch()
         case "set-cross-query":
@@ -570,6 +582,17 @@ public enum ScriptVerb {
                     "selectedLogSHAs": Array(panel.selectedLogSHAs).sorted(),
                     "logCount": panel.logEntries.count,
                 ] as [String: Any]
+            } ?? [:],
+            // TSK-505: checksum-section projection (via the live panel
+            // registry — empty dict when no MetadataPanel is mounted). Lets
+            // the UAT assert the compute outcome (state + hash) cross-process.
+            "metadataChecksum": MetadataChecksumModel.live.map { cm -> [String: Any] in
+                switch cm.state {
+                case .idle:          return ["state": "idle"]
+                case .computing:     return ["state": "computing"]
+                case .done(let hex): return ["state": "done", "hash": hex]
+                case .failed:        return ["state": "failed"]
+                }
             } ?? [:],
             // Nested sidebar projection. SidebarPage reads
             // `model.sidebar.rootURL` from here; without it the
