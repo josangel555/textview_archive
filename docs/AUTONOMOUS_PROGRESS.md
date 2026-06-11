@@ -7449,3 +7449,17 @@ Session: 3 tickets landed+validated this tick (deb7c2e, 562a56f, bde2016) + TSK-
 Fixed lane is now all honest holds: waiting-human (270/306/372/608/322), live-validation
 (334/468/505/529/619), visual VM-batch (261/268/331/324), terminal interaction (456/457),
 CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
+
+## LOG +222 (2026-06-11 tick — TSK-469 landed: Tier A static-bind real rows, placeholder gone)
+
+- **TSK-469 → validated** (commit cd7d730) — rank-2 backend-not-surfaced item. Tier A plugin
+  sections now carry their rows VERBATIM in plugin.json (`"provider": {"tier":"A","rows":[
+  {id,label,detail?}]}`); `PluginManifest.Provider.a` gained the `rows` payload (absent → empty
+  array, so pre-469 manifests stay loadable as honest empty sections) and `PluginRegistry`
+  extracts them at load time into the section provider — the
+  "(Tier A static-bind not yet implemented)" placeholder is deleted. Two behavior tests load
+  real plugin.json fixtures through the real loadAll path and pin the provider output (verbatim
+  rows + explicit no-placeholder assert; rows-less → empty). TEETH (placeholder re-introduced →
+  red). Plugin suites 23/23; headless gate green on cd7d730. Remaining rank-2 siblings
+  TSK-463 (editor completion — CM6/WebView-coupled) and TSK-464 (LSP command surfacing) are
+  bigger slices for dedicated ticks.
