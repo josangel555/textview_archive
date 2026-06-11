@@ -211,6 +211,11 @@ generously and keep the board honest:
   **read the latest with `mcp__tasked__task_get` before updating** (staleness).
   (These are the BOARD tools — not the built-in Claude Code TaskList, whose
   `#NNN` numbering is a different system from board `TSK-NNN`.)
+- **Before validating/closing any `fixed` board ticket, match its recorded
+  `understanding`/transition reasons against the board TITLE.** The #NNN trap has
+  produced mislabeled-as-fixed tickets (work for a different finding recorded on a
+  same-numbered board id — TSK-326/276/279 confirmed 2026-06-10). A topic mismatch
+  ⇒ `task_record {to: progress}` with a correction note, never validate.
 - This complements the durable docs (`AUTONOMOUS_PROGRESS.md` for the autonomous
   run log, `BACKLOG.md` for the standing queue) — the task board is the live
   per-item state; the docs are the narrative that survives compaction.

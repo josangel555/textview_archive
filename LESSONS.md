@@ -2776,3 +2776,34 @@ Continuation of "the five constraints" above; these three close every remaining 
 - **Small visibility seams (`private`→`private(set)`/internal) are the standing way
   to make guards testable**: loadMoreTask, childPID, HighlightFingerprint, apply(delta:),
   attachWindowHook. Document each as "TSK-NNN test seam" at the declaration.
+
+## 2026-06-10 (validation drain, night — BACKLOG band + mislabel pattern)
+
+- **Mislabeled-as-fixed board tickets (the #NNN ≠ TSK-NNN trap's worst form):** three
+  fixed-lane tickets (TSK-326, 276, 279) were driven to `fixed` by work on the
+  built-in TaskList's SAME-NUMBERED item — the recorded `understanding` and
+  transition reasons describe an unrelated topic. The `fixed` lane count was
+  silently inflated. DEFENSE: before validating any fixed ticket, compare the
+  recorded understanding/triage/fixed reasons against the board title+report; a
+  topic mismatch = bounce to progress with a correction note, never validate.
+- **SwiftUI Buttons/Rectangles do not realize as individual NSViews** — a hosted
+  NSView-tree walk cannot see them, so "the divider/button is placed correctly"
+  has NO honest headless structural assert (and ImageRenderer is the known false
+  green, TSK-488). Visual placement claims are VM-pixel-or-owner-eyes only; batch
+  them into ONE GUI-lane run instead of per-ticket runs.
+- **Piping a remote test run through `tail` eats its exit code** — the
+  exit-0-masking class (#311/#162) bit the OBSERVER: `ssh … | tail` reported
+  success for a red lane. Always `> log 2>&1; echo EXIT=$?` and read the marker.
+- **An armed lane's FIRST real run is the moment of truth:** the instant TSK-163's
+  false-green fix made the WebView lane actually execute, it surfaced 3 stale
+  tests (TSK-623) that had silently rotted while the lane self-skipped. Expect
+  the first armed run of any previously-skipped lane to be red — that red is the
+  fix working.
+- **Discriminating-fixture trick for "which implementation ran":** when fixed vs
+  buggy code produce different VALUES for the right input (UTF-16 units vs
+  grapheme count via emoji; CRLF; etc.), one fixture pins the implementation
+  choice behaviorally — far stronger than a textual pin (used in TSK-172).
+- **Parity pins tie a script to the code it serves:** compute the live value
+  (e.g. SessionStore.defaultDirectory()) in the test and assert the script
+  references the same path — either side drifting goes red (TSK-191). Beats
+  pinning both sides to a hardcoded constant.

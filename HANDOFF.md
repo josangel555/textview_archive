@@ -1,59 +1,72 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — validation drain: 151..196 series COMPLETE, BACKLOG series + mislabel sweep in flight (2026-06-10 night)
+# Handoff — "once done with the current ones": drain checkpoint, mislabel sweep pending (2026-06-10 night)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ 8db08a8
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ 870ceef (+ LESSONS/CLAUDE.md/HANDOFF commit follows)
 
 ## Mission
 SOP rank 1.5 VALIDATION DRAIN (docs/TASK_WORKFLOW.md §3 — read it every firing): drain
 the `fixed` lane by re-running each ticket's evidence FRESH; validate on
-green-with-teeth, build the missing guard when unpinned, bounce dishonest states,
-hold honestly otherwise.
+green-with-teeth, build missing guards, bounce dishonest states, hold honestly.
 
 ## Current state
-- **TSK-151..196 S3/S4 audit-reconciliation series: COMPLETE** (20 tickets, all
-  re-verified fresh; 9 new guards built — fold-race seam, vm-smoke dry-run tests,
-  dylib-identifier build check, JUnit converter extraction, infra invariants,
-  UTF-16 dump pin, watcher-degradation seam, SessionStore parity pin).
-- **BACKLOG series (TSK-261..334) in progress.** Validated: 271, 273, 274.
-  Visual-only HOLDS awaiting one batched VM pixel run: **261, 268** (tab strip —
-  one MDV_UI_SCENE shot covers both). Shared-park hold: 272 (with TSK-306's
-  owner decision). Parked: 276 (Debugger — 3-option owner ask).
-- **MISLABEL PATTERN (3 confirmed): TSK-326, 276, 279** were "fixed" by work on the
-  built-in-TaskList's same-numbered item (#NNN ≠ TSK-NNN trap). All three bounced
-  to progress with corrections. **A read-only subagent sweep of ALL remaining
-  fixed-lane tickets is RUNNING** to classify CONSISTENT / MISLABELED / UNCLEAR
-  with evidence quotes (results expected as a background-task notification).
-- Session tally: 25 validated, 3 holds, 3 bounced, 1 parked, TSK-623 caught+fixed
-  (stale sync-mount tests in the WebView lane — fixed + VM-re-run green).
-- All commits gated; main continuously gate-green. Logs +196..+204 in
-  docs/AUTONOMOUS_PROGRESS.md.
+- Done: **TSK-151..196 series COMPLETE** (20 tickets, 9 new guards). BACKLOG series
+  partial: 271/273/274 validated; 261/268 visual-holds; 272 shared-park hold;
+  276 parked (Debugger 3-option ask); 326/279 mislabels bounced to progress.
+  Session tally: 25 validated · 3 holds · 3 bounced · 1 parked · TSK-623
+  caught+fixed. Main continuously gate-green; logs +196..+204.
+- **In flight: read-only mislabel-sweep subagent** over ALL remaining fixed-lane
+  tickets (classify CONSISTENT/MISLABELED/UNCLEAR vs board titles, with commits +
+  suite names for the consistent ones). If its completion notification was lost
+  to compaction, its transcript is at
+  `/private/tmp/claude-501/-Users-me-Documents-workspaces-claude-markdown-viewer/80ad52ff-c401-4cd4-9a0a-7558a3ded7c4/tasks/aae5e380773bedfba.output`
+  (JSONL — extract only the LAST assistant message, do not load the whole file),
+  or simply RE-RUN the sweep: it's cheap (read-only task_get loop, prompt pattern
+  in LOG +204 / the memory file reference_board_vs_tasklist_numbering).
+- Next action: (1) collect/re-run sweep → (2) bounce MISLABELED with correction
+  notes (pattern: TSK-279's 2026-06-10 record) → (3) drain the CONSISTENT list
+  (fresh-run named suites → validate / hold-visual / park) → (4) ONE batched VM
+  GUI pixel run for the visual-hold cluster (currently 261+268; tab-strip
+  MDV_UI_SCENE shot covers both; MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password>).
 
-## Next action (resume here)
-1. Collect the mislabel-sweep agent's report (or re-run the sweep if lost: list
-   fixed-lane, task_get each, compare understanding/transition-reasons vs title).
-2. BOUNCE every MISLABELED ticket to progress with a correction note (pattern from
-   TSK-279's record on 2026-06-10).
-3. Resume normal draining over the CONSISTENT list (fresh-run their named suites →
-   validate / hold-visual / park).
-4. When the visual-hold cluster stops growing: ONE VM GUI-lane pixel run
-   (MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password>, ui-snapshot scenes) to clear
-   261/268 + any later additions.
+## Key decisions & rationale
+- Mislabel remedy = `task_record {to: progress}` + correction note (the only legal
+  agent edge out of `fixed`); park on top when the real ask needs owner
+  prioritization. Chosen over dismiss (work IS needed) and over leaving at fixed
+  (lane fraud).
+- Visual-only residuals batch into ONE VM pixel run, not per-ticket runs — GUI
+  lane setup cost dominates.
+- TSK-272 deliberately NOT validated despite green model tests — it shares
+  TSK-306's parked owner decision; validating would pre-empt the park.
 
-## Gotchas (full list in LESSONS.md "validation drain")
-- #NNN ≠ TSK-NNN: ALWAYS compare recorded understanding vs board title before
-  validating a fixed ticket in the 261..334 band.
-- Never pipe VM runs through `tail` — read EXIT= markers (exit-0 masking).
-- SwiftUI Buttons/Rectangles don't realize as NSViews; visual claims need VM pixels
-  or owner eyes (ImageRenderer = false green, TSK-488).
-- Bench-flake gate failures: re-run, look for ZERO named test failures.
+## Gotchas / lessons (full entries in LESSONS.md "2026-06-10 night" section)
+- #NNN ≠ TSK-NNN mislabeled-as-fixed pattern — title-match before ANY validation
+  (now also a CLAUDE.md rule).
+- `ssh … | tail` eats exit codes — write `EXIT=$?` markers.
+- SwiftUI Buttons/Rectangles never realize as NSViews — placement claims are
+  VM-pixel-or-owner-eyes only.
+- An armed lane's first real run is expected to be red (TSK-163 → TSK-623).
 
-## Owner queue
-TSK-598 supervised MountedPanesLRU extension · TSK-276 Debugger 3-option ask ·
-TSK-306/272 preview-tab validation-bar decision · TSK-139 dismiss · TSK-608 ask ·
-261/268 one-glance visual confirms (or wait for the batched pixel run) ·
-validated pile awaits one-click done.
+## Files that matter
+- `docs/AUTONOMOUS_PROGRESS.md` LOG +196..+204 — per-wave narrative.
+- `Tests/ViewerCoreTests/InfraInvariantTests.swift` — infra pins incl. the
+  SessionStore↔vm-smoke parity pin.
+- `Tests/ViewerUITests/FileWatcherDegradationCueTests.swift` + the
+  `FileWatcher.forceConstructionFailure` seam (`Sources/ViewerCore/FileWatcher.swift:105-119`).
+- `scripts/junit-convert.py` (+ `JUnitConverterTests`), `scripts/check-dylib-identifiers.sh`.
+
+## Open questions / blockers (owner queue)
+TSK-598 supervised MountedPanesLRU · TSK-276 Debugger 3-option ask · TSK-306/272
+preview-tab validation bar · TSK-139 dismiss · TSK-608 ask · 261/268 visual
+confirms · validated pile awaits one-click done.
+
+## Tracker
+Board live-synced through wave 13 (every move recorded with artifacts at action
+time). Validated this session: 602,615,108,621,599,600,609,266,440,134,181,150,
+141,142,143,147,138,151,157,159,160,161,162,163,623,170,171,172,173,183,185,187,
+189,190,191,192,193,196,271,273,274. Bounced: 326,276(parked),279. Holds:
+261,268,272.
 
 ## How to resume
 1. Read docs/TASK_WORKFLOW.md in full (per-firing mandate).
-2. `git status` — commit stray docs if dirty.
-3. Continue per "Next action".
+2. `git status` — commit stray docs if dirty (`.profiling/` untracked is expected).
+3. Continue per "Next action" above (sweep first).
