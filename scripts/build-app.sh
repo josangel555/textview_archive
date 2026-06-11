@@ -226,6 +226,10 @@ if [[ "$HAS_LOCAL_IDENTITY" == "1" ]]; then
   rm -rf "$APP_DIR"
   ditto "$SIGN_STAGE" "$APP_DIR"
   rm -rf "$SIGN_TMP"
+  # TSK-157 guard: prove the --deep pass did NOT stamp the main bundle
+  # identifier onto the nested grammar dylibs (fails the build if an
+  # `--identifier` is ever re-added to the deep codesign above).
+  bash "$SCRIPT_DIR/check-dylib-identifiers.sh" "$APP_DIR"
 else
   echo "==> No local signing identity; falling back to ad-hoc"
   echo "    (TCC will re-prompt on every rebuild — fix with"
