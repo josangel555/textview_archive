@@ -6897,3 +6897,33 @@ each given the missing regression guard with demonstrated teeth, all validated:
 
 Gate: `==> headless gate PASSED` on committed HEAD 1428c49. Board: 4× validated
 (checks artifacts with teeth rows). Remaining fixed lane: ~54.
+
+## LOG +197 (2026-06-10, drain wave 6 — test-infra trio + the lane's first catch)
+
+- **TSK-161 validated** — panic=unwind profile gate verified fresh
+  (build-rust-core.sh:41-51 rejects abort profiles pre-cargo); pinned with
+  `RustProfileGuardTests` (instant negative-path, no toolchain). Teeth: exit 1→exit 0
+  ("prints but doesn't block") → red. Commit b239dd5.
+- **TSK-162 validated** — JUnit converter EXTRACTED verbatim to
+  `scripts/junit-convert.py` (write_junit delegates; identical VM behavior, now
+  host-testable); `JUnitConverterTests` pins skipped→`<skipped/>`, crashed→synthetic
+  count-mismatch RED, clean→no false alarm. Teeth: dropped `|skipped` → red.
+  Commit c0e0a80.
+- **TSK-163 validated with a FRESH armed-lane run** — `test-in-vm.sh quick` on the VM
+  executed the WebView lane for real (49 cases) instead of self-skipping… and the
+  armed lane immediately caught **3 genuine reds**: ContentViewHostingTests:170,
+  DiagnosticDumpTests:235, MermaidHostingTests:114 — all asserting the pre-TSK-611
+  SYNCHRONOUS WKWebView mount while the rendered branch now deliberately shows a
+  spinner until the off-main fill (ContentView.swift:768-800). NOT a product
+  regression (PaneRetentionMountProbeTests, which awaits the fill, passed in the same
+  run). Filed as **TSK-623**.
+- **TSK-623 filed → fixed → validated same window** — the 3 tests now await the
+  async fill (runloop pump + 15s deadline, regression bite retained); VM re-run with
+  the gate armed: 15/15 across the 3 suites, EXIT=0. Teeth = same-day before/after on
+  identical product code. Commit 75f2829.
+- Process note: my first quick-run wrapper piped through `tail`, masking the lane's
+  non-zero exit — the #311/#162 exit-0-masking class striking the OBSERVER this time.
+  Read `EXIT=` markers, never pipeline status.
+
+Gate: `==> headless gate PASSED` on HEAD 75f2829. Board: 4× validated this wave
+(161/162/163/623). Remaining fixed lane: ~50.
