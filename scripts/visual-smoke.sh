@@ -47,12 +47,20 @@ bash "$SCRIPT_DIR/build-app.sh" debug >/dev/null
 APP_PATH="$ROOT_DIR/dist/TextView.app"
 BIN_PATH="$APP_PATH/Contents/MacOS/MarkdownViewer"
 
-# Kill prior instance.
-/usr/bin/killall MarkdownViewer 2>/dev/null || true
+# Kill prior TEST instance only (TSK-625). A bare `killall MarkdownViewer`
+# SIGTERMs the owner's running /Applications app too — the installed app and
+# every built bundle share the exec name. Reap by the MDV_TEST_INSTANCE env
+# tag instead (the AppLauncher.killTestInstances convention); `ps -E` exposes
+# the environment for same-user processes.
+for pid in $(pgrep -x MarkdownViewer 2>/dev/null || true); do
+  if ps -E -p "$pid" 2>/dev/null | grep -q 'MDV_TEST_INSTANCE=1'; then
+    kill "$pid" 2>/dev/null || true
+  fi
+done
 sleep 0.3
 
 echo "==> Launching for: $FILE_ARG"
-"$BIN_PATH" "$FILE_ARG" &
+MDV_TEST_INSTANCE=1 "$BIN_PATH" "$FILE_ARG" &
 APP_PID=$!
 
 # Let the window appear + the source view paint.

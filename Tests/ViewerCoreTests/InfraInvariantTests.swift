@@ -51,6 +51,34 @@ final class InfraInvariantTests: XCTestCase {
                       + "the 2026-06-06 no-UI-on-host directive)")
     }
 
+    /// TSK-625 — automated scripts must never `killall` by the shared exec
+    /// name: the owner's installed /Applications app and every test bundle
+    /// are both named `MarkdownViewer`, so a bare killall SIGTERMs the
+    /// owner's running app. Test spawns are tagged `MDV_TEST_INSTANCE=1`
+    /// and reaped by tag. reset-and-launch.sh / reset-tcc.sh are exempt:
+    /// they are owner-invoked utilities whose PURPOSE is restarting the
+    /// owner's own app.
+    func test_automatedScripts_neverBareKillallByExecName() throws {
+        let exempt: Set<String> = ["reset-and-launch.sh", "reset-tcc.sh"]
+        let scriptsDir = Self.repoRoot.appendingPathComponent("scripts")
+        let scripts = try FileManager.default
+            .contentsOfDirectory(at: scriptsDir, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "sh" && !exempt.contains($0.lastPathComponent) }
+        XCTAssertFalse(scripts.isEmpty, "scripts/ enumeration must not be vacuous")
+        for url in scripts {
+            let body = try String(contentsOf: url, encoding: .utf8)
+            for (n, line) in body.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+                let t = line.trimmingCharacters(in: .whitespaces)
+                guard !t.hasPrefix("#") else { continue }
+                XCTAssertFalse(
+                    t.contains("killall MarkdownViewer"),
+                    "\(url.lastPathComponent):\(n + 1) bare killall by shared exec "
+                    + "name — kills the owner's running app; reap by "
+                    + "MDV_TEST_INSTANCE tag instead (TSK-625)")
+            }
+        }
+    }
+
     /// TSK-191 — vm-smoke.sh's pre-launch reset must clear the directory
     /// SessionStore ACTUALLY writes. The audited bug reset a retired
     /// subdir name, so launches restored stale state the script believed
