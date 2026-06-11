@@ -7119,3 +7119,37 @@ tests) · 548(TooLarge tests) · 550/553/555/569(workspace gate) · 551/556/558
 Fixed lane after the purge: ~53 → all with verified-consistent recorded work.
 Next: drain the consistent queue in suite-cluster batches (rust e83408d cluster
 first — one gate run covers 394–398).
+
+## LOG +206 (2026-06-10, drain wave 14 — rust cluster + terminal cluster; TSK-489 found INCOMPLETE and finished)
+
+CONSISTENT-queue drain per LOG +205, suite-cluster batches:
+
+- **TSK-394/395/396/397/398 → validated** (rust e83408d cluster) — ONE fresh `rust-core-gate.sh`
+  run on main @ 2ea4d79 covered all five: gate green EXIT=0; per-ticket pins re-ran green
+  (dist `opt-level=3` in Cargo.toml; 4 snapshot_frame byte-identity tests; matching_indices
+  parity ×2; ascii fast-path + dotted-I/sharp-s Unicode discriminators ×5; single-alloc
+  encode_frame byte-identity + round-trip ×4).
+- **TSK-459 → validated** — store wiring was pinned but the CORE suppression behavior wasn't;
+  built `TerminalForegroundBumpTests` (commit `f84ca99`): real forkpty shell through the exact
+  production onOutput closure — backgrounded output feeds the parser but `version` stays 0;
+  re-entry refresh-bumps exactly once. Teeth: gate removed → "1 is not equal to 0" red → restored.
+- **TSK-456/457 → honest holds** (comments) — model suites fresh-green (116-test terminal sweep);
+  the mouse drag-select/right-click and wheel/snap UX wiring has no automated interaction
+  coverage → VM interaction test or owner click-test named as the gap. Same as the +114 hold.
+- **TSK-489 → found INCOMPLETE, completed, validated** — drain re-check caught that dd8570f only
+  fired the model write-back from `update()`'s pin/shrink paths; `scrollWheel`, `snapToBottom`
+  (typing), and BOTH scrollbar-drag sites mutated `scrollOffset` silently. Quiet-shell scroll →
+  tab switch → snap-to-bottom (the owner's exact complaint) survived the "fix"; typing left a
+  stale model offset that jumped the returning tab back up. Chatty shells masked it (update-pin
+  fired constantly). Fix `ee6ab30`: all four sites route through `setScrollOffset(_:)` which
+  persists via `onScrollOffsetChange`. New `TerminalScrollOffsetPersistenceTests` (4) drive the
+  REAL `scrollWheel(with:)`/`keyDown(with:)` with synthesized NSEvents (CGEvent scroll + keyEvent):
+  write-back, init seeding (5→wheel-down→4), clamp, typing-snap 0. Teeth: callback muted → 5 red.
+  Fresh bundle built + installed to /Applications (owner-felt fix).
+- **TSK-458 → pending the batched VM GUI pixel run** — store behavior fresh-green on host
+  (TerminalPaneStoreTests); the tab-strip visibility half has the T5
+  `TerminalTabStripVisualRegressionTests` guard (teeth proven in the TSK-488 saga) which needs a
+  fresh VM GUI-session run; rsync + VM dist build kicked off for it.
+
+Gates: headless gate PASSED on `f84ca99` and `ee6ab30`; rust gate green on `2ea4d79`.
+Wave tally: 7 validated · 2 holds · 1 live bug found+fixed (commit per item).
