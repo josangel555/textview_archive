@@ -7526,3 +7526,18 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   updateEditorText incl. the snapshot guard) has no automated test yet. Named buildable gap:
   a fake-server end-to-end format test on the LSPPoolFakeServerTests harness (canned TextEdit
   response → buffer text changes; typed-during-format → stale response dropped). Next tick.
+
+## LOG +227 (2026-06-11 tick — TSK-627 validated: formatting e2e gap closed with a real fake-server round trip)
+
+- **TSK-627 → validated** (commit 1c16b2d closes the hold from LOG +226) — the response-side
+  glue now has real end-to-end coverage. MDVFakeLSPServer answers `textDocument/formatting`
+  with two canned edits; DocumentModel gained an injectable `lspPool` init param (HeadlessHarness
+  passes it through) and the new command guards consult `pool.registry` instead of
+  `LSPLanguageRegistry.default` — the SAME registry the pool routes with, which is what made the
+  e2e injectable (`registry` exposed as `public nonisolated let`). LSPFormatEndToEndTests spawns
+  the REAL fake server: (a) the server's TextEdits land verbatim-applied in the editor buffer and
+  the buffer goes dirty; (b) the SNAPSHOT GUARD drops a stale response when the user typed
+  mid-round-trip — teeth demonstrated by muting the guard (race test red: the formatter clobbered
+  "user typed this"). Plus a pool-level round-trip test pinning request encode + decode + route.
+  Full TSK-627 chain: 19 tests across applier/decode/wiring/e2e, all host-gate-run. Gate green
+  on 1c16b2d.
