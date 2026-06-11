@@ -262,7 +262,7 @@ public final class DocumentModel: ObservableObject {
     /// Lazy: the actor is cheap to allocate; servers spawn on first
     /// request and reap when idle. Public so the sidebar's outline
     /// section + the diagnostics panel can talk to the same pool.
-    public let lspPool: LSPPool = LSPPool()
+    public let lspPool: LSPPool
 
     /// Per-(file URL) LSP diagnostics, populated by server-pushed
     /// `textDocument/publishDiagnostics` notifications. Wired up to
@@ -312,8 +312,12 @@ public final class DocumentModel: ObservableObject {
         ),
         bookmarks: BookmarksStore = BookmarksStore(storeURL: BookmarksStore.defaultStoreURL()),
         sidebar: SidebarModel = SidebarModel(),
-        preferences: PreferencesStore = PreferencesStore()
+        preferences: PreferencesStore = PreferencesStore(),
+        // Injectable for tests (TSK-627: fake-server registry e2e). The
+        // default is the production pool over LSPLanguageRegistry.default.
+        lspPool: LSPPool = LSPPool()
     ) {
+        self.lspPool = lspPool
         self.controller = controller
         self.history = history
         self.goToPathHistory = goToPathHistory
@@ -1971,7 +1975,7 @@ public final class DocumentModel: ObservableObject {
         kind: LSPNavigationKind, tabID: UUID, fileURL: URL, request: CMPositionRequest
     ) {
         _ = effectiveLanguage(forTabID: tabID, url: fileURL)
-        guard LSPLanguageRegistry.default.language(for: fileURL) != nil else { return }
+        guard lspPool.registry.language(for: fileURL) != nil else { return }
         let lspLine = max(0, request.line - 1)
         let lspChar = max(0, request.character)
         #if DEBUG
@@ -2041,7 +2045,7 @@ public final class DocumentModel: ObservableObject {
     @discardableResult
     public func formatActiveEditorViaLSP() -> Bool {
         guard let tab = tabs.selected, let url = tab.url else { return false }
-        guard LSPLanguageRegistry.default.language(for: url) != nil else { return false }
+        guard lspPool.registry.language(for: url) != nil else { return false }
         guard let buf = editor.editorBuffers[tab.id] else { return false }
         let tabID = tab.id
         let snapshot = buf.text

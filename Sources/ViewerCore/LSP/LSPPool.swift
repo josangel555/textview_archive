@@ -113,7 +113,11 @@ public actor LSPPool {
         public let status: LSPServerStatus
     }
 
-    private let registry: LSPLanguageRegistry
+    // Public so callers (DocumentModel command guards) consult the SAME
+    // registry this pool routes with — not LSPLanguageRegistry.default —
+    // which is what makes the fake-server e2e injectable (TSK-627).
+    // Immutable Sendable: synchronously readable cross-actor.
+    public nonisolated let registry: LSPLanguageRegistry
     private let config: Config
     private let clock = ContinuousClock()
     private var entries: [Key: Entry] = [:]

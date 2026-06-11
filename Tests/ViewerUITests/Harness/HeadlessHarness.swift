@@ -60,7 +60,7 @@ final class HeadlessHarness {
     private let suiteName: String
     private let defaults: UserDefaults
 
-    init(label: String) {
+    init(label: String, lspPool: LSPPool? = nil) {
         let id = UUID().uuidString
         self.tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("\(label)-\(id)")
@@ -72,7 +72,8 @@ final class HeadlessHarness {
         self.defaults = UserDefaults(suiteName: suiteName) ?? .standard
 
         // Hermetic stores: every persistence URL points inside tmpDir so
-        // a run can't read or clobber real user state.
+        // a run can't read or clobber real user state. `lspPool` lets a
+        // test route a synthetic language to MDVFakeLSPServer (TSK-627).
         let model = DocumentModel(
             controller: DocumentController(),
             history: HistoryStore(storeURL: tmpDir.appendingPathComponent("history.json")),
@@ -80,7 +81,8 @@ final class HeadlessHarness {
                 storeURL: tmpDir.appendingPathComponent("goto.json")),
             bookmarks: BookmarksStore(storeURL: tmpDir.appendingPathComponent("bookmarks.json")),
             sidebar: SidebarModel(),
-            preferences: PreferencesStore(defaults: defaults)
+            preferences: PreferencesStore(defaults: defaults),
+            lspPool: lspPool ?? LSPPool()
         )
         self.model = model
 

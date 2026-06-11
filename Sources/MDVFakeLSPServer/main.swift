@@ -309,6 +309,28 @@ final class FakeServer: @unchecked Sendable {
             writeJSON(responseEnvelope(
                 id: id, result: [locationDict(uri: uri), locationDict(uri: uri)]))
 
+        case "textDocument/formatting":
+            // Canned, deterministic edit set (TSK-627): replace the first
+            // three UTF-16 units of line 0 with "FMT" and insert a header
+            // line at the very top. Two edits so the client's reverse-order
+            // application is exercised, not just a single replace.
+            writeJSON(responseEnvelope(id: id, result: [
+                [
+                    "range": [
+                        "start": ["line": 0, "character": 0],
+                        "end": ["line": 0, "character": 3],
+                    ],
+                    "newText": "FMT",
+                ],
+                [
+                    "range": [
+                        "start": ["line": 0, "character": 0],
+                        "end": ["line": 0, "character": 0],
+                    ],
+                    "newText": "// formatted\n",
+                ],
+            ]))
+
         case "textDocument/documentSymbol":
             writeJSON(responseEnvelope(id: id, result: documentSymbolResult()))
 

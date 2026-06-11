@@ -736,4 +736,30 @@ final class LSPPoolFakeServerTests: XCTestCase {
         XCTAssertNotNil(s.lastResponseMillis,
             "lastResponseMillis should be populated after a successful routed call")
     }
+
+    // MARK: - Formatting (TSK-627)
+
+    func test_formatting_roundTripsTextEditsFromServer() async throws {
+        let binary = try FakeLSPServerHelper.locate()
+        let (root, file) = try makeTempFile()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let pool = LSPPool(
+            registry: makeRegistry(binary: binary), config: tightConfig())
+        self.addTeardownBlock { await pool.closeAll() }
+
+        try await pool.ensureOpened(fileURL: file, text: "abcdef\n")
+        let edits = try await pool.formatting(fileURL: file)
+        // The fake server returns exactly two canned edits (a replace +
+        // an insertion at the doc head) — pins request encode, server
+        // round-trip, decodeTextEdits, and the pool route end-to-end.
+        XCTAssertEqual(edits.count, 2)
+        XCTAssertEqual(edits.first?.newText, "FMT")
+        XCTAssertEqual(edits.first?.range.start, LSPPosition(line: 0, character: 0))
+        XCTAssertEqual(edits.first?.range.end, LSPPosition(line: 0, character: 3))
+        XCTAssertEqual(edits.last?.newText, "// formatted\n")
+        // And the applier turns them into the formatted document.
+        let applied = LSPTextEditApplier.apply(edits, to: "abcdef\n", encoding: .utf16)
+        XCTAssertEqual(applied, "// formatted\nFMTdef\n")
+    }
 }
