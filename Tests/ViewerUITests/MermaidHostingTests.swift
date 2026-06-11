@@ -107,11 +107,20 @@ final class MermaidHostingTests: XCTestCase {
         XCTAssertEqual(m.currentViewMode, .rendered,
                        ".mmd files should open in rendered mode by default")
 
+        // TSK-623: since TSK-611 the rendered branch shows a spinner
+        // until the off-main render fills the cache — await the mount.
         let host = host(ContentView(model: m))
-        let descendants = allDescendants(of: host)
         let webViewClass: AnyClass = NSClassFromString("WKWebView")!
-        let webViews = descendants.filter { $0.isKind(of: webViewClass) }
+        var webViews: [NSView] = []
+        let deadline = Date().addingTimeInterval(15)
+        while Date() < deadline {
+            webViews = allDescendants(of: host).filter { $0.isKind(of: webViewClass) }
+            if !webViews.isEmpty { break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            host.layoutSubtreeIfNeeded()
+        }
         XCTAssertFalse(webViews.isEmpty,
-                       ".mmd file should host a WKWebView (rendered path)")
+                       ".mmd file should host a WKWebView (rendered path) "
+                       + "once the async fill lands (TSK-611 contract)")
     }
 }

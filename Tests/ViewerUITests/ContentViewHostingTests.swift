@@ -95,6 +95,23 @@ final class ContentViewHostingTests: XCTestCase {
         return result
     }
 
+    /// TSK-623: since TSK-611 the rendered branch shows a spinner until
+    /// the OFF-MAIN render fills the cache — the WKWebView mounts on the
+    /// async fill's republish, never synchronously with the host. Pump
+    /// the runloop until it appears (or return empty at the deadline).
+    private func waitForWebViews(in host: NSView,
+                                 timeout: TimeInterval = 15) -> [NSView] {
+        let webViewClass: AnyClass = NSClassFromString("WKWebView")!
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            let found = allDescendants(of: host).filter { $0.isKind(of: webViewClass) }
+            if !found.isEmpty { return found }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            host.layoutSubtreeIfNeeded()
+        }
+        return []
+    }
+
     // MARK: Model preconditions
 
     func test_openXML_modelHasOneLoadedTab() throws {
@@ -162,13 +179,14 @@ final class ContentViewHostingTests: XCTestCase {
         let url = try writeFile("hello.md", "# Hi\n\nThis is a test.\n")
         model.open(url: url)
 
-        // model.viewMode defaults to .rendered, so the WKWebView is shown.
+        // model.viewMode defaults to .rendered. Since TSK-611 the
+        // WKWebView mounts only after the off-main render fills the
+        // cache — await the fill rather than asserting synchronously.
         let host = host(ContentView(model: model))
-        let descendants = allDescendants(of: host)
-        let webViewClass: AnyClass = NSClassFromString("WKWebView")!
-        let webViews = descendants.filter { $0.isKind(of: webViewClass) }
+        let webViews = waitForWebViews(in: host)
         XCTAssertFalse(webViews.isEmpty,
-                       "Rendered markdown should embed a WKWebView")
+                       "Rendered markdown should embed a WKWebView once "
+                       + "the async fill lands (TSK-611 contract)")
     }
 
     // MARK: Layout invariant under "no sidebar" (the user's reported configuration)

@@ -230,9 +230,21 @@ final class DiagnosticDumpTests: XCTestCase {
         let model = makeModel()
         let url = try writeFile("hello.md", "# Hi\n\nbody\n")
         model.open(url: url)
-        let (_, tree) = dump(ContentView(model: model))
-        let webViews = nodesOfClass("WKWebView", in: tree)
-        XCTAssertFalse(webViews.isEmpty, "Rendered markdown must embed a WKWebView")
+        // TSK-623: since TSK-611 the rendered branch shows a spinner until
+        // the off-main render fills the cache — re-dump until the WKWebView
+        // mounts (or fail at the deadline).
+        let (host, firstTree) = dump(ContentView(model: model))
+        var webViews = nodesOfClass("WKWebView", in: firstTree)
+        let deadline = Date().addingTimeInterval(15)
+        while webViews.isEmpty, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            host.layoutSubtreeIfNeeded()
+            let tree = DiagnosticDump.describeView(host, depth: 0, includeRecursive: false)
+            webViews = nodesOfClass("WKWebView", in: tree)
+        }
+        XCTAssertFalse(webViews.isEmpty,
+                       "Rendered markdown must embed a WKWebView once the "
+                       + "async fill lands (TSK-611 contract)")
         if let web = webViews.first, let frame = web["frame"] as? String {
             // Frame is encoded as "(x,y wxh)". Strip non-numeric and check width/height.
             let parts = frame
