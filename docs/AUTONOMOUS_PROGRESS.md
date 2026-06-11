@@ -6949,3 +6949,26 @@ TSK-170/171/172/173 re-verified fresh on main, pinned, validated:
 
 Gate: `==> headless gate PASSED` on HEAD 70da109. Board: 4× validated.
 Remaining fixed lane: ~46 (next: TSK-183/185/187 S4 series).
+
+## LOG +199 (2026-06-10, drain wave 8 — S4 series)
+
+TSK-183/185/187 re-verified fresh, validated:
+
+- **TSK-183** (scanBrace regex churn) — fix present; the finding's OWN audit suite
+  exists (Audit_..._ReDoSTests header declares "S4 (line 132): hand-rolled brace
+  scan"). Fresh: 7/7 + HighlightedTextTests 21/21 + HotPathPerfRegressionTests 6/6.
+  No new code needed — the drain's cheapest case: a pin that already existed,
+  re-run rather than trusted.
+- **TSK-185** (silent watcher failure) — fix present (liveReloadUnavailable + Obs
+  emit at DocumentModel.swift:3707-3740) but UNPINNED. Added
+  `FileWatcher.forceConstructionFailure` DEBUG seam + FileWatcherDegradationCueTests
+  through the real open path (cue surfaces, clears on recovery, pause ≠ failure).
+  Teeth: silent-catch mutation → both red. Commit a137cdf.
+- **TSK-187** (exit() bypasses teardown) — resolution is the documented DELIBERATE
+  bypass: CONTRACT comments at both exit sites (Diagnostics.swift:119-131, :243-249)
+  with precondition (dev/test flags, no durable state), remediation, and a
+  do-not-copy warning. Validated on the code artifact; honest skip noted — no
+  generic test detects "durable state added later".
+
+Gate: `==> headless gate PASSED` on HEAD a137cdf. Board: 3× validated.
+Remaining fixed lane: ~43 (next: TSK-189/190/191 TUI + vm-smoke S4s).
