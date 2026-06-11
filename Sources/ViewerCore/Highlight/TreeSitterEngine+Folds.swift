@@ -307,6 +307,17 @@ extension TreeSitterEngine {
         if foldFailed.contains(lang)   { foldLock.unlock(); return nil }
         foldLock.unlock()
 
+        #if DEBUG
+        // TSK-151 test seam — fires INSIDE the compile window (post-
+        // acquire re-check missed, compile committed, per-language lock
+        // held), so the double-compile race is a deterministic
+        // interleaving in tests rather than a stress loop.
+        Self.foldCompileWindowHook?(lang)
+        Self.foldCompileLocksGuard.lock()
+        Self.foldCompileCount += 1
+        Self.foldCompileLocksGuard.unlock()
+        #endif
+
         guard let language = languageHandle(for: lang),
               let url = foldQueryURL(for: lang) else {
             foldLock.lock(); foldFailed.insert(lang); foldLock.unlock()
@@ -438,6 +449,21 @@ private extension TreeSitterEngine {
     /// Guards lazy allocation/lookup of `foldCompileLocks` itself.
     static let foldCompileLocksGuard = NSLock()
 }
+
+#if DEBUG
+extension TreeSitterEngine {
+    /// TSK-151 test seam — invoked inside the per-language compile
+    /// window of `foldBundle(for:)`. `nonisolated(unsafe)`: mutated only
+    /// from test threads (installed before engine use, cleared in
+    /// tearDown) — same justification as `FileWatcher.attachWindowHook`.
+    nonisolated(unsafe) static var foldCompileWindowHook: ((HighlightLanguage) -> Void)?
+
+    /// TSK-151 test seam — counts fold-query compile attempts. Writes
+    /// are bracketed by `foldCompileLocksGuard`; tests reset it between
+    /// runs.
+    nonisolated(unsafe) static var foldCompileCount = 0
+}
+#endif
 
 /// Per-language compiled fold query, parallel to the highlight bundle.
 internal struct FoldBundle {
