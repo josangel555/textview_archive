@@ -109,6 +109,12 @@ public final class FileWatcher: @unchecked Sendable {
     /// concurrent mutation by design (same justification as
     /// SessionStore.coalesceLock).
     nonisolated(unsafe) public static var attachWindowHook: ((FileWatcher) -> Void)?
+
+    /// TSK-185 test seam — forces `attach()` to throw `cannotOpen`, the
+    /// failure DocumentModel's watcher-degradation fallback must surface
+    /// (descriptor exhaustion / kqueue pressure can't be staged in a
+    /// test). Same test-thread-only justification as `attachWindowHook`.
+    nonisolated(unsafe) public static var forceConstructionFailure = false
     #endif
 
     // MARK: - Private
@@ -119,6 +125,9 @@ public final class FileWatcher: @unchecked Sendable {
         // survives `posix_spawn` and a hostile / buggy child could read
         // or fstat the watched file via an inherited fd, and the fd
         // count climbs across every spawn while a watcher is live.
+        #if DEBUG
+        if Self.forceConstructionFailure { throw FileWatcherError.cannotOpen }
+        #endif
         let fd = open(url.path, O_EVTONLY | O_CLOEXEC)
         guard fd >= 0 else { throw FileWatcherError.cannotOpen }
 
