@@ -7373,3 +7373,23 @@ persistence, TSK-624 WebView failure recovery, TSK-625 killall footgun) · 2 fal
 owner bugs investigated + parked with evidence (TSK-270/372). Remaining work concentrates in:
 the batched VM GUI run (261/268/331/324 + the T4 UATs for 505/468), the TSK-538 rust-core epic
 P1 children, and the owner queue.
+
+## LOG +218 (2026-06-11 tick — TSK-579 landed: ABI skew guard, the versionless-ABI half of R4)
+
+- **TSK-579 → validated** (commit deb7c2e) — `MDV_WIRE_VERSION: u32 = 1` + `mdvcore_abi_version()`
+  (ffi_guard_value, 0 = guard-tripped sentinel) exported from mdvcore-ffi; cbindgen emits both into
+  the staged header. Swift `CoreABI` (Sources/RustCore/CoreClient.swift): `compiled` (header const)
+  vs `linked` (runtime fn), `isCompatible` pure comparison, `assertCompatible()` crash-fast
+  precondition with rebuild hint (once per process), wired into `CsvSession.init` before the first
+  FFI call. Rust pin `abi_version_reports_the_wire_const` (fn==const, !=0); Swift
+  `testABIVersion_linkedLibraryMatchesCompiledHeader` is THE skew detector — header const vs linked
+  lib, runs in every host+VM gate. TEETH: header const mutated 1→2 → red ("1 is not equal to 2",
+  3 asserts) → restored → 13/13 green. Both gates green on deb7c2e (rust-core: header-drift OK +
+  "Rust-core gate green"; headless: "headless gate PASSED").
+- **TSK-626 filed** — the teeth run exposed that SwiftPM's incremental build did NOT recompile on a
+  header-only change to Sources/CMdvCore/mdvcore.h (needed a `touch` of the importing Swift files
+  to go red). A regenerated header after an FFI signature change can silently compile against the
+  stale clang module — same drift class at build-graph level. Candidate fix: build-rust-core.sh
+  touches importers when the staged header content changes.
+
+Next: TSK-538 P1 siblings TSK-581/582.
