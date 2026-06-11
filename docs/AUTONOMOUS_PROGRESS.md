@@ -7479,3 +7479,18 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   headless gate green on 93748cf.
 - Remaining TSK-464 increments, each tick-sized: editor.format (TextEdit[] via the CM edit
   applier), goto-declaration/typeDefinition/implementation commands, menu/palette wiring.
+
+## LOG +224 (2026-06-11 tick — TSK-464 slice 3: the unreachable LSP go-to verbs are commands now)
+
+- **TSK-464 slice 3/4 landed** (commit 4168d9a, ticket at `progress`) — declaration /
+  typeDefinition / implementation existed on the LSP client+pool but were unreachable from any
+  command (definition itself was Cmd-click-only). `DocumentModel.navigateViaLSP(kind:)`
+  generalizes the Cmd-click path (which now delegates to it); `navigateViaLSPAtCursor(kind:)`
+  resolves at the active editor cursor and refuses to guess without one. Surfaced as 4 script
+  verbs + 4 `lsp.*` palette/keybinding commands; the registry verb-vocabulary pin extended.
+  LSPGotoCommandTests (4 tests) pins verb→kind routing, cursor sourcing, 1-based→0-based
+  conversion, the no-cursor no-op, the non-LSP guard, and the catalog contract. TEETH
+  (declaration cross-wired to definition → red). 40/40 across goto+registry+verb suites;
+  headless gate green on 4168d9a.
+- TSK-464 remaining: slice 2 editor.format (the substantive piece) + slice 4 menu rows (polish —
+  palette invokability already shipped).
