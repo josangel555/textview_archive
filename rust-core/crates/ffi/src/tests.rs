@@ -62,6 +62,16 @@ fn stage0_add_smoke() {
 }
 
 #[test]
+fn abi_version_reports_the_wire_const() {
+    // The runtime fn and the cbindgen-emitted const MUST agree — Swift compiles
+    // against the header const and compares it to this fn's return at startup;
+    // the pair is the skew detector (TSK-579). 0 is reserved for "guard
+    // tripped", so the const itself must never be 0.
+    assert_eq!(mdvcore_abi_version(), MDV_WIRE_VERSION);
+    assert_ne!(MDV_WIRE_VERSION, 0);
+}
+
+#[test]
 fn force_panic_returns_error_not_crash() {
     // The whole point: a panicking core path returns MdvStatus::Panic and the
     // test process keeps running (proves catch_unwind under panic=unwind).

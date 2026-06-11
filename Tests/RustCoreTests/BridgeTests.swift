@@ -18,6 +18,29 @@ final class BridgeTests: XCTestCase {
         XCTAssertEqual(mdvCoreAdd(Int32.max, 1), Int32.min)
     }
 
+    func testABIVersion_linkedLibraryMatchesCompiledHeader() {
+        // THE skew detector (TSK-579, audit R4): the cbindgen header bakes
+        // MDV_WIRE_VERSION into this compilation; mdvcore_abi_version() reports
+        // what the linked libmdvcore_ffi.a was built with. Inequality means the
+        // staged header and the staticlib drifted (stale rust-core/link/ on the
+        // host, stale rsync'd .a on the VM) — every other bridge call is then
+        // crossing an undefined ABI. Runs in every gate, host and VM.
+        XCTAssertEqual(mdvcore_abi_version(), UInt32(MDV_WIRE_VERSION),
+                       "header/staticlib ABI skew — run scripts/build-rust-core.sh and rebuild")
+        XCTAssertTrue(CoreABI.isCompatible)
+        XCTAssertEqual(CoreABI.compiled, CoreABI.linked)
+        // 0 is the guard-tripped sentinel — never a valid version.
+        XCTAssertNotEqual(UInt32(MDV_WIRE_VERSION), 0)
+    }
+
+    func testABIVersion_assertCompatibleIsCallableAndIdempotent() {
+        // The crash-fast entry-point hook must be a no-op on a healthy link,
+        // repeatedly (static-let once semantics).
+        CoreABI.assertCompatible()
+        CoreABI.assertCompatible()
+        XCTAssertTrue(CoreABI.isCompatible)
+    }
+
     func testForcePanicMapsToError() {
         // The core panics; the boundary catches it and returns .panic. The test
         // process must NOT crash (proves catch_unwind end-to-end into Swift,

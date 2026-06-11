@@ -56,6 +56,37 @@ public enum CoreError: Error, Equatable {
     }
 }
 
+/// ABI skew guard (TSK-579, audit R4). The cbindgen header bakes
+/// `MDV_WIRE_VERSION` in at COMPILE time; `mdvcore_abi_version()` reports what
+/// the LINKED `libmdvcore_ffi.a` was built with at RUN time. They differ when
+/// the staticlib and the staged header drift (the VM links a prebuilt .a
+/// against rsync'd sources; a stale `rust-core/link/` artifact does the same
+/// on the host). Calling across a skewed ABI is undefined behavior, so every
+/// bridge entry point asserts compatibility once per process and crashes fast
+/// with a rebuild hint instead of corrupting memory.
+public enum CoreABI {
+    /// The version this module was compiled against (header constant).
+    public static let compiled: UInt32 = UInt32(MDV_WIRE_VERSION)
+    /// The version the linked staticlib reports. 0 = the FFI guard tripped,
+    /// which is never a valid version and always incompatible.
+    public static var linked: UInt32 { mdvcore_abi_version() }
+    /// Pure comparison — no side effects, safe for tests to probe.
+    public static var isCompatible: Bool { linked == compiled }
+
+    private static let checkedOnce: Void = {
+        precondition(
+            isCompatible,
+            "mdvcore ABI skew: linked libmdvcore_ffi.a reports wire version "
+            + "\(linked) but this build compiled against \(compiled) — run "
+            + "`bash scripts/build-rust-core.sh` and rebuild before calling "
+            + "across the FFI"
+        )
+    }()
+
+    /// Crash-fast skew assert; runs the check exactly once per process.
+    public static func assertCompatible() { _ = checkedOnce }
+}
+
 /// The parsed CSV table (Stage 1 result). Mirrors the Rust `wire::Table`.
 public struct Table: Equatable, Sendable {
     public let delimiter: String
@@ -111,6 +142,7 @@ public final class CsvSession {
 
     /// Open a session by parsing `bytes` as UTF-8 CSV.
     public init(bytes: [UInt8]) throws {
+        CoreABI.assertCompatible()
         var raw: OpaquePointer?
         let status = bytes.withUnsafeBufferPointer { buf in
             mdvcore_session_open(buf.baseAddress, UInt(buf.count), &raw)

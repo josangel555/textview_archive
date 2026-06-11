@@ -87,6 +87,27 @@ pub extern "C" fn mdvcore_add(a: i32, b: i32) -> i32 {
 }
 
 // ---------------------------------------------------------------------------
+// ABI version (TSK-579) — the runtime backstop for header↔staticlib skew.
+// The VM links a prebuilt libmdvcore_ffi.a against rsync'd Swift sources, so
+// the compiled-in header constant and the linked library can silently
+// diverge. Swift asserts at bridge init that the LINKED library reports the
+// same version the header it compiled against declares.
+// ---------------------------------------------------------------------------
+
+/// The wire/ABI contract version. Bump on ANY breaking change to the
+/// extern "C" surface or the MessagePack frame layout. cbindgen emits this
+/// into the header, so Swift compiles against the value; the function below
+/// reports what the linked library was built with. Equal ⇒ no skew.
+pub const MDV_WIRE_VERSION: u32 = 1;
+
+/// Runtime ABI version of the LINKED library. Returns 0 (never a valid
+/// version) if the guard trips — callers must treat 0 as incompatible.
+#[unsafe(no_mangle)]
+pub extern "C" fn mdvcore_abi_version() -> u32 {
+    ffi_guard_value!(0u32, { MDV_WIRE_VERSION })
+}
+
+// ---------------------------------------------------------------------------
 // A deliberate panic path, used by tests to prove catch_unwind converts a
 // panic into MdvStatus::Panic and does NOT abort (under panic=unwind builds).
 // ---------------------------------------------------------------------------
