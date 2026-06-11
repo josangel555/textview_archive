@@ -7153,3 +7153,30 @@ CONSISTENT-queue drain per LOG +205, suite-cluster batches:
 
 Gates: headless gate PASSED on `f84ca99` and `ee6ab30`; rust gate green on `2ea4d79`.
 Wave tally: 7 validated · 2 holds · 1 live bug found+fixed (commit per item).
+
+## LOG +207 (2026-06-10, drain wave 15 — VM pixel batch + singles)
+
+- **VM GUI pixel run (fresh, main @ ee6ab30)** — rsync + VM dist build + launchctl-asuser T5 lane:
+  `TerminalTabStripVisualRegressionTests` 4/4 (left/right/top chip composites + right-docked content
+  not blank — real WindowServer screencapture) and `SourceViewVisualRegressionTests` 2/2 (incl. the
+  meta broken-ruler teeth test). 6/6, EXIT=0.
+- **TSK-458 → validated** — both tiers fresh: host TerminalPaneStoreTests (tab behavior) + the VM
+  pixel run above (strip visibility, the TSK-488 occlusion class).
+- **TSK-315 → validated** — TabToNewSessionTests fresh green (exact menu closure; open keeps the
+  source tab, move removes it across persist→rehydrate).
+- **TSK-467 → validated** — ContentToolbarMappingTests fresh green (hex default read-only;
+  setViewOnly arms without ViewMode churn; per-tab isolation).
+- **TSK-611 → validated** — RenderedHTMLAsyncFillTests fresh green + the armed VM WebView lane
+  consumes the await-the-fill contract (TSK-163/623).
+- **TSK-612 → validated** — RowCounterPluginTests fresh green.
+- **Holds (honest, gap named):** TSK-466 (CM6 fold gutter render — needs a WebView-lane DOM
+  assertion or owner eyes), TSK-505 (MetadataPanel checksum row — the named VM T4 UAT doesn't
+  exist yet), TSK-619 (its own blocker=live-validation — warmup mechanism host-pinned, the ~400ms
+  first-open improvement needs a live/signpost confirmation), TSK-331 (width tests admit no teeth;
+  shrink-not-overflow is pixel territory — batch with 261/268 next VM GUI run).
+
+Wave tally: 5 validated · 4 holds. Session total (waves 14–15): 12 validated · 6 holds · 1 live
+bug found+fixed (TSK-489). Remaining CONSISTENT queue: rust singles (542/549/557/539 — tonight's
+fresh rust gate already covers them, validate next tick), workspace gate 550/553/555/569, web
+hardening 551/556/558, hex clamp 540/578, hunk marks 565/576, build-script 446/448/449/435/436,
+VM-toolchain 401/439/616, 324, 477, 482, 622, 365, 468.
