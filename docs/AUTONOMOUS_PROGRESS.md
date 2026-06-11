@@ -7408,3 +7408,21 @@ Next: TSK-538 P1 siblings TSK-581/582.
   green on 562a56f.
 
 Next: TSK-582 (last of the groomed TSK-538 P1 trio).
+
+## LOG +220 (2026-06-11 tick — TSK-582 landed: FFI misuse matrix complete; P1 trio DONE)
+
+- **TSK-582 → validated** (commit bde2016) — the audit's STRONG-verdict testing proposal is
+  complete. Six per-export misuse matrices (cm_apply, diff_parse, diff_hunk_marks, hex_render,
+  hex_search, indent_detect — previously ZERO direct tests): null out_buf, null-ptr+nonzero-len,
+  empty input, hostile 2GiB-declared frame prefix, non-UTF-8 inputs, hostile mode/width values;
+  every error path also proves out_buf stays safe-to-free. The test-lie contention test (happy
+  path only, could never fail) is REPLACED by a deterministic Busy test: a holder thread parks
+  inside with() via mpsc rendezvous so the main thread's FFI call is guaranteed to hit a held
+  lock. ffi suite 22→28. Teeth ×2 (Busy→Internal mutation red; null-guard→Internal mutation
+  red). Both gates green on bde2016.
+- **TSK-538 P1 trio (579/581/582) is now fully validated** — ABI skew guard, poisoned-lock
+  tri-state, and the misuse matrix. The epic's remaining children are lower-priority phases.
+
+Session: 3 tickets landed+validated this tick (deb7c2e, 562a56f, bde2016) + TSK-626 filed
+(SwiftPM header-staleness build-graph gap). Next: batched VM GUI run for the visual holds
+(261/268/331/324 + T4 UATs for 505/468), or the next groomed pool item.
