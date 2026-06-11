@@ -14,19 +14,17 @@ green-with-teeth, build missing guards, bounce dishonest states, hold honestly.
   276 parked (Debugger 3-option ask); 326/279 mislabels bounced to progress.
   Session tally: 25 validated · 3 holds · 3 bounced · 1 parked · TSK-623
   caught+fixed. Main continuously gate-green; logs +196..+204.
-- **In flight: read-only mislabel-sweep subagent** over ALL remaining fixed-lane
-  tickets (classify CONSISTENT/MISLABELED/UNCLEAR vs board titles, with commits +
-  suite names for the consistent ones). If its completion notification was lost
-  to compaction, its transcript is at
-  `/private/tmp/claude-501/-Users-me-Documents-workspaces-claude-markdown-viewer/80ad52ff-c401-4cd4-9a0a-7558a3ded7c4/tasks/aae5e380773bedfba.output`
-  (JSONL — extract only the LAST assistant message, do not load the whole file),
-  or simply RE-RUN the sweep: it's cheap (read-only task_get loop, prompt pattern
-  in LOG +204 / the memory file reference_board_vs_tasklist_numbering).
-- Next action: (1) collect/re-run sweep → (2) bounce MISLABELED with correction
-  notes (pattern: TSK-279's 2026-06-10 record) → (3) drain the CONSISTENT list
-  (fresh-run named suites → validate / hold-visual / park) → (4) ONE batched VM
-  GUI pixel run for the visual-hold cluster (currently 261+268; tab-strip
-  MDV_UI_SCENE shot covers both; MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password>).
+- **MISLABEL SWEEP COMPLETE: 19 total mislabeled tickets** (16 found by the
+  sweep + 3 hand-caught), ALL bounced to progress with correction notes. Full
+  classification AND the 52-ticket CONSISTENT drain queue (with suite names) are
+  in docs/AUTONOMOUS_PROGRESS.md LOG +205. Fallout back in the open pool:
+  TSK-270 (file-open delay) and TSK-372 (tab duplication on reopen) — owner-felt
+  bugs that had been falsely closed, both annotated with reproduce-first notes.
+- Next action: (1) drain the CONSISTENT queue from LOG +205 in suite-cluster
+  batches — rust e83408d cluster first (TSK-394–398: ONE fresh rust-core gate run
+  covers all five), then terminal cluster (456–459), then singles → (2) ONE
+  batched VM GUI pixel run for the visual-hold cluster (261+268+489; tab-strip
+  MDV_UI_SCENE shot; MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password>).
 
 ## Key decisions & rationale
 - Mislabel remedy = `task_record {to: progress}` + correction note (the only legal
