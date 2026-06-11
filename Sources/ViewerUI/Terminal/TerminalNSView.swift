@@ -129,7 +129,7 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
         if screen.scrollback.count > 0, local.x >= bounds.width - scrollbarHitWidth {
             isScrollbarDrag = true
             if selection != nil { selection = nil }
-            scrollOffset = scrollbarOffset(for: event)
+            setScrollOffset(scrollbarOffset(for: event))
             needsDisplay = true
             return
         }
@@ -153,7 +153,7 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
 
     override func mouseDragged(with event: NSEvent) {
         if isScrollbarDrag {
-            scrollOffset = scrollbarOffset(for: event)
+            setScrollOffset(scrollbarOffset(for: event))
             needsDisplay = true
             return
         }
@@ -190,15 +190,13 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
         // reading (capped at the buffer; at the cap the oldest line is
         // genuinely evicted and can't be pinned).
         if scrollOffset > 0, newScrollback > oldScrollback {
-            scrollOffset = min(scrollOffset + (newScrollback - oldScrollback), newScrollback)
+            setScrollOffset(min(scrollOffset + (newScrollback - oldScrollback), newScrollback))
             changed = true
-            onScrollOffsetChange?(scrollOffset)
         }
         // Keep the viewport valid as scrollback shrinks (resize/reset).
         if scrollOffset > newScrollback {
-            scrollOffset = newScrollback
+            setScrollOffset(newScrollback)
             changed = true
-            onScrollOffsetChange?(scrollOffset)
         }
         if changed { needsDisplay = true }
     }
@@ -216,7 +214,7 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
         let maxOff = screen.scrollback.count
         let newOff = min(max(0, scrollOffset + lines), maxOff)
         guard newOff != scrollOffset else { return }
-        scrollOffset = newOff
+        setScrollOffset(newOff)
         // Selection is in viewport-row space; scrolling moves content under
         // it, so drop it rather than leave a misaligned highlight.
         if selection != nil { selection = nil }
@@ -226,9 +224,21 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
     /// Snap the viewport back to the live bottom (called on keyboard input).
     private func snapToBottom() {
         guard scrollOffset != 0 else { return }
-        scrollOffset = 0
+        setScrollOffset(0)
         scrollAccum = 0
         needsDisplay = true
+    }
+
+    /// Set the viewport offset AND persist it to the per-tab model
+    /// (TSK-489). Every mutation must route through here: a silent local
+    /// write leaves `TerminalModel.scrollOffset` stale, and the next
+    /// `.id`-driven remount (tab switch) restores the wrong position —
+    /// the audited "snaps to bottom on tab switch" bug (and its inverse,
+    /// jumping back up after typing had snapped the live view down).
+    private func setScrollOffset(_ newValue: Int) {
+        guard newValue != scrollOffset else { return }
+        scrollOffset = newValue
+        onScrollOffsetChange?(newValue)
     }
 
     private func rebuildFontMetrics() {
