@@ -7508,3 +7508,21 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   request, TextEdit decode with reverse-order application, buffer application + live-editor
   push, editor-format command); host-testable on the fake-server harness. Nothing silently
   dropped from 464's original five-verb list.
+
+## LOG +226 (2026-06-11 tick — TSK-627 landed: LSP formatting built from scratch, held at fixed)
+
+- **TSK-627 → fixed** (commit 5f77657, 381 insertions) — the formatting feature the stale audit
+  thought existed is now real: LSPTextEdit/LSPFormattingOptions protocol types; client
+  formatting/rangeFormatting requests + tolerant decodeTextEdits; pool route;
+  **LSPTextEditApplier** (pure: ranges resolved against the ORIGINAL text via
+  LSPPositionConverter, UTF-16-correct incl. emoji, hostile positions clamped, REVERSE-order
+  application, spec-violating overlaps dropped instead of corrupting); DocumentModel.
+  formatActiveEditorViaLSP with a SNAPSHOT GUARD (a keystroke racing the formatter wins — the
+  stale response is dropped); `editor-format` verb + `lsp.format` "Format Document" palette
+  command. The existing CM6 pendingText/lastSentText machinery pushes the new buffer text into
+  a live editor with caret preservation — no new WebView channel needed. 16 new tests
+  (12 applier/decode + 4 wiring), teeth demonstrated (sort flipped → red), 55/55, gate green.
+- **Held at fixed, NOT self-validated** — the response-side glue (pool round-trip → apply →
+  updateEditorText incl. the snapshot guard) has no automated test yet. Named buildable gap:
+  a fake-server end-to-end format test on the LSPPoolFakeServerTests harness (canned TextEdit
+  response → buffer text changes; typed-during-format → stale response dropped). Next tick.
