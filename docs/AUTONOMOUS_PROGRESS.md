@@ -7015,3 +7015,24 @@ fix + rationale documented at the site and live test coverage):
 No code changes this wave (no commit beyond this log). Board: 3× validated.
 Remaining fixed lane: ~37 — next series: TSK-261..334 (BACKLOG/PARTIAL items, many
 live-gated → expect more VM lanes + honest holds).
+
+## LOG +202 (2026-06-10, drain wave 11 — into the BACKLOG series)
+
+First three of TSK-261..334 processed; the series' different character confirmed
+(feature/[PARTIAL] items, much of it visual):
+
+- **TSK-271 validated** — media file-info zoom (0f5d33d): its pinning suite
+  MediaPreviewInfoZoomTests re-run fresh on current main, 2/2.
+- **TSK-261 + TSK-268 HELD at fixed (honest)** — both fixes (c72ed38, 4246ec9)
+  re-verified present in TabBar.swift with rationale comments; the residual claims
+  are purely visual (the + button's on-screen placement, the 1pt divider's
+  visibility). SwiftUI Buttons/Rectangles don't realize as NSViews, so no headless
+  structural assert exists that isn't a lie (TSK-488 ImageRenderer false-green
+  class). Gap named on both tickets: needs a T5/MDV_UI_SCENE pixel check on the VM
+  GUI lane, or the owner's one-glance confirm.
+
+PLAN: batch the visual holds (261, 268, + any further visual-only BACKLOG items
+found in the series) into ONE VM GUI-lane pixel run (MDV_VM_GUI_SESSION=1,
+ui-snapshot tab-strip scene) instead of per-ticket runs.
+
+Board: 1× validated, 2× held-with-gap. Remaining fixed lane: ~36.
