@@ -73,9 +73,39 @@ final class FileTabStripPixelEvalTests: HeadlessUITestCase {
         XCTAssertEqual(cols.count, 1, "one physical line must cluster to one column")
     }
 
-    /// A short edge (an icon, half-band high) must NOT register — the
-    /// detector requires ≥60% of the band rows.
-    func test_separatorColumns_rejectsShortEdges() {
+    /// The VM-capture regression that drove the asymmetric contrast rule
+    /// (2026-06-11): a separator flanked by the SELECTED tab's accent tint
+    /// is only ~7/255 darker than the tint side, so a darker-than-BOTH-by-8
+    /// rule misses it. Pin: line lum 217 between tint 227 (left) and clear
+    /// background 236 (right) MUST be detected.
+    func test_separatorColumns_findsLineBesideSelectedTabTint() {
+        let bpr = 600 * 4
+        let ctx = CGContext(
+            data: nil, width: 600, height: 40,
+            bitsPerComponent: 8, bytesPerRow: bpr,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                | CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.setFillColor(CGColor(red: 236/255.0, green: 236/255.0, blue: 236/255.0, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: 600, height: 40))
+        ctx.setFillColor(CGColor(red: 227/255.0, green: 227/255.0, blue: 227/255.0, alpha: 1))
+        ctx.fill(CGRect(x: 100, y: 0, width: 200, height: 40))     // tinted tab
+        ctx.setFillColor(CGColor(red: 217/255.0, green: 217/255.0, blue: 217/255.0, alpha: 1))
+        ctx.fill(CGRect(x: 300, y: 0, width: 1, height: 40))       // separator
+        let img = ctx.makeImage()!
+        let cols = FileTabStripVisualRegressionTests.separatorColumns(
+            in: img, xRange: 250 ..< 400, yRange: 0 ..< 40, scale: 1)
+        XCTAssertEqual(
+            cols.count, 1,
+            "the separator beside a selected-tab tint must be detected (got \(cols))")
+        XCTAssertEqual(cols.first.map { abs($0 - 300) <= 3 }, true, "found at \(cols)")
+    }
+
+    /// A partial-height edge must NOT register — the detector requires ≥85%
+    /// of the band rows. The ~70% case is the live false-positive that drove
+    /// the threshold (a tab's file-icon chip is ~15 pt of the 22-pt band:
+    /// its vertical edges over-counted 2 tabs as 6 columns at a 60% bar).
+    func test_separatorColumns_rejectsPartialHeightEdges() {
         let bpr = 600 * 4
         let ctx = CGContext(
             data: nil, width: 600, height: 40,
@@ -87,10 +117,11 @@ final class FileTabStripPixelEvalTests: HeadlessUITestCase {
         ctx.fill(CGRect(x: 0, y: 0, width: 600, height: 40))
         ctx.setFillColor(CGColor(red: 0.5, green: 0.5, blue: 0.5, alpha: 1))
         ctx.fill(CGRect(x: 200, y: 12, width: 1, height: 14))   // 35% of band
+        ctx.fill(CGRect(x: 400, y: 6, width: 1, height: 28))    // 70% — icon chip
         let img = ctx.makeImage()!
         let cols = FileTabStripVisualRegressionTests.separatorColumns(
             in: img, xRange: 0 ..< 600, yRange: 0 ..< 40, scale: 1)
-        XCTAssertEqual(cols, [], "a half-height icon edge must not count as a separator")
+        XCTAssertEqual(cols, [], "partial-height edges (icon chips) must not count")
     }
 
     func test_inkPixelCount_countsGlyphInk_zeroOnFlat() {

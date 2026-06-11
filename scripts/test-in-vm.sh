@@ -164,6 +164,15 @@ swift_test() {
   local uid; uid=$(stat -f %u /dev/console)
   local inner="cd $(printf '%q' "$ROOT_DIR") && ulimit -n 8192"
   [[ -n "${TOOLCHAINS:-}" ]] && inner+=" && export TOOLCHAINS=$(printf '%q' "$TOOLCHAINS")"
+  # Forward MDV_* knobs (MDV_PIXEL_DEBUG_DIR, MDV_RUN_WEBVIEW_TESTS, …) into
+  # the asuser shell — `launchctl asuser` drops the caller's environment, so
+  # without this re-export the pixel suites silently lose their debug/capture
+  # configuration. The sudo secret is deliberately NOT forwarded.
+  local v
+  for v in $(compgen -v | grep '^MDV_' || true); do
+    [[ "$v" == "MDV_VM_SUDO_PASS" || "$v" == "MDV_VM_SUDO_PASSWORD" ]] && continue
+    inner+=" && export $v=$(printf '%q' "${!v}")"
+  done
   inner+=" && exec swift test"
   local a
   for a in "$@"; do inner+=" $(printf '%q' "$a")"; done

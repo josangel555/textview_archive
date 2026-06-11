@@ -42,13 +42,15 @@ final class FileTabStripVisualRegressionTests: PixelTestCase {
     }()
 
     /// TabBar band in WINDOW POINTS, measured from the top of the captured
-    /// window: title bar (~28 pt) + SessionTabBar (46 pt) + divider, then the
-    /// 30-pt TabBar row. The band is deliberately the strip's INNER rows
-    /// (skip 2 pt top/bottom) so the strip's own horizontal bounding
-    /// dividers don't pollute the vertical-column scan.
-    /// Verified against a real VM capture via MDV_PIXEL_DEBUG_DIR.
-    private static let stripTopPt = 77
-    private static let stripBottomPt = 103
+    /// window: title bar (~28 pt) + SessionTabBar (46 pt·zoom) + divider,
+    /// then the 30-pt·zoom TabBar row. [82, 104] sits INSIDE the tab-divider
+    /// span at both 100% and 110% zoom (the VM default is 110%), and skips
+    /// the strip's horizontal bounding dividers so they don't pollute the
+    /// vertical-column scan. Verified against real VM captures via
+    /// MDV_PIXEL_DEBUG_DIR (2026-06-11): 2-tab scene → columns at exactly
+    /// the 2 tab edges; 14-tab scene → exactly 14.
+    private static let stripTopPt = 82
+    private static let stripBottomPt = 104
 
     // MARK: - tests
 
@@ -133,10 +135,19 @@ final class FileTabStripVisualRegressionTests: PixelTestCase {
     // MARK: - pixel eval (pure; headless-tested in FileTabStripPixelEvalTests)
 
     /// X positions (device px) of thin vertical separator lines spanning the
-    /// band: columns whose luminance is darker than BOTH horizontal
-    /// neighbours (±3 px) by ≥8/255 for ≥60% of the band rows. Adjacent
-    /// qualifying columns (a 1-pt line is `scale` px wide) are clustered to
-    /// their first column. Pure structure — no absolute color pinned.
+    /// band: columns no brighter than EITHER horizontal neighbour (±3 px)
+    /// AND ≥8/255 darker than the BRIGHTER one, for ≥85% of the band rows.
+    /// 85% (not 60%) is load-bearing too: a tab's file-icon chip is ~15 pt
+    /// tall — ~70% of the 22-pt band — so its vertical edges qualify at 60%
+    /// and over-count (observed live: 6 columns for 2 tabs). A separator
+    /// spans the full band; nothing else in the strip does.
+    /// The asymmetric rule is load-bearing: the SELECTED tab's accent tint
+    /// (~0.18 alpha) sits within ~7/255 of the separator grey, so a
+    /// darker-than-BOTH-by-8 rule goes blind to the separators flanking the
+    /// selected tab (found 12/14 and 0/2 on real VM captures; this rule
+    /// finds exactly 14/14 and 2/2). Adjacent qualifying columns (a 1-pt
+    /// line is `scale` px wide) cluster to their first column. Pure
+    /// structure — no absolute color pinned.
     static func separatorColumns(
         in cg: CGImage, xRange: Range<Int>, yRange: Range<Int>, scale: Int
     ) -> [Int] {
@@ -155,9 +166,9 @@ final class FileTabStripVisualRegressionTests: PixelTestCase {
                 let c = lum[y * w + x]
                 let l = lum[y * w + (x - off)]
                 let r = lum[y * w + (x + off)]
-                if c + 8 <= l && c + 8 <= r { dark += 1 }
+                if c <= min(l, r) && c + 8 <= max(l, r) { dark += 1 }
             }
-            if Double(dark) >= 0.6 * Double(yHi - yLo) { hits.append(x) }
+            if Double(dark) >= 0.85 * Double(yHi - yLo) { hits.append(x) }
         }
         // Cluster adjacent columns (a 1-pt line is `scale` px wide, AA can
         // double it) into one detected line, keyed by the cluster's first x.

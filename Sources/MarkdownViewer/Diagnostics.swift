@@ -233,6 +233,12 @@ extension AppDelegate {
                     try? "# tab \(i)\n".write(to: f, atomically: true, encoding: .utf8)
                     self.model.open(url: f)
                 }
+                // Select the FIRST tab: (1) the strip starts unscrolled (the
+                // last-opened tab being selected scrolls it, clipping tab 1),
+                // and (2) the LAST tab carries no selection tint — its accent
+                // boundary reads as a full-height column to the pixel tests,
+                // which would mask a missing TSK-268 trailing divider.
+                self.model.selectTab(at: 0)
                 FileHandle.standardError.write(Data(
                     "ui-scene: applied '\(scene)' tabs=\(self.model.tabs.tabs.count)\n".utf8))
                 return
