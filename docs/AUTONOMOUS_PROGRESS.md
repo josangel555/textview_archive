@@ -7180,3 +7180,28 @@ bug found+fixed (TSK-489). Remaining CONSISTENT queue: rust singles (542/549/557
 fresh rust gate already covers them, validate next tick), workspace gate 550/553/555/569, web
 hardening 551/556/558, hex clamp 540/578, hunk marks 565/576, build-script 446/448/449/435/436,
 VM-toolchain 401/439/616, 324, 477, 482, 622, 365, 468.
+
+## LOG +208 (2026-06-11 tick — TSK-372 reproduce-first: cannot reproduce, guard landed, owner pinged)
+
+P1 user-facing pivot per TASK_WORKFLOW rank 1 (the mislabel-sweep fallout put TSK-372 back in the
+pool). "Close with 1 tab, reopen see 2":
+
+- **Traced the full restore path** — `bootstrap → core.restore → mount → SessionState.hydrate`
+  is structurally dedup-safe on current main: PERSIST-12 `dedupedRestoreTabs` collapses persisted
+  duplicates and `appendLazyTab` is idempotent by resolved-path dedup key; `flushForTermination`
+  cancels the debounce and writes an authoritative snapshot that supersedes any pending coalesced
+  value (per-URL coalescing in SessionStore).
+- **New guard `TabRestoreAfterQuitTests` (commit `83a6e8c`)** — drives the REAL quit/relaunch
+  machinery (flushForTermination → fresh model+coordinator over the same store dir → bootstrap)
+  across three histories: the literal one-tab quit; a stale 2-tab disk snapshot that must be
+  superseded when one tab is closed before quit (the most plausible original mechanism); a pending
+  unfired autosave at quit. ALL GREEN — the bug does not reproduce at the persistence/model layer.
+  TEETH: muting the quit-time `replaceSnapshot` → 6 assertions red ("stale snapshot resurrected")
+  → restored, green.
+- **Gate:** first run had a single `CrossFileSearchBench` wall-clock flake (382ms vs 349ms cap,
+  documented bench-flake class); clean re-run PASSED with zero non-bench failures.
+- **Board:** TSK-372 → fixed with the evidence; PARKED (review) asking the owner whether the
+  symptom survives on tonight's installed build, and if so whether the duplicate is the same file
+  twice / an older file / the session strip — one observation closes it either way.
+
+Next P1 from the same fallout: TSK-270 (file-open delay) — re-measure post-TSK-108/611.
