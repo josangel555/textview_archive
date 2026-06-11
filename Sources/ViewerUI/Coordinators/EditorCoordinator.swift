@@ -382,6 +382,14 @@ public final class EditorCoordinator: ObservableObject {
     /// a TabCoordinator strong reference (we already hold a weak one).
     public var activeTabIDSnapshot: (() -> UUID?)?
 
+    /// Fired on the save SUCCESS path with the saved URL + text.
+    /// DocumentModel wires this to `LSPPool.didSave` (TSK-464) so
+    /// language servers see `textDocument/didSave` and can run their
+    /// on-save behaviours (format/lint/index). The pool no-ops for
+    /// files without a live LSP session, so this is safe for every
+    /// file type.
+    public var onDidSaveToDisk: ((URL, String) -> Void)?
+
     /// Save a specific tab's buffer. Used by `saveActiveEditor` and by
     /// the close-confirm path that targets a non-active tab.
     @discardableResult
@@ -468,6 +476,7 @@ public final class EditorCoordinator: ObservableObject {
                     onReplaceTab?(idx, t)
                 }
             }
+            onDidSaveToDisk?(savedURL, buf.text)
             return true
         } catch {
             // Surface failure to the user. Stay dirty so the next ⌘S

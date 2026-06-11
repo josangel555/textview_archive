@@ -384,6 +384,13 @@ public final class DocumentModel: ObservableObject {
         editor.onReloadFromDisk = { [weakSelfBox2] url, index in
             weakSelfBox2.value?.reload(url: url, at: index)
         }
+        editor.onDidSaveToDisk = { [weakSelfBox2] url, text in
+            // textDocument/didSave (TSK-464): a notification, not a request —
+            // fire-and-forget is the correct shape. The pool no-ops unless the
+            // file has a live LSP session, so this never spawns a server.
+            guard let pool = weakSelfBox2.value?.lspPool else { return }
+            Task { try? await pool.didSave(fileURL: url, text: text) }
+        }
         // Seed sidebar visibility from prefs. We DON'T force visible if
         // no folder is open — sidebar without a root is empty by design.
         self.sidebar.isVisible = preferences.sidebarVisible
@@ -2383,6 +2390,11 @@ public final class DocumentModel: ObservableObject {
         if let url = tabs.tabs.first(where: { $0.id == id })?.url {
             repoFocus.refreshRepo(enclosing: url)
         }
+        // textDocument/didSave (TSK-464): no text payload for a binary
+        // write; the pool no-ops unless this file has a live LSP session
+        // (i.e. a source file the user hex-patched while it was open).
+        let pool = lspPool
+        Task { try? await pool.didSave(fileURL: url, text: nil) }
         return true
     }
 
