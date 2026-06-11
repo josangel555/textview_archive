@@ -276,20 +276,47 @@ fn handle_lifecycle_many_open_free_no_leak_smoke() {
 }
 
 #[test]
-fn single_writer_busy_under_contention() {
-    // Hold the lock from outside, then call an FFI fn on the same handle from
-    // another "logical" path → it must return Busy, not block or corrupt.
+fn single_writer_busy_is_deterministic_under_held_lock() {
+    // TSK-582: the old version of this test was a confirmed test-lie — it only
+    // sanity-checked the happy path and could never fail on a Busy regression.
+    // This one is DETERMINISTIC: a holder thread takes the lock and parks
+    // inside `with()` (rendezvous via channels), so the main thread's FFI call
+    // is GUARANTEED to hit a held lock → must be Busy, not block, not Ok.
+    use std::sync::mpsc;
+    use std::thread;
+
     let h = open(CSV);
-    // Borrow the handle and take the lock manually.
-    let handle = unsafe { SessionHandle::as_ref(h) }.unwrap();
-    let held = handle.with(|_session| {
-        // While we hold this (via try_lock inside `with`), the closure runs.
-        // To actually test contention we need a concurrently-held guard, so we
-        // grab the raw mutex below instead. This branch just sanity-checks the
-        // happy path.
-        MdvStatus::Ok
+    let ptr = h as usize; // move a usize across the boundary (Send-safe)
+    let (locked_tx, locked_rx) = mpsc::channel::<()>();
+    let (release_tx, release_rx) = mpsc::channel::<()>();
+
+    let holder = thread::spawn(move || {
+        let h = ptr as *mut SessionHandle;
+        let handle = unsafe { SessionHandle::as_ref(h) }.unwrap();
+        let held = handle.with(|_session| {
+            locked_tx.send(()).unwrap(); // signal: lock is held
+            release_rx.recv().unwrap(); // park until the Busy assert ran
+            MdvStatus::Ok
+        });
+        assert_eq!(held, Ok(MdvStatus::Ok));
     });
-    assert_eq!(held, Ok(MdvStatus::Ok));
+
+    locked_rx.recv().unwrap(); // the holder definitely owns the lock now
+    let needle = b"par";
+    assert_eq!(
+        unsafe { mdvcore_session_set_filter(h, needle.as_ptr(), needle.len(), -1) },
+        MdvStatus::Busy,
+        "a concurrently-held single-writer lock must report Busy deterministically"
+    );
+
+    release_tx.send(()).unwrap();
+    holder.join().unwrap();
+
+    // Lock released: the identical call now succeeds (Busy was transient).
+    assert_eq!(
+        unsafe { mdvcore_session_set_filter(h, needle.as_ptr(), needle.len(), -1) },
+        MdvStatus::Ok
+    );
     unsafe { mdvcore_session_free(h) };
 }
 
@@ -400,4 +427,202 @@ fn snapshot_is_level_triggered_full_state() {
     assert_eq!(snap.rows.len(), 1);
     assert_eq!(snap.rows[0][1], "Berlin");
     unsafe { mdvcore_session_free(h) };
+}
+
+// ---------------------------------------------------------------------------
+// TSK-582 misuse matrix: every stateless export gets direct null-arg /
+// zero-len / hostile-input coverage. Each error path must (a) return the
+// documented status, (b) leave out_buf safe to free, (c) never crash.
+// ---------------------------------------------------------------------------
+
+/// A hostile "frame": the u32 LE length prefix declares ~2 GiB but only two
+/// body bytes follow. The unframe step must reject it as a wire error, not
+/// trust the declared length.
+const HOSTILE_FRAME: &[u8] = &[0xFF, 0xFF, 0xFF, 0x7F, 0x01, 0x02];
+
+#[test]
+fn cm_apply_misuse_matrix() {
+    // null out_buf → NullArg
+    assert_eq!(
+        unsafe { mdvcore_cm_apply(core::ptr::null(), 0, core::ptr::null_mut()) },
+        MdvStatus::NullArg
+    );
+    // null req with nonzero len → NullArg (never dereferenced)
+    let mut buf = MdvBuf::empty();
+    assert_eq!(
+        unsafe { mdvcore_cm_apply(core::ptr::null(), 4, &mut buf) },
+        MdvStatus::NullArg
+    );
+    // empty input is not a valid frame → WireError, out_buf still freeable
+    assert_eq!(
+        unsafe { mdvcore_cm_apply(core::ptr::null(), 0, &mut buf) },
+        MdvStatus::WireError
+    );
+    unsafe { mdvcore_buf_free(&mut buf) };
+    // hostile prefix (declared len >> body) → WireError, not an OOB read
+    let mut buf2 = MdvBuf::empty();
+    assert_eq!(
+        unsafe { mdvcore_cm_apply(HOSTILE_FRAME.as_ptr(), HOSTILE_FRAME.len(), &mut buf2) },
+        MdvStatus::WireError
+    );
+    unsafe { mdvcore_buf_free(&mut buf2) };
+}
+
+#[test]
+fn diff_parse_misuse_matrix() {
+    assert_eq!(
+        unsafe { mdvcore_diff_parse(core::ptr::null(), 0, core::ptr::null_mut()) },
+        MdvStatus::NullArg
+    );
+    let mut buf = MdvBuf::empty();
+    assert_eq!(
+        unsafe { mdvcore_diff_parse(core::ptr::null(), 4, &mut buf) },
+        MdvStatus::NullArg
+    );
+    assert_eq!(
+        unsafe { mdvcore_diff_parse(core::ptr::null(), 0, &mut buf) },
+        MdvStatus::WireError
+    );
+    unsafe { mdvcore_buf_free(&mut buf) };
+    let mut buf2 = MdvBuf::empty();
+    assert_eq!(
+        unsafe { mdvcore_diff_parse(HOSTILE_FRAME.as_ptr(), HOSTILE_FRAME.len(), &mut buf2) },
+        MdvStatus::WireError
+    );
+    unsafe { mdvcore_buf_free(&mut buf2) };
+}
+
+#[test]
+fn diff_hunk_marks_misuse_matrix() {
+    assert_eq!(
+        unsafe { mdvcore_diff_hunk_marks(core::ptr::null(), 0, core::ptr::null_mut()) },
+        MdvStatus::NullArg
+    );
+    let mut buf = MdvBuf::empty();
+    assert_eq!(
+        unsafe { mdvcore_diff_hunk_marks(core::ptr::null(), 4, &mut buf) },
+        MdvStatus::NullArg
+    );
+    assert_eq!(
+        unsafe { mdvcore_diff_hunk_marks(core::ptr::null(), 0, &mut buf) },
+        MdvStatus::WireError
+    );
+    unsafe { mdvcore_buf_free(&mut buf) };
+    let mut buf2 = MdvBuf::empty();
+    assert_eq!(
+        unsafe {
+            mdvcore_diff_hunk_marks(HOSTILE_FRAME.as_ptr(), HOSTILE_FRAME.len(), &mut buf2)
+        },
+        MdvStatus::WireError
+    );
+    unsafe { mdvcore_buf_free(&mut buf2) };
+}
+
+#[test]
+fn hex_render_misuse_matrix() {
+    // null out_buf → NullArg
+    assert_eq!(
+        unsafe { mdvcore_hex_render(core::ptr::null(), 0, 16, 0, false, core::ptr::null_mut()) },
+        MdvStatus::NullArg
+    );
+    // null bytes with nonzero len → NullArg
+    let mut buf = MdvBuf::empty();
+    assert_eq!(
+        unsafe { mdvcore_hex_render(core::ptr::null(), 8, 16, 8, false, &mut buf) },
+        MdvStatus::NullArg
+    );
+    // empty input is a valid (empty) dump → Ok
+    assert_eq!(
+        unsafe { mdvcore_hex_render(core::ptr::null(), 0, 16, 0, false, &mut buf) },
+        MdvStatus::Ok
+    );
+    unsafe { mdvcore_buf_free(&mut buf) };
+}
+
+#[test]
+fn hex_search_misuse_matrix() {
+    let data = b"deadbeef";
+    let q = b"ad";
+    // null out_buf → NullArg
+    assert_eq!(
+        unsafe {
+            mdvcore_hex_search(data.as_ptr(), data.len(), q.as_ptr(), q.len(), 1,
+                               core::ptr::null_mut())
+        },
+        MdvStatus::NullArg
+    );
+    // null data with nonzero len → NullArg
+    let mut buf = MdvBuf::empty();
+    assert_eq!(
+        unsafe { mdvcore_hex_search(core::ptr::null(), 8, q.as_ptr(), q.len(), 1, &mut buf) },
+        MdvStatus::NullArg
+    );
+    // null query with nonzero len → NullArg
+    assert_eq!(
+        unsafe {
+            mdvcore_hex_search(data.as_ptr(), data.len(), core::ptr::null(), 2, 1, &mut buf)
+        },
+        MdvStatus::NullArg
+    );
+    // non-UTF-8 query → BadUtf8 (documented), not a panic in str::from_utf8
+    let bad = [0xFFu8, 0xFE];
+    assert_eq!(
+        unsafe {
+            mdvcore_hex_search(data.as_ptr(), data.len(), bad.as_ptr(), bad.len(), 1, &mut buf)
+        },
+        MdvStatus::BadUtf8
+    );
+    // empty query → Ok with an (empty) offsets frame, per the docs
+    assert_eq!(
+        unsafe {
+            mdvcore_hex_search(data.as_ptr(), data.len(), core::ptr::null(), 0, 0, &mut buf)
+        },
+        MdvStatus::Ok
+    );
+    unsafe { mdvcore_buf_free(&mut buf) };
+    // hostile mode value (neither 0 nor 1) falls back to hex parsing → total
+    let mut buf2 = MdvBuf::empty();
+    assert_eq!(
+        unsafe {
+            mdvcore_hex_search(data.as_ptr(), data.len(), q.as_ptr(), q.len(), u32::MAX,
+                               &mut buf2)
+        },
+        MdvStatus::Ok
+    );
+    unsafe { mdvcore_buf_free(&mut buf2) };
+}
+
+#[test]
+fn indent_detect_misuse_matrix() {
+    let text = b"\tfoo\n\tbar\n";
+    // null out_buf → NullArg
+    assert_eq!(
+        unsafe { mdvcore_indent_detect(text.as_ptr(), text.len(), 100, core::ptr::null_mut()) },
+        MdvStatus::NullArg
+    );
+    // null text with nonzero len → NullArg
+    let mut buf = MdvBuf::empty();
+    assert_eq!(
+        unsafe { mdvcore_indent_detect(core::ptr::null(), 4, 100, &mut buf) },
+        MdvStatus::NullArg
+    );
+    // non-UTF-8 text → BadUtf8
+    let bad = [0xFFu8, 0xFE, 0x00];
+    assert_eq!(
+        unsafe { mdvcore_indent_detect(bad.as_ptr(), bad.len(), 100, &mut buf) },
+        MdvStatus::BadUtf8
+    );
+    // empty text → Ok (a real "no indentation" answer, not an error)
+    assert_eq!(
+        unsafe { mdvcore_indent_detect(core::ptr::null(), 0, 100, &mut buf) },
+        MdvStatus::Ok
+    );
+    unsafe { mdvcore_buf_free(&mut buf) };
+    // sample_lines == 0 must be total (no division/indexing surprises)
+    let mut buf2 = MdvBuf::empty();
+    assert_eq!(
+        unsafe { mdvcore_indent_detect(text.as_ptr(), text.len(), 0, &mut buf2) },
+        MdvStatus::Ok
+    );
+    unsafe { mdvcore_buf_free(&mut buf2) };
 }
