@@ -7494,3 +7494,17 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   headless gate green on 4168d9a.
 - TSK-464 remaining: slice 2 editor.format (the substantive piece) + slice 4 menu rows (polish —
   palette invokability already shipped).
+
+## LOG +225 (2026-06-11 tick — TSK-464 closed on realized scope; stale audit evidence corrected)
+
+- **TSK-464 → validated** (commits 93748cf + 4168d9a) — closed on the REALIZED scope with the
+  audit's evidence corrected on the record. Verified against current code: declaration /
+  typeDefinition / implementation + didSave existed on the client/pool and were unsurfaced
+  (both slices landed and validated, 7 tests + 2 teeth demos across them); but
+  formatting/rangeFormatting — which the audit claimed existed — were NEVER implemented
+  (LSPClient.swift:540 lists them in the not-implemented capability comment; no method, no
+  TextEdit type, no applier anywhere). "Surface it" is actually "build it".
+- **TSK-627 filed** — implement textDocument/formatting + rangeFormatting end-to-end (client
+  request, TextEdit decode with reverse-order application, buffer application + live-editor
+  push, editor-format command); host-testable on the fake-server harness. Nothing silently
+  dropped from 464's original five-verb list.
