@@ -7205,3 +7205,27 @@ pool). "Close with 1 tab, reopen see 2":
   twice / an older file / the session strip — one observation closes it either way.
 
 Next P1 from the same fallout: TSK-270 (file-open delay) — re-measure post-TSK-108/611.
+
+## LOG +209 (2026-06-11 tick — TSK-270 re-measured: native open path is fast; WKWebView load is the residual suspect)
+
+MEASURED per the bounce note (vm-profile.sh open-mode, release bundle, VM GUI session, xctrace
+os_signpost, LESSONS.md, 20s window; trace pulled to host $TMPDIR/mdv-vm-profile.trace):
+
+| interval | duration | note |
+|---|---|---|
+| DocumentModel.openResolved | **7.0 ms** | the headline open interval — was the 927ms-hang class |
+| DocumentController.open | 2.8 ms | |
+| HTMLRenderer.render | 36.9 ms | off-main (TSK-611) |
+| TreeSitterEngine.tokenize | ≤1.4 ms ×15 | |
+| ts.query-compile | max 115.9 ms ×15 | off the open path (TSK-619 warmup) |
+| **WKWebView.loadToFinish** | **17,074 ms = TRUNCATED at recording stop** | began t=3.07s, still open at t=20s |
+
+Verdict: the TSK-611/619/108 fixes hold in a release build — the model/native open path is
+single-digit milliseconds. The residual suspect for the owner-felt "delay in opening files" (on
+.md at least) is the rendered-markdown WKWebView load, which did NOT reach didFinish within ~17s
+on the VM. Caveats recorded: VM software rendering inflates WebKit numbers; a didFinish-never-
+fires instrumentation/navigation defect is also possible (which would mean spinner-forever UX).
+
+Board: TSK-270 recorded (stays progress); **TSK-624 filed** as its child — discriminate the three
+hypotheses (real load slowness / VM artifact / didFinish never fires) via a 60s trace + paired
+screencapture + a look at the loadToFinish end-site, plus the owner one-look on the host.
