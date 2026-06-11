@@ -178,6 +178,11 @@ extension AppDelegate {
     ///   terminal[-left|-top|-right][-<N>]
     ///       Open the bottom terminal, place the tab strip (default left),
     ///       seed N tabs (default 2), tall enough that the rail is visible.
+    ///   tabs-<N>
+    ///       Open N throwaway files as permanent FILE tabs so the top TabBar
+    ///       holds exactly N tabs (TSK-261/268/331 pixel tests).
+    ///   preview[-promoted]  (needs MDV_PREVIEW_FILE)
+    ///       Drive the ephemeral preview-tab slot (TSK-306/272).
     func applyUISceneIfRequested() {
         let env = ProcessInfo.processInfo.environment
         guard let scene = env["MDV_UI_SCENE"]?.lowercased(), !scene.isEmpty else { return }
@@ -205,6 +210,31 @@ extension AppDelegate {
                 }
                 FileHandle.standardError.write(Data(
                     "ui-scene: applied '\(scene)' tabs=\(self.model.tabs.tabs.count) preview=\(self.model.tabs.previewTabID != nil)\n".utf8))
+                return
+            }
+            // FILE tab-strip scenes (TSK-261/268/331): `tabs-<N>` opens N
+            // throwaway markdown files as PERMANENT tabs so the TOP TabBar is
+            // on screen with a deterministic population — the state the
+            // tab-strip pixel tests (`FileTabStripVisualRegressionTests`)
+            // assert against. Launch the app with NO positional file: the
+            // first `open` reuses the blank launch tab, so the strip holds
+            // EXACTLY N tabs. Files live under the per-user tmpdir (never
+            // ~/Documents — see CLAUDE.md), one dir per pid so parallel
+            // instances can't collide.
+            if parts.first == "tabs" {
+                let count = max(1, parts.compactMap { Int($0) }.first ?? 3)
+                let dir = FileManager.default.temporaryDirectory
+                    .appendingPathComponent(
+                        "mdv-scene-tabs-\(ProcessInfo.processInfo.processIdentifier)")
+                try? FileManager.default.createDirectory(
+                    at: dir, withIntermediateDirectories: true)
+                for i in 1...count {
+                    let f = dir.appendingPathComponent(String(format: "tab-%02d.md", i))
+                    try? "# tab \(i)\n".write(to: f, atomically: true, encoding: .utf8)
+                    self.model.open(url: f)
+                }
+                FileHandle.standardError.write(Data(
+                    "ui-scene: applied '\(scene)' tabs=\(self.model.tabs.tabs.count)\n".utf8))
                 return
             }
             guard parts.first == "terminal" else {
