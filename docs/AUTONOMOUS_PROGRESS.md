@@ -7229,3 +7229,24 @@ fires instrumentation/navigation defect is also possible (which would mean spinn
 Board: TSK-270 recorded (stays progress); **TSK-624 filed** as its child — discriminate the three
 hypotheses (real load slowness / VM artifact / didFinish never fires) via a 60s trace + paired
 screencapture + a look at the loadToFinish end-site, plus the owner one-look on the host.
+
+## LOG +210 (2026-06-11 tick — TSK-624: WKWebView failure paths were UNIMPLEMENTED; fixed)
+
+The cheap discriminator (inspect the loadToFinish end-sites) found a real defect behind the
+truncated 17s interval: MarkdownRenderedView's Coordinator implemented ONLY didFinish — no
+didFail, no didFailProvisionalNavigation, no webViewWebContentProcessDidTerminate. Consequences:
+a failed load or WebContent renderer death (jetsam is routine under memory pressure) leaked the
+signpost token AND left `lastHTML` claiming the page was current, so updateNSView never re-issued
+the load — blank/spinner forever with no recovery (the classic WKWebView white-screen footgun;
+matches the historical "endless spinner, retry loads fast" class and is a credible mechanism for
+the owner-felt "delay in opening files").
+
+Fix `96354f3`: every navigation outcome routes through an idempotent endLoadToFinish(); the two
+didFail paths drop the dedup baseline (next update re-issues the load); process-termination
+additionally resets documentReady and nudges webView.reload(). RenderedLoadFailureRecoveryTests
+(3) drive the exact delegate methods against a windowless WKWebView — teeth: muting the
+baseline-clear → 3 red → restored green. Headless gate PASSED on the committed commit.
+
+Board: TSK-624 → fixed (advance walk). Remaining in its scope: the 60s VM trace + paired
+screencapture to discriminate real-load-slowness vs VM-software-rendering for the 17s magnitude.
+Fresh bundle building + installing to /Applications.
