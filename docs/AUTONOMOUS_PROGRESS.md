@@ -7393,3 +7393,18 @@ P1 children, and the owner queue.
   touches importers when the staged header content changes.
 
 Next: TSK-538 P1 siblings TSK-581/582.
+
+## LOG +219 (2026-06-11 tick — TSK-581 landed: poisoned-lock tri-state, no more post-panic state service)
+
+- **TSK-581 → validated** (commit 562a56f) — `handle.with()` is tri-state `Result<R, MdvStatus>`:
+  Ok / Err(Busy) / Err(HandleDead). The `into_inner()` poison recovery — which served possibly
+  half-mutated post-panic session state and left the drop-&-recreate contract enforced only by
+  the Swift wrapper — is gone; a poisoned lock now returns the new `MdvStatus::HandleDead = 6`
+  (additive, no renumbering) from every session call. Swift maps it to `.handleDead` AND latches
+  the wrapper dead-flag (core poison is permanent). Tests: rust
+  `poisoned_handle_returns_handle_dead_not_recovered_state` (real panic under the real lock →
+  all three session entry points HandleDead, free still safe) + Swift mapping/latch pins.
+  TEETH on both sides (recovery re-introduced → rust red; latch muted → Swift red). Both gates
+  green on 562a56f.
+
+Next: TSK-582 (last of the groomed TSK-538 P1 trio).
