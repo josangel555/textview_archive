@@ -6927,3 +6927,25 @@ Gate: `==> headless gate PASSED` on committed HEAD 1428c49. Board: 4× validated
 
 Gate: `==> headless gate PASSED` on HEAD 75f2829. Board: 4× validated this wave
 (161/162/163/623). Remaining fixed lane: ~50.
+
+## LOG +198 (2026-06-10, drain wave 7 — S3 perf reconciliations)
+
+TSK-170/171/172/173 re-verified fresh on main, pinned, validated:
+
+- **TSK-172** — `string_length` is the O(1) NSString UTF-16 length + 120-char
+  bounded head. Behavioral pin `DiagnosticDumpTextViewMetricsTests` exploits
+  UTF-16-vs-grapheme semantics (emoji fixture: 150 units ≠ 100 graphemes), so a
+  revert to `tv.string.count` flips the number → red. Host-safe (pure NSTextView,
+  ungated — runs in the merge gate). Teeth demonstrated. Commit 0225e2e.
+- **TSK-170/171** — CI build caches (3× actions/cache keyed on
+  Package.resolved/Cargo.lock + workspace-pinned CARGO_TARGET_DIR) and the all-lane
+  smoke-gate skip (two independent layers) verified fresh; pinned with
+  `InfraInvariantTests` (textual config invariants — the cheapest guard that still
+  bites; both mutations demonstrated red). Commit 70da109.
+- **TSK-173** — `str()` decodes the byte slice in place (zero per-token `[UInt8]`),
+  rationale documented at the site; correctness re-proven fresh
+  (MessagePackEncoderTests 10/10, MsgPackDecoderNegativeAuditTests 23/23). No alloc-
+  counting pseudo-test manufactured — honest skip noted on the ticket.
+
+Gate: `==> headless gate PASSED` on HEAD 70da109. Board: 4× validated.
+Remaining fixed lane: ~46 (next: TSK-183/185/187 S4 series).
