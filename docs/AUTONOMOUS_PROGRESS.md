@@ -7319,3 +7319,21 @@ Drain tally this session: 35 tickets validated. Remaining CONSISTENT queue: buil
 
 Session drain tally: 39 validated. Remaining: VM-toolchain 401/439/616, singles 324/477/482/622/
 365/468, TSK-448 guard, TSK-625; visual-holds 261/268/331 (next VM GUI batch).
+
+## LOG +215 (2026-06-11 tick — TSK-448 guard built + validated; TSK-625 footgun fixed + validated)
+
+- **TSK-448 → validated** (commit `059b1d6`) — built the missing routing guard:
+  TerminalReturnKeyRoutingTests (4) drives the exact performKeyEquivalent override (focused view
+  in a never-ordered borderless window — no on-screen UI): Return claimed + CR reaches the PTY;
+  keypad Enter; ⌘-chords fall through; unfocused view doesn't steal Return. Teeth: claim muted →
+  4 red → restored.
+- **TSK-625 → validated** (commit `0358b33`) — visual-smoke.sh now reaps by the MDV_TEST_INSTANCE
+  tag (pgrep + ps -E) and tags its own spawn; new gate-enforced pin
+  `test_automatedScripts_neverBareKillallByExecName` bans bare `killall MarkdownViewer` across
+  scripts/ (owner reset utilities exempt, documented). Teeth: re-added a bare line → red.
+  The kills-the-owner's-app class is now structurally closed: Tests/ clean (TSK-435/436) +
+  scripts/ gate-pinned.
+
+Gates: headless gate PASSED on both commits. Session drain tally: **42 validated**.
+Remaining: VM-toolchain 401/439/616, singles 324/477/482/622/365/468; visual-holds 261/268/331
+(next batched VM GUI run); owner queue unchanged (270/372 parked + decisions).
