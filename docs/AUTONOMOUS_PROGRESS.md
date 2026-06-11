@@ -7463,3 +7463,19 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   red). Plugin suites 23/23; headless gate green on cd7d730. Remaining rank-2 siblings
   TSK-463 (editor completion — CM6/WebView-coupled) and TSK-464 (LSP command surfacing) are
   bigger slices for dedicated ticks.
+
+## LOG +223 (2026-06-11 tick — TSK-464 slice 1: textDocument/didSave finally has a caller)
+
+- **TSK-464 slice 1/4 landed** (commit 93748cf, ticket stays at `progress`) — the LSP
+  client/pool have had `didSave` since the LSP feature shipped, but NOTHING ever called it
+  (LSPPool.didSave's own doc comment said "caller is the editor-save success path" — a caller
+  that didn't exist). Now: `EditorCoordinator.onDidSaveToDisk` fires on the save SUCCESS path
+  with (saved URL, saved text); DocumentModel wires it to `LSPPool.didSave` as a fire-and-forget
+  notification (the correct LSP shape); `saveHexEdits` notifies with `text: nil`. The pool's
+  existing guards make this a no-op for files without a live LSP session — it can never spawn
+  a server. Tests: LSPDidSaveWiringTests (real save path against a temp file → hook fired
+  exactly once with URL+text; no-op save fires nothing; default wiring non-nil pins the
+  DocumentModel side). TEETH (hook call muted → 3 asserts red). Editor-save suites 36/36;
+  headless gate green on 93748cf.
+- Remaining TSK-464 increments, each tick-sized: editor.format (TextEdit[] via the CM edit
+  applier), goto-declaration/typeDefinition/implementation commands, menu/palette wiring.
