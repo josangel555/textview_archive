@@ -542,7 +542,7 @@ pub unsafe extern "C" fn mdvcore_session_table(
                 Err(e) => wire_status(&e),
             }
         })
-        .unwrap_or(MdvStatus::Busy)
+        .unwrap_or_else(|contended_or_dead| contended_or_dead)
     })
 }
 
@@ -593,7 +593,7 @@ pub unsafe extern "C" fn mdvcore_session_set_filter(
             session.set_filter(q);
             MdvStatus::Ok
         })
-        .unwrap_or(MdvStatus::Busy)
+        .unwrap_or_else(|contended_or_dead| contended_or_dead)
     })
 }
 
@@ -634,7 +634,7 @@ pub unsafe extern "C" fn mdvcore_session_snapshot(
                 Err(e) => wire_status(&e),
             }
         })
-        .unwrap_or(MdvStatus::Busy)
+        .unwrap_or_else(|contended_or_dead| contended_or_dead)
     })
 }
 

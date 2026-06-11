@@ -59,6 +59,13 @@ final class BridgeTests: XCTestCase {
         XCTAssertEqual(CoreError(status: MDV_STATUS_WIRE_ERROR), .wireError)
     }
 
+    func testHandleDeadStatusMapsToDistinctError() {
+        // TSK-581: the core's poisoned-lock tri-state must surface as
+        // .handleDead (permanent, drop & recreate) — NOT .busy (retryable).
+        XCTAssertEqual(CoreError(status: MDV_STATUS_HANDLE_DEAD), .handleDead)
+        XCTAssertNotEqual(CoreError(status: MDV_STATUS_HANDLE_DEAD), .busy)
+    }
+
     func testOpenAndTableRoundTrip() throws {
         let session = try CsvSession(csv: csv)
         let table = try session.table()

@@ -38,8 +38,11 @@ public enum CoreError: Error, Equatable {
     case unknown(UInt32)
     /// The MessagePack frame returned by the core failed to decode.
     case decode(String)
-    /// The session handle was invalidated by a prior caught panic; the caller
-    /// must drop and recreate the session rather than reuse suspect state.
+    /// The session handle is invalid: either this wrapper dead-flagged it after
+    /// a caught panic, or the CORE reports its lock poisoned
+    /// (`MDV_STATUS_HANDLE_DEAD`, TSK-581 — a previous call panicked while
+    /// holding it). Both mean the same thing: drop and recreate the session
+    /// rather than reuse suspect state.
     case handleDead
 
     init(status: MdvStatus) {
@@ -49,6 +52,7 @@ public enum CoreError: Error, Equatable {
         case MDV_STATUS_BUSY: self = .busy
         case MDV_STATUS_WIRE_ERROR: self = .wireError
         case MDV_STATUS_TOO_LARGE: self = .tooLarge
+        case MDV_STATUS_HANDLE_DEAD: self = .handleDead
         case MDV_STATUS_PANIC: self = .panic
         case MDV_STATUS_INTERNAL: self = .internalError
         default: self = .unknown(status.rawValue)
@@ -196,9 +200,11 @@ public final class CsvSession {
 
     private func check(_ status: MdvStatus) throws {
         if status == MDV_STATUS_OK { return }
-        if status == MDV_STATUS_PANIC {
-            // The core's state may be half-mutated. Dead-flag the handle so no
-            // further call touches suspect state; the free still runs in deinit.
+        if status == MDV_STATUS_PANIC || status == MDV_STATUS_HANDLE_DEAD {
+            // The core's state may be half-mutated (panic mid-call) or its lock
+            // is poisoned (the core's own tri-state, TSK-581). Dead-flag the
+            // handle so no further call touches suspect state; the free still
+            // runs in deinit.
             dead = true
         }
         throw CoreError(status: status)
@@ -215,6 +221,9 @@ public final class CsvSession {
         /// Maps to `MDV_STATUS_BUSY`: the single-writer lock was contended
         /// (retryable — must NOT latch the dead-flag).
         case busy
+        /// Maps to `MDV_STATUS_HANDLE_DEAD`: the core reports its lock
+        /// poisoned (TSK-581 tri-state; fatal — latches the dead-flag).
+        case coreHandleDead
         /// Maps to `MDV_STATUS_OK`: a clean call (used to probe a dead handle).
         case ok
 
@@ -222,6 +231,7 @@ public final class CsvSession {
             switch self {
             case .panic: return MDV_STATUS_PANIC
             case .busy: return MDV_STATUS_BUSY
+            case .coreHandleDead: return MDV_STATUS_HANDLE_DEAD
             case .ok: return MDV_STATUS_OK
             }
         }

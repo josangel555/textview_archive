@@ -73,6 +73,27 @@ final class SessionPanicDeadFlagAuditTests: XCTestCase {
         XCTAssertEqual(snap.totalRows, 3)
     }
 
+    /// TSK-581 core tri-state: the CORE now reports a poisoned session lock as
+    /// `MDV_STATUS_HANDLE_DEAD` (a previous call panicked while holding it).
+    /// The wrapper must map it to `.handleDead` AND latch the dead-flag — the
+    /// poison is permanent on the Rust side, so retrying through a live-looking
+    /// Swift wrapper would just bounce off the core forever.
+    func testCoreHandleDeadStatusMapsAndLatches() throws {
+        let session = try CsvSession(csv: csv)
+
+        XCTAssertThrowsError(try session._simulateSessionCall(.coreHandleDead)) { error in
+            XCTAssertEqual(error as? CoreError, .handleDead)
+        }
+        XCTAssertTrue(session._isDead,
+                      "a core-reported poisoned lock must latch the dead-flag (TSK-581)")
+
+        // Subsequent real calls short-circuit at liveHandle() without
+        // re-entering the poisoned core state.
+        XCTAssertThrowsError(try session.table()) { error in
+            XCTAssertEqual(error as? CoreError, .handleDead)
+        }
+    }
+
     /// A `.busy` throw before a `.panic` on the same session: the busy must not
     /// pre-poison the handle, and the later panic must still latch correctly —
     /// pins the ordering independence of the two contention/fatal arms.

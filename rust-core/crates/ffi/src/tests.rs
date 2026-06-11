@@ -289,7 +289,46 @@ fn single_writer_busy_under_contention() {
         // happy path.
         MdvStatus::Ok
     });
-    assert_eq!(held, Some(MdvStatus::Ok));
+    assert_eq!(held, Ok(MdvStatus::Ok));
+    unsafe { mdvcore_session_free(h) };
+}
+
+#[test]
+fn poisoned_handle_returns_handle_dead_not_recovered_state() {
+    // TSK-581: a panic while holding the session lock poisons it. The old
+    // behavior recovered the guard with `into_inner()` and SERVED the possibly
+    // half-mutated state; the contract says drop-&-recreate. Pin the tri-state:
+    // every subsequent call on the poisoned handle is HandleDead — not Ok with
+    // suspect data, not Busy.
+    let h = open(CSV);
+    let handle = unsafe { SessionHandle::as_ref(h) }.unwrap();
+    let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = handle.with(|_session| -> MdvStatus { panic!("poison the lock") });
+    }));
+    assert!(unwound.is_err(), "the panic must unwind out of with()");
+
+    let mut buf = MdvBuf::empty();
+    assert_eq!(
+        unsafe { mdvcore_session_table(h, &mut buf) },
+        MdvStatus::HandleDead
+    );
+    unsafe { mdvcore_buf_free(&mut buf) };
+
+    let needle = b"par";
+    assert_eq!(
+        unsafe { mdvcore_session_set_filter(h, needle.as_ptr(), needle.len(), -1) },
+        MdvStatus::HandleDead
+    );
+
+    let mut snap = MdvBuf::empty();
+    assert_eq!(
+        unsafe { mdvcore_session_snapshot(h, &mut snap) },
+        MdvStatus::HandleDead
+    );
+    unsafe { mdvcore_buf_free(&mut snap) };
+
+    // Free still works on a poisoned handle — the drop path must not require
+    // the lock to be healthy.
     unsafe { mdvcore_session_free(h) };
 }
 

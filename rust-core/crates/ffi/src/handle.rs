@@ -23,10 +23,11 @@
 //! The model is **single-writer**: there should be one logical owner per
 //! handle at a time. To make a contract violation LOUD rather than a silent
 //! deadlock/serialization, [`SessionHandle::with`] uses `try_lock` and returns
-//! `None` (→ [`crate::MdvStatus::Busy`]) if another thread holds the lock,
+//! `Err(`[`crate::MdvStatus::Busy`]`)` if another thread holds the lock,
 //! rather than blocking. That turns "two threads raced on one handle" into a
 //! recoverable error the caller sees, which is exactly what we want to surface
-//! in the concurrency test.
+//! in the concurrency test. A POISONED lock (a prior panic under the lock)
+//! returns `Err(`[`crate::MdvStatus::HandleDead`]`)` — see `with` (TSK-581).
 
 use mdvcore_core::session::CsvSession;
 use std::sync::Mutex;
@@ -93,21 +94,26 @@ impl SessionHandle {
     }
 
     /// Run `f` with exclusive access to the inner session, IF the lock is
-    /// immediately available. Returns `None` if another thread currently holds
-    /// the lock (single-writer contract violated) — the caller maps that to
-    /// [`crate::MdvStatus::Busy`]. A poisoned lock (a previous panic while
-    /// holding it) is recovered into-place so one caught panic doesn't wedge
-    /// the handle forever.
-    pub fn with<R>(&self, f: impl FnOnce(&mut CsvSession) -> R) -> Option<R> {
+    /// immediately available. Tri-state (audit TSK-581):
+    ///
+    /// - `Ok(R)` — lock acquired, `f` ran.
+    /// - `Err(Busy)` — another thread holds the lock (single-writer contract
+    ///   violated); retryable.
+    /// - `Err(HandleDead)` — the lock is POISONED: a previous call panicked
+    ///   while holding it, so the session may be half-mutated. Serving that
+    ///   state would contradict the documented drop-&-recreate contract, so
+    ///   the handle is permanently dead. (The earlier `into_inner()` recovery
+    ///   quietly served the suspect state and relied on the Swift wrapper
+    ///   alone to enforce the contract.) Stopgap until the CoreRuntime
+    ///   registry; the caller returns the status verbatim.
+    pub fn with<R>(
+        &self,
+        f: impl FnOnce(&mut CsvSession) -> R,
+    ) -> Result<R, crate::MdvStatus> {
         match self.inner.try_lock() {
-            Ok(mut guard) => Some(f(&mut guard)),
-            Err(std::sync::TryLockError::Poisoned(p)) => {
-                // Recover: the data is still structurally valid CSV state; the
-                // poison only flags that a panic occurred under the lock.
-                let mut guard = p.into_inner();
-                Some(f(&mut guard))
-            }
-            Err(std::sync::TryLockError::WouldBlock) => None,
+            Ok(mut guard) => Ok(f(&mut guard)),
+            Err(std::sync::TryLockError::Poisoned(_)) => Err(crate::MdvStatus::HandleDead),
+            Err(std::sync::TryLockError::WouldBlock) => Err(crate::MdvStatus::Busy),
         }
     }
 }

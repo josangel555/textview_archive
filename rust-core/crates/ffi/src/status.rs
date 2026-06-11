@@ -30,6 +30,14 @@ pub enum MdvStatus {
     /// TSK-548 stopgap) — distinct from [`MdvStatus::WireError`] so the host
     /// can react (window / fall back) instead of diagnosing a codec bug.
     TooLarge = 5,
+    /// The handle's lock is POISONED: a previous call panicked while holding
+    /// it, so the session state may be half-mutated (audit TSK-581). The
+    /// handle is permanently dead — drop it via `mdvcore_session_free` and
+    /// recreate; every further call on it returns this same status. Distinct
+    /// from [`MdvStatus::Busy`] (retryable contention) and from
+    /// [`MdvStatus::Panic`] (the call that panicked reports `Panic`; the NEXT
+    /// caller of the poisoned handle sees `HandleDead`).
+    HandleDead = 6,
     /// A Rust panic was caught at the boundary (recoverable: the process did
     /// NOT crash, but the handle's state may be suspect — drop & recreate it).
     Panic = 98,
