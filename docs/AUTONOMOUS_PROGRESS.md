@@ -6992,3 +6992,26 @@ TSK-189/190/191 re-verified fresh, validated:
 Gates: rust-core green (fresh) + `==> headless gate PASSED` on HEAD a6e91ae.
 Board: 3× validated. Remaining fixed lane: ~40 (next: TSK-192/193/196 —
 TierGateObserver clobber, MCP header scan, Claude index double-redact).
+
+## LOG +201 (2026-06-10, drain wave 10 — S4 tail; TSK-151..196 series COMPLETE)
+
+TSK-192/193/196 re-verified fresh, validated — a docs-only wave (all three had the
+fix + rationale documented at the site and live test coverage):
+
+- **TSK-192** (sentinel clobber race) — single-syscall O_APPEND write with the
+  cross-worker atomicity rationale in place; exercised by EVERY headless gate run
+  (tier enforcement reads the sentinel — green repeatedly today). Honest skip noted:
+  a staged cross-process race test would test the kernel's O_APPEND guarantee, not
+  our code.
+- **TSK-193** (quadratic header scan) — O(1) cursor reader, rejected shape documented;
+  fresh: MCPServerTests 5/5, DataSliceOffsetDefenseTests 7/7, DeadTransport 1/1.
+- **TSK-196** (redact-to-count) — raw-record eventCount(of:) with redaction-safety
+  argument; its DEDICATED audit suite fresh: 5/5.
+
+**Milestone: the TSK-151..196 S3/S4 audit-reconciliation series is fully drained**
+(151/157/159/160/161/162/163/170/171/172/173/183/185/187/189/190/191/192/193/196 —
+20 tickets, every one re-verified fresh, 9 new guards built along the way).
+
+No code changes this wave (no commit beyond this log). Board: 3× validated.
+Remaining fixed lane: ~37 — next series: TSK-261..334 (BACKLOG/PARTIAL items, many
+live-gated → expect more VM lanes + honest holds).
