@@ -7300,3 +7300,22 @@ All four verified by direct inspection + tonight's gate run:
 Drain tally this session: 35 tickets validated. Remaining CONSISTENT queue: build-script
 446/448/449/435/436, VM-toolchain 401/439/616, singles 324/477/482/622/365/468; visual-holds
 261/268/331 (next batched VM GUI run); owner queue unchanged.
+
+## LOG +214 (2026-06-11 tick — build-script cluster: 4 validated, 1 hold, 1 new footgun filed)
+
+- **TSK-435/436 → validated** — fresh grep: Tests/ has ZERO bare `killall MarkdownViewer` (tag
+  reaping via AppLauncher.killTestInstances); LIVE proof: tonight's VM T5 batch ran the migrated
+  suites 6/6 with reap-by-tag teardown in a real GUI session.
+- **TSK-446 → validated** — LIVE proof: dist assembled on the cargo-less VM twice tonight
+  (prebuilt libmdvcore_ffi.a fallback; 'All bundle checks passed'); it unblocked the T5 lane.
+- **TSK-449 → validated** — LIVE proof: build-app.sh ran twice on the HOST (the iCloud-racing
+  environment) with EXIT=0 + bundle checks passed; sign-in-TMPDIR + swap held.
+- **TSK-448 → held** — performKeyEquivalent Return-routing fix present + encoder bytes pinned,
+  but the ROUTING has no automated test; guard is buildable (synthesized Return NSEvent →
+  assert onInput gets \r) — queued.
+- **NEW TSK-625 filed** — drain caught scripts/visual-smoke.sh:51 still carrying a bare
+  `killall MarkdownViewer` (the owner-app-killer footgun, outside 436's test-harness scope);
+  reset-and-launch.sh / reset-tcc.sh are deliberate owner utilities, exempt.
+
+Session drain tally: 39 validated. Remaining: VM-toolchain 401/439/616, singles 324/477/482/622/
+365/468, TSK-448 guard, TSK-625; visual-holds 261/268/331 (next VM GUI batch).
