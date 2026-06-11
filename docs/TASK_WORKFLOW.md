@@ -73,8 +73,21 @@ Rank order each firing:
    epic (TSK-590) reconciled, the groomed default pools are: the `TSK-538` rust-core epic's
    P1 children (579/581/582 — headless, real), then the backend-not-surfaced UI items
    (TSK-463/464/469 — user-visible, mostly built).
+2.5. **MIGRATION POLICY (OWNER DIRECTIVE 2026-06-11): do NOT build/optimize Swift engines
+   that are port targets.** "Tasks that are eventually going to be ported are not worth
+   building in Swift core." Concretely: an engine with an approved Rust port ticket
+   (find — TSK-630, markdown→HTML — TSK-631, transcript/JSONL parsing — TSK-632,
+   fuzzy matching — TSK-633; CSV/diff/hex already ported) takes **user-facing bugfixes
+   only** on the Swift side — no perf work, no internal refactors, no feature additions,
+   no test backfill on the Swift twin. Deep-audit findings against those Swift engines
+   (e.g. the Swift CSVParser O(n²) cell scan, Swift ReDoS wall-clock caps) get re-tagged
+   `port-superseded` and closed against the Rust port instead of fixed twice. The Rust
+   port + the contract work that unblocks it (Phase 1: windowed snapshot, error model v2,
+   envelope; TSK-634 FFI velocity) rank ABOVE Swift-side internal-quality work — this
+   amends rule 3's old "[PORT] last" for the *engine* ports specifically (the TUI/web
+   *front-end feature* `[PORT]` lane stays last-resort).
 3. *(superseded 2026-06-05 ranking, kept for context: SwiftUI app over the Rust `[PORT]` lane —
-   still true as a tiebreak; `[PORT]` remains the last-resort lane.)*
+   still true as a tiebreak for FRONT-END feature ports; engine ports are governed by 2.5.)*
 4. **Headless-actionable now** vs **live-gated**. Decide honestly:
    - *Headless* (land it): pure logic in `ViewerCore`/`ViewerKit`, model layer, parsers, FFI
      decode, security guards, correctness bugs. Validate with `scripts/test-headless-gate.sh`.
