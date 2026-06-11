@@ -8,9 +8,10 @@ import Foundation
 ///     Used for first-party plugins where typed access to host model
 ///     types is wanted (e.g. `RowCounterPlugin`). Third-party authors
 ///     cannot ship bundled-Swift code — design §3.4.
-///   - **Tier A** — JSON-only, host-owned data. The contribution is a
-///     sidebar section whose rows come from a host-supplied source
-///     keyed by plugin id. (Open work: §2.1 "static-bind" expression.)
+///   - **Tier A** — JSON-only static-bind. The contribution is a
+///     sidebar section whose rows are declared verbatim in plugin.json
+///     (`provider.rows`) and extracted at load time — no subprocess
+///     (TSK-469; design §2.1).
 ///   - **Tier B** — `plugin.json` plus an executable. Each row pull
 ///     spawns the plugin's `bin` and pipes a JSON envelope; the
 ///     plugin returns rows on stdout. See `PluginSubprocessHost`.
@@ -272,10 +273,13 @@ public final class PluginRegistry {
         }
 
         switch s.provider {
-        case .a:
-            // Tier A static-bind isn't implemented in v1 (see design
-            // doc §2.1 follow-up). We emit a placeholder row so the
-            // section is visibly registered.
+        case .a(let rows):
+            // Tier A static-bind (TSK-469): the rows are declared verbatim
+            // in plugin.json and extracted at load time — no subprocess,
+            // no placeholder. An empty `rows` is a valid (empty) section.
+            let staticRows = rows.map {
+                SidebarSectionRegistry.Row(id: $0.id, label: $0.label, detail: $0.detail)
+            }
             let entry = SidebarSectionRegistry.Entry(
                 pluginID: manifest.id,
                 sectionID: s.id,
@@ -283,13 +287,7 @@ public final class PluginRegistry {
                 icon: s.icon,
                 order: s.order ?? 100,
                 collapsedByDefault: s.collapsedByDefault ?? false,
-                provider: { _ in
-                    [SidebarSectionRegistry.Row(
-                        id: "\(s.id).placeholder",
-                        label: "(Tier A static-bind not yet implemented)",
-                        detail: nil
-                    )]
-                }
+                provider: { _ in staticRows }
             )
             sidebarSections.register(entry)
             return nil

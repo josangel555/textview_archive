@@ -111,18 +111,34 @@ public struct PluginManifest: Decodable, Sendable, Equatable {
         public let collapsedByDefault: Bool?
         public let provider: Provider
 
-        /// Provider is a tagged union over `tier`. Tier A carries no
-        /// extra fields (host owns the data). Tier B carries the
-        /// path of the binary inside the plugin folder plus optional
-        /// args. Tier C parses-and-rejects with a warning.
+        /// One static row of a Tier A section, declared verbatim in
+        /// plugin.json (`{"id": "...", "label": "...", "detail": "..."}`).
+        public struct StaticRow: Decodable, Sendable, Equatable {
+            public let id: String
+            public let label: String
+            public let detail: String?
+
+            public init(id: String, label: String, detail: String? = nil) {
+                self.id = id
+                self.label = label
+                self.detail = detail
+            }
+        }
+
+        /// Provider is a tagged union over `tier`. Tier A carries its
+        /// rows STATICALLY in the manifest (`rows`, optional — absent
+        /// means an empty section; no subprocess is ever spawned).
+        /// Tier B carries the path of the binary inside the plugin
+        /// folder plus optional args. Tier C parses-and-rejects with
+        /// a warning.
         public enum Provider: Decodable, Sendable, Equatable {
-            case a
+            case a(rows: [StaticRow])
             case b(bin: String, args: [String], timeoutMs: Int?)
             case c
             case unknown(tier: String)
 
             private enum CodingKeys: String, CodingKey {
-                case tier, bin, args, timeoutMs
+                case tier, bin, args, timeoutMs, rows
             }
 
             public init(from decoder: Decoder) throws {
@@ -130,7 +146,11 @@ public struct PluginManifest: Decodable, Sendable, Equatable {
                 let tier = try c.decode(String.self, forKey: .tier)
                 switch tier {
                 case "A":
-                    self = .a
+                    // Static-bind (TSK-469): rows come straight from the
+                    // manifest. Absent `rows` decodes as an empty section —
+                    // the old placeholder row is gone.
+                    let rows = try c.decodeIfPresent([StaticRow].self, forKey: .rows) ?? []
+                    self = .a(rows: rows)
                 case "B":
                     // Tier B *must* declare a `bin`. We surface a
                     // missing `bin` as a decode error rather than

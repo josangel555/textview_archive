@@ -89,6 +89,72 @@ final class PluginRegistryTests: XCTestCase {
         XCTAssertEqual(entries[0].sectionID, "s1")
     }
 
+    /// TSK-469 — Tier A static-bind: rows declared in plugin.json must
+    /// surface VERBATIM from the section provider (no subprocess, no
+    /// "(Tier A static-bind not yet implemented)" placeholder).
+    func test_tier_a_static_rows_surface_from_manifest() throws {
+        let dir = try makePluginsDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        _ = try writePlugin(in: dir, id: "com.test.static", manifestJSON: #"""
+        {
+          "id": "com.test.static", "name": "Static", "version": "1.0.0",
+          "author": { "name": "Test" },
+          "hostVersion": "0", "manifestVersion": 1,
+          "capabilities": ["ui.sidebar"],
+          "contributes": [
+            { "type": "sidebar_section", "id": "links", "title": "Links",
+              "provider": { "tier": "A", "rows": [
+                { "id": "r1", "label": "Docs", "detail": "docs/DESIGN.md" },
+                { "id": "r2", "label": "Backlog" }
+              ] } }
+          ]
+        }
+        """#)
+        grant("com.test.static", ["ui.sidebar"])
+
+        let results = PluginRegistry.shared.loadAll(from: dir)
+        XCTAssertEqual(results.count, 1)
+        if case .loaded = results[0].status {} else {
+            XCTFail("expected .loaded, got \(results[0].status)")
+        }
+        let entries = PluginRegistry.shared.sidebarSections.all
+        XCTAssertEqual(entries.count, 1)
+        let rows = entries[0].provider(.init(openFileContents: [:]))
+        XCTAssertEqual(rows, [
+            SidebarSectionRegistry.Row(id: "r1", label: "Docs", detail: "docs/DESIGN.md"),
+            SidebarSectionRegistry.Row(id: "r2", label: "Backlog", detail: nil),
+        ], "Tier A rows must come verbatim from the manifest (TSK-469)")
+        XCTAssertFalse(rows.contains { $0.label.contains("not yet implemented") },
+                       "the v1 placeholder row must be gone (TSK-469)")
+    }
+
+    /// TSK-469 — a Tier A section with NO `rows` key (the pre-469 manifest
+    /// shape) is a valid EMPTY section, not a placeholder advertisement.
+    func test_tier_a_without_rows_is_empty_not_placeholder() throws {
+        let dir = try makePluginsDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        _ = try writePlugin(in: dir, id: "com.test.norows", manifestJSON: #"""
+        {
+          "id": "com.test.norows", "name": "NoRows", "version": "1.0.0",
+          "author": { "name": "Test" },
+          "hostVersion": "0", "manifestVersion": 1,
+          "capabilities": ["ui.sidebar"],
+          "contributes": [
+            { "type": "sidebar_section", "id": "s1", "title": "S1",
+              "provider": { "tier": "A" } }
+          ]
+        }
+        """#)
+        grant("com.test.norows", ["ui.sidebar"])
+
+        _ = PluginRegistry.shared.loadAll(from: dir)
+        let entries = PluginRegistry.shared.sidebarSections.all
+        XCTAssertEqual(entries.count, 1)
+        let rows = entries[0].provider(.init(openFileContents: [:]))
+        XCTAssertTrue(rows.isEmpty,
+                      "rows-less Tier A must be an empty section, not a placeholder")
+    }
+
     // Fail isolation: a broken plugin must not prevent a good plugin
     // in the same Plugins/ folder from loading.
     func test_malformed_plugin_does_not_block_sibling() throws {

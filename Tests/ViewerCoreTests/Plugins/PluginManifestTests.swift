@@ -40,7 +40,7 @@ final class PluginManifestTests: XCTestCase {
         XCTAssertEqual(s.title, "Notes")
         XCTAssertEqual(s.order, 100)
         XCTAssertEqual(s.collapsedByDefault, true)
-        XCTAssertEqual(s.provider, .a)
+        XCTAssertEqual(s.provider, .a(rows: []))
     }
 
     // Forward-compat: unknown capability strings decode to `.unknown`
