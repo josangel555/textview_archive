@@ -212,6 +212,21 @@ extension CommandRegistry {
             id: "nav.crossSearch", title: "Search Across Files", category: .navigation,
             scriptVerb: "show-cross-search"),
 
+        // MARK: LSP go-to (TSK-464 — deliberate-command form of the
+        // editor's Cmd-click navigation; resolved at the active cursor)
+        CommandDescriptor(
+            id: "lsp.gotoDefinition", title: "Go to Definition", category: .lsp,
+            scriptVerb: "editor-goto-definition"),
+        CommandDescriptor(
+            id: "lsp.gotoDeclaration", title: "Go to Declaration", category: .lsp,
+            scriptVerb: "editor-goto-declaration"),
+        CommandDescriptor(
+            id: "lsp.gotoTypeDefinition", title: "Go to Type Definition", category: .lsp,
+            scriptVerb: "editor-goto-type-definition"),
+        CommandDescriptor(
+            id: "lsp.gotoImplementation", title: "Go to Implementation", category: .lsp,
+            scriptVerb: "editor-goto-implementation"),
+
         // MARK: Git
         CommandDescriptor(
             id: "git.showPanel", title: "Show Git Panel", category: .git,

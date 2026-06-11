@@ -141,6 +141,19 @@ public enum ScriptVerb {
         case "editor-save":
             // ⌘S equivalent: write the active tab's buffer to disk.
             _ = model.saveActiveEditor()
+        // ---- LSP go-to commands (TSK-464) ----
+        // Deliberate-command form of the editor's Cmd-click navigation:
+        // resolve the verb at the ACTIVE editor cursor and jump to the
+        // first result. No-ops (returns quietly) when there's no cursor
+        // or the file's language has no LSP.
+        case "editor-goto-definition":
+            _ = model.navigateViaLSPAtCursor(kind: .definition)
+        case "editor-goto-declaration":
+            _ = model.navigateViaLSPAtCursor(kind: .declaration)
+        case "editor-goto-type-definition":
+            _ = model.navigateViaLSPAtCursor(kind: .typeDefinition)
+        case "editor-goto-implementation":
+            _ = model.navigateViaLSPAtCursor(kind: .implementation)
         case "save-copy":
             // Write a COPY of the active tab's current content to `arg` (an
             // absolute path), leaving the open tab untouched (TSK-300). This

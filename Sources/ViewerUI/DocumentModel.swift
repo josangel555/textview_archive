@@ -1936,6 +1936,24 @@ public final class DocumentModel: ObservableObject {
         }
     }
 
+    /// The four LSP go-to verbs surfaceable as deliberate commands
+    /// (TSK-464 — previously only `definition` was reachable, and only
+    /// via Cmd-click/right-click in the editor).
+    public enum LSPNavigationKind: String, Sendable, CaseIterable {
+        case definition
+        case declaration
+        case typeDefinition
+        case implementation
+    }
+
+    #if DEBUG
+    /// Test-only: the last LSP navigation dispatched (kind + the exact
+    /// 0-based position handed to the pool). Lets headless tests pin the
+    /// kind→verb routing and the 1-based→0-based conversion without a
+    /// live language server.
+    var _lastLSPNavigation: (kind: LSPNavigationKind, url: URL, line: Int, character: Int)?
+    #endif
+
     /// JS posted a Cmd-click. Resolve via LSP `definition`; on a
     /// single result, open the target tab + jump to the line. Multi-
     /// result is single-pick for now (first result) — matches the
@@ -1943,15 +1961,41 @@ public final class DocumentModel: ObservableObject {
     public func handleEditorDefinition(
         tabID: UUID, fileURL: URL, request: CMPositionRequest
     ) {
+        navigateViaLSP(kind: .definition, tabID: tabID, fileURL: fileURL, request: request)
+    }
+
+    /// Generalized LSP go-to: resolve `kind` at the given position and
+    /// jump to the first result. Same single-pick + silent-failure
+    /// contract as `handleEditorDefinition` (which delegates here).
+    public func navigateViaLSP(
+        kind: LSPNavigationKind, tabID: UUID, fileURL: URL, request: CMPositionRequest
+    ) {
         _ = effectiveLanguage(forTabID: tabID, url: fileURL)
         guard LSPLanguageRegistry.default.language(for: fileURL) != nil else { return }
         let lspLine = max(0, request.line - 1)
         let lspChar = max(0, request.character)
+        #if DEBUG
+        _lastLSPNavigation = (kind, fileURL, lspLine, lspChar)
+        #endif
         Task { [weak self] in
             guard let self = self else { return }
             do {
-                let locs = try await self.lspPool.definition(
-                    fileURL: fileURL, line: lspLine, character: lspChar)
+                let pool = self.lspPool
+                let locs: [LSPLocation]
+                switch kind {
+                case .definition:
+                    locs = try await pool.definition(
+                        fileURL: fileURL, line: lspLine, character: lspChar)
+                case .declaration:
+                    locs = try await pool.declaration(
+                        fileURL: fileURL, line: lspLine, character: lspChar)
+                case .typeDefinition:
+                    locs = try await pool.typeDefinition(
+                        fileURL: fileURL, line: lspLine, character: lspChar)
+                case .implementation:
+                    locs = try await pool.implementation(
+                        fileURL: fileURL, line: lspLine, character: lspChar)
+                }
                 guard let first = locs.first else { return }
                 let targetLine = first.range.start.line + 1 // back to 1-based
                 guard let targetURL = URL(string: first.uri) else { return }
@@ -1959,11 +2003,25 @@ public final class DocumentModel: ObservableObject {
                     self.openPath(targetURL, atLine: targetLine)
                 }
             } catch {
-                // Definition lookup failures are silent — there's no
+                // Navigation lookup failures are silent — there's no
                 // UI surface for "LSP returned nothing"; users notice
                 // by absence of navigation. Logged at trace level.
             }
         }
+    }
+
+    /// Command/verb entry: run an LSP go-to at the ACTIVE editor cursor.
+    /// Returns false (and does nothing) when there's no selected tab
+    /// with a URL or no recorded editor cursor — the command is a no-op
+    /// rather than a guess at line 1.
+    @discardableResult
+    public func navigateViaLSPAtCursor(kind: LSPNavigationKind) -> Bool {
+        guard let tab = tabs.selected, let url = tab.url else { return false }
+        guard let cursor = editor.editorCursorByTab[tab.id] else { return false }
+        navigateViaLSP(
+            kind: kind, tabID: tab.id, fileURL: url,
+            request: CMPositionRequest(line: cursor.line, character: cursor.column))
+        return true
     }
 
     /// JS posted a right-click. Build a native NSMenu and pop it at

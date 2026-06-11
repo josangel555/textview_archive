@@ -76,6 +76,9 @@ final class CommandRegistryTests: XCTestCase {
             "tools.fileChecksum",
             "reload", "toggle-split", "swap-split", "move-tab-left", "move-tab-right",
             "show-git-panel", "toggle-line-bookmark", "git-file-history",
+            // LSP go-to commands (TSK-464)
+            "editor-goto-definition", "editor-goto-declaration",
+            "editor-goto-type-definition", "editor-goto-implementation",
         ]
         for cmd in CommandRegistry.builtIn.commands {
             guard let verb = cmd.scriptVerb else { continue }
