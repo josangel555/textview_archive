@@ -73,7 +73,9 @@ if [[ "$FILE_ARG_HOST" == "$ROOT_DIR"* ]]; then
   FILE_ARG_VM="/Users/vm-tester/markdown_viewer/$RELPATH"
 else
   FILE_ARG_VM="/tmp/vm-smoke-input"
-  scp -q "$FILE_ARG_HOST" "macOS15:$FILE_ARG_VM"
+  # MDV_SMOKE_DRY_RUN: path-logic test mode (VMSmokePathGuardTests) — no
+  # remote contact of any kind.
+  [[ -z "${MDV_SMOKE_DRY_RUN:-}" ]] && scp -q "$FILE_ARG_HOST" "macOS15:$FILE_ARG_VM"
 fi
 
 # Defense-in-depth: the VM path is handed to a privileged remote shell
@@ -86,6 +88,13 @@ if [[ ! "$FILE_ARG_VM" =~ ^[A-Za-z0-9._/-]+$ ]]; then
   echo "Error: refusing VM path with unsafe characters: $FILE_ARG_VM" >&2
   echo "       (allowed: A-Z a-z 0-9 . _ / -)" >&2
   exit 1
+fi
+
+# Dry-run exit AFTER the allowlist so tests exercise the real rejection
+# path; everything below this line touches the VM.
+if [[ -n "${MDV_SMOKE_DRY_RUN:-}" ]]; then
+  echo "DRY-RUN VM path: $FILE_ARG_VM"
+  exit 0
 fi
 
 OUT_PNG="${TMPDIR:-/tmp}/vm-smoke.png"
