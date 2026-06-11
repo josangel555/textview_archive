@@ -7036,3 +7036,24 @@ found in the series) into ONE VM GUI-lane pixel run (MDV_VM_GUI_SESSION=1,
 ui-snapshot tab-strip scene) instead of per-ticket runs.
 
 Board: 1× validated, 2× held-with-gap. Remaining fixed lane: ~36.
+
+## LOG +203 (2026-06-10, drain wave 12 — three outcomes, one each)
+
+- **TSK-273 validated** — "switching tabs very slow" is the owner-felt symptom of
+  TSK-108's root (MountedPanesLRU, 39925fd), and its pinning suite ran FRESH on the
+  VM TODAY: PaneRetentionMountProbeTests in the armed lane (A→B→A = 0 remounts,
+  LRU tail eviction) + the TSK-621 mounted-aware-eviction guard. Evidence could not
+  be fresher.
+- **TSK-272 held (shared parked gate)** — arrow-nav preview's model boundary
+  re-verified fresh (DocumentModelPreviewTests 7/7); the key-routing residual
+  explicitly shares TSK-306's PARKED owner decision on the validation bar.
+  Validating now would double-count the shared core and pre-empt the parked
+  decision. Unblocks with TSK-306.
+- **TSK-326 BOUNCED fixed→progress (lane integrity)** — the fixed state was earned
+  by work on a DIFFERENT finding (aspectFit guards; the recurring built-in-#NNN ≠
+  board-TSK-NNN trap, correction already on the ticket). The actual ask (~half the
+  command registry is scriptVerb:nil, not omni-invokable) is genuinely open.
+  Returned to progress as real feature work for a future firing.
+
+Board: 1× validated, 1× held, 1× bounced. Remaining fixed lane: ~33.
+Visual-hold cluster for the batched VM pixel run so far: TSK-261, TSK-268.
