@@ -7541,3 +7541,31 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   "user typed this"). Plus a pool-level round-trip test pinning request encode + decode + route.
   Full TSK-627 chain: 19 tests across applier/decode/wiring/e2e, all host-gate-run. Gate green
   on 1c16b2d.
+
+## LOG +228 (2026-06-11 tick — batched VM GUI pixel run: tab-strip visual holds TSK-261/268/331 validated with teeth)
+
+- **The visual-hold cluster is CLOSED**: TSK-261 ("+" beside last tab), TSK-268 (last tab's
+  right border), TSK-331 (crowded tabs shrink, no overflow) all → **validated** on stage-④
+  WindowServer pixels from the UTM VM GUI lane (commits 0750a9b + 2984649).
+- **New deterministic scene `MDV_UI_SCENE=tabs-<N>`** (Diagnostics.swift): opens N throwaway
+  files as permanent tabs, selects the FIRST tab (so the strip starts unscrolled and the last
+  tab carries no selection tint — the tint boundary reads as a full-height column and would
+  mask a missing trailing divider).
+- **New T5 suite `FileTabStripVisualRegressionTests`** (3 tests) with structural pixel evals:
+  `separatorColumns` (thin full-height vertical lines; no absolute colors) + `inkPixelCount`
+  (|Δ|≥40 from region median). Both are pure statics, host-pinned on synthetic CGImages in
+  `FileTabStripPixelEvalTests` (8 tests, in the merge gate).
+- **Two calibration lessons baked into the detector, each with a headless pin**:
+  (1) darker-than-BOTH-neighbours-by-8 goes blind next to the selected tab's accent tint
+  (~7/255 contrast) — the rule is now `c <= min(l,r) && c+8 <= max(l,r)` (found 0/2 and 12/14
+  before; exactly 2/2 and 14/14 after); (2) a 60% band-height bar admits file-icon-chip edges
+  (~70% of band) — raised to 85% (a separator spans the full band; nothing else does).
+- **Teeth demonstrated for ALL THREE on the VM** (mutate → rebuild → red → restore → green):
+  divider re-gated `index < count-1` → "got 1 at [395]" red (268); `minShrunkWidth` 40→180 →
+  "Only 6 separators for 14 tabs / pitch 199pt" double-red (331); "+" pinned far-right →
+  "beside ink 0 / far-right ink 134" double-red (261). Final clean run 3/3 green, EXIT=0.
+- **Infra fix shipped**: `test-in-vm.sh swift_test()` now re-exports `MDV_*` env (except the
+  sudo secret) into the `launchctl asuser` shell — the bridge silently dropped
+  `MDV_PIXEL_DEBUG_DIR`/`MDV_RUN_WEBVIEW_TESTS`-class knobs before.
+- Host headless gate green on both commits; `TabBar.swift` byte-identical to pre-wave state
+  (mutations fully restored, verified via `git diff`).
