@@ -7269,3 +7269,19 @@ Fresh bundle building + installing to /Applications.
 Tally this tick: 5 validated (542/549/557/539/624) · TSK-270 fixed+parked. Remaining CONSISTENT
 queue: workspace-gate 550/553/555/569, web-hardening 551/556/558, hex-clamp 540/578, hunk-marks
 565/576, build-script 446/448/449/435/436, VM-toolchain 401/439/616, 324/477/482/622/365/468.
+
+## LOG +212 (2026-06-11 tick — drain wave: 7 more rust-core CONSISTENT tickets validated)
+
+All seven re-validated on tonight's fresh rust gate (rust-core verified untouched since that run),
+each on its exact-behavior pin:
+- TSK-551 web inflight-slot RAII (`inflight_slot_released_when_handler_panics`)
+- TSK-556 request-head deadline (`request_head_deadline_trips_on_slow_drip`)
+- TSK-558 dir-listing entry cap (`read_entries_cap_bounds_runaway_directory`)
+- TSK-540 hex width clamp (`hex_render_clamps_hostile_width_to_max` + zero-width edge)
+- TSK-578 OpenError exhaustive FFI mapping (`wire_status_maps_too_large_distinctly` + BadUtf8 pins)
+- TSK-565 hunk-marks top-of-file deletion (`hunk_marks_top_of_file_deletion_lands_on_line_1`)
+- TSK-576 hunk-marks hostile-header clamp (`hunk_marks_hostile_header_clamps_not_panics`)
+
+Remaining CONSISTENT queue: workspace-gate 550/553/555/569, build-script 446/448/449/435/436,
+VM-toolchain 401/439/616, 324/477/482/622/365/468; visual-holds 261/268/331 await the next
+batched VM GUI run; owner queue unchanged (270/372 parked, 598/276/306/139/608).
