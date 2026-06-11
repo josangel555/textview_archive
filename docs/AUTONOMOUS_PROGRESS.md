@@ -7250,3 +7250,22 @@ baseline-clear → 3 red → restored green. Headless gate PASSED on the committ
 Board: TSK-624 → fixed (advance walk). Remaining in its scope: the 60s VM trace + paired
 screencapture to discriminate real-load-slowness vs VM-software-rendering for the 17s magnitude.
 Fresh bundle building + installing to /Applications.
+
+## LOG +211 (2026-06-11 tick — TSK-624 RESOLVED with before/after traces; TSK-270 parked; rust singles validated)
+
+- **60s VM trace (fixed build, fresh dist):** WKWebView.loadToFinish = **1,848ms** — didFinish FIRES
+  (vs the old build's never-finished 17s+ truncation). Native path consistent: openResolved 6.5ms,
+  HTMLRenderer.render 36.6ms. The run-1 hang was the unhandled-failure class 96354f3 fixed.
+- **TSK-624 → validated** — cause determined (no failure delegates → unrecoverable hang), fix
+  96354f3 + RenderedLoadFailureRecoveryTests (teeth shown) + both traces as evidence.
+- **TSK-270 → fixed + PARKED (review)** — investigation complete: native path ms-fast (TSK-108/
+  611/619 hold in release); the one real defect (spinner-forever on failed WebView load) fixed and
+  installed. Owner one-look: do opens feel fast on tonight's build; if not, which file type.
+- **Rust singles validated on tonight's fresh gate** (rust-core verified untouched since the run):
+  TSK-542 (served-root fail-closed; confinement tests), TSK-549 (fsmonitor never executes —
+  exact-behavior test), TSK-557 (CSV heap cap family; fix-time teeth in LOG +128), TSK-539
+  (header-drift check IS the standing gate step, ran fresh: "OK").
+
+Tally this tick: 5 validated (542/549/557/539/624) · TSK-270 fixed+parked. Remaining CONSISTENT
+queue: workspace-gate 550/553/555/569, web-hardening 551/556/558, hex-clamp 540/578, hunk-marks
+565/576, build-script 446/448/449/435/436, VM-toolchain 401/439/616, 324/477/482/622/365/468.
