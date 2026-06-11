@@ -446,14 +446,59 @@ public struct MarkdownRenderedView: NSViewRepresentable {
             return "\"\""
         }
 
-        public func webView(
-            _ webView: WKWebView,
-            didFinish navigation: WKNavigation!
-        ) {
+        /// Close the in-flight load signpost (idempotent). Every
+        /// navigation OUTCOME — finish, fail, provisional fail, process
+        /// death — must route here or the interval leaks open (the
+        /// TSK-624 trace artifact: loadToFinish truncated at recording
+        /// stop because only didFinish ended it).
+        func endLoadToFinish() {
             if let token = loadToFinishToken {
                 PerfSignpost.end(token)
                 loadToFinishToken = nil
             }
+        }
+
+        /// TSK-624 — failure paths were UNIMPLEMENTED: a failed load or a
+        /// WebContent process death left `documentReady` false forever
+        /// (spinner/blank with no recovery — the classic WKWebView
+        /// white-screen footgun, and a credible mechanism for the
+        /// owner-felt "delay opening files" / "retry loads fast" reports).
+        public func webView(
+            _ webView: WKWebView,
+            didFail navigation: WKNavigation!, withError error: Error
+        ) {
+            endLoadToFinish()
+            // Clear the dedup baseline so the next updateNSView tick
+            // re-issues the load instead of believing the page is current.
+            lastHTML = nil
+        }
+
+        public func webView(
+            _ webView: WKWebView,
+            didFailProvisionalNavigation navigation: WKNavigation!,
+            withError error: Error
+        ) {
+            endLoadToFinish()
+            lastHTML = nil
+        }
+
+        public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            endLoadToFinish()
+            // The renderer died (jetsam/crash): the view is now a blank
+            // white surface that never recovers on its own. Drop the
+            // dedup baseline + reload the window's content on the next
+            // tick; also nudge an immediate reload so recovery doesn't
+            // wait for an unrelated SwiftUI update.
+            lastHTML = nil
+            documentReady = false
+            webView.reload()
+        }
+
+        public func webView(
+            _ webView: WKWebView,
+            didFinish navigation: WKNavigation!
+        ) {
+            endLoadToFinish()
             documentReady = true
             // WV-4: from here on, any top-level `.other` navigation to
             // file:/data: is an in-page script escape, not the bootstrap
