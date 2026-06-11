@@ -6873,3 +6873,27 @@ Owner corrections this tick: (1) "we did have some harness to do profiling etc. 
   rust indices-only cache (a58eda9→TSK-142/143), FileWatcher FW-S3 window
   (0a42e5f→TSK-147), PTY reap (8480367→TSK-138). Drain tally: 19 validated.
   TSK-622 residue: the sibling-test foreground flake + TSK-139 owner-dismiss.
+
+## LOG +196 (2026-06-10, drain wave 5 — S3 audit-reconciliation guards)
+
+Validation drain over TSK-151/157/159/160 (June-5 read-only reconciliations: code
+verified by reading, zero tests, empty commits[]). All four re-verified FRESH on main,
+each given the missing regression guard with demonstrated teeth, all validated:
+
+- **TSK-151** (fold double-compile race): fix present (per-lang lock + post-acquire
+  re-check). Built DEBUG seam `foldCompileWindowHook`/`foldCompileCount` +
+  `FoldCompileLockRaceTests` (deterministic interleaving, not stress). Teeth: lockless
+  mutation → "2 is not equal to 1". Commit 4d7fb53.
+- **TSK-159/160** (vm-smoke path bug + injection): fix present. Added
+  `MDV_SMOKE_DRY_RUN` (compute+validate path, exit pre-remote) +
+  `VMSmokePathGuardTests` (3 tests, zero network: in-root translation, out-of-root
+  staging, hostile-filename allowlist rejection). Teeth: double-slash regression +
+  allowlist-exit removal each caught by its own test. Commit a9d781d.
+- **TSK-157** (dylib identifier footgun): fix present in shipped artifact
+  (filename-derived ids). Built `scripts/check-dylib-identifiers.sh` (fails on bundle-id
+  claim AND on zero-dylib vacuousness) wired into build-app.sh post-sign. Teeth:
+  re-signed libTreeSitterLuaLazy with the bundle id → EXIT=1. Full release rebuild ran
+  the integrated guard green (44 MB / 24 MB within budgets). Commit 1428c49.
+
+Gate: `==> headless gate PASSED` on committed HEAD 1428c49. Board: 4× validated
+(checks artifacts with teeth rows). Remaining fixed lane: ~54.
