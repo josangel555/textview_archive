@@ -2024,6 +2024,55 @@ public final class DocumentModel: ObservableObject {
         return true
     }
 
+    #if DEBUG
+    /// Test-only: the last formatting dispatch (URL + the buffer snapshot
+    /// the edits will be applied against). Pins the guard set + snapshot
+    /// semantics without a live language server.
+    var _lastFormatDispatch: (url: URL, snapshot: String)?
+    #endif
+
+    /// `editor.format` (TSK-627): whole-document format of the ACTIVE
+    /// editor buffer via `textDocument/formatting`. Snapshot-guarded:
+    /// the edits are resolved against the buffer text captured at
+    /// dispatch, and applied only if the buffer is still unchanged when
+    /// the response lands — a keystroke that raced the formatter wins,
+    /// the stale response is dropped. Returns false when there is no
+    /// selected tab with a URL, no editor buffer, or no LSP language.
+    @discardableResult
+    public func formatActiveEditorViaLSP() -> Bool {
+        guard let tab = tabs.selected, let url = tab.url else { return false }
+        guard LSPLanguageRegistry.default.language(for: url) != nil else { return false }
+        guard let buf = editor.editorBuffers[tab.id] else { return false }
+        let tabID = tab.id
+        let snapshot = buf.text
+        #if DEBUG
+        _lastFormatDispatch = (url, snapshot)
+        #endif
+        Task { [weak self] in
+            guard let self = self else { return }
+            do {
+                let edits = try await self.lspPool.formatting(fileURL: url)
+                guard !edits.isEmpty else { return }
+                // CM6 documents are UTF-16; the negotiated LSP encoding is
+                // utf-16 everywhere this app touches (same as the
+                // diagnostics path in EditorCoordinator).
+                let formatted = LSPTextEditApplier.apply(
+                    edits, to: snapshot, encoding: .utf16)
+                guard formatted != snapshot else { return }
+                await MainActor.run {
+                    // Snapshot guard: drop the result if the user typed
+                    // while the formatter ran.
+                    guard self.editor.editorBuffers[tabID]?.text == snapshot else { return }
+                    self.updateEditorText(formatted, forTabID: tabID)
+                }
+            } catch {
+                // Same silent-failure contract as the go-to verbs: no
+                // formatter / server error degrades to "nothing happened".
+            }
+        }
+        return true
+    }
+
     /// JS posted a right-click. Build a native NSMenu and pop it at
     /// the screen point CM6 forwarded. Keeps Cmd-click + right-click
     /// → "Go to Definition" symmetric with the source-view's menu.

@@ -79,6 +79,7 @@ final class CommandRegistryTests: XCTestCase {
             // LSP go-to commands (TSK-464)
             "editor-goto-definition", "editor-goto-declaration",
             "editor-goto-type-definition", "editor-goto-implementation",
+            "editor-format",
         ]
         for cmd in CommandRegistry.builtIn.commands {
             guard let verb = cmd.scriptVerb else { continue }

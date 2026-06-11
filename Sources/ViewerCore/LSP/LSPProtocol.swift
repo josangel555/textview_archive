@@ -33,6 +33,28 @@ public struct LSPLocation: Codable, Hashable, Sendable {
     }
 }
 
+/// `textDocument/formatting` result entry (LSP 3.17 §15.13): replace
+/// `range` (positions in the ORIGINAL document) with `newText`. Per
+/// spec, edits in one response never overlap — apply in reverse
+/// document order so earlier offsets stay valid (`LSPTextEditApplier`).
+public struct LSPTextEdit: Codable, Hashable, Sendable {
+    public let range: LSPRange
+    public let newText: String
+    public init(range: LSPRange, newText: String) {
+        self.range = range; self.newText = newText
+    }
+}
+
+/// `FormattingOptions` for `textDocument/formatting` — the two fields
+/// every server understands; server-specific extras are out of scope.
+public struct LSPFormattingOptions: Sendable {
+    public let tabSize: Int
+    public let insertSpaces: Bool
+    public init(tabSize: Int = 4, insertSpaces: Bool = true) {
+        self.tabSize = tabSize; self.insertSpaces = insertSpaces
+    }
+}
+
 /// `textDocument/foldingRange` result entry. Per LSP 3.17 §16.18,
 /// positions are line-based — `startCharacter` / `endCharacter` are
 /// optional (servers may omit them when the whole line is included).

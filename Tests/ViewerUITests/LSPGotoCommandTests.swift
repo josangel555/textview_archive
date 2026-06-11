@@ -86,6 +86,50 @@ final class LSPGotoCommandTests: HeadlessUITestCase {
             "a language with no LSP mapping must not dispatch (same guard as Cmd-click)")
     }
 
+    // MARK: - editor.format (TSK-627)
+
+    func test_formatVerb_dispatchesWithBufferSnapshot() throws {
+        let url = try harness.writeFile("fmt.swift", "let  x=1\n")
+        let model = harness.model
+        model.open(url: url)
+        let id = model.tabs.selected!.id
+        _ = model.editor.editorBuffer(forTabID: id) // materialize the buffer
+
+        XCTAssertTrue(
+            ScriptVerb.apply(verb: "editor-format", to: model, sessions: harness.sessions),
+            "editor-format must be a recognized script verb (TSK-627)")
+        XCTAssertEqual(model._lastFormatDispatch?.url.lastPathComponent, "fmt.swift")
+        XCTAssertEqual(model._lastFormatDispatch?.snapshot, "let  x=1\n",
+            "the dispatch must snapshot the buffer text the edits will apply against")
+    }
+
+    func test_format_noBuffer_isANoOp() throws {
+        let url = try harness.writeFile("nobuf.swift", "let x = 1\n")
+        let model = harness.model
+        model.open(url: url)
+        // No editor buffer materialized → refuse rather than format a
+        // buffer that doesn't exist.
+        XCTAssertFalse(model.formatActiveEditorViaLSP())
+        XCTAssertNil(model._lastFormatDispatch)
+    }
+
+    func test_format_nonLSPLanguage_isANoOp() throws {
+        let url = try harness.writeFile("plain.txt", "hello\n")
+        let model = harness.model
+        model.open(url: url)
+        let id = model.tabs.selected!.id
+        _ = model.editor.editorBuffer(forTabID: id)
+        XCTAssertFalse(model.formatActiveEditorViaLSP(),
+            "a language with no LSP mapping must refuse, same as the go-to verbs")
+        XCTAssertNil(model._lastFormatDispatch)
+    }
+
+    func test_commandCatalog_carriesTheFormatCommand() {
+        let cmd = CommandRegistry.builtIn.command(id: "lsp.format")
+        XCTAssertNotNil(cmd, "lsp.format must be in the built-in catalog (TSK-627)")
+        XCTAssertEqual(cmd?.scriptVerb, "editor-format")
+    }
+
     func test_commandCatalog_carriesTheFourGotoCommands() {
         let registry = CommandRegistry.builtIn
         let expected: [(String, String)] = [

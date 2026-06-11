@@ -679,6 +679,25 @@ public actor LSPPool {
         }
     }
 
+    /// `textDocument/formatting` (TSK-627) — routed like every other
+    /// per-file request: spins up / reuses the workspace's server.
+    public func formatting(
+        fileURL: URL, options: LSPFormattingOptions = LSPFormattingOptions(),
+        token: LSPCancellationToken? = nil
+    ) async throws -> [LSPTextEdit] {
+        let (client, key) = try await routedClient(for: fileURL)
+        let start = clock.now
+        do {
+            let result = try await client.formatting(
+                url: fileURL, options: options, token: token)
+            recordRequest(key: key, millis: millisElapsed(since: start))
+            return result
+        } catch {
+            recordCrash(key: key, error: "\(error)")
+            throw error
+        }
+    }
+
     /// `workspace/symbol` across all live clients. Each call fans out
     /// to every currently-live client, merges + dedupes by
     /// `(uri, range.start)`, and sorts by name. Empty when no live

@@ -154,6 +154,11 @@ public enum ScriptVerb {
             _ = model.navigateViaLSPAtCursor(kind: .typeDefinition)
         case "editor-goto-implementation":
             _ = model.navigateViaLSPAtCursor(kind: .implementation)
+        case "editor-format":
+            // Whole-document LSP format of the active editor buffer
+            // (TSK-627). Snapshot-guarded; silent no-op without a
+            // formatter, like the go-to verbs.
+            _ = model.formatActiveEditorViaLSP()
         case "save-copy":
             // Write a COPY of the active tab's current content to `arg` (an
             // absolute path), leaving the open tab untouched (TSK-300). This

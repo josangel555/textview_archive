@@ -226,6 +226,9 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "lsp.gotoImplementation", title: "Go to Implementation", category: .lsp,
             scriptVerb: "editor-goto-implementation"),
+        CommandDescriptor(
+            id: "lsp.format", title: "Format Document", category: .lsp,
+            scriptVerb: "editor-format"),
 
         // MARK: Git
         CommandDescriptor(

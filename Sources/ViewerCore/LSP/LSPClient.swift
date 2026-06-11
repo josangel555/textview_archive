@@ -753,6 +753,51 @@ public actor LSPClient {
         return Self.decodeDefinition(raw)
     }
 
+    /// `textDocument/formatting` (TSK-627) — whole-document format.
+    /// Returns the server's TextEdit list (possibly empty = "already
+    /// formatted" or "no formatter"); apply via `LSPTextEditApplier`.
+    public func formatting(
+        url: URL, options: LSPFormattingOptions = LSPFormattingOptions(),
+        token: LSPCancellationToken? = nil
+    ) async throws -> [LSPTextEdit] {
+        guard initialized else { throw LSPError.notInitialized }
+        let params: [String: Any] = [
+            "textDocument": ["uri": url.absoluteString],
+            "options": [
+                "tabSize": options.tabSize,
+                "insertSpaces": options.insertSpaces,
+            ],
+        ]
+        let raw = try await request(
+            method: "textDocument/formatting", params: params,
+            timeout: .seconds(10), token: token)
+        return Self.decodeTextEdits(raw)
+    }
+
+    /// `textDocument/rangeFormatting` (TSK-627) — format only `range`.
+    public func rangeFormatting(
+        url: URL, range: LSPRange,
+        options: LSPFormattingOptions = LSPFormattingOptions(),
+        token: LSPCancellationToken? = nil
+    ) async throws -> [LSPTextEdit] {
+        guard initialized else { throw LSPError.notInitialized }
+        let params: [String: Any] = [
+            "textDocument": ["uri": url.absoluteString],
+            "range": [
+                "start": ["line": range.start.line, "character": range.start.character],
+                "end": ["line": range.end.line, "character": range.end.character],
+            ],
+            "options": [
+                "tabSize": options.tabSize,
+                "insertSpaces": options.insertSpaces,
+            ],
+        ]
+        let raw = try await request(
+            method: "textDocument/rangeFormatting", params: params,
+            timeout: .seconds(10), token: token)
+        return Self.decodeTextEdits(raw)
+    }
+
     /// `workspace/symbol` — server-side fuzzy symbol search across the
     /// entire workspace. Empty query returns the server's notion of
     /// "all symbols" (most servers cap at a few hundred). UI callers
@@ -986,6 +1031,23 @@ extension LSPClient {
         return LSPRange(
             start: LSPPosition(line: sl, character: sc),
             end:   LSPPosition(line: el, character: ec))
+    }
+
+    /// `textDocument/formatting` / `rangeFormatting` decode: a
+    /// `TextEdit[]` or `null` ("no edits / no formatter"). Malformed
+    /// entries are dropped, not trapped — a bad formatter response must
+    /// degrade to "nothing happened" (TSK-627).
+    static func decodeTextEdits(_ data: Data) -> [LSPTextEdit] {
+        guard let any = try? JSONSerialization.jsonObject(
+                with: data, options: [.fragmentsAllowed]) else { return [] }
+        if any is NSNull { return [] }
+        guard let arr = any as? [[String: Any]] else { return [] }
+        return arr.compactMap { d in
+            guard let r = d["range"] as? [String: Any],
+                  let range = parseRange(r),
+                  let newText = d["newText"] as? String else { return nil }
+            return LSPTextEdit(range: range, newText: newText)
+        }
     }
 
     /// `textDocument/documentSymbol` polymorphic decode:
