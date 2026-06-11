@@ -7426,3 +7426,26 @@ Next: TSK-582 (last of the groomed TSK-538 P1 trio).
 Session: 3 tickets landed+validated this tick (deb7c2e, 562a56f, bde2016) + TSK-626 filed
 (SwiftPM header-staleness build-graph gap). Next: batched VM GUI run for the visual holds
 (261/268/331/324 + T4 UATs for 505/468), or the next groomed pool item.
+
+## LOG +221 (2026-06-11 tick — drain wave: 548/139/323 validated, zoom-split decision parked)
+
+- **TSK-548 → validated** — TooLarge stopgap re-verified fresh on current main: core
+  `encode_frame_oversize_is_too_large_not_framing` (fresh run), ffi `wire_status_maps_too_large
+  _distinctly` (today's 28/28), Swift `testTooLargeStatusMapsToDistinctError` (today's 18/18).
+  Scope honestly noted: the ~16 MiB ceiling itself remains until TSK-559 windowed snapshots.
+- **TSK-139 → validated** (commit 9ef960a) — the 2026-06-08 hold's named gap is closed: new
+  `InfraInvariantTests.test_lspTestCleanup_neverFireAndForgetProcessReap` scans all test files
+  and fails on any detached `defer { Task }` process reap. Verified zero fire-and-forget sites
+  remain (27 awaited addTeardownBlock across 7 LSP suites); TEETH (injected one → red naming
+  file:line → restored). Zombie "claude" lease reconciled. Headless gate green on 9ef960a.
+- **TSK-323 → validated** — zoom-audit close claims verified fresh: ChromeZoomScalingTests 6/6,
+  the residual (media file-info zoom) is TSK-271 and itself validated, persistence pinned.
+- **TSK-322 → parked (owner decision) + TSK-321 held** — drain review caught both sitting at
+  fixed under a 2026-06-05 agent "resolved by design" close that CONTRADICTS the owner's own
+  ticket wording asking for a doc/window zoom split. Verified in code: one unified
+  PreferencesStore.zoom; no split exists. Parked with 3 options (keep unified / full split /
+  rendered-MD-only split); one answer settles both.
+
+Fixed lane is now all honest holds: waiting-human (270/306/372/608/322), live-validation
+(334/468/505/529/619), visual VM-batch (261/268/331/324), terminal interaction (456/457),
+CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
