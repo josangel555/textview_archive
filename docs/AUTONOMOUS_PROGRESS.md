@@ -7078,3 +7078,44 @@ in the band, compare the recorded understanding text against the board title bef
 any validation; bounce mismatches. The fixed-lane count is inflated by these.
 
 Board: 1× validated, 2× bounced (1 parked). Remaining fixed lane: ~30 (pre-sweep).
+
+## LOG +205 (2026-06-10, night — mislabel sweep RESULTS: 16 more bounced)
+
+The read-only subagent sweep audited all 69 remaining fixed-lane tickets:
+**16 MISLABELED · 52 CONSISTENT · 1 UNCLEAR.** Total mislabel count is now 19
+(with the 3 found by hand). All 16 bounced fixed→progress with correction notes.
+
+Two distinct corruption batches, both prior claude-mdv sessions:
+- **Backlog-verify batch** (~ts 1780789–1780809k): deep-audit finding verifications
+  recorded onto [BACKLOG] feature tickets — TSK-270, 283, 285, 287, 293, 296, 298,
+  305, 307.
+- **TSK-402-reconcile batch** (all ts 1780711845): rust-port PORT verifications
+  recorded onto [PARTIAL] tickets — TSK-364, 372, 373, 374, 375, 376, 377 (+ a
+  stray record on the otherwise-consistent TSK-365, flagged by comment).
+
+High-priority fallout now back in the open pool:
+- **TSK-270 "Delay in opening files"** and **TSK-372 "close with 1 tab, reopen see
+  2"** — owner-felt USER-FACING bugs that were falsely closed. Both annotated with
+  reproduce-first guidance (270: re-measure post-TSK-108/611; 372: SessionStore
+  snapshot round-trip is host-testable).
+- **TSK-293** — a REAL shipped fix (ReDoS skipGroupPrefix, c7a9bb8, 10 tests) was
+  filed under "Encryption"; provenance note left on the ticket.
+
+**CONSISTENT drain queue (52)** — remaining fixed-lane work, with suites where named:
+315(TabToNewSessionTests) · 321/322/323(resolved-by-design, no tests) ·
+324(gate-only) · 331(TabBarWidthTests; NO teeth admitted — hold candidate) ·
+394–398(e83408d rust suites) · 401/439/616(VM toolchain) · 435/436(killall;
+build-only) · 446(verify-app) · 448/449(build-script) · 456–459(terminal headless
+suites) · 466(folding 7 tests) · 467(HEX ViewOnly 4 tests) · 468(view-only) ·
+477(comment-only) · 482(dup of 141, pinned via 622) · 489(no host coverage —
+visual-hold candidate) · 505(FileChecksumRunnerTests) · 529(AudioWaveformTests 16
++ T5) · 539(ABI drift gate) · 540/578(hex clamp tests) · 542/549(web/git rust
+tests) · 548(TooLarge tests) · 550/553/555/569(workspace gate) · 551/556/558
+(web hardening tests) · 557(CSV heap cap) · 565/576(hunk-marks tests) ·
+608(parked on owner) · 611(RenderedHTMLAsyncFillTests) · 612(RowCounterPluginTests)
+· 619(TreeSitterWarmupTests) · 622(guard batch, partially validated already) ·
+365(UNCLEAR→drainable: re-run test_zoom_persistsAcrossNewTab).
+
+Fixed lane after the purge: ~53 → all with verified-consistent recorded work.
+Next: drain the consistent queue in suite-cluster batches (rust e83408d cluster
+first — one gate run covers 394–398).
