@@ -79,6 +79,34 @@ final class InfraInvariantTests: XCTestCase {
         }
     }
 
+    /// TSK-139 — LSP test cleanup must reap spawned child processes with an
+    /// AWAITED `addTeardownBlock`, never a detached `defer { Task { … } }`:
+    /// the detached Task is never awaited, so the test (or the whole process)
+    /// exits with sourcekit-lsp/fake-server children still alive. The fix
+    /// swapped every site (commit 6703798); this pin fails if any test file
+    /// reverts a process-reaping call to the fire-and-forget shape.
+    func test_lspTestCleanup_neverFireAndForgetProcessReap() throws {
+        let testsDir = Self.repoRoot.appendingPathComponent("Tests")
+        let files = FileManager.default
+            .enumerator(at: testsDir, includingPropertiesForKeys: nil)!
+            .compactMap { $0 as? URL }
+            .filter { $0.pathExtension == "swift" }
+        XCTAssertGreaterThan(files.count, 50, "Tests/ enumeration must not be vacuous")
+        for url in files {
+            let body = try String(contentsOf: url, encoding: .utf8)
+            for (n, line) in body.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+                let t = line.trimmingCharacters(in: .whitespaces)
+                guard !t.hasPrefix("//") else { continue }
+                let detached = t.contains("defer { Task")
+                let reapsProcess = t.contains("closeAll(") || t.contains("shutdown(")
+                XCTAssertFalse(
+                    detached && reapsProcess,
+                    "\(url.lastPathComponent):\(n + 1) fire-and-forget process reap "
+                    + "in a detached Task — use an awaited addTeardownBlock (TSK-139)")
+            }
+        }
+    }
+
     /// TSK-191 — vm-smoke.sh's pre-launch reset must clear the directory
     /// SessionStore ACTUALLY writes. The audited bug reset a retired
     /// subdir name, so launches restored stale state the script believed
