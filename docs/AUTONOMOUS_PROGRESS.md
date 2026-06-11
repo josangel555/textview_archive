@@ -6972,3 +6972,23 @@ TSK-183/185/187 re-verified fresh, validated:
 
 Gate: `==> headless gate PASSED` on HEAD a137cdf. Board: 3× validated.
 Remaining fixed lane: ~43 (next: TSK-189/190/191 TUI + vm-smoke S4s).
+
+## LOG +200 (2026-06-10, drain wave 9 — TUI + vm-smoke S4s)
+
+TSK-189/190/191 re-verified fresh, validated:
+
+- **TSK-189** (TUI per-frame list rebuild) — items cached per directory change,
+  draw_files reuses them (main.rs:525, visible_len :996); behavior held by the
+  61-test host TestBackend suite. Rust gate run FRESH: green.
+- **TSK-190** (--snapshot .expect() panic) — io::Result end-to-end (main() :60,
+  `?` at :90, snapshot() :2204); the one remaining .expect() is a different
+  invariant-commented site. Snapshot path exercised throughout the TestBackend
+  suite. Fresh gate green.
+- **TSK-191** (stale reset dir) — script resets the dir SessionStore actually
+  writes. New PARITY pin (InfraInvariantTests) computes defaultDirectory() at
+  test time and requires vm-smoke.sh to reference the same path — either side
+  drifting goes red. Teeth: stale-Workspaces mutation → red. Commit a6e91ae.
+
+Gates: rust-core green (fresh) + `==> headless gate PASSED` on HEAD a6e91ae.
+Board: 3× validated. Remaining fixed lane: ~40 (next: TSK-192/193/196 —
+TierGateObserver clobber, MCP header scan, Claude index double-redact).
