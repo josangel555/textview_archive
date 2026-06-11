@@ -7285,3 +7285,18 @@ each on its exact-behavior pin:
 Remaining CONSISTENT queue: workspace-gate 550/553/555/569, build-script 446/448/449/435/436,
 VM-toolchain 401/439/616, 324/477/482/622/365/468; visual-holds 261/268/331 await the next
 batched VM GUI run; owner queue unchanged (270/372 parked, 598/276/306/139/608).
+
+## LOG +213 (2026-06-11 tick — workspace-infra cluster validated: TSK-550/553/555/569)
+
+All four verified by direct inspection + tonight's gate run:
+- TSK-550 — the gate now builds/tests tui+web+highlight (3 crate test binaries in the gate log,
+  all green; web/tui behavior tests visibly ran). Coverage enforced per-commit via the merge gate.
+- TSK-553 — `rust-version = "1.88"` (Cargo.toml:30) matches the real let-chains MSRV; cargo
+  enforces it at build time.
+- TSK-555 — rust-core/.cargo/config.toml redirects builds OUTSIDE the iCloud-synced worktree
+  (self-enforcing); no in-tree `rust-core/target` exists even after tonight's full gate build.
+- TSK-569 — ffi [dependencies] is exactly `mdvcore-core`; unused serde/rmp-serde gone.
+
+Drain tally this session: 35 tickets validated. Remaining CONSISTENT queue: build-script
+446/448/449/435/436, VM-toolchain 401/439/616, singles 324/477/482/622/365/468; visual-holds
+261/268/331 (next batched VM GUI run); owner queue unchanged.
