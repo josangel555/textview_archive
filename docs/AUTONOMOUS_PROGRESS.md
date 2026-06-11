@@ -7351,3 +7351,25 @@ Remaining: VM-toolchain 401/439/616, singles 324/477/482/622/365/468; visual-hol
 
 Session drain tally: **45 validated**. Remaining singles: 324/477/482/622/365/468;
 visual-holds 261/268/331 (need the next batched VM GUI run); owner queue unchanged.
+
+## LOG +217 (2026-06-11 tick — final singles: CONSISTENT QUEUE FULLY DRAINED)
+
+- **TSK-477 → validated** — the "INTENTIONALLY RETAINED (TSK-477)" keep-note header verified
+  in-tree atop LineNumberRulerView.swift.
+- **TSK-482 → validated** — O(1) HighlightFingerprint dedupe pinned by
+  HexHighlightFingerprintTests + HexHighlightPlanTests (3/3 fresh).
+- **TSK-622 → validated** — the guard batch's six underlying tickets were each re-validated this
+  session on fresh runs of these very guards; suites live in every PASSED gate.
+- **TSK-365 → validated** — test_zoom_persistsAcrossNewTab 1/1 fresh on current main.
+- **TSK-324 → held** — hover tooltips have no automated coverage; named the buildable gap
+  (catalog-driven .help binding test) and batched with the visual holds.
+- **TSK-468 → held** — its own live-validation blocker: References needs a real LSP session;
+  VM T4 UAT named as the gap.
+
+**The LOG +205 CONSISTENT queue is now EMPTY.** Final session tally: **49 validated** · 9 honest
+holds (456/457/448→closed/466/505/619/331/261/268/272/324/468 — the open ones all have named,
+buildable gaps) · 19 mislabels bounced · 3 real bugs found+fixed mid-drain (TSK-489 scroll
+persistence, TSK-624 WebView failure recovery, TSK-625 killall footgun) · 2 falsely-closed
+owner bugs investigated + parked with evidence (TSK-270/372). Remaining work concentrates in:
+the batched VM GUI run (261/268/331/324 + the T4 UATs for 505/468), the TSK-538 rust-core epic
+P1 children, and the owner queue.
