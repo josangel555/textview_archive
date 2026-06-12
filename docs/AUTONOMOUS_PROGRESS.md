@@ -7801,3 +7801,22 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   init constant. Both gates green (one documented FoldBench load-flake, clean re-run).
 - Next per the recorded order: TSK-645/646/647 adapter flips, then TSK-648 (markdown
   adapter — now only two chunk kinds to splice), TSK-652 transport seam, TSK-649 soak.
+
+## LOG +240 (2026-06-12 tick — TSK-645 + TSK-646 validated: find + fuzzy adapters, wave 1 rolling)
+
+- **TSK-645 → validated** (8d231d6): `case find` gate (MDV_RUST_FIND, default OFF) +
+  `RustFindAdapter` via the RustCoreFallback seam. Scoping discovery recorded: the live
+  find bars use NATIVE WKWebView/NSTextView/CM6 search — `automationFind` (the MCP find
+  verb) is FindEngine's only production consumer, now routed. The ICU-fallback channel
+  is the load-bearing bit: lookaround/backrefs → rust `.invalidPattern` → the Swift/ICU
+  engine's full result (proven non-empty in test); truly-invalid → `[]` per the
+  historical contract. Rust-path gains documented: no ReDoS-guard rejections, no
+  wall-clock truncation (PikeVM). Teeth: line/column swap → parity red.
+- **TSK-646 → validated** (8696a4a): `RustFuzzyAdapter.filterWithMatches<T>` routes the
+  command palette's two batch sites behind MDV_RUST_FUZZY; empty query short-circuits
+  bridge-free. CARVE-OUT: FileTreeFilter's per-node match stays Swift (a bridge round
+  trip per tree node is wire-hostile) — tree filtering migrates server-side with fs.tree
+  (TSK-654). Teeth: score+1 corruption → contract red on every query.
+- Adapter scoreboard: csv/diff/hex/hexSearch/indent (pre-existing) + find + fuzzy wired,
+  all default-OFF. Remaining wave 1: TSK-647 (transcript), TSK-648 (markdown splice —
+  two chunk kinds). Then TSK-652 transport seam → TSK-649 default-ON soak.
