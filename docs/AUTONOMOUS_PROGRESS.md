@@ -7716,3 +7716,32 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - **Handoff checkpoint written** (HANDOFF.md): ports remaining TSK-631 (markdown) +
   TSK-632 (transcript); then 628/636/parity/theming pools. Port scoreboard:
   csv/diff/hex/indent/cm-apply (pre-existing) + fuzzy + find ported; 2 to go.
+
+## LOG +237 (2026-06-12 — TSK-632 validated: transcript/JSONL port, hand-rolled JSON, NSNumber quirk pinned)
+
+- **TSK-632 → validated** (commits f477b58 + 1b34251), two stages in one tick pair:
+  - **Stage 1 `json.rs`** (~450 lines, NO serde_json per the 1000-line rule): byte-cursor
+    recursive descent, MAX_DEPTH=128, lone-surrogate=error (Foundation parity), duplicate
+    keys last-wins, i64-overflow→f64 (kills the S3 out-of-Int64 trap class), strict
+    `parse()` vs tolerant `parse_jsonl()`. TEETH ×2: depth-cap removal → the hostile
+    fixture STACK-OVERFLOWS (strongest possible load-bearing proof); lone-surrogate→U+FFFD
+    → red. The clippy wall caught a `panic!` in a TEST helper — the deny applies to test
+    code too (rewrote as `matches!` assert).
+  - **Stage 2 `transcript.rs`**: full `ClaudeLogParser` twin — five event kinds, tolerant
+    framing, S6/S7 caps, the TSK-245 redaction barrier (signature/headers scrub +
+    image-blob collapse), RFC3339→epoch-ms (`days_from_civil`, leap-year tested),
+    JSONSerialization-parity compact repr (`\/` escaping). Ceremony export
+    `mdvcore_transcript_parse`; MDV_CAP_TRANSCRIPT (1<<7) flipped with BOTH reserved-bit
+    tests; Swift `mdvCoreTranscriptParse` via `mdvFrameCall`.
+- **The A/B suite earned its keep on day one**: 8 tests vs the SHIPPING parser including
+  a REAL `~/.claude` transcript sweep (redacted mode). It went RED — fixture AND real
+  transcript — on NSNumber bridging: Swift's `v as? Int` SUCCEEDS for a JSON boolean
+  (CFBoolean → 1/0 before the `Bool` branch), so tool_use inputs render booleans as
+  "1"/"0", not "true"/"false". Rust now matches the shipping behavior; pinned both sides
+  with a comment explaining the quirk. This is exactly the divergence class fixtures
+  alone would have shipped wrong.
+- Documented divergences: missing-uuid records get deterministic `line-<n>` ids (the
+  core reads no randomness, by lint); multi-key NESTED-object input repr key order is
+  Swift-dictionary-nondeterministic (A/B corpus avoids; per-key parity holds).
+- Port scoreboard: csv/diff/hex/indent/cm-apply/fuzzy/find/**transcript** — markdown
+  (TSK-631) is the LAST reserved capability bit.
