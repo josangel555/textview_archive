@@ -8519,3 +8519,16 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   install. Residual risk: low. Recurrence recipe recorded on the ticket.
 - Owner-answer queue now: TSK-643 confirm (one line), TSK-660 caps,
   TSK-649 stage B, TSK-306 validation bar, GUI glance batch.
+
+## LOG +282 (2026-06-12 tick — board hygiene: TSK-452's lost park re-filed; evidence re-verified)
+
+- **TSK-452 (prio-1 statusbar bug) had a LOST PARK**: the 2026-06-06
+  session fixed the one identifiable defect (blank-during-lazy-load,
+  1615b98, with a headless data-source test) and wrote "parked for owner
+  clarification" into the log — but never filed the park on the board, so
+  the ticket squatted at reported/waiting:agent for six days. Evidence
+  re-ran fresh today (DocumentModelTests 60/60 incl. the TSK-452 pin);
+  the park is now properly filed with the crisp ask: which chip, which
+  view mode, which sequence still goes stale.
+- Owner-answer queue: TSK-452 repro detail, TSK-643 VPN confirm, TSK-660
+  caps, TSK-649 stage B, TSK-306 validation bar, GUI glance batch.
