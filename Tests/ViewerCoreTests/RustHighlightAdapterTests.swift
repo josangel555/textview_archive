@@ -12,11 +12,21 @@ final class RustHighlightAdapterTests: XCTestCase {
 
     private let gateOn = ["MDV_RUST_HIGHLIGHT": "1"]
 
-    func test_shippedDefault_routesSwift() {
-        // The first post-stage-A port ships OFF until its soak round —
-        // the empty environment IS the shipped default.
+    func test_shippedDefault_routesRust() {
+        // TSK-660 flip round: the empty environment IS the shipped default,
+        // and it routes RUST now.
         let out = RustHighlightAdapter.outcome(
             "let x = 1", language: .swift, environment: [:])
+        XCTAssertEqual(out.source, .rust)
+        XCTAssertFalse(out.value.isEmpty)
+    }
+
+    func test_envZero_pinsTheSwiftPath() {
+        // The off-switch contract survives the flip (the flip-round
+        // test-migration pattern: gate-off behavior is env-pinned).
+        let out = RustHighlightAdapter.outcome(
+            "let x = 1", language: .swift,
+            environment: ["MDV_RUST_HIGHLIGHT": "0"])
         XCTAssertEqual(out.source, .swiftBecauseGateOff)
         XCTAssertEqual(
             out.value,

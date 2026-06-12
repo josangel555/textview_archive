@@ -77,10 +77,12 @@ public enum RustCoreCapability: String, CaseIterable, Sendable {
         // capability now routes Rust by default; the Swift twins are
         // fallback-only pending stage B deletion (owner-gated).
         case .cmEdit: return true
-        // TSK-660: the first post-stage-A port — OFF until adapter
-        // consumption + A/B evidence + its own soak round (the same ladder
-        // every stage-A engine climbed).
-        case .highlight: return false
+        // TSK-660 flip round (2026-06-12): consumption (3 tokenize
+        // consumers) + contract A/B + 22-language parity + the TSK-545
+        // config-compile cache all landed — the rust highlighter ships ON.
+        // It also FIXES the TSK-410 class (predicates evaluated). Off-switch
+        // unchanged: MDV_RUST_HIGHLIGHT=0 / the Settings toggle.
+        case .highlight: return true
         }
     }
 }
