@@ -7983,3 +7983,15 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - Remote families remaining: TSK-656 (cross-file search), TSK-658 (transcript
   list/follow), TSK-659 (LSP pipe), fs.watch/tree (TSK-654 deferrals), TSK-660
   (TreeSitter). Soak (csv/indent/diff) quiet so far — flip round 2 next.
+## LOG +250 (2026-06-12 tick — soak round 2: hex + hexSearch default-ON; 5 of 10 engines live)
+
+- **Round 2 flipped** (8dc777e, installed): hex + hexSearch ship default-ON after a
+  quiet round 1. ON now: csv, indent, diff, hex, hexSearch — HALF the engine surface
+  runs Rust in the owner's app. Off-switches per engine unchanged (MDV_RUST_X=0 /
+  Settings). Round 3: the wave-1 four; cmEdit last; then stage B twin deletion
+  (owner-gated).
+- Migration mechanics this round: hex adapters gained env injection; gate-off tests
+  env-pinned; one subtle catch — the persisted-toggle LEAK PROBE used .hex as its
+  "should be off" capability, which the new default silently satisfied... wrongly.
+  Probe moved to a still-OFF capability. Every default flip will keep hunting tests
+  that ASSUME defaults — the env-pinning pattern is now established in four suites.
