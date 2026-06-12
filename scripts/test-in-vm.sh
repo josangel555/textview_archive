@@ -215,6 +215,7 @@ run_webview_tests() {
     --filter ViewerUITests.EditorThemeParityTests \
     --filter ViewerUITests.FindBarTests \
     --filter ViewerUITests.FormatToggleTests \
+    --filter ViewerUITests.FoldGutterWebViewTests \
     --filter ViewerUITests.MermaidHostingTests \
     --filter ViewerUITests.MultiCursorWebViewTests \
     --filter ViewerUITests.PaneRetentionMountProbeTests \
