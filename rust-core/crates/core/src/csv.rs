@@ -162,20 +162,76 @@ pub fn parse_with(text: &str, delimiter: char, limits: Limits) -> Table {
     // content bytes + per-cell/per-row overhead. See the Limits field doc.
     let mut estimated_heap = 0usize;
 
-    let mut chars = text.chars().peekable();
+    // TSK-560: byte-SPAN tokenizer. The old loop walked char-at-a-time with
+    // per-char cap checks and per-char String::push — several× slower than
+    // scanning runs. Structure: a manual byte index; the four special bytes
+    // ('"', '\n', '\r', the delimiter) are all matched at byte level (UTF-8
+    // continuation bytes can never equal an ASCII special, so the scan is
+    // char-safe); everything between specials appends as ONE push_str with
+    // char-counted cap splitting that reproduces the old per-char boundaries
+    // exactly (the golden + cap suites referee). A non-ASCII delimiter is
+    // decoded at its first byte before being treated as a hit.
+    let bytes = text.as_bytes();
+    let delim_first = {
+        let mut buf = [0u8; 4];
+        let s = delimiter.encode_utf8(&mut buf);
+        s.as_bytes().first().copied().unwrap_or(b',')
+    };
+    let delim_len = delimiter.len_utf8();
+    let mut i = 0usize;
 
-    // Append honoring the per-cell char cap (one `…` marker on first overflow).
-    macro_rules! append_to_field {
-        ($c:expr) => {{
-            if field_chars >= limits.max_cell_chars {
+    // Append `span` to the field honoring max_cell_chars + the one-time '…'
+    // marker, and the global scalar cap. Returns false when the SCALAR cap
+    // tripped (caller breaks). Mirrors the old per-char semantics: the char
+    // that would EXCEED max_input_scalars is not processed.
+    macro_rules! append_span {
+        ($span:expr) => {{
+            let mut span: &str = $span;
+            let mut span_chars = span.chars().count();
+            let mut scalar_capped = false;
+            if scalars_consumed + span_chars > limits.max_input_scalars {
+                let take = limits.max_input_scalars - scalars_consumed;
+                let cut = span
+                    .char_indices()
+                    .nth(take)
+                    .map_or(span.len(), |(b, _)| b);
+                span = span.get(..cut).unwrap_or(span);
+                span_chars = take;
+                scalar_capped = true;
+                truncated = true;
+            }
+            scalars_consumed += span_chars;
+            if field_chars + span_chars > limits.max_cell_chars {
+                let room = limits.max_cell_chars.saturating_sub(field_chars);
+                let cut = span
+                    .char_indices()
+                    .nth(room)
+                    .map_or(span.len(), |(b, _)| b);
+                field.push_str(span.get(..cut).unwrap_or(span));
+                field_chars += room;
                 if !field_capped {
                     field.push('…');
                     field_capped = true;
                     truncated = true;
                 }
             } else {
-                field.push($c);
-                field_chars += 1;
+                field.push_str(span);
+                field_chars += span_chars;
+            }
+            !scalar_capped
+        }};
+    }
+
+    // Consume ONE special/control char's scalar budget (the old loop counted
+    // every char incl. delimiters/quotes/newlines). False = cap tripped.
+    macro_rules! consume_scalar {
+        () => {{
+            scalars_consumed += 1;
+            if scalars_consumed > limits.max_input_scalars {
+                truncated = true;
+                false
+            } else {
+                true
             }
         }};
     }
@@ -195,12 +251,7 @@ pub fn parse_with(text: &str, delimiter: char, limits: Limits) -> Table {
         }};
     }
 
-    while let Some(c) = chars.next() {
-        scalars_consumed += 1;
-        if scalars_consumed > limits.max_input_scalars {
-            truncated = true;
-            break;
-        }
+    'outer: while i < bytes.len() {
         if total_cells >= limits.max_total_cells {
             truncated = true;
             break;
@@ -211,49 +262,115 @@ pub fn parse_with(text: &str, delimiter: char, limits: Limits) -> Table {
         }
 
         if in_quotes {
-            if c == '"' {
-                match chars.peek() {
-                    Some('"') => {
-                        chars.next();
-                        append_to_field!('"');
-                    }
-                    _ => in_quotes = false,
+            // Span until the closing quote, appended in bulk.
+            match bytes.get(i..).unwrap_or(&[]).iter().position(|&b| b == b'"') {
+                None => {
+                    let _ = append_span!(text.get(i..).unwrap_or(""));
+                    i = bytes.len();
                 }
-            } else {
-                append_to_field!(c);
+                Some(rel) => {
+                    if rel > 0 && !append_span!(text.get(i..i + rel).unwrap_or("")) {
+                        break 'outer;
+                    }
+                    i += rel + 1; // past the quote
+                    if !consume_scalar!() {
+                        break 'outer;
+                    }
+                    if bytes.get(i) == Some(&b'"') {
+                        // Escaped "" → one literal quote.
+                        i += 1;
+                        if !consume_scalar!() {
+                            break 'outer;
+                        }
+                        let _ = append_span!("\"");
+                    } else {
+                        in_quotes = false;
+                    }
+                }
             }
             continue;
         }
 
-        // Outside quotes.
-        if c == '"' && field.is_empty() {
-            in_quotes = true;
-            continue;
-        }
-        if c == delimiter {
-            commit_field!();
-            total_cells += 1;
-            continue;
-        }
-        if c == '\n' {
-            commit_field!();
-            total_cells += 1;
-            estimated_heap += ROW_HEAP_OVERHEAD;
-            rows.push(core::mem::take(&mut row));
-            continue;
-        }
-        if c == '\r' {
-            commit_field!();
-            total_cells += 1;
-            estimated_heap += ROW_HEAP_OVERHEAD;
-            rows.push(core::mem::take(&mut row));
-            // Swallow a following LF so CRLF doesn't make an empty row.
-            if chars.peek() == Some(&'\n') {
-                chars.next();
+        // Outside quotes: scan the plain run up to the next special byte.
+        let mut j = i;
+        while let Some(&b) = bytes.get(j) {
+            if b == b'"' || b == b'\n' || b == b'\r' || b == delim_first {
+                break;
             }
+            j += 1;
+        }
+        if j > i {
+            if !append_span!(text.get(i..j).unwrap_or("")) {
+                break 'outer;
+            }
+            i = j;
             continue;
         }
-        append_to_field!(c);
+
+        // i sits on a special byte.
+        let Some(&b) = bytes.get(i) else { break };
+        if b == delim_first {
+            // For a multi-byte delimiter, verify the full char; a first-byte
+            // false hit is appended as a plain char and the scan resumes.
+            if delim_len > 1
+                && !text.get(i..).unwrap_or("").starts_with(delimiter) {
+                let ch_len = text
+                    .get(i..)
+                    .and_then(|s| s.chars().next())
+                    .map_or(1, char::len_utf8);
+                if !append_span!(text.get(i..i + ch_len).unwrap_or("")) {
+                    break 'outer;
+                }
+                i += ch_len;
+                continue;
+            }
+            if !consume_scalar!() {
+                break 'outer;
+            }
+            commit_field!();
+            total_cells += 1;
+            i += delim_len;
+            continue;
+        }
+        if b == b'"' {
+            if !consume_scalar!() {
+                break 'outer;
+            }
+            if field.is_empty() && !field_capped {
+                in_quotes = true;
+            } else {
+                let _ = append_span!("\"");
+            }
+            i += 1;
+            continue;
+        }
+        if b == b'\n' {
+            if !consume_scalar!() {
+                break 'outer;
+            }
+            commit_field!();
+            total_cells += 1;
+            estimated_heap += ROW_HEAP_OVERHEAD;
+            rows.push(core::mem::take(&mut row));
+            i += 1;
+            continue;
+        }
+        // b == b'\r'
+        if !consume_scalar!() {
+            break 'outer;
+        }
+        commit_field!();
+        total_cells += 1;
+        estimated_heap += ROW_HEAP_OVERHEAD;
+        rows.push(core::mem::take(&mut row));
+        i += 1;
+        // Swallow a following LF so CRLF doesn't make an empty row.
+        if bytes.get(i) == Some(&b'\n') {
+            i += 1;
+            if !consume_scalar!() {
+                break 'outer;
+            }
+        }
     }
 
     // Flush trailing field / row. We inline the row-cap check here rather than
