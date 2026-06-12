@@ -7934,3 +7934,20 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   engine surface** — the owner's "no Swift on the server" target has its skeleton.
 - Next: TSK-652 stage 2 (Swift RemoteTransport + loopback A/B = the cross-language
   acceptance), then TSK-654 (fs family + push, with root containment).
+## LOG +247 (2026-06-12 tick — TSK-652 + TSK-653 VALIDATED: remote is a working carrier)
+
+- **The carrier-swap proof passed** (9cc33d8): RemoteTransport (unix-socket dial, hello,
+  serialized sync calls, in-band errors mapped onto CoreError) + the loopback acceptance
+  — ALL SEVEN engine wrappers byte-equal in-process vs a spawned mdv-serve; the typed
+  `invalid_pattern` survives the wire (the ICU-fallback channel works remotely);
+  capability masks agree. MsgPackValue gained the bin family (additive).
+- **Teeth caught a false green in the acceptance test itself**: the envelope-key
+  mutation broke the handshake and the suite SKIPPED instead of failing (the skip was
+  meant for binary-not-built only). Fixed — handshake failure with an existing binary
+  XCTFails — then the same mutation reddened all four tests loudly. Exactly the test
+  class the teeth mandate exists to kill.
+- Both tickets validated (652: seam+remote complete; 653: server v1 with the
+  cross-language acceptance met). **A Swift client and a rust-only server now run the
+  same engine surface with identical bytes** — the remote-core goal has its working
+  spine. Next: TSK-654 (fs family + push + root containment), TSK-660 (TreeSitter),
+  flip rounds on TSK-649.
