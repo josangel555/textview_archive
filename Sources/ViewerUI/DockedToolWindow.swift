@@ -27,10 +27,29 @@ struct PanelDragPayload: Codable, Transferable {
 }
 
 extension UTType {
-    /// Custom UTI for an in-app tool-window drag (UX-E / #227). Not
-    /// exported to the system pasteboard registry — scoped to in-process
-    /// drag-and-drop between our own docks.
+    /// Custom UTI for an in-app tool-window drag (UX-E / #227). Declared
+    /// in the app's Info.plist `UTExportedTypeDeclarations` (TSK-327):
+    /// `UTType(exportedAs:)` types MUST be declared there — an undeclared
+    /// exported UTI is the classic silently-dead drag/drop (the payload
+    /// writes but no `dropDestination` ever accepts it).
     static let mdvPanelDrag = UTType(exportedAs: "com.markdownviewer.panel-drag")
+}
+
+/// The shared drag-preview chip for a tool-window drag — used by every
+/// drag source (docked header, accordion section header, rail icon) so
+/// the affordance reads identically wherever the drag starts (TSK-327).
+struct PanelDragChip: View {
+    let kind: SidebarPanelKind
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: kind.systemImage)
+            Text(kind.displayName)
+        }
+        .font(.system(size: 11, weight: .medium))
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(Palette.windowBackground)
+    }
 }
 
 // MARK: - Rail drop-zone modifier
@@ -404,13 +423,7 @@ struct DockedToolWindow: View {
         // the explicit, discoverable alternative.
         .draggable(PanelDragPayload(kind)) {
             // Drag preview: a compact chip naming the panel.
-            HStack(spacing: 4) {
-                Image(systemName: kind.systemImage)
-                Text(kind.displayName)
-            }
-            .font(.system(size: 11, weight: .medium))
-            .padding(.horizontal, 8).padding(.vertical, 4)
-            .background(Palette.windowBackground)
+            PanelDragChip(kind: kind)
         }
         .accessibilityIdentifier("mdv.dock.\(edge.rawValue).\(kind.rawValue).header")
     }

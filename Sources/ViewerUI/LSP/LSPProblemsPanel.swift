@@ -106,7 +106,8 @@ public struct LSPProblemsPanel: View {
                 SidebarSectionHeaderLabel(
                     title: "Problems",
                     isExpanded: isExpanded,
-                    uiSize: uiSize
+                    uiSize: uiSize,
+                    dragKind: .lspProblems
                 )
                 .contentShape(Rectangle())
             }

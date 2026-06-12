@@ -69,7 +69,8 @@ struct BookmarksSection: View {
                 SidebarSectionHeaderLabel(
                     title: "Bookmarks",
                     isExpanded: isExpanded,
-                    uiSize: model.uiSize
+                    uiSize: model.uiSize,
+                    dragKind: .bookmarks
                 )
                 .contentShape(Rectangle())
             }

@@ -152,7 +152,8 @@ public struct LSPOutlineSection: View {
                 SidebarSectionHeaderLabel(
                     title: "Outline",
                     isExpanded: isExpanded,
-                    uiSize: uiSize
+                    uiSize: uiSize,
+                    dragKind: .lspOutline
                 )
                 Spacer()
                 if model.isLoading {

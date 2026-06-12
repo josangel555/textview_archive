@@ -76,6 +76,24 @@
             </dict>
         </dict>
     </array>
+    <!-- TSK-327: the in-app tool-window drag payload type. SwiftUI's
+         .draggable/.dropDestination use UTType(exportedAs:
+         "com.markdownviewer.panel-drag") — an EXPORTED type MUST be
+         declared here, or the drag payload writes to the pasteboard but
+         no drop zone ever accepts it (the silently-dead drag). -->
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.markdownviewer.panel-drag</string>
+            <key>UTTypeDescription</key>
+            <string>TextView tool-window drag payload</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+        </dict>
+    </array>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>

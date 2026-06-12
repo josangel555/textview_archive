@@ -42,7 +42,8 @@ struct RecentlyOpenedSection: View {
                 SidebarSectionHeaderLabel(
                     title: "Recent",
                     isExpanded: isExpanded,
-                    uiSize: model.uiSize
+                    uiSize: model.uiSize,
+                    dragKind: .recentlyOpened
                 )
                 Spacer()
                 if !model.recents.isEmpty {

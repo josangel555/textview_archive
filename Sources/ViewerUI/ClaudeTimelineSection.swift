@@ -65,7 +65,8 @@ struct ClaudeTimelineSection: View {
                 SidebarSectionHeaderLabel(
                     title: "Claude",
                     isExpanded: isExpanded,
-                    uiSize: model.uiSize
+                    uiSize: model.uiSize,
+                    dragKind: .claudeTimeline
                 )
                 Spacer()
                 Text("\(events.count)")

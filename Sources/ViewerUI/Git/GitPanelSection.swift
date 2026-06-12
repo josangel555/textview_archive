@@ -78,7 +78,8 @@ struct GitPanelSection: View {
                 SidebarSectionHeaderLabel(
                     title: "Git",
                     isExpanded: isExpanded,
-                    uiSize: model.uiSize
+                    uiSize: model.uiSize,
+                    dragKind: .git
                 )
                 if let branch = panel.head?.branch {
                     Text(branch)

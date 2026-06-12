@@ -1,4 +1,5 @@
 import SwiftUI
+import ViewerCore
 
 /// Layout constants shared across sidebar sections — Bookmarks,
 /// Search, Git panel body, Claude timeline, FILES.
@@ -99,12 +100,31 @@ public enum SidebarSectionHeaderMetrics {
 /// buttons). The `uiSize` closure threads `DocumentModel.uiSize(_:)`
 /// through so user zoom still scales the label; defaults to identity
 /// for call sites without a model.
+///
+/// TSK-327: when `dragKind` is set, the label is a DRAG SOURCE for the
+/// tool-window drag-to-snap system — dragging the section header onto a
+/// shoulder rail / the sidebar (`panelDropZone`) redocks the panel.
+/// This is the one shared chokepoint every dockable section's header
+/// passes through, so the accordion gets its drag handles in one place.
+/// `nil` (the default) keeps non-dockable headers (FILES, per-plugin
+/// inner sections) inert.
 struct SidebarSectionHeaderLabel: View {
     let title: String
     let isExpanded: Bool
     var uiSize: (CGFloat) -> CGFloat = { $0 }
+    var dragKind: SidebarPanelKind? = nil
 
     var body: some View {
+        if let kind = dragKind {
+            labelRow.draggable(PanelDragPayload(kind)) {
+                PanelDragChip(kind: kind)
+            }
+        } else {
+            labelRow
+        }
+    }
+
+    private var labelRow: some View {
         HStack(spacing: 4) {
             // UX-F (#228): chevron glyph + its reserved frame scale with the
             // same `uiSize` closure as the label, so the whole header row

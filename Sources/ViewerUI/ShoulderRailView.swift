@@ -185,6 +185,20 @@ struct PanelRailButton: View {
     var onMove: ((PanelEdge) -> Void)? = nil
 
     var body: some View {
+        if kind == .files {
+            // FILES is never a free-standing tool window — no drag source.
+            core
+        } else {
+            // TSK-327: the rail ICON is a drag source too — "drag the tool
+            // window icon to any shoulder". Click still toggles; a drag
+            // starts the same PanelDragPayload session as the headers.
+            core.draggable(PanelDragPayload(kind)) {
+                PanelDragChip(kind: kind)
+            }
+        }
+    }
+
+    private var core: some View {
         Button(action: action) {
             Image(systemName: kind.systemImage)
                 .font(.system(size: uiSize(13), weight: .medium))

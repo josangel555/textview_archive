@@ -96,7 +96,8 @@ public struct LSPNavigationPanel: View {
                 SidebarSectionHeaderLabel(
                     title: headerTitle,
                     isExpanded: isExpanded,
-                    uiSize: uiSize
+                    uiSize: uiSize,
+                    dragKind: .lspNavigation
                 )
                 if let ctx = store.contextDescription, store.mode == .references {
                     Text("· \(ctx)")

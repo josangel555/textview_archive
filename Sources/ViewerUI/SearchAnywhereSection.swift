@@ -74,7 +74,8 @@ struct SearchAnywhereSection: View {
                 SidebarSectionHeaderLabel(
                     title: "Search",
                     isExpanded: isExpanded,
-                    uiSize: model.uiSize
+                    uiSize: model.uiSize,
+                    dragKind: .searchAnywhere
                 )
                 Spacer()
                 if isRunning {
