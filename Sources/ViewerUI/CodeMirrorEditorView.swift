@@ -575,7 +575,10 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
                 // back protects against drift if JS and Swift ever
                 // disagree on doc length.
                 let base = lastSentText ?? ""
-                if let applied = CMEditApplier.apply(edits, to: base),
+                // Routed through the `.cmEdit` gate (TSK-649 A0 — the last
+                // unconsumed adapter): Rust reducer when on, Swift
+                // CMEditApplier otherwise; both signal "resync" as nil.
+                if let applied = RustCMEditAdapter.apply(edits, to: base),
                    contentLength < 0 || applied.utf16.count == contentLength {
                     lastSentText = applied
                     onTextChange?(applied)
