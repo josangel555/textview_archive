@@ -149,6 +149,13 @@ on the host — it just exercises the headless tiers and skips T4/T5.
 
 ## Project-specific
 
+- **SwiftPM staleness traps (TSK-626 family): after changing the staged C
+  header OR any cross-module public type's LAYOUT (e.g. adding a case to
+  `RustCore.CoreError`), `touch` every file that references it — INCLUDING
+  the Tests/ targets' files** — before trusting test results. Stale test
+  objects against a re-laid-out enum SIGSEGV (signal 11) in ways that look
+  exactly like FFI/unwinding bugs (live case 2026-06-12: a pure-Swift
+  `throw CoreError.panic` segfaulted). Suspect staleness BEFORE the boundary.
 - Bundle id stays `com.markdownviewer.MarkdownViewer` (TCC-stable).
 - Local signing only (cert `MarkdownViewer Local Dev`); no Developer
   ID until shipping public.

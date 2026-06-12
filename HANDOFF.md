@@ -1,70 +1,81 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — "once done with the current ones": drain checkpoint, mislabel sweep pending (2026-06-10 night)
+# Handoff — rust-core port wave: find port landed; markdown + transcript ports next  (2026-06-12)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ 870ceef (+ LESSONS/CLAUDE.md/HANDOFF commit follows)
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ db30ecb (+ docs commits follow)
 
 ## Mission
-SOP rank 1.5 VALIDATION DRAIN (docs/TASK_WORKFLOW.md §3 — read it every firing): drain
-the `fixed` lane by re-running each ticket's evidence FRESH; validate on
-green-with-teeth, build missing guards, bounce dishonest states, hold honestly.
+Rust-core migration / Swift-core deprecation (OWNER PRIORITY 2026-06-12, SOP §2.5:
+port-targeted Swift engines are bugfix-only). Drive the owner-greenlit pools on the
+tasked board; the loop cron (`3,13,23,33,43,53 * * * *`, session-only — RECREATE in a
+fresh session) fires the ticks.
 
 ## Current state
-- Done: **TSK-151..196 series COMPLETE** (20 tickets, 9 new guards). BACKLOG series
-  partial: 271/273/274 validated; 261/268 visual-holds; 272 shared-park hold;
-  276 parked (Debugger 3-option ask); 326/279 mislabels bounced to progress.
-  Session tally: 25 validated · 3 holds · 3 bounced · 1 parked · TSK-623
-  caught+fixed. Main continuously gate-green; logs +196..+204.
-- **MISLABEL SWEEP COMPLETE: 19 total mislabeled tickets** (16 found by the
-  sweep + 3 hand-caught), ALL bounced to progress with correction notes. Full
-  classification AND the 52-ticket CONSISTENT drain queue (with suite names) are
-  in docs/AUTONOMOUS_PROGRESS.md LOG +205. Fallout back in the open pool:
-  TSK-270 (file-open delay) and TSK-372 (tab duplication on reopen) — owner-felt
-  bugs that had been falsely closed, both annotated with reproduce-first notes.
-- Next action: (1) drain the CONSISTENT queue from LOG +205 in suite-cluster
-  batches — rust e83408d cluster first (TSK-394–398: ONE fresh rust-core gate run
-  covers all five), then terminal cluster (456–459), then singles → (2) ONE
-  batched VM GUI pixel run for the visual-hold cluster (261+268+489; tab-strip
-  MDV_UI_SCENE shot; MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password>).
+- **Done & validated this session:** TSK-635 (egress, corrected scope), TSK-554
+  (supply-chain lane: deny+audit split, nightly workflow, teeth), TSK-634 (FFI velocity,
+  3 stages: capability bitmap / `ffi_frame_body!`+misuse-matrix macros / `mdvFrameCall`
+  Swift helper), TSK-633 (fuzzy port, zero deps), TSK-630 (find port on regex-lite
+  =0.1.8, features-off, 0 transitive). TSK-505/TSK-261/268/331 validated earlier in
+  session. TSK-643 filed (the owner-observed outbound connection is UNEXPLAINED —
+  markdown CSP ruled out). TSK-256 un-gated (dep decision = pulldown-cmark via TSK-629),
+  linked + blocked_by TSK-631.
+- **In flight:** nothing torn — find port committed (db30ecb), both gates green, board
+  reconciled. LOG +236 may still need appending if the docs commit below didn't happen.
+- **Next action:** TSK-632 (transcript/JSONL port, hand-rolled JSON subset ~500-800
+  lines, NO serde_json) or TSK-631 (markdown port on pulldown-cmark — add dep per the
+  features-off rider exactly as regex-lite was added in `rust-core/Cargo.toml`). Then the
+  remaining pools: TSK-628, TSK-636, parity fruits TSK-637-640, theming TSK-641→642.
 
 ## Key decisions & rationale
-- Mislabel remedy = `task_record {to: progress}` + correction note (the only legal
-  agent edge out of `fixed`); park on top when the real ask needs owner
-  prioritization. Chosen over dismiss (work IS needed) and over leaving at fixed
-  (lane fraud).
-- Visual-only residuals batch into ONE VM pixel run, not per-ticket runs — GUI
-  lane setup cost dominates.
-- TSK-272 deliberately NOT validated despite green model tests — it shares
-  TSK-306's parked owner decision; validating would pre-empt the park.
+- **Stage 3 of TSK-634 redesigned** from "generate Swift stubs" to the shared
+  `mdvFrameCall` helper — stage 2's uniform C signature made a generator pure machinery.
+- **Adapter flips deliberately deferred** (BACKLOG): fuzzy/find are validated but no UI
+  routes through them; flip + Swift-twin deletion is a collective, reviewed change.
+- **deny/audit duty split** because cargo-deny 0.18.x can't parse CVSS-4.0 advisories.
+- **Capability bits are ABI**: pre-assigned for unported engines (markdown 1<<6,
+  transcript 1<<7), flipped atomically with each port's exports — both sides' reserved-bit
+  tests edit in the SAME change (they go red otherwise, by design).
 
-## Gotchas / lessons (full entries in LESSONS.md "2026-06-10 night" section)
-- #NNN ≠ TSK-NNN mislabeled-as-fixed pattern — title-match before ANY validation
-  (now also a CLAUDE.md rule).
-- `ssh … | tail` eats exit codes — write `EXIT=$?` markers.
-- SwiftUI Buttons/Rectangles never realize as NSViews — placement claims are
-  VM-pixel-or-owner-eyes only.
-- An armed lane's first real run is expected to be red (TSK-163 → TSK-623).
+## Gotchas / lessons (full entries in LESSONS.md 2026-06-12)
+- **Stale test-target objects after a cross-module enum layout change SIGSEGV** like an
+  FFI bug (pure-Swift `throw CoreError.panic` crashed). `touch` Tests/ referents too —
+  CLAUDE.md rule added; TSK-626 commented (second instance of the class).
+- cbindgen does NOT expand macro_rules — extern signatures stay hand-written; macros
+  generate bodies/tests only.
+- cargo-deny unions all platforms' graphs — `[graph] targets` pin is load-bearing.
+- regex-lite: ASCII-only case-insensitivity, no lookaround → `.invalidPattern` typed
+  channel = the Swift-fallback path.
 
 ## Files that matter
-- `docs/AUTONOMOUS_PROGRESS.md` LOG +196..+204 — per-wave narrative.
-- `Tests/ViewerCoreTests/InfraInvariantTests.swift` — infra pins incl. the
-  SessionStore↔vm-smoke parity pin.
-- `Tests/ViewerUITests/FileWatcherDegradationCueTests.swift` + the
-  `FileWatcher.forceConstructionFailure` seam (`Sources/ViewerCore/FileWatcher.swift:105-119`).
-- `scripts/junit-convert.py` (+ `JUnitConverterTests`), `scripts/check-dylib-identifiers.sh`.
+- `rust-core/crates/core/src/find_engine.rs` — the find port (UTF-16 sweep, S2-E/CORR-6).
+- `rust-core/crates/core/src/fuzzy.rs` — the fuzzy port (scoring constants = parity contract).
+- `rust-core/crates/ffi/src/guard.rs` — `ffi_frame_body!`; `tests.rs` —
+  `frame_export_misuse_matrix!` + capability pins (edit reserved-bits tests when porting).
+- `Sources/RustCore/CoreClient.swift` — `mdvFrameCall` (~line 380), `CoreCapabilities`,
+  wrappers; `CoreError.invalidPattern`.
+- `Tests/RustCoreTests/{FuzzyRank,FindSearch}ABTests.swift` — the parity oracles.
+- `scripts/rust-supply-chain-audit.sh` + `.github/workflows/nightly-supply-chain.yml`.
+- `docs/EGRESS.md` — egress inventory (answer firewall prompts from it).
 
 ## Open questions / blockers (owner queue)
-TSK-598 supervised MountedPanesLRU · TSK-276 Debugger 3-option ask · TSK-306/272
-preview-tab validation bar · TSK-139 dismiss · TSK-608 ask · 261/268 visual
-confirms · validated pile awaits one-click done.
+- TSK-643: needs the firewall's full flow record (port + process path) next occurrence.
+- Miri/ASan nightly step: behind nightly-toolchain approval (audit ask #5).
+- Owner parks unchanged: TSK-322 zoom, TSK-598 MountedPanesLRU (do NOT start), TSK-608,
+  TSK-270/372; validated pile awaits owner one-click done.
 
 ## Tracker
-Board live-synced through wave 13 (every move recorded with artifacts at action
-time). Validated this session: 602,615,108,621,599,600,609,266,440,134,181,150,
-141,142,143,147,138,151,157,159,160,161,162,163,623,170,171,172,173,183,185,187,
-189,190,191,192,193,196,271,273,274. Bounced: 326,276(parked),279. Holds:
-261,268,272.
+All live on the tasked board (project `tasked`, agent `claude-mdv`): validated this
+session — 635, 554, 634, 633, 630, 505, 261, 268, 331; commented — 626 (staleness class),
+256 (un-gated, blocked_by 631); filed — 643 (egress investigation), 628/636-642 pools
+untouched; 644 self-dismissed (misfile).
 
 ## How to resume
-1. Read docs/TASK_WORKFLOW.md in full (per-firing mandate).
-2. `git status` — commit stray docs if dirty (`.profiling/` untracked is expected).
-3. Continue per "Next action" above (sweep first).
+1. Read `docs/TASK_WORKFLOW.md` IN FULL (per-firing mandate; §2.5 = migration policy).
+2. `git status` — tree should be clean except `.profiling/`; `git log --oneline -5`.
+3. Recreate the loop cron if the session restarted (10-min cadence, prompt = the
+   "Autonomous loop tick" text in AUTONOMOUS_PROGRESS LOG +230 context or CLAUDE.md SOP).
+4. Pick up TSK-632 or TSK-631 (claim → port engine → export via the ceremony: 1-line
+   `ffi_frame_body!`, 2-line misuse matrix, flip the reserved capability bit + BOTH
+   reserved-bit tests, 1-line Swift wrapper via `mdvFrameCall`, A/B parity suite, teeth,
+   both gates: `bash scripts/rust-core-gate.sh` + `bash scripts/test-headless-gate.sh`).
+5. After enum/header changes: `touch` referencing files in Sources/ AND Tests/ (see
+   CLAUDE.md staleness rule) before believing any SIGSEGV.

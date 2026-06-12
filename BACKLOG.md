@@ -927,3 +927,20 @@ all already tracked on the board, listed here only as the resume pointer:
 - MountedPanesLRU supervised session: parked on TSK-598 with measurement
   backing (WebKit loadToFinish 3.46s = 94% of MD open); clears TSK-598 +
   TSK-266 residue + tab-switch lag in one move once approved.
+
+## 2026-06-12 — port-wave follow-ups
+
+- **Adapter-flip decision package** (M): fuzzy (TSK-633) + find (TSK-630) are validated
+  with A/B parity but NOT consumed — no UI adapter routes through them yet. When 2+ more
+  engines land (or on owner ask): a RustCoreFallback-gated adapter per engine, default-OFF,
+  then the flip + Swift-twin deletion as its own reviewed change. Don't flip ad hoc.
+- **Swift-twin deletions after flips** (S each): FuzzyMatcher.swift, FindEngine.swift +
+  RegexComplexityGuard wall-clock half (compile-shape guard may stay for the MCP
+  find tool if it keeps NSRegularExpression during transition).
+- **mdvFrameCall `name:` param → TSK-636 audit-log emit point** — wire when 636 lands.
+- **Miri/ASan nightly step** on the supply-chain lane (TSK-554 noted follow-up) — behind
+  the nightly-toolchain approval (audit ask #5).
+- **cargo-deny advisories re-merge** once it parses CVSS-4.0 (drop the cargo-audit split
+  if so; see LESSONS 2026-06-12).
+- **regex-lite escape**: hand-rolled `escape_literal` in find_engine.rs — if regex-lite
+  ever exports `escape` under our feature set, swap and delete.

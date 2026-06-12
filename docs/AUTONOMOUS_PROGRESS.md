@@ -7696,3 +7696,23 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - Swift `FuzzyMatcher` is now §2.5-frozen with a validated Rust replacement standing by;
   adapter flip waits on the collective decision. Next ports: TSK-632 (transcript/JSONL,
   hand-rolled JSON) or TSK-630 (find/regex-lite — first dep add under the features-off rider).
+
+## LOG +236 (2026-06-12 — TSK-630 find port validated; TSK-256 un-gated; handoff checkpoint)
+
+- **TSK-630 → validated** (commit db30ecb). regex-lite =0.1.8 added — the FIRST dep under
+  the features-off rider: default-features OFF, explicit ["std","string"], verified ZERO
+  transitive (lock 145→146 exactly). `find_engine.rs`: whole-doc search in NSRange/UTF-16
+  semantics via one monotonic sweep, S2-E line accounting + CORR-6 clamp; ReDoS
+  structurally gone (PikeVM). Export via the ceremony; MDV_CAP_FIND atomic flip; typed
+  `CoreError.invalidPattern` = the Swift-fallback channel (ICU-only constructs included).
+  A/B parity 5/5 green first try; TEETH: CR line-advance muted → A/B red with exactly the
+  S2-E divergence on every CR/CRLF text.
+- **Incident, diagnosed honestly:** two ViewerCore panic-path tests SIGSEGV'd in the gate
+  — NOT the port: stale TEST-target objects vs the CoreError layout change (TSK-626 class,
+  SECOND instance; commented there, rule added to CLAUDE.md, lesson in LESSONS.md). Cure:
+  touch Tests/ referents too. Gate green after.
+- **TSK-256 un-gated** (owner confirm): the [DEPGATED] decision was settled by TSK-629 —
+  pulldown-cmark; linked + blocked_by TSK-631 (the engine port the web tier will consume).
+- **Handoff checkpoint written** (HANDOFF.md): ports remaining TSK-631 (markdown) +
+  TSK-632 (transcript); then 628/636/parity/theming pools. Port scoreboard:
+  csv/diff/hex/indent/cm-apply (pre-existing) + fuzzy + find ported; 2 to go.

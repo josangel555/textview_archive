@@ -2807,3 +2807,34 @@ Continuation of "the five constraints" above; these three close every remaining 
   (e.g. SessionStore.defaultDirectory()) in the test and assert the script
   references the same path — either side drifting goes red (TSK-191). Beats
   pinning both sides to a hardcoded constant.
+
+## 2026-06-12 — rust-core port wave (capability bitmap, codegen, fuzzy/find ports)
+
+- **SwiftPM staleness class #2: cross-module enum-layout skew SIGSEGVs.** Adding a case
+  mid-enum to `RustCore.CoreError` recompiled ViewerCore consumers but NOT the
+  ViewerCoreTests object files that pattern-match the enum — the stale test objects
+  segfaulted (signal 11) on a `throw CoreError.panic` from a PURE SWIFT closure (no FFI
+  involved; looked exactly like an FFI/unwinding bug). Cure: `touch` the *test target's*
+  files that reference the changed type, not just Sources. Same family as TSK-626
+  (header-only changes); filed as a comment there. When a test SIGSEGVs right after an
+  enum/ABI-ish change, suspect stale objects BEFORE suspecting the boundary.
+- **cbindgen does not expand `macro_rules!`** — extern "C" signatures must stay
+  hand-written in the source cbindgen scans or they silently vanish from the header
+  (the header-drift check catches it loudly, but design for it). Hence `ffi_frame_body!`
+  generates BODIES only. A proc-macro could generate signatures but would pull syn/quote —
+  rejected on minimal-deps.
+- **cargo-deny 0.18.x cannot parse RustSec CVSS-4.0 advisories** (hard error loading the
+  DB) — split duties: deny owns licenses/bans/sources, cargo-audit owns advisories.
+  Re-test on cargo-deny upgrades; re-merge when fixed.
+- **cargo-deny unions ALL platforms' dep graphs by default** — 7 of our 8 "duplicate
+  version" findings were windows/linux-only phantoms. `[graph] targets = [...]` pinned to
+  the actually-built triples makes findings real.
+- **regex-lite is ASCII-only for case-insensitivity and rejects lookaround** — both
+  documented divergences vs NSRegularExpression/ICU; the find A/B corpus must stay in the
+  common subset, and `.invalidPattern` is the typed fallback channel to the Swift engine.
+- **NSRange parity means UTF-16 everywhere**: the find port reports UTF-16 offsets/columns
+  via a single monotonic char sweep (byte→UTF-16 map + CR/LF/CRLF line accounting in one
+  pass). Bare CR advances lines (S2-E), CRLF once, CORR-6 column clamp ≥1 — teeth-verified
+  against the Swift engine on every terminator style.
+- **The `1 ignored` in cargo test after adding a doc example** is the ```ignore doctest —
+  not a skipped unit test. Don't chase it.
