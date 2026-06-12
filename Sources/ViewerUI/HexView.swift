@@ -223,10 +223,14 @@ struct HexView: View {
         }
         queryIsInvalid = false
         searchPattern = pattern
+        // Routed through the `.hexSearch` gate (TSK-649 A0): the adapter
+        // re-parses the query rust-side; its Swift arm is the incumbent
+        // parse+find. The click-highlight below stays Swift-only by design
+        // (byte-pattern entry, the adapter's documented carve-out).
         let capped = HexMatchCap.cap(
             pattern.isEmpty
                 ? []
-                : HexSearchEngine.find(pattern: pattern, in: file.data),
+                : RustHexSearchAdapter.search(searchQuery, mode: searchMode, in: file.data),
             to: Self.matchCap)
         matches = capped.offsets
         matchesCapped = capped.wasCapped
@@ -672,7 +676,10 @@ final class HexTextController: NSViewController {
         // overhead that dominated small files (#218: 6 KB ≈ 1 s).
         if HexRenderPlan.useSyncBuild(renderedByteCount: file.byteCount) {
             PerfSignpost.withInterval(.render, "HexView.syncBuild") {
-                let text = HexDumpBuilder.buildAll(file: file, width: width)
+                // Routed through the `.hex` gate (TSK-649 A0). The windowed
+                // chunk build below stays Swift until the Phase-1 windowed
+                // snapshot lands (the adapter only has the full-dump API).
+                let text = RustHexAdapter.buildAll(file: file, width: width)
                 storage.beginEditing()
                 storage.setAttributedString(NSAttributedString(
                     string: text,
