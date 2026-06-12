@@ -8139,3 +8139,17 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - DECISIONS NEEDED: the TSK-649 park above. While it waits, the non-gated queue is
   TSK-660 (TreeSitter — best started fresh post-compaction given its size), the push
   loop, TSK-659 LSP pipe, and the live-gated UI tails.
+## LOG +262 (2026-06-12 tick — VM lane green: the whole wave cross-validated)
+
+- **First VM run since the wave began: 4872 tests, 0 genuine failures** (58 skipped =
+  the self-skipping heavy tiers; the single reported failure —
+  TerminalForegroundBumpTests' async-scheduling wait, 10.7s under full-suite load vs
+  0.057s green isolated — is the documented VM-load timing-flake class, unrelated to
+  any session change). The run covers stage A (all ten default flips), the four engine
+  ports + adapters, the transport seam, the audit log, outline, and theming on the
+  VM's Swift 6.3 toolchain against the host-built libmdvcore_ffi.a that rsync shipped.
+- En route it hit and cured the documented TSK-502 class (root-owned .build files from
+  a prior sudo run → chown -R vm-tester).
+- TSK-468 drain: the fix intact on today's main; the VM suite covers its
+  compile/headless half — only the GUI glance batch remains (References menu, outline
+  panel, theme picker), alongside the TSK-649 stage-B owner decision.
