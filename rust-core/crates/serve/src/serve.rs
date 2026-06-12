@@ -39,14 +39,23 @@ fn method_fn(name: &str) -> Option<WireFn> {
 }
 
 /// Serve one connection: hello first (wire-version hard-close), then a
-/// request loop. Returns on EOF / IO error / protocol violation.
+/// DUPLEX loop (TSK-662): requests answer inline while a per-connection
+/// watcher thread pushes subscription events; both share the write side
+/// behind a mutex. Subscriptions die with the connection (§5). Returns on
+/// EOF / IO error / protocol violation.
 pub fn handle_connection(
     stream: &UnixStream,
     fs_ctx: &FsCtx,
     transcript_ctx: &TranscriptCtx,
 ) -> std::io::Result<()> {
     let mut reader = stream;
-    let mut writer = stream;
+    let writer = std::sync::Mutex::new(stream.try_clone()?);
+    let write_locked = |frame: &Frame| -> std::io::Result<()> {
+        let Ok(mut w) = writer.lock() else {
+            return Err(std::io::Error::other("writer lock poisoned"));
+        };
+        write_frame(&mut &*w, &envelope::encode(frame))
+    };
 
     // --- hello (must be the first frame) ---
     let Some(first) = read_frame(&mut reader)? else { return Ok(()) };
@@ -68,7 +77,7 @@ pub fn handle_connection(
                 ),
             }),
         };
-        let _ = write_frame(&mut writer, &envelope::encode(&resp));
+        let _ = write_locked(&resp);
         return Ok(());
     }
     let mut capabilities = MDV_CAPABILITIES | MDV_CAP_TRANSCRIPT_LIST;
@@ -82,24 +91,76 @@ pub fn handle_connection(
     })
     .map(unframe_or_empty)
     .unwrap_or_default();
-    write_frame(
-        &mut writer,
-        &envelope::encode(&Frame::Response { id: hello.0, body: Some(hello_body), error: None }),
-    )?;
+    write_locked(&Frame::Response { id: hello.0, body: Some(hello_body), error: None })?;
+
+    // --- watcher thread (the push half, §5) ---
+    // One per connection; ticks at MIN_TICK_MS and lets the hub's per-sub
+    // debounce accounting decide what is due. Event writes serialize with
+    // response writes through the same mutex (a fresh stream clone).
+    let hub = std::sync::Arc::new(crate::watch::WatchHub::new(fs_ctx));
+    let watcher = if fs_ctx.enabled() {
+        let hub_t = std::sync::Arc::clone(&hub);
+        let event_stream = std::sync::Mutex::new(stream.try_clone()?);
+        Some(std::thread::spawn(move || {
+            let step = crate::watch::MIN_TICK_MS;
+            while !hub_t.stopped() {
+                std::thread::sleep(std::time::Duration::from_millis(step));
+                let mut failed = false;
+                hub_t.tick(step, &mut |frame| {
+                    if failed {
+                        return;
+                    }
+                    let Ok(mut w) = event_stream.lock() else {
+                        failed = true;
+                        return;
+                    };
+                    if write_frame(&mut &*w, &envelope::encode(&frame)).is_err() {
+                        // Peer gone — the request loop will notice EOF and
+                        // stop the hub; just stop emitting.
+                        failed = true;
+                    }
+                });
+                if failed {
+                    break;
+                }
+            }
+        }))
+    } else {
+        None
+    };
 
     // --- request loop ---
-    while let Some(bytes) = read_frame(&mut reader)? {
-        let frame = match envelope::decode(&bytes) {
-            Ok(f) => f,
-            Err(_) => return Ok(()), // malformed envelope: hang up
-        };
-        let Frame::Request { id, method, body } = frame else {
-            continue; // responses/events from a client are ignored in v1
-        };
-        let resp = dispatch(id, &method, &body, fs_ctx, transcript_ctx);
-        write_frame(&mut writer, &envelope::encode(&resp))?;
+    let result = (|| -> std::io::Result<()> {
+        while let Some(bytes) = read_frame(&mut reader)? {
+            let frame = match envelope::decode(&bytes) {
+                Ok(f) => f,
+                Err(_) => return Ok(()), // malformed envelope: hang up
+            };
+            let Frame::Request { id, method, body } = frame else {
+                continue; // responses/events from a client are ignored in v1
+            };
+            let resp = match method.as_str() {
+                "fs.watch" => match hub.watch(fs_ctx, &body) {
+                    Ok(out) => Frame::Response { id, body: Some(out), error: None },
+                    Err(e) => Frame::Response { id, body: None, error: Some(e) },
+                },
+                "fs.unwatch" => match hub.unwatch(&body) {
+                    Ok(out) => Frame::Response { id, body: Some(out), error: None },
+                    Err(e) => Frame::Response { id, body: None, error: Some(e) },
+                },
+                _ => dispatch(id, &method, &body, fs_ctx, transcript_ctx),
+            };
+            write_locked(&resp)?;
+        }
+        Ok(())
+    })();
+
+    // Subscriptions die with the connection.
+    hub.stop();
+    if let Some(t) = watcher {
+        let _ = t.join();
     }
-    Ok(())
+    result
 }
 
 fn dispatch(
@@ -243,6 +304,129 @@ mod tests {
             let tctx = TranscriptCtx::new(Some("/nonexistent"));
             let _ = handle_connection(&server, &ctx, &tctx);
         })
+    }
+
+    #[test]
+    fn fs_watch_pushes_events_over_the_socket_and_unwatch_silences() {
+        // TSK-662 end-to-end: hello → fs.watch → file churn → pushed Event
+        // frames (monotonic seq, root-relative paths) → fs.unwatch → quiet.
+        #[allow(clippy::unwrap_used, reason = "test setup")]
+        let dir = {
+            let d = std::env::temp_dir()
+                .join(format!("mdv-serve-watch-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&d);
+            std::fs::create_dir_all(&d).unwrap();
+            d.canonicalize().unwrap()
+        };
+        let (client, server) = connected_pair();
+        let dir_t = dir.clone();
+        let h = std::thread::spawn(move || {
+            #[allow(clippy::unwrap_used, reason = "test setup")]
+            let ctx = FsCtx::new(Some(dir_t.to_str().unwrap())).unwrap();
+            let tctx = TranscriptCtx::new(Some("/nonexistent"));
+            let _ = handle_connection(&server, &ctx, &tctx);
+        });
+
+        send(&client, &Frame::Request { id: 1, method: "hello".into(), body: hello_body() });
+        let Frame::Response { id: 1, body: Some(_), error: None } = recv(&client) else {
+            #[allow(clippy::panic, reason = "test assertion")]
+            {
+                panic!("hello must succeed");
+            }
+        };
+
+        #[derive(serde::Serialize)]
+        struct WatchReq<'a> {
+            paths: Vec<&'a str>,
+            recursive: bool,
+            debounce_ms: u64,
+        }
+        #[allow(clippy::unwrap_used, reason = "test fixture")]
+        let body = unframe_or_empty(
+            wire::encode_frame(&WatchReq {
+                paths: vec!["."],
+                recursive: false,
+                debounce_ms: 30,
+            })
+            .unwrap(),
+        );
+        send(&client, &Frame::Request { id: 2, method: "fs.watch".into(), body });
+        let Frame::Response { id: 2, body: Some(resp), error: None } = recv(&client) else {
+            #[allow(clippy::panic, reason = "test assertion")]
+            {
+                panic!("fs.watch must succeed");
+            }
+        };
+        #[derive(serde::Deserialize)]
+        struct WatchResp {
+            sub: u64,
+        }
+        #[allow(clippy::unwrap_used, reason = "test fixture")]
+        let sub_id = {
+            let mut framed = u32::try_from(resp.len()).unwrap().to_le_bytes().to_vec();
+            framed.extend_from_slice(&resp);
+            wire::decode_frame::<WatchResp>(&framed).unwrap().sub
+        };
+
+        // Touch a file: the watcher thread must PUSH an event (no request
+        // outstanding). Allow a couple of poll windows for it to arrive.
+        #[allow(clippy::unwrap_used, reason = "test io")]
+        {
+            std::fs::write(dir.join("born.txt"), "x").unwrap();
+            client
+                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                .unwrap();
+        }
+        let Frame::Event { sub, seq, kind, body } = recv(&client) else {
+            #[allow(clippy::panic, reason = "test assertion")]
+            {
+                panic!("expected a pushed event frame");
+            }
+        };
+        assert_eq!((sub, seq, kind.as_str()), (sub_id, 1, "created"));
+        #[derive(serde::Deserialize)]
+        struct EvtBody {
+            path: String,
+        }
+        #[allow(clippy::unwrap_used, reason = "test fixture")]
+        let evt: EvtBody = {
+            let mut framed = u32::try_from(body.len()).unwrap().to_le_bytes().to_vec();
+            framed.extend_from_slice(&body);
+            wire::decode_frame(&framed).unwrap()
+        };
+        assert_eq!(evt.path, "born.txt", "event paths are root-relative");
+
+        // Unwatch, then churn again: NOTHING may arrive (read times out).
+        #[derive(serde::Serialize)]
+        struct UnReq {
+            sub: u64,
+        }
+        #[allow(clippy::unwrap_used, reason = "test fixture")]
+        let body = unframe_or_empty(wire::encode_frame(&UnReq { sub: sub_id }).unwrap());
+        send(&client, &Frame::Request { id: 3, method: "fs.unwatch".into(), body });
+        let Frame::Response { id: 3, error: None, .. } = recv(&client) else {
+            #[allow(clippy::panic, reason = "test assertion")]
+            {
+                panic!("fs.unwatch must succeed");
+            }
+        };
+        #[allow(clippy::unwrap_used, reason = "test io")]
+        {
+            std::fs::write(dir.join("silent.txt"), "y").unwrap();
+            client
+                .set_read_timeout(Some(std::time::Duration::from_millis(250)))
+                .unwrap();
+        }
+        let got = crate::read_frame(&mut &client).ok().flatten();
+        assert!(got.is_none(), "no frames after unwatch (got {got:?})");
+
+        // EOF → request loop exits → hub stops → watcher joins. (An
+        // earlier draft held a try_clone here — the server never saw EOF
+        // and join() hung the whole suite. One fd, one drop.)
+        drop(client);
+        #[allow(clippy::unwrap_used, reason = "test teardown")]
+        h.join().unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

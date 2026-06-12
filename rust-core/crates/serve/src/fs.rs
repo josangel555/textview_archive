@@ -41,6 +41,12 @@ impl FsCtx {
         self.root.is_some()
     }
 
+    /// The canonical served root (None = fs family disabled). The watch
+    /// family (TSK-662) relativizes event paths against it.
+    pub(crate) fn root_path(&self) -> Option<&Path> {
+        self.root.as_deref()
+    }
+
     /// Resolve + contain `path`. Errors are the protocol's `unauthorized`.
     pub(crate) fn contained(&self, path: &str) -> Result<PathBuf, WireError> {
         let Some(root) = &self.root else {
@@ -207,15 +213,15 @@ impl FsCtx {
     }
 }
 
-fn unauthorized(text: &str) -> WireError {
+pub(crate) fn unauthorized(text: &str) -> WireError {
     WireError { code: "unauthorized".into(), text: text.into() }
 }
 
-fn io_error(text: &str) -> WireError {
+pub(crate) fn io_error(text: &str) -> WireError {
     WireError { code: "internal".into(), text: text.into() }
 }
 
-fn modified_ms(meta: &std::fs::Metadata) -> i64 {
+pub(crate) fn modified_ms(meta: &std::fs::Metadata) -> i64 {
     meta.modified()
         .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
@@ -228,7 +234,7 @@ fn push_str(out: &mut Vec<u8>, s: &str) {
     out.extend_from_slice(s.as_bytes());
 }
 
-fn decode_body<T: serde::de::DeserializeOwned>(body: &[u8]) -> Result<T, WireError> {
+pub(crate) fn decode_body<T: serde::de::DeserializeOwned>(body: &[u8]) -> Result<T, WireError> {
     let mut framed = Vec::with_capacity(body.len().saturating_add(4));
     framed.extend_from_slice(&u32::try_from(body.len()).unwrap_or(u32::MAX).to_le_bytes());
     framed.extend_from_slice(body);
@@ -238,7 +244,7 @@ fn decode_body<T: serde::de::DeserializeOwned>(body: &[u8]) -> Result<T, WireErr
     })
 }
 
-fn encode_body<T: serde::Serialize>(value: &T) -> Result<Vec<u8>, WireError> {
+pub(crate) fn encode_body<T: serde::Serialize>(value: &T) -> Result<Vec<u8>, WireError> {
     let framed = wire::encode_frame(value).map_err(|_| WireError {
         code: "wire_error".into(),
         text: "fs response encode failed".into(),

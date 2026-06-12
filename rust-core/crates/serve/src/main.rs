@@ -20,6 +20,7 @@ mod git;
 mod search;
 mod serve;
 mod transcript_list;
+mod watch;
 
 use serve::handle_connection;
 
