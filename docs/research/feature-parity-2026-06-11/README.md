@@ -249,8 +249,18 @@ Deliberate non-goals for a fast viewer-first product — each would compromise t
 identity (instant open, low footprint, minimal deps):
 
 - **Debugging (DAP)** — IDE-weight; users debugging have an IDE open already.
-- **Remote development (SSH/containers/WSL)** — a platform, not a feature; massive
-  server-side surface for marginal viewer value.
+- **EDITOR-HOST remoting (the VS Code model: extension host / language servers /
+  debuggers running server-side)** — a platform, not a feature; massive server-side
+  surface for marginal viewer value. **OWNER CORRECTION (2026-06-11): scope this
+  non-goal narrowly.** ENGINE remoting is a stated GOAL of the rust-core split:
+  the native UI stays local and `mdvcore` runs on the remote box behind the same
+  wire frames (Phase 1 envelope = the RPC boundary; Phase 2 DocId registry makes
+  handles network-safe — raw pointers can't cross a socket; `mdvcore-host` +
+  ConfinedRoot is the server side; `mdv-web` is the interim answer today). Every
+  Phase 1 contract decision must therefore be TRANSPORT-AGNOSTIC: no process-local
+  values in frames, coarse calls over chatty ones, self-describing errors,
+  capability negotiation (TSK-634) mandatory because client/server skew
+  independently.
 - **Extension marketplace** — the curated subprocess plugin host is the right risk
   posture (supply-chain, review burden); a marketplace is a product in itself.
 - **Rich-text *editing* (RTF/.docx/WYSIWYG)** — different product (word processor);
