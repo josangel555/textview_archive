@@ -94,6 +94,7 @@ fn capability_bits_are_abi_and_never_renumber() {
     assert_eq!(MDV_CAP_MARKDOWN, 1 << 6);
     assert_eq!(MDV_CAP_TRANSCRIPT, 1 << 7);
     assert_eq!(MDV_CAP_FUZZY, 1 << 8);
+    assert_eq!(MDV_CAP_FS, 1 << 9);
 }
 
 #[test]
@@ -105,6 +106,9 @@ fn reserved_capability_bits_stay_off_until_their_exports_land() {
     // engine-port wave is complete); the next reserved bit gets pre-assigned
     // here when its port is approved. Every shipped family must be ON:
     let mask = mdvcore_capabilities();
+    // SERVER-ONLY bits never appear in the in-process mask: there is no fs
+    // FFI export (mdv-serve adds the bit itself when a root is served).
+    assert_eq!(mask & MDV_CAP_FS, 0, "fs is a server-only capability (TSK-654)");
     for (bit, name) in [
         (MDV_CAP_CSV_SESSION, "csv"),
         (MDV_CAP_DIFF, "diff"),

@@ -123,6 +123,9 @@ public struct CoreCapabilities: OptionSet, Sendable {
     public static let markdown   = CoreCapabilities(rawValue: UInt64(MDV_CAP_MARKDOWN))
     public static let transcript = CoreCapabilities(rawValue: UInt64(MDV_CAP_TRANSCRIPT))
     public static let fuzzy      = CoreCapabilities(rawValue: UInt64(MDV_CAP_FUZZY))
+    /// SERVER-ONLY (TSK-654): set by a remote mdv-serve hello when a root
+    /// is served; never present in the in-process library's mask.
+    public static let fs         = CoreCapabilities(rawValue: UInt64(MDV_CAP_FS))
 
     /// Everything the CURRENT Swift adapters require of the linked core —
     /// the graceful-degradation floor. `assertCompatible` already crash-fasts

@@ -3,7 +3,9 @@
 use std::os::unix::net::UnixStream;
 
 use mdvcore_core::{cm_edit, diff, find_engine, fuzzy, markdown, transcript, wire};
-use mdvcore_ffi::{MDV_CAPABILITIES, MDV_WIRE_VERSION};
+use mdvcore_ffi::{MDV_CAPABILITIES, MDV_CAP_FS, MDV_WIRE_VERSION};
+
+use crate::fs::FsCtx;
 
 use crate::envelope::{self, Frame, WireError};
 use crate::{read_frame, write_frame};
@@ -31,7 +33,7 @@ fn method_fn(name: &str) -> Option<WireFn> {
 
 /// Serve one connection: hello first (wire-version hard-close), then a
 /// request loop. Returns on EOF / IO error / protocol violation.
-pub fn handle_connection(stream: &UnixStream) -> std::io::Result<()> {
+pub fn handle_connection(stream: &UnixStream, fs_ctx: &FsCtx) -> std::io::Result<()> {
     let mut reader = stream;
     let mut writer = stream;
 
@@ -58,9 +60,14 @@ pub fn handle_connection(stream: &UnixStream) -> std::io::Result<()> {
         let _ = write_frame(&mut writer, &envelope::encode(&resp));
         return Ok(());
     }
+    let capabilities = if fs_ctx.enabled() {
+        MDV_CAPABILITIES | MDV_CAP_FS
+    } else {
+        MDV_CAPABILITIES
+    };
     let hello_body = wire::encode_frame(&HelloResponse {
         wire_version: u64::from(MDV_WIRE_VERSION),
-        capabilities: MDV_CAPABILITIES,
+        capabilities,
         server: concat!("mdv-serve/", env!("CARGO_PKG_VERSION")).to_owned(),
     })
     .map(unframe_or_empty)
@@ -79,15 +86,21 @@ pub fn handle_connection(stream: &UnixStream) -> std::io::Result<()> {
         let Frame::Request { id, method, body } = frame else {
             continue; // responses/events from a client are ignored in v1
         };
-        let resp = dispatch(id, &method, &body);
+        let resp = dispatch(id, &method, &body, fs_ctx);
         write_frame(&mut writer, &envelope::encode(&resp))?;
     }
     Ok(())
 }
 
-fn dispatch(id: u64, method: &str, body: &[u8]) -> Frame {
+fn dispatch(id: u64, method: &str, body: &[u8], fs_ctx: &FsCtx) -> Frame {
     if method == "ping" {
         return Frame::Response { id, body: Some(Vec::new()), error: None };
+    }
+    if method.starts_with("fs.") {
+        return match fs_ctx.dispatch(method, body) {
+            Ok(out) => Frame::Response { id, body: Some(out), error: None },
+            Err(e) => Frame::Response { id, body: None, error: Some(e) },
+        };
     }
     let Some(f) = method_fn(method) else {
         return Frame::Response {
@@ -191,7 +204,9 @@ mod tests {
 
     fn serve_on(server: UnixStream) -> std::thread::JoinHandle<()> {
         std::thread::spawn(move || {
-            let _ = handle_connection(&server);
+            #[allow(clippy::unwrap_used, reason = "test setup")]
+            let ctx = FsCtx::new(None).unwrap();
+            let _ = handle_connection(&server, &ctx);
         })
     }
 

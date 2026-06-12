@@ -15,6 +15,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 mod envelope;
+mod fs;
 mod serve;
 
 use serve::handle_connection;
@@ -25,12 +26,28 @@ const MAX_CONNECTIONS: usize = 8;
 static INFLIGHT: AtomicUsize = AtomicUsize::new(0);
 
 fn main() {
+    let mut socket_path: Option<String> = None;
+    let mut root: Option<String> = None;
     let mut args = std::env::args().skip(1);
-    let socket_path = match (args.next().as_deref(), args.next()) {
-        (Some("--socket"), Some(path)) => path,
-        _ => {
-            eprintln!("usage: mdv-serve --socket <path>");
-            std::process::exit(2);
+    while let Some(flag) = args.next() {
+        match (flag.as_str(), args.next()) {
+            ("--socket", Some(v)) => socket_path = Some(v),
+            ("--root", Some(v)) => root = Some(v),
+            _ => {
+                eprintln!("usage: mdv-serve --socket <path> [--root <dir>]");
+                std::process::exit(2);
+            }
+        }
+    }
+    let Some(socket_path) = socket_path else {
+        eprintln!("usage: mdv-serve --socket <path> [--root <dir>]");
+        std::process::exit(2);
+    };
+    let fs_ctx = match fs::FsCtx::new(root.as_deref()) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("mdv-serve: --root: {e}");
+            std::process::exit(1);
         }
     };
     // A stale socket file from a previous run refuses the bind; remove it
@@ -51,8 +68,9 @@ fn main() {
             drop(stream); // over cap: refuse by hangup (client retries)
             continue;
         }
+        let ctx = fs_ctx.clone();
         std::thread::spawn(move || {
-            let _ = handle_connection(&stream);
+            let _ = handle_connection(&stream, &ctx);
             INFLIGHT.fetch_sub(1, Ordering::SeqCst);
         });
     }

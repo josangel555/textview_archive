@@ -145,6 +145,11 @@ pub const MDV_CAP_MARKDOWN: u64 = 1 << 6;
 pub const MDV_CAP_TRANSCRIPT: u64 = 1 << 7;
 /// Fuzzy ranking (`mdvcore_fuzzy_rank`) — TSK-633.
 pub const MDV_CAP_FUZZY: u64 = 1 << 8;
+/// SERVER-ONLY (TSK-654): the mdv-serve fs family (stat/read/readdir).
+/// NEVER set by the in-process library — there is no fs FFI export by
+/// design (the host does its own IO locally); mdv-serve ORs this into its
+/// hello mask when a served root is configured.
+pub const MDV_CAP_FS: u64 = 1 << 9;
 
 /// The capability mask THIS build was compiled with. Reserved bits stay OFF
 /// until their engine's exports actually exist — turning a bit on is part of
