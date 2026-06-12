@@ -18,30 +18,15 @@ import ViewerKit
 /// fully), and `<ol start>` (both sides drop it).
 final class MarkdownRenderABTests: XCTestCase {
 
-    /// Enrichment matching `HTMLVisitor`'s host-coupled paths — what the
-    /// real adapter will do at flip time.
+    /// The PRODUCTION enrichment (TSK-648: `RustMarkdownAdapter.enrich`),
+    /// with one test-only tripwire: the retired `mermaid` kind reappearing
+    /// means the rust side regressed to the chunk path (TSK-661).
     private func enrich(_ chunk: CoreMarkdownChunk) -> String {
-        let visitor = HTMLVisitor()
-        switch chunk.kind {
-        case "raw_html":
-            return HTMLSanitizer.sanitize(chunk.payload)
-        case "mermaid":
-            // TSK-661 retired this kind: the core renders the host div
-            // itself. A mermaid chunk reappearing means the rust side
-            // regressed to the chunk path.
+        if chunk.kind == "mermaid" {
             XCTFail("'mermaid' chunk kind is retired — core renders the host div")
             return ""
-        case "code":
-            let lang = HighlightLanguage.detect(fromInfoString: chunk.lang)
-            if lang != .plainText {
-                let runs = TreeSitterEngine.shared.tokenize(chunk.payload, language: lang)
-                return visitor.spanned(chunk.payload, runs: runs)
-            }
-            return visitor.htmlEscape(chunk.payload)
-        default:
-            XCTFail("unknown chunk kind '\(chunk.kind)'")
-            return ""
         }
+        return RustMarkdownAdapter.enrich(chunk)
     }
 
     private func assertParity(

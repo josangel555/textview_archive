@@ -31,6 +31,8 @@ public enum RustCoreCapability: String, CaseIterable, Sendable {
     case find
     /// Claude transcript event projection (TSK-647; engine port TSK-632).
     case transcript
+    /// Markdown→HTML structural render (TSK-648; engine port TSK-631).
+    case markdown
 
     /// Persisted UserDefaults key. `csv` keeps its original key for
     /// back-compat with any already-persisted preference / the Settings toggle.

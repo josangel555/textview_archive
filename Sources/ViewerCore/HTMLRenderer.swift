@@ -44,20 +44,31 @@ public struct HTMLRenderer: Sendable {
 
     public func render(_ markdown: String) -> String {
         PerfSignpost.withInterval(.render, "HTMLRenderer.render") {
-            // PARSE-03 input-side guard: reject pathologically deep block
-            // nesting BEFORE cmark's native recursive descent can blow the
-            // C stack. Emit the same truncation marker the visitor uses so
-            // callers (and tests) get a graceful, non-empty result instead
-            // of a crash. The UI layer's `markdownRenderMaxBytes` cap
-            // (LargeMarkdownPlaceholderView) is the coarse byte gate; this
-            // is the fine nesting gate cmark needs that bytes alone miss.
-            if Self.exceedsLeadingBlockNesting(markdown) {
-                return HTMLVisitor.truncationMarker
-            }
-            let document = Document(parsing: markdown)
-            var visitor = HTMLVisitor()
-            return visitor.visit(document)
+            // Routed through the `.markdown` gate (TSK-648): the Rust core's
+            // structural render + host chunk splice when on, the incumbent
+            // Swift visitor path otherwise.
+            RustMarkdownAdapter.render(markdown)
         }
+    }
+
+    /// The incumbent Swift visitor path — the rust adapter's fallback arm
+    /// (and the only path until the `.markdown` gate defaults on).
+    static func renderSwiftPath(_ markdown: String) -> String {
+        // PARSE-03 input-side guard: reject pathologically deep block
+        // nesting BEFORE cmark's native recursive descent can blow the
+        // C stack. Emit the same truncation marker the visitor uses so
+        // callers (and tests) get a graceful, non-empty result instead
+        // of a crash. The UI layer's `markdownRenderMaxBytes` cap
+        // (LargeMarkdownPlaceholderView) is the coarse byte gate; this
+        // is the fine nesting gate cmark needs that bytes alone miss.
+        // The guard is SWIFT-PATH-ONLY by design: pulldown (the rust
+        // path) is iterative and has no C stack to blow.
+        if Self.exceedsLeadingBlockNesting(markdown) {
+            return HTMLVisitor.truncationMarker
+        }
+        let document = Document(parsing: markdown)
+        var visitor = HTMLVisitor()
+        return visitor.visit(document)
     }
 
     /// Single-pass O(n) scan: returns `true` once any line's leading `>`

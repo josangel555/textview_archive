@@ -890,6 +890,12 @@ public struct CoreMarkdownChunk: Equatable, Sendable {
     public let kind: String
     public let lang: String
     public let payload: String
+
+    public init(kind: String, lang: String, payload: String) {
+        self.kind = kind
+        self.lang = lang
+        self.payload = payload
+    }
 }
 
 /// The Rust renderer's output: structural html + enrichment chunks.
