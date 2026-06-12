@@ -8404,3 +8404,24 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - VM full-suite revalidation of the 640/662-665 wave in flight (fresh
   rsync; results next entry). Owner parks unchanged (TSK-660 caps,
   TSK-649 stage B, GUI glance).
+
+## LOG +275 (2026-06-12 tick — TSK-638 phase 1 lands IN PARALLEL with the VM run; VM verdict green)
+
+- **Owner nudge applied: the session no longer idles during VM runs.**
+  TSK-638 (Print/Export-as-PDF — the never-started parity item) was built
+  while the revalidation suite ran.
+- **TSK-638 phase 1 (d7536b6):** canPrintRenderedPage gate (markdown/
+  mermaid rendered + html rendered; source/editor = phase 2), nonce-driven
+  requests on the find-bar pattern, MarkdownRenderedView answers on the
+  live WKWebView (printOperation window-modal w/ the op.view frame quirk;
+  createPDF → atomic write → Obs-logged result), File→Print… ⌘P + Export
+  as PDF… with validateMenuItem gating, @media print CSS. 5 headless tests
+  + gate-collapse teeth (2 red). Gate EXIT=0. Recorded tails: the
+  WebView-lane createPDF magic-bytes test + lane-list wiring,
+  HTMLRenderedView nonce plumbing, print-panel VM smoke.
+- **VM revalidation verdict: 4907 tests, 0 genuine failures** — the single
+  report (TerminalForegroundBumpTests, 10.95s under load) passed isolated
+  at 0.070s, the documented flake. Wave covered: TSK-640 stages 2-3,
+  662-665. NOTE: the run took 3057s of test time vs the morning's 1106s —
+  the VM memory-pressure slowdown quantified at ~2.8×; the 8 GiB RAM bump
+  (owner-side UTM setting) remains the standing cure.
