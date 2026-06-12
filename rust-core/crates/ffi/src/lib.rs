@@ -108,6 +108,58 @@ pub extern "C" fn mdvcore_abi_version() -> u32 {
 }
 
 // ---------------------------------------------------------------------------
+// Capability bitmap (TSK-634) — feature negotiation ABOVE the frozen wire.
+//
+// The wire version above answers "can we talk at all"; the capability mask
+// answers "which feature families does the linked core actually have". This
+// lets new exports ship WITHOUT a wire-version bump, and lets a client built
+// against a newer header degrade gracefully against an older library — the
+// skew a remote `mdv-serve` deployment makes routine (owner constraint
+// 2026-06-11: client and server WILL version independently).
+//
+// RULES: bits are ABI — assigned once, never renumbered, never reused.
+// Reserved bits for the approved-but-unported engines are pre-assigned so
+// both sides can compile gating code before the port lands.
+// ---------------------------------------------------------------------------
+
+/// CSV session family (`mdvcore_session_*`).
+pub const MDV_CAP_CSV_SESSION: u64 = 1 << 0;
+/// Structured diff + hunk gutter marks (`mdvcore_diff_*`).
+pub const MDV_CAP_DIFF: u64 = 1 << 1;
+/// HEX render + search (`mdvcore_hex_*`).
+pub const MDV_CAP_HEX: u64 = 1 << 2;
+/// Indent detection (`mdvcore_indent_*`).
+pub const MDV_CAP_INDENT: u64 = 1 << 3;
+/// Editor document apply (`mdvcore_cm_apply`).
+pub const MDV_CAP_CM_APPLY: u64 = 1 << 4;
+/// RESERVED (TSK-630): find engine — not yet implemented, bit pre-assigned.
+pub const MDV_CAP_FIND: u64 = 1 << 5;
+/// RESERVED (TSK-631): markdown→HTML — not yet implemented, bit pre-assigned.
+pub const MDV_CAP_MARKDOWN: u64 = 1 << 6;
+/// RESERVED (TSK-632): transcript/JSONL parse — not yet implemented.
+pub const MDV_CAP_TRANSCRIPT: u64 = 1 << 7;
+/// RESERVED (TSK-633): fuzzy matcher — not yet implemented.
+pub const MDV_CAP_FUZZY: u64 = 1 << 8;
+
+/// The capability mask THIS build was compiled with. Reserved bits stay OFF
+/// until their engine's exports actually exist — turning a bit on is part of
+/// landing the feature, pinned by tests on both sides.
+pub const MDV_CAPABILITIES: u64 = MDV_CAP_CSV_SESSION
+    | MDV_CAP_DIFF
+    | MDV_CAP_HEX
+    | MDV_CAP_INDENT
+    | MDV_CAP_CM_APPLY;
+
+/// Runtime capability mask of the LINKED library. Returns 0 (no capabilities
+/// — every gated feature disabled, never UB) if the guard trips. Callers must
+/// IGNORE bits they don't know (a newer library may set them) and gate each
+/// feature on its own bit, never on equality of the whole mask.
+#[unsafe(no_mangle)]
+pub extern "C" fn mdvcore_capabilities() -> u64 {
+    ffi_guard_value!(0u64, { MDV_CAPABILITIES })
+}
+
+// ---------------------------------------------------------------------------
 // A deliberate panic path, used by tests to prove catch_unwind converts a
 // panic into MdvStatus::Panic and does NOT abort (under panic=unwind builds).
 // ---------------------------------------------------------------------------

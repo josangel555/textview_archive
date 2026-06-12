@@ -72,6 +72,53 @@ fn abi_version_reports_the_wire_const() {
 }
 
 #[test]
+fn capabilities_reports_the_compiled_mask() {
+    // Same skew-detector pairing as the ABI version: the runtime fn and the
+    // cbindgen-emitted const must agree (TSK-634). 0 means "guard tripped /
+    // nothing available", so the compiled mask must never be 0.
+    assert_eq!(mdvcore_capabilities(), MDV_CAPABILITIES);
+    assert_ne!(MDV_CAPABILITIES, 0);
+}
+
+#[test]
+fn capability_bits_are_abi_and_never_renumber() {
+    // Bits are ABI: assigned once, never renumbered, never reused. A failure
+    // here means someone reshuffled the bit table — that silently flips
+    // remote/skewed clients' feature gates. Add NEW bits; never edit these.
+    assert_eq!(MDV_CAP_CSV_SESSION, 1 << 0);
+    assert_eq!(MDV_CAP_DIFF, 1 << 1);
+    assert_eq!(MDV_CAP_HEX, 1 << 2);
+    assert_eq!(MDV_CAP_INDENT, 1 << 3);
+    assert_eq!(MDV_CAP_CM_APPLY, 1 << 4);
+    assert_eq!(MDV_CAP_FIND, 1 << 5);
+    assert_eq!(MDV_CAP_MARKDOWN, 1 << 6);
+    assert_eq!(MDV_CAP_TRANSCRIPT, 1 << 7);
+    assert_eq!(MDV_CAP_FUZZY, 1 << 8);
+}
+
+#[test]
+fn reserved_capability_bits_stay_off_until_their_exports_land() {
+    // Turning a reserved bit ON is part of LANDING the engine's exports
+    // (TSK-630..633) — flipping it early advertises a capability that calls
+    // into nothing. This test is edited in the SAME commit as the port.
+    let mask = mdvcore_capabilities();
+    assert_eq!(mask & MDV_CAP_FIND, 0, "find not ported yet (TSK-630)");
+    assert_eq!(mask & MDV_CAP_MARKDOWN, 0, "markdown not ported yet (TSK-631)");
+    assert_eq!(mask & MDV_CAP_TRANSCRIPT, 0, "transcript not ported yet (TSK-632)");
+    assert_eq!(mask & MDV_CAP_FUZZY, 0, "fuzzy not ported yet (TSK-633)");
+    // And the shipped families are ON.
+    for (bit, name) in [
+        (MDV_CAP_CSV_SESSION, "csv"),
+        (MDV_CAP_DIFF, "diff"),
+        (MDV_CAP_HEX, "hex"),
+        (MDV_CAP_INDENT, "indent"),
+        (MDV_CAP_CM_APPLY, "cm_apply"),
+    ] {
+        assert_ne!(mask & bit, 0, "shipped family '{name}' must advertise its bit");
+    }
+}
+
+#[test]
 fn force_panic_returns_error_not_crash() {
     // The whole point: a panicking core path returns MdvStatus::Panic and the
     // test process keeps running (proves catch_unwind under panic=unwind).

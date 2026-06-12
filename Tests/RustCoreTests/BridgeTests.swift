@@ -41,6 +41,47 @@ final class BridgeTests: XCTestCase {
         XCTAssertTrue(CoreABI.isCompatible)
     }
 
+    func testCapabilities_linkedLibraryAdvertisesShippedFamilies() {
+        // TSK-634: feature negotiation above the wire version. The LINKED
+        // library must advertise every family the shipping Swift adapters
+        // consume; the cross-language pairing (header consts vs runtime mask)
+        // is the same skew detector shape as the ABI version above.
+        let caps = CoreABI.capabilities
+        XCTAssertTrue(caps.contains(.requiredByShippingAdapters),
+                      "linked core is missing shipped families: raw=\(caps.rawValue)")
+        // Reserved bits stay OFF until their port lands (TSK-630..633) —
+        // flipping one here and in the Rust twin is PART of landing the port.
+        XCTAssertFalse(caps.contains(.find))
+        XCTAssertFalse(caps.contains(.markdown))
+        XCTAssertFalse(caps.contains(.transcript))
+        XCTAssertFalse(caps.contains(.fuzzy))
+    }
+
+    func testCapabilityBits_areABIAndNeverRenumber() {
+        // Bits are ABI — pinned on BOTH sides (Rust twin:
+        // capability_bits_are_abi_and_never_renumber). A renumber silently
+        // flips feature gates for skewed/remote clients.
+        XCTAssertEqual(CoreCapabilities.csvSession.rawValue, 1 << 0)
+        XCTAssertEqual(CoreCapabilities.diff.rawValue, 1 << 1)
+        XCTAssertEqual(CoreCapabilities.hex.rawValue, 1 << 2)
+        XCTAssertEqual(CoreCapabilities.indent.rawValue, 1 << 3)
+        XCTAssertEqual(CoreCapabilities.cmApply.rawValue, 1 << 4)
+        XCTAssertEqual(CoreCapabilities.find.rawValue, 1 << 5)
+        XCTAssertEqual(CoreCapabilities.markdown.rawValue, 1 << 6)
+        XCTAssertEqual(CoreCapabilities.transcript.rawValue, 1 << 7)
+        XCTAssertEqual(CoreCapabilities.fuzzy.rawValue, 1 << 8)
+    }
+
+    func testCapabilities_unknownBitsAreTolerated() {
+        // Forward-compat contract: a NEWER library may set bits this build
+        // doesn't know. OptionSet semantics must keep known-bit gating
+        // working regardless — this is what lets client and core (or a
+        // future remote mdv-serve) version independently.
+        let future = CoreCapabilities(rawValue: CoreCapabilities.csvSession.rawValue | (1 << 63))
+        XCTAssertTrue(future.contains(.csvSession))
+        XCTAssertFalse(future.contains(.markdown))
+    }
+
     func testForcePanicMapsToError() {
         // The core panics; the boundary catches it and returns .panic. The test
         // process must NOT crash (proves catch_unwind end-to-end into Swift,

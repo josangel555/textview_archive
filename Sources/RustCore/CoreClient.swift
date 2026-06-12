@@ -89,6 +89,42 @@ public enum CoreABI {
 
     /// Crash-fast skew assert; runs the check exactly once per process.
     public static func assertCompatible() { _ = checkedOnce }
+
+    /// Capability mask of the LINKED library (TSK-634) — feature negotiation
+    /// ABOVE the frozen wire version. Gate each feature on its own bit;
+    /// UNKNOWN bits must be ignored (a newer library may set them) — that
+    /// tolerance is what lets client and core version independently, the
+    /// skew a remote `mdv-serve` deployment makes routine.
+    public static var capabilities: CoreCapabilities {
+        CoreCapabilities(rawValue: mdvcore_capabilities())
+    }
+}
+
+/// Typed view of the `MDV_CAP_*` bitmap. Raw values MIRROR the header
+/// constants and are ABI — assigned once, never renumbered (pinned by
+/// `CoreCapabilityTests` against the header AND by the Rust-side twin).
+public struct CoreCapabilities: OptionSet, Sendable {
+    public let rawValue: UInt64
+    public init(rawValue: UInt64) { self.rawValue = rawValue }
+
+    public static let csvSession = CoreCapabilities(rawValue: UInt64(MDV_CAP_CSV_SESSION))
+    public static let diff       = CoreCapabilities(rawValue: UInt64(MDV_CAP_DIFF))
+    public static let hex        = CoreCapabilities(rawValue: UInt64(MDV_CAP_HEX))
+    public static let indent     = CoreCapabilities(rawValue: UInt64(MDV_CAP_INDENT))
+    public static let cmApply    = CoreCapabilities(rawValue: UInt64(MDV_CAP_CM_APPLY))
+    /// Reserved — pre-assigned for the approved ports (TSK-630..633); their
+    /// bits stay OFF in the mask until the engine's exports land.
+    public static let find       = CoreCapabilities(rawValue: UInt64(MDV_CAP_FIND))
+    public static let markdown   = CoreCapabilities(rawValue: UInt64(MDV_CAP_MARKDOWN))
+    public static let transcript = CoreCapabilities(rawValue: UInt64(MDV_CAP_TRANSCRIPT))
+    public static let fuzzy      = CoreCapabilities(rawValue: UInt64(MDV_CAP_FUZZY))
+
+    /// Everything the CURRENT Swift adapters require of the linked core —
+    /// the graceful-degradation floor. `assertCompatible` already crash-fasts
+    /// on wire-version skew; capability gating is deliberately SOFT (adapters
+    /// fall back to Swift), so this set is for diagnostics, not preconditions.
+    public static let requiredByShippingAdapters: CoreCapabilities =
+        [.csvSession, .diff, .hex, .indent, .cmApply]
 }
 
 /// The parsed CSV table (Stage 1 result). Mirrors the Rust `wire::Table`.
