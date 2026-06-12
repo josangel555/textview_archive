@@ -8731,3 +8731,25 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - **Regression guard with teeth:** the in-gate ffi audit test now requires
   string_slice in the deny list; mutation (line deleted) → 2 FAILED,
   restore → green. Both gates EXIT=0 on the committed commit.
+
+## LOG +293 (2026-06-12 tick — TSK-561 VALIDATED; zero-copy wire requests + the gutter finally routes rust)
+
+- **Borrowed request decode (5d4d5db):** `wire::decode_frame_borrowed` —
+  `#[serde(borrow)] Cow<'a, str>` fields point into the frame bytes; the
+  six whole-document seams (diff ×2, cm_apply, find, transcript,
+  markdown render, highlight runs) drop their per-call payload copy.
+  Strictness kept without a consumed-byte API: probe for a second value;
+  clean end = UnexpectedEof on the first marker byte, anything else
+  rejects. `Cow::Borrowed` is pinned by a tripwire test.
+- **The audit's refuted-impact note pointed at the REAL bug:** the
+  verifier showed RustDiffAdapter.hunkMarks had ZERO production callers —
+  DocumentModel's gutter refresh (per save/watch/tab-switch) and
+  DiffGutterFeeder called Swift `DiffHunkParser` directly, so the
+  default-ON rust hunk_marks engine was dead code on the hottest diff
+  path. All three sites now route the adapter; a source-audit test pins
+  RustDiffAdapter.swift as the only direct Swift-twin caller (teeth:
+  reverting the rewire → red naming the offender).
+- Skipped deliberately: combined parse+marks call (no consumer needs
+  both for one text); fuzzy candidates Vec (many small strings).
+- Lane tally today: TSK-545/547/560/562/566/561 validated. Next: TSK-546
+  (table storage arena), TSK-563 (wire key repetition), TSK-544 (TUI).
