@@ -7838,3 +7838,22 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   `signature`/`headers`); the parity test passing while the barrier test failed was the
   tell that the TEST was wrong, not the engines. Fixture fixed to the real key.
 - Wave 1 remaining: TSK-648 (markdown adapter — the splice is two chunk kinds now).
+
+## LOG +242 (2026-06-12 tick — TSK-648 validated: markdown adapter — WAVE 1 COMPLETE)
+
+- **TSK-648 → validated** (ac5955d). `markdown` gate; the seam lives INSIDE
+  `HTMLRenderer.render` — all three consumers route with zero churn, the renderPage CSP
+  wrapper stays byte-identical (TSK-635 pin untouched). The production splice:
+  raw_html → HTMLSanitizer (trust boundary at render), code → TreeSitter spans,
+  UNKNOWN kinds → escaped payload (version-skew: degrade visibly, never inject raw).
+  PARSE-03 guard is now SWIFT-PATH-ONLY — the 6000-deep blockquote bomb renders fully
+  on rust vs the truncation marker on Swift, which doubles as the gate-routing proof in
+  test. The A/B suite consumes the production enrich (one implementation). Teeth:
+  sanitizer bypass → equality + script-leak asserts red. Carve-out: LSPMarkdownRenderer
+  (NSAttributedString hover surface) stays Swift.
+- **WAVE 1 COMPLETE: all four adapters wired** (find 8d231d6, fuzzy 8696a4a, transcript
+  7e60d91, markdown ac5955d) — every ported engine now has a default-OFF gate and a
+  fail-safe Swift fallback. TSK-649 (default-ON soak → twin deletion) is UNBLOCKED.
+  Next per the recorded order: TSK-652 (CoreTransport seam), then the TSK-649 soak —
+  flipping defaults is owner-visible, so stage A starts one engine per change with the
+  A/B suites as the net.
