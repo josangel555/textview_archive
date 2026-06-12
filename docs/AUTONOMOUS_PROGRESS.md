@@ -8063,3 +8063,15 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - HELD AT FIXED deliberately: the live API path first runs on the next nightly
   (GITHUB_TOKEN is CI-only). Validate after one green nightly — or the owner can
   workflow_dispatch it immediately.
+## LOG +256 (2026-06-12 tick — TSK-637 at fixed: markdown finally has an outline)
+
+- **TSK-637 → fixed** (c0e74bd): the OUTLINE sidebar panel serves .md/.markdown via
+  the existing tested MarkdownOutline extractor mapped into LSPDocumentSymbol trees
+  (levels stack-nest, gaps tolerated, 0-based LSP lines) — synchronously, no LSP
+  server spawned (the LSP_04 no-server UAT holds by construction). The panel UI is
+  untouched; jump rides the existing selectionRange path. 8 headless tests.
+- Held at fixed: model regression-guarded; the VISIBLE panel for .md is rendered
+  behavior → VM lane / owner glance before validated. Follow-up: rendered-mode jump
+  to the heading's slug anchor (the renderer's ids exist).
+- A nice convergence: the markdown-viewer's flagship file type gets its outline from
+  the same panel LSP languages use — one surface, two data sources.
