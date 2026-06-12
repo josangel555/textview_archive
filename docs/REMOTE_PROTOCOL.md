@@ -73,9 +73,10 @@ First frame each direction, before anything else:
 Wire-version inequality = hard close (the ABI-skew rule, networked).
 `capabilities` is the SAME u64 bitmap the FFI exports — remote families get
 new bits: `fs` (1<<9), `git` (1<<10), `transcript_list` (1<<11), `lsp_pipe`
-(1<<12), `search` (1<<13, added with TSK-656) — pre-assigned here, flipped
-per family landing (the reserved-bit test discipline applies on both sides,
-same as the engine ports).
+(1<<12), `search` (1<<13, added with TSK-656), `highlight` (1<<14, TSK-660 —
+an ENGINE bit, present in both the in-process mask and hello) — pre-assigned
+here, flipped per family landing (the reserved-bit test discipline applies on
+both sides, same as the engine ports).
 
 ## 5. Subscriptions (the push half)
 
@@ -109,7 +110,8 @@ Subscribe/unsubscribe are ordinary requests:
 ## 6. Method namespaces (forward map)
 
 - Engine methods keep their FFI names verbatim (`find_search`,
-  `markdown_render`, …) — `RemoteTransport` is a drop-in `CoreTransport`.
+  `markdown_render`, `highlight_runs`, …) — `RemoteTransport` is a drop-in
+  `CoreTransport`.
 - New families are dotted: `fs.stat`, `fs.readdir`, `fs.read`
   (**windowed**: `{path, offset, len}` → `{total, data}` — the Phase-1
   windowed contract; a whole-file convenience is deliberately absent),

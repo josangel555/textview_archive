@@ -18,6 +18,8 @@ path = "src/main.rs"
 [dependencies]
 mdvcore-core = { path = "../core" }
 mdvcore-ffi = { path = "../ffi" }
+# TSK-660: remote highlight (`highlight_runs`) — same grammars the app links.
+mdvcore-highlight = { path = "../highlight" }
 # Already a workspace dep (core uses it for the wire structs) — no new
 # supply-chain surface.
 serde = { workspace = true }

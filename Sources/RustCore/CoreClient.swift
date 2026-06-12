@@ -134,6 +134,9 @@ public struct CoreCapabilities: OptionSet, Sendable {
     public static let lspPipe    = CoreCapabilities(rawValue: UInt64(MDV_CAP_LSP_PIPE))
     /// SERVER-ONLY (TSK-656): same posture as `.fs`.
     public static let search     = CoreCapabilities(rawValue: UInt64(MDV_CAP_SEARCH))
+    /// Tree-sitter highlight runs (TSK-660) — an ENGINE bit: present in the
+    /// in-process mask AND a remote hello.
+    public static let highlight  = CoreCapabilities(rawValue: UInt64(MDV_CAP_HIGHLIGHT))
 
     /// Everything the CURRENT Swift adapters require of the linked core —
     /// the graceful-degradation floor. `assertCompatible` already crash-fasts

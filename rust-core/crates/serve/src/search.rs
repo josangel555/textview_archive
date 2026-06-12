@@ -9,7 +9,7 @@
 //! match + files-walked caps with a `truncated` flag (streaming joins the
 //! push loop later).
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use mdvcore_core::{find_engine, wire};
 
@@ -173,6 +173,7 @@ fn encode_body<T: serde::Serialize>(value: &T) -> Result<Vec<u8>, WireError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     struct TempTree {
         path: PathBuf,

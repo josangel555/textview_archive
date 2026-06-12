@@ -371,12 +371,15 @@ version = "0.0.0"
 dependencies = [
  "cbindgen",
  "mdvcore-core",
+ "mdvcore-highlight",
 ]
 
 [[package]]
 name = "mdvcore-highlight"
 version = "0.0.0"
 dependencies = [
+ "mdvcore-core",
+ "serde",
  "tree-sitter",
  "tree-sitter-c",
  "tree-sitter-c-sharp",
@@ -398,6 +401,7 @@ version = "0.0.0"
 dependencies = [
  "mdvcore-core",
  "mdvcore-ffi",
+ "mdvcore-highlight",
  "serde",
 ]
 

@@ -61,6 +61,7 @@ use mdvcore_core::markdown;
 use mdvcore_core::session::{CsvSession, OpenError};
 use mdvcore_core::transcript;
 use mdvcore_core::wire;
+use mdvcore_highlight::runs as highlight_runs;
 
 pub use buf::MdvBuf;
 pub use handle::SessionHandle;
@@ -159,6 +160,10 @@ pub const MDV_CAP_SEARCH: u64 = 1 << 13;
 /// design (the host does its own IO locally); mdv-serve ORs this into its
 /// hello mask when a served root is configured.
 pub const MDV_CAP_FS: u64 = 1 << 9;
+/// Tree-sitter highlight runs (`mdvcore_highlight_runs`) — TSK-660. (The
+/// ticket pre-assigned 1<<9, but the fs family took it first; bits are
+/// append-only, so highlight gets the next free bit.)
+pub const MDV_CAP_HIGHLIGHT: u64 = 1 << 14;
 
 /// The capability mask THIS build was compiled with. Reserved bits stay OFF
 /// until their engine's exports actually exist — turning a bit on is part of
@@ -171,7 +176,8 @@ pub const MDV_CAPABILITIES: u64 = MDV_CAP_CSV_SESSION
     | MDV_CAP_FUZZY
     | MDV_CAP_FIND
     | MDV_CAP_TRANSCRIPT
-    | MDV_CAP_MARKDOWN;
+    | MDV_CAP_MARKDOWN
+    | MDV_CAP_HIGHLIGHT;
 
 /// Runtime capability mask of the LINKED library. Returns 0 (no capabilities
 /// — every gated feature disabled, never UB) if the guard trips. Callers must
@@ -296,6 +302,31 @@ pub unsafe extern "C" fn mdvcore_fuzzy_rank(
     out_buf: *mut MdvBuf,
 ) -> MdvStatus {
     ffi_frame_body!(req, req_len, out_buf, fuzzy::rank_wire)
+}
+
+/// Tree-sitter highlight runs (stateless, TSK-660). `req`/`req_len` is a
+/// `{text, lang}` MessagePack request frame (`lang` = the host's
+/// `HighlightLanguage` rawValue); the result is written to `out_buf` as a
+/// `{supported, runs:[{start, len, kind}]}` response frame — `start`/`len`
+/// are UTF-16 code-unit offsets (NSRange's model), `kind` is the host
+/// `TokenKind` rawValue, and `supported == false` means this build has no
+/// grammar for `lang` (caller falls back; distinct from a real empty
+/// result). Caller MUST call [`mdvcore_buf_free`] on `out_buf`.
+///
+/// # Returns
+/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::WireError`], or
+/// [`MdvStatus::Panic`].
+///
+/// # Safety
+/// `req` must point to `req_len` valid bytes (or be null with `req_len == 0`).
+/// `out_buf` must be a valid, writable pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_highlight_runs(
+    req: *const u8,
+    req_len: usize,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_frame_body!(req, req_len, out_buf, highlight_runs::runs_wire)
 }
 
 /// Whole-document find (stateless, TSK-630). `req`/`req_len` is a

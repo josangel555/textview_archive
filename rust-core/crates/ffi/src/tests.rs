@@ -99,6 +99,7 @@ fn capability_bits_are_abi_and_never_renumber() {
     assert_eq!(MDV_CAP_TRANSCRIPT_LIST, 1 << 11);
     assert_eq!(MDV_CAP_LSP_PIPE, 1 << 12);
     assert_eq!(MDV_CAP_SEARCH, 1 << 13);
+    assert_eq!(MDV_CAP_HIGHLIGHT, 1 << 14);
 }
 
 #[test]
@@ -130,6 +131,7 @@ fn reserved_capability_bits_stay_off_until_their_exports_land() {
         (MDV_CAP_FIND, "find"),
         (MDV_CAP_TRANSCRIPT, "transcript"),
         (MDV_CAP_MARKDOWN, "markdown"),
+        (MDV_CAP_HIGHLIGHT, "highlight"),
     ] {
         assert_ne!(mask & bit, 0, "shipped family '{name}' must advertise its bit");
     }
@@ -548,6 +550,42 @@ frame_export_misuse_matrix!(fuzzy_rank_misuse_matrix, mdvcore_fuzzy_rank);
 frame_export_misuse_matrix!(find_search_misuse_matrix, mdvcore_find_search);
 frame_export_misuse_matrix!(transcript_parse_misuse_matrix, mdvcore_transcript_parse);
 frame_export_misuse_matrix!(markdown_render_misuse_matrix, mdvcore_markdown_render);
+frame_export_misuse_matrix!(highlight_runs_misuse_matrix, mdvcore_highlight_runs);
+
+#[test]
+fn highlight_runs_round_trip_through_the_export() {
+    // The full boundary: encode a {text, lang} frame, call the extern fn,
+    // decode {supported, runs} — UTF-16 offsets + app TokenKind rawValues.
+    let frame = mdvcore_core::wire::encode_frame(&highlight_runs::RunsRequest {
+        text: "fn main() { let x = 7; }".into(),
+        lang: "rust".into(),
+    })
+    .unwrap();
+    let mut buf = MdvBuf::empty();
+    let st = unsafe { mdvcore_highlight_runs(frame.as_ptr(), frame.len(), &mut buf) };
+    assert_eq!(st, MdvStatus::Ok);
+    let out = unsafe { buf.as_slice() }.to_vec();
+    unsafe { mdvcore_buf_free(&mut buf) };
+    let resp: highlight_runs::RunsResponse = mdvcore_core::wire::decode_frame(&out).unwrap();
+    assert!(resp.supported);
+    assert!(resp.runs.iter().any(|r| r.kind == "keyword"));
+
+    // Unsupported language: supported=false, NOT an error (the host's
+    // fall-back signal rides in-band).
+    let frame2 = mdvcore_core::wire::encode_frame(&highlight_runs::RunsRequest {
+        text: "x: 1".into(),
+        lang: "yaml".into(),
+    })
+    .unwrap();
+    let mut buf2 = MdvBuf::empty();
+    let st2 = unsafe { mdvcore_highlight_runs(frame2.as_ptr(), frame2.len(), &mut buf2) };
+    assert_eq!(st2, MdvStatus::Ok);
+    let out2 = unsafe { buf2.as_slice() }.to_vec();
+    unsafe { mdvcore_buf_free(&mut buf2) };
+    let resp2: highlight_runs::RunsResponse = mdvcore_core::wire::decode_frame(&out2).unwrap();
+    assert!(!resp2.supported);
+    assert!(resp2.runs.is_empty());
+}
 
 frame_export_misuse_matrix!(diff_hunk_marks_misuse_matrix, mdvcore_diff_hunk_marks);
 

@@ -12,6 +12,8 @@
 
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 
+pub mod runs;
+
 /// A normalised token category — the small, render-agnostic vocabulary the
 /// front-ends colour. Maps from tree-sitter's finer-grained capture names
 /// (e.g. `function.method` and `function.builtin` both fold to `Function`).
@@ -77,6 +79,29 @@ impl Lang {
             "cs" => Some(Self::CSharp),
             "swift" => Some(Self::Swift),
             "kt" | "kts" => Some(Self::Kotlin),
+            "lua" => Some(Self::Lua),
+            _ => None,
+        }
+    }
+
+    /// Resolve the HOST's `HighlightLanguage` rawValue (`"swift"`, `"json"`,
+    /// `"csharp"`, …) to a grammar (TSK-660 wire contract). Tolerates the
+    /// tree-sitter-style `c_sharp` spelling. `None` = no grammar in this
+    /// build (the wire reports `supported: false`; the host falls back).
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name.to_ascii_lowercase().as_str() {
+            "json" => Some(Self::Json),
+            "rust" => Some(Self::Rust),
+            "javascript" => Some(Self::JavaScript),
+            "typescript" => Some(Self::TypeScript),
+            "tsx" => Some(Self::Tsx),
+            "java" => Some(Self::Java),
+            "c" => Some(Self::C),
+            "cpp" => Some(Self::Cpp),
+            "csharp" | "c_sharp" => Some(Self::CSharp),
+            "swift" => Some(Self::Swift),
+            "kotlin" => Some(Self::Kotlin),
             "lua" => Some(Self::Lua),
             _ => None,
         }

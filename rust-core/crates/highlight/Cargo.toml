@@ -11,14 +11,20 @@ license.workspace = true
 # This crate is DELIBERATELY separate from `mdvcore-core`:
 #   - core is `#![forbid(unsafe_code)]`; tree-sitter grammar crates link C and
 #     need `unsafe` FFI, so they can't live there.
-#   - it is NOT in `default-members`, so it never enters the merge gate
-#     (core + ffi) nor the macOS SwiftUI app build — same scoping as ratatui.
+#   - SINCE TSK-660 it IS a dependency of `mdvcore-ffi` (and mdv-serve), so it
+#     enters the merge gate and the macOS app's staticlib: the owner decision
+#     2026-06-12 "Treesitter should be in rust" makes highlighting an
+#     app/remote capability, not just a TUI/web nicety.
 #
 # Owner-approved deps (TSK-257 park: "Approve tree-sitter + full grammar set").
 # Grammar crates are ABI-decoupled from the core via `tree-sitter-language`, so
 # the core version doesn't have to match each grammar's build version.
 
 [dependencies]
+# TSK-660 (app-contract runs + wire): the wire codec lives in mdvcore-core;
+# serde is already a workspace dep. No NEW external supply-chain surface.
+mdvcore-core = { path = "../core" }
+serde = { workspace = true }
 # Pinned exactly (minimal-deps posture).
 tree-sitter = "=0.25.10"
 tree-sitter-highlight = "=0.25.10"

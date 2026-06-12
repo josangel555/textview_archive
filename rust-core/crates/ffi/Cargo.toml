@@ -45,6 +45,11 @@ panic = "deny"
 # opaque frame bytes across the C boundary (audit TSK-569 removed the unused
 # serde/rmp-serde declarations so the manifest states the true supply chain).
 mdvcore-core = { path = "../core" }
+# TSK-660: tree-sitter highlighting enters the app capability surface
+# (mdvcore_highlight_runs, MDV_CAP_HIGHLIGHT). This pulls the grammar crates'
+# C objects into the staticlib — the deliberate trade that lets the Swift
+# bundle's grammar dylibs retire once the host routes through this path.
+mdvcore-highlight = { path = "../highlight" }
 
 [build-dependencies]
 cbindgen = { workspace = true }

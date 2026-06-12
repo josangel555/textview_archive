@@ -31,6 +31,9 @@ fn method_fn(name: &str) -> Option<WireFn> {
         // machine. The in-process FFI keeps caller choice (local trust).
         "transcript_parse" => Some(transcript::parse_wire_forced_redaction),
         "markdown_render" => Some(markdown::render_wire),
+        // TSK-660: tree-sitter highlight runs (UTF-16 offsets, app
+        // TokenKind vocabulary) — MDV_CAP_HIGHLIGHT.
+        "highlight_runs" => Some(mdvcore_highlight::runs::runs_wire),
         _ => None,
     }
 }
@@ -240,6 +243,26 @@ mod tests {
             let tctx = TranscriptCtx::new(Some("/nonexistent"));
             let _ = handle_connection(&server, &ctx, &tctx);
         })
+    }
+
+    #[test]
+    fn highlight_runs_is_dispatched_with_app_contract_output() {
+        // TSK-660: the remote path serves the same wire fn the FFI exports.
+        let f = method_fn("highlight_runs").expect("highlight_runs must be registered");
+        #[allow(clippy::unwrap_used, reason = "test fixture")]
+        let frame = wire::encode_frame(&mdvcore_highlight::runs::RunsRequest {
+            text: "fn main() {}".into(),
+            lang: "rust".into(),
+        })
+        .unwrap();
+        #[allow(clippy::unwrap_used, reason = "test assertion")]
+        let out = f(&frame).unwrap();
+        #[allow(clippy::unwrap_used, reason = "test assertion")]
+        let resp: mdvcore_highlight::runs::RunsResponse = wire::decode_frame(&out).unwrap();
+        assert!(resp.supported);
+        assert!(resp.runs.iter().any(|r| r.kind == "keyword"));
+        // And the hello mask advertises the bit (it rides MDV_CAPABILITIES).
+        assert_ne!(MDV_CAPABILITIES & mdvcore_ffi::MDV_CAP_HIGHLIGHT, 0);
     }
 
     #[test]
