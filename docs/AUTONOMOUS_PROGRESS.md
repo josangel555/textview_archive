@@ -8252,3 +8252,18 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - VM lane: full-suite run on current main in flight in the background
   (fresh rsync incl. the 50 MB highlight-bearing staticlib) — wave
   cross-validation for TSK-640/660 commits lands next entry.
+
+## LOG +267 (2026-06-12 tick — VM lane green on the wave: 4886 tests, 0 genuine failures)
+
+- **Full VM suite on current main (Swift 6.3, fresh rsync incl. the 50 MB
+  highlight-bearing staticlib): 4886 tests, 58 skipped (self-skipping heavy
+  tiers), 0 genuine failures.** The 2 reported failures both passed isolated
+  — TerminalForegroundBumpTests (10.6s under load vs 0.062s; the documented
+  flake) and ViewModesUATTests/test_VM_02 (9.6s isolated-green;
+  timeout-margin under full-suite load — adding it to the known flake list).
+- Cross-validates this session's wave on the VM toolchain: TSK-640 stage 1
+  (rename plumbing), TSK-660 stages 1+2 (capability bit 14 pins, adapter
+  precedence suite), TSK-628 (advisory-watch script tests). The loopback
+  suite self-skips on the VM (no mdv-serve binary — by design).
+- Board: VM evidence recorded on TSK-660 (still owner-parked on the
+  63/43-vs-48/26 cap decision). TSK-628 sits validated from LOG +266.
