@@ -1,76 +1,82 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — §5 push pipeline END-TO-END; TSK-640 headless-complete; owner gates queued  (2026-06-12 ~13:45)
+# Handoff — rust-perf lane drained; theming COMPLETE (4 surfaces); owner glances queued  (2026-06-12 ~19:10)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ 953acf0
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ 18b3773
 
 ## Mission
 Owner directive 2026-06-12: rust-core to the point Swift core is deprecated; rust-only
-remote server, thin Swift UI (epic TSK-651). Bugs deprioritized by owner.
+remote server, thin Swift UI (epic TSK-651). USER-FACING bugs first when present.
 
-## Current state (since the stage-A handoff @ 339146a)
-- **§5 PUSH PIPELINE COMPLETE end-to-end (validated):** TSK-662 fs.watch/unwatch in
-  mdv-serve (duplex connection, std-only polling watcher, debounce-by-tick,
-  burst→resync, per-sub monotonic seq) + TSK-663 transcript.follow (tail-follow with
-  WIRE-FORCED redaction — never raw lines; torn-line carry; truncation resync) +
-  TSK-664 RemoteTransport client (reader-thread demux, subscribe/unsubscribe, bounded
-  pre-registration buffer, 30s call deadline, SO_NOSIGPIPE hardening, onClose).
-- **TSK-640 LSP rename + code actions: headless surface COMPLETE, at `fixed`**
-  (894a7be request plumbing, 9bed97a rename model action w/ snapshot-guarded
-  WorkspaceEdit apply across open tabs — unopened files NEVER written, d6391b7 code
-  actions: union decode, pool route, fetch/apply edit-bearing-only). Remaining: the
-  live UI tail (menu entries + name prompt + action picker — VM lane).
-- **TSK-660 TreeSitter→rust stages 1+2 landed, PARKED on the owner:** rust highlight
-  is a core capability (MDV_CAP_HIGHLIGHT=1<<14, UTF-16 app-contract runs mirroring
-  CaptureMap, serve dispatch) + RustHighlightAdapter behind `.highlight` gate DEFAULT
-  OFF, all three tokenize consumers routed, TSK-410 predicate fix pinned. THE GATE:
-  release bundle 63MB/exec 43MB vs 48/26 caps (grammar C objects enter the exec).
-  Options on the ticket: transient bump / dlopen dylib / feature-off-in-app.
-  Stage 3 (+10 grammar crates for 22-lang parity, list needs pre-approval) + stage 4
-  (Swift grammar deletion, reclaims double-carry) queue behind the decision.
-- **TSK-628 advisory watch: VALIDATED after the drain caught it had NEVER worked**
-  (herestring overrode the matcher heredoc → permanent silent PASS; no GitHub remote
-  → the nightly never runs; no unauth API fallback). Fixed + hermetic fixture seam +
-  4 in-gate tests (25dc089).
-- **VM lane green on the wave:** 4886 tests, 0 genuine failures (the 2 reported =
-  the documented load-flake class, both isolated-green; ViewModesUAT/test_VM_02 added
-  to the known list).
-- Validated this run: 628, 662, 663, 664. At fixed: 640 (live tail), 637/641/642
-  (VM/glance tails), 649 (stage B owner), 660 (progress, owner-parked).
+## Current state (this wave, after the owner-answer sweep)
+- **Owner answered a park batch (2026-06-12):** TSK-359 → wontfix per "leave as is";
+  TSK-608 → validated riding TSK-614 (owner confirmed ROW COUNTS); TSK-327 re-scoped
+  by owner re-report ("still not draggable") → THREE roots fixed (un-declared
+  exported UTI in Info.plist, no drag source on accordion headers, none on rail
+  icons; 2aab064) → at review for the owner's drag try-out.
+- **Rust-perf lane fully drained + validated:** TSK-566 (string_slice lint wall,
+  33a552d), TSK-561 (zero-copy borrowed wire decode ×6 seams + the gutter finally
+  routes the rust diff engine, 5d4d5db), TSK-546 (TableArena — session store is 2
+  heap blocks, arena/vec filter parity via shared CellMatcher, d764ed8), TSK-563
+  (diff per-element records positional, **WIRE v2**, 37f2d48). Remaining: TSK-544
+  (TUI redraws — front-end lane, last resort by policy).
+- **THEMING COMPLETE — all four surfaces follow the selected theme:** stage 3 editor
+  (CM6 setTheme dedupes on dark+palette, 20b842f) + stage 4 chrome
+  (ChromeTheme/ChromeColors; Palette.textBackground/windowBackground/
+  sidebarPanelBackground consult it, fallback derivation for slot-less themes,
+  VS Code workbench-color mapping; 52db383). TSK-641+642 at fixed,
+  blocker live-validation (owner glance / VM pixels).
+- **Wire v2 note:** the loopback mdv-serve binary at `/private/tmp/mdv-rust-target`
+  must be REBUILT after wire changes — the handshake guard rejects stale binaries
+  ("wire_version_skew") by design; third hit of this trap.
+- **VM full-suite run IN FLIGHT at handoff time** (host log `/tmp/vm-test-*.log`,
+  started ~19:05) — the standing post-substantive-change sweep. Process results on
+  resume if finished: chase non-bench failures; remember the documented load-flake
+  class (re-run isolated before believing a red).
 
-## Next actions
-1. **Owner gates (parked, pinged):** TSK-660 bundle-cap decision (63/43 vs 48/26 —
-   release builds FAIL the size gate until answered); TSK-649 stage B per-engine
-   deletion sign-off; GUI glance batch (References menu/outline/theme picker).
-2. App-level push consumers: FolderWatcher/monitor remote mode over
-   RemoteTransport.subscribe (new ticket; the transport seam is ready).
-3. TSK-659 LSP pipe spike (park-grade per its own title — triage into a plan first).
-4. Live-gated tails: TSK-640 UI (rename prompt/code-action picker), 638 print/PDF,
-   639 multi-cursor, 641 stage-2 VM check.
-5. Search streaming (protocol §5 third family) if the owner wants it before remote v1.
+## Key decisions & rationale
+- usize (not u32) arena offsets — correctness must not depend on caller Limits < 4 GiB.
+- Positional wire elements ONLY for the diff family this round; envelope stays named
+  (remote debuggability). find/transcript/runs measured-before-converted (on TSK-563).
+- Chrome theming scope: the three main Palette surfaces only; semantic colors stay
+  system-native (macOS-citizen look, per the ticket).
+- TSK-642 held at fixed deliberately: same owner-glance bar as 327/641 (thin Button →
+  closure hop is the only untested link; importer pipeline fully host-guarded).
 
-## Gotchas (LOG +263..+272; LESSONS.md has the durable forms)
-- **Teeth must FAIL, never crash:** a force-unwrap in a test crashed xctest under a
-  mutation; swift-test wedged FOREVER on the zombie child (signature: ~0 CPU, defunct
-  child, no compilers). XCTUnwrap in assertion paths; check for orphaned mdv-serve
-  daemons after killed runs.
-- **Self-referential teeth false green:** computing a test's expected values through
-  the same helper it pins (utf16_len) — use an independent std oracle + literals.
-- **heredoc + herestring on one command: the LAST stdin redirection wins** (the
-  advisory-watch silent-PASS class). `|| fail` any command substitution that gates a
-  verdict.
-- Sockets need SO_NOSIGPIPE at dial or a dead peer SIGPIPE-kills the app.
-- A unix-socket test client must drop ALL fd clones or the server never sees EOF
-  (join() wedge).
-- The loopback suites spawn `/private/tmp/mdv-rust-target/debug/mdv-serve` — REBUILD
-  it after serve changes or hello-mask/method tests fail stale.
-- Bash auto-backgrounds long commands in this harness; their tail output may lag —
-  prefer foreground for short test runs, read task output files for the rest.
+## Gotchas / lessons (durable forms in LESSONS.md)
+- An exported UTType MUST be declared in Info.plist UTExportedTypeDeclarations or
+  drag/drop dies silently (TSK-327 root 1).
+- Substring pins are fooled by suffixed mutants — parse plists/structures for config
+  pins (the TSK-327 teeth check caught my own weak assertion live).
+- rmp-serde's borrowed reader has no consumed-bytes API — strict end-of-input via
+  the IgnoredAny second-value probe (wire.rs decode_borrowed).
+- Stale test objects after a header/public-type change SIGSEGV (TSK-626) — the build
+  script auto-touches now (it fired on the wire-v2 bump); suspect staleness first.
+- Teeth must FAIL, never crash (zombie-xctest wedge); self-referential oracles give
+  false greens; the loopback mdv-serve must be rebuilt after serve/wire changes.
+
+## Open questions / blockers (owner)
+- TSK-327: try the three drag sources after relaunch (review).
+- TSK-641/642: pick a theme after relaunch — the whole window should follow; name
+  any region that stays light (the stale-chrome/non-republishing-view class).
+- TSK-637/638/640: rendered-surface glances (md outline panel, print/PDF, rename/
+  code-actions against a live LSP).
+- TSK-598 family: schedule the supervised MountedPanesLRU session (five captures
+  indict per-switch pane teardown).
+- TSK-649 stage B (Swift grammar deletion) remains waiting:human.
+
+## Tracker
+- Validated this wave: TSK-546/561/563/566/608. Review: TSK-327. Fixed+held
+  (live-validation): TSK-637/638/640/641/642. Wontfix: TSK-359. Progress(gated):
+  TSK-591/592/598/601 (supervised session).
 
 ## How to resume
-1. `docs/TASK_WORKFLOW.md` in full; board via `mcp__tasked__*` (agent claude-mdv).
-2. `git log --oneline -15` for the wave; gates: `scripts/test-headless-gate.sh` +
-   `scripts/rust-core-gate.sh`.
-3. Check `task_list {waiting: human}` first — if the owner answered TSK-660/649, that
-   work outranks everything else.
+1. Read docs/TASK_WORKFLOW.md; `task_next {agent: claude-mdv, project: tasked}`;
+   check `task_list {waiting: human}` — owner answers outrank everything.
+2. If the VM run finished: tail the newest `/tmp/vm-test-*.log` — `Executed` lines;
+   non-bench failures get chased; where the run covers a held ticket's claimed lane
+   (WebView theme parity, outline panel), attach it as evidence.
+3. Gates: `bash scripts/test-headless-gate.sh` + `bash scripts/rust-core-gate.sh`;
+   after rust wire/serve changes also rebuild `/private/tmp/mdv-rust-target`'s
+   mdv-serve.
 4. Soak watch unchanged: Obs `rust-core` channel + audit.jsonl; a noisy engine →
    bounce its default OFF in RustCoreGates.defaultEnabled + file the regression.
