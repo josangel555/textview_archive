@@ -8861,3 +8861,23 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   the stale-chrome/non-republishing-view class need the VM/owner glance.
 - OWNER ASK: relaunch → Settings → Appearance → pick a theme → the whole
   window (sidebar, tab strip, panels) should follow it.
+
+## LOG +299 (2026-06-12 tick — TSK-282 mode A: sidebar fuzzy filter lands; VM sweep in flight)
+
+- **Owner course-correction applied: never no-op while a background run
+  is in flight** — pick the next board item in parallel. (Second time
+  this directive came up; recorded to memory.)
+- **Sidebar type-to-filter (05dd9bd, installed):** field under FILES
+  narrows the visible tree as you type — 130ms debounce, view-local
+  @State (the #215 rule: no model observation widening, nothing
+  expensive in body), 500-row cap with teeth, Esc/clear snap back.
+  Matched glyphs bold via FuzzyHighlight — extracted from the palette so
+  both surfaces share ONE highlight path. Activation mirrors the tree
+  row: file → preview tab (+filter clears), dir → expand + recompute.
+- **§2.5 honored:** ranking routes RustFuzzyAdapter (the TSK-633 ported
+  engine) — source-pinned that FuzzyMatcher gains no new consumer.
+- Held at fixed (live-validation): typing latency on a big tree + the
+  highlight pixels are the glance. Mode B (global find via descendant
+  cache) stays the designed follow-up.
+- VM full-suite sweep still running in parallel (SessionsCoordinator
+  territory, ~25 min in); monitor armed, results processed on fire.
