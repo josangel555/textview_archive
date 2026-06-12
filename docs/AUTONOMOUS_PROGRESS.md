@@ -8712,3 +8712,22 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   suite — the lesson keeps paying.)
 - Lane tally today: TSK-545/547/560/562 validated, 552 deduped. Both
   gates green; .a restaged.
+
+## LOG +292 (2026-06-12 tick — TSK-566 VALIDATED; string_slice joins the no-panic wall)
+
+- **string_slice = "deny" in all three lint tables (33a552d):** workspace
+  (inherited by mdvcore-core), ffi-local, serve-local. `&s[a..b]` on
+  strings panics on non-char-boundary/out-of-range and is a SEPARATE
+  restriction lint from indexing_slicing — the wall had a hole.
+- **The "0 violations" adoption claim was wrong:** denying surfaced 19
+  real production sites (diff.rs ×16, theme.rs ×3) + 3 in the ffi
+  lint-gate audit test, all converted to get-forms
+  (`raw.get(1..).unwrap_or("")`, `u8::from_str_radix(body.get(0..2)?, …)`).
+  Measure by turning the lint ON, not by grepping.
+- **Arithmetic hole stays open deliberately:** `arithmetic_side_effects`
+  measured 205 sites across default-members — that deny is a dedicated
+  sweep, recorded on the ticket + the workspace Cargo.toml comment, not
+  bundled into this change.
+- **Regression guard with teeth:** the in-gate ffi audit test now requires
+  string_slice in the deny list; mutation (line deleted) → 2 FAILED,
+  restore → green. Both gates EXIT=0 on the committed commit.
