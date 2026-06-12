@@ -7616,3 +7616,19 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   case strengthens.
 - **Next per owner directive: rust-core migration / swift-core deprecation lane** —
   TSK-554 (supply-chain audit lane, P1) first, then TSK-634 + ports 630-633.
+
+## LOG +231 (2026-06-12 — TSK-554 validated: the supply-chain audit lane is real)
+
+- **TSK-554 → validated** (commit 1c11269). cargo-deny installed (brew); duty split because
+  cargo-deny 0.18.x hard-errors on the RustSec DB's CVSS-4.0 entries: **deny owns
+  licenses/bans/sources, cargo-audit owns advisories** (`--deny warnings`). deny.toml made
+  truthful: `[graph]` targets pinned to the mac builds (killed 7 phantom cross-platform dup
+  findings), cbindgen MPL-2.0 as a SCOPED build-tool exception, 4 real dup skips with
+  provenance comments. First run found 2 warn-class advisories — both verified
+  ratatui/tui-only (paste unmaintained, lru IterMut unsound), ignored BY ID with triage
+  notes; any NEW advisory fails the lane. `scripts/rust-supply-chain-audit.sh` +
+  `.github/workflows/nightly-supply-chain.yml` (ubuntu; deliberately zero third-party setup
+  actions). TEETH live: ignores removed → exit 1 "2 denied warnings found". rust-core gate
+  green. Follow-up noted: Miri/ASan nightly step behind the toolchain approval.
+- Next in the rust-core lane per owner directive: TSK-634 (FFI velocity) and ports
+  TSK-630-633.
