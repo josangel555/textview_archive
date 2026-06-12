@@ -7775,3 +7775,29 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   (regex-lite, pulldown-cmark), both features-off, +3 lock packages combined. TSK-256
   (web-tier rendered markdown) is now UNBLOCKED. Next: adapter flips (BACKLOG decision
   package) so the app actually routes through the ports, then Swift-twin deprecation.
+
+## LOG +239 (2026-06-12 — owner session: remote-core program chartered; TSK-661 mermaid host validated)
+
+- **Owner redirected the loop**: "ignore bugs for now — get rust-core to the point we
+  deprecate Swift core", then sharpened to FULL REMOTE OPERATION: rust-only on a remote
+  server, thin Swift UI. Chartered on the board: deprecation wave TSK-645..649 (adapters
+  for find/fuzzy/transcript/markdown + default-ON soak → twin deletion) and the
+  REMOTE-CORE epic TSK-651 (children 652 CoreTransport seam, 653 mdv-serve, 654 fs
+  family, 655 watch/push protocol, 656 cross-file search, 657 git, 658 transcript
+  remote, 659 LSP pipe, 660 TreeSitter→Rust, 661 mermaid host). Owner rulings: terminal
+  = ssh/tmux -CC (no PTY in mdv-serve); LSP = server-side processes piped over the
+  tunnel; v1 wire = frames over ssh-forwarded socket (no TLS dep); TreeSitter moves to
+  Rust; sanitizer stays at the client render boundary. `docs/ARCHITECTURE_LAYERS.md`
+  written (layer mermaid + remote gap table); TSK-650 filed (mermaid render glitch on
+  the fancy diagram — parked); TSK-452 statusbar investigation parked with state.
+  Reprioritization delegated → wave order recorded on TSK-651.
+- **TSK-661 → validated** (d2fa667), wave-1 head: `mermaid.rs` — MermaidSourceParser
+  port (@id/@step, malformed-marker rejection), sorted-keys compact steps JSON, and
+  `short_hash` via a HAND-ROLLED FIPS 180-4 SHA-256 (~100 lines, zero crypto deps,
+  NIST-vector-pinned — the hash keys the shim's theme-flip cache). Mermaid fences now
+  render the complete host div IN CORE; `ChunkKind::Mermaid` retired from the wire —
+  only `raw_html` (sanitizer) and `code` (retires with TSK-660) cross to Swift. A/B
+  byte-equal vs `renderMermaidHost` incl. step annotations; teeth via corrupted SHA-256
+  init constant. Both gates green (one documented FoldBench load-flake, clean re-run).
+- Next per the recorded order: TSK-645/646/647 adapter flips, then TSK-648 (markdown
+  adapter — now only two chunk kinds to splice), TSK-652 transport seam, TSK-649 soak.
