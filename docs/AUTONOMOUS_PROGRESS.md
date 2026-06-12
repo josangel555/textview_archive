@@ -8662,3 +8662,20 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - TSK-660 → fixed (the soak IS the validation window). Remaining: stage 4
   Swift-grammar deletion behind TSK-649 stage B (reclaims the 70/50 size
   double-carry); TSK-410 cross-close after a quiet soak.
+
+## LOG +289 (2026-06-12 tick — TSK-547 VALIDATED in parallel with the VM revalidation)
+
+- **Cow-fold in the find engine (2c90c8b):** Case::Sensitive never copies a
+  line anymore (the audit caught the old to_string() copy contradicting the
+  fn's own "no allocation" doc); Insensitive allocates only when uppercase
+  ASCII forces real folding. Behavior byte-identical (40 pre-existing find
+  tests unchanged); the allocation contract is pinned BY TYPE
+  (Borrowed/Owned matches!) with teeth. Both gates green; .a restaged.
+  Beneficiaries: every default-path find + the web tier's ?find= scans.
+- Early soak read: zero highlight entries in the audit tail; the running
+  app is still the pre-flip process — the rust-highlighter soak starts at
+  the owner's next relaunch.
+- **VM quick-lane verdict (landed before this entry committed): GREEN —
+  exit 0, ZERO failures in 299s**, covering the flip wave (default-ON
+  highlighter, stage-3 grammars in the rsync'd .a, the WebView suites
+  incl. fold-gutter/mermaid/multi-cursor/PDF) on Swift 6.3.
