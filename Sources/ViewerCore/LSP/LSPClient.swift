@@ -823,8 +823,14 @@ public actor LSPClient {
     /// ignored; we re-read before applying). Malformed entries drop.
     static func decodeWorkspaceEdit(_ data: Data) -> [String: [LSPTextEdit]] {
         guard let any = try? JSONSerialization.jsonObject(
-                with: data, options: [.fragmentsAllowed]),
-              let obj = any as? [String: Any] else { return [:] }
+                with: data, options: [.fragmentsAllowed]) else { return [:] }
+        return decodeWorkspaceEditObject(any)
+    }
+
+    /// Object-level WorkspaceEdit decode — shared by rename (top-level
+    /// response) and codeAction (nested `edit` field).
+    static func decodeWorkspaceEditObject(_ any: Any) -> [String: [LSPTextEdit]] {
+        guard let obj = any as? [String: Any] else { return [:] }
         var out: [String: [LSPTextEdit]] = [:]
         if let changes = obj["changes"] as? [String: Any] {
             for (uri, edits) in changes {
@@ -852,6 +858,50 @@ public actor LSPClient {
               let range = parseRange(r),
               let newText = d["newText"] as? String else { return nil }
         return LSPTextEdit(range: range, newText: newText)
+    }
+
+    /// `textDocument/codeAction` (TSK-640) — actions available at `range`
+    /// (an empty range = the cursor position). Returns both edit-bearing
+    /// CodeActions and command-only entries (the latter decode with an
+    /// empty `edit`; this viewer applies edits, never executes commands).
+    public func codeActions(
+        url: URL, range: LSPRange, token: LSPCancellationToken? = nil
+    ) async throws -> [LSPCodeAction] {
+        guard initialized else { throw LSPError.notInitialized }
+        let params: [String: Any] = [
+            "textDocument": ["uri": url.absoluteString],
+            "range": [
+                "start": ["line": range.start.line, "character": range.start.character],
+                "end": ["line": range.end.line, "character": range.end.character],
+            ],
+            "context": ["diagnostics": [Any]()],
+        ]
+        let raw = try await request(
+            method: "textDocument/codeAction", params: params,
+            timeout: .seconds(10), token: token)
+        return Self.decodeCodeActions(raw)
+    }
+
+    /// CodeAction decode: the spec allows `(Command | CodeAction)[]`.
+    /// A bare Command (no `edit`, has `command: String`) and an
+    /// edit-less CodeAction both yield an empty `edit` map; malformed
+    /// entries drop.
+    static func decodeCodeActions(_ data: Data) -> [LSPCodeAction] {
+        guard let any = try? JSONSerialization.jsonObject(
+                with: data, options: [.fragmentsAllowed]),
+              let arr = any as? [Any] else { return [] }
+        return arr.compactMap { element in
+            // Per-entry tolerance: one malformed element (non-object,
+            // missing title) drops alone, not the whole list.
+            guard let entry = element as? [String: Any],
+                  let title = entry["title"] as? String else { return nil }
+            let edit = entry["edit"].map(Self.decodeWorkspaceEditObject) ?? [:]
+            return LSPCodeAction(
+                title: title,
+                kind: entry["kind"] as? String,
+                isPreferred: entry["isPreferred"] as? Bool ?? false,
+                edit: edit)
+        }
     }
 
     /// `workspace/symbol` — server-side fuzzy symbol search across the

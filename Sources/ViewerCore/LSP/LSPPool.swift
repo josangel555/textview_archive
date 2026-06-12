@@ -599,6 +599,24 @@ public actor LSPPool {
         }
     }
 
+    /// `textDocument/codeAction` (TSK-640) routed through the pool.
+    public func codeActions(
+        fileURL: URL, range: LSPRange,
+        token: LSPCancellationToken? = nil
+    ) async throws -> [LSPCodeAction] {
+        let (client, key) = try await routedClient(for: fileURL)
+        let start = clock.now
+        do {
+            let result = try await client.codeActions(
+                url: fileURL, range: range, token: token)
+            recordRequest(key: key, millis: millisElapsed(since: start))
+            return result
+        } catch {
+            recordCrash(key: key, error: "\(error)")
+            throw error
+        }
+    }
+
     public func hover(
         fileURL: URL, line: Int, character: Int,
         token: LSPCancellationToken? = nil

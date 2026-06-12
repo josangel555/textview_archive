@@ -45,6 +45,26 @@ public struct LSPTextEdit: Codable, Hashable, Sendable {
     }
 }
 
+/// One `textDocument/codeAction` result (TSK-640). `edit` is the decoded
+/// WorkspaceEdit (uri → TextEdits); EMPTY for command-only actions — this
+/// viewer applies edits and never executes server commands, so an empty
+/// `edit` means "listable but not applicable here".
+public struct LSPCodeAction: Hashable, Sendable {
+    public let title: String
+    public let kind: String?
+    public let isPreferred: Bool
+    public let edit: [String: [LSPTextEdit]]
+    public init(
+        title: String, kind: String?, isPreferred: Bool,
+        edit: [String: [LSPTextEdit]]
+    ) {
+        self.title = title
+        self.kind = kind
+        self.isPreferred = isPreferred
+        self.edit = edit
+    }
+}
+
 /// `FormattingOptions` for `textDocument/formatting` — the two fields
 /// every server understands; server-specific extras are out of scope.
 public struct LSPFormattingOptions: Sendable {

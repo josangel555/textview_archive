@@ -253,6 +253,7 @@ final class FakeServer: @unchecked Sendable {
                 "implementationProvider": true,
                 "documentSymbolProvider": true,
                 "renameProvider": true,
+                "codeActionProvider": true,
                 "foldingRangeProvider": true,
                 "workspaceSymbolProvider": true
             ]
@@ -356,6 +357,31 @@ final class FakeServer: @unchecked Sendable {
                                    "end": ["line": 2, "character": 11]],
                          "newText": newName],
                     ],
+                ],
+            ]))
+
+        case "textDocument/codeAction":
+            // Fixture: one edit-bearing action (replace line 0 chars 0-3
+            // with "FIXED" in the requested file) + one command-only
+            // action (the client must list it with an EMPTY edit).
+            let p = params as? [String: Any] ?? [:]
+            let td = p["textDocument"] as? [String: Any] ?? [:]
+            let uri = td["uri"] as? String ?? "file:///fake.swift"
+            writeJSON(responseEnvelope(id: id, result: [
+                [
+                    "title": "Fix the thing",
+                    "kind": "quickfix",
+                    "isPreferred": true,
+                    "edit": ["changes": [uri: [
+                        ["range": ["start": ["line": 0, "character": 0],
+                                   "end": ["line": 0, "character": 3]],
+                         "newText": "FIXED"],
+                    ]]],
+                ],
+                [
+                    "title": "Run a server command",
+                    "kind": "refactor",
+                    "command": ["title": "cmd", "command": "fake.doThing"],
                 ],
             ]))
 

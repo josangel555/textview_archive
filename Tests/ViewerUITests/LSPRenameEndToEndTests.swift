@@ -139,6 +139,31 @@ final class LSPRenameEndToEndTests: HeadlessUITestCase {
         XCTAssertEqual(model._lastRenameDispatch?.newName, "ok")
     }
 
+    /// Code actions (TSK-640, same harness): fetch at the cursor, refuse
+    /// command-only picks, apply the edit-bearing one to the buffer.
+    func test_codeActions_fetchAtCursor_andApplyEditBearingOnly() async throws {
+        let model = try makeModelWithFakeLSP()
+        let url = try harness.writeFile("ca.fakelsp", doc)
+        model.open(url: url)
+        let id = model.tabs.selected!.id
+        _ = model.editor.editorBuffer(forTabID: id)
+        seedCursor(model, tabID: id)
+
+        let actions = await model.codeActionsAtCursor()
+        XCTAssertEqual(actions.count, 2, "fixture: edit-bearing + command-only")
+
+        let commandOnly = try XCTUnwrap(actions.first { $0.edit.isEmpty })
+        XCTAssertFalse(model.applyCodeAction(commandOnly),
+                       "command-only actions are refused, never executed")
+        XCTAssertEqual(model.editor.editorBuffers[id]?.text, doc,
+                       "a refused action must not touch the buffer")
+
+        let editBearing = try XCTUnwrap(actions.first { !$0.edit.isEmpty })
+        XCTAssertTrue(model.applyCodeAction(editBearing))
+        XCTAssertTrue(model.editor.editorBuffers[id]!.text.hasPrefix("FIXED foo = 1"),
+                      "the fixture edit (line 0 chars 0-3 → FIXED) must land")
+    }
+
     /// Edits addressed to a file that is NOT open in any tab are skipped —
     /// never written to disk. Proven through the private apply step's
     /// public effects: the open buffer changes, the skip list records the

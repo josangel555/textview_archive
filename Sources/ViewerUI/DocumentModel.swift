@@ -2116,7 +2116,7 @@ public final class DocumentModel: ObservableObject {
                     newName: trimmed)
                 guard !workspaceEdit.isEmpty else { return }
                 await MainActor.run {
-                    self.applyRenameWorkspaceEdit(
+                    self.applyWorkspaceEditToOpenTabs(
                         workspaceEdit, dispatchTabID: tabID, dispatchSnapshot: snapshot)
                 }
             } catch {
@@ -2128,8 +2128,8 @@ public final class DocumentModel: ObservableObject {
     }
 
     /// Apply a decoded WorkspaceEdit to the open tabs (see the policy on
-    /// `renameActiveEditorSymbolViaLSP`).
-    private func applyRenameWorkspaceEdit(
+    /// `renameActiveEditorSymbolViaLSP`; `applyCodeAction` shares it).
+    private func applyWorkspaceEditToOpenTabs(
         _ workspaceEdit: [String: [LSPTextEdit]],
         dispatchTabID: UUID,
         dispatchSnapshot: String
@@ -2172,10 +2172,36 @@ public final class DocumentModel: ObservableObject {
         dispatchTabID: UUID,
         dispatchSnapshot: String
     ) {
-        applyRenameWorkspaceEdit(
+        applyWorkspaceEditToOpenTabs(
             workspaceEdit, dispatchTabID: dispatchTabID, dispatchSnapshot: dispatchSnapshot)
     }
     #endif
+
+    /// `editor.codeActions` (TSK-640): actions available at the active
+    /// editor cursor (an empty range at the cursor position). Returns []
+    /// on any failure — the same silent contract as the go-to verbs.
+    public func codeActionsAtCursor() async -> [LSPCodeAction] {
+        guard let tab = tabs.selected, let url = tab.url,
+              lspPool.registry.language(for: url) != nil,
+              let cursor = editor.editorCursorByTab[tab.id] else { return [] }
+        let pos = LSPPosition(line: cursor.line, character: cursor.column)
+        return (try? await lspPool.codeActions(
+            fileURL: url, range: LSPRange(start: pos, end: pos))) ?? []
+    }
+
+    /// Apply a picked code action's WorkspaceEdit — same policy as rename
+    /// (open tabs only; unopened files are never written). Command-only
+    /// actions (empty `edit`) are refused: this viewer applies edits, it
+    /// never executes server commands.
+    @discardableResult
+    public func applyCodeAction(_ action: LSPCodeAction) -> Bool {
+        guard !action.edit.isEmpty else { return false }
+        guard let tab = tabs.selected else { return false }
+        let snapshot = editor.editorBuffers[tab.id]?.text ?? ""
+        applyWorkspaceEditToOpenTabs(
+            action.edit, dispatchTabID: tab.id, dispatchSnapshot: snapshot)
+        return true
+    }
 
     /// JS posted a right-click. Build a native NSMenu and pop it at
     /// the screen point CM6 forwarded. Keeps Cmd-click + right-click
