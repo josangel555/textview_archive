@@ -104,7 +104,11 @@ pub extern "C" fn mdvcore_add(a: i32, b: i32) -> i32 {
 /// extern "C" surface or the MessagePack frame layout. cbindgen emits this
 /// into the header, so Swift compiles against the value; the function below
 /// reports what the linked library was built with. Equal ⇒ no skew.
-pub const MDV_WIRE_VERSION: u32 = 1;
+///
+/// v2 (TSK-563): diff per-element records (files/hunks/lines, gutter marks)
+/// went positional (MessagePack arrays) — named-map element decoding of
+/// those frames mis-decodes, so skew must crash-fast.
+pub const MDV_WIRE_VERSION: u32 = 2;
 
 /// Runtime ABI version of the LINKED library. Returns 0 (never a valid
 /// version) if the guard trips — callers must treat 0 as incompatible.

@@ -522,29 +522,47 @@ public func mdvCoreParseDiff(text: String) throws -> [DiffFile] {
     }
 }
 
+// TSK-563 (wire v2): diff per-element records are POSITIONAL MessagePack
+// arrays — the per-line field keys were ~41 bytes/line of pure key text.
+// Element order is the wire contract, mirrored by the Rust `FileView`/
+// `HunkView`/`LineView` tuples: append-only, never reorder.
+
 private func decodeDiffFile(_ v: MsgPackValue) throws -> DiffFile {
-    let m = try v.mapValue()
+    let a = try positional(v, count: 7, what: "diff file")
     return DiffFile(
-        oldPath: try m.require("old_path").stringValue(),
-        newPath: try m.require("new_path").stringValue(),
-        isNew: try m.require("is_new").boolValue(),
-        isDeleted: try m.require("is_deleted").boolValue(),
-        isBinary: try m.require("is_binary").boolValue(),
-        isRename: try m.require("is_rename").boolValue(),
-        hunks: try m.require("hunks").arrayValue().map(decodeDiffHunk)
+        oldPath: try a[0].stringValue(),
+        newPath: try a[1].stringValue(),
+        isNew: try a[2].boolValue(),
+        isDeleted: try a[3].boolValue(),
+        isBinary: try a[4].boolValue(),
+        isRename: try a[5].boolValue(),
+        hunks: try a[6].arrayValue().map(decodeDiffHunk)
     )
 }
 
 private func decodeDiffHunk(_ v: MsgPackValue) throws -> DiffHunk {
-    let m = try v.mapValue()
+    let a = try positional(v, count: 6, what: "diff hunk")
     return DiffHunk(
-        oldStart: Int(try m.require("old_start").u64Value()),
-        oldCount: Int(try m.require("old_count").u64Value()),
-        newStart: Int(try m.require("new_start").u64Value()),
-        newCount: Int(try m.require("new_count").u64Value()),
-        header: try m.require("header").stringValue(),
-        lines: try m.require("lines").arrayValue().map(decodeDiffLine)
+        oldStart: Int(try a[0].u64Value()),
+        oldCount: Int(try a[1].u64Value()),
+        newStart: Int(try a[2].u64Value()),
+        newCount: Int(try a[3].u64Value()),
+        header: try a[4].stringValue(),
+        lines: try a[5].arrayValue().map(decodeDiffLine)
     )
+}
+
+/// Decode a positional element record: an array of exactly `count` values.
+/// A count mismatch is a wire-contract violation (e.g. a version-skewed
+/// library), surfaced as a decode fault so adapters fall back to Swift.
+private func positional(
+    _ v: MsgPackValue, count: Int, what: String
+) throws -> [MsgPackValue] {
+    let a = try v.arrayValue()
+    guard a.count == count else {
+        throw CoreError.decode("\(what): expected \(count) positional fields, got \(a.count)")
+    }
+    return a
 }
 
 /// Per-working-tree-line diff mark (mirrors the Rust `diff::DiffMark`; raw
@@ -569,9 +587,10 @@ public func mdvCoreDiffHunkMarks(text: String) throws -> [Int: DiffHunkMark] {
         guard let marksVal = map["marks"] else { throw CoreError.decode("missing 'marks'") }
         var result: [Int: DiffHunkMark] = [:]
         for el in try marksVal.arrayValue() {
-            let m = try el.mapValue()
-            let line = Int(try m.require("line").u64Value())
-            let kindStr = try m.require("mark").stringValue()
+            // TSK-563 (wire v2): positional `[line, mark]`.
+            let a = try positional(el, count: 2, what: "diff hunk mark")
+            let line = Int(try a[0].u64Value())
+            let kindStr = try a[1].stringValue()
             guard let mark = DiffHunkMark(rawValue: kindStr) else {
                 throw CoreError.decode("unknown diff hunk mark '\(kindStr)'")
             }
@@ -584,16 +603,16 @@ public func mdvCoreDiffHunkMarks(text: String) throws -> [Int: DiffHunkMark] {
 }
 
 private func decodeDiffLine(_ v: MsgPackValue) throws -> DiffLine {
-    let m = try v.mapValue()
-    let kindStr = try m.require("kind").stringValue()
+    let a = try positional(v, count: 4, what: "diff line")
+    let kindStr = try a[0].stringValue()
     guard let kind = DiffLine.Kind(rawValue: kindStr) else {
         throw CoreError.decode("unknown diff line kind '\(kindStr)'")
     }
     return DiffLine(
         kind: kind,
-        oldLineNo: try decodeOptInt(m.require("old_line_no")),
-        newLineNo: try decodeOptInt(m.require("new_line_no")),
-        content: try m.require("content").stringValue()
+        oldLineNo: try decodeOptInt(a[1]),
+        newLineNo: try decodeOptInt(a[2]),
+        content: try a[3].stringValue()
     )
 }
 

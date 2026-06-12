@@ -413,18 +413,70 @@ struct ParseRequest<'a> {
     text: std::borrow::Cow<'a, str>,
 }
 
-/// Response payload: the parsed files (the full structured diff). `File`/`Hunk`/
-/// `Line` already derive `Serialize`, so they ride the wire as named maps.
-#[derive(Serialize, Deserialize)]
-struct ParseResponse {
-    files: Vec<File>,
+// Positional per-element wire records (TSK-563). Named-map encoding repeated
+// the field-name keys on EVERY line (~41 bytes/line of key text); tuple
+// structs serialize as MessagePack ARRAYS, so the per-element keys vanish.
+// The ENVELOPE stays a named map ({files: …}) — the top level is where remote
+// debuggability matters and its keys amortize over the whole frame. Field
+// ORDER is the wire contract (mirrored by the Swift decoders + the owned
+// twins below); append-only, never reorder. Wire version bumped 1 → 2.
+
+/// One line, positional: `[kind, old_line_no, new_line_no, content]`.
+#[derive(Serialize)]
+struct LineView<'a>(LineKind, Option<i64>, Option<i64>, &'a str);
+
+/// One hunk, positional: `[old_start, old_count, new_start, new_count, header, lines]`.
+#[derive(Serialize)]
+struct HunkView<'a>(i64, i64, i64, i64, &'a str, Vec<LineView<'a>>);
+
+/// One file, positional:
+/// `[old_path, new_path, is_new, is_deleted, is_binary, is_rename, hunks]`.
+#[derive(Serialize)]
+struct FileView<'a>(&'a str, &'a str, bool, bool, bool, bool, Vec<HunkView<'a>>);
+
+/// Response envelope: named map, positional elements.
+#[derive(Serialize)]
+struct ParseResponseView<'a> {
+    files: Vec<FileView<'a>>,
+}
+
+fn file_views(files: &[File]) -> Vec<FileView<'_>> {
+    files
+        .iter()
+        .map(|f| {
+            FileView(
+                &f.old_path,
+                &f.new_path,
+                f.is_new,
+                f.is_deleted,
+                f.is_binary,
+                f.is_rename,
+                f.hunks
+                    .iter()
+                    .map(|h| {
+                        HunkView(
+                            h.old_start,
+                            h.old_count,
+                            h.new_start,
+                            h.new_count,
+                            &h.header,
+                            h.lines
+                                .iter()
+                                .map(|l| LineView(l.kind, l.old_line_no, l.new_line_no, &l.content))
+                                .collect(),
+                        )
+                    })
+                    .collect(),
+            )
+        })
+        .collect()
 }
 
 /// Stateless wire seam for the FFI shim `mdvcore_diff_parse`: decode a
 /// length-prefixed MessagePack request frame `{text}`, parse the unified diff,
-/// and encode a `{files:[…]}` response frame. Pure + sans-IO, so it is fully
-/// cargo-testable without the C edge; the FFI layer adds only the pointer/
-/// `MdvBuf`/panic-guard plumbing.
+/// and encode a `{files:[…]}` response frame (positional per-element records,
+/// TSK-563). Pure + sans-IO, so it is fully cargo-testable without the C edge;
+/// the FFI layer adds only the pointer/`MdvBuf`/panic-guard plumbing.
 ///
 /// # Errors
 /// [`crate::wire::WireFault`] on a malformed/oversized request frame or an
@@ -433,7 +485,7 @@ struct ParseResponse {
 pub fn parse_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault> {
     let req: ParseRequest<'_> = crate::wire::decode_frame_borrowed(req_frame)?;
     let files = parse(&req.text);
-    crate::wire::encode_frame(&ParseResponse { files })
+    crate::wire::encode_frame(&ParseResponseView { files: file_views(&files) })
 }
 
 // MARK: - Per-line gutter marks (port of Swift DiffHunkParser)
@@ -531,15 +583,13 @@ pub fn hunk_marks(diff: &str) -> BTreeMap<i64, DiffMark> {
     marks
 }
 
-/// One `line → mark` pair as it crosses the wire (a list, not a map: the Swift
-/// `MsgPackReader` decodes only string-keyed maps, and these keys are ints).
+/// One `line → mark` pair, positional (TSK-563): `[line, mark]`. A list, not a
+/// map keyed by line: the Swift `MsgPackReader` decodes only string-keyed maps.
 #[derive(Serialize, Deserialize)]
-struct MarkWire {
-    line: i64,
-    mark: DiffMark,
-}
+struct MarkWire(i64, DiffMark);
 
-/// Response payload: the gutter marks as a deterministic (line-sorted) list.
+/// Response payload: the gutter marks as a deterministic (line-sorted) list
+/// (named-map envelope, positional elements).
 #[derive(Serialize, Deserialize)]
 struct HunkMarksResponse {
     marks: Vec<MarkWire>,
@@ -556,7 +606,7 @@ pub fn hunk_marks_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFau
     let req: ParseRequest<'_> = crate::wire::decode_frame_borrowed(req_frame)?;
     let marks: Vec<MarkWire> = hunk_marks(&req.text)
         .into_iter()
-        .map(|(line, mark)| MarkWire { line, mark })
+        .map(|(line, mark)| MarkWire(line, mark))
         .collect();
     crate::wire::encode_frame(&HunkMarksResponse { marks })
 }
@@ -736,14 +786,88 @@ mod tests {
         assert_eq!(lines[1], Line { kind: LineKind::Context, old_line_no: Some(2), new_line_no: Some(2), content: String::new() });
     }
 
+    /// Owned positional twins (TSK-563): tuple structs DESERIALIZE only from
+    /// MessagePack arrays — decoding the response through these both
+    /// round-trips the data AND pins that the per-element encoding really is
+    /// positional (a regression to named maps fails the tuple decode).
+    #[derive(serde::Deserialize)]
+    struct LineWireOwned(LineKind, Option<i64>, Option<i64>, String);
+    #[derive(serde::Deserialize)]
+    struct HunkWireOwned(i64, i64, i64, i64, String, Vec<LineWireOwned>);
+    #[derive(serde::Deserialize)]
+    struct FileWireOwned(String, String, bool, bool, bool, bool, Vec<HunkWireOwned>);
+    #[derive(serde::Deserialize)]
+    struct ParseResponseOwned {
+        files: Vec<FileWireOwned>,
+    }
+
+    fn rebuild(files: Vec<FileWireOwned>) -> Vec<File> {
+        files
+            .into_iter()
+            .map(|f| File {
+                old_path: f.0,
+                new_path: f.1,
+                is_new: f.2,
+                is_deleted: f.3,
+                is_binary: f.4,
+                is_rename: f.5,
+                hunks: f
+                    .6
+                    .into_iter()
+                    .map(|h| Hunk {
+                        old_start: h.0,
+                        old_count: h.1,
+                        new_start: h.2,
+                        new_count: h.3,
+                        header: h.4,
+                        lines: h
+                            .5
+                            .into_iter()
+                            .map(|l| Line {
+                                kind: l.0,
+                                old_line_no: l.1,
+                                new_line_no: l.2,
+                                content: l.3,
+                            })
+                            .collect(),
+                    })
+                    .collect(),
+            })
+            .collect()
+    }
+
     #[test]
     fn wire_round_trip_matches_direct_parse() {
         // parse_wire(encode {text}) must decode to the same files as parse().
+        // Decoding through the tuple twins also pins the POSITIONAL element
+        // encoding (tuples reject named maps).
         let d = "diff --git a/foo.txt b/foo.txt\n@@ -1,2 +1,3 @@ ctx\n a\n-b\n+c\n+d\n";
         let req = crate::wire::encode_frame(&ParseRequest { text: d.into() }).unwrap();
         let resp_frame = parse_wire(&req).unwrap();
-        let resp: ParseResponse = crate::wire::decode_frame(&resp_frame).unwrap();
-        assert_eq!(resp.files, parse(d));
+        let resp: ParseResponseOwned = crate::wire::decode_frame(&resp_frame).unwrap();
+        assert_eq!(rebuild(resp.files), parse(d));
+    }
+
+    #[test]
+    fn positional_elements_shrink_the_frame_vs_named_maps() {
+        // The point of TSK-563: the same diff encoded with named-map elements
+        // (the old shape, reconstructed locally) must be strictly larger —
+        // per-line key text is the dominant payload for small records.
+        #[derive(Serialize)]
+        struct NamedResponse<'a> {
+            files: &'a [File],
+        }
+        let d = "diff --git a/foo.txt b/foo.txt\n@@ -1,4 +1,5 @@ ctx\n a\n-b\n+c\n+d\n e\n f\n";
+        let req = crate::wire::encode_frame(&ParseRequest { text: d.into() }).unwrap();
+        let positional = parse_wire(&req).unwrap();
+        let files = parse(d);
+        let named = crate::wire::encode_frame(&NamedResponse { files: &files }).unwrap();
+        assert!(
+            positional.len() < named.len(),
+            "positional frame ({}) must be smaller than named-map frame ({})",
+            positional.len(),
+            named.len()
+        );
     }
 
     #[test]
@@ -799,7 +923,7 @@ mod tests {
         let frame = hunk_marks_wire(&req).unwrap();
         let resp: HunkMarksResponse = crate::wire::decode_frame(&frame).unwrap();
         assert_eq!(resp.marks.len(), 1);
-        assert_eq!(resp.marks[0].line, 2);
-        assert_eq!(resp.marks[0].mark, DiffMark::Added);
+        assert_eq!(resp.marks[0].0, 2);
+        assert_eq!(resp.marks[0].1, DiffMark::Added);
     }
 }
