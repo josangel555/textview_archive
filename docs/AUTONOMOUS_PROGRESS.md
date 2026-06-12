@@ -8471,3 +8471,18 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   rename/code-actions, and the MDV_REMOTE_SOCKET remote attach.
 - Owner-answer queue unchanged and now the only blockers: TSK-660 caps,
   TSK-649 stage B, GUI glance batch (+ the ⌘P panel glance riding it).
+
+## LOG +279 (2026-06-12 tick — validation drain: TSK-466 VALIDATED by closing its named render-path gap)
+
+- **FoldGutterWebViewTests (2a3ef6b):** the gap TSK-466's own drain note
+  named — proof that setFoldingRanges produces REAL fold-gutter markers in
+  the live CM6 DOM — now exists, with teeth (gutting the range filter →
+  2 red). Two non-obvious finds en route, documented in-test: CM keeps an
+  INVISIBLE sizing element that always holds a marker span (exclude
+  visibility:hidden parents or every count is off-by-one), and headless
+  WKWebViews never fire the gutter's measure/rAF repaint cycle — a
+  synchronous doc-change dispatch is the nudge. Suite wired into both
+  lanes same-commit; merge gate EXIT=0.
+- **TSK-466 → validated**: producer→wire→dispatch (7 headless tests,
+  re-run fresh in the 06-10 drain) + the rendered gutter artifact (this
+  suite) = the whole pipeline guarded. indentGuides half stays in TSK-487.
