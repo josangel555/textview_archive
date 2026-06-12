@@ -8532,3 +8532,21 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   view mode, which sequence still goes stale.
 - Owner-answer queue: TSK-452 repro detail, TSK-643 VPN confirm, TSK-660
   caps, TSK-649 stage B, TSK-306 validation bar, GUI glance batch.
+
+## LOG +283 (2026-06-12 tick — TSK-650 ROOT-CAUSED: mermaid's runtime NEVER loaded)
+
+- **The owner-repro mermaid bug (d8367fa):** MermaidBundle asked
+  Bundle.module for "mermaid.js" while the shipped file is mermaid.min.js
+  — nil lookup, silent empty-string fallback, nothing injected, shim
+  aborts, every mermaid host shows RAW SOURCE TEXT. The vendor tests
+  couldn't catch it: they check the SOURCE TREE (sha/license), not built-
+  bundle resolution — the file existed; the lookup was broken.
+- Diagnosis fully automated: headless host dump (rust emission correct) →
+  live WebView probe ("mermaidType=undefined, shimRan=false") → bundle
+  listing → name mismatch. Fix = one line + two guards: a merge-gate
+  bundle-resolution pin (>1MB runtime resolves) and a WebView-lane SVG
+  test (the owner-repro flowchart now renders, viewBox 1924×3339). Teeth:
+  name revert → red. Fixed bundle INSTALLED.
+- LESSON (durable): an empty-string resource fallback + source-tree-only
+  vendor checks = a silent forever-failure; resource loads need a
+  built-bundle resolution pin.

@@ -2867,3 +2867,14 @@ Continuation of "the five constraints" above; these three close every remaining 
   for a crash in the TEST, not a build-lock problem. Also found: sockets
   need SO_NOSIGPIPE at dial — a write to a dead peer otherwise SIGPIPE-kills
   the host process (app-grade bug, exposed by the same test).
+
+- **2026-06-12 — A graceful empty-string resource fallback hid a NEVER-WORKED
+  feature.** `Bundle.module.url(forResource: "mermaid", withExtension: "js")`
+  can't match the shipped `mermaid.min.js` (base name "mermaid.min"); the
+  loader's `return ""` fallback made every mermaid host silently degrade to
+  raw source text since the feature landed. Vendor tests (sha/size/license
+  on the SOURCE tree) stayed green throughout — they never exercised
+  Bundle.module. Rule: every vendored-resource loader needs a BUILT-BUNDLE
+  resolution pin (non-empty/size assert via Bundle.module) in the merge
+  gate; "missing resource = empty string + keep going" is a false-green
+  factory.
