@@ -7745,3 +7745,33 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   Swift-dictionary-nondeterministic (A/B corpus avoids; per-key parity holds).
 - Port scoreboard: csv/diff/hex/indent/cm-apply/fuzzy/find/**transcript** — markdown
   (TSK-631) is the LAST reserved capability bit.
+
+## LOG +238 (2026-06-12 — TSK-631 validated: markdown port — THE ENGINE-PORT WAVE IS COMPLETE)
+
+- **TSK-631 → validated** (commit bad46e3). The LAST engine port: no reserved capability
+  bits remain. pulldown-cmark =0.13.4 lands per the features-off rider (+2 lock packages —
+  itself + unicase; bitflags/memchr were already in the graph; supply-chain lane re-run
+  green). `markdown.rs` (~700 lines): event-driven writer mirroring the Swift
+  `HTMLVisitor`'s emission BYTE-FOR-BYTE over the parity corpus — GitHub-slug dedup ids,
+  tight-item `<p>` synthesis (the Swift AST always wraps item inlines in a Paragraph;
+  pulldown emits them bare), GFM tables/strikethrough/tasklists with checkbox markers
+  dropped (Swift parity), `safe_url` S5/F-06 allowlist, 5-entity escape.
+- **The chunk contract** (the design decision of the port): host-coupled islands ride
+  typed chunks + `<!--mdv-chunk-N-->` sentinels instead of being rendered in core —
+  `raw_html` → HTMLSanitizer (the SECURITY BARRIER stays Swift-side; raw markup never
+  enters the structural html, pinned by test), `mermaid` → host div, `code` → TreeSitter
+  spans. Splice is segment-based over the original html, so a payload *containing*
+  sentinel text can't hijack a later slot. Transport-agnostic — a remote core ships the
+  same frames.
+- **A/B earned its keep again**: red on swift-markdown's DEFAULT smart punctuation
+  (straight quotes parse to curly) — invisible to any fixture-only corpus —
+  fixed by enabling pulldown's matching option. Deliberate teeth: `javascript:`
+  admitted to the link allowlist → red → restored.
+- Divergences documented: PARSE-03 truncation absent (pulldown is iterative — 6000-deep
+  nesting renders fully instead of being refused), `<ol start>` ignored (the Swift
+  visitor does the same), parser-engine corner cases out of corpus.
+- **Wave retrospective (TSK-630/631/632/633 + the TSK-634 ceremony):** four engine ports
+  in two days, each with cross-language A/B parity and teeth; two new deps total
+  (regex-lite, pulldown-cmark), both features-off, +3 lock packages combined. TSK-256
+  (web-tier rendered markdown) is now UNBLOCKED. Next: adapter flips (BACKLOG decision
+  package) so the app actually routes through the ports, then Swift-twin deprecation.
