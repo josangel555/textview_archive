@@ -29,6 +29,8 @@ public enum RustCoreCapability: String, CaseIterable, Sendable {
     case indent
     /// Whole-document find (TSK-645; engine port TSK-630).
     case find
+    /// Claude transcript event projection (TSK-647; engine port TSK-632).
+    case transcript
 
     /// Persisted UserDefaults key. `csv` keeps its original key for
     /// back-compat with any already-persisted preference / the Settings toggle.

@@ -113,9 +113,9 @@ public struct ClaudeTranscriptSearch: Sendable {
                          matcher: Matcher, options: Options) -> [Match] {
         // REDACTED events only — a surfaced snippet must never carry a
         // `signature`/`headers` value or a raw inline image blob (the same
-        // barrier the monitor's transcript detail applies). See
-        // `ClaudeLogParser.parseRedacted`.
-        let events = (try? parser.redactedEvents(from: url)) ?? []
+        // barrier the monitor's transcript detail applies). Routed through
+        // the `.transcript` gate (TSK-647); redaction holds on BOTH engines.
+        let events = (try? RustTranscriptAdapter.redactedEvents(from: url)) ?? []
         let key = url.deletingPathExtension().lastPathComponent
         var out: [Match] = []
         for (i, event) in events.enumerated() {

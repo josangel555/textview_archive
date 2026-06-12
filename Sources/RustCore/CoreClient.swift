@@ -818,11 +818,19 @@ public struct CoreTranscriptEvent: Equatable, Sendable {
 /// (signature/headers/image-blob scrub) and is REQUIRED for surfacing
 /// consumers. Throws `CoreError` only on a bridge FAULT so an adapter can
 /// fall back to the Swift `ClaudeLogParser`.
-public func mdvCoreTranscriptParse(text: String, redacting: Bool) throws -> [CoreTranscriptEvent] {
-    let request = MsgPackValue.map([
+public func mdvCoreTranscriptParse(
+    text: String,
+    redacting: Bool,
+    maxEvents: Int? = nil
+) throws -> [CoreTranscriptEvent] {
+    var fields: [(MsgPackValue, MsgPackValue)] = [
         (.string("text"), .string(text)),
         (.string("redacting"), .bool(redacting)),
-    ])
+    ]
+    if let maxEvents, maxEvents > 0 {
+        fields.append((.string("max_events"), .uint(UInt64(maxEvents))))
+    }
+    let request = MsgPackValue.map(fields)
     guard let body = try mdvFrameCall(
         "transcript_parse", mdvcore_transcript_parse, request: request) else {
         throw CoreError.decode("empty transcript_parse response frame")

@@ -204,7 +204,10 @@ struct ClaudeTimelineSection: View {
         parser: ClaudeLogParser = ClaudeLogParser(),
         cap: Int = 200
     ) -> [ClaudeEvent] {
-        var parsed = (try? parser.redactedEvents(from: url)) ?? []
+        // Routed through the `.transcript` gate (TSK-647); redaction holds
+        // on both engines. `parser` is kept for call-site compatibility.
+        _ = parser
+        var parsed = (try? RustTranscriptAdapter.redactedEvents(from: url)) ?? []
         parsed.reverse()                                    // most recent first
         if parsed.count > cap { parsed = Array(parsed.prefix(cap)) }
         return parsed

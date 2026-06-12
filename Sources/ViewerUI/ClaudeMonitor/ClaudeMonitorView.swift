@@ -316,8 +316,11 @@ final class ClaudeMonitorModel: ObservableObject {
         // Trailing line without a final newline.
         finalizeLine()
 
-        let parser = ClaudeLogParser(maxEvents: cap)
-        let parsed = parser.parse(redactedJSONL)
+        // Routed through the `.transcript` gate (TSK-647). The content was
+        // already redacted line-by-line above; the cap rides the wire so a
+        // (future remote) core applies it server-side.
+        let parsed = RustTranscriptAdapter.parse(
+            redactedJSONL, redacting: false, maxEvents: cap)
         return (parsed, parsed.count >= cap)
     }
 }

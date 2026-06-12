@@ -568,6 +568,11 @@ fn format_double(f: f64) -> String {
 struct ParseRequest {
     text: String,
     redacting: bool,
+    /// Optional event-count ceiling override (the monitor's detail cap).
+    /// Riding the wire matters for remote: the cap must apply SERVER-side
+    /// so a capped consumer never ships the full event list.
+    #[serde(default)]
+    max_events: Option<u32>,
 }
 
 #[derive(Serialize)]
@@ -595,7 +600,10 @@ struct ParseResponse {
 /// `{text, redacting}` request frame → `{events:[…]}` response frame.
 pub fn parse_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault> {
     let req: ParseRequest = crate::wire::decode_frame(req_frame)?;
-    let events = parse(&req.text, req.redacting)
+    let max_events = req
+        .max_events
+        .map_or(MAX_EVENTS, |n| (n as usize).min(MAX_EVENTS));
+    let events = parse_with(&req.text, req.redacting, MAX_LINE_BYTES, max_events)
         .into_iter()
         .map(|e| {
             let mut w = WireEvent {
@@ -901,5 +909,33 @@ mod tests {
         assert_eq!(e.timestamp_ms, Some(1_781_234_055_926));
         assert!(e.name.is_none());
         assert!(e.tool_use_id.is_none());
+        // NOTE: this request omits max_events entirely — #[serde(default)]
+        // makes the field additive (old clients keep working).
+    }
+
+    #[test]
+    fn wire_max_events_caps_server_side() {
+        #[derive(Serialize)]
+        struct Req<'a> {
+            text: &'a str,
+            redacting: bool,
+            max_events: Option<u32>,
+        }
+        #[derive(Deserialize)]
+        struct Resp {
+            events: Vec<REvent>,
+        }
+        #[derive(Deserialize)]
+        struct REvent {
+            id: String,
+        }
+        let log = format!("{}{}{}", user_line("a", "1"), "\n", user_line("b", "2")) + "\n";
+        let frame = crate::wire::encode_frame(&Req {
+            text: &log, redacting: false, max_events: Some(1),
+        })
+        .unwrap();
+        let resp: Resp = crate::wire::decode_frame(&parse_wire(&frame).unwrap()).unwrap();
+        assert_eq!(resp.events.len(), 1, "cap must apply server-side");
+        assert_eq!(resp.events[0].id, "a");
     }
 }
