@@ -8820,3 +8820,24 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   per-cell allocs are one-time per open — measure first).
 - usize offsets, not the audit's u32: correctness must not depend on
   caller-supplied heap caps staying under 4 GiB.
+
+## LOG +297 (2026-06-12 tick — TSK-563 VALIDATED; diff wire goes positional, wire v2)
+
+- **Positional per-element records (37f2d48):** diff files/hunks/lines +
+  gutter marks serialize as tuple-struct ARRAYS (~41 bytes/line of key
+  text gone); the envelope stays a named map (remote debuggability).
+  Swift decoders mirror the order with exact-count guards.
+- **MDV_WIRE_VERSION 1→2 — and the guard proved itself live:** the stale
+  loopback mdv-serve (built at v1) was rejected at handshake with
+  "wire_version_skew: server speaks wire v1, client sent Some(2)" until
+  rebuilt. That rejection IS the scenario the bump exists for; third hit
+  of the stale-loopback-binary trap (rebuild /private/tmp/mdv-rust-target
+  after serve/wire changes).
+- **Oracles with teeth both sides:** rust tuple-twin round-trip (tuples
+  structurally reject named maps), explicit frame-shrink pin vs the
+  reconstructed named encode, and the cross-language diff A/B corpus —
+  decoder index swap → red, restore → 116/116.
+- Scope: diff family only (the cited dominant payload); find/transcript/
+  runs stay named — same pattern, measure before converting (on ticket).
+- TSK-626 header auto-touch fired on the version bump (no stale-object
+  SIGSEGV chase). Both gates green; matched bundle installed.
