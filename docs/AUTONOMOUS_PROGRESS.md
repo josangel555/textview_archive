@@ -8697,3 +8697,18 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - rust-perf lane tally today: TSK-545, 547, 560 validated; 552 deduped.
   Next candidates: TSK-546 (Vec<Vec<String>> table storage — large), 563
   (wire key repetition — protocol-shape, needs care), 544 (TUI redraws).
+
+## LOG +291 (2026-06-12 tick — TSK-562 VALIDATED; the teeth run found a suite hole)
+
+- **Skip-loop hex search (57d60d2):** std's vectorized u8 position scan
+  finds first-byte candidates; the full compare runs only there — O(n)
+  skip replaces the O(n·m) every-position compare on the default-ON
+  hexSearch engine. No new deps (memchr-the-crate stays a separate owner
+  decision). Semantics unchanged.
+- **The teeth run earned its keep:** the report-bare-first-byte-hits
+  mutation SURVIVED the entire existing hex suite — no test had a
+  first-byte-matches-rest-doesn't case. The new rejection pin closes the
+  hole and reddens the mutation. (Run the mutation BEFORE trusting a
+  suite — the lesson keeps paying.)
+- Lane tally today: TSK-545/547/560/562 validated, 552 deduped. Both
+  gates green; .a restaged.
