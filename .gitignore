@@ -28,3 +28,5 @@ scripts/AppIcon.iconset/
 .claude/
 # Example: keep a checked-in project config if/when we add one:
 # !.claude/settings.json
+# Perf-capture scratch (vm-profile / interact-signposted fixture files).
+.profiling/
