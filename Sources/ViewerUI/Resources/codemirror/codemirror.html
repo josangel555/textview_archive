@@ -21,7 +21,7 @@
   const {
     EditorState, EditorView, EditorSelection, Compartment, Transaction,
     keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter,
-    drawSelection, dropCursor,
+    drawSelection, dropCursor, rectangularSelection, crosshairCursor,
     defaultKeymap, history, historyKeymap, undo, redo, indentWithTab,
     searchKeymap, highlightSelectionMatches, openSearchPanel, closeSearchPanel,
     findNext, findPrevious, replaceNext, replaceAll,
@@ -745,6 +745,14 @@
   function baseExtensions(initialLang, initialThemeDark, initialFontPx) {
     return [
       gutterCompartment.of([lineNumbers(), highlightActiveLineGutter(), foldGutter()]),
+      // Multi-cursor (TSK-639): the facet that PERMITS >1 selection range.
+      // With it, the built-ins light up: ⌥-click adds a caret, ⌘D
+      // (searchKeymap's selectNextOccurrence) grows the selection set,
+      // ⌥-drag makes rectangular selections. drawSelection() renders the
+      // extra carets (the native-selection path can't).
+      EditorState.allowMultipleSelections.of(true),
+      rectangularSelection(),
+      crosshairCursor(),
       drawSelection(),
       dropCursor(),
       history(),
@@ -804,6 +812,10 @@
     state: initialState,
     parent: document.getElementById("editor"),
   });
+  // Test/diagnostic handle (TSK-639): the WebView-lane suites drive the
+  // live editor through this. Same exposure class as cmDispatch — the
+  // page is local, sandboxed, and never loads remote content.
+  window.__mdvView = view;
   attachScrollListener();
 
   // ---- Dispatch entry point (Swift → JS) -------------------------------

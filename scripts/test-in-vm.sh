@@ -216,6 +216,7 @@ run_webview_tests() {
     --filter ViewerUITests.FindBarTests \
     --filter ViewerUITests.FormatToggleTests \
     --filter ViewerUITests.MermaidHostingTests \
+    --filter ViewerUITests.MultiCursorWebViewTests \
     --filter ViewerUITests.PaneRetentionMountProbeTests \
     --filter ViewerUITests.PDFExportWebViewTests \
     --filter ViewerUITests.RenderedFindBarTests \
