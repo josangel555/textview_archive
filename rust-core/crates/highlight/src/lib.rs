@@ -61,6 +61,17 @@ pub enum Lang {
     Swift,
     Kotlin,
     Lua,
+    // TSK-660 stage 3: coverage parity with the Swift engine's set.
+    Python,
+    Bash,
+    Yaml,
+    Html,
+    Css,
+    Go,
+    Ruby,
+    Markdown,
+    Xml,
+    Sql,
 }
 
 impl Lang {
@@ -80,6 +91,16 @@ impl Lang {
             "swift" => Some(Self::Swift),
             "kt" | "kts" => Some(Self::Kotlin),
             "lua" => Some(Self::Lua),
+            "py" | "pyw" | "pyi" => Some(Self::Python),
+            "sh" | "bash" | "zsh" => Some(Self::Bash),
+            "yaml" | "yml" => Some(Self::Yaml),
+            "html" | "htm" | "xhtml" => Some(Self::Html),
+            "css" => Some(Self::Css),
+            "go" => Some(Self::Go),
+            "rb" => Some(Self::Ruby),
+            "md" | "markdown" => Some(Self::Markdown),
+            "xml" | "plist" | "svg" => Some(Self::Xml),
+            "sql" => Some(Self::Sql),
             _ => None,
         }
     }
@@ -103,6 +124,17 @@ impl Lang {
             "swift" => Some(Self::Swift),
             "kotlin" => Some(Self::Kotlin),
             "lua" => Some(Self::Lua),
+            "python" => Some(Self::Python),
+            // The host's rawValue is "shell"; accept both spellings.
+            "shell" | "bash" => Some(Self::Bash),
+            "yaml" => Some(Self::Yaml),
+            "html" => Some(Self::Html),
+            "css" => Some(Self::Css),
+            "go" => Some(Self::Go),
+            "ruby" => Some(Self::Ruby),
+            "markdown" => Some(Self::Markdown),
+            "xml" => Some(Self::Xml),
+            "sql" => Some(Self::Sql),
             _ => None,
         }
     }
@@ -121,6 +153,16 @@ impl Lang {
             Self::Swift => "swift",
             Self::Kotlin => "kotlin",
             Self::Lua => "lua",
+            Self::Python => "python",
+            Self::Bash => "bash",
+            Self::Yaml => "yaml",
+            Self::Html => "html",
+            Self::Css => "css",
+            Self::Go => "go",
+            Self::Ruby => "ruby",
+            Self::Markdown => "markdown",
+            Self::Xml => "xml",
+            Self::Sql => "sql",
         }
     }
 
@@ -197,6 +239,49 @@ impl Lang {
             Self::Lua => (
                 tree_sitter_lua::LANGUAGE.into(),
                 tree_sitter_lua::HIGHLIGHTS_QUERY.to_string(),
+            ),
+            Self::Python => (
+                tree_sitter_python::LANGUAGE.into(),
+                tree_sitter_python::HIGHLIGHTS_QUERY.to_string(),
+            ),
+            Self::Bash => (
+                tree_sitter_bash::LANGUAGE.into(),
+                tree_sitter_bash::HIGHLIGHT_QUERY.to_string(),
+            ),
+            Self::Yaml => (
+                tree_sitter_yaml::LANGUAGE.into(),
+                tree_sitter_yaml::HIGHLIGHTS_QUERY.to_string(),
+            ),
+            Self::Html => (
+                tree_sitter_html::LANGUAGE.into(),
+                tree_sitter_html::HIGHLIGHTS_QUERY.to_string(),
+            ),
+            Self::Css => (
+                tree_sitter_css::LANGUAGE.into(),
+                tree_sitter_css::HIGHLIGHTS_QUERY.to_string(),
+            ),
+            Self::Go => (
+                tree_sitter_go::LANGUAGE.into(),
+                tree_sitter_go::HIGHLIGHTS_QUERY.to_string(),
+            ),
+            Self::Ruby => (
+                tree_sitter_ruby::LANGUAGE.into(),
+                tree_sitter_ruby::HIGHLIGHTS_QUERY.to_string(),
+            ),
+            // The md crate ships BLOCK + INLINE grammars; the runs API uses
+            // the block grammar (headings/fences/lists — the structure a
+            // viewer colors; inline emphasis degrades gracefully).
+            Self::Markdown => (
+                tree_sitter_md::LANGUAGE.into(),
+                tree_sitter_md::HIGHLIGHT_QUERY_BLOCK.to_string(),
+            ),
+            Self::Xml => (
+                tree_sitter_xml::LANGUAGE_XML.into(),
+                tree_sitter_xml::XML_HIGHLIGHT_QUERY.to_string(),
+            ),
+            Self::Sql => (
+                tree_sitter_sequel::LANGUAGE.into(),
+                tree_sitter_sequel::HIGHLIGHTS_QUERY.to_string(),
             ),
         }
     }
@@ -420,6 +505,16 @@ mod tests {
         assert_eq!(Lang::from_extension("swift"), Some(Lang::Swift));
         assert_eq!(Lang::from_extension("kt"), Some(Lang::Kotlin));
         assert_eq!(Lang::from_extension("lua"), Some(Lang::Lua));
+        assert_eq!(Lang::from_extension("py"), Some(Lang::Python));
+        assert_eq!(Lang::from_extension("sh"), Some(Lang::Bash));
+        assert_eq!(Lang::from_extension("yml"), Some(Lang::Yaml));
+        assert_eq!(Lang::from_extension("html"), Some(Lang::Html));
+        assert_eq!(Lang::from_extension("css"), Some(Lang::Css));
+        assert_eq!(Lang::from_extension("go"), Some(Lang::Go));
+        assert_eq!(Lang::from_extension("rb"), Some(Lang::Ruby));
+        assert_eq!(Lang::from_extension("md"), Some(Lang::Markdown));
+        assert_eq!(Lang::from_extension("xml"), Some(Lang::Xml));
+        assert_eq!(Lang::from_extension("sql"), Some(Lang::Sql));
         assert_eq!(Lang::from_extension("txt"), None);
     }
 
@@ -440,6 +535,15 @@ mod tests {
             // Kotlin uses the hand-vendored query (the crate ships no query).
             (Lang::Kotlin, "val s = \"hi\" // note", "// note", TokenKind::Comment),
             (Lang::Kotlin, "fun f() {}", "fun", TokenKind::Keyword),
+            // TSK-660 stage 3 — the parity set.
+            (Lang::Python, "def f():\n    return 1  # note", "def", TokenKind::Keyword),
+            (Lang::Bash, "echo \"hi\" # note", "# note", TokenKind::Comment),
+            (Lang::Yaml, "key: \"value\"\n# note", "# note", TokenKind::Comment),
+            (Lang::Html, "<div class=\"a\">x</div>", "div", TokenKind::Tag),
+            (Lang::Css, ".a { color: red; }", "color", TokenKind::Property),
+            (Lang::Go, "func main() { return }", "func", TokenKind::Keyword),
+            (Lang::Ruby, "def f\n  1\nend # note", "# note", TokenKind::Comment),
+            (Lang::Sql, "SELECT a FROM t;", "SELECT", TokenKind::Keyword),
         ];
         for (lang, src, needle, kind) in cases {
             let spans = highlight(src, *lang);

@@ -309,13 +309,13 @@ mod tests {
     #[test]
     fn wire_unsupported_language_reports_unsupported_not_empty() {
         let frame = mdvcore_core::wire::encode_frame(&RunsRequest {
-            text: "x: 1".into(),
-            lang: "yaml".into(),
+            text: "anything".into(),
+            lang: "plain".into(),
         })
         .expect("encode");
         let out = runs_wire(&frame).expect("runs_wire");
         let resp: RunsResponse = mdvcore_core::wire::decode_frame(&out).expect("decode");
-        assert!(!resp.supported, "yaml has no grammar in this build yet");
+        assert!(!resp.supported, "'plain' is the forever-unsupported host rawValue");
         assert!(resp.runs.is_empty());
     }
 
@@ -330,7 +330,10 @@ mod tests {
         assert_eq!(Lang::from_name("csharp"), Some(Lang::CSharp));
         assert_eq!(Lang::from_name("c_sharp"), Some(Lang::CSharp));
         assert_eq!(Lang::from_name("TSX"), Some(Lang::Tsx));
+        // Stage 3 additions resolve; "shell" is the host's rawValue.
+        assert_eq!(Lang::from_name("yaml"), Some(Lang::Yaml));
+        assert_eq!(Lang::from_name("shell"), Some(Lang::Bash));
+        assert_eq!(Lang::from_name("markdown"), Some(Lang::Markdown));
         assert_eq!(Lang::from_name("plain"), None);
-        assert_eq!(Lang::from_name("yaml"), None);
     }
 }

@@ -52,7 +52,11 @@ APP_DIR="$ROOT_DIR/dist/TextView.app"
 # measured release 63 MB bundle / 43 MB exec while the Swift grammars are
 # still double-carried. Stage 4 (Swift grammar deletion) reclaims part;
 # the owner revisits hard caps then.
-BUDGET_MB="${BUDGET_MB:-${1:-64}}"
+# 64 -> 72 (2026-06-12, same owner blanket): TSK-660 stage 3 adds the 10
+# parity grammars (python/bash/yaml/html/css/go/ruby/md/xml/sql) — release
+# measured 70 MB bundle / 50 MB exec with the Swift grammars still
+# double-carried. Stage 4 deletion reclaims; owner revisits hard caps then.
+BUDGET_MB="${BUDGET_MB:-${1:-72}}"
 # Per-exec check defaults to 26 MB. The eager keeplist (JSON, Swift,
 # Markdown) + everything-else-Swift-and-resources fits in ~11 MB
 # release. The CodeMirror 6 editor (Swift wrapper + JS bridge code)
@@ -76,7 +80,8 @@ BUDGET_MB="${BUDGET_MB:-${1:-64}}"
 # 26 -> 44 (2026-06-12): same owner-approved TSK-660 bump — the rust
 # grammar objects are exec-resident (static link), unlike the Swift lazy
 # grammar dylibs they will replace.
-EXEC_BUDGET_MB="${EXEC_BUDGET_MB:-44}"
+# 44 -> 52 (2026-06-12): stage-3 grammar objects (same blanket as above).
+EXEC_BUDGET_MB="${EXEC_BUDGET_MB:-52}"
 BUDGET_BYTES=$(( BUDGET_MB * 1024 * 1024 ))
 EXEC_BUDGET_BYTES=$(( EXEC_BUDGET_MB * 1024 * 1024 ))
 

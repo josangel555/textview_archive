@@ -62,15 +62,29 @@ final class RustHighlightAdapterTests: XCTestCase {
     }
 
     func test_gateOn_uncoveredLanguage_fallsBackToSwift() {
-        // The core build covers a SUBSET of the Swift set until stage 3 —
-        // yaml is Swift-only today, and the in-band supported:false signal
-        // must land on the Swift engine, not on an empty result.
-        let src = "key: value\nlist:\n  - a\n"
-        let out = RustHighlightAdapter.outcome(src, language: .yaml, environment: gateOn)
+        // Stage 3 closed the language gap, so the forever-uncovered case is
+        // .plainText — the in-band supported:false signal must land on the
+        // Swift engine path, not on an empty rust result.
+        let src = "just words\n"
+        let out = RustHighlightAdapter.outcome(src, language: .plainText, environment: gateOn)
         XCTAssertEqual(out.source, .swiftFallback)
         XCTAssertEqual(
-            out.value, TreeSitterEngine.shared.tokenize(src, language: .yaml),
+            out.value, TreeSitterEngine.shared.tokenize(src, language: .plainText),
             "fallback must surface the full Swift result")
+    }
+
+    func test_gateOn_stage3Languages_routeRust() {
+        // The parity set added in stage 3 must actually route rust now.
+        for (lang, src): (HighlightLanguage, String) in [
+            (.yaml, "key: value\n# note\n"),
+            (.python, "def f():\n    return 1\n"),
+            (.go, "func main() {}\n"),
+            (.html, "<div class=\"a\">x</div>\n"),
+        ] {
+            let out = RustHighlightAdapter.outcome(src, language: lang, environment: gateOn)
+            XCTAssertEqual(out.source, .rust, "\(lang) must route rust post-stage-3")
+            XCTAssertFalse(out.value.isEmpty, "\(lang) must produce runs")
+        }
     }
 
     /// TSK-410 class, pinned at the ADAPTER level: with the gate ON, a

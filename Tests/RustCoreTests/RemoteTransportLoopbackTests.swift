@@ -129,7 +129,9 @@ final class RemoteTransportLoopbackTests: XCTestCase {
         }
         try both("highlight_runs:unsupported") {
             // The in-band supported:false (nil) signal must survive the wire.
-            try mdvCoreHighlightRuns(text: "k: v", lang: "yaml") == nil
+            // "plain" is the forever-unsupported host rawValue (stage 3
+            // closed the real language gaps).
+            try mdvCoreHighlightRuns(text: "anything", lang: "plain") == nil
         }
     }
 

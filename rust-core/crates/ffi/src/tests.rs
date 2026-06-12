@@ -573,8 +573,8 @@ fn highlight_runs_round_trip_through_the_export() {
     // Unsupported language: supported=false, NOT an error (the host's
     // fall-back signal rides in-band).
     let frame2 = mdvcore_core::wire::encode_frame(&highlight_runs::RunsRequest {
-        text: "x: 1".into(),
-        lang: "yaml".into(),
+        text: "anything".into(),
+        lang: "plain".into(),
     })
     .unwrap();
     let mut buf2 = MdvBuf::empty();
