@@ -2707,9 +2707,35 @@ public final class DocumentModel: ObservableObject {
     @Published public var themeOverride: SyntaxTheme.Name? = nil {
         didSet { preferences.themeOverrideRaw = themeOverride?.rawValue }
     }
+    /// TSK-641 stage 2: the definition-based selection (built-ins + user +
+    /// VS Code imports via ThemeStore). Wins over the legacy two-theme
+    /// override; nil = legacy behavior. Changing it invalidates the
+    /// rendered-HTML cache so the tokCSS override re-splices.
+    @Published public var selectedThemeID: String? = ThemeStore.shared.selectedID {
+        didSet {
+            ThemeStore.shared.selectedID = selectedThemeID
+            renderedHTMLCache.removeAll()
+        }
+    }
+
+    /// The active definition when a catalog theme is selected.
+    public var activeThemeDefinition: ThemeDefinition? {
+        guard let id = selectedThemeID else { return nil }
+        return ThemeStore.shared.all().first { $0.id == id }
+    }
+
     public var activeTheme: SyntaxTheme {
+        if let def = activeThemeDefinition { return SyntaxTheme(from: def) }
         if let o = themeOverride { return SyntaxTheme.named(o) }
         return SyntaxTheme.resolved(forAppearance: NSApp?.effectiveAppearance)
+    }
+
+    /// The rendered view's extra stylesheet: the mermaid shim always, plus
+    /// the active theme's token override when a catalog theme is selected.
+    /// Pure composition — unit-tested; both renderPage sites use it.
+    public var themedExtraStylesheet: String {
+        guard let def = activeThemeDefinition else { return MermaidBundle.shimCSS }
+        return MermaidBundle.shimCSS + "\n" + def.tokCSS()
     }
 
     /// View-facing accessor. Returns runs immediately if cached on the
@@ -2899,7 +2925,7 @@ public final class DocumentModel: ObservableObject {
         let html = renderer.renderPage(
             contents,
             stylesheet: stylesheet,
-            extraStylesheet: MermaidBundle.shimCSS
+            extraStylesheet: themedExtraStylesheet
         )
         storeRenderedHTML(key: key, html: html)
         return html
@@ -2949,11 +2975,14 @@ public final class DocumentModel: ObservableObject {
         guard renderedHTMLCache[key] == nil,
               !renderedHTMLInFlight.contains(key) else { return nil }
         renderedHTMLInFlight.insert(key)
+        // Capture the themed stylesheet on the main actor BEFORE the
+        // detached hop (it reads the live theme selection).
+        let extraStylesheet = themedExtraStylesheet
         return Task.detached(priority: .userInitiated) { [weak self] in
             let html = renderer.renderPage(
                 contents,
                 stylesheet: stylesheet,
-                extraStylesheet: MermaidBundle.shimCSS
+                extraStylesheet: extraStylesheet
             )
             await MainActor.run { [weak self] in
                 guard let self else { return }

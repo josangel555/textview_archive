@@ -107,14 +107,32 @@ public struct SettingsView: View {
     private var appearanceSection: some View {
         section("Appearance") {
             row("Theme") {
-                Picker("", selection: themeBinding) {
-                    Text("Follow System").tag(Optional<SyntaxTheme.Name>.none)
-                    Text("Xcode Light").tag(Optional(SyntaxTheme.Name.xcodeLight))
-                    Text("Xcode Dark").tag(Optional(SyntaxTheme.Name.xcodeDark))
+                // TSK-641 stage 2: the catalog picker — built-ins + user +
+                // VS Code imports (ThemeStore), with Follow System as nil.
+                Picker("", selection: $model.selectedThemeID) {
+                    Text("Follow System").tag(Optional<String>.none)
+                    ForEach(ThemeStore.shared.all(), id: \.id) { def in
+                        Text(def.displayName).tag(Optional(def.id))
+                    }
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
                 .frame(maxWidth: 180)
+            }
+            row("") {
+                Button("Import VS Code Theme…") {
+                    let panel = NSOpenPanel()
+                    panel.allowedContentTypes = [.json]
+                    panel.allowsMultipleSelection = false
+                    guard panel.runModal() == .OK, let url = panel.url else { return }
+                    do {
+                        let def = try VSCodeThemeImporter.importFile(at: url)
+                        model.selectedThemeID = def.id
+                    } catch {
+                        NSSound.beep()
+                    }
+                }
+                .font(.system(size: 11))
             }
             // Single unified zoom slider — drives both document
             // content (rendered HTML / source font / hex / find-bar)
