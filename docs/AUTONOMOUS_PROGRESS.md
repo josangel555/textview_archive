@@ -8075,3 +8075,15 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   to the heading's slug anchor (the renderer's ids exist).
 - A nice convergence: the markdown-viewer's flagship file type gets its outline from
   the same panel LSP languages use — one surface, two data sources.
+## LOG +257 (2026-06-12 tick — TSK-641 stage 1: the theme engine's headless core)
+
+- **TSK-641 stage 1 landed** (23c9bcb, ticket holds at progress): ThemeDefinition — a
+  platform-free Codable hex-string model as the SINGLE upstream for all four color
+  surfaces and the contract TSK-642's VS Code import targets (642's design is now
+  unblocked). Hex parse/render round-trip stable; SyntaxTheme conversion with per-slot
+  fallbacks; tokCSS() feeds the EXISTING renderPage extraStylesheet hook; the two
+  incumbent themes expressed losslessly as built-ins (pinned token-by-token);
+  ThemeStore with persisted selection + user JSON dir + appearance fallback.
+  Teeth: an R/B channel swap reddened 47 tests suite-wide.
+- Stage 2 (live-gated): Settings picker + applying the active theme through the four
+  surfaces — VM lane. The engine's data layer is done and regression-guarded.
