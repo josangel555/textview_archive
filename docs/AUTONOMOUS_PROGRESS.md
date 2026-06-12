@@ -8087,3 +8087,16 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   Teeth: an R/B channel swap reddened 47 tests suite-wide.
 - Stage 2 (live-gated): Settings picker + applying the active theme through the four
   surfaces — VM lane. The engine's data layer is done and regression-guarded.
+## LOG +258 (2026-06-12 tick — TSK-642 at fixed: VS Code themes import end-to-end)
+
+- **TSK-642 → fixed** (dd0f0a1): VSCodeThemeImporter — string-aware JSONC stripping
+  (comments/trailing commas are legal in theme files; in-string URLs survive),
+  workbench colors → surface slots, TextMate scopes → TokenKind via longest-prefix
+  specificity (regexp>string, operator owns its slot, equal specificity = first claim),
+  luminance fallback for missing `type`, install through the TSK-641 store — an
+  imported theme is immediately selectable. 6 tests incl. a Monokai-ish JSONC fixture
+  end-to-end into a working SyntaxTheme. Teeth: specificity guard degraded → 9 red.
+- THE THEMING PAIR's headless work is COMPLETE: definition model + store + conversions
+  (641 stage 1) + the import pipeline (642). What remains is one live work package:
+  the Settings picker + Import… button + applying the active theme through the four
+  surfaces (641 stage 2) — VM-validated, the natural next owner-visible win.
