@@ -43,6 +43,17 @@ public final class LSPOutlineModel: ObservableObject {
             return
         }
         guard registry.language(for: url) != nil else {
+            // TSK-637: markdown has no LSP server but HAS a tested outline
+            // extractor — serve the heading tree through the same panel.
+            let ext = url.pathExtension.lowercased()
+            if ext == "md" || ext == "markdown" {
+                self.isSupported = true
+                self.isLoading = false
+                self.errorMessage = nil
+                self.symbols = MarkdownOutline.documentSymbols(
+                    in: text, uri: url.absoluteString)
+                return
+            }
             self.isSupported = false
             self.symbols = []
             self.errorMessage = nil

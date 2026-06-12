@@ -38,6 +38,64 @@ public struct MarkdownHeading: Equatable, Sendable {
 /// reference-style constructs. Good enough for a TOC; not a CommonMark parser.
 public enum MarkdownOutline {
 
+    /// Map the heading outline to LSP document symbols so the sidebar's
+    /// existing OUTLINE panel renders markdown without an LSP server
+    /// (TSK-637). Heading LEVELS become the symbol tree: each heading nests
+    /// under the nearest shallower predecessor (an H3 after an H1 nests
+    /// directly — gaps are fine). Lines convert 1-based → LSP 0-based.
+    public static func documentSymbols(in text: String, uri: String? = nil) -> [LSPDocumentSymbol] {
+        struct Node {
+            let heading: MarkdownHeading
+            var children: [Node] = []
+        }
+        var roots: [Node] = []
+        var stack: [(level: Int, path: [Int])] = []
+
+        func append(_ node: Node, at path: [Int]) -> [Int] {
+            if path.isEmpty {
+                roots.append(node)
+                return [roots.count - 1]
+            }
+            var indices = path
+            func insert(into nodes: inout [Node], depth: Int) {
+                if depth == indices.count {
+                    nodes.append(node)
+                    indices.append(nodes.count - 1)
+                } else {
+                    insert(into: &nodes[indices[depth]].children, depth: depth + 1)
+                }
+            }
+            insert(into: &roots, depth: 0)
+            return indices
+        }
+
+        for h in headings(in: text) {
+            while let top = stack.last, top.level >= h.level {
+                stack.removeLast()
+            }
+            let parentPath = stack.last?.path ?? []
+            let path = append(Node(heading: h), at: parentPath)
+            stack.append((h.level, path))
+        }
+
+        func symbol(_ n: Node) -> LSPDocumentSymbol {
+            let line = max(0, n.heading.line - 1)
+            let range = LSPRange(
+                start: LSPPosition(line: line, character: 0),
+                end: LSPPosition(line: line, character: n.heading.title.utf16.count))
+            return LSPDocumentSymbol(
+                name: n.heading.title,
+                detail: "H\(n.heading.level)",
+                kind: .string,
+                range: range,
+                selectionRange: range,
+                children: n.children.map(symbol),
+                uri: uri)
+        }
+        return roots.map(symbol)
+    }
+
+
     public static func headings(in text: String) -> [MarkdownHeading] {
         var out: [MarkdownHeading] = []
 
