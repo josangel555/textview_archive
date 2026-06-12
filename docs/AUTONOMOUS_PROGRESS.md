@@ -7920,3 +7920,17 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   local ones. §9 carries the implementing tickets' test plan (incl. the loopback A/B
   acceptance for TSK-652 stage 2). Held at review — design gate; implementations
   validate against it.
+
+## LOG +246 (2026-06-12 tick — TSK-653 v1: mdv-serve EXISTS — the rust-only server runs)
+
+- **TSK-653 v1 landed** (151f6b5, held at fixed pending the TSK-652 stage-2 loopback
+  A/B acceptance): `crates/serve` — the machine-API daemon, std-only, ZERO new deps.
+  Hand-rolled envelope codec (fixmap/bin32, unknown-key tolerant), hello with
+  wire-version HARD-CLOSE + the capability mask from the ffi consts (no drift),
+  all seven engine methods dispatched DIRECTLY to the *_wire fns (no FFI hop),
+  thread-per-conn + inflight cap + 16MiB ceiling. In default-members → the gate runs
+  its 9 tests every firing, including an END-TO-END find_search over a socket pair.
+  Teeth: disabled version check → skew test red. **A rust-only server now serves the
+  engine surface** — the owner's "no Swift on the server" target has its skeleton.
+- Next: TSK-652 stage 2 (Swift RemoteTransport + loopback A/B = the cross-language
+  acceptance), then TSK-654 (fs family + push, with root containment).
