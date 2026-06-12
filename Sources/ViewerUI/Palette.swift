@@ -13,10 +13,25 @@ import SwiftUI
 /// `NSColor.controlBackgroundColor` etc. ARE dynamic at draw time;
 /// SwiftUI re-resolves them on appearance changes.
 enum Palette {
-    static let windowBackground   = Color(nsColor: .windowBackgroundColor)
+    // TSK-641 stage 4: the three MAIN chrome surfaces consult the selected
+    // theme (`ChromeTheme.current`) before the system dynamic color. The
+    // values stay pre-resolved `Color`s either way (no per-call NSColor →
+    // Color wrapping — the allocation contract above holds). Everything
+    // else in this palette stays system-native deliberately.
+    @MainActor
+    static var windowBackground: Color {
+        ChromeTheme.current?.windowBackground ?? systemWindowBackground
+    }
+    @MainActor
+    static var textBackground: Color {
+        ChromeTheme.current?.textBackground ?? systemTextBackground
+    }
+
+    private static let systemWindowBackground = Color(nsColor: .windowBackgroundColor)
+    private static let systemTextBackground   = Color(nsColor: .textBackgroundColor)
+
     static let controlBackground  = Color(nsColor: .controlBackgroundColor)
     static let separator          = Color(nsColor: .separatorColor)
-    static let textBackground     = Color(nsColor: .textBackgroundColor)
     static let underPageBackground = Color(nsColor: .underPageBackgroundColor)
     static let selectedContentBackground = Color(nsColor: .selectedContentBackgroundColor)
     static let labelColor         = Color(nsColor: .labelColor)
@@ -33,7 +48,12 @@ enum Palette {
     /// dark mode switches. The chosen swatch is intentionally very
     /// light grey in light mode (a hair off the sidebar bg) and a
     /// slightly elevated dark grey in dark mode.
-    static let sidebarPanelBackground = Color(nsColor: NSColor(name: nil) { appearance in
+    @MainActor
+    static var sidebarPanelBackground: Color {
+        ChromeTheme.current?.sidebarPanelBackground ?? systemSidebarPanelBackground
+    }
+
+    private static let systemSidebarPanelBackground = Color(nsColor: NSColor(name: nil) { appearance in
         let isDark = appearance.bestMatch(from: [.darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua, .accessibilityHighContrastVibrantDark]) != nil
         return isDark
             ? NSColor(white: 0.13, alpha: 1.0)

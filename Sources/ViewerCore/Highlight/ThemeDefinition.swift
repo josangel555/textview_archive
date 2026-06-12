@@ -31,12 +31,26 @@ public struct ThemeDefinition: Codable, Equatable, Sendable {
     public var accent: String?
     public var selectionBackground: String?
 
+    /// Chrome SURFACE slots (TSK-641 stage 4 — the fourth color surface).
+    /// All optional: a theme without them still themes the chrome via the
+    /// `ChromeColors` fallback derivation (sidebar ← `background`, bars +
+    /// panels ← `gutterBackground`), so imports and hand-written themes get
+    /// a coherent full-window look with zero extra required fields. Persisted
+    /// user-theme JSON without these keys decodes fine (optionals).
+    public var sidebarBackground: String?
+    /// Tab strip / status bar / section-header bars (`Palette.windowBackground`).
+    public var barBackground: String?
+    /// Sidebar accordion panel cards (`Palette.sidebarPanelBackground`).
+    public var panelBackground: String?
+
     public init(
         id: String, displayName: String, isDark: Bool,
         background: String, foreground: String,
         gutterText: String, gutterBackground: String,
         tokens: [String: String],
-        accent: String? = nil, selectionBackground: String? = nil
+        accent: String? = nil, selectionBackground: String? = nil,
+        sidebarBackground: String? = nil, barBackground: String? = nil,
+        panelBackground: String? = nil
     ) {
         self.id = id
         self.displayName = displayName
@@ -48,6 +62,9 @@ public struct ThemeDefinition: Codable, Equatable, Sendable {
         self.tokens = tokens
         self.accent = accent
         self.selectionBackground = selectionBackground
+        self.sidebarBackground = sidebarBackground
+        self.barBackground = barBackground
+        self.panelBackground = panelBackground
     }
 }
 

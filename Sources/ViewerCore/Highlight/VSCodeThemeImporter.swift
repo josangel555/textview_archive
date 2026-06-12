@@ -71,7 +71,14 @@ public enum VSCodeThemeImporter {
             gutterBackground: (colors["editorGutter.background"] as? String) ?? background,
             tokens: tokens,
             accent: colors["focusBorder"] as? String,
-            selectionBackground: colors["editor.selectionBackground"] as? String
+            selectionBackground: colors["editor.selectionBackground"] as? String,
+            // TSK-641 stage 4: the main workbench chrome surfaces. All
+            // optional — ChromeColors derives coherent fallbacks from
+            // background/gutterBackground when a theme omits them.
+            sidebarBackground: colors["sideBar.background"] as? String,
+            barBackground: (colors["editorGroupHeader.tabsBackground"] as? String)
+                ?? (colors["statusBar.background"] as? String),
+            panelBackground: colors["sideBarSectionHeader.background"] as? String
         )
     }
 

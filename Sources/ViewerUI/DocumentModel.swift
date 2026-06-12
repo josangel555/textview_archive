@@ -347,6 +347,13 @@ public final class DocumentModel: ObservableObject {
         // Restore the persisted theme override (TSK-101). An unknown/stale raw
         // (e.g. a renamed theme) maps to nil = Follow System, never a crash.
         self.themeOverride = preferences.themeOverrideRaw.flatMap(SyntaxTheme.Name.init(rawValue:))
+        // TSK-641 stage 4: seed the chrome surfaces from the PERSISTED theme
+        // selection (the property's didSet doesn't fire for the initial
+        // value; resolved straight from the store — self isn't fully
+        // initialized yet). nil selection = system-native chrome.
+        ChromeTheme.current = ThemeStore.shared.selectedID
+            .flatMap { id in ThemeStore.shared.all().first { $0.id == id } }
+            .map { ChromeColors(from: $0) }
         // Construct the editor coordinator BEFORE wiring its side-
         // effect closures so the closures can capture `self` weakly.
         // EditorCoordinator registers a close-hook on TabCoordinator
@@ -2843,6 +2850,10 @@ public final class DocumentModel: ObservableObject {
         didSet {
             ThemeStore.shared.selectedID = selectedThemeID
             renderedHTMLCache.removeAll()
+            // TSK-641 stage 4: the chrome surfaces follow the selection.
+            // The @Published change re-bodies the chrome views; they read
+            // the new ChromeTheme on that pass. nil = system-native.
+            ChromeTheme.current = activeThemeDefinition.map { ChromeColors(from: $0) }
         }
     }
 
