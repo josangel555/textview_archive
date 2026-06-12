@@ -63,7 +63,7 @@ pub fn find_matches(text: &str, query: &str, case: Case) -> Vec<Match> {
         // overlap. `hay` is byte-length-identical to `line` (ASCII fold), so the
         // offsets we collect index straight back into the original `line`.
         let mut from = 0usize;
-        while let Some(rel) = hay.get(from..).and_then(|s| s.find(&needle)) {
+        while let Some(rel) = hay.get(from..).and_then(|s| s.find(needle.as_ref())) {
             let start = from + rel;
             let end = start + needle.len();
             out.push(Match { line: idx, start, end });
@@ -184,13 +184,22 @@ pub fn match_minimap(match_lines: &[usize], total_lines: usize, buckets: usize) 
     out
 }
 
-/// ASCII-fold a string for case-insensitive comparison (no allocation when
-/// `Sensitive`). `to_ascii_lowercase` preserves every byte's length, so offsets
-/// into the folded string map 1:1 back onto the original.
-fn fold(s: &str, case: Case) -> String {
+/// ASCII-fold a string for case-insensitive comparison. TRULY no allocation
+/// for `Sensitive` (a borrow — the audit TSK-547 caught the old version
+/// copying every line while the doc claimed otherwise), and `Insensitive`
+/// allocates only when the input actually contains uppercase ASCII.
+/// `to_ascii_lowercase` preserves every byte's length, so offsets into the
+/// folded string map 1:1 back onto the original.
+fn fold(s: &str, case: Case) -> std::borrow::Cow<'_, str> {
     match case {
-        Case::Sensitive => s.to_string(),
-        Case::Insensitive => s.to_ascii_lowercase(),
+        Case::Sensitive => std::borrow::Cow::Borrowed(s),
+        Case::Insensitive => {
+            if s.bytes().any(|b| b.is_ascii_uppercase()) {
+                std::borrow::Cow::Owned(s.to_ascii_lowercase())
+            } else {
+                std::borrow::Cow::Borrowed(s)
+            }
+        }
     }
 }
 
@@ -274,6 +283,17 @@ fn push_row_hits(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// TSK-547: the fold is structurally allocation-free where no work is
+    /// needed — Sensitive ALWAYS borrows (the doc's old claim, now true),
+    /// Insensitive borrows unless uppercase ASCII forces an owned fold.
+    #[test]
+    fn fold_borrows_when_no_work_is_needed() {
+        use std::borrow::Cow;
+        assert!(matches!(fold("Hello", Case::Sensitive), Cow::Borrowed(_)));
+        assert!(matches!(fold("already lower", Case::Insensitive), Cow::Borrowed(_)));
+        assert!(matches!(fold("Has Upper", Case::Insensitive), Cow::Owned(_)));
+    }
 
     fn m(line: usize, start: usize, end: usize) -> Match {
         Match { line, start, end }
