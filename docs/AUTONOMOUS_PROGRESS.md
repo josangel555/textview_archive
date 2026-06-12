@@ -8645,3 +8645,20 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - TSK-660 ladder next: the .highlight default-ON flip round (consumption ✓,
   A/B contract tests ✓, perf blocker ✓), then stage 4 deletion behind
   TSK-649 stage B.
+
+## LOG +288 (2026-06-12 tick — TSK-660 FLIP ROUND: the rust highlighter ships DEFAULT-ON)
+
+- **`.highlight` defaultEnabled = true (7702519)** — the first
+  post-stage-A engine completes the same ladder stage A used:
+  consumption (3 tokenize consumers) → contract A/B + loopback →
+  22-language parity → the TSK-545 compile-cache perf fix → flip. The
+  soak-set seam test covers ALL capabilities again; the default-encoding
+  adapter test migrated per the flip pattern (shipped-default-routes-rust
+  + env-0 off-switch pin). Gate EXIT=0 with zero failures.
+- **SOAKING BUNDLE INSTALLED**: source views and markdown code fences now
+  render through the rust engine — which also fixes the TSK-410
+  identifier mis-coloring class live (predicates evaluated). Off-switch:
+  MDV_RUST_HIGHLIGHT=0 / Settings; a noisy engine bounces via one line.
+- TSK-660 → fixed (the soak IS the validation window). Remaining: stage 4
+  Swift-grammar deletion behind TSK-649 stage B (reclaims the 70/50 size
+  double-carry); TSK-410 cross-close after a quiet soak.
