@@ -804,6 +804,48 @@ public func mdvCoreFindSearch(
     }
 }
 
+// MARK: - Tree-sitter highlight runs (migration slice — TSK-660)
+
+/// One highlight run from the Rust core: UTF-16 NSRange pieces + the app
+/// `TokenKind` rawValue (the core's capture table mirrors CaptureMap.swift).
+public struct CoreHighlightRun: Equatable, Sendable {
+    public let start: Int
+    public let len: Int
+    public let kind: String
+}
+
+/// Tokenise `text` as `lang` (the host `HighlightLanguage` rawValue) through
+/// the Rust core (STATELESS, `{text, lang}` frame in, `{supported, runs}`
+/// frame out). Returns `nil` when this core build has NO grammar for `lang`
+/// — the caller's fall-back-to-Swift signal, distinct from a real empty
+/// result. Throws `CoreError` only on a bridge fault.
+public func mdvCoreHighlightRuns(text: String, lang: String) throws -> [CoreHighlightRun]? {
+    let request = MsgPackValue.map([
+        (.string("text"), .string(text)),
+        (.string("lang"), .string(lang)),
+    ])
+    guard let body = try CoreTransportRegistry.current.call("highlight_runs", request: request)
+    else {
+        throw CoreError.decode("empty highlight_runs response frame")
+    }
+    var reader = MsgPackReader(body)
+    do {
+        let map = try reader.decode().mapValue()
+        guard case .bool(true) = map["supported"] ?? .bool(false) else { return nil }
+        guard let runs = map["runs"] else { throw CoreError.decode("missing 'runs'") }
+        return try runs.arrayValue().map { el in
+            let m = try el.mapValue()
+            return CoreHighlightRun(
+                start: Int(try m.require("start").u64Value()),
+                len: Int(try m.require("len").u64Value()),
+                kind: try m.require("kind").stringValue()
+            )
+        }
+    } catch let e as MsgPackError {
+        throw CoreError.decode("\(e)")
+    }
+}
+
 // MARK: - Claude transcript parse (migration slice — TSK-632)
 
 /// One projected transcript event from the Rust core — mirrors the Swift

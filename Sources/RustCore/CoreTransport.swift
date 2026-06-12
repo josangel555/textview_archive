@@ -46,6 +46,7 @@ public struct InProcessTransport: CoreTransport {
         "find_search": mdvcore_find_search,
         "transcript_parse": mdvcore_transcript_parse,
         "markdown_render": mdvcore_markdown_render,
+        "highlight_runs": mdvcore_highlight_runs,
     ]
 
     public func call(_ method: String, requestBody: [UInt8]) throws -> [UInt8]? {

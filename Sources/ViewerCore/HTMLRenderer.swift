@@ -269,7 +269,7 @@ struct HTMLVisitor: MarkupVisitor {
             // Tokenize the fence body and emit per-run spans the
             // stylesheet themes via the tok-* class set. Engine is
             // shared + thread-safe; calling synchronously here is fine.
-            let runs = TreeSitterEngine.shared.tokenize(codeBlock.code, language: lang)
+            let runs = RustHighlightAdapter.tokenize(codeBlock.code, language: lang)
             body = spanned(codeBlock.code, runs: runs)
         } else {
             body = htmlEscape(codeBlock.code)

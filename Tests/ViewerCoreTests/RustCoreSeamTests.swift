@@ -21,8 +21,10 @@ final class RustCoreSeamTests: XCTestCase {
         // TSK-649 stage A: the soak set (consumed + A/B-validated + longest
         // proven) ships ON; everything else stays OFF until its soak round.
         // Editing this set is a DELIBERATE soak decision, never a side effect.
-        // ROUND 4 / STAGE A COMPLETE: every capability ships ON.
-        let soakSet = Set(RustCoreCapability.allCases)
+        // ROUND 4 / STAGE A COMPLETE: every stage-A capability ships ON.
+        // TSK-660: highlight is the first POST-stage-A port — OFF until its
+        // own adapter-consumption + A/B + soak ladder completes.
+        let soakSet = Set(RustCoreCapability.allCases).subtracting([.highlight])
         for cap in RustCoreCapability.allCases {
             XCTAssertEqual(
                 RustCoreGates.isEnabled(cap, defaults: defaults, environment: [:]),

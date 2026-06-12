@@ -55,7 +55,7 @@ public enum RustMarkdownAdapter {
         case "code":
             let lang = HighlightLanguage.detect(fromInfoString: chunk.lang)
             if lang != .plainText {
-                let runs = TreeSitterEngine.shared.tokenize(chunk.payload, language: lang)
+                let runs = RustHighlightAdapter.tokenize(chunk.payload, language: lang)
                 return visitor.spanned(chunk.payload, runs: runs)
             }
             return visitor.htmlEscape(chunk.payload)

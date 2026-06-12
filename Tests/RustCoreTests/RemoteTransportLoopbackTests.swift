@@ -124,6 +124,13 @@ final class RemoteTransportLoopbackTests: XCTestCase {
         try both("diff_parse") {
             try mdvCoreParseDiff(text: "diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n")
         }
+        try both("highlight_runs") {
+            try mdvCoreHighlightRuns(text: "fn main() { let x = 7; } // é😀", lang: "rust")
+        }
+        try both("highlight_runs:unsupported") {
+            // The in-band supported:false (nil) signal must survive the wire.
+            try mdvCoreHighlightRuns(text: "k: v", lang: "yaml") == nil
+        }
     }
 
     func test_remoteTypedErrors_mapToCoreError() throws {

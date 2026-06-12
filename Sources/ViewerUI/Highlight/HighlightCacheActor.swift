@@ -71,7 +71,7 @@ public final class HighlightCacheActor: ObservableObject {
         let snapshot = text
         let lang = key.language
         Task.detached(priority: .userInitiated) { [weak self] in
-            let runs = TreeSitterEngine.shared.tokenize(snapshot, language: lang)
+            let runs = RustHighlightAdapter.tokenize(snapshot, language: lang)
             await MainActor.run { [weak self] in
                 self?.store(runs, for: key)
             }

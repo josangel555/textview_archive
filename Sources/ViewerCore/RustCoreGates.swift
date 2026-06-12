@@ -34,6 +34,9 @@ public enum RustCoreCapability: String, CaseIterable, Sendable {
     case transcript
     /// Markdown→HTML structural render (TSK-648; engine port TSK-631).
     case markdown
+    /// Tree-sitter highlight runs (engine port TSK-660). The first
+    /// post-stage-A port: ships OFF until its own soak round.
+    case highlight
 
     /// Persisted UserDefaults key. `csv` keeps its original key for
     /// back-compat with any already-persisted preference / the Settings toggle.
@@ -74,6 +77,10 @@ public enum RustCoreCapability: String, CaseIterable, Sendable {
         // capability now routes Rust by default; the Swift twins are
         // fallback-only pending stage B deletion (owner-gated).
         case .cmEdit: return true
+        // TSK-660: the first post-stage-A port — OFF until adapter
+        // consumption + A/B evidence + its own soak round (the same ladder
+        // every stage-A engine climbed).
+        case .highlight: return false
         }
     }
 }
