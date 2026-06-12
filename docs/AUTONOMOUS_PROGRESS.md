@@ -7857,3 +7857,21 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   Next per the recorded order: TSK-652 (CoreTransport seam), then the TSK-649 soak —
   flipping defaults is owner-visible, so stage A starts one engine per change with the
   A/B suites as the net.
+
+## LOG +243 (2026-06-12 tick — TSK-652 stage 1: the CoreTransport seam lands)
+
+- **TSK-652 stage 1 landed** (6c912c3, ticket held at progress — stage 2 blocked on
+  TSK-653). The remote-enabler refactor: `CoreTransport` protocol (BYTE-level — method
+  name + unframed request body → response body; a remote carrier moves bytes, the
+  MessagePack value layer stays client-side), `InProcessTransport` with a name→extern-fn
+  export table, thread-safe `CoreTransportRegistry` with test injection. All SEVEN
+  frame-shaped wrappers route through the registry — remote becomes a carrier swap.
+  The whole existing A/B + adapter suite is the refactor's regression net (gate green).
+- Seam tests pin each wrapper's method name via a spy transport (a wrapper bypassing
+  the registry fails), fault propagation, and the typed unknown-method fault. TEETH:
+  deleting one export-table row → 9 A/B failures with the typed fault.
+- Carve-outs recorded: CSV session APIs are handle-shaped (await the Phase-2 DocId
+  registry); hex/indent are raw-byte signatures. The seam's `call(name,…)` supersedes
+  `mdvFrameCall`'s name param as THE TSK-636 audit-log emit point (covers remote too).
+- Next: TSK-649 stage A (default-ON soak, smallest blast radius first) and/or TSK-655
+  (watch/push protocol design) before TSK-653 mdv-serve.
