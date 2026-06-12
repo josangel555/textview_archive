@@ -7901,3 +7901,7 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   Consumption scoreboard: consumed = csv/indent/diff (ON, soaking) + hexSearch/hex-sync/
   find/fuzzy/transcript/markdown (OFF, awaiting flip rounds); unconsumed = cmEdit only
   (CodeMirrorBridge routing audit, last A0 item).
+- **A0 COMPLETE (23b29ca):** the editor's incremental apply (keystroke hot path) routes
+  RustCMEditAdapter — every adapter now has a consumer. Flip-round plan recorded on the
+  ticket: hex family next, cmEdit LAST (highest stakes — keystroke path), wave-1 four
+  in between; then stage B twin deletion, owner-gated per engine.
