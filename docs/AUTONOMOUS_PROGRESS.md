@@ -7875,3 +7875,23 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   `mdvFrameCall`'s name param as THE TSK-636 audit-log emit point (covers remote too).
 - Next: TSK-649 stage A (default-ON soak, smallest blast radius first) and/or TSK-655
   (watch/push protocol design) before TSK-653 mdv-serve.
+
+## LOG +244 (2026-06-12 tick — TSK-649 stage A: csv/indent/diff ship DEFAULT-ON; soak begins)
+
+- **The first real engine cut-over** (55bb765, soak bundle installed to /Applications).
+  Consumption audit first (A0): the indent/diff adapters existed but NOTHING routed
+  through them — StatusBar's indent metric, ReviewSession ×2 and DiffView now consume
+  their adapters (csv was already live via CSVTableView). Then the mechanism (A1):
+  per-capability `defaultEnabled`; precedence env > EXPLICIT persisted toggle
+  (`object(forKey:)` distinguishes unset from false, so a user's deliberate OFF
+  survives the shipped flip) > shipped default.
+- **SOAK SET ON: csv, indent, diff.** Still OFF: hex/hexSearch/cmEdit (adapters
+  unconsumed — A0 continues), find/fuzzy/transcript/markdown (younger validations,
+  next rounds). **OWNER OFF-SWITCHES, per engine:** `MDV_RUST_CSV=0` /
+  `MDV_RUST_INDENT=0` / `MDV_RUST_DIFF=0` env, or the Settings toggle. Fallbacks are
+  fail-safe (CoreError → Swift) and Obs-logged (`rust-core` channel) so a misbehaving
+  rust path is visible, not silent.
+- **De-facto teeth:** six tests across five suites encoded the old all-OFF default and
+  went RED on the flip — exactly the guard the soak set needed — then were migrated to
+  env-pinned gate-off + new shipped-default-routes-rust pins (the indent/diff adapters
+  gained env injection in the process).
