@@ -7951,3 +7951,18 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   same engine surface with identical bytes** — the remote-core goal has its working
   spine. Next: TSK-654 (fs family + push + root containment), TSK-660 (TreeSitter),
   flip rounds on TSK-649.
+## LOG +248 (2026-06-12 tick — TSK-654 validated: the fs family, root-contained)
+
+- **TSK-654 v1 → validated** (c6baaf1): fs.stat / fs.read / fs.readdir in mdv-serve
+  behind ROOT CONTAINMENT (--root canonicalizes once; every request path must prefix
+  the canonical root — dotdot/absolute/symlink escapes all die, tested incl. a /etc
+  symlink; no --root = family disabled). fs.read is WINDOWED-ONLY ({offset,len} →
+  {total,data} as msgpack bin via hand-rolled encode; 4MiB window cap). readdir sorted
+  + capped at 4096 (TSK-558 discipline). stat answers exists=false for
+  missing-but-contained (not-found is an answer; an escape is not). MDV_CAP_FS=1<<9 as
+  the first SERVER-ONLY bit — never in the in-process mask, pinned on both sides.
+  Teeth: containment check removed → both escape tests red.
+- **A remote machine can now be browsed and read by the thin client** (stat/readdir/
+  windowed read) with the engine surface already proven byte-equal — the remote-core
+  MVP is: tunnel + mdv-serve --socket --root. Deferred, recorded: fs.tree, fs.watch
+  (push loop; protocol designed), Swift-side consumers (remote sidebar UI).
