@@ -404,10 +404,13 @@ impl PartialHunk {
 // MARK: - Wire seam (stateless FFI request/response)
 
 /// Request payload: the raw unified-diff text. Deserialized from the MessagePack
-/// named-map frame the Swift side builds (matching `to_vec_named`).
+/// named-map frame the Swift side builds (matching `to_vec_named`). Borrowed
+/// (TSK-561): the text points into the request frame — diffs cross on every
+/// gutter refresh of the viewed file, so the owned copy was pure overhead.
 #[derive(Serialize, Deserialize)]
-struct ParseRequest {
-    text: String,
+struct ParseRequest<'a> {
+    #[serde(borrow)]
+    text: std::borrow::Cow<'a, str>,
 }
 
 /// Response payload: the parsed files (the full structured diff). `File`/`Hunk`/
@@ -428,7 +431,7 @@ struct ParseResponse {
 /// encode failure. (A diff that parses to zero files is NOT an error — it
 /// returns Ok with `files: []`.)
 pub fn parse_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault> {
-    let req: ParseRequest = crate::wire::decode_frame(req_frame)?;
+    let req: ParseRequest<'_> = crate::wire::decode_frame_borrowed(req_frame)?;
     let files = parse(&req.text);
     crate::wire::encode_frame(&ParseResponse { files })
 }
@@ -550,7 +553,7 @@ struct HunkMarksResponse {
 /// [`crate::wire::WireFault`] on a malformed/oversized request frame or an
 /// encode failure.
 pub fn hunk_marks_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault> {
-    let req: ParseRequest = crate::wire::decode_frame(req_frame)?;
+    let req: ParseRequest<'_> = crate::wire::decode_frame_borrowed(req_frame)?;
     let marks: Vec<MarkWire> = hunk_marks(&req.text)
         .into_iter()
         .map(|(line, mark)| MarkWire { line, mark })
@@ -737,7 +740,7 @@ mod tests {
     fn wire_round_trip_matches_direct_parse() {
         // parse_wire(encode {text}) must decode to the same files as parse().
         let d = "diff --git a/foo.txt b/foo.txt\n@@ -1,2 +1,3 @@ ctx\n a\n-b\n+c\n+d\n";
-        let req = crate::wire::encode_frame(&ParseRequest { text: d.to_string() }).unwrap();
+        let req = crate::wire::encode_frame(&ParseRequest { text: d.into() }).unwrap();
         let resp_frame = parse_wire(&req).unwrap();
         let resp: ParseResponse = crate::wire::decode_frame(&resp_frame).unwrap();
         assert_eq!(resp.files, parse(d));
@@ -792,7 +795,7 @@ mod tests {
     #[test]
     fn hunk_marks_wire_round_trips() {
         let d = "diff --git a/f b/f\n@@ -1 +1,2 @@\n ctx\n+added\n";
-        let req = crate::wire::encode_frame(&ParseRequest { text: d.to_string() }).unwrap();
+        let req = crate::wire::encode_frame(&ParseRequest { text: d.into() }).unwrap();
         let frame = hunk_marks_wire(&req).unwrap();
         let resp: HunkMarksResponse = crate::wire::decode_frame(&frame).unwrap();
         assert_eq!(resp.marks.len(), 1);

@@ -564,9 +564,11 @@ fn format_double(f: f64) -> String {
 // Wire layer — `ffi_frame_body!` shape.
 // ---------------------------------------------------------------------------
 
+/// Borrowed `text` (TSK-561): a whole transcript file crosses per parse.
 #[derive(Deserialize)]
-struct ParseRequest {
-    text: String,
+struct ParseRequest<'a> {
+    #[serde(borrow)]
+    text: std::borrow::Cow<'a, str>,
     redacting: bool,
     /// Optional event-count ceiling override (the monitor's detail cap).
     /// Riding the wire matters for remote: the cap must apply SERVER-side
@@ -615,7 +617,7 @@ fn parse_wire_impl(
     req_frame: &[u8],
     redacting_override: Option<bool>,
 ) -> Result<Vec<u8>, crate::wire::WireFault> {
-    let req: ParseRequest = crate::wire::decode_frame(req_frame)?;
+    let req: ParseRequest<'_> = crate::wire::decode_frame_borrowed(req_frame)?;
     let redacting = redacting_override.unwrap_or(req.redacting);
     let max_events = req
         .max_events

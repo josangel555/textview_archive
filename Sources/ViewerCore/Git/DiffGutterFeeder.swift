@@ -46,11 +46,14 @@ public enum DiffGutterFeeder {
     }
 
     /// Convenience: parse the unified-diff string and produce the CM6
-    /// marker payload in one call. Delegates to `DiffHunkParser` so the
-    /// parsing rules stay in one place (modify-pairs, deletion-marks-
-    /// next-line, "No newline at end of file" tolerance, etc.).
+    /// marker payload in one call. Routes through `RustDiffAdapter` (the
+    /// `.diff` capability gate, TSK-561 closed the routing gap here) so
+    /// the parsing rules stay in one place (modify-pairs, deletion-marks-
+    /// next-line, "No newline at end of file" tolerance, etc.) — Rust
+    /// engine by default, Swift `DiffHunkParser` as the gate-off/fault
+    /// fallback inside the adapter.
     public static func markers(fromDiff diff: String) -> [CMGutterMarker] {
-        markers(from: DiffHunkParser.parse(diff))
+        markers(from: RustDiffAdapter.hunkMarks(diff))
     }
 
     /// Map a `DiffMark` case to the JS-side `kind` string. Centralized

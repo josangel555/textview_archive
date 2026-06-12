@@ -112,9 +112,13 @@ pub struct Run {
 
 /// Wire request: `{text, lang}` where `lang` is the host's
 /// `HighlightLanguage` rawValue (`"swift"`, `"json"`, `"csharp"`, …).
+/// Borrowed `text` (TSK-561): the whole source file crosses per tokenize.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct RunsRequest {
-    pub text: String,
+pub struct RunsRequest<'a> {
+    /// The source text to tokenize.
+    #[serde(borrow)]
+    pub text: std::borrow::Cow<'a, str>,
+    /// Host `HighlightLanguage` rawValue.
     pub lang: String,
 }
 
@@ -203,7 +207,7 @@ fn utf16_len(s: &str) -> usize {
 /// frame. Exposed by `mdvcore_highlight_runs` (FFI) and `highlight_runs`
 /// (mdv-serve) — capability bit `MDV_CAP_HIGHLIGHT`.
 pub fn runs_wire(req_frame: &[u8]) -> Result<Vec<u8>, mdvcore_core::wire::WireFault> {
-    let req: RunsRequest = mdvcore_core::wire::decode_frame(req_frame)?;
+    let req: RunsRequest<'_> = mdvcore_core::wire::decode_frame_borrowed(req_frame)?;
     let resp = match Lang::from_name(&req.lang) {
         Some(lang) => RunsResponse { supported: true, runs: runs_utf16(&req.text, lang) },
         None => RunsResponse { supported: false, runs: Vec::new() },

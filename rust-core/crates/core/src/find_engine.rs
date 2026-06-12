@@ -174,9 +174,12 @@ pub fn search(
 // Wire layer — `ffi_frame_body!` shape.
 // ---------------------------------------------------------------------------
 
+/// Borrowed `text` (TSK-561): the whole document crosses per find request;
+/// the pattern/kind fields are query-sized and stay owned.
 #[derive(Deserialize)]
-struct SearchRequest {
-    text: String,
+struct SearchRequest<'a> {
+    #[serde(borrow)]
+    text: std::borrow::Cow<'a, str>,
     pattern: String,
     /// "literal" | "regex" — anything else is a wire error (typed enums are
     /// the contract; unknown values must not silently default).
@@ -204,7 +207,7 @@ struct SearchResponse {
 /// `{text, pattern, kind, case_sensitive, whole_word}` request frame →
 /// `{error, matches:[{location,length,line,column}]}` response frame.
 pub fn search_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault> {
-    let req: SearchRequest = crate::wire::decode_frame(req_frame)?;
+    let req: SearchRequest<'_> = crate::wire::decode_frame_borrowed(req_frame)?;
     let kind = match req.kind.as_str() {
         "literal" => QueryKind::Literal,
         "regex" => QueryKind::Regex,

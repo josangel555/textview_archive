@@ -1155,7 +1155,9 @@ public final class DocumentModel: ObservableObject {
             let client = GitClient(repoRoot: repoRoot, statusTimeout: Self.gutterDiffTimeout)
             let diff = client.diff(forPath: relPath)
             if Task.isCancelled { return }
-            let marks = DiffHunkParser.parse(diff)
+            // Routed: Rust engine per the `.diff` gate, Swift fallback
+            // inside the adapter (TSK-561 closed the gutter routing gap).
+            let marks = RustDiffAdapter.hunkMarks(diff)
             // Build the CM6 marker payload off-main so the main-actor
             // hop below is just an assignment. `markers(from:)` is a
             // sort + map; cheap, but no point doing it on the main thread.
@@ -1196,7 +1198,7 @@ public final class DocumentModel: ObservableObject {
             let client = GitClient(repoRoot: repoRoot, statusTimeout: Self.gutterDiffTimeout)
             let diff = client.diff(forPath: relPath)
             if Task.isCancelled { return }
-            let marks = DiffHunkParser.parse(diff)
+            let marks = RustDiffAdapter.hunkMarks(diff)
             let cmMarkers = DiffGutterFeeder.markers(from: marks)
             await MainActor.run { [weak self] in
                 guard let self, self.tabCoordinator.splitURL == token else { return }

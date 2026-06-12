@@ -551,9 +551,11 @@ pub fn escape(s: &str) -> String {
 // Wire layer — `ffi_frame_body!` shape.
 // ---------------------------------------------------------------------------
 
+/// Borrowed `text` (TSK-561): the whole markdown document crosses per render.
 #[derive(Deserialize)]
-struct RenderRequest {
-    text: String,
+struct RenderRequest<'a> {
+    #[serde(borrow)]
+    text: std::borrow::Cow<'a, str>,
 }
 
 #[derive(Serialize)]
@@ -572,7 +574,7 @@ struct RenderResponse {
 /// `{text}` request frame → `{html, chunks:[{kind,lang,payload}]}` response
 /// frame (see the module docs for the chunk/splice contract).
 pub fn render_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault> {
-    let req: RenderRequest = crate::wire::decode_frame(req_frame)?;
+    let req: RenderRequest<'_> = crate::wire::decode_frame_borrowed(req_frame)?;
     let out = render(&req.text);
     crate::wire::encode_frame(&RenderResponse {
         html: out.html,

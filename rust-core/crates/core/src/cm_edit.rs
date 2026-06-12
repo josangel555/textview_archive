@@ -96,9 +96,13 @@ pub fn apply(base: &str, edits: &[CmEdit]) -> Option<String> {
 
 /// Request payload: the base doc + the edit batch. Deserialized from the
 /// MessagePack named-map frame the Swift side builds (matching `to_vec_named`).
+/// Borrowed `base` (TSK-561): the whole document crosses per edit batch, so
+/// the owned copy was the largest single allocation on the keystroke path.
+/// The edits' `insert` strings stay owned — they are keystroke-sized.
 #[derive(Serialize, Deserialize)]
-struct ApplyRequest {
-    base: String,
+struct ApplyRequest<'a> {
+    #[serde(borrow)]
+    base: std::borrow::Cow<'a, str>,
     edits: Vec<EditWire>,
 }
 
@@ -128,7 +132,7 @@ struct ApplyResponse {
 /// encode failure. (A *rejected edit batch* is NOT an error — it returns Ok with
 /// `text: None`.)
 pub fn apply_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault> {
-    let req: ApplyRequest = crate::wire::decode_frame(req_frame)?;
+    let req: ApplyRequest<'_> = crate::wire::decode_frame_borrowed(req_frame)?;
     let edits: Vec<CmEdit> = req
         .edits
         .into_iter()
@@ -224,7 +228,7 @@ mod tests {
 
     fn req_frame(base: &str, edits: &[(i64, i64, &str)]) -> Vec<u8> {
         let r = ApplyRequest {
-            base: base.to_string(),
+            base: base.into(),
             edits: edits.iter().map(|&(f, t, i)| EditWire { from: f, to: t, insert: i.to_string() }).collect(),
         };
         crate::wire::encode_frame(&r).unwrap()

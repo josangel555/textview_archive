@@ -141,6 +141,43 @@ pub fn decode<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> Result<T, WireFault
     Ok(value)
 }
 
+/// Decode a MessagePack payload **borrowing from the input slice** (TSK-561).
+///
+/// The owned [`decode`] copies every string field out of the buffer; for the
+/// request seams that carry a whole document (`diff_parse`, `cm_apply`,
+/// `find_search`, `markdown_render`, `transcript_parse`, `highlight_runs`)
+/// that copy is pure overhead — the FFI/serve layer hands us a `&[u8]` that
+/// outlives the call, so `#[serde(borrow)] Cow<'a, str>` fields can point
+/// straight into the frame bytes.
+///
+/// Same strictness as [`decode`]: trailing bytes after the single MessagePack
+/// value are rejected. rmp-serde's borrowing reader exposes no consumed-byte
+/// count, so end-of-input is verified by probing for a second value: a clean
+/// end fails that probe with `UnexpectedEof` on the very first marker byte;
+/// anything else means the body carried trailing bytes (a well-formed extra
+/// value or garbage — both rejected).
+///
+/// # Errors
+/// Returns [`WireFault::Decode`] if deserialization fails or if any bytes
+/// remain after the first value.
+pub fn decode_borrowed<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> Result<T, WireFault> {
+    let mut de = rmp_serde::Deserializer::from_read_ref(bytes);
+    let value = T::deserialize(&mut de).map_err(|e| WireFault::Decode(e.to_string()))?;
+    match serde::de::IgnoredAny::deserialize(&mut de) {
+        Err(rmp_serde::decode::Error::InvalidMarkerRead(ref io))
+            if io.kind() == std::io::ErrorKind::UnexpectedEof =>
+        {
+            Ok(value)
+        }
+        Ok(serde::de::IgnoredAny) => Err(WireFault::Decode(
+            "trailing bytes after MessagePack value".to_string(),
+        )),
+        Err(e) => Err(WireFault::Decode(format!(
+            "trailing garbage after MessagePack value: {e}"
+        ))),
+    }
+}
+
 /// Encode a value to a single length-prefixed frame: `u32` LE length + body.
 ///
 /// Serializes the MessagePack body **directly into one buffer** behind a 4-byte
@@ -193,6 +230,22 @@ pub fn encode_frame<T: Serialize>(value: &T) -> Result<Vec<u8>, WireFault> {
 /// length is invalid/oversized, or [`WireFault::Decode`] on a body decode
 /// failure.
 pub fn decode_frame<T: for<'de> Deserialize<'de>>(frame: &[u8]) -> Result<T, WireFault> {
+    decode(frame_body(frame)?)
+}
+
+/// Borrowed-decode variant of [`decode_frame`] (TSK-561): same prefix/length
+/// validation, body decoded via [`decode_borrowed`] so `#[serde(borrow)]`
+/// fields point into `frame` instead of copying out of it.
+///
+/// # Errors
+/// Same as [`decode_frame`].
+pub fn decode_frame_borrowed<'a, T: Deserialize<'a>>(frame: &'a [u8]) -> Result<T, WireFault> {
+    decode_borrowed(frame_body(frame)?)
+}
+
+/// Validate a frame's `u32` LE length prefix and return the body slice.
+/// Shared by the owned and borrowed frame decoders.
+fn frame_body(frame: &[u8]) -> Result<&[u8], WireFault> {
     if frame.len() < 4 {
         return Err(WireFault::Framing(format!(
             "frame too short for length prefix: {} bytes",
@@ -214,7 +267,7 @@ pub fn decode_frame<T: for<'de> Deserialize<'de>>(frame: &[u8]) -> Result<T, Wir
             body.len()
         )));
     }
-    decode(body)
+    Ok(body)
 }
 
 #[cfg(test)]
@@ -397,5 +450,71 @@ mod tests {
     fn short_buffer_is_rejected() {
         let err = decode_frame::<Table>(&[0x00, 0x01]).unwrap_err();
         assert!(matches!(err, WireFault::Framing(_)));
+    }
+
+    // --- Borrowed (zero-copy) decode, TSK-561 ---------------------------------
+
+    /// The request shape the engine seams use: one big text payload.
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct BorrowReq<'a> {
+        #[serde(borrow)]
+        text: std::borrow::Cow<'a, str>,
+        flag: bool,
+    }
+
+    #[test]
+    fn decode_frame_borrowed_actually_borrows() {
+        // THE point of the variant: the text field must be Cow::Borrowed —
+        // a pointer into the frame, not a copy. If a refactor reroutes this
+        // through the owned cursor path, Borrowed becomes Owned and this
+        // test is the tripwire.
+        let frame =
+            encode_frame(&BorrowReq { text: "payload".into(), flag: true }).unwrap();
+        let req: BorrowReq<'_> = decode_frame_borrowed(&frame).unwrap();
+        assert!(
+            matches!(req.text, std::borrow::Cow::Borrowed(_)),
+            "text must borrow from the frame, got an owned copy"
+        );
+        assert_eq!(req.text, "payload");
+        assert!(req.flag);
+    }
+
+    #[test]
+    fn decode_borrowed_rejects_trailing_garbage() {
+        // Strictness parity with `decode`: a stray byte after the value fails.
+        let mut bytes = encode(&BorrowReq { text: "x".into(), flag: false }).unwrap();
+        bytes.push(0xc0);
+        let r: Result<BorrowReq<'_>, _> = decode_borrowed(&bytes);
+        assert!(
+            matches!(r, Err(WireFault::Decode(_))),
+            "trailing byte after value must be rejected, got {r:?}"
+        );
+    }
+
+    #[test]
+    fn decode_borrowed_rejects_trailing_second_value() {
+        // A well-formed SECOND value is just as much trailing garbage as a
+        // stray byte (the probe must reject Ok, not only marker errors).
+        let mut bytes = encode(&BorrowReq { text: "x".into(), flag: false }).unwrap();
+        bytes.extend_from_slice(&encode(&7u32).unwrap());
+        let r: Result<BorrowReq<'_>, _> = decode_borrowed(&bytes);
+        assert!(
+            matches!(r, Err(WireFault::Decode(_))),
+            "second value after the first must be rejected, got {r:?}"
+        );
+    }
+
+    #[test]
+    fn decode_frame_borrowed_validates_framing_like_the_owned_path() {
+        let frame = encode_frame(&BorrowReq { text: "x".into(), flag: false }).unwrap();
+        // Truncated body.
+        let err = decode_frame_borrowed::<BorrowReq<'_>>(&frame[..frame.len() - 1]).unwrap_err();
+        assert!(matches!(err, WireFault::Framing(_)));
+        // Short buffer.
+        let err = decode_frame_borrowed::<BorrowReq<'_>>(&[0x00, 0x01]).unwrap_err();
+        assert!(matches!(err, WireFault::Framing(_)));
+        // Clean frame round-trips.
+        let req: BorrowReq<'_> = decode_frame_borrowed(&frame).unwrap();
+        assert_eq!(req.text, "x");
     }
 }
