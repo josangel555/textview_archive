@@ -8169,3 +8169,33 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED.
 - Board: TSK-640 stays at `progress` — stage 2 (editor invocation: CM6
   selection → prompt → per-file apply → tab refresh) is the live-gated tail.
+
+## LOG +264 (2026-06-12 tick — TSK-660 stage 1: rust highlight becomes a core capability)
+
+- **`mdvcore-highlight` gains the app contract (84bf49c):** `runs_utf16` emits
+  UTF-16 code-unit runs in the Swift `TokenKind` rawValue vocabulary via an
+  `APP_CAPTURES` table mirroring `CaptureMap.swift` (configure()'s
+  longest-dot-prefix ≡ CaptureMap's right-to-left walk); `runs_wire`
+  `{text,lang}→{supported,runs}` — `supported:false` is the in-band "no
+  grammar, fall back" signal. FFI export `mdvcore_highlight_runs` +
+  `MDV_CAP_HIGHLIGHT = 1<<14` (the ticket's 1<<9 pre-assign was stale — fs
+  took it); mdv-serve `highlight_runs` dispatch; Swift
+  `CoreCapabilities.highlight` + pins (same-change rule, both sides).
+- **TSK-410 evidence:** the rust path EVALUATES `#match?`/`#eq?` predicates —
+  pinned: a TS lowercase identifier never classifies type/constructor while
+  `new Thing()` still does. The Swift engine's structural bug is absent here;
+  cross-close lands with the consumer routing (stage 2).
+- **Size:** the staticlib grew 21.7→50 MB (grammar C objects), but the app
+  EXEC is unaffected until a Swift symbol references the export (archive
+  member dead-strip) — the bundle-cap measurement is a stage-2 gate.
+- **Teeth lesson (recorded in LESSONS.md):** the first byte-offset mutation
+  was a FALSE GREEN — the test computed expectations through the same
+  `utf16_len` helper it was pinning. Fixed with an independent std-encoder
+  oracle + hardcoded literals; mutation then reddened 2 tests, kind-table
+  mutation reddened 1. Gates: rust EXIT=0, swift headless EXIT=0 (the
+  loopback suite needed the stale `/private/tmp/mdv-rust-target` mdv-serve
+  rebuilt — its hello-mask pin has teeth).
+- Board: TSK-660 at `progress`; stage 2 = Swift adapter + gate(default OFF) +
+  consumer routing + A/B suite + bundle measurement; stage 3 = +10 grammar
+  crates (list goes on the ticket first, TSK-629 rider); stage 4 = Swift
+  grammar deletion.

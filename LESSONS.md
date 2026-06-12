@@ -2838,3 +2838,12 @@ Continuation of "the five constraints" above; these three close every remaining 
   against the Swift engine on every terminator style.
 - **The `1 ignored` in cargo test after adding a doc example** is the ```ignore doctest —
   not a skipped unit test. Don't chase it.
+
+- **2026-06-12 — Teeth mutations must not flow through the helper they pin
+  (self-referential false green).** A mutation of `utf16_len` (byte offsets
+  instead of UTF-16) left the suite GREEN because the test computed its
+  expected offsets via the same helper — both sides moved together. Rule:
+  the expected side of a teeth-bearing assertion needs an INDEPENDENT oracle
+  (a different std API — e.g. `encode_utf16().count()` vs
+  `chars().map(len_utf16).sum()` — or hardcoded literals). Run the mutation
+  BEFORE trusting any new suite; the false green is invisible in review.
