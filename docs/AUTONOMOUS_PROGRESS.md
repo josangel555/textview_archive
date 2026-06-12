@@ -8366,3 +8366,22 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   (byte-subsequence scan — msgpack bodies are not UTF-8 wholesale),
   server-death typed failure. Loopback byte-equal suite green across the
   call() refactor. Gate EXIT=0. TSK-664 → validated.
+
+## LOG +273 (2026-06-12 tick — TSK-665 VALIDATED: the app can now attach a remote core)
+
+- **RemoteCoreAttach (1458132):** `MDV_REMOTE_SOCKET` dials the ssh-forwarded
+  mdv-serve at launch and installs RemoteTransport as the process transport.
+  FAIL-SAFE (any failure → Obs warn + stay in-process) and RESILIENT
+  (onClose auto-reverts to local engines — a dropped tunnel degrades instead
+  of stalling adapters on the dead socket's deadline). Launch-time-only in
+  v1; reconnect policy is a recorded follow-up. Wired after the audit hook,
+  before any engine use.
+- **The owner recipe now works end-to-end:**
+  `ssh -fNL /tmp/mdv.sock:<server>.sock host` →
+  `MDV_REMOTE_SOCKET=/tmp/mdv.sock open -a TextView` — every default-ON
+  engine routes the remote core; faults fall back to Swift exactly as local.
+- 4 tests vs a real server (env gate / attach+real-call routing / fail-safe /
+  auto-revert), teeth on the revert path, gate EXIT=0. TSK-665 → validated.
+  With 662/663/664 this closes the epic's transport story: engines, fs, git,
+  search, transcripts, push — all reachable remotely, nothing Swift on the
+  server.
