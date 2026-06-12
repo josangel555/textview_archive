@@ -24,7 +24,7 @@ firewalls attribute it to TextView)
 
 | Surface | Remote subresources | Navigations | JS | Verdict |
 |---|---|---|---|---|
-| **Rendered markdown** (`MarkdownRenderedView`) | **⚠ FETCHED — the gap.** Remote `![images]`/badges in any markdown load over the network; subresource fetches never pass the navigation delegate and no `WKContentRuleList` exists | link clicks → system browser (http/https/mailto), in-page nav fenced | ON (our own template needs it) | **This is what the owner saw.** Fix in flight (TSK-635): content-rule default-deny on non-`file:` subresources + per-tab "Load remote images" opt-in |
+| **Rendered markdown** (`MarkdownRenderedView`) | **Blocked by CSP** — every page goes through `HTMLRenderer.renderPage` (verified: both call sites + the model render cache), whose CRIT-1 meta is `default-src 'none'; img-src file: data:; connect-src 'none'; frame-src 'none'; object-src 'none'…` — remote `![images]`/badges are denied. (CORRECTION 2026-06-12: an earlier revision of this doc called this surface "the gap" — wrong; the check missed the template CSP.) Residual: no network-layer TEST pins this — a CSP-string regression would re-open egress silently (TSK-635's remaining scope) | link clicks → system browser (http/https/mailto), in-page nav fenced | ON (our own template; WKUserScripts bypass page CSP by design) | Fenced by CSP; needs a regression test. **NOT the source of the owner's observation — see TSK-643** |
 | **HTML viewer** (`HTMLRenderedView`) | **Blocked** — injected CSP `default-src 'none'` AND `HTMLDocumentPolicy.decideSubresource` (file:-within-document-dir only) | clicks → system browser or cancelled; `file:`/`data:`/`javascript:` cancelled | default-DENY, per-tab opt-in | Fenced by design (layers L1–L4 in the file header). TSK-635 adds a network-layer verification test |
 | **CM6 editor** (`CodeMirrorEditorView`) | local bundle only (`codemirror.html` has zero remote refs) | **default-cancel** — `javascript:`/`vbscript:`/`data:` always blocked; only bootstrap `file:` + same-doc fragments allowed (unit-tested `Coordinator.decide`) | ON (the editor is JS) | Fenced |
 | **Mermaid** | runs inside the rendered-markdown WebView; `mermaid.min.js` is vendored (no CDN). Its 52 `http(s)` strings are SVG namespaces/links, not fetches | (same as host view) | (same) | Covered by the rendered-markdown fix once landed |
@@ -50,9 +50,11 @@ no remote `@import`/`src` references. Fonts are system fonts only.
 lsof -p <pid> -i                      # live sockets for the app process
 # WebKit fetches: look for the "com.apple.WebKit.Networking" child of the pid
 ```
-If the frontmost tab is markdown in Rendered mode, `grep -n 'http' file.md`
-— remote badges/images are the near-certain cause until the TSK-635
-default-deny lands. Denying the connection only breaks remote images.
+With the CSP verified in place, rendered-markdown badges are NOT the
+explanation for app-attributed egress; the observed 2026-06-11 connection
+(pid 6877 → 100.64.100.1) is UNEXPLAINED and tracked as TSK-643 — capture
+`lsof -p <pid> -i` + the firewall's full flow detail (remote port, process
+path) next time it fires.
 
 ## 5. Future: every row above emits an audit-log event (TSK-636) — allowed
 AND blocked decisions, subprocess spawns with argv — so this table becomes
