@@ -15,9 +15,14 @@ public enum RustIndentAdapter {
     }
 
     /// Same, but also reporting which engine produced the result (A/B / diag).
-    public static func outcome(in text: String, sampleLines: Int = 50) -> CoreOutcome<String> {
+    public static func outcome(
+        in text: String,
+        sampleLines: Int = 50,
+        defaults: UserDefaults = .standard,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> CoreOutcome<String> {
         RustCoreFallback.run(
-            .indent,
+            .indent, defaults: defaults, environment: environment,
             rust: { try mdvCoreIndentDetect(text: text, sampleLines: sampleLines) },
             swift: { IndentDetector.detect(in: text, sampleLines: sampleLines) }
         )

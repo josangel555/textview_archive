@@ -168,7 +168,7 @@ final class DiffParseABTests: XCTestCase {
         -a
         +b
         """
-        let o = RustDiffAdapter.outcome(text)
+        let o = RustDiffAdapter.outcome(text, environment: ["MDV_RUST_DIFF": "0"])
         XCTAssertEqual(o.source, .swiftBecauseGateOff)
         XCTAssertEqual(o.value, DiffParser.parse(text))
     }

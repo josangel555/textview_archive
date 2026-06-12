@@ -18,9 +18,13 @@ public enum RustDiffAdapter {
     }
 
     /// Same, but also reporting which engine produced the result (A/B / diag).
-    public static func outcome(_ text: String) -> CoreOutcome<[UnifiedDiff.File]> {
+    public static func outcome(
+        _ text: String,
+        defaults: UserDefaults = .standard,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> CoreOutcome<[UnifiedDiff.File]> {
         RustCoreFallback.run(
-            .diff,
+            .diff, defaults: defaults, environment: environment,
             rust: { try toUnified(mdvCoreParseDiff(text: text)) },
             swift: { DiffParser.parse(text) }
         )
@@ -70,9 +74,13 @@ public enum RustDiffAdapter {
     }
 
     /// Same, but also reporting which engine produced the result (A/B / diag).
-    public static func hunkMarksOutcome(_ diff: String) -> CoreOutcome<[Int: DiffMark]> {
+    public static func hunkMarksOutcome(
+        _ diff: String,
+        defaults: UserDefaults = .standard,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> CoreOutcome<[Int: DiffMark]> {
         RustCoreFallback.run(
-            .diff,
+            .diff, defaults: defaults, environment: environment,
             rust: { try mdvCoreDiffHunkMarks(text: diff).mapValues(mark) },
             swift: { DiffHunkParser.parse(diff) }
         )

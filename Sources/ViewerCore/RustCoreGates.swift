@@ -7,12 +7,13 @@ import Foundation
 /// per capability, so the host, adapters, tests, and the Settings view all
 /// consult a single predicate.
 ///
-/// **Default OFF for every capability.** A slice only runs through Rust when
-/// explicitly opted in. Precedence (highest first):
+/// Precedence (highest first):
 ///   1. env var (`MDV_RUST_<CAP>=1`) — per-run override for A/B / CI; wins even
 ///      over a persisted toggle, and an env `0` pins the Swift A-side.
-///   2. persisted `UserDefaults` toggle (the Settings switch).
-///   3. otherwise `false` (the safe Swift path).
+///   2. persisted `UserDefaults` toggle (the Settings switch) — an EXPLICIT
+///      user choice in either direction survives a shipped-default change.
+///   3. the capability's `defaultEnabled` (TSK-649 stage A: the soak set
+///      ships ON; everything else stays OFF until soaked).
 ///
 /// SwiftUI-free (lives in ViewerCore) so pure routing code can gate without the
 /// UI layer.
@@ -51,13 +52,27 @@ public enum RustCoreCapability: String, CaseIterable, Sendable {
         default:   return "MDV_RUST_\(rawValue.uppercased())"
         }
     }
+
+    /// The shipped default (TSK-649 stage A). The SOAK SET — engines whose
+    /// adapters are consumed in app paths, A/B-parity-validated, and
+    /// longest-proven — ships ON; the rest stays OFF until their soak round.
+    /// Off-switch at any time: `MDV_RUST_<CAP>=0` env, or the persisted
+    /// Settings toggle (an explicit toggle beats this default).
+    public var defaultEnabled: Bool {
+        switch self {
+        case .csv, .indent, .diff: return true
+        case .cmEdit, .hex, .hexSearch, .fuzzy, .find, .transcript, .markdown:
+            return false
+        }
+    }
 }
 
 public enum RustCoreGates {
 
     /// Is `capability` routed through the Rust core for this run? Env override
     /// first (a hard `1`/`true` ON, anything else — incl. `0` — OFF), else the
-    /// persisted toggle, else `false`.
+    /// EXPLICIT persisted toggle (either direction), else the capability's
+    /// shipped default.
     public static func isEnabled(
         _ capability: RustCoreCapability,
         defaults: UserDefaults = .standard,
@@ -66,6 +81,12 @@ public enum RustCoreGates {
         if let raw = environment[capability.envVar] {
             return raw == "1" || raw.lowercased() == "true"
         }
-        return defaults.bool(forKey: capability.defaultsKey)
+        // `object(forKey:)` distinguishes "never touched" from an explicit
+        // false — a user who toggled a slice OFF must stay OFF even after
+        // the shipped default flips ON (TSK-649 stage A).
+        if defaults.object(forKey: capability.defaultsKey) != nil {
+            return defaults.bool(forKey: capability.defaultsKey)
+        }
+        return capability.defaultEnabled
     }
 }

@@ -480,7 +480,11 @@ struct StatusBar: View {
             byteCount: f.byteCount,
             lineEndings: LineEndingDetector.displayString(in: f.contents, sampleScalars: 4096),
             encodingShort: encodingShort(f.encoding),
-            indent: IndentDetector.detect(in: f.contents)
+            // Routed through the `.indent` gate (TSK-649 A0): Rust core when
+            // on (the shipped default since stage A), Swift IndentDetector
+            // otherwise. Cached per (url, bytes) above, so the detect runs
+            // once per file version either way.
+            indent: RustIndentAdapter.detect(in: f.contents)
         )
         metricsLock.lock()
         metricsCache = (AnyHashable(key), m)

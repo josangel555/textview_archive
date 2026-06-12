@@ -83,8 +83,8 @@ struct DiffView: View {
                 }
             }
         }
-        .onAppear { files = DiffParser.parse(text) }
-        .onChange(of: text) { _, newText in files = DiffParser.parse(newText) }
+        .onAppear { files = RustDiffAdapter.parse(text) }
+        .onChange(of: text) { _, newText in files = RustDiffAdapter.parse(newText) }
         .onChange(of: findQuery) { _, q in recomputeFind(query: q) }
         .onChange(of: files) { _, _ in recomputeFind(query: findQuery) }
     }

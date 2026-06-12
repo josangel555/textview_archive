@@ -17,10 +17,12 @@ final class GateAndAdapterTests: XCTestCase {
 
     // MARK: - Gate default & opt-ins
 
-    func testGateDefaultIsOff() {
+    func testGateShippedDefaultIsOn_soakSet() {
         let d = scratchDefaults()
-        // No env override, no persisted toggle → OFF (the safe shipping default).
-        XCTAssertFalse(RustCSVGate.isEnabled(defaults: d, environment: [:]))
+        // TSK-649 stage A: csv is in the soak set — no env override, no
+        // persisted toggle → the shipped default is ON. (Explicit toggles
+        // and MDV_RUST_CSV=0 still pin Swift — pinned elsewhere.)
+        XCTAssertTrue(RustCSVGate.isEnabled(defaults: d, environment: [:]))
     }
 
     func testGateEnvVarForcesOn() {

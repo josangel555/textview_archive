@@ -43,9 +43,19 @@ final class IndentDetectABTests: XCTestCase {
     }
 
     func test_gate_off_uses_swift_and_matches() {
+        // Env-pinned OFF (the shipped default is ON since TSK-649 stage A).
         let text = "    a\n    b\n"
-        let o = RustIndentAdapter.outcome(in: text)
+        let o = RustIndentAdapter.outcome(in: text, environment: ["MDV_RUST_INDENT": "0"])
         XCTAssertEqual(o.source, .swiftBecauseGateOff)
+        XCTAssertEqual(o.value, IndentDetector.detect(in: text))
+    }
+
+    func test_shippedDefault_routesRust_andMatchesSwift() {
+        // TSK-649 stage A: indent is in the soak set — an UNTOUCHED process
+        // default must route rust, with output equal to the Swift engine.
+        let text = "    a\n    b\n"
+        let o = RustIndentAdapter.outcome(in: text, environment: [:])
+        XCTAssertEqual(o.source, .rust, "indent ships default-ON (soak set)")
         XCTAssertEqual(o.value, IndentDetector.detect(in: text))
     }
 }

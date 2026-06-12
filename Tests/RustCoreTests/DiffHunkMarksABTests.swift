@@ -52,7 +52,7 @@ final class DiffHunkMarksABTests: XCTestCase {
 
     func test_gate_off_uses_swift_and_matches() {
         let diff = "diff --git a/f b/f\n@@ -1 +1 @@\n-a\n+b\n"
-        let o = RustDiffAdapter.hunkMarksOutcome(diff)
+        let o = RustDiffAdapter.hunkMarksOutcome(diff, environment: ["MDV_RUST_DIFF": "0"])
         XCTAssertEqual(o.source, .swiftBecauseGateOff)
         XCTAssertEqual(o.value, DiffHunkParser.parse(diff))
     }

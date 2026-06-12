@@ -17,11 +17,29 @@ final class RustCoreSeamTests: XCTestCase {
 
     // MARK: Gate precedence
 
-    func test_gate_defaultsOff() {
+    func test_gate_shippedDefaults_matchTheSoakSet() {
+        // TSK-649 stage A: the soak set (consumed + A/B-validated + longest
+        // proven) ships ON; everything else stays OFF until its soak round.
+        // Editing this set is a DELIBERATE soak decision, never a side effect.
+        let soakSet: Set<RustCoreCapability> = [.csv, .indent, .diff]
         for cap in RustCoreCapability.allCases {
-            XCTAssertFalse(RustCoreGates.isEnabled(cap, defaults: defaults, environment: [:]),
-                           "\(cap) must default OFF")
+            XCTAssertEqual(
+                RustCoreGates.isEnabled(cap, defaults: defaults, environment: [:]),
+                soakSet.contains(cap),
+                "\(cap) shipped default diverged from the soak set")
         }
+    }
+
+    func test_gate_explicitUserOff_survivesShippedDefaultOn() {
+        // A user who toggled a slice OFF stays OFF even after the shipped
+        // default flips ON (object(forKey:) distinguishes unset from false).
+        defaults.set(false, forKey: RustCoreCapability.csv.defaultsKey)
+        XCTAssertFalse(RustCoreGates.isEnabled(.csv, defaults: defaults, environment: [:]),
+                       "explicit OFF must beat the shipped default")
+        // And the env kill switch still beats everything.
+        defaults.removeObject(forKey: RustCoreCapability.csv.defaultsKey)
+        XCTAssertFalse(RustCoreGates.isEnabled(
+            .csv, defaults: defaults, environment: ["MDV_RUST_CSV": "0"]))
     }
 
     func test_gate_persistedToggle() {
@@ -71,7 +89,7 @@ final class RustCoreSeamTests: XCTestCase {
     // MARK: Fallback contract
 
     func test_fallback_gateOff_runsSwift() {
-        let o = RustCoreFallback.run(.diff, defaults: defaults, environment: [:],
+        let o = RustCoreFallback.run(.diff, defaults: defaults, environment: ["MDV_RUST_DIFF": "0"],
                                      rust: { XCTFail("rust must not run when gate off"); return "R" },
                                      swift: { "S" })
         XCTAssertEqual(o.value, "S")

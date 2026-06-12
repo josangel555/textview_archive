@@ -72,7 +72,7 @@ public final class ReviewSession: ObservableObject {
         switch review.scope {
         case .commit:
             // One `git show` → all files.
-            return DiffParser.parse(git.diff(scope: review.scope, path: ""))
+            return RustDiffAdapter.parse(git.diff(scope: review.scope, path: ""))
         case .workingTree, .range, .branch:
             // Per-path modes: union the diffs of every path we have a comment
             // on (plus, if none yet, nothing — the view drives path selection
@@ -80,7 +80,7 @@ public final class ReviewSession: ObservableObject {
             let paths = Set(review.comments.map(\.filePath))
             var files: [UnifiedDiff.File] = []
             for path in paths.sorted() {
-                files.append(contentsOf: DiffParser.parse(git.diff(scope: review.scope, path: path)))
+                files.append(contentsOf: RustDiffAdapter.parse(git.diff(scope: review.scope, path: path)))
             }
             return files
         }
