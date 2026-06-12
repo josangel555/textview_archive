@@ -8800,3 +8800,23 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   (fourth surface) + picker pixels.
 - Validation-drain pass: TSK-637's 22 outline tests re-run fresh on
   current main — green; stays at fixed for the rendered-panel glance.
+
+## LOG +296 (2026-06-12 tick — TSK-546 VALIDATED; arena table storage)
+
+- **TableArena (d764ed8):** the session's resident store drops from the
+  wire DTO's ~2 allocations/row + 1 String/cell (~2M+ for a 1M-cell CSV)
+  to exactly TWO heap blocks — one contiguous cell-bytes String + a flat
+  offset table — pinned by a struct-size test (the CachedView idiom).
+  The per-keystroke filter scan walks linear memory.
+- **Semantics stay in one home:** filter::CellMatcher extracted; the
+  Vec-based front-end paths and the arena scan share it, with an
+  arena/vec parity test across the Unicode corpus (İ/ß/emoji). Teeth:
+  column-scope arm mutated to scan-all → red naming the exact query.
+- **Wire unchanged byte-for-byte:** SnapshotView projects spans;
+  table_frame() feeds mdvcore_session_table without materializing the
+  DTO; the pre-existing snapshot_frame oracle + a new table_frame
+  identity test referee. All 355 core tests green FIRST RUN.
+- Deliberately deferred: csv::parse emitting the arena directly (its
+  per-cell allocs are one-time per open — measure first).
+- usize offsets, not the audit's u32: correctness must not depend on
+  caller-supplied heap caps staying under 4 GiB.
