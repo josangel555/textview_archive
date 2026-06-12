@@ -818,6 +818,16 @@ public struct ContentView: View {
             },
             onFindSummary: { summary in
                 Task { @MainActor in model.setRenderedFindMatchSummary(summary) }
+            },
+            // Print / Export-as-PDF (TSK-638): only the ACTIVE tab's view
+            // answers the model's nonce, never a background sibling.
+            printNonce: isActive ? model.renderedPrintRequest : 0,
+            pdfExportNonce: isActive ? (model.renderedPDFExportRequest?.nonce ?? 0) : 0,
+            pdfExportURL: model.renderedPDFExportRequest?.url,
+            onPDFExportResult: { nonce, ok, message in
+                Task { @MainActor in
+                    model.recordPDFExportResult(nonce: nonce, ok: ok, message: message)
+                }
             }
         )
     }

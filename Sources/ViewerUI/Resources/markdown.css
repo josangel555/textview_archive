@@ -169,3 +169,14 @@ mark.mdv-find-current {
     .tok-tag         { color: #FC5FA3; }
     .tok-tagattribute { color: #D9C97C; }
 }
+
+/* Print / Export-as-PDF (TSK-638): paginate cleanly. Code fences keep
+   their background but must not clip across pages; long URLs wrap. */
+@media print {
+  body { margin: 12mm; background: #fff !important; color: #111 !important; }
+  pre, blockquote, table, img { break-inside: avoid; }
+  pre { white-space: pre-wrap; word-break: break-word; }
+  a { word-break: break-all; }
+  h1, h2, h3 { break-after: avoid; }
+  .mdv-find, .mdv-find-current { background: none !important; }
+}

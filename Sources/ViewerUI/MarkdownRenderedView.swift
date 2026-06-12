@@ -22,6 +22,14 @@ public struct MarkdownRenderedView: NSViewRepresentable {
     /// when no matches). Set by ContentView to update
     /// model.renderedFindMatchSummary so the find bar can render it.
     public let onFindSummary: ((String) -> Void)?
+    /// Print/Export-as-PDF (TSK-638): nonce-bumped requests (the find
+    /// pattern). The representable owns the live WKWebView, so the AppKit
+    /// print operation and createPDF run here.
+    public let printNonce: Int
+    public let pdfExportNonce: Int
+    public let pdfExportURL: URL?
+    /// (nonce, ok, message) reported after createPDF resolves.
+    public let onPDFExportResult: ((Int, Bool, String) -> Void)?
 
     public init(
         html: String,
@@ -32,7 +40,11 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         findNextNonce: Int = 0,
         findPrevNonce: Int = 0,
         onFindResult: ((Bool?) -> Void)? = nil,
-        onFindSummary: ((String) -> Void)? = nil
+        onFindSummary: ((String) -> Void)? = nil,
+        printNonce: Int = 0,
+        pdfExportNonce: Int = 0,
+        pdfExportURL: URL? = nil,
+        onPDFExportResult: ((Int, Bool, String) -> Void)? = nil
     ) {
         self.html = html
         self.baseURL = baseURL
@@ -43,6 +55,10 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         self.findPrevNonce = findPrevNonce
         self.onFindResult = onFindResult
         self.onFindSummary = onFindSummary
+        self.printNonce = printNonce
+        self.pdfExportNonce = pdfExportNonce
+        self.pdfExportURL = pdfExportURL
+        self.onPDFExportResult = onPDFExportResult
     }
 
     /// Shared WebContent process pool across all `MarkdownRenderedView`
@@ -232,6 +248,47 @@ public struct MarkdownRenderedView: NSViewRepresentable {
             c.lastPrevNonce = findPrevNonce
             c.runFind(in: webView, backwards: true)
         }
+        // Print / Export-as-PDF (TSK-638).
+        if c.lastPrintNonce != printNonce {
+            c.lastPrintNonce = printNonce
+            Self.runPrintOperation(webView)
+        }
+        if c.lastPDFExportNonce != pdfExportNonce, let url = pdfExportURL {
+            c.lastPDFExportNonce = pdfExportNonce
+            let nonce = pdfExportNonce
+            let report = onPDFExportResult
+            webView.createPDF(configuration: WKPDFConfiguration()) { result in
+                switch result {
+                case .success(let data):
+                    do {
+                        try data.write(to: url, options: .atomic)
+                        report?(nonce, true, url.path)
+                    } catch {
+                        report?(nonce, false, "write failed: \(error.localizedDescription)")
+                    }
+                case .failure(let error):
+                    report?(nonce, false, "createPDF failed: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    /// `⌘P`: the AppKit print operation for the live page. WKWebView's
+    /// printOperation needs its operation view given a real frame before
+    /// running, and runs as a window-attached panel.
+    static func runPrintOperation(_ webView: WKWebView) {
+        let info = NSPrintInfo.shared
+        info.horizontalPagination = .fit
+        info.verticalPagination = .automatic
+        let op = webView.printOperation(with: info)
+        op.showsPrintPanel = true
+        op.showsProgressPanel = true
+        op.view?.frame = webView.bounds
+        if let window = webView.window {
+            op.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+        } else {
+            op.run()
+        }
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -378,6 +435,8 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         var lastCaseSensitive: Bool = false
         var lastNextNonce: Int = 0
         var lastPrevNonce: Int = 0
+        var lastPrintNonce: Int = 0
+        var lastPDFExportNonce: Int = 0
         /// Reported back via SwiftUI: true/false = last find's matchFound.
         var onFindResult: ((Bool?) -> Void)? = nil
         /// Match count + current index + pre-formatted "n/N" summary,

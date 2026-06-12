@@ -1147,6 +1147,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         applyShortcut("file.save", to: saveItem)
         fileMenu.addItem(saveItem)
 
+        // Print + Export as PDF (TSK-638 phase 1): rendered pages only —
+        // validateMenuItem gates on model.canPrintRenderedPage.
+        fileMenu.addItem(.separator())
+        let printItem = NSMenuItem(
+            title: "Print…",
+            action: #selector(printRenderedPage(_:)),
+            keyEquivalent: "p"
+        )
+        printItem.target = self
+        applyShortcut("file.print", to: printItem)
+        fileMenu.addItem(printItem)
+        let exportPDFItem = NSMenuItem(
+            title: "Export as PDF…",
+            action: #selector(exportRenderedPDF(_:)),
+            keyEquivalent: ""
+        )
+        exportPDFItem.target = self
+        fileMenu.addItem(exportPDFItem)
+
         // File → Reset — granular "invalidate the things that get stuck".
         // Each item moves its on-disk store into a recoverable backup and
         // relaunches. Motivated by the empty-session-index failure (session
@@ -1771,10 +1790,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     /// Convention: items whose action is on the AppDelegate go through
     /// here. System actions (NSApplication.hide:, NSWindow.miniaturize:)
     /// are handled by AppKit and don't route through us.
+    /// `⌘P` (TSK-638): print the selected rendered page. The model nonce
+    /// asks the live rendered view (the WKWebView owner) to run the
+    /// AppKit print operation.
+    @objc func printRenderedPage(_ sender: Any?) {
+        if !model.printRenderedPage() { NSSound.beep() }
+    }
+
+    /// File → Export as PDF… (TSK-638): save-panel → model request → the
+    /// rendered view answers with createPDF and reports the outcome.
+    @objc func exportRenderedPDF(_ sender: Any?) {
+        guard model.canPrintRenderedPage, let window = NSApp.keyWindow else {
+            NSSound.beep()
+            return
+        }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.canCreateDirectories = true
+        let stem = model.currentURL?.deletingPathExtension().lastPathComponent ?? "Document"
+        panel.nameFieldStringValue = stem + ".pdf"
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            self?.model.exportRenderedPDF(to: url)
+        }
+    }
+
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         let hasFile = model.currentURL != nil
         let hasTab  = model.tabs.selected != nil
         switch item.action {
+        case #selector(printRenderedPage(_:)), #selector(exportRenderedPDF(_:)):
+            return model.canPrintRenderedPage
         case #selector(toggleViewMode(_:)):
             // Rendered/Source toggle only meaningful for markdown.
             item.title = (model.currentViewMode == .source) ? "Show Rendered" : "Show Source"
