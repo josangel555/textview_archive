@@ -1,17 +1,41 @@
 # cargo-deny config (tightened — `cargo deny init` defaults are permissive
-# theater). Run with `cargo deny check` if the tool is installed.
-#
-# NOTE: cargo-deny was NOT installed on this host at PoC time (only cargo-audit
-# v0.22.1). This config is committed so the gate is ready the moment the tool
-# lands. See poc/STATUS.md.
+# theater). Run via `scripts/rust-supply-chain-audit.sh` (TSK-554), which
+# pairs `cargo deny check licenses bans sources` with `cargo audit` for
+# advisories — cargo-deny 0.18.x cannot parse the RustSec DB's CVSS-4.0
+# entries yet, so the advisories duty lives with cargo-audit until it can.
+
+[graph]
+# Audit the graphs we actually BUILD: macOS (the app + host-built front
+# ends). Without this, cargo-deny unions every platform's dependency tree
+# and flags windows-sys/linux-raw-sys duplicate versions we never compile.
+# Revisit when the TUI's Linux port (TSK-369) becomes a real build target.
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+]
 
 [advisories]
 yanked = "deny"
 
 [bans]
 # Duplicate versions of a -sys crate are a C one-definition-rule hazard
-# (correctness, not just bloat). The PoC has no -sys deps, but keep the gate.
+# (correctness, not just bloat).
 multiple-versions = "deny"
+skip = [
+  # ratatui 0.29 (tui front-end) pins unicode-width 0.2 while its own
+  # unicode-truncate dep still wants 0.1 — upstream churn, pure-Rust crate
+  # (no ODR hazard), drops when ratatui updates. Re-check on ratatui bumps.
+  { crate = "unicode-width" },
+  # cbindgen 0.29 (build-dep only, never linked into shipping code) pulls
+  # hashbrown 0.14 + winnow 0.5 generations behind the workspace's. Build-
+  # tool-only duplication; drops on cbindgen bumps.
+  { crate = "hashbrown" },
+  { crate = "winnow" },
+  # crossterm 0.28 (tui front-end) is on rustix 0.38 while tempfile (build/
+  # dev tree) moved to rustix 1.x. Neither is in the shipping staticlib;
+  # drops when ratatui/crossterm bump. Re-check on tui dep updates.
+  { crate = "rustix" },
+]
 
 [licenses]
 allow = [
@@ -22,6 +46,11 @@ allow = [
   "ISC",
   "Unicode-3.0",
   "Zlib",
+]
+# MPL-2.0 is file-level copyleft — fine for an unmodified BUILD TOOL that
+# never ships in the bundle. Scoped to cbindgen only, NOT allowed globally.
+exceptions = [
+  { name = "cbindgen", allow = ["MPL-2.0"] },
 ]
 
 [sources]
