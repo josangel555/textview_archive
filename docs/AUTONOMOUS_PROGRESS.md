@@ -8614,3 +8614,17 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - Remaining owner gates: TSK-649 stage B, TSK-306 validation bar, the GUI
   glance batch, TSK-650 visual glance. Loop-actionable next: TSK-660
   stage 3 (the 10 parity grammars).
+
+## LOG +286 (2026-06-12 tick — TSK-660 stage 3: 22-language parity in the rust highlighter)
+
+- **The 10 remaining grammars landed (a8b15b5):** python/bash/yaml/html/
+  css/go/ruby/markdown(block)/xml/sql, pinned exact, under TSK-257's
+  full-set approval. Lang = 22 cases; "shell"→Bash host-rawValue mapping;
+  every gap-encoding test retargeted to the forever-unsupported "plain";
+  a new adapter test pins that the parity set ROUTES RUST gate-on. The
+  grammar consts compiled FIRST TRY across all 10 crates.
+- Size under the owner blanket: release 70/50 → caps 72/52 (history
+  in-script). Stage 4's Swift-grammar deletion reclaims the double-carry.
+- Gates: rust + swift + release-size all green (loopback binary rebuilt).
+  Remaining on TSK-660: stage 4 deletion (entangled with TSK-649 stage B)
+  + the .highlight soak ladder toward default-ON + the TSK-410 cross-close.
