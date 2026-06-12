@@ -8591,3 +8591,26 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - The reported lane is now EMPTY of agent-actionable work. Everything
   open is owner-gated: TSK-452 repro, TSK-643 confirm, TSK-650 glance,
   TSK-660 caps, TSK-649 stage B, TSK-306 validation bar, GUI glances.
+
+## LOG +285 (2026-06-12 tick — OWNER ANSWERS LANDED: caps bumped, TSK-643 closed, TSK-452 root-caused + VALIDATED)
+
+- **TSK-660 caps (owner: "bump as needed for now")**: check-bundle-size.sh
+  48/26 → 64/44 (b61ff96), history documented in-script; release gate
+  GREEN again at 63/43. Ticket unparked; stage 3 grammars are covered by
+  TSK-257's existing full-set approval; stage 4 reclaims the double-carry
+  and is when the owner revisits hard caps.
+- **TSK-643 → VALIDATED (owner: "Yes, but why?")**: the WHY recorded — at
+  observation time the TSK-635 default-deny hadn't reached the installed
+  bundle (markdown remote subresources still auto-fetched) and WebKit
+  DNS-prefetches link hosts; with the VPN up, all of it egresses via the
+  utun, so lsof shows the tunnel gateway as the peer.
+- **TSK-452 (owner: "bottom file stats") → root-caused, FIXED, VALIDATED
+  (30daa95)**: the old "0d" design made tab-switch re-stat SIGNAL-ONLY, so
+  files changed while backgrounded kept load-time stats after switching.
+  Now a stale-on-disk switch runs the watcher path's guarded reload —
+  clean tabs refresh silently; dirty buffers keep the conflict prompt
+  (pinned). Headless repro came first (6 vs 500 bytes); teeth shown; gate
+  green; fixed bundle INSTALLED.
+- Remaining owner gates: TSK-649 stage B, TSK-306 validation bar, the GUI
+  glance batch, TSK-650 visual glance. Loop-actionable next: TSK-660
+  stage 3 (the 10 parity grammars).
