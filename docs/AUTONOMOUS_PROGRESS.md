@@ -8900,3 +8900,20 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   now landed + validated** (545/546/547/552-dup/560/561/562/563/566/544).
 - VM sweep still in flight in parallel (the known memory-pressure crawl);
   monitor armed.
+
+## LOG +301 (2026-06-12 tick — TSK-666: global fuzzy find (mode B) lands; filter pair complete)
+
+- **Global find-any-file (ed848cd, installed):** the sidebar filter now
+  finds files in COLLAPSED branches. Off-main enumerator walk (skip-set
+  prunes .git/node_modules/.build/.swiftpm/dist; hidden honored; 50k cap
+  logged) → global candidates ranked + displayed by root-relative path.
+  Mode A serves while the walk builds (typing never blocks); one
+  published version bump upgrades results when it lands; a generation
+  token keeps a stale build from landing after an invalidation
+  (setRoot / hidden toggle / FSEvents all invalidate).
+- **Auto-reveal:** activating a hit expands its ancestor chain so the
+  file stays visible when the filter clears.
+- 10 tests incl. teeth (skip-set disabled → red). Gate green. Held at
+  fixed on TSK-282's live glance (latency + highlight pixels).
+- VM sweep STILL running in parallel (memory-pressure crawl, log past
+  ViewerUITests); monitor armed.
