@@ -8012,3 +8012,15 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   mdv-serve, transcript.list to find sessions, windowed fs.read + forced-redacted
   transcript_parse to watch them. Remaining: follow (push), TSK-656 search, TSK-659
   LSP pipe, TSK-660 TreeSitter; soak round 3 next quiet interval.
+## LOG +252 (2026-06-12 tick — TSK-656 validated: cross-file search server-side)
+
+- **TSK-656 v1 → validated** (3366264): search.files walks the canonical served root
+  with symlinks NEVER followed (one rule = escape + cycle safety, tested with /etc and
+  self-cycle links), 4MiB/NUL-sniff per-file gates, then the PORTED find_engine — a
+  hostile remote regex structurally cannot ReDoS the server (the TSK-630 PikeVM win,
+  now remote). Bounded v1 (1000 matches / 10k files, truncated flag); compile errors
+  ride the typed channel once. MDV_CAP_SEARCH=1<<13 (+ LSP_PIPE 1<<12 reserved-pinned);
+  protocol §4 amended. Teeth: sniff disabled → NUL fixture leaked → red.
+- Remote epic remaining: TSK-659 (LSP pipe), the push loop (fs.watch +
+  transcript.follow + search streaming), TSK-660 (TreeSitter). Soak round 2 quiet so
+  far; round 3 (wave-1 four) next quiet interval.
