@@ -393,6 +393,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mdvcore-serve"
+version = "0.0.0"
+dependencies = [
+ "mdvcore-core",
+ "mdvcore-ffi",
+ "serde",
+]
+
+[[package]]
 name = "mdvcore-tui"
 version = "0.0.0"
 dependencies = [

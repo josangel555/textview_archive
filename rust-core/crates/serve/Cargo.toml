@@ -1,0 +1,36 @@
+# mdv-serve — the MACHINE API daemon (TSK-653): MessagePack frames over a
+# unix socket, per docs/REMOTE_PROTOCOL.md. NOT the human HTML server
+# (that's mdv-web). std-only — zero external deps; the envelope codec is
+# hand-rolled at the byte level. Depends on mdvcore-ffi (rlib) ONLY for the
+# wire-version/capability constants so client and server can never drift.
+[package]
+name = "mdvcore-serve"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "mdv-serve"
+path = "src/main.rs"
+
+[dependencies]
+mdvcore-core = { path = "../core" }
+mdvcore-ffi = { path = "../ffi" }
+# Already a workspace dep (core uses it for the wire structs) — no new
+# supply-chain surface.
+serde = { workspace = true }
+
+[lints.rust]
+rust_2024_compatibility = { level = "warn", priority = -1 }
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+indexing_slicing = "deny"
+panic = "deny"
+module_name_repetitions = "allow"
+allow_attributes_without_reason = "warn"
