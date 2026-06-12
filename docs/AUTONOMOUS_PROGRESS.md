@@ -8425,3 +8425,16 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   662-665. NOTE: the run took 3057s of test time vs the morning's 1106s —
   the VM memory-pressure slowdown quantified at ~2.8×; the 8 GiB RAM bump
   (owner-side UTM setting) remains the standing cure.
+
+## LOG +276 (2026-06-12 tick — TSK-638 phase 1 COMPLETE: HTML tabs + the gated PDF suite, lane-wired)
+
+- **1500eec:** HTMLRenderedView answers the same print/export nonces
+  (post-sanitize — the PDF can only carry what the page renders);
+  ContentView feeds both rendered views active-tab-guarded. The
+  #192-gated PDFExportWebViewTests suite renders OUR page into a real
+  WKWebView → createPDF → %PDF magic + size asserted; PROVEN BOTH WAYS on
+  the host (armed: 2 passes; bare sweep: clean self-skip) and wired into
+  test-in-vm.sh + nightly-vm.yml IN THE SAME COMMIT (the TSK-621 rule).
+- TSK-638 holds at fixed/live-validation: only the AppKit print-panel
+  glance (VM/owner) and the next nightly WebView-lane run remain. Phase 2
+  (source/editor NSPrintOperation) = separate ticket if wanted.
