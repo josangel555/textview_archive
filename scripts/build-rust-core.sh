@@ -113,6 +113,16 @@ if [[ ! -f "$HEADER_SRC" ]]; then
 fi
 
 mkdir -p "$LINK_DIR"
+# TSK-626: SwiftPM does NOT track the staged header as a build input either —
+# a header-only change (new const, re-laid-out decl) silently compiles stale
+# dependents, and stale TEST objects against a re-laid-out type SIGSEGV in
+# ways that look like FFI bugs (the documented trap; bit twice). Detect a
+# REAL header change before overwriting so the widened touch below runs only
+# when needed.
+HEADER_CHANGED=1
+if cmp -s "$HEADER_SRC" "$CMOD_DIR/mdvcore.h" 2>/dev/null; then
+  HEADER_CHANGED=0
+fi
 # Stage ONLY the .a — if a stale .dylib lingers in the link dir, SwiftPM's
 # `-lmdvcore_ffi` would prefer it (and reintroduce the team-ID load failure), so
 # remove it.
@@ -127,6 +137,22 @@ cp "$HEADER_SRC" "$CMOD_DIR/mdvcore.h"
 # code (caught 2026-06-10: an A/B parity test compared stale Rust against new
 # Swift). Touch the bridge sources so the next SwiftPM build relinks.
 find "$ROOT_DIR/Sources/RustCore" -name '*.swift' -exec touch {} +
+
+# TSK-626: when the HEADER changed, the touch must reach every target that
+# compiles against its surface — above all the TEST targets pinning header
+# consts (BridgeTests' MDV_CAP_*/MDV_WIRE_VERSION pins, the loopback suites).
+# Stale test objects against a re-laid-out ABI are the SIGSEGV-that-looks-
+# like-an-FFI-bug class. Conditional so routine restages (header unchanged)
+# don't force pointless test-target rebuilds.
+if [[ "$HEADER_CHANGED" == "1" ]]; then
+  echo "==> header CHANGED — touching header-referencing targets (TSK-626)"
+  find "$ROOT_DIR/Tests/RustCoreTests" -name '*.swift' -exec touch {} + 2>/dev/null || true
+  # Any other Swift file that names the header's exported surface.
+  grep -rl --include='*.swift' -E "MDV_CAP_|MDV_WIRE_VERSION|import CMdvCore" \
+      "$ROOT_DIR/Sources" "$ROOT_DIR/Tests" 2>/dev/null | while read -r f; do
+    touch "$f"
+  done
+fi
 
 echo "==> staged:"
 echo "    $LINK_DIR/libmdvcore_ffi.a   ($(/usr/bin/du -h "$LINK_DIR/libmdvcore_ffi.a" | awk '{print $1}'))"
