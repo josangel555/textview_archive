@@ -3188,6 +3188,31 @@ manufacture marginal code; if it finds a NEW clean model-core-extractable item i
 build it, else hold.
 
 ## DECISIONS NEEDED (owner — non-blocking; I proceed on best-judgment defaults meanwhile)
+
+### CURRENT QUEUE (2026-06-12 — the loop is input-bound on exactly these)
+1. **TSK-660 bundle caps** (parked, pinged): release build 63 MB/43 MB vs
+   48/26 after the rust grammars enter the exec. (1) bump ~64/44, reclaim
+   at stage 4 · (2) dlopen'd rust-highlight dylib (exec cap intact) ·
+   (3) grammars feature-off in the app, remote-only. Rec: (2) if the exec
+   cap is principle, else (1). Release size gate FAILS until answered.
+2. **TSK-649 stage B**: per-engine Swift-twin deletion sign-off
+   (docs/STAGE_B_DELETION_PLAN.md; indent first as the template; the find
+   ICU-channel removal is the one behavior change needing explicit OK).
+3. **TSK-643 confirm (one line)**: was the VPN client up on 2026-06-11? The
+   "unexplained host" 100.64.100.1 is your VPN tunnel's gateway.
+4. **TSK-452 repro detail**: which statusbar chip stays stale, which view
+   mode, what sequence (the known lazy-load blank is fixed + tested).
+5. **TSK-650 glance**: the mermaid fix is INSTALLED — reopen
+   docs/ARCHITECTURE_LAYERS.md; flowchart should render now.
+6. **TSK-306 validation bar**: how should preview-tab Phase 2 (SwiftUI
+   key-event routing) be validated — VM lane / wire-and-review / eyeball?
+   TSK-272 unblocks with it.
+7. **GUI glance batch** (one sitting): References menu (TSK-468), outline
+   panel (TSK-637), theme picker + import (TSK-641/642), ⌘P print panel
+   (TSK-638), fold-gutter arrows feel (TSK-466 visual), ⌥-click/⌘D feel
+   (TSK-639), mermaid visual quality (TSK-650).
+
+### Older entries (kept for context; some resolved — see notes inline)
 - **⚠️ Bundle caps vs rust grammars** (2026-06-12, `TSK-660`, **parked — pinged**) — linking the
   12 tree-sitter grammar parsers into `libmdvcore_ffi.a` puts the RELEASE build over both caps:
   **63 MB bundle / 43 MB exec vs 48/26** (+15/+17). Debug builds (your installed soak bundle),
