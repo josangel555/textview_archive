@@ -8917,3 +8917,18 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   fixed on TSK-282's live glance (latency + highlight pixels).
 - VM sweep STILL running in parallel (memory-pressure crawl, log past
   ViewerUITests); monitor armed.
+
+## LOG +302 (2026-06-12 tick — TSK-659 spike closed VALIDATED; VM sweep nearing the end)
+
+- **TSK-659 (remote LSP/terminal spike) validated:** the deliverable —
+  the implementable §7.5 LSP-pipe spec (63ecaf1) + the owner rulings
+  (terminal OUT: ssh/tmux; LSP = allowlist-only server-side processes
+  piped as duplex events; URIs verbatim; provisioning = operator) +
+  the sequencing decision (implementation gated on remote-file editing)
+  — was complete but stuck at triaged; walked through the lifecycle
+  with the doc as the artifact.
+- VM sweep: 526 suites passed so far; ONE failure logged
+  (TerminalForegroundBumpTests.test_backgroundOutput_feedsParser_
+  withoutVersionBump — the timing-sensitive load-flake shape; will
+  re-run isolated before treating as real). Monitor window expires
+  ~20:10; results processed on fire or next tick.
