@@ -8679,3 +8679,21 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   exit 0, ZERO failures in 299s**, covering the flip wave (default-ON
   highlighter, stage-3 grammars in the rsync'd .a, the WebView suites
   incl. fold-gutter/mermaid/multi-cursor/PDF) on Swift 6.3.
+
+## LOG +290 (2026-06-12 tick — TSK-560 VALIDATED: the CSV tokenizer scans byte spans)
+
+- **Byte-span CSV tokenizer (5e1a7b8):** plain runs and quoted spans append
+  as ONE push_str each instead of char-at-a-time; the four specials match
+  at byte level (UTF-8-safe — continuation bytes never equal ASCII
+  specials; non-ASCII delimiters decode at first-byte hits). Every cap
+  boundary preserved exactly: max_cell_chars + the one-time '…', the
+  scalar-cap break point (span split at the remaining budget), TSK-557
+  heap accounting untouched. The no-panic wall forced all 11 index sites
+  into get-forms.
+- All 24 CSV tests green UNCHANGED first run (the golden/cap/CRLF suites
+  referee the rewrite); cross-language Swift parity green; teeth shown
+  post-commit (escaped-quote branch disabled → 3 red). Both gates EXIT=0.
+  CSV is the default-ON beachhead — every table open/filter benefits.
+- rust-perf lane tally today: TSK-545, 547, 560 validated; 552 deduped.
+  Next candidates: TSK-546 (Vec<Vec<String>> table storage — large), 563
+  (wire key repetition — protocol-shape, needs care), 544 (TUI redraws).
