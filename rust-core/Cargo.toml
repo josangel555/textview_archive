@@ -44,6 +44,16 @@ cbindgen = { version = "=0.29.3", default-features = false }
 # the two features below are the explicit minimal set ("std" + "string" =
 # the &str search API; everything else regex-lite offers stays disabled).
 regex-lite = { version = "=0.1.8", default-features = false, features = ["std", "string"] }
+# Owner-approved 2026-06-11 (TSK-629 row 2, for the TSK-631 markdown port):
+# the reference CommonMark+GFM pull parser (linear-time, iterative — the
+# PARSE-03 C-stack-overflow class of cmark-gfm is structurally absent). Per
+# the owner rider: default features OFF — that drops "html" (the bundled
+# pulldown-cmark-escape HTML writer; we hand-roll the writer to mirror the
+# Swift visitor's emission), "simd", and the getopts bin dep. NO feature list
+# needed: the bare parser is the whole surface we consume. Transitive blast
+# radius (verified in Cargo.lock): bitflags + memchr + unicase, all three
+# already-vetted ecosystem leaf crates.
+pulldown-cmark = { version = "=0.13.4", default-features = false }
 
 # ---------------------------------------------------------------------------
 # Workspace lints. The pure `mdvcore-core` crate inherits these via

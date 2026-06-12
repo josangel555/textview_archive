@@ -57,6 +57,7 @@ use mdvcore_core::find_engine;
 use mdvcore_core::fuzzy;
 use mdvcore_core::hex;
 use mdvcore_core::indent;
+use mdvcore_core::markdown;
 use mdvcore_core::session::{CsvSession, OpenError};
 use mdvcore_core::transcript;
 use mdvcore_core::wire;
@@ -138,7 +139,7 @@ pub const MDV_CAP_INDENT: u64 = 1 << 3;
 pub const MDV_CAP_CM_APPLY: u64 = 1 << 4;
 /// Whole-document find (`mdvcore_find_search`) — TSK-630.
 pub const MDV_CAP_FIND: u64 = 1 << 5;
-/// RESERVED (TSK-631): markdown→HTML — not yet implemented, bit pre-assigned.
+/// Markdown→HTML structural render (`mdvcore_markdown_render`) — TSK-631.
 pub const MDV_CAP_MARKDOWN: u64 = 1 << 6;
 /// Claude transcript/JSONL parse (`mdvcore_transcript_parse`) — TSK-632.
 pub const MDV_CAP_TRANSCRIPT: u64 = 1 << 7;
@@ -155,7 +156,8 @@ pub const MDV_CAPABILITIES: u64 = MDV_CAP_CSV_SESSION
     | MDV_CAP_CM_APPLY
     | MDV_CAP_FUZZY
     | MDV_CAP_FIND
-    | MDV_CAP_TRANSCRIPT;
+    | MDV_CAP_TRANSCRIPT
+    | MDV_CAP_MARKDOWN;
 
 /// Runtime capability mask of the LINKED library. Returns 0 (no capabilities
 /// — every gated feature disabled, never UB) if the guard trips. Callers must
@@ -329,6 +331,32 @@ pub unsafe extern "C" fn mdvcore_transcript_parse(
     out_buf: *mut MdvBuf,
 ) -> MdvStatus {
     ffi_frame_body!(req, req_len, out_buf, transcript::parse_wire)
+}
+
+/// Render markdown to structural HTML + enrichment chunks (stateless,
+/// TSK-631). `req`/`req_len` is a `{text}` MessagePack request frame; the
+/// result is written to `out_buf` as an `{html, chunks:[{kind,lang,payload}]}`
+/// response frame. `html` carries `<!--mdv-chunk-N-->` sentinels where the
+/// host splices enrichments: `raw_html` chunks MUST pass through the host
+/// sanitizer (the security barrier deliberately stays host-side), `mermaid`
+/// chunks become the mermaid host div, `code` chunks get syntax highlighting.
+/// Raw HTML never appears in `html` itself. Caller MUST call
+/// [`mdvcore_buf_free`].
+///
+/// # Returns
+/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::WireError`], or
+/// [`MdvStatus::Panic`].
+///
+/// # Safety
+/// `req` must point to `req_len` valid bytes (or be null with `req_len == 0`).
+/// `out_buf` must be a valid, writable pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_markdown_render(
+    req: *const u8,
+    req_len: usize,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_frame_body!(req, req_len, out_buf, markdown::render_wire)
 }
 
 /// Render a HEX dump (stateless). `bytes`/`len` is the raw byte buffer to dump;

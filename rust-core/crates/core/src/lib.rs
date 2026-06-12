@@ -35,6 +35,7 @@ pub mod history;
 pub mod image;
 pub mod indent;
 pub mod json;
+pub mod markdown;
 pub mod meta;
 pub mod nav;
 pub mod outline;

@@ -871,3 +871,70 @@ public func mdvCoreTranscriptParse(text: String, redacting: Bool) throws -> [Cor
         throw CoreError.decode("\(e)")
     }
 }
+
+// MARK: - Markdown structural render (migration slice — TSK-631)
+
+/// One host-enrichment island from the Rust markdown renderer. The html
+/// carries a `<!--mdv-chunk-N-->` sentinel per chunk; the host splices:
+/// `raw_html` → HTMLSanitizer (the security barrier stays Swift-side),
+/// `mermaid` → the mermaid host div, `code` → syntax-highlighted fence body.
+public struct CoreMarkdownChunk: Equatable, Sendable {
+    public let kind: String
+    public let lang: String
+    public let payload: String
+}
+
+/// The Rust renderer's output: structural html + enrichment chunks.
+public struct CoreMarkdownRendered: Equatable, Sendable {
+    public let html: String
+    public let chunks: [CoreMarkdownChunk]
+
+    /// The sentinel marking where chunk `n` splices in.
+    public static func sentinel(_ n: Int) -> String { "<!--mdv-chunk-\(n)-->" }
+
+    /// Splice enriched chunk content into the html. Segment-based scan of
+    /// the ORIGINAL html, left-to-right, each sentinel consumed once — a
+    /// payload that *contains* sentinel text cannot hijack a later slot.
+    public func spliced(_ enrich: (CoreMarkdownChunk) -> String) -> String {
+        var out = ""
+        var rest = Substring(html)
+        for (i, chunk) in chunks.enumerated() {
+            guard let range = rest.range(of: Self.sentinel(i)) else { continue }
+            out += rest[..<range.lowerBound]
+            out += enrich(chunk)
+            rest = rest[range.upperBound...]
+        }
+        out += rest
+        return out
+    }
+}
+
+/// Render markdown through the Rust core (STATELESS, `{text}` frame in,
+/// `{html, chunks}` frame out — see `CoreMarkdownRendered` for the splice
+/// contract). Raw HTML NEVER appears in `html`; it rides `raw_html` chunks
+/// for the host sanitizer. Throws `CoreError` only on a bridge FAULT so an
+/// adapter can fall back to the Swift `HTMLRenderer`.
+public func mdvCoreMarkdownRender(text: String) throws -> CoreMarkdownRendered {
+    let request = MsgPackValue.map([
+        (.string("text"), .string(text)),
+    ])
+    guard let body = try mdvFrameCall(
+        "markdown_render", mdvcore_markdown_render, request: request) else {
+        throw CoreError.decode("empty markdown_render response frame")
+    }
+    var reader = MsgPackReader(body)
+    do {
+        let map = try reader.decode().mapValue()
+        let html = try map.require("html").stringValue()
+        let chunks = try map.require("chunks").arrayValue().map { el in
+            let m = try el.mapValue()
+            return CoreMarkdownChunk(
+                kind: try m.require("kind").stringValue(),
+                lang: try m.require("lang").stringValue(),
+                payload: try m.require("payload").stringValue())
+        }
+        return CoreMarkdownRendered(html: html, chunks: chunks)
+    } catch let e as MsgPackError {
+        throw CoreError.decode("\(e)")
+    }
+}

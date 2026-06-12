@@ -98,13 +98,13 @@ fn capability_bits_are_abi_and_never_renumber() {
 
 #[test]
 fn reserved_capability_bits_stay_off_until_their_exports_land() {
-    // Turning a reserved bit ON is part of LANDING the engine's exports
-    // (TSK-630..633) — flipping it early advertises a capability that calls
-    // into nothing. This test is edited in the SAME commit as the port.
+    // Turning a reserved bit ON is part of LANDING the engine's exports —
+    // flipping it early advertises a capability that calls into nothing.
+    // This test is edited in the SAME commit as each port. With the
+    // TSK-631 markdown port landed, NO reserved bits remain (the TSK-630..633
+    // engine-port wave is complete); the next reserved bit gets pre-assigned
+    // here when its port is approved. Every shipped family must be ON:
     let mask = mdvcore_capabilities();
-    assert_eq!(mask & MDV_CAP_MARKDOWN, 0, "markdown not ported yet (TSK-631)");
-    // And the shipped families are ON (fuzzy: TSK-633; find: TSK-630;
-    // transcript: TSK-632).
     for (bit, name) in [
         (MDV_CAP_CSV_SESSION, "csv"),
         (MDV_CAP_DIFF, "diff"),
@@ -114,6 +114,7 @@ fn reserved_capability_bits_stay_off_until_their_exports_land() {
         (MDV_CAP_FUZZY, "fuzzy"),
         (MDV_CAP_FIND, "find"),
         (MDV_CAP_TRANSCRIPT, "transcript"),
+        (MDV_CAP_MARKDOWN, "markdown"),
     ] {
         assert_ne!(mask & bit, 0, "shipped family '{name}' must advertise its bit");
     }
@@ -531,6 +532,7 @@ frame_export_misuse_matrix!(diff_parse_misuse_matrix, mdvcore_diff_parse);
 frame_export_misuse_matrix!(fuzzy_rank_misuse_matrix, mdvcore_fuzzy_rank);
 frame_export_misuse_matrix!(find_search_misuse_matrix, mdvcore_find_search);
 frame_export_misuse_matrix!(transcript_parse_misuse_matrix, mdvcore_transcript_parse);
+frame_export_misuse_matrix!(markdown_render_misuse_matrix, mdvcore_markdown_render);
 
 frame_export_misuse_matrix!(diff_hunk_marks_misuse_matrix, mdvcore_diff_hunk_marks);
 
