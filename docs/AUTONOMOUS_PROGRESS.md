@@ -8881,3 +8881,22 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   cache) stays the designed follow-up.
 - VM full-suite sweep still running in parallel (SessionsCoordinator
   territory, ~25 min in); monitor armed, results processed on fire.
+
+## LOG +300 (2026-06-12 tick — TSK-544 VALIDATED; the rust-core audit's perf findings are DONE)
+
+- **TUI per-frame memoization (0d11c91):** the audit's three per-frame
+  rescans (whole-file text_metrics for the title badge, whole-table
+  filter re-match, all-cells find re-scan) now cache on Preview with the
+  hl_cache RefCell idiom — keys: nothing (badge), filter needle, (find
+  query, needle). filtered_table_indices returns a Ref (the old version
+  also cloned the index Vec per call).
+- **The pinned contract is invalidation correctness** — a stale cache
+  renders WRONG data: tests assert key changes serve fresh results;
+  teeth shown (never-stale mutation → red naming the contract). The
+  badge pin ties the cached value to the RENDERED title (TestBackend),
+  so cache and screen can't drift. 63/63; validated (TUI rendered
+  behavior is host-testable by design — no VM gate).
+- **Milestone: every perf finding from the 2026-06-09 rust-core audit is
+  now landed + validated** (545/546/547/552-dup/560/561/562/563/566/544).
+- VM sweep still in flight in parallel (the known memory-pressure crawl);
+  monitor armed.
