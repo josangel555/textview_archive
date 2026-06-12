@@ -8438,3 +8438,22 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - TSK-638 holds at fixed/live-validation: only the AppKit print-panel
   glance (VM/owner) and the next nightly WebView-lane run remain. Phase 2
   (source/editor NSPrintOperation) = separate ticket if wanted.
+
+## LOG +277 (2026-06-12 tick — TSK-639 multi-cursor lands; the greenlit parity pool is fully worked)
+
+- **Multi-cursor (28c3578):** config-only inside the CM6 host page —
+  `EditorState.allowMultipleSelections.of(true)` (THE permitting facet) +
+  `rectangularSelection()` + `crosshairCursor()`. The built-ins light up:
+  ⌥-click adds carets, ⌘D grows the selection set (searchKeymap's
+  selectNextOccurrence was already bound — it just collapsed before),
+  ⌥-drag selects rectangles; drawSelection renders the extra carets.
+- MultiCursorWebViewTests (#192-gated, in BOTH lane lists same-commit):
+  two dispatched ranges SURVIVE in the page's live editor (via a
+  `window.__mdvView` debug handle) + the control experiment proving a
+  facet-less state collapses — the detector detects exactly the facet.
+  Armed = 2 passes / bare sweep self-skips / teeth: facet removal → 1 red.
+  Merge gate EXIT=0.
+- With 637/638/639/640 all at fixed+, the greenlit PARITY pool is fully
+  worked; remaining tails are VM/owner glances. The board's biggest
+  unblockers remain the three owner answers (TSK-660 caps, TSK-649
+  stage B, GUI glance batch).
