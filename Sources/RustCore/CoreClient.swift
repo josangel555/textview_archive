@@ -395,16 +395,18 @@ public func mdvCoreForcePanic() -> CoreError {
 /// every wrapper a one-liner around it, which captures the same ceremony
 /// reduction with zero generator/build machinery and no generated-file
 /// drift to police.
-private func mdvFrameCall(
+func mdvFrameCall(
     // `name` is the per-export observability tag — unused today, reserved as
     // the single emit point for the TSK-636 activity/audit log (one hook
-    // instruments every stateless FFI call).
-    _ name: StaticString,
+    // instruments every stateless FFI call). Since TSK-652 the transport
+    // seam (`CoreTransport.call`) is the equivalent point one level up,
+    // covering remote calls too.
+    _ name: String,
     _ fn: (UnsafePointer<UInt8>?, UInt, UnsafeMutablePointer<MdvBuf>?) -> MdvStatus,
-    request: MsgPackValue
+    body: [UInt8]
 ) throws -> [UInt8]? {
     CoreABI.assertCompatible()
-    let reqBytes = request.frame()
+    let reqBytes = MsgPackFraming.frame(body)
     var buf = MdvBuf(data: nil, len: 0, cap: 0)
     let status = reqBytes.withUnsafeBufferPointer { p in
         fn(p.baseAddress, UInt(p.count), &buf)
@@ -434,7 +436,7 @@ public func mdvCoreApplyCMEdits(
         (.string("base"), .string(base)),
         (.string("edits"), .array(editVals)),
     ])
-    guard let body = try mdvFrameCall("cm_apply", mdvcore_cm_apply, request: request) else {
+    guard let body = try CoreTransportRegistry.current.call("cm_apply", request: request) else {
         throw CoreError.decode("empty cm_apply response frame")
     }
     var reader = MsgPackReader(body)
@@ -493,7 +495,7 @@ public struct DiffLine: Equatable, Sendable {
 /// parses to zero files is `[]`, not a throw.
 public func mdvCoreParseDiff(text: String) throws -> [DiffFile] {
     let request = MsgPackValue.map([(.string("text"), .string(text))])
-    guard let body = try mdvFrameCall("diff_parse", mdvcore_diff_parse, request: request) else {
+    guard let body = try CoreTransportRegistry.current.call("diff_parse", request: request) else {
         throw CoreError.decode("empty diff_parse response frame")
     }
     var reader = MsgPackReader(body)
@@ -546,9 +548,7 @@ public enum DiffHunkMark: String, Sendable {
 /// so the adapter can fall back to the Swift `DiffHunkParser`.
 public func mdvCoreDiffHunkMarks(text: String) throws -> [Int: DiffHunkMark] {
     let request = MsgPackValue.map([(.string("text"), .string(text))])
-    guard let body = try mdvFrameCall(
-        "diff_hunk_marks", mdvcore_diff_hunk_marks, request: request
-    ) else { return [:] }   // empty response = no marks, not a fault
+    guard let body = try CoreTransportRegistry.current.call("diff_hunk_marks", request: request) else { return [:] }   // empty response = no marks, not a fault
     var reader = MsgPackReader(body)
     do {
         let map = try reader.decode().mapValue()
@@ -714,7 +714,7 @@ public func mdvCoreFuzzyRank(query: String, candidates: [String]) throws -> [Fuz
         (.string("query"), .string(query)),
         (.string("candidates"), .array(candidates.map { .string($0) })),
     ])
-    guard let body = try mdvFrameCall("fuzzy_rank", mdvcore_fuzzy_rank, request: request) else {
+    guard let body = try CoreTransportRegistry.current.call("fuzzy_rank", request: request) else {
         throw CoreError.decode("empty fuzzy_rank response frame")
     }
     var reader = MsgPackReader(body)
@@ -766,7 +766,7 @@ public func mdvCoreFindSearch(
         (.string("case_sensitive"), .bool(caseSensitive)),
         (.string("whole_word"), .bool(wholeWord)),
     ])
-    guard let body = try mdvFrameCall("find_search", mdvcore_find_search, request: request) else {
+    guard let body = try CoreTransportRegistry.current.call("find_search", request: request) else {
         throw CoreError.decode("empty find_search response frame")
     }
     var reader = MsgPackReader(body)
@@ -831,8 +831,7 @@ public func mdvCoreTranscriptParse(
         fields.append((.string("max_events"), .uint(UInt64(maxEvents))))
     }
     let request = MsgPackValue.map(fields)
-    guard let body = try mdvFrameCall(
-        "transcript_parse", mdvcore_transcript_parse, request: request) else {
+    guard let body = try CoreTransportRegistry.current.call("transcript_parse", request: request) else {
         throw CoreError.decode("empty transcript_parse response frame")
     }
     var reader = MsgPackReader(body)
@@ -932,8 +931,7 @@ public func mdvCoreMarkdownRender(text: String) throws -> CoreMarkdownRendered {
     let request = MsgPackValue.map([
         (.string("text"), .string(text)),
     ])
-    guard let body = try mdvFrameCall(
-        "markdown_render", mdvcore_markdown_render, request: request) else {
+    guard let body = try CoreTransportRegistry.current.call("markdown_render", request: request) else {
         throw CoreError.decode("empty markdown_render response frame")
     }
     var reader = MsgPackReader(body)

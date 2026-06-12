@@ -261,7 +261,14 @@ extension MsgPackValue {
     /// The core's wire framing: a `u32`-LE length prefix + the encoded body
     /// (decision #6: DIY `u32`-LE length prefix). Matches `wire::encode_frame`.
     func frame() -> [UInt8] {
-        let body = encode()
+        MsgPackFraming.frame(encode())
+    }
+}
+
+/// Frame raw body bytes (the transport seam works at the byte level; the
+/// value-tree `frame()` above delegates here).
+enum MsgPackFraming {
+    static func frame(_ body: [UInt8]) -> [UInt8] {
         let n = UInt32(truncatingIfNeeded: body.count)
         var out: [UInt8] = [
             UInt8(n & 0xff), UInt8((n >> 8) & 0xff),
@@ -270,7 +277,9 @@ extension MsgPackValue {
         out.append(contentsOf: body)
         return out
     }
+}
 
+extension MsgPackValue {
     private func encode(into out: inout [UInt8]) {
         switch self {
         case .nilValue: out.append(0xc0)
