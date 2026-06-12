@@ -130,6 +130,10 @@ public struct CoreCapabilities: OptionSet, Sendable {
     public static let git        = CoreCapabilities(rawValue: UInt64(MDV_CAP_GIT))
     /// SERVER-ONLY (TSK-658): same posture as `.fs`.
     public static let transcriptList = CoreCapabilities(rawValue: UInt64(MDV_CAP_TRANSCRIPT_LIST))
+    /// RESERVED (TSK-659): the LSP pipe family.
+    public static let lspPipe    = CoreCapabilities(rawValue: UInt64(MDV_CAP_LSP_PIPE))
+    /// SERVER-ONLY (TSK-656): same posture as `.fs`.
+    public static let search     = CoreCapabilities(rawValue: UInt64(MDV_CAP_SEARCH))
 
     /// Everything the CURRENT Swift adapters require of the linked core —
     /// the graceful-degradation floor. `assertCompatible` already crash-fasts

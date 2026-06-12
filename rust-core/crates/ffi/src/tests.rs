@@ -97,6 +97,8 @@ fn capability_bits_are_abi_and_never_renumber() {
     assert_eq!(MDV_CAP_FS, 1 << 9);
     assert_eq!(MDV_CAP_GIT, 1 << 10);
     assert_eq!(MDV_CAP_TRANSCRIPT_LIST, 1 << 11);
+    assert_eq!(MDV_CAP_LSP_PIPE, 1 << 12);
+    assert_eq!(MDV_CAP_SEARCH, 1 << 13);
 }
 
 #[test]
@@ -116,6 +118,8 @@ fn reserved_capability_bits_stay_off_until_their_exports_land() {
         mask & MDV_CAP_TRANSCRIPT_LIST, 0,
         "transcript.list is a server-only capability (TSK-658)"
     );
+    assert_eq!(mask & MDV_CAP_LSP_PIPE, 0, "lsp pipe is reserved (TSK-659)");
+    assert_eq!(mask & MDV_CAP_SEARCH, 0, "search is a server-only capability (TSK-656)");
     for (bit, name) in [
         (MDV_CAP_CSV_SESSION, "csv"),
         (MDV_CAP_DIFF, "diff"),

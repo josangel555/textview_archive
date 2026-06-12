@@ -3,7 +3,7 @@
 use std::os::unix::net::UnixStream;
 
 use mdvcore_core::{cm_edit, diff, find_engine, fuzzy, markdown, transcript, wire};
-use mdvcore_ffi::{MDV_CAPABILITIES, MDV_CAP_FS, MDV_CAP_GIT, MDV_CAP_TRANSCRIPT_LIST, MDV_WIRE_VERSION};
+use mdvcore_ffi::{MDV_CAPABILITIES, MDV_CAP_FS, MDV_CAP_GIT, MDV_CAP_SEARCH, MDV_CAP_TRANSCRIPT_LIST, MDV_WIRE_VERSION};
 
 use crate::fs::FsCtx;
 use crate::transcript_list::TranscriptCtx;
@@ -70,7 +70,7 @@ pub fn handle_connection(
     }
     let mut capabilities = MDV_CAPABILITIES | MDV_CAP_TRANSCRIPT_LIST;
     if fs_ctx.enabled() {
-        capabilities |= MDV_CAP_FS | MDV_CAP_GIT;
+        capabilities |= MDV_CAP_FS | MDV_CAP_GIT | MDV_CAP_SEARCH;
     }
     let hello_body = wire::encode_frame(&HelloResponse {
         wire_version: u64::from(MDV_WIRE_VERSION),
@@ -117,6 +117,12 @@ fn dispatch(
     }
     if method == "transcript.list" {
         return match transcript_ctx.list() {
+            Ok(out) => Frame::Response { id, body: Some(out), error: None },
+            Err(e) => Frame::Response { id, body: None, error: Some(e) },
+        };
+    }
+    if method.starts_with("search.") {
+        return match crate::search::dispatch(fs_ctx, method, body) {
             Ok(out) => Frame::Response { id, body: Some(out), error: None },
             Err(e) => Frame::Response { id, body: None, error: Some(e) },
         };

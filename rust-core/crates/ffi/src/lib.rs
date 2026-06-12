@@ -150,6 +150,10 @@ pub const MDV_CAP_FUZZY: u64 = 1 << 8;
 pub const MDV_CAP_GIT: u64 = 1 << 10;
 /// SERVER-ONLY (TSK-658): mdv-serve transcript discovery (`transcript.list`).
 pub const MDV_CAP_TRANSCRIPT_LIST: u64 = 1 << 11;
+/// RESERVED (protocol §4): the LSP pipe family (TSK-659).
+pub const MDV_CAP_LSP_PIPE: u64 = 1 << 12;
+/// SERVER-ONLY (TSK-656): mdv-serve cross-file search (`search.files`).
+pub const MDV_CAP_SEARCH: u64 = 1 << 13;
 /// SERVER-ONLY (TSK-654): the mdv-serve fs family (stat/read/readdir).
 /// NEVER set by the in-process library — there is no fs FFI export by
 /// design (the host does its own IO locally); mdv-serve ORs this into its

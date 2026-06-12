@@ -17,6 +17,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 mod envelope;
 mod fs;
 mod git;
+mod search;
 mod serve;
 mod transcript_list;
 

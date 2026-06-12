@@ -62,6 +62,8 @@ final class BridgeTests: XCTestCase {
         XCTAssertFalse(caps.contains(.fs))
         XCTAssertFalse(caps.contains(.git))
         XCTAssertFalse(caps.contains(.transcriptList))
+        XCTAssertFalse(caps.contains(.lspPipe))
+        XCTAssertFalse(caps.contains(.search))
     }
 
     func testCapabilityBits_areABIAndNeverRenumber() {
@@ -80,6 +82,8 @@ final class BridgeTests: XCTestCase {
         XCTAssertEqual(CoreCapabilities.fs.rawValue, 1 << 9)
         XCTAssertEqual(CoreCapabilities.git.rawValue, 1 << 10)
         XCTAssertEqual(CoreCapabilities.transcriptList.rawValue, 1 << 11)
+        XCTAssertEqual(CoreCapabilities.lspPipe.rawValue, 1 << 12)
+        XCTAssertEqual(CoreCapabilities.search.rawValue, 1 << 13)
     }
 
     func testCapabilities_unknownBitsAreTolerated() {

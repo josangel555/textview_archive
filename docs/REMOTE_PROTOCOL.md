@@ -73,8 +73,9 @@ First frame each direction, before anything else:
 Wire-version inequality = hard close (the ABI-skew rule, networked).
 `capabilities` is the SAME u64 bitmap the FFI exports — remote families get
 new bits: `fs` (1<<9), `git` (1<<10), `transcript_list` (1<<11), `lsp_pipe`
-(1<<12) — pre-assigned here, flipped per family landing (the reserved-bit
-test discipline applies on both sides, same as the engine ports).
+(1<<12), `search` (1<<13, added with TSK-656) — pre-assigned here, flipped
+per family landing (the reserved-bit test discipline applies on both sides,
+same as the engine ports).
 
 ## 5. Subscriptions (the push half)
 
