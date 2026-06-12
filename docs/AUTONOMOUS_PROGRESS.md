@@ -8779,3 +8779,24 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - Held at review (live-validation): the real mouse-drag session can't be
   synthesized headlessly. Owner ask on the ticket: relaunch + try the
   three drag sources.
+
+## LOG +295 (2026-06-12 tick — owner-answer sweep + TSK-641 editor surface)
+
+- **Owner park-resolution sweep:** TSK-359 (grey invisibles on read-only
+  Source) closed wontfix per "Leave as is for now" — the editor lens is
+  already styled, the NSLayoutManager hard rule stands. TSK-608 validated
+  riding TSK-614's hide/re-show (owner confirmed choice (a): the ROW
+  COUNTS plugin section). TSK-598 (+ the perf siblings): measurement
+  complete, all five captures indict per-switch pane teardown; the
+  supervised MountedPanesLRU session remains the gate — commented and
+  skipped per "ignore blocking items".
+- **TSK-641 stage 3 (20b842f, installed):** the CM6 editor follows the
+  selected theme — `applyPendingState` had the legacy pair hardcoded, so
+  catalog themes recolored ViewOnly + rendered MD but not the editor.
+  `activeThemeCMPalette` → new `themePalette` prop → dedupe on BOTH
+  dark+palette (a theme switch under the same appearance re-dispatches).
+  3 new pins incl. a ContentView pass-through source pin (the TSK-561
+  dead-channel lesson); teeth shown. Remaining tail: chrome Palette
+  (fourth surface) + picker pixels.
+- Validation-drain pass: TSK-637's 22 outline tests re-run fresh on
+  current main — green; stays at fixed for the rendered-panel glance.
