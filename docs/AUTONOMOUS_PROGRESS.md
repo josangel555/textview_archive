@@ -7592,3 +7592,27 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - **Owner directive (mid-tick): loop paused** — cron stopped after this item; resume on owner
   signal ("tomorrow night"). Remaining drain queue unchanged: TSK-468 (References-removal VM
   confirm), TSK-619/334/529 (live-validation holds), TSK-626, TSK-463, owner-queue parks.
+
+## LOG +230 (2026-06-12 — loop resumed; TSK-635 validated on CORRECTED scope; pivot to rust-core lane)
+
+- **Loop resumed** (cron 9d1275ef, every 10 min) with the owner-greenlit pool: security
+  (635/636) → rust-core (554/628-634, ports 630-633) → parity fruits (637-640) →
+  theming (641/642) → drain.
+- **TSK-635 → validated, with an honest premise correction.** Phase A delivered
+  `docs/EGRESS.md` (per-surface egress inventory: zero first-party networking; CM6 nav
+  default-cancel verified; HTML viewer fence verified; bundled JS/CSS remote-ref-free;
+  subprocess inventory — GitClient local-only). Phase B then DISPROVED the ticket's own
+  premise: rendered markdown was never the leak — every page routes through
+  `HTMLRenderer.renderPage` whose CRIT-1 CSP (`img-src file: data:`) blocks remote
+  images; the original triage had checked content-rules + nav-delegate and missed the
+  template CSP. What WAS missing: the existing CSP test was presence-only — a loosened
+  `img-src` stayed green. Landed the exact-directive pin (teeth: `https:` added →
+  red → restored), EGRESS.md corrected in place. No opt-in chip shipped (feature
+  decision, owner's call). Commits 4ebdd4b/adbcf3c/a06455f; gate green.
+- **TSK-643 filed (owner ask):** the observed outbound connection (pid 6877 →
+  100.64.100.1) is now UNEXPLAINED — hypotheses + reproduce-first method on the
+  ticket; needs the firewall's full flow record (remote port + process path) on next
+  occurrence. TSK-636 (audit log) would have answered this instantly — its priority
+  case strengthens.
+- **Next per owner directive: rust-core migration / swift-core deprecation lane** —
+  TSK-554 (supply-chain audit lane, P1) first, then TSK-634 + ports 630-633.
