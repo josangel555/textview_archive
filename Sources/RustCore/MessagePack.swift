@@ -18,6 +18,10 @@ enum MsgPackValue: Equatable {
     case string(String)
     case array([MsgPackValue])
     case map([(MsgPackValue, MsgPackValue)])
+    /// MessagePack bin family (0xc4/c5/c6) — the remote envelope's opaque
+    /// body (TSK-652 stage 2). Additive: nothing in the pre-remote wire
+    /// emits bin.
+    case binary([UInt8])
 
     static func == (lhs: MsgPackValue, rhs: MsgPackValue) -> Bool {
         switch (lhs, rhs) {
@@ -26,6 +30,7 @@ enum MsgPackValue: Equatable {
         case let (.int(a), .int(b)): return a == b
         case let (.uint(a), .uint(b)): return a == b
         case let (.string(a), .string(b)): return a == b
+        case let (.binary(a), .binary(b)): return a == b
         case let (.array(a), .array(b)): return a == b
         case let (.map(a), .map(b)):
             guard a.count == b.count else { return false }
@@ -92,6 +97,9 @@ struct MsgPackReader {
         case 0xd3: return .int(try intN(8))
         case 0xa0...0xbf: return .string(try str(Int(tag & 0x1f)))      // fixstr
         case 0xd9: return .string(try str(Int(try uintN(1))))
+        case 0xc4: return .binary(try bin(Int(try uintN(1))))
+        case 0xc5: return .binary(try bin(Int(try uintN(2))))
+        case 0xc6: return .binary(try bin(Int(try uintN(4))))
         case 0xda: return .string(try str(Int(try uintN(2))))
         case 0xdb: return .string(try str(Int(try uintN(4))))
         case 0x90...0x9f: return try array(Int(tag & 0x0f))             // fixarray
@@ -115,6 +123,12 @@ struct MsgPackReader {
         guard pos == bytes.count else {
             throw MsgPackError.typeMismatch("trailing bytes")
         }
+    }
+
+    private mutating func bin(_ n: Int) throws -> [UInt8] {
+        guard n >= 0, pos <= bytes.count - n else { throw MsgPackError.truncated }
+        defer { pos += n }
+        return Array(bytes[pos..<pos + n])
     }
 
     private mutating func str(_ n: Int) throws -> String {
@@ -287,6 +301,12 @@ extension MsgPackValue {
         case .uint(let u): Self.encodeUInt(u, into: &out)
         case .int(let i): Self.encodeInt(i, into: &out)
         case .string(let s): Self.encodeString(s, into: &out)
+        case .binary(let b):
+            // bin32 unconditionally — mirrors the server's encoder; bodies
+            // can be big and the 5-byte header is noise at that size.
+            out.append(0xc6)
+            Self.appendBE(UInt64(b.count), 4, &out)
+            out.append(contentsOf: b)
         case .array(let a):
             Self.encodeLength(a.count, fix: 0x90, tag16: 0xdc, tag32: 0xdd, into: &out)
             for e in a { e.encode(into: &out) }

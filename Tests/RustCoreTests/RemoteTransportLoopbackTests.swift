@@ -1,0 +1,148 @@
+import XCTest
+@testable import RustCore
+
+/// THE TSK-652 acceptance: the engine surface, byte-equal over a LOOPBACK
+/// `mdv-serve` (unix socket) vs the in-process FFI — remote is a carrier
+/// swap. Spawns the real server binary (env `MDV_SERVE_BIN`, falling back
+/// to the workspace target dir); self-skips when the binary isn't built so
+/// hosts without a Rust toolchain (the VM) stay green.
+final class RemoteTransportLoopbackTests: XCTestCase {
+
+    // Class-setUp populated, read-only afterwards; XCTest serializes the
+    // class lifecycle so the unprotected statics are race-free in practice.
+    nonisolated(unsafe) private static var server: Process?
+    nonisolated(unsafe) private static var socketPath = ""
+    nonisolated(unsafe) private static var remote: RemoteTransport?
+    /// Set when the binary EXISTS but dial/hello failed — that's a FAILURE,
+    /// never a skip (a broken transport must not silently skip the suite).
+    nonisolated(unsafe) private static var handshakeFailure: String?
+
+    private static func serveBinary() -> String? {
+        if let env = ProcessInfo.processInfo.environment["MDV_SERVE_BIN"],
+           FileManager.default.isExecutableFile(atPath: env) {
+            return env
+        }
+        let fallback = "/private/tmp/mdv-rust-target/debug/mdv-serve"
+        return FileManager.default.isExecutableFile(atPath: fallback) ? fallback : nil
+    }
+
+    override class func setUp() {
+        super.setUp()
+        guard let bin = serveBinary() else { return }
+        socketPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-serve-\(UUID().uuidString.prefix(8)).sock").path
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: bin)
+        p.arguments = ["--socket", socketPath]
+        p.standardError = FileHandle.nullDevice
+        do { try p.run() } catch { return }
+        server = p
+        // Wait for the socket to appear (bind is fast; cap at 5 s).
+        for _ in 0..<100 {
+            if FileManager.default.fileExists(atPath: socketPath) { break }
+            usleep(50_000)
+        }
+        do {
+            remote = try RemoteTransport(socketPath: socketPath)
+        } catch {
+            handshakeFailure = "\(error)"
+        }
+    }
+
+    override class func tearDown() {
+        CoreTransportRegistry.resetToInProcess()
+        server?.terminate()
+        try? FileManager.default.removeItem(atPath: socketPath)
+        super.tearDown()
+    }
+
+    override func tearDown() {
+        CoreTransportRegistry.resetToInProcess()
+        super.tearDown()
+    }
+
+    private func requireRemote() throws -> RemoteTransport {
+        if let failure = Self.handshakeFailure {
+            XCTFail("mdv-serve handshake failed (binary exists — this is a transport bug, not an environment gap): \(failure)")
+            throw XCTSkip("handshake failed — see the failure above")
+        }
+        guard let r = Self.remote else {
+            throw XCTSkip("mdv-serve binary not built (cargo build -p mdvcore-serve)")
+        }
+        return r
+    }
+
+    func test_hello_advertisesTheSameCapabilityMask() throws {
+        let remote = try requireRemote()
+        XCTAssertEqual(remote.capabilities, CoreABI.capabilities.rawValue,
+                       "server and linked staticlib must advertise the same mask")
+    }
+
+    /// Every stateless wrapper, byte-equal local vs remote — the carrier-swap
+    /// proof. Each wrapper runs against the in-process default, then against
+    /// the loopback server, and the decoded results must match exactly.
+    func test_engineSurface_byteEqual_localVsRemote() throws {
+        let remote = try requireRemote()
+
+        func both<T: Equatable>(_ label: String, _ call: () throws -> T) throws {
+            CoreTransportRegistry.resetToInProcess()
+            let local = try call()
+            CoreTransportRegistry.current = remote
+            let remoteResult = try call()
+            CoreTransportRegistry.resetToInProcess()
+            XCTAssertEqual(local, remoteResult, "\(label) diverged local vs remote")
+        }
+
+        try both("fuzzy_rank") {
+            try mdvCoreFuzzyRank(query: "fz", candidates: ["fuzzy", "fz-a", "nope"])
+                .map { "\($0.index):\($0.score):\($0.matchedIndices)" }
+        }
+        try both("find_search") {
+            try mdvCoreFindSearch(text: "a hello\r\nb hello", pattern: "hello",
+                                  kind: "literal", caseSensitive: false, wholeWord: false)
+        }
+        try both("transcript_parse") {
+            try mdvCoreTranscriptParse(
+                text: #"{"uuid":"u1","timestamp":"2026-06-12T03:14:15.926Z","message":{"role":"user","content":"hi"}}"# + "\n",
+                redacting: true)
+        }
+        try both("markdown_render") {
+            try mdvCoreMarkdownRender(text: "# T\n\n```mermaid\nA-->B\n```\n\na <b>b</b>")
+        }
+        try both("diff_hunk_marks") {
+            try mdvCoreDiffHunkMarks(text: "diff --git a/f b/f\n@@ -1 +1 @@\n-a\n+b\n")
+        }
+        try both("cm_apply") {
+            try mdvCoreApplyCMEdits(base: "hello", edits: [(from: 5, to: 5, insert: " world")])
+        }
+        try both("diff_parse") {
+            try mdvCoreParseDiff(text: "diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1 +1 @@\n-a\n+b\n")
+        }
+    }
+
+    func test_remoteTypedErrors_mapToCoreError() throws {
+        let remote = try requireRemote()
+        CoreTransportRegistry.current = remote
+        defer { CoreTransportRegistry.resetToInProcess() }
+        // invalid_pattern must survive the wire as the TYPED error (the
+        // adapters' ICU-fallback channel depends on it).
+        XCTAssertThrowsError(
+            try mdvCoreFindSearch(text: "x", pattern: "(unclosed", kind: "regex",
+                                  caseSensitive: false, wholeWord: false)
+        ) { error in
+            guard case CoreError.invalidPattern = error else {
+                return XCTFail("expected .invalidPattern over the wire, got \(error)")
+            }
+        }
+    }
+
+    func test_unknownMethod_surfacesAsTypedDecodeFault() throws {
+        let remote = try requireRemote()
+        XCTAssertThrowsError(try remote.call("no.such.method", requestBody: [0x80])) { error in
+            guard case CoreError.decode(let msg)? = error as? CoreError else {
+                return XCTFail("expected decode fault, got \(error)")
+            }
+            XCTAssertTrue(msg.contains("unknown_method"))
+        }
+    }
+}
