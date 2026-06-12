@@ -66,7 +66,8 @@ pub use status::MdvStatus;
 /// encode-side `TooLarge` keeps its identity so the host can react (window the
 /// request, fall back) instead of diagnosing a codec bug; every other fault
 /// stays the generic [`MdvStatus::WireError`].
-fn wire_status(fault: &wire::WireFault) -> MdvStatus {
+#[doc(hidden)] // pub only so `ffi_frame_body!` can name it via $crate::
+pub fn wire_status(fault: &wire::WireFault) -> MdvStatus {
     match fault {
         wire::WireFault::TooLarge(_) => MdvStatus::TooLarge,
         wire::WireFault::Encode(_) | wire::WireFault::Decode(_) | wire::WireFault::Framing(_) => {
@@ -207,31 +208,7 @@ pub unsafe extern "C" fn mdvcore_cm_apply(
     req_len: usize,
     out_buf: *mut MdvBuf,
 ) -> MdvStatus {
-    ffi_guard!({
-        if out_buf.is_null() {
-            return MdvStatus::NullArg;
-        }
-        // SAFETY: out_buf validated; empty default so error paths stay safe-to-free.
-        unsafe { *out_buf = MdvBuf::empty() };
-
-        if req.is_null() && req_len != 0 {
-            return MdvStatus::NullArg;
-        }
-        let bytes: &[u8] = if req_len == 0 {
-            &[]
-        } else {
-            // SAFETY: caller guarantees req/req_len describe valid bytes (len != 0).
-            unsafe { core::slice::from_raw_parts(req, req_len) }
-        };
-        match cm_edit::apply_wire(bytes) {
-            Ok(frame) => {
-                // SAFETY: out_buf validated non-null above.
-                unsafe { *out_buf = MdvBuf::from_vec(frame) };
-                MdvStatus::Ok
-            }
-            Err(e) => wire_status(&e),
-        }
-    })
+    ffi_frame_body!(req, req_len, out_buf, cm_edit::apply_wire)
 }
 
 /// Parse a unified diff (stateless). `req`/`req_len` is a length-prefixed
@@ -253,31 +230,7 @@ pub unsafe extern "C" fn mdvcore_diff_parse(
     req_len: usize,
     out_buf: *mut MdvBuf,
 ) -> MdvStatus {
-    ffi_guard!({
-        if out_buf.is_null() {
-            return MdvStatus::NullArg;
-        }
-        // SAFETY: out_buf validated; empty default so error paths stay safe-to-free.
-        unsafe { *out_buf = MdvBuf::empty() };
-
-        if req.is_null() && req_len != 0 {
-            return MdvStatus::NullArg;
-        }
-        let bytes: &[u8] = if req_len == 0 {
-            &[]
-        } else {
-            // SAFETY: caller guarantees req/req_len describe valid bytes (len != 0).
-            unsafe { core::slice::from_raw_parts(req, req_len) }
-        };
-        match diff::parse_wire(bytes) {
-            Ok(frame) => {
-                // SAFETY: out_buf validated non-null above.
-                unsafe { *out_buf = MdvBuf::from_vec(frame) };
-                MdvStatus::Ok
-            }
-            Err(e) => wire_status(&e),
-        }
-    })
+    ffi_frame_body!(req, req_len, out_buf, diff::parse_wire)
 }
 
 /// Flatten a unified diff to per-line gutter marks (stateless). `req`/`req_len`
@@ -298,31 +251,7 @@ pub unsafe extern "C" fn mdvcore_diff_hunk_marks(
     req_len: usize,
     out_buf: *mut MdvBuf,
 ) -> MdvStatus {
-    ffi_guard!({
-        if out_buf.is_null() {
-            return MdvStatus::NullArg;
-        }
-        // SAFETY: out_buf validated; empty default so error paths stay safe-to-free.
-        unsafe { *out_buf = MdvBuf::empty() };
-
-        if req.is_null() && req_len != 0 {
-            return MdvStatus::NullArg;
-        }
-        let bytes: &[u8] = if req_len == 0 {
-            &[]
-        } else {
-            // SAFETY: caller guarantees req/req_len describe valid bytes (len != 0).
-            unsafe { core::slice::from_raw_parts(req, req_len) }
-        };
-        match diff::hunk_marks_wire(bytes) {
-            Ok(frame) => {
-                // SAFETY: out_buf validated non-null above.
-                unsafe { *out_buf = MdvBuf::from_vec(frame) };
-                MdvStatus::Ok
-            }
-            Err(e) => wire_status(&e),
-        }
-    })
+    ffi_frame_body!(req, req_len, out_buf, diff::hunk_marks_wire)
 }
 
 /// Render a HEX dump (stateless). `bytes`/`len` is the raw byte buffer to dump;

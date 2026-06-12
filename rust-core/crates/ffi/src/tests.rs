@@ -487,83 +487,48 @@ fn snapshot_is_level_triggered_full_state() {
 /// trust the declared length.
 const HOSTILE_FRAME: &[u8] = &[0xFF, 0xFF, 0xFF, 0x7F, 0x01, 0x02];
 
-#[test]
-fn cm_apply_misuse_matrix() {
-    // null out_buf → NullArg
-    assert_eq!(
-        unsafe { mdvcore_cm_apply(core::ptr::null(), 0, core::ptr::null_mut()) },
-        MdvStatus::NullArg
-    );
-    // null req with nonzero len → NullArg (never dereferenced)
-    let mut buf = MdvBuf::empty();
-    assert_eq!(
-        unsafe { mdvcore_cm_apply(core::ptr::null(), 4, &mut buf) },
-        MdvStatus::NullArg
-    );
-    // empty input is not a valid frame → WireError, out_buf still freeable
-    assert_eq!(
-        unsafe { mdvcore_cm_apply(core::ptr::null(), 0, &mut buf) },
-        MdvStatus::WireError
-    );
-    unsafe { mdvcore_buf_free(&mut buf) };
-    // hostile prefix (declared len >> body) → WireError, not an OOB read
-    let mut buf2 = MdvBuf::empty();
-    assert_eq!(
-        unsafe { mdvcore_cm_apply(HOSTILE_FRAME.as_ptr(), HOSTILE_FRAME.len(), &mut buf2) },
-        MdvStatus::WireError
-    );
-    unsafe { mdvcore_buf_free(&mut buf2) };
+/// TSK-634 stage 2: the shared misuse matrix for every `ffi_frame_body!`
+/// export — null out_buf → NullArg; null req + nonzero len → NullArg (never
+/// dereferenced); empty input → WireError with out_buf still freeable;
+/// hostile length prefix → WireError, not an OOB read. One macro invocation
+/// per export keeps the TSK-582 matrix complete as the surface grows —
+/// adopting the body macro AND this test macro is the whole ceremony.
+macro_rules! frame_export_misuse_matrix {
+    ($test_name:ident, $export:ident) => {
+        #[test]
+        fn $test_name() {
+            // null out_buf → NullArg
+            assert_eq!(
+                unsafe { $export(core::ptr::null(), 0, core::ptr::null_mut()) },
+                MdvStatus::NullArg
+            );
+            // null req with nonzero len → NullArg (never dereferenced)
+            let mut buf = MdvBuf::empty();
+            assert_eq!(
+                unsafe { $export(core::ptr::null(), 4, &mut buf) },
+                MdvStatus::NullArg
+            );
+            // empty input is not a valid frame → WireError, out_buf still freeable
+            assert_eq!(
+                unsafe { $export(core::ptr::null(), 0, &mut buf) },
+                MdvStatus::WireError
+            );
+            unsafe { mdvcore_buf_free(&mut buf) };
+            // hostile prefix (declared len >> body) → WireError, not an OOB read
+            let mut buf2 = MdvBuf::empty();
+            assert_eq!(
+                unsafe { $export(HOSTILE_FRAME.as_ptr(), HOSTILE_FRAME.len(), &mut buf2) },
+                MdvStatus::WireError
+            );
+            unsafe { mdvcore_buf_free(&mut buf2) };
+        }
+    };
 }
 
-#[test]
-fn diff_parse_misuse_matrix() {
-    assert_eq!(
-        unsafe { mdvcore_diff_parse(core::ptr::null(), 0, core::ptr::null_mut()) },
-        MdvStatus::NullArg
-    );
-    let mut buf = MdvBuf::empty();
-    assert_eq!(
-        unsafe { mdvcore_diff_parse(core::ptr::null(), 4, &mut buf) },
-        MdvStatus::NullArg
-    );
-    assert_eq!(
-        unsafe { mdvcore_diff_parse(core::ptr::null(), 0, &mut buf) },
-        MdvStatus::WireError
-    );
-    unsafe { mdvcore_buf_free(&mut buf) };
-    let mut buf2 = MdvBuf::empty();
-    assert_eq!(
-        unsafe { mdvcore_diff_parse(HOSTILE_FRAME.as_ptr(), HOSTILE_FRAME.len(), &mut buf2) },
-        MdvStatus::WireError
-    );
-    unsafe { mdvcore_buf_free(&mut buf2) };
-}
+frame_export_misuse_matrix!(cm_apply_misuse_matrix, mdvcore_cm_apply);
+frame_export_misuse_matrix!(diff_parse_misuse_matrix, mdvcore_diff_parse);
 
-#[test]
-fn diff_hunk_marks_misuse_matrix() {
-    assert_eq!(
-        unsafe { mdvcore_diff_hunk_marks(core::ptr::null(), 0, core::ptr::null_mut()) },
-        MdvStatus::NullArg
-    );
-    let mut buf = MdvBuf::empty();
-    assert_eq!(
-        unsafe { mdvcore_diff_hunk_marks(core::ptr::null(), 4, &mut buf) },
-        MdvStatus::NullArg
-    );
-    assert_eq!(
-        unsafe { mdvcore_diff_hunk_marks(core::ptr::null(), 0, &mut buf) },
-        MdvStatus::WireError
-    );
-    unsafe { mdvcore_buf_free(&mut buf) };
-    let mut buf2 = MdvBuf::empty();
-    assert_eq!(
-        unsafe {
-            mdvcore_diff_hunk_marks(HOSTILE_FRAME.as_ptr(), HOSTILE_FRAME.len(), &mut buf2)
-        },
-        MdvStatus::WireError
-    );
-    unsafe { mdvcore_buf_free(&mut buf2) };
-}
+frame_export_misuse_matrix!(diff_hunk_marks_misuse_matrix, mdvcore_diff_hunk_marks);
 
 #[test]
 fn hex_render_misuse_matrix() {

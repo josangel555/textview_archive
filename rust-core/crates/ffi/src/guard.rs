@@ -46,3 +46,54 @@ macro_rules! ffi_guard_value {
         }
     }};
 }
+
+/// The canonical STATELESS export body (TSK-634 stage 2): a length-prefixed
+/// MessagePack request frame in (`req`/`req_len`), a response frame out
+/// (`out_buf`), produced by `$core_fn: fn(&[u8]) -> Result<Vec<u8>, WireFault>`.
+///
+/// Generates the body ONLY — the `extern "C"` signature stays hand-written at
+/// the call site because cbindgen does not expand `macro_rules!`, and the
+/// header generator must see the symbol. The macro owns the entire safety
+/// ritual (out-buf validation + safe-to-free default, null/len argument
+/// guard, the raw-parts slice, status mapping) so a new export cannot get it
+/// subtly wrong; the guard semantics are pinned once by the shared
+/// misuse-matrix macro in `tests.rs` and apply to every adopter.
+///
+/// Call shape:
+/// ```ignore
+/// pub unsafe extern "C" fn mdvcore_thing(
+///     req: *const u8, req_len: usize, out_buf: *mut MdvBuf,
+/// ) -> MdvStatus {
+///     ffi_frame_body!(req, req_len, out_buf, thing::thing_wire)
+/// }
+/// ```
+#[macro_export]
+macro_rules! ffi_frame_body {
+    ($req:ident, $req_len:ident, $out_buf:ident, $core_fn:path) => {{
+        $crate::ffi_guard!({
+            if $out_buf.is_null() {
+                return $crate::MdvStatus::NullArg;
+            }
+            // SAFETY: out_buf validated; empty default so error paths stay safe-to-free.
+            unsafe { *$out_buf = $crate::MdvBuf::empty() };
+
+            if $req.is_null() && $req_len != 0 {
+                return $crate::MdvStatus::NullArg;
+            }
+            let bytes: &[u8] = if $req_len == 0 {
+                &[]
+            } else {
+                // SAFETY: caller guarantees req/req_len describe valid bytes (len != 0).
+                unsafe { core::slice::from_raw_parts($req, $req_len) }
+            };
+            match $core_fn(bytes) {
+                Ok(frame) => {
+                    // SAFETY: out_buf validated non-null above.
+                    unsafe { *$out_buf = $crate::MdvBuf::from_vec(frame) };
+                    $crate::MdvStatus::Ok
+                }
+                Err(e) => $crate::wire_status(&e),
+            }
+        })
+    }};
+}
