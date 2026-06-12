@@ -280,8 +280,10 @@ final class G5ParserHardeningTests: XCTestCase {
     // MARK: - PARSE-03: deep-nesting guard
 
     func test_html_render_5000_deep_blockquote_does_not_crash() {
+        // The PARSE-03 guard lives on the SWIFT path (the rust route renders
+        // deep nesting fully — pinned by RustMarkdownAdapterTests' bomb test).
         let deep = String(repeating: "> ", count: 5000) + "boom\n"
-        let html = HTMLRenderer().render(deep)
+        let html = HTMLRenderer.renderSwiftPath(deep)
         XCTAssertFalse(html.isEmpty)
         XCTAssertTrue(html.contains("blockquote"))
         XCTAssertTrue(html.contains("truncated"),
@@ -297,7 +299,7 @@ final class G5ParserHardeningTests: XCTestCase {
         // belongs to the off-main render hop in G1). 700 `>` nests the
         // blockquote tree past our guard.
         let deep = String(repeating: "> ", count: 700) + "x\n"
-        let html = HTMLRenderer().render(deep)
+        let html = HTMLRenderer.renderSwiftPath(deep)
         XCTAssertTrue(html.contains("truncated"),
                       "visitor must stop descending and emit the marker")
     }

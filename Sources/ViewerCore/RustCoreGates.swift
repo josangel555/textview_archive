@@ -65,9 +65,12 @@ public enum RustCoreCapability: String, CaseIterable, Sendable {
         // Round 2 (2026-06-12, round 1 quiet): the hex family — consumed
         // since A0, A/B suites long green, engines ported in the first wave.
         case .hex, .hexSearch: return true
-        // Round 3 candidates (wave-1 engines); cmEdit LAST (keystroke path).
-        case .cmEdit, .fuzzy, .find, .transcript, .markdown:
-            return false
+        // Round 3 (2026-06-12, rounds 1-2 quiet): the wave-1 engines —
+        // fresh ports with cross-language A/B parity + adapter routing
+        // tests, all fail-safe behind RustCoreFallback.
+        case .fuzzy, .find, .transcript, .markdown: return true
+        // cmEdit flips LAST and alone (the keystroke hot path).
+        case .cmEdit: return false
         }
     }
 }

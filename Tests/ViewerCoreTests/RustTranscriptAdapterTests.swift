@@ -25,7 +25,9 @@ final class RustTranscriptAdapterTests: XCTestCase {
     private var data: Data { Data(log.utf8) }
 
     func test_gateOff_runsSwift() {
-        let out = RustTranscriptAdapter.outcome(data, redacting: true, environment: [:])
+        // Env-pinned OFF (the shipped default is ON since TSK-649 round 3).
+        let out = RustTranscriptAdapter.outcome(
+            data, redacting: true, environment: ["MDV_RUST_TRANSCRIPT": "0"])
         XCTAssertEqual(out.source, .swiftBecauseGateOff)
         XCTAssertEqual(out.value, ClaudeLogParser().parseRedacted(data))
     }

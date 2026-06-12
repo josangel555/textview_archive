@@ -12,8 +12,9 @@ final class RustMarkdownAdapterTests: XCTestCase {
     private let gateOn = ["MDV_RUST_MARKDOWN": "1"]
 
     func test_gateOff_runsSwiftPath() {
+        // Env-pinned OFF (the shipped default is ON since TSK-649 round 3).
         let md = "# T\n\npara with *em*"
-        let out = RustMarkdownAdapter.outcome(md, environment: [:])
+        let out = RustMarkdownAdapter.outcome(md, environment: ["MDV_RUST_MARKDOWN": "0"])
         XCTAssertEqual(out.source, .swiftBecauseGateOff)
         XCTAssertEqual(out.value, HTMLRenderer.renderSwiftPath(md))
     }
@@ -41,9 +42,9 @@ final class RustMarkdownAdapterTests: XCTestCase {
     }
 
     func test_renderEntryPoint_routesThroughTheGate() {
-        // The public HTMLRenderer.render must route — gate ON behavior is
-        // observable via the PARSE-03 divergence below; here pin equality
-        // of the two entry points under the default (gate-off) world.
+        // With the round-3 default ON this compares the RUST route against
+        // the Swift path — byte-equality IS the A/B guarantee, so the assert
+        // holds in both worlds and regresses if either route or parity breaks.
         let md = "- a\n- b"
         XCTAssertEqual(HTMLRenderer().render(md), HTMLRenderer.renderSwiftPath(md))
     }

@@ -27,7 +27,7 @@ final class Audit_Sources_ViewerCore_HTMLRenderer_swift_Tests: XCTestCase {
         // SIGSEGV (rc=139) inside Document(parsing:). The render must
         // instead return a graceful, non-empty marker.
         let deep = String(repeating: ">", count: 10_000) + " boom\n"
-        let html = renderer.render(deep)
+        let html = HTMLRenderer.renderSwiftPath(deep)
         XCTAssertFalse(html.isEmpty, "deep nesting must yield a graceful result, not a crash")
         XCTAssertEqual(html, HTMLVisitor.truncationMarker,
                        "over-deep input short-circuits to the truncation marker")
@@ -36,7 +36,7 @@ final class Audit_Sources_ViewerCore_HTMLRenderer_swift_Tests: XCTestCase {
     func test_render_10k_nested_blockquote_with_spaces_does_not_crash() {
         // The "> " spaced form doubles the per-line leading run.
         let deep = String(repeating: "> ", count: 10_000) + "boom\n"
-        let html = renderer.render(deep)
+        let html = HTMLRenderer.renderSwiftPath(deep)
         XCTAssertFalse(html.isEmpty)
         XCTAssertTrue(html.contains("truncated"))
     }
@@ -46,7 +46,7 @@ final class Audit_Sources_ViewerCore_HTMLRenderer_swift_Tests: XCTestCase {
         // arm cmark recurses on. A multi-thousand-space leading run trips
         // the same input-side ceiling.
         let deep = String(repeating: " ", count: 8_000) + "- item\n"
-        let html = renderer.render(deep)
+        let html = HTMLRenderer.renderSwiftPath(deep)
         XCTAssertEqual(html, HTMLVisitor.truncationMarker)
     }
 
@@ -106,7 +106,7 @@ final class Audit_Sources_ViewerCore_HTMLRenderer_swift_Tests: XCTestCase {
     // MARK: - The guard must not regress legitimate documents
 
     func test_render_normal_document_unaffected_by_input_guard() {
-        let html = renderer.render("> quote\n\n- a\n- b\n\n# Heading\n")
+        let html = HTMLRenderer.renderSwiftPath("> quote\n\n- a\n- b\n\n# Heading\n")
         XCTAssertFalse(html.contains("truncated"))
         XCTAssertTrue(html.contains("<blockquote>"))
         XCTAssertTrue(html.contains("<ul>"))
@@ -124,7 +124,7 @@ final class Audit_Sources_ViewerCore_HTMLRenderer_swift_Tests: XCTestCase {
             String(repeating: ">", count: 700)),
             "700 leading `>` must stay under the input-side ceiling")
         let deep = String(repeating: ">", count: 700) + " x\n"
-        let html = renderer.render(deep)
+        let html = HTMLRenderer.renderSwiftPath(deep)
         XCTAssertTrue(html.contains("truncated"))
         XCTAssertTrue(html.contains("blockquote"),
                       "moderately-deep input still parses through cmark + visitor")

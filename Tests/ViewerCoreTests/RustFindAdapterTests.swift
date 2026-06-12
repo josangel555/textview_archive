@@ -16,8 +16,10 @@ final class RustFindAdapterTests: XCTestCase {
     }
 
     func test_gateOff_runsSwift_withoutCallingRust() {
+        // Env-pinned OFF (the shipped default is ON since TSK-649 round 3).
         let q = FindQuery(pattern: "hello")
-        let out = RustFindAdapter.outcome(in: text, query: q, environment: [:])
+        let out = RustFindAdapter.outcome(in: text, query: q,
+                                          environment: ["MDV_RUST_FIND": "0"])
         XCTAssertEqual(out.source, .swiftBecauseGateOff)
         XCTAssertEqual(out.value, swiftResults(q))
         XCTAssertFalse(out.value.isEmpty)

@@ -14,10 +14,10 @@ final class RustCoreFallbackTests: XCTestCase {
 
     private var defaults: UserDefaults!
     private var suiteName: String!
-    // A capability whose SHIPPED default is still OFF (TSK-649 stage A
-    // flipped csv/indent/diff ON) — these tests exercise the generic
-    // fallback machinery and need the unset-default = off baseline.
-    private let cap = RustCoreCapability.markdown
+    // A capability whose SHIPPED default is still OFF (cmEdit flips last,
+    // TSK-649) — these tests exercise the generic fallback machinery and
+    // need the unset-default = off baseline.
+    private let cap = RustCoreCapability.cmEdit
 
     override func setUp() {
         super.setUp()

@@ -30,7 +30,9 @@ final class RustFuzzyAdapterTests: XCTestCase {
     }
 
     func test_gateOff_runsSwift() {
-        let out = RustFuzzyAdapter.outcome(corpus, query: "fz", by: { $0 }, environment: [:])
+        // Env-pinned OFF (the shipped default is ON since TSK-649 round 3).
+        let out = RustFuzzyAdapter.outcome(corpus, query: "fz", by: { $0 },
+                                           environment: ["MDV_RUST_FUZZY": "0"])
         XCTAssertEqual(out.source, .swiftBecauseGateOff)
         assertSame(out.value, swiftResults("fz"), "gate off")
     }
