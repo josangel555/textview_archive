@@ -7895,3 +7895,9 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   went RED on the flip — exactly the guard the soak set needed — then were migrated to
   env-pinned gate-off + new shipped-default-routes-rust pins (the indent/diff adapters
   gained env injection in the process).
+- **A0 continued (9744caa):** HexView's query search → RustHexSearchAdapter; small-file
+  sync full-dump → RustHexAdapter.buildAll. Carve-outs in place: click-highlight
+  (byte-pattern entry) and the windowed chunk build (Phase-1 windowed snapshot).
+  Consumption scoreboard: consumed = csv/indent/diff (ON, soaking) + hexSearch/hex-sync/
+  find/fuzzy/transcript/markdown (OFF, awaiting flip rounds); unconsumed = cmEdit only
+  (CodeMirrorBridge routing audit, last A0 item).
