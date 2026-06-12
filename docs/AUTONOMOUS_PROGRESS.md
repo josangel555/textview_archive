@@ -8283,3 +8283,20 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   snapshot guard reddened the race test. Headless gate EXIT=0.
 - Ticket stays at `progress`: the live UI half (editor command + new-name
   prompt invoking this action — VM lane) and code actions remain.
+
+## LOG +269 (2026-06-12 tick — TSK-640 stage 3: code actions land; the ticket's headless surface is complete)
+
+- **`textDocument/codeAction` (d6391b7):** client request (cursor as empty
+  range) + decode of the spec's (Command|CodeAction) union with PER-ENTRY
+  tolerance (a malformed element drops alone — the decode test caught the
+  whole-array-cast bug red-first); `decodeWorkspaceEdit` refactored to a
+  shared object-level decoder for the nested `edit`. Pool route; fake-server
+  two-action fixture; `codeActionsAtCursor()` + `applyCodeAction` on the
+  model — EDIT-BEARING ONLY (command-only actions are refused; this viewer
+  never executes server commands), sharing the rename apply policy via the
+  generalized `applyWorkspaceEditToOpenTabs`.
+- 9 tests across the two suites; teeth (command-only-refusal removal → red);
+  headless gate EXIT=0. **TSK-640 → `fixed`**: rename + code actions are
+  both fully plumbed and regression-guarded at the model layer; only the
+  live UI tail (menu entries + name-prompt sheet + action picker) remains,
+  riding the VM/GUI lane.
