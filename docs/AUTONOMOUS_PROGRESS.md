@@ -8300,3 +8300,24 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   both fully plumbed and regression-guarded at the model layer; only the
   live UI tail (menu entries + name-prompt sheet + action picker) remains,
   riding the VM/GUI lane.
+
+## LOG +270 (2026-06-12 tick — TSK-662 VALIDATED: the push half goes live in mdv-serve)
+
+- **fs.watch/fs.unwatch push subscriptions (5f11fc7):** handle_connection is
+  now DUPLEX — responses and unsolicited events share the write side behind
+  a mutex; one watcher thread per connection, joined at teardown (subs die
+  with the connection, §5). std-only POLLING watcher (the crate's zero-dep
+  posture is a contract): per-tick snapshot+diff where the tick IS the
+  debounce window — per-path-per-window coalescing is structural. Per-sub
+  monotonic seq; a >256-event tick collapses to ONE resync with no seq gap;
+  containment on every watched path; symlinks never followed; events
+  relativize against the served root; rides MDV_CAP_FS.
+- 6 new tests incl. a real socket e2e (pushed Event frame while no request
+  is outstanding). Teeth: burst-collapse disabled → resync test red.
+  GOTCHA (now in the test as a comment): the e2e initially HUNG — a
+  try_clone of the client kept the socket open so the server never saw EOF
+  and join() blocked. One fd, one drop.
+- Both gates EXIT=0; loopback mdv-serve binary rebuilt. TSK-662 →
+  validated (host-testable, in-gate, teeth shown). Follow-ups queued as
+  separate work: transcript.follow on the same infra; the Swift
+  RemoteTransport subscription-consumption client half.
