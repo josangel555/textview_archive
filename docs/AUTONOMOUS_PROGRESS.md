@@ -8111,3 +8111,18 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - Both theming tickets now at fixed: 641 (engine, two of four surfaces live — CM6 +
   chrome are the recorded VM-lane tail) and 642 (import, fully regression-guarded).
   Owner can pick + import themes TODAY; validation rides the VM picker check.
+## LOG +260 (2026-06-12 tick — ROUND 4: STAGE A COMPLETE — the whole engine surface runs Rust)
+
+- **cmEdit flipped** (83356ed, installed) — the keystroke hot path, last and alone,
+  after three quiet rounds. **ALL TEN capabilities now route through the Rust core by
+  default in the owner's app.** Every Swift engine twin is fallback-only: fail-safe
+  via RustCoreFallback, every fallback Obs-logged, per-engine off-switches intact.
+- Probe-ecosystem endgame: with no default-OFF capability left, the fallback suite
+  pins gate-off via the env kill switch, the seam leak probe INVERTED (an explicit
+  OFF must not leak into a default-ON sibling), and the soak-set test collapsed to
+  allCases — the flip-round test-migration pattern closes cleanly behind itself.
+- TSK-649 holds at fixed: validated = a quiet full-ON soak interval; then STAGE B —
+  the owner-gated twin deletions, one package per engine. The Swift-core deprecation
+  the owner directed this morning is now one sign-off per engine away, with the
+  remote-core spine (mdv-serve + RemoteTransport + fs/git/search/transcript families)
+  validated alongside it.
