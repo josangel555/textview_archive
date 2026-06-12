@@ -21,7 +21,7 @@ final class RustCoreSeamTests: XCTestCase {
         // TSK-649 stage A: the soak set (consumed + A/B-validated + longest
         // proven) ships ON; everything else stays OFF until its soak round.
         // Editing this set is a DELIBERATE soak decision, never a side effect.
-        let soakSet: Set<RustCoreCapability> = [.csv, .indent, .diff]
+        let soakSet: Set<RustCoreCapability> = [.csv, .indent, .diff, .hex, .hexSearch]
         for cap in RustCoreCapability.allCases {
             XCTAssertEqual(
                 RustCoreGates.isEnabled(cap, defaults: defaults, environment: [:]),
@@ -43,9 +43,11 @@ final class RustCoreSeamTests: XCTestCase {
     }
 
     func test_gate_persistedToggle() {
-        defaults.set(true, forKey: RustCoreCapability.diff.defaultsKey)
-        XCTAssertTrue(RustCoreGates.isEnabled(.diff, defaults: defaults, environment: [:]))
-        XCTAssertFalse(RustCoreGates.isEnabled(.hex, defaults: defaults, environment: [:]),
+        defaults.set(true, forKey: RustCoreCapability.markdown.defaultsKey)
+        XCTAssertTrue(RustCoreGates.isEnabled(.markdown, defaults: defaults, environment: [:]))
+        // The leak probe must be a capability whose SHIPPED default is OFF
+        // (markdown's sibling in round-3 waiting), else the default masks it.
+        XCTAssertFalse(RustCoreGates.isEnabled(.fuzzy, defaults: defaults, environment: [:]),
                        "a different capability's toggle must not leak")
     }
 

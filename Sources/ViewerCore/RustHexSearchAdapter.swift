@@ -17,9 +17,15 @@ public enum RustHexSearchAdapter {
     }
 
     /// Same, but also reporting which engine produced the result (A/B / diag).
-    public static func outcome(_ query: String, mode: HexSearchMode, in data: Data) -> CoreOutcome<[Int]> {
+    public static func outcome(
+        _ query: String,
+        mode: HexSearchMode,
+        in data: Data,
+        defaults: UserDefaults = .standard,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> CoreOutcome<[Int]> {
         RustCoreFallback.run(
-            .hexSearch,
+            .hexSearch, defaults: defaults, environment: environment,
             rust: { try mdvCoreHexSearch(data: data, query: query, mode: kind(mode)) },
             swift: { HexSearchEngine.search(query, mode: mode, in: data) }
         )

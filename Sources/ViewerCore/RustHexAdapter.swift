@@ -18,9 +18,14 @@ public enum RustHexAdapter {
     }
 
     /// Same, but also reporting which engine produced the result (A/B / diag).
-    public static func outcome(file: BinaryFile, width: Int) -> CoreOutcome<String> {
+    public static func outcome(
+        file: BinaryFile,
+        width: Int,
+        defaults: UserDefaults = .standard,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> CoreOutcome<String> {
         RustCoreFallback.run(
-            .hex,
+            .hex, defaults: defaults, environment: environment,
             rust: {
                 try mdvCoreHexRender(
                     bytes: file.data,

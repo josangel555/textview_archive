@@ -43,9 +43,18 @@ final class HexSearchABTests: XCTestCase {
     }
 
     func test_gate_off_uses_swift_and_matches() {
+        // Env-pinned OFF (the shipped default is ON since TSK-649 round 2).
         let data = Data([0xde, 0xad, 0xde, 0xad])
-        let o = RustHexSearchAdapter.outcome("dead", mode: .hex, in: data)
+        let o = RustHexSearchAdapter.outcome(
+            "dead", mode: .hex, in: data, environment: ["MDV_RUST_HEXSEARCH": "0"])
         XCTAssertEqual(o.source, .swiftBecauseGateOff)
+        XCTAssertEqual(o.value, HexSearchEngine.search("dead", mode: .hex, in: data))
+    }
+
+    func test_shippedDefault_routesRust_andMatchesSwift() {
+        let data = Data([0xde, 0xad, 0xde, 0xad])
+        let o = RustHexSearchAdapter.outcome("dead", mode: .hex, in: data, environment: [:])
+        XCTAssertEqual(o.source, .rust, "hexSearch ships default-ON (soak round 2)")
         XCTAssertEqual(o.value, HexSearchEngine.search("dead", mode: .hex, in: data))
     }
 }

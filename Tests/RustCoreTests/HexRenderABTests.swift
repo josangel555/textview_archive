@@ -51,9 +51,18 @@ final class HexRenderABTests: XCTestCase {
     }
 
     func test_gate_off_uses_swift_and_matches() {
+        // Env-pinned OFF (the shipped default is ON since TSK-649 round 2).
         let f = file(Array("abc".utf8))
-        let o = RustHexAdapter.outcome(file: f, width: 16)
+        let o = RustHexAdapter.outcome(
+            file: f, width: 16, environment: ["MDV_RUST_HEX": "0"])
         XCTAssertEqual(o.source, .swiftBecauseGateOff)
+        XCTAssertEqual(o.value, HexDumpBuilder.buildAll(file: f, width: 16))
+    }
+
+    func test_shippedDefault_routesRust_andMatchesSwift() {
+        let f = file(Array("abc".utf8))
+        let o = RustHexAdapter.outcome(file: f, width: 16, environment: [:])
+        XCTAssertEqual(o.source, .rust, "hex ships default-ON (soak round 2)")
         XCTAssertEqual(o.value, HexDumpBuilder.buildAll(file: f, width: 16))
     }
 }

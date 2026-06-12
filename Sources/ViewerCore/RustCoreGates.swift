@@ -60,8 +60,13 @@ public enum RustCoreCapability: String, CaseIterable, Sendable {
     /// Settings toggle (an explicit toggle beats this default).
     public var defaultEnabled: Bool {
         switch self {
+        // Round 1 (2026-06-12): the longest-proven trio.
         case .csv, .indent, .diff: return true
-        case .cmEdit, .hex, .hexSearch, .fuzzy, .find, .transcript, .markdown:
+        // Round 2 (2026-06-12, round 1 quiet): the hex family — consumed
+        // since A0, A/B suites long green, engines ported in the first wave.
+        case .hex, .hexSearch: return true
+        // Round 3 candidates (wave-1 engines); cmEdit LAST (keystroke path).
+        case .cmEdit, .fuzzy, .find, .transcript, .markdown:
             return false
         }
     }
