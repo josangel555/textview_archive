@@ -46,7 +46,13 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 ROOT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 APP_DIR="$ROOT_DIR/dist/TextView.app"
 
-BUDGET_MB="${BUDGET_MB:-${1:-48}}"
+# 48 -> 64 (2026-06-12, OWNER-APPROVED "bump caps as needed for now; will
+# revisit hard caps"): the TSK-660 rust tree-sitter grammars' C objects now
+# enter libmdvcore_ffi.a and (once Swift references the export) the exec —
+# measured release 63 MB bundle / 43 MB exec while the Swift grammars are
+# still double-carried. Stage 4 (Swift grammar deletion) reclaims part;
+# the owner revisits hard caps then.
+BUDGET_MB="${BUDGET_MB:-${1:-64}}"
 # Per-exec check defaults to 26 MB. The eager keeplist (JSON, Swift,
 # Markdown) + everything-else-Swift-and-resources fits in ~11 MB
 # release. The CodeMirror 6 editor (Swift wrapper + JS bridge code)
@@ -67,7 +73,10 @@ BUDGET_MB="${BUDGET_MB:-${1:-48}}"
 # so each bump is real code growth, not a static-link regression.
 # Override via env to opt out:
 #   EXEC_BUDGET_MB=0 bash scripts/check-bundle-size.sh
-EXEC_BUDGET_MB="${EXEC_BUDGET_MB:-26}"
+# 26 -> 44 (2026-06-12): same owner-approved TSK-660 bump — the rust
+# grammar objects are exec-resident (static link), unlike the Swift lazy
+# grammar dylibs they will replace.
+EXEC_BUDGET_MB="${EXEC_BUDGET_MB:-44}"
 BUDGET_BYTES=$(( BUDGET_MB * 1024 * 1024 ))
 EXEC_BUDGET_BYTES=$(( EXEC_BUDGET_MB * 1024 * 1024 ))
 
