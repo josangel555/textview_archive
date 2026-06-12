@@ -377,6 +377,40 @@ public func mdvCoreForcePanic() -> CoreError {
 /// **rejected** the batch (out-of-bounds / overlap / ill-formed UTF-16) — the
 /// caller's cue to full-resync, exactly matching the Swift `CMEditApplier`
 /// contract. Throws `CoreError` only on a bridge FAULT (null/wire/panic) so the
+/// TSK-634 stage 3: the ONE Swift-side call ritual for every stateless
+/// frame export (`ffi_frame_body!` shape: request frame in, response frame
+/// out). Owns request framing, the unsafe pointer pass, buf free, status
+/// mapping, response copy + unframe — and the once-per-process ABI assert
+/// the per-wrapper copies had silently dropped. Returns `nil` for an EMPTY
+/// response buffer: callers decide whether that is a decode fault
+/// (cm_apply/diff_parse) or a legitimate empty result (hunk marks).
+///
+/// Stage 3 was deliberately REDESIGNED from "generate Swift stubs post-
+/// cbindgen" to this shared helper: stage 2's uniform C signature makes
+/// every wrapper a one-liner around it, which captures the same ceremony
+/// reduction with zero generator/build machinery and no generated-file
+/// drift to police.
+private func mdvFrameCall(
+    // `name` is the per-export observability tag — unused today, reserved as
+    // the single emit point for the TSK-636 activity/audit log (one hook
+    // instruments every stateless FFI call).
+    _ name: StaticString,
+    _ fn: (UnsafePointer<UInt8>?, UInt, UnsafeMutablePointer<MdvBuf>?) -> MdvStatus,
+    request: MsgPackValue
+) throws -> [UInt8]? {
+    CoreABI.assertCompatible()
+    let reqBytes = request.frame()
+    var buf = MdvBuf(data: nil, len: 0, cap: 0)
+    let status = reqBytes.withUnsafeBufferPointer { p in
+        fn(p.baseAddress, UInt(p.count), &buf)
+    }
+    defer { mdvcore_buf_free(&buf) }
+    guard status == MDV_STATUS_OK else { throw CoreError(status: status) }
+    guard let data = buf.data, buf.len > 0 else { return nil }
+    let frame = Array(UnsafeBufferPointer(start: data, count: Int(buf.len)))
+    return try CsvSession.unframe(frame)
+}
+
 /// adapter can fall back to the Swift path; a rejected batch is `nil`, not a throw.
 public func mdvCoreApplyCMEdits(
     base: String,
@@ -395,19 +429,9 @@ public func mdvCoreApplyCMEdits(
         (.string("base"), .string(base)),
         (.string("edits"), .array(editVals)),
     ])
-    let reqBytes = request.frame()
-
-    var buf = MdvBuf(data: nil, len: 0, cap: 0)
-    let status = reqBytes.withUnsafeBufferPointer { p in
-        mdvcore_cm_apply(p.baseAddress, UInt(p.count), &buf)
-    }
-    defer { mdvcore_buf_free(&buf) }
-    guard status == MDV_STATUS_OK else { throw CoreError(status: status) }
-    guard let data = buf.data, buf.len > 0 else {
+    guard let body = try mdvFrameCall("cm_apply", mdvcore_cm_apply, request: request) else {
         throw CoreError.decode("empty cm_apply response frame")
     }
-    let frame = Array(UnsafeBufferPointer(start: data, count: Int(buf.len)))
-    let body = try CsvSession.unframe(frame)
     var reader = MsgPackReader(body)
     do {
         let map = try reader.decode().mapValue()
@@ -464,19 +488,9 @@ public struct DiffLine: Equatable, Sendable {
 /// parses to zero files is `[]`, not a throw.
 public func mdvCoreParseDiff(text: String) throws -> [DiffFile] {
     let request = MsgPackValue.map([(.string("text"), .string(text))])
-    let reqBytes = request.frame()
-
-    var buf = MdvBuf(data: nil, len: 0, cap: 0)
-    let status = reqBytes.withUnsafeBufferPointer { p in
-        mdvcore_diff_parse(p.baseAddress, UInt(p.count), &buf)
-    }
-    defer { mdvcore_buf_free(&buf) }
-    guard status == MDV_STATUS_OK else { throw CoreError(status: status) }
-    guard let data = buf.data, buf.len > 0 else {
+    guard let body = try mdvFrameCall("diff_parse", mdvcore_diff_parse, request: request) else {
         throw CoreError.decode("empty diff_parse response frame")
     }
-    let frame = Array(UnsafeBufferPointer(start: data, count: Int(buf.len)))
-    let body = try CsvSession.unframe(frame)
     var reader = MsgPackReader(body)
     do {
         let map = try reader.decode().mapValue()
@@ -527,17 +541,9 @@ public enum DiffHunkMark: String, Sendable {
 /// so the adapter can fall back to the Swift `DiffHunkParser`.
 public func mdvCoreDiffHunkMarks(text: String) throws -> [Int: DiffHunkMark] {
     let request = MsgPackValue.map([(.string("text"), .string(text))])
-    let reqBytes = request.frame()
-
-    var buf = MdvBuf(data: nil, len: 0, cap: 0)
-    let status = reqBytes.withUnsafeBufferPointer { p in
-        mdvcore_diff_hunk_marks(p.baseAddress, UInt(p.count), &buf)
-    }
-    defer { mdvcore_buf_free(&buf) }
-    guard status == MDV_STATUS_OK else { throw CoreError(status: status) }
-    guard let data = buf.data, buf.len > 0 else { return [:] }
-    let frame = Array(UnsafeBufferPointer(start: data, count: Int(buf.len)))
-    let body = try CsvSession.unframe(frame)
+    guard let body = try mdvFrameCall(
+        "diff_hunk_marks", mdvcore_diff_hunk_marks, request: request
+    ) else { return [:] }   // empty response = no marks, not a fault
     var reader = MsgPackReader(body)
     do {
         let map = try reader.decode().mapValue()
