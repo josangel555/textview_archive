@@ -37,6 +37,13 @@ license = "MIT"
 serde = { version = "=1.0.228", default-features = false, features = ["derive", "alloc"] }
 rmp-serde = "=1.3.0"
 cbindgen = { version = "=0.29.3", default-features = false }
+# Owner-approved 2026-06-12 (TSK-629 row 1, for the TSK-630 find port):
+# ZERO transitive deps, rust-lang/regex repo, worst-case-LINEAR-time PikeVM —
+# the ReDoS class the Swift FindEngine wall-clock-guards against is
+# structurally impossible here. Per the owner rider: default features OFF,
+# the two features below are the explicit minimal set ("std" + "string" =
+# the &str search API; everything else regex-lite offers stays disabled).
+regex-lite = { version = "=0.1.8", default-features = false, features = ["std", "string"] }
 
 # ---------------------------------------------------------------------------
 # Workspace lints. The pure `mdvcore-core` crate inherits these via

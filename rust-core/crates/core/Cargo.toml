@@ -12,6 +12,8 @@ workspace = true
 
 [dependencies]
 serde = { workspace = true }
+# find_engine (TSK-630): linear-time regex for the FindEngine port.
+regex-lite = { workspace = true }
 # The wire module owns BOTH the serde-derived cross-language types AND the
 # MessagePack codec + length-prefix framing (the "proto" role folded into core
 # for the PoC). rmp-serde is therefore a real dependency, not dev-only.

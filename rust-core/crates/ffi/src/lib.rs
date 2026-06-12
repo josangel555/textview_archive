@@ -53,6 +53,7 @@ pub mod status;
 use mdvcore_core::cm_edit;
 use mdvcore_core::diff;
 use mdvcore_core::filter::{Query, Scope};
+use mdvcore_core::find_engine;
 use mdvcore_core::fuzzy;
 use mdvcore_core::hex;
 use mdvcore_core::indent;
@@ -134,7 +135,7 @@ pub const MDV_CAP_HEX: u64 = 1 << 2;
 pub const MDV_CAP_INDENT: u64 = 1 << 3;
 /// Editor document apply (`mdvcore_cm_apply`).
 pub const MDV_CAP_CM_APPLY: u64 = 1 << 4;
-/// RESERVED (TSK-630): find engine — not yet implemented, bit pre-assigned.
+/// Whole-document find (`mdvcore_find_search`) — TSK-630.
 pub const MDV_CAP_FIND: u64 = 1 << 5;
 /// RESERVED (TSK-631): markdown→HTML — not yet implemented, bit pre-assigned.
 pub const MDV_CAP_MARKDOWN: u64 = 1 << 6;
@@ -151,7 +152,8 @@ pub const MDV_CAPABILITIES: u64 = MDV_CAP_CSV_SESSION
     | MDV_CAP_HEX
     | MDV_CAP_INDENT
     | MDV_CAP_CM_APPLY
-    | MDV_CAP_FUZZY;
+    | MDV_CAP_FUZZY
+    | MDV_CAP_FIND;
 
 /// Runtime capability mask of the LINKED library. Returns 0 (no capabilities
 /// — every gated feature disabled, never UB) if the guard trips. Callers must
@@ -276,6 +278,30 @@ pub unsafe extern "C" fn mdvcore_fuzzy_rank(
     out_buf: *mut MdvBuf,
 ) -> MdvStatus {
     ffi_frame_body!(req, req_len, out_buf, fuzzy::rank_wire)
+}
+
+/// Whole-document find (stateless, TSK-630). `req`/`req_len` is a
+/// `{text, pattern, kind, case_sensitive, whole_word}` MessagePack request
+/// frame; the result is written to `out_buf` as an
+/// `{error, matches:[{location,length,line,column}]}` response frame —
+/// UTF-16 ranges, 1-based line/column, `error` non-null when the pattern
+/// doesn't compile (the host's invalid-regex / fallback channel). Linear-time
+/// engine: no ReDoS guard needed. Caller MUST call [`mdvcore_buf_free`].
+///
+/// # Returns
+/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::WireError`], or
+/// [`MdvStatus::Panic`].
+///
+/// # Safety
+/// `req` must point to `req_len` valid bytes (or be null with `req_len == 0`).
+/// `out_buf` must be a valid, writable pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_find_search(
+    req: *const u8,
+    req_len: usize,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_frame_body!(req, req_len, out_buf, find_engine::search_wire)
 }
 
 /// Render a HEX dump (stateless). `bytes`/`len` is the raw byte buffer to dump;

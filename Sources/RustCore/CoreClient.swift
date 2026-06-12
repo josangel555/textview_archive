@@ -38,6 +38,11 @@ public enum CoreError: Error, Equatable {
     case unknown(UInt32)
     /// The MessagePack frame returned by the core failed to decode.
     case decode(String)
+    /// A find pattern the linear-time engine cannot compile (invalid syntax
+    /// or an ICU-only construct like lookaround). NOT a bridge fault — the
+    /// adapter maps it to `FindError.invalidRegex` or falls back to the
+    /// Swift engine (TSK-630).
+    case invalidPattern(String)
     /// The session handle is invalid: either this wrapper dead-flagged it after
     /// a caught panic, or the CORE reports its lock poisoned
     /// (`MDV_STATUS_HANDLE_DEAD`, TSK-581 — a previous call panicked while
@@ -722,6 +727,62 @@ public func mdvCoreFuzzyRank(query: String, candidates: [String]) throws -> [Fuz
                 index: Int(try m.require("index").u64Value()),
                 score: Int(try m.require("score").u64Value()),
                 matchedIndices: try m.require("indices").u32Array().map(Int.init)
+            )
+        }
+    } catch let e as MsgPackError {
+        throw CoreError.decode("\(e)")
+    }
+}
+
+// MARK: - Whole-document find (migration slice — TSK-630)
+
+/// One find match from the Rust engine: UTF-16 range pieces + 1-based
+/// line/column, mirroring the Swift `FindMatch`'s NSRange semantics exactly.
+public struct CoreFindMatch: Equatable, Sendable {
+    public let location: Int
+    public let length: Int
+    public let line: Int
+    public let column: Int
+}
+
+/// Search `text` through the Rust core's linear-time find engine (STATELESS,
+/// TSK-630). `kind` is "literal" or "regex". Throws `CoreError.invalidPattern`
+/// when the pattern doesn't compile (the adapter's FindError.invalidRegex /
+/// Swift-fallback channel) and other `CoreError`s only on a bridge fault.
+/// ReDoS is structurally impossible (PikeVM) — no deadline parameter exists.
+/// Documented divergence vs ICU: case-insensitivity is ASCII-only; lookaround/
+/// backreferences surface as `.invalidPattern`.
+public func mdvCoreFindSearch(
+    text: String,
+    pattern: String,
+    kind: String,
+    caseSensitive: Bool,
+    wholeWord: Bool
+) throws -> [CoreFindMatch] {
+    let request = MsgPackValue.map([
+        (.string("text"), .string(text)),
+        (.string("pattern"), .string(pattern)),
+        (.string("kind"), .string(kind)),
+        (.string("case_sensitive"), .bool(caseSensitive)),
+        (.string("whole_word"), .bool(wholeWord)),
+    ])
+    guard let body = try mdvFrameCall("find_search", mdvcore_find_search, request: request) else {
+        throw CoreError.decode("empty find_search response frame")
+    }
+    var reader = MsgPackReader(body)
+    do {
+        let map = try reader.decode().mapValue()
+        if let err = map["error"], case .string(let reason) = err {
+            throw CoreError.invalidPattern(reason)
+        }
+        guard let matches = map["matches"] else { throw CoreError.decode("missing 'matches'") }
+        return try matches.arrayValue().map { el in
+            let m = try el.mapValue()
+            return CoreFindMatch(
+                location: Int(try m.require("location").u64Value()),
+                length: Int(try m.require("length").u64Value()),
+                line: Int(try m.require("line").u64Value()),
+                column: Int(try m.require("column").u64Value())
             )
         }
     } catch let e as MsgPackError {

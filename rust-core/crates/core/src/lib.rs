@@ -26,6 +26,7 @@ pub mod csv;
 pub mod diff;
 pub mod filter;
 pub mod find;
+pub mod find_engine;
 pub mod format;
 pub mod fuzzy;
 pub mod git;
