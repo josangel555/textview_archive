@@ -165,12 +165,14 @@ struct CommandPaletteView: View {
         if isCommandMode {
             // Command mode (UX-M / #232): list EVERY registered command,
             // fuzzy-filtered on the post-`>` query. Empty query lists all.
-            filteredCommands = FuzzyMatcher.filterWithMatches(
+            // Routed through the `.fuzzy` gate (TSK-646): Rust core when
+            // on, the Swift FuzzyMatcher otherwise.
+            filteredCommands = RustFuzzyAdapter.filterWithMatches(
                 model.commandRegistry.commands, query: commandQuery
             ) { $0.title }
             filtered = []
         } else {
-            filtered = FuzzyMatcher.filterWithMatches(merged(), query: query) {
+            filtered = RustFuzzyAdapter.filterWithMatches(merged(), query: query) {
                 $0.displayName
             }
             filteredCommands = []
