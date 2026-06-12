@@ -164,6 +164,22 @@ struct Preview {
     /// the `&self` render without a parsing pass every frame (files cap at 200k
     /// lines, so per-frame re-parse would be far too slow).
     hl_cache: RefCell<Option<Vec<Vec<Segment>>>>,
+    /// TSK-544 per-frame caches. The bytes/rows are IMMUTABLE per Preview
+    /// (a reload builds a fresh Preview), so the only inputs that can change
+    /// between frames are the cache keys below — same memoization idiom as
+    /// `hl_cache`. Borrow discipline: the fill (`borrow_mut`) only happens
+    /// when the key changed, which never coincides with an outstanding
+    /// same-frame `Ref` (each render computes the filter FIRST, then find).
+    ///
+    /// Text-mode title badge (encoding · line-ending · lines · words) —
+    /// was a full-file `text_metrics` scan EVERY frame.
+    text_badge_cache: RefCell<Option<String>>,
+    /// Surviving row indices keyed by the filter needle — was a full-table
+    /// re-match every frame/keypress.
+    filter_cache: RefCell<Option<(String, Vec<u32>)>>,
+    /// Cell-find hits keyed by (find query, filter needle) — was a full
+    /// cell re-scan every frame.
+    find_cache: RefCell<Option<(String, String, Vec<find::TableHit>)>>,
 }
 
 impl Preview {
@@ -210,9 +226,74 @@ impl Preview {
 
     /// Original-row indices that survive the active filter (no row cloning), via
     /// the shared `view::table_query` + `filter::matching_indices_in`.
-    fn filtered_table_indices(&self, header: &[String], rows: &[Vec<String>]) -> Vec<u32> {
-        let query = view::table_query(header, self.table_needle());
-        filter::matching_indices_in(rows, &query)
+    /// Memoized on the needle (TSK-544): rows are immutable per Preview, so a
+    /// frame with an unchanged filter serves the cached indices instead of
+    /// re-matching the whole table.
+    fn filtered_table_indices(
+        &self, header: &[String], rows: &[Vec<String>],
+    ) -> std::cell::Ref<'_, Vec<u32>> {
+        let needle = self.table_needle().to_string();
+        let stale = self
+            .filter_cache
+            .borrow()
+            .as_ref()
+            .is_none_or(|(k, _)| *k != needle);
+        if stale {
+            let query = view::table_query(header, &needle);
+            let out = filter::matching_indices_in(rows, &query);
+            *self.filter_cache.borrow_mut() = Some((needle, out));
+        }
+        std::cell::Ref::map(self.filter_cache.borrow(), |c| {
+            &c.as_ref().expect("just filled above").1
+        })
+    }
+
+    /// Cell-find hits over the SHOWN (filtered) rows, memoized on
+    /// (query, filter needle) — both inputs that can move between frames
+    /// (TSK-544). An empty query caches an empty hit list (find_in_table's
+    /// own contract).
+    fn table_find_hits(
+        &self, header: &[String], rows: &[Vec<String>], query: &str,
+    ) -> std::cell::Ref<'_, Vec<find::TableHit>> {
+        let needle = self.table_needle().to_string();
+        let stale = self
+            .find_cache
+            .borrow()
+            .as_ref()
+            .is_none_or(|(q, n, _)| q != query || *n != needle);
+        if stale {
+            let hits = {
+                let shown_idx = self.filtered_table_indices(header, rows);
+                let shown: Vec<&Vec<String>> =
+                    shown_idx.iter().filter_map(|&i| rows.get(i as usize)).collect();
+                find::find_in_table(header, &shown, query, find::Case::Insensitive, true, None)
+            };
+            *self.find_cache.borrow_mut() = Some((query.to_string(), needle, hits));
+        }
+        std::cell::Ref::map(self.find_cache.borrow(), |c| {
+            &c.as_ref().expect("just filled above").2
+        })
+    }
+
+    /// The Text-mode title badge (encoding · line-ending · lines · words),
+    /// computed ONCE per Preview (TSK-544): `text_metrics` walks the whole
+    /// file and the bytes never change under a loaded Preview.
+    fn text_badge(&self) -> std::cell::Ref<'_, String> {
+        if self.text_badge_cache.borrow().is_none() {
+            let lossy = String::from_utf8_lossy(&self.raw);
+            let m = meta::text_metrics(&lossy);
+            let badge = format!(
+                " · {} · {} · {} lines · {} words",
+                meta::encoding_label(&self.raw),
+                meta::line_ending(&self.raw).as_str(),
+                m.lines,
+                m.words,
+            );
+            *self.text_badge_cache.borrow_mut() = Some(badge);
+        }
+        std::cell::Ref::map(self.text_badge_cache.borrow(), |o| {
+            o.as_ref().expect("just filled above")
+        })
     }
 }
 
@@ -775,6 +856,9 @@ impl App {
             table_filter: String::new(),
             table_filter_editing: None,
             hl_cache: RefCell::new(None),
+            text_badge_cache: RefCell::new(None),
+            filter_cache: RefCell::new(None),
+            find_cache: RefCell::new(None),
         };
         // Clamp the saved scroll into the (possibly grown/shrunk) content.
         let max_scroll = p.content_len().saturating_sub(1);
@@ -1075,6 +1159,9 @@ impl App {
                     table_filter: String::new(),
                     table_filter_editing: None,
                     hl_cache: RefCell::new(None),
+            text_badge_cache: RefCell::new(None),
+            filter_cache: RefCell::new(None),
+            find_cache: RefCell::new(None),
                 });
                 self.active = self.tabs.len() - 1;
                 self.flash = None;
@@ -1134,6 +1221,9 @@ impl App {
                     table_filter,
                     table_filter_editing: None,
                     hl_cache: RefCell::new(None),
+            text_badge_cache: RefCell::new(None),
+            filter_cache: RefCell::new(None),
+            find_cache: RefCell::new(None),
                 };
                 // Clamp the old scroll into the (possibly shorter) new content.
                 let max_scroll = next.content_len().saturating_sub(1);
@@ -1784,10 +1874,7 @@ impl App {
             return Vec::new();
         }
         let ViewBody::Table { header, rows, .. } = &p.view.body else { return Vec::new() };
-        let shown_idx = p.filtered_table_indices(header, rows);
-        let shown: Vec<&Vec<String>> =
-            shown_idx.iter().filter_map(|&i| rows.get(i as usize)).collect();
-        find::find_in_table(header, &shown, &self.find_query, find::Case::Insensitive, true, None)
+        p.table_find_hits(header, rows, &self.find_query).clone()
     }
 
     /// Scroll the table so the current cell-hit's row is visible, only adjusting
@@ -1843,10 +1930,7 @@ impl App {
         // Text mode via jump_to_current_match. Composes with the row filter.
         if p.view.mode == ViewMode::Table {
             let hits = if let ViewBody::Table { header, rows, .. } = &p.view.body {
-                let shown_idx = p.filtered_table_indices(header, rows);
-                let shown: Vec<&Vec<String>> =
-                    shown_idx.iter().filter_map(|&i| rows.get(i as usize)).collect();
-                find::find_in_table(header, &shown, &query, find::Case::Insensitive, true, None)
+                p.table_find_hits(header, rows, &query).clone()
             } else {
                 Vec::new()
             };
@@ -2361,11 +2445,8 @@ impl App {
                     .bg(self.tc(Role::CurrentBg, Color::Magenta))
                     .fg(self.tc(Role::OnHighlight, Color::White))
                     .bold();
-                let hv = if self.find_query.is_empty() {
-                    Vec::new()
-                } else {
-                    find::find_in_table(header, &shown, &self.find_query, find::Case::Insensitive, true, None)
-                };
+                // Memoized on (query, needle) — TSK-544; empty query caches [].
+                let hv = p.table_find_hits(header, rows, &self.find_query);
                 let cur = hv.get(self.find_sel.min(hv.len().saturating_sub(1))).map(|h| (h.row, h.col));
                 let hits: std::collections::HashSet<(i64, usize)> =
                     hv.iter().map(|h| (h.row, h.col)).collect();
@@ -2517,16 +2598,10 @@ impl App {
                 // Encoding + line-ending badge and file-metadata metrics (shared
                 // `core::meta`) — only meaningful for the Text view; HEX shows raw
                 // bytes, so skip it.
+                // Computed once per Preview (TSK-544) — was a full-file
+                // metrics scan every frame.
                 let badge = if matches!(p.view.mode, ViewMode::Text) {
-                    let lossy = String::from_utf8_lossy(&p.raw);
-                    let m = meta::text_metrics(&lossy);
-                    format!(
-                        " · {} · {} · {} lines · {} words",
-                        meta::encoding_label(&p.raw),
-                        meta::line_ending(&p.raw).as_str(),
-                        m.lines,
-                        m.words,
-                    )
+                    p.text_badge().clone()
                 } else {
                     String::new()
                 };
@@ -4701,6 +4776,62 @@ more text
         fs::write(&other, b"# Only\n").unwrap();
         app.open_file(&other);
         assert!(!app.outline_active(), "a new file clears the stale outline");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// TSK-544 — the per-frame caches must INVALIDATE on their keys. The
+    /// dangerous regression is a wrong cache (stale results rendered), not a
+    /// slow one: each assertion here fails if a key change serves the
+    /// previous key's value.
+    #[test]
+    fn table_caches_invalidate_on_their_keys() {
+        let dir = fixture_dir();
+        let mut app = App::new(dir.clone());
+        select_name(&mut app, "people.csv");
+        app.enter();
+        let (header, rows) = match &app.tabs[0].view.body {
+            ViewBody::Table { header, rows, .. } => (header.clone(), rows.clone()),
+            other => panic!("expected table body, got {other:?}"),
+        };
+
+        // Filter cache: needle change must re-match, not serve the old set.
+        app.tabs[0].table_filter = "ali".into();
+        assert_eq!(*app.tabs[0].filtered_table_indices(&header, &rows), vec![0],
+                   "ali → Alice's row");
+        app.tabs[0].table_filter = "bob".into();
+        assert_eq!(*app.tabs[0].filtered_table_indices(&header, &rows), vec![1],
+                   "needle change must invalidate the filter cache");
+
+        // Find cache is keyed by (query, needle): same query over a CHANGED
+        // filter must rescan the new shown set.
+        let hits_bob = app.tabs[0].table_find_hits(&header, &rows, "la").len();
+        assert!(hits_bob > 0, "Bob/LA visible → 'la' hits");
+        app.tabs[0].table_filter = "ali".into();
+        let hits_ali = app.tabs[0].table_find_hits(&header, &rows, "la").len();
+        assert_eq!(hits_ali, 0,
+                   "filter-needle change must invalidate the find cache (LA filtered out)");
+        // …and a query change under the same needle re-scans too.
+        assert!(app.tabs[0].table_find_hits(&header, &rows, "nyc").len() > 0,
+                "query change must invalidate (Alice/NYC visible)");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// TSK-544 — the Text badge computes once and matches the per-frame value
+    /// the title renders (the cache must not change WHAT is shown).
+    #[test]
+    fn text_badge_is_cached_and_rendered() {
+        let dir = fixture_dir();
+        let mut app = App::new(dir.clone());
+        select_name(&mut app, "hello.txt");
+        app.enter();
+        let badge = app.tabs[0].text_badge().clone();
+        assert!(badge.contains("lines") && badge.contains("words"),
+                "badge carries the metrics: {badge}");
+        assert_eq!(*app.tabs[0].text_badge(), badge, "stable across calls");
+        let out = render(&mut app);
+        // The rendered title carries the badge's line count.
+        assert!(out.contains("2 lines"), "title shows the cached metrics:\n{out}");
         let _ = fs::remove_dir_all(&dir);
     }
 }
