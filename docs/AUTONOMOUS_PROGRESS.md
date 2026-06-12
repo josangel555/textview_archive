@@ -8550,3 +8550,19 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - LESSON (durable): an empty-string resource fallback + source-tree-only
   vendor checks = a silent forever-failure; resource loads need a
   built-bundle resolution pin.
+
+## LOG +284 (2026-06-12 tick — TSK-626: the stale-header SIGSEGV class closed at the staging script)
+
+- **build-rust-core.sh (b314f5a):** cmp-detects a REAL header change before
+  overwriting the staged copy; on change, the staleness touch widens beyond
+  Sources/RustCore to the TEST targets and every grep-located referent of
+  the header surface (MDV_CAP_/MDV_WIRE_VERSION/import CMdvCore). The
+  documented twice-biting trap — stale test objects against a re-laid-out
+  ABI segfaulting like an FFI bug — now can't recur via the staging path.
+  Conditional, so routine restages stay cheap. Demonstrated live both ways
+  (perturb→touch; clean→silent); gate EXIT=0. Held at fixed: a hermetic
+  automated test would need cargo-stubbing seams that outweigh their value;
+  the two-way demo is recorded and re-runnable.
+- The reported lane is now EMPTY of agent-actionable work. Everything
+  open is owner-gated: TSK-452 repro, TSK-643 confirm, TSK-650 glance,
+  TSK-660 caps, TSK-649 stage B, TSK-306 validation bar, GUI glances.
