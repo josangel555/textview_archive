@@ -14,7 +14,12 @@ public enum MermaidBundle {
     /// The full mermaid UMD bundle. Injected as a `WKUserScript` at
     /// `.atDocumentStart` so `window.mermaid` is defined before the page
     /// body parses.
-    public static let runtime: String = load(name: "mermaid", ext: "js")
+    // NOTE the resource's BASE NAME is "mermaid.min" (the file is
+    // mermaid.min.js): forResource:"mermaid" withExtension:"js" silently
+    // returned nil and the empty-string fallback ate the failure — every
+    // mermaid host degraded to raw source text (TSK-650). Pinned by
+    // MermaidVendorTests' non-empty guard now.
+    public static let runtime: String = load(name: "mermaid.min", ext: "js")
 
     /// Our wrapper around `mermaid.run()` — initializes theme, walks the
     /// step manifest, builds the control bar, wires keyboard handlers.

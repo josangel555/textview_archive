@@ -217,6 +217,7 @@ run_webview_tests() {
     --filter ViewerUITests.FormatToggleTests \
     --filter ViewerUITests.FoldGutterWebViewTests \
     --filter ViewerUITests.MermaidHostingTests \
+    --filter ViewerUITests.MermaidRenderProbeTests \
     --filter ViewerUITests.MultiCursorWebViewTests \
     --filter ViewerUITests.PaneRetentionMountProbeTests \
     --filter ViewerUITests.PDFExportWebViewTests \
