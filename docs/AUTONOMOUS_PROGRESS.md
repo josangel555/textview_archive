@@ -8232,3 +8232,23 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   feature-off-in-app); DECISIONS NEEDED updated. Stage 3 (+10 grammars,
   crate list pre-approval per TSK-629) and stage 4 (Swift grammar deletion,
   reclaims the double-carry) queue behind the decision.
+
+## LOG +266 (2026-06-12 tick — TSK-628 VALIDATED after the drain caught a dead watch)
+
+- **Validation drain found the advisory watch had NEVER worked (25dc089):**
+  (a) the matcher's pins rode a herestring ALONGSIDE the heredoc — the
+  herestring overrode it, python executed the PIN LIST as its script, and
+  the empty result read as PASSED: the watch could not flag a hit, ever;
+  (b) the repo has NO GitHub remote, so the "nightly lane" never runs
+  anywhere, and the local-only lane required gh/GITHUB_TOKEN this host
+  doesn't have. Fixed: pins via env var, matcher failure now FAILS the run,
+  unauthenticated public-API fallback (≤10 calls vs the 60/hr unauth limit).
+- Live strict evidence: 56 advisories scanned, 18 pins, 0 hits, EXIT=0;
+  planted Sparkle pin → 3 HITs EXIT=1; broken matcher → EXIT=1. Hermetic
+  `MDV_ADVISORY_FIXTURE` seam + AdvisoryWatchScriptTests (4 tests IN the
+  merge gate); teeth: reintroducing the herestring bug reddened all 4.
+  TSK-628 → validated (self-validation policy: behavior-exercising
+  automated tests in the gate).
+- VM lane: full-suite run on current main in flight in the background
+  (fresh rsync incl. the 50 MB highlight-bearing staticlib) — wave
+  cross-validation for TSK-640/660 commits lands next entry.

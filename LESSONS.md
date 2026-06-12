@@ -2847,3 +2847,12 @@ Continuation of "the five constraints" above; these three close every remaining 
   (a different std API — e.g. `encode_utf16().count()` vs
   `chars().map(len_utf16).sum()` — or hardcoded literals). Run the mutation
   BEFORE trusting any new suite; the false green is invisible in review.
+
+- **2026-06-12 — `<<'EOF'` heredoc + `<<<` herestring on one command: the
+  LAST stdin redirection wins.** The advisory watch fed python its program
+  via heredoc and its data via herestring — python silently executed the
+  DATA as its script and the command-substitution error was swallowed,
+  yielding a permanent silent PASS. Pass data via env vars/argv/files, and
+  always `|| fail` a command substitution whose output gates a verdict.
+  Validation-drain rule proven again: re-run evidence FRESH — this "green
+  since landing" security gate had never executed its matcher once.
