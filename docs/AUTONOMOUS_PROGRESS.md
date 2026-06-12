@@ -7905,3 +7905,18 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   RustCMEditAdapter — every adapter now has a consumer. Flip-round plan recorded on the
   ticket: hex family next, cmEdit LAST (highest stakes — keystroke path), wave-1 four
   in between; then stage B twin deletion, owner-gated per engine.
+
+## LOG +245 (2026-06-12 tick — TSK-655 at review: remote protocol v1 designed)
+
+- **TSK-655 → review** (6b914cd): `docs/REMOTE_PROTOCOL.md`. The shape: existing body
+  maps stay BYTE-IDENTICAL to the FFI contract (RemoteTransport = drop-in
+  CoreTransport); a named-map envelope {t,i,m,b,e,s,n,k} adds correlation ids +
+  unsolicited events; subscriptions are ordinary requests; per-sub monotonic seq with
+  an EXPLICIT resync event on bounded-queue overflow (drop-all, no seq gap — never
+  inferred loss, never unbounded memory); portable fs-event contract with server-side
+  debounce; hello hard-closes on wire-version skew; capability bits pre-assigned for
+  the remote families (fs 1<<9, git 1<<10, transcript_list 1<<11, lsp_pipe 1<<12);
+  fs.read is WINDOWED-ONLY; remote faults trip the same adapter Swift-fallback as
+  local ones. §9 carries the implementing tickets' test plan (incl. the loopback A/B
+  acceptance for TSK-652 stage 2). Held at review — design gate; implementations
+  validate against it.
