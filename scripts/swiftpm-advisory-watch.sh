@@ -70,8 +70,26 @@ fetch_page() {
          -H "Accept: application/vnd.github+json" \
          "https://api.github.com${path}" && return 0
   fi
+  # Unauthenticated fallback: the advisory endpoint is PUBLIC (60 req/hr
+  # unauth limit; we make at most MAX_PAGES=10 calls). This repo has no
+  # GitHub remote, so the nightly workflow never runs — the LOCAL run is
+  # the only live lane and must work without gh/credentials (TSK-628).
+  curl -sf -H "Accept: application/vnd.github+json" \
+       "https://api.github.com${path}" && return 0
   return 1
 }
+
+# Hermetic test seam (TSK-628): a fixture file of canned advisories skips
+# the network entirely — the gate-runnable path that keeps the matcher's
+# honesty regression-guarded (see AdvisoryWatchScriptTests).
+if [[ -n "${MDV_ADVISORY_FIXTURE:-}" ]]; then
+  if [[ ! -f "$MDV_ADVISORY_FIXTURE" ]]; then
+    echo "swiftpm-advisory-watch: fixture $MDV_ADVISORY_FIXTURE not found" >&2
+    exit 2
+  fi
+  ALL="$(cat "$MDV_ADVISORY_FIXTURE")"
+  net_ok=1
+else
 
 ALL="[]"
 net_ok=1
@@ -86,6 +104,8 @@ print(json.dumps(acc + new))
   [[ "$count" -lt 100 ]] && break
 done
 
+fi  # MDV_ADVISORY_FIXTURE
+
 if [[ "$net_ok" == "0" ]]; then
   echo "==> advisory API unreachable" >&2
   if [[ "$STRICT" == "1" ]]; then
@@ -97,11 +117,15 @@ if [[ "$net_ok" == "0" ]]; then
 fi
 
 # --- local match: advisory package names vs pin urls/identities ----------
-result=$(python3 - "$ALL" <<'PYEOF' <<< "$PINS"
-import json, sys
+# Pins ride an ENV VAR, advisories ride argv. (A prior version fed pins via
+# `<<< "$PINS"` ALONGSIDE the heredoc — the herestring overrode the heredoc,
+# so python executed the PIN LIST as its script, the matcher never ran, and
+# the empty result read as PASSED. A matcher that cannot run must FAIL.)
+result=$(MDV_PINS="$PINS" python3 - "$ALL" <<'PYEOF'
+import json, os, sys
 advisories = json.loads(sys.argv[1] or "[]")
 pins = []
-for line in sys.stdin.read().splitlines():
+for line in os.environ.get("MDV_PINS", "").splitlines():
     parts = line.split("\t")
     if len(parts) == 3:
         pins.append(parts)
@@ -122,7 +146,10 @@ print(f"{len(advisories)} advisories scanned")
 for h in sorted(set(hits)):
     print("HIT " + h)
 PYEOF
-)
+) || {
+  echo "==> matcher failed to run — failing (a watch that cannot match is not a pass)" >&2
+  exit 1
+}
 echo "$result"
 if grep -q '^HIT ' <<< "$result"; then
   echo "==> ADVISORIES MATCH PINNED PACKAGES — triage required" >&2
