@@ -8841,3 +8841,23 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   runs stay named — same pattern, measure before converting (on ticket).
 - TSK-626 header auto-touch fired on the version bump (no stale-object
   SIGSEGV chase). Both gates green; matched bundle installed.
+
+## LOG +298 (2026-06-12 tick — TSK-641 stage 4: the chrome follows the theme; all four surfaces done)
+
+- **Chrome surface (52db383, installed):** Palette's three main-surface
+  accessors consult `ChromeTheme.current` (set by the model's theme
+  selection, seeded at init from the persisted selection) before the
+  system dynamic colors. nil = system-native, byte-identical (pinned).
+  The theming pair is COMPLETE: syntax ✓ rendered-MD ✓ editor ✓ chrome ✓.
+- Themes without explicit chrome slots derive coherent surfaces
+  (sidebar ← background, bars/panels ← gutterBackground); three new
+  OPTIONAL ThemeDefinition slots (legacy JSON decodes unchanged); the
+  VS Code importer maps the main workbench colors onto them.
+- Perf contract held: colors pre-resolve once per theme change; the
+  Palette accessors return cached Colors (the no-per-call-allocation
+  rule that Palette exists for).
+- 6 tests; teeth: Palette mutated to ignore the theme → 2 red with the
+  exact provider diff. Held at fixed (live-validation): painted pixels +
+  the stale-chrome/non-republishing-view class need the VM/owner glance.
+- OWNER ASK: relaunch → Settings → Appearance → pick a theme → the whole
+  window (sidebar, tab strip, panels) should follow it.
