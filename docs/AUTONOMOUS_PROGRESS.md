@@ -8126,3 +8126,16 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   the owner directed this morning is now one sign-off per engine away, with the
   remote-core spine (mdv-serve + RemoteTransport + fs/git/search/transcript families)
   validated alongside it.
+## LOG +261 (2026-06-12 tick — stage B planned and PARKED to the owner)
+
+- **docs/STAGE_B_DELETION_PLAN.md written** and TSK-649 parked (decision ping): the
+  deletion model (twin deleted ⇒ adapter collapses to rust-only, gates retire, A/B
+  suites freeze into golden suites — no permanent Swift fallback), smallest-first
+  order (indent template → hexSearch/hex/diff clean → csv/fuzzy/find/transcript/
+  markdown each with a named caveat), and the one genuine behavior removal needing
+  sign-off: find's ICU-fallback channel (lookbehind regexes error post-deletion
+  instead of silently working). Options offered incl. batch-approve 1-4 and a
+  keep-fallback alternative.
+- DECISIONS NEEDED: the TSK-649 park above. While it waits, the non-gated queue is
+  TSK-660 (TreeSitter — best started fresh post-compaction given its size), the push
+  loop, TSK-659 LSP pipe, and the live-gated UI tails.
