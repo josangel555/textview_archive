@@ -8486,3 +8486,20 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - **TSK-466 → validated**: producer→wire→dispatch (7 headless tests,
   re-run fresh in the 06-10 drain) + the rendered gutter artifact (this
   suite) = the whole pipeline guarded. indentGuides half stays in TSK-487.
+
+## LOG +280 (2026-06-12 tick — drain continues: TSK-372 zombie reconciled and VALIDATED)
+
+- **TSK-372 ("close with one tab, reopen shows two") — the board-hygiene
+  zombie** (fixed under the retired `claude` agent, lease expired for
+  days) reconciled per the drain rule: evidence re-ran FRESH on current
+  main — TabRestoreAfterQuitTests (incl. the EXACT scenario:
+  quit-with-one-restores-exactly-one, plus the stale-snapshot and
+  autosave-race guards) + HydrateDedupRegressionTests, all green. Session
+  restore is model/store-layer with full host coverage → validated.
+- **TSK-272/306 deliberately NOT validated** despite green model suites:
+  both share a PARKED owner decision on the validation bar for SwiftUI
+  key-event routing (VM lane vs wire-and-review vs eyeball) — validating
+  would pre-empt the park and double-count the shared core. They unblock
+  with the TSK-306 answer.
+- Drain tally today: 372, 466, 639 validated; 628/662-665 earlier. The
+  fixed lane is now ~entirely owner/VM-pixel-gated.
