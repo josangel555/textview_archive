@@ -8628,3 +8628,20 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - Gates: rust + swift + release-size all green (loopback binary rebuilt).
   Remaining on TSK-660: stage 4 deletion (entangled with TSK-649 stage B)
   + the .highlight soak ladder toward default-ON + the TSK-410 cross-close.
+
+## LOG +287 (2026-06-12 tick — TSK-545 VALIDATED: the highlight flip-blocker removed; TSK-552 deduped)
+
+- **Configured-grammar cache (072e870):** query parse+compile now runs once
+  per (Lang, name-list) process-wide (Mutex<HashMap> + Arc sharing), not
+  per call. Both entry points covered — the web tier's per-request cost
+  (the original S3 finding) AND the app's runs path, which would have paid
+  tens of ms PER TOKENIZE once `.highlight` defaults ON. This was the
+  perf blocker on TSK-660's soak ladder; the flip is now unblocked.
+- Pinned structurally (same-Arc refetch; per-key separation) instead of
+  wall clock — CI-load-proof. Teeth: insert disabled → red. Both gates
+  green; .a restaged. TSK-545 → validated; TSK-552 dismissed as the
+  documented duplicate (the SOP's own dedupe example). Fixed in the RUST
+  port per §2.5 — the Swift twin's TSK-619 compile cost retires with it.
+- TSK-660 ladder next: the .highlight default-ON flip round (consumption ✓,
+  A/B contract tests ✓, perf blocker ✓), then stage 4 deletion behind
+  TSK-649 stage B.
