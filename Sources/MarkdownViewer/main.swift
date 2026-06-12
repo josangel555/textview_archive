@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import SwiftUI
 import UniformTypeIdentifiers
+import RustCore
 import ViewerCore
 import ViewerUI
 import ViewerKit
@@ -47,6 +48,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     fileprivate var walkthroughController: WalkthroughPlayerController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // TSK-636: core-call auditing at the transport seam. FAILURES only —
+        // successes are routine and high-volume (fuzzy ranks per palette
+        // keystroke); a failing/panicking core is the security signal.
+        CoreTransportRegistry.auditHook = { method, transport, ok in
+            guard !ok else { return }
+            AuditLog.shared.record(
+                .coreCall, action: "error", target: method,
+                meta: ["transport": transport])
+        }
         // `--mcp-stdio`: skip all UI work and run the MCP server on
         // stdin/stdout. We still need an NSApplication to host
         // `@MainActor` model state, but no window, no menu, no

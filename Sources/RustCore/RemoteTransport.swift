@@ -85,6 +85,17 @@ public final class RemoteTransport: CoreTransport, @unchecked Sendable {
     // MARK: CoreTransport
 
     public func call(_ method: String, requestBody: [UInt8]) throws -> [UInt8]? {
+        do {
+            let result = try callInner(method, requestBody: requestBody)
+            CoreTransportRegistry.audit(method, transport: "remote", ok: true)
+            return result
+        } catch {
+            CoreTransportRegistry.audit(method, transport: "remote", ok: false)
+            throw error
+        }
+    }
+
+    private func callInner(_ method: String, requestBody: [UInt8]) throws -> [UInt8]? {
         lock.lock()
         defer { lock.unlock() }
         nextId &+= 1

@@ -53,9 +53,17 @@ public struct InProcessTransport: CoreTransport {
             // A method name missing here is a build-time wiring bug (the
             // wrappers and this table live in the same module) — surfaced
             // as a typed decode fault, never a crash.
+            CoreTransportRegistry.audit(method, transport: "in-process", ok: false)
             throw CoreError.decode("no in-process export for core method '\(method)'")
         }
-        return try mdvFrameCall(method, fn, body: requestBody)
+        do {
+            let result = try mdvFrameCall(method, fn, body: requestBody)
+            CoreTransportRegistry.audit(method, transport: "in-process", ok: true)
+            return result
+        } catch {
+            CoreTransportRegistry.audit(method, transport: "in-process", ok: false)
+            throw error
+        }
     }
 }
 
@@ -65,6 +73,32 @@ public struct InProcessTransport: CoreTransport {
 public enum CoreTransportRegistry {
     nonisolated(unsafe) private static var _current: any CoreTransport = InProcessTransport()
     private static let lock = NSLock()
+
+    /// TSK-636 audit hook — the ONE emit point covering every stateless
+    /// core call on BOTH transports (`method`, `transport` tag, success).
+    /// RustCore cannot depend on the host's audit log, so the host installs
+    /// a closure at startup. Nil = no auditing cost beyond a nil check.
+    nonisolated(unsafe) private static var _auditHook:
+        (@Sendable (_ method: String, _ transport: String, _ ok: Bool) -> Void)?
+
+    public static var auditHook:
+        (@Sendable (_ method: String, _ transport: String, _ ok: Bool) -> Void)? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _auditHook
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            _auditHook = newValue
+        }
+    }
+
+    /// Called by transport impls around each call.
+    static func audit(_ method: String, transport: String, ok: Bool) {
+        auditHook?(method, transport, ok)
+    }
 
     public static var current: any CoreTransport {
         get {

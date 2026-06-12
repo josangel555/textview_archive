@@ -94,6 +94,7 @@ public struct DocumentController: Sendable {
     ///     a `.db` opened as Source / CSV shows its textual content.
     /// `nil` keeps the historical auto-detection path.
     public func open(url: URL, forcedCategory: FileCategory? = nil) -> DocumentState {
+        AuditLog.shared.record(.fileOpen, action: "open", target: url.path)
         let openToken = PerfSignpost.begin(.load, "DocumentController.open")
         defer { PerfSignpost.end(openToken) }
         // Native-preview fast path: detect by extension/UTI before

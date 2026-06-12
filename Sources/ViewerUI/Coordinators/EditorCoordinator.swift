@@ -395,6 +395,7 @@ public final class EditorCoordinator: ObservableObject {
     @discardableResult
     public func saveEditor(forTabID id: UUID) -> Bool {
         guard var buf = tabCoordinator.editorBuffers[id] else { return false }
+        AuditLog.shared.record(.fileSave, action: "save", target: buf.url.path)
         // File-watcher reload during save would race the write — pause
         // it for the moment the write is in flight + the immediate
         // post-write watcher event we'd otherwise re-enter on. Caller

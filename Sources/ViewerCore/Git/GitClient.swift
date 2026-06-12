@@ -1128,6 +1128,10 @@ public final class GitClient: Sendable {
     /// we DON'T throw `processFailed` in that case — we return the
     /// partial output + `timedOut: true` and let the caller decide.
     private func runResult(_ args: [String]) throws -> (output: String, timedOut: Bool) {
+        AuditLog.shared.record(
+            .processSpawn, action: "git",
+            target: args.first ?? "?",
+            meta: ["repo": repoRoot.path])
         guard let bin = Self.resolvedGitBinary else {
             throw Error.gitNotFound
         }
