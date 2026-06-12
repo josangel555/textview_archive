@@ -252,6 +252,7 @@ final class FakeServer: @unchecked Sendable {
                 "typeDefinitionProvider": true,
                 "implementationProvider": true,
                 "documentSymbolProvider": true,
+                "renameProvider": true,
                 "foldingRangeProvider": true,
                 "workspaceSymbolProvider": true
             ]
@@ -336,6 +337,27 @@ final class FakeServer: @unchecked Sendable {
 
         case "textDocument/foldingRange":
             writeJSON(responseEnvelope(id: id, result: foldingRangeResult()))
+
+        case "textDocument/rename":
+            // Deterministic fixture: rename the 3-char symbol at the given
+            // position in the SAME file, twice (lines 0 and 2), exercising
+            // the multi-edit + reverse-application path client-side.
+            let p = params as? [String: Any] ?? [:]
+            let td = p["textDocument"] as? [String: Any] ?? [:]
+            let uri = td["uri"] as? String ?? "file:///fake.swift"
+            let newName = p["newName"] as? String ?? "renamed"
+            writeJSON(responseEnvelope(id: id, result: [
+                "changes": [
+                    uri: [
+                        ["range": ["start": ["line": 0, "character": 4],
+                                   "end": ["line": 0, "character": 7]],
+                         "newText": newName],
+                        ["range": ["start": ["line": 2, "character": 8],
+                                   "end": ["line": 2, "character": 11]],
+                         "newText": newName],
+                    ],
+                ],
+            ]))
 
         case "workspace/symbol":
             let p = params as? [String: Any] ?? [:]

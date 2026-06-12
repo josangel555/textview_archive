@@ -579,6 +579,26 @@ public actor LSPPool {
         }
     }
 
+    /// `textDocument/rename` (TSK-640) routed through the pool —
+    /// per-file uri → edits; apply via LSPTextEditApplier.
+    public func rename(
+        fileURL: URL, line: Int, character: Int, newName: String,
+        token: LSPCancellationToken? = nil
+    ) async throws -> [String: [LSPTextEdit]] {
+        let (client, key) = try await routedClient(for: fileURL)
+        let start = clock.now
+        do {
+            let result = try await client.rename(
+                url: fileURL, line: line, character: character,
+                newName: newName, token: token)
+            recordRequest(key: key, millis: millisElapsed(since: start))
+            return result
+        } catch {
+            recordCrash(key: key, error: "\(error)")
+            throw error
+        }
+    }
+
     public func hover(
         fileURL: URL, line: Int, character: Int,
         token: LSPCancellationToken? = nil

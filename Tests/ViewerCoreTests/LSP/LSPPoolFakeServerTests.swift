@@ -762,4 +762,32 @@ final class LSPPoolFakeServerTests: XCTestCase {
         let applied = LSPTextEditApplier.apply(edits, to: "abcdef\n", encoding: .utf16)
         XCTAssertEqual(applied, "// formatted\nFMTdef\n")
     }
+
+    // MARK: - Rename (TSK-640)
+
+    func test_rename_routesThroughPool_andRecordsMetrics() async throws {
+        let binary = try FakeLSPServerHelper.locate()
+        let (root, file) = try makeTempFile()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let pool = LSPPool(
+            registry: makeRegistry(binary: binary), config: tightConfig())
+        self.addTeardownBlock { await pool.closeAll() }
+
+        let edits = try await pool.rename(
+            fileURL: file, line: 0, character: 4, newName: "newSym")
+        // The fixture renames twice within the REQUESTED file's uri —
+        // pins request encode (uri/position/newName), server round-trip,
+        // decodeWorkspaceEdit, and the pool route.
+        XCTAssertEqual(edits.count, 1)
+        let fileEdits = try XCTUnwrap(edits[file.absoluteString])
+        XCTAssertEqual(fileEdits.count, 2)
+        XCTAssertTrue(fileEdits.allSatisfy { $0.newText == "newSym" })
+        let snap = await pool.snapshot()
+        guard let s = snap.first?.status else {
+            return XCTFail("expected one snapshot entry")
+        }
+        XCTAssertGreaterThanOrEqual(s.requestCount, 1,
+            "rename must bump requestCount via recordRequest")
+    }
 }

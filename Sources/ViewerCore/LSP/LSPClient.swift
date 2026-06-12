@@ -798,6 +798,62 @@ public actor LSPClient {
         return Self.decodeTextEdits(raw)
     }
 
+    /// `textDocument/rename` (TSK-640) — returns the server's
+    /// WorkspaceEdit as per-file URI → TextEdit lists; apply each file's
+    /// list via `LSPTextEditApplier` (the formatting path's proven
+    /// pipeline). Empty = the server declined (e.g. not a symbol).
+    public func rename(
+        url: URL, line: Int, character: Int, newName: String,
+        token: LSPCancellationToken? = nil
+    ) async throws -> [String: [LSPTextEdit]] {
+        guard initialized else { throw LSPError.notInitialized }
+        let params: [String: Any] = [
+            "textDocument": ["uri": url.absoluteString],
+            "position": ["line": line, "character": character],
+            "newName": newName,
+        ]
+        let raw = try await request(
+            method: "textDocument/rename", params: params,
+            timeout: .seconds(10), token: token)
+        return Self.decodeWorkspaceEdit(raw)
+    }
+
+    /// WorkspaceEdit decode: the `changes` map (uri → TextEdit[]) plus the
+    /// `documentChanges` array form (TextDocumentEdit entries — versions
+    /// ignored; we re-read before applying). Malformed entries drop.
+    static func decodeWorkspaceEdit(_ data: Data) -> [String: [LSPTextEdit]] {
+        guard let any = try? JSONSerialization.jsonObject(
+                with: data, options: [.fragmentsAllowed]),
+              let obj = any as? [String: Any] else { return [:] }
+        var out: [String: [LSPTextEdit]] = [:]
+        if let changes = obj["changes"] as? [String: Any] {
+            for (uri, edits) in changes {
+                guard let arr = edits as? [[String: Any]] else { continue }
+                let decoded = arr.compactMap(Self.decodeTextEdit)
+                if !decoded.isEmpty { out[uri] = decoded }
+            }
+        }
+        if let docChanges = obj["documentChanges"] as? [[String: Any]] {
+            for change in docChanges {
+                guard let textDoc = change["textDocument"] as? [String: Any],
+                      let uri = textDoc["uri"] as? String,
+                      let arr = change["edits"] as? [[String: Any]] else { continue }
+                let decoded = arr.compactMap(Self.decodeTextEdit)
+                if !decoded.isEmpty {
+                    out[uri, default: []].append(contentsOf: decoded)
+                }
+            }
+        }
+        return out
+    }
+
+    private static func decodeTextEdit(_ d: [String: Any]) -> LSPTextEdit? {
+        guard let r = d["range"] as? [String: Any],
+              let range = parseRange(r),
+              let newText = d["newText"] as? String else { return nil }
+        return LSPTextEdit(range: range, newText: newText)
+    }
+
     /// `workspace/symbol` — server-side fuzzy symbol search across the
     /// entire workspace. Empty query returns the server's notion of
     /// "all symbols" (most servers cap at a few hundred). UI callers
