@@ -7632,3 +7632,18 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   green. Follow-up noted: Miri/ASan nightly step behind the toolchain approval.
 - Next in the rust-core lane per owner directive: TSK-634 (FFI velocity) and ports
   TSK-630-633.
+
+## LOG +232 (2026-06-12 tick — TSK-634 stage 1: the capability bitmap, cross-language teeth)
+
+- **TSK-634 stage 1/3 landed** (commit 83cd758): feature negotiation ABOVE the frozen wire.
+  `MDV_CAP_*` u64 bits (5 shipped families ON; find/markdown/transcript/fuzzy RESERVED for
+  ports TSK-630..633 — pre-assigned, OFF until each port lands) + `mdvcore_capabilities()`
+  + Swift `CoreCapabilities` OptionSet with `requiredByShippingAdapters` as a soft
+  diagnostics floor. Contracts pinned on BOTH sides: exact bit values (bits are ABI),
+  compiled-mask agreement, reserved-bits-off (flips in the same commit as its port),
+  unknown-bit tolerance (the independent-versioning contract a remote `mdv-serve` needs —
+  owner constraint 2026-06-11). TEETH cross-language: CM_APPLY dropped from the Rust mask
+  → Rust test red AND Swift test red (raw=15) against the rebuilt staticlib; restored →
+  31/31 ffi + 17/17 bridge. Both gates green.
+- Remaining on TSK-634: stage 2 (Rust `ffi_export` codegen), stage 3 (Swift wrapper-stub
+  generation). Ports should land core engines first and ride the codegen for exports.
