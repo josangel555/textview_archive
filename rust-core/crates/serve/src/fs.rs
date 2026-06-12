@@ -42,7 +42,7 @@ impl FsCtx {
     }
 
     /// Resolve + contain `path`. Errors are the protocol's `unauthorized`.
-    fn contained(&self, path: &str) -> Result<PathBuf, WireError> {
+    pub(crate) fn contained(&self, path: &str) -> Result<PathBuf, WireError> {
         let Some(root) = &self.root else {
             return Err(unauthorized("no served root"));
         };

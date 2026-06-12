@@ -126,6 +126,8 @@ public struct CoreCapabilities: OptionSet, Sendable {
     /// SERVER-ONLY (TSK-654): set by a remote mdv-serve hello when a root
     /// is served; never present in the in-process library's mask.
     public static let fs         = CoreCapabilities(rawValue: UInt64(MDV_CAP_FS))
+    /// SERVER-ONLY (TSK-657): same posture as `.fs`.
+    public static let git        = CoreCapabilities(rawValue: UInt64(MDV_CAP_GIT))
 
     /// Everything the CURRENT Swift adapters require of the linked core —
     /// the graceful-degradation floor. `assertCompatible` already crash-fasts

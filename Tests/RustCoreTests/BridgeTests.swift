@@ -60,6 +60,7 @@ final class BridgeTests: XCTestCase {
         // SERVER-ONLY bit: never in the in-process mask (no fs FFI export);
         // a remote mdv-serve hello sets it when a root is served (TSK-654).
         XCTAssertFalse(caps.contains(.fs))
+        XCTAssertFalse(caps.contains(.git))
     }
 
     func testCapabilityBits_areABIAndNeverRenumber() {
@@ -76,6 +77,7 @@ final class BridgeTests: XCTestCase {
         XCTAssertEqual(CoreCapabilities.transcript.rawValue, 1 << 7)
         XCTAssertEqual(CoreCapabilities.fuzzy.rawValue, 1 << 8)
         XCTAssertEqual(CoreCapabilities.fs.rawValue, 1 << 9)
+        XCTAssertEqual(CoreCapabilities.git.rawValue, 1 << 10)
     }
 
     func testCapabilities_unknownBitsAreTolerated() {

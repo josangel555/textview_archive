@@ -3,7 +3,7 @@
 use std::os::unix::net::UnixStream;
 
 use mdvcore_core::{cm_edit, diff, find_engine, fuzzy, markdown, transcript, wire};
-use mdvcore_ffi::{MDV_CAPABILITIES, MDV_CAP_FS, MDV_WIRE_VERSION};
+use mdvcore_ffi::{MDV_CAPABILITIES, MDV_CAP_FS, MDV_CAP_GIT, MDV_WIRE_VERSION};
 
 use crate::fs::FsCtx;
 
@@ -61,7 +61,7 @@ pub fn handle_connection(stream: &UnixStream, fs_ctx: &FsCtx) -> std::io::Result
         return Ok(());
     }
     let capabilities = if fs_ctx.enabled() {
-        MDV_CAPABILITIES | MDV_CAP_FS
+        MDV_CAPABILITIES | MDV_CAP_FS | MDV_CAP_GIT
     } else {
         MDV_CAPABILITIES
     };
@@ -98,6 +98,12 @@ fn dispatch(id: u64, method: &str, body: &[u8], fs_ctx: &FsCtx) -> Frame {
     }
     if method.starts_with("fs.") {
         return match fs_ctx.dispatch(method, body) {
+            Ok(out) => Frame::Response { id, body: Some(out), error: None },
+            Err(e) => Frame::Response { id, body: None, error: Some(e) },
+        };
+    }
+    if method.starts_with("git.") {
+        return match crate::git::dispatch(fs_ctx, method, body) {
             Ok(out) => Frame::Response { id, body: Some(out), error: None },
             Err(e) => Frame::Response { id, body: None, error: Some(e) },
         };

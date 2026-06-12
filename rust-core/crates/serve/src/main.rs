@@ -16,6 +16,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 mod envelope;
 mod fs;
+mod git;
 mod serve;
 
 use serve::handle_connection;
