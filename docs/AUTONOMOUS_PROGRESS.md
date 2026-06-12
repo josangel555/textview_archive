@@ -8321,3 +8321,23 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   validated (host-testable, in-gate, teeth shown). Follow-ups queued as
   separate work: transcript.follow on the same infra; the Swift
   RemoteTransport subscription-consumption client half.
+
+## LOG +271 (2026-06-12 tick — TSK-663 VALIDATED: transcript.follow completes the §5 server push family)
+
+- **transcript.follow (c131204)** rides the TSK-662 hub as a second payload:
+  {dir, name} are EXACTLY the transcript.list identifiers (single
+  components, *.jsonl) — the zero-traversal posture, no second containment
+  scheme. Tail starts at file END (from_start replays); 1 MiB/tick window;
+  torn trailing lines carry across ticks (1 MiB cap → hostile → resync);
+  truncation/rotation → offset reset + resync; per-sub monotonic seq across
+  kinds; unsubscribe shares fs.unwatch (+ alias). Watcher thread now spawns
+  unconditionally.
+- **The load-bearing call: pushed events are PARSED, REDACTION-FORCED
+  batches** (parse_wire_forced_redaction + redacting:true, belt and
+  suspenders) — raw line tailing does not exist on the wire because it
+  would bypass the TSK-658 guarantee. The redaction pin's teeth: disabling
+  both layers leaked SECRET-BLOB and reddened the test.
+- 5 new tests (36 serve total); both gates EXIT=0; protocol §5 doc updated.
+  TSK-663 → validated. The §5 server push family is now COMPLETE
+  (fs.watch + transcript.follow); the remaining push work is the Swift
+  RemoteTransport client half (subscription consumption) — next ticket.
