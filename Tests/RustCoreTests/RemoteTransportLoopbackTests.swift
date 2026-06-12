@@ -72,10 +72,16 @@ final class RemoteTransportLoopbackTests: XCTestCase {
         return r
     }
 
-    func test_hello_advertisesTheSameCapabilityMask() throws {
+    func test_hello_advertisesEngineMaskPlusServerOnlyFamilies() throws {
         let remote = try requireRemote()
-        XCTAssertEqual(remote.capabilities, CoreABI.capabilities.rawValue,
-                       "server and linked staticlib must advertise the same mask")
+        let engineMask = CoreABI.capabilities.rawValue
+        XCTAssertEqual(remote.capabilities & engineMask, engineMask,
+                       "the server must advertise every engine family the staticlib has")
+        // This spawn has no --root: the only server-only bit is
+        // transcript.list (fs/git need a served root).
+        XCTAssertEqual(remote.capabilities & ~engineMask,
+                       CoreCapabilities.transcriptList.rawValue,
+                       "unexpected server-only bits for a root-less spawn")
     }
 
     /// Every stateless wrapper, byte-equal local vs remote — the carrier-swap
@@ -134,6 +140,29 @@ final class RemoteTransportLoopbackTests: XCTestCase {
                 return XCTFail("expected .invalidPattern over the wire, got \(error)")
             }
         }
+    }
+
+    func test_wireBoundary_redactionForced_evenWhenClientAsksOff() throws {
+        // TSK-658: nothing unredacted leaves the server. A redacting:false
+        // request over the WIRE must still come back scrubbed (the same call
+        // in-process honors the flag — the trust boundary is the socket).
+        let remote = try requireRemote()
+        let log = #"{"uuid":"a","message":{"role":"assistant","content":[{"type":"tool_use","id":"t","name":"X","input":{"signature":"SECRET-BLOB"}}]}}"# + "\n"
+        CoreTransportRegistry.current = remote
+        defer { CoreTransportRegistry.resetToInProcess() }
+        let events = try mdvCoreTranscriptParse(text: log, redacting: false)
+        guard case let .toolUse(_, _, input)? = events.first?.kind else {
+            return XCTFail("expected a tool_use event")
+        }
+        XCTAssertEqual(input["signature"], "[REDACTED]",
+                       "the wire must force redaction regardless of the flag")
+        // Sanity: the SAME request in-process honors the caller's choice.
+        CoreTransportRegistry.resetToInProcess()
+        let local = try mdvCoreTranscriptParse(text: log, redacting: false)
+        guard case let .toolUse(_, _, localInput)? = local.first?.kind else {
+            return XCTFail("expected a tool_use event locally")
+        }
+        XCTAssertEqual(localInput["signature"], "SECRET-BLOB")
     }
 
     func test_unknownMethod_surfacesAsTypedDecodeFault() throws {

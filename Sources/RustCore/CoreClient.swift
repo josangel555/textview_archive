@@ -128,6 +128,8 @@ public struct CoreCapabilities: OptionSet, Sendable {
     public static let fs         = CoreCapabilities(rawValue: UInt64(MDV_CAP_FS))
     /// SERVER-ONLY (TSK-657): same posture as `.fs`.
     public static let git        = CoreCapabilities(rawValue: UInt64(MDV_CAP_GIT))
+    /// SERVER-ONLY (TSK-658): same posture as `.fs`.
+    public static let transcriptList = CoreCapabilities(rawValue: UInt64(MDV_CAP_TRANSCRIPT_LIST))
 
     /// Everything the CURRENT Swift adapters require of the linked core —
     /// the graceful-degradation floor. `assertCompatible` already crash-fasts

@@ -3,9 +3,10 @@
 use std::os::unix::net::UnixStream;
 
 use mdvcore_core::{cm_edit, diff, find_engine, fuzzy, markdown, transcript, wire};
-use mdvcore_ffi::{MDV_CAPABILITIES, MDV_CAP_FS, MDV_CAP_GIT, MDV_WIRE_VERSION};
+use mdvcore_ffi::{MDV_CAPABILITIES, MDV_CAP_FS, MDV_CAP_GIT, MDV_CAP_TRANSCRIPT_LIST, MDV_WIRE_VERSION};
 
 use crate::fs::FsCtx;
+use crate::transcript_list::TranscriptCtx;
 
 use crate::envelope::{self, Frame, WireError};
 use crate::{read_frame, write_frame};
@@ -25,7 +26,10 @@ fn method_fn(name: &str) -> Option<WireFn> {
         "diff_hunk_marks" => Some(diff::hunk_marks_wire),
         "fuzzy_rank" => Some(fuzzy::rank_wire),
         "find_search" => Some(find_engine::search_wire),
-        "transcript_parse" => Some(transcript::parse_wire),
+        // WIRE-BOUNDARY redaction (TSK-658): the server FORCES redaction
+        // regardless of the request flag — nothing unredacted leaves the
+        // machine. The in-process FFI keeps caller choice (local trust).
+        "transcript_parse" => Some(transcript::parse_wire_forced_redaction),
         "markdown_render" => Some(markdown::render_wire),
         _ => None,
     }
@@ -33,7 +37,11 @@ fn method_fn(name: &str) -> Option<WireFn> {
 
 /// Serve one connection: hello first (wire-version hard-close), then a
 /// request loop. Returns on EOF / IO error / protocol violation.
-pub fn handle_connection(stream: &UnixStream, fs_ctx: &FsCtx) -> std::io::Result<()> {
+pub fn handle_connection(
+    stream: &UnixStream,
+    fs_ctx: &FsCtx,
+    transcript_ctx: &TranscriptCtx,
+) -> std::io::Result<()> {
     let mut reader = stream;
     let mut writer = stream;
 
@@ -60,11 +68,10 @@ pub fn handle_connection(stream: &UnixStream, fs_ctx: &FsCtx) -> std::io::Result
         let _ = write_frame(&mut writer, &envelope::encode(&resp));
         return Ok(());
     }
-    let capabilities = if fs_ctx.enabled() {
-        MDV_CAPABILITIES | MDV_CAP_FS | MDV_CAP_GIT
-    } else {
-        MDV_CAPABILITIES
-    };
+    let mut capabilities = MDV_CAPABILITIES | MDV_CAP_TRANSCRIPT_LIST;
+    if fs_ctx.enabled() {
+        capabilities |= MDV_CAP_FS | MDV_CAP_GIT;
+    }
     let hello_body = wire::encode_frame(&HelloResponse {
         wire_version: u64::from(MDV_WIRE_VERSION),
         capabilities,
@@ -86,18 +93,30 @@ pub fn handle_connection(stream: &UnixStream, fs_ctx: &FsCtx) -> std::io::Result
         let Frame::Request { id, method, body } = frame else {
             continue; // responses/events from a client are ignored in v1
         };
-        let resp = dispatch(id, &method, &body, fs_ctx);
+        let resp = dispatch(id, &method, &body, fs_ctx, transcript_ctx);
         write_frame(&mut writer, &envelope::encode(&resp))?;
     }
     Ok(())
 }
 
-fn dispatch(id: u64, method: &str, body: &[u8], fs_ctx: &FsCtx) -> Frame {
+fn dispatch(
+    id: u64,
+    method: &str,
+    body: &[u8],
+    fs_ctx: &FsCtx,
+    transcript_ctx: &TranscriptCtx,
+) -> Frame {
     if method == "ping" {
         return Frame::Response { id, body: Some(Vec::new()), error: None };
     }
     if method.starts_with("fs.") {
         return match fs_ctx.dispatch(method, body) {
+            Ok(out) => Frame::Response { id, body: Some(out), error: None },
+            Err(e) => Frame::Response { id, body: None, error: Some(e) },
+        };
+    }
+    if method == "transcript.list" {
+        return match transcript_ctx.list() {
             Ok(out) => Frame::Response { id, body: Some(out), error: None },
             Err(e) => Frame::Response { id, body: None, error: Some(e) },
         };
@@ -212,7 +231,8 @@ mod tests {
         std::thread::spawn(move || {
             #[allow(clippy::unwrap_used, reason = "test setup")]
             let ctx = FsCtx::new(None).unwrap();
-            let _ = handle_connection(&server, &ctx);
+            let tctx = TranscriptCtx::new(Some("/nonexistent"));
+            let _ = handle_connection(&server, &ctx, &tctx);
         })
     }
 

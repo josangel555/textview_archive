@@ -18,6 +18,7 @@ mod envelope;
 mod fs;
 mod git;
 mod serve;
+mod transcript_list;
 
 use serve::handle_connection;
 
@@ -29,19 +30,21 @@ static INFLIGHT: AtomicUsize = AtomicUsize::new(0);
 fn main() {
     let mut socket_path: Option<String> = None;
     let mut root: Option<String> = None;
+    let mut claude_dir: Option<String> = None;
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {
         match (flag.as_str(), args.next()) {
             ("--socket", Some(v)) => socket_path = Some(v),
             ("--root", Some(v)) => root = Some(v),
+            ("--claude-dir", Some(v)) => claude_dir = Some(v),
             _ => {
-                eprintln!("usage: mdv-serve --socket <path> [--root <dir>]");
+                eprintln!("usage: mdv-serve --socket <path> [--root <dir>] [--claude-dir <dir>]");
                 std::process::exit(2);
             }
         }
     }
     let Some(socket_path) = socket_path else {
-        eprintln!("usage: mdv-serve --socket <path> [--root <dir>]");
+        eprintln!("usage: mdv-serve --socket <path> [--root <dir>] [--claude-dir <dir>]");
         std::process::exit(2);
     };
     let fs_ctx = match fs::FsCtx::new(root.as_deref()) {
@@ -51,6 +54,7 @@ fn main() {
             std::process::exit(1);
         }
     };
+    let transcript_ctx = transcript_list::TranscriptCtx::new(claude_dir.as_deref());
     // A stale socket file from a previous run refuses the bind; remove it
     // (the path is ours by contract).
     let _ = std::fs::remove_file(&socket_path);
@@ -70,8 +74,9 @@ fn main() {
             continue;
         }
         let ctx = fs_ctx.clone();
+        let tctx = transcript_ctx.clone();
         std::thread::spawn(move || {
-            let _ = handle_connection(&stream, &ctx);
+            let _ = handle_connection(&stream, &ctx, &tctx);
             INFLIGHT.fetch_sub(1, Ordering::SeqCst);
         });
     }

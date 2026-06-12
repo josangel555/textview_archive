@@ -96,6 +96,7 @@ fn capability_bits_are_abi_and_never_renumber() {
     assert_eq!(MDV_CAP_FUZZY, 1 << 8);
     assert_eq!(MDV_CAP_FS, 1 << 9);
     assert_eq!(MDV_CAP_GIT, 1 << 10);
+    assert_eq!(MDV_CAP_TRANSCRIPT_LIST, 1 << 11);
 }
 
 #[test]
@@ -111,6 +112,10 @@ fn reserved_capability_bits_stay_off_until_their_exports_land() {
     // FFI export (mdv-serve adds the bit itself when a root is served).
     assert_eq!(mask & MDV_CAP_FS, 0, "fs is a server-only capability (TSK-654)");
     assert_eq!(mask & MDV_CAP_GIT, 0, "git is a server-only capability (TSK-657)");
+    assert_eq!(
+        mask & MDV_CAP_TRANSCRIPT_LIST, 0,
+        "transcript.list is a server-only capability (TSK-658)"
+    );
     for (bit, name) in [
         (MDV_CAP_CSV_SESSION, "csv"),
         (MDV_CAP_DIFF, "diff"),

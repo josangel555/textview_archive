@@ -61,6 +61,7 @@ final class BridgeTests: XCTestCase {
         // a remote mdv-serve hello sets it when a root is served (TSK-654).
         XCTAssertFalse(caps.contains(.fs))
         XCTAssertFalse(caps.contains(.git))
+        XCTAssertFalse(caps.contains(.transcriptList))
     }
 
     func testCapabilityBits_areABIAndNeverRenumber() {
@@ -78,6 +79,7 @@ final class BridgeTests: XCTestCase {
         XCTAssertEqual(CoreCapabilities.fuzzy.rawValue, 1 << 8)
         XCTAssertEqual(CoreCapabilities.fs.rawValue, 1 << 9)
         XCTAssertEqual(CoreCapabilities.git.rawValue, 1 << 10)
+        XCTAssertEqual(CoreCapabilities.transcriptList.rawValue, 1 << 11)
     }
 
     func testCapabilities_unknownBitsAreTolerated() {

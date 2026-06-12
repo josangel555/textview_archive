@@ -148,6 +148,8 @@ pub const MDV_CAP_FUZZY: u64 = 1 << 8;
 /// SERVER-ONLY (TSK-657): the mdv-serve git family (head/status/branches/log).
 /// Same posture as the fs bit: never set by the in-process library.
 pub const MDV_CAP_GIT: u64 = 1 << 10;
+/// SERVER-ONLY (TSK-658): mdv-serve transcript discovery (`transcript.list`).
+pub const MDV_CAP_TRANSCRIPT_LIST: u64 = 1 << 11;
 /// SERVER-ONLY (TSK-654): the mdv-serve fs family (stat/read/readdir).
 /// NEVER set by the in-process library — there is no fs FFI export by
 /// design (the host does its own IO locally); mdv-serve ORs this into its

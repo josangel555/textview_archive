@@ -599,11 +599,28 @@ struct ParseResponse {
 
 /// `{text, redacting}` request frame → `{events:[…]}` response frame.
 pub fn parse_wire(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault> {
+    parse_wire_impl(req_frame, None)
+}
+
+/// [`parse_wire`] with redaction FORCED ON regardless of the request flag —
+/// the remote server routes through this (the TSK-245 barrier as a
+/// WIRE-boundary guarantee: nothing unredacted leaves the machine). The
+/// in-process FFI keeps caller choice (a local trust domain has legitimate
+/// un-redacted consumers, e.g. count-only indexing).
+pub fn parse_wire_forced_redaction(req_frame: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault> {
+    parse_wire_impl(req_frame, Some(true))
+}
+
+fn parse_wire_impl(
+    req_frame: &[u8],
+    redacting_override: Option<bool>,
+) -> Result<Vec<u8>, crate::wire::WireFault> {
     let req: ParseRequest = crate::wire::decode_frame(req_frame)?;
+    let redacting = redacting_override.unwrap_or(req.redacting);
     let max_events = req
         .max_events
         .map_or(MAX_EVENTS, |n| (n as usize).min(MAX_EVENTS));
-    let events = parse_with(&req.text, req.redacting, MAX_LINE_BYTES, max_events)
+    let events = parse_with(&req.text, redacting, MAX_LINE_BYTES, max_events)
         .into_iter()
         .map(|e| {
             let mut w = WireEvent {
@@ -911,6 +928,45 @@ mod tests {
         assert!(e.tool_use_id.is_none());
         // NOTE: this request omits max_events entirely — #[serde(default)]
         // makes the field additive (old clients keep working).
+    }
+
+    #[test]
+    fn wire_forced_redaction_ignores_the_request_flag() {
+        #[derive(Serialize)]
+        struct Req<'a> {
+            text: &'a str,
+            redacting: bool,
+        }
+        #[derive(Deserialize)]
+        struct Resp {
+            events: Vec<REvent>,
+        }
+        #[derive(Deserialize)]
+        struct REvent {
+            input: Option<Vec<(String, String)>>,
+        }
+        let log = concat!(
+            r#"{"uuid":"a","message":{"role":"assistant","content":[{"type":"tool_use","id":"t","name":"X","input":{"signature":"SECRET"}}]}}"#,
+            "\n"
+        );
+        // The request EXPLICITLY asks for un-redacted — the forced variant
+        // must scrub anyway (the wire-boundary guarantee).
+        let frame = crate::wire::encode_frame(&Req { text: log, redacting: false }).unwrap();
+        let resp: Resp =
+            crate::wire::decode_frame(&parse_wire_forced_redaction(&frame).unwrap()).unwrap();
+        let input = resp.events.first().and_then(|e| e.input.clone()).unwrap_or_default();
+        assert_eq!(
+            input.iter().find(|(k, _)| k == "signature").map(|(_, v)| v.as_str()),
+            Some("[REDACTED]"),
+            "forced redaction must override redacting:false"
+        );
+        // And the plain wire fn still honors the flag (local trust domain).
+        let resp: Resp = crate::wire::decode_frame(&parse_wire(&frame).unwrap()).unwrap();
+        let input = resp.events.first().and_then(|e| e.input.clone()).unwrap_or_default();
+        assert_eq!(
+            input.iter().find(|(k, _)| k == "signature").map(|(_, v)| v.as_str()),
+            Some("SECRET")
+        );
     }
 
     #[test]
