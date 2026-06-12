@@ -8024,3 +8024,17 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - Remote epic remaining: TSK-659 (LSP pipe), the push loop (fs.watch +
   transcript.follow + search streaming), TSK-660 (TreeSitter). Soak round 2 quiet so
   far; round 3 (wave-1 four) next quiet interval.
+## LOG +253 (2026-06-12 tick — soak round 3: 9 OF 10 ENGINES RUN RUST BY DEFAULT)
+
+- **Round 3 flipped** (3ffcdbd, installed): find/fuzzy/transcript/markdown default-ON
+  after quiet rounds 1-2. The owner's app now routes NINE of ten capabilities through
+  the Rust core; only cmEdit (the keystroke path) remains, flipping last and alone.
+- The flip's test migrations followed the established pattern, with one structural
+  consequence worth recording: the PARSE-03 nesting-guard tests retargeted to
+  renderSwiftPath — the guard's actual home. The routed render() now legitimately
+  renders nesting bombs FULLY (rust is iterative); "does not crash" holds on BOTH
+  paths by different means (guard vs parser architecture), each pinned by its own
+  test. The fallback/leak probes moved to cmEdit — the probe pool shrinks every round
+  by design; when cmEdit flips, those probes must switch to env-pinning.
+- Next: cmEdit flip after soak, then STAGE B (gate removal + twin deletion, owner-
+  gated per engine) — the actual Swift-core shrinkage the owner asked for.
