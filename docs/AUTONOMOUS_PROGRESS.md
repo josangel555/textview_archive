@@ -8457,3 +8457,17 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   worked; remaining tails are VM/owner glances. The board's biggest
   unblockers remain the three owner answers (TSK-660 caps, TSK-649
   stage B, GUI glance batch).
+
+## LOG +278 (2026-06-12 tick — VM WebView lane green for the new suites; TSK-639 VALIDATED; fresh soak bundle installed)
+
+- **The two new gated suites ran FOR REAL in their lane on the VM**
+  (test-in-vm.sh quick → MDV_RUN_WEBVIEW_TESTS=1: 53 lane tests, exit 0,
+  zero failures; MultiCursor at [45/53], PDFExport at [51-52/53]).
+  TSK-639 → **validated** (rendered behavior now has the VM-lane coverage
+  the policy requires). TSK-638 holds at fixed honestly: the modal ⌘P
+  panel is the one surface no automated test can reach (owner glance).
+- **Fresh soak bundle installed** at /Applications/TextView.app — the
+  owner's next launch carries print/PDF export, multi-cursor, LSP
+  rename/code-actions, and the MDV_REMOTE_SOCKET remote attach.
+- Owner-answer queue unchanged and now the only blockers: TSK-660 caps,
+  TSK-649 stage B, GUI glance batch (+ the ⌘P panel glance riding it).
