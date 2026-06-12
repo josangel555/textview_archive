@@ -7820,3 +7820,21 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - Adapter scoreboard: csv/diff/hex/hexSearch/indent (pre-existing) + find + fuzzy wired,
   all default-OFF. Remaining wave 1: TSK-647 (transcript), TSK-648 (markdown splice —
   two chunk kinds). Then TSK-652 transport seam → TSK-649 default-ON soak.
+
+## LOG +241 (2026-06-12 tick — TSK-647 validated: transcript adapter; max_events rides the wire)
+
+- **TSK-647 → validated** (7e60d91). `transcript` gate + RustTranscriptAdapter routing
+  all three projection consumers (timeline section, transcript search — redaction
+  ALWAYS on; monitor detail — pre-redacted, custom cap). The remote-minded piece:
+  `ParseRequest` gained `#[serde(default)] max_events` so the monitor's cap applies
+  SERVER-side (a remote core must never ship 200k events to a capped consumer); the
+  pre-existing round-trip test omits the field — additive compat pinned by accident of
+  history, kept deliberately. Non-UTF-8 data can't cross the String-typed wire →
+  `.badUTF8` → Swift fallback (tested). Carve-out: ClaudeSessionIndex streams per-line
+  record CLASSIFICATION, a different surface — migrates with transcript.list (TSK-658).
+  Teeth: timestamp divisor corruption → year-2534 dates → equality red.
+- **Test-fixture lesson (cheap but real):** my first redaction-barrier test asserted a
+  key named `sig` gets scrubbed — it doesn't, on EITHER engine (the barrier is exact-key
+  `signature`/`headers`); the parity test passing while the barrier test failed was the
+  tell that the TEST was wrong, not the engines. Fixture fixed to the real key.
+- Wave 1 remaining: TSK-648 (markdown adapter — the splice is two chunk kinds now).
