@@ -3188,6 +3188,16 @@ manufacture marginal code; if it finds a NEW clean model-core-extractable item i
 build it, else hold.
 
 ## DECISIONS NEEDED (owner — non-blocking; I proceed on best-judgment defaults meanwhile)
+- **⚠️ Bundle caps vs rust grammars** (2026-06-12, `TSK-660`, **parked — pinged**) — linking the
+  12 tree-sitter grammar parsers into `libmdvcore_ffi.a` puts the RELEASE build over both caps:
+  **63 MB bundle / 43 MB exec vs 48/26** (+15/+17). Debug builds (your installed soak bundle),
+  CI, headless + rust gates: all unaffected/green; the `.highlight` gate ships OFF so behavior
+  is unchanged. Options: (1) transient bump to ~64/44, reclaim at stage 4 (Swift grammar
+  deletion) — end state ~55/40 since grammars move from dlopen'd Frameworks/ dylibs INTO the
+  exec; (2) ship rust highlight as a dlopen'd dylib like the Swift lazy grammars — exec cap
+  intact, extra plumbing; (3) cargo-feature grammars OFF in the app's staticlib (remote-only
+  highlight) until remote is primary. **My recommendation: (2) if the 26 MB exec cap is a hard
+  principle, else (1).** Stage 3 (+10 grammar crates for 22-language parity) waits on this too.
 - **WebView teardown vs keep-alive** (2026-06-05, `TSK-113`, **parked**) — measured 108MB phys
   for one source-mode file (43MB IOSurface layer backing + ~49MB Swift heap + ~10MB WebKit
   linkage). Options: (A) keep-alive pool [current; fast switches, WebKit always linked]; (B) tear
@@ -8199,3 +8209,26 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   consumer routing + A/B suite + bundle measurement; stage 3 = +10 grammar
   crates (list goes on the ticket first, TSK-629 rider); stage 4 = Swift
   grammar deletion.
+
+## LOG +265 (2026-06-12 tick — TSK-660 stage 2: adapter consumed, size decision parked)
+
+- **RustHighlightAdapter lands (1cdb6f0):** `.highlight` gate (DEFAULT OFF —
+  the first post-stage-A port starts the same ladder), `mdvCoreHighlightRuns`
+  wrapper (nil = no grammar → routine Swift fallback, coverage never
+  narrows), `highlight_runs` in the InProcessTransport table, and ALL THREE
+  tokenize consumers routed (HighlightCacheActor source view,
+  RustMarkdownAdapter.enrich, HTMLRenderer code fences). Loopback A/B
+  extended: highlight byte-equal local-vs-remote, including the
+  unsupported-nil signal over the wire.
+- 6 adapter tests (precedence incl. explicit-toggle/env, app-contract
+  classifications + ordered-disjoint invariant, UTF-16 against the NSString
+  oracle, yaml fallback equality, the TSK-410 pin at adapter level). TEETH:
+  lang pass-through mutation → 4 red → restored. Headless gate EXIT=0.
+- **The stage-2 measurement found the real cost:** release
+  `check-bundle-size.sh` FAILS — 63 MB bundle / 43 MB exec vs 48/26 caps
+  (+15/+17: the 12 grammar C parsers enter the exec once Swift references
+  the export; debug/installed bundles + CI unaffected). PARKED to owner on
+  TSK-660 with three carry options (transient bump / dlopen dylib /
+  feature-off-in-app); DECISIONS NEEDED updated. Stage 3 (+10 grammars,
+  crate list pre-approval per TSK-629) and stage 4 (Swift grammar deletion,
+  reclaims the double-carry) queue behind the decision.
