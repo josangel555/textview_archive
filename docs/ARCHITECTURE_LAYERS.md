@@ -123,3 +123,60 @@ class GATES,CLIENT,MSGPACK,HDR,EXPORTS,CAPS,DEPS,TUI,WEB gray
 
 > Mermaid rendering glitch in this doc is tracked as TSK-650 (parked by owner
 > directive).
+
+---
+
+# Remote operation (owner target 2026-06-12): Rust-only server, thin Swift UI
+
+**What the Swift app calls "core" today is ONLY the engine families above.**
+Everything else is Swift-local — and that's the real gap for remote:
+
+| Surface | Today (Swift-local) | Remote requirement | Ticket |
+|---|---|---|---|
+| File read | `TextFileLoader` / `BinaryFileLoader` | `fs.read` **windowed** (offset+len; a 500 MB file never ships whole) | TSK-654 |
+| File tree / sidebar | `FileTreeService` | `fs.tree` / `fs.readdir` with listing caps + root containment | TSK-654 |
+| File watching | `FileWatcher` (FSEvents) | `fs.watch` **server-push** events — needs a duplex channel, not request/response | TSK-655 |
+| Cross-file search | `CrossFileSearch` | host-layer orchestration over `find_engine`, streamed results | TSK-656 |
+| Git | `GitClient` (spawns local git) | `git.*` family server-side (spawn server's git; no libgit2 dep) | TSK-657 |
+| Transcript discovery + tail | `FileManager` + Swift tail | `transcript.list/follow` on the server; redaction enforced at the WIRE | TSK-658 |
+| LSP / Terminal | local processes | server-side LSP proxy / remote PTY — hardest, spiked separately | TSK-659 |
+| In-document find bars | WKWebView / NSTextView / CM6 native search | stays client-side (it searches what's on screen) | — |
+
+The engine layer (`mdvcore-core`) is deliberately **sans-IO** — that stays.
+IO lives in a Rust **host layer**: locally that's the Swift app feeding bytes
+through FFI; remotely it's **`mdv-serve`** (TSK-653) doing its own IO where
+the files live. `mdv-web` already proves the shape (it browses/reads/searches
+in pure Rust) — but it serves HTML to humans; `mdv-serve` speaks the SAME
+MessagePack frames the FFI speaks, to the Swift thin client over a socket.
+
+```mermaid
+flowchart LR
+
+subgraph MAC["Mac (thin client)"]
+    UI2["SwiftUI app<br/>lenses, chrome, caret,<br/>native find bars"]
+    TRANS["CoreTransport seam (TSK-652)<br/>same frames, two carriers"]
+end
+
+subgraph LOCALMODE["Local mode (today)"]
+    FFI2["in-process FFI<br/>libmdvcore_ffi.a"]
+end
+
+subgraph SERVER["Remote server (Rust ONLY)"]
+    SERVE["mdv-serve (TSK-653)<br/>fs.*, git.*, transcript.*,<br/>watch push, DocId registry,<br/>audit log"]
+    CORE2["mdvcore-core<br/>all 9 engine families"]
+    FILES["files, git repos,<br/>~/.claude transcripts"]
+end
+
+UI2 --> TRANS
+TRANS -->|local| FFI2
+FFI2 --> CORE2
+TRANS -->|"socket (frames)"| SERVE
+SERVE --> CORE2
+SERVE --> FILES
+SERVE -.->|push: watch events,<br/>search/tail streams| TRANS
+```
+
+**Why the adapter-flip wave (TSK-645–649) is still the critical path:** the
+transport seam only helps if every consumer already routes through the
+adapters. Flip order: adapters → `CoreTransport` → `mdv-serve` + `fs` family →
+watch/push → git/transcript → LSP/terminal spike. Epic: **TSK-651**.
