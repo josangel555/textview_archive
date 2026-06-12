@@ -7995,3 +7995,20 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   "should be off" capability, which the new default silently satisfied... wrongly.
   Probe moved to a still-OFF capability. Every default flip will keep hunting tests
   that ASSUME defaults — the env-pinning pattern is now established in four suites.
+## LOG +251 (2026-06-12 tick — TSK-658 validated: redaction is a WIRE guarantee; transcripts discoverable)
+
+- **TSK-658 v1 → validated** (96d0a9a). The security centerpiece: mdv-serve routes
+  transcript_parse through `parse_wire_forced_redaction` — a redacting:false request
+  over the socket STILL returns scrubbed events (proven end-to-end in the loopback
+  suite; in-process keeps caller choice — the trust boundary is the SOCKET, not the
+  API). Teeth was vivid: reverting the routing reddened the test with "SECRET-BLOB"
+  visibly leaking in the assert diff.
+- transcript.list: fixed server-side base ($HOME/.claude/projects, --claude-dir
+  override), jsonl-only, recent-first, capped 512×256, ZERO client path input (no
+  traversal surface). MDV_CAP_TRANSCRIPT_LIST=1<<11 server-only. The loopback hello
+  test evolved to the containment relation (server mask ⊇ engine mask + exactly the
+  expected server-only extras per spawn config).
+- **The owner's original cloud-desktop use case is now end-to-end feasible**: tunnel +
+  mdv-serve, transcript.list to find sessions, windowed fs.read + forced-redacted
+  transcript_parse to watch them. Remaining: follow (push), TSK-656 search, TSK-659
+  LSP pipe, TSK-660 TreeSitter; soak round 3 next quiet interval.
