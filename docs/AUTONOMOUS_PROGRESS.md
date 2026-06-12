@@ -8100,3 +8100,14 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   (641 stage 1) + the import pipeline (642). What remains is one live work package:
   the Settings picker + Import… button + applying the active theme through the four
   surfaces (641 stage 2) — VM-validated, the natural next owner-visible win.
+## LOG +259 (2026-06-12 tick — TSK-641 stage 2: theming is owner-usable)
+
+- **TSK-641 stage 2 landed** (33583d2, installed): Settings → Appearance now offers
+  the full theme CATALOG (built-ins + user + VS Code imports) with Follow System, and
+  an Import VS Code Theme… button (open panel → importer → auto-select). The selection
+  drives the highlight surface (SyntaxTheme(from:)) and the rendered view (tokCSS
+  through both renderPage sites); nil selection stays byte-identical to legacy
+  (pinned); theme changes invalidate the rendered-HTML cache (teeth: red without it).
+- Both theming tickets now at fixed: 641 (engine, two of four surfaces live — CM6 +
+  chrome are the recorded VM-lane tail) and 642 (import, fully regression-guarded).
+  Owner can pick + import themes TODAY; validation rides the VM picker check.
