@@ -8503,3 +8503,19 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   with the TSK-306 answer.
 - Drain tally today: 372, 466, 639 validated; 628/662-665 earlier. The
   fixed lane is now ~entirely owner/VM-pixel-gated.
+
+## LOG +281 (2026-06-12 tick — TSK-643 SOLVED: the "unexplained host" is the owner's own VPN gateway)
+
+- **TSK-643 (security investigation) → fixed + parked for one-line owner
+  confirmation.** Three findings converge: (1) STATIC — the app's Swift
+  code has ZERO IP-capable call sites (only AF_UNIX for the remote core);
+  the sole IP-capable component is WebKit's subresource loader, which
+  TSK-635 (validated) now default-denies; (2) LIVE — the running app and
+  its WebKit networking helper hold zero internet sockets today;
+  (3) THE PEER — this Mac carries the the VPN client utun at
+  100.64.100.6→100.64.100.5, and **100.64.100.1 is that tunnel's
+  gateway**: the 2026-06-11 observation was app/WebKit traffic routed
+  through the owner's own VPN, pre-dating the TSK-635 default-deny
+  install. Residual risk: low. Recurrence recipe recorded on the ticket.
+- Owner-answer queue now: TSK-643 confirm (one line), TSK-660 caps,
+  TSK-649 stage B, TSK-306 validation bar, GUI glance batch.
