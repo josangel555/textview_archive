@@ -722,7 +722,15 @@ public struct ContentView: View {
                     zoom: model.zoom,
                     // L2: per-tab JS opt-in. Default-OFF lives in the
                     // model (absence of the tab id ⇒ false).
-                    javaScriptEnabled: model.htmlJavaScriptEnabled(forTabID: tab.id)
+                    javaScriptEnabled: model.htmlJavaScriptEnabled(forTabID: tab.id),
+                    printNonce: isActive ? model.renderedPrintRequest : 0,
+                    pdfExportNonce: isActive ? (model.renderedPDFExportRequest?.nonce ?? 0) : 0,
+                    pdfExportURL: model.renderedPDFExportRequest?.url,
+                    onPDFExportResult: { nonce, ok, message in
+                        Task { @MainActor in
+                            model.recordPDFExportResult(nonce: nonce, ok: ok, message: message)
+                        }
+                    }
                 )
                 .accessibilityIdentifier("mdv.htmlRendered")
             }

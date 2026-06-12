@@ -53,17 +53,32 @@ public struct HTMLRenderedView: NSViewRepresentable {
     /// returns `false` when the user hasn't opted the tab in). When this
     /// is `false` (the default) the WebView's JS engine is disabled.
     public let javaScriptEnabled: Bool
+    /// Print/Export-as-PDF (TSK-638): same nonce contract as
+    /// `MarkdownRenderedView` — print/createPDF run on the live WebView,
+    /// AFTER sanitization (they render what the page shows, nothing more).
+    public let printNonce: Int
+    public let pdfExportNonce: Int
+    public let pdfExportURL: URL?
+    public let onPDFExportResult: ((Int, Bool, String) -> Void)?
 
     public init(
         rawHTML: String,
         documentURL: URL,
         zoom: Double = 1.0,
-        javaScriptEnabled: Bool = false
+        javaScriptEnabled: Bool = false,
+        printNonce: Int = 0,
+        pdfExportNonce: Int = 0,
+        pdfExportURL: URL? = nil,
+        onPDFExportResult: ((Int, Bool, String) -> Void)? = nil
     ) {
         self.rawHTML = rawHTML
         self.documentURL = documentURL
         self.zoom = zoom
         self.javaScriptEnabled = javaScriptEnabled
+        self.printNonce = printNonce
+        self.pdfExportNonce = pdfExportNonce
+        self.pdfExportURL = pdfExportURL
+        self.onPDFExportResult = onPDFExportResult
     }
 
     /// Shared process pool (same rationale as `MarkdownRenderedView`):
@@ -135,6 +150,31 @@ public struct HTMLRenderedView: NSViewRepresentable {
         if abs(webView.pageZoom - CGFloat(zoom)) > 0.001 {
             webView.pageZoom = CGFloat(zoom)
         }
+        // Print / Export-as-PDF (TSK-638) — shared mechanics with the
+        // markdown view; the L1 sanitize above already ran, so the PDF
+        // can only ever contain what the page renders.
+        if coord.lastPrintNonce != printNonce {
+            coord.lastPrintNonce = printNonce
+            MarkdownRenderedView.runPrintOperation(webView)
+        }
+        if coord.lastPDFExportNonce != pdfExportNonce, let url = pdfExportURL {
+            coord.lastPDFExportNonce = pdfExportNonce
+            let nonce = pdfExportNonce
+            let report = onPDFExportResult
+            webView.createPDF(configuration: WKPDFConfiguration()) { result in
+                switch result {
+                case .success(let data):
+                    do {
+                        try data.write(to: url, options: .atomic)
+                        report?(nonce, true, url.path)
+                    } catch {
+                        report?(nonce, false, "write failed: \(error.localizedDescription)")
+                    }
+                case .failure(let error):
+                    report?(nonce, false, "createPDF failed: \(error.localizedDescription)")
+                }
+            }
+        }
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -152,6 +192,8 @@ public struct HTMLRenderedView: NSViewRepresentable {
 
     @MainActor
     public final class Coordinator: NSObject, WKNavigationDelegate {
+        var lastPrintNonce: Int = 0
+        var lastPDFExportNonce: Int = 0
         /// Last document string handed to `loadHTMLString`. Gate against
         /// redundant reloads on @Published churn.
         var lastDocument: String?

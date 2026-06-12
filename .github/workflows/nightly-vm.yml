@@ -64,6 +64,7 @@ jobs:
             --filter ViewerUITests.FormatToggleTests \
             --filter ViewerUITests.MermaidHostingTests \
             --filter ViewerUITests.PaneRetentionMountProbeTests \
+            --filter ViewerUITests.PDFExportWebViewTests \
             --filter ViewerUITests.RenderedFindBarTests
 
       - name: Upload test results
