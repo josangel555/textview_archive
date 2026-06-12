@@ -35,12 +35,12 @@ fn lints_clippy_section(toml: &str) -> &str {
     let Some(start) = toml.find("[lints.clippy]") else {
         return "";
     };
-    let after_header = &toml[start..];
+    let after_header = toml.get(start..).unwrap_or("");
     // Skip past the header line itself, then find the next top-level table.
     let body_start = after_header.find('\n').map_or(after_header.len(), |i| i + 1);
-    let body = &after_header[body_start..];
+    let body = after_header.get(body_start..).unwrap_or("");
     match body.find("\n[") {
-        Some(end) => &body[..end],
+        Some(end) => body.get(..end).unwrap_or(body),
         None => body,
     }
 }
@@ -64,7 +64,7 @@ fn is_denied(section: &str, name: &str) -> bool {
 }
 
 #[test]
-fn ffi_manifest_denies_the_four_no_panic_restriction_lints() {
+fn ffi_manifest_denies_the_no_panic_restriction_lints() {
     let section = lints_clippy_section(FFI_CARGO_TOML);
     assert!(
         !section.is_empty(),
@@ -72,7 +72,8 @@ fn ffi_manifest_denies_the_four_no_panic_restriction_lints() {
          crate opts out of workspace inheritance) is gone"
     );
 
-    for lint in ["unwrap_used", "expect_used", "indexing_slicing", "panic"] {
+    // string_slice joined the wall in TSK-566 (the audit's enforcement hole).
+    for lint in ["unwrap_used", "expect_used", "indexing_slicing", "string_slice", "panic"] {
         assert!(
             is_denied(section, lint),
             "ffi/Cargo.toml [lints.clippy] no longer denies `{lint}`. These four \

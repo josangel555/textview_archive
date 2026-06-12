@@ -79,6 +79,12 @@ pedantic = { level = "warn", priority = -1 }
 unwrap_used = "deny"
 expect_used = "deny"
 indexing_slicing = "deny"
+# TSK-566: `&s[a..b]` on strings panics on non-char-boundary/out-of-range and
+# is a SEPARATE lint from indexing_slicing. Measured 0 violations at adoption
+# (the get-form discipline already covered it) — the deny just locks the door.
+# The audit's second hole (arithmetic overflow) measured 205 sites; denying
+# arithmetic_side_effects is a dedicated sweep, recorded on the ticket.
+string_slice = "deny"
 panic = "deny"
 # Hygiene.
 module_name_repetitions = "allow"

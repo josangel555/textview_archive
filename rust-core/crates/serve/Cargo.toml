@@ -33,6 +33,7 @@ pedantic = { level = "warn", priority = -1 }
 unwrap_used = "deny"
 expect_used = "deny"
 indexing_slicing = "deny"
+string_slice = "deny"
 panic = "deny"
 module_name_repetitions = "allow"
 allow_attributes_without_reason = "warn"

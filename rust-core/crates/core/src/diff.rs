@@ -165,10 +165,10 @@ pub fn parse(text: &str) -> Vec<File> {
             continue;
         }
         match raw.as_bytes().first() {
-            Some(b' ') => hunk.append(LineKind::Context, &raw[1..]),
-            Some(b'+') => hunk.append(LineKind::Added, &raw[1..]),
-            Some(b'-') => hunk.append(LineKind::Removed, &raw[1..]),
-            Some(b'\\') => hunk.append(LineKind::NoNewline, &raw[1..]),
+            Some(b' ') => hunk.append(LineKind::Context, raw.get(1..).unwrap_or("")),
+            Some(b'+') => hunk.append(LineKind::Added, raw.get(1..).unwrap_or("")),
+            Some(b'-') => hunk.append(LineKind::Removed, raw.get(1..).unwrap_or("")),
+            Some(b'\\') => hunk.append(LineKind::NoNewline, raw.get(1..).unwrap_or("")),
             // Tolerate unknown prefixes (e.g. combined diff): whole line as context.
             _ => hunk.append(LineKind::Context, raw),
         }
@@ -197,16 +197,16 @@ fn parse_diff_git_paths(rest: &str) -> (String, String) {
     // (1) Quoted form: `"a/…" "b/…"`.
     if rest.starts_with('"')
         && let Some(mid) = rest.find("\" \"") {
-            let a = &rest[..mid];
-            let b = &rest[mid + 3..];
+            let a = rest.get(..mid).unwrap_or("");
+            let b = rest.get(mid + 3..).unwrap_or("");
             let bs = b.strip_suffix('"').unwrap_or(b);
             return (strip_path_prefix(&format!("{a}\"")), strip_path_prefix(bs));
         }
     // (2) Equal-prefix same-file case: a ` b/` where the prefix is `a/PATH` and
     // the suffix equals `PATH`.
     for (idx, _) in rest.match_indices(" b/") {
-        let a_part = &rest[..idx];
-        let b_part = &rest[idx + 3..];
+        let a_part = rest.get(..idx).unwrap_or("");
+        let b_part = rest.get(idx + 3..).unwrap_or("");
         if let Some(a_path) = a_part.strip_prefix("a/")
             && a_path == b_part {
                 return (a_path.to_string(), b_part.to_string());
@@ -214,8 +214,8 @@ fn parse_diff_git_paths(rest: &str) -> (String, String) {
     }
     // (3) Rename / asymmetric — fall back to the LAST ` b/`.
     if let Some(idx) = rest.rfind(" b/") {
-        let a = &rest[..idx];
-        let b = &rest[idx + 3..];
+        let a = rest.get(..idx).unwrap_or("");
+        let b = rest.get(idx + 3..).unwrap_or("");
         return (strip_path_prefix(a), b.to_string());
     }
     // (4) Last resort: split at first space. Mirror Swift's
@@ -241,7 +241,7 @@ fn parse_diff_git_paths(rest: &str) -> (String, String) {
 fn strip_path_prefix(s: &str) -> String {
     let mut t = s.trim().to_string();
     if t.starts_with('"') && t.ends_with('"') && t.len() >= 2 {
-        t = t[1..t.len() - 1].to_string();
+        t = t.get(1..t.len() - 1).unwrap_or(&t).to_string();
     }
     if let Some(rest) = t.strip_prefix("a/").or_else(|| t.strip_prefix("b/")) {
         t = rest.to_string();
@@ -253,9 +253,9 @@ fn strip_path_prefix(s: &str) -> String {
 fn parse_hunk_header(raw: &str) -> Option<PartialHunk> {
     let first = raw.find("@@")?;
     let after_first = first + 2;
-    let second_rel = raw[after_first..].find("@@")?;
+    let second_rel = raw.get(after_first..)?.find("@@")?;
     let second = after_first + second_rel;
-    let coords = raw[after_first..second].trim();
+    let coords = raw.get(after_first..second).unwrap_or("").trim();
     // "-10,5 +12,7" or "-10 +12".
     let parts: Vec<&str> = coords.split(' ').filter(|s| !s.is_empty()).collect();
     let [old_part, new_part] = parts.as_slice() else {
@@ -266,7 +266,7 @@ fn parse_hunk_header(raw: &str) -> Option<PartialHunk> {
     }
     let (old_start, old_count) = parse_coord(old_part.get(1..).unwrap_or(""));
     let (new_start, new_count) = parse_coord(new_part.get(1..).unwrap_or(""));
-    let tail = raw[second + 2..].trim().to_string();
+    let tail = raw.get(second + 2..).unwrap_or("").trim().to_string();
     Some(PartialHunk::new(old_start, old_count, new_start, new_count, tail))
 }
 
@@ -466,9 +466,9 @@ pub fn hunk_marks(diff: &str) -> BTreeMap<i64, DiffMark> {
             // up to the first space or comma (matches Swift exactly: a header
             // without that terminator leaves line_in_new unchanged).
             if let Some(plus) = line.find('+') {
-                let rest = &line[plus + 1..];
+                let rest = line.get(plus + 1..).unwrap_or("");
                 if let Some(end) = rest.find([' ', ','])
-                    && let Ok(n) = rest[..end].parse::<i64>() {
+                    && let Ok(n) = rest.get(..end).unwrap_or("").parse::<i64>() {
                         // Clamp like parse_coord (TSK-576): the header is
                         // attacker-controlled, and an unclamped i64::MIN
                         // overflows the `- 1` (panic in dev, wrap in release).

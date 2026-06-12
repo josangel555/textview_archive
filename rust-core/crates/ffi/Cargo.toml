@@ -26,7 +26,7 @@ unsafe_op_in_unsafe_fn = "deny"
 all = { level = "deny", priority = -1 }
 undocumented_unsafe_blocks = "deny"
 multiple_unsafe_ops_per_block = "deny"
-# No-panic enforcement on the C ABI edge. These four are clippy RESTRICTION
+# No-panic enforcement on the C ABI edge. These five are clippy RESTRICTION
 # lints (NOT in the `all`/pedantic/correctness groups) so they fire only where
 # opted in — they are NOT covered by `all = deny` above. This crate opts OUT of
 # workspace lint inheritance (cargo #13157), so unlike `mdvcore-core` it does
@@ -38,6 +38,7 @@ multiple_unsafe_ops_per_block = "deny"
 unwrap_used = "deny"
 expect_used = "deny"
 indexing_slicing = "deny"
+string_slice = "deny"
 panic = "deny"
 
 [dependencies]

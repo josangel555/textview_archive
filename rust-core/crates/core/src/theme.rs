@@ -123,9 +123,9 @@ pub fn parse_hex(s: &str) -> Option<Rgb> {
     if body.len() != 6 || !body.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
     }
-    let r = u8::from_str_radix(&body[0..2], 16).ok()?;
-    let g = u8::from_str_radix(&body[2..4], 16).ok()?;
-    let b = u8::from_str_radix(&body[4..6], 16).ok()?;
+    let r = u8::from_str_radix(body.get(0..2)?, 16).ok()?;
+    let g = u8::from_str_radix(body.get(2..4)?, 16).ok()?;
+    let b = u8::from_str_radix(body.get(4..6)?, 16).ok()?;
     Some(Rgb::new(r, g, b))
 }
 
