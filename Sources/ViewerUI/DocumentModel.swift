@@ -2858,6 +2858,15 @@ public final class DocumentModel: ObservableObject {
         return SyntaxTheme.resolved(forAppearance: NSApp?.effectiveAppearance)
     }
 
+    /// TSK-641 (editor surface): the CM6 palette of the SELECTED catalog
+    /// theme, or nil when no theme is selected (the editor then keeps the
+    /// TSK-602 appearance-keyed legacy pair). Derived, not stored — a
+    /// selectedThemeID change republishes and the editor coordinator's
+    /// palette dedupe decides whether a setTheme actually ships.
+    public var activeThemeCMPalette: [String: String]? {
+        activeThemeDefinition.map { SyntaxTheme(from: $0).cmPalette }
+    }
+
     /// The rendered view's extra stylesheet: the mermaid shim always, plus
     /// the active theme's token override when a catalog theme is selected.
     /// Pure composition — unit-tested; both renderPage sites use it.

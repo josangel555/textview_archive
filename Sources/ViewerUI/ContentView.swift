@@ -613,6 +613,7 @@ public struct ContentView: View {
                     fontSize: 13 * model.zoom,
                     language: lang,
                     isDarkTheme: model.activeTheme.name == .xcodeDark,
+                    themePalette: model.activeThemeCMPalette,
                     wordWrap: model.sourceWordWrap,
                     lineNumbers: true,
                     indentation: model.editorIndentation,

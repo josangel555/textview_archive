@@ -28,6 +28,11 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
     public let fontSize: CGFloat
     public let language: HighlightLanguage
     public let isDarkTheme: Bool
+    /// TSK-641 (theme engine, editor surface): the resolved CM palette of
+    /// the USER-SELECTED theme (`DocumentModel.activeThemeCMPalette`).
+    /// nil = no theme selected → the appearance-keyed legacy pair
+    /// (TSK-602 behavior, byte-identical).
+    public let themePalette: [String: String]?
     public let wordWrap: Bool
     public let readOnly: Bool
     public let lineNumbers: Bool
@@ -99,6 +104,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         fontSize: CGFloat = 13,
         language: HighlightLanguage = .markdown,
         isDarkTheme: Bool = false,
+        themePalette: [String: String]? = nil,
         wordWrap: Bool = true,
         readOnly: Bool = false,
         lineNumbers: Bool = true,
@@ -133,6 +139,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         self.fontSize = fontSize
         self.language = language
         self.isDarkTheme = isDarkTheme
+        self.themePalette = themePalette
         self.wordWrap = wordWrap
         self.readOnly = readOnly
         self.lineNumbers = lineNumbers
@@ -257,6 +264,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         private var pendingFontSize: CGFloat?
         private var pendingLanguage: HighlightLanguage?
         private var pendingDark: Bool?
+        private var pendingThemePalette: [String: String]?
         private var pendingWrap: Bool?
         private var pendingReadOnly: Bool?
         private var pendingLineNumbers: Bool?
@@ -286,6 +294,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         private var lastSentFontSize: CGFloat?
         private var lastSentLanguage: HighlightLanguage?
         private var lastSentDark: Bool?
+        private var lastSentPalette: [String: String]?
         private var lastSentWrap: Bool?
         private var lastSentReadOnly: Bool?
         private var lastSentLineNumbers: Bool?
@@ -328,6 +337,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             self.pendingFontSize = view.fontSize
             self.pendingLanguage = view.language
             self.pendingDark = view.isDarkTheme
+            self.pendingThemePalette = view.themePalette
             self.pendingWrap = view.wordWrap
             self.pendingReadOnly = view.readOnly
             self.pendingLineNumbers = view.lineNumbers
@@ -372,15 +382,21 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         /// against `lastSent*` so over-calling is cheap.
         func applyPendingState() {
             guard isReady, let webView = webView else { return }
-            if let dark = pendingDark, dark != lastSentDark {
-                lastSentDark = dark
-                // TSK-602: ship the SyntaxTheme palette so the editor
-                // colors match the ViewOnly source view exactly. The two
-                // shipped themes are appearance-keyed, same as the source
-                // view's `SyntaxTheme.resolved(forAppearance:)`.
-                let theme = SyntaxTheme.named(dark ? .xcodeDark : .xcodeLight)
-                dispatch(.setTheme(name: dark ? "dark" : "light",
-                                   palette: theme.cmPalette), webView: webView)
+            // TSK-602: ship the SyntaxTheme palette so the editor colors
+            // match the ViewOnly source view exactly. TSK-641 (editor
+            // surface): a user-SELECTED theme's palette wins; nil falls
+            // back to the appearance-keyed legacy pair. A palette change
+            // alone (theme switch under the same appearance) must
+            // re-dispatch, so the dedupe compares BOTH channels.
+            if let dark = pendingDark {
+                let wire = CMEditorThemeWire.payload(
+                    dark: dark, themePalette: pendingThemePalette)
+                if dark != lastSentDark || wire.palette != lastSentPalette {
+                    lastSentDark = dark
+                    lastSentPalette = wire.palette
+                    dispatch(.setTheme(name: wire.name, palette: wire.palette),
+                             webView: webView)
+                }
             }
             if let lang = pendingLanguage, lang != lastSentLanguage {
                 lastSentLanguage = lang
@@ -998,5 +1014,19 @@ public func jsLanguageName(for lang: HighlightLanguage) -> String {
     case .python:      return "python"
     case .json:        return "json"
     default:           return "plain"
+    }
+}
+
+/// TSK-641 (editor surface): resolve what `setTheme` should carry for the
+/// current appearance + selected theme. Pure — host-testable without a
+/// WKWebView. A selected theme's palette wins; nil reproduces the TSK-602
+/// appearance-keyed legacy pair byte-for-byte.
+enum CMEditorThemeWire {
+    static func payload(
+        dark: Bool, themePalette: [String: String]?
+    ) -> (name: String, palette: [String: String]) {
+        let palette = themePalette
+            ?? SyntaxTheme.named(dark ? .xcodeDark : .xcodeLight).cmPalette
+        return (dark ? "dark" : "light", palette)
     }
 }
