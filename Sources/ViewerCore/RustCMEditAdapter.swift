@@ -18,9 +18,14 @@ public enum RustCMEditAdapter {
     }
 
     /// Same, but also reporting which engine produced the result (A/B / diag).
-    public static func outcome(_ edits: [CMEdit], to base: String) -> CoreOutcome<String?> {
+    public static func outcome(
+        _ edits: [CMEdit],
+        to base: String,
+        defaults: UserDefaults = .standard,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> CoreOutcome<String?> {
         RustCoreFallback.run(
-            .cmEdit,
+            .cmEdit, defaults: defaults, environment: environment,
             rust: {
                 try mdvCoreApplyCMEdits(
                     base: base,

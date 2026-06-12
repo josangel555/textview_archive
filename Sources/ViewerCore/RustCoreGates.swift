@@ -69,8 +69,11 @@ public enum RustCoreCapability: String, CaseIterable, Sendable {
         // fresh ports with cross-language A/B parity + adapter routing
         // tests, all fail-safe behind RustCoreFallback.
         case .fuzzy, .find, .transcript, .markdown: return true
-        // cmEdit flips LAST and alone (the keystroke hot path).
-        case .cmEdit: return false
+        // Round 4 (2026-06-12, rounds 1-3 quiet): cmEdit — the keystroke
+        // hot path, deliberately last and alone. STAGE A COMPLETE: every
+        // capability now routes Rust by default; the Swift twins are
+        // fallback-only pending stage B deletion (owner-gated).
+        case .cmEdit: return true
         }
     }
 }

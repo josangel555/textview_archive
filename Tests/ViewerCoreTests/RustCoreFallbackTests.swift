@@ -31,11 +31,14 @@ final class RustCoreFallbackTests: XCTestCase {
     }
 
     private var gateOnEnv: [String: String] { [cap.envVar: "1"] }
+    /// STAGE A COMPLETE: no capability ships default-OFF anymore — gate-off
+    /// behavior is exercised via the env kill switch.
+    private var gateOffEnv: [String: String] { [cap.envVar: "0"] }
 
     func test_gateOff_runsSwift_taggedGateOff_andSkipsRust() {
         var rustCalled = false
         let out = RustCoreFallback.run(
-            cap, defaults: defaults, environment: [:],
+            cap, defaults: defaults, environment: gateOffEnv,
             rust: { rustCalled = true; return "rust" },
             swift: { "swift" })
         XCTAssertEqual(out.value, "swift")

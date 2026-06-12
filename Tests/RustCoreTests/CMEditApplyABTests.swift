@@ -50,11 +50,18 @@ final class CMEditApplyABTests: XCTestCase {
     }
 
     func test_gate_off_uses_swift_and_matches() {
-        // Through the adapter with the gate OFF (default): Swift path, and it
-        // equals calling CMEditApplier directly.
+        // Env-pinned OFF (the shipped default is ON since TSK-649 round 4).
         let edits = [e(2, 2, "Z")]
-        let o = RustCMEditAdapter.outcome(edits, to: "hello")
+        let o = RustCMEditAdapter.outcome(
+            edits, to: "hello", environment: ["MDV_RUST_CMEDIT": "0"])
         XCTAssertEqual(o.source, .swiftBecauseGateOff)
+        XCTAssertEqual(o.value, CMEditApplier.apply(edits, to: "hello"))
+    }
+
+    func test_shippedDefault_routesRust_andMatchesSwift() {
+        let edits = [e(2, 2, "Z")]
+        let o = RustCMEditAdapter.outcome(edits, to: "hello", environment: [:])
+        XCTAssertEqual(o.source, .rust, "cmEdit ships default-ON (round 4 — stage A complete)")
         XCTAssertEqual(o.value, CMEditApplier.apply(edits, to: "hello"))
     }
 }
