@@ -67,10 +67,11 @@ extension DocumentModel: AutomationHost {
         case .binary, .preview, .error, .empty, .loading, .hostedView:
             return []
         }
-        // FindEngine throws only on invalid regex — surface as an
-        // empty result here; the catalog can be enhanced later to
-        // round-trip a tool-error response.
-        return (try? FindEngine().search(in: text, query: query)) ?? []
+        // Routed through the `.find` gate (TSK-645): Rust core when on,
+        // the Swift FindEngine otherwise. Invalid patterns surface as an
+        // empty result (the historical contract); the catalog can be
+        // enhanced later to round-trip a tool-error response.
+        return RustFindAdapter.search(in: text, query: query)
     }
 
     public func automationVisibleText() -> String {
