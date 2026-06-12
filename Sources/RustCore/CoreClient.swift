@@ -789,3 +789,85 @@ public func mdvCoreFindSearch(
         throw CoreError.decode("\(e)")
     }
 }
+
+// MARK: - Claude transcript parse (migration slice — TSK-632)
+
+/// One projected transcript event from the Rust core — mirrors the Swift
+/// `ClaudeEvent.Kind` cases. `timestampMs` is epoch milliseconds (the
+/// `withFractionalSeconds` precision); divergence from the Swift twin: a
+/// record with neither `uuid` nor `id` gets a deterministic `line-<n>` id
+/// rather than a random UUID (the core reads no randomness).
+public struct CoreTranscriptEvent: Equatable, Sendable {
+    public enum Kind: Equatable, Sendable {
+        case userMessage(text: String)
+        case assistantMessage(text: String)
+        case thinking(text: String)
+        case toolUse(id: String, name: String, input: [String: String])
+        case toolResult(toolUseId: String, summary: String)
+    }
+
+    public let id: String
+    public let timestampMs: Int64?
+    public let kind: Kind
+}
+
+/// Parse a Claude JSONL transcript through the Rust core (STATELESS,
+/// `{text, redacting}` frame in, `{events:[…]}` frame out — tolerant framing,
+/// torn/invalid lines skipped, the S6/S7 line-byte/event caps applied).
+/// `redacting: true` routes every record through the TSK-245 barrier
+/// (signature/headers/image-blob scrub) and is REQUIRED for surfacing
+/// consumers. Throws `CoreError` only on a bridge FAULT so an adapter can
+/// fall back to the Swift `ClaudeLogParser`.
+public func mdvCoreTranscriptParse(text: String, redacting: Bool) throws -> [CoreTranscriptEvent] {
+    let request = MsgPackValue.map([
+        (.string("text"), .string(text)),
+        (.string("redacting"), .bool(redacting)),
+    ])
+    guard let body = try mdvFrameCall(
+        "transcript_parse", mdvcore_transcript_parse, request: request) else {
+        throw CoreError.decode("empty transcript_parse response frame")
+    }
+    var reader = MsgPackReader(body)
+    do {
+        let map = try reader.decode().mapValue()
+        guard let events = map["events"] else { throw CoreError.decode("missing 'events'") }
+        return try events.arrayValue().map { el in
+            let m = try el.mapValue()
+            let id = try m.require("id").stringValue()
+            var timestampMs: Int64?
+            if let ts = m["timestamp_ms"], !ts.isNil {
+                timestampMs = try ts.i64Value()
+            }
+            let kind: CoreTranscriptEvent.Kind
+            switch try m.require("kind").stringValue() {
+            case "user":
+                kind = .userMessage(text: try m.require("text").stringValue())
+            case "assistant":
+                kind = .assistantMessage(text: try m.require("text").stringValue())
+            case "thinking":
+                kind = .thinking(text: try m.require("text").stringValue())
+            case "tool_use":
+                var input: [String: String] = [:]
+                for pair in try m.require("input").arrayValue() {
+                    let kv = try pair.arrayValue()
+                    if kv.count == 2 {
+                        input[try kv[0].stringValue()] = try kv[1].stringValue()
+                    }
+                }
+                kind = .toolUse(
+                    id: id,
+                    name: try m.require("name").stringValue(),
+                    input: input)
+            case "tool_result":
+                kind = .toolResult(
+                    toolUseId: try m.require("tool_use_id").stringValue(),
+                    summary: try m.require("summary").stringValue())
+            case let unknown:
+                throw CoreError.decode("unknown transcript event kind '\(unknown)'")
+            }
+            return CoreTranscriptEvent(id: id, timestampMs: timestampMs, kind: kind)
+        }
+    } catch let e as MsgPackError {
+        throw CoreError.decode("\(e)")
+    }
+}

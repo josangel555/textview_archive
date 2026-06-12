@@ -49,13 +49,14 @@ final class BridgeTests: XCTestCase {
         let caps = CoreABI.capabilities
         XCTAssertTrue(caps.contains(.requiredByShippingAdapters),
                       "linked core is missing shipped families: raw=\(caps.rawValue)")
-        // Reserved bits stay OFF until their port lands (TSK-631/632) —
+        // Reserved bits stay OFF until their port lands (TSK-631) —
         // flipping one here and in the Rust twin is PART of landing the port.
         XCTAssertFalse(caps.contains(.markdown))
-        XCTAssertFalse(caps.contains(.transcript))
-        // Landed ports advertise: fuzzy (TSK-633), find (TSK-630).
+        // Landed ports advertise: fuzzy (TSK-633), find (TSK-630),
+        // transcript (TSK-632).
         XCTAssertTrue(caps.contains(.fuzzy))
         XCTAssertTrue(caps.contains(.find))
+        XCTAssertTrue(caps.contains(.transcript))
     }
 
     func testCapabilityBits_areABIAndNeverRenumber() {

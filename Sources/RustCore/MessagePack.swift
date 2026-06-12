@@ -163,6 +163,11 @@ struct MsgPackReader {
 // MARK: - Typed accessors over a decoded map
 
 extension MsgPackValue {
+    var isNil: Bool {
+        if case .nilValue = self { return true }
+        return false
+    }
+
     func mapValue() throws -> [String: MsgPackValue] {
         guard case let .map(pairs) = self else {
             throw MsgPackError.typeMismatch("expected map")
@@ -200,6 +205,14 @@ extension MsgPackValue {
         case let .uint(u): return u
         case let .int(i) where i >= 0: return UInt64(i)
         default: throw MsgPackError.typeMismatch("expected non-negative int")
+        }
+    }
+
+    func i64Value() throws -> Int64 {
+        switch self {
+        case let .int(i): return i
+        case let .uint(u) where u <= UInt64(Int64.max): return Int64(u)
+        default: throw MsgPackError.typeMismatch("expected int")
         }
     }
 

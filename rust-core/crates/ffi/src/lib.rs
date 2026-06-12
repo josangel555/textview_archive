@@ -58,6 +58,7 @@ use mdvcore_core::fuzzy;
 use mdvcore_core::hex;
 use mdvcore_core::indent;
 use mdvcore_core::session::{CsvSession, OpenError};
+use mdvcore_core::transcript;
 use mdvcore_core::wire;
 
 pub use buf::MdvBuf;
@@ -139,7 +140,7 @@ pub const MDV_CAP_CM_APPLY: u64 = 1 << 4;
 pub const MDV_CAP_FIND: u64 = 1 << 5;
 /// RESERVED (TSK-631): markdown→HTML — not yet implemented, bit pre-assigned.
 pub const MDV_CAP_MARKDOWN: u64 = 1 << 6;
-/// RESERVED (TSK-632): transcript/JSONL parse — not yet implemented.
+/// Claude transcript/JSONL parse (`mdvcore_transcript_parse`) — TSK-632.
 pub const MDV_CAP_TRANSCRIPT: u64 = 1 << 7;
 /// Fuzzy ranking (`mdvcore_fuzzy_rank`) — TSK-633.
 pub const MDV_CAP_FUZZY: u64 = 1 << 8;
@@ -153,7 +154,8 @@ pub const MDV_CAPABILITIES: u64 = MDV_CAP_CSV_SESSION
     | MDV_CAP_INDENT
     | MDV_CAP_CM_APPLY
     | MDV_CAP_FUZZY
-    | MDV_CAP_FIND;
+    | MDV_CAP_FIND
+    | MDV_CAP_TRANSCRIPT;
 
 /// Runtime capability mask of the LINKED library. Returns 0 (no capabilities
 /// — every gated feature disabled, never UB) if the guard trips. Callers must
@@ -302,6 +304,31 @@ pub unsafe extern "C" fn mdvcore_find_search(
     out_buf: *mut MdvBuf,
 ) -> MdvStatus {
     ffi_frame_body!(req, req_len, out_buf, find_engine::search_wire)
+}
+
+/// Parse a Claude JSONL transcript (stateless, TSK-632). `req`/`req_len` is a
+/// `{text, redacting}` MessagePack request frame; the result is written to
+/// `out_buf` as an `{events:[{id, timestamp_ms, kind, text, name, input,
+/// tool_use_id, summary}]}` response frame — `kind` discriminates which
+/// optional fields are set; `redacting: true` routes every record through the
+/// TSK-245 barrier (signature/headers/image-blob scrub) and is REQUIRED for
+/// surfacing consumers. Tolerant framing: torn/invalid lines are skipped,
+/// never an error. Caller MUST call [`mdvcore_buf_free`].
+///
+/// # Returns
+/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::WireError`], or
+/// [`MdvStatus::Panic`].
+///
+/// # Safety
+/// `req` must point to `req_len` valid bytes (or be null with `req_len == 0`).
+/// `out_buf` must be a valid, writable pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_transcript_parse(
+    req: *const u8,
+    req_len: usize,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_frame_body!(req, req_len, out_buf, transcript::parse_wire)
 }
 
 /// Render a HEX dump (stateless). `bytes`/`len` is the raw byte buffer to dump;

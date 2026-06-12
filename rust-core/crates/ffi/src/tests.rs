@@ -103,8 +103,8 @@ fn reserved_capability_bits_stay_off_until_their_exports_land() {
     // into nothing. This test is edited in the SAME commit as the port.
     let mask = mdvcore_capabilities();
     assert_eq!(mask & MDV_CAP_MARKDOWN, 0, "markdown not ported yet (TSK-631)");
-    assert_eq!(mask & MDV_CAP_TRANSCRIPT, 0, "transcript not ported yet (TSK-632)");
-    // And the shipped families are ON (fuzzy: TSK-633; find: TSK-630).
+    // And the shipped families are ON (fuzzy: TSK-633; find: TSK-630;
+    // transcript: TSK-632).
     for (bit, name) in [
         (MDV_CAP_CSV_SESSION, "csv"),
         (MDV_CAP_DIFF, "diff"),
@@ -113,6 +113,7 @@ fn reserved_capability_bits_stay_off_until_their_exports_land() {
         (MDV_CAP_CM_APPLY, "cm_apply"),
         (MDV_CAP_FUZZY, "fuzzy"),
         (MDV_CAP_FIND, "find"),
+        (MDV_CAP_TRANSCRIPT, "transcript"),
     ] {
         assert_ne!(mask & bit, 0, "shipped family '{name}' must advertise its bit");
     }
@@ -529,6 +530,7 @@ frame_export_misuse_matrix!(cm_apply_misuse_matrix, mdvcore_cm_apply);
 frame_export_misuse_matrix!(diff_parse_misuse_matrix, mdvcore_diff_parse);
 frame_export_misuse_matrix!(fuzzy_rank_misuse_matrix, mdvcore_fuzzy_rank);
 frame_export_misuse_matrix!(find_search_misuse_matrix, mdvcore_find_search);
+frame_export_misuse_matrix!(transcript_parse_misuse_matrix, mdvcore_transcript_parse);
 
 frame_export_misuse_matrix!(diff_hunk_marks_misuse_matrix, mdvcore_diff_hunk_marks);
 
