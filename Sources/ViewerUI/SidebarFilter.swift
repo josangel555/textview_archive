@@ -7,12 +7,18 @@ import ViewerCore
 // docs/SIDEBAR_FUZZY_FILTER_DESIGN.md — mode B's global descendant cache
 // is the deferred follow-up).
 
-/// One ranked sidebar filter hit.
+/// One ranked sidebar filter hit. `display` is what the row renders and
+/// what `matchedIndices` index into: the filename in mode A (visible-rows
+/// narrowing), the root-relative path in mode B (global find — TSK-666),
+/// so deep matches show WHERE they are and rank by path-segment boundaries.
 struct SidebarFilterMatch: Equatable, Identifiable {
     let url: URL
-    let name: String
+    let display: String
+    /// Secondary context text (mode A: the parent directory name; mode B:
+    /// empty — the relPath already carries the location).
+    let secondary: String
     let isDirectory: Bool
-    /// Character indices into `name` to bold (the matcher contract).
+    /// Character indices into `display` to bold (the matcher contract).
     let matchedIndices: [Int]
     var id: URL { url }
 }
@@ -21,10 +27,10 @@ enum SidebarFilter {
     /// Render cap — never an unbounded match list (design rule 4).
     static let resultCap = 500
 
-    /// Rank the visible rows against `query` through the ROUTED fuzzy
-    /// engine (`RustFuzzyAdapter` — rust by default; §2.5: new consumers
-    /// must not grow the Swift twin). Empty/whitespace query → `[]`
-    /// (callers render the normal tree). Ranked, stable ties, capped.
+    /// Mode A: rank the VISIBLE rows against `query` through the ROUTED
+    /// fuzzy engine (`RustFuzzyAdapter` — rust by default; §2.5: new
+    /// consumers must not grow the Swift twin). Empty/whitespace query →
+    /// `[]` (callers render the normal tree). Ranked, stable ties, capped.
     static func filter(
         _ rows: [SidebarModel.VisibleRow], query: String
     ) -> [SidebarFilterMatch] {
@@ -34,8 +40,29 @@ enum SidebarFilter {
         return ranked.prefix(resultCap).map { row, match in
             SidebarFilterMatch(
                 url: row.node.url,
-                name: row.node.name,
+                display: row.node.name,
+                secondary: row.node.url.deletingLastPathComponent().lastPathComponent,
                 isDirectory: row.node.isDirectory,
+                matchedIndices: match.matchedIndices
+            )
+        }
+    }
+
+    /// Mode B (TSK-666): rank the GLOBAL descendant set — every file under
+    /// the root regardless of expansion — by root-relative path. Same
+    /// routed engine, same cap.
+    static func filterGlobal(
+        _ entries: [SidebarModel.DescendantEntry], query: String
+    ) -> [SidebarFilterMatch] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return [] }
+        let ranked = RustFuzzyAdapter.filterWithMatches(entries, query: q) { $0.relPath }
+        return ranked.prefix(resultCap).map { entry, match in
+            SidebarFilterMatch(
+                url: entry.url,
+                display: entry.relPath,
+                secondary: "",
+                isDirectory: entry.isDirectory,
                 matchedIndices: match.matchedIndices
             )
         }

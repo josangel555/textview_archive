@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import ViewerCore
+import os
 
 /// Observable state for the file-browser sidebar. Lazily caches per-directory
 /// children; UI calls `children(of:)` and trusts the result.
@@ -11,10 +12,143 @@ public final class SidebarModel: ObservableObject {
     @Published public var includeHidden: Bool = true {
         didSet {
             clearCache()   // also drops the flat-row memo
+            invalidateDescendantsCache()   // global-find set changes too (TSK-666)
             for url in expanded { ensureLoaded(url: url) }
         }
     }
     @Published public var isVisible: Bool = false
+
+    // MARK: - Global-find descendant cache (TSK-666, fuzzy filter mode B)
+
+    /// One global-find candidate: a descendant of the root regardless of
+    /// expansion state, with its root-relative display path.
+    public struct DescendantEntry: Equatable, Sendable {
+        public let url: URL
+        /// Root-relative path (`/`-joined) — mode B ranks on this so deep
+        /// matches benefit from path-segment word boundaries.
+        public let relPath: String
+        public let isDirectory: Bool
+    }
+
+    /// Bump published when a cache build COMPLETES, so the filter view can
+    /// upgrade mode-A results to global results mid-typing. Deliberately
+    /// the only published surface of the cache (one bump per build — not
+    /// per-keystroke observation widening; the #215 rule).
+    @Published public private(set) var descendantsVersion = 0
+
+    /// nil = not built (or invalidated). Built OFF-MAIN by
+    /// `ensureDescendantsCache()`; never touched from `body` (design rule 1).
+    private var descendantsCache: [DescendantEntry]?
+    private var descendantsBuildTask: Task<Void, Never>?
+    /// Generation token: a build started before an invalidation must not
+    /// land its (stale) result after it.
+    private var descendantsGeneration = 0
+
+    /// Skip-set for the global walk: heavyweight machine-managed trees
+    /// that would dominate the candidate list without ever being what the
+    /// user is fuzzy-finding. (The VISIBLE tree still shows them when
+    /// expanded — this only scopes the global FIND set.)
+    nonisolated static let descendantSkipNames: Set<String> =
+        [".git", "node_modules", ".build", ".swiftpm", "dist"]
+
+    /// Hard ceiling on the candidate list — a runaway tree (mounted volume,
+    /// home dir as root) must not balloon memory. Logged on truncation.
+    nonisolated static let descendantCap = 50_000
+
+    /// The global-find candidates, or nil while unbuilt/building (callers
+    /// fall back to the visible rows — typing never blocks on the walk).
+    public func globalFindCandidates() -> [DescendantEntry]? { descendantsCache }
+
+    /// Kick the off-main walk if no cache exists and none is building.
+    /// Idempotent; completion bumps `descendantsVersion` on the main actor.
+    public func ensureDescendantsCache() {
+        guard descendantsCache == nil, descendantsBuildTask == nil,
+              let root = rootURL else { return }
+        let gen = descendantsGeneration
+        let includeHidden = self.includeHidden
+        descendantsBuildTask = Task { [weak self] in
+            let entries = await Task.detached(priority: .utility) {
+                Self.walkDescendants(root: root, includeHidden: includeHidden)
+            }.value
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.descendantsBuildTask = nil
+                // A root/hidden change invalidated this build mid-flight —
+                // drop the stale result; the next ensure starts fresh.
+                guard self.descendantsGeneration == gen else { return }
+                self.descendantsCache = entries
+                self.descendantsVersion &+= 1
+            }
+        }
+    }
+
+    /// Drop the cache and outdate any in-flight build. Hooked to the same
+    /// signals that change the candidate set: root change (`setRoot` via
+    /// `clearCache`... root path), hidden-toggle, and FSEvents mutations.
+    private func invalidateDescendantsCache() {
+        descendantsGeneration &+= 1
+        descendantsCache = nil
+        descendantsBuildTask?.cancel()
+        descendantsBuildTask = nil
+    }
+
+    /// The off-main walk. `FileManager.enumerator` honors the hidden flag;
+    /// the skip-set prunes whole subtrees via `skipDescendants`. Capped.
+    nonisolated static func walkDescendants(
+        root: URL, includeHidden: Bool
+    ) -> [DescendantEntry] {
+        let opts: FileManager.DirectoryEnumerationOptions =
+            includeHidden ? [] : [.skipsHiddenFiles]
+        guard let walker = FileManager.default.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: opts
+        ) else { return [] }
+        let rootPath = root.standardizedFileURL.path
+        var out: [DescendantEntry] = []
+        for case let url as URL in walker {
+            let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?
+                .isDirectory ?? false
+            if isDir, descendantSkipNames.contains(url.lastPathComponent) {
+                walker.skipDescendants()
+                continue
+            }
+            let path = url.standardizedFileURL.path
+            guard path.hasPrefix(rootPath + "/") else { continue }
+            out.append(DescendantEntry(
+                url: url,
+                relPath: String(path.dropFirst(rootPath.count + 1)),
+                isDirectory: isDir
+            ))
+            if out.count >= descendantCap {
+                Logger(subsystem: "com.markdownviewer", category: "sidebar")
+                    .warning("global-find walk hit the \(Self.descendantCap) cap — list truncated")
+                break
+            }
+        }
+        return out
+    }
+
+    /// Expand every ancestor directory of `url` (mode-B auto-reveal): a
+    /// filtered hit inside a collapsed branch stays visible when the
+    /// filter clears. Loads each newly-expanded level's children so the
+    /// flat tree can actually render the chain.
+    public func revealAncestors(of url: URL) {
+        guard let root = rootURL else { return }
+        let rootPath = root.standardizedFileURL.path
+        var chain: [URL] = []
+        var dir = url.standardizedFileURL.deletingLastPathComponent()
+        while dir.path.hasPrefix(rootPath + "/") || dir.path == rootPath {
+            chain.append(dir)
+            if dir.path == rootPath { break }
+            dir = dir.deletingLastPathComponent()
+        }
+        for d in chain.reversed() {
+            expanded.insert(d)
+            ensureLoaded(url: d)
+        }
+        invalidateFlatCache()
+    }
 
     // Git status / repo-root / root-override moved OUT of SidebarModel
     // into the multi-repo git registry (`TrackedReposChannel` read side,
@@ -105,6 +239,7 @@ public final class SidebarModel: ObservableObject {
         rootURL = normalized
         expanded.removeAll()
         clearCache()   // also drops the flat-row memo
+        invalidateDescendantsCache()   // new root = new global-find set (TSK-666)
         folderWatcher?.stop()
         folderWatcher = nil
         // Refresh the Claude-transcript flag on every root change. Cheap
@@ -222,6 +357,9 @@ public final class SidebarModel: ObservableObject {
         if !results.isEmpty { recencyVersion &+= 1 }
         guard touched else { return }
         invalidateFlatCache()
+        // An external mutation changed the candidate set — the global-find
+        // cache rebuilds lazily on the next filter use (TSK-666).
+        invalidateDescendantsCache()
         // Force a publish so SwiftUI re-bodies. expanded is the
         // cheapest @Published prop to nudge — assigning the same
         // value is value-blind and refires (LESSONS).

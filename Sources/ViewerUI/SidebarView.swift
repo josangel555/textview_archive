@@ -640,6 +640,12 @@ struct SidebarView: View {
                 recomputeFilterMatches()
             }
         }
+        // TSK-666: the global cache finished building mid-filter — upgrade
+        // the mode-A results to global ones (one bump per build, not a
+        // per-keystroke observation).
+        .onChange(of: sidebar.descendantsVersion) { _, _ in
+            if !debouncedFilterQuery.isEmpty { recomputeFilterMatches() }
+        }
     }
 
     /// Flat ranked results replacing the tree while a filter is active.
@@ -673,17 +679,30 @@ struct SidebarView: View {
         .accessibilityIdentifier("sidebar.filterResults")
     }
 
+    /// Mode B (TSK-666) when the global descendant cache is ready —
+    /// finds files in COLLAPSED branches; mode A (visible rows) until
+    /// then, so typing never blocks on the off-main walk. The cache kick
+    /// lives here (a user actively filtering is the demand signal).
     private func recomputeFilterMatches() {
-        filterMatches = SidebarFilter.filter(
-            sidebar.flatVisibleRows(), query: debouncedFilterQuery)
+        if let entries = sidebar.globalFindCandidates() {
+            filterMatches = SidebarFilter.filterGlobal(
+                entries, query: debouncedFilterQuery)
+        } else {
+            sidebar.ensureDescendantsCache()
+            filterMatches = SidebarFilter.filter(
+                sidebar.flatVisibleRows(), query: debouncedFilterQuery)
+        }
     }
 
     /// Same activation semantics as a tree row (`FileRowView.activate`):
     /// file → ephemeral preview tab; directory → toggle expansion (the
     /// newly visible children join the next recompute). Opening a FILE
     /// clears the filter — you found what you were looking for; the tree
-    /// snaps back with the selection set.
+    /// snaps back with the selection set. A global (mode B) hit may live
+    /// in a collapsed branch — reveal its ancestors first so the file is
+    /// visible after the filter clears.
     private func activateFilterMatch(_ match: SidebarFilterMatch) {
+        sidebar.revealAncestors(of: match.url)
         sidebar.setSelected(match.url)
         if match.isDirectory {
             sidebar.toggleExpansion(match.url)
@@ -1208,25 +1227,28 @@ private struct SidebarFilterRow: View {
                 )
                 .frame(width: 16, height: 16)
                 Text(FuzzyHighlight.attributed(
-                    match.name,
+                    match.display,
                     matchedIndices: match.matchedIndices,
                     size: uiSize(12),
                     regular: .primary,
                     highlight: .accentColor))
                     .lineLimit(1)
-                Spacer(minLength: 4)
-                Text(match.url.deletingLastPathComponent().lastPathComponent)
-                    .font(.system(size: uiSize(10)))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
                     .truncationMode(.head)
+                Spacer(minLength: 4)
+                if !match.secondary.isEmpty {
+                    Text(match.secondary)
+                        .font(.system(size: uiSize(10)))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 3)
             .contentShape(Rectangle())
         }
         .buttonStyle(RowHoverButtonStyle(cornerRadius: 0))
-        .accessibilityIdentifier("sidebar.filterRow.\(match.name)")
+        .accessibilityIdentifier("sidebar.filterRow.\(match.display)")
     }
 }
 
