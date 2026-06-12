@@ -8385,3 +8385,22 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   With 662/663/664 this closes the epic's transport story: engines, fs, git,
   search, transcripts, push — all reachable remotely, nothing Swift on the
   server.
+
+## LOG +274 (2026-06-12 tick — TSK-659 spike resolved into a spec; VM revalidation in flight)
+
+- **TSK-659 LSP pipe: spike → written spec (63ecaf1, protocol §7.5),
+  ticket → triaged.** The owner rulings were already on the ticket
+  (terminal OUT — ssh/tmux -CC; LSP = server-side processes piped). The
+  design's load-bearing call: **the wire is NOT a remote-exec API** —
+  lsp.start picks a server by NAME from the operator's --lsp-server
+  allowlist; nothing executable crosses the wire; no allowlist = bit OFF +
+  unauthorized. LSP sessions ride the TSK-662 subscription infra ({k:"lsp"}
+  verbatim JSON-RPC events, {k:"exit"} terminal); the URI-mapping question
+  resolved as NO TRANSLATION (server-local paths verbatim — binding the
+  feature to remote-file editing, the correct dependency order).
+  Implementation deliberately sequenced BEHIND remote-file editing: a
+  remote LSP session has nothing to serve until remote files open in the
+  editor.
+- VM full-suite revalidation of the 640/662-665 wave in flight (fresh
+  rsync; results next entry). Owner parks unchanged (TSK-660 caps,
+  TSK-649 stage B, GUI glance).
