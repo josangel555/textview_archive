@@ -10,9 +10,48 @@
 //! nested captures to the innermost (top of the stack), which is what a
 //! span-based renderer wants.
 
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
+
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 
 pub mod runs;
+
+/// Process-wide cache of CONFIGURED highlight configurations (TSK-545/552):
+/// query parse + compile is tens of ms on the big grammars and was paid on
+/// EVERY call — per HTTP request in the web tier, per tokenize in the app
+/// once the `.highlight` gate routes rust. One entry per (language,
+/// capture-name-list identity); `configure()` runs once at insert. The two
+/// name lists in this crate are 'static, so pointer identity is the key.
+type ConfigKey = (Lang, usize);
+fn config_cache() -> &'static Mutex<HashMap<ConfigKey, Arc<HighlightConfiguration>>> {
+    static CACHE: OnceLock<Mutex<HashMap<ConfigKey, Arc<HighlightConfiguration>>>> =
+        OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Fetch-or-build the configured grammar for `lang` + `names`. Returns
+/// `None` when the grammar/query fails to compile (the callers' existing
+/// best-effort contract).
+pub(crate) fn configured(
+    lang: Lang,
+    names: &'static [&'static str],
+) -> Option<Arc<HighlightConfiguration>> {
+    let key: ConfigKey = (lang, names.as_ptr() as usize);
+    if let Ok(cache) = config_cache().lock() {
+        if let Some(hit) = cache.get(&key) {
+            return Some(Arc::clone(hit));
+        }
+    }
+    let (language, query) = lang.grammar();
+    let mut config = HighlightConfiguration::new(language, lang.name(), &query, "", "").ok()?;
+    config.configure(names);
+    let arc = Arc::new(config);
+    if let Ok(mut cache) = config_cache().lock() {
+        cache.insert(key, Arc::clone(&arc));
+    }
+    Some(arc)
+}
 
 /// A normalised token category — the small, render-agnostic vocabulary the
 /// front-ends colour. Maps from tree-sitter's finer-grained capture names
@@ -47,7 +86,7 @@ pub struct Span {
 
 /// A supported source language. `from_extension` maps a file extension to a
 /// grammar; unknown extensions yield `None` (front-ends fall back to plain).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Lang {
     Json,
     Rust,
@@ -376,12 +415,11 @@ fn kind_for_name(name: &str) -> TokenKind {
 /// is best-effort decoration, never a hard error for the caller.
 #[must_use]
 pub fn highlight(src: &str, lang: Lang) -> Vec<Span> {
-    let (language, query) = lang.grammar();
-    let mut config = match HighlightConfiguration::new(language, lang.name(), &query, "", "") {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
+    // TSK-545: the configured grammar is cached process-wide; the query
+    // parse+compile runs once per language, not per call.
+    let Some(config) = configured(lang, HIGHLIGHT_NAMES) else {
+        return Vec::new();
     };
-    config.configure(HIGHLIGHT_NAMES);
 
     let mut hl = Highlighter::new();
     let events = match hl.highlight(&config, src.as_bytes(), None, |_| None) {
@@ -597,6 +635,22 @@ mod tests {
         assert_eq!(kind_at(&spans, src, "const"), Some(TokenKind::Keyword));
         assert_eq!(kind_at(&spans, src, "\"hello\""), Some(TokenKind::String));
         assert_eq!(kind_at(&spans, src, "function"), Some(TokenKind::Keyword));
+    }
+
+    /// TSK-545: the second call must not re-pay the query compile. We
+    /// assert structurally (cache hit returns the SAME Arc) rather than by
+    /// wall clock — timing thresholds flake under CI load.
+    #[test]
+    fn configured_grammar_is_cached_not_recompiled() {
+        let a = configured(Lang::Rust, HIGHLIGHT_NAMES).expect("rust grammar");
+        let b = configured(Lang::Rust, HIGHLIGHT_NAMES).expect("rust grammar");
+        assert!(Arc::ptr_eq(&a, &b), "second fetch must be the cached Arc");
+        // Different name lists key separately (the runs path's table).
+        let c = configured(Lang::Rust, &["keyword"]).expect("rust grammar");
+        assert!(!Arc::ptr_eq(&a, &c), "a different name list is a different config");
+        // And different languages never collide.
+        let d = configured(Lang::Python, HIGHLIGHT_NAMES).expect("python grammar");
+        assert!(!Arc::ptr_eq(&a, &d));
     }
 
     #[test]

@@ -19,7 +19,7 @@
 //! tracked as TSK-410 is structurally absent on this path (pinned in tests).
 
 use serde::{Deserialize, Serialize};
-use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
+use tree_sitter_highlight::{HighlightEvent, Highlighter};
 
 use crate::Lang;
 
@@ -93,6 +93,13 @@ const APP_CAPTURES: &[(&str, &str)] = &[
     ("tag.attribute", "tagAttribute"),
 ];
 
+/// The capture-name list (table keys) as the 'static slice the config
+/// cache keys on. Built once.
+fn app_capture_names() -> &'static [&'static str] {
+    static NAMES: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    NAMES.get_or_init(|| APP_CAPTURES.iter().map(|(n, _)| *n).collect())
+}
+
 /// One highlighted run in the HOST's text model: `start`/`len` are UTF-16
 /// code-unit offsets into the source, `kind` is a Swift `TokenKind` rawValue.
 /// Runs are non-overlapping and in source order.
@@ -125,13 +132,10 @@ pub struct RunsResponse {
 /// failure yields an empty vec, never an error.
 #[must_use]
 pub fn runs_utf16(src: &str, lang: Lang) -> Vec<Run> {
-    let (language, query) = lang.grammar();
-    let mut config = match HighlightConfiguration::new(language, lang.name(), &query, "", "") {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
+    // TSK-545: cached configured grammar (query compile once per language).
+    let Some(config) = crate::configured(lang, app_capture_names()) else {
+        return Vec::new();
     };
-    let names: Vec<&str> = APP_CAPTURES.iter().map(|(n, _)| *n).collect();
-    config.configure(&names);
 
     let mut hl = Highlighter::new();
     let events = match hl.highlight(&config, src.as_bytes(), None, |_| None) {
