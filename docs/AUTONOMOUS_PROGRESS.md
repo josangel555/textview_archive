@@ -7662,3 +7662,18 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - Behavior-identical (same 31/31 pre/post); macro TEETH: null-arm mis-mapped → all three
   generated matrices red at once → restored. Header byte-identical (drift check green),
   bridge 76/76, both gates green. Remaining: stage 3 (Swift wrapper-stub generation).
+
+## LOG +234 (2026-06-12 tick — TSK-634 VALIDATED: FFI velocity complete across all three stages)
+
+- **TSK-634 → validated** (83cd758 + d225265 + 9310e83). Stage 3 landed this tick:
+  `mdvFrameCall` — the one Swift call ritual for stateless frame exports (framing, pointer
+  pass, buf free, status mapping, unframe) — with the three wrappers converted to
+  one-liners and the once-per-process ABI assert RESTORED (the per-wrapper copies had
+  silently dropped it). Stage 3 was honestly REDESIGNED from "generate Swift stubs" to the
+  shared helper: stage 2's uniform C signature made a generator pure machinery (build step
+  + generated-file drift for zero extra dedupe). `name` param reserved as the TSK-636
+  audit-log emit point. Teeth: unframe skipped → all 3 A/B parity suites red.
+- **Net effect for the ports (TSK-630..633):** a new frame-shaped export now costs a Rust
+  signature+doc+1-line body, 2 test-macro lines, a 1-line Swift wrapper, and a capability
+  bit flip — ~15 min vs the audited ~45. Ports land core engines next and ride this.
+- Both gates green; main @ 9310e83 + this log.
