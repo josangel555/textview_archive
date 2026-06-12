@@ -7647,3 +7647,18 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   31/31 ffi + 17/17 bridge. Both gates green.
 - Remaining on TSK-634: stage 2 (Rust `ffi_export` codegen), stage 3 (Swift wrapper-stub
   generation). Ports should land core engines first and ride the codegen for exports.
+
+## LOG +233 (2026-06-12 tick — TSK-634 stage 2: export-ceremony codegen, zero-dep macros)
+
+- **TSK-634 stage 2/3 landed** (commit d225265, net −55 lines). `ffi_frame_body!` owns the
+  whole stateless-export safety ritual (out-buf default, null/len guard, raw-parts slice,
+  wire_status mapping); `frame_export_misuse_matrix!` generates the TSK-582 null/hostile
+  matrix per export. The roadmap's copy-paste trio (cm_apply, diff_parse, diff_hunk_marks)
+  converted to signature + doc + 1-line body; a new frame-shaped export's ENTIRE ceremony
+  is now ~10 lines + 2 macro lines — the four engine ports ride this.
+- **Design constraint discovered + documented:** cbindgen does not expand macro_rules —
+  extern signatures stay hand-written (the header must see the symbol); the macro generates
+  bodies. No proc-macro crate (syn/quote would violate minimal-deps); zero new dependencies.
+- Behavior-identical (same 31/31 pre/post); macro TEETH: null-arm mis-mapped → all three
+  generated matrices red at once → restored. Header byte-identical (drift check green),
+  bridge 76/76, both gates green. Remaining: stage 3 (Swift wrapper-stub generation).
