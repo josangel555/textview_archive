@@ -57,6 +57,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 .coreCall, action: "error", target: method,
                 meta: ["transport": transport])
         }
+        // TSK-665: MDV_REMOTE_SOCKET attaches the remote core (ssh-forwarded
+        // mdv-serve). Fail-safe — any failure stays in-process; a connection
+        // lost later auto-reverts. Must run AFTER the audit hook (attach
+        // outcomes are observable) and BEFORE any engine use.
+        RemoteCoreAttach.attachIfConfigured()
         // `--mcp-stdio`: skip all UI work and run the MCP server on
         // stdin/stdout. We still need an NSApplication to host
         // `@MainActor` model state, but no window, no menu, no
