@@ -180,14 +180,26 @@ pub fn hex_search_find(pattern: &[u8], data: &[u8]) -> Vec<usize> {
     let mut hits = Vec::new();
     let m = pattern.len();
     let limit = data.len() - m;
+    // TSK-562: first-byte skip replaces the per-position subslice compare.
+    // `Iterator::position` over a u8 slice compiles to a vectorized scan
+    // (LLVM memchr-recognition), so the common path skips in SIMD-width
+    // strides and the full compare runs only at candidate positions —
+    // O(n) skip + rare compares instead of O(n·m).
+    let Some(&first) = pattern.first() else {
+        return Vec::new();
+    };
     let mut i = 0;
     while i <= limit {
-        // `data[i..i+m] == pattern` without indexing (no-panic policy).
-        if data.get(i..i + m) == Some(pattern) {
-            hits.push(i);
-            i += m; // non-overlapping
+        let Some(rel) = data.get(i..=limit).and_then(|w| w.iter().position(|&b| b == first))
+        else {
+            break;
+        };
+        let at = i + rel;
+        if data.get(at..at + m) == Some(pattern) {
+            hits.push(at);
+            i = at + m; // non-overlapping (cursor advances the full pattern)
         } else {
-            i += 1;
+            i = at + 1;
         }
     }
     hits
@@ -231,6 +243,19 @@ pub fn hex_search_frame(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// TSK-562 coverage hole found by the teeth run: no prior test had a
+    /// first-byte-matches-but-rest-doesn't case, so a search that reported
+    /// bare first-byte hits passed the whole suite. Pins the candidate
+    /// REJECTION path of the skip-loop.
+    #[test]
+    fn find_rejects_partial_prefix_matches() {
+        // 0xAB appears three times; only ONE full [0xAB, 0xCD] match exists.
+        let data = [0xABu8, 0x00, 0xAB, 0xCD, 0xAB];
+        assert_eq!(hex_search_find(&[0xAB, 0xCD], &data), vec![2]);
+        // And a needle whose first byte is frequent but never completes.
+        assert_eq!(hex_search_find(&[0xAB, 0xEE], &data), Vec::<usize>::new());
+    }
 
     #[test]
     fn row_math_matches_swift() {
