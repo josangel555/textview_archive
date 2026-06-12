@@ -8753,3 +8753,29 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   both for one text); fuzzy candidates Vec (many small strings).
 - Lane tally today: TSK-545/547/560/562/566/561 validated. Next: TSK-546
   (table storage arena), TSK-563 (wire key repetition), TSK-544 (TUI).
+
+## LOG +294 (2026-06-12 tick — TSK-327 owner re-report: "still not draggable" — three roots fixed)
+
+- **Owner resolved the park with a bug report**, re-scoping the ticket
+  from the 'Main tab' fork to: tool windows AND rail icons must drag to
+  any of the 3 shoulders. Three roots found (2aab064, installed):
+  1. `com.markdownviewer.panel-drag` (`UTType(exportedAs:)`) was NEVER
+     declared in Info.plist `UTExportedTypeDeclarations` — an undeclared
+     exported UTI is the silently-dead drag (payload writes, no
+     dropDestination accepts). This killed even the shipped docked-header
+     drag.
+  2. The only drag source was the header of an already-docked window —
+     a panel in its default left-accordion home had NO drag handle (the
+     UX-E comment admitted it).
+  3. Rail icons had no drag source.
+- Fix: `SidebarSectionHeaderLabel` gains `dragKind` (one chokepoint, all
+  8 dockable sections pass theirs); `PanelRailButton` (≠FILES) drags;
+  shared `PanelDragChip` preview; existing 3-shoulder drop zones unchanged.
+- 6 tests in the gate with teeth shown TWICE: the plist pin had to be
+  hardened from substring to STRUCTURAL parse (a suffixed mutant fooled
+  `contains`) — red names the declared identifiers; the per-section
+  dragKind audit reds when one is removed. Drop-action chain pinned
+  against the real store on all 3 edges.
+- Held at review (live-validation): the real mouse-drag session can't be
+  synthesized headlessly. Owner ask on the ticket: relaunch + try the
+  three drag sources.
