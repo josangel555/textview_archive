@@ -8050,3 +8050,16 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   GitClient spawns. Teeth: rotation disabled → red. Follow-ups recorded: WebView
   policy, other spawns, pasteboard, UI panel.
 - The TSK-652 seam paid for itself again: ONE hook covers local AND remote core calls.
+## LOG +255 (2026-06-12 tick — TSK-628 at fixed: SwiftPM advisory watch in the nightly lane)
+
+- **TSK-628 → fixed** (bbec4e9): all 18 SPM pins — including the 14 tree-sitter
+  grammars that parse attacker-controlled files — get advisory monitoring via the GH
+  Advisory Database (ecosystem=swift), as a STRICT step in nightly-supply-chain.yml.
+  Design: one paginated fetch of the full swift advisory set, matched locally by
+  owner/repo tail (no per-package affects-query semantics to get wrong silently);
+  strict mode makes ANY API problem a loud lane failure. Verified offline: strict
+  exits 1 when unreachable (the no-false-green teeth), non-strict warns+passes for
+  ad-hoc runs, matcher hits a synthetic grammar advisory and ignores unrelated ones.
+- HELD AT FIXED deliberately: the live API path first runs on the next nightly
+  (GITHUB_TOKEN is CI-only). Validate after one green nightly — or the owner can
+  workflow_dispatch it immediately.
