@@ -8341,3 +8341,28 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   TSK-663 → validated. The §5 server push family is now COMPLETE
   (fs.watch + transcript.follow); the remaining push work is the Swift
   RemoteTransport client half (subscription consumption) — next ticket.
+
+## LOG +272 (2026-06-12 tick — TSK-664 VALIDATED: the §5 push pipeline is end-to-end)
+
+- **RemoteTransport subscriptions (22d8a80):** rewritten around a reader
+  thread owning all socket reads — responses fill per-call slots (30s
+  deadline → the Swift fallback fires instead of a wedge), events dispatch
+  to handlers, a BOUNDED pre-registration buffer absorbs events that race
+  the subscribe response, unknown response ids are tolerated, teardown
+  shutdown()s before close so the blocked reader wakes, onClose fires once.
+  With TSK-662/663 this completes the §5 push pipeline END-TO-END:
+  server watch/follow → wire → client handlers.
+- **Hardening found en route:** no SO_NOSIGPIPE on the dialed socket — a
+  write to a dead server raised process-killing SIGPIPE (the app would have
+  died on any server death). Fixed at dial.
+- **Teeth war story (lesson in LESSONS.md):** the first two mutation runs
+  WEDGED swift-test — a force-unwrap in the new test crashed xctest under
+  the mutation and swift-test hung forever on the zombie child. A guard
+  that CRASHES instead of failing wedges the whole lane and reads as
+  silence. Fixed to XCTUnwrap; the re-run gave 3 clean reds. Orphaned
+  mdv-serve test daemons from the crashed runs were reaped.
+- 4 tests vs a real mdv-serve (--root + --claude-dir): push/unsubscribe,
+  call-event interleave demux + monotonic seq, CLIENT-side redaction oracle
+  (byte-subsequence scan — msgpack bodies are not UTF-8 wholesale),
+  server-death typed failure. Loopback byte-equal suite green across the
+  call() refactor. Gate EXIT=0. TSK-664 → validated.

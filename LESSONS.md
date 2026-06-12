@@ -2856,3 +2856,14 @@ Continuation of "the five constraints" above; these three close every remaining 
   always `|| fail` a command substitution whose output gates a verdict.
   Validation-drain rule proven again: re-run evidence FRESH — this "green
   since landing" security gate had never executed its matcher once.
+
+- **2026-06-12 — A regression guard that CRASHES instead of FAILING wedges
+  the whole test lane.** A force-unwrap (`first {...}!`) in a push-event
+  test crashed xctest when the teeth mutation suppressed events; swift-test
+  then hung FOREVER on the zombie child (0 CPU, no compilers — the
+  diagnostic signature), and orphaned server daemons piled up. Assertion
+  paths in tests must use XCTUnwrap/guard-fail, never force-unwrap; when a
+  filtered swift-test sits at ~0 CPU with a defunct child, kill it and look
+  for a crash in the TEST, not a build-lock problem. Also found: sockets
+  need SO_NOSIGPIPE at dial — a write to a dead peer otherwise SIGPIPE-kills
+  the host process (app-grade bug, exposed by the same test).
