@@ -37,6 +37,12 @@ impl TranscriptCtx {
         Self { base: base.join("projects") }
     }
 
+    /// The fixed discovery base (`transcript.follow` resolves its
+    /// {dir, name} identifiers against it — TSK-663).
+    pub(crate) fn base(&self) -> &std::path::Path {
+        &self.base
+    }
+
     /// `transcript.list` — no request body fields in v1.
     pub fn list(&self) -> Result<Vec<u8>, WireError> {
         #[derive(serde::Serialize)]

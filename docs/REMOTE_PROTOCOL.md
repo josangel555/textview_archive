@@ -106,6 +106,18 @@ Subscribe/unsubscribe are ordinary requests:
   This bounds server memory under event storms (build dirs, git checkouts).
 - Subscriptions die with the connection. No server-side persistence —
   reconnect = re-subscribe + initial re-stat (the resync path again).
+- **`transcript.follow` (TSK-663)** rides the same machinery:
+  `{dir, name, from_start?, debounce_ms?}` → `{sub}`, where `dir`/`name`
+  are EXACTLY the identifiers `transcript.list` returns (single path
+  components; `name` is `*.jsonl` — the list family's zero-traversal
+  posture). Events: `{k:"events", b:{events:[…]}}` — PARSED batches with
+  redaction FORCED server-side (raw line tailing would bypass the
+  TSK-658 wire guarantee, so it does not exist); `{k:"resync"}` on
+  truncation/rotation/oversized torn lines (tail resets; client refetches
+  via `transcript_parse` if it needs history). Torn trailing lines carry
+  across ticks; per-tick read window 1 MiB. Unsubscribe via `fs.unwatch`
+  or the `transcript.unfollow` alias. Rides the `transcript_list`
+  capability bit.
 
 ## 6. Method namespaces (forward map)
 

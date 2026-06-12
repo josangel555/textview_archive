@@ -97,11 +97,13 @@ pub fn handle_connection(
     // One per connection; ticks at MIN_TICK_MS and lets the hub's per-sub
     // debounce accounting decide what is due. Event writes serialize with
     // response writes through the same mutex (a fresh stream clone).
+    // Spawned unconditionally: transcript.follow (TSK-663) works without a
+    // served fs root; an idle hub is one sleeping thread.
     let hub = std::sync::Arc::new(crate::watch::WatchHub::new(fs_ctx));
-    let watcher = if fs_ctx.enabled() {
+    let watcher = {
         let hub_t = std::sync::Arc::clone(&hub);
         let event_stream = std::sync::Mutex::new(stream.try_clone()?);
-        Some(std::thread::spawn(move || {
+        std::thread::spawn(move || {
             let step = crate::watch::MIN_TICK_MS;
             while !hub_t.stopped() {
                 std::thread::sleep(std::time::Duration::from_millis(step));
@@ -124,9 +126,7 @@ pub fn handle_connection(
                     break;
                 }
             }
-        }))
-    } else {
-        None
+        })
     };
 
     // --- request loop ---
@@ -144,7 +144,11 @@ pub fn handle_connection(
                     Ok(out) => Frame::Response { id, body: Some(out), error: None },
                     Err(e) => Frame::Response { id, body: None, error: Some(e) },
                 },
-                "fs.unwatch" => match hub.unwatch(&body) {
+                "fs.unwatch" | "transcript.unfollow" => match hub.unwatch(&body) {
+                    Ok(out) => Frame::Response { id, body: Some(out), error: None },
+                    Err(e) => Frame::Response { id, body: None, error: Some(e) },
+                },
+                "transcript.follow" => match hub.follow(transcript_ctx, &body) {
                     Ok(out) => Frame::Response { id, body: Some(out), error: None },
                     Err(e) => Frame::Response { id, body: None, error: Some(e) },
                 },
@@ -157,9 +161,7 @@ pub fn handle_connection(
 
     // Subscriptions die with the connection.
     hub.stop();
-    if let Some(t) = watcher {
-        let _ = t.join();
-    }
+    let _ = watcher.join();
     result
 }
 

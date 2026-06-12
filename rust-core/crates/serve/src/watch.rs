@@ -13,6 +13,12 @@
 //! [`MAX_EVENTS_PER_TICK`] events drops the WHOLE burst and emits one
 //! `resync` event instead — seq stays monotonic with NO gap, so loss is
 //! explicit, never inferred. Subscriptions die with the connection.
+//!
+//! `transcript.follow` (TSK-663) rides the same hub as a second payload:
+//! a tail-reader whose events are PARSED, REDACTION-FORCED batches via
+//! `transcript::parse_wire_forced_redaction` — never raw JSONL lines,
+//! which would bypass the TSK-658 wire-redaction guarantee. Truncation/
+//! rotation (or a vanished file) resets the tail and emits `resync`.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -32,18 +38,31 @@ pub const DEFAULT_TICK_MS: u64 = 100;
 /// Floor for a client-supplied `debounce_ms` (keeps a hostile 0 from
 /// busy-spinning the watcher).
 pub const MIN_TICK_MS: u64 = 25;
+/// transcript.follow: bytes read per tick (the rest waits for the next
+/// tick — bounded work per window).
+pub const FOLLOW_WINDOW_BYTES: u64 = 1024 * 1024;
+/// transcript.follow: a torn line may carry across ticks up to this many
+/// bytes; beyond it the carry drops and a `resync` emits (a single line
+/// bigger than this is hostile input, not a transcript).
+pub const FOLLOW_CARRY_CAP: usize = 1024 * 1024;
 
 /// path → (modified_ms, len). Equality of the pair = "unchanged".
 type Snapshot = HashMap<PathBuf, (i64, u64)>;
 
 struct Sub {
-    roots: Vec<PathBuf>,
-    recursive: bool,
     tick_ms: u64,
     /// Milliseconds accumulated since the last scan.
     since_scan_ms: u64,
     seq: u64,
-    snapshot: Snapshot,
+    payload: Payload,
+}
+
+enum Payload {
+    /// fs.watch: snapshot-diff over watched roots.
+    Fs { roots: Vec<PathBuf>, recursive: bool, snapshot: Snapshot },
+    /// transcript.follow: tail a JSONL file from `offset`, carrying a
+    /// torn trailing line between ticks.
+    Follow { path: PathBuf, offset: u64, carry: Vec<u8> },
 }
 
 /// Per-connection subscription registry + the watcher thread's stop flag.
@@ -108,12 +127,64 @@ impl WatchHub {
         let snapshot = scan(&roots, req.recursive, MAX_WATCHED_ENTRIES);
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let sub = Sub {
-            roots,
-            recursive: req.recursive,
             tick_ms,
             since_scan_ms: 0,
             seq: 0,
-            snapshot,
+            payload: Payload::Fs { roots, recursive: req.recursive, snapshot },
+        };
+        if let Ok(mut subs) = self.subs.lock() {
+            subs.insert(id, sub);
+        }
+        encode_body(&Resp { sub: id })
+    }
+
+    /// `transcript.follow {dir, name, from_start?, debounce_ms?}` → `{sub}`
+    /// (TSK-663). `dir`/`name` are EXACTLY the identifiers `transcript.list`
+    /// returns; both must be single path components (no separators, no
+    /// `..`) and `name` must end in `.jsonl` — the list family's
+    /// zero-traversal posture. The tail starts at the file END unless
+    /// `from_start` (history rides `transcript_parse`).
+    pub fn follow(
+        &self,
+        tctx: &crate::transcript_list::TranscriptCtx,
+        body: &[u8],
+    ) -> Result<Vec<u8>, WireError> {
+        #[derive(serde::Deserialize)]
+        struct Req {
+            dir: String,
+            name: String,
+            #[serde(default)]
+            from_start: bool,
+            #[serde(default)]
+            debounce_ms: Option<u64>,
+        }
+        #[derive(serde::Serialize)]
+        struct Resp {
+            sub: u64,
+        }
+        let req: Req = decode_body(body)?;
+        if !is_single_component(&req.dir)
+            || !is_single_component(&req.name)
+            || !req.name.ends_with(".jsonl")
+        {
+            return Err(unauthorized(
+                "dir/name must be transcript.list identifiers (single components, name *.jsonl)",
+            ));
+        }
+        let path = tctx.base().join(&req.dir).join(&req.name);
+        let meta = std::fs::symlink_metadata(&path)
+            .map_err(|_| unauthorized("no such transcript"))?;
+        if meta.file_type().is_symlink() || !meta.is_file() {
+            return Err(unauthorized("not a regular transcript file"));
+        }
+        let offset = if req.from_start { 0 } else { meta.len() };
+        let tick_ms = req.debounce_ms.unwrap_or(DEFAULT_TICK_MS).max(MIN_TICK_MS);
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let sub = Sub {
+            tick_ms,
+            since_scan_ms: 0,
+            seq: 0,
+            payload: Payload::Follow { path, offset, carry: Vec::new() },
         };
         if let Ok(mut subs) = self.subs.lock() {
             subs.insert(id, sub);
@@ -156,35 +227,146 @@ impl WatchHub {
                 continue;
             }
             sub.since_scan_ms = 0;
-            let fresh = scan(&sub.roots, sub.recursive, MAX_WATCHED_ENTRIES);
-            let events = diff(&sub.snapshot, &fresh);
-            sub.snapshot = fresh;
-            if events.is_empty() {
-                continue;
-            }
-            if events.len() > MAX_EVENTS_PER_TICK {
-                // §5 backpressure: drop the burst, emit ONE resync — the
-                // seq advances by exactly one (explicit loss, no gap).
-                sub.seq = sub.seq.saturating_add(1);
-                emit(Frame::Event {
-                    sub: id,
-                    seq: sub.seq,
-                    kind: "resync".into(),
-                    body: Vec::new(),
-                });
-                continue;
-            }
-            for (kind, path) in events {
-                sub.seq = sub.seq.saturating_add(1);
-                emit(Frame::Event {
-                    sub: id,
-                    seq: sub.seq,
-                    kind: kind.into(),
-                    body: event_body(self.root.as_deref(), &path),
-                });
+            match &mut sub.payload {
+                Payload::Fs { roots, recursive, snapshot } => {
+                    let fresh = scan(roots, *recursive, MAX_WATCHED_ENTRIES);
+                    let events = diff(snapshot, &fresh);
+                    *snapshot = fresh;
+                    if events.is_empty() {
+                        continue;
+                    }
+                    if events.len() > MAX_EVENTS_PER_TICK {
+                        // §5 backpressure: drop the burst, emit ONE resync —
+                        // the seq advances by exactly one (explicit loss,
+                        // no gap).
+                        sub.seq = sub.seq.saturating_add(1);
+                        emit(Frame::Event {
+                            sub: id,
+                            seq: sub.seq,
+                            kind: "resync".into(),
+                            body: Vec::new(),
+                        });
+                        continue;
+                    }
+                    for (kind, path) in events {
+                        sub.seq = sub.seq.saturating_add(1);
+                        emit(Frame::Event {
+                            sub: id,
+                            seq: sub.seq,
+                            kind: kind.into(),
+                            body: event_body(self.root.as_deref(), &path),
+                        });
+                    }
+                }
+                Payload::Follow { path, offset, carry } => {
+                    match follow_step(path, offset, carry) {
+                        FollowStep::Quiet => {}
+                        FollowStep::Resync => {
+                            sub.seq = sub.seq.saturating_add(1);
+                            emit(Frame::Event {
+                                sub: id,
+                                seq: sub.seq,
+                                kind: "resync".into(),
+                                body: Vec::new(),
+                            });
+                        }
+                        FollowStep::Events(body) => {
+                            sub.seq = sub.seq.saturating_add(1);
+                            emit(Frame::Event {
+                                sub: id,
+                                seq: sub.seq,
+                                kind: "events".into(),
+                                body,
+                            });
+                        }
+                    }
+                }
             }
         }
     }
+}
+
+/// One transcript-follow poll outcome.
+enum FollowStep {
+    Quiet,
+    Resync,
+    /// The UNFRAMED `{events: […]}` parse response — already
+    /// REDACTION-FORCED (the wire guarantee holds for pushed content).
+    Events(Vec<u8>),
+}
+
+/// Advance a follow tail one tick: detect truncation/rotation, read the
+/// next window, carry torn lines, parse complete ones (redaction forced).
+fn follow_step(path: &Path, offset: &mut u64, carry: &mut Vec<u8>) -> FollowStep {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(meta) = std::fs::symlink_metadata(path) else {
+        // Vanished mid-follow: if we had progress, that is a rotation.
+        if *offset > 0 || !carry.is_empty() {
+            *offset = 0;
+            carry.clear();
+            return FollowStep::Resync;
+        }
+        return FollowStep::Quiet;
+    };
+    if meta.len() < *offset {
+        // Truncated/rotated in place.
+        *offset = 0;
+        carry.clear();
+        return FollowStep::Resync;
+    }
+    if meta.len() == *offset {
+        return FollowStep::Quiet;
+    }
+    let Ok(mut file) = std::fs::File::open(path) else { return FollowStep::Quiet };
+    if file.seek(SeekFrom::Start(*offset)).is_err() {
+        return FollowStep::Quiet;
+    }
+    let mut buf = Vec::new();
+    if file.take(FOLLOW_WINDOW_BYTES).read_to_end(&mut buf).is_err() {
+        return FollowStep::Quiet;
+    }
+    *offset = offset.saturating_add(buf.len() as u64);
+    carry.extend_from_slice(&buf);
+    let Some(cut) = carry.iter().rposition(|&b| b == b'\n') else {
+        if carry.len() > FOLLOW_CARRY_CAP {
+            // A single "line" past the cap is hostile input — drop it
+            // and tell the client to resync.
+            carry.clear();
+            return FollowStep::Resync;
+        }
+        return FollowStep::Quiet;
+    };
+    let rest = carry.split_off(cut.saturating_add(1));
+    let complete = std::mem::replace(carry, rest);
+    let text = String::from_utf8_lossy(&complete).into_owned();
+
+    #[derive(serde::Serialize)]
+    struct ParseReq {
+        text: String,
+        redacting: bool,
+    }
+    let Ok(req_frame) = mdvcore_core::wire::encode_frame(&ParseReq { text, redacting: true })
+    else {
+        return FollowStep::Quiet;
+    };
+    let Ok(framed) = mdvcore_core::transcript::parse_wire_forced_redaction(&req_frame) else {
+        return FollowStep::Quiet;
+    };
+    let body = framed.get(4..).map(<[u8]>::to_vec).unwrap_or_default();
+    // Skip empty batches (every line torn/invalid) — no frame, no seq.
+    #[derive(serde::Deserialize)]
+    struct Probe {
+        events: Vec<serde::de::IgnoredAny>,
+    }
+    let non_empty = mdvcore_core::wire::decode_frame::<Probe>(&framed)
+        .map(|p| !p.events.is_empty())
+        .unwrap_or(false);
+    if non_empty { FollowStep::Events(body) } else { FollowStep::Quiet }
+}
+
+/// A single path component: non-empty, no separators, not a dot-walk.
+fn is_single_component(s: &str) -> bool {
+    !s.is_empty() && !s.contains('/') && !s.contains('\\') && s != "." && s != ".."
 }
 
 /// `{path}` event body — relative to the served root where possible.
@@ -449,6 +631,162 @@ mod tests {
         let Frame::Event { seq, kind, .. } = &events[0] else { panic!() };
         assert_eq!((*seq, kind.as_str()), (2, "created"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---- transcript.follow (TSK-663) ----
+
+    fn follow_base() -> (PathBuf, crate::transcript_list::TranscriptCtx) {
+        // TranscriptCtx joins "projects" onto the claude dir.
+        let claude = temp_dir();
+        let proj = claude.join("projects").join("proj-a");
+        std::fs::create_dir_all(&proj).unwrap();
+        let ctx = crate::transcript_list::TranscriptCtx::new(Some(claude.to_str().unwrap()));
+        (proj, ctx)
+    }
+
+    fn follow_body(dir: &str, name: &str, from_start: bool) -> Vec<u8> {
+        #[derive(serde::Serialize)]
+        struct Req<'a> {
+            dir: &'a str,
+            name: &'a str,
+            from_start: bool,
+            debounce_ms: u64,
+        }
+        encode_body(&Req { dir, name, from_start, debounce_ms: 40 }).unwrap()
+    }
+
+    fn append(path: &Path, chunk: &str) {
+        use std::io::Write as _;
+        let mut f = std::fs::OpenOptions::new().append(true).open(path).unwrap();
+        f.write_all(chunk.as_bytes()).unwrap();
+    }
+
+    #[derive(serde::Deserialize)]
+    struct EvBody {
+        events: Vec<Ev>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Ev {
+        kind: String,
+        text: Option<String>,
+        input: Option<Vec<(String, String)>>,
+    }
+
+    fn decode_events(body: &[u8]) -> Vec<Ev> {
+        let mut framed = u32::try_from(body.len()).unwrap().to_le_bytes().to_vec();
+        framed.extend_from_slice(body);
+        mdvcore_core::wire::decode_frame::<EvBody>(&framed).unwrap().events
+    }
+
+    #[test]
+    fn follow_rejects_traversal_and_shape() {
+        let (proj, tctx) = follow_base();
+        write(&proj, "s.jsonl", "");
+        let dir_fs = ctx(&proj);
+        let hub = WatchHub::new(&dir_fs);
+        for (d, n) in [
+            ("../proj-a", "s.jsonl"),
+            ("proj-a", "../s.jsonl"),
+            ("proj-a", "x/s.jsonl"),
+            ("proj-a", "notes.txt"),
+            ("..", "s.jsonl"),
+        ] {
+            let err = hub.follow(&tctx, &follow_body(d, n, false)).unwrap_err();
+            assert_eq!(err.code, "unauthorized", "{d}/{n} must be rejected");
+        }
+        // Missing file is unauthorized too (no existence oracle outside list).
+        let err = hub.follow(&tctx, &follow_body("proj-a", "nope.jsonl", false)).unwrap_err();
+        assert_eq!(err.code, "unauthorized");
+    }
+
+    #[test]
+    fn follow_emits_redacted_parsed_batches_from_the_tail() {
+        let (proj, tctx) = follow_base();
+        let file = proj.join("s.jsonl");
+        std::fs::write(&file, "{\"uuid\":\"old\",\"message\":{\"role\":\"user\",\"content\":\"history\"}}\n").unwrap();
+        let hub = WatchHub::new(&ctx(&proj));
+        let resp = hub.follow(&tctx, &follow_body("proj-a", "s.jsonl", false)).unwrap();
+        let id = sub_id(&resp);
+
+        // Pre-subscribe history must NOT replay (tail starts at end).
+        assert!(collect(&hub, 40).is_empty());
+
+        // Append a user line + a tool_use carrying a SECRET signature.
+        append(&file, "{\"uuid\":\"u1\",\"message\":{\"role\":\"user\",\"content\":\"hi\"}}\n");
+        append(&file, "{\"uuid\":\"t1\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"t\",\"name\":\"X\",\"input\":{\"signature\":\"SECRET-BLOB\"}}]}}\n");
+        let frames = collect(&hub, 40);
+        assert_eq!(frames.len(), 1, "one batched events frame per tick");
+        let Frame::Event { sub, seq, kind, body } = &frames[0] else { panic!() };
+        assert_eq!((*sub, *seq, kind.as_str()), (id, 1, "events"));
+        let events = decode_events(body);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].kind, "user");
+        assert_eq!(events[0].text.as_deref(), Some("hi"));
+        // THE WIRE GUARANTEE: pushed content is REDACTED.
+        let input = events[1].input.as_ref().unwrap();
+        let sig = input.iter().find(|(k, _)| k == "signature").unwrap();
+        assert_eq!(sig.1, "[REDACTED]", "follow must never push unredacted content");
+    }
+
+    #[test]
+    fn follow_carries_torn_lines_across_ticks() {
+        let (proj, tctx) = follow_base();
+        let file = proj.join("s.jsonl");
+        std::fs::write(&file, "").unwrap();
+        let hub = WatchHub::new(&ctx(&proj));
+        hub.follow(&tctx, &follow_body("proj-a", "s.jsonl", false)).unwrap();
+
+        // Half a record, no newline: nothing may emit.
+        append(&file, "{\"uuid\":\"u9\",\"message\":{\"role\":\"user\",");
+        assert!(collect(&hub, 40).is_empty(), "torn line must wait");
+        // The rest arrives: ONE complete event, text intact.
+        append(&file, "\"content\":\"stitched\"}}\n");
+        let frames = collect(&hub, 40);
+        assert_eq!(frames.len(), 1);
+        let Frame::Event { kind, body, .. } = &frames[0] else { panic!() };
+        assert_eq!(kind, "events");
+        let events = decode_events(body);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].text.as_deref(), Some("stitched"));
+    }
+
+    #[test]
+    fn follow_truncation_resyncs_then_recovers_with_monotonic_seq() {
+        let (proj, tctx) = follow_base();
+        let file = proj.join("s.jsonl");
+        std::fs::write(&file, "{\"uuid\":\"a\",\"message\":{\"role\":\"user\",\"content\":\"one\"}}\n").unwrap();
+        let hub = WatchHub::new(&ctx(&proj));
+        hub.follow(&tctx, &follow_body("proj-a", "s.jsonl", false)).unwrap();
+
+        // Rotate: the file shrinks under the tail.
+        std::fs::write(&file, "").unwrap();
+        let frames = collect(&hub, 40);
+        assert_eq!(frames.len(), 1);
+        let Frame::Event { seq, kind, .. } = &frames[0] else { panic!() };
+        assert_eq!((*seq, kind.as_str()), (1, "resync"));
+
+        // Post-rotation content emits from the new file, seq continues.
+        append(&file, "{\"uuid\":\"b\",\"message\":{\"role\":\"user\",\"content\":\"two\"}}\n");
+        let frames = collect(&hub, 40);
+        assert_eq!(frames.len(), 1);
+        let Frame::Event { seq, kind, body, .. } = &frames[0] else { panic!() };
+        assert_eq!((*seq, kind.as_str()), (2, "events"));
+        assert_eq!(decode_events(body)[0].text.as_deref(), Some("two"));
+    }
+
+    #[test]
+    fn follow_from_start_replays_existing_content() {
+        let (proj, tctx) = follow_base();
+        let file = proj.join("s.jsonl");
+        std::fs::write(&file, "{\"uuid\":\"h\",\"message\":{\"role\":\"user\",\"content\":\"replayed\"}}\n").unwrap();
+        let hub = WatchHub::new(&ctx(&proj));
+        hub.follow(&tctx, &follow_body("proj-a", "s.jsonl", true)).unwrap();
+        let frames = collect(&hub, 40);
+        assert_eq!(frames.len(), 1);
+        let Frame::Event { kind, body, .. } = &frames[0] else { panic!() };
+        assert_eq!(kind, "events");
+        assert_eq!(decode_events(body)[0].text.as_deref(), Some("replayed"));
+        let _ = std::fs::remove_dir_all(file.parent().unwrap());
     }
 
     #[test]
