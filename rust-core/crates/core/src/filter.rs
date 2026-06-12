@@ -73,34 +73,12 @@ pub fn matching_indices_in(rows: &[Vec<String>], query: &Query) -> Vec<u32> {
             .collect();
     }
 
-    let needle = query.text.to_lowercase();
-    // ASCII fast path is only valid when the lowercased needle is itself ASCII.
-    // (`to_lowercase` can turn an ASCII input into non-ASCII? No — ASCII maps to
-    // ASCII — but the *query* may already contain non-ASCII, so guard on the
-    // result.) When the needle has any non-ASCII byte we always take the
-    // `to_lowercase()` Unicode path for byte-identity with the Swift impl.
-    let needle_is_ascii = needle.is_ascii();
-    let needle_bytes = needle.as_bytes();
+    let matcher = CellMatcher::new(&query.text);
     let mut indices = Vec::new();
-
-    let cell_matches = |cell: &str| -> bool {
-        // ASCII-vs-ASCII: a no-alloc `eq_ignore_ascii_case` byte-window scan.
-        // For ASCII data this is exactly equivalent to
-        // `cell.to_lowercase().contains(&needle)` — both fold `A-Z` → `a-z`
-        // and leave every other byte untouched. Non-ASCII cells (or a
-        // non-ASCII needle) fall back to the Unicode `to_lowercase()` path so
-        // Unicode case-folding semantics stay identical to Swift.
-        if needle_is_ascii && cell.is_ascii() {
-            ascii_contains_ignore_case(cell.as_bytes(), needle_bytes)
-        } else {
-            cell.to_lowercase().contains(&needle)
-        }
-    };
-
     for (i, row) in rows.iter().enumerate() {
         let matched = match &query.scope {
-            Scope::All => row.iter().any(|cell| cell_matches(cell)),
-            Scope::Column(c) => row.get(*c).is_some_and(|cell| cell_matches(cell)),
+            Scope::All => row.iter().any(|cell| matcher.matches(cell)),
+            Scope::Column(c) => row.get(*c).is_some_and(|cell| matcher.matches(cell)),
         };
         if matched {
             indices.push(u32::try_from(i).unwrap_or(u32::MAX));
@@ -108,6 +86,47 @@ pub fn matching_indices_in(rows: &[Vec<String>], query: &Query) -> Vec<u32> {
     }
 
     indices
+}
+
+/// The per-cell match predicate, factored out so every row-storage layout
+/// (the `Vec<Vec<String>>` paths here, the [`crate::table_arena::TableArena`]
+/// scan) shares ONE home for the match semantics — the Unicode-parity suite
+/// below pins it once for all of them.
+#[derive(Debug)]
+pub struct CellMatcher {
+    needle: String,
+    needle_is_ascii: bool,
+}
+
+impl CellMatcher {
+    /// Build a matcher for `query_text` (folded once, reused per cell).
+    #[must_use]
+    pub fn new(query_text: &str) -> Self {
+        // ASCII fast path is only valid when the lowercased needle is itself
+        // ASCII. (`to_lowercase` maps ASCII to ASCII — but the *query* may
+        // already contain non-ASCII, so guard on the result.) When the needle
+        // has any non-ASCII byte we always take the `to_lowercase()` Unicode
+        // path for byte-identity with the Swift impl.
+        let needle = query_text.to_lowercase();
+        let needle_is_ascii = needle.is_ascii();
+        Self { needle, needle_is_ascii }
+    }
+
+    /// Case-insensitive substring test for one cell.
+    #[must_use]
+    pub fn matches(&self, cell: &str) -> bool {
+        // ASCII-vs-ASCII: a no-alloc `eq_ignore_ascii_case` byte-window scan.
+        // For ASCII data this is exactly equivalent to
+        // `cell.to_lowercase().contains(&needle)` — both fold `A-Z` → `a-z`
+        // and leave every other byte untouched. Non-ASCII cells (or a
+        // non-ASCII needle) fall back to the Unicode `to_lowercase()` path so
+        // Unicode case-folding semantics stay identical to Swift.
+        if self.needle_is_ascii && cell.is_ascii() {
+            ascii_contains_ignore_case(cell.as_bytes(), self.needle.as_bytes())
+        } else {
+            cell.to_lowercase().contains(&self.needle)
+        }
+    }
 }
 
 /// No-alloc, no-panic case-insensitive substring test for ASCII byte strings.

@@ -664,7 +664,9 @@ pub unsafe extern "C" fn mdvcore_session_table(
             return MdvStatus::NullArg;
         };
         h.with(|session| {
-            match wire::encode_frame(session.table()) {
+            // TSK-546: encode straight from the arena's spans — byte-identical
+            // to encoding the owned Table, without materializing it.
+            match session.table_frame() {
                 Ok(frame) => {
                     // SAFETY: out_buf validated non-null above.
                     unsafe { *out_buf = MdvBuf::from_vec(frame) };

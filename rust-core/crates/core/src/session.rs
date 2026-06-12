@@ -17,15 +17,21 @@
 //! NOT `Sync` (no interior sync). Single-writer is the invariant; the FFI
 //! layer enforces it (see `mdvcore-ffi`). We do NOT slap `unsafe impl Sync` on it.
 
-use crate::filter::{self, Query};
+use crate::filter::Query;
+use crate::table_arena::TableArena;
 use crate::trace::{self, Level};
 use crate::wire::{self, Snapshot, Table, WireFault};
 use serde::Serialize;
 
 /// A parsed CSV table plus its active filter. Owns all state for one open CSV.
+///
+/// Storage is the [`TableArena`] (TSK-546): one contiguous text buffer + a
+/// flat offset table instead of the wire DTO's `Vec<Vec<String>>` — the
+/// per-keystroke filter scan walks linear memory, and a 1M-cell table costs
+/// 2 resident heap blocks instead of ~2M+.
 #[derive(Debug)]
 pub struct CsvSession {
-    table: Table,
+    arena: TableArena,
     query: Query,
     version: u64,
     // Cached filtered view, recomputed lazily when the query changes. Stores
@@ -60,30 +66,44 @@ impl CsvSession {
             "session.opened",
             vec![("rows", table.rows.len().to_string())],
         );
-        Ok(Self {
-            table,
-            query: Query::empty(),
-            version: 1,
-            cached: None,
-        })
+        Ok(Self::from_table(table))
     }
 
     /// Open a session from an already-parsed table (used in tests / when the
-    /// caller parsed separately).
+    /// caller parsed separately). Consumes the DTO into the arena store.
     #[must_use]
     pub fn from_table(table: Table) -> Self {
         Self {
-            table,
+            arena: TableArena::from_table(table),
             query: Query::empty(),
             version: 1,
             cached: None,
         }
     }
 
-    /// The parsed table (read-only borrow).
+    /// The arena store (read-only borrow) — span accessors without
+    /// materializing a wire [`Table`].
     #[must_use]
-    pub fn table(&self) -> &Table {
-        &self.table
+    pub fn arena(&self) -> &TableArena {
+        &self.arena
+    }
+
+    /// Materialize the parsed table as an owned wire [`Table`] (tests /
+    /// callers that need the DTO). The FFI full-table pull should use
+    /// [`CsvSession::table_frame`], which encodes straight from spans.
+    #[must_use]
+    pub fn to_table(&self) -> Table {
+        self.arena.to_table()
+    }
+
+    /// Encode the full table as a length-prefixed MessagePack frame,
+    /// byte-identical to `wire::encode_frame(&self.to_table())` but without
+    /// materializing the owned DTO (the `mdvcore_session_table` path).
+    ///
+    /// # Errors
+    /// [`WireFault::Encode`] / [`WireFault::TooLarge`] per `encode_frame`.
+    pub fn table_frame(&self) -> Result<Vec<u8>, WireFault> {
+        self.arena.table_frame()
     }
 
     /// The active query.
@@ -137,13 +157,13 @@ impl CsvSession {
             .unwrap_or_default();
         let rows = self.project_rows(&indices);
         Snapshot {
-            header: self.table.header.clone(),
+            header: self.arena.header_vec().into_iter().map(str::to_string).collect(),
             indices,
             rows,
-            total_rows: u32::try_from(self.table.rows.len()).unwrap_or(u32::MAX),
+            total_rows: u32::try_from(self.arena.row_count()).unwrap_or(u32::MAX),
             query: self.query.text.clone(),
             version: self.version,
-            truncated: self.table.truncated,
+            truncated: self.arena.truncated(),
         }
     }
 
@@ -165,31 +185,34 @@ impl CsvSession {
         // ensure_cached guarantees `cached` is Some for the current version; an
         // empty index slice (no surviving rows) is the safe fallback.
         let indices: &[u32] = self.cached.as_ref().map_or(&[], |view| view.indices.as_slice());
-        // Project rows as BORROWS — `&Vec<String>` serializes identically to
-        // `Vec<String>`, so the frame matches the owned `Snapshot` exactly.
-        let rows: Vec<&Vec<String>> = indices
+        // Project rows as arena SPANS — `&str` serializes identically to
+        // `String`, so the frame matches the owned `Snapshot` exactly.
+        let rows: Vec<Vec<&str>> = indices
             .iter()
-            .filter_map(|&i| self.table.rows.get(i as usize))
+            .filter(|&&i| (i as usize) < self.arena.row_count())
+            .map(|&i| self.arena.row(i as usize).collect())
             .collect();
         let view = SnapshotView {
-            header: &self.table.header,
+            header: self.arena.header_vec(),
             indices,
-            rows: &rows,
-            total_rows: u32::try_from(self.table.rows.len()).unwrap_or(u32::MAX),
+            rows,
+            total_rows: u32::try_from(self.arena.row_count()).unwrap_or(u32::MAX),
             query: &self.query.text,
             version: self.version,
-            truncated: self.table.truncated,
+            truncated: self.arena.truncated(),
         };
         wire::encode_frame(&view)
     }
 
-    /// Project the visible rows for `indices` by borrowing from
-    /// `self.table.rows`. Out-of-range indices (which cannot occur for a cache
-    /// computed against the current table) are skipped rather than panicking.
+    /// Project the visible rows for `indices` as owned strings from the
+    /// arena. Out-of-range indices (which cannot occur for a cache computed
+    /// against the current table) project as empty rows via the arena's
+    /// no-panic accessors.
     fn project_rows(&self, indices: &[u32]) -> Vec<Vec<String>> {
         indices
             .iter()
-            .filter_map(|&i| self.table.rows.get(i as usize).cloned())
+            .filter(|&&i| (i as usize) < self.arena.row_count())
+            .map(|&i| self.arena.row(i as usize).map(str::to_string).collect())
             .collect()
     }
 
@@ -200,12 +223,10 @@ impl CsvSession {
             .is_none_or(|c| c.for_version != self.version);
         if needs_recompute {
             // Cache the surviving indices only; rows are projected on demand.
-            // `filter::matching_indices` runs the match loop WITHOUT cloning any
-            // row — both the (default) empty-query identity path and the
-            // non-empty filter path go through it, so the match semantics live
-            // in one place and the session never materializes a row clone it
-            // would immediately discard.
-            let indices = filter::matching_indices(&self.table, &self.query);
+            // The arena scan runs the match loop over ONE contiguous buffer
+            // (no per-cell pointer chase) — match semantics live in
+            // `filter::CellMatcher`, shared with the Vec-based paths.
+            let indices = self.arena.matching_indices(&self.query);
             self.cached = Some(CachedView {
                 for_version: self.version,
                 indices,
@@ -223,9 +244,9 @@ impl CsvSession {
 /// [`Snapshot`].
 #[derive(Serialize)]
 struct SnapshotView<'a> {
-    header: &'a [String],
+    header: Vec<&'a str>,
     indices: &'a [u32],
-    rows: &'a [&'a Vec<String>],
+    rows: Vec<Vec<&'a str>>,
     total_rows: u32,
     query: &'a str,
     version: u64,
@@ -267,9 +288,21 @@ mod tests {
     #[test]
     fn open_parses() {
         let s = CsvSession::open(CSV.as_bytes()).unwrap();
-        assert_eq!(s.table().header, vec!["name", "city"]);
-        assert_eq!(s.table().rows.len(), 3);
+        assert_eq!(s.to_table().header, vec!["name", "city"]);
+        assert_eq!(s.arena().row_count(), 3);
         assert_eq!(s.version(), 1);
+    }
+
+    /// TSK-546 — the arena store must encode the SAME full-table frame the
+    /// wire DTO would: byte-identical to encoding the materialized Table.
+    #[test]
+    fn table_frame_matches_owned_table_encode() {
+        let s = CsvSession::open(CSV.as_bytes()).unwrap();
+        assert_eq!(
+            s.table_frame().unwrap(),
+            wire::encode_frame(&s.to_table()).unwrap(),
+            "span-projected table frame must be byte-identical to the DTO frame"
+        );
     }
 
     #[test]

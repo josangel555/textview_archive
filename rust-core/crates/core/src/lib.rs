@@ -41,6 +41,7 @@ pub mod meta;
 pub mod nav;
 pub mod outline;
 pub mod session;
+pub mod table_arena;
 pub mod theme;
 pub mod trace;
 pub mod transcript;
