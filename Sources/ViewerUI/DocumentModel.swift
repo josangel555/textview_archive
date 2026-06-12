@@ -2077,6 +2077,106 @@ public final class DocumentModel: ObservableObject {
         return true
     }
 
+    #if DEBUG
+    /// Test-only: the last rename dispatch + the uris whose edits were
+    /// SKIPPED because the file isn't open in any tab (viewer posture: a
+    /// rename never silently writes files to disk).
+    var _lastRenameDispatch: (url: URL, newName: String)?
+    var _lastRenameSkippedURIs: [String] = []
+    #endif
+
+    /// `editor.rename` (TSK-640 stage 2): rename the symbol at the active
+    /// editor cursor via `textDocument/rename`. Apply policy, deliberate:
+    ///   • the DISPATCHING buffer is snapshot-guarded exactly like
+    ///     `formatActiveEditorViaLSP` — a keystroke racing the server wins;
+    ///   • edits to OTHER OPEN tabs apply against their current buffer
+    ///     text (cross-file rename inside the session);
+    ///   • edits to files NOT open anywhere are SKIPPED, never written to
+    ///     disk behind the user's back (recorded for diagnostics).
+    /// Returns false when there is no selected tab/URL, no LSP language,
+    /// no editor buffer, no cursor, or an empty new name.
+    @discardableResult
+    public func renameActiveEditorSymbolViaLSP(newName: String) -> Bool {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        guard let tab = tabs.selected, let url = tab.url else { return false }
+        guard lspPool.registry.language(for: url) != nil else { return false }
+        guard let buf = editor.editorBuffers[tab.id] else { return false }
+        guard let cursor = editor.editorCursorByTab[tab.id] else { return false }
+        let tabID = tab.id
+        let snapshot = buf.text
+        #if DEBUG
+        _lastRenameDispatch = (url, trimmed)
+        #endif
+        Task { [weak self] in
+            guard let self = self else { return }
+            do {
+                let workspaceEdit = try await self.lspPool.rename(
+                    fileURL: url, line: cursor.line, character: cursor.column,
+                    newName: trimmed)
+                guard !workspaceEdit.isEmpty else { return }
+                await MainActor.run {
+                    self.applyRenameWorkspaceEdit(
+                        workspaceEdit, dispatchTabID: tabID, dispatchSnapshot: snapshot)
+                }
+            } catch {
+                // Same silent-failure contract as format/go-to: a server
+                // error degrades to "nothing happened".
+            }
+        }
+        return true
+    }
+
+    /// Apply a decoded WorkspaceEdit to the open tabs (see the policy on
+    /// `renameActiveEditorSymbolViaLSP`).
+    private func applyRenameWorkspaceEdit(
+        _ workspaceEdit: [String: [LSPTextEdit]],
+        dispatchTabID: UUID,
+        dispatchSnapshot: String
+    ) {
+        #if DEBUG
+        _lastRenameSkippedURIs = []
+        #endif
+        for (uri, edits) in workspaceEdit {
+            guard !edits.isEmpty,
+                  let editURL = URL(string: uri), editURL.isFileURL else { continue }
+            let editPath = editURL.standardizedFileURL.resolvingSymlinksInPath().path
+            let target = tabs.tabs.first { t in
+                guard let u = t.url else { return false }
+                return u.standardizedFileURL.resolvingSymlinksInPath().path == editPath
+            }
+            guard let target, let buffer = editor.editorBuffers[target.id] else {
+                #if DEBUG
+                _lastRenameSkippedURIs.append(uri)
+                #endif
+                continue
+            }
+            if target.id == dispatchTabID {
+                // Snapshot guard: the user typed while the server worked —
+                // their text wins, the stale edits drop.
+                guard buffer.text == dispatchSnapshot else { continue }
+            }
+            let updated = LSPTextEditApplier.apply(edits, to: buffer.text, encoding: .utf16)
+            if updated != buffer.text {
+                updateEditorText(updated, forTabID: target.id)
+            }
+        }
+    }
+
+    #if DEBUG
+    /// Test-only door to the private apply step (the skip policy can't be
+    /// reached through the fake server, whose fixture only ever edits the
+    /// requested file).
+    func _applyRenameWorkspaceEditForTesting(
+        _ workspaceEdit: [String: [LSPTextEdit]],
+        dispatchTabID: UUID,
+        dispatchSnapshot: String
+    ) {
+        applyRenameWorkspaceEdit(
+            workspaceEdit, dispatchTabID: dispatchTabID, dispatchSnapshot: dispatchSnapshot)
+    }
+    #endif
+
     /// JS posted a right-click. Build a native NSMenu and pop it at
     /// the screen point CM6 forwarded. Keeps Cmd-click + right-click
     /// → "Go to Definition" symmetric with the source-view's menu.
