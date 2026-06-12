@@ -35,3 +35,12 @@ jobs:
 
       - name: Run supply-chain audit
         run: bash scripts/rust-supply-chain-audit.sh
+
+      - name: SwiftPM advisory watch (TSK-628)
+        # STRICT: an unreachable advisory API FAILS the lane — a watch that
+        # silently passes offline is a false green. GITHUB_TOKEN feeds the
+        # GH Advisory Database query (ecosystem=swift).
+        env:
+          MDV_ADVISORY_STRICT: "1"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/swiftpm-advisory-watch.sh
