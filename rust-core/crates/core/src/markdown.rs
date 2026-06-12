@@ -12,11 +12,14 @@
 //! - `raw_html` — raw HTML blocks/inline tags. The SECURITY BARRIER
 //!   (`HTMLSanitizer`) stays Swift-side, per the TSK-631 grooming; the core
 //!   never emits attacker-controlled raw HTML into `html`.
-//! - `mermaid` — ` ```mermaid ` fences; the host `<div class="mdv-mermaid">`
-//!   needs `MermaidSourceParser` (steps/hash/id), which is host logic.
 //! - `code` — fences with a non-empty info string; the host decides
 //!   TreeSitter `tok-*` spans vs plain escape. The `<pre><code class=…>`
 //!   wrapper IS emitted here; the sentinel sits where the body goes.
+//!   (Retires when the TSK-660 highlight port lands.)
+//!
+//! ` ```mermaid ` fences render their COMPLETE host `<div class="mdv-mermaid">`
+//! here via [`crate::mermaid`] (TSK-661) — no chunk round-trip; only the
+//! mermaid.js diagram pass stays client-side.
 //!
 //! Splice rule: each sentinel is replaced VERBATIM by the enrichment of its
 //! chunk, located by scanning the ORIGINAL core-emitted html (segment-based,
@@ -53,8 +56,6 @@ pub struct Chunk {
 pub enum ChunkKind {
     /// Sanitize (HTMLSanitizer) and splice.
     RawHtml,
-    /// Build the mermaid host `<div>` and splice.
-    Mermaid,
     /// Highlight (or plain-escape) the fence body and splice.
     Code,
 }
@@ -65,7 +66,6 @@ impl ChunkKind {
     pub fn as_str(self) -> &'static str {
         match self {
             ChunkKind::RawHtml => "raw_html",
-            ChunkKind::Mermaid => "mermaid",
             ChunkKind::Code => "code",
         }
     }
@@ -381,7 +381,9 @@ impl Writer {
                 if info.is_empty() {
                     self.out(&format!("<pre><code>{}</code></pre>\n", escape(&code)));
                 } else if info.eq_ignore_ascii_case("mermaid") {
-                    self.push_chunk(ChunkKind::Mermaid, "", code);
+                    // TSK-661: the full host div renders in core — no chunk.
+                    let host = crate::mermaid::render_host(&code);
+                    self.out(&host);
                 } else {
                     self.out(&format!("<pre><code class=\"language-{}\">", escape(&info)));
                     self.push_chunk(ChunkKind::Code, &info, code);
@@ -741,17 +743,22 @@ mod tests {
     }
 
     #[test]
-    fn mermaid_fences_become_mermaid_chunks() {
+    fn mermaid_fences_render_full_host_div_no_chunk() {
+        // TSK-661: the host div renders in core (id/hash/steps/src attrs);
+        // no chunk crosses to the host for mermaid.
         let out = render("```mermaid\ngraph TD; A-->B;\n```");
-        assert_eq!(out.html, sentinel(0));
-        assert_eq!(out.chunks.first().map(|c| c.kind), Some(ChunkKind::Mermaid));
-        assert_eq!(
-            out.chunks.first().map(|c| c.payload.as_str()),
-            Some("graph TD; A-->B;\n")
-        );
+        assert!(out.chunks.is_empty(), "mermaid must not produce a chunk");
+        assert!(out.html.starts_with("<div class=\"mdv-mermaid\""));
+        assert!(out.html.contains("data-mdv-src-hash=\""));
+        assert!(out.html.contains("graph TD; A--&gt;B;"));
+        assert!(out.html.ends_with("</div>\n"));
         // Case-insensitive intercept, like the Swift visitor.
         let out = render("```Mermaid\nx\n```");
-        assert_eq!(out.chunks.first().map(|c| c.kind), Some(ChunkKind::Mermaid));
+        assert!(out.chunks.is_empty());
+        assert!(out.html.starts_with("<div class=\"mdv-mermaid\""));
+        // Step annotations surface as the data-mdv-steps manifest.
+        let out = render("```mermaid\n%% @step 1\nA-->B\n```");
+        assert!(out.html.contains("data-mdv-steps=\""));
     }
 
     #[test]

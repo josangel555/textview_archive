@@ -26,7 +26,11 @@ final class MarkdownRenderABTests: XCTestCase {
         case "raw_html":
             return HTMLSanitizer.sanitize(chunk.payload)
         case "mermaid":
-            return visitor.renderMermaidHost(source: chunk.payload)
+            // TSK-661 retired this kind: the core renders the host div
+            // itself. A mermaid chunk reappearing means the rust side
+            // regressed to the chunk path.
+            XCTFail("'mermaid' chunk kind is retired — core renders the host div")
+            return ""
         case "code":
             let lang = HighlightLanguage.detect(fromInfoString: chunk.lang)
             if lang != .plainText {
@@ -85,9 +89,17 @@ final class MarkdownRenderABTests: XCTestCase {
         try assertParity("```json\n{\"k\": [1, true, null]}\n```")
         // Unknown language — chunk falls back to plain escape.
         try assertParity("```nosuchlang\na < b\n```")
-        // Mermaid host div (hash/steps/data-attrs via the same Swift parser).
+        // Mermaid host div — rendered ENTIRELY in rust since TSK-661; the
+        // byte-equal comparison vs the Swift renderMermaidHost output is
+        // the parity oracle for the hand-rolled SHA-256 hash, the steps
+        // JSON byte shape, and the attribute order.
         try assertParity("```mermaid\ngraph TD; A-->B;\n```")
         try assertParity("```Mermaid\nsequenceDiagram\n  A->>B: hi\n```")
+        try assertParity("```mermaid\n%% @id flow-1\n%% @step 1\nA-->B\n%% @step 2\nB-->C\n```")
+        // And the retired kind never crosses the wire.
+        let out = try mdvCoreMarkdownRender(text: "```mermaid\nA-->B\n```")
+        XCTAssertFalse(out.chunks.contains { $0.kind == "mermaid" })
+        XCTAssertTrue(out.html.contains("data-mdv-src-hash"))
     }
 
     func test_raw_html_corpus_sanitizer_barrier() throws {
