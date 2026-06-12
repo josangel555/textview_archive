@@ -105,14 +105,14 @@ fn reserved_capability_bits_stay_off_until_their_exports_land() {
     assert_eq!(mask & MDV_CAP_FIND, 0, "find not ported yet (TSK-630)");
     assert_eq!(mask & MDV_CAP_MARKDOWN, 0, "markdown not ported yet (TSK-631)");
     assert_eq!(mask & MDV_CAP_TRANSCRIPT, 0, "transcript not ported yet (TSK-632)");
-    assert_eq!(mask & MDV_CAP_FUZZY, 0, "fuzzy not ported yet (TSK-633)");
-    // And the shipped families are ON.
+    // And the shipped families are ON (fuzzy landed with TSK-633).
     for (bit, name) in [
         (MDV_CAP_CSV_SESSION, "csv"),
         (MDV_CAP_DIFF, "diff"),
         (MDV_CAP_HEX, "hex"),
         (MDV_CAP_INDENT, "indent"),
         (MDV_CAP_CM_APPLY, "cm_apply"),
+        (MDV_CAP_FUZZY, "fuzzy"),
     ] {
         assert_ne!(mask & bit, 0, "shipped family '{name}' must advertise its bit");
     }
@@ -527,6 +527,7 @@ macro_rules! frame_export_misuse_matrix {
 
 frame_export_misuse_matrix!(cm_apply_misuse_matrix, mdvcore_cm_apply);
 frame_export_misuse_matrix!(diff_parse_misuse_matrix, mdvcore_diff_parse);
+frame_export_misuse_matrix!(fuzzy_rank_misuse_matrix, mdvcore_fuzzy_rank);
 
 frame_export_misuse_matrix!(diff_hunk_marks_misuse_matrix, mdvcore_diff_hunk_marks);
 

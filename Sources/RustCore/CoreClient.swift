@@ -686,3 +686,45 @@ public func mdvCoreIndentDetect(text: String, sampleLines: Int = 50) throws -> S
     return String(decoding: UnsafeBufferPointer(start: data, count: Int(buf.len)),
                   as: UTF8.self)
 }
+
+// MARK: - Fuzzy ranking (migration slice — TSK-633)
+
+/// One ranked fuzzy match from the Rust core. `matchedIndices` are Unicode
+/// SCALAR offsets into the candidate (the Rust port walks `char`s; the Swift
+/// twin walks grapheme `Character`s) — identical on ASCII, divergent only on
+/// grapheme-cluster-heavy strings. A consumer highlighting glyphs must map.
+public struct FuzzyRanked: Equatable, Sendable {
+    public let index: Int
+    public let score: Int
+    public let matchedIndices: [Int]
+}
+
+/// Rank `candidates` against `query` through the Rust core (STATELESS,
+/// `{query, candidates}` frame in, `{matches:[{index,score,indices}]}` frame
+/// out — sorted score-descending, stable input-order ties, exactly the Swift
+/// `FuzzyMatcher.filterWithMatches` contract). Throws `CoreError` only on a
+/// bridge FAULT so an adapter can fall back to the Swift matcher.
+public func mdvCoreFuzzyRank(query: String, candidates: [String]) throws -> [FuzzyRanked] {
+    let request = MsgPackValue.map([
+        (.string("query"), .string(query)),
+        (.string("candidates"), .array(candidates.map { .string($0) })),
+    ])
+    guard let body = try mdvFrameCall("fuzzy_rank", mdvcore_fuzzy_rank, request: request) else {
+        throw CoreError.decode("empty fuzzy_rank response frame")
+    }
+    var reader = MsgPackReader(body)
+    do {
+        let map = try reader.decode().mapValue()
+        guard let matches = map["matches"] else { throw CoreError.decode("missing 'matches'") }
+        return try matches.arrayValue().map { el in
+            let m = try el.mapValue()
+            return FuzzyRanked(
+                index: Int(try m.require("index").u64Value()),
+                score: Int(try m.require("score").u64Value()),
+                matchedIndices: try m.require("indices").u32Array().map(Int.init)
+            )
+        }
+    } catch let e as MsgPackError {
+        throw CoreError.decode("\(e)")
+    }
+}

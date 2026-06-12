@@ -53,6 +53,7 @@ pub mod status;
 use mdvcore_core::cm_edit;
 use mdvcore_core::diff;
 use mdvcore_core::filter::{Query, Scope};
+use mdvcore_core::fuzzy;
 use mdvcore_core::hex;
 use mdvcore_core::indent;
 use mdvcore_core::session::{CsvSession, OpenError};
@@ -139,7 +140,7 @@ pub const MDV_CAP_FIND: u64 = 1 << 5;
 pub const MDV_CAP_MARKDOWN: u64 = 1 << 6;
 /// RESERVED (TSK-632): transcript/JSONL parse — not yet implemented.
 pub const MDV_CAP_TRANSCRIPT: u64 = 1 << 7;
-/// RESERVED (TSK-633): fuzzy matcher — not yet implemented.
+/// Fuzzy ranking (`mdvcore_fuzzy_rank`) — TSK-633.
 pub const MDV_CAP_FUZZY: u64 = 1 << 8;
 
 /// The capability mask THIS build was compiled with. Reserved bits stay OFF
@@ -149,7 +150,8 @@ pub const MDV_CAPABILITIES: u64 = MDV_CAP_CSV_SESSION
     | MDV_CAP_DIFF
     | MDV_CAP_HEX
     | MDV_CAP_INDENT
-    | MDV_CAP_CM_APPLY;
+    | MDV_CAP_CM_APPLY
+    | MDV_CAP_FUZZY;
 
 /// Runtime capability mask of the LINKED library. Returns 0 (no capabilities
 /// — every gated feature disabled, never UB) if the guard trips. Callers must
@@ -252,6 +254,28 @@ pub unsafe extern "C" fn mdvcore_diff_hunk_marks(
     out_buf: *mut MdvBuf,
 ) -> MdvStatus {
     ffi_frame_body!(req, req_len, out_buf, diff::hunk_marks_wire)
+}
+
+/// Rank candidates by fuzzy-match score (stateless, TSK-633). `req`/`req_len`
+/// is a `{query, candidates:[String]}` MessagePack request frame; the result
+/// is written to `out_buf` as a `{matches:[{index, score, indices}]}` response
+/// frame, sorted score-descending with stable input-order ties. Caller MUST
+/// call [`mdvcore_buf_free`] on `out_buf`.
+///
+/// # Returns
+/// [`MdvStatus::Ok`], [`MdvStatus::NullArg`], [`MdvStatus::WireError`], or
+/// [`MdvStatus::Panic`].
+///
+/// # Safety
+/// `req` must point to `req_len` valid bytes (or be null with `req_len == 0`).
+/// `out_buf` must be a valid, writable pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_fuzzy_rank(
+    req: *const u8,
+    req_len: usize,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_frame_body!(req, req_len, out_buf, fuzzy::rank_wire)
 }
 
 /// Render a HEX dump (stateless). `bytes`/`len` is the raw byte buffer to dump;
