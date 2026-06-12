@@ -7966,3 +7966,20 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   windowed read) with the engine surface already proven byte-equal — the remote-core
   MVP is: tunnel + mdv-serve --socket --root. Deferred, recorded: fs.tree, fs.watch
   (push loop; protocol designed), Swift-side consumers (remote sidebar UI).
+## LOG +249 (2026-06-12 tick — TSK-657 validated: the git family, server-side)
+
+- **TSK-657 v1 → validated** (a513564): git.head (direct .git/HEAD read incl. one
+  worktree-indirection level — the statusbar-chip feed, subprocess-free) +
+  status/branches/log spawning the SERVER's git under the GitClient discipline: no
+  shell, 5s deadline (poll+kill), 1MiB cap with a DRAINING reader thread (chatty child
+  can't pipe-deadlock), log clamped 500. Containment shared with fs; MDV_CAP_GIT=1<<10
+  server-only, pinned both sides. Read-only v1 (mutations/diff-text deferred,
+  recorded). Tests run REAL git against a temp repo in the gate. Teeth: HEAD-parse
+  prefix → red.
+- Lint note for the record: the determinism lint (Instant::now ban) is a CORE
+  protection — the host layer's ambient clock IS the subprocess deadline; scoped
+  allow with reason (mdv-web has the same posture and only evades the gate by not
+  being a default member).
+- Remote families remaining: TSK-656 (cross-file search), TSK-658 (transcript
+  list/follow), TSK-659 (LSP pipe), fs.watch/tree (TSK-654 deferrals), TSK-660
+  (TreeSitter). Soak (csv/indent/diff) quiet so far — flip round 2 next.
