@@ -7677,3 +7677,22 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   signature+doc+1-line body, 2 test-macro lines, a 1-line Swift wrapper, and a capability
   bit flip — ~15 min vs the audited ~45. Ports land core engines next and ride this.
 - Both gates green; main @ 9310e83 + this log.
+
+## LOG +235 (2026-06-12 tick — TSK-633 validated: the first engine port, riding the new ceremony)
+
+- **TSK-633 → validated** (commit 5dfd4ce, zero new deps). The FuzzyMatcher port proves the
+  whole TSK-634 pipeline end-to-end on its first real customer: char-level engine with every
+  Swift scoring constant pinned (`scoring_matches_the_swift_table`), wire layer, export via
+  1-line `ffi_frame_body!` + 2-line misuse matrix, `MDV_CAP_FUZZY` flipped atomically (the
+  stage-1 capability contract BIT during development — the Swift reserved-bit test went red
+  on the flip until edited in the same change, exactly as designed), 1-line Swift wrapper.
+- **A/B parity green first try**: scores + order + matched INDICES identical to the shipping
+  `FuzzyMatcher.filterWithMatches` on an ASCII filename/command corpus (13 queries);
+  scores+order on single-scalar unicode; the scalar-vs-grapheme index unit divergence is
+  documented. TEETH: boundary bonus 6→5 in Rust → A/B red cross-language → restored.
+- **The no-panic wall earned its keep**: gate clippy rejected `[]` indexing in the first
+  draft → lint-clean `get()` accessors. Hygiene: a misfiled placeholder (TSK-644) was
+  self-dismissed as invalid.
+- Swift `FuzzyMatcher` is now §2.5-frozen with a validated Rust replacement standing by;
+  adapter flip waits on the collective decision. Next ports: TSK-632 (transcript/JSONL,
+  hand-rolled JSON) or TSK-630 (find/regex-lite — first dep add under the features-off rider).
