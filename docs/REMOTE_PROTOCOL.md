@@ -147,6 +147,39 @@ Subscribe/unsubscribe are ordinary requests:
   failure → the adapters' Swift fallback fires exactly as for a local fault
   (fail-safe property preserved remotely).
 
+## 7.5 The LSP pipe (TSK-659 design — implementable spec)
+
+Owner rulings (2026-06-12): terminal is OUT of mdv-serve (remote terminal =
+ssh / `tmux -CC` over ssh); LSP servers RUN ON the remote host and their
+JSON-RPC is PIPED to the UI over this channel. "Proxy" never means protocol
+translation — the pipe carries verbatim JSON-RPC bodies.
+
+- **Security posture (load-bearing): the wire is NOT a remote-exec API.**
+  `lsp.start` picks a server by NAME from the operator's allowlist
+  (`--lsp-server <name>=<path> [args…]`, repeatable, at mdv-serve startup).
+  No command, path, or argv ever crosses the wire. No allowlist = the
+  family answers `unauthorized` (and the `lsp_pipe` capability bit stays
+  OFF in hello).
+- **Methods:** `lsp.start {server, root}` → `{sub}` (root contained in the
+  served root; the child's cwd). The session IS a subscription: child
+  stdout JSON-RPC messages arrive as events `{k:"lsp", b:<verbatim body>}`
+  (Content-Length framing stripped server-side, re-added client-side if
+  needed); child death → `{k:"exit", b:{code}}`, terminal for the sub.
+  `lsp.send {sub, payload}` → `{}` writes one framed message to child
+  stdin. `lsp.stop {sub}` → graceful shutdown (request 'shutdown'/'exit'
+  is the CLIENT's protocol job; stop kills after a deadline).
+- **Lifecycle:** sessions die with the connection (kill + reap — the
+  fs.watch posture). Restart policy belongs to the client (it sees `exit`).
+  Server-binary provisioning is the OPERATOR's job, documented, not solved.
+- **URI mapping (the one design item, resolved):** NO translation layer.
+  The pipe carries server-local `file://` URIs verbatim; the client
+  addresses remote documents by their server paths (which it already has
+  from `fs.readdir`). This binds LSP-pipe usefulness to remote-file
+  editing, which is the correct dependency order — translation heuristics
+  would mask it.
+- **Capability:** `lsp_pipe` (1<<12, pre-assigned) flips ON in hello only
+  when at least one allowlisted server is configured.
+
 ## 8. What this deliberately defers
 
 - Authentication beyond the tunnel (the tunnel IS the auth boundary, v1).
