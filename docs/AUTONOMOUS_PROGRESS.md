@@ -8038,3 +8038,15 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   by design; when cmEdit flips, those probes must switch to env-pinning.
 - Next: cmEdit flip after soak, then STAGE B (gate removal + twin deletion, owner-
   gated per engine) — the actual Swift-core shrinkage the owner asked for.
+## LOG +254 (2026-06-12 tick — TSK-636 validated: the sensitive-activity audit log)
+
+- **TSK-636 v1 → validated** (9a66ea3): the owner's "I want to see what the app
+  touched" — AuditLog JSONL at ~/Library/Application Support/MarkdownViewer/audit.jsonl,
+  5MB rotation, default ON (explicit-false kill switch), contents NEVER logged. The v1
+  viewer is the app itself (it's a JSONL — open it in TextView). Emit points: the
+  CoreTransportRegistry audit hook (every stateless core call, BOTH transports,
+  failures-only — fuzzy fires per palette keystroke, so successes would be noise;
+  a failing core is the signal), DocumentController.open, EditorCoordinator.saveEditor,
+  GitClient spawns. Teeth: rotation disabled → red. Follow-ups recorded: WebView
+  policy, other spawns, pasteboard, UI panel.
+- The TSK-652 seam paid for itself again: ONE hook covers local AND remote core calls.
