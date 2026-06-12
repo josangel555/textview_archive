@@ -8267,3 +8267,19 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   suite self-skips on the VM (no mdv-serve binary — by design).
 - Board: VM evidence recorded on TSK-660 (still owner-parked on the
   63/43-vs-48/26 cap decision). TSK-628 sits validated from LOG +266.
+
+## LOG +268 (2026-06-12 tick — TSK-640 stage 2: the rename action lands headless)
+
+- **`renameActiveEditorSymbolViaLSP` (9bed97a):** the model-side rename
+  action on the formatActiveEditorViaLSP pattern. Policy, deliberate: the
+  dispatching buffer is snapshot-guarded (racing keystroke wins); edits to
+  other OPEN tabs apply in-session (uri matched by standardized,
+  symlink-resolved path); files not open anywhere are SKIPPED — a rename
+  never writes to disk behind the user's back (DEBUG seam records the
+  skips).
+- 4 fake-server end-to-end tests: two-edit reverse application + dirty
+  flag, snapshot-guard race, the guard set (cursor/blank-name), and the
+  unopened-file skip with byte-identical disk proof. TEETH: removing the
+  snapshot guard reddened the race test. Headless gate EXIT=0.
+- Ticket stays at `progress`: the live UI half (editor command + new-name
+  prompt invoking this action — VM lane) and code actions remain.
