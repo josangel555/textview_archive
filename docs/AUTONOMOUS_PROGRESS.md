@@ -8153,3 +8153,19 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - TSK-468 drain: the fix intact on today's main; the VM suite covers its
   compile/headless half — only the GUI glance batch remains (References menu, outline
   panel, theme picker), alongside the TSK-649 stage-B owner decision.
+
+## LOG +263 (2026-06-12 tick — TSK-640 stage 1: LSP rename plumbing lands)
+
+- **`textDocument/rename` request path landed (894a7be):** `LSPClient.rename`
+  + `decodeWorkspaceEdit` (BOTH spec forms — the `changes` uri→edits map and
+  the `documentChanges` TextDocumentEdit array; merged per-uri, malformed
+  entries drop), `LSPPool.rename` route with request/crash bookkeeping, fake
+  server gains `renameProvider` + a deterministic two-edit fixture.
+- 8 new tests: decode unit pins (both forms, merge, malformed-drop,
+  non-object→empty), end-to-end fake-server rename applied through the
+  SHIPPING `LSPTextEditApplier` (multi-edit reverse application on a real
+  doc), notInitialized guard, pool route + requestCount. TEETH: corrupting
+  the `changes` key lookup reddened 5 tests; restored green. Headless gate
+  PASSED.
+- Board: TSK-640 stays at `progress` — stage 2 (editor invocation: CM6
+  selection → prompt → per-file apply → tab refresh) is the live-gated tail.
