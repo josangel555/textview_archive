@@ -348,31 +348,16 @@ private struct PaletteRow: View {
         return entry.kind == .folder ? "folder" : "doc.text"
     }
 
-    /// Builds an AttributedString where matched characters are bolded and
-    /// accent-colored. Single forward pass over the characters — O(N), not
-    /// the previous O(N²) where each matched index re-walked from startIndex.
-    /// `matchedIndices` index into the original `displayName` (the matcher's
-    /// new contract — see FuzzyMatcher.match docs).
+    /// Matched-glyph bolding via the shared `FuzzyHighlight` helper
+    /// (TSK-282 extracted it so the sidebar filter renders identically).
     private var attributedName: AttributedString {
-        let name = entry.displayName
-        var out = AttributedString(name)
-        let regular: Color = isSelected ? .white : .primary
-        let highlight: Color = isSelected ? .white : .accentColor
-        out.foregroundColor = regular
-        let matchedSet = Set(matchedIndices)
-
-        var charIndex = 0
-        var cur = out.startIndex
-        while cur < out.endIndex {
-            let next = out.characters.index(after: cur)
-            if matchedSet.contains(charIndex) {
-                out[cur..<next].foregroundColor = highlight
-                out[cur..<next].font = .system(size: 13, weight: .semibold)
-            }
-            cur = next
-            charIndex += 1
-        }
-        return out
+        FuzzyHighlight.attributed(
+            entry.displayName,
+            matchedIndices: matchedIndices,
+            size: 13,
+            regular: isSelected ? .white : .primary,
+            highlight: isSelected ? .white : .accentColor
+        )
     }
 }
 

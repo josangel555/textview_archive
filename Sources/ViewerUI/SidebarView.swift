@@ -27,6 +27,16 @@ struct SidebarView: View {
     /// header reads as clickable.
     @State private var filesHeaderHovering = false
 
+    // TSK-282 (mode A): type-to-fuzzy-filter the visible file tree.
+    // VIEW-LOCAL @State, deliberately NOT @Published on SidebarModel —
+    // widening model observation is what #215 punished (design doc rule 2).
+    // The debounced copy drives the actual ranking (~130 ms, the palette/
+    // CSV-filter cadence); matches are computed in onChange, never in body.
+    @State private var filterQuery = ""
+    @State private var debouncedFilterQuery = ""
+    @State private var filterMatches: [SidebarFilterMatch] = []
+    @State private var filterDebounceTask: Task<Void, Never>?
+
     /// P1 — TOOL-WINDOW BOUNDING. The sidebar's currently-allotted
     /// content height, measured via a NON-layout-driving
     /// `.background(GeometryReader …)` (the same intrinsic-size-safe trick
@@ -501,6 +511,12 @@ struct SidebarView: View {
                     Divider()
                 }
                 if filesExpanded {
+                    // TSK-282: type-to-filter field. Additive — empty query
+                    // renders the tree exactly as before.
+                    sidebarFilterField
+                    if !debouncedFilterQuery.isEmpty {
+                        filteredResultsList
+                    } else {
                     ScrollViewReader { proxy in
                         ScrollView {
                             // PERF #6: flatten the visible tree once and
@@ -564,6 +580,7 @@ struct SidebarView: View {
                     // the tree would collapse to its intrinsic
                     // height and leave a gap at the sidebar bottom.
                     .frame(maxHeight: .infinity)
+                    }
                 }
             }
         } else {
@@ -575,6 +592,105 @@ struct SidebarView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
+        }
+    }
+
+    // MARK: - TSK-282 fuzzy filter (mode A — narrow the visible rows)
+
+    /// The type-to-filter field under the FILES header. Esc clears (the
+    /// field's exit command); the clear button is the discoverable twin.
+    private var sidebarFilterField: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: model.uiSize(10)))
+                .foregroundStyle(Palette.secondaryLabel)
+            TextField("Filter files", text: $filterQuery)
+                .textFieldStyle(.plain)
+                .font(.system(size: model.uiSize(11)))
+                .onExitCommand { filterQuery = "" }
+                .accessibilityIdentifier("sidebar.filterField")
+            if !filterQuery.isEmpty {
+                Button {
+                    filterQuery = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: model.uiSize(10)))
+                        .foregroundStyle(Palette.secondaryLabel)
+                }
+                .buttonStyle(.plain)
+                .help("Clear the file filter")
+                .accessibilityIdentifier("sidebar.filterField.clear")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 3)
+        .onChange(of: filterQuery) { _, new in
+            // Debounce keystrokes (~130 ms, the palette/CSV cadence);
+            // clearing applies INSTANTLY so Esc snaps the tree back.
+            filterDebounceTask?.cancel()
+            if new.isEmpty {
+                debouncedFilterQuery = ""
+                filterMatches = []
+                return
+            }
+            filterDebounceTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 130_000_000)
+                guard !Task.isCancelled else { return }
+                debouncedFilterQuery = new
+                recomputeFilterMatches()
+            }
+        }
+    }
+
+    /// Flat ranked results replacing the tree while a filter is active.
+    /// Matches are recomputed in `onChange`, never in `body` (design
+    /// rule 1 — nothing expensive on the body pass).
+    private var filteredResultsList: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                if filterMatches.isEmpty {
+                    HStack {
+                        Text("No matches")
+                            .foregroundStyle(.secondary)
+                            .font(.system(size: model.uiSize(11)))
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                } else {
+                    ForEach(filterMatches) { match in
+                        SidebarFilterRow(
+                            match: match,
+                            uiSize: model.uiSize,
+                            action: { activateFilterMatch(match) }
+                        )
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        }
+        .frame(maxHeight: .infinity)
+        .accessibilityIdentifier("sidebar.filterResults")
+    }
+
+    private func recomputeFilterMatches() {
+        filterMatches = SidebarFilter.filter(
+            sidebar.flatVisibleRows(), query: debouncedFilterQuery)
+    }
+
+    /// Same activation semantics as a tree row (`FileRowView.activate`):
+    /// file → ephemeral preview tab; directory → toggle expansion (the
+    /// newly visible children join the next recompute). Opening a FILE
+    /// clears the filter — you found what you were looking for; the tree
+    /// snaps back with the selection set.
+    private func activateFilterMatch(_ match: SidebarFilterMatch) {
+        sidebar.setSelected(match.url)
+        if match.isDirectory {
+            sidebar.toggleExpansion(match.url)
+            recomputeFilterMatches()
+        } else {
+            model.openPreview(url: match.url)
+            filterQuery = ""
         }
     }
 
@@ -1070,6 +1186,47 @@ struct FileRowState: Equatable, Sendable {
             recencyMode: recencyMode,
             recencyVersion: sidebar.recencyVersion
         )
+    }
+}
+
+/// One flat row in the TSK-282 filtered-results list: icon + fuzzy-bolded
+/// name + root-relative path. Deliberately lighter than `FileRowView` (no
+/// tree depth, no git stripe) — filter mode is a transient find surface.
+private struct SidebarFilterRow: View {
+    let match: SidebarFilterMatch
+    let uiSize: (CGFloat) -> CGFloat
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                FileIconView(
+                    url: match.url,
+                    isDirectory: match.isDirectory,
+                    isExpanded: false,
+                    size: .tree
+                )
+                .frame(width: 16, height: 16)
+                Text(FuzzyHighlight.attributed(
+                    match.name,
+                    matchedIndices: match.matchedIndices,
+                    size: uiSize(12),
+                    regular: .primary,
+                    highlight: .accentColor))
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Text(match.url.deletingLastPathComponent().lastPathComponent)
+                    .font(.system(size: uiSize(10)))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 3)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(RowHoverButtonStyle(cornerRadius: 0))
+        .accessibilityIdentifier("sidebar.filterRow.\(match.name)")
     }
 }
 
