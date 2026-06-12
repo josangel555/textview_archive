@@ -203,6 +203,27 @@ final class HTMLRendererTests: XCTestCase {
         XCTAssertTrue(page.contains("connect-src 'none'"))
     }
 
+    /// TSK-635 — the EGRESS fence. `safeURL` deliberately admits http/https
+    /// image markup (above), so the CSP `img-src` directive is the ONLY
+    /// thing preventing remote images / tracking pixels in rendered
+    /// markdown from making network requests. The presence-only check
+    /// above stays green if someone loosens the source list — pin the
+    /// directive EXACTLY, and prove the remote markup really is in the
+    /// page (i.e. CSP is the load-bearing layer, not the sanitizer).
+    func test_renderPage_cspImgSrc_blocksRemoteImageEgress() {
+        let page = renderer.renderPage(
+            "![pixel](https://tracker.example/p.png)", stylesheet: "")
+        XCTAssertTrue(
+            page.contains("img-src file: data:;"),
+            "img-src must allow ONLY file:/data: — adding http(s) re-opens "
+            + "the tracking-pixel egress documented in docs/EGRESS.md (TSK-635)")
+        XCTAssertTrue(
+            page.contains("tracker.example"),
+            "remote <img> markup is expected to be PRESENT (markup-level "
+            + "allowlist admits it); if this fails the render path changed "
+            + "and this test's premise needs re-checking")
+    }
+
     // MARK: S5 / F-06 — URL scheme allowlist on link / image
 
     func test_link_javascriptURL_isNeutralized() {
