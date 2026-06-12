@@ -4348,9 +4348,19 @@ public final class DocumentModel: ObservableObject {
         updateDerived()
         startWatchingCurrentFile()
         // 0d: refresh the staleness signal for the now-active tab (background
-        // tabs aren't watched, so a switch is when we re-stat). Signal only —
-        // no reload.
+        // tabs aren't watched, so a switch is when we re-stat).
         refreshDiskStateForActiveTab()
+        // TSK-452 (owner repro: "bottom file stats" stale after switching):
+        // the original 0d call was signal-only, so a file changed WHILE
+        // BACKGROUNDED kept its load-time stats/content until some later
+        // watcher tick. Switching is the user saying "show me this file" —
+        // when the re-stat above flags staleness, run the SAME guarded
+        // reload the watcher path uses: clean tabs refresh silently, dirty
+        // editor buffers still get the external-edit conflict prompt.
+        if let sel = tabs.selected, sel.diskState == .staleVsDisk,
+           let url = sel.url {
+            reloadCurrentFile(matching: url)
+        }
         // item9: if "pin"/follow is on, reveal the now-active file in the
         // sidebar (select + expand only, never re-root).
         followActiveTabIfNeeded()
