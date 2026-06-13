@@ -1,82 +1,63 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — rust-perf lane drained; theming COMPLETE (4 surfaces); owner glances queued  (2026-06-12 ~19:10)
+# Handoff — wishlist wave: 6 features landed; board fully owner-gated  (2026-06-12 ~21:30)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ 18b3773
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ b2fae4e
 
 ## Mission
-Owner directive 2026-06-12: rust-core to the point Swift core is deprecated; rust-only
-remote server, thin Swift UI (epic TSK-651). USER-FACING bugs first when present.
+Owner directive 2026-06-12: rust-core toward Swift-core deprecation (epic TSK-651);
+USER-FACING bugs first when present; never idle while background runs execute.
 
-## Current state (this wave, after the owner-answer sweep)
-- **Owner answered a park batch (2026-06-12):** TSK-359 → wontfix per "leave as is";
-  TSK-608 → validated riding TSK-614 (owner confirmed ROW COUNTS); TSK-327 re-scoped
-  by owner re-report ("still not draggable") → THREE roots fixed (un-declared
-  exported UTI in Info.plist, no drag source on accordion headers, none on rail
-  icons; 2aab064) → at review for the owner's drag try-out.
-- **Rust-perf lane fully drained + validated:** TSK-566 (string_slice lint wall,
-  33a552d), TSK-561 (zero-copy borrowed wire decode ×6 seams + the gutter finally
-  routes the rust diff engine, 5d4d5db), TSK-546 (TableArena — session store is 2
-  heap blocks, arena/vec filter parity via shared CellMatcher, d764ed8), TSK-563
-  (diff per-element records positional, **WIRE v2**, 37f2d48). Remaining: TSK-544
-  (TUI redraws — front-end lane, last resort by policy).
-- **THEMING COMPLETE — all four surfaces follow the selected theme:** stage 3 editor
-  (CM6 setTheme dedupes on dark+palette, 20b842f) + stage 4 chrome
-  (ChromeTheme/ChromeColors; Palette.textBackground/windowBackground/
-  sidebarPanelBackground consult it, fallback derivation for slot-less themes,
-  VS Code workbench-color mapping; 52db383). TSK-641+642 at fixed,
-  blocker live-validation (owner glance / VM pixels).
-- **Wire v2 note:** the loopback mdv-serve binary at `/private/tmp/mdv-rust-target`
-  must be REBUILT after wire changes — the handshake guard rejects stale binaries
-  ("wire_version_skew") by design; third hit of this trap.
-- **VM full-suite run IN FLIGHT at handoff time** (host log `/tmp/vm-test-*.log`,
-  started ~19:05) — the standing post-substantive-change sweep. Process results on
-  resume if finished: chase non-bench failures; remember the documented load-flake
-  class (re-run isolated before believing a red).
+## Current state — the wishlist wave (all installed to /Applications)
+Six features landed this wave, every one held at `fixed` for the owner's glance:
+- **TSK-284 drag-OUT** (b2f66ba): sidebar rows / filter rows / tabs carry real file
+  refs (NSItemProvider(contentsOf:)); tab reorder payload composes (pinned).
+- **TSK-330 undo** (51b6a12): bookmark-removal ⌘Z outside the editor; text-input
+  guard releases ⌘Z to fields. Audit ledger on the ticket (clearRecents follow-up).
+- **TSK-311 archives** (1a734b5+3ab1d5f): `.archive` FileCategory → preview lens;
+  list+extract via system unzip/tar (zip-slip structurally impossible — stdout
+  pipes); ArchiveBrowserView; double-click opens entries.
+- **TSK-259 font picker** (f5f319a+ee09f99): fail-safe FontPreference; Settings →
+  Appearance → Font (fixed-pitch only); drives BOTH the source view (AttrKey +
+  gutter lineHeight from the RESOLVED font) and the CM6 editor (setFontFamily into
+  the fontCompartment; double-optional clear channel).
+- **TSK-282+666 fuzzy filter** (05dd9bd+ed848cd) and **TSK-641/642 theming**,
+  **TSK-327 drag-to-snap**, **TSK-563 wire v2** etc. — earlier in the wave; see
+  LOG +292..+310 in docs/AUTONOMOUS_PROGRESS.md.
+- **VM sweep was CLEAN**: 4942 tests / 1 confirmed load-flake; WebView lane 18/18.
 
-## Key decisions & rationale
-- usize (not u32) arena offsets — correctness must not depend on caller Limits < 4 GiB.
-- Positional wire elements ONLY for the diff family this round; envelope stays named
-  (remote debuggability). find/transcript/runs measured-before-converted (on TSK-563).
-- Chrome theming scope: the three main Palette surfaces only; semantic colors stay
-  system-native (macOS-citizen look, per the ticket).
-- TSK-642 held at fixed deliberately: same owner-glance bar as 327/641 (thin Button →
-  closure hop is the only untested link; importer pipeline fully host-guarded).
+## Board state (the live truth — re-query, don't trust this list)
+- **Parked on the owner:** TSK-336 (hook-event surfacing, 4 options), TSK-338
+  (plugins/MCP/walkthroughs consolidation, 4 options; 339/340 deduped into it),
+  TSK-649 stage B (waiting:human).
+- **The glance batch** (fixed, blocker live-validation): 327 drag-snap (review),
+  641/642 theme, 637 outline, 638 print, 640 rename, 282/666 filter, 284 drag-out,
+  330 ⌘Z, 311 archives, 259 fonts.
+- **Supervised:** the MountedPanesLRU session (TSK-598 family — five captures).
+- **Remaining reported wishlist:** TSK-275 (render-FPS jank meter — obvious default:
+  opt-in CVDisplayLink chip; semi-parkable), TSK-316/317 (walkthrough versioning/
+  deeplinks), TSK-280/319 (dependency graph/explorer — big), TSK-318, TSK-320,
+  TSK-264/265 (sessions/multi-window — architectural), TSK-256 (DEPGATED).
 
-## Gotchas / lessons (durable forms in LESSONS.md)
-- An exported UTType MUST be declared in Info.plist UTExportedTypeDeclarations or
-  drag/drop dies silently (TSK-327 root 1).
-- Substring pins are fooled by suffixed mutants — parse plists/structures for config
-  pins (the TSK-327 teeth check caught my own weak assertion live).
-- rmp-serde's borrowed reader has no consumed-bytes API — strict end-of-input via
-  the IgnoredAny second-value probe (wire.rs decode_borrowed).
-- Stale test objects after a header/public-type change SIGSEGV (TSK-626) — the build
-  script auto-touches now (it fired on the wire-v2 bump); suspect staleness first.
-- Teeth must FAIL, never crash (zombie-xctest wedge); self-referential oracles give
-  false greens; the loopback mdv-serve must be rebuilt after serve/wire changes.
-
-## Open questions / blockers (owner)
-- TSK-327: try the three drag sources after relaunch (review).
-- TSK-641/642: pick a theme after relaunch — the whole window should follow; name
-  any region that stays light (the stale-chrome/non-republishing-view class).
-- TSK-637/638/640: rendered-surface glances (md outline panel, print/PDF, rename/
-  code-actions against a live LSP).
-- TSK-598 family: schedule the supervised MountedPanesLRU session (five captures
-  indict per-switch pane teardown).
-- TSK-649 stage B (Swift grammar deletion) remains waiting:human.
-
-## Tracker
-- Validated this wave: TSK-546/561/563/566/608. Review: TSK-327. Fixed+held
-  (live-validation): TSK-637/638/640/641/642. Wontfix: TSK-359. Progress(gated):
-  TSK-591/592/598/601 (supervised session).
+## Gotchas added this wave (durable forms in LESSONS.md)
+- A SURVIVING mutation isn't always a weak test: NSItemProvider URL-sniffs strings
+  (the "degraded" mutant was behavior-preserving). Probe empirically (`swift -e`).
+- Same-second SwiftPM staleness: confirm a mutant COMPILED (grep `Compiling`) before
+  reading its test result; and the cross-module-enum-layout trap (FileCategory) makes
+  PHANTOM failures — touch referents first, then diagnose.
+- Weak source-pin needles match the wrong site (call site vs construction; substring
+  vs structural plist) — target the exact seam; demonstrate red.
+- VM "wedge" can be ssh buffering under memory pressure — check process CPU trend +
+  log mtime, not the tail.
 
 ## How to resume
-1. Read docs/TASK_WORKFLOW.md; `task_next {agent: claude-mdv, project: tasked}`;
-   check `task_list {waiting: human}` — owner answers outrank everything.
-2. If the VM run finished: tail the newest `/tmp/vm-test-*.log` — `Executed` lines;
-   non-bench failures get chased; where the run covers a held ticket's claimed lane
-   (WebView theme parity, outline panel), attach it as evidence.
+1. docs/TASK_WORKFLOW.md in full; `task_list {waiting: human}` FIRST — owner answers
+   outrank everything; then `task_next {project: tasked}`.
+2. Owner-answer playbook: glance-confirmed → task_validate citing the held evidence;
+   park answers → execute the chosen option (TSK-336/338 have costed options inline).
 3. Gates: `bash scripts/test-headless-gate.sh` + `bash scripts/rust-core-gate.sh`;
-   after rust wire/serve changes also rebuild `/private/tmp/mdv-rust-target`'s
-   mdv-serve.
-4. Soak watch unchanged: Obs `rust-core` channel + audit.jsonl; a noisy engine →
-   bounce its default OFF in RustCoreGates.defaultEnabled + file the regression.
+   wire/serve changes → rebuild `/private/tmp/mdv-rust-target` mdv-serve (handshake
+   rejects stale binaries by design). Bundle: `bash scripts/build-app.sh debug
+   --install` after user-facing changes.
+4. Next NEW work if nothing answered: TSK-275 (FPS chip — smallest), then 316/317.
+   Mode-B follow-ups recorded on tickets: clearRecents undo, 7z/rar locator,
+   TSK-259 VM computed-style case.

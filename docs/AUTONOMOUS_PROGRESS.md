@@ -9063,3 +9063,15 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   two suites; gate green; installed.
 - TSK-259 held at fixed: family change in both surfaces + gutter
   alignment = the glance.
+
+## LOG +311 (2026-06-12 tick — merge-trio deduped + parked; handoff checkpoint)
+
+- **TSK-338/339/340 reconciled:** one wishlist line ("merge plugins/MCP/
+  walkthroughs into the mainline UX") had become three tickets — 339/340
+  dismissed as duplicates; TSK-338 parked as the canonical consolidation
+  decision with 4 costed options (Extensions Settings tab → full
+  extension-manager window).
+- **HANDOFF refreshed at b2fae4e:** the wishlist wave is fully recorded —
+  6 features landed+installed this wave, all at fixed for the glance;
+  board otherwise owner-gated (2 parks, stage B, the supervised perf
+  session). Next new work if nothing is answered: TSK-275 (FPS chip).
