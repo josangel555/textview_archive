@@ -9169,6 +9169,25 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +395 (2026-06-13 — TSK-748 file-info checksum UI VM-render-validated (a11y-presence); decisive minor-feature drain after last tick's hold)
+
+- **TSK-748 (file-info multi-algo checksums + copy button) → validated (commit `bb363a0`).** Engine/model were
+  host-tested (CRC-32/MD5/SHA-1/256/512 pinned to vectors; algo-switch; copyHash→green-"Copied!"-1.2s; teeth).
+  This tick closed the RENDER: wrapped checksumContent in `.accessibilityElement(children: .contain)` so the
+  leaf ids surface, + a new `metadata-checksum` MDV_UI_SCENE (writes a 1×1 PNG, opens it as a media preview,
+  shows the panel). VM: `mdv.metadata.checksumAlgorithm` + `.checksumSection` + `.computeChecksum` present + the
+  capture visibly shows the CHECKSUM section (SHA-256 Picker + Compute button). The 'all-formats' part was split
+  to TSK-807. Wired host test + scene_expect.
+- **Two VM gotchas hit + handled (both known, re-confirmed):** (1) the scene first showed DESIGN.md, not the PNG
+  — the aqua-runner auto-opens DESIGN.md; fixed by closing tabs first so the PNG is the active media tab (the
+  folder-only pattern). (2) build-app.sh on the VM failed with `ModuleCache .../CMdvCore-*.pcm: Operation not
+  permitted` — the ROOT-POISONED `.build` (the GUI-session WebView/vm-uitest lanes run builds as root via
+  launchctl asuser; a later vm-tester build can't write the root-owned cache). Fix per memory/TSK-502:
+  `sudo chown -R vm-tester .build` → build clean. (Recurs after any GUI-session run; worth a build-app.sh guard
+  someday.)
+- **Process:** decisive this tick (vs last tick's over-deliberation) — committed to the minor-feature drain via
+  the proven a11y-presence pattern + pushed it through the per-item complexity. `main` headless-gate-green.
+
 ## LOG +394 (2026-06-13 — render-drain proven-mode pool DRAINED; mapped the remaining bug tail's capability gaps → TSK-818; documented hold)
 
 - **Honest §5 outcome this tick (no forced validation).** The render-drain's PROVEN validation modes are now
