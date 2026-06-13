@@ -9169,6 +9169,25 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +388 (2026-06-13 — TSK-641 chrome surface VM-validated via a new window-COLOR harness assertion; markdown-content Dark-Mode gap found → TSK-815)
+
+- **TSK-641 chrome surface VM-render-validated** (commit `db44a95`) — the last theming surface tracked as
+  unproven. New `theme-dark` scene sets `selectedThemeID="xcode-dark"` (live @Published → ChromeTheme.current +
+  chrome re-body, the stage-4 repaint path); vm-uitest gained a per-scene **window-COLOR assertion**
+  (`scene_color`) — the harness's 3rd capability after the terminal pixel-eval and the a11y-presence check. It
+  samples the LEFT SIDEBAR strip (the theme-driven chrome surface — whole-window is wrong: the markdown page bg
+  follows system, staying light). VM: **sidebar_dark_fraction=0.975 vs 0.003** for the light default
+  (threshold 0.35) → the chrome PAINTS the theme; contrast is the teeth. So syntax + CM6 editor + chrome are all
+  VM-confirmed.
+- **Dark-Mode GAP found + filed (TSK-815):** the same capture showed that under xcode-dark the rendered-markdown
+  READING page stays LIGHT (page bg + prose follow system appearance; only syntax tokens via tokCSS follow the
+  theme). Counter to the owner's re-raised "Dark Mode" (P8) + TSK-641 surface (c) intent. **HELD 641 at review**
+  (won't validate the umbrella while the flagship markdown reading surface is half-themed); TSK-815 carries the
+  fix sketch (inject the theme bg/fg into the rendered view's CSS via the existing themedExtraStylesheet hook;
+  nil-theme unchanged) + the validation (extend theme-dark's color check to the CONTENT region).
+- **Harness now has 3 assertion modes** (a11y-presence · window-color · legacy terminal pixel) — the
+  render-drain lever covers presence AND color. `main` headless-gate-green; per-item commit db44a95.
+
 ## LOG +387 (2026-06-13 — TSK-745 + TSK-760 VM-render-validated via one a11y-grouping edit; the surfacing rule codified in LESSONS)
 
 - **TSK-745 (new-tab recents) + TSK-760 (New File button) → validated** — TWO user-facing minor-features closed
