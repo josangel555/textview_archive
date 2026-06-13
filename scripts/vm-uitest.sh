@@ -138,24 +138,29 @@ import sys
 from PIL import Image
 png, mode, minfrac = sys.argv[1], sys.argv[2], float(sys.argv[3])
 im = Image.open(png).convert("RGB"); W, H = im.size; px = im.load()
-# Sample the LEFT SIDEBAR strip (rail + files panel) below the title bar — the
-# chrome surface theming targets. Sampling the whole window is wrong: the
-# rendered-markdown page background follows SYSTEM appearance (not the theme),
-# so it stays a large light region even with a dark chrome — measured 0.18
-# whole-window vs 0.47 sidebar-strip for xcode-dark. The sidebar bg IS
-# theme-driven (Palette.textBackground → ChromeTheme.current).
-x0, x1 = 0, int(W * 0.18)
-y0, y1 = int(H * 0.12), int(H * 0.95)
-dark = tot = 0
-for y in range(y0, y1, 3):
-    for x in range(x0, x1, 3):
-        r, g, b = px[x, y]
-        lum = 0.299 * r + 0.587 * g + 0.114 * b
-        tot += 1
-        if lum < 80: dark += 1
-frac = dark / tot if tot else 0.0
-ok = (frac >= minfrac) if mode == "dark" else (frac <= (1 - minfrac))
-print(f"color-eval scene mode={mode} sidebar_dark_fraction={frac:.3f} threshold={minfrac} pass={ok}")
+# Two regions, both fractional (resolution-independent): the LEFT SIDEBAR strip
+# (CHROME surface — Palette.textBackground → ChromeTheme.current, TSK-641) AND
+# the CENTER CONTENT band (the rendered-markdown reading page — TSK-815 made it
+# theme-driven; before that it followed SYSTEM appearance and stayed light, so
+# the chrome could be dark while the content was light — measured 0.18
+# whole-window). Requiring BOTH dark guards both surfaces: a regression in
+# either (chrome non-republish, or the markdown page-CSS override) drops its
+# region's fraction below threshold and FAILs.
+def dark_fraction(x0f, x1f, y0f, y1f):
+    d = t = 0
+    for y in range(int(H * y0f), int(H * y1f), 3):
+        for x in range(int(W * x0f), int(W * x1f), 3):
+            r, g, b = px[x, y]
+            t += 1
+            if 0.299 * r + 0.587 * g + 0.114 * b < 80: d += 1
+    return d / t if t else 0.0
+sidebar = dark_fraction(0.0, 0.18, 0.12, 0.95)
+content = dark_fraction(0.30, 0.75, 0.20, 0.85)
+if mode == "dark":
+    ok = sidebar >= minfrac and content >= minfrac
+else:
+    ok = sidebar <= (1 - minfrac) and content <= (1 - minfrac)
+print(f"color-eval scene mode={mode} sidebar_dark={sidebar:.3f} content_dark={content:.3f} threshold={minfrac} pass={ok}")
 sys.exit(0 if ok else 7)
 PY
       rc=$?
