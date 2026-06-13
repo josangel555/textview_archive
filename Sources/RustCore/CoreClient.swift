@@ -547,6 +547,30 @@ func mdvFrameCall(
     return try CsvSession.unframe(frame)
 }
 
+/// Same ritual as `mdvFrameCall`, but routes through the thin-waist envelope
+/// `mdvcore_call(methodId, …)` instead of a per-method symbol (TSK-580 slice 4).
+/// Byte-identical to the direct symbol (proven by the dispatch parity tests),
+/// so migrating the transport seam to it is behavior-preserving — and it is the
+/// SINGLE entry a remote `mdv-serve` carrier exposes (the transport-agnostic
+/// goal). Logs the rich WireError detail (TSK-669) on a fault.
+func mdvEnvelopeCall(_ name: String, _ methodId: UInt16, body: [UInt8]) throws -> [UInt8]? {
+    _ = name // observability tag (the audit point is one level up, CoreTransport.call)
+    CoreABI.assertCompatible()
+    let reqBytes = MsgPackFraming.frame(body)
+    var buf = MdvBuf(data: nil, len: 0, cap: 0)
+    let status = reqBytes.withUnsafeBufferPointer { p in
+        mdvcore_call(methodId, p.baseAddress, UInt(p.count), nil, 0, &buf)
+    }
+    defer { mdvcore_buf_free(&buf) }
+    guard status == MDV_STATUS_OK else {
+        CsvSession.logWireErrorIfPresent(buf)
+        throw CoreError(status: status)
+    }
+    guard let data = buf.data, buf.len > 0 else { return nil }
+    let frame = Array(UnsafeBufferPointer(start: data, count: Int(buf.len)))
+    return try CsvSession.unframe(frame)
+}
+
 /// adapter can fall back to the Swift path; a rejected batch is `nil`, not a throw.
 public func mdvCoreApplyCMEdits(
     base: String,

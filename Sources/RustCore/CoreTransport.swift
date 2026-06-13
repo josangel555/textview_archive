@@ -36,29 +36,41 @@ public struct InProcessTransport: CoreTransport {
         UnsafePointer<UInt8>?, UInt, UnsafeMutablePointer<MdvBuf>?
     ) -> MdvStatus
 
-    /// The export table — one row per stateless frame export. Adding a port
-    /// = adding a row (the misuse-matrix/capability ceremony covers the rest).
+    /// TSK-580 slice 4: stateless methods route through the ONE thin-waist
+    /// envelope `mdvcore_call(MDV_METHOD_*, …)` (the per-method C symbols still
+    /// exist but are no longer dispatched here). Byte-identical to the old
+    /// symbols (dispatch parity tests), and the single entry a remote carrier
+    /// exposes. Adding a port = adding a row here + a `dispatch::Method` arm.
+    static let methodIds: [String: UInt16] = [
+        "cm_apply": UInt16(MDV_METHOD_CM_APPLY),
+        "diff_parse": UInt16(MDV_METHOD_DIFF_PARSE),
+        "diff_hunk_marks": UInt16(MDV_METHOD_DIFF_HUNK_MARKS),
+        "fuzzy_rank": UInt16(MDV_METHOD_FUZZY_RANK),
+        "find_search": UInt16(MDV_METHOD_FIND_SEARCH),
+        "transcript_parse": UInt16(MDV_METHOD_TRANSCRIPT_PARSE),
+        "markdown_render": UInt16(MDV_METHOD_MARKDOWN_RENDER),
+    ]
+
+    /// Methods not yet in the envelope (highlight lives in a separate crate;
+    /// it joins the envelope in slice 5). These keep their per-method symbol.
     static let exports: [String: FrameFn] = [
-        "cm_apply": mdvcore_cm_apply,
-        "diff_parse": mdvcore_diff_parse,
-        "diff_hunk_marks": mdvcore_diff_hunk_marks,
-        "fuzzy_rank": mdvcore_fuzzy_rank,
-        "find_search": mdvcore_find_search,
-        "transcript_parse": mdvcore_transcript_parse,
-        "markdown_render": mdvcore_markdown_render,
         "highlight_runs": mdvcore_highlight_runs,
     ]
 
     public func call(_ method: String, requestBody: [UInt8]) throws -> [UInt8]? {
-        guard let fn = Self.exports[method] else {
-            // A method name missing here is a build-time wiring bug (the
-            // wrappers and this table live in the same module) — surfaced
-            // as a typed decode fault, never a crash.
-            CoreTransportRegistry.audit(method, transport: "in-process", ok: false)
-            throw CoreError.decode("no in-process export for core method '\(method)'")
-        }
         do {
-            let result = try mdvFrameCall(method, fn, body: requestBody)
+            let result: [UInt8]?
+            if let id = Self.methodIds[method] {
+                result = try mdvEnvelopeCall(method, id, body: requestBody)
+            } else if let fn = Self.exports[method] {
+                result = try mdvFrameCall(method, fn, body: requestBody)
+            } else {
+                // A method name in neither table is a build-time wiring bug
+                // (the wrappers and these tables live in the same module) —
+                // surfaced as a typed decode fault, never a crash.
+                CoreTransportRegistry.audit(method, transport: "in-process", ok: false)
+                throw CoreError.decode("no in-process export for core method '\(method)'")
+            }
             CoreTransportRegistry.audit(method, transport: "in-process", ok: true)
             return result
         } catch {
