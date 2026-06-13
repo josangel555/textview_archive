@@ -697,3 +697,36 @@ fn indent_detect_misuse_matrix() {
     );
     unsafe { mdvcore_buf_free(&mut buf2) };
 }
+
+/// TSK-123 perf guard — the session_table FFI path must encode from arena
+/// SPANS (`session.table_frame()`), never materialize + clone the whole
+/// Table (`session.to_table()`). The original S2 finding was a per-call
+/// whole-Table clone; TSK-546's arena store removed the resident Table
+/// entirely, so the resident-clone class is structurally gone — but a
+/// behavioral test can't catch a revert (a clone produces byte-identical
+/// output). This pins the hot path so a regression to materialize-then-
+/// encode flips it red.
+#[test]
+fn session_table_ffi_encodes_from_spans_not_a_clone() {
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs"))
+        .expect("ffi lib.rs readable");
+    // `split_once`/`split` avoid string-index slicing (the no-panic
+    // string_slice lint, TSK-566). Take from the fn's signature, then
+    // truncate at the next export so we test THIS fn's body only.
+    let from_fn = src
+        .split_once("pub unsafe extern \"C\" fn mdvcore_session_table")
+        .map(|(_, rest)| rest)
+        .expect("mdvcore_session_table present");
+    let body = from_fn
+        .split("#[unsafe(no_mangle)]")
+        .next()
+        .unwrap_or(from_fn);
+    assert!(
+        body.contains("session.table_frame()"),
+        "session_table must encode from arena spans (TSK-123/546), not clone"
+    );
+    assert!(
+        !body.contains("to_table()"),
+        "session_table must NOT materialize + clone the whole Table"
+    );
+}
