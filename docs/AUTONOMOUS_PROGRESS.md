@@ -8984,3 +8984,18 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   follow-up candidate) · sessions ✓ trash · no sidebar file management ·
   tab close prompts on dirty. 3 tests w/ injected temp store; teeth
   compile-verified. Held at fixed for the ⌘Z glance.
+
+## LOG +306 (2026-06-12 tick — TSK-311 slice 1: archive-browse core lands)
+
+- **ArchiveCatalog (1a734b5):** list + single-entry extract for
+  zip/jar/tar/tgz/tbz2 via the system tools every macOS ships
+  (unzip/tar — the owner-approved host-tools pattern, zero deps).
+  Security is structural: extraction streams over STDOUT pipes into an
+  app-chosen temp filename — entry names never drive paths, so zip-slip
+  is impossible by construction (hostile-name + sanitizer pins anyway).
+  Caps: 20k entries, 64 MiB/entry, 20s tool timeout; concurrent pipe
+  read avoids the full-buffer deadlock. 6 tests on real-tool fixtures;
+  teeth compile-verified. 7z/rar deferred (no system tool).
+- Slice 2 (next): the archive-listing content view + open-entry-as-tab.
+- Board hygiene: dismissed a mis-created empty ticket (TSK-667, my own
+  tool misfire — caught and closed in the same minute).
