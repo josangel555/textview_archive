@@ -80,6 +80,18 @@ final class UISceneApplierTests: XCTestCase {
         XCTAssertEqual(model.tabs.selectedIndex, 0, "the FIRST tab is selected (unscrolled strip)")
     }
 
+    func test_landingScene_isANamedNoop_leavingEmptyState() {
+        // TSK-760: the 'landing' scene shows the empty-state surface (New File /
+        // recents). It must be a recognised no-op — NOT fall through to "unknown
+        // scene" — and must not open any tab or the terminal.
+        let model = makeModel()
+        let status = apply("landing", model)
+        XCTAssertTrue(status.contains("landing"), "named landing scene, not unknown: \(status)")
+        XCTAssertFalse(status.contains("unknown"), "must be recognised: \(status)")
+        XCTAssertTrue(model.tabs.tabs.isEmpty, "landing opens no tabs (empty state)")
+        XCTAssertFalse(model.terminalPane.isOpen, "landing leaves the terminal closed")
+    }
+
     func test_unknownScene_isReportedNotApplied() {
         let model = makeModel()
         let status = apply("bogus-scene", model)

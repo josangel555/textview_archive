@@ -32,6 +32,14 @@ public enum UISceneApplier {
     ) -> String {
         let parts = scene.split(separator: "-").map(String.init)
 
+        // Empty-state landing (EmptyStateView): no file open. A deliberate no-op
+        // — the app launches into the empty state; this scene NAMES it for the
+        // harness (TSK-760: capture the New File button / recents launcher on the
+        // landing) so it isn't misreported as an "unknown scene".
+        if scene == "landing" {
+            return "ui-scene: applied 'landing' (empty state, no tabs)"
+        }
+
         // Preview-tab scenes (TSK-306 / TSK-272): drive the ONE ephemeral preview
         // slot. `preview-promoted` then promotes it to a permanent (upright) tab.
         if parts.first == "preview" {
