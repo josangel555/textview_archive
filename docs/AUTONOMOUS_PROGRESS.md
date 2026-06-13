@@ -9134,3 +9134,22 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - The deep progress lane still holds many zombie/expired-lease tickets
   (board hygiene candidates) + big owner-shaped features — next firings
   can reconcile zombies or validation-drain host-testable review items.
+
+## LOG +316 (2026-06-13 tick — validation drain: TSK-123 closed with a real guard)
+
+- **TSK-123 (session_table whole-Table clone, S2) VALIDATED** — a textbook
+  §1.5 validation-drain catch. The prior agent (2026-06-07) honestly held
+  it at review: the borrow-encode fix was right but UNGUARDED (a clone =
+  byte-identical output, so no behavioral test catches a revert).
+- **Reconciled against current code:** TSK-546's arena store (this session)
+  made the concern STRUCTURALLY impossible — the session holds a
+  TableArena, `session.table()→&Table` is gone, the FFI encodes from spans
+  via `table_frame()`. That's exactly the "borrow-only shape that makes a
+  clone a compile error" the prior agent asked for.
+- **Added the missing guard (4b3ec3e):** an FFI hot-path pin forbidding a
+  `to_table()`-then-encode revert; teeth shown (revert → red). Hit the
+  string_slice lint (TSK-566) mid-write — rewrote with split_once/split.
+  Rust-core gate green.
+- LESSON reinforced: the validation drain isn't bookkeeping — it converts
+  "fixed but unguardable" review-limbo items into genuinely-guarded
+  validated ones by reconciling against what later work changed.
