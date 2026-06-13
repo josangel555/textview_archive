@@ -228,6 +228,14 @@ public final class DocumentModel: ObservableObject {
     /// Owned here (not at ContentView level) so the menu item + script
     /// runner can toggle it without prop-drilling. See `GoToPathPrompt`.
     @Published public var isGoToPathPresented: Bool = false
+    /// LSP "Rename Symbol…" prompt presentation (TSK-640). Owned here so the
+    /// command/menu + script runner toggle it without prop-drilling, mirroring
+    /// `isGoToPathPresented`. The prompt's submit runs the host-tested
+    /// `renameActiveEditorSymbolViaLSP`. The field seeds from `lspRenamePrefill`.
+    @Published public var isLSPRenamePromptPresented: Bool = false
+    /// Initial text for the rename field — empty for now (the user types the
+    /// new name); a prepareRename placeholder is a follow-up.
+    public private(set) var lspRenamePrefill: String = ""
     /// Last error produced by the most recent `commitGoToPath` call.
     /// Empty string when the last commit succeeded or no commit has
     /// happened yet. Surfaced to the diagnostic dump so VM UI tests can
@@ -2232,6 +2240,45 @@ public final class DocumentModel: ObservableObject {
             }
         }
         return true
+    }
+
+    /// Whether the active editor offers an LSP rename right now: a selected
+    /// tab with an LSP-registered language, a live editor buffer, and a
+    /// recorded cursor. Mirrors `renameActiveEditorSymbolViaLSP`'s guards
+    /// (minus the new-name check, which is submit-time) so the command/menu can
+    /// gate enablement and `showLSPRenamePrompt` can refuse on a non-rename-able
+    /// context. (TSK-640.)
+    public var canRenameActiveEditorSymbol: Bool {
+        guard let tab = tabs.selected, let url = tab.url else { return false }
+        guard lspPool.registry.language(for: url) != nil else { return false }
+        guard editor.editorBuffers[tab.id] != nil else { return false }
+        guard editor.editorCursorByTab[tab.id] != nil else { return false }
+        return true
+    }
+
+    /// Present the rename prompt IF the active editor is rename-able (else a
+    /// silent no-op — the command's enablement already greys it, this guards
+    /// the script/programmatic path). The prompt's submit calls
+    /// `submitLSPRename`. (TSK-640.)
+    public func showLSPRenamePrompt() {
+        guard canRenameActiveEditorSymbol else { return }
+        lspRenamePrefill = ""
+        isLSPRenamePromptPresented = true
+    }
+
+    public func dismissLSPRenamePrompt() {
+        isLSPRenamePromptPresented = false
+        lspRenamePrefill = ""
+    }
+
+    /// Submit the rename prompt: dispatch the (host-tested) rename and dismiss.
+    /// Returns the dispatch result (false = guards refused / blank name) so the
+    /// view can beep on a no-op. (TSK-640.)
+    @discardableResult
+    public func submitLSPRename(_ newName: String) -> Bool {
+        let dispatched = renameActiveEditorSymbolViaLSP(newName: newName)
+        dismissLSPRenamePrompt()
+        return dispatched
     }
 
     /// Apply a decoded WorkspaceEdit to the open tabs (see the policy on

@@ -124,6 +124,30 @@ final class LSPRenameEndToEndTests: HeadlessUITestCase {
                        "the verb drives the full engine — both WorkspaceEdit spans land")
     }
 
+    /// The interactive rename PROMPT (TSK-640): the show-lsp-rename verb (the
+    /// command/menu entry) presents it; submit drives the host-tested engine and
+    /// dismisses. Pins the model state machine + submit wiring (the prompt VIEW
+    /// render is the VM/review tail).
+    func test_renamePrompt_showThenSubmit_drivesEngine_andDismisses() async throws {
+        let model = try makeModelWithFakeLSP()
+        let url = try harness.writeFile("prompt.fakelsp", doc)
+        model.open(url: url)
+        let id = model.tabs.selected!.id
+        _ = model.editor.editorBuffer(forTabID: id)
+        seedCursor(model, tabID: id)
+
+        XCTAssertTrue(model.canRenameActiveEditorSymbol,
+                      "an LSP editor with a recorded cursor is rename-able")
+        ScriptVerb.apply(verb: "show-lsp-rename", to: model, sessions: harness.sessions)
+        XCTAssertTrue(model.isLSPRenamePromptPresented, "show-lsp-rename presents the prompt")
+
+        XCTAssertTrue(model.submitLSPRename("walrus"), "submit dispatches the rename")
+        XCTAssertFalse(model.isLSPRenamePromptPresented, "submit dismisses the prompt")
+        await waitUntil { model.editor.editorBuffers[id]?.text == self.renamed }
+        XCTAssertEqual(model.editor.editorBuffers[id]?.text, renamed,
+                       "the prompt's submit drives the full engine (both spans land)")
+    }
+
     func test_rename_droppedWhenBufferChangedSinceDispatch() async throws {
         let model = try makeModelWithFakeLSP()
         let url = try harness.writeFile("race.fakelsp", doc)

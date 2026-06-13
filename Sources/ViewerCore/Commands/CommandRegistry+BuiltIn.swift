@@ -229,6 +229,9 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "lsp.format", title: "Format Document", category: .lsp,
             scriptVerb: "editor-format"),
+        CommandDescriptor(
+            id: "lsp.rename", title: "Rename Symbol…", category: .lsp,
+            scriptVerb: "show-lsp-rename"),
 
         // MARK: Git
         CommandDescriptor(

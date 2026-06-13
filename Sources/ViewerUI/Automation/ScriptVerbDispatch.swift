@@ -167,6 +167,12 @@ public enum ScriptVerb {
             // that supply the name interactively are the live follow-up. Silent
             // no-op without an LSP server / cursor, like editor-format.
             _ = model.renameActiveEditorSymbolViaLSP(newName: arg)
+        case "show-lsp-rename":
+            // Open the interactive "Rename Symbol…" prompt (TSK-640) — the
+            // command/menu entry. No-op on a non-rename-able context (the
+            // command's enablement greys it; showLSPRenamePrompt guards too).
+            // The prompt's submit calls renameActiveEditorSymbolViaLSP.
+            model.showLSPRenamePrompt()
         case "set-theme":
             // Headless theming seam (TSK-641): select a theme by id — the
             // automation/UAT equivalent of the Settings → Appearance picker.

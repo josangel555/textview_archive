@@ -130,6 +130,59 @@ final class LSPGotoCommandTests: HeadlessUITestCase {
         XCTAssertEqual(cmd?.scriptVerb, "editor-format")
     }
 
+    // MARK: - LSP rename prompt (TSK-640)
+    // Host-reliable: a real LSP-mapped .swift file makes the rename guards pass
+    // and `_lastRenameDispatch` records synchronously (the async pool round trip
+    // fails silently without a server — irrelevant to the prompt state machine).
+    // The buffer-rename end-to-end is the fake-LSP VM suite (LSPRenameEndToEndTests).
+
+    func test_renamePrompt_showVerbPresents_submitDispatchesAndDismisses() throws {
+        let model = try openWithCursor(line: 2, column: 8)
+        _ = model.editor.editorBuffer(forTabID: model.tabs.selected!.id) // rename needs a live buffer
+        XCTAssertTrue(model.canRenameActiveEditorSymbol, "swift + cursor + buffer ⇒ rename-able")
+
+        XCTAssertTrue(
+            ScriptVerb.apply(verb: "show-lsp-rename", to: model, sessions: harness.sessions),
+            "show-lsp-rename must be a recognized verb")
+        XCTAssertTrue(model.isLSPRenamePromptPresented, "the verb presents the prompt")
+
+        model._lastRenameDispatch = nil
+        XCTAssertTrue(model.submitLSPRename("renamed"), "submit dispatches the rename")
+        XCTAssertEqual(model._lastRenameDispatch?.newName, "renamed",
+                       "submit drives renameActiveEditorSymbolViaLSP with the typed name")
+        XCTAssertFalse(model.isLSPRenamePromptPresented, "submit dismisses the prompt")
+    }
+
+    func test_renamePrompt_refusesWhenNotRenameable() throws {
+        // Plain-text (no LSP language) → not rename-able → no present.
+        let url = try harness.writeFile("plain.txt", "hello\n")
+        let model = harness.model
+        model.open(url: url)
+        let id = model.tabs.selected!.id
+        _ = model.editor.editorBuffer(forTabID: id)
+        model.editor.recordEditorCursor(
+            CMCursorPosition(line: 1, column: 0, head: 0, rangeCount: 1), forTabID: id)
+        XCTAssertFalse(model.canRenameActiveEditorSymbol, "a non-LSP language isn't rename-able")
+        model.showLSPRenamePrompt()
+        XCTAssertFalse(model.isLSPRenamePromptPresented,
+                       "showLSPRenamePrompt must refuse a non-rename-able context")
+    }
+
+    func test_renamePrompt_dismissClearsPresentation() throws {
+        let model = try openWithCursor(line: 1, column: 4)
+        _ = model.editor.editorBuffer(forTabID: model.tabs.selected!.id)
+        model.showLSPRenamePrompt()
+        XCTAssertTrue(model.isLSPRenamePromptPresented)
+        model.dismissLSPRenamePrompt()
+        XCTAssertFalse(model.isLSPRenamePromptPresented, "dismiss clears the flag")
+    }
+
+    func test_commandCatalog_carriesTheRenameCommand() {
+        let cmd = CommandRegistry.builtIn.command(id: "lsp.rename")
+        XCTAssertNotNil(cmd, "lsp.rename must be in the built-in catalog (TSK-640)")
+        XCTAssertEqual(cmd?.scriptVerb, "show-lsp-rename")
+    }
+
     func test_commandCatalog_carriesTheFourGotoCommands() {
         let registry = CommandRegistry.builtIn
         let expected: [(String, String)] = [

@@ -80,6 +80,8 @@ final class CommandRegistryTests: XCTestCase {
             "editor-goto-definition", "editor-goto-declaration",
             "editor-goto-type-definition", "editor-goto-implementation",
             "editor-format",
+            // LSP rename prompt (TSK-640)
+            "show-lsp-rename",
         ]
         for cmd in CommandRegistry.builtIn.commands {
             guard let verb = cmd.scriptVerb else { continue }
