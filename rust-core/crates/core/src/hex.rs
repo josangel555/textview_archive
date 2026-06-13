@@ -240,6 +240,33 @@ pub fn hex_search_frame(
     crate::wire::encode_frame(&SearchResponse { offsets })
 }
 
+/// Request for [`search_wire_aux`] (TSK-580 slice 3): `{query, mode}` only. The
+/// buffer to search is NOT in this frame — it rides the dispatch `aux` bulk
+/// side-channel, so a multi-MiB file needn't be wrapped in a request frame
+/// (frame-cap-exempt). `pub` so front-ends/tests build it. Borrowed query to
+/// match the zero-copy spirit (the query itself is tiny either way).
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct SearchAuxRequest<'a> {
+    pub query: &'a str,
+    /// `1` = ASCII/raw bytes, else hex-byte-pair (mirrors `mdvcore_hex_search`).
+    pub mode: u32,
+}
+
+/// Hex search routed through the dispatch envelope (TSK-580 slice 3) — the FIRST
+/// consumer of the `aux` bulk side-channel. The buffer to search arrives as
+/// `aux` (zero-copy borrowed, frame-cap-exempt); `req` carries only the small
+/// `{query, mode}` frame. The `{offsets:[u32]}` response is byte-identical to
+/// [`hex_search_frame`] called directly (the dedicated `mdvcore_hex_search`
+/// symbol keeps using that during the coexistence window).
+///
+/// # Errors
+/// [`crate::wire::WireFault`] on a request-decode or response-encode fault.
+pub fn search_wire_aux(req: &[u8], aux: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault> {
+    let r: SearchAuxRequest<'_> = crate::wire::decode_frame_borrowed(req)?;
+    let mode = if r.mode == 1 { HexSearchMode::Ascii } else { HexSearchMode::Hex };
+    hex_search_frame(aux, r.query, mode)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

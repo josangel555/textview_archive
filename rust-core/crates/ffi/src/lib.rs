@@ -258,11 +258,13 @@ pub const MDV_METHOD_MARKDOWN_RENDER: u16 = 6;
 pub const MDV_METHOD_TRANSCRIPT_PARSE: u16 = 7;
 pub const MDV_METHOD_TRANSCRIPT_PARSE_FORCED_REDACTION: u16 = 8;
 pub const MDV_METHOD_HIGHLIGHT_RUNS: u16 = 9;
+pub const MDV_METHOD_HEX_SEARCH: u16 = 10;
 
 /// Envelope dispatch. `method` is a `dispatch::Method` discriminant; `req` is the
-/// request frame; `aux` is the reserved bulk side-channel (unused by the current
-/// stateless methods). The response frame (or a rich WireError frame on a wire
-/// fault, TSK-577) is written to `out_buf`; caller MUST `mdvcore_buf_free` it.
+/// request frame; `aux` is the bulk side-channel — the `req`-only methods ignore
+/// it, `MDV_METHOD_HEX_SEARCH` consumes it as the (frame-cap-exempt) buffer to
+/// search. The response frame (or a rich WireError frame on a wire fault,
+/// TSK-577) is written to `out_buf`; caller MUST `mdvcore_buf_free` it.
 ///
 /// Returns [`MdvStatus::Ok`], [`MdvStatus::NullArg`] (null out_buf, or a
 /// null/len mismatch on req/aux), [`MdvStatus::Internal`] (unknown method id —

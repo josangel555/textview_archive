@@ -635,16 +635,17 @@ fn method_id_consts_match_the_dispatch_enum() {
         Method::TranscriptParseForcedRedaction as u16
     );
     assert_eq!(MDV_METHOD_HIGHLIGHT_RUNS, Method::HighlightRuns as u16);
+    assert_eq!(MDV_METHOD_HEX_SEARCH, Method::HexSearch as u16);
     // Every const is a live method, and there are exactly (NEXT_FREE_ID - 1).
     for id in [
         MDV_METHOD_CM_APPLY, MDV_METHOD_DIFF_PARSE, MDV_METHOD_DIFF_HUNK_MARKS,
         MDV_METHOD_FUZZY_RANK, MDV_METHOD_FIND_SEARCH, MDV_METHOD_MARKDOWN_RENDER,
         MDV_METHOD_TRANSCRIPT_PARSE, MDV_METHOD_TRANSCRIPT_PARSE_FORCED_REDACTION,
-        MDV_METHOD_HIGHLIGHT_RUNS,
+        MDV_METHOD_HIGHLIGHT_RUNS, MDV_METHOD_HEX_SEARCH,
     ] {
         assert!(Method::from_u16(id).is_some(), "const {id} must be a live method");
     }
-    assert_eq!(Method::NEXT_FREE_ID, 10, "9 methods defined; next free id is 10");
+    assert_eq!(Method::NEXT_FREE_ID, 11, "10 methods defined; next free id is 11");
 }
 
 #[test]
@@ -669,6 +670,45 @@ fn envelope_routes_highlight_to_the_same_result_as_its_symbol() {
     assert_eq!(s1, MdvStatus::Ok, "a real highlight request succeeds via the envelope");
     assert_eq!(s1, s2, "envelope and the highlight symbol return the same status");
     assert_eq!(via_bytes, direct_bytes, "byte-identical highlight result");
+    unsafe { mdvcore_buf_free(&mut via) };
+    unsafe { mdvcore_buf_free(&mut direct) };
+}
+
+#[test]
+fn envelope_routes_hex_search_over_the_aux_channel() {
+    // Hex search is the FIRST method to use the `aux` bulk side-channel: the
+    // buffer to search rides `aux` (frame-cap-exempt — a multi-MiB file would
+    // overflow a `req` frame), `req` carries only {query, mode}. The envelope
+    // result must match the dedicated mdvcore_hex_search symbol byte-for-byte.
+    // TEETH: if the envelope dropped aux (passed empty), there would be no
+    // matches and the offsets frame would diverge from the symbol's.
+    let data: [u8; 5] = [0xDE, 0xAD, 0x00, 0xDE, 0xAD]; // 0xDEAD at offsets 0 and 3
+    let req = mdvcore_core::wire::encode_frame(&mdvcore_core::hex::SearchAuxRequest {
+        query: "dead",
+        mode: 0,
+    })
+    .unwrap();
+    let mut via = MdvBuf::empty();
+    let s1 = unsafe {
+        mdvcore_call(
+            MDV_METHOD_HEX_SEARCH,
+            req.as_ptr(),
+            req.len(),
+            data.as_ptr(),
+            data.len(),
+            &mut via,
+        )
+    };
+    let via_bytes = unsafe { via.as_slice() }.to_vec();
+    let mut direct = MdvBuf::empty();
+    let s2 = unsafe {
+        mdvcore_hex_search(data.as_ptr(), data.len(), "dead".as_ptr(), 4, 0, &mut direct)
+    };
+    let direct_bytes = unsafe { direct.as_slice() }.to_vec();
+    assert_eq!(s1, MdvStatus::Ok, "hex search via the envelope succeeds");
+    assert_eq!(s1, s2, "envelope and the hex_search symbol return the same status");
+    assert_eq!(via_bytes, direct_bytes, "byte-identical offsets frame — aux carried the data");
+    assert!(!via_bytes.is_empty(), "two matches were found, not zero");
     unsafe { mdvcore_buf_free(&mut via) };
     unsafe { mdvcore_buf_free(&mut direct) };
 }

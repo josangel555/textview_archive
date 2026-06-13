@@ -15,10 +15,13 @@
 //!
 //! ## Aux side-channel
 //!
-//! `call` takes an `aux` byte slice reserved for the bulk-payload side channel
-//! (e.g. hex render's ~18 MB output / zero-copy borrowed inputs) so the 16 MiB
-//! frame cap doesn't bite. The stateless methods routed in this first slice
-//! carry everything in `req` and ignore `aux`; a bulk method will consume it.
+//! `call` takes an `aux` byte slice for the bulk-payload side channel (e.g. a
+//! multi-MiB buffer to search / zero-copy borrowed inputs) so the 16 MiB frame
+//! cap doesn't bite. The `req`-only stateless methods ignore `aux`;
+//! [`Method::HexSearch`] is the first to consume it (the search buffer rides
+//! `aux`, the `{query, mode}` params ride `req`). Bulk *output* (hex render's
+//! ~18 MB dump, which exceeds the frame cap) needs an out-aux mechanism and
+//! stays on its dedicated symbol for now — a separate slice.
 
 use crate::wire::WireFault;
 
@@ -47,12 +50,16 @@ pub enum Method {
     /// space but [`call`] does NOT route it — the FFI/front-end layer (which
     /// links highlight) intercepts this id before calling `call`.
     HighlightRuns = 9,
+    /// Hex search over a bulk buffer (`hex::search_wire_aux`). The buffer to
+    /// search rides the `aux` side-channel (frame-cap-exempt); `req` carries
+    /// only `{query, mode}`. The FIRST method to consume `aux`.
+    HexSearch = 10,
 }
 
 impl Method {
     /// The next id a new method gets — pinned by a test so adding a method here
     /// without bumping it (or renumbering an existing one) fails loudly.
-    pub const NEXT_FREE_ID: u16 = 10;
+    pub const NEXT_FREE_ID: u16 = 11;
 
     /// Map a raw `u16` to a [`Method`], or `None` for an id this build doesn't
     /// know (a forward-compat caller sent a newer method) — the FFI envelope
@@ -69,6 +76,7 @@ impl Method {
             7 => Some(Method::TranscriptParse),
             8 => Some(Method::TranscriptParseForcedRedaction),
             9 => Some(Method::HighlightRuns),
+            10 => Some(Method::HexSearch),
             _ => None,
         }
     }
@@ -79,12 +87,12 @@ impl Method {
 /// extern symbols delegate to the same fns, so the envelope and the old symbols
 /// agree exactly during the coexistence window).
 ///
-/// `aux` is reserved for the bulk side channel and is unused by these methods.
+/// `aux` is the bulk side channel: the `req`-only methods ignore it;
+/// [`Method::HexSearch`] consumes it as the buffer to search.
 ///
 /// # Errors
 /// Whatever the routed method returns ([`WireFault`] on a wire/encode fault).
 pub fn call(method: Method, req: &[u8], aux: &[u8]) -> Result<Vec<u8>, WireFault> {
-    let _ = aux; // reserved; consumed by bulk methods in a later slice
     match method {
         Method::CmApply => crate::cm_edit::apply_wire(req),
         Method::DiffParse => crate::diff::parse_wire(req),
@@ -103,6 +111,7 @@ pub fn call(method: Method, req: &[u8], aux: &[u8]) -> Result<Vec<u8>, WireFault
         Method::HighlightRuns => Err(WireFault::Decode(
             "highlight_runs is dispatched at the front-end layer, not core".to_string(),
         )),
+        Method::HexSearch => crate::hex::search_wire_aux(req, aux),
     }
 }
 
@@ -124,8 +133,8 @@ mod tests {
     #[test]
     fn next_free_id_is_one_past_the_last_method() {
         // Pins the ABI: adding a Method without bumping NEXT_FREE_ID (or
-        // renumbering one) breaks this. HighlightRuns is the current last id.
-        assert_eq!(Method::HighlightRuns as u16 + 1, Method::NEXT_FREE_ID);
+        // renumbering one) breaks this. HexSearch is the current last id.
+        assert_eq!(Method::HexSearch as u16 + 1, Method::NEXT_FREE_ID);
     }
 
     #[test]
@@ -136,6 +145,27 @@ mod tests {
         let via_dispatch = call(Method::DiffParse, &req, &[]).unwrap();
         let direct = crate::diff::parse_wire(&req).unwrap();
         assert_eq!(via_dispatch, direct, "the envelope routes to the same logic");
+    }
+
+    #[test]
+    fn dispatch_routes_hex_search_over_the_aux_channel() {
+        // The buffer to search rides `aux`; `req` carries only {query, mode}.
+        // The envelope result must be byte-identical to hex_search_frame called
+        // directly. TEETH: if search_wire_aux searched `req` instead of `aux`
+        // (or aux were dropped), there would be no matches and this diverges.
+        let data = [0xDEu8, 0xAD, 0x00, 0xDE, 0xAD]; // 0xDEAD at offsets 0 and 3
+        let req = crate::wire::encode_frame(&crate::hex::SearchAuxRequest {
+            query: "dead",
+            mode: 0, // hex-byte-pair
+        })
+        .unwrap();
+        let via = call(Method::HexSearch, &req, &data).unwrap();
+        let direct =
+            crate::hex::hex_search_frame(&data, "dead", crate::hex::HexSearchMode::Hex).unwrap();
+        // `data` was passed as the `aux` arg (3rd positional), NOT wrapped in
+        // `req` — so this byte-identical match proves the aux channel carried
+        // the search buffer through dispatch to hex_search_frame.
+        assert_eq!(via, direct, "hex search routes aux→data, req→{{query,mode}}");
     }
 
     #[test]
