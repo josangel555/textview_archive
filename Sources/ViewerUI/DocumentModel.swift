@@ -3028,6 +3028,21 @@ public final class DocumentModel: ObservableObject {
         displayedText(for: file).text
     }
 
+    /// TSK-806: the text the SPLIT pane should render for `url` — the live
+    /// UNSAVED edits when that file is open in a tab with a DIRTY editor buffer,
+    /// else the on-disk `fallback`. Unlike `displayedText(for:)` this keys on the
+    /// file's OWN tab (matched by URL), NOT `tabs.selected`: the split pane can
+    /// show a DIFFERENT file than the active tab (`splitURL` is independent and
+    /// swappable), so consulting the selected tab's buffer would render the wrong
+    /// file's edits. A clean/absent buffer ⇒ on-disk text (same bytes anyway).
+    public func splitPaneText(for url: URL, fallback: String) -> String {
+        if let tab = tabs.tabs.first(where: { $0.url == url }),
+           let buf = editor.editorBuffer(forTabID: tab.id), buf.isDirty {
+            return buf.text
+        }
+        return fallback
+    }
+
     // MARK: Syntax highlighting
 
     /// PERF #5 (2026-05-25): per-tab cache, owned by

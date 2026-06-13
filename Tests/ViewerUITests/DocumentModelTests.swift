@@ -87,6 +87,37 @@ final class DocumentModelTests: XCTestCase {
             "byteLength must match the displayed (edited) text, not the on-disk byteCount")
     }
 
+    // MARK: Split pane shows unsaved edits, keyed by the SPLIT file (TSK-806)
+
+    func test_splitPaneText_showsDirtyBufferOfTheSplitFile_notSelectedTab() throws {
+        let model = makeModel()
+        let split = try writeFile("split.txt", "split on disk\n")
+        let other = try writeFile("other.txt", "other on disk\n")
+
+        // Clean / not-open: fall back to on-disk contents.
+        XCTAssertEqual(model.splitPaneText(for: split, fallback: "split on disk\n"),
+                       "split on disk\n", "no open/dirty buffer ⇒ on-disk text")
+
+        // Open the split file, dirty its buffer.
+        model.open(url: split)
+        let splitID = try XCTUnwrap(model.tabs.selected?.id)
+        _ = model.editorBuffer(forTabID: splitID)
+        model.updateEditorText("split EDITED\n", forTabID: splitID)
+
+        // Open a DIFFERENT file and select it (the active tab is now `other`,
+        // with its own dirty edit) — the split must still reflect SPLIT's edits,
+        // not the selected tab's (the `displayedText(for:)` cross-file hazard).
+        model.open(url: other)
+        let otherID = try XCTUnwrap(model.tabs.selected?.id)
+        _ = model.editorBuffer(forTabID: otherID)
+        model.updateEditorText("other EDITED\n", forTabID: otherID)
+        XCTAssertNotEqual(splitID, otherID, "two distinct tabs")
+
+        XCTAssertEqual(model.splitPaneText(for: split, fallback: "split on disk\n"),
+                       "split EDITED\n",
+                       "split pane shows the SPLIT file's unsaved edits, keyed by URL — not the selected tab's")
+    }
+
     // MARK: Status footer gate — folder-only context (TSK-738)
 
     func test_hasOpenContext_trueForFolderOnly_whenNoFileTabSelected() throws {

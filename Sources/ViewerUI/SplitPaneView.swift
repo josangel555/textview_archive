@@ -134,12 +134,17 @@ struct SplitPaneView: View {
         } else if let file = try? TextFileLoader().load(url: url) {
             let ext = url.pathExtension.lowercased()
             let cat = FileTypeDetector.category(for: url)
+            // TSK-806: show the file's UNSAVED edits, not stale on-disk text,
+            // when this file is open in a (dirty) editor tab. Keyed by the split
+            // file's URL — the split can show a different file than the active
+            // tab — so it can't reuse the selected-tab `displayedText(for:)`.
+            let sourceText = model.splitPaneText(for: url, fallback: file.contents)
             if cat == .markdown || cat == .mermaid {
                 // `.mmd` standalone files get wrapped into a single mermaid
                 // fence so the same renderer path handles them.
                 let body: String = (cat == .mermaid)
-                    ? "```mermaid\n\(file.contents)\n```\n"
-                    : file.contents
+                    ? "```mermaid\n\(sourceText)\n```\n"
+                    : sourceText
                 MarkdownRenderedView(
                     html: HTMLRenderer().renderPage(
                         body,
@@ -150,13 +155,13 @@ struct SplitPaneView: View {
                     zoom: zoom
                 )
             } else if ext == "csv" || ext == "tsv" {
-                CSVTableView(text: file.contents,
+                CSVTableView(text: sourceText,
                              model: model,
                              tabID: splitCSVTabID)
             } else {
                 let lang = HighlightLanguage.detect(from: url)
                 TextDisplayView(
-                    text: file.contents,
+                    text: sourceText,
                     fontSize: 13 * zoom,
                     language: lang,
                     runs: [],   // no syntax highlight in split v1 — saves a TreeSitter pass per render
