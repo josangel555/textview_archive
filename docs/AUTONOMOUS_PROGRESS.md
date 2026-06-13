@@ -9169,6 +9169,20 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +344 (2026-06-13 overnight — TSK-737 gutter last-line off-by-one fixed + validated)
+
+- **TSK-737 VALIDATED (97da320).** SourceTextController.countLines subtracted 1 for a trailing newline,
+  under-counting by one vs the empty final line fragment NSLayoutManager lays out. That count feeds
+  SourceScrollState.lineCount; the gutter clamps lastLine=min(lineCount,…) so the bottom row of a
+  \n-terminated log got no number — and the same under-count skewed the hover-highlight + pointer→line
+  map (TSK-263). One-line fix (drop the -=1 → newlineCount+1). 5 host table tests, teeth demonstrated.
+  Self-validated (pure-logic — the source count the gutter/hover render from). Gate green (5048, no
+  regressions — nothing codified the old under-count).
+- Overnight tally (7 ticks): 739 · 742 · 744 · 729 · 737 validated · 734/728/730 review (VM-gated) ·
+  743 fixed · TSK-806 filed (split-pane sibling).
+- Next crons: 738 (footer missing after relaunch — state/binding), terminal 740 (ANSI DCH/ICH/ECH/IL/DL)
+  + 735 (DEC scroll region), then 731 (terminal emoji display width), 741 (PTY blocking write off-main).
+
 ## LOG +343 (2026-06-13 overnight — TSK-729 View-Only-shows-unsaved-edits fixed + validated)
 
 - **TSK-729 VALIDATED (f395750).** displayedText(for:) returned on-disk file.contents in every path, so
