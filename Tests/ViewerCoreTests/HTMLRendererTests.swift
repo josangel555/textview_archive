@@ -224,6 +224,26 @@ final class HTMLRendererTests: XCTestCase {
             + "and this test's premise needs re-checking")
     }
 
+    /// TSK-812 — the DNS-prefetch fence. WebKit auto-prefetches the HOSTS of
+    /// link hrefs in rendered content WITHOUT a click; the CSP does NOT cover
+    /// DNS prefetch (it's a DNS-layer step before any connection), so a doc with
+    /// an external link would leak that hostname — what the user is reading — to
+    /// DNS. `x-dns-prefetch-control: off` is the documented disable. Pin the meta
+    /// EXACTLY and prove the external link markup really is present (the meta is
+    /// the load-bearing fence, not the sanitizer).
+    func test_renderPage_disablesDNSPrefetch_forLinkHosts() {
+        let page = renderer.renderPage(
+            "[docs](https://leak.example/page)", stylesheet: "")
+        XCTAssertTrue(
+            page.contains("http-equiv=\"x-dns-prefetch-control\" content=\"off\""),
+            "the x-dns-prefetch-control:off meta must be present — without it WebKit "
+            + "DNS-prefetches external link hosts, leaking reading activity (TSK-812)")
+        XCTAssertTrue(
+            page.contains("leak.example"),
+            "the external <a href> is expected PRESENT (markup admits http(s) links); "
+            + "if this fails the render path changed and this test's premise needs re-checking")
+    }
+
     // MARK: S5 / F-06 — URL scheme allowlist on link / image
 
     func test_link_javascriptURL_isNeutralized() {

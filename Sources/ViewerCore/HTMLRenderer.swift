@@ -148,6 +148,12 @@ public struct HTMLRenderer: Sendable {
         <head>
         <meta charset="utf-8">
         <meta http-equiv="Content-Security-Policy" content="\(csp)">
+        <!-- TSK-812: WebKit DNS-prefetches link href HOSTS without a click, as a
+             perf optimization the CSP does NOT govern (it's a DNS-layer step
+             before any connection). Left on, viewing a doc with external links
+             would leak those hostnames — what the user is reading — to DNS. This
+             is the documented mechanism to disable it. -->
+        <meta http-equiv="x-dns-prefetch-control" content="off">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         \(styleBlock)
         </head>
