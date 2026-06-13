@@ -9016,3 +9016,20 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   deliberate). The first gate FAIL was the trap, not the change.
 - Held at fixed for the glance: open a .zip → listing; double-click an
   entry → extracted + opened.
+
+## LOG +308 (2026-06-12 tick — TSK-336 parked with options; TSK-259 triaged to execute-ready)
+
+- **TSK-336 (Claude hook events) PARKED:** the capture/parse layer is
+  complete and tested (ClaudeMonitorLog + analytics helpers) with ZERO
+  UI consumers — pure surfacing decision. Four costed options on the
+  ticket: (a) timeline-section segment, (b) new Claude Activity panel
+  w/ feed+stats (recommended for active monitoring), (c) status-bar
+  ticker, (d) defer.
+- **TSK-259 ("Front picker" = FONT picker) claimed + planned:** slice-1
+  plan recorded on the ticket with verified landing points — the two
+  traps named: TextDisplayView's AttrKey must gain fontName (else a
+  family change never repaints) and lineHeight() must use the RESOLVED
+  font (else the gutter misaligns; its doc comment warns of exactly
+  this). Deliberately NOT rushed into the perf-sensitive file at the
+  tail of a long session — execute-ready for the next firing, the
+  TSK-282 pattern.
