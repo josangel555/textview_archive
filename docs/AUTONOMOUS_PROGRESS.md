@@ -9169,6 +9169,15 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +404 (2026-06-13 — validation drain: TSK-741, TSK-736, TSK-619 → validated (2 self-validatable opts + 1 closed by the profile))
+
+Host-actionable pool drained + perf cluster parked → ran the §1.5 validation drain on this session's review/fixed-held items. Re-ran each evidence FRESH on current main (fd1530c), then validated 3:
+- **TSK-741 (terminal output-leg ANR) → validated.** Realized it was over-held: the version-gate is an OUTPUT-IDENTICAL optimization (installs the SAME terminal screen, just gated on `version` instead of a per-frame deep `Equatable` over ~1256 scrollback rows) — no rendered-pixel change to VM-validate, only main-thread work removed. The two visual-regression risks (stale screen / swallowed font-size) are host-tested with teeth. TerminalUpdateVersionGateTests 4/4 fresh.
+- **TSK-736 (hover-highlight lag) → validated.** Same logic: skipping the redundant find-repaint leaves the displayed wash IDENTICAL; the one visual risk (stale highlight after a storage rebuild) is host-guarded (test_storageRebuild_clearsLive). TextSearchRepaintGuardTests 4/4 fresh + the VM profile corroborates apply=6.7ms.
+- **TSK-619 (first-open ~400ms ts.query-compile on MAIN) → validated by the fresh profile.** It was held at fixed for exactly "a live signpost showing ts.query-compile gone from the open critical path." This session's nav profile delivers it: ALL ts.query-compile ran on worker thread 0x64616 (the launch warm-task), NOT Main (0x6446d) — the open served warm queries (sub-ms), no main-thread hitch. TreeSitterWarmupTests 3/3 fresh.
+
+Insight: "output-identical work-reduction" optimizations (same pixels, less work) whose visual-regression modes are host-tested are self-validatable on the host — they aren't "rendered-pixels behavior needing VM." No code change this tick.
+
 ## LOG +403 (2026-06-13 — fresh VM perf profile: the switch/resize residual is RESOLVED; perf cluster parked for owner re-feel)
 
 Ran the teed-up fresh VM xctrace profile (`vm-profile.sh` nav + resize, debug, os_signpost) on current main + this session's fixes. Ran the nav profile in the BACKGROUND while checking the board in parallel (the "no idle" rule) — and confirmed the entire owner-listed groomed pool is DONE (635/636/554/634/630/631/632/633/637/638/639/628 all validated; 763/789 done-at-review). The host-actionable user-facing pool is fully drained.
