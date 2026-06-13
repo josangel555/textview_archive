@@ -122,15 +122,20 @@ final class FindCoordinatorTests: XCTestCase {
         XCTAssertEqual(f.editorFocusRequest, n0 &+ 1)
     }
 
-    func test_editor_dismiss_clearsQueryAndSummary() {
+    func test_editor_dismiss_keepsQuery_clearsSummary() {
+        // TSK-770: dismiss PRESERVES the search text (Cmd+F reopen restores it —
+        // "keeping prev text"); only the transient match summary clears. CM6
+        // highlights clear by bar visibility (ContentView gates findQuery on
+        // isEditorBarPresented), so the preserved query leaves no stale
+        // highlights while hidden.
         let f = FindCoordinator()
         f.showEditorBar()
         f.editorQuery = "needle"
         f.setEditorMatchSummary("3/12")
         f.dismissEditorBar()
         XCTAssertFalse(f.isEditorBarPresented)
-        XCTAssertEqual(f.editorQuery, "")
-        XCTAssertEqual(f.editorMatchSummary, "")
+        XCTAssertEqual(f.editorQuery, "needle", "TSK-770: prior search text survives dismiss")
+        XCTAssertEqual(f.editorMatchSummary, "", "the transient match summary still clears")
     }
 
     func test_editor_matchSummary_dedupes() async {

@@ -102,10 +102,14 @@ final class FindBarTests: HeadlessUITestCase {
         XCTAssertEqual(model.editorReplaceAllRequest, all0 + 1)
     }
 
-    /// Dismissing the editor bar must clear the replacement string and
-    /// collapse the replace row, so a fresh Cmd+F doesn't resurrect a
-    /// stale replacement.
-    func test_editorReplace_dismissClearsState() {
+    /// TSK-770: dismissing the editor bar KEEPS the prior search text (so a
+    /// reopen via Cmd+F restores it — the owner's "Cmd+F again opens keeping
+    /// prev text"), but clears the replacement and collapses the replace row so
+    /// a fresh find opens find-only with no stale replacement. CM6 highlights
+    /// clear by bar visibility (ContentView gates findQuery on
+    /// isEditorFindBarPresented), so the preserved query leaves no stale
+    /// highlights while hidden and re-highlights on reopen.
+    func test_editorReplace_dismissKeepsQuery_clearsReplacement() {
         let model = makeModel()
         model.showEditorReplaceBar()
         model.editorFindQuery = "foo"
@@ -114,9 +118,17 @@ final class FindBarTests: HeadlessUITestCase {
 
         model.dismissEditorFindBar()
         XCTAssertFalse(model.isEditorFindBarPresented)
-        XCTAssertEqual(model.editorFindQuery, "")
-        XCTAssertEqual(model.editorFindReplacement, "")
-        XCTAssertFalse(model.find.editorReplaceVisible)
+        XCTAssertEqual(model.editorFindQuery, "foo",
+                       "TSK-770: the prior search text survives dismiss")
+        XCTAssertEqual(model.editorFindReplacement, "",
+                       "the replacement is cleared — no stale replacement on a fresh find")
+        XCTAssertFalse(model.find.editorReplaceVisible, "reopen is find-only")
+
+        // Reopen (Cmd+F): the preserved query is restored, not blanked.
+        model.showEditorFindBar()
+        XCTAssertTrue(model.isEditorFindBarPresented)
+        XCTAssertEqual(model.editorFindQuery, "foo",
+                       "reopening the find bar shows the preserved prior text")
     }
 
     /// Read-only surfaces (rendered / source) have no replace state —

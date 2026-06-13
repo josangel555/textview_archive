@@ -151,7 +151,13 @@ public final class FindCoordinator: ObservableObject {
 
     public func dismissEditorBar() {
         isEditorBarPresented = false
-        editorQuery = ""
+        // TSK-770: KEEP `editorQuery` so a reopen (Cmd+F) restores the prior
+        // search text — the owner's "Cmd+F again opens keeping prev text". This
+        // is safe: ContentView gates the CM6 `findQuery` on `isEditorBarPresented`
+        // (not on the string), so a HIDDEN bar still feeds CM6 "" and highlights
+        // clear; reopening re-feeds the preserved query and re-highlights — no
+        // stale highlights while hidden. The replacement + row visibility DO
+        // reset so a fresh find opens find-only with no stale replacement.
         editorReplacement = ""
         editorReplaceVisible = false
         editorMatchSummary = ""
