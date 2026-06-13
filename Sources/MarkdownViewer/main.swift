@@ -725,13 +725,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         _ = model.saveActiveEditor()
     }
 
-    /// Edit → Undo (⌘Z). Routes to the active CodeMirror webview's
-    /// JS undo. Only enabled when an editor tab is mounted; otherwise
-    /// validateMenuItem returns false and AppKit forwards ⌘Z down the
-    /// responder chain (NSTextField etc.).
+    /// Edit → Undo (⌘Z). Routes to the active CodeMirror webview's JS
+    /// undo when an editor is on screen. Otherwise (TSK-330) falls back
+    /// to the APP-LEVEL undo: restoring the last removed bookmark — the
+    /// store has carried this stack since the Delete-to-remove ask, but
+    /// nothing ever consumed it (the dead-channel class). Text-field
+    /// undo is protected by validateMenuItem: the item disables while a
+    /// text input is focused, releasing ⌘Z down the responder chain.
     @objc func editorUndo(_ sender: Any?) {
-        guard let webView = CodeMirrorEditorRegistry.shared.current() else { return }
-        webView.evaluateJavaScript("undo()", completionHandler: nil)
+        if let webView = CodeMirrorEditorRegistry.shared.current(),
+           model.currentViewMode == .editor {
+            webView.evaluateJavaScript("undo()", completionHandler: nil)
+            return
+        }
+        _ = model.undoLastBookmarkRemoval()
     }
 
     /// Edit → Redo (⇧⌘Z). Mirror of `editorUndo`.
@@ -1872,15 +1879,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             // Only meaningful when an editor is on screen to receive it.
             return hasTab && model.currentViewMode == .editor
                 && CodeMirrorEditorRegistry.shared.current() != nil
-        case #selector(editorUndo(_:)), #selector(editorRedo(_:)):
-            // Only intercept ⌘Z / ⇧⌘Z when an editor is on screen.
-            // Returning false here releases the keystroke back to the
-            // responder chain so NSTextField / NSTextView undo keeps
-            // working in non-editor contexts (Go-to prompt, search
-            // fields). CM6 has no per-tab "can undo" affordance
-            // exposed here, so we enable optimistically when an editor
-            // tab is selected — JS undo()/redo() are no-ops on empty
-            // history.
+        case #selector(editorUndo(_:)):
+            // Editor on screen → editor undo (optimistic; JS undo() is a
+            // no-op on empty history). Otherwise (TSK-330) enable for the
+            // app-level bookmark-removal undo — but NEVER while a text
+            // input is focused (field editors are NSText): returning
+            // false releases ⌘Z down the responder chain so
+            // NSTextField / NSTextView undo keeps working in prompts and
+            // search fields.
+            if hasTab && model.currentViewMode == .editor
+                && CodeMirrorEditorRegistry.shared.current() != nil {
+                return true
+            }
+            if NSApp.keyWindow?.firstResponder is NSText { return false }
+            return model.canUndoBookmarkRemoval
+        case #selector(editorRedo(_:)):
+            // Redo stays editor-only (the bookmark stack is undo-only).
             return hasTab && model.currentViewMode == .editor
                 && CodeMirrorEditorRegistry.shared.current() != nil
         default:

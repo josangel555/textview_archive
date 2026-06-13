@@ -1034,6 +1034,22 @@ public final class DocumentModel: ObservableObject {
         invalidateBookmarkedLinesCache()
     }
 
+    /// TSK-330 — the app-level ⌘Z target outside the editor: whether the
+    /// store has a removal that undo can restore.
+    public var canUndoBookmarkRemoval: Bool { bookmarksStore.canUndoRemoval }
+
+    /// Restore the most recently removed bookmark (the store has carried
+    /// this stack since the Delete-to-remove ask; the Edit→Undo fallback
+    /// is its first consumer). Republishes the bookmarks array so the
+    /// panel + star indicators reflect the restoration immediately.
+    @discardableResult
+    public func undoLastBookmarkRemoval() -> Bool {
+        guard bookmarksStore.undoLastRemoval() != nil else { return false }
+        bookmarks = bookmarksStore.all()
+        invalidateBookmarkedLinesCache()
+        return true
+    }
+
     /// Reload the `bookmarks` array from the store. Call this after a
     /// mutation that went directly through `bookmarksStore` (e.g. the
     /// sidebar context-menu's `toggle(url:)`) — those bypass the
