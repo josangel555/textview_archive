@@ -9169,6 +9169,23 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +340 (2026-06-13 overnight — TSK-734 crash fixed)
+
+- **TSK-734 (crash, highest-severity bug) FIXED → review (ab5f55e).** The git-chip Menu content
+  builder called `GitClient.localBranches()`/`worktreeList()` SYNCHRONOUSLY — and SwiftUI evaluates
+  `Menu` content during the layout/commit pass, so `NSTask.waitUntilExit` spun a nested CFRunLoop inside
+  `CA::Transaction::commit` → AppKit reentrancy NSException → SIGTRAP. Fix: new `GitChipStore`
+  (@MainActor ObservableObject) caches branches/worktrees, populated OFF-MAIN via `Task.detached` from the
+  chip's `.task(id: root)`; `gitChipMenu` now reads the cache with ZERO `GitClient` in the builder — the
+  crash class is structurally removed. 3 model-teeth tests (empty-before-load / publishes / per-root
+  replace), teeth demonstrated (drop the publish → red). Headless gate PASSED (5028).
+- **Held at `review`, NOT self-validated** — the crash is AppKit render-path reentrancy, so per the
+  validation policy the host model-teeth aren't sufficient; the on-screen no-crash needs the VM lane
+  (TODO: repo session + git chip during a session-switch layout churn → confirm no SIGTRAP). Structural +
+  model proof is strong; this is the honest ceiling.
+- Per-tick cadence reset to 1-2 bugs (avoiding the earlier mega-turn). Next crons: 728/730 (editor keys
+  stolen by SidebarKeyMonitor), 742+743+744 (preview-slot tab-id reuse), 729/737/738, terminal 735/740.
+
 ## LOG +339 (2026-06-13 — overnight kickoff: spikes landed, bug bucket triaged, first bug fixed)
 
 Owner went to bed ("don't be blocked, start tackling by priority, answers tomorrow noon"). Progress:
