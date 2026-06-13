@@ -9169,6 +9169,20 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +406 (2026-06-13 — TSK-822: gate the T5 pixel tier on MDV_VM_GUI_SESSION → validated; closes a VM-lane false-fail + a host footgun)
+
+- **TSK-822 (visual-regression suites false-fail in the non-GUI VM lane) → validated (commit `1bf47cb`, headless gate green).**
+  Root cause: the 3 PixelTestCase visual-regression suites gated per-test only on `MDV_HEADLESS_GATE`, not `MDV_VM_GUI_SESSION`
+  — so they ran outside the explicit GUI lane: on the non-GUI `test-in-vm.sh test` (AppleScript `-609` / blank screencaptures,
+  the symptom surfaced last tick) AND on a bare host `swift test` (which would OPEN A WINDOW on the owner's screen — the same
+  footgun TSK-817 fixed for LiveAppTestCase, still open for these). Fix: `PixelTestCase.setUpWithError` now gates the whole T5
+  tier on `LaunchHarness.shouldRunLiveTiers` (the TSK-817 decision, already host-tested) → self-skip unless
+  `MDV_VM_GUI_SESSION=1`. Host-validated: running the 3 suites on the host now SKIPS all 6 tests in setUp (0.00s, no spawn, no
+  window, no -609); LaunchHarnessTierGateTests 4/4; headless gate green (skip-in-setUp keeps the heavy-tier sentinel
+  untripped). Self-validated (pure test-infra gating logic, the decision + the empirical skip are both host-proven).
+- Surfaced + fixed in the same loop as last tick's VM validation run — the VM lane's non-GUI signal is now trustworthy
+  (only its real headless tiers run there; the GUI tier waits for the asuser lane).
+
 ## LOG +405 (2026-06-13 — TSK-821 rendered-markdown per-file scroll (the dominant TSK-743 case); VM suite triaged + TSK-822 filed)
 
 - **TSK-821 (rendered-markdown WKWebView per-file scroll) → fixed (commit `43a29a3`, headless gate green; held for VM).**
