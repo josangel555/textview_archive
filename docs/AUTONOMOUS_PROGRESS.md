@@ -9169,6 +9169,32 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +364 (2026-06-13 — TSK-640 interactive Code Actions picker landed (fixed→review); TSK-745 test backfill)
+
+- **TSK-640 code-actions picker (second half of the PARITY ticket; rename half landed prior tick) → review.**
+  Commit `d5b8410`. The engine (`codeActionsAtCursor`/`applyCodeAction`) was already host-tested; this tick
+  built the interactive entry:
+  - **`CodeActionPicker.swift`** (new SwiftUI view) + ContentView overlay (mirrors the LSP-rename / GoToPath
+    scrim+panel block). Lightbulb header, a `.loading` spinner, and a row per action; command-only actions
+    (empty `edit`) are listed-but-disabled (this viewer applies edits, never executes server commands).
+    a11y ids `mdv.codeActions.panel/loading/row/cancelButton`.
+  - **DocumentModel state machine:** `CodeActionPickerState{.hidden|.loading|.presenting([LSPCodeAction])}`;
+    `showCodeActionPicker()` flips to `.loading` then async-fetches with a **generation stale-guard** (a fetch
+    that resolves after dismiss/re-show is dropped, not re-presented); `pickCodeAction` applies the edit-bearing
+    action via the host-tested `applyCodeAction` and dismisses; `canRequestCodeActions` gates on LSP-language +
+    recorded cursor. Wired `show-code-actions` script verb + `lsp.codeActions` command (vocabulary gate updated).
+  - **7 host tests** (LSPRenameEndToEndTests, fake-LSP harness, 2-action fixture): show→loading→presenting,
+    pick edit-bearing applies+dismisses, command-only refused-but-dismisses, dismiss-during-fetch stays hidden,
+    canRequest gate, the verb presents. **Teeth:** dropping `dismissCodeActionPicker()` from `pickCodeAction`
+    turned 2 tests RED (mutant compiled), then restored. Headless gate 5068 tests green.
+  - **Held at review (not validated):** the picker VIEW render (panel/loading/rows) is SwiftUI → VM/T5 pixel
+    tail (`blocker: live-validation`); the model state machine is the host-guarded part.
+- **TSK-745 test backfill (commit `7933bd6`):** the prior tick shipped the new-tab landing recents launcher
+  (`fdb072a`) WITHOUT its host test (test gap vs the change→tests mandate). Committed the orphaned
+  `LandingRecentsTests.swift` (3 tests pinning the `landingRecentsCap` prefix/passthrough/empty cases).
+- **Process:** picked up the in-flight TSK-640 picker, no oscillation; fixed one compile error (`.tertiary` is a
+  HierarchicalShapeStyle not a Color in the ternary → `AnyShapeStyle` wrap); per-item commits.
+
 ## LOG +363 (2026-06-13 — TSK-791 spike: "why is the editor slow / was CM6 a mistake?" answered + parked)
 
 - **TSK-791 (owner #1-priority complaint) spiked → triaged + parked (owner-decision).** Answer (docs/research/
