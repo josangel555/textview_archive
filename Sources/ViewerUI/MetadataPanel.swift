@@ -23,6 +23,10 @@ final class MetadataChecksumModel: ObservableObject {
         case idle, computing, done(String), failed
     }
     @Published private(set) var state: State = .idle
+    /// The algorithm `compute()` will hash with. Defaults to SHA-256 (the
+    /// historical single-algo behavior); the panel offers the full
+    /// `ChecksumAlgorithm` set (TSK-748).
+    @Published private(set) var algorithm: ChecksumAlgorithm = .sha256
     private(set) var url: URL?
 
     /// Most recently mounted panel's model — the script-verb seam.
@@ -37,24 +41,36 @@ final class MetadataChecksumModel: ObservableObject {
         state = .idle
     }
 
-    /// The "Compute SHA-256" button's action. Hashes OFF the main thread
-    /// (a large file's disk read must not block the UI — cf. TSK-214). The
-    /// URL-identity guard drops a STALE completion: without it an in-flight
-    /// hash finishing after a file switch would overwrite the new file's
-    /// `.idle` with the OLD file's hash.
+    /// Switch the active algorithm. A different algorithm ⇒ any displayed hash
+    /// is now for the WRONG algorithm, so drop it back to `.idle` (the user
+    /// recomputes). Idempotent for the same algorithm so a re-render doesn't
+    /// clear a computed hash.
+    func select(algorithm: ChecksumAlgorithm) {
+        guard algorithm != self.algorithm else { return }
+        self.algorithm = algorithm
+        state = .idle
+    }
+
+    /// The "Compute" button's action. Hashes OFF the main thread (a large
+    /// file's disk read must not block the UI — cf. TSK-214). The identity
+    /// guard drops a STALE completion: without it an in-flight hash finishing
+    /// after a file switch OR an algorithm switch would overwrite the current
+    /// `.idle` with a hash for the wrong file/algorithm.
     func compute() {
         guard let target = url else { return }
+        let algo = algorithm
         state = .computing
         Task { [weak self] in
-            let hex = await Self.hashOffMain(target)
-            guard let self, self.url == target else { return }
+            let hex = await Self.hashOffMain(target, algorithm: algo)
+            guard let self, self.url == target, self.algorithm == algo else { return }
             self.state = hex.map(State.done) ?? .failed
         }
     }
 
-    nonisolated private static func hashOffMain(_ url: URL) async -> String? {
+    nonisolated private static func hashOffMain(_ url: URL,
+                                                algorithm: ChecksumAlgorithm) async -> String? {
         await Task.detached(priority: .userInitiated) {
-            try? FileChecksum.sha256Hex(ofFileAt: url)
+            try? FileChecksum.hex(ofFileAt: url, algorithm: algorithm)
         }.value
     }
 }
@@ -110,22 +126,46 @@ struct MetadataPanel: View {
 
     @ViewBuilder
     private var checksumContent: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // Algorithm picker (TSK-748). Changing it drops any displayed hash
+            // back to .idle so the user recomputes for the new algorithm.
+            Picker("Algorithm", selection: Binding(
+                get: { checksumModel.algorithm },
+                set: { checksumModel.select(algorithm: $0) }
+            )) {
+                ForEach(ChecksumAlgorithm.allCases, id: \.self) { algo in
+                    Text(algo.label).tag(algo)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .controlSize(.small)
+            .font(.system(size: 10 * uiScale))
+            .accessibilityIdentifier("mdv.metadata.checksumAlgorithm")
+
+            checksumStateContent
+        }
+    }
+
+    @ViewBuilder
+    private var checksumStateContent: some View {
+        let label = checksumModel.algorithm.label
         switch checksumModel.state {
         case .idle:
-            Button("Compute SHA-256") { checksumModel.compute() }
+            Button("Compute \(label)") { checksumModel.compute() }
                 .font(.system(size: 10 * uiScale))
                 .buttonStyle(.link)
                 .accessibilityIdentifier("mdv.metadata.computeChecksum")
         case .computing:
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small)
-                Text("Computing SHA-256…")
+                Text("Computing \(label)…")
                     .font(.system(size: 10 * uiScale))
                     .foregroundStyle(.secondary)
             }
         case .done(let hex):
             VStack(alignment: .leading, spacing: 4) {
-                row(Row("SHA-256", hex))
+                row(Row(label, hex))
                 Button("Copy") { SystemPasteboard().writeString(hex) }
                     .font(.system(size: 10 * uiScale))
                     .buttonStyle(.link)

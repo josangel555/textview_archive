@@ -206,6 +206,21 @@ public enum ScriptVerb {
                 return true
             }
             checksums.compute()
+        case "metadata-set-checksum-algorithm":
+            // TSK-748: drive the panel's algorithm picker (the exact `select`
+            // the SwiftUI Picker is bound to). Same mounted-panel requirement
+            // and in-process-event-synthesis fallback as the compute verb.
+            guard let checksums = MetadataChecksumModel.live else {
+                FileHandle.standardError.write(Data(
+                    "script: metadata-set-checksum-algorithm needs a mounted MetadataPanel\n".utf8))
+                return true
+            }
+            guard let algo = ChecksumAlgorithm(rawValue: arg) else {
+                FileHandle.standardError.write(Data(
+                    "script: metadata-set-checksum-algorithm unknown algorithm '\(arg)'\n".utf8))
+                return true
+            }
+            checksums.select(algorithm: algo)
         case "show-cross-search":    model.showCrossSearch()
         case "dismiss-cross-search": model.dismissCrossSearch()
         case "set-cross-query":
@@ -587,12 +602,14 @@ public enum ScriptVerb {
             // registry — empty dict when no MetadataPanel is mounted). Lets
             // the UAT assert the compute outcome (state + hash) cross-process.
             "metadataChecksum": MetadataChecksumModel.live.map { cm -> [String: Any] in
+                var out: [String: Any] = ["algorithm": cm.algorithm.rawValue]
                 switch cm.state {
-                case .idle:          return ["state": "idle"]
-                case .computing:     return ["state": "computing"]
-                case .done(let hex): return ["state": "done", "hash": hex]
-                case .failed:        return ["state": "failed"]
+                case .idle:          out["state"] = "idle"
+                case .computing:     out["state"] = "computing"
+                case .done(let hex): out["state"] = "done"; out["hash"] = hex
+                case .failed:        out["state"] = "failed"
                 }
+                return out
             } ?? [:],
             // Nested sidebar projection. SidebarPage reads
             // `model.sidebar.rootURL` from here; without it the

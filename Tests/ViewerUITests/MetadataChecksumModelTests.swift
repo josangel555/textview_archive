@@ -100,6 +100,83 @@ final class MetadataChecksumModelTests: XCTestCase {
                        "a stale completion must NOT clobber the new file's state")
     }
 
+    // MARK: - Multi-algorithm selection (TSK-748)
+
+    private static let abcMD5 = "900150983cd24fb0d6963f7d28e17f72"
+    private static let abcCRC32 = "352441c2"
+
+    func test_compute_withSelectedAlgorithm_producesThatAlgorithmsHash() async throws {
+        let model = MetadataChecksumModel()
+        model.configure(url: try file("abc.bin", "abc"))
+        model.select(algorithm: .md5)
+        XCTAssertEqual(model.algorithm, .md5)
+        model.compute()
+        await waitUntil { model.state != .computing }
+        XCTAssertEqual(model.state, .done(Self.abcMD5),
+                       "the displayed hash must be the SELECTED algorithm's digest")
+
+        // Switch to CRC-32 and recompute → the other vector.
+        model.select(algorithm: .crc32)
+        model.compute()
+        await waitUntil { model.state != .computing }
+        XCTAssertEqual(model.state, .done(Self.abcCRC32))
+    }
+
+    func test_select_differentAlgorithm_resetsHash_sameAlgorithmKeepsIt() async throws {
+        let model = MetadataChecksumModel()
+        model.configure(url: try file("abc.bin", "abc"))
+        model.compute()                                   // default .sha256
+        await waitUntil { model.state != .computing }
+        XCTAssertEqual(model.state, .done(Self.abcSHA))
+
+        model.select(algorithm: .sha256)                  // SAME algorithm
+        XCTAssertEqual(model.state, .done(Self.abcSHA),
+                       "re-selecting the active algorithm must not clear the hash")
+
+        model.select(algorithm: .md5)                     // DIFFERENT algorithm
+        XCTAssertEqual(model.state, .idle,
+                       "a new algorithm ⇒ the old-algorithm hash is stale, drop it")
+        XCTAssertEqual(model.algorithm, .md5)
+    }
+
+    /// Sibling of the file-switch race: an in-flight hash finishing AFTER the
+    /// user switches algorithm must be dropped, not land the OLD algorithm's
+    /// digest under the NEW algorithm's label.
+    func test_staleCompletion_afterAlgorithmSwitch_isDropped() async throws {
+        let model = MetadataChecksumModel()
+        model.configure(url: try file("abc.bin", "abc"))
+        model.compute()                                   // .sha256 in flight
+        model.select(algorithm: .md5)                     // switch before it lands
+        XCTAssertEqual(model.state, .idle)
+        try? await Task.sleep(for: .milliseconds(700))
+        XCTAssertEqual(model.state, .idle,
+                       "the stale .sha256 completion must NOT clobber the .md5 idle state")
+    }
+
+    func test_setAlgorithmVerb_drivesSelectionAndDumpProjectsIt() async throws {
+        let harness = HeadlessHarness(label: "MetadataChecksumModelTests-algo")
+        defer { harness.cleanup() }
+
+        let model = MetadataChecksumModel()
+        model.configure(url: try file("abc.bin", "abc"))
+
+        ScriptVerb.apply(verb: "metadata-set-checksum-algorithm md5",
+                         to: harness.model, sessions: harness.sessions)
+        XCTAssertEqual(model.algorithm, .md5, "the verb must drive the live model's algorithm")
+
+        ScriptVerb.apply(verb: "metadata-compute-checksum",
+                         to: harness.model, sessions: harness.sessions)
+        await waitUntil { model.state != .computing }
+
+        let dump = harness.snapshot()["model"] as? [String: Any]
+        let proj = dump?["metadataChecksum"] as? [String: Any]
+        XCTAssertEqual(proj?["algorithm"] as? String, "md5",
+                       "the dump must project the selected algorithm; got \(proj ?? [:])")
+        XCTAssertEqual(proj?["state"] as? String, "done")
+        XCTAssertEqual(proj?["hash"] as? String, Self.abcMD5,
+                       "the projected hash must be the selected algorithm's digest")
+    }
+
     // MARK: - verb + dump projection (the script-harness surface the T4 UAT reads)
 
     func test_verbAndDumpProjection_endToEnd() async throws {
