@@ -9169,6 +9169,32 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +320 (2026-06-13 tick — TSK-300 Save-a-Copy menu wired (owner-greenlit); TSK-310 dedup)
+
+- **TSK-300 (Save a Copy) — UI WIRED + landed (`a775c16`, installed, gate-green 5014).**
+  Owner had RESOLVED the park 2026-06-11: "write the remaining UI wiring + validate on
+  the VM — applies to all 4 siblings" (300/302/303/310). Engine + `save-copy` verb were
+  already host-tested (6c2fc9e, SaveCopyTests×9); only the AppKit surface remained.
+  Added File → "Save a Copy…" (⇧⌘S) → NSSavePanel (pre-filled w/ the tab's name) →
+  `model.saveCopyOfCurrentTab`, leaving the open doc untouched (no retarget/dirty).
+  New host gates `canSaveCopyOfCurrentTab` (drives validateMenuItem) + `saveCopySuggestedName`,
+  4 wiring tests + teeth on the gate (forced false → enable+engine tests red, recompile-
+  confirmed, restored). Fixed, live glance (menu→panel UX is the VM glance the owner asked for).
+- **TSK-310 (Files-pane fuzzy filter) — DISMISSED as duplicate of TSK-282 (fixed).**
+  The owner listed 310 in the "wire all 4 siblings" answer, but the feature is ALREADY
+  LIVE via TSK-282: an always-visible "Filter files" field under FILES (id
+  `sidebar.filterField`) that fuzzy-narrows the tree via FuzzyMatcher (recomputeFilterMatches
+  → SidebarFilterRow), host-tested by SidebarFilterTests×10 + FuzzyMatcherTests. The
+  `FileTreeFilter` core built for 310 (654015b) is DEAD/unused (UI uses FuzzyMatcher
+  directly). Noted the only nuance for the owner (always-visible row vs 310's "button to
+  reveal") — reopen only if the button affordance specifically matters.
+- **Remaining greenlit siblings: TSK-302 (CSV cell-cursor nav + Cmd-C) + TSK-303
+  (find-in-table)** — cores done (a12391c/e1dc879, host-tested), but the wiring is
+  substantial live-gated SwiftUI-table work (focus state, key handlers, highlight render),
+  each its own build. Queued as the next builds; NOTE §2.5: CSV PARSER is a port target,
+  but these are VIEW-layer interaction features (cursor/find over already-parsed rows),
+  and the owner explicitly greenlit them 2026-06-11.
+
 ## LOG +319 (2026-06-13 tick — TSK-283 rename-from-nav built; agent-fleet board reconciliation)
 
 - **TSK-283 (Enter to rename) — BUILT + landed (`1165759`, installed, gate-green
