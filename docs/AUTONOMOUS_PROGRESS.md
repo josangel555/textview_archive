@@ -9169,6 +9169,27 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +386 (2026-06-13 — TSK-738 status-footer bug VM-validated via the harness; folder-only scene; 745/760 visually confirmed + follow-up framed)
+
+- **TSK-738 → validated** (user-facing bug: status footer missing after relaunch / opening a folder). The fix
+  (`3aaa8f1`, prior) broadened the footer gate to `hasOpenContext` (currentURL || sidebar.rootURL) so it shows
+  in the no-file folder state. This tick added the **`folder-only` UI scene** (`d9536d7`) — closes the
+  auto-opened tab + openFolder a root to REACH that state (the aqua-runner always launches with a file). VM:
+  `vm-uitest.sh run folder-only` → **`mdv.statusBar` PRESENT** in the AX tree (StatusBar mounted; pre-fix the
+  `currentURL != nil` gate would leave it ABSENT in this state — so the folder-only assertion is a true gate
+  guard) + the footer strip rendered in the capture. Host test guards the predicate (hasOpenContext true while
+  currentURL nil, teeth); VM proves the render mounts. `/tmp/mdv-vm-ui/folder-only.png`.
+- **Bonus from the same capture:** the EmptyStateView's **New File button (TSK-760)** + populated **Recents
+  launcher (TSK-745)** are VISUALLY confirmed rendering. But their nested `mdv.emptyState.*` ids DON'T surface
+  out-of-process (SwiftUI exposes only CONTAINER ids — same as the rename/picker panels), so they can't be
+  auto-asserted yet. Framed the clean next slice on both tickets: add a surfacing CONTAINER a11y id
+  (`mdv.emptyState.newFileButton` / `mdv.emptyState.recents`), then `scene_expect folder-only` requires it.
+  Held at review (visual confirmation, no automated render guard yet).
+- **Harness lesson reinforced:** out-of-process AX surfaces CONTAINER `accessibilityIdentifier`s, not nested
+  leaf controls (buttons/fields/rows). To make a SwiftUI element auto-assertable on the VM lane, put the id on
+  its container. The render-drain recipe now: scene (reach the state) + a surfacing container id + a
+  `scene_expect` line. `main` headless-gate-green; per-item commit (d9536d7).
+
 ## LOG +385 (2026-06-13 — TSK-640 LSP rename + code actions FULLY VALIDATED: both SwiftUI overlays VM-render-validated; P8 parity feature closed)
 
 - **TSK-640 → validated** (the owner-named P8 PARITY feature, fully closed across the pyramid). This tick added
