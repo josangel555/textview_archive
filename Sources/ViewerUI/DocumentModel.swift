@@ -130,6 +130,17 @@ public final class DocumentModel: ObservableObject {
     }
 
     @Published public private(set) var recents: [HistoryEntry] = []
+
+    /// Newest-first recents for the empty-tab landing screen (TSK-745). The
+    /// sidebar's Recent section scrolls the full list; the welcome screen shows
+    /// only the top few so it stays a glanceable launcher, not a wall.
+    nonisolated public static let landingRecentsCap = 8
+    /// Pure cap (host-testable without populating the live history store).
+    nonisolated public static func landingRecents(from all: [HistoryEntry]) -> [HistoryEntry] {
+        Array(all.prefix(landingRecentsCap))
+    }
+    public var landingRecents: [HistoryEntry] { Self.landingRecents(from: recents) }
+
     @Published public private(set) var bookmarks: [BookmarkEntry] = []
     /// Width of the sidebar in points. Mutated frequently during a drag —
     /// see `setSidebarWidthLive` (no persistence) vs `setSidebarWidth`

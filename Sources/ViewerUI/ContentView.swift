@@ -537,7 +537,7 @@ public struct ContentView: View {
     private func tabContent(for tab: ViewerCore.Tab, isActive: Bool) -> some View {
         switch tab.state {
         case .empty:
-            EmptyStateView()
+            EmptyStateView(model: model)
         case .loading(let url):
             LoadingStateView(url: url)
         case .loaded(let file):
@@ -561,7 +561,7 @@ public struct ContentView: View {
                 hosted
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                EmptyStateView()
+                EmptyStateView(model: model)
             }
         case .preview(let url, let cat):
             HStack(spacing: 0) {
@@ -1384,6 +1384,8 @@ struct LoadingStateView: View {
 }
 
 struct EmptyStateView: View {
+    @ObservedObject var model: DocumentModel
+
     var body: some View {
         VStack(spacing: 14) {
             Image(systemName: "doc.text")
@@ -1403,11 +1405,54 @@ struct EmptyStateView: View {
                 }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
             }
-            Text("Or press ⌘K to search recents.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            // TSK-745: the new-tab landing surfaces recent files, click-to-open.
+            // Capped (model.landingRecents) so the welcome screen stays a
+            // glanceable launcher; the full scrollable list lives in the sidebar.
+            if model.landingRecents.isEmpty {
+                Text("Or press ⌘K to search recents.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                recentsLauncher
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var recentsLauncher: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Recent")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("mdv.emptyState.recentsHeader")
+            ForEach(model.landingRecents) { entry in
+                Button(action: { model.openPath(entry.url) }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: entry.kind == .folder ? "folder" : "doc")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16)
+                        Text(entry.displayName)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        if let folder = entry.parentFolderLabel {
+                            Text(folder)
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                                .truncationMode(.head)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(entry.url.path)
+                .accessibilityIdentifier("mdv.emptyState.recentRow")
+            }
+        }
+        .frame(maxWidth: 360, alignment: .leading)
+        .padding(.top, 4)
+        .accessibilityIdentifier("mdv.emptyState.recents")
     }
 }
 
