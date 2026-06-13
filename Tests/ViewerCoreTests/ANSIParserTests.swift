@@ -35,11 +35,18 @@ final class ANSIParserTests: XCTestCase {
         XCTAssertEqual(p.screen.line(0), "éx")
     }
 
-    func test_emoji_rendersInSingleCell() {
+    func test_emoji_isDoubleWidth_andLineReconstructs() {
         var p = parser()
         feed(&p, "a😀b")
-        // The emoji is one grapheme = one cell in our model.
-        XCTAssertEqual(p.screen.line(0), "a😀b")
+        // TSK-731: the emoji occupies TWO cells (lead + wide trailer); the cursor
+        // advanced by 2, so 'b' is at col 3 (was col 2 under the old 1-cell model
+        // that shifted everything after an emoji left + misaligned tables).
+        XCTAssertEqual(p.screen.line(0), "a😀b", "line text skips the trailer placeholder")
+        XCTAssertEqual(p.screen.cells[0][0].char, "a")
+        XCTAssertEqual(p.screen.cells[0][1].char, "😀")
+        XCTAssertTrue(p.screen.cells[0][2].isWideTrailer, "the column after the emoji is reserved")
+        XCTAssertEqual(p.screen.cells[0][3].char, "b")
+        XCTAssertEqual(p.screen.cursor.col, 4)
     }
 
     // MARK: - C0 controls
@@ -440,5 +447,37 @@ final class ANSIParserTests: XCTestCase {
         feed(&p, "\u{1b}[r")           // DECSTBM with no params → reset
         XCTAssertEqual(p.screen.scrollTop, 0)
         XCTAssertEqual(p.screen.scrollBottom, 3, "full screen restored")
+    }
+
+    // MARK: - Double-width glyphs (TSK-731 — emoji/CJK column accounting)
+
+    func test_displayWidth_emojiAndCJK_areTwo_asciiOne() {
+        XCTAssertEqual(TerminalScreen.displayWidth(of: "a"), 1)
+        XCTAssertEqual(TerminalScreen.displayWidth(of: " "), 1)
+        XCTAssertEqual(TerminalScreen.displayWidth(of: "😀"), 2)
+        XCTAssertEqual(TerminalScreen.displayWidth(of: "✅"), 2)   // U+2705 dingbats
+        XCTAssertEqual(TerminalScreen.displayWidth(of: "中"), 2)   // CJK Unified
+        XCTAssertEqual(TerminalScreen.displayWidth(of: "한"), 2)   // Hangul syllable
+    }
+
+    func test_wideGlyph_alignsFollowingColumns() {
+        // The owner's case: an emoji row and an ascii row must keep the same
+        // border column. ✅ takes 2 cells (like 2 ascii chars), so 'x' lands at
+        // the same column on both rows → table borders line up.
+        var p = parser(2, 10)
+        feed(&p, "✅ x")               // ✅(2) + space + x → x at col 3
+        feed(&p, "\u{1b}[2;1Hab x")    // row 1: a,b,space,x → x at col 3
+        XCTAssertEqual(p.screen.cells[0].firstIndex { $0.char == "x" }, 3)
+        XCTAssertEqual(p.screen.cells[1].firstIndex { $0.char == "x" }, 3,
+                       "the emoji row and the ascii row align")
+    }
+
+    func test_wideGlyph_atRightEdge_wrapsToNextLine() {
+        var p = parser(3, 4)
+        feed(&p, "abc")                // cols 0,1,2 ; cursor at the last col (3)
+        feed(&p, "😀")                 // 2 cells don't fit in 1 remaining col → wrap
+        XCTAssertEqual(p.screen.line(0), "abc")
+        XCTAssertEqual(p.screen.line(1), "😀")
+        XCTAssertTrue(p.screen.cells[1][1].isWideTrailer)
     }
 }

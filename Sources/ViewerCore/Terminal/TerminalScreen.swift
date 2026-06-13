@@ -98,7 +98,9 @@ public struct TerminalScreen: Sendable, Equatable {
     /// cells trimmed per line. Used by tests + the accessibility path.
     public func plainText() -> String {
         cells.map { row -> String in
-            var line = String(row.map(\.char))
+            // Skip wide-glyph trailers (TSK-731) — they're column placeholders,
+            // not text; the lead cell already carries the character.
+            var line = String(row.lazy.filter { !$0.isWideTrailer }.map(\.char))
             while line.hasSuffix(" ") { line.removeLast() }
             return line
         }.joined(separator: "\n")
@@ -106,7 +108,7 @@ public struct TerminalScreen: Sendable, Equatable {
 
     public func line(_ r: Int) -> String {
         guard cells.indices.contains(r) else { return "" }
-        var line = String(cells[r].map(\.char))
+        var line = String(cells[r].lazy.filter { !$0.isWideTrailer }.map(\.char))
         while line.hasSuffix(" ") { line.removeLast() }
         return line
     }
@@ -204,16 +206,55 @@ public struct TerminalScreen: Sendable, Equatable {
 
     // MARK: - Writing
 
-    /// Write a single printable character at the cursor, advancing the
-    /// cursor. At the right edge we wrap to the start of the next line
-    /// (scrolling if on the last row) — standard auto-wrap behaviour.
+    /// Display columns a grapheme occupies: 2 for CJK-wide / emoji, else 1.
+    /// CONSERVATIVE — only known-wide ranges return 2; everything else returns 1,
+    /// so an un-tabled scalar keeps the prior single-cell behaviour (no
+    /// regression). Width is taken from the cluster's FIRST scalar (the standard
+    /// wcwidth approach; combining marks ride along in the same Character).
+    /// TSK-731.
+    public static func displayWidth(of ch: Character) -> Int {
+        guard let v = ch.unicodeScalars.first?.value else { return 1 }
+        switch v {
+        case 0x1100...0x115F,   // Hangul Jamo
+             0x2329...0x232A,   // angle brackets
+             0x2E80...0x303E,   // CJK radicals … Kangxi
+             0x3041...0x33FF,   // Hiragana/Katakana … CJK compatibility
+             0x3400...0x4DBF,   // CJK Ext A
+             0x4E00...0x9FFF,   // CJK Unified Ideographs
+             0xA000...0xA4CF,   // Yi
+             0xAC00...0xD7A3,   // Hangul Syllables
+             0xF900...0xFAFF,   // CJK compatibility ideographs
+             0xFE30...0xFE4F,   // CJK compatibility forms
+             0xFF00...0xFF60,   // Fullwidth forms
+             0xFFE0...0xFFE6,   // Fullwidth signs
+             0x1F000...0x1F02F, // Mahjong tiles
+             0x1F0A0...0x1F0FF, // Playing cards
+             0x1F300...0x1FAFF, // emoji: pictographs / symbols / ext-A
+             0x2600...0x26FF,   // Misc symbols (emoji presentation)
+             0x2700...0x27BF,   // Dingbats (incl ✅ U+2705)
+             0x20000...0x3FFFD: // CJK Ext B and beyond
+            return 2
+        default:
+            return 1
+        }
+    }
+
+    /// Write a printable grapheme at the cursor, advancing by its DISPLAY WIDTH
+    /// (1 or 2). A double-width glyph also stamps a `isWideTrailer` placeholder
+    /// in the next column so the grid stays aligned (TSK-731). At the right edge
+    /// we wrap to the start of the next line (scrolling if at the bottom).
     public mutating func write(_ ch: Character) {
-        if cursor.col >= cols {
+        let w = Self.displayWidth(of: ch)
+        if cursor.col + w > cols {
             cursor.col = 0
             lineFeed()
         }
         cells[cursor.row][cursor.col] = TerminalCell(char: ch, attributes: pen)
-        cursor.col += 1
+        if w == 2 && cursor.col + 1 < cols {
+            cells[cursor.row][cursor.col + 1] =
+                TerminalCell(char: " ", attributes: pen, isWideTrailer: true)
+        }
+        cursor.col += w
     }
 
     // MARK: - Erase

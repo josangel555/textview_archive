@@ -100,22 +100,26 @@ public struct CellAttributes: Sendable, Equatable, Hashable {
 
 /// A single character cell in the terminal grid.
 ///
-/// `char` holds one `Character`. A blank cell is a space with default
-/// attributes. We deliberately store `Character` (a grapheme cluster)
-/// rather than a scalar so combining marks / emoji render as one cell —
-/// good enough for a basic shell; true wide-character (CJK double-width)
-/// column accounting is out of scope for v1 (a wide glyph occupies one
-/// logical cell and may visually overflow, which the shell tolerates).
+/// `char` holds one `Character` (a grapheme cluster, so combining marks stay
+/// with their base). A DOUBLE-WIDTH glyph (CJK / emoji) occupies TWO cells: the
+/// lead cell holds the character, the next cell is a `isWideTrailer` placeholder
+/// so the grid stays column-aligned (TSK-731). Trailers are skipped when
+/// reconstructing line text.
 public struct TerminalCell: Sendable, Equatable {
     public var char: Character
     public var attributes: CellAttributes
+    /// True for the SECOND cell of a double-width glyph — a placeholder holding
+    /// the column after a wide lead. (TSK-731.)
+    public var isWideTrailer: Bool
 
-    public init(char: Character = " ", attributes: CellAttributes = .default) {
+    public init(char: Character = " ", attributes: CellAttributes = .default,
+                isWideTrailer: Bool = false) {
         self.char = char
         self.attributes = attributes
+        self.isWideTrailer = isWideTrailer
     }
 
     public static let blank = TerminalCell()
 
-    public var isBlank: Bool { char == " " && attributes == .default }
+    public var isBlank: Bool { char == " " && attributes == .default && !isWideTrailer }
 }
