@@ -9169,6 +9169,37 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +336 (2026-06-13 tick — OWNER PUSHBACK on "exhausted"; landed TSK-572 + triaged the rust-core efficiency cluster + re-activated TSK-492)
+
+Owner corrected the "clean pool exhausted" framing: ~84 items in Reported, 140+ pre-Validated — "plenty of
+work… some may require design/spike, don't wait for me, do those proactively." Also asked: **what's the plan
+for Validated — do I have to click buttons?** Re-scanned the board fresh and worked it, no idling:
+
+- **TSK-572 (trace facade) — LANDED + self-VALIDATED (commit e83214e).** Spun up 4 Explore subagents to
+  verify the rust-core efficiency cluster (572/573/570/575) against current source (audit-stale guard).
+  572 confirmed TRUE on all counts: module doc claimed FFI forwarding that does not exist (grep: ZERO
+  `trace::` refs outside crates/core), `emit()` took a `RwLock::read()` even with no sink (paid on the
+  per-keystroke `snapshot_frame` span), and 3 `event()` sites heap-allocated `fields` vecs nobody consumes.
+  Fix: honest docs + an `AtomicBool SINK_PRESENT` fast-path (one relaxed load, skips the lock when no sink —
+  the production default; lock re-validates so relaxed ordering is sound) + `sink_installed()` guards on the
+  3 allocating sites. New host test `presence_flag_gates_delivery`; teeth demonstrated (removed the flag-flip
+  → 2 tests RED → restored). rust-core-gate green; no FFI export so no header/.a rebuild.
+- **Pipeline filled — TSK-570/573/575 → triaged** with verified, executable plans (each prefaced by the
+  subagent's fresh repo check). 570 (dup helpers: 3 byte-identical + git-spawn → hoist to core; 2 diverged,
+  leave). 573 (web hardcodes ~55 hex, ignores core::theme — conservative no-visible-change plan: core gains a
+  web palette seeded from web's CURRENT values; a true unify is a visible change → defer to owner taste/VM).
+  575 (clippy: actually 167 warns not 60; DENY tier already clean; the 13 cast_possible_truncation are real
+  panic-risk — fix those + ratchet the gate; rank below 570/573).
+- **VALIDATED answer (TSK-492 re-activated, reported→triaged).** The fixed lane is ~35 tickets, ~25 tagged
+  `blocker:live-validation`. For host-testable logic agents self-validate via `task_validate` + a passing-test
+  artifact (no buttons). For UI/rendered behavior the plan IS TSK-492 — and the harness was already BUILT
+  (scripts/vm-uitest.sh + ui-snapshot.sh + vm-uitest/) and the owner RESOLVED the setup park on 2026-06-08,
+  but **grep proves it is wired into NO `.github/workflows/`** (built-but-runs-nowhere) and the ticket sat
+  abandoned in `reported`. Triaged with a two-track plan: Track A (autonomous, host-authored) = scene catalog
+  over the fixed-lane UI tickets + wire vm-uitest.sh into nightly-vm.yml + use the host T5 lane now; Track B
+  (one-time) = confirm the VM LaunchAgent/Screen-Recording + TSK-451. Net: the owner should rarely click —
+  the gap is wiring + the VM-lane confirmation, both mine to drive.
+
 ## LOG +335 (2026-06-13 tick — refreshed HANDOFF.md (was ~16 firings stale); state unchanged-gated)
 
 Clean autonomous pool remains exhausted (per +332/+334) + owner away (no responses to the direction
