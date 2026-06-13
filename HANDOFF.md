@@ -3,11 +3,13 @@
 
 **Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `90fcc06` (+ a docs commit). Recent ticks: interactive Rename Symbol UI (640); TSK-564 FFI copy-2 elimination (in-place frame decode, rust-core lane).
 
-## Pick fast — actionable pool + a process rule
-**RULE (repeated over-deliberation, worsening): pick the first viable bounded item within 2-3 board reads and START.** The gate + teeth are the safety net, not pre-analysis. Don't oscillate between candidates.
-Actionable headless items right now (groomed pools are mostly validated/heavy-tailed):
-- **rust-core perf/quality (headless, fresh lane):** TSK-543 (cm_apply full-doc-FFI per edit, S3 — bigger, hot path), TSK-575 (clippy warn-tier hygiene), TSK-564 (copy-1 buf-scope refactor = its remaining half), TSK-583 (DocId registry, remote-core enabler).
-- **wishlist minor-features (headless):** TSK-745 (new-tab recents), TSK-757 (shortcut catalog).
+## Two process rules (both learned the hard way) + actionable pool
+1. **Pick the first viable bounded item within 2-3 board reads and START.** Gate + teeth are the safety net, not pre-analysis.
+2. **VERIFY a ticket's severity/"real-bug" claim against the actual code with ONE targeted read BEFORE committing.** (Lost a near-codeless tick to TSK-575: the audit called 13 casts "panic-risk safety bugs"; one read of cm_edit.rs:63-85 showed they're GUARDED-benign — it's low-value pedantic hygiene, not bugs. Re-triage recorded on the ticket.)
+
+Actionable pool (groomed pools mostly validated/heavy-tailed):
+- **BEST next picks — wishlist minor-features (headless model + review render, REAL user value):** TSK-745 (new-tab recents — builds on the HistoryStore/parentFolderLabel work), TSK-757 (shortcut catalog). Cleaner than the rust-core remainder.
+- **rust-core (verify scope first):** TSK-543 (cm_apply full-doc-FFI per edit, S3 — real but a bigger incremental-edit protocol change), TSK-583 (DocId registry, big), TSK-564 (copy-1 buf-scope refactor = its remaining half). **TSK-575 is DEPRIORITIZED hygiene** (casts benign — see its re-triage comment); touch only if the real pool drains, as one batched sweep.
 - **VM/UI tails (heavy, dedicated tick):** 641 chrome T5 pixel; 640 rename-prompt VM render + code-action picker UI.
 
 ## ⚠️ The remaining fixed-lane work is user-facing UI tails — each a dedicated build tick

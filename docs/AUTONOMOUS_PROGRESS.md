@@ -9169,6 +9169,26 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +361 (2026-06-13 — TSK-575 RE-TRIAGE: the audit over-claimed "13 cast safety bugs"; they're guarded-benign)
+
+- **TSK-575 re-triaged, NOT swept (board-hygiene correction).** Picked it as a "real-bug" rust-core item (the
+  audit framed 13 `cast_possible_truncation` as "genuine panic-risk at i64→usize boundaries"). Read the actual
+  sites: the headline one, `cm_edit.rs apply()`, GUARDS every cast — the validation loop (:63-70) rejects
+  from<0 / to>base_len / from>to / overlap BEFORE the i64→usize casts (:78/:85), and `cursor` only takes
+  validated `e.to`, so the casts are provably in `0..=base_len` and CANNOT truncate/wrap. The 2
+  `case_sensitive_file_extension_comparisons` are also false-positives (image.rs:77 pre-lowercased;
+  serve/watch.rs:168 a fixed `.jsonl` format-id, not a user filename). So 575 is a LOW-VALUE 167-warning
+  pedantic HYGIENE sweep (reasoned-allows + a cast-category deny ratchet), NOT a safety-bug fix — §0/anti-
+  paper-cut says it's not a per-tick priority. Recorded the correction on the ticket (left at progress; agent
+  can't bounce progress→triaged; lease expires → reclaimable with context). Did NOT do the piecemeal sweep
+  (2-of-167 doesn't restore the warn-tier signal; that's the busywork §0 forbids).
+- **Process LESSON (the real takeaway — the over-deliberation finally cost a near-codeless tick):** I committed
+  to 575 on the audit's "real bug" framing and spent the tick discovering the bugs were benign. **VERIFY a
+  "real bug" claim against the actual code BEFORE claiming/committing to the ticket** — one targeted read of
+  the cited site (cm_edit.rs:63-85) up front would have shown the guards and re-ranked 575 as hygiene in 2
+  calls instead of ~16. Next tick: pick-fast a genuinely-real bounded item, and sanity-check the severity
+  claim with one read before going deep.
+
 ## LOG +360 (2026-06-13 — TSK-564 FFI copy-2 elimination: in-place frame decode for table/snapshot)
 
 - **TSK-564 (rust-core/FFI perf) copy-2 eliminated for the payload-scaling decoders (commit 90fcc06).** The
