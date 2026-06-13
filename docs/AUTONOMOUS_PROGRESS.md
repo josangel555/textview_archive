@@ -9169,6 +9169,22 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +378 (2026-06-13 — TSK-789: Settings shows supported LSP languages + server availability)
+
+- **TSK-789 (commit `87efa57`, reported→review).** Diversified off the VM lane to an owner-wishlisted feature.
+  Added `LSPLanguageRegistry.LanguageStatus` + `languageStatuses(resolve:)` — maps each `LSPLanguage` to
+  {available, resolvedPath} via an **injectable resolver** (default probes PATH/toolchain via the existing
+  discovery). Folded the list into the existing Settings "Language servers (LSP)" section (avoided a duplicate):
+  each language shows **Installed ✓ / Not found** + the **install hint** (`npm i -g …` / `brew install …`) when
+  missing — loaded off-main in a `.task` since the resolver shells out (xcrun/which).
+  - **Teeth:** injected resolver test pins that statuses reflect the resolver; mutating `available→true` turned it
+    red (unresolved servers wrongly marked available). Plus an install-hint-present pin. Gate green.
+  - Held at review: status core host-tested with teeth; the Settings rows + off-main load are the VM/owner tail.
+- **Note:** the injected-resolver design makes this genuinely host-testable (vs a static list) — the same shape
+  worked for TSK-790's round-trip. Standing blockers unchanged (TSK-810/589 owner-decision; perf cluster
+  supervised; the VM per-item drains now build-unblocked by TSK-813, awaiting the landing-skip-restore +
+  AX-assert-per-scene follow-ups).
+
 ## LOG +377 (2026-06-13 — TSK-813 [VALIDATED]: build-app.sh auto-selects the Swift toolchain — unblocks all clean VM dist builds)
 
 - **TSK-813 fixed + validated (commit `573bf0f`).** The fix for the VM build break I root-caused in +376. Added
