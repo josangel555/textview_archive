@@ -9169,6 +9169,29 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +330 (2026-06-13 tick — TSK-580 envelope SLICE 4: the stateless transport seam now uses it)
+
+Continued TSK-580 (approved, in-flight; no owner answer yet). Slice 4 makes the envelope the
+PRODUCTION dispatch path for stateless core calls — the payoff + the remote-carrier enabler.
+
+- **Slice 4 (commit pending, headless gate green; Swift-only — rust dispatch unchanged from 1+2):**
+  - `CoreClient.swift`: `mdvEnvelopeCall(name, methodId, body)` — the `mdvFrameCall` ritual (ABI
+    assert, frame, buf-free, status, unframe) but over `mdvcore_call(MDV_METHOD_*, …)` instead of a
+    per-method symbol, + the TSK-669 WireError logging.
+  - `CoreTransport.swift`: `InProcessTransport` now dispatches the **7 stateless core methods**
+    (cm_apply/diff_parse/diff_hunk_marks/fuzzy_rank/find_search/transcript_parse/markdown_render)
+    through the single envelope via a `methodIds: [String: UInt16]` table; the per-method C symbols
+    still exist but are no longer dispatched here. **highlight_runs** keeps its symbol (separate
+    crate → slice 5). This is the `CoreTransport` seam (TSK-652), so this IS the single entry a
+    remote `mdv-serve` carrier would expose (the transport-agnostic / remote-core goal).
+  - **Behavior-preserving:** the envelope routes byte-identically to the same core fn (dispatch
+    parity proven slices 1+2); the framing/ABI/audit are mirrored. Validated by the existing seam +
+    diff/fuzzy/markdown parity suites (CoreTransportSeamTests + ABTests + BridgeTests, 77 green) + a
+    new structural pin that the 7 core methods are in the envelope table, NOT the symbol table.
+- **TSK-580 remaining (stays `progress`):** (3) aux bulk side-channel (hex ~18 MB); (5) the highlight
+  method into the envelope (FFI-level dispatch since it's a separate crate); then deprecate/remove the
+  migrated per-method C symbols after a soak. The stateless seam migration (the core payoff) is done.
+
 ## LOG +329 (2026-06-13 tick — TSK-580 envelope SLICE 2: method ids cross-language + Swift caller)
 
 Continued TSK-580 (no owner answer yet; mandate is to keep moving on approved work). Slice 2 makes
