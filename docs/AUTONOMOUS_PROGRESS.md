@@ -9169,6 +9169,18 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +399 (2026-06-13 — TSK-806 split-pane unsaved-edits: the observation-starvation fix the model fix missed)
+
+- **TSK-806 (split-pane source shows on-disk text, not unsaved edits) → fix landed (commit `75bde17`, headless gate
+  green; held at review for VM AX-read).** The prior model fix (`e87a20a`) was correct AND host-tested — yet the live
+  bug persisted because `SplitPaneView` never re-rendered on a keystroke. It observed only `@ObservedObject model:
+  DocumentModel`, but the editor buffers live on `tabCoordinator`, whose `objectWillChange` is deliberately NOT
+  forwarded into `DocumentModel` (PERF #1 severed it to kill a republish storm). So the split painted the right text on
+  first body, then went stale. Fix: add `@ObservedObject var tabs: TabCoordinator` to `SplitPaneView` + pass
+  `model.tabCoordinator` at the call site — the narrow-observation pattern StatusBar already uses. Build clean. Data
+  contract host-tested; the re-render-on-edit is VM (AX-read of the split source — the capability this ticket was
+  parked on). This is Wave-1 item #1 from the +398 fleet's actionable queue.
+
 ## LOG +398 (2026-06-13 — owner "use subagents generously": 6-agent bug-tail investigation + TSK-741 terminal-ANR output-leg fix)
 
 Owner asked for a ~40-tick priority plan + generous subagent use. Delivered the plan (4 waves: P0 user-facing
