@@ -9116,3 +9116,21 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   DECISIONS NEEDED refreshed to the evening truth (morning items
   1/3/4/5 answered + landed). main is gate-green at HEAD; the board is
   the queue.
+
+## LOG +315 (2026-06-12 tick — "continue": TSK-333 closed end-to-end; greenlit pools re-verified drained)
+
+- **Re-checked the directive's named pools (635/636/630-633/639/628):
+  ALL validated** — the tick's priority list is stale; the wishlist wave
+  genuinely drained them.
+- **Comprehensive open-state sweep found a rich review/progress lane** I'd
+  under-counted. TSK-333 (bookmark Delete+undo) was in review with its
+  undo MODEL verified and — after TSK-330 this session — its Undo COMMAND
+  wired; the ONE remaining gap was the Delete-key handler.
+- **TSK-333 completed (53f2f51, installed):** BookmarkRow gains
+  .focusable() + .onKeyPress(.delete) → undoable removeBookmark. Delete
+  removes a focused bookmark, ⌘Z restores (the TSK-330 chain). 5 tests
+  incl. the model round-trip + source-wiring teeth (compile-verified).
+  Linked relates→TSK-330. Held at fixed for the keystroke glance.
+- The deep progress lane still holds many zombie/expired-lease tickets
+  (board hygiene candidates) + big owner-shaped features — next firings
+  can reconcile zombies or validation-drain host-testable review items.
