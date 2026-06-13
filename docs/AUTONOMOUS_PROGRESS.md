@@ -9169,6 +9169,26 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +385 (2026-06-13 — TSK-640 LSP rename + code actions FULLY VALIDATED: both SwiftUI overlays VM-render-validated; P8 parity feature closed)
+
+- **TSK-640 → validated** (the owner-named P8 PARITY feature, fully closed across the pyramid). This tick added
+  the SECOND overlay scene to finish it: `code-actions` (commit `ef935a7`) — a `#if DEBUG` harness present-seam
+  (`_presentCodeActionsForHarness`, parallel to `_applyRenameWorkspaceEditForTesting`) drives the picker
+  (private(set)+async, no LSP server in the spawned app) to `.presenting` with canned actions over an editor
+  backdrop; `vm-uitest.sh` manifest gains `code-actions → mdv.codeActions.panel`. Host-tested
+  (UISceneApplierTests, 9); headless gate green (5092).
+- **VM render validation (agent-run, no owner in the loop):** `vm-uitest.sh run code-actions` → the **Code
+  Actions picker composited + VISIBLE** with both row states correct (Organize Imports enabled/edit-bearing;
+  Convert to async greyed/command-only-disabled) → automated PASS (mdv.codeActions.panel in the AX tree); teeth
+  shown (bogus id → FAIL). Capture `/tmp/mdv-vm-ui/code-actions.png`. Combined with last tick's rename-prompt
+  validation, BOTH of 640's render surfaces are now VM-validated; the engines/state-machines/verbs were already
+  host-tested (fake-LSP e2e). Validated via task_validate with the full checks artifact.
+- **The TSK-492 harness pattern is now proven on TWO overlays** (rename prompt + code-action picker): each new
+  overlay = a UI scene + a `scene_expect` manifest line + (for private(set)/async state) a `#if DEBUG`
+  present-seam. The remaining render drains (641 theme chrome, 745 landing) follow the same recipe; 641 also
+  needs a color/pixel assertion (a11y-presence doesn't cover theming), the frame-aware-ax-reader follow-up.
+- `main` headless-gate-green; per-item commits (ef935a7 code-actions scene + the teeth-restored vm-uitest.sh).
+
 ## LOG +384 (2026-06-13 — VM render-drain UNBLOCKED: harness now self-validates overlays; TSK-640 rename prompt VM-validated end-to-end)
 
 - **The TSK-492 lever is built + proven (commit `89d7277`).** `vm-uitest.sh run` now drives PASS/FAIL from a
