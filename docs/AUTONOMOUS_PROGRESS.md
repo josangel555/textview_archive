@@ -9169,6 +9169,25 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +387 (2026-06-13 — TSK-745 + TSK-760 VM-render-validated via one a11y-grouping edit; the surfacing rule codified in LESSONS)
+
+- **TSK-745 (new-tab recents) + TSK-760 (New File button) → validated** — TWO user-facing minor-features closed
+  with one small edit (`c4b6a81`), capitalizing on last tick's folder-only capture that already showed both
+  rendering. Root insight: a bare `.accessibilityIdentifier` on a SwiftUI container is NOT promoted to a
+  readable out-of-process AX element (the `mdv.emptyState.*` ids existed but never surfaced). Adding
+  `.accessibilityElement(children: .contain)` to the action row + recents launcher promotes them to AX groups
+  that EXPOSE their children → `mdv.emptyState.newFile` (760) + `mdv.emptyState.recentRow` (745) now surface.
+- **VM-validated:** `vm-uitest.sh run folder-only` now asserts all THREE empty-state/footer ids
+  (`mdv.statusBar` + `mdv.emptyState.newFile` + `mdv.emptyState.recentRow`) → automated PASS; both features
+  visible in `/tmp/mdv-vm-ui/folder-only.png`. Teeth = the before/after surfacing (prior runs had NO
+  emptyState ids; after `.contain` they appear). Models were already host-tested (landingRecents cap;
+  newTextFileForLanding). One scene now guards three tickets.
+- **Codified in LESSONS.md** (saves every future render-drain item hours): the VM AX lane surfaces only PROMOTED
+  elements; `.accessibilityElement(children: .contain)` is the lever; `.contain` exposes CHILD ids (assert
+  those, not the wrapper); modal panels (rename/code-action) self-promote via their card material.
+- **Drain scoreboard (harness pattern):** TSK-640 (rename + code-action overlays), TSK-738 (status footer),
+  TSK-745 + TSK-760 (empty-state) all VM-validated across 3 ticks. `main` headless-gate-green; commit c4b6a81.
+
 ## LOG +386 (2026-06-13 — TSK-738 status-footer bug VM-validated via the harness; folder-only scene; 745/760 visually confirmed + follow-up framed)
 
 - **TSK-738 → validated** (user-facing bug: status footer missing after relaunch / opening a folder). The fix

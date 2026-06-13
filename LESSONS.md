@@ -5,6 +5,25 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## VM render-validation: out-of-process AX surfaces only PROMOTED elements — a bare `.accessibilityIdentifier` on a SwiftUI container is invisible (2026-06-13)
+- The VM UI lane (`scripts/vm-uitest.sh`, the `.ax` dump via `ax-reader.swift`) reads the LIVE app's
+  accessibility tree out-of-process (the only way — SwiftUI's in-process AX tree is empty for an NSHostingView).
+  It collects every element's `kAXIdentifierAttribute`. **But a SwiftUI view with only
+  `.accessibilityIdentifier("x")` is frequently NOT promoted to a readable AX element** — proven: the
+  EmptyStateView's recents launcher (`mdv.emptyState.recents`) and New File button (`mdv.emptyState.newFile`)
+  had ids yet were ABSENT from the `.ax` dump, while sibling "real" containers (`mdv.statusBar`,
+  `mdv.terminal.pane`, the LSP rename/code-action PANELS) surfaced fine.
+- **Fix to make an element auto-assertable on the VM lane: add `.accessibilityElement(children: .contain)`**
+  to the container (alongside the id). That promotes it to an AXGroup AND exposes its children — after adding it
+  to the action row + recents launcher, `mdv.emptyState.newFile` / `mdv.emptyState.recentRow` surfaced and the
+  folder-only scene could guard them (TSK-745/760 validated). It's also a genuine VoiceOver-grouping improvement.
+- **Practical rule for the render-drain recipe:** scene (reach the state) → ensure the target view is a PROMOTED
+  AX element (`.accessibilityElement(children: .contain)` on its container, or it's already a panel/bar that
+  SwiftUI promotes) → a `scene_expect` manifest line requiring the id. Note: `.contain` exposes CHILDREN ids
+  (newFile/recentRow surfaced), but the container's OWN id (`mdv.emptyState.actions/.recents`) may still not —
+  assert the child ids, not the wrapper. Modal sheets/panels (rename/code-action) surface their own panel id
+  without extra work because the card material promotes them.
+
 ## Theme tests share the `ThemeStore.shared` singleton → latent `--parallel` race (2026-06-13)
 - `DocumentModel.selectedThemeID`'s didSet writes `ThemeStore.shared.selectedID` (a process-wide singleton),
   so EVERY test that sets `model.selectedThemeID` (ChromeThemeTests, ThemeSelectionModelTests, SetThemeVerbTests,
