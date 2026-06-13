@@ -9169,6 +9169,26 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +354 (2026-06-13 — RUST-CORE Stage B #4: TSK-809 delete DiffParser/DiffHunkParser; carve-out #2/#3 parked)
+
+- **TSK-809 → VALIDATED (954f1d8).** Stage B package #4 (diff), done out of plan order because it's the
+  clean one. Deleted the Swift `DiffParser` + `DiffHunkParser` engines; `RustDiffAdapter` is rust-only
+  (`mdvCoreParseDiff` / `mdvCoreDiffHunkMarks`) with an empty-result (`[]`/`[:]`) + `Obs.error` degraded
+  path (no Swift fallback). The `UnifiedDiff` + `DiffMark` MODELS stay (the adapter maps the rust wire types
+  into them; the diff viewer + gutter render them). Retired the `.diff` gate/env/toggle (ABI bit kept).
+  - **Bigger blast radius than indent (12 test files):** both A/B suites frozen to GOLDEN snapshot suites
+    (compact single-line render of the parsed structure / line→mark map, captured from the parity-proven
+    rust output — 14 + 9 cases incl. rename/binary/no-newline/coord-clamp/multi-hunk); 8 fixture-builder
+    suites retargeted `DiffParser.parse` → `RustDiffAdapter.parse` (the live rust path); the 2 twin
+    unit-test files + the obsolete TSK-561 source-bypass audit retired; `RustCoreSeamTests` +
+    the fallback-observability audit reparented onto `.csv` (still-gated sample capability).
+  - Headless gate green (5045), no staleness segfault from the `.diff` enum-case removal; golden teeth shown.
+- **TSK-810 PARKED (owner-decision):** packages #2 hexSearch + #3 hex are NOT clean twin deletions — their
+  Swift engine has a LIVE non-gated consumer (hexSearch: click-to-highlight's `HexSearchEngine.find(pattern:)`;
+  hex: the un-ported windowed `HexDumpBuilder` chunk build), so the approved "delete twin / no fallback"
+  model can't apply as-is. Framed 3 options (A keep-fallback+retire-gate [recommended] · B uniform-no-fallback ·
+  C port-carve-outs-first); the call also sets the pattern for #5-9. Indent + diff done; moving to other lanes.
+
 ## LOG +353 (2026-06-13 — RUST-CORE Stage B begins: TSK-808 delete IndentDetector Swift twin)
 
 - **TSK-808 → VALIDATED (1e2b557).** Stage B package #1 / the template, under the migration endgame epic

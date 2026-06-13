@@ -1,7 +1,7 @@
 <!-- CLAUDE-HANDOFF v1 -->
 # Handoff — RUST-CORE Stage B (twin deletion) is the active lane; #1 indent done  (2026-06-13)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `1e2b557`
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `954f1d8` (then +1 log commit)
 
 ## Mission
 Owner away until ~noon 2026-06-13; autonomous chipping. USER-FACING bugs are drained; the wishlist
@@ -14,12 +14,17 @@ every firing (§0.5 spike/design autonomy + chipping order; §1.5 validation-dra
 The owner resolved TSK-649's park: **"Approve policy + batch 1-4 (indent/hexSearch/hex/diff); review 5-9
 individually."** Stage A (all 10 caps default-ON) is done + soaked. Stage B deletes the now-dead twins per
 `docs/STAGE_B_DELETION_PLAN.md`, one package per engine.
-- **#1 indent — DONE + VALIDATED (TSK-808, commit `1e2b557`).** The template.
-- **#2 hexSearch · #3 hex · #4 diff — batch-approved, NEXT (no individual review needed).** File a child of
-  649 per package (like TSK-808), follow the template, self-validate on the host gate.
-- **#5-9 (csv/fuzzy/find/transcript/markdown) — each needs individual owner review** + carries a named
-  caveat (see the plan: csv DocId, fuzzy FileTreeFilter per-node, find ICU-fallback REMOVAL = behavior
-  change owner must accept, transcript ClaudeSessionIndex helpers, markdown sanitizer/mermaid/TS stay).
+- **#1 indent — DONE + VALIDATED (TSK-808, `1e2b557`).** The clean template.
+- **#4 diff — DONE + VALIDATED (TSK-809, `954f1d8`).** Also clean (twins adapter-only, fully deleted).
+  Bigger blast radius (12 test files): A/B → golden snapshots, 8 fixture suites retargeted to the adapter,
+  twin tests + bypass audit retired, seam/obs tests reparented to `.csv`.
+- **#2 hexSearch · #3 hex — PARKED (TSK-810, owner-decision).** NOT clean: the Swift engine has a live
+  non-gated consumer (hexSearch click-highlight `HexSearchEngine.find(pattern:)`; hex un-ported windowed
+  `HexDumpBuilder`), so the "delete twin / no fallback" model can't apply as-is. 3 options framed; recommend
+  (A) keep-fallback + retire-gate. **Do NOT start #2/#3 until the owner answers** — the call sets the pattern.
+- **#5-9 (csv/fuzzy/find/transcript/markdown) — each needs individual owner review** + a named caveat (csv
+  DocId, fuzzy FileTreeFilter per-node, find ICU-fallback REMOVAL = behavior change, transcript
+  ClaudeSessionIndex helpers, markdown sanitizer/mermaid/TS spans stay) — several share #2/#3's carve-out shape.
 - **The template pattern** (proven on #1): delete twin source → collapse adapter to a direct `mdvCore*` call
   with a safe degraded value + loud `Obs.error` (no Swift fallback) → retire the `RustCoreCapability` gate
   case + env var + Settings toggle (KEEP the ABI bit in `CoreCapabilities` — bits are ABI) → freeze the A/B
@@ -66,10 +71,13 @@ Render/event/concurrency items held at `review` — `task_list {project:tasked, 
 - **Terminal Tier-D** (TSK-781). **Dep approvals**: 584/585/587/399.
 
 ## How to resume
-1. Read `docs/TASK_WORKFLOW.md`. Then **continue TSK-649 Stage B package #2 (hexSearch)** — the highest-value
-   lane (owner-approved deprecation endgame, headless-validatable). Read `docs/STAGE_B_DELETION_PLAN.md` +
-   `TSK-808` (the validated template). File a child of 649, follow the template, self-validate on the gate.
-   Then #3 hex, #4 diff. Stop and `task_park` for review before #5-9 (each has an owner-review gate + caveat).
+1. Read `docs/TASK_WORKFLOW.md`. Stage B's CLEAN packages are done (#1 indent TSK-808, #4 diff TSK-809,
+   both validated). **#2 hexSearch + #3 hex are PARKED on TSK-810 (owner-decision) — do NOT start them until
+   the owner answers** (the carve-out fallback model). #5-9 also need owner review. So Stage B is owner-gated
+   for now → **pick another lane** (don't idle). Good headless picks: the `[WISH][minor-feature]` bucket
+   (TSK-745 new-tab recents · TSK-757/678 shortcut catalog · TSK-770 Find-bar Replace/ReplaceAll), or the
+   `fixed`-lane validation drain (§1.5) for any host-validatable ticket. Template for a clean Stage B engine
+   (when unblocked): `TSK-808`/`TSK-809`.
 2. **Secondary: the `[WISH][minor-feature]` bucket** (when Stage B 1-4 is done or you want variety). Headless
    picks: **TSK-745** (new-tab recents — `model.recents` exists), **TSK-757/678** (shortcut catalog + Help),
    **TSK-770** (Find bar Replace/ReplaceAll), **TSK-724** (Recent Locations). TSK-573 (web palette → core)
