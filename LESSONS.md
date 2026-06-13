@@ -5,6 +5,21 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## NEVER run `swift test` against the ViewerUITests target on the host while a `dist/` bundle exists — a T4 LiveAppTestCase will SPAWN the app (window) (2026-06-13)
+- The heavy UI tiers self-skip ONLY when `isAppBuilt` is false (no `dist/` bundle) + no GUI session. They do
+  NOT key on `MDV_HEADLESS_GATE`. So once you've built `dist/TextView.app` on the host (e.g. for an
+  `/Applications` build), `isAppBuilt` is TRUE and a broad `swift test --filter ViewerUITests` (or bare
+  `swift test`) matches a T4 `LiveAppTestCase`, whose guard now passes → it spawns `dist/TextView.app` → **a
+  window opens on the owner's screen mid-work** (owner caught this 2026-06-13). The `TierGateObserver` only
+  FAILS the run *after* a heavy body ran; it does not PREVENT the spawn, and a bare run doesn't even set
+  `MDV_HEADLESS_GATE`. CLAUDE.md's "bare sweep is non-disruptive, no window ever opens" is CONDITIONAL on
+  `dist/` being ABSENT.
+- **Rules:** (1) for host model/logic re-runs, prefer **ViewerCoreTests** (pure logic, NO heavy tiers) — not
+  ViewerUITests. (2) If you must touch a ViewerUITests model class, use a **per-class** filter
+  (`--filter ViewerUITests.DocumentModelTests`) — never the bare target (which matches T4/T5). (3) After
+  building `dist/` on the host, do NOT sweep ViewerUITests at all. (4) Real UI/render validation is **VM-only**
+  (`scripts/vm-uitest.sh`). Tracking the infra fix (skip should honor `MDV_HEADLESS_GATE`/non-Aqua): TSK-817.
+
 ## `var=$(<no-match-glob> | pipe)` aborts a `set -euo pipefail` script — guard build-script toolchain/glob lookups with `|| true` (2026-06-13)
 - `build-app.sh`'s `select_toolchain` did `newest=$(ls -d /Library/Developer/Toolchains/swift-6.*-RELEASE.xctoolchain 2>/dev/null | sort -V | tail -1)`.
   On the HOST that glob matches nothing → **bash leaves it literal** → `ls` fails (exit 2) → `pipefail` makes the
