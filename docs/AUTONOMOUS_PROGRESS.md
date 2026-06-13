@@ -9169,6 +9169,26 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +389 (2026-06-13 — TSK-815 markdown Dark-Mode fix landed; OWNER /Applications build → caught + fixed a TSK-813 host-build regression (TSK-816))
+
+- **TSK-815 → fixed (commit `557ce7d`): the Dark-Mode payoff.** New `ThemeDefinition.pageCSS()` overrides
+  markdown.css's `:root` vars (`--mdv-bg`←background, `--mdv-fg`←foreground, `--mdv-fg-secondary`←gutterText,
+  `--mdv-code-bg`←gutterBackground, `--mdv-link`←accent) from the active theme; `themedExtraStylesheet` composes
+  pageCSS + tokCSS (appended after markdown.css → wins by cascade). So a selected dark theme now darkens the
+  rendered-markdown READING page, not just syntax tokens (it followed SYSTEM appearance before). nil theme →
+  shim only, byte-identical (pinned). Host-tested (pageCSS var mapping, link-omitted-without-accent,
+  themedExtraStylesheet present/absent; teeth drop-`--mdv-bg`→red). Render guard (VM content-region color
+  assertion) is the follow-up; closing it closes TSK-641 → unblocks 642.
+- **OWNER asked for an /Applications build → surfaced + fixed a regression (TSK-816 → validated, `1a47f1d`).**
+  `build-app.sh debug --install` had been silently broken on the HOST since TSK-813 (573bf0f): select_toolchain's
+  `newest=$(ls -d …/swift-6.*-RELEASE.xctoolchain | sort -V | tail -1)` aborts under `set -euo pipefail` when
+  the glob matches nothing (the host has no such toolchain) — exiting before `swift build`. The VM never caught
+  it (its glob matches). Fix: `|| true` on the substitution (build-app.sh + test-in-vm.sh's mirror). Verified
+  build-app.sh debug --install now completes (swift build → assemble → install, EXIT=0); fresh bundle installed
+  to /Applications/TextView.app (15:47), shipping the TSK-815 dark-mode fix for the owner.
+- **Lesson (also LESSONS.md):** `var=$(<no-match-glob> | pipe)` aborts under `set -euo pipefail` (bash leaves the
+  glob literal → ls fails → pipefail) — guard such substitutions with `|| true`. `main` headless-gate-green.
+
 ## LOG +388 (2026-06-13 — TSK-641 chrome surface VM-validated via a new window-COLOR harness assertion; markdown-content Dark-Mode gap found → TSK-815)
 
 - **TSK-641 chrome surface VM-render-validated** (commit `db44a95`) — the last theming surface tracked as

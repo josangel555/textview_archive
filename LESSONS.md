@@ -5,6 +5,18 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## `var=$(<no-match-glob> | pipe)` aborts a `set -euo pipefail` script — guard build-script toolchain/glob lookups with `|| true` (2026-06-13)
+- `build-app.sh`'s `select_toolchain` did `newest=$(ls -d /Library/Developer/Toolchains/swift-6.*-RELEASE.xctoolchain 2>/dev/null | sort -V | tail -1)`.
+  On the HOST that glob matches nothing → **bash leaves it literal** → `ls` fails (exit 2) → `pipefail` makes the
+  pipe non-zero → the command-substitution **assignment** aborts under `set -e`. Result: `build-app.sh debug
+  --install` exited 1 right after the rust-core step, BEFORE `swift build`, silently — every host build/install
+  broke from TSK-813 (573bf0f) until TSK-816. The VM never caught it (its glob matches → no failure).
+- **Fix / rule:** append `|| true` to any `var=$(… | …)` whose first stage is an optional glob/lookup
+  (`… | sort -V | tail -1 || true`) so a no-match yields an empty string, not a script abort. A `2>/dev/null` is
+  NOT enough — it hides stderr but not the non-zero EXIT that pipefail+set-e act on.
+- **Test gap that let it ship:** no CI/gate runs `build-app.sh` on a clean host (the headless gate is `swift
+  test`; the VM lane has the toolchain). When you touch a build script's control flow, run it on the host once.
+
 ## VM render-validation: out-of-process AX surfaces only PROMOTED elements — a bare `.accessibilityIdentifier` on a SwiftUI container is invisible (2026-06-13)
 - The VM UI lane (`scripts/vm-uitest.sh`, the `.ax` dump via `ax-reader.swift`) reads the LIVE app's
   accessibility tree out-of-process (the only way — SwiftUI's in-process AX tree is empty for an NSHostingView).
