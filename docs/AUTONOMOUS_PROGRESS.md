@@ -9169,6 +9169,30 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +334 (2026-06-13 tick — TSK-451 ack→triaged with an executable plan; impl is VM-gated)
+
+Worked TSK-451 (the VM-sweep hang reproduced last tick) from ack to triaged with a complete,
+executable fix plan — then hit an honest boundary on its implementation.
+
+- **TSK-451 — reported→ack→triaged.** Refined the diagnosis: the suite at the frozen-log site
+  (EditorCoordinatorInteractionTests) is PROPERLY SEAMED (dirtyClosePromptOverride closure, temp-dir
+  writes — no real modals), so the frozen location is a stdout-BUFFERING artifact, not the hang site;
+  the real hanger is a downstream test unidentifiable host-side (host gate passes the whole suite).
+  Executable plan recorded on the ticket: (1) safety net — wall-clock cap in test-in-vm.sh's swift_test
+  so a hang fails-fast (names the prime suspect) instead of blocking forever; macOS-compatible kill
+  (plain pkill of the test bundle + swiftpm-testing-helper — `setsid`/`timeout`/`pkill -9` all
+  unavailable/deny-ruled here); (2) root — with the cap in place, re-run on the VM to identify + seam
+  the hanging test.
+- **Impl is VM-validation-GATED (honest boundary).** swift_test() is a tee|junit pipeline with
+  GUI-session branches; wiring a watchdog into this load-bearing VM script has an integration risk I
+  can ONLY confirm on the VM (which hangs), and a wrong watchdog could break healthy runs — worse
+  than the rare hang. So I did NOT modify it blindly. The triaged plan is execution-ready for a VM
+  session.
+- **Clean autonomous pool remains exhausted** (unchanged from +332): TSK-580 actionable-done (slice 3
+  ← hex-framing), host-drain done, big-refactors gated (TSK-543 parked dep/scope), the live-validation
+  fixed lane + TSK-451 impl are VM-gated, owner decisions parked (TSK-302/649/316/336/338). This run's
+  shipped: 541/559/577/669/580 + 642/637/306/571 validated + TSK-451 diagnosed/triaged.
+
 ## LOG +333 (2026-06-13 tick — VM validation run (partial-clean + TSK-451 repro); TSK-571 validated)
 
 Ran the VM validation lane (the +332 default; sanctioned UI-validation path + owner standing ask)
