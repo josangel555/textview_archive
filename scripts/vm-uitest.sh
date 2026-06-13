@@ -52,6 +52,21 @@ scene_expect() {
   esac
 }
 
+# Per-scene WINDOW-COLOR expectation (TSK-641): for scenes whose subject is a
+# COLOR (chrome theming), a11y-presence can't prove it — the chrome IS present;
+# the question is whether it PAINTED the theme. Returns "<mode> <min-fraction>":
+# `dark` asserts ≥ min-fraction of window pixels are dark (luminance < 80). The
+# VM is in system LIGHT mode, so a dark theme flips the window predominantly
+# dark — a clean discriminator (the light default fails the same threshold). The
+# only validator for the CHROME surface (the stale-chrome / non-republishing
+# class) — host tests prove Palette consults the theme; this proves it paints.
+scene_color() {
+  case "$1" in
+    theme-dark) echo "dark 0.35" ;;
+    *) echo "" ;;
+  esac
+}
+
 rsync_tree() {
   rsync -az --delete \
     --exclude='.build/' --exclude='.swiftpm/' --exclude='dist/' \
@@ -111,6 +126,41 @@ case "$cmd" in
         echo "FAIL: expected a11y id(s) absent from the AX tree:$missing -> /tmp/mdv-vm-ui/$scene.png"; exit 6
       fi
       echo "PASS (a11y): expected ids present [$expect] -> /tmp/mdv-vm-ui/$scene.png"; exit 0
+    fi
+    # WINDOW-COLOR ASSERTION (chrome theming scenes): PASS iff the window's dark
+    # fraction meets the threshold — the only proof the CHROME surface painted
+    # the theme (a11y can't see color). Prints the measured fraction either way.
+    color="$(scene_color "$scene")"
+    if [ -n "$color" ]; then
+      set -- $color; mode="$1"; minfrac="$2"
+      python3 - "/tmp/mdv-vm-ui/$scene.png" "$mode" "$minfrac" <<'PY'
+import sys
+from PIL import Image
+png, mode, minfrac = sys.argv[1], sys.argv[2], float(sys.argv[3])
+im = Image.open(png).convert("RGB"); W, H = im.size; px = im.load()
+# Sample the LEFT SIDEBAR strip (rail + files panel) below the title bar — the
+# chrome surface theming targets. Sampling the whole window is wrong: the
+# rendered-markdown page background follows SYSTEM appearance (not the theme),
+# so it stays a large light region even with a dark chrome — measured 0.18
+# whole-window vs 0.47 sidebar-strip for xcode-dark. The sidebar bg IS
+# theme-driven (Palette.textBackground → ChromeTheme.current).
+x0, x1 = 0, int(W * 0.18)
+y0, y1 = int(H * 0.12), int(H * 0.95)
+dark = tot = 0
+for y in range(y0, y1, 3):
+    for x in range(x0, x1, 3):
+        r, g, b = px[x, y]
+        lum = 0.299 * r + 0.587 * g + 0.114 * b
+        tot += 1
+        if lum < 80: dark += 1
+frac = dark / tot if tot else 0.0
+ok = (frac >= minfrac) if mode == "dark" else (frac <= (1 - minfrac))
+print(f"color-eval scene mode={mode} sidebar_dark_fraction={frac:.3f} threshold={minfrac} pass={ok}")
+sys.exit(0 if ok else 7)
+PY
+      rc=$?
+      [ $rc -eq 0 ] && { echo "PASS (color): window matches '$mode' -> /tmp/mdv-vm-ui/$scene.png"; exit 0; } \
+                    || { echo "FAIL($rc): window does NOT match '$mode' -> /tmp/mdv-vm-ui/$scene.png"; exit 1; }
     fi
     # PIXEL EVAL on the HOST (has Pillow; the VM doesn't). A dense saturated
     # (accent-chip) block anywhere in the window-minus-status-bar band proves

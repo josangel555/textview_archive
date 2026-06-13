@@ -75,6 +75,20 @@ public enum UISceneApplier {
             return "ui-scene: applied 'folder-only' tabs=\(model.tabs.tabs.count) root=\(model.sidebar.rootURL != nil) hasContext=\(model.hasOpenContext)"
         }
 
+        // Chrome theming scene (TSK-641 stage-4 render validation): apply the
+        // dark built-in theme so the VM lane can assert the CHROME surface
+        // actually PAINTS dark (the stale-chrome / non-republishing-view risk —
+        // host tests prove Palette consults the theme; only the painted pixels
+        // were unproven). Setting the @Published `selectedThemeID` is a LIVE
+        // change → its didSet updates `ChromeTheme.current` + the chrome views
+        // re-body (the stage-4 repaint mechanism), so this also exercises the
+        // reactivity, not just a launch-time paint. Keeps the default file open
+        // so the content + chrome both tint dark (a high window dark-fraction).
+        if scene == "theme-dark" {
+            model.selectedThemeID = "xcode-dark"
+            return "ui-scene: applied 'theme-dark' selectedThemeID=\(model.selectedThemeID ?? "nil")"
+        }
+
         #if DEBUG
         // LSP code-action PICKER scene (TSK-640 render tail): present the picker
         // with canned actions over an editor backdrop so the VM harness can

@@ -147,6 +147,19 @@ final class UISceneApplierTests: XCTestCase {
     }
     #endif
 
+    func test_themeDarkScene_selectsTheDarkBuiltin() {
+        // TSK-641 stage-4: the scene selects the dark built-in so the VM lane can
+        // assert the chrome paints dark. Pins the scene→model contract; the
+        // painted pixels are the VM lane. Restore the process-global theme
+        // singleton in tearDown (LESSONS: ThemeStore.shared/ChromeTheme.current).
+        let model = makeModel()
+        defer { model.selectedThemeID = nil }
+        let status = apply("theme-dark", model)
+        XCTAssertEqual(model.selectedThemeID, "xcode-dark",
+                       "the dark built-in is selected for the VM chrome capture")
+        XCTAssertTrue(status.contains("xcode-dark"), "status: \(status)")
+    }
+
     func test_unknownScene_isReportedNotApplied() {
         let model = makeModel()
         let status = apply("bogus-scene", model)
