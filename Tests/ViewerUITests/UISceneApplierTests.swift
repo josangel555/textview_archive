@@ -107,6 +107,27 @@ final class UISceneApplierTests: XCTestCase {
         XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
     }
 
+    func test_folderOnlyScene_reachesNoFileFolderContext() {
+        // TSK-738: the status footer regressed-hidden when a folder is open but
+        // no file tab is selected. This scene reaches that exact state (close the
+        // auto-opened tab, open a folder root) so the VM lane can assert the
+        // footer (mdv.statusBar) is still on screen. Pins the model contract: the
+        // broadened gate predicate (hasOpenContext) is TRUE while currentURL is
+        // nil — the precise condition the old gate hid the footer on.
+        let model = makeModel()
+        let f = tmp.appendingPathComponent("preopened.md")
+        try? "# x\n".write(to: f, atomically: true, encoding: .utf8)
+        model.open(url: f)
+        XCTAssertFalse(model.tabs.tabs.isEmpty, "precondition: a file tab is open")
+        let status = apply("folder-only", model)
+        XCTAssertTrue(model.tabs.tabs.isEmpty, "folder-only closes all file tabs")
+        XCTAssertNotNil(model.sidebar.rootURL, "a folder root is open")
+        XCTAssertNil(model.currentURL, "no file selected — the regressed state")
+        XCTAssertTrue(model.hasOpenContext,
+                      "hasOpenContext true via the folder root — the broadened footer gate (TSK-738)")
+        XCTAssertTrue(status.contains("hasContext=true"), "status: \(status)")
+    }
+
     #if DEBUG
     func test_codeActionsScene_presentsThePickerOverAnEditorBackdrop() {
         // TSK-640 render tail (sibling of lsp-rename): the 'code-actions' scene

@@ -59,6 +59,22 @@ public enum UISceneApplier {
             return "ui-scene: applied 'lsp-rename' tabs=\(model.tabs.tabs.count) renamePrompt=\(model.isLSPRenamePromptPresented)"
         }
 
+        // Folder-only / no-file scene (TSK-738 render validation): the status
+        // footer regressed-HIDDEN when a folder is open but NO file tab is
+        // selected (currentURL nil → the old `currentURL != nil` gate). The
+        // aqua-runner always launches with a file open, so reach the reported
+        // state explicitly — close every open tab, then open a folder root.
+        // `hasOpenContext` becomes true via `sidebar.rootURL` while `currentURL`
+        // stays nil → the broadened gate (TSK-738) must KEEP the footer
+        // (`mdv.statusBar`) on screen.
+        if scene == "folder-only" {
+            try? FileManager.default.createDirectory(
+                at: tabsBaseDir, withIntermediateDirectories: true)
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.openFolder(tabsBaseDir)
+            return "ui-scene: applied 'folder-only' tabs=\(model.tabs.tabs.count) root=\(model.sidebar.rootURL != nil) hasContext=\(model.hasOpenContext)"
+        }
+
         #if DEBUG
         // LSP code-action PICKER scene (TSK-640 render tail): present the picker
         // with canned actions over an editor backdrop so the VM harness can

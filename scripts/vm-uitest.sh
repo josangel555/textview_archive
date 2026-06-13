@@ -47,6 +47,7 @@ scene_expect() {
   case "$1" in
     lsp-rename) echo "mdv.lspRename.panel" ;;
     code-actions) echo "mdv.codeActions.panel" ;;
+    folder-only) echo "mdv.statusBar" ;;
     *) echo "" ;;
   esac
 }
