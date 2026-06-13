@@ -9169,6 +9169,26 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +402 (2026-06-13 — CORRECTION: MountedPanesLRU is DONE; the perf cluster was mis-framed as owner-gated for ticks)
+
+**A multi-tick error, corrected.** My last several handoffs called MountedPanesLRU "the owner-gated lever, awaiting a
+supervised session." That is STALE. **MountedPanesLRU (Perf Fix#1) landed 2026-06-06 (`39925fd`) and TSK-108 is
+`validated`** (2026-06-10): `ContentView.content` renders a ZStack of `MountedPanesLRU(capacity:4)`-retained panes
+(inactive at opacity:0, WKWebViews stay mounted), reconciled by `noteActiveTabForRetention()` on every
+`updateDerived()`; host `MountedPanesWiringTests`/`RepublishCountTests` + VM `PaneRetentionMountProbeTests` prove
+A→B→A = 0 WKWebView mounts. The ~1s tab-switch reload freeze is **structurally fixed**. The owner-parked "approve
+supervised MountedPanesLRU?" question on TSK-598 et al. is **moot** — no approval is outstanding.
+
+- **What actually remains** (the genuine residual the TSK-108 validation carved out to TSK-598/592): the MODEL-SIDE
+  per-switch cost — `SourceTextController.apply` (~199ms on a SOURCE-pane switch, TSK-613) + the `sizeThatFits` fan-out
+  across the ≤4 mounted panes per resize frame. **App-side perf, host-investigable, NOT owner-gated.**
+- **Those numbers are now STALE** — they predate this session's TSK-736 Fix B (`1404c9b`), which removed the
+  per-republish find-repaint that ran on EVERY mounted pane. So the apply() fan-out is already lighter.
+- **NEXT STEP (teed up): a fresh VM profile** (`scripts/vm-profile.sh` nav + resize, `--instrument os_signpost`,
+  release) to re-measure `SourceTextController.apply` + `sizeThatFits` on current main, then a targeted host fix of
+  whatever the new numbers indict (candidate: gate inactive opacity:0 panes' apply()/layout). Measure-don't-guess;
+  deserves a dedicated tick with budget for trace analysis. Corrected the framing on TSK-598 (the umbrella).
+
 ## LOG +401 (2026-06-13 — TSK-743 source-view per-file preview scroll; rendered case split to TSK-821)
 
 - **TSK-743 source channel → landed (commit `865fdd6`, headless gate green).** The ticket was only partially fixed
