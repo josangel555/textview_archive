@@ -63,7 +63,7 @@ final class ScopeDiffTests: XCTestCase {
         let client = GitClient(repoRoot: repo)
         let diff = client.diff(scope: .commit(sha: sha), path: "a.txt")
         XCTAssertFalse(diff.isEmpty)
-        let files = DiffParser.parse(diff)
+        let files = RustDiffAdapter.parse(diff)
         XCTAssertTrue(files.contains { $0.newPath == "a.txt" })
         // The added line must be in the parsed diff.
         let added = files.flatMap { $0.hunks }.flatMap { $0.lines }
@@ -83,7 +83,7 @@ final class ScopeDiffTests: XCTestCase {
         let client = GitClient(repoRoot: repo)
         let diff = client.diff(scope: .workingTree(base: "HEAD"), path: "a.txt")
         XCTAssertFalse(diff.isEmpty)
-        let added = DiffParser.parse(diff).flatMap { $0.hunks }.flatMap { $0.lines }
+        let added = RustDiffAdapter.parse(diff).flatMap { $0.hunks }.flatMap { $0.lines }
             .filter { $0.kind == .added }.map(\.content)
         XCTAssertTrue(added.contains("WORKTREE"))
     }
@@ -102,7 +102,7 @@ final class ScopeDiffTests: XCTestCase {
         let client = GitClient(repoRoot: repo)
         let diff = client.diff(scope: .range(from: from, to: to), path: "a.txt")
         XCTAssertFalse(diff.isEmpty)
-        let added = DiffParser.parse(diff).flatMap { $0.hunks }.flatMap { $0.lines }
+        let added = RustDiffAdapter.parse(diff).flatMap { $0.hunks }.flatMap { $0.lines }
             .filter { $0.kind == .added }.map(\.content)
         XCTAssertTrue(added.contains("RANGE"))
     }
@@ -134,7 +134,7 @@ final class ScopeDiffTests: XCTestCase {
 
         let diff = client.diff(scope: .branch(branch: "feature", base: "main"), path: "a.txt")
         XCTAssertFalse(diff.isEmpty)
-        let added = DiffParser.parse(diff).flatMap { $0.hunks }.flatMap { $0.lines }
+        let added = RustDiffAdapter.parse(diff).flatMap { $0.hunks }.flatMap { $0.lines }
             .filter { $0.kind == .added }.map(\.content)
         XCTAssertTrue(added.contains("FEATURE"))
     }

@@ -72,7 +72,7 @@ final class DiffViewLayoutTests: HeadlessUITestCase {
     private func contentBounds() throws -> CGRect {
         let view = DiffView(
             text: shortDiff, doc: makeDoc(), reviewSession: nil,
-            initialFiles: DiffParser.parse(shortDiff)
+            initialFiles: RustDiffAdapter.parse(shortDiff)
         ).scrollBody(viewport: viewport)
         let renderer = ImageRenderer(content: view.frame(
             width: viewport.width, height: viewport.height))

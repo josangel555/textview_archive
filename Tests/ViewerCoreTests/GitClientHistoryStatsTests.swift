@@ -146,7 +146,7 @@ final class GitClientHistoryStatsTests: XCTestCase {
         // to == nil → diff against working tree.
         let d = GitClient(repoRoot: repo).diff(from: firstSHA, to: nil, path: "a.txt")
         XCTAssertTrue(d.contains("v1-changed"), "should show working-tree change")
-        let files = DiffParser.parse(d)
+        let files = RustDiffAdapter.parse(d)
         XCTAssertEqual(files.count, 1)
     }
 
@@ -165,7 +165,7 @@ final class GitClientHistoryStatsTests: XCTestCase {
         let older = history[1].fullSHA  // c1
 
         let d = GitClient(repoRoot: repo).diff(from: older, to: newer, path: "a.txt")
-        let files = DiffParser.parse(d)
+        let files = RustDiffAdapter.parse(d)
         XCTAssertEqual(files.count, 1)
         // Going older→newer, "beta" is an addition.
         let added = files[0].hunks.flatMap { $0.lines }.filter { $0.kind == .added }

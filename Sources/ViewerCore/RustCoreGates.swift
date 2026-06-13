@@ -23,7 +23,9 @@ public enum RustCoreCapability: String, CaseIterable, Sendable {
     // Planned Phase-A slices (no new deps) — gates exist ahead of the adapters
     // so a slice's gate name is stable from day one.
     case cmEdit
-    case diff
+    // NOTE: `diff` retired — TSK-649 Stage B #4 deleted the Swift DiffParser/
+    // DiffHunkParser twins, so unified-diff parsing is now a direct rust-only
+    // call (no gate). The ABI capability bit `CoreCapabilities.diff` stays.
     case hex
     case hexSearch
     case fuzzy
@@ -65,9 +67,9 @@ public enum RustCoreCapability: String, CaseIterable, Sendable {
     /// Settings toggle (an explicit toggle beats this default).
     public var defaultEnabled: Bool {
         switch self {
-        // Round 1 (2026-06-12): the longest-proven trio (indent retired to
-        // rust-only in Stage B #1 — no gate; csv + diff remain gated).
-        case .csv, .diff: return true
+        // Round 1 (2026-06-12): the longest-proven trio. indent + diff retired
+        // to rust-only in Stage B #1/#4 (no gate); csv remains gated.
+        case .csv: return true
         // Round 2 (2026-06-12, round 1 quiet): the hex family — consumed
         // since A0, A/B suites long green, engines ported in the first wave.
         case .hex, .hexSearch: return true

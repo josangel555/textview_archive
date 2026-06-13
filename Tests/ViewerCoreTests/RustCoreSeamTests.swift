@@ -95,8 +95,11 @@ final class RustCoreSeamTests: XCTestCase {
 
     // MARK: Fallback contract
 
+    // Uses `.csv` as the sample gated capability — `.diff`/`.indent` retired to
+    // rust-only in TSK-649 Stage B, so they no longer have a Swift fallback arm
+    // to exercise the generic contract with. csv is still gated (twin alive).
     func test_fallback_gateOff_runsSwift() {
-        let o = RustCoreFallback.run(.diff, defaults: defaults, environment: ["MDV_RUST_DIFF": "0"],
+        let o = RustCoreFallback.run(.csv, defaults: defaults, environment: ["MDV_RUST_CSV": "0"],
                                      rust: { XCTFail("rust must not run when gate off"); return "R" },
                                      swift: { "S" })
         XCTAssertEqual(o.value, "S")
@@ -105,7 +108,7 @@ final class RustCoreSeamTests: XCTestCase {
     }
 
     func test_fallback_gateOn_rustSucceeds() {
-        let o = RustCoreFallback.run(.diff, defaults: defaults, environment: ["MDV_RUST_DIFF": "1"],
+        let o = RustCoreFallback.run(.csv, defaults: defaults, environment: ["MDV_RUST_CSV": "1"],
                                      rust: { "R" }, swift: { "S" })
         XCTAssertEqual(o.value, "R")
         XCTAssertEqual(o.source, .rust)
@@ -114,7 +117,7 @@ final class RustCoreSeamTests: XCTestCase {
 
     func test_fallback_gateOn_rustThrows_fallsBackToSwift() {
         struct Boom: Error {}
-        let o = RustCoreFallback.run(.diff, defaults: defaults, environment: ["MDV_RUST_DIFF": "1"],
+        let o = RustCoreFallback.run(.csv, defaults: defaults, environment: ["MDV_RUST_CSV": "1"],
                                      rust: { throw Boom() }, swift: { "S" })
         XCTAssertEqual(o.value, "S")
         XCTAssertEqual(o.source, .swiftFallback)

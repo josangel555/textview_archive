@@ -19,7 +19,7 @@ final class UnifiedDiffClipboardTextTests: XCTestCase {
     """
 
     func test_hunkClipboardText_roundTripsPrefixesAndBanner() throws {
-        let file = try XCTUnwrap(DiffParser.parse(sample).first)
+        let file = try XCTUnwrap(RustDiffAdapter.parse(sample).first)
         let hunk = try XCTUnwrap(file.hunks.first)
         XCTAssertEqual(hunk.clipboardText, """
         @@ -1,2 +1,3 @@ func foo()
@@ -31,7 +31,7 @@ final class UnifiedDiffClipboardTextTests: XCTestCase {
     }
 
     func test_fileClipboardText_includesHeaderAndHunks() throws {
-        let file = try XCTUnwrap(DiffParser.parse(sample).first)
+        let file = try XCTUnwrap(RustDiffAdapter.parse(sample).first)
         XCTAssertEqual(file.clipboardText, """
         --- a/a.swift
         +++ b/a.swift
@@ -53,7 +53,7 @@ final class UnifiedDiffClipboardTextTests: XCTestCase {
         @@ -0,0 +1,1 @@
         +hello
         """
-        let file = try XCTUnwrap(DiffParser.parse(newFile).first)
+        let file = try XCTUnwrap(RustDiffAdapter.parse(newFile).first)
         XCTAssertTrue(file.clipboardText.hasPrefix("--- /dev/null\n+++ b/fresh.txt\n"),
                       "new file must show /dev/null on the old side: \(file.clipboardText)")
     }
@@ -64,7 +64,7 @@ final class UnifiedDiffClipboardTextTests: XCTestCase {
         index 0000000..1111111 100644
         Binary files a/img.png and b/img.png differ
         """
-        let file = try XCTUnwrap(DiffParser.parse(binary).first)
+        let file = try XCTUnwrap(RustDiffAdapter.parse(binary).first)
         XCTAssertEqual(file.clipboardText, "Binary files a/img.png and b/img.png differ\n")
     }
 
@@ -78,7 +78,7 @@ final class UnifiedDiffClipboardTextTests: XCTestCase {
         +new
         \\ No newline at end of file
         """
-        let file = try XCTUnwrap(DiffParser.parse(noNL).first)
+        let file = try XCTUnwrap(RustDiffAdapter.parse(noNL).first)
         let hunk = try XCTUnwrap(file.hunks.first)
         XCTAssertTrue(hunk.clipboardText.contains("\\ No newline at end of file"),
                       "the no-newline marker must keep its backslash prefix")

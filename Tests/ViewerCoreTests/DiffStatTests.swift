@@ -18,7 +18,7 @@ final class DiffStatTests: XCTestCase {
         +another new
          trailing
         """
-        let files = DiffParser.parse(diff)
+        let files = RustDiffAdapter.parse(diff)
         XCTAssertEqual(files.count, 1)
         let s = files[0].lineStats
         XCTAssertEqual(s.added, 2)
@@ -42,7 +42,7 @@ final class DiffStatTests: XCTestCase {
         +p
         +q
         """
-        let stat = DiffStat(DiffParser.parse(diff))
+        let stat = DiffStat(RustDiffAdapter.parse(diff))
         XCTAssertEqual(stat.filesChanged, 2)
         XCTAssertEqual(stat.additions, 3)   // a:+1, b:+2
         XCTAssertEqual(stat.deletions, 1)   // a:-1
@@ -58,7 +58,7 @@ final class DiffStatTests: XCTestCase {
         @@ -0,0 +1 @@
         +only
         """
-        let stat = DiffStat(DiffParser.parse(one))
+        let stat = DiffStat(RustDiffAdapter.parse(one))
         XCTAssertEqual(stat.shortStat, "1 file changed, 1 insertion(+)")
     }
 
@@ -72,7 +72,7 @@ final class DiffStatTests: XCTestCase {
         -was here
         -now gone
         """
-        let stat = DiffStat(DiffParser.parse(diff))
+        let stat = DiffStat(RustDiffAdapter.parse(diff))
         XCTAssertEqual(stat.additions, 0)
         XCTAssertEqual(stat.deletions, 2)
         XCTAssertEqual(stat.shortStat, "1 file changed, 2 deletions(-)")
@@ -84,7 +84,7 @@ final class DiffStatTests: XCTestCase {
         index abc..def 100644
         Binary files a/img.png and b/img.png differ
         """
-        let files = DiffParser.parse(diff)
+        let files = RustDiffAdapter.parse(diff)
         XCTAssertEqual(files.first?.lineStats.added, 0)
         XCTAssertEqual(files.first?.lineStats.removed, 0)
         let stat = DiffStat(files)
@@ -93,7 +93,7 @@ final class DiffStatTests: XCTestCase {
     }
 
     func test_emptyDiff_noChanges() {
-        let stat = DiffStat(DiffParser.parse(""))
+        let stat = DiffStat(RustDiffAdapter.parse(""))
         XCTAssertEqual(stat, DiffStat(filesChanged: 0, additions: 0, deletions: 0))
         XCTAssertEqual(stat.shortStat, "no changes")
     }

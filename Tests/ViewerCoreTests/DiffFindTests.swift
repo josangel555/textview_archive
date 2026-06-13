@@ -9,7 +9,7 @@ final class DiffFindTests: XCTestCase {
     /// Two files, second file has two hunks — enough shape to pin
     /// coordinate ordering across every tree level.
     private var files: [UnifiedDiff.File] {
-        DiffParser.parse("""
+        RustDiffAdapter.parse("""
         diff --git a/alpha.swift b/alpha.swift
         --- a/alpha.swift
         +++ b/alpha.swift

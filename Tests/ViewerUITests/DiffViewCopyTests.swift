@@ -41,7 +41,7 @@ final class DiffViewCopyTests: HeadlessUITestCase {
          let a = 1
         +let b = 2
         """
-        let file = try XCTUnwrap(DiffParser.parse(sample).first)
+        let file = try XCTUnwrap(RustDiffAdapter.parse(sample).first)
         let hunk = try XCTUnwrap(file.hunks.first)
 
         let pb = NSPasteboard(name: NSPasteboard.Name("mdv-test-\(UUID().uuidString)"))

@@ -1,33 +1,32 @@
 import Foundation
 import RustCore
 
-/// Routes unified-diff parsing through the Rust core (migration slice #3) when
-/// the `.diff` gate is on, falling back to the Swift `DiffParser` otherwise —
-/// the single place the two implementations meet.
+/// Unified-diff parsing, served by the Rust core (`mdvcore_diff_parse` +
+/// `mdvcore_diff_hunk_marks`).
 ///
-/// Fail-safe by construction (`RustCoreFallback`): gate off → Swift; Rust bridge
-/// fault → Swift. Default-OFF; the diff viewer is byte-identical to today until
-/// the gate is flipped. Only the *parsing* is routed — the `git diff` subprocess
-/// that produces the text stays in Swift `GitClient`.
+/// TSK-649 Stage B #4: the Swift `DiffParser` / `DiffHunkParser` twins have been
+/// DELETED. After a quiet default-ON soak (Stage A), the `.diff` gate, env var,
+/// Settings toggle, and the Swift fallback all retire — this is now a direct,
+/// rust-only call. A bridge fault can no longer fall back to Swift, so it
+/// degrades to an EMPTY result (no diff files / no gutter marks — a safe,
+/// non-crashing "nothing to show" state) and is made LOUD on the `rust-core` Obs
+/// channel (surfaced by the TSK-636 audit log). The `.diff` ABI capability bit
+/// stays required of the linked core. Only the *parsing* is rust — the `git diff`
+/// subprocess that produces the text stays in Swift `GitClient`.
 public enum RustDiffAdapter {
 
-    /// Parse `text` (unified-diff output) into the structured model, routing per
-    /// the `.diff` gate.
+    /// Parse `text` (unified-diff output) into the structured model. Returns an
+    /// empty file list (and logs) if the core call faults.
     public static func parse(_ text: String) -> [UnifiedDiff.File] {
-        outcome(text).value
-    }
-
-    /// Same, but also reporting which engine produced the result (A/B / diag).
-    public static func outcome(
-        _ text: String,
-        defaults: UserDefaults = .standard,
-        environment: [String: String] = ProcessInfo.processInfo.environment
-    ) -> CoreOutcome<[UnifiedDiff.File]> {
-        RustCoreFallback.run(
-            .diff, defaults: defaults, environment: environment,
-            rust: { try toUnified(mdvCoreParseDiff(text: text)) },
-            swift: { DiffParser.parse(text) }
-        )
+        do {
+            return try toUnified(mdvCoreParseDiff(text: text))
+        } catch {
+            Obs.shared.emit(
+                .error, "rust-core",
+                "diff parse faulted (no Swift fallback remains): \(error)",
+                fields: ["capability": "diff"])
+            return []
+        }
     }
 
     /// Map the RustCore bridge's wire types to the ViewerCore `UnifiedDiff`
@@ -66,24 +65,18 @@ public enum RustDiffAdapter {
 
     // MARK: - Gutter marks (the DiffHunkParser half of the slice)
 
-    /// Flatten `diff` to a per-working-tree-line gutter-mark map, routing per the
-    /// `.diff` gate (the gutter is the same "diff parsing in Rust" capability as
-    /// the structured `parse`).
+    /// Flatten `diff` to a per-working-tree-line gutter-mark map. Returns an
+    /// empty map (and logs) if the core call faults.
     public static func hunkMarks(_ diff: String) -> [Int: DiffMark] {
-        hunkMarksOutcome(diff).value
-    }
-
-    /// Same, but also reporting which engine produced the result (A/B / diag).
-    public static func hunkMarksOutcome(
-        _ diff: String,
-        defaults: UserDefaults = .standard,
-        environment: [String: String] = ProcessInfo.processInfo.environment
-    ) -> CoreOutcome<[Int: DiffMark]> {
-        RustCoreFallback.run(
-            .diff, defaults: defaults, environment: environment,
-            rust: { try mdvCoreDiffHunkMarks(text: diff).mapValues(mark) },
-            swift: { DiffHunkParser.parse(diff) }
-        )
+        do {
+            return try mdvCoreDiffHunkMarks(text: diff).mapValues(mark)
+        } catch {
+            Obs.shared.emit(
+                .error, "rust-core",
+                "diff hunk-marks faulted (no Swift fallback remains): \(error)",
+                fields: ["capability": "diff"])
+            return [:]
+        }
     }
 
     private static func mark(_ m: RustCore.DiffHunkMark) -> DiffMark {

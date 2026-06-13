@@ -377,7 +377,7 @@ final class G5ParserHardeningTests: XCTestCase {
         @@ -99999999999999 +-5 @@
         +new line
         """
-        let files = DiffParser.parse(diff)
+        let files = RustDiffAdapter.parse(diff)
         // Garbage `+-5` (not a valid `+N` start) makes the header
         // unparseable → no hunk; that's acceptable. The load-bearing
         // assertion is that parsing does not crash and produces a file.
@@ -401,7 +401,7 @@ final class G5ParserHardeningTests: XCTestCase {
          ctx
         +added
         """
-        let files = DiffParser.parse(diff)
+        let files = RustDiffAdapter.parse(diff)
         let hunk = try? XCTUnwrap(files.first?.hunks.first)
         if let hunk {
             XCTAssertLessThanOrEqual(hunk.oldStart, 1_000_000_000)
@@ -418,7 +418,7 @@ final class G5ParserHardeningTests: XCTestCase {
          ctx
         +added
         """
-        let files = DiffParser.parse(diff)
+        let files = RustDiffAdapter.parse(diff)
         XCTAssertEqual(files.first?.hunks.first?.oldStart, 10)
         XCTAssertEqual(files.first?.hunks.first?.newStart, 12)
     }

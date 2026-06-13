@@ -37,9 +37,12 @@ final class Audit_Sources_ViewerCore_RustCoreFallback_swift_ObservabilityTests: 
 
     // MARK: Fail-safe degradation is preserved
 
+    // Uses `.csv` as the sample gated capability — `.diff` retired to rust-only
+    // in TSK-649 Stage B #4 (no Swift fallback arm to exercise the generic
+    // fallback-observability contract with). csv is still gated (twin alive).
     func test_rustThrows_stillFallsBackToSwift() {
         struct Boom: Error {}
-        let o = RustCoreFallback.run(.diff, defaults: defaults, environment: ["MDV_RUST_DIFF": "1"],
+        let o = RustCoreFallback.run(.csv, defaults: defaults, environment: ["MDV_RUST_CSV": "1"],
                                      rust: { throw Boom() }, swift: { "S" })
         XCTAssertEqual(o.value, "S")
         XCTAssertEqual(o.source, .swiftFallback)
@@ -49,15 +52,15 @@ final class Audit_Sources_ViewerCore_RustCoreFallback_swift_ObservabilityTests: 
 
     func test_rustThrows_emitsObsEvent_taggedWithCapability() {
         struct Boom: Error {}
-        _ = RustCoreFallback.run(.diff, defaults: defaults, environment: ["MDV_RUST_DIFF": "1"],
+        _ = RustCoreFallback.run(.csv, defaults: defaults, environment: ["MDV_RUST_CSV": "1"],
                                  rust: { throw Boom() }, swift: { "S" })
 
         let events = sink.snapshotEvents()
         XCTAssertEqual(events.count, 1, "a caught bridge fault must emit exactly one event")
         let e = try! XCTUnwrap(events.first)
         XCTAssertEqual(e.subsystem, "rust-core")
-        XCTAssertEqual(e.fields["capability"], "diff")
-        XCTAssertTrue(e.message.contains("diff"), "message should name the capability")
+        XCTAssertEqual(e.fields["capability"], "csv")
+        XCTAssertTrue(e.message.contains("csv"), "message should name the capability")
         XCTAssertTrue(e.message.contains("fell back"), "message should describe the fallback")
     }
 
@@ -83,13 +86,13 @@ final class Audit_Sources_ViewerCore_RustCoreFallback_swift_ObservabilityTests: 
     // MARK: No event on the success / gate-off paths
 
     func test_rustSucceeds_emitsNothing() {
-        _ = RustCoreFallback.run(.diff, defaults: defaults, environment: ["MDV_RUST_DIFF": "1"],
+        _ = RustCoreFallback.run(.csv, defaults: defaults, environment: ["MDV_RUST_CSV": "1"],
                                  rust: { "R" }, swift: { "S" })
         XCTAssertTrue(sink.snapshotEvents().isEmpty, "the success path must stay quiet")
     }
 
     func test_gateOff_emitsNothing() {
-        _ = RustCoreFallback.run(.diff, defaults: defaults, environment: [:],
+        _ = RustCoreFallback.run(.csv, defaults: defaults, environment: ["MDV_RUST_CSV": "0"],
                                  rust: { "R" }, swift: { "S" })
         XCTAssertTrue(sink.snapshotEvents().isEmpty, "the gate-off path must stay quiet")
     }
