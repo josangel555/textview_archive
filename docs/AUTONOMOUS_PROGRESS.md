@@ -9169,6 +9169,32 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +366 (2026-06-13 — TSK-743: preview slot remembers & restores editor scroll/cursor per file)
+
+- **TSK-743 preserve-half landed (commit `cd699b4`, fixed→review).** The sibling TSK-744 (isolation) fix
+  (141494d) made the reused preview tab id *reset* its scroll/cursor on each file swap so file B doesn't
+  inherit A's position — but TSK-743's actual wish (*preserve* per file: return to A and it's where you left
+  it) was left unimplemented, flagged as an "ambiguity." It wasn't ambiguous — the ticket pairing is explicit
+  (744 = isolate, 743 = remember/restore), so per §0.5 (investigate, don't park false ambiguities) I built it:
+  - `EditorCoordinator` gains a **FIFO-bounded (cap 64) per-URL store**: `stashPreviewState(forTabID:url:)`
+    remembers the outgoing preview file's editor scroll+cursor *before* the swap's `resetEditorState` drops the
+    id-keyed state; `restorePreviewState(forTabID:url:)` re-seeds them for the incoming file.
+  - Wired into `DocumentModel.openResolved` preview branch: stash(prior.url) → discard buffer + reset (isolation,
+    744) → restore(resolved). Never-previewed file ⇒ no stored entry ⇒ stays reset (isolation intact); re-previewed
+    file ⇒ position restored (the wish). Feeds the **pre-existing** `editorScrollByTab`→CM6 seed path (same infra
+    as tab-switch scroll restore) — no new render path.
+  - **Teeth:** neutering `restorePreviewState` turned the new preservation test red (scroll + cursor) while the
+    existing isolation test STAYED GREEN — proving the change is purely additive. 11/11 preview tests + headless
+    gate green.
+  - **Scope:** covers the CM6 editor scroll/cursor surface (the tab-id-reuse leak 743/744 target). Rendered-MD /
+    source-view scroll uses a separate by-index mechanism (`Tab.scrollTopLine` + shared `SourceViewChannel`) not
+    subject to this leak — noted as a separate surface if the owner means that too. Held at review (CM6 pixels are
+    the VM/owner tail; the model remember/restore is host-guarded).
+- **Pick rationale:** Stage B rust-core deletion is fully owner-blocked (TSK-810 hexSearch/hex carve-out parked
+  for a fallback-model decision; engines 5-9 need per-package review). User-facing perf cluster still supervised-
+  gated. So §1.5 validation-drain of the `fixed` lane: TSK-743 was a user-facing wishlist bug sitting at `fixed`
+  with its core intent unimplemented + fully host-actionable — the highest-value drain target.
+
 ## LOG +365 (2026-06-13 — TSK-580 slice 3: hex_search routes through the FFI envelope; the aux bulk side-channel gets its first real consumer)
 
 - **TSK-580 slice 3 input-half (commit `f47d782`, both gates green) — stays in `progress`.** The thin-waist
