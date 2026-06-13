@@ -41,6 +41,12 @@ struct StatusBar: View {
     /// working without a new injection at the (out-of-scope) ContentView root.
     @ObservedObject var helpSink: HelpSink = .shared
 
+    /// Off-main cache for the git-chip menu (TSK-734). The menu reads branches/
+    /// worktrees from here; the `git` enumeration runs in `.task(id: root)` below,
+    /// NEVER synchronously in the Menu content builder (that crashed via a nested
+    /// runloop inside the layout commit).
+    @StateObject private var gitChipStore = GitChipStore()
+
     var body: some View {
         #if DEBUG
         let _ = BodyProbe.tick("StatusBar")   // TSK-615 re-eval width probe
@@ -141,6 +147,11 @@ struct StatusBar: View {
             // The chip is informative but droppable under extreme width
             // pressure — still higher priority than the bare path.
             .layoutPriority(0)
+            // TSK-734: populate the branch/worktree cache OFF-MAIN when the repo
+            // root appears/changes, so the Menu content builder never spawns git
+            // on the layout path. Re-runs on root change; cancels when the chip
+            // disappears.
+            .task(id: root) { await gitChipStore.load(root: root) }
             .helpInfo(title: "Git: \(label)",
                       description: "Click to switch branch or open a worktree")
             .accessibilityIdentifier("mdv.statusBar.git")
@@ -148,16 +159,18 @@ struct StatusBar: View {
         }
     }
 
-    /// Lazily-built menu content. Evaluated only when the user opens the
-    /// menu, so the `git` calls (`localBranches`, `worktreeList`) stay off
-    /// the render hot path. Branch rows run the guarded switch; worktree
-    /// rows open in a new window (non-destructive).
+    /// Menu content. CRITICAL (TSK-734): NO `GitClient` / subprocess here —
+    /// SwiftUI evaluates `Menu` content during the layout/commit pass, and a
+    /// synchronous `git` call there spins a nested runloop inside
+    /// `CA::Transaction::commit` → AppKit reentrancy crash. Branches/worktrees
+    /// come from `gitChipStore` (populated off-main by the chip's `.task(id:)`).
+    /// `current` is a cheap `.git/HEAD` file read (`SessionGitInfo`), not a
+    /// subprocess, so it is safe on the body path.
     @ViewBuilder
     private func gitChipMenu(root: URL) -> some View {
-        let client = GitClient(repoRoot: root, statusTimeout: 5)
         let current = SessionGitInfo.badge(for: root).branch
-        let branches = client.localBranches()
-        let worktrees = client.worktreeList()
+        let branches = gitChipStore.branches
+        let worktrees = gitChipStore.worktrees
 
         Section("Branches") {
             if branches.isEmpty {
