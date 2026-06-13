@@ -9169,6 +9169,29 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +324 (2026-06-13 tick — TSK-577 WireError channel now EMITS (error model v2, §2.5 Phase-1))
+
+- **TSK-577 (`[RUST-CORE]` the documented WireError {code,message,data} channel was never emitted)
+  — FIXED.** Every FFI error returned a bare status enum; the host got zero context on the most
+  likely real failures (large file, malformed wire), so production diagnosis was impossible
+  host-side. The `WireError` type existed + was tested but nothing WROTE it.
+  - **Additive + backward-compatible:** `write_wire_error(out_buf, fault)` encodes a
+    `WireError{code: status, message: fault.to_string(), data:[("kind", <encode|decode|framing|too_large>)]}`
+    frame into the already-freed out_buf on error, and returns the same status — a drop-in for the
+    old `Err(e) => wire_status(&e)`. Wired into the `ffi_frame_body!` macro (all 8 stateless exports)
+    + the 4 session/hex frame exports. Hosts that throw on the status without reading out_buf (Swift
+    today) are unaffected; the rich frame is there for those that opt in.
+  - **Validation:** rust-core gate green; 3 new FFI tests with **teeth** (malformed request → out_buf
+    decodes to a WireError code=4 + kind=decode; bad length prefix → kind=framing; unit covers all 4
+    kinds; mutating write_wire_error to not write → 2 emission tests red, recompile-confirmed,
+    restored). No new FFI export → no header change. Caught + fixed an `undocumented_unsafe_blocks`
+    clippy-wall trip (12 new unsafe blocks needed `// SAFETY:` comments) that plain `cargo build`
+    missed but the gate caught.
+  - **Consumer follow-up filed: TSK-669** — surface the emitted detail host-side (decode out_buf on
+    error → log, or enrich CoreError). Noted that enriching the Equatable `.wireError` case is an
+    owner-facing API change (~8 sites + equality semantics), so prefer logging unless owner wants the
+    typed detail. Keeps the channel from being write-only.
+
 ## LOG +323 (2026-06-13 tick — TSK-559 windowed snapshot SHIPPED (the top open S2 perf item))
 
 - **TSK-559 (`[RUST-CORE][S2][perf]` level-triggered snapshot = O(table) per filter keystroke) —
