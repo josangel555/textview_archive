@@ -9169,6 +9169,28 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +369 (2026-06-13 — TSK-770: Find/Replace mostly already-built; added persist-prev-text on reopen)
+
+- **TSK-770 (commit `1c538fb`, reported→review).** "Verify-claim-first" paid off: the headline ask (Replace +
+  ReplaceAll in the editor Find bar) was **already fully built and tested** — `CodeMirrorEditorView`
+  findReplacement/replaceNextRequest/replaceAllRequest (wired ContentView:662-664), CM6 JS replaceNext/replaceAll,
+  `MarkdownFindBar.ReplaceConfig` (replace row + disclosure), model `editorReplaceNext()`/`showEditorReplaceBar()`,
+  and 4 green replace tests in FindBarTests. The ticket was a stale 2026-06-13 wishlist stub.
+  - The ONE genuine remaining gap was the sub-ask **"Cmd+F again opens keeping prev text"**: `dismissEditorBar()`
+    cleared `editorQuery`, so a reopen lost the prior search text (and this is NOT owned by TSK-739, which only did
+    the close-toggle). Fix: `dismissEditorBar()` now **preserves `editorQuery`** (clears only the replacement +
+    row visibility + transient summary). Verified safe — ContentView:657 gates the CM6 `findQuery` on bar
+    *visibility* (`isEditorBarPresented`), not the query string, so a hidden bar still feeds CM6 `""` (highlights
+    clear) and reopen re-feeds the preserved query (re-highlights). No new render path.
+  - **Teeth:** re-adding `editorQuery = ""` turned both the FindBarTests + FindCoordinatorTests reopen assertions
+    red. The gate also caught a SECOND test (`FindCoordinatorTests.test_editor_dismiss_clearsQueryAndSummary`)
+    pinning the old clear-on-dismiss contract — updated both to the new "keep query, clear summary" behavior.
+  - Held at review: the persist fix is pure-model (host-tested w/ teeth), but the find-bar text display + CM6's
+    built-in replace are WebView/SwiftUI render = VM/owner tail.
+- **Pick rationale:** user-facing minor-feature (owner wishlist); the verify-first read found it ~90% done, so the
+  tick became "close the real gap + confirm the rest is already covered" rather than a from-scratch build. Standing
+  blockers unchanged (Stage B 810 owner-decision; perf cluster supervised).
+
 ## LOG +368 (2026-06-13 — TSK-732: unify View/Edit/split font resolution)
 
 - **TSK-732 fixed (commit `f90bef7`, triaged→review).** User-facing editor bug: the source font looked different
