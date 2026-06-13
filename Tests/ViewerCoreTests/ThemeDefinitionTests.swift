@@ -56,6 +56,31 @@ final class ThemeDefinitionTests: XCTestCase {
         XCTAssertTrue(css.contains("pre, code { background-color: #FFFFFF; color: #111111; }"))
     }
 
+    func test_pageCSS_overrides_markdown_root_vars_from_the_theme() {
+        // TSK-815: the reading page must follow the theme, not system appearance.
+        let def = ThemeDefinition(
+            id: "t", displayName: "T", isDark: true,
+            background: "#1E1E1E", foreground: "#EEEEEE",
+            gutterText: "#808080", gutterBackground: "#262626",
+            tokens: [:], accent: "#3FA0FF")
+        let css = def.pageCSS()
+        XCTAssertTrue(css.contains(":root {"), css)
+        XCTAssertTrue(css.contains("--mdv-bg: #1E1E1E;"), "page background ← theme.background: \(css)")
+        XCTAssertTrue(css.contains("--mdv-fg: #EEEEEE;"), "prose color ← theme.foreground: \(css)")
+        XCTAssertTrue(css.contains("--mdv-fg-secondary: #808080;"), css)
+        XCTAssertTrue(css.contains("--mdv-code-bg: #262626;"), css)
+        XCTAssertTrue(css.contains("--mdv-link: #3FA0FF;"), "link ← accent when present: \(css)")
+    }
+
+    func test_pageCSS_omits_link_when_no_accent() {
+        let def = ThemeDefinition(
+            id: "t", displayName: "T", isDark: false,
+            background: "#FFFFFF", foreground: "#111111",
+            gutterText: "#888888", gutterBackground: "#F0F0F0", tokens: [:])
+        XCTAssertFalse(def.pageCSS().contains("--mdv-link"),
+                       "no accent ⇒ leave markdown.css's default link color")
+    }
+
     // MARK: store
 
     func test_store_persistence_selection_and_fallback() throws {

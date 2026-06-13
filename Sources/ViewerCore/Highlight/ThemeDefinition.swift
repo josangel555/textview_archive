@@ -160,6 +160,27 @@ extension ThemeDefinition {
         }
         return out
     }
+
+    /// Re-theme the rendered markdown PAGE (reading background + prose), not
+    /// just the syntax tokens, by overriding markdown.css's `:root` custom
+    /// properties from the theme (TSK-815). markdown.css's page bg + text +
+    /// code/link colors all read these vars and otherwise follow SYSTEM
+    /// appearance (`-apple-system-*`), so a selected dark theme on a light-mode
+    /// system left the reading view LIGHT — the Dark-Mode gap. Appended AFTER
+    /// markdown.css in the `<style>` block, so this `:root` wins by cascade. The
+    /// translucent grey rules (`--mdv-rule`/`--mdv-*-border`) are appearance-
+    /// agnostic and deliberately left alone. Only emitted when a theme is
+    /// selected (nil → system-following, byte-identical to before).
+    public func pageCSS() -> String {
+        var out = ":root {\n"
+        out += "  --mdv-bg: \(background);\n"
+        out += "  --mdv-fg: \(foreground);\n"
+        out += "  --mdv-fg-secondary: \(gutterText);\n"
+        out += "  --mdv-code-bg: \(gutterBackground);\n"
+        if let link = accent { out += "  --mdv-link: \(link);\n" }
+        out += "}\n"
+        return out
+    }
 }
 
 // MARK: - Built-ins (the incumbents, expressed losslessly as definitions)

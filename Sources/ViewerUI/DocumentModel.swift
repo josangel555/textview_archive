@@ -3222,7 +3222,9 @@ public final class DocumentModel: ObservableObject {
     /// Pure composition — unit-tested; both renderPage sites use it.
     public var themedExtraStylesheet: String {
         guard let def = activeThemeDefinition else { return MermaidBundle.shimCSS }
-        return MermaidBundle.shimCSS + "\n" + def.tokCSS()
+        // pageCSS re-themes the reading page (bg/prose); tokCSS re-themes the
+        // syntax tokens + code surface. nil theme → shim only (system-following).
+        return MermaidBundle.shimCSS + "\n" + def.pageCSS() + "\n" + def.tokCSS()
     }
 
     /// View-facing accessor. Returns runs immediately if cached on the

@@ -42,6 +42,16 @@ final class ThemeSelectionModelTests: HeadlessUITestCase {
         XCTAssertTrue(css.hasPrefix(MermaidBundle.shimCSS), "shim always leads")
         XCTAssertTrue(css.contains("/* theme: xcode-dark */"))
         XCTAssertTrue(css.contains(".tok-keyword"))
+        // TSK-815: the page bg/prose vars must be re-themed too (not just tokens),
+        // so the reading view follows a dark theme instead of system appearance.
+        let dark = try? XCTUnwrap(model.activeThemeDefinition)
+        XCTAssertTrue(css.contains("--mdv-bg: \(dark?.background ?? "?");"),
+                      "themedExtraStylesheet must override the page background var: \(css)")
+        XCTAssertTrue(css.contains("--mdv-fg:"), "and the prose color var")
+        // nil selection leaves the page vars untouched (system-following).
+        model.selectedThemeID = nil
+        XCTAssertFalse(model.themedExtraStylesheet.contains("--mdv-bg:"),
+                       "no selection ⇒ no page-var override (system appearance)")
     }
 
     // MARK: - Editor surface (TSK-641 stage 3)
