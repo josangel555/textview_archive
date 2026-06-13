@@ -9169,6 +9169,25 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +377 (2026-06-13 — TSK-813 [VALIDATED]: build-app.sh auto-selects the Swift toolchain — unblocks all clean VM dist builds)
+
+- **TSK-813 fixed + validated (commit `573bf0f`).** The fix for the VM build break I root-caused in +376. Added
+  `select_toolchain()` to `build-app.sh` (mirrors `test-in-vm.sh`): picks the newest installed
+  `/Library/Developer/Toolchains/swift-6.*-RELEASE` and exports `TOOLCHAINS` before `swift build`.
+  - **Host-safe by construction:** the host has zero such toolchains → `select_toolchain` returns early → default
+    Swift 6.3.2, host build unchanged (verified). The VM has `swift-6.3-RELEASE` → selects it.
+  - **End-to-end verified:** a BARE `build-app.sh debug` on the VM (no env override) now emits
+    `==> toolchain: swift-6.3-RELEASE` and `Built dist/TextView.app` (fresh dist). **Red→green teeth on the
+    identical command:** the same bare build failed last tick with `circular reference` on `MsgPackValue` under the
+    default 6.1.2; it succeeds now.
+  - **Impact:** this is the unblock for the whole VM validation lane — clean `dist/TextView.app` builds on the VM
+    now work, so the TSK-492 per-item drain (T4 tests / scene captures) is no longer build-blocked. The VM is left
+    with a fresh dist (latest code incl. the New File button + `landing` scene).
+- **Disciplined scope:** this is the root-caused CI fix (not VM-validation *chasing*, which I hard-stopped in +376)
+  — clean, bounded, cheaply verified (host no-op + VM-selects-proven-6.3 + one end-to-end bare build). Standing
+  blockers unchanged (TSK-810, TSK-589 owner-decision; perf cluster supervised). Next: diversify; the per-item VM
+  drains (now unblocked) want the `landing` skip-restore fix + AX-assert-per-scene from +376.
+
 ## LOG +376 (2026-06-13 — root-caused the VM build break [Swift 6.1.2], filed TSK-813; over-invested the VM lane, hard-stopped)
 
 - **Root-caused the VM `circular reference` build failure → TSK-813.** It is NOT chown/incremental corruption (my
