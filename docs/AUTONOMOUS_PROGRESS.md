@@ -9169,6 +9169,25 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +381 (2026-06-13 — TSK-580 slice 3-output: the thin-waist envelope now routes EVERY stateless method, incl. the raw-output ones)
+
+- **TSK-580 (commit `bdb0abd`, stays in progress).** The two stateless methods left off the envelope —
+  `indent_detect` (tiny result string) and `hex_render` (~18 MB dump, blows the 16 MiB frame cap) — return
+  **raw bytes**, not MessagePack frames. Routed both through `mdvcore_call` with **NO signature change**:
+  `dispatch::call` returns the raw bytes directly (no `encode_frame`), `mdvcore_call` writes them to `out_buf`
+  verbatim, and the `MdvStatus` Ok-vs-fault code disambiguates a raw payload from an error frame. Bulk input
+  (text / bytes-to-dump) rides `aux`; the small scalars ride `req` (new `RenderAuxRequest`/`DetectAuxRequest`).
+  - `dispatch::Method::IndentDetect=11`, `HexRender=12` (NEXT_FREE_ID→13); `ffi MDV_METHOD_*` consts → cbindgen
+    emits the `#define`s so Swift shares the ids free (header restaged). `core::MAX_HEX_WIDTH` added for the
+    safety clamp (mirrors the FFI ABI constant; the over-cap A/B test pins them equal).
+  - **This completes the envelope's coverage of every stateless method** (the TSK-568 collapse). Dedicated
+    symbols keep serving during the coexistence window.
+  - **Teeth:** 2 core dispatch route tests + 2 FFI envelope-vs-symbol byte-identical A/B parity tests; dropping
+    `aux` in both dispatch arms reddened the route tests (mutant compiled), restored green. rust-core gate green
+    (header-drift OK, clippy DENY, 78 FFI) + Swift headless gate PASSED (5090, additive ABI).
+  - **REMAINING (close-out):** (a) switch the 3 production Swift raw wrappers (still call dedicated symbols);
+    (b) deprecate the redundant per-method C symbols after a soak. Slices 1/2/4/5 + 3-input/output all landed.
+
 ## LOG +380 (2026-06-13 — TSK-814: surfaced git blame in the editor gutter; completes TSK-672's blame ask)
 
 - **TSK-814 (commit `ebc8fd2`, reported→review).** Surfaced the blame data from +379 — giving the `c341d3f`
