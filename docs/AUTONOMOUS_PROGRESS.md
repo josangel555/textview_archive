@@ -9169,6 +9169,15 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +352 (2026-06-13 — minor-feature wave: TSK-763 recents grey folder hint)
+
+- **TSK-763 → review (885cb7b).** Recents rows now show the containing folder in grey after the filename
+  (IntelliJ "Recent Files" style) so two same-named files in different folders disambiguate. Added a pure
+  `HistoryEntry.parentFolderLabel` (immediate parent folder name; home→`~`, fs-root→`/`, `nil` for a bare
+  relative name) and rendered it tertiary-grey in `RecentRow` with head-truncation + lower layout priority
+  (the filename keeps its space). 4 host tests (file+folder kinds, home→~, root→/, same-name disambiguation);
+  teeth shown (parent→self mutant red, compiled). Headless gate green. Render VM-gated; label logic host-tested.
+
 ## LOG +351 (2026-06-13 — minor-feature wave begins: TSK-748 file-info multi-algo checksums + copy feedback)
 
 - **TSK-748 → review (2e1d345, 2c43d0a, d3a469b).** First item of the `[WISH][minor-feature]` bucket. The
