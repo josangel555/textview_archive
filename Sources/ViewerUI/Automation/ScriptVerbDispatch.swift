@@ -159,6 +159,14 @@ public enum ScriptVerb {
             // (TSK-627). Snapshot-guarded; silent no-op without a
             // formatter, like the go-to verbs.
             _ = model.formatActiveEditorViaLSP()
+        case "set-theme":
+            // Headless theming seam (TSK-641): select a theme by id — the
+            // automation/UAT equivalent of the Settings → Appearance picker.
+            // Empty arg = Follow System (nil selection). An unknown id falls
+            // back per ThemeStore. This is the entry a VM T5 chrome-pixel test
+            // drives to validate the chrome surface (the one un-host-testable
+            // theming surface); the picker UI is the user-facing equivalent.
+            model.selectedThemeID = arg.isEmpty ? nil : arg
         case "save-copy":
             // Write a COPY of the active tab's current content to `arg` (an
             // absolute path), leaving the open tab untouched (TSK-300). This
