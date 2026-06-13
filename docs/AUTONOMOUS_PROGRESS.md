@@ -9169,6 +9169,21 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +345 (2026-06-13 overnight — TSK-740 terminal in-line edits (DCH/ICH/ECH/IL/DL) fixed + validated)
+
+- **TSK-740 VALIDATED (243438f).** ANSIParser.dispatchCSI parse-and-ignored the in-line edit CSI
+  sequences, so a line editor's DCH (delete-char) left the glyph on screen ("display doesn't match true
+  state"). Added 5 cases + TerminalScreen mutators: DCH(P)/ICH(@)/ECH(X) char ops within the row,
+  IL(L)/DL(M) line ops cursor-row→bottom (no scroll-region margins yet — that's the paired TSK-735).
+  6 cell-level tests; teeth demonstrated (remove cases → 9 grid assertions red). Self-validated — the
+  cell grid IS the source of truth the terminal view draws (host pixel-equivalent, like the rust TUI
+  TestBackend). Gate green (5054).
+- Overnight tally (8 ticks): 739 · 742 · 744 · 729 · 737 · 740 validated · 734/728/730 review (VM-gated) ·
+  743 fixed · TSK-806 filed.
+- Next crons: 735 (DEC scroll region DECSTBM — the vim-footer glitch; pairs with 740, builds on the new
+  IL/DL by adding margin-awareness), 738 (footer after relaunch), 731 (emoji display width), 741 (PTY
+  blocking write off-main).
+
 ## LOG +344 (2026-06-13 overnight — TSK-737 gutter last-line off-by-one fixed + validated)
 
 - **TSK-737 VALIDATED (97da320).** SourceTextController.countLines subtracted 1 for a trailing newline,
