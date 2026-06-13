@@ -9169,6 +9169,28 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +372 (2026-06-13 — TSK-492 Layer-1: scene→model mapping extracted to a host-tested seam; nightly-wiring blocker found)
+
+- **TSK-492 (the owner's "agents self-validate UI without me" foundation) — investigated + advanced; stays triaged.**
+  Picked it as the root-cause fix for the growing review pile. Two outcomes:
+  1. **Blocker found (recorded on the ticket):** the built harness `scripts/vm-uitest.sh run` executes FROM the
+     host and **SSHes into the VM** (`ssh $HOST … launchctl kickstart`), but `nightly-vm.yml` runs
+     `test-in-vm.sh` **directly on the `[self-hosted, macos-vm]` runner** (no ssh) — the runner *is* the VM. So
+     wiring it into nightly as-is would SSH-to-self. Correct fix = give vm-uitest.sh an **on-VM local mode** +
+     the nightly scene matrix + a **VM run to verify** — VM-budgeted, not host-autonomous. Did NOT ship
+     speculative CI wiring I can't validate.
+  2. **Layer-1 host-autonomous slice landed (commit `ad4d5e0`).** The `MDV_UI_SCENE` scene→model mapping lived in
+     the un-test-linked `MarkdownViewer` executable target (`Diagnostics.applyUISceneIfRequested`), so the scene
+     catalog the harness depends on had **no regression guard** (a scene silently failing to enter its state =
+     a false green for the pixel harness). Extracted it to `ViewerUI.UISceneApplier` (behaviour-identical; env/
+     dispatch/stderr shell stays in Diagnostics) + 6 host tests pinning the catalog contract (terminal edge/
+     height/tabs, preview slot, tabs-N, guarded no-ops, unknown). **Teeth:** paneright→.bottom mutation → red.
+- **Process honesty:** over-invested early reads confirming TSK-492 is VM-coupled before finding the
+  host-autonomous slice. Net: a real blocker surfaced + a real regression guard landed on the foundation, but the
+  foundation's payoff (the running self-validation lane) remains a VM-budgeted tick. Standing blockers unchanged
+  (Stage B 810; perf cluster supervised; review pile 640/732/743/770/760/806 awaits the VM lane this foundation
+  will become).
+
 ## LOG +371 (2026-06-13 — TSK-812: close the WebKit DNS-prefetch reading-activity leak [VALIDATED])
 
 - **TSK-812 (commit `fad48cb`, reported→validated — a clean close).** TSK-643's investigation had *surfaced* but
