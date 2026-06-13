@@ -1,7 +1,7 @@
 <!-- CLAUDE-HANDOFF v1 -->
 # Handoff — RUST-CORE Stage B (twin deletion) is the active lane; #1 indent done  (2026-06-13)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `008518a` (+ a docs commit). Recent ticks: render-health VM pass (18/18); `set-theme` verb (unblocks 641 chrome T5); `lsp-rename` verb (unblocks 640 rename UAT). Both verbs are automation/UAT enablers for the two remaining user-facing UI tails.
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `8a57023` (+ a docs commit). Recent ticks: render-health VM pass (18/18); `set-theme` verb (unblocks 641 chrome T5); `lsp-rename` verb + **the interactive Rename Symbol UI** (command + prompt + state machine, host-tested; render → VM).
 
 ## ⚠️ The remaining fixed-lane work is user-facing UI tails — each a dedicated build tick
 The cheap drains are done. What's left needs a focused SwiftUI/T5 effort (don't expect a quick re-run drain):
@@ -11,10 +11,12 @@ The cheap drains are done. What's left needs a focused SwiftUI/T5 effort (don't 
   from the theme def, or A/B vs xcode-light). Mirror `SourceViewVisualRegressionTests` (PixelTestCase). Wire
   into `test-in-vm.sh run_webview_tests`/equivalent + `nightly-vm.yml`. Needs `dist/` built on the VM (heavy)
   + the screencapture run + teeth (revert chrome fix → red). Closes 641's 4th surface → validated.
-- **640 rename → the interactive UI.** Unblocked by the `lsp-rename` verb (engine + automation host-tested).
-  Build: `lsp.rename` command + Edit-menu "Rename Symbol…" + a rename prompt sheet (GoTo-prompt pattern) whose
-  submit calls the verb's action; + a code-action picker. Host-test the command/enablement/submit-wiring; the
-  sheet render holds at review (VM). Delivers user-reachable rename (owner re-raised, P8).
+- **640 rename → interactive UI LANDED (8a57023).** The `lsp.rename` command + `show-lsp-rename` verb +
+  `LSPRenamePrompt` + state machine are in (host-tested). REMAINING for 640: (a) the prompt SHEET render — a
+  VM UI test driving `show-lsp-rename` and asserting the `mdv.lspRename.*` field/buttons + that submit renames
+  the buffer in the spawned app (a11y ids in place); (b) the code-action PICKER UI (applyCodeAction engine
+  host-tested; picker unbuilt — a follow-up slice). An Edit-menu item for Rename is also a nice-to-have (the
+  command is palette-invokable today).
 - **NOTE on cadence:** the last 2 ticks landed automation-verb seams (set-theme, lsp-rename). Don't do a 3rd
   verb-only tick — the next THEMING/LSP tick should build one of the two UI tails above (real user value), or
   pick a genuinely-headless NEW item from the `[WISH][minor-feature]` bucket (745 recents, 757 shortcut catalog).

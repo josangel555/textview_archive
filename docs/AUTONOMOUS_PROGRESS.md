@@ -9169,6 +9169,25 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +359 (2026-06-13 — TSK-640 interactive Rename Symbol UI: command + prompt + state machine)
+
+- **TSK-640 interactive rename UI (commit 8a57023)** — the user-facing entry to the host-tested rename engine,
+  built this tick (not another verb-only seam — the handoff's directive). `LSPRenamePrompt` (mirrors
+  GoToPathPrompt) presented via a DocumentModel state machine (`isLSPRenamePromptPresented` +
+  `showLSPRenamePrompt`/`dismissLSPRenamePrompt`/`submitLSPRename`), opened by the `lsp.rename` command +
+  `show-lsp-rename` verb, gated by `canRenameActiveEditorSymbol` (active LSP editor + cursor + buffer). Submit
+  → `renameActiveEditorSymbolViaLSP` + dismiss.
+  - **Host-RELIABLE tests** (LSPGotoCommandTests, real `.swift` file — runs in the gate, no fake-server skip,
+    via the `_lastRenameDispatch` seam): show→submit→dispatch+dismiss · refuse-non-renameable gate ·
+    dismiss-clears · command-registration. Full buffer-rename e2e rides the fake-LSP VM suite. Teeth shown.
+  - **Gate caught a real omission:** the new `show-lsp-rename` verb wasn't in CommandRegistryTests'
+    known-verb vocabulary (the catalog↔dispatcher consistency guard) → registered it. (The 2nd gate fail was
+    the documented theme-global flake — clean on re-run.)
+  - REMAINING (640 holds at fixed): (a) the prompt SHEET render (a11y ids `mdv.lspRename.*` in place for a VM
+    UI test); (b) the code-action PICKER UI (the applyCodeAction engine is host-tested; the picker is unbuilt).
+- **Process note (self):** committed to the UI build faster this tick (less mid-tick survey than +357/+358).
+  The gate-as-safety-net worked twice (vocabulary omission + flake re-run) — trust it, don't pre-chase.
+
 ## LOG +358 (2026-06-13 — TSK-640 lsp-rename automation verb seam)
 
 - **TSK-640 reachability seam (commit 008518a):** `lsp-rename <newName>` script verb — the headless/automation
