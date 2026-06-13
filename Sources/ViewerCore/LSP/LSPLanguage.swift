@@ -266,6 +266,32 @@ public struct LSPLanguageRegistry: Sendable {
         ),
     ])
 
+    /// TSK-789: a Settings-facing summary of one LSP language + whether its
+    /// server binary is currently discoverable on this machine.
+    public struct LanguageStatus: Equatable, Sendable {
+        public let language: LSPLanguage
+        public let available: Bool
+        /// Absolute path of the discovered server binary (nil when missing).
+        public let resolvedPath: String?
+    }
+
+    /// TSK-789: the supported-LSP-languages + availability list for the Settings
+    /// "Language Servers" section. `resolve` is injected so this is host-testable
+    /// without touching real binaries / running `xcrun`/`which`; the app passes
+    /// the default (`discoverServerBinary`, which probes PATH + the toolchain).
+    /// Synchronous — the default resolver shells out, so callers should run this
+    /// OFF the main thread (the Settings view loads it in a `.task`).
+    public static func languageStatuses(
+        resolve: ((LSPLanguage) -> URL?)? = nil
+    ) -> [LanguageStatus] {
+        let resolver = resolve ?? { discoverServerBinary(for: $0) }
+        return LSPLanguage.allCases.map { lang in
+            let url = resolver(lang)
+            return LanguageStatus(
+                language: lang, available: url != nil, resolvedPath: url?.path)
+        }
+    }
+
     /// Translate a workspace-root override (LSP_DESIGN.md §11, per-
     /// workspace placement) into an `LSPClient.Config`. Returns nil
     /// when no override file is present, no entry matches the

@@ -68,8 +68,43 @@ public struct SettingsView: View {
     /// a destructive primary (mirrors GitStashTab's Drop confirmation).
     @State private var confirmingClearBookmarks = false
 
+    /// TSK-789: per-language LSP server availability, loaded off-main (the
+    /// resolver shells out to xcrun/which). Empty until the .task fills it.
+    @State private var lspStatuses: [LSPLanguageRegistry.LanguageStatus] = []
+
     private var lspSection: some View {
         section("Language servers (LSP)") {
+            // TSK-789: which languages have LSP support + whether the server
+            // binary is installed on this machine (with an install hint when not).
+            if lspStatuses.isEmpty {
+                row("Supported") {
+                    Text("Checking…").font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+            } else {
+                ForEach(lspStatuses, id: \.language) { st in
+                    row(st.language.displayName) {
+                        if st.available {
+                            Label("Installed", systemImage: "checkmark.circle.fill")
+                                .labelStyle(.titleAndIcon)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.green)
+                        } else {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Label("Not found", systemImage: "xmark.circle")
+                                    .labelStyle(.titleAndIcon)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                if let hint = st.language.installHint {
+                                    Text(hint)
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundStyle(.tertiary)
+                                        .textSelection(.enabled)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             row("Diagnostics") {
                 NavigationLink("Open Diagnostics…") {
                     SettingsSubPage(title: "LSP Diagnostics") {
@@ -81,6 +116,13 @@ public struct SettingsView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .padding(.leading, 4)
+        }
+        .accessibilityIdentifier("mdv.settings.lspLanguages")
+        .task {
+            // Off-main: languageStatuses() shells out (xcrun -f / which) per server.
+            lspStatuses = await Task.detached(priority: .utility) {
+                LSPLanguageRegistry.languageStatuses()
+            }.value
         }
     }
 
