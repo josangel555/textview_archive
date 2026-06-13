@@ -8948,3 +8948,22 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - The sweep covers the whole wave on the VM's stricter toolchain: drag
   wiring, theming stages 3+4, gutter routing, wire v2 staticlib, arena
   storage, sidebar filter A+B — all green.
+
+## LOG +304 (2026-06-12 tick — TSK-284(a): drag files OUT lands; a teeth lesson)
+
+- **Drag-out (b2f66ba, installed), per the owner's park answer (a):**
+  sidebar tree rows, filter results, and TABS carry the real file
+  reference — Finder copies, Mail attaches. The load-bearing detail:
+  NSItemProvider(contentsOf:) registers the file's content type +
+  public.file-url; SwiftUI's .draggable(URL) would export only
+  public.url (a dead link). Tabs compose the file URL onto the existing
+  reorder provider — .plainText preserved (pinned), reorder + drag-out
+  coexist.
+- **Teeth lesson (LESSONS-worthy):** the first mutation (string payload
+  of absoluteString) stayed green HONESTLY — NSItemProvider sniffs
+  URL-shaped strings and registers public.file-url for them. Verified
+  empirically before strengthening; a non-URL payload mutation reds
+  both pins. Also re-hit the same-second incremental-build trap:
+  confirm the mutation COMPILED (grep Compiling) before reading its
+  test result.
+- Held at fixed: the physical drag is the live glance (TSK-327 batch).
