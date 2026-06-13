@@ -9169,6 +9169,26 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +374 (2026-06-13 — TSK-492 PROVEN: the VM UI self-validation lane is agent-runnable [real pixels])
+
+- **Stopped deferring the VM-drain and proved it.** Ran `bash scripts/vm-uitest.sh run terminal-paneright` from
+  the host: VM reachable, `dist/TextView.app` present, the `gui/501/com.markdownviewer.uitest` LaunchAgent still
+  bootstrapped (owner's 2026-06-08 setup held), Screen-Recording grant works. The harness kickstarted the agent →
+  drove `MDV_UI_SCENE=terminal-paneright` → **screencaptured real WindowServer pixels (1640×927** — the
+  authoritative stage-④ source, NOT the ImageRenderer/cacheDisplay false-green) → pixel eval **PASS**. The frame
+  is a genuine full render (sidebar + rendered DESIGN.md + terminal docked RIGHT — the scene applied). **Sent the
+  PNG to the owner.** The "agents self-validate UI without me" foundation WORKS for the host-driven agent path.
+- **Strategy-changing finding (recorded on TSK-492):** the vm-uitest harness validates **static rendered states**
+  (scene → capture → assert) — the original terminal-tabs-invisible class — but does NOT drive **interaction
+  sequences**. My whole review pile (640 pick, 743 scroll-on-reopen, 770 find-reopen, 806 split-dirty-edit, 732
+  View/Edit font) are interaction behaviors → they need the **T4 LiveAppTestCase event lane** (test-in-vm.sh GUI),
+  not this harness. So the harness, while proven, doesn't directly drain my pile — that's the T4 path. Only
+  TSK-760 (landing New File button) is cleanly harness-amenable.
+- **Net:** the foundation's capture round-trip is **de-risked/proven**; the remaining work is per-item authoring
+  (static scenes for harness-amenable items + T4 event tests for interaction items) + the nightly on-VM mode. No
+  feature code this tick — the deliverable is the proof + the corrected drain strategy. Standing blockers
+  unchanged (Stage B 810, eviction 589; perf cluster supervised).
+
 ## LOG +373 (2026-06-13 — TSK-790: Settings lists supported syntax-highlighting languages + extensions)
 
 - **TSK-790 (commit `7818a8a`, reported→review).** Owner-wishlist discoverability: show which syntax-highlighting
