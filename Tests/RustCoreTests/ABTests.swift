@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import RustCore
+import CMdvCore
 import ViewerCore
 
 /// The A/B: the Rust core vs the SHIPPING Swift `CSVParser` / `CSVFilter` (the
@@ -201,6 +202,26 @@ final class ABTests: XCTestCase {
         XCTAssertNil(CsvSession.decodeWireError([]))
         XCTAssertNil(CsvSession.decodeWireError(MsgPackValue.int(7).frame()))
         XCTAssertNil(CsvSession.decodeWireError([0xFF, 0x00]))
+    }
+
+    /// TSK-580 slice 2 — the MDV_METHOD_* ids cbindgen emitted reach Swift via
+    /// CMdvCore, and a Swift call through the thin-waist envelope routes to the
+    /// right core method (here: diff, whose response is a {files:[…]} frame).
+    func testEnvelopeCallFromSwiftRoutesToDiff() throws {
+        XCTAssertEqual(MDV_METHOD_DIFF_PARSE, 2, "the header const reaches Swift")
+        let diff = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n"
+        let req = MsgPackValue.map([(.string("text"), .string(diff))]).frame()
+        let result = try CoreEnvelope.call(method: UInt16(MDV_METHOD_DIFF_PARSE), req: req)
+        XCTAssertFalse(result.isEmpty)
+        let body = try CsvSession.unframe(result)
+        var reader = MsgPackReader(body)
+        let map = try reader.decode().mapValue()
+        XCTAssertNotNil(map["files"], "routed to diff::parse_wire (response carries a files array)")
+    }
+
+    func testEnvelopeCallUnknownMethodThrows() {
+        XCTAssertThrowsError(try CoreEnvelope.call(method: 9999, req: []),
+                             "an unknown method id throws, not crashes")
     }
 
     /// Wiring pin (dead-channel idiom): the session call path decodes+logs the

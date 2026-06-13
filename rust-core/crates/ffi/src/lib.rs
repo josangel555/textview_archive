@@ -241,9 +241,22 @@ pub extern "C" fn mdvcore_capabilities() -> u64 {
 // to the right stateless core method, via the safe-Rust `dispatch::call`
 // (host-tested + reusable by TUI/web/WASM). The per-method extern symbols
 // coexist during migration; new methods land HERE, not as new per-feature
-// symbols. Method ids are `mdvcore_core::dispatch::Method` (codegen into the
-// header + a Swift constants file is a follow-up slice).
+// symbols.
 // ---------------------------------------------------------------------------
+
+// Method ids for `mdvcore_call`, the C/Swift-visible mirror of
+// `dispatch::Method` (TSK-580 slice 2). cbindgen emits these as
+// `#define MDV_METHOD_*`, so Swift shares them via CMdvCore — no hand-synced
+// Swift table. `method_id_consts_match_the_dispatch_enum` pins each to its enum
+// discriminant so the two can never drift. ABI: assign-once, never renumber.
+pub const MDV_METHOD_CM_APPLY: u16 = 1;
+pub const MDV_METHOD_DIFF_PARSE: u16 = 2;
+pub const MDV_METHOD_DIFF_HUNK_MARKS: u16 = 3;
+pub const MDV_METHOD_FUZZY_RANK: u16 = 4;
+pub const MDV_METHOD_FIND_SEARCH: u16 = 5;
+pub const MDV_METHOD_MARKDOWN_RENDER: u16 = 6;
+pub const MDV_METHOD_TRANSCRIPT_PARSE: u16 = 7;
+pub const MDV_METHOD_TRANSCRIPT_PARSE_FORCED_REDACTION: u16 = 8;
 
 /// Envelope dispatch. `method` is a `dispatch::Method` discriminant; `req` is the
 /// request frame; `aux` is the reserved bulk side-channel (unused by the current

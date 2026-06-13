@@ -619,6 +619,33 @@ fn envelope_agrees_with_the_direct_export_byte_for_byte() {
 }
 
 #[test]
+fn method_id_consts_match_the_dispatch_enum() {
+    // The C/Swift-visible #defines MUST equal the safe-Rust dispatch enum, or a
+    // Swift caller routes to the wrong method. Pins every id + the count.
+    use mdvcore_core::dispatch::Method;
+    assert_eq!(MDV_METHOD_CM_APPLY, Method::CmApply as u16);
+    assert_eq!(MDV_METHOD_DIFF_PARSE, Method::DiffParse as u16);
+    assert_eq!(MDV_METHOD_DIFF_HUNK_MARKS, Method::DiffHunkMarks as u16);
+    assert_eq!(MDV_METHOD_FUZZY_RANK, Method::FuzzyRank as u16);
+    assert_eq!(MDV_METHOD_FIND_SEARCH, Method::FindSearch as u16);
+    assert_eq!(MDV_METHOD_MARKDOWN_RENDER, Method::MarkdownRender as u16);
+    assert_eq!(MDV_METHOD_TRANSCRIPT_PARSE, Method::TranscriptParse as u16);
+    assert_eq!(
+        MDV_METHOD_TRANSCRIPT_PARSE_FORCED_REDACTION,
+        Method::TranscriptParseForcedRedaction as u16
+    );
+    // Every const is a live method, and there are exactly (NEXT_FREE_ID - 1).
+    for id in [
+        MDV_METHOD_CM_APPLY, MDV_METHOD_DIFF_PARSE, MDV_METHOD_DIFF_HUNK_MARKS,
+        MDV_METHOD_FUZZY_RANK, MDV_METHOD_FIND_SEARCH, MDV_METHOD_MARKDOWN_RENDER,
+        MDV_METHOD_TRANSCRIPT_PARSE, MDV_METHOD_TRANSCRIPT_PARSE_FORCED_REDACTION,
+    ] {
+        assert!(Method::from_u16(id).is_some(), "const {id} must be a live method");
+    }
+    assert_eq!(Method::NEXT_FREE_ID, 9, "8 methods defined; next free id is 9");
+}
+
+#[test]
 fn envelope_unknown_method_is_internal() {
     let mut buf = MdvBuf::empty();
     assert_eq!(

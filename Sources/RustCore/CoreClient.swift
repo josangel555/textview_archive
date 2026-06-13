@@ -76,6 +76,33 @@ public struct WireErrorDetail: Equatable, Sendable {
     public let kind: String
 }
 
+/// The Swift side of the thin-waist envelope (TSK-580): route a STATELESS
+/// method through the single `mdvcore_call` dispatch, using the `MDV_METHOD_*`
+/// ids cbindgen emits into the C header (no hand-synced Swift table). Returns
+/// the response frame; throws `CoreError` on a fault (with the rich WireError
+/// detail logged, TSK-669). The per-method C symbols still exist during the
+/// migration — this is the forward path new callers should use.
+public enum CoreEnvelope {
+    /// Dispatch `req` (a length-prefixed request frame) to `method`. `aux` is
+    /// the reserved bulk side-channel (unused by the current methods).
+    public static func call(method: UInt16, req: [UInt8], aux: [UInt8] = []) throws -> [UInt8] {
+        var buf = MdvBuf(data: nil, len: 0, cap: 0)
+        let status = req.withUnsafeBufferPointer { rp in
+            aux.withUnsafeBufferPointer { ap in
+                mdvcore_call(method, rp.baseAddress, UInt(rp.count),
+                             ap.baseAddress, UInt(ap.count), &buf)
+            }
+        }
+        defer { mdvcore_buf_free(&buf) }
+        if status != MDV_STATUS_OK {
+            CsvSession.logWireErrorIfPresent(buf)   // TSK-669 rich-error diagnosis
+            throw CoreError(status: status)
+        }
+        guard let data = buf.data, buf.len > 0 else { return [] }
+        return Array(UnsafeBufferPointer(start: data, count: Int(buf.len)))
+    }
+}
+
 /// ABI skew guard (TSK-579, audit R4). The cbindgen header bakes
 /// `MDV_WIRE_VERSION` in at COMPILE time; `mdvcore_abi_version()` reports what
 /// the LINKED `libmdvcore_ffi.a` was built with at RUN time. They differ when
