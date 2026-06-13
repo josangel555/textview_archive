@@ -596,6 +596,70 @@ fn windowed_exports_reject_null_handle() {
     );
 }
 
+// ===== TSK-580: thin-waist envelope (mdvcore_call dispatch) =====
+
+#[test]
+fn envelope_agrees_with_the_direct_export_byte_for_byte() {
+    // A hand-built `{text: ""}` request frame (the ffi crate has no serde; the
+    // core dispatch test covers rich-frame parity). TEETH: if mdvcore_call
+    // routed method 2 to the wrong core fn, these bytes would diverge from the
+    // old mdvcore_diff_parse symbol.
+    let frame: [u8; 11] = [7, 0, 0, 0, 0x81, 0xa4, b't', b'e', b'x', b't', 0xa0];
+    let mut via = MdvBuf::empty();
+    let s1 = unsafe { mdvcore_call(2, frame.as_ptr(), frame.len(), core::ptr::null(), 0, &mut via) };
+    let via_bytes = unsafe { via.as_slice() }.to_vec();
+    let mut direct = MdvBuf::empty();
+    let s2 = unsafe { mdvcore_diff_parse(frame.as_ptr(), frame.len(), &mut direct) };
+    let direct_bytes = unsafe { direct.as_slice() }.to_vec();
+    assert_eq!(s1, MdvStatus::Ok, "an empty diff parses cleanly");
+    assert_eq!(s1, s2, "envelope and old symbol return the same status");
+    assert_eq!(via_bytes, direct_bytes, "byte-identical result frame");
+    unsafe { mdvcore_buf_free(&mut via) };
+    unsafe { mdvcore_buf_free(&mut direct) };
+}
+
+#[test]
+fn envelope_unknown_method_is_internal() {
+    let mut buf = MdvBuf::empty();
+    assert_eq!(
+        unsafe { mdvcore_call(0, core::ptr::null(), 0, core::ptr::null(), 0, &mut buf) },
+        MdvStatus::Internal,
+        "id 0 is reserved (no method)"
+    );
+    assert_eq!(
+        unsafe { mdvcore_call(9999, core::ptr::null(), 0, core::ptr::null(), 0, &mut buf) },
+        MdvStatus::Internal,
+        "an id from a newer ABI is Internal, not UB"
+    );
+    unsafe { mdvcore_buf_free(&mut buf) };
+}
+
+#[test]
+fn envelope_null_out_buf_is_nullarg() {
+    assert_eq!(
+        unsafe {
+            mdvcore_call(2, core::ptr::null(), 0, core::ptr::null(), 0, core::ptr::null_mut())
+        },
+        MdvStatus::NullArg
+    );
+}
+
+#[test]
+fn envelope_malformed_request_emits_wire_error() {
+    // Garbage body reaches diff::parse_wire through the envelope → WireError +
+    // (TSK-577) a rich WireError frame in out_buf. Proves the request bytes are
+    // routed to the method, not dropped.
+    let bad: [u8; 6] = [2, 0, 0, 0, 0xC1, 0xC1];
+    let mut buf = MdvBuf::empty();
+    let st = unsafe { mdvcore_call(2, bad.as_ptr(), bad.len(), core::ptr::null(), 0, &mut buf) };
+    assert_eq!(st, MdvStatus::WireError);
+    let frame = unsafe { buf.as_slice() }.to_vec();
+    let err: mdvcore_core::wire::WireError =
+        mdvcore_core::wire::decode_frame(&frame).expect("envelope emits the WireError frame too");
+    assert_eq!(err.code, MdvStatus::WireError as i32);
+    unsafe { mdvcore_buf_free(&mut buf) };
+}
+
 // ===== TSK-577: the rich WireError channel is actually emitted =====
 
 #[test]

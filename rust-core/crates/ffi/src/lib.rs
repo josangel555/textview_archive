@@ -52,6 +52,7 @@ pub mod status;
 
 use mdvcore_core::cm_edit;
 use mdvcore_core::diff;
+use mdvcore_core::dispatch;
 use mdvcore_core::filter::{Query, Scope};
 use mdvcore_core::find_engine;
 use mdvcore_core::fuzzy;
@@ -232,6 +233,77 @@ pub const MDV_CAPABILITIES: u64 = MDV_CAP_CSV_SESSION
 #[unsafe(no_mangle)]
 pub extern "C" fn mdvcore_capabilities() -> u64 {
     ffi_guard_value!(0u64, { MDV_CAPABILITIES })
+}
+
+// ---------------------------------------------------------------------------
+// Thin-waist envelope (TSK-580). ONE versioned dispatch entry routing a u16
+// method id + request frame (+ a reserved aux side-channel for bulk payloads)
+// to the right stateless core method, via the safe-Rust `dispatch::call`
+// (host-tested + reusable by TUI/web/WASM). The per-method extern symbols
+// coexist during migration; new methods land HERE, not as new per-feature
+// symbols. Method ids are `mdvcore_core::dispatch::Method` (codegen into the
+// header + a Swift constants file is a follow-up slice).
+// ---------------------------------------------------------------------------
+
+/// Envelope dispatch. `method` is a `dispatch::Method` discriminant; `req` is the
+/// request frame; `aux` is the reserved bulk side-channel (unused by the current
+/// stateless methods). The response frame (or a rich WireError frame on a wire
+/// fault, TSK-577) is written to `out_buf`; caller MUST `mdvcore_buf_free` it.
+///
+/// Returns [`MdvStatus::Ok`], [`MdvStatus::NullArg`] (null out_buf, or a
+/// null/len mismatch on req/aux), [`MdvStatus::Internal`] (unknown method id —
+/// a forward-compat caller on a newer ABI; the host falls back), a wire status,
+/// or [`MdvStatus::Panic`].
+///
+/// # Safety
+/// `out_buf` valid & writable; `req`/`aux` each point to their `len` bytes (or
+/// are null with `len == 0`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_call(
+    method: u16,
+    req: *const u8,
+    req_len: usize,
+    aux: *const u8,
+    aux_len: usize,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_guard!({
+        if out_buf.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_buf validated; empty default so error paths stay safe-to-free.
+        unsafe { *out_buf = MdvBuf::empty() };
+
+        if (req.is_null() && req_len != 0) || (aux.is_null() && aux_len != 0) {
+            return MdvStatus::NullArg;
+        }
+        let Some(m) = dispatch::Method::from_u16(method) else {
+            // Unknown method id: a caller on a newer ABI than this build. Coarse
+            // Internal is fine — the host gates on capabilities/version first.
+            return MdvStatus::Internal;
+        };
+        let req_bytes: &[u8] = if req_len == 0 {
+            &[]
+        } else {
+            // SAFETY: caller guarantees req/req_len describe valid bytes (len != 0).
+            unsafe { core::slice::from_raw_parts(req, req_len) }
+        };
+        let aux_bytes: &[u8] = if aux_len == 0 {
+            &[]
+        } else {
+            // SAFETY: caller guarantees aux/aux_len describe valid bytes (len != 0).
+            unsafe { core::slice::from_raw_parts(aux, aux_len) }
+        };
+        match dispatch::call(m, req_bytes, aux_bytes) {
+            Ok(frame) => {
+                // SAFETY: out_buf validated non-null above.
+                unsafe { *out_buf = MdvBuf::from_vec(frame) };
+                MdvStatus::Ok
+            }
+            // SAFETY: out_buf validated non-null + empty-defaulted above.
+            Err(e) => unsafe { write_wire_error(out_buf, &e) },
+        }
+    })
 }
 
 // ---------------------------------------------------------------------------
