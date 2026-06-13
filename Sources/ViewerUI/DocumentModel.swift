@@ -2626,6 +2626,25 @@ public final class DocumentModel: ObservableObject {
         return try saveCopy(ofTabAt: i, to: target)
     }
 
+    /// Whether "Save a Copy…" has anything to write for the current tab —
+    /// drives the File-menu item's `validateMenuItem`. True when a tab is
+    /// selected AND it has on-disk content, a non-empty editor buffer, or
+    /// pending HEX-dirty bytes (the three sources `saveCopy` draws from). A
+    /// blank Untitled tab with no edits has nothing to copy → disabled.
+    public var canSaveCopyOfCurrentTab: Bool {
+        guard let tab = tabs.selected else { return false }
+        if tab.url != nil { return true }
+        if let buf = editor.editorBuffer(forTabID: tab.id), !buf.text.isEmpty { return true }
+        return hexDirtyBytes[tab.id] != nil
+    }
+
+    /// A suggested filename for the Save-a-Copy panel: the current tab's own
+    /// name, else a generic default. Pure so the menu layer doesn't reach
+    /// into tab internals.
+    public var saveCopySuggestedName: String {
+        tabs.selected?.url?.lastPathComponent ?? "Untitled.txt"
+    }
+
     /// Forwarder. New code should call `editor.confirmCloseIfDirty(at:)`.
     public func confirmCloseIfDirty(at index: Int) -> DirtyClosePrompt? {
         editor.confirmCloseIfDirty(at: index)

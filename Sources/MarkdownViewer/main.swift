@@ -721,6 +721,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         _ = model.saveActiveEditor()
     }
 
+    /// File → Save a Copy… (⇧⌘S, TSK-300). Opens an NSSavePanel pre-filled
+    /// with the current tab's name and writes a COPY of its effective content
+    /// to the chosen path via `model.saveCopyOfCurrentTab` — the open document
+    /// is left untouched (no retarget, no dirty change). The engine + its
+    /// behavior are host-tested (SaveCopyTests); this is the AppKit surface.
+    @objc func saveCopyAs(_ sender: Any?) {
+        guard model.canSaveCopyOfCurrentTab else { NSSound.beep(); return }
+        let panel = NSSavePanel()
+        panel.title = "Save a Copy"
+        panel.nameFieldStringValue = model.saveCopySuggestedName
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            _ = try model.saveCopyOfCurrentTab(to: url)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Couldn’t Save a Copy"
+            alert.informativeText = String(describing: error)
+            alert.runModal()
+        }
+    }
+
     /// Edit → Undo (⌘Z). Routes to the active CodeMirror webview's JS
     /// undo when an editor is on screen. Otherwise (TSK-330) falls back
     /// to the APP-LEVEL undo: restoring the last removed bookmark — the
@@ -1168,6 +1190,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         saveItem.target = self
         applyShortcut("file.save", to: saveItem)
         fileMenu.addItem(saveItem)
+
+        // Save a Copy… (⇧⌘S, TSK-300). Writes the current tab's effective
+        // content (HEX-dirty bytes → else dirty editor text → else the
+        // on-disk file) to a chosen path WITHOUT retargeting or dirtying
+        // the open doc. validateMenuItem gates on model.canSaveCopyOfCurrentTab.
+        let saveCopyItem = NSMenuItem(
+            title: "Save a Copy…",
+            action: #selector(saveCopyAs(_:)),
+            keyEquivalent: "S"   // capital S → ⇧⌘S
+        )
+        saveCopyItem.target = self
+        fileMenu.addItem(saveCopyItem)
 
         // Print + Export as PDF (TSK-638 phase 1): rendered pages only —
         // validateMenuItem gates on model.canPrintRenderedPage.
@@ -1893,6 +1927,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             if let i = model.tabs.selectedIndex, model.isHexDirtyTab(at: i) { return true }
             guard model.currentViewMode == .editor else { return false }
             return model.tabs.selected?.isDirty == true
+        case #selector(saveCopyAs(_:)):
+            // Save a Copy enables whenever the current tab has content to
+            // copy (on-disk file, non-empty editor buffer, or HEX-dirty
+            // bytes) — unlike Save, it works on any view mode, not just editor.
+            return model.canSaveCopyOfCurrentTab
         case #selector(insertDateTime(_:)):
             // Only meaningful when an editor is on screen to receive it.
             return hasTab && model.currentViewMode == .editor
