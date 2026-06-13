@@ -901,6 +901,7 @@ struct SourceModeView: View {
                     TextDisplayView(
                         text: displayed,
                         fontSize: 13 * model.zoom,
+                        fontName: model.sourceFontName,
                         language: lang,
                         runs: runs,
                         theme: model.activeTheme,

@@ -106,6 +106,22 @@ public struct SettingsView: View {
 
     private var appearanceSection: some View {
         section("Appearance") {
+            row("Font") {
+                // TSK-259: monospace family for the text surfaces.
+                // nil = the system monospaced font; only fixed-pitch
+                // families are offered (a proportional font would break
+                // the source view's gutter math).
+                Picker("", selection: $model.sourceFontName) {
+                    Text("System Default").tag(Optional<String>.none)
+                    ForEach(FontPreference.monospaceFamilies(), id: \.self) { family in
+                        Text(family).tag(Optional(family))
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(maxWidth: 180)
+                .accessibilityIdentifier("mdv.settings.fontPicker")
+            }
             row("Theme") {
                 // TSK-641 stage 2: the catalog picker — built-ins + user +
                 // VS Code imports (ThemeStore), with Follow System as nil.

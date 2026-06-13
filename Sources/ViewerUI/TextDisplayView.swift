@@ -34,6 +34,9 @@ import ViewerKit
 public struct TextDisplayView: NSViewControllerRepresentable {
     public let text: String
     public let fontSize: CGFloat
+    /// TSK-259: the user-selected monospace family (nil = system).
+    /// Resolution is fail-safe (FontPreference.resolvedFont).
+    public let fontName: String?
     public let language: HighlightLanguage
     public let runs: [HighlightRun]
     public let theme: SyntaxTheme
@@ -67,6 +70,7 @@ public struct TextDisplayView: NSViewControllerRepresentable {
     public init(
         text: String,
         fontSize: CGFloat = 13,
+        fontName: String? = nil,
         language: HighlightLanguage = .plainText,
         runs: [HighlightRun] = [],
         theme: SyntaxTheme = .xcodeLight,
@@ -82,6 +86,7 @@ public struct TextDisplayView: NSViewControllerRepresentable {
     ) {
         self.text = text
         self.fontSize = fontSize
+        self.fontName = fontName
         self.language = language
         self.runs = runs
         self.theme = theme
@@ -169,6 +174,7 @@ public struct TextDisplayView: NSViewControllerRepresentable {
         controller.apply(
             text: text,
             fontSize: fontSize,
+            fontName: fontName,
             theme: theme,
             runs: runs,
             wordWrap: wordWrap,
@@ -310,6 +316,9 @@ public final class SourceTextController: NSViewController {
     /// O(text.utf8.count). Cleared (set to 0) when there's no text.
     private var cachedTextByteCount: Int = 0
     private var cachedFontSize: CGFloat = 13
+    /// TSK-259: the family the last apply() used — gutter metrics must
+    /// derive from the SAME font the body renders or lines misalign.
+    private var cachedFontName: String?
     private var cachedLineCount: Int = 1
     /// When true, the file loaded above the read-only soft watermark
     /// (see `TextFile.isLargeReadOnly`). The source view then skips the
@@ -353,6 +362,7 @@ public final class SourceTextController: NSViewController {
     private struct AttrKey: Equatable {
         let content: ContentFingerprint
         let fontSize: CGFloat
+        let fontName: String?
         let theme: SyntaxTheme.Name
         let runCount: Int
     }
@@ -530,7 +540,7 @@ public final class SourceTextController: NSViewController {
         let state = SourceScrollState(
             offsetY: offset,
             viewportHeight: viewport,
-            lineHeight: Self.lineHeight(forFontSize: cachedFontSize),
+            lineHeight: Self.lineHeight(forFontSize: cachedFontSize, fontName: cachedFontName),
             lineCount: cachedLineCount,
             topInset: topInset
         )
@@ -772,8 +782,10 @@ public final class SourceTextController: NSViewController {
     /// monospaced font. The factor 1.20 holds for SF Mono / Menlo /
     /// Monaco across the size range we use; if it ever drifts we'd
     /// see misalignment in the gutter.
-    static func lineHeight(forFontSize size: CGFloat) -> CGFloat {
-        let font = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+    static func lineHeight(forFontSize size: CGFloat, fontName: String? = nil) -> CGFloat {
+        // TSK-259: metrics come from the RESOLVED font — the doc comment
+        // above warns exactly about gutter drift if these diverge.
+        let font = FontPreference.resolvedFont(name: fontName, size: size)
         // boundingRectForFont gives the maximal glyph box; NSTextView's
         // layout manager uses a slightly tighter line height.
         return ceil(font.ascender - font.descender + font.leading)
@@ -790,6 +802,7 @@ public final class SourceTextController: NSViewController {
     public func apply(
         text: String,
         fontSize: CGFloat,
+        fontName: String? = nil,
         theme: SyntaxTheme,
         runs: [HighlightRun],
         wordWrap: Bool,
@@ -809,6 +822,7 @@ public final class SourceTextController: NSViewController {
         self.onFindMatchesChange = onFindMatchesChange
         self.isLargeReadOnly = isLargeReadOnly
         self.cachedFontSize = fontSize
+        self.cachedFontName = fontName
         self.currentTheme = theme
         // Refresh cached byte count for the selection-highlight
         // engine's O(1) size check. utf8.count is O(N) but only walked
@@ -837,7 +851,8 @@ public final class SourceTextController: NSViewController {
         textView.layoutManager?.showsInvisibleCharacters = showInvisibles
 
         applyAttributedString(
-            text: text, fontSize: fontSize, theme: theme, runs: runs
+            text: text, fontSize: fontSize, fontName: fontName,
+            theme: theme, runs: runs
         )
         applyFindHighlights(
             text: text, findState: findState, onFindSummary: onFindSummary
@@ -950,14 +965,18 @@ public final class SourceTextController: NSViewController {
     }
 
     private func applyAttributedString(
-        text: String, fontSize: CGFloat, theme: SyntaxTheme, runs: [HighlightRun]
+        text: String, fontSize: CGFloat, fontName: String?,
+        theme: SyntaxTheme, runs: [HighlightRun]
     ) {
+        // TSK-259: fontName is part of the repaint key — a family change
+        // with identical text/size/theme must NOT serve the cached paint.
         let key = AttrKey(
             content: ContentFingerprint(text),
-            fontSize: fontSize, theme: theme.name, runCount: runs.count
+            fontSize: fontSize, fontName: fontName,
+            theme: theme.name, runCount: runs.count
         )
         if key == lastAttrKey { return }
-        let baseFont = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        let baseFont = FontPreference.resolvedFont(name: fontName, size: fontSize)
 
         // PERF (source-slow, 2026-06-01): in-place recolor on the
         // plain → highlighted transition.

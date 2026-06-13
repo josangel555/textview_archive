@@ -166,6 +166,13 @@ public final class DocumentModel: ObservableObject {
     }
     public func toggleShowInvisibleChars() { showInvisibleChars.toggle() }
 
+    /// TSK-259 — the user-selected monospace family for the text
+    /// surfaces (nil = system). Write-through to PreferencesStore;
+    /// resolution is fail-safe in FontPreference.resolvedFont.
+    @Published public var sourceFontName: String? {
+        didSet { preferences.sourceFontName = sourceFontName }
+    }
+
     /// When on, the CM6 editor draws vertical indentation guide lines
     /// (`CodeMirrorEditorView(indentGuides:)` → JS `setIndentGuides`).
     /// Persisted; off by default (opt-in, TSK-487) so the editor's
@@ -342,6 +349,7 @@ public final class DocumentModel: ObservableObject {
         self.sourceWordWrap = preferences.sourceWordWrap
         self.showPreviewMetadataPanel = preferences.previewMetadataVisible
         self.showInvisibleChars = preferences.showInvisibleChars
+        self.sourceFontName = preferences.sourceFontName
         self.editorIndentGuides = preferences.editorIndentGuides
         self.audioFFmpegPath = preferences.audioFFmpegPath
         // Restore the persisted theme override (TSK-101). An unknown/stale raw

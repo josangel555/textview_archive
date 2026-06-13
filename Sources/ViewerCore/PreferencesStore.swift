@@ -33,6 +33,7 @@ public final class PreferencesStore: @unchecked Sendable {
         static let audioFFmpegPath = "MarkdownViewer.audioFFmpegPath"
         /// Preview mode's metadata side panel visibility (TSK-608).
         static let previewMetadataVisible = "MarkdownViewer.previewMetadataVisible"
+        static let sourceFontName = "MarkdownViewer.sourceFontName"
     }
 
     /// Defaults to the pristine-aware store (TSK-618): `.standard`
@@ -81,6 +82,14 @@ public final class PreferencesStore: @unchecked Sendable {
     public var sourceWordWrap: Bool {
         get { defaults.object(forKey: Key.sourceWordWrap) as? Bool ?? false }
         set { defaults.set(newValue, forKey: Key.sourceWordWrap) }
+    }
+
+    /// Preferred monospace font FAMILY for the text surfaces (TSK-259).
+    /// nil = the system monospaced font. Resolution is fail-safe
+    /// (`FontPreference.resolvedFont`): a deleted font degrades silently.
+    public var sourceFontName: String? {
+        get { defaults.string(forKey: Key.sourceFontName) }
+        set { defaults.set(newValue, forKey: Key.sourceFontName) }
     }
 
     /// Whether preview mode shows the metadata side panel (file info,
