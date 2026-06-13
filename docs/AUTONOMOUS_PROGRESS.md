@@ -9169,6 +9169,25 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +379 (2026-06-13 — TSK-672 git bundle: 3/4 already built; landed the blame data foundation; surfacing→TSK-814)
+
+- **Assessed the P1 git bundle (TSK-672: diff/log/status/blame).** Verify-first found **3 of 4 already built +
+  shipping**: DIFF (GitClient.diff/fileDiff/commitDiff + DiffView + DiffGutterFeeder gutter bars), LOG
+  (log/fileHistory/graphLog/grepLog + GitPanelView/GitLogDiffActions + File History), STATUS
+  (status/statusEntries + GitStatusTab + GitChipStore). Only **blame** was missing — no `GitClient.blame` despite
+  a scaffolded CM6 `'blame'` gutter-marker channel.
+- **Landed the blame DATA foundation (commit `c341d3f`).** `GitClient.blame(path:)` + `parseBlamePorcelain` →
+  `[BlameLine{line, sha, author, timestamp, summary}]` from `git blame --line-porcelain`. The parse is the
+  correctness-critical part — host-tested with **teeth** (a moved-line fixture, orig=5/final=2, catches a
+  final-vs-orig line-mapping regression; empty/garbage safe). Gate green.
+- **Split the surfacing → TSK-814** (feed the existing gutter channel + a toggle command + hover tooltip; the
+  CM6 render is the VM tail). So the P1 bundle is near-complete: diff/log/status done, blame data done, blame UI
+  in TSK-814.
+- **Note:** this is a clean self-validatable parse slice (not render-tail) — but it's a *foundation* (consumer is
+  TSK-814), so it's incremental delivery, not a closed feature. Diversified off the VM lane (committed). Standing
+  blockers unchanged (TSK-810/589 owner-decision; perf cluster supervised; VM per-item drains build-unblocked by
+  TSK-813, awaiting landing-skip-restore + AX-assert-per-scene).
+
 ## LOG +378 (2026-06-13 — TSK-789: Settings shows supported LSP languages + server availability)
 
 - **TSK-789 (commit `87efa57`, reported→review).** Diversified off the VM lane to an owner-wishlisted feature.
