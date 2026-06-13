@@ -647,6 +647,20 @@ public final class DocumentModel: ObservableObject {
         }
     }
 
+    /// TSK-760: "New text file" from the empty-tab landing. Creates an editable
+    /// Untitled.txt and opens it. Unlike File→New (⌘N, which `validateMenuItem`
+    /// disables when no folder is open), the landing button must ALWAYS work —
+    /// the landing is shown precisely when nothing is open — so it falls back to
+    /// the per-user temp scratch dir (`temporaryDirectory`, the sanctioned
+    /// automated-write location) when there is no workspace folder; the user
+    /// Saves-As to a real home from there. With a folder open it targets the
+    /// same directory File→New would (`newFileTargetDirectory`).
+    @discardableResult
+    public func newTextFileForLanding() -> URL? {
+        let dir = newFileTargetDirectory ?? FileManager.default.temporaryDirectory
+        return createNewFile(in: dir)
+    }
+
     /// Rename the file/folder at `url` to `newName` (collision-safe via
     /// `FileRenamer`: never overwrites a different file), then refresh the
     /// tree, reselect the renamed item, and repoint any bookmarks that

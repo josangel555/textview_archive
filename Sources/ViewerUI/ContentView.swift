@@ -1410,6 +1410,14 @@ struct EmptyStateView: View {
             Text("No file open")
                 .font(.title2)
             HStack(spacing: 12) {
+                // TSK-760: create a new editable text file straight from the
+                // landing (folder if one is open, else a temp scratch the user
+                // Saves-As from). ⌘N matches File → New File.
+                Button("New File") {
+                    model.newTextFileForLanding()
+                }
+                .keyboardShortcut("n", modifiers: [.command])
+                .accessibilityIdentifier("mdv.emptyState.newFile")
                 Button("Open File…") {
                     NSApp.sendAction(#selector(AppMenuActions.openDocument(_:)), to: nil, from: nil)
                 }

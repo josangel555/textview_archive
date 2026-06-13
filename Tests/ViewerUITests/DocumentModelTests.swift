@@ -1152,4 +1152,31 @@ final class DocumentModelTests: XCTestCase {
         XCTAssertEqual(info.modifiedTime, file.modifiedTime,
             "displayedText must surface the source mtime for the cache key")
     }
+
+    // MARK: - Landing "New text file" button (TSK-760)
+
+    func test_newTextFileForLanding_usesWorkspaceFolder_whenOpen() throws {
+        let model = makeModel()
+        let folder = tmpDir.appendingPathComponent("proj", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        model.openFolder(folder)
+
+        let url = try XCTUnwrap(model.newTextFileForLanding(), "with a folder open it must create a file")
+        XCTAssertEqual(url.deletingLastPathComponent().standardizedFileURL,
+                       folder.standardizedFileURL,
+                       "with a folder open, the new file lands IN the workspace folder")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path), "created on disk")
+        XCTAssertEqual(model.tabs.selected?.url, url, "the new file opens in a tab")
+    }
+
+    func test_newTextFileForLanding_fallsBackToTempScratch_whenNothingOpen() throws {
+        let model = makeModel()
+        // Nothing open ⇒ newFileTargetDirectory is nil; the landing button must
+        // STILL work (temp scratch), unlike File→New which disables.
+        let url = try XCTUnwrap(model.newTextFileForLanding(),
+                                "landing New File must succeed even with no folder open")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path), "created on disk (temp scratch)")
+        XCTAssertEqual(model.tabs.selected?.url, url, "the new file opens in a tab")
+        try? FileManager.default.removeItem(at: url)
+    }
 }
