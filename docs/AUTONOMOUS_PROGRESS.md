@@ -9169,6 +9169,47 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +319 (2026-06-13 tick — TSK-283 rename-from-nav built; agent-fleet board reconciliation)
+
+- **TSK-283 (Enter to rename) — BUILT + landed (`1165759`, installed, gate-green
+  5010 tests).** Was genuinely unbuilt (the only in-tree `rename` was LSP *symbol*
+  rename; no file/folder rename anywhere). Slice mirrors the TSK-329 shape:
+  - `FileRenamer` core (ViewerCore) — atomic `rename(2)`, inode-aware collision
+    guard (never overwrites a DIFFERENT file; ALLOWS a case-only `Foo`→`foo`
+    rename), rejects traversal/NUL/`.`/`..` names. 8 tests + teeth (disabled the
+    collision guard → no-overwrite test red, recompile-confirmed, restored).
+  - `BookmarksStore.relocate(from:to:)` — exact + folder-prefix repoint so a
+    renamed item's star/links follow. 4 tests incl. a path-boundary-prefix guard.
+  - `DocumentModel.renameFile(at:to:)` — rename + reloadChildren + reselect +
+    bookmark relocate. 3 host behavior tests (disk/tree/selection/bookmark follow;
+    invalid/collision → nil not crash).
+  - UI: sidebar right-click "Rename…" (files+folders) + **F2** key (added `.f2`
+    to SidebarKeyMonitor) → shared NSAlert prompt → renameFile. Source-pinned.
+  - Shipped rename on F2 (Explorer/VS Code convention), NOT by remapping Return —
+    Return is load-bearing (open/toggle + preview-promote, TSK-272/306). Parked
+    the "remap Return → rename, Finder-style?" as a one-line owner call (comment
+    on TSK-283; default B = keep F2). Open-editor-follows-rename deliberately
+    deferred (surfaces the existing diskState==.deleted signal). Fixed, live glance.
+- **Owner asked to spin up agents to drain the board faster** — fanned out 4
+  read-only Explore agents over the ~25-ticket zombie `progress` lane. Reconciliation
+  map (VERIFY identity before mutating — the agents partly tripped the #NNN
+  doc-vs-board trap on 373–377, so those need a direct task_get re-check):
+  - **Dismissed: TSK-109** (quick-wins umbrella) — fully decomposed into per-child
+    tickets (268✓/271✓/329✓/333✓ done, 332 open); zombie drained as duplicate.
+  - **core-done / UI-parked, owner-greenlit 2026-06-11 to wire (next builds):**
+    TSK-300 (Save-a-Copy — engine+verb done, NO File-menu item — confirmed absent),
+    TSK-302 (table cell-cursor), TSK-303 (table find). Same shape as 283/329.
+  - **TSK-310 (fuzzy file filter): effectively DELIVERED** via `sidebarFilterField`
+    + `SidebarFilterRow` (the agent's "FileTreeFilter has no UI caller" was a false
+    alarm — the UI built a parallel filter path; FileTreeFilter core is dead code).
+    Needs a focused validation pass (is match fuzzy? is SidebarFilterMatch tested?).
+  - **ALREADY-DONE + tested (validate next, after identity re-check):** TSK-110
+    (image-edit PoC), TSK-111 (Claude monitor PoC), TSK-262 (session-tab action icons,
+    3105935), TSK-305/307 (security fixes already remediated).
+  - **UNBUILT backlog features, correctly bounced/parked — owner triage:** TSK-276
+    (Debugger), 279 (LSP-MCP), 285 (Paint), 287 (Vector), 293 (Encryption), 296
+    (MD formatter), 298 (Java formatter).
+
 ## LOG +318 (2026-06-13 tick — validation drain continues: TSK-655 + TSK-329)
 
 - **TSK-655 (fs.watch push protocol design, P1) VALIDATED** — a design is
