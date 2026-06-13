@@ -159,6 +159,14 @@ public enum ScriptVerb {
             // (TSK-627). Snapshot-guarded; silent no-op without a
             // formatter, like the go-to verbs.
             _ = model.formatActiveEditorViaLSP()
+        case "lsp-rename":
+            // LSP rename of the symbol at the active editor cursor (TSK-640).
+            // `arg` is the new name. The headless/automation entry (the engine —
+            // request → decode → snapshot-guarded reverse apply across open tabs
+            // — is fully host-tested); the Edit-menu item + rename prompt sheet
+            // that supply the name interactively are the live follow-up. Silent
+            // no-op without an LSP server / cursor, like editor-format.
+            _ = model.renameActiveEditorSymbolViaLSP(newName: arg)
         case "set-theme":
             // Headless theming seam (TSK-641): select a theme by id — the
             // automation/UAT equivalent of the Settings → Appearance picker.

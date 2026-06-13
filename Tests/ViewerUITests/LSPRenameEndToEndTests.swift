@@ -105,6 +105,25 @@ final class LSPRenameEndToEndTests: HeadlessUITestCase {
             "a renamed buffer is unsaved work — must be dirty")
     }
 
+    /// The `lsp-rename <newName>` script verb (TSK-640) — the headless/automation
+    /// entry the future VM T4 UAT + scripting drive. Pins verb → the tested
+    /// rename engine end-to-end through the fake server (both server edits land).
+    func test_lspRenameVerb_dispatchesRenameThroughTheEngine() async throws {
+        let model = try makeModelWithFakeLSP()
+        let url = try harness.writeFile("verb.fakelsp", doc)
+        model.open(url: url)
+        let id = model.tabs.selected!.id
+        _ = model.editor.editorBuffer(forTabID: id)
+        seedCursor(model, tabID: id)
+
+        ScriptVerb.apply(verb: "lsp-rename walrus", to: model, sessions: harness.sessions)
+        XCTAssertEqual(model._lastRenameDispatch?.newName, "walrus",
+                       "the verb must dispatch the rename with its arg as the new name")
+        await waitUntil { model.editor.editorBuffers[id]?.text == self.renamed }
+        XCTAssertEqual(model.editor.editorBuffers[id]?.text, renamed,
+                       "the verb drives the full engine — both WorkspaceEdit spans land")
+    }
+
     func test_rename_droppedWhenBufferChangedSinceDispatch() async throws {
         let model = try makeModelWithFakeLSP()
         let url = try harness.writeFile("race.fakelsp", doc)
