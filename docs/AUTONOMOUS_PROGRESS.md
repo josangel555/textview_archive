@@ -9169,6 +9169,25 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +373 (2026-06-13 — TSK-790: Settings lists supported syntax-highlighting languages + extensions)
+
+- **TSK-790 (commit `7818a8a`, reported→review).** Owner-wishlist discoverability: show which syntax-highlighting
+  languages the app supports, in Settings. Added `HighlightLanguage.fileExtensions` (lang→exts, the inverse of
+  `detect`) + `supportedForDisplay` (allCases minus plainText, sorted) + a SettingsView "Syntax Highlighting"
+  section listing each language with its extensions (View + Edit both highlight the set).
+  - **Load-bearing host guard:** a **round-trip invariant** — every extension listed under a language must
+    `detect()` back to it, so `fileExtensions` can't drift from `detect(from:)`. **Teeth:** adding `.py` under
+    Swift turned it red. 3 ViewerKit tests; headless gate green.
+  - Held at review: data host-tested with teeth; the Settings section render is the VM/owner tail.
+- **Board reality (recorded for the owner):** the clean, high-value, one-tick HEADLESS *code* pool is now
+  genuinely thin. Confirmed this tick: user-facing bugs drained/owner-gated; rust-core high-value items are
+  gated/architectural — TSK-543 (editor-perf, owner #1) is parked via 791; TSK-583's soundness core already
+  landed with TSK-541 (residual is a de-prioritized future runtime); TSK-580 hex-out-aux is a remote *streaming*
+  bulk-output design, not a clean slice; fixed-lane/review-pile is VM-gated (TSK-492, VM-budgeted). What remains
+  for clean autonomous closes: owner-wishlisted minor-features (mostly render-tail) + strategic spikes. **The
+  high-leverage unblock is a VM-budgeted tick to land TSK-492's on-VM mode + nightly matrix** — that drains the
+  whole review pile (640/732/743/770/760/790/806).
+
 ## LOG +372 (2026-06-13 — TSK-492 Layer-1: scene→model mapping extracted to a host-tested seam; nightly-wiring blocker found)
 
 - **TSK-492 (the owner's "agents self-validate UI without me" foundation) — investigated + advanced; stays triaged.**
