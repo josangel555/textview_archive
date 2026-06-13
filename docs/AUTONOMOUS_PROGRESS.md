@@ -9169,6 +9169,31 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +382 (2026-06-13 — §1.5 validation drain: TSK-270 "delay in opening files" closed; board-state reconnaissance)
+
+- **TSK-270 → validated** (no new commit — §1.5 fresh re-run of the fix's evidence). Owner-felt user-facing
+  perf bug. Re-ran `RenderedLoadFailureRecoveryTests` FRESH on current `main` → 3/3 green (host XCTestCase, not
+  VM-gated). The fix (`96354f3`) handles the rendered-MD WKWebView's `didFail` / `didFailProvisionalNavigation` /
+  `webViewWebContentProcessDidTerminate` — pre-fix a failed/hung load left the `lastHTML` dedup baseline claiming
+  the page was current, so `updateNSView` never re-issued the load (the "delay that never resolves; retry loads
+  fast" symptom). The owner had **human-resolved** the parked confirmation ("File opens feels faster now. good
+  enough for now", seq 4377); child TSK-624 validated with before/after VM traces (pre: load never finished a 17s
+  window; post: 1.85s on the software-rendered VM). Native open path measured fast (openResolved ~7ms; render
+  ~37ms off-main; TSK-108/611/619 hold). Title↔work match confirmed (the earlier CSV-O(n²) #NNN mislabel was
+  already bounced 2026-06-10; this fix addresses the titled .md-open symptom).
+- **Board reconnaissance (fresh this firing):** the owner-named groomed pools are all delivered —
+  SECURITY (635/636/554/628), RUST-CORE FFI + engine ports (634/630/631/632/633), PARITY (637 + 639 validated,
+  638 validated prior session, **640 at `review`** — full headless surface done: LSP rename + code-actions
+  model/verbs/commands/UI-state-machines all host-tested, only the SwiftUI sheet/picker PIXELS remain → VM tail).
+  No P1 user-facing **bug** is open (the `reported` pool is wishlist features/questions). **THE remaining lane is
+  the `fixed`/`review` VM render-validation drain** (641 chrome T5; 640 rename-prompt + code-action-picker; the
+  file-op/landing feature pile) + owner-gated items (TSK-810 carve-out decision; TSK-649 Stage B gated on 810).
+- **TSK-580 close-out stays deferred (decided, not forgotten):** switching the 3 production raw wrappers
+  (hex_render/indent_detect/hex_search) to the envelope has little standalone value (aux methods bypass the
+  CoreTransport seam, so the switch doesn't advance remote-core) and the symbol-deletion it enables is
+  soak-gated — best done atomically post-soak (or alongside a seam aux-param redesign). The envelope's core
+  value (single dispatch entry covering every stateless method, host-testable, byte-identical) is delivered.
+
 ## LOG +381 (2026-06-13 — TSK-580 slice 3-output: the thin-waist envelope now routes EVERY stateless method, incl. the raw-output ones)
 
 - **TSK-580 (commit `bdb0abd`, stays in progress).** The two stateless methods left off the envelope —
