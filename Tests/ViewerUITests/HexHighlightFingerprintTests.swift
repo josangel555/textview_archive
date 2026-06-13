@@ -67,4 +67,30 @@ final class HexHighlightFingerprintTests: XCTestCase {
         XCTAssertFalse(a.differsOnlyByActiveMatch(from: a),
             "identical fingerprints are NOT an active-match step")
     }
+
+    /// TSK-122 consumption pin (the dead-channel idiom): the O(1) detector
+    /// above is only a perf GUARD if the render path actually uses it.
+    /// `applyHighlights` must branch on `differsOnlyByActiveMatch` and take
+    /// the `stepActiveMatch` O(2) repaint for an arrow-step. A revert that
+    /// deletes the fast path repaints ALL matches (up to 50k) per step —
+    /// the original S2 main-thread stall — yet paints IDENTICAL pixels, so
+    /// only a wiring pin catches it (no behavioral test can). Source-audit,
+    /// same shape as the TSK-123 / TSK-561 dead-channel guards.
+    func test_renderPath_consumesTheActiveMatchFastPath() throws {
+        let src = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/ViewerUI/HexView.swift"),
+            encoding: .utf8)
+        XCTAssertTrue(
+            src.contains("key.differsOnlyByActiveMatch(from: prev)"),
+            "applyHighlights must branch on the active-match fast-path "
+            + "detector (TSK-122) — without it every arrow-step repaints "
+            + "all matches")
+        XCTAssertTrue(
+            src.contains("stepActiveMatch("),
+            "the fast path must repaint only the two affected ranges, not "
+            + "the full match set")
+    }
 }
