@@ -9169,6 +9169,17 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +403 (2026-06-13 — fresh VM perf profile: the switch/resize residual is RESOLVED; perf cluster parked for owner re-feel)
+
+Ran the teed-up fresh VM xctrace profile (`vm-profile.sh` nav + resize, debug, os_signpost) on current main + this session's fixes. Ran the nav profile in the BACKGROUND while checking the board in parallel (the "no idle" rule) — and confirmed the entire owner-listed groomed pool is DONE (635/636/554/634/630/631/632/633/637/638/639/628 all validated; 763/789 done-at-review). The host-actionable user-facing pool is fully drained.
+
+**Profile headline (debug VM — ratios are the signal):**
+- **`SourceTextController.apply` on a switch = 6.7ms** — the stale TSK-613 "~199ms per source-pane switch" residual that the perf cluster was re-scoped to is GONE. This session's TSK-736 Fix B (find-repaint early-out) + the caches did it. Tab SWITCHING is fast; MountedPanesLRU retention works.
+- First-open costs (paid once, cached/retained after): `WKWebView.loadToFinish` 1746ms (WebKit page build, ~600ms release-equiv, inherent), `HTMLRenderer.render` 438ms (app-side, render-cached), `ts.query-compile` 401ms (one-time, OFF-MAIN).
+- **Resize sweep: ZERO hangs ≥250ms.** No freeze.
+
+**Conclusion:** the perf cluster (591/592/598/266/455) is LARGELY RESOLVED for the switch + resize complaints (fast, regression-guarded by TSK-108's PaneRetentionMountProbeTests + this measurement). What remains is FIRST-OPEN latency dominated by inherent WebKit `loadToFinish` — low-ROI app-side. Recorded the full data on TSK-598 and **parked an owner re-feel decision** (felt perf is the owner's ground truth): close 591/592/266/455 + narrow 598, or chase a specific still-laggy action, or spike a progressive-render first-open optimization. measure-don't-guess paid off — the residual we'd been chasing is gone.
+
 ## LOG +402 (2026-06-13 — CORRECTION: MountedPanesLRU is DONE; the perf cluster was mis-framed as owner-gated for ticks)
 
 **A multi-tick error, corrected.** My last several handoffs called MountedPanesLRU "the owner-gated lever, awaiting a
