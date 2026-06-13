@@ -9169,6 +9169,29 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +397 (2026-06-13 — TSK-580 close-out: the thin-waist FFI envelope is now the UNIVERSAL production dispatch path)
+
+- **TSK-580 (thin-waist FFI envelope) → validated (close-out commit `18da813`, headless gate green).** The 3 raw/aux
+  production Swift wrappers — `mdvCoreHexRender`, `mdvCoreHexSearch`, `mdvCoreIndentDetect` — were the LAST direct callers
+  of their dedicated per-method C symbols; they now route through the single `mdvcore_call(MDV_METHOD_*, req, aux, out)`
+  envelope via a new `mdvEnvelopeCallAux` helper (CoreClient.swift). The helper carries the **aux bulk side-channel**
+  zero-copy (no `[UInt8]` copy of a multi-MiB file) and returns RAW `out_buf` bytes unframed, so the caller disambiguates
+  frame output (HexSearch `{offsets}`) from raw payload (HexRender/IndentDetect dumps). Each wrapper builds the small
+  scalar `req` as a **named map** matching the Rust `*AuxRequest` structs (`with_struct_map`): `{width,total_byte_count,
+  is_truncated}`, `{query,mode}`, `{sample_lines}`.
+- **NET:** every stateless method (the 8 frame methods via the CoreTransport seam in slice 4, plus these 3 raw/aux) now
+  dispatches through the ONE envelope entry — the single seam a remote `mdv-serve` carrier exposes (the transport-agnostic
+  / remote-core goal). **No production Swift code calls any per-method C symbol anymore** — they're dead exports kept only
+  for the coexistence soak.
+- **Validation (host, teeth):** new `EnvelopeRawAuxRoutingTests` pin the migrated wrappers to the exact fixed outputs the
+  Rust `envelope_routes_*` A/B tests assert (independent ground truth); the `HexRender/HexSearch/IndentDetect ABTests`
+  corpora re-verify byte-for-byte parity vs the Swift engines THROUGH this path. TEETH: dropping `aux` in the helper →
+  **36 failures** across all three corpora (empty dump / `[]` / `"—"` = the aux-dropped signature), mutant compiled +
+  ran → restored to 0. Central headless gate green on the committed commit (5108 tests).
+- **Remaining slice (b) — deleting the now-dead per-method C symbols — filed as `TSK-820`** (deferred for soak; blocked on
+  re-pointing the FFI A/B oracle off the symbols first). The COLLAPSE (routing) is done; only the symbol DELETION cleanup
+  remains, so the functional feature is complete.
+
 ## LOG +396 (2026-06-13 — TSK-819: automate the root-poisoned-.build chown-back in test-in-vm.sh; recurring VM-build blocker killed)
 
 - **TSK-819 (test-in-vm.sh GUI-session lane poisons shared .build with root-owned files) → validated (commit `050dcaa`).**
