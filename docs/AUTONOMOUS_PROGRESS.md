@@ -9153,3 +9153,18 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - LESSON reinforced: the validation drain isn't bookkeeping — it converts
   "fixed but unguardable" review-limbo items into genuinely-guarded
   validated ones by reconciling against what later work changed.
+
+## LOG +317 (2026-06-13 tick — validation drain continues: TSK-122 closed)
+
+- **TSK-122 (HexView 50k-match repaint per arrow-step, S2) VALIDATED** —
+  same §1.5 pattern as TSK-123. Fix (O(2) stepActiveMatch fast path) was
+  right; prior agent held it at review for lacking a teeth guard (a
+  full-repaint revert paints identical pixels). Model detector was
+  already host-tested (HexHighlightFingerprintTests); added the
+  CONSUMPTION pin proving applyHighlights branches on
+  differsOnlyByActiveMatch → stepActiveMatch (5daa3dd). Teeth: fast path
+  disabled → red.
+- Gate note: a CONCURRENT double gate-run thrashed the machine and the
+  FoldBench wall-clock (258ms vs 250ms) flaked; a clean single run
+  PASSED with zero non-bench failures. (Reinforces: never run two gates
+  at once; the bench asserts are load-sensitive by design.)
