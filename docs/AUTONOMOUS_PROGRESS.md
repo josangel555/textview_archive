@@ -9169,6 +9169,23 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +341 (2026-06-13 overnight — TSK-728 + TSK-730 editor-keys fixed (one change))
+
+- **TSK-728 (Enter→sidebar) + TSK-730 (arrows/⌘←/⌥← stolen) FIXED → review (312d8d3).** Both shared one
+  root cause: the app-wide `SidebarKeyMonitor` only yielded Enter/arrows to `NSText`/exempt responders,
+  but the CM6 editor is a WKWebView (neither) → bare keys stolen for tree nav. Fix: extracted a pure
+  `shouldYield(modifiers:firstResponder:editorView:)` that yields when (a) ⌘/⌥/⌃ is held (editor/system
+  commands — fixes the modified-arrow half of 730), (b) NSText/exempt focused (unchanged), or (c) the CM6
+  editor webview is the focused responder/ancestor (via `CodeMirrorEditorRegistry.current()`). Crucially
+  it does NOT over-yield: editor-open-but-unfocused still drives sidebar nav (a dedicated test guards
+  that). 11 pure-logic tests, teeth demonstrated (drop the editor clause → 2 red). Headless gate PASSED.
+- **Both held at `review`, not self-validated** — like TSK-734, real key-event routing is AppKit
+  behavior needing the VM (the host tests cover the decision logic; the VM confirms the firstResponder-
+  within-editor assumption + that the tree still navigates).
+- VM-gated review queue building up: 734, 728, 730 — all want one VM UI pass (lane works now).
+- Next crons: 742+743+744 (preview-slot tab-id reuse — one coordinated fix), 729 (View-Only shows
+  on-disk not the dirty buffer), 737/738 (gutter/footer), terminal 735/740.
+
 ## LOG +340 (2026-06-13 overnight — TSK-734 crash fixed)
 
 - **TSK-734 (crash, highest-severity bug) FIXED → review (ab5f55e).** The git-chip Menu content
