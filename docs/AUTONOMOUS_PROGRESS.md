@@ -9169,6 +9169,32 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +328 (2026-06-13 tick — TSK-580 thin-waist envelope, SLICE 1 landed (the last §2.5 Phase-1 item))
+
+Started the highest-leverage approved work from the +327 checkpoint (no owner answer yet; mandate is
+to keep moving). TSK-580 (the thin-waist FFI envelope) is the LAST §2.5 Phase-1 contract item, P1,
+remote-enabling, and the fix-ticket for the TSK-568 duplication finding. It's a multi-slice feature;
+landed a clean, **additive** slice 1 (existing per-method symbols intact).
+
+- **Slice 1 (commit `7d092ee`, both gates green):**
+  - `core/src/dispatch.rs` — the safe-Rust dispatch, the reusable heart (host-testable, usable by
+    TUI/web/WASM, not copy-pasted per extern symbol). `Method` u16 enum (8 stateless methods:
+    CmApply/DiffParse/DiffHunkMarks/FuzzyRank/FindSearch/MarkdownRender/TranscriptParse×2),
+    `from_u16` (None on unknown → never UB), `call(method,req,aux) → core fn`, byte-identical to the
+    direct call. Method ids are ABI (assign-once; a NEXT_FREE_ID test pins it).
+  - `ffi/lib.rs` — `mdvcore_call(method,req,req_len,aux,aux_len,out_buf)` over `dispatch::call`,
+    with the TSK-577 WireError emission on fault + Internal on an unknown (forward-compat) method.
+    cbindgen emits it; additive → no MDV_WIRE_VERSION bump.
+  - 7 tests with **teeth** (mis-route DiffParse → BOTH the core dispatch parity AND the FFI envelope
+    byte-parity tests red, recompile-confirmed, restored): core 3 (id round-trip, NEXT_FREE_ID pin,
+    byte-identical-to-direct) + FFI 4 (envelope==old-symbol byte-for-byte, unknown→Internal,
+    null→NullArg, malformed→WireError-frame).
+- **Remaining slices (TSK-580 stays `progress`):** (2) build.rs codegen of method ids into the
+  header + a Swift constants file + a Swift caller; (3) the aux bulk side-channel (hex render ~18 MB
+  via aux, zero-copy borrowed inputs, dodging the 16 MiB frame cap); (4) migrate the old per-method
+  symbols to delegate to dispatch / deprecate; (5) the highlight method (separate crate → FFI-level
+  dispatch). DO NOT add new per-feature extern symbols on the old pattern while this is open.
+
 ## LOG +327 (2026-06-13 tick — clean autonomous pool drained; honest checkpoint + direction needed)
 
 Thorough board sweep this tick. `task_next` surfaces only the owner-gated epic (TSK-590). Did one
