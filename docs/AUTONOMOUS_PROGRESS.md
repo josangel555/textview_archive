@@ -9169,6 +9169,31 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +365 (2026-06-13 — TSK-580 slice 3: hex_search routes through the FFI envelope; the aux bulk side-channel gets its first real consumer)
+
+- **TSK-580 slice 3 input-half (commit `f47d782`, both gates green) — stays in `progress`.** The thin-waist
+  FFI envelope (`mdvcore_call`) had its `aux` byte-slice **reserved but dead** since slice 1. This tick wired
+  its first consumer:
+  - `core/dispatch.rs` `Method::HexSearch = 10` (NEXT_FREE_ID→11) → new `core/hex.rs` `search_wire_aux(req, aux)`:
+    the **buffer to search rides `aux`** (zero-copy borrowed, frame-cap-exempt — a multi-MiB file would overflow
+    the 16 MiB `req` frame), while `req` carries only the small `{query, mode}` (public `SearchAuxRequest`). The
+    `let _ = aux` stub in `dispatch::call` is gone — `aux` is now load-bearing.
+  - `ffi/lib.rs` `MDV_METHOD_HEX_SEARCH = 10` — cbindgen emits the `#define`, so Swift gets the id for free
+    (header restaged). `mdvcore_call` already plumbs `aux` → **no envelope-signature change** (ABI-additive).
+  - Tests with **teeth**: core dispatch route + FFI envelope-vs-`mdvcore_hex_search` byte-identical parity;
+    mutation (drop `aux` → search empty) turned **both** red (mutant compiled), restored green; drift-pin
+    extended to id 10.
+- **Why hex *search* and not hex *render*:** `mdvcore_hex_render` returns a ~18 MB **raw** dump straight to
+  `MdvBuf` (bypasses `encode_frame` — frame-cap-exempt *output*), so it does NOT fit `dispatch::call`'s
+  frame-returning contract; routing it needs an **out-aux** mechanism (a second out buffer or a raw-output
+  method class) — an ABI-shaping decision deferred to its own slice. Hex *search* returns a small `{offsets}`
+  frame, so it fits the envelope as-is once its bulk *input* rides `aux` — the clean ABI-stable first step.
+- **Pick rationale:** the owner-priority user-facing perf cluster (591/592/598/266/455) is all owner-gated on the
+  **supervised** `MountedPanesLRU` session (WebView race history #213/#217 — not safe to land blind; 5 measured
+  captures, awaiting approval). The groomed SECURITY/PARITY/THEMING pools are nearly all already `validated`
+  (635, 636, 554, 630-633, 637, 638, 639, 642, 647, 661). TSK-580 is the live P1 rust-core contract centerpiece
+  (4/5 slices already landed), headless-testable, not owner-gated — the highest-value actionable item.
+
 ## LOG +364 (2026-06-13 — TSK-640 interactive Code Actions picker landed (fixed→review); TSK-745 test backfill)
 
 - **TSK-640 code-actions picker (second half of the PARITY ticket; rename half landed prior tick) → review.**
