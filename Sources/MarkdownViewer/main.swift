@@ -460,40 +460,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     ///   - markdownviewer://open?path=/abs/path/to/file.md
     ///   - markdownviewer://open?path=~/notes/foo.md     (~ expanded)
     ///   - markdownviewer://search?root=/path&q=hello
-    /// More verbs can be added as we go; each is a URL host.
-    ///
-    /// **Policy (S1.1 hardening, 2026-05-25):** every path supplied to
-    /// this entry-point is funneled through `URLSchemePolicy.containedPath`,
-    /// which expands `~`, standardizes, and rejects anything outside the
-    /// user's home directory or per-user temp dir. A malicious browser
-    /// link like `markdownviewer://open?path=/etc/passwd` is dropped at
-    /// the boundary. The previous behavior — accept any absolute path —
-    /// made the scheme a one-click read-anything primitive from any web
-    /// page. Documented in `MANUAL_TESTING.md` so testers know to verify
-    /// that out-of-home paths bounce.
+    ///   - markdownviewer://walkthrough?path=~/walks/demo.json  (TSK-317;
+    ///     prompts before starting — a walkthrough drives UI automation)
+    /// Parsing + the S1.1 containedPath hardening live in
+    /// `URLSchemeRouter` (ViewerCore) so every verb is headless-tested;
+    /// this delegate only dispatches the typed route.
     private func handleCustomURLScheme(_ url: URL) {
-        guard let host = url.host else { return }
-        let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        let items = comps?.queryItems ?? []
-        let q: (String) -> String? = { key in
-            items.first(where: { $0.name == key })?.value
-        }
-        switch host {
-        case "open":
-            if let raw = q("path"),
-               let safeURL = URLSchemePolicy.containedPath(raw) {
-                model.openPath(safeURL)
-            }
-        case "search":
-            if let root = q("root"),
-               let safeURL = URLSchemePolicy.containedPath(root) {
-                model.sidebar.setRoot(safeURL)
-            }
-            if let queryStr = q("q") {
-                model.crossSearchQuery = queryStr
+        switch URLSchemeRouter.route(url) {
+        case .open(let safeURL):
+            model.openPath(safeURL)
+        case .search(let root, let query):
+            if let root { model.sidebar.setRoot(root) }
+            if let query {
+                model.crossSearchQuery = query
                 model.showCrossSearch()
             }
-        default:
+        case .walkthrough(let safeURL):
+            // CONFIRMATION GATE (TSK-317): unlike open/search, a
+            // walkthrough EXECUTES UI automation. A drive-by web link
+            // must not auto-drive the app — the user approves first.
+            // (The local --walkthrough CLI flag stays unprompted.)
+            let alert = NSAlert()
+            alert.messageText = "Start walkthrough?"
+            alert.informativeText =
+                "A link wants to run the walkthrough “\(safeURL.lastPathComponent)”. "
+                + "Walkthroughs control the app's interface while they play."
+            alert.addButton(withTitle: "Run Walkthrough")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            startWalkthrough(at: safeURL.path)
+        case nil:
             break
         }
     }
