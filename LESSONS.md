@@ -2878,3 +2878,5 @@ Continuation of "the five constraints" above; these three close every remaining 
   resolution pin (non-empty/size assert via Bundle.module) in the merge
   gate; "missing resource = empty string + keep going" is a false-green
   factory.
+
+- **2026-06-12 (TSK-284): a surviving mutation isn't always a weak test — verify the mutation actually BREAKS behavior before "fixing" the test.** `NSItemProvider(object: NSString("file:///…"))` URL-sniffs the string and registers `public.file-url` alongside plain-text, so the "degraded" mutant was behavior-preserving and the green was honest. Probe the runtime empirically (one-liner `swift -e`) before strengthening either side. Corollary re-hit the same run: SwiftPM's incremental build can miss a same-second source rewrite — a teeth run must confirm the mutant COMPILED (grep for `Compiling <module>`) or the result is the OLD binary's.
