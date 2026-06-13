@@ -2848,6 +2848,32 @@ public final class DocumentModel: ObservableObject {
                 modifiedTime: file.modifiedTime
             )
         }
+        // TSK-729: the View Only (.source) lens must show UNSAVED edits, not the
+        // stale on-disk text. If the selected tab has a DIRTY editor buffer, render
+        // its live text (matching the Editor path's `buf?.text ?? file.contents`
+        // and the outline path at :1342). A clean/absent buffer falls through to
+        // the disk path below (identical text, and the format memo still applies).
+        if let selID = tabs.selected?.id,
+           let buf = editor.editorBuffer(forTabID: selID), buf.isDirty {
+            let live = buf.text
+            // Dirty edits bypass the format memo — its cache key is the on-disk
+            // (length, mtime), which no longer matches the buffer. Pretty-print
+            // live when the tab is in a formatted view; otherwise raw edited text.
+            if tabCoordinator.formattedTabIDs.contains(selID),
+               let format = Formatter.SupportedFormat.detect(file.url) {
+                let pretty = Formatter.prettyPrint(live, as: format)
+                return DisplayedText(
+                    text: pretty,
+                    byteLength: pretty.utf8.count,
+                    modifiedTime: file.modifiedTime
+                )
+            }
+            return DisplayedText(
+                text: live,
+                byteLength: live.utf8.count,
+                modifiedTime: file.modifiedTime
+            )
+        }
         guard let id = tabs.selected?.id,
               tabCoordinator.formattedTabIDs.contains(id),
               let format = Formatter.SupportedFormat.detect(file.url) else {

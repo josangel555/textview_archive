@@ -64,6 +64,29 @@ final class DocumentModelTests: XCTestCase {
         return url
     }
 
+    // MARK: View Only shows unsaved edits (TSK-729)
+
+    func test_displayedText_showsDirtyEditorBuffer_notDiskContents() throws {
+        let model = makeModel()
+        let url = try writeFile("a.txt", "on disk\n")
+        model.open(url: url)
+        let id = try XCTUnwrap(model.tabs.selected?.id)
+        guard case .loaded(let file) = model.tabs.selected?.state else {
+            return XCTFail("tab did not load")
+        }
+        // Clean buffer (or none): View Only shows the on-disk text.
+        XCTAssertEqual(model.displayedText(for: file).text, "on disk\n")
+
+        // Dirty: edit the live buffer, then View Only must show the EDITED text.
+        _ = model.editorBuffer(forTabID: id)            // materialize the buffer
+        model.updateEditorText("edited live\n", forTabID: id)
+        let shown = model.displayedText(for: file)
+        XCTAssertEqual(shown.text, "edited live\n",
+            "View Only (.source) must reflect unsaved edits, not stale on-disk content")
+        XCTAssertEqual(shown.byteLength, "edited live\n".utf8.count,
+            "byteLength must match the displayed (edited) text, not the on-disk byteCount")
+    }
+
     // MARK: Initial state
 
     func test_initial_isEmpty() {
