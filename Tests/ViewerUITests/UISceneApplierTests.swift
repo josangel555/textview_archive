@@ -1,0 +1,89 @@
+import XCTest
+import ViewerCore
+@testable import ViewerUI
+
+/// TSK-492 (Layer 1) — host tests for the deterministic UI-scene → model-state
+/// mapping that the visual-eval harness (`scripts/vm-uitest.sh`) depends on.
+/// Before the extraction this logic lived in the MarkdownViewer EXECUTABLE
+/// target (un-test-linked), so the scene catalog had NO regression guard — a
+/// scene silently failing to enter its state would make the harness capture the
+/// wrong pixels (a false green). These pin the model-state contract; the pixel
+/// capture itself stays the VM lane.
+@MainActor
+final class UISceneApplierTests: XCTestCase {
+
+    private var tmp: URL!
+
+    override func setUpWithError() throws {
+        tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("UISceneApplierTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: tmp)
+    }
+
+    private func makeModel() -> DocumentModel {
+        let defaults = UserDefaults(suiteName: "UISceneApplierTests-\(UUID().uuidString)")!
+        return DocumentModel(
+            controller: DocumentController(),
+            history: HistoryStore(storeURL: tmp.appendingPathComponent("history.json")),
+            sidebar: SidebarModel(),
+            preferences: PreferencesStore(defaults: defaults))
+    }
+
+    @discardableResult
+    private func apply(_ scene: String, _ model: DocumentModel, previewFile: URL? = nil) -> String {
+        UISceneApplier.apply(scene: scene, to: model, previewFile: previewFile, tabsBaseDir: tmp)
+    }
+
+    func test_terminalPaneRight_entersExactState() {
+        let model = makeModel()
+        let status = apply("terminal-paneright", model)
+        XCTAssertTrue(model.terminalPane.isOpen, "the terminal pane must be open")
+        XCTAssertEqual(model.terminalPane.paneEdge, .right, "paneright docks the pane on the right edge")
+        XCTAssertEqual(model.terminalPane.height, 320, "deterministic height")
+        XCTAssertGreaterThanOrEqual(model.terminalPane.tabs.count, 2, "default terminal tab count is 2")
+        XCTAssertTrue(status.contains("edge=right"), "status reflects the applied edge: \(status)")
+    }
+
+    func test_terminalDefaultEdge_isBottom_notInheritedFromPrefs() {
+        // A bare `terminal` scene must DETERMINISTICALLY dock .bottom (the state
+        // leak the T5 tests caught), not inherit a persisted edge.
+        let model = makeModel()
+        apply("terminal", model)
+        XCTAssertEqual(model.terminalPane.paneEdge, .bottom)
+        XCTAssertTrue(model.terminalPane.isOpen)
+    }
+
+    func test_previewScene_opensEphemeralPreview() throws {
+        let model = makeModel()
+        let file = tmp.appendingPathComponent("doc.md")
+        try "# hi\n".write(to: file, atomically: true, encoding: .utf8)
+        let status = apply("preview", model, previewFile: file)
+        XCTAssertNotNil(model.tabs.previewTabID, "the preview slot must be populated")
+        XCTAssertTrue(status.contains("preview=true"), "status: \(status)")
+    }
+
+    func test_previewScene_withoutFile_isAGuardedNoop() {
+        let model = makeModel()
+        let status = apply("preview", model, previewFile: nil)
+        XCTAssertNil(model.tabs.previewTabID, "no file ⇒ nothing opened")
+        XCTAssertTrue(status.contains("needs MDV_PREVIEW_FILE"), "status: \(status)")
+    }
+
+    func test_tabsScene_opensNPermanentTabs_firstSelected() {
+        let model = makeModel()
+        apply("tabs-3", model)
+        XCTAssertEqual(model.tabs.tabs.count, 3, "tabs-3 opens exactly 3 permanent tabs")
+        XCTAssertEqual(model.tabs.selectedIndex, 0, "the FIRST tab is selected (unscrolled strip)")
+    }
+
+    func test_unknownScene_isReportedNotApplied() {
+        let model = makeModel()
+        let status = apply("bogus-scene", model)
+        XCTAssertTrue(status.contains("unknown scene"), "status: \(status)")
+        XCTAssertFalse(model.terminalPane.isOpen, "an unknown scene changes nothing")
+    }
+}

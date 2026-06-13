@@ -187,85 +187,22 @@ extension AppDelegate {
         let env = ProcessInfo.processInfo.environment
         guard let scene = env["MDV_UI_SCENE"]?.lowercased(), !scene.isEmpty else { return }
         let delay = Double(env["MDV_UI_SCENE_DELAY"] ?? "") ?? 0.6
+        // The per-pid tmp dir the `tabs-<N>` scene writes throwaway markdown into
+        // (never ~/Documents — see CLAUDE.md; one dir per pid so parallel
+        // instances can't collide).
+        let tabsBaseDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "mdv-scene-tabs-\(ProcessInfo.processInfo.processIdentifier)")
+        let previewFile = env["MDV_PREVIEW_FILE"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self else { return }
-            let parts = scene.split(separator: "-").map(String.init)
-            // Preview-tab scenes (TSK-306 / TSK-272): drive the ONE ephemeral
-            // preview slot so the tab strip shows an italic preview tab + the
-            // content pane shows the previewed file — the render path the
-            // sidebar single-click / arrow-nav exercises (which can't be
-            // event-synthesised headlessly). `MDV_PREVIEW_FILE` names the file;
-            // `preview-promoted` then promotes it to a permanent (upright) tab.
-            if parts.first == "preview" {
-                guard let f = env["MDV_PREVIEW_FILE"], !f.isEmpty else {
-                    FileHandle.standardError.write(
-                        Data("ui-scene: 'preview' needs MDV_PREVIEW_FILE\n".utf8))
-                    return
-                }
-                let url = URL(fileURLWithPath: f)
-                self.model.openPreview(url: url)
-                if parts.contains("promoted") {
-                    // Promote-to-permanent (the Enter / double-click commit path).
-                    self.model.open(url: url)
-                }
-                FileHandle.standardError.write(Data(
-                    "ui-scene: applied '\(scene)' tabs=\(self.model.tabs.tabs.count) preview=\(self.model.tabs.previewTabID != nil)\n".utf8))
-                return
-            }
-            // FILE tab-strip scenes (TSK-261/268/331): `tabs-<N>` opens N
-            // throwaway markdown files as PERMANENT tabs so the TOP TabBar is
-            // on screen with a deterministic population — the state the
-            // tab-strip pixel tests (`FileTabStripVisualRegressionTests`)
-            // assert against. Launch the app with NO positional file: the
-            // first `open` reuses the blank launch tab, so the strip holds
-            // EXACTLY N tabs. Files live under the per-user tmpdir (never
-            // ~/Documents — see CLAUDE.md), one dir per pid so parallel
-            // instances can't collide.
-            if parts.first == "tabs" {
-                let count = max(1, parts.compactMap { Int($0) }.first ?? 3)
-                let dir = FileManager.default.temporaryDirectory
-                    .appendingPathComponent(
-                        "mdv-scene-tabs-\(ProcessInfo.processInfo.processIdentifier)")
-                try? FileManager.default.createDirectory(
-                    at: dir, withIntermediateDirectories: true)
-                for i in 1...count {
-                    let f = dir.appendingPathComponent(String(format: "tab-%02d.md", i))
-                    try? "# tab \(i)\n".write(to: f, atomically: true, encoding: .utf8)
-                    self.model.open(url: f)
-                }
-                // Select the FIRST tab: (1) the strip starts unscrolled (the
-                // last-opened tab being selected scrolls it, clipping tab 1),
-                // and (2) the LAST tab carries no selection tint — its accent
-                // boundary reads as a full-height column to the pixel tests,
-                // which would mask a missing TSK-268 trailing divider.
-                self.model.selectTab(at: 0)
-                FileHandle.standardError.write(Data(
-                    "ui-scene: applied '\(scene)' tabs=\(self.model.tabs.tabs.count)\n".utf8))
-                return
-            }
-            guard parts.first == "terminal" else {
-                FileHandle.standardError.write(Data("ui-scene: unknown scene '\(scene)'\n".utf8))
-                return
-            }
-            let pane = self.model.terminalPane
-            pane.setOpen(true)                      // open FIRST so height applies to the live pane
-            if parts.contains("top") { pane.setTabPosition(.top) }
-            else if parts.contains("right") { pane.setTabPosition(.right) }
-            else { pane.setTabPosition(.left) }
-            // Pane DOCK edge (TSK-491) — distinct tokens from the tab-strip
-            // position above. e.g. MDV_UI_SCENE=terminal-paneright. ALWAYS set
-            // it (default .bottom) so a scene is DETERMINISTIC and doesn't
-            // inherit a persisted edge from a prior launch — the state leak the
-            // T5 tests caught.
-            if parts.contains("paneright") { pane.setPaneEdge(.right) }
-            else if parts.contains("paneleft") { pane.setPaneEdge(.left) }
-            else { pane.setPaneEdge(.bottom) }
-            pane.setHeight(320)
-            pane.setWidth(360)
-            let count = max(1, parts.compactMap { Int($0) }.first ?? 2)
-            while pane.tabs.count < count { pane.addTab() }
-            FileHandle.standardError.write(
-                Data("ui-scene: applied '\(scene)' tabs=\(pane.tabs.count) height=\(pane.height) edge=\(pane.paneEdge.rawValue) width=\(pane.sideWidth)\n".utf8))
+            // TSK-492: the scene→model mapping lives in the host-tested
+            // ViewerUI.UISceneApplier seam; this shell only supplies env-derived
+            // inputs + writes the status line.
+            let status = UISceneApplier.apply(
+                scene: scene, to: self.model,
+                previewFile: previewFile, tabsBaseDir: tabsBaseDir)
+            FileHandle.standardError.write(Data((status + "\n").utf8))
         }
     }
 
