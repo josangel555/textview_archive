@@ -9169,6 +9169,24 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +392 (2026-06-13 — TSK-814 git blame gutter VM-render-validated via a new WebView-lane DOM test; resumed the render-drain safely)
+
+- **TSK-814 → validated (test commit `6e8d95a`).** Git blame in the editor gutter — feeder/model/toggle were
+  host-tested (prior `c341d3f`/`ebc8fd2`); this tick closed the render loop. New `BlameGutterWebViewTests`
+  (mirrors FoldGutterWebViewTests, the WebView lane — NOT affected by TSK-817, it's MDV_RUN_WEBVIEW_TESTS-gated)
+  boots the real codemirror.html, dispatches `setGutterMarkers` kind:"blame" rows, and asserts
+  `.cm-blame-marker` elements render in the live `.cm-diff-gutter` DOM WITH the author·sha tooltip on `title`
+  (2/2 on the VM, 3.9s). Teeth organic: before-count is 0 (the spacer is cm-diff-modified), so the >0 delta +
+  the tooltip-content assertion catch a render/mapping regression; the clear test drains. Wired into
+  test-in-vm.sh + nightly-vm.yml (the gated-suite-in-a-lane rule). Completes TSK-672's blame ask.
+- **First render-drain since the TSK-817 fix — and it was clean:** the WebView lane is in-process (offscreen
+  WKWebView, DOM-query, no app spawn, no screencapture), so no host window and no owner disruption. The owner
+  also granted Screen-Recording to sshd-session/bash/screencapture, so the VM capture prompts are quieted.
+- **Harness maturity:** the render-drain now has 4 proven validation modes — a11y-presence (overlays),
+  window-color (theming), and the WebView-lane DOM query (CM6 gutter/editor internals: fold ✓ blame ✓). Each
+  remaining review item maps to one of these or needs interaction/perf (the harder tail). `main` green; commit
+  6e8d95a.
+
 ## LOG +391 (2026-06-13 — TSK-817: closed the host-window footgun (heavy tiers now opt-in to MDV_VM_GUI_SESSION); two owner disruptions handled)
 
 - **TSK-817 → validated (commit `277450d`).** Last tick a bare host `swift test --filter ViewerUITests`
