@@ -9169,6 +9169,25 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +383 (2026-06-13 — render-drain enabler: `lsp-rename` UI scene lands; harness AX/pixel-assert gap framed as the TSK-492 lever)
+
+- **TSK-640 (commit `71e4375`, stays at review).** Added the `lsp-rename` MDV_UI_SCENE to `UISceneApplier` —
+  opens an editor backdrop tab + presents the rename prompt sheet (`isLSPRenamePromptPresented`). Host-tested
+  (UISceneApplierTests, teeth: scene not presenting → red); headless gate green (5091). **Why:** the vm-uitest
+  harness could only reach landing/preview/tabs/terminal scenes, so the rename prompt SHEET had no path onto the
+  screen for a real-pixel VM capture — its "present ≠ visible" gap (the open part of 640) was unvalidatable.
+  Now `vm-uitest.sh run lsp-rename` can present it + dump the live AX tree (a11y ids `mdv.lspRename.*` in place).
+- **The real blocker for the whole render-drain, now framed on TSK-492:** `vm-uitest.sh`'s PASS/FAIL is a SINGLE
+  hardcoded pixel eval tuned for the terminal tab strip (dense accent-chip block) — it false-greens/false-fails
+  every other scene. Cheap render-validation of overlays (640 rename/picker, 641 theme chrome, 745 landing)
+  needs a PER-SCENE assertion: expected-a11y-ids present in the `.ax` dump AND a non-background pixel check on
+  the asserted view's frame (AX presence alone ≠ visible, per CLAUDE.md). That generalization is the lever that
+  turns the expensive one-off VM drains into a repeatable pattern — recommended as the next TSK-492 slice.
+  Code-action PICKER additionally needs a scene seam (private(set) + async-LSP-fetch → can't reach .presenting
+  deterministically without a DEBUG/harness entry or fake server).
+- **Tick honesty:** committed the host-completable prerequisite (the scene) rather than force a heavy VM cycle
+  through a terminal-tuned harness that can't cleanly assert the rename sheet. `main` headless-gate-green.
+
 ## LOG +382 (2026-06-13 — §1.5 validation drain: TSK-270 "delay in opening files" closed; board-state reconnaissance)
 
 - **TSK-270 → validated** (no new commit — §1.5 fresh re-run of the fix's evidence). Owner-felt user-facing
