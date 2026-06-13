@@ -125,4 +125,47 @@ public enum HighlightLanguage: String, Sendable, CaseIterable {
         case .plainText:   return "Plain Text"
         }
     }
+
+    /// File extensions that map to this language (the inverse of `detect(from:)`).
+    /// Surfaced in Settings (TSK-790) so users can see WHICH file types get
+    /// highlighting. Kept in lock-step with `detect(from:)` by
+    /// `HighlightLanguageTests.test_fileExtensions_roundTripThroughDetect` — every
+    /// extension here MUST detect back to this case, so the two can't drift.
+    public var fileExtensions: [String] {
+        switch self {
+        case .swift:      return ["swift"]
+        case .json:       return ["json", "jsonl"]
+        case .xml:        return ["xml", "plist", "xib", "storyboard", "svg"]
+        case .python:     return ["py", "pyw", "pyi"]
+        case .javascript: return ["js", "mjs", "cjs", "jsx"]
+        case .typescript: return ["ts"]
+        case .tsx:        return ["tsx"]
+        case .markdown:   return ["md", "markdown", "mdown", "mkd", "mkdn"]
+        case .shell:      return ["sh", "bash", "zsh", "fish"]
+        case .yaml:       return ["yaml", "yml"]
+        case .html:       return ["html", "htm", "xhtml"]
+        case .css:        return ["css", "scss", "sass"]
+        case .sql:        return ["sql"]
+        case .go:         return ["go"]
+        case .rust:       return ["rs"]
+        case .c:          return ["c", "h"]
+        case .cpp:        return ["cpp", "cc", "cxx", "hpp", "hh"]
+        case .ruby:       return ["rb"]
+        case .java:       return ["java"]
+        case .kotlin:     return ["kt", "kts"]
+        case .csharp:     return ["cs"]
+        case .lua:        return ["lua"]
+        case .plainText:  return []
+        }
+    }
+
+    /// The highlightable languages to LIST in Settings (TSK-790) — every real
+    /// grammar, sorted by display name; `.plainText` (the no-highlight fallback)
+    /// is excluded. Both the read-only source View (TreeSitter) and the CM6
+    /// editor (Edit) highlight this same set, keyed by `HighlightLanguage`.
+    public static var supportedForDisplay: [HighlightLanguage] {
+        allCases
+            .filter { $0 != .plainText }
+            .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+    }
 }
