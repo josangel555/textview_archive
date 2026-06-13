@@ -9169,6 +9169,27 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +370 (2026-06-13 — TSK-760: New File button on the empty-tab landing)
+
+- **TSK-760 (commit `592f950`, reported→review).** The new-tab landing (EmptyStateView) had Open File / Open
+  Folder + recents but no way to CREATE a file. Added a "New File" (⌘N) button wired to a new
+  `DocumentModel.newTextFileForLanding()` → `createNewFile` in `newFileTargetDirectory` (the File→New target:
+  selected folder / sidebar root) ELSE the temp scratch dir. Unlike File→New (⌘N, which `validateMenuItem`
+  disables when no folder is open), the landing button ALWAYS works — the landing is shown precisely when
+  nothing's open — falling back to temp scratch (user Saves-As to a real home).
+  - **Teeth:** forcing always-temp turned the folder test red (file landed in `/T/` not the workspace folder).
+    2 host tests (folder path + temp fallback, each asserting create-on-disk + opens-in-tab). Gate green.
+  - Held at review: action host-tested; the button render/click is SwiftUI → VM/owner tail.
+  - **Scope:** delivered the ticket's headline ask (the named "[New text file] button"). The report's broader
+    bundle (New Image/RichText/Source types, recent folders w/ git indicator, drag-reorder) is separate —
+    recents already shipped (TSK-745), drag-reorder is TSK-759, "open browser" is the existing Open File button.
+- **Tick process note:** over-read the board early (chasing the §1.5 fixed-lane drain, which is genuinely
+  VM/owner-gated — TSK-272 confirmed render+was-parked, most fixed items are live-validation). The fixed lane
+  isn't cleanly agent-drainable without writing VM UI tests; per §3.5 ("blocked by owner → move on") shipped a
+  user-facing minor-feature instead. Standing blockers unchanged (Stage B 810 owner-decision; perf cluster
+  supervised). DECISION-NEEDED candidate surfacing: the review pile (640/732/743/770/760/806) needs either VM UI
+  tests written per item or an owner pass — flagged for a future VM-drain tick.
+
 ## LOG +369 (2026-06-13 — TSK-770: Find/Replace mostly already-built; added persist-prev-text on reopen)
 
 - **TSK-770 (commit `1c538fb`, reported→review).** "Verify-claim-first" paid off: the headline ask (Replace +
