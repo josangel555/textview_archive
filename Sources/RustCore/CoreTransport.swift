@@ -49,13 +49,15 @@ public struct InProcessTransport: CoreTransport {
         "find_search": UInt16(MDV_METHOD_FIND_SEARCH),
         "transcript_parse": UInt16(MDV_METHOD_TRANSCRIPT_PARSE),
         "markdown_render": UInt16(MDV_METHOD_MARKDOWN_RENDER),
+        // slice 5: highlight (separate crate) now dispatches via the envelope
+        // too — the FFI intercepts id 9 and routes it to mdvcore-highlight.
+        "highlight_runs": UInt16(MDV_METHOD_HIGHLIGHT_RUNS),
     ]
 
-    /// Methods not yet in the envelope (highlight lives in a separate crate;
-    /// it joins the envelope in slice 5). These keep their per-method symbol.
-    static let exports: [String: FrameFn] = [
-        "highlight_runs": mdvcore_highlight_runs,
-    ]
+    /// Per-method-symbol fallback — now EMPTY: every stateless method routes
+    /// through the envelope. Kept (with `mdvFrameCall`) as the ready path for
+    /// any future method that lands as a symbol before joining the envelope.
+    static let exports: [String: FrameFn] = [:]
 
     public func call(_ method: String, requestBody: [UInt8]) throws -> [UInt8]? {
         do {

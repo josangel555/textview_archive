@@ -224,19 +224,16 @@ final class ABTests: XCTestCase {
                              "an unknown method id throws, not crashes")
     }
 
-    /// TSK-580 slice 4 — the stateless transport seam now dispatches the 7 core
-    /// methods through the single envelope (method-id table), not per-method
-    /// symbols. Highlight (separate crate) keeps its symbol until slice 5.
-    /// Structural teeth: reverting a method to a symbol fails this.
-    func testStatelessCoreMethodsRouteThroughTheEnvelope() {
+    /// TSK-580 slices 4+5 — ALL 8 stateless methods now dispatch through the
+    /// single envelope (method-id table); the per-method-symbol fallback table
+    /// is empty. Structural teeth: reverting any method to a symbol fails this.
+    func testAllStatelessMethodsRouteThroughTheEnvelope() {
         for m in ["cm_apply", "diff_parse", "diff_hunk_marks", "fuzzy_rank",
-                  "find_search", "transcript_parse", "markdown_render"] {
+                  "find_search", "transcript_parse", "markdown_render", "highlight_runs"] {
             XCTAssertNotNil(InProcessTransport.methodIds[m], "\(m) routes via mdvcore_call")
-            XCTAssertNil(InProcessTransport.exports[m], "\(m) no longer uses a per-method symbol")
         }
-        XCTAssertNotNil(InProcessTransport.exports["highlight_runs"])
-        XCTAssertNil(InProcessTransport.methodIds["highlight_runs"],
-                     "highlight joins the envelope in slice 5")
+        XCTAssertTrue(InProcessTransport.exports.isEmpty,
+                      "no stateless method uses a per-method symbol anymore")
     }
 
     /// Wiring pin (dead-channel idiom): the session call path decodes+logs the

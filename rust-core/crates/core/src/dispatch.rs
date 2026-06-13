@@ -42,12 +42,17 @@ pub enum Method {
     TranscriptParse = 7,
     /// Transcript parse with forced redaction (`transcript::parse_wire_forced_redaction`).
     TranscriptParseForcedRedaction = 8,
+    /// Tree-sitter highlight runs. Lives in the `mdvcore-highlight` crate (core
+    /// does not depend on it), so the id is registered here for a UNIFIED id
+    /// space but [`call`] does NOT route it — the FFI/front-end layer (which
+    /// links highlight) intercepts this id before calling `call`.
+    HighlightRuns = 9,
 }
 
 impl Method {
     /// The next id a new method gets — pinned by a test so adding a method here
     /// without bumping it (or renumbering an existing one) fails loudly.
-    pub const NEXT_FREE_ID: u16 = 9;
+    pub const NEXT_FREE_ID: u16 = 10;
 
     /// Map a raw `u16` to a [`Method`], or `None` for an id this build doesn't
     /// know (a forward-compat caller sent a newer method) — the FFI envelope
@@ -63,6 +68,7 @@ impl Method {
             6 => Some(Method::MarkdownRender),
             7 => Some(Method::TranscriptParse),
             8 => Some(Method::TranscriptParseForcedRedaction),
+            9 => Some(Method::HighlightRuns),
             _ => None,
         }
     }
@@ -90,6 +96,13 @@ pub fn call(method: Method, req: &[u8], aux: &[u8]) -> Result<Vec<u8>, WireFault
         Method::TranscriptParseForcedRedaction => {
             crate::transcript::parse_wire_forced_redaction(req)
         }
+        // Not routable from core (the impl lives in the `mdvcore-highlight`
+        // crate). The FFI/front-end intercepts this id before calling `call`;
+        // this arm is the defensive guard if someone routes it through core
+        // directly — a clear error, never a panic.
+        Method::HighlightRuns => Err(WireFault::Decode(
+            "highlight_runs is dispatched at the front-end layer, not core".to_string(),
+        )),
     }
 }
 
@@ -111,9 +124,8 @@ mod tests {
     #[test]
     fn next_free_id_is_one_past_the_last_method() {
         // Pins the ABI: adding a Method without bumping NEXT_FREE_ID (or
-        // renumbering one) breaks this. TranscriptParseForcedRedaction is the
-        // current last id.
-        assert_eq!(Method::TranscriptParseForcedRedaction as u16 + 1, Method::NEXT_FREE_ID);
+        // renumbering one) breaks this. HighlightRuns is the current last id.
+        assert_eq!(Method::HighlightRuns as u16 + 1, Method::NEXT_FREE_ID);
     }
 
     #[test]
@@ -124,6 +136,17 @@ mod tests {
         let via_dispatch = call(Method::DiffParse, &req, &[]).unwrap();
         let direct = crate::diff::parse_wire(&req).unwrap();
         assert_eq!(via_dispatch, direct, "the envelope routes to the same logic");
+    }
+
+    #[test]
+    fn core_call_refuses_highlight_runs() {
+        // HighlightRuns is registered for the unified id space but lives in a
+        // separate crate; core::call must NOT route it (the FFI intercepts it
+        // first) — a clear Err, never a panic.
+        assert!(matches!(
+            call(Method::HighlightRuns, &[], &[]),
+            Err(crate::wire::WireFault::Decode(_))
+        ));
     }
 
     #[derive(serde::Serialize)]

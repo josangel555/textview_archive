@@ -257,6 +257,7 @@ pub const MDV_METHOD_FIND_SEARCH: u16 = 5;
 pub const MDV_METHOD_MARKDOWN_RENDER: u16 = 6;
 pub const MDV_METHOD_TRANSCRIPT_PARSE: u16 = 7;
 pub const MDV_METHOD_TRANSCRIPT_PARSE_FORCED_REDACTION: u16 = 8;
+pub const MDV_METHOD_HIGHLIGHT_RUNS: u16 = 9;
 
 /// Envelope dispatch. `method` is a `dispatch::Method` discriminant; `req` is the
 /// request frame; `aux` is the reserved bulk side-channel (unused by the current
@@ -307,7 +308,13 @@ pub unsafe extern "C" fn mdvcore_call(
             // SAFETY: caller guarantees aux/aux_len describe valid bytes (len != 0).
             unsafe { core::slice::from_raw_parts(aux, aux_len) }
         };
-        match dispatch::call(m, req_bytes, aux_bytes) {
+        // HighlightRuns lives in the mdvcore-highlight crate (core can't route
+        // it); intercept it here. Everything else dispatches in safe-Rust core.
+        let result = match m {
+            dispatch::Method::HighlightRuns => highlight_runs::runs_wire(req_bytes),
+            other => dispatch::call(other, req_bytes, aux_bytes),
+        };
+        match result {
             Ok(frame) => {
                 // SAFETY: out_buf validated non-null above.
                 unsafe { *out_buf = MdvBuf::from_vec(frame) };

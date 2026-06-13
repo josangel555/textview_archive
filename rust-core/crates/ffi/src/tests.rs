@@ -634,15 +634,43 @@ fn method_id_consts_match_the_dispatch_enum() {
         MDV_METHOD_TRANSCRIPT_PARSE_FORCED_REDACTION,
         Method::TranscriptParseForcedRedaction as u16
     );
+    assert_eq!(MDV_METHOD_HIGHLIGHT_RUNS, Method::HighlightRuns as u16);
     // Every const is a live method, and there are exactly (NEXT_FREE_ID - 1).
     for id in [
         MDV_METHOD_CM_APPLY, MDV_METHOD_DIFF_PARSE, MDV_METHOD_DIFF_HUNK_MARKS,
         MDV_METHOD_FUZZY_RANK, MDV_METHOD_FIND_SEARCH, MDV_METHOD_MARKDOWN_RENDER,
         MDV_METHOD_TRANSCRIPT_PARSE, MDV_METHOD_TRANSCRIPT_PARSE_FORCED_REDACTION,
+        MDV_METHOD_HIGHLIGHT_RUNS,
     ] {
         assert!(Method::from_u16(id).is_some(), "const {id} must be a live method");
     }
-    assert_eq!(Method::NEXT_FREE_ID, 9, "8 methods defined; next free id is 9");
+    assert_eq!(Method::NEXT_FREE_ID, 10, "9 methods defined; next free id is 10");
+}
+
+#[test]
+fn envelope_routes_highlight_to_the_same_result_as_its_symbol() {
+    // Highlight is the one method whose impl lives in a separate crate
+    // (mdvcore-highlight); the FFI envelope must route id 9 to it, byte-
+    // identically to the old mdvcore_highlight_runs symbol. TEETH: a mis-route
+    // to dispatch::call hits the defensive Err → status diverges from Ok.
+    let frame = mdvcore_core::wire::encode_frame(&highlight_runs::RunsRequest {
+        text: "fn main() { let x = 7; }".into(),
+        lang: "rust".into(),
+    })
+    .unwrap();
+    let mut via = MdvBuf::empty();
+    let s1 = unsafe {
+        mdvcore_call(9, frame.as_ptr(), frame.len(), core::ptr::null(), 0, &mut via)
+    };
+    let via_bytes = unsafe { via.as_slice() }.to_vec();
+    let mut direct = MdvBuf::empty();
+    let s2 = unsafe { mdvcore_highlight_runs(frame.as_ptr(), frame.len(), &mut direct) };
+    let direct_bytes = unsafe { direct.as_slice() }.to_vec();
+    assert_eq!(s1, MdvStatus::Ok, "a real highlight request succeeds via the envelope");
+    assert_eq!(s1, s2, "envelope and the highlight symbol return the same status");
+    assert_eq!(via_bytes, direct_bytes, "byte-identical highlight result");
+    unsafe { mdvcore_buf_free(&mut via) };
+    unsafe { mdvcore_buf_free(&mut direct) };
 }
 
 #[test]
