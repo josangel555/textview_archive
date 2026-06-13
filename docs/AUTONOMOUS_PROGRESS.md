@@ -9169,6 +9169,29 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +329 (2026-06-13 tick — TSK-580 envelope SLICE 2: method ids cross-language + Swift caller)
+
+Continued TSK-580 (no owner answer yet; mandate is to keep moving on approved work). Slice 2 makes
+the envelope usable from Swift end-to-end.
+
+- **Slice 2 (commit pending, both gates green):**
+  - `ffi/lib.rs`: `pub const MDV_METHOD_*: u16` (8 ids) mirroring `dispatch::Method`. cbindgen
+    emits them as `#define MDV_METHOD_*` into mdvcore.h, so Swift shares the ids via CMdvCore — NO
+    hand-synced Swift table (cbindgen IS the codegen the spec asked for). A drift-pin test asserts
+    each const == its enum discriminant + the count == NEXT_FREE_ID-1; teeth shown (set a const
+    wrong → test red).
+  - `Sources/RustCore/CoreClient.swift`: `CoreEnvelope.call(method:req:aux:)` — the Swift caller over
+    `mdvcore_call` (manages MdvBuf, reuses the TSK-669 WireError logging on fault, throws CoreError).
+    The forward path new Swift callers use; the per-method C symbols still coexist.
+  - Tests: 2 Swift (RustCoreTests) — `MDV_METHOD_DIFF_PARSE` reaches Swift (== 2) and routes through
+    the envelope to diff (response is a `{files:[…]}` frame); unknown method throws. Plus the rust
+    drift-pin. rust-core + Swift headless gates GREEN.
+- **TSK-580 remaining (stays `progress`):** (3) aux bulk side-channel (hex render ~18 MB via aux,
+  zero-copy borrowed inputs, dodging the 16 MiB frame cap); (4) migrate the existing per-method Swift
+  callers + C symbols to route through the envelope / deprecate the old symbols; (5) the highlight
+  method (separate crate → FFI-level dispatch). Method-id + dispatch foundation is now complete and
+  reachable from both languages.
+
 ## LOG +328 (2026-06-13 tick — TSK-580 thin-waist envelope, SLICE 1 landed (the last §2.5 Phase-1 item))
 
 Started the highest-leverage approved work from the +327 checkpoint (no owner answer yet; mandate is
