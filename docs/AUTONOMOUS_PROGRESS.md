@@ -9169,6 +9169,31 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +339 (2026-06-13 — overnight kickoff: spikes landed, bug bucket triaged, first bug fixed)
+
+Owner went to bed ("don't be blocked, start tackling by priority, answers tomorrow noon"). Progress:
+
+- **Spike iterations complete** (all `triaged`, docs written): TSK-775 Rust migration plan
+  (`docs/research/rust-migration-plan-2026-06-13/PLAN.md` — it's a FINISHING plan; all 11 caps ship
+  default-ON; 3 owner decisions in §6, non-blocking), TSK-781/779 LSP + plugin/core boundary
+  (`docs/research/lsp-and-plugin-boundary-2026-06-13/FINDINGS.md` — own client/rent servers; 1 parked:
+  terminal = new Tier-D plugin contract or stay core), TSK-787/788 test-stack
+  (`docs/research/test-stack-audit-2026-06-13/FINDINGS.md` — stay XCTest; 4 gaps incl. no coverage measure).
+- **Dedup:** 3 intra-wishlist stubs merged (767→768, 765→770, 761→758); intake dedup otherwise thorough.
+- **Bug bucket FULLY triaged** (4-agent fleet): all 17 owner bugs root-caused with file:line + fix plan +
+  HEADLESS/VM/REPRO classification. Standouts: **TSK-734 is a real crash** (git subprocess in a SwiftUI
+  Menu @ViewBuilder spins a nested runloop during layout → SIGTRAP reentrancy; StatusBar.swift:156-160);
+  728+730 share one cause (SidebarKeyMonitor steals keys from the CM6 editor); 742+743+744 share one
+  (preview slot reuses tab id → stale buffer/scroll). Most are headless-landable.
+- **TSK-739 LANDED + validated (3fb8401):** Cmd+F now toggles the find bar closed on 2nd press
+  (toggle*Bar on FindCoordinator + model wrappers + findInPage routing). 4 new tests, teeth demonstrated,
+  headless gate PASSED (5025 tests).
+- **NOTE for the owner:** TSK-733 (save-prompt on session switch) was parked by the triage as an A/B
+  decision, but the owner's own bug report ("don't we have autosave? why prompt?") already indicates
+  option A (preserve dirty buffers, no prompt) — recommend unparking to A and implementing, not waiting.
+- Next crons: land the headless bugs (734 crash first by severity, then 728/730/729/737/738/742+743+744/
+  740/735/731), VM-validate the rendered ones (VM lane now works), then the 54 minor-features.
+
 ## LOG +338 (2026-06-13 — owner wishlist intake + VM fully unblocked + spike-autonomy directive)
 
 Big owner-interaction session. Highlights:
