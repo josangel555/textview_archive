@@ -27,6 +27,11 @@ RUST_DIR="$ROOT_DIR/rust-core"
 LINK_DIR="$RUST_DIR/link"
 CMOD_DIR="$ROOT_DIR/Sources/CMdvCore"
 
+# The SwiftPM header-staleness guard (TSK-626) lives in a sourceable function so
+# build + a hermetic host test share one implementation.
+# shellcheck source=lib/restage-header.sh
+source "$SCRIPT_DIR/lib/restage-header.sh"
+
 PROFILE="${MDV_RUST_PROFILE:-dist}"
 
 # Guard the app-link path against a panic=abort profile (Architecture invariant
@@ -113,46 +118,20 @@ if [[ ! -f "$HEADER_SRC" ]]; then
 fi
 
 mkdir -p "$LINK_DIR"
-# TSK-626: SwiftPM does NOT track the staged header as a build input either —
-# a header-only change (new const, re-laid-out decl) silently compiles stale
-# dependents, and stale TEST objects against a re-laid-out type SIGSEGV in
-# ways that look like FFI bugs (the documented trap; bit twice). Detect a
-# REAL header change before overwriting so the widened touch below runs only
-# when needed.
-HEADER_CHANGED=1
-if cmp -s "$HEADER_SRC" "$CMOD_DIR/mdvcore.h" 2>/dev/null; then
-  HEADER_CHANGED=0
-fi
 # Stage ONLY the .a — if a stale .dylib lingers in the link dir, SwiftPM's
 # `-lmdvcore_ffi` would prefer it (and reintroduce the team-ID load failure), so
 # remove it.
 rm -f "$LINK_DIR/libmdvcore_ffi.dylib"
 cp "$STATICLIB" "$LINK_DIR/libmdvcore_ffi.a"
 cp "$HEADER_SRC" "$LINK_DIR/mdvcore.h"
-cp "$HEADER_SRC" "$CMOD_DIR/mdvcore.h"
 
-# SwiftPM does NOT track the prebuilt .a as a build input: with no Swift source
-# change in the RustCore target, an incremental `swift build`/`swift test`
-# reuses the previously linked binaries and silently keeps running OLD Rust
-# code (caught 2026-06-10: an A/B parity test compared stale Rust against new
-# Swift). Touch the bridge sources so the next SwiftPM build relinks.
-find "$ROOT_DIR/Sources/RustCore" -name '*.swift' -exec touch {} +
-
-# TSK-626: when the HEADER changed, the touch must reach every target that
-# compiles against its surface — above all the TEST targets pinning header
-# consts (BridgeTests' MDV_CAP_*/MDV_WIRE_VERSION pins, the loopback suites).
-# Stale test objects against a re-laid-out ABI are the SIGSEGV-that-looks-
-# like-an-FFI-bug class. Conditional so routine restages (header unchanged)
-# don't force pointless test-target rebuilds.
-if [[ "$HEADER_CHANGED" == "1" ]]; then
-  echo "==> header CHANGED — touching header-referencing targets (TSK-626)"
-  find "$ROOT_DIR/Tests/RustCoreTests" -name '*.swift' -exec touch {} + 2>/dev/null || true
-  # Any other Swift file that names the header's exported surface.
-  grep -rl --include='*.swift' -E "MDV_CAP_|MDV_WIRE_VERSION|import CMdvCore" \
-      "$ROOT_DIR/Sources" "$ROOT_DIR/Tests" 2>/dev/null | while read -r f; do
-    touch "$f"
-  done
-fi
+# Stage the SwiftPM-imported header + run the staleness touches (TSK-626):
+# detect a real header change before overwriting, always relink the RustCore
+# bridge sources (the prebuilt .a isn't a tracked input), and on a header change
+# widen the touch to the TEST targets + header-surface referents so stale test
+# objects against a re-laid-out ABI can't SIGSEGV-as-FFI-bug. See the function's
+# header in scripts/lib/restage-header.sh; pinned by RustCoreHeaderRestageTests.
+restage_core_header "$HEADER_SRC" "$CMOD_DIR/mdvcore.h" "$ROOT_DIR"
 
 echo "==> staged:"
 echo "    $LINK_DIR/libmdvcore_ffi.a   ($(/usr/bin/du -h "$LINK_DIR/libmdvcore_ffi.a" | awk '{print $1}'))"
