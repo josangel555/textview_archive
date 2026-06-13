@@ -9169,6 +9169,28 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +356 (2026-06-13 — VM render lane PROVEN agent-runnable: TSK-650 + TSK-638 validated off the fixed lane)
+
+- **The §1.5 validation drain via the VM is now an AGENT capability — proven end-to-end this tick.** The big
+  `fixed`-lane pool (~15 items) is gated on `live-validation` (WebView/render). Recipe that WORKS from the
+  host, no owner clicks:
+  `ssh macOS15 'cd markdown_viewer && MDV_RUN_WEBVIEW_TESTS=1 MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> bash scripts/test-in-vm.sh test --filter ViewerUITests.<Suite>'`
+  — rsync first; the `#192` WebView suites RUN (not skip) because `MDV_RUN_WEBVIEW_TESTS=1` is forwarded into
+  the `launchctl asuser` GUI session; Swift 6.3 toolchain auto-selected; warm builds ~4-35s. This directly
+  answers the owner's "do I have to click buttons?" — NO, the agent runs the VM lane.
+- **TSK-650 (owner-repro mermaid render bug) → VALIDATED.** Root cause (d8367fa): `MermaidBundle` loaded
+  resource `"mermaid"` but the file base name is `"mermaid.min"` → nil lookup → every diagram degraded to raw
+  source text (exactly the owner's symptom). Validated FRESH across the pyramid: host `MermaidBundleLoadTests`
+  (2/2 — runtime resolves >1MB from the built bundle = the root cause) + VM `MermaidRenderProbeTests` (1/1,
+  EXECUTED not skipped — the subgraph+`<br/>` flowchart renders an SVG in a live WKWebView).
+- **TSK-638 (Print + Export-as-PDF, Phase 1) → VALIDATED.** Host `PrintExportModelTests` (5/5 — gate matrix +
+  nonce flows + result round-trip) + VM `PDFExportWebViewTests` (2/2 fresh — rendered page → createPDF → `%PDF`
+  magic + >1KB; atomic-write round trip). The lone un-automatable atom (the `⌘P` NSPrintOperation modal panel)
+  is acknowledged in the evidence, not pixel-claimed — the testable surface is fully guarded.
+- No code change this tick (validation-only). Next: keep draining the live-validation pool with the proven
+  lane — clean 1:1 suite↔ticket maps: 641 theming↔EditorThemeParityTests, 660 treesitter highlight, 666 fuzzy
+  filter↔(its WebView/sidebar suite), 468 LSP refs; run the full `run_webview_tests` lane for a broad green.
+
 ## LOG +355 (2026-06-13 — validation drain: TSK-626 header-staleness guard gets an automated regression test)
 
 - **TSK-626 → VALIDATED (ed2821a).** §1.5 validation drain. The SwiftPM header-staleness guard (b314f5a) was
