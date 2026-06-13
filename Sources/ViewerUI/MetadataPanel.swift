@@ -22,16 +22,28 @@ final class MetadataChecksumModel: ObservableObject {
     enum State: Equatable {
         case idle, computing, done(String), failed
     }
-    @Published private(set) var state: State = .idle
+    @Published private(set) var state: State = .idle {
+        didSet { if case .done = state {} else { justCopied = false } }
+    }
     /// The algorithm `compute()` will hash with. Defaults to SHA-256 (the
     /// historical single-algo behavior); the panel offers the full
     /// `ChecksumAlgorithm` set (TSK-748).
     @Published private(set) var algorithm: ChecksumAlgorithm = .sha256
+    /// Transient "Copied!" affordance for the copy button (TSK-748). Set by
+    /// `copyHash()`; the view shows it briefly then calls
+    /// `acknowledgeCopiedFeedback()`. Cleared whenever the hash leaves `.done`.
+    @Published private(set) var justCopied = false
     private(set) var url: URL?
+    private let pasteboard: PasteboardIO
 
     /// Most recently mounted panel's model — the script-verb seam.
     private(set) static weak var live: MetadataChecksumModel?
-    init() { Self.live = self }
+    /// `pasteboard` is injectable so the copy action is host-testable without
+    /// clobbering the developer's real `NSPasteboard.general`.
+    init(pasteboard: PasteboardIO = SystemPasteboard()) {
+        self.pasteboard = pasteboard
+        Self.live = self
+    }
 
     /// New file ⇒ drop any prior hash. Idempotent for the same URL so a
     /// re-render doesn't clear a computed hash.
@@ -50,6 +62,17 @@ final class MetadataChecksumModel: ObservableObject {
         self.algorithm = algorithm
         state = .idle
     }
+
+    /// Copy the computed hash to the pasteboard and raise the transient
+    /// "Copied!" feedback. No-op unless a hash is currently displayed.
+    func copyHash() {
+        guard case .done(let hex) = state else { return }
+        pasteboard.writeString(hex)
+        justCopied = true
+    }
+
+    /// The view calls this after the brief feedback window elapses.
+    func acknowledgeCopiedFeedback() { justCopied = false }
 
     /// The "Compute" button's action. Hashes OFF the main thread (a large
     /// file's disk read must not block the UI — cf. TSK-214). The identity
@@ -166,10 +189,21 @@ struct MetadataPanel: View {
         case .done(let hex):
             VStack(alignment: .leading, spacing: 4) {
                 row(Row(label, hex))
-                Button("Copy") { SystemPasteboard().writeString(hex) }
-                    .font(.system(size: 10 * uiScale))
-                    .buttonStyle(.link)
-                    .accessibilityIdentifier("mdv.metadata.copyChecksum")
+                Button(checksumModel.justCopied ? "Copied!" : "Copy") {
+                    checksumModel.copyHash()
+                }
+                .font(.system(size: 10 * uiScale))
+                .buttonStyle(.link)
+                .foregroundStyle(checksumModel.justCopied ? Color.green : Color.accentColor)
+                .accessibilityIdentifier("mdv.metadata.copyChecksum")
+                .task(id: checksumModel.justCopied) {
+                    // Brief "Copied!" confirmation, then revert. Bound to the
+                    // flag so each copy restarts the window; cancellation on
+                    // re-render is automatic via `.task(id:)`.
+                    guard checksumModel.justCopied else { return }
+                    try? await Task.sleep(for: .milliseconds(1200))
+                    if !Task.isCancelled { checksumModel.acknowledgeCopiedFeedback() }
+                }
             }
         case .failed:
             Text("Couldn’t read file")

@@ -153,6 +153,57 @@ final class MetadataChecksumModelTests: XCTestCase {
                        "the stale .sha256 completion must NOT clobber the .md5 idle state")
     }
 
+    // MARK: - Copy button feedback (TSK-748)
+
+    private final class FakePasteboard: PasteboardIO {
+        private(set) var stored: String?
+        private(set) var writeCount = 0
+        func readString() -> String? { stored }
+        func writeString(_ s: String) { stored = s; writeCount += 1 }
+    }
+
+    func test_copyHash_writesDisplayedHash_andRaisesFeedback() async throws {
+        let pb = FakePasteboard()
+        let model = MetadataChecksumModel(pasteboard: pb)
+        model.configure(url: try file("abc.bin", "abc"))
+        model.compute()
+        await waitUntil { model.state != .computing }
+        XCTAssertEqual(model.state, .done(Self.abcSHA))
+        XCTAssertFalse(model.justCopied)
+
+        model.copyHash()
+        XCTAssertEqual(pb.stored, Self.abcSHA, "copy must write the displayed hash")
+        XCTAssertEqual(pb.writeCount, 1)
+        XCTAssertTrue(model.justCopied, "copy must raise the transient feedback")
+
+        model.acknowledgeCopiedFeedback()
+        XCTAssertFalse(model.justCopied, "acknowledging clears the feedback")
+    }
+
+    func test_copyHash_noOpWhenNoHashDisplayed() {
+        let pb = FakePasteboard()
+        let model = MetadataChecksumModel(pasteboard: pb)
+        model.copyHash()                       // .idle — nothing to copy
+        XCTAssertEqual(pb.writeCount, 0, "no displayed hash ⇒ pasteboard untouched")
+        XCTAssertFalse(model.justCopied)
+    }
+
+    func test_leavingDoneState_clearsCopiedFeedback() async throws {
+        let pb = FakePasteboard()
+        let model = MetadataChecksumModel(pasteboard: pb)
+        model.configure(url: try file("abc.bin", "abc"))
+        model.compute()
+        await waitUntil { model.state != .computing }
+        model.copyHash()
+        XCTAssertTrue(model.justCopied)
+
+        // Switching algorithm drops state→.idle, which must clear the stale
+        // "Copied!" affordance (it referred to the now-gone hash).
+        model.select(algorithm: .md5)
+        XCTAssertEqual(model.state, .idle)
+        XCTAssertFalse(model.justCopied, "leaving .done must clear the copied feedback")
+    }
+
     func test_setAlgorithmVerb_drivesSelectionAndDumpProjectsIt() async throws {
         let harness = HeadlessHarness(label: "MetadataChecksumModelTests-algo")
         defer { harness.cleanup() }
