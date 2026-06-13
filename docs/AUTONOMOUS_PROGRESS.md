@@ -9169,6 +9169,27 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +368 (2026-06-13 — TSK-732: unify View/Edit/split font resolution)
+
+- **TSK-732 fixed (commit `f90bef7`, triaged→review).** User-facing editor bug: the source font looked different
+  between View and Edit. Root cause — View resolves `sourceFontName` via `NSFont(name:)` → a real family, but Edit
+  shipped the **same raw string** into CM6 as a CSS `font-family`, and CSS matching ≠ `NSFont(name:)` matching (a
+  face/PostScript name AppKit resolves doesn't match as a CSS family) → the two surfaces could land on different
+  fonts. SplitPaneView passed **no** font → always SF Mono, ignoring the user's pick.
+  - **Fix:** `FontPreference.cssFamily(for:)` returns the family AppKit *actually* resolves (`NSFont.familyName`),
+    so CM6 names the SAME family the View renders; nil/unresolvable → nil (CM6 keeps its monospace default = the
+    View's SF-Mono nil-path). ContentView feeds CM6 `cssFamily(for: sourceFontName)` instead of the raw string;
+    SplitPane's `TextDisplayView` now passes `fontName: model.sourceFontName`.
+  - **Teeth:** making `cssFamily` echo the raw name turned the test red (`"Menlo-Regular"` ≠ `"Menlo"` — the
+    face→family normalization that prevents the divergence). 7/7 FontPreferenceTests + headless gate green.
+  - **Triage corrections:** the "Shoulder" the triage flagged (`ShoulderRailView:204/263`) is **SF-Symbol icons** —
+    `.font(.system)` sizes the glyph, not a code-text surface; no change needed (triage misread it). The "View as →
+    lock-icon affordance" is a UX redesign, **split to TSK-811** (a feature, not the font bug).
+  - Held at review: resolution logic host-guarded with teeth; on-screen View==Edit parity is a CM6-webview pixel
+    check (ImageRenderer false-green) → VM/owner tail.
+- **Pick rationale:** USER-FACING editor bug (owner priority #1), triaged/groomed, headless core. Picked in 1 board
+  read (the triaged lane). Standing blockers unchanged (Stage B 810 owner-decision; perf cluster supervised).
+
 ## LOG +367 (2026-06-13 — TSK-806: split pane shows unsaved edits, URL-keyed)
 
 - **TSK-806 fixed (commit `e87a20a`, reported→review).** A user-facing editor bug (sibling of the validated
