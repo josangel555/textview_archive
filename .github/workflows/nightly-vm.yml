@@ -70,6 +70,7 @@ jobs:
             --filter ViewerUITests.MultiCursorWebViewTests \
             --filter ViewerUITests.PaneRetentionMountProbeTests \
             --filter ViewerUITests.PDFExportWebViewTests \
+            --filter ViewerUITests.PaneScrollRestoreWebViewTests \
             --filter ViewerUITests.RenderedFindBarTests
 
       - name: Upload test results
