@@ -9169,6 +9169,30 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +331 (2026-06-13 tick — TSK-580 envelope SLICE 5: ALL 8 stateless methods on the envelope)
+
+Continued TSK-580 (approved, in-flight). Slice 5 brings the last method (highlight) into the
+envelope, so the stateless `CoreTransport` seam is now 100% on `mdvcore_call` — fully remote-ready.
+
+- **Slice 5 (commit pending, both gates green):**
+  - core/dispatch.rs: `Method::HighlightRuns = 9` joins the UNIFIED id space (NEXT_FREE_ID→10), but
+    `dispatch::call` does NOT route it (the impl is in the separate mdvcore-highlight crate) — a
+    defensive Err arm documents that, tested by `core_call_refuses_highlight_runs`.
+  - ffi/lib.rs: `MDV_METHOD_HIGHLIGHT_RUNS = 9` (cbindgen → header) + `mdvcore_call` intercepts id 9
+    and routes it to `highlight_runs::runs_wire` (the FFI links both crates). FFI test: envelope id 9
+    == the old mdvcore_highlight_runs symbol byte-for-byte (teeth: a mis-route to dispatch::call hits
+    the defensive Err → status diverges).
+  - CoreTransport.swift: `InProcessTransport.methodIds` now has all 8 stateless methods; the
+    per-method-symbol `exports` table is EMPTY. Migration pin updated (all 8 in the envelope table,
+    exports empty).
+  - Validated: rust-core gate + Swift headless gate green; drift-pin covers all 9 ids; 77+ seam/
+    parity tests green (behavior-preserving).
+- **TSK-580 status:** the dispatch + method-id registry + cross-language constants + the FULL
+  stateless-seam migration (8/8 methods) are DONE across slices 1/2/4/5. REMAINING: (3) the aux bulk
+  side-channel (hex render ~18 MB via aux, dodging the 16 MiB frame cap — the one genuinely new
+  mechanism left); then deprecate/remove the now-unused per-method C symbols after a soak. Stays
+  `progress` for slice 3 + the symbol cleanup.
+
 ## LOG +330 (2026-06-13 tick — TSK-580 envelope SLICE 4: the stateless transport seam now uses it)
 
 Continued TSK-580 (approved, in-flight; no owner answer yet). Slice 4 makes the envelope the
