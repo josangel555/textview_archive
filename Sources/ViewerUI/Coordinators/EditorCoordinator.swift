@@ -114,6 +114,17 @@ public final class EditorCoordinator: ObservableObject {
     /// session). Cross-session persistence is a Phase 3+ deliverable.
     @Published public private(set) var editorScrollByTab: [UUID: CMScrollPosition] = [:]
 
+    /// TSK-743: editor scroll/cursor remembered per FILE URL for the ephemeral
+    /// preview slot. The slot reuses ONE tab id across file swaps, so its
+    /// id-keyed scroll/cursor is RESET on each swap (isolation — TSK-744); this
+    /// is the complementary "remember & restore" half — re-previewing a file you
+    /// scrolled earlier restores its position. FIFO-bounded so a long session
+    /// previewing many distinct files can't grow it without limit.
+    private var previewScrollByURL: [URL: CMScrollPosition] = [:]
+    private var previewCursorByURL: [URL: CMCursorPosition] = [:]
+    private var previewURLOrder: [URL] = []
+    private let previewMemoryCap = 64
+
     /// Per-tab pending diagnostics payload. `CodeMirrorEditorView`
     /// reads + clears this on each `updateNSView` cycle so re-renders
     /// don't re-ship the same set.
@@ -214,6 +225,44 @@ public final class EditorCoordinator: ObservableObject {
         pendingEditorDiagnostics.removeValue(forKey: id)
         pendingEditorGutterMarkers.removeValue(forKey: id)
         editorFoldRangesByTab.removeValue(forKey: id)
+    }
+
+    /// TSK-743: remember `id`'s current editor scroll/cursor under `url` (the
+    /// file LEAVING the preview slot) so a later re-preview of `url` can restore
+    /// it. A no-op when nothing is recorded (don't pollute the store with nil).
+    /// Call BEFORE `resetEditorState` drops the id-keyed state.
+    public func stashPreviewState(forTabID id: UUID, url: URL) {
+        let scroll = editorScrollByTab[id]
+        let cursor = editorCursorByTab[id]
+        guard scroll != nil || cursor != nil else { return }
+        if previewScrollByURL[url] == nil, previewCursorByURL[url] == nil {
+            previewURLOrder.append(url)
+            if previewURLOrder.count > previewMemoryCap {
+                let evict = previewURLOrder.removeFirst()
+                previewScrollByURL.removeValue(forKey: evict)
+                previewCursorByURL.removeValue(forKey: evict)
+            }
+        }
+        previewScrollByURL[url] = scroll
+        previewCursorByURL[url] = cursor
+    }
+
+    /// TSK-743: re-seed `id`'s editor scroll/cursor from `url`'s remembered
+    /// preview state, if any. Returns true when state was restored (the caller's
+    /// `ensureEditorBuffer`/CM6 seed then applies the position). No stored entry
+    /// ⇒ leaves `id` reset (top), which is also the isolation case (TSK-744).
+    @discardableResult
+    public func restorePreviewState(forTabID id: UUID, url: URL) -> Bool {
+        var restored = false
+        if let scroll = previewScrollByURL[url] {
+            editorScrollByTab[id] = scroll
+            restored = true
+        }
+        if let cursor = previewCursorByURL[url] {
+            editorCursorByTab[id] = cursor
+            restored = true
+        }
+        return restored
     }
 
     // MARK: - editorBuffers (forwarders to TabCoordinator)

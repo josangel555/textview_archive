@@ -3912,8 +3912,17 @@ public final class DocumentModel: ObservableObject {
                let now = tabCoordinator.tabs.tabs.first(where: { $0.id == prior.id && $0.isPreview }),
                now.url != prior.url,
                !(tabCoordinator.editorBuffers[prior.id]?.isDirty ?? false) {
+                // TSK-743: remember the OUTGOING file's scroll/cursor before the
+                // reset drops it, so returning to it via preview restores the
+                // position; TSK-744: reset the reused id so the INCOMING file
+                // doesn't inherit it; then restore the incoming file's own
+                // remembered position (no-op/top when never previewed = isolation).
+                if let priorURL = prior.url {
+                    editor.stashPreviewState(forTabID: prior.id, url: priorURL)
+                }
                 tabCoordinator.discardEditorBuffer(forTabID: prior.id)
                 editor.resetEditorState(forTabID: prior.id)
+                editor.restorePreviewState(forTabID: prior.id, url: resolved)
             }
         } else {
             tabCoordinator.openOrReveal(url: resolved, state: state, viewMode: mode)

@@ -210,4 +210,38 @@ final class DocumentModelPreviewTests: XCTestCase {
         XCTAssertEqual(model.editorBuffer(forTabID: id)?.text, "alpha",
                        "same-file re-preview must keep the buffer")
     }
+
+    func test_previewReturn_restoresScrollAndCursorPerFile() throws {
+        // TSK-743 (the "preserve scroll state per file" wish, distinct from the
+        // TSK-744 isolation defect above): the preview slot now REMEMBERS each
+        // file's scroll/cursor by URL, so returning to a file you scrolled
+        // earlier restores its position — while a never-before-previewed file
+        // still starts clean (isolation preserved).
+        let model = makeModel()
+        let a = try writeFile("a.txt", "alpha\nbeta\ngamma\ndelta\n")
+        let b = try writeFile("b.txt", "bravo\necho\n")
+        model.openPreview(url: a)
+        let id = try XCTUnwrap(model.tabs.previewTabID)
+        _ = model.editorBuffer(forTabID: id)
+        model.recordEditorScroll(
+            CMScrollPosition(top: 500, left: 0, viewportFromLine: 40, viewportToLine: 60),
+            forTabID: id)
+        model.recordEditorCursor(
+            CMCursorPosition(line: 3, column: 2, head: 17, rangeCount: 1), forTabID: id)
+
+        // Swap to B (never previewed): isolation — A's state must NOT leak.
+        model.openPreview(url: b)
+        XCTAssertEqual(model.tabs.previewTabID, id, "same reused preview slot")
+        XCTAssertNil(model.editor.editorScrollByTab[id],
+                     "B starts clean — A's scroll does not leak (TSK-744)")
+        XCTAssertNil(model.editor.editorCursorByTab[id],
+                     "B starts clean — A's cursor does not leak (TSK-744)")
+
+        // Return to A: its remembered scroll + cursor must be restored.
+        model.openPreview(url: a)
+        XCTAssertEqual(model.editor.editorScrollByTab[id]?.top, 500,
+                       "returning to A restores A's remembered scroll (TSK-743)")
+        XCTAssertEqual(model.editor.editorCursorByTab[id]?.head, 17,
+                       "returning to A restores A's remembered cursor (TSK-743)")
+    }
 }
