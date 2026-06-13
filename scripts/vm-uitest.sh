@@ -32,6 +32,24 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LABEL="com.markdownviewer.uitest"
 REMOTE_HOME_CMD='echo $HOME'
 
+# Per-scene SEMANTIC expectation (TSK-492/640): the SwiftUI view a11y ids that
+# MUST appear in the out-of-process AX tree (`<scene>.ax`) for the scene's UI to
+# have actually rendered. Proven viable — the AX walk surfaces `mdv.*`
+# accessibilityIdentifier values (e.g. mdv.terminal.pane, mdv.lspRename.panel),
+# not just AppKit menu selectors. This is the authoritative PASS/FAIL for
+# OVERLAY/sheet scenes, where the legacy dense-saturated-block pixel eval (tuned
+# for the terminal tab strip) false-passes on an unrelated accent chip. The
+# `.png` is still captured every run for visual corroboration; per CLAUDE.md a
+# frame-targeted pixel-visibility assertion (needs a frame-aware ax-reader) is a
+# follow-up — AX-presence is the regression guard for "the element stopped
+# rendering", the most likely regression.
+scene_expect() {
+  case "$1" in
+    lsp-rename) echo "mdv.lspRename.panel" ;;
+    *) echo "" ;;
+  esac
+}
+
 rsync_tree() {
   rsync -az --delete \
     --exclude='.build/' --exclude='.swiftpm/' --exclude='dist/' \
@@ -75,6 +93,23 @@ case "$cmd" in
       echo "AX identifiers (out-of-process tree read):"; sed 's/^/  /' "/tmp/mdv-vm-ui/$scene.ax"
     fi
     grep -q '^CAPTURED' "/tmp/mdv-vm-ui/$scene.result" || { echo "FAIL: agent did not capture (Screen Recording denied? see result)"; exit 4; }
+    # SEMANTIC ASSERTION (overlay/sheet scenes): PASS iff every expected mdv.*
+    # a11y id is present in the out-of-process AX tree — generalizes the harness
+    # beyond the terminal-only dense-block pixel eval (which false-passes on an
+    # unrelated accent chip for non-terminal scenes). The .png stays captured for
+    # visual corroboration.
+    expect="$(scene_expect "$scene")"
+    if [ -n "$expect" ]; then
+      [ -s "/tmp/mdv-vm-ui/$scene.ax" ] || { echo "FAIL: no AX dump for '$scene' (Accessibility denied for the reader binary?)"; exit 6; }
+      missing=""
+      for id in $expect; do
+        grep -qxF "$id" "/tmp/mdv-vm-ui/$scene.ax" || missing="$missing $id"
+      done
+      if [ -n "$missing" ]; then
+        echo "FAIL: expected a11y id(s) absent from the AX tree:$missing -> /tmp/mdv-vm-ui/$scene.png"; exit 6
+      fi
+      echo "PASS (a11y): expected ids present [$expect] -> /tmp/mdv-vm-ui/$scene.png"; exit 0
+    fi
     # PIXEL EVAL on the HOST (has Pillow; the VM doesn't). A dense saturated
     # (accent-chip) block anywhere in the window-minus-status-bar band proves
     # the terminal tab strip composited — works for any dock edge.
