@@ -247,6 +247,20 @@ public final class DocumentModel: ObservableObject {
     /// Initial text for the rename field — empty for now (the user types the
     /// new name); a prepareRename placeholder is a follow-up.
     public private(set) var lspRenamePrefill: String = ""
+
+    /// LSP "Code Actions…" picker (TSK-640). The command/menu opens it; it
+    /// fetches actions at the cursor (async), presents the list, and applies the
+    /// pick via the host-tested applyCodeAction. Mirrors the rename prompt with
+    /// an async fetch state.
+    public enum CodeActionPickerState: Equatable {
+        case hidden
+        case loading
+        case presenting([LSPCodeAction])
+    }
+    @Published public private(set) var codeActionPicker: CodeActionPickerState = .hidden
+    /// Bumped on every show/dismiss so a slow fetch landing AFTER the user
+    /// dismissed (or re-opened) is dropped rather than popping a stale list.
+    private var codeActionPickerGeneration = 0
     /// Last error produced by the most recent `commitGoToPath` call.
     /// Empty string when the last commit succeeded or no commit has
     /// happened yet. Surfaced to the diagnostic dump so VM UI tests can
@@ -2366,6 +2380,47 @@ public final class DocumentModel: ObservableObject {
         applyWorkspaceEditToOpenTabs(
             action.edit, dispatchTabID: tab.id, dispatchSnapshot: snapshot)
         return true
+    }
+
+    /// Whether the active editor can offer code actions now (an LSP language +
+    /// a recorded cursor). Gates the command/menu + showCodeActionPicker. (TSK-640.)
+    public var canRequestCodeActions: Bool {
+        guard let tab = tabs.selected, let url = tab.url else { return false }
+        guard lspPool.registry.language(for: url) != nil else { return false }
+        return editor.editorCursorByTab[tab.id] != nil
+    }
+
+    /// Open the code-action picker: present a spinner, fetch actions at the
+    /// cursor off-main, then list them (or auto-dismiss if none). No-op on a
+    /// non-LSP context (the command's enablement greys it; this guards the
+    /// script/programmatic path). (TSK-640.)
+    public func showCodeActionPicker() {
+        guard canRequestCodeActions else { return }
+        codeActionPickerGeneration += 1
+        let generation = codeActionPickerGeneration
+        codeActionPicker = .loading
+        Task { [weak self] in
+            guard let self else { return }
+            let actions = await self.codeActionsAtCursor()
+            // Drop a late fetch the user already dismissed / superseded.
+            guard self.codeActionPickerGeneration == generation,
+                  self.codeActionPicker == .loading else { return }
+            self.codeActionPicker = actions.isEmpty ? .hidden : .presenting(actions)
+        }
+    }
+
+    public func dismissCodeActionPicker() {
+        codeActionPickerGeneration += 1
+        codeActionPicker = .hidden
+    }
+
+    /// Apply a picked action and dismiss. Returns applyCodeAction's result
+    /// (false = command-only / refused) so the view can beep on a no-op. (TSK-640.)
+    @discardableResult
+    public func pickCodeAction(_ action: LSPCodeAction) -> Bool {
+        let applied = applyCodeAction(action)
+        dismissCodeActionPicker()
+        return applied
     }
 
     /// JS posted a right-click. Build a native NSMenu and pop it at

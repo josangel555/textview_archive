@@ -239,4 +239,122 @@ final class LSPRenameEndToEndTests: HeadlessUITestCase {
         XCTAssertEqual(try String(contentsOf: closedURL, encoding: .utf8), doc,
             "an unopened file must NEVER be modified on disk")
     }
+
+    // MARK: - Code-action PICKER state machine (TSK-640)
+
+    private func presentedActions(_ model: DocumentModel) -> [LSPCodeAction]? {
+        if case .presenting(let a) = model.codeActionPicker { return a }
+        return nil
+    }
+
+    /// `showCodeActionPicker()` flips to `.loading` synchronously, then the
+    /// async fetch lands the fixture's two actions as `.presenting`.
+    func test_codeActionPicker_show_loadsThenPresents() async throws {
+        let model = try makeModelWithFakeLSP()
+        let url = try harness.writeFile("pick.fakelsp", doc)
+        model.open(url: url)
+        let id = model.tabs.selected!.id
+        _ = model.editor.editorBuffer(forTabID: id)
+        seedCursor(model, tabID: id)
+
+        XCTAssertTrue(model.canRequestCodeActions,
+                      "an LSP editor with a recorded cursor can request actions")
+        model.showCodeActionPicker()
+        XCTAssertEqual(model.codeActionPicker, .loading,
+                       "the picker shows a spinner immediately while it fetches")
+
+        await waitUntil { self.presentedActions(model) != nil }
+        XCTAssertEqual(presentedActions(model)?.count, 2,
+                       "fetch lands the fixture's edit-bearing + command-only actions")
+    }
+
+    /// Picking the edit-bearing action applies it to the buffer and dismisses.
+    func test_codeActionPicker_pickEditBearing_appliesAndDismisses() async throws {
+        let model = try makeModelWithFakeLSP()
+        let url = try harness.writeFile("pickapply.fakelsp", doc)
+        model.open(url: url)
+        let id = model.tabs.selected!.id
+        _ = model.editor.editorBuffer(forTabID: id)
+        seedCursor(model, tabID: id)
+
+        model.showCodeActionPicker()
+        await waitUntil { self.presentedActions(model) != nil }
+        let editBearing = try XCTUnwrap(presentedActions(model)?.first { !$0.edit.isEmpty })
+
+        XCTAssertTrue(model.pickCodeAction(editBearing), "an edit-bearing pick applies")
+        XCTAssertEqual(model.codeActionPicker, .hidden, "applying dismisses the picker")
+        XCTAssertTrue(model.editor.editorBuffers[id]!.text.hasPrefix("FIXED foo = 1"),
+                      "the picked action's edit must land in the buffer")
+    }
+
+    /// A command-only pick is refused (no edit applied) but still dismisses —
+    /// this viewer never executes server commands.
+    func test_codeActionPicker_pickCommandOnly_refusedButDismisses() async throws {
+        let model = try makeModelWithFakeLSP()
+        let url = try harness.writeFile("pickcmd.fakelsp", doc)
+        model.open(url: url)
+        let id = model.tabs.selected!.id
+        _ = model.editor.editorBuffer(forTabID: id)
+        seedCursor(model, tabID: id)
+
+        model.showCodeActionPicker()
+        await waitUntil { self.presentedActions(model) != nil }
+        let commandOnly = try XCTUnwrap(presentedActions(model)?.first { $0.edit.isEmpty })
+
+        XCTAssertFalse(model.pickCodeAction(commandOnly), "command-only is refused")
+        XCTAssertEqual(model.codeActionPicker, .hidden, "but the picker still dismisses")
+        XCTAssertEqual(model.editor.editorBuffers[id]?.text, doc,
+                       "a refused pick must not touch the buffer")
+    }
+
+    /// `dismissCodeActionPicker()` resets to hidden, and its generation bump
+    /// makes a still-in-flight fetch a no-op (it must NOT resurrect the panel).
+    func test_codeActionPicker_dismissDuringFetch_staysHidden() async throws {
+        let model = try makeModelWithFakeLSP()
+        let url = try harness.writeFile("pickrace.fakelsp", doc)
+        model.open(url: url)
+        let id = model.tabs.selected!.id
+        _ = model.editor.editorBuffer(forTabID: id)
+        seedCursor(model, tabID: id)
+
+        model.showCodeActionPicker()
+        XCTAssertEqual(model.codeActionPicker, .loading)
+        model.dismissCodeActionPicker()
+        XCTAssertEqual(model.codeActionPicker, .hidden, "dismiss is immediate")
+
+        // Give the in-flight fetch time to resolve; it must not re-present.
+        try? await Task.sleep(for: .milliseconds(800))
+        XCTAssertEqual(model.codeActionPicker, .hidden,
+                       "a fetch that resolves after dismiss must be dropped")
+    }
+
+    /// The guard: no cursor / non-LSP file ⇒ can't request, and show is a no-op.
+    func test_canRequestCodeActions_gate() throws {
+        let model = try makeModelWithFakeLSP()
+        let url = try harness.writeFile("gate.fakelsp", doc)
+        model.open(url: url)
+        let id = model.tabs.selected!.id
+        _ = model.editor.editorBuffer(forTabID: id)
+
+        XCTAssertFalse(model.canRequestCodeActions, "no recorded cursor ⇒ can't request")
+        model.showCodeActionPicker()
+        XCTAssertEqual(model.codeActionPicker, .hidden, "show is a no-op without a cursor")
+    }
+
+    /// The `show-code-actions` script verb (command/menu entry) presents the
+    /// picker and drives the host-tested fetch to `.presenting`.
+    func test_showCodeActionsVerb_presentsPicker() async throws {
+        let model = try makeModelWithFakeLSP()
+        let url = try harness.writeFile("verbca.fakelsp", doc)
+        model.open(url: url)
+        let id = model.tabs.selected!.id
+        _ = model.editor.editorBuffer(forTabID: id)
+        seedCursor(model, tabID: id)
+
+        ScriptVerb.apply(verb: "show-code-actions", to: model, sessions: harness.sessions)
+        XCTAssertEqual(model.codeActionPicker, .loading, "the verb presents the picker")
+        await waitUntil { self.presentedActions(model) != nil }
+        XCTAssertEqual(presentedActions(model)?.count, 2,
+                       "the verb drives the full fetch to presenting")
+    }
 }

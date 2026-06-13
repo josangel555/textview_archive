@@ -173,6 +173,11 @@ public enum ScriptVerb {
             // command's enablement greys it; showLSPRenamePrompt guards too).
             // The prompt's submit calls renameActiveEditorSymbolViaLSP.
             model.showLSPRenamePrompt()
+        case "show-code-actions":
+            // Open the LSP "Code Actions…" picker at the active editor cursor
+            // (TSK-640) — the command/menu entry. Fetches off-main + lists;
+            // picking applies the edit-bearing action (command-only refused).
+            model.showCodeActionPicker()
         case "set-theme":
             // Headless theming seam (TSK-641): select a theme by id — the
             // automation/UAT equivalent of the Settings → Appearance picker.

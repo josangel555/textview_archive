@@ -316,6 +316,16 @@ public struct ContentView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
 
+            // MARK: - LSP Code Actions picker overlay (TSK-640)
+            if model.codeActionPicker != .hidden {
+                Color.black.opacity(0.18)
+                    .ignoresSafeArea()
+                    .onTapGesture { model.dismissCodeActionPicker() }
+                CodeActionPicker(model: model)
+                    .padding(.top, 80)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
+
             // UX-H (#230): the custom floating tooltip overlay. Mounted
             // LAST so it sits at the top of the Z-order (above every
             // chrome bar + panel). It observes only the small, dedicated
