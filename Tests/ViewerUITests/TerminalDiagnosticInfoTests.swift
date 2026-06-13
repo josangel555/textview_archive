@@ -71,7 +71,7 @@ final class TerminalDiagnosticInfoTests: HeadlessUITestCase {
         }
         view.frame = NSRect(x: 0, y: 0, width: 575, height: 320)
         view.layoutSubtreeIfNeeded()
-        view.update(screen: screen, fontSize: 13)
+        view.update(screen: screen, version: 1, fontSize: 13)
 
         let info = view.diagnosticGridInfo()
         XCTAssertEqual(info["gridMatchesBounds"] as? Bool, true,

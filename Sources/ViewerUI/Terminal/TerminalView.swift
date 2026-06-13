@@ -60,9 +60,10 @@ struct TerminalRepresentable: NSViewRepresentable {
 
     func updateNSView(_ nsView: TerminalNSView, context: Context) {
         // Reading `model.version` in `body` is what makes SwiftUI call
-        // this on a frame bump; pull the fresh snapshot + push it in.
-        _ = model.version
-        nsView.update(screen: model.screenSnapshot, fontSize: fontSize)
+        // this on a frame bump; pull the fresh snapshot + push it in. The
+        // view installs it only when `version` actually changed (TSK-741 —
+        // no per-frame deep screen compare on the main thread).
+        nsView.update(screen: model.screenSnapshot, version: model.version, fontSize: fontSize)
     }
 
     @MainActor

@@ -175,28 +175,45 @@ final class TerminalNSView: NSView, SidebarKeyMonitorExempt, NSMenuItemValidatio
 
     // MARK: - Public update
 
+    /// The model `version` last installed — the gate that replaces a per-frame
+    /// deep value-compare of the whole screen (TSK-741). `nil` until the first
+    /// `update`, so the initial snapshot always installs.
+    private var lastScreenVersion: Int?
+
     /// Install a new screen snapshot + font size and redraw. Called from
     /// the representable's `updateNSView` (main actor) on a version bump.
-    func update(screen: TerminalScreen, fontSize: CGFloat) {
+    ///
+    /// TSK-741: the install is gated on the model's monotonic `version` — the
+    /// authoritative "screen changed" signal — instead of `self.screen != screen`.
+    /// That `==` is a synthesized deep compare over `cells` + up to ~1256
+    /// scrollback rows; running it on the MAIN THREAD once per coalesced frame
+    /// was the residual ANR when a large output burst (e.g. pasting big JSON
+    /// into vim) filled the scrollback — ~100K cell comparisons per frame even
+    /// when only the bottom rows changed. `version` bumps on every screen
+    /// mutation, so an unchanged version means byte-identical content and there
+    /// is nothing to reinstall.
+    func update(screen: TerminalScreen, version: Int, fontSize: CGFloat) {
         var changed = false
         if self.fontSize != fontSize { self.fontSize = fontSize; changed = true }
-        let oldScrollback = self.screen.scrollback.count
-        if self.screen != screen { self.screen = screen; changed = true }
-        let newScrollback = self.screen.scrollback.count
-        // While scrolled up (reading history), new shell output that pushes
-        // lines into scrollback would otherwise slide the "frozen" view —
-        // and drag a held selection off its content. Advance the offset by
-        // the same growth so the viewport stays pinned to what the user is
-        // reading (capped at the buffer; at the cap the oldest line is
-        // genuinely evicted and can't be pinned).
-        if scrollOffset > 0, newScrollback > oldScrollback {
-            setScrollOffset(min(scrollOffset + (newScrollback - oldScrollback), newScrollback))
+        if version != lastScreenVersion {
+            lastScreenVersion = version
+            let oldScrollback = self.screen.scrollback.count
+            self.screen = screen
+            let newScrollback = self.screen.scrollback.count
             changed = true
-        }
-        // Keep the viewport valid as scrollback shrinks (resize/reset).
-        if scrollOffset > newScrollback {
-            setScrollOffset(newScrollback)
-            changed = true
+            // While scrolled up (reading history), new shell output that pushes
+            // lines into scrollback would otherwise slide the "frozen" view —
+            // and drag a held selection off its content. Advance the offset by
+            // the same growth so the viewport stays pinned to what the user is
+            // reading (capped at the buffer; at the cap the oldest line is
+            // genuinely evicted and can't be pinned).
+            if scrollOffset > 0, newScrollback > oldScrollback {
+                setScrollOffset(min(scrollOffset + (newScrollback - oldScrollback), newScrollback))
+            }
+            // Keep the viewport valid as scrollback shrinks (resize/reset).
+            if scrollOffset > newScrollback {
+                setScrollOffset(newScrollback)
+            }
         }
         if changed { needsDisplay = true }
     }
