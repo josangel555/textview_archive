@@ -430,7 +430,8 @@ public struct ContentView: View {
                     zoom: model.zoom,
                     theme: model.activeTheme,
                     onClose: { model.closeSplit() },
-                    model: model
+                    model: model,
+                    tabs: model.tabCoordinator
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("mdv.split")

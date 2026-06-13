@@ -25,6 +25,13 @@ struct SplitPaneView: View {
     let theme: SyntaxTheme
     let onClose: () -> Void
     @ObservedObject var model: DocumentModel
+    /// TSK-806: the split source text comes from the live editor buffer
+    /// (`model.splitPaneText`), which is owned by `tabCoordinator` and is
+    /// deliberately NOT forwarded into `DocumentModel.objectWillChange`
+    /// (PERF #1 severed that to kill a republish storm). Observing the
+    /// coordinator DIRECTLY re-bodies the split on each keystroke so unsaved
+    /// edits appear here — the same narrow-observation pattern StatusBar uses.
+    @ObservedObject var tabs: TabCoordinator
 
     /// Per-instance pseudo-tab-id for CSV filter state. @State keeps
     /// it stable across body re-renders for this SplitPaneView
