@@ -9169,6 +9169,24 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +398 (2026-06-13 — owner "use subagents generously": 6-agent bug-tail investigation + TSK-741 terminal-ANR output-leg fix)
+
+Owner asked for a ~40-tick priority plan + generous subagent use. Delivered the plan (4 waves: P0 user-facing
+bug tail → P1 MountedPanesLRU decision → P2 fixed-lane validation drain → P3 remaining groomed) and fanned out a
+**6-agent parallel investigation** of the `review`-lane bug tail (728/730/732/734/736/741 + 806/743). KEY OUTCOME —
+the tail is mostly already-fixed-pending-VM, BUT the fleet found **two tickets mis-stated as fixed with live
+residuals** (741 terminal output-leg, 743 rendered-scroll) and **4 clean host-actionable fixes** (806 split-pane
+observation, 732 font line-height/rounding, 736 hover paint-signature guard, 730 PageDown/Home/End WebView-lane test).
+Precise file:line fix sketches captured per ticket — de-risks the next ~10 ticks.
+
+- **TSK-741 output leg → fixed (commit `b79b8b2`, headless gate green; held at review for VM felt-latency).** The
+  input/paste leg was already off-main (8fd89a0), but a large burst (big JSON echoed by vim) still beachballed:
+  `TerminalNSView.update` did `if self.screen != screen` — a synthesized DEEP value-compare over cells + up to ~1256
+  scrollback rows on the MAIN THREAD, once per coalesced frame. Fix: gate the install on the model's monotonic
+  `version` (the authoritative change signal) instead of the deep `==`; `update(screen:version:fontSize:)` +
+  nil-first `lastScreenVersion`. 4 new `TerminalUpdateVersionGateTests` with teeth (revert to deep-compare → the
+  same-version-different-content test reddens; mutant compiled; restored). Felt no-beachball = VM smoke.
+
 ## LOG +397 (2026-06-13 — TSK-580 close-out: the thin-waist FFI envelope is now the UNIVERSAL production dispatch path)
 
 - **TSK-580 (thin-waist FFI envelope) → validated (close-out commit `18da813`, headless gate green).** The 3 raw/aux
