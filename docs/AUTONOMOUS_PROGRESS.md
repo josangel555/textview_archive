@@ -9169,6 +9169,24 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +393 (2026-06-13 — TSK-770 editor Find/Replace VM-behavior-validated; WebView-lane DOM mode keeps drilling the render-drain)
+
+- **TSK-770 (Find bar Replace/ReplaceAll + persist-prev-text) → validated (test `85a26d7`).** The functional
+  replace is now proven END-TO-END: new `EditorReplaceWebViewTests` boots the real CM6 editor and proves
+  `setSearchQuery{query,replace}` + `replaceAll` turns "foo foo foo" → "bar bar bar", and `findNext`+`replaceNext`
+  replaces exactly ONE match (CM6 select-then-replace) — 2/2 on the VM. Model/dispatch host-tested
+  (FindBarTests 9/9); the one new sub-ask (persist prior search text on Cmd+F reopen) was a prior host-tested
+  FindCoordinator fix (1c538fb, teeth). Wired into test-in-vm.sh + nightly-vm.yml.
+- **Caught + fixed a test-logic bug mid-validation (process win):** the first VM run failed `replaceNext`
+  ("foo foo foo" unchanged) — NOT a product bug: CM6's `replaceNext` is *select-then-replace* (the first call
+  selects without replacing; the real find-bar selects via findNext on query-type before Replace). Corrected
+  the test to mirror that flow (findNext → replaceNext) → green. (Validating in the live editor surfaced the
+  semantics a host dispatch test wouldn't have.)
+- **Render-drain scoreboard via the WebView-lane DOM mode:** fold ✓ blame ✓ editor-replace ✓ — each clean +
+  non-disruptive (in-process offscreen WKWebView, no host window, no screencapture). The mode is the workhorse
+  for CM6-internal behaviors. Remaining review tail is the harder classes (crash 734, key-nav 730/728, perf
+  736/741, split-text 806, scroll 743). `main` headless-gate-green; commit 85a26d7.
+
 ## LOG +392 (2026-06-13 — TSK-814 git blame gutter VM-render-validated via a new WebView-lane DOM test; resumed the render-drain safely)
 
 - **TSK-814 → validated (test commit `6e8d95a`).** Git blame in the editor gutter — feeder/model/toggle were
