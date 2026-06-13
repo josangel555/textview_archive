@@ -8932,3 +8932,19 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   withoutVersionBump — the timing-sensitive load-flake shape; will
   re-run isolated before treating as real). Monitor window expires
   ~20:10; results processed on fire or next tick.
+
+## LOG +303 (2026-06-12 tick — VM sweep CLEAN: 4942 tests, 0 genuine failures)
+
+- **Full-suite VM run (52 min under memory pressure): 4942 tests, 71
+  skipped (heavy tiers + gated suites, by design), 1 failure — CONFIRMED
+  load-flake:** TerminalForegroundBumpTests took 10.9s under load and
+  failed its scheduling assertion; isolated re-run 2/2 green in 0.066s.
+  The documented class; no regression filed.
+- **WebView lane (own gated invocation): 18/18 green** incl.
+  EditorThemeParityTests — real codemirror.html, computed span colors
+  equal the dispatched palette. With the host channel pins, the editor
+  theme surface's chain is evidence-complete end-to-end; attached to
+  TSK-641 (chrome glance is now the ONLY thing between it and close).
+- The sweep covers the whole wave on the VM's stricter toolchain: drag
+  wiring, theming stages 3+4, gutter routing, wire v2 staticlib, arena
+  storage, sidebar filter A+B — all green.
