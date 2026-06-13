@@ -287,6 +287,15 @@ struct SidebarView: View {
                             model.open(url: url)
                         }
                     }
+                case .f2:
+                    // TSK-283: F2 renames the highlighted file/folder — the
+                    // conventional rename key (Explorer / VS Code), additive
+                    // so it doesn't disturb Return's existing open/toggle.
+                    if let url = sidebar.selectedURL {
+                        Self.presentRenamePrompt(for: url, model: model)
+                    } else {
+                        return false  // nothing selected → let others see it
+                    }
                 case .escape:
                     return false  // let other handlers (palette dismiss) see it
                 }
@@ -306,6 +315,27 @@ struct SidebarView: View {
         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir),
               !isDir.boolValue else { return }
         model.openPreview(url: url)
+    }
+
+    /// TSK-283: modal rename prompt for a sidebar file/folder. Pre-fills the
+    /// current name (selected) so the user can type over it. Shared by the
+    /// F2 key and the right-click → Rename menu. Light NSAlert + text field,
+    /// matching the Go-to-Line prompt idiom; the disk work + tree/bookmark
+    /// follow-through live in `DocumentModel.renameFile`.
+    @MainActor
+    static func presentRenamePrompt(for url: URL, model: DocumentModel) {
+        let alert = NSAlert()
+        alert.messageText = "Rename"
+        alert.informativeText = "Enter a new name for \u{201C}\(url.lastPathComponent)\u{201D}."
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 22))
+        field.stringValue = url.lastPathComponent
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        field.selectText(nil)  // select the whole name so a type replaces it
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        _ = model.renameFile(at: url, to: field.stringValue)
     }
 
     // MARK: - Accordion stack (visibility-aware divider placement)
@@ -1056,6 +1086,9 @@ private struct FileRowContextMenu: View {
         Button("Copy Path") { Pasteboard.copy(node.url.path) }
         Button("Copy Relative Path") { Pasteboard.copy(relativePath) }
         Button("Reveal in Finder") { Finder.reveal(node.url) }
+        // TSK-283: rename this file/folder (also bound to F2). Collision-safe
+        // via the model; the tree + bookmarks follow the move.
+        Button("Rename…") { SidebarView.presentRenamePrompt(for: node.url, model: model) }
         if node.isDirectory {
             // TSK-329: create a new file in this folder (the right-click →
             // New File entry point). Atomic + non-colliding via the model.

@@ -145,6 +145,44 @@ public final class BookmarksStore {
         save()
     }
 
+    /// Repoint bookmarks after a file/folder rename so a renamed item's
+    /// star (and any line bookmarks under it) follow the move instead of
+    /// going stale. Matches BOTH the exact URL and — for a folder rename —
+    /// any bookmark beneath `oldURL` (prefix), rebasing each onto `newURL`.
+    /// Returns the number of entries moved. (TSK-283.)
+    ///
+    /// An exact-file rename also refreshes the entry's `displayName` to the
+    /// new last path component; a folder rename leaves each child's own
+    /// display name untouched (only an ancestor changed).
+    @discardableResult
+    public func relocate(from oldURL: URL, to newURL: URL) -> Int {
+        let old = oldURL.standardizedFileURL.resolvingSymlinksInPath()
+        let new = newURL.standardizedFileURL.resolvingSymlinksInPath()
+        let oldPrefix = old.path.hasSuffix("/") ? old.path : old.path + "/"
+        var moved = 0
+        entries = entries.map { entry in
+            if entry.url == old {
+                moved += 1
+                return BookmarkEntry(url: new, addedAt: entry.addedAt,
+                                     displayName: new.lastPathComponent, line: entry.line)
+            }
+            // Folder rename: rebase a descendant's path onto the new folder.
+            if entry.url.path.hasPrefix(oldPrefix) {
+                let rel = String(entry.url.path.dropFirst(old.path.count))  // leading "/…"
+                let rebased = URL(fileURLWithPath: new.path + rel)
+                moved += 1
+                return BookmarkEntry(url: rebased, addedAt: entry.addedAt,
+                                     displayName: entry.displayName, line: entry.line)
+            }
+            return entry
+        }
+        if moved > 0 {
+            rebuildIndex()
+            save()
+        }
+        return moved
+    }
+
     /// Move bookmark from index `from` to index `to`. Indices outside
     /// the current range are clamped.
     public func move(from: Int, to: Int) {

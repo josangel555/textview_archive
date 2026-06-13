@@ -614,6 +614,38 @@ public final class DocumentModel: ObservableObject {
         }
     }
 
+    /// Rename the file/folder at `url` to `newName` (collision-safe via
+    /// `FileRenamer`: never overwrites a different file), then refresh the
+    /// tree, reselect the renamed item, and repoint any bookmarks that
+    /// pointed at it (or, for a folder rename, anything beneath it).
+    /// Returns the new URL, or nil on failure (logged; an invalid name /
+    /// collision / sandbox denial must not crash the menu action). The
+    /// single entry point for the sidebar right-click → Rename and the F2
+    /// key (TSK-283).
+    ///
+    /// An editor tab open on the renamed file is intentionally left as-is:
+    /// it surfaces the existing `diskState == .deleted` "moved on disk"
+    /// signal, identical to renaming the file in Finder while it's open.
+    /// Silently repointing the live editor buffer/state is a separate,
+    /// view-coupled change deferred out of this slice.
+    @discardableResult
+    public func renameFile(at url: URL, to newName: String) -> URL? {
+        do {
+            let newURL = try FileRenamer.rename(at: url, to: newName)
+            let parent = url.deletingLastPathComponent()
+            sidebar.reloadChildren(of: parent)
+            sidebar.setSelected(newURL)
+            if bookmarksStore.relocate(from: url, to: newURL) > 0 {
+                refreshBookmarks()
+            }
+            return newURL
+        } catch {
+            Obs.shared.emit(.warn, "files",
+                            "Rename failed: \(String(describing: error))")
+            return nil
+        }
+    }
+
     /// File→New target: the selected sidebar folder if one is selected and
     /// is a directory, else the sidebar root. nil when no folder is open
     /// (the menu item disables).

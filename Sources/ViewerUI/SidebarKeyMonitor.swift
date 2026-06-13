@@ -19,7 +19,7 @@ struct SidebarKeyMonitor: NSViewRepresentable {
     let handle: (Key) -> Bool
 
     enum Key {
-        case up, down, left, right, ret, escape
+        case up, down, left, right, ret, escape, f2
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -73,6 +73,7 @@ struct SidebarKeyMonitor: NSViewRepresentable {
             case KeyCode.ret,
                  KeyCode.numpadEnter:  return .ret
             case KeyCode.escape:       return .escape
+            case KeyCode.f2:           return .f2
             default:                   return nil
             }
         }
@@ -87,6 +88,7 @@ struct SidebarKeyMonitor: NSViewRepresentable {
             static let ret:         UInt16 = 36
             static let numpadEnter: UInt16 = 76
             static let escape:      UInt16 = 53
+            static let f2:          UInt16 = 120
         }
 
         /// If a text-editing field is focused, let it handle arrows / enter.
