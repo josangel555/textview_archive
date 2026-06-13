@@ -419,15 +419,17 @@ pub fn parse_with(text: &str, delimiter: char, limits: Limits) -> Table {
         })
         .collect();
 
-    trace::event(
-        Level::Info,
-        "csv.parse.done",
-        vec![
-            ("cols", cols.to_string()),
-            ("rows", body.len().to_string()),
-            ("truncated", truncated.to_string()),
-        ],
-    );
+    if trace::sink_installed() {
+        trace::event(
+            Level::Info,
+            "csv.parse.done",
+            vec![
+                ("cols", cols.to_string()),
+                ("rows", body.len().to_string()),
+                ("truncated", truncated.to_string()),
+            ],
+        );
+    }
 
     Table {
         delimiter: delim_str,

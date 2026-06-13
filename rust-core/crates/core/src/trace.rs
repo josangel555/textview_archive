@@ -5,16 +5,25 @@
 //! `tracing-core` / `pin-project-lite` transitive surface), we model the same
 //! shape — **spans** (scoped, RAII-closed) and **events** (point-in-time) —
 //! behind a pluggable [`Sink`]. This is deliberately the seam the main Swift
-//! app calls its `ObservabilitySink`: a host installs ONE sink and every core
-//! span/event is delivered to it. The FFI layer can forward these across the
-//! C ABI to a Swift closure (see `mdvcore-ffi`), exactly how the production app
-//! would wire core observability into its existing sink.
+//! app would call its `ObservabilitySink`: a host installs ONE sink and every
+//! core span/event is delivered to it.
 //!
-//! Concurrency: the sink is stored behind a `RwLock<Option<...>>`. Installing
-//! is rare (once at startup); emitting takes a read lock. A real host would
-//! likely install at process start and never swap.
+//! NOTE: no FFI forwarding is wired yet. `mdvcore-ffi` exposes no
+//! `set_sink`/forwarding entry point, so the only sinks installed today are
+//! in-process (the core's own tests). Forwarding span/event records across the
+//! C ABI to a Swift closure is the intended next step, not a shipped capability
+//! — until then the global sink stays `None` in production and emitting is a
+//! near-free fast-path (see [`emit`]).
+//!
+//! Concurrency: the sink is stored behind a `RwLock<Option<...>>`, fronted by an
+//! [`AtomicBool`] presence flag. Installing is rare (once at startup) and flips
+//! the flag; emitting does a single relaxed atomic load and only takes the read
+//! lock when a sink is actually present — so the no-sink production path pays
+//! ~one atomic load, not a lock. A real host would install once at process start
+//! and never swap.
 
 use std::sync::RwLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Severity of an event. Mirrors the common `tracing` levels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -87,11 +96,18 @@ pub trait Sink: Send + Sync {
 
 static SINK: RwLock<Option<Box<dyn Sink>>> = RwLock::new(None);
 
+/// Fast-path presence flag for [`SINK`]. Read on every [`emit`] with a single
+/// relaxed load so the no-sink production path never touches the `RwLock`. The
+/// flag is only a hint — [`emit`] re-validates under the read lock — so relaxed
+/// ordering is sound (the lock provides the real happens-before for the sink).
+static SINK_PRESENT: AtomicBool = AtomicBool::new(false);
+
 /// Install the global trace sink, replacing any previous one. Idempotent;
 /// passing the same kind of sink twice simply swaps it.
 pub fn set_sink(sink: Box<dyn Sink>) {
     if let Ok(mut guard) = SINK.write() {
         *guard = Some(sink);
+        SINK_PRESENT.store(true, Ordering::Relaxed);
     }
 }
 
@@ -99,13 +115,26 @@ pub fn set_sink(sink: Box<dyn Sink>) {
 pub fn clear_sink() {
     if let Ok(mut guard) = SINK.write() {
         *guard = None;
+        SINK_PRESENT.store(false, Ordering::Relaxed);
     }
+}
+
+/// Whether a sink is currently installed. A single relaxed atomic load — cheap
+/// enough to gate hot-path call sites that would otherwise allocate their
+/// `fields` vec (and the `String`s in it) only to drop them when nobody listens.
+#[must_use]
+pub fn sink_installed() -> bool {
+    SINK_PRESENT.load(Ordering::Relaxed)
 }
 
 /// Emit a record to the installed sink, if any. Lock-poisoning is treated as
 /// "no sink" rather than propagated — instrumentation must never take down the
-/// core.
+/// core. The fast-path presence check ([`sink_installed`]) skips the read lock
+/// entirely when no sink is installed (the production default).
 pub fn emit(record: &Record) {
+    if !sink_installed() {
+        return;
+    }
     if let Ok(guard) = SINK.read()
         && let Some(sink) = guard.as_ref()
     {
@@ -153,6 +182,10 @@ mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
 
+    /// The sink is a process-global; `cargo test` runs these in parallel, so
+    /// tests that install/clear it must serialize or they clobber each other.
+    static STATE_LOCK: Mutex<()> = Mutex::new(());
+
     #[derive(Default)]
     struct CollectSink(Arc<Mutex<Vec<Record>>>);
 
@@ -164,6 +197,7 @@ mod tests {
 
     #[test]
     fn span_emits_enter_and_exit() {
+        let _state = STATE_LOCK.lock().unwrap();
         let store = Arc::new(Mutex::new(Vec::new()));
         set_sink(Box::new(CollectSink(Arc::clone(&store))));
         {
@@ -192,9 +226,40 @@ mod tests {
 
     #[test]
     fn no_sink_is_a_noop() {
+        let _state = STATE_LOCK.lock().unwrap();
         clear_sink();
         // Must not panic with no sink installed.
         event(Level::Warn, "no sink", vec![]);
         let _span = Span::enter("orphan");
+    }
+
+    #[test]
+    fn presence_flag_gates_delivery() {
+        let _state = STATE_LOCK.lock().unwrap();
+
+        clear_sink();
+        assert!(!sink_installed(), "flag must be false after clear");
+
+        let store = Arc::new(Mutex::new(Vec::new()));
+        set_sink(Box::new(CollectSink(Arc::clone(&store))));
+        assert!(sink_installed(), "flag must be true after set");
+        event(Level::Info, "after-install", vec![]);
+
+        clear_sink();
+        assert!(!sink_installed(), "flag must be false after clear");
+        event(Level::Info, "after-clear", vec![]);
+
+        // Only the event emitted while a sink was installed reached it. This
+        // also pins set_sink's flag-flip: drop the `store(true)` and emit's
+        // fast-path early-returns even with a sink installed → zero records.
+        let recs = store.lock().unwrap().clone();
+        assert_eq!(
+            recs,
+            vec![Record::Event {
+                level: Level::Info,
+                message: "after-install",
+                fields: vec![],
+            }]
+        );
     }
 }

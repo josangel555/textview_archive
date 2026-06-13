@@ -61,11 +61,13 @@ impl CsvSession {
             valid_up_to: e.valid_up_to(),
         })?;
         let table = crate::csv::parse(text);
-        trace::event(
-            Level::Info,
-            "session.opened",
-            vec![("rows", table.rows.len().to_string())],
-        );
+        if trace::sink_installed() {
+            trace::event(
+                Level::Info,
+                "session.opened",
+                vec![("rows", table.rows.len().to_string())],
+            );
+        }
         Ok(Self::from_table(table))
     }
 
@@ -130,11 +132,13 @@ impl CsvSession {
         self.query = query;
         self.version += 1;
         self.cached = None; // invalidate
-        trace::event(
-            Level::Info,
-            "session.filter_changed",
-            vec![("version", self.version.to_string())],
-        );
+        if trace::sink_installed() {
+            trace::event(
+                Level::Info,
+                "session.filter_changed",
+                vec![("version", self.version.to_string())],
+            );
+        }
         true
     }
 
