@@ -429,6 +429,26 @@ public final class CsvSession {
         return body
     }
 
+    /// Zero-copy twin of `unframe` (TSK-564): validate the 4-byte LE length
+    /// prefix against the remaining bytes and return the BODY START OFFSET (4),
+    /// without copying `frame[4...]`. The caller decodes the body in place via
+    /// `MsgPackReader(frame, startingAt:)`. Same validation as `unframe`; use it
+    /// on the big-payload decode paths (table/snapshot) where the body copy
+    /// scales with the frame.
+    static func frameBodyStart(_ frame: [UInt8]) throws -> Int {
+        guard frame.count >= 4 else {
+            throw CoreError.decode("frame shorter than length prefix")
+        }
+        let declared =
+            UInt32(frame[0]) | (UInt32(frame[1]) << 8)
+            | (UInt32(frame[2]) << 16) | (UInt32(frame[3]) << 24)
+        let bodyLen = frame.count - 4
+        guard Int(declared) == bodyLen else {
+            throw CoreError.decode("frame length \(declared) != body \(bodyLen)")
+        }
+        return 4
+    }
+
     /// Diagnostics channel for FFI faults (TSK-669).
     static let log = Logger(subsystem: "com.markdownviewer.RustCore", category: "ffi")
 
@@ -460,8 +480,7 @@ public final class CsvSession {
         if frame.isEmpty {
             return Table(delimiter: "", header: [], rows: [], truncated: false)
         }
-        let body = try unframe(frame)
-        var reader = MsgPackReader(body)
+        var reader = MsgPackReader(frame, startingAt: try frameBodyStart(frame))
         do {
             let map = try reader.decode().mapValue()
             return Table(
@@ -476,8 +495,7 @@ public final class CsvSession {
     }
 
     static func decodeSnapshot(_ frame: [UInt8]) throws -> Snapshot {
-        let body = try unframe(frame)
-        var reader = MsgPackReader(body)
+        var reader = MsgPackReader(frame, startingAt: try frameBodyStart(frame))
         do {
             let map = try reader.decode().mapValue()
             return Snapshot(

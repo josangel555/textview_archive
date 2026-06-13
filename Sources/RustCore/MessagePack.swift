@@ -54,6 +54,16 @@ struct MsgPackReader {
 
     init(_ data: [UInt8]) { self.bytes = data }
     init(_ data: Data) { self.bytes = [UInt8](data) }
+    /// Read `data` starting at `offset` — the zero-copy decode path for a
+    /// length-prefixed frame: pass the WHOLE frame + the body offset (4) instead
+    /// of copying `frame[4...]` into a fresh `[UInt8]` (TSK-564). `bytes` stays
+    /// 0-indexed (the full frame); only the cursor starts past the prefix, so the
+    /// bounds checks (`pos <= bytes.count - n`) and `finish()` (`pos == count`,
+    /// reached after the body) hold unchanged.
+    init(_ data: [UInt8], startingAt offset: Int) {
+        self.bytes = data
+        self.pos = offset
+    }
 
     private mutating func u8() throws -> UInt8 {
         guard pos < bytes.count else { throw MsgPackError.truncated }
