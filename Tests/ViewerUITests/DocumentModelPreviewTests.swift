@@ -59,6 +59,49 @@ final class DocumentModelPreviewTests: XCTestCase {
         model.tabs.tabs.filter { $0.isPreview }.map { $0.title }
     }
 
+    /// A `SourceScrollState` whose `topVisibleLine` resolves to `topLine`
+    /// (1-based) — the inverse of the production capture math.
+    private func scrollState(topLine: Int, lineCount: Int = 500,
+                             lineHeight: CGFloat = 16, topInset: CGFloat = 10) -> SourceScrollState {
+        SourceScrollState(
+            offsetY: topInset + CGFloat(topLine - 1) * lineHeight,
+            viewportHeight: 400, lineHeight: lineHeight,
+            lineCount: lineCount, topInset: topInset)
+    }
+
+    func test_previewReturn_restoresSourceScrollPerFile() throws {
+        // TSK-743 (source channel): the preview slot remembers each file's
+        // SOURCE-view (NSTextView) top line by URL, so returning to a file you
+        // scrolled restores its position — while a never-previewed file starts
+        // at the top (isolation). The editor channel is covered by
+        // test_previewReturn_restoresScrollAndCursorPerFile above.
+        let model = makeModel()
+        let a = try writeFile("a.txt", String(repeating: "alpha\n", count: 200))
+        let b = try writeFile("b.txt", String(repeating: "bravo\n", count: 200))
+
+        model.openPreview(url: a)
+        let id = try XCTUnwrap(model.tabs.previewTabID)
+        model.sourceScrollState = scrollState(topLine: 137)   // A scrolled to 137
+
+        // Swap to B (never previewed) → captures A@137; B starts clean.
+        model.openPreview(url: b)
+        XCTAssertEqual(model.tabs.previewTabID, id, "same reused preview slot")
+        XCTAssertNil(try XCTUnwrap(model.tabs.tabs.first { $0.id == id }).scrollTopLine,
+                     "B was never previewed → starts at the top (isolation)")
+
+        // B scrolled to 42; return to A → captures B@42, restores A@137.
+        model.sourceScrollState = scrollState(topLine: 42)
+        model.openPreview(url: a)
+        XCTAssertEqual(try XCTUnwrap(model.tabs.tabs.first { $0.id == id }).scrollTopLine, 137,
+                       "returning to A restores A's remembered source scroll")
+
+        // A scrolled to 9; return to B → restores B@42.
+        model.sourceScrollState = scrollState(topLine: 9)
+        model.openPreview(url: b)
+        XCTAssertEqual(try XCTUnwrap(model.tabs.tabs.first { $0.id == id }).scrollTopLine, 42,
+                       "returning to B restores B's remembered source scroll")
+    }
+
     // MARK: - openPreview creates / reuses ONE ephemeral slot
 
     func test_openPreview_createsOnePreviewTab() throws {

@@ -1716,6 +1716,25 @@ public final class DocumentModel: ObservableObject {
         scrollSource(toLine: line)
     }
 
+    /// TSK-743 (source channel): per-URL memory of the source-view (NSTextView)
+    /// top line for the ONE ephemeral preview slot. The slot reuses a single tab
+    /// id across files and rebuilds the `Tab` on each swap — dropping
+    /// `Tab.scrollTopLine` — so without this a sidebar preview-switch always
+    /// returned a file to the top. Mirrors the editor channel's URL-keyed
+    /// `previewScrollByURL`. Bounded so a long browse session can't grow it.
+    private var previewSourceLineByURL: [URL: Int] = [:]
+    private static let previewSourceLineCap = 64
+
+    /// Remember `line` as `url`'s source-view top line for a later preview-return.
+    private func rememberPreviewSourceLine(_ line: Int, for url: URL) {
+        if previewSourceLineByURL[url] == nil,
+           previewSourceLineByURL.count >= Self.previewSourceLineCap,
+           let victim = previewSourceLineByURL.keys.first {
+            previewSourceLineByURL.removeValue(forKey: victim)
+        }
+        previewSourceLineByURL[url] = line
+    }
+
     // MARK: - Split view (forwarders to TabCoordinator)
     //
     // The split pane lives on `tabCoordinator` because it shares the
@@ -3992,6 +4011,19 @@ public final class DocumentModel: ObservableObject {
             // edits defensively rather than discarding unsaved work.)
             let priorPreview = tabCoordinator.tabs.tabs.first(where: { $0.isPreview })
                 .map { (id: $0.id, url: $0.url) }
+            // TSK-743 (source channel): the slot rebuild below drops
+            // `Tab.scrollTopLine`, so refresh the OUTGOING file's source-view
+            // scroll from the live geometry and remember it by URL BEFORE the
+            // swap (mirrors the editor stash) — the view still shows the
+            // outgoing file at this instant, so its scroll is current.
+            if let prior = priorPreview, prior.url != resolved,
+               let priorURL = prior.url,
+               let idx = tabCoordinator.tabs.tabs.firstIndex(where: { $0.id == prior.id }) {
+                captureScroll(forTabAt: idx)
+                if let line = tabCoordinator.tabs.tabs[idx].scrollTopLine, line > 0 {
+                    rememberPreviewSourceLine(line, for: priorURL)
+                }
+            }
             tabCoordinator.openPreview(url: resolved, state: state, viewMode: mode)
             if let prior = priorPreview,
                let now = tabCoordinator.tabs.tabs.first(where: { $0.id == prior.id && $0.isPreview }),
@@ -4008,6 +4040,14 @@ public final class DocumentModel: ObservableObject {
                 tabCoordinator.discardEditorBuffer(forTabID: prior.id)
                 editor.resetEditorState(forTabID: prior.id)
                 editor.restorePreviewState(forTabID: prior.id, url: resolved)
+                // TSK-743 (source channel): stamp the INCOMING file's remembered
+                // source line onto the reused tab so `restoreScroll` re-applies
+                // it (nil when never previewed → top of file, isolation kept).
+                if let idx = tabCoordinator.tabs.tabs.firstIndex(where: { $0.id == prior.id }) {
+                    var t = tabCoordinator.tabs.tabs[idx]
+                    t.scrollTopLine = previewSourceLineByURL[resolved]
+                    tabCoordinator.replace(at: idx, with: t)
+                }
             }
         } else {
             tabCoordinator.openOrReveal(url: resolved, state: state, viewMode: mode)
