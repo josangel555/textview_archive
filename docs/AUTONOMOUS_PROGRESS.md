@@ -9169,6 +9169,24 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +390 (2026-06-13 — THEMING pool CLOSED: TSK-815 + TSK-641 VM-render-validated; whole-window Dark Mode confirmed)
+
+- **TSK-815 → validated** (markdown reading page Dark Mode). Rebuilt dist on the VM with the fix; `vm-uitest.sh
+  run theme-dark` → the CONTENT region (rendered markdown) measures **content_dark=0.930** (was ~light, 0.18
+  whole-window pre-fix) and the capture visibly shows the Design-Plan markdown on a DARK bg with light prose.
+  Extended the theme-dark color assertion to guard BOTH regions — sidebar (chrome) + center content (markdown
+  page) — `pass iff both ≥ 0.35` (commit `01b120e`): sidebar_dark=0.977, content_dark=0.930. Automated VM
+  regression guard for both surfaces.
+- **TSK-641 → validated** (theme engine, all FOUR surfaces). The gap that held it last tick (markdown reading
+  page) is closed by 815, so all four are now VM-confirmed: syntax (host pins) · CM6 editor
+  (EditorThemeParityTests) · chrome (sidebar_dark 0.977) · markdown content (content_dark 0.930). **TSK-642
+  (VS Code import) was already validated → the entire THEMING pool is closed.** The owner's re-raised "Dark
+  Mode" (P8) + "user themable" (P6) ask is fully delivered + VM-validated: pick a dark theme → the WHOLE window
+  follows (chrome + editor + markdown reading view + syntax), live without relaunch.
+- **Harness now has a two-region color assertion** — proven on a 2nd dimension (content vs chrome). The
+  render-drain lever (a11y-presence · window-color · multi-region) is mature. `main` headless-gate-green;
+  commits 557ce7d (fix, prior) + 01b120e (2-region guard).
+
 ## LOG +389 (2026-06-13 — TSK-815 markdown Dark-Mode fix landed; OWNER /Applications build → caught + fixed a TSK-813 host-build regression (TSK-816))
 
 - **TSK-815 → fixed (commit `557ce7d`): the Dark-Mode payoff.** New `ThemeDefinition.pageCSS()` overrides
