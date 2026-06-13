@@ -1069,11 +1069,18 @@ public final class SourceTextController: NSViewController {
         newlineOffsetsFor = NSRange(location: 0, length: -1)
     }
 
-    private static func countLines(in text: String) -> Int {
+    /// Logical line count = `newlineCount + 1` for non-empty text (0 for empty).
+    /// TSK-737: a trailing `\n` does NOT reduce the count — NSLayoutManager lays
+    /// out an empty final line fragment after it, so a file ending in `\n` has
+    /// one more line position than newlines. The old `-= 1` adjustment
+    /// under-counted by one, which clamped the gutter's last row off (no number
+    /// on the bottom line) and skewed the hover-highlight + pointer→line map
+    /// (TSK-263) that read the same count. `static` (not `private`) for the
+    /// pure-logic teeth test.
+    static func countLines(in text: String) -> Int {
         if text.isEmpty { return 0 }
         var n = 1
         for b in text.utf8 where b == 0x0A { n += 1 }
-        if text.utf8.last == 0x0A { n -= 1 }
         return n
     }
 
