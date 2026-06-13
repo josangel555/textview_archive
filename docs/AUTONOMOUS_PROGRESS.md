@@ -9033,3 +9033,18 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   this). Deliberately NOT rushed into the perf-sensitive file at the
   tail of a long session — execute-ready for the next firing, the
   TSK-282 pattern.
+
+## LOG +309 (2026-06-12 tick — TSK-259 slice 1: the font picker lands)
+
+- **Monospace font picker (f5f319a, installed):** Settings → Appearance
+  → Font (fixed-pitch families only + System Default) drives the
+  read-only source view. Resolution is fail-safe: a deleted/unknown
+  family degrades to the system monospaced font.
+- **Both planned traps closed with teeth:** the repaint key gains
+  fontName (family change ≠ cached paint) and the gutter's lineHeight
+  derives from the RESOLVED font (Monaco ≠ SF Mono row height pinned
+  behaviorally). Teeth needed a round 2 — the first pin needle matched
+  a CALL SITE rather than the key construction (the weak-needle class
+  from the TSK-327 plist lesson); tightened, then red/green clean.
+- Slice 2 remaining: CM6 editor parity (setFontFamily bridge + CSS).
+- Held at fixed: rendered font + gutter alignment = the glance.
