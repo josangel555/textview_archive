@@ -9169,6 +9169,30 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +394 (2026-06-13 — render-drain proven-mode pool DRAINED; mapped the remaining bug tail's capability gaps → TSK-818; documented hold)
+
+- **Honest §5 outcome this tick (no forced validation).** The render-drain's PROVEN validation modes are now
+  exhausted for the actionable items: a11y-presence (overlays — 640/738/745/760), window-color (theming —
+  641/815), WebView-lane DOM (CM6 internals — fold/blame/770-replace). Investigated the remaining high-priority
+  review BUGS and each needs a capability that doesn't exist yet — confirmed by reading, not guessed:
+  - **TSK-730/728 (editor key nav / Enter-focus):** fix = the SidebarKeyMonitor yield PREDICATE, host-tested
+    with teeth (SidebarKeyMonitorYieldTests, 11 cases). End-to-end (monitor yields → AppKit routes key → CM6)
+    is AppKit routing; the monitor's handler reads `NSApp.keyWindow?.firstResponder` so it's NOT cleanly
+    host-testable (unlike TerminalReturnKeyRoutingTests, which uses a LOCAL offscreen window). Needs a VM
+    key-synthesis T4 lane → **filed TSK-818** (covers 730/728 + 743 scroll + 327 drag — the interaction class).
+  - **TSK-736/741 (perf lag/ANR):** need a perf-measurement validation (vm-profile.sh signposts), not a render check.
+  - **TSK-806 (split-pane shows on-disk vs unsaved):** needs an AX-VALUE read of the split source view's text
+    (the harness reads a11y IDs, not text values yet) — distinct capability.
+  - **TSK-734 (crash):** structurally fixed (GitChipStore off-main, host-tested cache contract); a clean
+    automated guard for the off-main regression is awkward (a blanket GitClient main-thread precondition breaks
+    its own unit tests) and a VM repro is low-yield (the fix makes the reentrancy impossible by construction).
+  Minor-features (748 checksums / 789-790 settings lists / 763 recents-grey) need per-item a11y scene+ids work
+  (the blame pattern) — tractable but lower priority than the bugs.
+- **Recommendation (DECISIONS NEEDED):** the highest-leverage next build is **TSK-818** (VM key-synthesis lane)
+  — it unblocks the most bug-tail. A documented hold beats thrashing a heavy build mid-tick or over-claiming a
+  render-gapped host validation against the policy. `main` headless-gate-green; no code change this tick (the
+  deliverable is the mapped capability ticket).
+
 ## LOG +393 (2026-06-13 — TSK-770 editor Find/Replace VM-behavior-validated; WebView-lane DOM mode keeps drilling the render-drain)
 
 - **TSK-770 (Find bar Replace/ReplaceAll + persist-prev-text) → validated (test `85a26d7`).** The functional
