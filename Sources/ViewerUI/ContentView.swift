@@ -1427,6 +1427,13 @@ struct EmptyStateView: View {
                 }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
             }
+            // Group the action row as an AX container so its children (the
+            // New File button incl.) surface to an out-of-process AX reader —
+            // a bare `.accessibilityIdentifier` on a SwiftUI container is NOT
+            // promoted to a readable AX element (proven on the VM lane; the
+            // VM render-validation guard for TSK-760 depends on this).
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("mdv.emptyState.actions")
             // TSK-745: the new-tab landing surfaces recent files, click-to-open.
             // Capped (model.landingRecents) so the welcome screen stays a
             // glanceable launcher; the full scrollable list lives in the sidebar.
@@ -1474,6 +1481,10 @@ struct EmptyStateView: View {
         }
         .frame(maxWidth: 360, alignment: .leading)
         .padding(.top, 4)
+        // AX container so the launcher + its rows surface out-of-process (the
+        // VM render-validation guard for TSK-745) — see the note on the action
+        // row above; a bare identifier on a SwiftUI VStack isn't promoted.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("mdv.emptyState.recents")
     }
 }
