@@ -9169,6 +9169,31 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +321 (2026-06-13 tick — TSK-541 rust-core handle free-vs-call UAF closed + VALIDATED)
+
+- **TSK-541 (`[RUST-CORE][unsafe-ffi]` Handle free-vs-call race = UB) — FIXED + VALIDATED
+  (`df250db`).** The audit's "top remaining soundness hole": the inner Mutex's `try_lock`
+  guarded call-vs-call (Busy), but `free` did `Box::from_raw`→drop with NO coordination
+  against an in-flight `with` borrow → freeing a handle mid-snapshot was raw UAF + dropping
+  a *locked* Mutex (the exact ARC/deinit-timing misuse a Swift app commits).
+  - **Fix: Arc-backed global handle registry** (`Mutex<HashMap<usize, Arc<SessionHandle>>>`).
+    The token Swift holds is now an opaque registry key. A call (`lookup`) clones the Arc
+    out under the registry lock then operates on its clone, so a concurrent `free`
+    (registry remove) DEFERS the real drop until the call returns — no UAF, the inner
+    Mutex is never dropped while locked. Bonus: double-free is an idempotent no-op (was
+    heap corruption); a bogus/stale token is looked up not dereferenced (None→status,
+    never UB) → `lookup`/`free` shed their `unsafe`.
+  - **ABI byte-identical** (opaque `*mut SessionHandle`, never dereferenced — only a struct
+    doc-comment changed → header restaged via build-rust-core.sh; neither header is
+    git-tracked). Contained to handle.rs + 5 FFI call sites.
+  - **Validation:** rust-core gate green on committed df250db; 41 FFI tests incl. 3 new
+    TSK-541 tests with **teeth** (free skips registry remove → 2 free-invalidation tests
+    red, recompile-confirmed, restored); 116 Swift RustCoreTests green vs the rebuilt .a
+    (end-to-end open/call/free via CoreClient). Self-validated (host-testable + teeth).
+  - Picked over the queued CSV-table features because §3/§2.5 rank a rust-core memory-safety
+    fix above Swift feature-wiring. (All the directive's named greenlit pools — 635/636/554/
+    634/630-633 etc. — are already validated; 541 was the standout open real item.)
+
 ## LOG +320 (2026-06-13 tick — TSK-300 Save-a-Copy menu wired (owner-greenlit); TSK-310 dedup)
 
 - **TSK-300 (Save a Copy) — UI WIRED + landed (`a775c16`, installed, gate-green 5014).**
