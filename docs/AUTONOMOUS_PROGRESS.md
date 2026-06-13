@@ -9169,6 +9169,22 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +347 (2026-06-13 overnight — TSK-738 status-footer folder-only gate fixed → review)
+
+- **TSK-738 FIXED → review (3aaa8f1).** The status footer gated on `currentURL != nil` (tabs.selected?.url),
+  so it vanished after relaunch / opening a folder with no file tab (openFolder sets sidebar.rootURL but
+  selects no tab). Added model.hasOpenContext (currentURL != nil || sidebar.rootURL != nil); ContentView
+  gates StatusBar on it (folder-only shows path "—" + folder-scoped git chip), BottomAttributesBar stays
+  file-gated. 2 host tests + teeth (folder-only → hasOpenContext true, currentURL nil; mutation → red).
+- **Held at review** (not self-validated): the predicate is host-tested, but whether the footer REACTIVELY
+  appears on folder-open depends on ContentView observing sidebar.rootURL (render/observation) — VM-confirm,
+  consistent with 734/728/730.
+- Overnight tally (10 ticks): 739·742·744·729·737·740·735 validated · 734/728/730/738 review (VM-gated) ·
+  743 fixed · 806 filed. Review queue for the noon VM pass: 734·728·730·738.
+- Next crons: 731 (terminal emoji DISPLAY WIDTH — the big one: needs wide-char width accounting in
+  TerminalScreen + wide-cell model + updating the existing one-grapheme-one-cell test), 741 (PTY blocking
+  write → dispatch off the main actor). Then the minor-feature bucket (54 created [WISH][minor-feature]).
+
 ## LOG +346 (2026-06-13 overnight — TSK-735 DEC scroll region (DECSTBM) fixed + validated)
 
 - **TSK-735 VALIDATED (79237b5).** The emulator had no DEC scroll region — scroll/lineFeed moved the WHOLE
