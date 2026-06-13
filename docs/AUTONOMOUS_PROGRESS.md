@@ -8967,3 +8967,20 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   confirm the mutation COMPILED (grep Compiling) before reading its
   test result.
 - Held at fixed: the physical drag is the live glance (TSK-327 batch).
+
+## LOG +305 (2026-06-12 tick — TSK-330 undo audit complete; bookmark ⌘Z wired)
+
+- **The audit's punchline is the dead-channel class AGAIN (third this
+  week):** BookmarksStore has carried a tested removal-undo stack since
+  the Delete-to-remove ask — with zero production consumers. ⌘Z outside
+  the editor did nothing.
+- **Fix (51b6a12, installed):** Edit→Undo falls back to
+  model.undoLastBookmarkRemoval() when no editor is on screen;
+  validateMenuItem enables on the stack state but RELEASES ⌘Z whenever
+  a text input is focused (firstResponder is NSText) — prompt/search
+  undo never stolen. Redo stays editor-only.
+- **Audit ledger:** editor text ✓ (CM6) · bookmarks ✗→FIXED ·
+  clearRecents = confirmed wipe, truthfully labeled (undoable variant =
+  follow-up candidate) · sessions ✓ trash · no sidebar file management ·
+  tab close prompts on dirty. 3 tests w/ injected temp store; teeth
+  compile-verified. Held at fixed for the ⌘Z glance.
