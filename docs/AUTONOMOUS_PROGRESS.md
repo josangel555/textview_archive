@@ -9169,6 +9169,27 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +337 (2026-06-13 tick — TSK-570 dedup landed+validated; greenlit pools reconciled (already drained))
+
+Board reconciliation first (the tick re-asserted the greenlit priority list, but it's STALE): TSK-635
+(rendered-md egress + EGRESS.md), TSK-636 (audit-log v1), TSK-554 (cargo-deny/audit gate wiring),
+TSK-634 (FFI codegen + capability bitmap), TSK-643 (the unexplained-egress investigation) are ALL already
+`validated` from prior sessions. `task_next` head = TSK-590 (user-facing epic) stuck at `review` (agent
+ceiling — needs owner). So the highest *actionable* item was the planned rust-core dedup.
+
+- **TSK-570 (tui/web duplicated helpers) — LANDED + self-VALIDATED (283b60a).** Key correctness call:
+  core is **sans-IO by explicit design** (git.rs: "No process spawning here… sans-IO" — load-bearing for
+  the WASM tier TSK-587), so I did NOT blindly follow the audit's "hoist all to core" plan. HOISTED only
+  what respects the boundary: `human_size` → core::format (byte-identical copies removed from both
+  front-ends), and the **TSK-549 git sandbox argv** → core::git::SANDBOX_ARGS+STATUS_ARGS consts (the real
+  win — the security-critical `-c core.fsmonitor= -c core.hooksPath=/dev/null` flags were duplicated in
+  tui git_status_for AND web git_status_html, a drift risk; now single-source). LEFT in the front-ends
+  (documented): read_capped (does fs IO), the git SPAWN (IO — only the argv moved), mtime_secs (fs-coupled,
+  5 lines), ViewMode token map + config codec (intentionally diverged). 2 tests; teeth demonstrated on the
+  security-args pin (weakened hooksPath → red). rust-core gate green; no FFI export so no header/.a rebuild.
+- Lesson reinforced: the rust-core audit findings repeatedly propose moving IO into core — always check the
+  sans-IO/WASM-portability boundary before hoisting (filed as the reason on 570; applies to 573/etc.).
+
 ## LOG +336 (2026-06-13 tick — OWNER PUSHBACK on "exhausted"; landed TSK-572 + triaged the rust-core efficiency cluster + re-activated TSK-492)
 
 Owner corrected the "clean pool exhausted" framing: ~84 items in Reported, 140+ pre-Validated — "plenty of
