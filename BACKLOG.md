@@ -944,3 +944,17 @@ all already tracked on the board, listed here only as the resume pointer:
   if so; see LESSONS 2026-06-12).
 - **regex-lite escape**: hand-rolled `escape_literal` in find_engine.rs — if regex-lite
   ever exports `escape` under our feature set, swap and delete.
+
+## 2026-06-12 evening — wishlist-wave follow-ups (features landed, refinements deferred)
+
+- **clearRecents undoable** (S): the undo audit (TSK-330) left "Clear Recent Files" as a
+  confirmed wipe ("can't be undone"). Making it undoable needs the alert reworded + a
+  recents-snapshot undo stack. Low value; only if owner asks.
+- **7z/rar archive support** (S-M): ArchiveCatalog (TSK-311) is zip/jar/tar/tgz/tbz2 via
+  system unzip/tar. 7z/rar have no system tool — needs a best-effort locator like
+  FFmpegLocator (PATH probe for `7z`/`unar`, disabled if absent). Owner-dep-shaped.
+- **TSK-259 editor-font VM pixel case** (S): the CM6 font-family change is host-tested at
+  the bridge/model layer; an EditorThemeParityTests-style computed-style assertion in the
+  VM WebView lane would close the painted half before validated.
+- **FrameRateMonitor as the MountedPanesLRU before/after** (note): TSK-275's FPS strip
+  gives a live readout — use it during the supervised perf session to show the win on screen.
