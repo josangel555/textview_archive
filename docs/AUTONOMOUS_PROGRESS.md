@@ -9169,6 +9169,26 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +391 (2026-06-13 — TSK-817: closed the host-window footgun (heavy tiers now opt-in to MDV_VM_GUI_SESSION); two owner disruptions handled)
+
+- **TSK-817 → validated (commit `277450d`).** Last tick a bare host `swift test --filter ViewerUITests`
+  spawned a window on the owner's screen — `LaunchHarness.isAppBuilt` ran heavy tiers whenever a `dist/` bundle
+  existed (I'd just built one for the /Applications build). Fix: pure
+  `LaunchHarness.shouldRunLiveTiers(env:bundleExists:)` requires the explicit VM GUI opt-in
+  (`MDV_VM_GUI_SESSION=1`, set+forwarded by test-in-vm.sh:174-177) AND not `MDV_HEADLESS_GATE` AND a present
+  bundle — so the app spawns ONLY in the VM GUI lane, never off a stray host bundle. Host-tested (4 pure-logic
+  cases, no spawn; teeth = bare-host+bundle→false). Gate green, tier-enforcement OK (window-free WITH a bundle
+  present). VM lane unaffected. Corrected the stale CLAUDE.md "self-skip when no bundle" note that misled the
+  prior run.
+- **Two owner disruptions handled this session:** (1) the host window above (root-caused + fixed = TSK-817).
+  (2) The owner saw recurring `sshd-session` Screen-Recording prompts in UTM — clarified these are macOS 15.6's
+  ScreenCaptureKit consent for my SSH-driven VM captures, attributed to the SSH process tree; they do NOT block
+  the captures (the LaunchAgent/Aqua grant is what the actual screencapture uses — all this session's VM
+  validations succeeded). Owner confirmed the prompts are fine + green-lit continuing VM testing; settings note
+  given (Privacy → Screen & System Audio Recording; macOS 15.6 periodic re-consent can't be fully disabled).
+- **Process lesson reinforced (LESSONS.md):** for host loops use the gate or `--filter ViewerCoreTests.<...>`
+  (pure logic, no heavy tiers) — never a bare/broad ViewerUITests sweep with a bundle present. `main` green.
+
 ## LOG +390 (2026-06-13 — THEMING pool CLOSED: TSK-815 + TSK-641 VM-render-validated; whole-window Dark Mode confirmed)
 
 - **TSK-815 → validated** (markdown reading page Dark Mode). Rebuilt dist on the VM with the fix; `vm-uitest.sh
