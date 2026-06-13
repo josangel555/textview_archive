@@ -78,6 +78,36 @@ pub fn detect(text: &str, sample_lines: usize) -> String {
     }
 }
 
+/// Request for [`detect_wire_aux`] (TSK-580 slice 3): just the sample bound. The
+/// source text is NOT in this frame — it rides the dispatch `aux` bulk side-
+/// channel (a large file needn't be wrapped in a request frame). `pub` so
+/// front-ends/tests build it.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct DetectAuxRequest {
+    /// How many indented lines to sample (mirrors `mdvcore_indent_detect`).
+    pub sample_lines: u32,
+}
+
+/// Indent detection routed through the dispatch envelope (TSK-580 slice 3). The
+/// source text arrives as `aux` (frame-cap-exempt); `req` carries only
+/// `{sample_lines}`. Like [`crate::hex::render_wire_aux`], the response is the
+/// **raw UTF-8 result string** (`"Tabs"`, `"Spaces (4)"`, `"—"`, …) — NOT a
+/// MessagePack frame — which `mdvcore_call` writes to `out_buf` verbatim.
+/// Byte-identical to the dedicated `mdvcore_indent_detect` symbol (the A/B
+/// parity test pins it).
+///
+/// # Errors
+/// [`crate::wire::WireFault::Decode`] on a request-decode fault, or when `aux`
+/// is not valid UTF-8 (the dedicated symbol returns `MdvStatus::BadUtf8`; the
+/// Swift caller always sends a valid-UTF-8 `String`, so the error is defensive).
+pub fn detect_wire_aux(req: &[u8], aux: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault> {
+    let r: DetectAuxRequest = crate::wire::decode_frame(req)?;
+    let text = core::str::from_utf8(aux)
+        .map_err(|_| crate::wire::WireFault::Decode("indent text is not valid UTF-8".to_string()))?;
+    let sample = usize::try_from(r.sample_lines).unwrap_or(usize::MAX);
+    Ok(detect(text, sample).into_bytes())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,5 +172,28 @@ mod tests {
         // 4, not 2. Without the fix the spurious width-2 lines outscore width-4
         // (2 divides 4) and this returns "Spaces (2)" — the teeth on the bug.
         assert_eq!(detect("    a\r\n  \r\n    b\r\n  \r\n    c\r\n", 50), "Spaces (4)");
+    }
+
+    #[test]
+    fn detect_wire_aux_matches_detect() {
+        // Text rides `aux`; {sample_lines} rides the `req` frame. The raw result
+        // bytes must equal detect() called directly (no framing).
+        let text = "    a\n    b\n";
+        let req = crate::wire::encode_frame(&DetectAuxRequest { sample_lines: 50 }).unwrap();
+        let via = detect_wire_aux(&req, text.as_bytes()).unwrap();
+        assert_eq!(via, detect(text, 50).into_bytes());
+        assert_eq!(String::from_utf8(via).unwrap(), "Spaces (4)");
+
+        // The sample bound is honored through the wire path (only the first
+        // indented line — a tab — is sampled → "Tabs", not "Mixed").
+        let req1 = crate::wire::encode_frame(&DetectAuxRequest { sample_lines: 1 }).unwrap();
+        let one = detect_wire_aux(&req1, "\tx\n    y\n".as_bytes()).unwrap();
+        assert_eq!(String::from_utf8(one).unwrap(), "Tabs");
+
+        // Invalid UTF-8 in `aux` is a typed decode fault, never a panic.
+        assert!(matches!(
+            detect_wire_aux(&req, &[0xff, 0xfe]),
+            Err(crate::wire::WireFault::Decode(_))
+        ));
     }
 }

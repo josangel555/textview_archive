@@ -19,9 +19,18 @@
 //! multi-MiB buffer to search / zero-copy borrowed inputs) so the 16 MiB frame
 //! cap doesn't bite. The `req`-only stateless methods ignore `aux`;
 //! [`Method::HexSearch`] is the first to consume it (the search buffer rides
-//! `aux`, the `{query, mode}` params ride `req`). Bulk *output* (hex render's
-//! ~18 MB dump, which exceeds the frame cap) needs an out-aux mechanism and
-//! stays on its dedicated symbol for now — a separate slice.
+//! `aux`, the `{query, mode}` params ride `req`).
+//!
+//! ## Raw-output methods
+//!
+//! Most methods return a MessagePack response *frame*. Two return **raw bytes**
+//! instead — [`Method::IndentDetect`] (a tiny result string) and
+//! [`Method::HexRender`] (a ~18 MB dump that would blow the 16 MiB frame cap and
+//! whose double-encoding would be pure waste). For these, [`call`] returns the
+//! raw bytes directly (no `encode_frame`); the FFI/front-end knows by method id
+//! not to unframe, and the `MdvStatus` Ok-vs-fault code disambiguates a raw
+//! payload from an error frame. Their bulk INPUT (the text / the bytes to dump)
+//! rides `aux`; the small layout scalars ride `req`.
 
 use crate::wire::WireFault;
 
@@ -54,12 +63,21 @@ pub enum Method {
     /// search rides the `aux` side-channel (frame-cap-exempt); `req` carries
     /// only `{query, mode}`. The FIRST method to consume `aux`.
     HexSearch = 10,
+    /// Indent detection (`indent::detect_wire_aux`). RAW-OUTPUT: the source text
+    /// rides `aux`, `{sample_lines}` rides `req`, and the result is the tiny
+    /// result string as raw bytes (not a frame).
+    IndentDetect = 11,
+    /// Hex dump render (`hex::render_wire_aux`). RAW-OUTPUT: the bytes to dump
+    /// ride `aux`, `{width, total_byte_count, is_truncated}` ride `req`, and the
+    /// ~18 MB dump returns as raw bytes (frame-cap-exempt) — the bulk-output
+    /// case the `aux` channel exists for.
+    HexRender = 12,
 }
 
 impl Method {
     /// The next id a new method gets — pinned by a test so adding a method here
     /// without bumping it (or renumbering an existing one) fails loudly.
-    pub const NEXT_FREE_ID: u16 = 11;
+    pub const NEXT_FREE_ID: u16 = 13;
 
     /// Map a raw `u16` to a [`Method`], or `None` for an id this build doesn't
     /// know (a forward-compat caller sent a newer method) — the FFI envelope
@@ -77,18 +95,25 @@ impl Method {
             8 => Some(Method::TranscriptParseForcedRedaction),
             9 => Some(Method::HighlightRuns),
             10 => Some(Method::HexSearch),
+            11 => Some(Method::IndentDetect),
+            12 => Some(Method::HexRender),
             _ => None,
         }
     }
 }
 
-/// Dispatch a request to its stateless method, returning the response frame —
+/// Dispatch a request to its stateless method, returning the response bytes —
 /// byte-identical to calling the underlying `*_wire` fn directly (the per-method
 /// extern symbols delegate to the same fns, so the envelope and the old symbols
 /// agree exactly during the coexistence window).
 ///
+/// For frame-shaped methods the bytes are a MessagePack response frame; for the
+/// raw-output methods ([`Method::IndentDetect`], [`Method::HexRender`]) they are
+/// raw bytes (see the module docs) — the caller knows which by method id.
+///
 /// `aux` is the bulk side channel: the `req`-only methods ignore it;
-/// [`Method::HexSearch`] consumes it as the buffer to search.
+/// [`Method::HexSearch`] consumes it as the buffer to search, and the
+/// raw-output methods consume it as their bulk input (text / bytes to dump).
 ///
 /// # Errors
 /// Whatever the routed method returns ([`WireFault`] on a wire/encode fault).
@@ -112,6 +137,9 @@ pub fn call(method: Method, req: &[u8], aux: &[u8]) -> Result<Vec<u8>, WireFault
             "highlight_runs is dispatched at the front-end layer, not core".to_string(),
         )),
         Method::HexSearch => crate::hex::search_wire_aux(req, aux),
+        // Raw-output methods: bulk input on `aux`, scalars on `req`, raw bytes out.
+        Method::IndentDetect => crate::indent::detect_wire_aux(req, aux),
+        Method::HexRender => crate::hex::render_wire_aux(req, aux),
     }
 }
 
@@ -133,8 +161,8 @@ mod tests {
     #[test]
     fn next_free_id_is_one_past_the_last_method() {
         // Pins the ABI: adding a Method without bumping NEXT_FREE_ID (or
-        // renumbering one) breaks this. HexSearch is the current last id.
-        assert_eq!(Method::HexSearch as u16 + 1, Method::NEXT_FREE_ID);
+        // renumbering one) breaks this. HexRender is the current last id.
+        assert_eq!(Method::HexRender as u16 + 1, Method::NEXT_FREE_ID);
     }
 
     #[test]
@@ -166,6 +194,40 @@ mod tests {
         // `req` — so this byte-identical match proves the aux channel carried
         // the search buffer through dispatch to hex_search_frame.
         assert_eq!(via, direct, "hex search routes aux→data, req→{{query,mode}}");
+    }
+
+    #[test]
+    fn dispatch_routes_indent_detect_raw_output_over_aux() {
+        // RAW-OUTPUT method: text rides `aux`, {sample_lines} rides `req`, and
+        // the result is the raw string bytes (NOT a frame). Byte-identical to
+        // indent::detect. TEETH: if the text were read from `req` instead of
+        // `aux` (or aux dropped), detect would see empty text → "—" ≠ "Spaces (4)".
+        let text = "    a\n    b\n";
+        let req = crate::wire::encode_frame(&crate::indent::DetectAuxRequest {
+            sample_lines: 50,
+        })
+        .unwrap();
+        let via = call(Method::IndentDetect, &req, text.as_bytes()).unwrap();
+        assert_eq!(via, crate::indent::detect(text, 50).into_bytes());
+        assert_eq!(String::from_utf8(via).unwrap(), "Spaces (4)");
+    }
+
+    #[test]
+    fn dispatch_routes_hex_render_raw_output_over_aux() {
+        // RAW-OUTPUT method: bytes ride `aux`, layout scalars ride `req`, raw
+        // dump bytes out (frame-cap-exempt). Byte-identical to render_all.
+        // TEETH: dropping aux → render_all over &[] → empty dump ≠ the real dump.
+        let data = [0x41u8, 0x42, 0x43];
+        let req = crate::wire::encode_frame(&crate::hex::RenderAuxRequest {
+            width: 4,
+            total_byte_count: data.len() as u64,
+            is_truncated: false,
+        })
+        .unwrap();
+        let via = call(Method::HexRender, &req, &data).unwrap();
+        let direct = crate::hex::render_all(&data, 4, data.len(), false).into_bytes();
+        assert_eq!(via, direct, "hex render routes aux→bytes, req→{{width,…}}, raw out");
+        assert!(!via.is_empty(), "a non-empty buffer renders a non-empty dump");
     }
 
     #[test]

@@ -52,6 +52,16 @@ fn hex_digit(nibble: u8) -> u8 {
     }
 }
 
+/// Upper bound on a render's bytes-per-row. Out-of-range widths clamp rather
+/// than error so the render stays total for any input. Mirrors the FFI ABI
+/// constant `MAX_HEX_WIDTH` (the `#define MAX_HEX_WIDTH` cbindgen emits into the
+/// header) — the two are pinned equal by the envelope A/B parity test, which
+/// renders at an over-cap width through both entry points. The clamp is a
+/// SAFETY guard, not cosmetic: an unclamped `u32::MAX` width drives a ~17 GiB
+/// single-row allocation whose failure aborts past the `catch_unwind` guard
+/// (audit TSK-540).
+pub const MAX_HEX_WIDTH: u32 = 512;
+
 /// Render the entire dump as one string (mirrors `HexDumpBuilder.buildAll`).
 /// `byte_count` is `bytes.len()` (post-truncation); `total_byte_count` is the
 /// pre-truncation file size used only in the `is_truncated` header.
@@ -267,6 +277,44 @@ pub fn search_wire_aux(req: &[u8], aux: &[u8]) -> Result<Vec<u8>, crate::wire::W
     hex_search_frame(aux, r.query, mode)
 }
 
+/// Request for [`render_wire_aux`] (TSK-580 slice 3, output half): just the
+/// small layout scalars. The bytes to render are NOT in this frame — they ride
+/// the dispatch `aux` bulk side-channel (a 4 MB file → ~18 MB dump; frame-cap-
+/// exempt on the input AND the raw output). `pub` so front-ends/tests build it.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct RenderAuxRequest {
+    /// Bytes-per-row, clamped to [`MAX_HEX_WIDTH`] (mirrors `mdvcore_hex_render`).
+    pub width: u32,
+    /// Pre-truncation file size — shown only in the `is_truncated` header.
+    pub total_byte_count: u64,
+    /// Whether the buffer was truncated for display (drives the header line).
+    pub is_truncated: bool,
+}
+
+/// HEX dump render routed through the dispatch envelope (TSK-580 slice 3, the
+/// bulk-OUTPUT half — the genuinely new mechanism the `aux` channel was built
+/// for). The bytes to render arrive as `aux` (frame-cap-exempt); `req` carries
+/// only the `{width, total_byte_count, is_truncated}` frame. Unlike the
+/// frame-returning methods, the response is the **raw UTF-8 dump bytes** (NOT a
+/// MessagePack frame): a ~18 MB dump would blow the 16 MiB frame cap, and
+/// double-encoding it is pure waste. `mdvcore_call` writes these bytes to
+/// `out_buf` verbatim; the `MdvStatus` (Ok vs a wire status) disambiguates raw
+/// output from an error frame. Byte-identical to `render_all` / the dedicated
+/// `mdvcore_hex_render` symbol (the A/B parity test pins it; the symbol keeps
+/// serving during the coexistence window).
+///
+/// # Errors
+/// [`crate::wire::WireFault`] on a request-decode fault. Rendering itself is
+/// total — it never faults — so a successful decode always yields `Ok`.
+pub fn render_wire_aux(req: &[u8], aux: &[u8]) -> Result<Vec<u8>, crate::wire::WireFault> {
+    let r: RenderAuxRequest = crate::wire::decode_frame(req)?;
+    // Same clamp as the FFI symbol (the safety guard, NOT cosmetic — see
+    // MAX_HEX_WIDTH); width == 0 → empty dump per render_all's contract.
+    let width = usize::try_from(r.width.min(MAX_HEX_WIDTH)).unwrap_or(0);
+    let total = usize::try_from(r.total_byte_count).unwrap_or(usize::MAX);
+    Ok(render_all(aux, width, total, r.is_truncated).into_bytes())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -388,5 +436,39 @@ mod tests {
         let frame = hex_search_frame(&data, "dead", HexSearchMode::Hex).unwrap();
         let resp: SearchResponse = crate::wire::decode_frame(&frame).unwrap();
         assert_eq!(resp.offsets, vec![1, 3]);
+    }
+
+    #[test]
+    fn render_wire_aux_matches_render_all_and_clamps_width() {
+        // Bytes ride `aux`; the layout scalars ride the `req` frame. The raw
+        // dump bytes must equal render_all called directly (no framing).
+        let data = [0x00u8, 0x41, 0x7f, 0xff, 0x42];
+        let req = crate::wire::encode_frame(&RenderAuxRequest {
+            width: 4,
+            total_byte_count: data.len() as u64,
+            is_truncated: false,
+        })
+        .unwrap();
+        let via = render_wire_aux(&req, &data).unwrap();
+        assert_eq!(
+            via,
+            render_all(&data, 4, data.len(), false).into_bytes(),
+            "render_wire_aux(req={{width,…}}, aux=bytes) is the raw dump"
+        );
+
+        // Over-cap width clamps to MAX_HEX_WIDTH — the safety guard, identical
+        // to the symbol. Teeth: were the clamp dropped, render_all at
+        // u32::MAX-as-usize would diverge (and on a real buffer abort).
+        let req_big = crate::wire::encode_frame(&RenderAuxRequest {
+            width: MAX_HEX_WIDTH + 1,
+            total_byte_count: data.len() as u64,
+            is_truncated: false,
+        })
+        .unwrap();
+        assert_eq!(
+            render_wire_aux(&req_big, &data).unwrap(),
+            render_all(&data, MAX_HEX_WIDTH as usize, data.len(), false).into_bytes(),
+            "an over-cap width clamps to MAX_HEX_WIDTH"
+        );
     }
 }

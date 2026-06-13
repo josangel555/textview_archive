@@ -636,16 +636,19 @@ fn method_id_consts_match_the_dispatch_enum() {
     );
     assert_eq!(MDV_METHOD_HIGHLIGHT_RUNS, Method::HighlightRuns as u16);
     assert_eq!(MDV_METHOD_HEX_SEARCH, Method::HexSearch as u16);
+    assert_eq!(MDV_METHOD_INDENT_DETECT, Method::IndentDetect as u16);
+    assert_eq!(MDV_METHOD_HEX_RENDER, Method::HexRender as u16);
     // Every const is a live method, and there are exactly (NEXT_FREE_ID - 1).
     for id in [
         MDV_METHOD_CM_APPLY, MDV_METHOD_DIFF_PARSE, MDV_METHOD_DIFF_HUNK_MARKS,
         MDV_METHOD_FUZZY_RANK, MDV_METHOD_FIND_SEARCH, MDV_METHOD_MARKDOWN_RENDER,
         MDV_METHOD_TRANSCRIPT_PARSE, MDV_METHOD_TRANSCRIPT_PARSE_FORCED_REDACTION,
         MDV_METHOD_HIGHLIGHT_RUNS, MDV_METHOD_HEX_SEARCH,
+        MDV_METHOD_INDENT_DETECT, MDV_METHOD_HEX_RENDER,
     ] {
         assert!(Method::from_u16(id).is_some(), "const {id} must be a live method");
     }
-    assert_eq!(Method::NEXT_FREE_ID, 11, "10 methods defined; next free id is 11");
+    assert_eq!(Method::NEXT_FREE_ID, 13, "12 methods defined; next free id is 13");
 }
 
 #[test]
@@ -711,6 +714,99 @@ fn envelope_routes_hex_search_over_the_aux_channel() {
     assert!(!via_bytes.is_empty(), "two matches were found, not zero");
     unsafe { mdvcore_buf_free(&mut via) };
     unsafe { mdvcore_buf_free(&mut direct) };
+}
+
+#[test]
+fn envelope_routes_indent_detect_raw_output() {
+    // RAW-OUTPUT method (TSK-580 slice 3): the source text rides `aux`,
+    // {sample_lines} rides `req`, and the result is the raw string bytes — NOT
+    // a frame. The envelope result must match the dedicated mdvcore_indent_detect
+    // symbol byte-for-byte. TEETH: if the envelope dropped aux, detect would see
+    // empty text → "—", diverging from the symbol's "Spaces (4)".
+    let text = "    a\n    b\n";
+    let req = mdvcore_core::wire::encode_frame(&mdvcore_core::indent::DetectAuxRequest {
+        sample_lines: 50,
+    })
+    .unwrap();
+    let mut via = MdvBuf::empty();
+    let s1 = unsafe {
+        mdvcore_call(
+            MDV_METHOD_INDENT_DETECT,
+            req.as_ptr(),
+            req.len(),
+            text.as_ptr(),
+            text.len(),
+            &mut via,
+        )
+    };
+    let via_bytes = unsafe { via.as_slice() }.to_vec();
+    let mut direct = MdvBuf::empty();
+    let s2 = unsafe { mdvcore_indent_detect(text.as_ptr(), text.len(), 50, &mut direct) };
+    let direct_bytes = unsafe { direct.as_slice() }.to_vec();
+    assert_eq!(s1, MdvStatus::Ok, "indent detect via the envelope succeeds");
+    assert_eq!(s1, s2, "envelope and the indent_detect symbol return the same status");
+    assert_eq!(via_bytes, direct_bytes, "byte-identical raw result — aux carried the text");
+    assert_eq!(via_bytes, b"Spaces (4)", "raw bytes, not a MessagePack frame");
+    unsafe { mdvcore_buf_free(&mut via) };
+    unsafe { mdvcore_buf_free(&mut direct) };
+}
+
+#[test]
+fn envelope_routes_hex_render_raw_bulk_output() {
+    // RAW-OUTPUT method (TSK-580 slice 3, the bulk case): the bytes to dump ride
+    // `aux` (a real file → ~18 MB dump, far past the 16 MiB frame cap), the
+    // {width, total_byte_count, is_truncated} scalars ride `req`, and the dump
+    // returns as raw bytes. Byte-identical to the dedicated mdvcore_hex_render
+    // symbol. TEETH: dropping aux → empty dump diverges from the symbol's.
+    let data: [u8; 5] = [0x00, 0x41, 0x7f, 0xff, 0x42];
+    let req = mdvcore_core::wire::encode_frame(&mdvcore_core::hex::RenderAuxRequest {
+        width: 4,
+        total_byte_count: data.len() as u64,
+        is_truncated: false,
+    })
+    .unwrap();
+    let mut via = MdvBuf::empty();
+    let s1 = unsafe {
+        mdvcore_call(
+            MDV_METHOD_HEX_RENDER,
+            req.as_ptr(),
+            req.len(),
+            data.as_ptr(),
+            data.len(),
+            &mut via,
+        )
+    };
+    let via_bytes = unsafe { via.as_slice() }.to_vec();
+    let mut direct = MdvBuf::empty();
+    let s2 = unsafe { mdvcore_hex_render(data.as_ptr(), data.len(), 4, data.len() as u64, false, &mut direct) };
+    let direct_bytes = unsafe { direct.as_slice() }.to_vec();
+    assert_eq!(s1, MdvStatus::Ok, "hex render via the envelope succeeds");
+    assert_eq!(s1, s2, "envelope and the hex_render symbol return the same status");
+    assert_eq!(via_bytes, direct_bytes, "byte-identical raw dump — aux carried the bytes");
+    assert!(!via_bytes.is_empty(), "a non-empty buffer renders a non-empty dump");
+    // Also pin the over-cap width clamp agrees across the two entry points
+    // (the core MAX_HEX_WIDTH mirrors the FFI ABI constant).
+    let req_big = mdvcore_core::wire::encode_frame(&mdvcore_core::hex::RenderAuxRequest {
+        width: MAX_HEX_WIDTH + 1,
+        total_byte_count: data.len() as u64,
+        is_truncated: false,
+    })
+    .unwrap();
+    let mut via_big = MdvBuf::empty();
+    unsafe {
+        mdvcore_call(MDV_METHOD_HEX_RENDER, req_big.as_ptr(), req_big.len(), data.as_ptr(), data.len(), &mut via_big);
+    }
+    let via_big_bytes = unsafe { via_big.as_slice() }.to_vec();
+    let mut direct_big = MdvBuf::empty();
+    unsafe {
+        mdvcore_hex_render(data.as_ptr(), data.len(), MAX_HEX_WIDTH + 1, data.len() as u64, false, &mut direct_big);
+    }
+    let direct_big_bytes = unsafe { direct_big.as_slice() }.to_vec();
+    assert_eq!(via_big_bytes, direct_big_bytes, "over-cap width clamps identically on both entry points");
+    unsafe { mdvcore_buf_free(&mut via) };
+    unsafe { mdvcore_buf_free(&mut direct) };
+    unsafe { mdvcore_buf_free(&mut via_big) };
+    unsafe { mdvcore_buf_free(&mut direct_big) };
 }
 
 #[test]

@@ -259,6 +259,13 @@ pub const MDV_METHOD_TRANSCRIPT_PARSE: u16 = 7;
 pub const MDV_METHOD_TRANSCRIPT_PARSE_FORCED_REDACTION: u16 = 8;
 pub const MDV_METHOD_HIGHLIGHT_RUNS: u16 = 9;
 pub const MDV_METHOD_HEX_SEARCH: u16 = 10;
+/// Raw-output methods (TSK-580 slice 3): `mdvcore_call` writes the dispatch
+/// result bytes to `out_buf` verbatim — for these two that's RAW bytes (a tiny
+/// result string / a ~18 MB dump), not a MessagePack frame. The bulk input
+/// rides `aux`; the small scalars ride `req`. Byte-identical to the dedicated
+/// `mdvcore_indent_detect` / `mdvcore_hex_render` symbols (coexistence window).
+pub const MDV_METHOD_INDENT_DETECT: u16 = 11;
+pub const MDV_METHOD_HEX_RENDER: u16 = 12;
 
 /// Envelope dispatch. `method` is a `dispatch::Method` discriminant; `req` is the
 /// request frame; `aux` is the bulk side-channel — the `req`-only methods ignore
