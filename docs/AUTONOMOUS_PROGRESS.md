@@ -9169,6 +9169,28 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +353 (2026-06-13 — RUST-CORE Stage B begins: TSK-808 delete IndentDetector Swift twin)
+
+- **TSK-808 → VALIDATED (1e2b557).** Stage B package #1 / the template, under the migration endgame epic
+  TSK-649. The owner RESOLVED 649's park today ("Approve policy + batch 1-4 (indent/hexSearch/hex/diff);
+  review 5-9 individually") — so the Swift-twin deletion the owner asked for ("deprecate swift core") is
+  unblocked. After Stage A's quiet default-ON soak, indent is now **rust-only**:
+  - Deleted `Sources/ViewerCore/IndentDetector.swift` (the Swift twin).
+  - `RustIndentAdapter` collapses to a direct `mdvCoreIndentDetect` call — a bridge fault degrades to the
+    engine's own `"—"` sentinel + a loud `rust-core` `Obs.error` (no silent Swift fallback; surfaced by the
+    TSK-636 audit log).
+  - Retired the `.indent` `RustCoreCapability` gate case + env var + Settings toggle. **Kept** the ABI bit
+    `CoreCapabilities.indent` (`1<<3`) — bits are ABI (BridgeTests pins it).
+  - `IndentDetectABTests` frozen into a **GOLDEN** suite (no Swift oracle; CRLF/trailing-CR cases intact);
+    the CRLF audit regression retargeted to `RustIndentAdapter.detect` (the live path); `IndentDetectorTests`
+    retired (covered by golden + CRLF suites).
+  - Host-validated: golden (17) + CRLF audit (11) + seam (10) green; headless gate green (5073), **no
+    staleness segfault** from the enum-case removal; golden teeth shown (value drift → red). Self-validated
+    (engine behavior, host-runnable).
+  - **Template for #2-4** (hexSearch/hex/diff, owner batch-approved): delete twin → collapse adapter to
+    rust-only + degraded value → retire gate case → A/B→golden + retarget/retire twin tests → gate. Next
+    tick: package #2 (hexSearch). Engines 5-9 (csv/fuzzy/find/transcript/markdown) get individual owner review.
+
 ## LOG +352 (2026-06-13 — minor-feature wave: TSK-763 recents grey folder hint)
 
 - **TSK-763 → review (885cb7b).** Recents rows now show the containing folder in grey after the filename

@@ -1,13 +1,30 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — minor-feature wave underway (TSK-748, TSK-763 landed → review); owner decisions at noon  (2026-06-13)
+# Handoff — RUST-CORE Stage B (twin deletion) is the active lane; #1 indent done  (2026-06-13)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `885cb7b`
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `1e2b557`
 
 ## Mission
-Owner away until ~noon 2026-06-13; overnight autonomous chipping of the 2026-06-13 wishlist. USER-FACING
-bugs first (DONE — whole bug bucket drained), now the `[WISH][minor-feature]` bucket. Validate across the
-pyramid (human not in loop); keep `main` headless-gate-green; land per item via direct commit on the linear
-trunk. Read `docs/TASK_WORKFLOW.md` every firing (esp. §0.5 spike+design autonomy + chipping order).
+Owner away until ~noon 2026-06-13; autonomous chipping. USER-FACING bugs are drained; the wishlist
+minor-feature wave is in flight (748/763 at review). **HIGHEST-VALUE LANE RIGHT NOW: TSK-649 Stage B — the
+owner-approved Swift-twin DELETION endgame ("deprecate swift core").** Validate across the pyramid (human not
+in loop); keep `main` headless-gate-green; land per item on the linear trunk. Read `docs/TASK_WORKFLOW.md`
+every firing (§0.5 spike/design autonomy + chipping order; §1.5 validation-drain outranks new work).
+
+## ⭐ ACTIVE LANE: TSK-649 Stage B — delete the Swift engine twins (owner-approved 2026-06-13)
+The owner resolved TSK-649's park: **"Approve policy + batch 1-4 (indent/hexSearch/hex/diff); review 5-9
+individually."** Stage A (all 10 caps default-ON) is done + soaked. Stage B deletes the now-dead twins per
+`docs/STAGE_B_DELETION_PLAN.md`, one package per engine.
+- **#1 indent — DONE + VALIDATED (TSK-808, commit `1e2b557`).** The template.
+- **#2 hexSearch · #3 hex · #4 diff — batch-approved, NEXT (no individual review needed).** File a child of
+  649 per package (like TSK-808), follow the template, self-validate on the host gate.
+- **#5-9 (csv/fuzzy/find/transcript/markdown) — each needs individual owner review** + carries a named
+  caveat (see the plan: csv DocId, fuzzy FileTreeFilter per-node, find ICU-fallback REMOVAL = behavior
+  change owner must accept, transcript ClaudeSessionIndex helpers, markdown sanitizer/mermaid/TS stay).
+- **The template pattern** (proven on #1): delete twin source → collapse adapter to a direct `mdvCore*` call
+  with a safe degraded value + loud `Obs.error` (no Swift fallback) → retire the `RustCoreCapability` gate
+  case + env var + Settings toggle (KEEP the ABI bit in `CoreCapabilities` — bits are ABI) → freeze the A/B
+  suite to a GOLDEN suite (frozen values, no Swift oracle) + retarget/retire the twin's unit tests → headless
+  gate + golden teeth. `RustCoreSeamTests` `allCases` loops adapt automatically to a removed gate case.
 
 ## Standing directives (2026-06-13)
 - **Spike + design AUTO-APPROVED** (TASK_WORKFLOW §0.5 / memory `feedback_spike_design_autonomy`): never
@@ -49,14 +66,17 @@ Render/event/concurrency items held at `review` — `task_list {project:tasked, 
 - **Terminal Tier-D** (TSK-781). **Dep approvals**: 584/585/587/399.
 
 ## How to resume
-1. Read `docs/TASK_WORKFLOW.md`. `task_list {project:tasked, state:reported, q:"[WISH][minor]"}` for the bucket.
-2. **Continue the `[WISH][minor-feature]` bucket** per chipping order. Headless-friendly next picks
-   (model layer host-testable, render held at review): **TSK-745** (new-tab recent files — `model.recents`
-   exists), **TSK-757/678** (keyboard-shortcut catalog + Help page — a typed catalog + completeness test),
-   **TSK-770** (Find bar Replace/ReplaceAll — replace engine host-testable), **TSK-724** (Recent Locations
-   popup). Avoid items needing live-only validation with no model seam.
-3. Gates: `bash scripts/test-headless-gate.sh` (host, one at a time) · `bash scripts/rust-core-gate.sh`.
-   VM: rsync + `bash scripts/test-in-vm.sh test --filter <Suite>` (headless) /
+1. Read `docs/TASK_WORKFLOW.md`. Then **continue TSK-649 Stage B package #2 (hexSearch)** — the highest-value
+   lane (owner-approved deprecation endgame, headless-validatable). Read `docs/STAGE_B_DELETION_PLAN.md` +
+   `TSK-808` (the validated template). File a child of 649, follow the template, self-validate on the gate.
+   Then #3 hex, #4 diff. Stop and `task_park` for review before #5-9 (each has an owner-review gate + caveat).
+2. **Secondary: the `[WISH][minor-feature]` bucket** (when Stage B 1-4 is done or you want variety). Headless
+   picks: **TSK-745** (new-tab recents — `model.recents` exists), **TSK-757/678** (shortcut catalog + Help),
+   **TSK-770** (Find bar Replace/ReplaceAll), **TSK-724** (Recent Locations). TSK-573 (web palette → core)
+   is triaged but its honest fix is a large CSS var() refactor that needs VM pixel proof — deprioritized.
+3. Gates: `bash scripts/test-headless-gate.sh` (host, one at a time) · `bash scripts/rust-core-gate.sh`
+   (only if `rust-core/` source changed — Stage B twin deletions are Swift-side, so the headless gate covers
+   the golden suites). VM: rsync + `bash scripts/test-in-vm.sh test --filter <Suite>` (headless) /
    `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> ... --filter <T5 suite>` (pixel).
 
 ## Gotchas / lessons (also in LESSONS.md)
