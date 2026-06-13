@@ -43,6 +43,27 @@ CONTENTS="$APP_DIR/Contents"
 echo "==> bash scripts/build-rust-core.sh"
 bash "$SCRIPT_DIR/build-rust-core.sh"
 
+# TSK-813: select the newest installed Swift toolchain when one is present in
+# /Library/Developer/Toolchains. The UTM VM ships swift-6.3-RELEASE there but its
+# DEFAULT `swift` is 6.1.2, which hits a type-checker `<unknown>:0: error:
+# circular reference` on RustCore's recursive `MsgPackValue: Equatable` during a
+# clean compile (an incremental build masks it) — so a from-scratch
+# `build-app.sh` on the VM failed, blocking every clean VM dist build (hence all
+# VM validation). 6.3 compiles it fine. HOST-SAFE: the host has no such toolchain
+# dir, so this is a no-op (uses the default swift). Mirrors test-in-vm.sh's
+# select_toolchain() (the TSK-439 fix for the test target's same 6.1.2 skew).
+select_toolchain() {
+  local newest tcid
+  newest=$(ls -d /Library/Developer/Toolchains/swift-6.*-RELEASE.xctoolchain 2>/dev/null \
+             | sort -V | tail -1)
+  [ -n "$newest" ] && [ -f "$newest/Info.plist" ] || return 0
+  tcid=$(plutil -extract CFBundleIdentifier raw "$newest/Info.plist" 2>/dev/null) || return 0
+  [ -n "$tcid" ] || return 0
+  export TOOLCHAINS="$tcid"
+  echo "==> toolchain: $(basename "$newest") ($tcid)"
+}
+select_toolchain
+
 echo "==> swift build -c $CONFIG"
 ( cd "$ROOT_DIR" && swift build -c "$CONFIG" )
 
