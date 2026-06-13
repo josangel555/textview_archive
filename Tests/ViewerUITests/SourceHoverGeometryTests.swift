@@ -61,4 +61,21 @@ final class SourceHoverGeometryTests: XCTestCase {
                            "round-trip failed for line \(line)")
         }
     }
+
+    // TSK-736: the hover handler dedupes its @State write — `if line !=
+    // hoveredSourceLine`. Its whole value rests on lineAtPointer being LINE-
+    // QUANTIZED: every pointer-y within one line maps to the SAME index, so an
+    // intra-line pointer move produces no write (no re-body / no find repaint),
+    // collapsing a per-pixel storm into one update per line crossing.
+    func test_intraLineSweep_isConstant_thenChangesAtCrossing_dedupePremise() {
+        let s = state()   // lineHeight 16, topInset 10 → line 1 = viewport-y [10, 26)
+        // 32 sub-pixel samples across the whole of line 1 all read as line 1.
+        let samples = stride(from: CGFloat(10), to: 26, by: 0.5)
+            .map { SourceHoverGeometry.lineAtPointer($0, in: s) }
+        XCTAssertEqual(Set(samples), [1],
+            "every intra-line sample maps to one line → the dedupe guard skips all of them")
+        // Crossing into the next line DOES change the value (the guard writes).
+        XCTAssertEqual(SourceHoverGeometry.lineAtPointer(25.99, in: s), 1)
+        XCTAssertEqual(SourceHoverGeometry.lineAtPointer(26.0, in: s), 2)
+    }
 }

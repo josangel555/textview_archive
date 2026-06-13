@@ -953,12 +953,19 @@ struct SourceModeView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .onContinuousHover { phase in
+                    // TSK-736: `.onContinuousHover` fires per pointer-pixel, and a
+                    // @State write always invalidates (SwiftUI doesn't dedupe equal
+                    // values) — re-bodying SourceModeView + re-running the find-
+                    // highlight repaint on EVERY pixel. Guard the write so only an
+                    // actual LINE CHANGE re-bodies (per-pixel → per-line-crossing),
+                    // which is the dominant lag on a big file with Find active.
                     switch phase {
                     case .active(let p):
-                        hoveredSourceLine = SourceHoverGeometry.lineAtPointer(
+                        let line = SourceHoverGeometry.lineAtPointer(
                             p.y, in: sourceView.sourceScrollState)
+                        if line != hoveredSourceLine { hoveredSourceLine = line }
                     case .ended:
-                        hoveredSourceLine = nil
+                        if hoveredSourceLine != nil { hoveredSourceLine = nil }
                     }
                 }
                 if model.isSourceFindBarPresented,
