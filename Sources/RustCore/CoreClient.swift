@@ -1,5 +1,6 @@
 import CMdvCore
 import Foundation
+import os
 
 /// `RustCore` — the Swift bridge over the MarkdownViewer Rust core's
 /// `extern "C"` boundary (adapted from the validated PoC's `PocCore`).
@@ -63,6 +64,16 @@ public enum CoreError: Error, Equatable {
         default: self = .unknown(status.rawValue)
         }
     }
+}
+
+/// The rich error detail carried in the MessagePack body on a wire fault
+/// (TSK-577 emits it; TSK-669 decodes it here). The C status enum is coarse;
+/// this gives host-side diagnosis the message + a stable `kind` tag
+/// (encode|decode|framing|too_large). `code` mirrors the C status discriminant.
+public struct WireErrorDetail: Equatable, Sendable {
+    public let code: Int
+    public let message: String
+    public let kind: String
 }
 
 /// ABI skew guard (TSK-579, audit R4). The cbindgen header bakes
@@ -351,9 +362,27 @@ public final class CsvSession {
         var buf = MdvBuf(data: nil, len: 0, cap: 0)
         let status = fn(h, &buf)
         defer { mdvcore_buf_free(&buf) }
+        if status != MDV_STATUS_OK {
+            // TSK-669: the core emits a rich WireError frame into out_buf on a
+            // wire fault — decode + log it for host-side diagnosis before the
+            // coarse status throws (production triage of large-file/malformed
+            // failures, which the bare enum couldn't explain).
+            Self.logWireErrorIfPresent(buf)
+        }
         try check(status)
         guard let data = buf.data, buf.len > 0 else { return [] }
         return Array(UnsafeBufferPointer(start: data, count: Int(buf.len)))
+    }
+
+    /// If `buf` carries a WireError frame (TSK-577), log its detail. No-op for
+    /// an empty buf or a non-WireError payload. Called on the error path only.
+    static func logWireErrorIfPresent(_ buf: MdvBuf) {
+        guard let data = buf.data, buf.len > 0 else { return }
+        let frame = Array(UnsafeBufferPointer(start: data, count: Int(buf.len)))
+        guard let detail = decodeWireError(frame) else { return }
+        log.error(
+            "FFI wire fault [\(detail.kind, privacy: .public)] code=\(detail.code, privacy: .public): \(detail.message, privacy: .public)"
+        )
     }
 
     // MARK: - Frame + wire decoding
@@ -371,6 +400,33 @@ public final class CsvSession {
             throw CoreError.decode("frame length \(declared) != body \(body.count)")
         }
         return body
+    }
+
+    /// Diagnostics channel for FFI faults (TSK-669).
+    static let log = Logger(subsystem: "com.markdownviewer.RustCore", category: "ffi")
+
+    /// Decode the rich WireError frame the core emits into out_buf on a wire
+    /// fault (TSK-577/669). Returns nil for an empty buf or any frame that
+    /// isn't a WireError map — total and non-throwing, since this runs on the
+    /// ERROR path and must not mask the original status with a decode throw.
+    static func decodeWireError(_ frame: [UInt8]) -> WireErrorDetail? {
+        guard let body = try? unframe(frame) else { return nil }
+        var reader = MsgPackReader(body)
+        guard let map = try? reader.decode().mapValue(),
+              let code = try? map.require("code").i64Value(),
+              let message = try? map.require("message").stringValue()
+        else { return nil }
+        var kind = ""
+        if let pairs = try? map.require("data").arrayValue() {
+            for pair in pairs {
+                guard let kv = try? pair.arrayValue(), kv.count == 2,
+                      let k = try? kv[0].stringValue(), k == "kind",
+                      let v = try? kv[1].stringValue()
+                else { continue }
+                kind = v
+            }
+        }
+        return WireErrorDetail(code: Int(code), message: message, kind: kind)
     }
 
     static func decodeTable(_ frame: [UInt8]) throws -> Table {

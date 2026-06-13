@@ -178,4 +178,45 @@ final class ABTests: XCTestCase {
         let win = try session.snapshotWindow(offset: 0, limit: 3)
         XCTAssertEqual(win.indices.map(Int.init), [1, 10, 11])
     }
+
+    /// TSK-669 — the host decodes the rich WireError frame TSK-577 emits.
+    /// Round-trips the EXACT shape the rust side writes ({code, message,
+    /// data:[["kind", tag]]}); the rust FFI test proves that shape is emitted.
+    func testWireErrorDetailDecodesEmittedFrame() throws {
+        let frame = MsgPackValue.map([
+            (.string("code"), .int(4)),
+            (.string("message"), .string("wire decode error: boom")),
+            (.string("data"), .array([.array([.string("kind"), .string("decode")])])),
+        ]).frame()
+        let detail = try XCTUnwrap(CsvSession.decodeWireError(frame))
+        XCTAssertEqual(detail.code, 4)
+        XCTAssertEqual(detail.message, "wire decode error: boom")
+        XCTAssertEqual(detail.kind, "decode")
+    }
+
+    /// The decoder runs on the ERROR path, so it must be TOTAL — never throw or
+    /// crash on an empty / non-WireError / garbage frame (that would mask the
+    /// real status).
+    func testDecodeWireErrorIsTotalOnBadFrames() {
+        XCTAssertNil(CsvSession.decodeWireError([]))
+        XCTAssertNil(CsvSession.decodeWireError(MsgPackValue.int(7).frame()))
+        XCTAssertNil(CsvSession.decodeWireError([0xFF, 0x00]))
+    }
+
+    /// Wiring pin (dead-channel idiom): the session call path decodes+logs the
+    /// emitted detail before the coarse status throws. os.Logger output isn't
+    /// assertable, so the channel is source-pinned here; the decoder behavior is
+    /// pinned by the two tests above.
+    func testCallBufSurfacesWireErrorBeforeThrowing() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let src = try String(
+            contentsOf: root.appendingPathComponent("Sources/RustCore/CoreClient.swift"),
+            encoding: .utf8)
+        XCTAssertTrue(src.contains("Self.logWireErrorIfPresent(buf)"),
+                      "callBuf must surface the WireError on the error path")
+        XCTAssertTrue(src.contains("decodeWireError(frame)"),
+                      "the surfacer must decode the emitted frame")
+    }
 }
