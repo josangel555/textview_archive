@@ -1,7 +1,7 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — RUST-CORE Stage B (twin deletion) is the active lane; #1 indent done  (2026-06-13)
+# Handoff — minor-features + fixed-lane drain; groomed pools mostly validated  (2026-06-13)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `90fcc06` (+ a docs commit). Recent ticks: interactive Rename Symbol UI (640); TSK-564 FFI copy-2 elimination (in-place frame decode, rust-core lane).
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `fdb072a` (+ a docs commit). Recent: 640 rename UI; 564 FFI copy-2; 575 re-triaged (deprioritized hygiene — casts benign); **745 new-tab landing recents (fixed, render→VM)** + the recurring ThemeStore-singleton parallel-test flake fixed.
 
 ## Two process rules (both learned the hard way) + actionable pool
 1. **Pick the first viable bounded item within 2-3 board reads and START.** Gate + teeth are the safety net, not pre-analysis.

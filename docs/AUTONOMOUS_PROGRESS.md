@@ -9169,6 +9169,25 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +362 (2026-06-13 — TSK-745 new-tab landing shows recent files + theme-flake fix)
+
+- **TSK-745 → fixed (commit fdb072a).** EmptyStateView (the empty/new-tab content) now surfaces a capped
+  recents launcher (icon + name + grey containing-folder, click→openPath) below the Open buttons; empty
+  recents fall back to the ⌘K hint. Cap via a nonisolated pure `DocumentModel.landingRecents(from:)` (8) —
+  the sidebar's Recent section keeps the full scrollable list. Host-tested (LandingRecentsTests: cap ≤8 +
+  newest-first order + under-cap passthrough + empty; teeth shown — uncapped → red). a11y ids
+  `mdv.emptyState.recent*` for a VM UI test. The list render + click = SwiftUI → review/VM. Scoped to recent
+  FILES; the compound New-Tab vision (recent folders w/ git indicator, new-file-type buttons, embedded
+  browser, drag-reorder) = separate slices 747/714/274.
+- **Recurring theme-flake fixed (commit de44826).** SetThemeVerbTests asserted on the shared
+  `ThemeStore.shared` singleton, which ChromeThemeTests/ThemeSelectionModelTests mutate concurrently under
+  `--parallel` — it flaked the gate across the last several ticks (incl. this one's first 2 gate runs).
+  Dropped those assertions (keep the race-free per-instance `model.selectedThemeID`; the global-persistence
+  didSet is ThemeStore's own contract). 2 clean gate runs after.
+- **Process — pick-fast WORKED this tick.** Committed to 745 (handoff's top pick) in 2 reads (SOP + verify),
+  built + host-tested + landed, and cleaned up the flake I owned. No mid-tick oscillation. The verify-read
+  confirmed 745 was buildable (EmptyStateView + a real cap behavior), not render-only.
+
 ## LOG +361 (2026-06-13 — TSK-575 RE-TRIAGE: the audit over-claimed "13 cast safety bugs"; they're guarded-benign)
 
 - **TSK-575 re-triaged, NOT swept (board-hygiene correction).** Picked it as a "real-bug" rust-core item (the
