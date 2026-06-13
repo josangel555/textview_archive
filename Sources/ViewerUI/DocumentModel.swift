@@ -1280,7 +1280,15 @@ public final class DocumentModel: ObservableObject {
     /// Falls back to `GitClient.discoverRoot` if the file's repo isn't
     /// tracked yet (it will be — opening the tab triggers
     /// `repoFocus.recompute()` which retains it).
+    /// TSK-672/814: when blame mode is on, the editor gutter shows per-line
+    /// authorship instead of diff bars. Toggled via `toggleEditorBlame()` /
+    /// the "Toggle Git Blame" command. `refreshDiffMarks` is the central
+    /// gutter-refresh (fired on file open/switch/save/watch), so routing it to
+    /// blame here makes blame survive tab switches without a separate hook.
+    @Published public var editorBlameActive = false
+
     public func refreshDiffMarks() {
+        if editorBlameActive { refreshBlameMarks(); return }
         diffMarksTask?.cancel()
         guard let url = currentURL,
               let repoRoot = resolveGutterRoot(for: url)
@@ -1320,6 +1328,40 @@ public final class DocumentModel: ObservableObject {
                 self.editor.setEditorGutterMarkers(cmMarkers, forURL: token)
             }
         }
+    }
+
+    /// TSK-814: feed the editor gutter with per-line git blame for the active
+    /// file. Mirrors `refreshDiffMarks` (off-main git + a marker feeder routed
+    /// through the same `setEditorGutterMarkers` channel), but produces
+    /// `"blame"`-kind markers with author/time/summary tooltips. Reaped/replaced
+    /// when blame mode turns off (the diff refresh resumes via the route-guard).
+    public func refreshBlameMarks() {
+        diffMarksTask?.cancel()
+        guard editorBlameActive, let url = currentURL,
+              let repoRoot = resolveGutterRoot(for: url)
+        else { diffMarksTask = nil; return }
+        let relPath = Self.relativePath(of: url, under: repoRoot)
+        let token = url
+        diffMarksTask = Task.detached(priority: .userInitiated) { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.diffMarksDebounceNanos)
+            if Task.isCancelled { return }
+            let client = GitClient(repoRoot: repoRoot, statusTimeout: Self.gutterDiffTimeout)
+            let blame = client.blame(path: relPath)
+            if Task.isCancelled { return }
+            let cmMarkers = BlameGutterFeeder.markers(from: blame)
+            await MainActor.run { [weak self] in
+                guard let self, self.currentURL == token, self.editorBlameActive else { return }
+                self.editor.setEditorGutterMarkers(cmMarkers, forURL: token)
+            }
+        }
+    }
+
+    /// Toggle the editor blame gutter (the "Toggle Git Blame" command / verb).
+    /// Routes through `refreshDiffMarks`, which dispatches to blame-or-diff per
+    /// `editorBlameActive` — so turning blame OFF restores the diff bars.
+    public func toggleEditorBlame() {
+        editorBlameActive.toggle()
+        refreshDiffMarks()
     }
 
     /// CHANGE 2 (split coverage): refresh the SPLIT pane's gutter diff.

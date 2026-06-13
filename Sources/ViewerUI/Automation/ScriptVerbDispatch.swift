@@ -178,6 +178,11 @@ public enum ScriptVerb {
             // (TSK-640) — the command/menu entry. Fetches off-main + lists;
             // picking applies the edit-bearing action (command-only refused).
             model.showCodeActionPicker()
+        case "toggle-blame":
+            // TSK-814: toggle the editor blame gutter (per-line author/time/
+            // summary). Routes through refreshDiffMarks → blame-or-diff per the
+            // editorBlameActive flag, so toggling off restores the diff bars.
+            model.toggleEditorBlame()
         case "set-theme":
             // Headless theming seam (TSK-641): select a theme by id — the
             // automation/UAT equivalent of the Settings → Appearance picker.

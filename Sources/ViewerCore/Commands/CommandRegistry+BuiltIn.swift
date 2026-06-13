@@ -249,6 +249,9 @@ extension CommandRegistry {
             id: "git.repoHistory", title: "Show Repository History", category: .git,
             defaultShortcut: Shortcut(key: "l", modifiers: [.command, .option, .shift]),
             scriptVerb: nil),
+        CommandDescriptor(
+            id: "git.toggleBlame", title: "Toggle Git Blame", category: .git,
+            scriptVerb: "toggle-blame"),
 
         // MARK: Sessions
         CommandDescriptor(

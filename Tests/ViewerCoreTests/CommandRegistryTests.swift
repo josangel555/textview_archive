@@ -82,6 +82,8 @@ final class CommandRegistryTests: XCTestCase {
             "editor-format",
             // LSP rename prompt + code-action picker (TSK-640)
             "show-lsp-rename", "show-code-actions",
+            // git blame gutter toggle (TSK-814)
+            "toggle-blame",
         ]
         for cmd in CommandRegistry.builtIn.commands {
             guard let verb = cmd.scriptVerb else { continue }
