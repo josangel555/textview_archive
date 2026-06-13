@@ -9169,6 +9169,23 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +405 (2026-06-13 — TSK-821 rendered-markdown per-file scroll (the dominant TSK-743 case); VM suite triaged + TSK-822 filed)
+
+- **TSK-821 (rendered-markdown WKWebView per-file scroll) → fixed (commit `43a29a3`, headless gate green; held for VM).**
+  The third + dominant scroll channel (rendered is the DEFAULT markdown mode), completing TSK-743 across editor + source
+  (865fdd6) + rendered. PULL design, WV-7-compatible (no user-scripts, no message handler): `DocumentModel.renderedScrollByURL`
+  store (cap 64) + `rememberRenderedScroll(y>0)` / `renderedScrollOffset`; `MarkdownRenderedView` captures the OUTGOING
+  file's `window.scrollY` (evaluateJavaScript) right before the html-change `loadHTMLString` resets it, and restores the
+  incoming file's offset in `didFinish` via `scrollTo({behavior:'instant'})`; ContentView wires it by `file.url`. Store
+  host-tested with teeth (`test_renderedScroll_remembersAndRestoresPerURL` — round-trip + isolation + the y≤0 no-overwrite
+  guard). The JS round-trip + visible restore are the VM #192 lane (a `PaneScrollRestoreWebViewTests` should be added + wired
+  per the TSK-621 rule).
+- **VM headless suite (this session's changes, Swift 6.3) triaged: NO regressions.** The headless tiers passed (forward-compat
+  green). 3 visual-regression suites false-failed (AppleScript `-609` / blank screencaptures) because they ran in the NON-GUI
+  `test-in-vm.sh test` lane where they can't drive the GUI-session app — a pre-existing tier-gating gap (they gate on
+  GUI-session-presence, not `MDV_VM_GUI_SESSION`), filed as **TSK-822** (gate them like TSK-817's `shouldRunLiveTiers`). Plus
+  `TerminalForegroundBumpTests` flaked on the VM (20s, PTY-over-ssh load) but passes on the host in 0.054s — not a regression.
+
 ## LOG +404 (2026-06-13 — validation drain: TSK-741, TSK-736, TSK-619 → validated (2 self-validatable opts + 1 closed by the profile))
 
 Host-actionable pool drained + perf cluster parked → ran the §1.5 validation drain on this session's review/fixed-held items. Re-ran each evidence FRESH on current main (fd1530c), then validated 3:
