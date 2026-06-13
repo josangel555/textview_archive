@@ -9169,6 +9169,28 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +326 (2026-06-13 tick — validation drain: 3 fixed-lane items → validated, no regressions)
+
+With the rust-core clean pool drained and no P1 user-facing bug open, ran the §1.5 validation drain
+on the `blocker: none` fixed-lane items whose behavior is HOST-testable. Re-ran each named suite
+FRESH on main b2b7cb7; all green (no regressions surfaced), so self-validated:
+- **TSK-642 (VS Code theme import)** → validated. VSCodeThemeImporterTests (6 behavioral: end-to-end
+  JSON parse → TextMate scopes, specificity last-longest-wins, luminance dark-inference, JSONC
+  stripping, typed errors, install-into-store) + ThemeSelectionModelTests. The importer is pure
+  logic (the deliverable), fully host-testable.
+- **TSK-637 (markdown outline sidebar)** → validated. MarkdownOutlinePanelTests proves the OUTLINE
+  panel's data source serves the markdown heading tree for .md (it had NONE — was LSP-only); renders
+  through the already-validated OutlinePanel, so the new data-source regression surface is guarded.
+- **TSK-306 (preview-tab + commit-on-edit)** → validated. DocumentModelPreviewTests +
+  TabsStatePreviewTests (15) pin the model: select previews into ONE reused slot, open/edit PROMOTES
+  to permanent, at-most-one-preview invariant.
+- Left **TSK-272** (arrow-nav previews) at fixed: its openPreview model is host-tested but the
+  arrow-KEY event trigger (SidebarKeyMonitor) is live-gated — needs the glance.
+
+The drain is the explicitly-sanctioned move when no P1 bug is open (it caught the live TSK-621
+regression historically); these 3 held green. Remaining fixed-lane items are mostly
+`blocker: live-validation` (VM/owner glance) or older rendered-UI features. No code change this tick.
+
 ## LOG +325 (2026-06-13 tick — TSK-669 closes the error-model-v2 loop: host decodes+logs WireError)
 
 - **TSK-669 (consumer for TSK-577) — FIXED (`4c7dbc1`).** TSK-577 made the FFI EMIT a rich
