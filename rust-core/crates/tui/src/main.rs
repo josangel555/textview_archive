@@ -39,6 +39,7 @@ use mdvcore_core::nav::{self, SortKey};
 use mdvcore_core::outline::{self, Heading};
 use mdvcore_core::filter;
 use mdvcore_core::find;
+use mdvcore_core::format;
 use mdvcore_core::git;
 use mdvcore_core::history;
 use mdvcore_core::meta;
@@ -2417,7 +2418,7 @@ impl App {
                         p.name,
                         shown.len(),
                         rows.len(),
-                        human_size(p.total),
+                        format::human_size(p.total),
                     )
                 } else {
                     format!(
@@ -2425,7 +2426,7 @@ impl App {
                         p.name,
                         rows.len(),
                         header.len(),
-                        human_size(p.total),
+                        format::human_size(p.total),
                     )
                 };
                 let widths = column_widths(header, rows);
@@ -2517,7 +2518,7 @@ impl App {
                         Style::new().fg(Color::Cyan).bold(),
                     )));
                 }
-                lines.push(Line::from(human_size(p.total)));
+                lines.push(Line::from(format::human_size(p.total)));
                 if p.truncated {
                     lines.push(Line::from(Span::styled(
                         "· file truncated at the preview cap",
@@ -2545,7 +2546,7 @@ impl App {
                     " {} · diff · {} lines · {}{trunc} ",
                     p.name,
                     lines.len(),
-                    human_size(p.total),
+                    format::human_size(p.total),
                 );
                 let start = p.scroll.min(lines.len().saturating_sub(1));
                 let gw = view::gutter_width(lines.len());
@@ -2614,7 +2615,7 @@ impl App {
                         " {}{state} · {mode} · indent: {} · {}{badge}{trunc} ",
                         p.name,
                         p.view.indent,
-                        human_size(p.total),
+                        format::human_size(p.total),
                     )
                 };
                 let start = p.scroll.min(lines.len().saturating_sub(1));
@@ -3027,15 +3028,13 @@ fn mtime_secs(meta: &fs::Metadata) -> Option<u64> {
 /// keeps it read-only-friendly (no index-lock churn) and the non-zero exit on a
 /// non-repo path maps cleanly to `None` (no panic, no error spew).
 fn git_status_for(dir: &Path) -> Option<git::RepoStatus> {
-    // SECURITY (TSK-549): browsed directories are untrusted. Repo-local config
-    // can make a bare `git status` EXECUTE attacker-chosen commands
-    // (core.fsmonitor) or honor hostile hook paths — neutralize both with `-c`
-    // overrides (they take precedence over the repo's own config).
+    // SECURITY (TSK-549): browsed directories are untrusted; the hardening `-c`
+    // overrides live in core::git as the single source (shared with the web tier).
     let out = Command::new("git")
-        .args(["-c", "core.fsmonitor=", "-c", "core.hooksPath=/dev/null"])
+        .args(git::SANDBOX_ARGS)
         .arg("-C")
         .arg(dir)
-        .args(["--no-optional-locks", "status", "--porcelain=v1", "--branch"])
+        .args(git::STATUS_ARGS)
         .output()
         .ok()?;
     if !out.status.success() {
@@ -3066,16 +3065,6 @@ fn column_widths(header: &[String], rows: &[Vec<String>]) -> Vec<Constraint> {
         .into_iter()
         .map(|x| Constraint::Length(u16::try_from(x).unwrap_or(u16::MAX)))
         .collect()
-}
-
-fn human_size(bytes: usize) -> String {
-    if bytes < 1024 {
-        format!("{bytes} B")
-    } else if bytes < 1024 * 1024 {
-        format!("{:.1} KB", bytes as f64 / 1024.0)
-    } else {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-    }
 }
 
 /// Map a syntax [`TokenKind`] to a terminal colour (TSK-257). `None` = leave the

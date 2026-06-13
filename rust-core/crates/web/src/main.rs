@@ -28,6 +28,7 @@ use std::{fs, thread};
 
 use mdvcore_core::filter;
 use mdvcore_core::find;
+use mdvcore_core::format;
 use mdvcore_core::git;
 use mdvcore_core::hex::{self, HexSearchMode};
 use mdvcore_core::image::{self, ImageInfo};
@@ -896,15 +897,13 @@ fn filter_box(dir: &Path, sort: SortKey, show_hidden: bool, filter: &str) -> Str
 /// read-only-friendly; a non-repo exits non-zero and yields no badge. The summary
 /// text is `esc`-escaped (a branch name can contain markup-significant chars).
 fn git_status_html(dir: &Path) -> String {
-    // SECURITY (TSK-549): a browsed directory is untrusted content. Repo-local
-    // config can make a bare `git status` EXECUTE attacker-chosen commands
-    // (core.fsmonitor) or pick up hostile hook paths — neutralize both before
-    // any repo config is honored. `-c` overrides apply over repo config.
+    // SECURITY (TSK-549): a browsed directory is untrusted content; the hardening
+    // `-c` overrides live in core::git as the single source (shared with the TUI).
     let Ok(out) = Command::new("git")
-        .args(["-c", "core.fsmonitor=", "-c", "core.hooksPath=/dev/null"])
+        .args(git::SANDBOX_ARGS)
         .arg("-C")
         .arg(dir)
-        .args(["--no-optional-locks", "status", "--porcelain=v1", "--branch"])
+        .args(git::STATUS_ARGS)
         .output()
     else {
         return String::new();
@@ -1051,7 +1050,7 @@ fn content_html(
         esc(&name),
         mode_str(v.mode),
         esc(&v.indent),
-        human_size(total),
+        format::human_size(total),
         badge,
         trunc
     );
@@ -1662,10 +1661,10 @@ fn image_html(name: &str, raw: &[u8], info: Option<ImageInfo>, truncated: bool) 
             i.kind.label(),
             i.width,
             i.height,
-            human_size(raw.len())
+            format::human_size(raw.len())
         ));
     } else {
-        s.push_str(&format!("<b>image</b> · dimensions unavailable · {}", human_size(raw.len())));
+        s.push_str(&format!("<b>image</b> · dimensions unavailable · {}", format::human_size(raw.len())));
     }
     s.push_str("</div>");
     if truncated {
@@ -1848,16 +1847,6 @@ fn mtime_secs(meta: &fs::Metadata) -> Option<u64> {
         .ok()
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
         .map(|d| d.as_secs())
-}
-
-fn human_size(bytes: usize) -> String {
-    if bytes < 1024 {
-        format!("{bytes} B")
-    } else if bytes < 1024 * 1024 {
-        format!("{:.1} KB", bytes as f64 / 1024.0)
-    } else {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-    }
 }
 
 fn short(path: &Path) -> String {

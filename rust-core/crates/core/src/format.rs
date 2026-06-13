@@ -486,9 +486,23 @@ fn xml_emit(toks: &[Tok]) -> String {
     out.trim_end().to_string()
 }
 
+/// Human-readable byte size — `512 B`, `1.5 KB`, `3.0 MB`. Shared by the file
+/// browser / metadata surfaces of every front-end (was duplicated verbatim in the
+/// TUI and web tiers; TSK-570). Sans-IO; one short `String`.
+#[must_use]
+pub fn human_size(bytes: usize) -> String {
+    if bytes < 1024 {
+        format!("{bytes} B")
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{pretty_json, pretty_xml};
+    use super::{human_size, pretty_json, pretty_xml};
 
     #[test]
     fn compact_object_is_indented() {
@@ -614,6 +628,18 @@ mod tests {
     fn xml_svg_self_closing_root_formats() {
         let out = pretty_xml(r#"<svg><rect x="0"/><circle r="1"/></svg>"#).expect("valid");
         assert_eq!(out, "<svg>\n  <rect x=\"0\"/>\n  <circle r=\"1\"/>\n</svg>");
+    }
+
+    #[test]
+    fn human_size_formats_each_magnitude_band() {
+        assert_eq!(human_size(0), "0 B");
+        assert_eq!(human_size(512), "512 B");
+        assert_eq!(human_size(1023), "1023 B"); // just under the KB threshold
+        assert_eq!(human_size(1024), "1.0 KB");
+        assert_eq!(human_size(1536), "1.5 KB");
+        assert_eq!(human_size(1024 * 1024 - 1), "1024.0 KB"); // just under the MB threshold
+        assert_eq!(human_size(1024 * 1024), "1.0 MB");
+        assert_eq!(human_size(5 * 1024 * 1024), "5.0 MB");
     }
 
     #[test]

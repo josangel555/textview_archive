@@ -18,6 +18,20 @@
 //! UU merge.rs          unmerged / conflicted
 //! ```
 
+/// Security-hardening flags (TSK-549) that MUST precede any repo-config-honoring
+/// `git` invocation on an UNTRUSTED browsed directory: an empty `core.fsmonitor`
+/// disables the arbitrary-command-execution vector, and `core.hooksPath=/dev/null`
+/// neutralizes hostile repo hooks. `-c` overrides take precedence over the repo's
+/// own config. The core stays sans-IO — the front-ends own the spawn — but it owns
+/// these security-critical flags as the SINGLE source so the TUI and web
+/// invocations can't drift apart. Prepend before `-C <dir>` and [`STATUS_ARGS`].
+pub const SANDBOX_ARGS: [&str; 4] = ["-c", "core.fsmonitor=", "-c", "core.hooksPath=/dev/null"];
+
+/// The `git status` porcelain args a front-end passes after `-C <dir>` to produce
+/// the stdout [`parse_status`] consumes. `--no-optional-locks` keeps it
+/// read-only-friendly (no index-lock churn).
+pub const STATUS_ARGS: [&str; 4] = ["--no-optional-locks", "status", "--porcelain=v1", "--branch"];
+
 /// A one-glance summary of a working tree's git state, derived from
 /// `git status --porcelain=v1 --branch`. All counts are file counts.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -167,6 +181,17 @@ fn bracket_count(seg: &str, key: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sandbox_args_pin_the_tsk549_hardening_flags() {
+        // TSK-549: these two `-c` overrides are the load-bearing defense against a
+        // hostile browsed-repo config (core.fsmonitor command execution + hook
+        // path). Pin them EXACTLY so a front-end refactor / a "cleanup" that drops
+        // or weakens one reddens here, not in the wild. Order matters: each `-c`
+        // must immediately precede its key=value.
+        assert_eq!(SANDBOX_ARGS, ["-c", "core.fsmonitor=", "-c", "core.hooksPath=/dev/null"]);
+        assert_eq!(STATUS_ARGS, ["--no-optional-locks", "status", "--porcelain=v1", "--branch"]);
+    }
 
     #[test]
     fn clean_tracking_branch_reports_branch_ahead_behind_and_clean() {
