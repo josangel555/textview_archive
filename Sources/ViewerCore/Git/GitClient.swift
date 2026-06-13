@@ -222,6 +222,80 @@ public final class GitClient: Sendable {
         (try? run(["diff", "--no-color", baseRef, tipRef])) ?? ""
     }
 
+    // MARK: - blame
+
+    /// One line's authorship, from `git blame` (TSK-672). `line` is the 1-based
+    /// FINAL line number; `sha` is the short (8-char) commit id for display;
+    /// `timestamp` is the author-time epoch (seconds) for relative-time rendering.
+    public struct BlameLine: Equatable, Sendable {
+        public let line: Int
+        public let sha: String
+        public let author: String
+        public let timestamp: Int
+        public let summary: String
+
+        public init(line: Int, sha: String, author: String, timestamp: Int, summary: String) {
+            self.line = line
+            self.sha = sha
+            self.author = author
+            self.timestamp = timestamp
+            self.summary = summary
+        }
+    }
+
+    /// `git blame --line-porcelain HEAD -- <path>` → per-line authorship.
+    /// Returns `[]` on any failure (not-a-repo / untracked / binary), matching
+    /// the non-throwing contract of `log`/`status`. The parse is factored into
+    /// `parseBlamePorcelain` so it's host-testable without a real repo.
+    public func blame(path: String) -> [BlameLine] {
+        guard let out = try? run(["blame", "--line-porcelain", "HEAD", "--", path]) else {
+            return []
+        }
+        return GitClient.parseBlamePorcelain(out)
+    }
+
+    /// Parse `git blame --line-porcelain` output. Each FINAL line is one record:
+    /// a header `<40-hex-sha> <orig-line> <final-line> [<group-count>]`, then the
+    /// commit fields (`author `, `author-time `, `summary `, … — repeated per
+    /// line under `--line-porcelain`, so no cross-line commit cache is needed),
+    /// terminated by the `\t<content>` line. Pure + sans-IO (host-testable).
+    public static func parseBlamePorcelain(_ output: String) -> [BlameLine] {
+        var result: [BlameLine] = []
+        var sha = "", author = "", summary = ""
+        var finalLine = 0, time = 0
+        var inRecord = false
+        for raw in output.split(separator: "\n", omittingEmptySubsequences: false) {
+            if raw.first == "\t" {
+                // The content line closes the current record.
+                if inRecord {
+                    result.append(BlameLine(
+                        line: finalLine, sha: String(sha.prefix(8)),
+                        author: author, timestamp: time, summary: summary))
+                    inRecord = false
+                }
+                continue
+            }
+            let parts = raw.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: false)
+            let key = parts.first.map(String.init) ?? ""
+            let val = parts.count > 1 ? String(parts[1]) : ""
+            if key.count == 40, key.allSatisfy(\.isHexDigit) {
+                // Header line starts a new record. val = "<orig> <final> [<count>]".
+                sha = key
+                let nums = val.split(separator: " ").compactMap { Int($0) }
+                finalLine = nums.count >= 2 ? nums[1] : 0
+                author = ""; time = 0; summary = ""
+                inRecord = true
+            } else if key == "author" {
+                author = val
+            } else if key == "author-time" {
+                time = Int(val) ?? 0
+            } else if key == "summary" {
+                summary = val
+            }
+        }
+        return result
+    }
+
     // MARK: - identity
 
     /// `git config user.name` / `user.email` — the identity reviews are
