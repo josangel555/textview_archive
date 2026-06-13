@@ -758,6 +758,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.newTab()
     }
 
+    /// File → New File (⌘N, TSK-329). Creates an untitled file in the
+    /// selected folder (or the sidebar root) via the atomic NewFileCreator
+    /// and opens it. validateMenuItem disables it when no folder is open.
+    @objc func newFile(_ sender: Any?) {
+        guard let dir = model.newFileTargetDirectory else { return }
+        model.createNewFile(in: dir)
+    }
+
     @objc func closeCurrentTab(_ sender: Any?) {
         guard model.tabs.selectedIndex != nil else {
             window?.performClose(nil)
@@ -1084,6 +1092,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         newTabItem.target = self
         applyShortcut("file.newTab", to: newTabItem)
         fileMenu.addItem(newTabItem)
+
+        // TSK-329: File → New File (⌘N). Creates an untitled file in the
+        // selected folder (or the sidebar root) and opens it. Disabled when
+        // no folder is open (validateMenuItem).
+        let newFileItem = NSMenuItem(
+            title: "New File",
+            action: #selector(newFile(_:)),
+            keyEquivalent: "n"
+        )
+        newFileItem.target = self
+        fileMenu.addItem(newFileItem)
 
         let openItem = NSMenuItem(
             title: "Open…",
@@ -1822,6 +1841,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let hasFile = model.currentURL != nil
         let hasTab  = model.tabs.selected != nil
         switch item.action {
+        case #selector(newFile(_:)):
+            // TSK-329: needs a folder to create into (selected dir or root).
+            return model.newFileTargetDirectory != nil
         case #selector(printRenderedPage(_:)), #selector(exportRenderedPDF(_:)):
             return model.canPrintRenderedPage
         case #selector(toggleViewMode(_:)):

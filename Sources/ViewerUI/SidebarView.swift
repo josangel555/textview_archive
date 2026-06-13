@@ -1057,6 +1057,10 @@ private struct FileRowContextMenu: View {
         Button("Copy Relative Path") { Pasteboard.copy(relativePath) }
         Button("Reveal in Finder") { Finder.reveal(node.url) }
         if node.isDirectory {
+            // TSK-329: create a new file in this folder (the right-click →
+            // New File entry point). Atomic + non-colliding via the model.
+            Button("New File") { model.createNewFile(in: node.url) }
+            Divider()
             Button("Open in Terminal") { openInTerminal(node.url) }
             // MARK: - Search in Folder (folder-context agent)
             // Presents the unified search panel with the scope picker

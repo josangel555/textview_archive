@@ -591,6 +591,45 @@ public final class DocumentModel: ObservableObject {
         }
     }
 
+    /// TSK-329 — create a new empty file in `directory` (atomic + TOCTOU-
+    /// safe via `NewFileCreator`: O_EXCL|O_NOFOLLOW, non-colliding name),
+    /// reveal it in the tree, select it, and open it for editing in one
+    /// step. Returns the created URL, or nil on failure (logged; a sandbox
+    /// denial or an exhausted name cap must not crash the menu action).
+    /// The single entry point for File→New and the folder right-click →
+    /// New File.
+    @discardableResult
+    public func createNewFile(in directory: URL, baseName: String = "Untitled.txt") -> URL? {
+        do {
+            let url = try NewFileCreator.create(in: directory, baseName: baseName)
+            // Show it immediately (don't wait for the FSEvents coalesce).
+            sidebar.reloadChildren(of: directory)
+            sidebar.setSelected(url)
+            open(url: url)
+            return url
+        } catch {
+            Obs.shared.emit(.warn, "files",
+                            "New File failed: \(String(describing: error))")
+            return nil
+        }
+    }
+
+    /// File→New target: the selected sidebar folder if one is selected and
+    /// is a directory, else the sidebar root. nil when no folder is open
+    /// (the menu item disables).
+    public var newFileTargetDirectory: URL? {
+        if let sel = sidebar.selectedURL {
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: sel.path, isDirectory: &isDir),
+               isDir.boolValue {
+                return sel
+            }
+            // A file is selected → its containing folder.
+            if sidebar.rootURL != nil { return sel.deletingLastPathComponent() }
+        }
+        return sidebar.rootURL
+    }
+
     /// Open a file at a specific 1-based source line and place the
     /// caret / selection there. Used by search-result rows
     /// (`SearchAnywhereSection`, `CrossSearchPanel`) so the user lands

@@ -382,6 +382,24 @@ public final class SidebarModel: ObservableObject {
         recencyVersion &+= 1
     }
 
+    /// TSK-329: force a synchronous re-list of `directory`'s children after
+    /// an IN-APP file creation, so the new file appears in the tree
+    /// immediately instead of waiting for the FSEvents coalesce window.
+    /// (`fileDidChange` only touches recency, not the child LIST.) Cheap —
+    /// one `contentsOfDirectory` — and idempotent. Also expands the dir so
+    /// the freshly-listed child is actually visible.
+    public func reloadChildren(of directory: URL) {
+        let dir = normalize(directory)
+        let kids = (try? service.children(of: dir, includeHidden: includeHidden)) ?? []
+        storeChildren(kids, for: dir)
+        expanded.insert(dir)
+        invalidateFlatCache()
+        descendantsCache = nil   // the global-find set changed (TSK-666)
+        // Nudge a publish (assigning the same Set value refires — LESSONS).
+        let snapshot = expanded
+        expanded = snapshot
+    }
+
     // MARK: Keyboard navigation (CRIT-6)
 
     public func setSelected(_ url: URL?) {
