@@ -9169,6 +9169,25 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +348 (2026-06-13 overnight — TSK-736 hover-lag dedupe (fix A) → review)
+
+- **TSK-736 FIXED → review (a1da3f1).** .onContinuousHover wrote hoveredSourceLine per pointer-PIXEL, and a
+  @State write always invalidates (SwiftUI doesn't dedupe equal values), so every pixel re-bodied
+  SourceModeView + re-ran the 2956-match find repaint = the lag. Fix A (the dominant lever): guard the
+  write `if line != hoveredSourceLine` → intra-line moves produce zero re-bodies (per-pixel →
+  per-line-crossing). Test pins the dedupe premise (lineAtPointer is line-quantized). Gate green.
+- **Fix B DEFERRED** (idempotent applyFindHighlights via a paint signature): the remove-all there is the
+  coordination point for the SHARED backgroundColor temp-attr (find + current-line + selection) — a naive
+  skip risks stale highlights, so it needs a careful complete signature; not safe to land blind. The
+  per-line-crossing repaint is acceptable, so A alone is the shippable win; B is a follow-up.
+- Held at review (felt latency is render-path → VM via vm-profile.sh os_signpost on .apply).
+- Overnight tally (11 ticks): 739·742·744·729·737·740·735 validated · 734/728/730/738/736 review (VM) ·
+  743 fixed · 806 filed. **All clean/low-risk wishlist bugs are now landed.** Remaining bugs are the
+  larger/riskier ones: 731 (emoji display-width — needs a Unicode wide-char table + wide-cell model;
+  best on fresh context), 741 (PTY blocking write → off-main; concurrency, hard to host-test).
+- Next crons: 731 or 741 (both substantial — take with fresh context), else the [WISH][minor-feature]
+  bucket (54 items) per the chipping order once the bug lane is down to the hard two.
+
 ## LOG +347 (2026-06-13 overnight — TSK-738 status-footer folder-only gate fixed → review)
 
 - **TSK-738 FIXED → review (3aaa8f1).** The status footer gated on `currentURL != nil` (tabs.selected?.url),
