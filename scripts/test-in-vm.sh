@@ -180,6 +180,16 @@ swift_test() {
   for a in "$@"; do inner+=" $(printf '%q' "$a")"; done
   printf '%s\n' "${MDV_VM_SUDO_PASS:?MDV_VM_GUI_SESSION=1 needs MDV_VM_SUDO_PASS}" \
     | sudo -S launchctl asuser "$uid" /bin/bash -lc "$inner"
+  local rc=$?
+  # TSK-819: the `launchctl asuser` bridge runs xctest (and the inner build) as
+  # ROOT, so SwiftPM writes root-owned files into the shared .build (TSK-502).
+  # The NEXT non-root build (build-app.sh / a plain `swift build`) then dies on
+  # `ModuleCache …: Operation not permitted`. Restore console-uid ownership so
+  # the shared tree stays usable without a manual `sudo chown`. Best-effort: a
+  # chown failure must not mask the test exit code.
+  printf '%s\n' "$MDV_VM_SUDO_PASS" \
+    | sudo -S chown -R "$uid" "$ROOT_DIR/.build" 2>/dev/null || true
+  return $rc
 }
 
 run_tests() {
