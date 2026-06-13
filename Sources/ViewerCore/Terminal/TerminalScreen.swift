@@ -245,6 +245,66 @@ public struct TerminalScreen: Sendable, Equatable {
         for c in 0..<cols { cells[cursor.row][c] = .blank }
     }
 
+    // MARK: - In-line editing (DCH / ICH / ECH / IL / DL)
+    //
+    // TSK-740: line editors (zsh/readline) and full-screen apps send these CSI
+    // edits to mutate the grid in place; the parser used to parse-and-IGNORE
+    // them, so a deleted char lingered on screen ("display doesn't match true
+    // state"). Char ops act within the cursor's row; line ops from the cursor
+    // row to the bottom (no scroll-region margins yet — that's TSK-735).
+
+    /// `ESC[nP` (DCH) — delete `n` chars at the cursor; the rest of the line
+    /// shifts left, blanks fill in at the right edge.
+    public mutating func deleteChars(_ n: Int) {
+        guard cells.indices.contains(cursor.row) else { return }
+        let count = min(max(1, n), cols - cursor.col)
+        guard count > 0 else { return }
+        var row = cells[cursor.row]
+        row.removeSubrange(cursor.col ..< (cursor.col + count))
+        row.append(contentsOf: Array(repeating: .blank, count: count))
+        cells[cursor.row] = row
+    }
+
+    /// `ESC[n@` (ICH) — insert `n` blanks at the cursor; the line shifts right,
+    /// chars past the right edge fall off.
+    public mutating func insertChars(_ n: Int) {
+        guard cells.indices.contains(cursor.row) else { return }
+        let count = min(max(1, n), cols - cursor.col)
+        guard count > 0 else { return }
+        var row = cells[cursor.row]
+        row.insert(contentsOf: Array(repeating: .blank, count: count), at: cursor.col)
+        row.removeLast(count)
+        cells[cursor.row] = row
+    }
+
+    /// `ESC[nX` (ECH) — erase `n` chars at the cursor (blank in place, no shift).
+    public mutating func eraseChars(_ n: Int) {
+        guard cells.indices.contains(cursor.row) else { return }
+        let end = min(cursor.col + max(1, n), cols)
+        guard cursor.col < end else { return }
+        for c in cursor.col ..< end { cells[cursor.row][c] = .blank }
+    }
+
+    /// `ESC[nL` (IL) — insert `n` blank lines at the cursor row; lines below
+    /// shift down, lines pushed past the bottom are lost.
+    public mutating func insertLines(_ n: Int) {
+        guard cells.indices.contains(cursor.row) else { return }
+        let count = min(max(1, n), rows - cursor.row)
+        guard count > 0 else { return }
+        cells.removeSubrange((rows - count) ..< rows)
+        cells.insert(contentsOf: Self.blankGrid(rows: count, cols: cols), at: cursor.row)
+    }
+
+    /// `ESC[nM` (DL) — delete `n` lines at the cursor row; lines below shift up,
+    /// blanks fill in at the bottom.
+    public mutating func deleteLines(_ n: Int) {
+        guard cells.indices.contains(cursor.row) else { return }
+        let count = min(max(1, n), rows - cursor.row)
+        guard count > 0 else { return }
+        cells.removeSubrange(cursor.row ..< (cursor.row + count))
+        cells.append(contentsOf: Self.blankGrid(rows: count, cols: cols))
+    }
+
     // MARK: - Scrolling
 
     /// Scroll the entire grid up by `n` lines: top `n` lines fall off

@@ -295,9 +295,18 @@ public struct ANSIParser: Sendable {
             }
         case "S": screen.scrollUp(param(params, 0, default: 1))
         case "T": screen.scrollDown(param(params, 0, default: 1))
+        // In-line edits (TSK-740) — line editors / full-screen apps mutate the
+        // grid in place; previously parse-and-ignored, so deletions lingered.
+        // In-line edits (TSK-740) — line editors / full-screen apps mutate the
+        // grid in place; previously parse-and-ignored, so deletions lingered.
+        case "P": screen.deleteChars(param(params, 0, default: 1))   // DCH
+        case "@": screen.insertChars(param(params, 0, default: 1))   // ICH
+        case "X": screen.eraseChars(param(params, 0, default: 1))    // ECH
+        case "L": screen.insertLines(param(params, 0, default: 1))   // IL
+        case "M": screen.deleteLines(param(params, 0, default: 1))   // DL
         case "m": applySGR(params)
         default:
-            // Unrecognised final byte (DCH/ICH/IL/DL/cursor-save/etc.) —
+            // Unrecognised final byte (cursor-save/restore/DECSTBM/etc.) —
             // parse-and-ignore so it never garbles the grid.
             break
         }

@@ -344,4 +344,58 @@ final class ANSIParserTests: XCTestCase {
         // '~' starts the blue run.
         XCTAssertEqual(p.screen.cells[0][10].attributes.fg, .blue)
     }
+
+    // MARK: - In-line edits DCH / ICH / ECH / IL / DL (TSK-740)
+
+    func test_DCH_deletesCharsAndShiftsLeft() {
+        var p = parser()
+        feed(&p, "abcde")
+        feed(&p, "\r")                 // cursor → col 0
+        feed(&p, "\u{1b}[2P")          // DCH 2 → delete a,b; cde shifts left
+        XCTAssertEqual(p.screen.line(0), "cde",
+            "DCH must remove the deleted chars — they used to linger (the bug)")
+    }
+
+    func test_DCH_default1() {
+        var p = parser()
+        feed(&p, "abc")
+        feed(&p, "\r")
+        feed(&p, "\u{1b}[P")           // DCH (no param) defaults to 1
+        XCTAssertEqual(p.screen.line(0), "bc")
+    }
+
+    func test_ICH_insertsBlanksAndShiftsRight() {
+        var p = parser()
+        feed(&p, "abcde")
+        feed(&p, "\r")
+        feed(&p, "\u{1b}[2@")          // ICH 2 → "  abcde"
+        XCTAssertEqual(p.screen.line(0), "  abcde")
+    }
+
+    func test_ECH_erasesInPlaceNoShift() {
+        var p = parser()
+        feed(&p, "abcde")
+        feed(&p, "\r")
+        feed(&p, "\u{1b}[2X")          // ECH 2 → blank cols 0,1 in place
+        XCTAssertEqual(p.screen.line(0), "  cde")
+    }
+
+    func test_DL_deletesLinesAndShiftsUp() {
+        var p = parser()
+        feed(&p, "L0\r\nL1\r\nL2")
+        feed(&p, "\u{1b}[1;1H")        // home
+        feed(&p, "\u{1b}[1M")          // DL 1 → drop L0, shift up
+        XCTAssertEqual(p.screen.line(0), "L1")
+        XCTAssertEqual(p.screen.line(1), "L2")
+    }
+
+    func test_IL_insertsBlankLineAndShiftsDown() {
+        var p = parser()
+        feed(&p, "L0\r\nL1")
+        feed(&p, "\u{1b}[1;1H")        // home
+        feed(&p, "\u{1b}[1L")          // IL 1 → blank row 0, shift down
+        XCTAssertEqual(p.screen.line(0), "")
+        XCTAssertEqual(p.screen.line(1), "L0")
+        XCTAssertEqual(p.screen.line(2), "L1")
+    }
 }
