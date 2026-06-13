@@ -9169,6 +9169,26 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +355 (2026-06-13 — validation drain: TSK-626 header-staleness guard gets an automated regression test)
+
+- **TSK-626 → VALIDATED (ed2821a).** §1.5 validation drain. The SwiftPM header-staleness guard (b314f5a) was
+  held at `fixed` with only a re-runnable MANUAL demo — the prior agent judged a hermetic test "not worth the
+  cargo-stubbing complexity." But this trap bit TWICE (incl. a pure-Swift `throw` that SIGSEGV'd on stale test
+  objects) and I dodged it MANUALLY in both Stage B packages this session — so a guard is real defense, not a
+  paper cut. Closed it WITHOUT cargo stubbing:
+  - Extracted the header change-detection + staleness touch from `build-rust-core.sh` into
+    `scripts/lib/restage-header.sh` (`restage_core_header`), so the build + a test share ONE implementation
+    (no parallel reimplementation). Refactored the script to source+call it (behavior-preserving: `bash -n`
+    clean + manual two-way fixture run; the `$LINK_DIR` copies stay in the script).
+  - New `RustCoreHeaderRestageTests` drives that EXACT function via `Process` over hermetic fixture dirs
+    (no cargo, no window — runs in the headless gate). Pins both halves: a header CHANGE touches the test
+    targets + `MDV_CAP_`/`import CMdvCore` referents (incl. a `Helper.swift` that does NOT name the header
+    surface — the 2026-06-12 stale-test-object SIGSEGV case the grep alone would miss); an unchanged header
+    touches only the RustCore bridge sources.
+  - **Teeth tightened by the process:** the first mutation (neuter the test-target `find`) FALSELY passed
+    because the fixture test file named `MDV_CAP_` (grep backstop caught it). Added a non-referent
+    `Helper.swift` to isolate the broad touch; re-mutated → RED. Headless gate green.
+
 ## LOG +354 (2026-06-13 — RUST-CORE Stage B #4: TSK-809 delete DiffParser/DiffHunkParser; carve-out #2/#3 parked)
 
 - **TSK-809 → VALIDATED (954f1d8).** Stage B package #4 (diff), done out of plan order because it's the

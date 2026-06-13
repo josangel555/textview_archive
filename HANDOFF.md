@@ -1,7 +1,7 @@
 <!-- CLAUDE-HANDOFF v1 -->
 # Handoff — RUST-CORE Stage B (twin deletion) is the active lane; #1 indent done  (2026-06-13)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `954f1d8` (then +1 log commit)
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `ed2821a` (+ log commit). Latest tick: TSK-626 validated (§1.5 drain — header-staleness guard now has a hermetic Process-driven regression test; `scripts/lib/restage-header.sh`).
 
 ## Mission
 Owner away until ~noon 2026-06-13; autonomous chipping. USER-FACING bugs are drained; the wishlist
