@@ -27,7 +27,9 @@ public enum RustCoreCapability: String, CaseIterable, Sendable {
     case hex
     case hexSearch
     case fuzzy
-    case indent
+    // NOTE: `indent` retired — TSK-649 Stage B #1 deleted the Swift twin, so
+    // indentation is now a direct rust-only call (no gate to toggle). The ABI
+    // capability bit `CoreCapabilities.indent` stays (bits are ABI).
     /// Whole-document find (TSK-645; engine port TSK-630).
     case find
     /// Claude transcript event projection (TSK-647; engine port TSK-632).
@@ -63,8 +65,9 @@ public enum RustCoreCapability: String, CaseIterable, Sendable {
     /// Settings toggle (an explicit toggle beats this default).
     public var defaultEnabled: Bool {
         switch self {
-        // Round 1 (2026-06-12): the longest-proven trio.
-        case .csv, .indent, .diff: return true
+        // Round 1 (2026-06-12): the longest-proven trio (indent retired to
+        // rust-only in Stage B #1 — no gate; csv + diff remain gated).
+        case .csv, .diff: return true
         // Round 2 (2026-06-12, round 1 quiet): the hex family — consumed
         // since A0, A/B suites long green, engines ported in the first wave.
         case .hex, .hexSearch: return true

@@ -1,30 +1,34 @@
 import Foundation
 import RustCore
 
-/// Routes indentation detection through the Rust core (migration slice #7) when
-/// the `.indent` gate is on, falling back to the Swift `IndentDetector`
-/// otherwise — the single place the two implementations meet.
+/// Indentation detection, served by the Rust core (`mdvcore_indent_detect`).
 ///
-/// Fail-safe by construction (`RustCoreFallback`): gate off → Swift; Rust bridge
-/// fault → Swift. Default-OFF.
+/// TSK-649 Stage B #1: the Swift `IndentDetector` twin has been DELETED. After
+/// a quiet default-ON soak (Stage A), the gate, the env var, and the Swift
+/// fallback all retire — this is now a direct, rust-only call. A bridge fault
+/// can no longer silently fall back to Swift, so it degrades to the `"—"`
+/// "no/unknown indent" sentinel (the same value the engine returns for an
+/// un-indented file — a safe, non-crashing status-bar value) and is made LOUD
+/// on the `rust-core` Obs channel (surfaced by the TSK-636 audit log) rather
+/// than masked. The indent ABI capability bit stays required of the linked core
+/// (`CoreCapabilities.requiredByShippingAdapters`).
 public enum RustIndentAdapter {
 
-    /// Detect the indentation style of `text`, routing per the `.indent` gate.
-    public static func detect(in text: String, sampleLines: Int = 50) -> String {
-        outcome(in: text, sampleLines: sampleLines).value
-    }
+    /// "No/unknown indentation" — the engine's own sentinel for an un-indented
+    /// file, reused as the safe degraded value on a (now-unexpected) bridge fault.
+    public static let unknown = "—"
 
-    /// Same, but also reporting which engine produced the result (A/B / diag).
-    public static func outcome(
-        in text: String,
-        sampleLines: Int = 50,
-        defaults: UserDefaults = .standard,
-        environment: [String: String] = ProcessInfo.processInfo.environment
-    ) -> CoreOutcome<String> {
-        RustCoreFallback.run(
-            .indent, defaults: defaults, environment: environment,
-            rust: { try mdvCoreIndentDetect(text: text, sampleLines: sampleLines) },
-            swift: { IndentDetector.detect(in: text, sampleLines: sampleLines) }
-        )
+    /// Detect the indentation style of `text` via the Rust core. Returns
+    /// `unknown` (and logs) if the core call faults.
+    public static func detect(in text: String, sampleLines: Int = 50) -> String {
+        do {
+            return try mdvCoreIndentDetect(text: text, sampleLines: sampleLines)
+        } catch {
+            Obs.shared.emit(
+                .error, "rust-core",
+                "indent detect faulted (no Swift fallback remains): \(error)",
+                fields: ["capability": "indent"])
+            return unknown
+        }
     }
 }
