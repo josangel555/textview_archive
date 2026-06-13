@@ -9169,6 +9169,27 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +376 (2026-06-13 — root-caused the VM build break [Swift 6.1.2], filed TSK-813; over-invested the VM lane, hard-stopped)
+
+- **Root-caused the VM `circular reference` build failure → TSK-813.** It is NOT chown/incremental corruption (my
+  +375 LESSONS entry was WRONG — corrected): the VM's default **Swift 6.1.2** chokes on `RustCore/MessagePack.swift`'s
+  recursive `enum MsgPackValue: Equatable` during a from-scratch compile; an incremental build had masked it. The
+  installed **6.3** toolchain compiles it cleanly (confirmed: `TOOLCHAINS=<6.3> swift build --target RustCore` →
+  green; then a full `TOOLCHAINS=<6.3> build-app.sh debug` → fresh dist). `test-in-vm.sh` already auto-selects 6.3;
+  `build-app.sh` doesn't — **filed TSK-813** (the fix; HIGH-value: blocks all clean VM dist builds → all VM
+  validation). Corrected LESSONS.md.
+- **Two more findings on the TSK-760 landing validation (against the fresh dist):**
+  1. `MDV_UI_SCENE=landing` (my no-op scene) did NOT show EmptyStateView — the app **restored a persisted session**
+     (DESIGN.md + terminal). So the New File button never rendered; `mdv.emptyState.newFile` is correctly absent
+     from the `.ax`. The `landing` scene must FORCE an empty state (skip-restore / `closeAllTabs`) — a small follow-up.
+  2. **False-green caught:** the harness's generic terminal-chip PIXEL eval reported PASS for the landing capture —
+     it found the *restored terminal's* chip. The AX-assert (grep `.ax` for the expected a11y id) correctly returned
+     absent. CONFIRMS the per-item drain must be **AX-assert-per-scene**, not the single pixel heuristic.
+- **Process (honest):** I over-invested the VM lane across ~4 ticks — lane-fixation, my recurring failure mode. The
+  end goal (validate an already-shipped feature, TSK-760) is low-value board-hygiene; the real value captured is the
+  infra diagnosis (TSK-813 root-cause + fix path) + the proven mechanism. **Hard-stopping the chase; diversifying
+  next tick.** No feature code this tick — deliverable is the root-cause + TSK-813 + corrected lessons.
+
 ## LOG +375 (2026-06-13 — TSK-492 drain path established [AX a11y ids] + 'landing' scene; TSK-760 VM-validation hit a build-corruption wall)
 
 - **AX-assert drain path established.** The harness's `ax-reader` dumps the LIVE view a11y tree out-of-process —
