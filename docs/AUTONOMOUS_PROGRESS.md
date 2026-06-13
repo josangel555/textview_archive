@@ -9168,3 +9168,20 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   FoldBench wall-clock (258ms vs 250ms) flaked; a clean single run
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
+
+## LOG +318 (2026-06-13 tick — validation drain continues: TSK-655 + TSK-329)
+
+- **TSK-655 (fs.watch push protocol design, P1) VALIDATED** — a design is
+  validated when its implementation works: docs/REMOTE_PROTOCOL.md
+  (6b914cd) is fully realized by TSK-662/663/664, all validated with
+  loopback A/B green.
+- **TSK-329 (File New) — built + landed (ec231bc, installed).** The
+  atomic NewFileCreator had a complete tested contract but ZERO UI
+  callers (the reported gap). Wired model.createNewFile into File→New
+  File (⌘N) + folder right-click "New File"; SidebarModel.reloadChildren
+  makes it appear in the tree immediately. 4 tests, teeth on the reload.
+- **Gate-flake note:** RepoFocusTrackerTests joined FoldBench as a
+  wall-clock-timing suite that flakes under machine load (concurrent
+  gate runs / killed strays). Both pass 5/5 isolated; a clean single
+  run PASSED with zero failures. Rule reinforced: one gate at a time;
+  re-run timing/bench reds isolated before chasing.
