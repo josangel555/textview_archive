@@ -9169,6 +9169,25 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +375 (2026-06-13 — TSK-492 drain path established [AX a11y ids] + 'landing' scene; TSK-760 VM-validation hit a build-corruption wall)
+
+- **AX-assert drain path established.** The harness's `ax-reader` dumps the LIVE view a11y tree out-of-process —
+  the captured `.ax` has **23 `mdv.*` VIEW identifiers** (sidebar/content/statusBar/rail/recents/…), not just menu
+  actions. So a robust per-item assert is viable: scene → capture → assert the element's a11y id is in the `.ax`
+  (+ the PNG for visible-confirmation). This is the static-state drain mechanism.
+- **Added the `landing` empty-state scene** (commit `f0dfd7c`, host-tested) so the harness can capture
+  EmptyStateView (TSK-760's New File button, `mdv.emptyState.newFile`).
+- **TSK-760 end-to-end VM validation BLOCKED on a VM build wall:** rsync'd HEAD, but the VM build failed twice —
+  (1) root-poisoned `.build` (root-owned index records from a prior sudo build; FIXED via
+  `sudo -S chown -R vm-tester .build`), then (2) a persistent `error: circular reference` that did NOT self-heal.
+  The host builds the same code clean → it's **incremental-state corruption from the chown** (changed ctimes
+  confuse SwiftPM's dep graph), not a code bug. Remediation (next VM tick): products-clean
+  `rm -rf .build/arm64-apple-macosx .build/index-build` (KEEP checkouts/repositories) → full rebuild → run
+  `landing` → assert. Banked the tick's value rather than gamble a ~10-min from-scratch VM build.
+- **Net:** the drain MECHANISM is proven (pixels last tick + AX ids this tick) + the `landing` scene is committed;
+  the first per-item close (TSK-760) is one clean VM rebuild away. Honest process note: I sank meaningful budget
+  into VM-build remediation (root-poison → chown → circular-ref) — a rabbit hole; should have banked sooner.
+
 ## LOG +374 (2026-06-13 — TSK-492 PROVEN: the VM UI self-validation lane is agent-runnable [real pixels])
 
 - **Stopped deferring the VM-drain and proved it.** Ran `bash scripts/vm-uitest.sh run terminal-paneright` from

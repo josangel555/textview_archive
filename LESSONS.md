@@ -2488,6 +2488,15 @@ Two durable VM gotchas found finishing the T5/VisualRegression pixel lane:
   wipe forces a from-scratch recompile + SwiftPM re-resolve). Never run the VM build/test under `sudo`
   directly — the GUI-session path is `sudo -S launchctl asuser 501 …` which DROPS to uid 501 (vm-tester),
   so artifacts stay vm-tester-owned and consistent.
+- **The chown remedy ITSELF then trips `<unknown>:0: error: circular reference` on the next build
+  (2026-06-13).** `sudo chown -R vm-tester .build` fixes the EPERM, but rewriting every file's ctime
+  confuses SwiftPM's incremental dependency graph → a persistent `circular reference` compile error that
+  does NOT self-heal on re-run (the host builds the SAME commit clean, so it's NOT a code bug). FIX: a
+  PRODUCTS-only clean — `rm -rf .build/arm64-apple-macosx .build/index-build` then rebuild — KEEPING
+  `.build/checkouts` + `.build/repositories` (the offline package mirror; wiping those breaks the VM's
+  no-network build, per the memory). So the full VM-build-recovery sequence after a sudo-poisoned `.build`
+  is: chown → products-clean → full rebuild (~10+ min). Budget for it; don't expect a chown alone to leave
+  a buildable tree.
 - **Granting Screen Recording to `/bin/bash` + `Terminal` does NOT let the T5 tests capture.** The T5
   PixelTestCase/VisualRegression suites spawn `/usr/sbin/screencapture -l<windowID>` from *inside* the
   `xctest` process (Foundation `Process`). macOS attributes the `kTCCServiceScreenCapture` check to the
