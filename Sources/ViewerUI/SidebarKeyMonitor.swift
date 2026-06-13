@@ -50,9 +50,14 @@ struct SidebarKeyMonitor: NSViewRepresentable {
                 // Swift toolchains).
                 monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
                     let keyCode = event.keyCode
+                    let mods = event.modifierFlags
                     let consume: Bool = MainActor.assumeIsolated {
                         guard let self else { return false }
-                        if Self.shouldYieldToFirstResponder() { return false }
+                        let fr = NSApp.keyWindow?.firstResponder
+                        let editor = CodeMirrorEditorRegistry.shared.current()
+                        if Self.shouldYield(modifiers: mods, firstResponder: fr, editorView: editor) {
+                            return false
+                        }
                         guard let key = Self.key(for: keyCode) else { return false }
                         return self.handler?(key) == true
                     }
@@ -91,21 +96,38 @@ struct SidebarKeyMonitor: NSViewRepresentable {
             static let f2:          UInt16 = 120
         }
 
-        /// If a text-editing field is focused, let it handle arrows / enter.
-        /// `NSText` is the AppKit base class for all text-editing responders
-        /// (NSTextView for plain content; the window's field editor for
-        /// NSTextField / NSSearchField).
+        /// Pure yield decision (TSK-728/730) — does the sidebar monitor let the
+        /// focused view handle this key instead of stealing it for tree nav?
+        /// Extracted as a pure function of (modifiers, firstResponder, editor
+        /// webview) so it's unit-testable with synthetic inputs. Yields when:
+        ///   (a) a Command/Option/Control modifier is held — those are editor/
+        ///       system commands (⌘←/⌥← word-nav, etc.), never bare sidebar nav;
+        ///   (b) a text editor (`NSText` — NSTextView / field editor) or a custom
+        ///       raw-key view (the terminal, `SidebarKeyMonitorExempt`) is focused;
+        ///   (c) the CM6 editor webview is the focused responder (or contains it)
+        ///       — a WKWebView is neither `NSText` nor exempt, so before this the
+        ///       monitor stole Enter/arrows from the editor (the bug). We pass the
+        ///       editor as a plain `NSView` (WKWebView is one) so the test needs no
+        ///       live WebView.
         ///
-        /// Marked `@MainActor` — touches `NSApp` / `keyWindow` / first
-        /// responder which are all main-actor isolated under Swift 6.3.
-        /// Callers (the event monitor closure) are on the main thread by
-        /// AppKit contract; declare it explicitly so the checker agrees.
+        /// `@MainActor` — `NSView.isDescendant(of:)` / responder are main-actor
+        /// isolated under Swift 6.3; the event-monitor caller is on the main thread.
         @MainActor
-        private static func shouldYieldToFirstResponder() -> Bool {
-            let fr = NSApp.keyWindow?.firstResponder
-            // Text editors (NSTextView / field editor) AND custom raw-key views
-            // (the terminal grid) own their key events — don't steal Return/arrows.
-            return fr is NSText || fr is SidebarKeyMonitorExempt
+        static func shouldYield(modifiers: NSEvent.ModifierFlags,
+                                firstResponder: NSResponder?,
+                                editorView: NSView?) -> Bool {
+            let m = modifiers.intersection(.deviceIndependentFlagsMask)
+            if m.contains(.command) || m.contains(.option) || m.contains(.control) {
+                return true
+            }
+            if firstResponder is NSText || firstResponder is SidebarKeyMonitorExempt {
+                return true
+            }
+            if let editor = editorView, let v = firstResponder as? NSView,
+               v === editor || v.isDescendant(of: editor) {
+                return true
+            }
+            return false
         }
 
         deinit {
