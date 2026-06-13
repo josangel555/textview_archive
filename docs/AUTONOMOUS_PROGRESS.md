@@ -9169,6 +9169,28 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +367 (2026-06-13 — TSK-806: split pane shows unsaved edits, URL-keyed)
+
+- **TSK-806 fixed (commit `e87a20a`, reported→review).** A user-facing editor bug (sibling of the validated
+  TSK-729): the split pane's text branches rendered `file.contents` (on-disk), bypassing the live dirty editor
+  buffer — so the split showed stale content while you had unsaved edits.
+  - **Key correctness nuance:** the ticket suggested `displayedText(for:)`, but that keys on `tabs.selected` —
+    and `splitURL` is INDEPENDENT of the active tab (DocumentModel:1847-1848 swaps split↔primary), so the split
+    can show a DIFFERENT file. Using the selected-tab text would render the wrong file's edits. The fix is
+    **URL-keyed**: new `DocumentModel.splitPaneText(for:fallback:)` finds the tab whose `url == splitURL`, returns
+    its dirty buffer text if dirty, else on-disk fallback.
+  - Wired all THREE split text branches (source `TextDisplayView`, markdown/mermaid render body, CSV table) to
+    the one computed `sourceText` — not just the source feed the ticket named (markdown/CSV had the same stale-text
+    class; fixing only the source branch would invite another sibling ticket).
+  - **Teeth:** disabling the dirty-buffer branch turned the new URL-keyed test red (got on-disk text); the test
+    specifically dirties BOTH the split file and a *different* selected tab, proving the URL-key (not selected-tab)
+    is load-bearing. Headless gate green.
+  - Held at review: text-selection logic host-guarded with teeth; the SplitPaneView render (pre-existing
+    TextDisplayView/MarkdownRenderedView/CSVTableView, unchanged) is the VM/owner on-screen tail.
+- **Pick rationale:** USER-FACING editor bug (owner priority #1) at `reported`, headless-actionable, sibling of an
+  already-fixed ticket (known pattern). Outranks the validation-drain + rust-core lanes per §3. (Stage B deletion
+  + perf cluster remain owner-blocked from prior ticks.) Picked in 2 board reads — held the pick-fast discipline.
+
 ## LOG +366 (2026-06-13 — TSK-743: preview slot remembers & restores editor scroll/cursor per file)
 
 - **TSK-743 preserve-half landed (commit `cd699b4`, fixed→review).** The sibling TSK-744 (isolation) fix
