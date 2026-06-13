@@ -9169,6 +9169,24 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +358 (2026-06-13 — TSK-640 lsp-rename automation verb seam)
+
+- **TSK-640 reachability seam (commit 008518a):** `lsp-rename <newName>` script verb — the headless/automation
+  entry to the already-host-tested rename engine (`renameActiveEditorSymbolViaLSP`: request → decode →
+  snapshot-guarded reverse apply across open tabs). Mirrors the `save-copy` pattern (verb = automation entry;
+  the interactive UI is the live follow-up). Test rides the fake-LSP e2e harness: verb dispatches with its arg
+  as the new name + both WorkspaceEdit spans land (host-green, fake server built; teeth: fixed-name → red).
+  Unblocks a VM T4 UAT of the full rename flow + scripting. REMAINING (640 holds at fixed): the interactive
+  UI — `lsp.rename` command + Edit-menu "Rename Symbol…" + a rename prompt sheet + the code-action picker
+  (SwiftUI → VM/review). Engine + automation seam fully host-guarded.
+- **Fixed-lane shape (unchanged):** the user-facing UI tails (640 rename prompt, 641 chrome pixel) each need a
+  dedicated SwiftUI/T5 build tick. 641's chrome T5 is unblocked (set-theme verb, +357) but the VM dist build +
+  screencapture run is a heavy dedicated effort. The two automation verbs (set-theme, lsp-rename) landed across
+  +357/+358 are the UAT/T5 enablers for those validations.
+- **Process note (self):** over-surveyed early this tick (read 3 tickets + the full T5 harness before committing
+  to the verb seam) — the same anti-pattern flagged in +357. The verb seam was the right bounded call; next
+  time, commit to a target in ≤2 reads.
+
 ## LOG +357 (2026-06-13 — render-health VM pass + set-theme verb unblocks the TSK-641 chrome T5 validation)
 
 - **VM render-health pass (current main):** EditorThemeParityTests 2/2 + ComponentVisual 10 + FoldGutter 2 +

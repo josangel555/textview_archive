@@ -1,7 +1,23 @@
 <!-- CLAUDE-HANDOFF v1 -->
 # Handoff — RUST-CORE Stage B (twin deletion) is the active lane; #1 indent done  (2026-06-13)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `06e0c94` (+ a docs commit). Latest tick: render-health VM pass (18/18) + `set-theme` verb landed (unblocks the 641 chrome T5 validation).
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `008518a` (+ a docs commit). Recent ticks: render-health VM pass (18/18); `set-theme` verb (unblocks 641 chrome T5); `lsp-rename` verb (unblocks 640 rename UAT). Both verbs are automation/UAT enablers for the two remaining user-facing UI tails.
+
+## ⚠️ The remaining fixed-lane work is user-facing UI tails — each a dedicated build tick
+The cheap drains are done. What's left needs a focused SwiftUI/T5 effort (don't expect a quick re-run drain):
+- **641 chrome → a T5 chrome-pixel test.** Unblocked by the `set-theme <id>` verb. Build: an app launch
+  env-seam (e.g. `MDV_FORCE_THEME`) OR drive `set-theme` via `--script`; spawn the app with a folder (sidebar
+  visible) + theme=xcode-dark; `screencapture` the sidebar; assert the themed dark color (compute expected
+  from the theme def, or A/B vs xcode-light). Mirror `SourceViewVisualRegressionTests` (PixelTestCase). Wire
+  into `test-in-vm.sh run_webview_tests`/equivalent + `nightly-vm.yml`. Needs `dist/` built on the VM (heavy)
+  + the screencapture run + teeth (revert chrome fix → red). Closes 641's 4th surface → validated.
+- **640 rename → the interactive UI.** Unblocked by the `lsp-rename` verb (engine + automation host-tested).
+  Build: `lsp.rename` command + Edit-menu "Rename Symbol…" + a rename prompt sheet (GoTo-prompt pattern) whose
+  submit calls the verb's action; + a code-action picker. Host-test the command/enablement/submit-wiring; the
+  sheet render holds at review (VM). Delivers user-reachable rename (owner re-raised, P8).
+- **NOTE on cadence:** the last 2 ticks landed automation-verb seams (set-theme, lsp-rename). Don't do a 3rd
+  verb-only tick — the next THEMING/LSP tick should build one of the two UI tails above (real user value), or
+  pick a genuinely-headless NEW item from the `[WISH][minor-feature]` bucket (745 recents, 757 shortcut catalog).
 
 ## ⭐ NEW CAPABILITY (2026-06-13): the VM live-validation drain is AGENT-RUNNABLE — proven
 The big `fixed`-lane pool (~15 items) is gated on `live-validation` (WebView/render). I proved the VM lane
