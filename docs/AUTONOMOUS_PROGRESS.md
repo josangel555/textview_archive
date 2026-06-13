@@ -9169,6 +9169,23 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +400 (2026-06-13 — TSK-736 hover-lag Fix B: skip the redundant find-highlight repaint; TSK-732 scoped+deferred)
+
+- **TSK-736 (mouse-over highlight lag on a 5000-line log + Find) → Fix B landed (commit `1404c9b`, headless gate green;
+  held at review for VM signpost).** After Fix A (a1da3f1, per-line-crossing dedupe), the residual was
+  `applyFindHighlights` running a full-range remove-all (O document) + per-match repaint (O matches) on EVERY apply() —
+  and a hover line-crossing re-bodies the source view → `apply()`. Fix B: early-out when the wash is already painted for
+  exactly `lastFindKey` and no next/prev nav. Correctness rests on a new `findHighlightsLive` flag, cleared only when the
+  storage CHARACTERS are replaced (`textView.string=` / `setAttributedString` — the ops that wipe layout-manager
+  temp-attrs); the find wash is a fixed (theme-independent) Palette colour so an attribute-only repaint needs no find
+  repaint. 4 new `TextSearchRepaintGuardTests` with teeth — disabling the early-out reddened ONLY the skip test (the 3
+  repaint tests stayed green, proving no over-skip). Recolor suite still green. Felt no-lag = VM `vm-profile.sh` signpost.
+- **TSK-732 (font View/Edit) scoped + deferred.** Family fix already landed (f90bef7); the two residuals (CM6 line-height
+  `1.45` vs View's `~1.20`, and `Int`-rounded font size) need a change to the VERSIONED CM bridge message
+  (`setFontSize(Int)` → carry `Double` px + a derived line-height px from `SourceTextController.lineHeight`). Correct-by-
+  construction sketch captured on the ticket; deferred to a VM-paired batch (the line-height value benefits from a pixel
+  confirm) — pivoted to the fully-host-validatable TSK-736 this tick instead.
+
 ## LOG +399 (2026-06-13 — TSK-806 split-pane unsaved-edits: the observation-starvation fix the model fix missed)
 
 - **TSK-806 (split-pane source shows on-disk text, not unsaved edits) → fix landed (commit `75bde17`, headless gate
