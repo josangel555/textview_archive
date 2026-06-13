@@ -1524,6 +1524,7 @@ public final class DocumentModel: ObservableObject {
     }
     public func showRenderedFindBar() { find.showRenderedBar() }
     public func dismissRenderedFindBar() { find.dismissRenderedBar() }
+    public func toggleRenderedFindBar() { find.toggleRenderedBar() }
 
     // MARK: Find bar (source mode) — forwarders
 
@@ -1838,6 +1839,7 @@ public final class DocumentModel: ObservableObject {
 
     public func showSourceFindBar() { find.showSourceBar() }
     public func dismissSourceFindBar() { find.dismissSourceBar() }
+    public func toggleSourceFindBar() { find.toggleSourceBar() }
     public func sourceFindNext() { find.sourceNext() }
     public func sourceFindPrev() { find.sourcePrev() }
     public func renderedFindNext() { find.renderedNext() }
@@ -1893,6 +1895,7 @@ public final class DocumentModel: ObservableObject {
     public func showEditorFindBar() { find.showEditorBar() }
     public func showEditorReplaceBar() { find.showEditorReplaceBar() }
     public func dismissEditorFindBar() { find.dismissEditorBar() }
+    public func toggleEditorFindBar() { find.toggleEditorBar() }
     public func editorFindNext() { find.editorNext() }
     public func editorFindPrev() { find.editorPrev() }
     public func editorReplaceNext() { find.editorReplaceNext() }

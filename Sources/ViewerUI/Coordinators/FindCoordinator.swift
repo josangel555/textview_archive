@@ -48,6 +48,11 @@ public final class FindCoordinator: ObservableObject {
         renderedMatched = nil
     }
 
+    /// Cmd+F semantics (TSK-739): a second invocation closes the bar.
+    public func toggleRenderedBar() {
+        if isRenderedBarPresented { dismissRenderedBar() } else { showRenderedBar() }
+    }
+
     public func renderedNext() { renderedNextRequest &+= 1 }
     public func renderedPrev() { renderedPrevRequest &+= 1 }
 
@@ -92,6 +97,11 @@ public final class FindCoordinator: ObservableObject {
         sourceQuery = ""
         setSourceMatchSummary("")
         setSourceMatches(lines: [], currentIndex: nil)
+    }
+
+    /// Cmd+F semantics (TSK-739): a second invocation closes the bar.
+    public func toggleSourceBar() {
+        if isSourceBarPresented { dismissSourceBar() } else { showSourceBar() }
     }
 
     public func sourceNext() { sourceNextRequest &+= 1 }
@@ -145,6 +155,13 @@ public final class FindCoordinator: ObservableObject {
         editorReplacement = ""
         editorReplaceVisible = false
         editorMatchSummary = ""
+    }
+
+    /// Cmd+F semantics (TSK-739): a second invocation closes the bar. Note Cmd+F
+    /// opens find-only — if the bar is showing the replace row, a re-press still
+    /// closes it (consistent "toggle the find surface" behavior).
+    public func toggleEditorBar() {
+        if isEditorBarPresented { dismissEditorBar() } else { showEditorBar() }
     }
 
     public func editorNext() { editorNextRequest &+= 1 }

@@ -144,6 +144,42 @@ final class FindCoordinatorTests: XCTestCase {
         XCTAssertEqual(count, 1)
     }
 
+    // MARK: Toggle — Cmd+F second press closes the bar (TSK-739)
+
+    func test_toggleSource_opensWhenHidden_thenClosesOnSecondPress() {
+        let f = FindCoordinator()
+        XCTAssertFalse(f.isSourceBarPresented)
+        f.toggleSourceBar()
+        XCTAssertTrue(f.isSourceBarPresented, "first toggle opens")
+        f.toggleSourceBar()
+        XCTAssertFalse(f.isSourceBarPresented, "second toggle closes (the bug: it used to re-focus, never close)")
+    }
+
+    func test_toggleEditor_opensWhenHidden_thenClosesOnSecondPress() {
+        let f = FindCoordinator()
+        f.toggleEditorBar()
+        XCTAssertTrue(f.isEditorBarPresented)
+        f.toggleEditorBar()
+        XCTAssertFalse(f.isEditorBarPresented)
+    }
+
+    func test_toggleRendered_opensWhenHidden_thenClosesOnSecondPress() {
+        let f = FindCoordinator()
+        f.toggleRenderedBar()
+        XCTAssertTrue(f.isRenderedBarPresented)
+        f.toggleRenderedBar()
+        XCTAssertFalse(f.isRenderedBarPresented)
+    }
+
+    func test_toggleSource_whenOpen_dismissesAndClearsQuery() {
+        let f = FindCoordinator()
+        f.showSourceBar()
+        f.sourceQuery = "needle"
+        f.toggleSourceBar()
+        XCTAssertFalse(f.isSourceBarPresented)
+        XCTAssertEqual(f.sourceQuery, "", "toggle-closed goes through dismiss, which clears the query")
+    }
+
     // MARK: Independence — each bag is isolated from the others
 
     func test_renderedQuery_change_doesNotMutateSourceOrEditor() {

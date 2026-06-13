@@ -2077,21 +2077,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     /// the source mode uses NSTextView for selection / scrolling but
     /// we still wrap our own bar around it so the UX matches.
     @objc func findInPage(_ sender: Any?) {
+        // Cmd+F TOGGLES the find bar for the active surface (TSK-739): a second
+        // press closes it. Each branch routes to the matching bar's toggle.
         // Rendered markdown — only meaningful when the file is markdown
         // and the user is viewing the rendered side.
         if model.supportsViewModeToggle, model.currentViewMode == .rendered {
-            model.showRenderedFindBar()
+            model.toggleRenderedFindBar()
             return
         }
         // Editor mode (CM6) — route to the new editor find bar that
         // drives CodeMirror via the v1 bridge.
         if model.currentViewMode == .editor {
-            model.showEditorFindBar()
+            model.toggleEditorFindBar()
             return
         }
         // Otherwise the user is on the source/text side: open the
         // source find bar (works for source view, plaintext, code, etc.).
-        model.showSourceFindBar()
+        model.toggleSourceFindBar()
     }
 
     /// Cmd+Option+F router — Find & Replace. Replace is only meaningful
