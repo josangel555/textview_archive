@@ -9169,6 +9169,24 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +380 (2026-06-13 — TSK-814: surfaced git blame in the editor gutter; completes TSK-672's blame ask)
+
+- **TSK-814 (commit `ebc8fd2`, reported→review).** Surfaced the blame data from +379 — giving the `c341d3f`
+  parse a live consumer (no dead code) + completing the P1 git bundle's last ask.
+  - `BlameGutterFeeder.markers(from:now:)` → sorted `"blame"`-kind `CMGutterMarker`s with
+    `"author · relative-time · summary  [sha]"` tooltips (GitRelativeTime, now-injectable for tests).
+  - `DocumentModel`: `editorBlameActive` flag + `refreshBlameMarks()` (mirrors `refreshDiffMarks` — off-main
+    `GitClient.blame` → feeder → the existing `setEditorGutterMarkers` channel) + `toggleEditorBlame()`. The
+    central `refreshDiffMarks` **routes** diff-or-blame per the flag — so blame survives tab switches via the
+    existing refresh path (one route-guard, no separate hook). `git.toggleBlame` command + `toggle-blame` verb.
+  - **Render reuses the pre-existing `cm-blame-marker` channel** (CSS + the gutter-marker + tooltip already
+    shipped) — near-zero new render. **Teeth:** dropping the feeder's sort turned the order assert red; the
+    catalog↔dispatcher vocab gate accepts `toggle-blame`. Held at review (live fetch + gutter pixels = VM tail;
+    v1 perf caveat noted: per-line markers cover the whole file).
+- **TSK-672 (P1 git bundle) is now functionally complete:** diff/log/status were already built; blame data
+  (c341d3f) + blame surface (ebc8fd2) landed across two ticks. The render is the VM/owner tail. Standing blockers
+  unchanged (TSK-810/589 owner-decision; perf cluster supervised).
+
 ## LOG +379 (2026-06-13 — TSK-672 git bundle: 3/4 already built; landed the blame data foundation; surfacing→TSK-814)
 
 - **Assessed the P1 git bundle (TSK-672: diff/log/status/blame).** Verify-first found **3 of 4 already built +
