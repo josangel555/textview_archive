@@ -2958,3 +2958,38 @@ Continuation of "the five constraints" above; these three close every remaining 
 - **2026-06-13: `rust-core` core is SANS-IO BY DESIGN (no fs/process) — do NOT hoist IO into it.** `git.rs` says it explicitly ("No process spawning here… sans-IO"); it's load-bearing for the WASM tier (TSK-587). When deduping front-end helpers into core (TSK-570), only pure logic + security-critical *argv constants* move; `read_capped` (file IO) and the git *spawn* stay in the front-ends. Audit findings that say "hoist this into core" must be checked against this boundary first.
 
 - **2026-06-13: board `task_advance`/`task_restate` garble when a long-text param is followed by another invoke in the same tool block.** Symptom: the second param/invoke bleeds into the first's `understanding`. Pass ONE long-text content field per call; don't batch multiple board mutations carrying long text in a single tool block.
+
+## 2026-06-13 — validation policy nuance + perf/test-infra discoveries
+
+- **"Output-identical work-reduction" optimizations are SELF-VALIDATABLE on the host** — don't reflexively
+  hold them at review for VM. If a change only REMOVES redundant work and the rendered OUTPUT is byte-identical
+  (same pixels, fewer cycles), AND its potential visual-regression modes are host-tested with teeth, the host
+  test IS the complete regression guard. Examples this session: TSK-741 (terminal version-gate replaces a
+  per-frame deep `Equatable` over ~1256 scrollback rows — installs the SAME screen; stale-screen risk host-tested),
+  TSK-736 (skip the redundant find-highlight repaint — same wash when painted; stale-highlight-after-rebuild risk
+  host-tested). I'd over-held both at review; they're squarely "host-testable logic" per the 2026-06-07 policy.
+- **A "blocked, awaiting owner approval" item may already be DONE — re-check the code before re-pinging.** The
+  perf cluster (591/592/598/266/455) was framed across MULTIPLE handoffs as "blocked on a supervised MountedPanesLRU
+  approval." FALSE: MountedPanesLRU (Perf Fix#1) landed 2026-06-06 (`39925fd`), TSK-108 is validated. `ContentView.content`
+  already renders a ZStack of retained panes. The parked question was moot for ticks. Lesson: when an item claims
+  to be owner-gated, grep the code for the supposed-missing implementation first.
+- **The "199ms apply per source-pane switch" perf residual was GONE on a fresh profile** (`vm-profile.sh nav`,
+  2026-06-13): `SourceTextController.apply` = 6.7ms. Stale measurements (TSK-613) drove ticks of chasing a
+  resolved problem. measure-don't-guess literally: re-profile before attributing. The real remaining first-open
+  cost is WebKit `WKWebView.loadToFinish` (~600ms release-equiv) — inherent to WKWebView, not app-side.
+- **`ts.query-compile` runs OFF-MAIN now** (profile thread `0x64616` ≠ Main `0x6446d`) — TSK-619's launch-warmup
+  (`Task.detached` warm-all in `applicationDidFinishLaunching`) works; the first open no longer hitches on main.
+  The signpost thread id is how you verify "moved off main" from a trace.
+- **T5 `PixelTestCase` (AppleScript+screencapture) visual-regression suites gated only on `MDV_HEADLESS_GATE`,
+  not `MDV_VM_GUI_SESSION`** → they RAN + false-failed on a non-GUI `test-in-vm.sh test` (AppleScript `-609` /
+  blank shots) AND would OPEN A WINDOW on a bare host `swift test` (the same footgun TSK-817 fixed for
+  `LiveAppTestCase`, still open for these). Fix (TSK-822): gate `PixelTestCase.setUpWithError` on
+  `LaunchHarness.shouldRunLiveTiers` so the whole T5 tier self-skips unless `MDV_VM_GUI_SESSION=1`.
+- **`test-in-vm.sh test` (plain ssh, no GUI lane) is NOT a clean signal** — its real signal is the headless tiers
+  (which pass = forward-compat green). GUI-lane suites false-fail and PTY tests flake (`TerminalForegroundBumpTests`
+  20s/timeout on VM vs 0.054s pass on host — PTY-over-ssh-under-load, the `reference_vm_plain_ssh_breaks_tests` class).
+- **`MarkdownRenderedView` (NSViewRepresentable) can't be unit-driven** — `NSViewRepresentable.Context` isn't
+  publicly constructible, so you can't call `makeNSView`/`updateNSView` directly in a test. Its view-bridge logic
+  (e.g. TSK-821 scroll capture/restore) is validated at the MODEL layer (host) + the JS round-trip on our actual
+  rendered page in a #192 WebView-lane test. Also: WV-7 governs user-SCRIPTS (mermaid `removeAllUserScripts`), NOT
+  `WKScriptMessageHandler`s or `evaluateJavaScript`-injected listeners — those are WV-7-safe.

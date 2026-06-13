@@ -1,164 +1,45 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — minor-features + fixed-lane drain; groomed pools mostly validated  (2026-06-13)
+# Handoff — to changelog + session wrap  (2026-06-13)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `fdb072a` (+ docs commits). Recent: 640 rename UI; 564 FFI copy-2; 575 re-triaged; 745 new-tab recents (fixed, render→VM) + theme-flake fix; **791 (editor-slowness / "was CM6 a mistake") spiked + PARKED — owner-decision** (keep CM6; fix priority 543>619; findings in docs/research/editor-perf-791-2026-06-13/).
-
-## ⚠️ TSK-791 is PARKED (owner decision on editor-perf direction) — the #1 user-facing item is now owner-gated
-The answer: CM6 isn't the mistake; the felt slowness = cm_apply full-doc FFI per edit batch (543, architectural), TS query-compile first-open (619), WebView mount (inherent). If the owner greenlights the **543 stateful-editor-session redesign**, that's the big typing-latency win (multi-tick: rust owns the doc mirror, Swift sends only edits). **619** (first-open TS-compile) is a smaller separate fix worth checking (its state — may already be fixed/VM-gated).
-
-## Two process rules (both learned the hard way) + actionable pool
-1. **Pick the first viable bounded item within 2-3 board reads and START.** Gate + teeth are the safety net, not pre-analysis.
-2. **VERIFY a ticket's severity/"real-bug" claim against the actual code with ONE targeted read BEFORE committing.** (Lost a near-codeless tick to TSK-575: the audit called 13 casts "panic-risk safety bugs"; one read of cm_edit.rs:63-85 showed they're GUARDED-benign — it's low-value pedantic hygiene, not bugs. Re-triage recorded on the ticket.)
-
-Actionable pool (groomed pools mostly validated/heavy-tailed):
-- **BEST next picks — wishlist minor-features (headless model + review render, REAL user value):** TSK-745 (new-tab recents — builds on the HistoryStore/parentFolderLabel work), TSK-757 (shortcut catalog). Cleaner than the rust-core remainder.
-- **rust-core (verify scope first):** TSK-543 (cm_apply full-doc-FFI per edit, S3 — real but a bigger incremental-edit protocol change), TSK-583 (DocId registry, big), TSK-564 (copy-1 buf-scope refactor = its remaining half). **TSK-575 is DEPRIORITIZED hygiene** (casts benign — see its re-triage comment); touch only if the real pool drains, as one batched sweep.
-- **VM/UI tails (heavy, dedicated tick):** 641 chrome T5 pixel; 640 rename-prompt VM render + code-action picker UI.
-
-## ⚠️ The remaining fixed-lane work is user-facing UI tails — each a dedicated build tick
-The cheap drains are done. What's left needs a focused SwiftUI/T5 effort (don't expect a quick re-run drain):
-- **641 chrome → a T5 chrome-pixel test.** Unblocked by the `set-theme <id>` verb. Build: an app launch
-  env-seam (e.g. `MDV_FORCE_THEME`) OR drive `set-theme` via `--script`; spawn the app with a folder (sidebar
-  visible) + theme=xcode-dark; `screencapture` the sidebar; assert the themed dark color (compute expected
-  from the theme def, or A/B vs xcode-light). Mirror `SourceViewVisualRegressionTests` (PixelTestCase). Wire
-  into `test-in-vm.sh run_webview_tests`/equivalent + `nightly-vm.yml`. Needs `dist/` built on the VM (heavy)
-  + the screencapture run + teeth (revert chrome fix → red). Closes 641's 4th surface → validated.
-- **640 rename → interactive UI LANDED (8a57023).** The `lsp.rename` command + `show-lsp-rename` verb +
-  `LSPRenamePrompt` + state machine are in (host-tested). REMAINING for 640: (a) the prompt SHEET render — a
-  VM UI test driving `show-lsp-rename` and asserting the `mdv.lspRename.*` field/buttons + that submit renames
-  the buffer in the spawned app (a11y ids in place); (b) the code-action PICKER UI (applyCodeAction engine
-  host-tested; picker unbuilt — a follow-up slice). An Edit-menu item for Rename is also a nice-to-have (the
-  command is palette-invokable today).
-- **NOTE on cadence:** the last 2 ticks landed automation-verb seams (set-theme, lsp-rename). Don't do a 3rd
-  verb-only tick — the next THEMING/LSP tick should build one of the two UI tails above (real user value), or
-  pick a genuinely-headless NEW item from the `[WISH][minor-feature]` bucket (745 recents, 757 shortcut catalog).
-
-## ⭐ NEW CAPABILITY (2026-06-13): the VM live-validation drain is AGENT-RUNNABLE — proven
-The big `fixed`-lane pool (~15 items) is gated on `live-validation` (WebView/render). I proved the VM lane
-works end-to-end with NO owner clicks. **Recipe (rsync first, then):**
-```
-rsync -az --delete --exclude='.build/' --exclude='.swiftpm/' --exclude='dist/' --exclude='.git/objects/pack/' \
-  /Users/me/Documents/workspaces/claude/markdown_viewer/ macOS15:markdown_viewer/
-ssh macOS15 'cd markdown_viewer && MDV_RUN_WEBVIEW_TESTS=1 MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> \
-  bash scripts/test-in-vm.sh test --filter ViewerUITests.<Suite>'
-```
-- `MDV_RUN_WEBVIEW_TESTS=1` is forwarded into the `launchctl asuser` GUI session → the `#192` WebView suites
-  RUN (not skip — confirm "Executed N tests", not "0 tests"). 6.3 toolchain auto-selected. Warm builds 4-35s.
-- This is the §1.5 drain done right: re-run the host guard + the VM lane the ticket claims, then `task_validate`.
-- **Validated this way last tick: TSK-650** (mermaid render bug — host MermaidBundleLoadTests + VM
-  MermaidRenderProbeTests) **and TSK-638** (Print/PDF — host PrintExportModelTests + VM PDFExportWebViewTests;
-  the ⌘P modal panel is the lone un-automatable atom, acknowledged not pixel-claimed).
-- **WebView-clean drains are EXHAUSTED** (650/638 closed; a fresh 18/18 WebView-lane pass confirms render
-  health on current main). The remaining live-validation `fixed` items each need a DEDICATED effort, not a
-  quick re-run:
-  - **641 chrome → build a T5 chrome-pixel test (NEXT, now unblocked).** 3 of 4 theme surfaces are
-    VM-confirmed (syntax/rendered-CSS/editor via EditorThemeParityTests); only the SwiftUI CHROME pixels
-    remain (a T5 PixelTestCase, NOT WebView). The `set-theme <id>` script verb (commit 06e0c94) is the entry:
-    a T5 test launches the app, drives `set-theme xcode-dark`, screencaptures the sidebar, asserts the themed
-    color ≠ system. T5 lane is proven (screencapture TCC granted, GUI session). Mirror an existing
-    `*VisualRegressionTests` (PixelTestCase) + the `MDV_UI_SCENE` scene mechanism. Closing 641 unblocks 642.
-  - **640 LSP rename → build the interactive UI** (command + Edit-menu item + rename prompt sheet, GoToPrompt
-    pattern + a code-action picker). The engine (renameActiveEditorSymbolViaLSP / applyCodeAction) is fully
-    host-tested; only the user trigger is unbuilt. Model/command layer host-testable; the prompt render → VM.
-  - **468 → a VM T4 menu-contents check** (dead-UI removal; nothing host-assertable) — low value, defer.
-- **Latent flake (LESSONS):** theme tests share `ThemeStore.shared` under `--parallel` → rare cross-class
-  race; re-run a lone theme/gate flake before chasing.
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `2cb1197`
 
 ## Mission
-Owner away until ~noon 2026-06-13; autonomous chipping. USER-FACING bugs are drained; the wishlist
-minor-feature wave is in flight (748/763 at review). **HIGHEST-VALUE LANE RIGHT NOW: TSK-649 Stage B — the
-owner-approved Swift-twin DELETION endgame ("deprecate swift core").** Validate across the pyramid (human not
-in loop); keep `main` headless-gate-green; land per item on the linear trunk. Read `docs/TASK_WORKFLOW.md`
-every firing (§0.5 spike/design autonomy + chipping order; §1.5 validation-drain outranks new work).
+Autonomous loop: drive the `tasked` board (http://localhost:8787/) toward Done, user-facing bug fixes first. Keep `main` headless-gate-green; commit per item; log to `docs/AUTONOMOUS_PROGRESS.md`; **NEW: keep `CHANGELOG.md` updated with user-facing changes each tick.**
 
-## ⭐ ACTIVE LANE: TSK-649 Stage B — delete the Swift engine twins (owner-approved 2026-06-13)
-The owner resolved TSK-649's park: **"Approve policy + batch 1-4 (indent/hexSearch/hex/diff); review 5-9
-individually."** Stage A (all 10 caps default-ON) is done + soaked. Stage B deletes the now-dead twins per
-`docs/STAGE_B_DELETION_PLAN.md`, one package per engine.
-- **#1 indent — DONE + VALIDATED (TSK-808, `1e2b557`).** The clean template.
-- **#4 diff — DONE + VALIDATED (TSK-809, `954f1d8`).** Also clean (twins adapter-only, fully deleted).
-  Bigger blast radius (12 test files): A/B → golden snapshots, 8 fixture suites retargeted to the adapter,
-  twin tests + bypass audit retired, seam/obs tests reparented to `.csv`.
-- **#2 hexSearch · #3 hex — PARKED (TSK-810, owner-decision).** NOT clean: the Swift engine has a live
-  non-gated consumer (hexSearch click-highlight `HexSearchEngine.find(pattern:)`; hex un-ported windowed
-  `HexDumpBuilder`), so the "delete twin / no fallback" model can't apply as-is. 3 options framed; recommend
-  (A) keep-fallback + retire-gate. **Do NOT start #2/#3 until the owner answers** — the call sets the pattern.
-- **#5-9 (csv/fuzzy/find/transcript/markdown) — each needs individual owner review** + a named caveat (csv
-  DocId, fuzzy FileTreeFilter per-node, find ICU-fallback REMOVAL = behavior change, transcript
-  ClaudeSessionIndex helpers, markdown sanitizer/mermaid/TS spans stay) — several share #2/#3's carve-out shape.
-- **The template pattern** (proven on #1): delete twin source → collapse adapter to a direct `mdvCore*` call
-  with a safe degraded value + loud `Obs.error` (no Swift fallback) → retire the `RustCoreCapability` gate
-  case + env var + Settings toggle (KEEP the ABI bit in `CoreCapabilities` — bits are ABI) → freeze the A/B
-  suite to a GOLDEN suite (frozen values, no Swift oracle) + retarget/retire the twin's unit tests → headless
-  gate + golden teeth. `RustCoreSeamTests` `allCases` loops adapt automatically to a removed gate case.
+## Current state
+- **Done this session (gate-green on main):** TSK-741 (terminal large-paste ANR) ✅validated · TSK-736 (hover-highlight lag) ✅validated · TSK-619 (first-open TS-compile off-main) ✅validated · TSK-822 (T5 tier-gate) ✅validated · TSK-806 (split shows unsaved edits) fixed/VM · TSK-743 (source preview scroll) fixed/VM · TSK-821 (rendered-markdown preview scroll) fixed/VM. Plus the 580 FFI-envelope close-out (validated) + 819 VM .build chown.
+- **Owner asks (this turn): DONE.** Added `CHANGELOG.md` (user-facing progress view) + the keep-updated discipline in `CLAUDE.md` (SOP) + `docs/TASK_WORKFLOW.md` §4 (per-firing reminder). Committed `2cb1197`.
+- **In flight:** nothing half-done. (Was about to build a TSK-821 WebView-lane test — NOT started, just researched; see BACKLOG.)
+- **Host-actionable user-facing pool is DRAINED.** Remaining = the VM render/interaction validation tail + the parked perf re-feel (below).
+- **Next action:** owner asked to `/compact` after this handoff. On resume, the cleanest next work is the TSK-821 `PaneScrollRestoreWebViewTests` (#192-gated; round-trip primitives on our rendered page) OR awaiting the owner's TSK-598 perf re-feel.
 
-## Standing directives (2026-06-13)
-- **Spike + design AUTO-APPROVED** (TASK_WORKFLOW §0.5 / memory `feedback_spike_design_autonomy`): never
-  `task_park` just because something needs design/an-approach-decision. Re-surface ONLY a genuine dep
-  approval / true undifferentiated ambiguity / hard blocker, post-spike.
-- **Chipping order:** regressions → bugs → minor-features(no-design) → epics(spike→design→ship) → very-large.
-- **Per-tick cadence:** land 1–2 items per tick with teeth; keep `main` green; commit + log each.
-- **Validation split:** model/pure-logic → self-validate (host). Render/event/concurrency (SwiftUI pixels,
-  AppKit key routing, off-main) → host-test the LOGIC, hold at `review` for the VM. Don't over-claim validated.
+## Key decisions & rationale
+- **"Output-identical work-reduction optimizations are self-validatable on the host."** Used to validate TSK-741/736 from review (same pixels, fewer cycles; visual-regression modes host-tested). Don't reflexively hold these for VM.
+- **Perf cluster un-blocked.** MountedPanesLRU was NOT pending owner approval — it shipped 2026-06-06 (TSK-108 validated). A fresh VM profile (`vm-profile.sh nav/resize`) showed switch `apply`=6.7ms (the stale ~199ms residual is GONE) + resize no-hangs → TSK-598 PARKED for owner re-feel; residual is inherent WebKit first-open `loadToFinish`.
+- **TSK-822** gates the whole T5 `PixelTestCase` tier on `MDV_VM_GUI_SESSION` (via `LaunchHarness.shouldRunLiveTiers`) — fixes non-GUI-VM false-failures AND a bare-host window-opening footgun.
+- **TSK-821 design:** PULL via `evaluateJavaScript` (capture `window.scrollY` before reload, restore on `didFinish`) — `MarkdownRenderedView`'s `Context` isn't constructible so the view-bridge can't be unit-driven; the store is host-tested, the round-trip is VM.
 
-## DONE this session (minor-feature wave — 2 items, 4 commits)
-- **TSK-748 → review** (3 commits): file-info **multi-algo checksums** + responsive copy button.
-  - `2e1d345` ENGINE: `FileChecksum` generalized to `ChecksumAlgorithm` (CRC-32/MD5/SHA-1/SHA-256/SHA-512)
-    — generic CryptoKit fold + hand-rolled streaming CRC32 (no new dep). Pinned to published vectors.
-  - `2c43d0a` MODEL: `MetadataChecksumModel` algorithm-parameterized, (url,algorithm) stale-completion
-    guard; `metadata-set-checksum-algorithm` verb + `algorithm` in dump projection; Picker + dynamic labels.
-  - `d3a469b` COPY FEEDBACK: `copyHash()` via injectable `PasteboardIO`, transient `justCopied` → green
-    "Copied!" self-clears 1.2s. 13 model + 8 engine host tests, teeth on 3 paths.
-  - **(c) "metadata for all formats" SPLIT OUT → TSK-807** (needs a FileCategory coverage-inventory spike).
-- **TSK-763 → review** (`885cb7b`): recents grey containing-folder hint. `HistoryEntry.parentFolderLabel`
-  (home→~, root→/, nil for bare name) rendered tertiary-grey in `RecentRow`. 4 host tests, teeth shown.
+## Gotchas / lessons (also in LESSONS.md, dated 2026-06-13)
+- `test-in-vm.sh test` (non-GUI) false-fails GUI-lane suites + flakes PTY tests — its real signal is the HEADLESS tiers. Use the GUI lane (`MDV_VM_GUI_SESSION=1`) for render/visual suites.
+- A "blocked, awaiting owner" item may already be DONE — grep the code before re-pinging (the MountedPanesLRU mis-framing burned ticks).
+- Signpost thread-id ≠ Main Thread is how you verify "moved off main" from a trace (TSK-619).
+- WV-7 governs user-SCRIPTS (mermaid), NOT message handlers / `evaluateJavaScript`-injected listeners.
 
-## Earlier this session (pre-minor-feature)
-Wishlist bug bucket FULLY DRAINED (TSK-728..744, 14 fixes; 8 validated, 6 in the VM review queue, 743 awaiting
-owner A/B). Wishlist intake via ultracode workflow (184 lines → 136 tickets). VM FULLY UNBLOCKED (owner's 6GiB
-+ Screen-Recording; TSK-451 closed). Spike docs + intake triage committed `babbe31`
-(`docs/research/*-2026-06-13/`). rust-core: TSK-572/570 validated.
+## Files that matter
+- `CHANGELOG.md` — NEW owner-facing changelog (user-facing only). Keep it updated per the discipline.
+- `CLAUDE.md` (SOP §"Automated runs") + `docs/TASK_WORKFLOW.md` §4 — the changelog keep-updated reminder.
+- `Sources/ViewerUI/MarkdownRenderedView.swift` — TSK-821 scroll capture (updateNSView, before `loadHTMLString`) + restore (`didFinish`). `Sources/ViewerUI/DocumentModel.swift` `renderedScrollByURL` + `rememberRenderedScroll`/`renderedScrollOffset`.
+- `Tests/ViewerUITests/Harness/TierBaseCases.swift` `PixelTestCase.setUpWithError` — TSK-822 gate.
+- `docs/AUTONOMOUS_PROGRESS.md` — LOG +397..+406 (this session). `BACKLOG.md` 2026-06-13 — the VM-validation tail.
 
-## VM REVIEW QUEUE for the owner's noon pass (one UI/live session validates all)
-Render/event/concurrency items held at `review` — `task_list {project:tasked, state:review}`:
-- Bug bucket (6): **734·728·730·738·736·741**.
-- Minor-feature (2 new): **748** (checksum Picker shows 5 algos · switch clears hash · per-algo digest ·
-  Copy→green "Copied!" reverts ~1.2s) · **763** (recent row shows grey folder; same-named files differ).
-
-## Owner decisions waiting at noon (`task_list {waiting:human}` + below)
-- **743 A/B**: scroll "preserve" — independent-scroll done; "remember-on-return" needs a per-URL store
-  (recommend confirming interpretation). Sibling filed: TSK-806 (split-pane).
-- **Migration plan §6** (`docs/research/rust-migration-plan-2026-06-13/PLAN.md`) — 3 calls (TSK-775).
-- **Terminal Tier-D** (TSK-781). **Dep approvals**: 584/585/587/399.
-
-## How to resume
-1. Read `docs/TASK_WORKFLOW.md`. Stage B's CLEAN packages are done (#1 indent TSK-808, #4 diff TSK-809,
-   both validated). **#2 hexSearch + #3 hex are PARKED on TSK-810 (owner-decision) — do NOT start them until
-   the owner answers** (the carve-out fallback model). #5-9 also need owner review. So Stage B is owner-gated
-   for now → **pick another lane** (don't idle). Good headless picks: the `[WISH][minor-feature]` bucket
-   (TSK-745 new-tab recents · TSK-757/678 shortcut catalog · TSK-770 Find-bar Replace/ReplaceAll), or the
-   `fixed`-lane validation drain (§1.5) for any host-validatable ticket. Template for a clean Stage B engine
-   (when unblocked): `TSK-808`/`TSK-809`.
-2. **Secondary: the `[WISH][minor-feature]` bucket** (when Stage B 1-4 is done or you want variety). Headless
-   picks: **TSK-745** (new-tab recents — `model.recents` exists), **TSK-757/678** (shortcut catalog + Help),
-   **TSK-770** (Find bar Replace/ReplaceAll), **TSK-724** (Recent Locations). TSK-573 (web palette → core)
-   is triaged but its honest fix is a large CSS var() refactor that needs VM pixel proof — deprioritized.
-3. Gates: `bash scripts/test-headless-gate.sh` (host, one at a time) · `bash scripts/rust-core-gate.sh`
-   (only if `rust-core/` source changed — Stage B twin deletions are Swift-side, so the headless gate covers
-   the golden suites). VM: rsync + `bash scripts/test-in-vm.sh test --filter <Suite>` (headless) /
-   `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> ... --filter <T5 suite>` (pixel).
-
-## Gotchas / lessons (also in LESSONS.md)
-- The MetadataChecksumModel state machine is the host pixel-equivalent seam: a script verb +
-  dump-projection lets the T4 UAT assert the compute/algorithm/copy outcome cross-process without rendering.
-  Pattern to reuse for any live-gated UI feature with a model behind it.
-- `task_advance` walks reported→…→target but takes NO commits param — attach the SHA via a `task_comment`
-  after, or `task_record` (with commits) before advancing. The triage step needs a `note`; progress→fixed→
-  review needs a `summary`.
-- AUTONOMOUS_PROGRESS.md LOG entries are NOT strictly monotonic on disk (a +318..+325 block sits below the
-  +350 region). Find the max with `grep -oE '^## LOG \+[0-9]+' | sort -n | tail` and prepend the new entry
-  directly above the current max.
-- Demonstrate teeth every fix: mutate→red (confirm the mutant COMPILED: grep `Compiling <module>`)→restore.
+## Open questions / blockers
+- **TSK-598 (waiting:human):** does tab-switch/resize still FEEL laggy in the installed build? Measured as resolved; owner's felt judgment gates closing 591/592/266/455.
 
 ## Tracker
-- tasked / TSK-748 (review, 3 commits) · TSK-763 (review, 885cb7b) · TSK-807 (reported, new split for metadata-all-formats).
+- `tasked` / TSK-741,736,619,822 → validated · 806,743,821 → fixed (VM render/interaction pending) · 598 → parked (owner re-feel) · 820,821,822 filed (822 done) · 590 epic → review (session summary commented).
+
+## How to resume
+1. The SessionStart hook re-injects this file. Read it, then `docs/AUTONOMOUS_PROGRESS.md` head (LOG +406) + `BACKLOG.md` (2026-06-13).
+2. `main` is gate-green at `2cb1197` (or later). Verify: `git -C /Users/me/Documents/workspaces/claude/markdown_viewer log --oneline -3`.
+3. Each tick: read `docs/TASK_WORKFLOW.md` IN FULL, query the board (`mcp__tasked__task_next {agent:claude-mdv, project:tasked}`), pick the highest-value actionable item. **Remember the new CHANGELOG.md discipline for any user-facing change.**
+4. Host-actionable pool is drained — the next work is the VM-validation tail or the parked perf re-feel. Don't manufacture paper cuts (§5).

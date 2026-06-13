@@ -958,3 +958,24 @@ all already tracked on the board, listed here only as the resume pointer:
   VM WebView lane would close the painted half before validated.
 - **FrameRateMonitor as the MountedPanesLRU before/after** (note): TSK-275's FPS strip
   gives a live readout — use it during the supervised perf session to show the win on screen.
+
+## 2026-06-13 — VM-validation tail + deferred refinements
+
+User-facing work is host-drained; the remaining items are render/interaction-gated (VM) or owner-gated.
+
+- **TSK-821 rendered-scroll WebView-lane test** (S) — add `PaneScrollRestoreWebViewTests` (#192-gated): load a
+  tall HTMLRenderer page into a real WKWebView → `scrollTo(top:500)` → read `window.scrollY`==500 → reload (resets
+  to 0) → `scrollTo({top:500,behavior:'instant'})` → 500. Validates the round-trip primitives on OUR page (the
+  view-bridge wiring can't be unit-driven — Context not constructible). Wire into `test-in-vm.sh run_webview_tests`
+  + `nightly-vm.yml` (TSK-621 rule). The store is already host-tested.
+- **TSK-732 font View/Edit seamlessness** (M) — needs a VERSIONED bridge change: `CMOutboundMessage.setFontSize(Int)`
+  → carry `Double` px + a derived line-height px from `SourceTextController.lineHeight` (the View's exact factor),
+  so CM6 matches the View by construction (not a magic 1.2). Sketch on the ticket.
+- **TSK-820 remove dead per-method FFI C symbols** (S) — post-soak cleanup; blocked on re-pointing the FFI A/B
+  oracle (envelope-vs-symbol) onto the core dispatch fn first, then delete the symbols.
+- **VM render/interaction validation tail** — TSK-806 (split re-render: AX-read of split source), TSK-743 (source
+  visible scroll restore), TSK-763/789 (settings/recents a11y-presence), TSK-468 (dead-UI-removal glance),
+  TSK-734 (no-crash smoke), TSK-728/730 (key-synthesis — needs the TSK-818 VM key lane). Each held at fixed/review.
+- **Perf cluster (591/592/598/266/455) is PARKED on owner re-feel** (TSK-598, waiting:human) — measured as resolved
+  (switch/resize fast); only first-open WebKit `loadToFinish` remains (inherent). If owner still feels lag, a
+  progressive/lighter-initial-page render spike is the lever (bigger change, uncertain payoff).
