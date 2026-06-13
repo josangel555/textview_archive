@@ -9169,6 +9169,31 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +333 (2026-06-13 tick — VM validation run (partial-clean + TSK-451 repro); TSK-571 validated)
+
+Ran the VM validation lane (the +332 default; sanctioned UI-validation path + owner standing ask)
+and drained a real finding in parallel.
+
+- **TSK-571 (HEX_WIDTH single source of truth) — VALIDATED (`5ad57b5`).** core::view::HEX_WIDTH
+  made pub; the TUI + web front-ends DERIVE their bytes-per-row from it (const = view::HEX_WIDTH)
+  instead of mirroring the literal 16 → drift structurally impossible. Behavior-preserving; workspace
+  compiles deriving from core; value-pin test + rust-core gate green. (Parallel work while the VM ran.)
+- **VM headless lane: PARTIAL-CLEAN, then hit the TSK-451 hang.** `rsync` + `test-in-vm.sh test`
+  (auto 6.3 toolchain, links the host-built .a). The VM BUILT this session's rust+Swift changes
+  (541/559/577/669/580 + envelope) and ran ~44k log lines with **0 failures across every suite**,
+  then HUNG — a live xctest/swiftpm-testing-helper stayed alive, log frozen for minutes, in/around
+  ViewerUITests.EditorCoordinatorInteractionTests (after test_closeTab_promptsForDirty_discard). Killed
+  the hung VM process (plain pkill; the -9 variant is deny-ruled), VM cleaned up, bg command exited.
+- **TSK-451 (VM-sweep hang) — REPRODUCED + advanced reported→ack with a diagnosis.** Broadens the
+  bug: it hangs on the plain `test` lane too (not just `all`), at a DIFFERENT test than the title's
+  TabBarWidthTests. Host gate passes these → VM-specific. LEAD: a close-tab-dirty-prompt test presents
+  a REAL AppKit modal (NSAlert.runModal) that blocks forever in the VM's no-GUI-login-session context.
+  Fix direction recorded: isolate the exact test under a timeout + make the headless test exercise the
+  DirtyClosePrompt model/closure rather than present a real modal. Didn't re-run on the fragile VM.
+- **Takeaway:** the VM run gave a POSITIVE partial signal (build + ~44k lines / 0 failures on the VM
+  toolchain — the session's work is forward-compat-clean for the large portion that ran). The host
+  headless gate remains the merge authority + is green on every commit this session.
+
 ## LOG +332 (2026-06-13 tick — cleanly-autonomous rust-core pool exhausted; TSK-543 parked, direction)
 
 Confirmed (via a thorough sweep this tick) that the cleanly-autonomous high-value pool is genuinely
