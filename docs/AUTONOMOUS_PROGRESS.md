@@ -9048,3 +9048,18 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   from the TSK-327 plist lesson); tightened, then red/green clean.
 - Slice 2 remaining: CM6 editor parity (setFontFamily bridge + CSS).
 - Held at fixed: rendered font + gutter alignment = the glance.
+
+## LOG +310 (2026-06-12 tick — TSK-259 complete: the font picker drives both text surfaces)
+
+- **Slice 2 (ee09f99, installed):** the CM6 editor follows the same
+  preference — setFontFamily over the bridge into the EXISTING
+  fontCompartment (one compartment owns size+family; swaps can't
+  fight). The JS always falls back to the monospace stack — a missing
+  system font can never degrade the editor to a proportional default
+  (pinned). The coordinator channel is a double optional so CLEARING
+  the preference still dispatches once (.some(nil)) and restores the
+  bundle default.
+- Teeth: encoding mutation → red "nil ≠ Monaco". 46 tests across the
+  two suites; gate green; installed.
+- TSK-259 held at fixed: family change in both surfaces + gutter
+  alignment = the glance.
