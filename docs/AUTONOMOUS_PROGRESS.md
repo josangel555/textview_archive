@@ -9169,6 +9169,19 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +335 (2026-06-13 tick — refreshed HANDOFF.md (was ~16 firings stale); state unchanged-gated)
+
+Clean autonomous pool remains exhausted (per +332/+334) + owner away (no responses to the direction
+questions / parked decisions across many firings). Rather than another checkpoint or marginal cleanup,
+did the genuinely-useful consolidation: **refreshed HANDOFF.md** — it was stale at `3c95f3c` (~+318,
+pre-envelope) and would mislead a returning owner / fresh session. The new handoff captures this
+session's full arc (541/559/577/669/580 + 642/637/306/571 validated + TSK-451 triaged), the exhausted-
+clean-pool state, the precise gated reasons per remaining item, and the owner-decision unblocks
+(TSK-543/302/649/316/336/338). Committed with this log. No code change; main gate-green @ prior commit.
+The highest-leverage next step is an owner answer to a parked decision (esp. TSK-543 typing-perf, or
+TSK-649 flip), or a supervised VM session (+ a `pkill -9` allowance) to land TSK-451's safety net and
+then drain the ~20 VM-gated fixed items.
+
 ## LOG +334 (2026-06-13 tick — TSK-451 ack→triaged with an executable plan; impl is VM-gated)
 
 Worked TSK-451 (the VM-sweep hang reproduced last tick) from ack to triaged with a complete,

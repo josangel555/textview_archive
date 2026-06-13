@@ -1,87 +1,78 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — validation-drain + review-lane reconciliation (post wishlist wave)  (2026-06-13 ~00:30)
+# Handoff — rust-core Phase-1 contract complete; clean pool exhausted, owner-gated  (2026-06-13 ~03:40)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ 3c95f3c
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `0bedb0f`
 
 ## Mission
-Rust-core → Swift-core deprecation (epic TSK-651); USER-FACING bugs first; work the
-`tasked` board; validate with automated tests; keep main gate-green. The wishlist feature
-wave is DONE; current focus is the VALIDATION DRAIN (§1.5) — reconciling the stale
-review/progress lanes against what later work changed, converting "fixed-but-unguarded"
-limbo items into genuinely-guarded validated ones.
+Rust-core production-readiness + the Swift→Rust migration (epic TSK-538/651); USER-FACING bugs first;
+work the `tasked` board; validate with automated tests (human not in loop); keep main headless-gate-green;
+land per item via rebase+ff. Read `docs/TASK_WORKFLOW.md` every firing.
 
-## Current state
-- **This session's validation-drain closures (all VALIDATED with real teeth-guards):**
-  - TSK-123 (session_table whole-Table clone, S2) — arena work made it structurally
-    impossible; added an FFI hot-path pin forbidding a to_table() revert (4b3ec3e).
-  - TSK-122 (HexView 50k-match repaint, S2) — added the render-path consumption pin
-    proving applyHighlights uses the O(2) fast path (5daa3dd).
-  - TSK-655 (fs.watch push protocol design, P1) — realized by TSK-662/663/664 (6b914cd).
-- **TSK-333 (bookmark Delete-key + undo) — COMPLETED** end-to-end this session: the
-  undo command was wired in TSK-330; added the Delete-key handler (53f2f51). Fixed.
-- **TSK-329 (File New) — BUILT + landed (ec231bc, installed):** NewFileCreator had zero
-  UI callers; wired File→New File (⌘N) + folder right-click "New File" + immediate
-  tree refresh. Fixed (live glance).
-- **In flight: NOTHING.** Tree clean at 3c95f3c, gate-green (clean single run).
-- **Next action: continue the validation drain.** Remaining review-lane items: TSK-114
-  (agent dogfood feedback — likely a note/dismiss), TSK-590 (the bug-list EPIC — all
-  children validated, can close as the parent). Then board hygiene on the zombie
-  `progress` lane (~20 tickets, many claimed by the retired `claude` agent with leases
-  expired ~8 days — reconcile/dismiss-with-proof/finish per §3 hygiene). THEN big
-  owner-shaped features if nothing else.
+## What this session shipped (all gate-green, validated unless noted)
+- **TSK-541** — FFI handle free-vs-call UAF closed via an Arc-backed registry (never-reused token; lookup/free total + safe). `df250db`.
+- **TSK-559** — windowed snapshot (`snapshot_window_frame` + `filtered_count`), additive, no wire-version bump — the O(window) filter pull. `8762a58`. Consumer follow-up filed **TSK-668** (live-gated CSV viewport paging).
+- **TSK-577** — the WireError {code,message,kind} channel now EMITS on error (was dead). `02161cb`.
+- **TSK-669** — host-side consumer: `CsvSession.decodeWireError` + `callBuf` logs it. `4c7dbc1`.
+- **TSK-580 (thin-waist FFI envelope, P1, the LAST §2.5 Phase-1 item)** — slices 1/2/4/5 landed:
+  safe-Rust `dispatch::call` + `mdvcore_call` envelope + `MDV_METHOD_*` ids (cbindgen→header→Swift) +
+  the FULL 8/8 stateless-seam migration (`InProcessTransport` routes everything through the envelope;
+  `exports` symbol table empty). `7d092ee`/`1900606`/`d1b5a35`/`56560f9`. STILL `progress` — see below.
+- **Validated (fixed→validated):** TSK-642 (VS Code theme import), TSK-637 (md outline), TSK-306
+  (preview-tab), TSK-571 (HEX_WIDTH single source). Earlier wishlist wave + 122/123/655 also validated.
+- **TSK-451 (VM-sweep hang) reproduced + triaged** with an executable plan (see below).
 
-## Key decisions & rationale
-- **The board is NOT input-bound** (corrected my own premature "hold" — the directive's
-  named pools were all validated, but the review/progress lanes hold real drain work).
-- **Validation-drain pattern**: re-run a review item's evidence FRESH against current
-  code; if later work (e.g. the TSK-546 arena) changed the landscape, the fix may now be
-  guardable — add the missing teeth-guard, then validate. This caught the unguarded perf
-  properties the prior agent honestly refused to self-validate.
-- **A design ticket is validated when its implementation works** (TSK-655 via 662/663/664).
+## Current state — clean autonomous pool is EXHAUSTED; remaining work is GATED
+Nothing in flight. Tree clean @ `0bedb0f`, host headless gate green on every commit. Confirmed across
+several firings that no cleanly-autonomous high-value work remains; each remaining item is gated:
 
-## Gotchas / lessons (durable forms in LESSONS.md)
-- **Two gate runs at once thrash the machine** → wall-clock-timing suites (FoldBench,
-  RepoFocusTrackerTests) flake. Run ONE gate at a time; re-run timing/bench reds ISOLATED
-  before chasing — they pass 5/5 isolated.
-- A perf property that produces byte-identical output (clone vs borrow; full vs O(2)
-  repaint) can't be caught behaviorally — needs a structural or source-wiring pin.
-- Adding code that string-slices in rust-core trips the `string_slice` lint (TSK-566) —
-  use split_once/split/.get(), not `&s[a..b]`.
-- Same-second SwiftPM staleness: confirm a mutant COMPILED (grep `Compiling <module>`)
-  before trusting a teeth result.
+- **TSK-580 remaining:** slice 3 (aux bulk side-channel for hex render ~18 MB) is BLOCKED — hex isn't
+  framed/on the envelope yet (raw-byte signature); the symbol cleanup is soak-gated. Stays `progress`.
+- **TSK-451 (VM hang):** triaged with the plan (1: wall-clock cap in `test-in-vm.sh` swift_test so a
+  hang fails-fast naming the prime suspect — macOS-compatible plain `pkill`, NO setsid/timeout/`pkill -9`
+  which are unavailable/deny-ruled; 2: re-run on VM under the cap to ID + seam the hanging test). IMPL is
+  VM-validation-gated (can't safely modify the load-bearing VM script without confirming on the VM, which
+  hangs). **This also BLOCKS draining the ~20 live-validation fixed items** (the VM GUI lane would hit the
+  same hang).
+- **Host-validation drain:** exhausted (the clean ones validated; the rest — TSK-468 live-gated, 626
+  build-process, 456/457 interaction-render — need the VM/owner glance).
+
+## Owner decisions parked (the real unblocks — `task_list {waiting:human}`)
+- **TSK-543** (cm_apply ships full doc per keystroke → stateful Rust editor; typing perf, owner's #1
+  class). Parked: (a) hand-roll gap-buffer vs approve a rope dep; (b) build behind a flag autonomously
+  vs supervised. NOTE: slice 1 (a String-backed stateful doc, additive, behind a flag, host-tested) is
+  arguably autonomous-safe with the conservative defaults — I left it parked rather than reverse my own
+  escalation, but a "go conservative" answer unblocks it immediately.
+- **TSK-302** (CSV cell-nav/find — live-gated twin features; CSV copy already works). Go/defer.
+- **TSK-649** (flip MDV_RUST_* defaults + delete the Swift twins) — `fixed`/waiting:human.
+- **TSK-316/336/338** (walkthroughs / hooks / plugins consolidation).
+
+## Gotchas / lessons (also in LESSONS.md)
+- `pkill -9 -f` is DENY-RULED in this env (incl. via ssh) — clean up VM procs with plain `pkill -f`.
+- macOS/VM lack `timeout` and `setsid` — use background + watchdog + plain `pkill` of the test bundle
+  (`MarkdownViewerPackageTests`) + `swiftpm-testing-helper` for process cleanup.
+- VM headless lane (`test-in-vm.sh test`) HANGS (TSK-451) partway — a frozen log mid-test is a stdout
+  BUFFERING artifact, not the hang site. The ~44k-line/0-failure partial run shows the bulk is VM-clean.
+- Adding an FFI export → cbindgen regen via `build-rust-core.sh` (restages header + rebuilds the .a);
+  additive exports need no MDV_WIRE_VERSION bump. The header + .a are NOT git-tracked.
+- Envelope method ids are ABI (assign-once); the `method_id_consts_match_the_dispatch_enum` drift-pin
+  guards core enum ↔ FFI consts ↔ Swift (via the header).
 
 ## Files that matter (this session's new surfaces)
-- `Sources/ViewerUI/DocumentModel.swift` — `createNewFile(in:)` + `newFileTargetDirectory`
-  (TSK-329); `undoLastBookmarkRemoval` (TSK-330).
-- `Sources/ViewerUI/SidebarModel.swift` — `reloadChildren(of:)` (immediate tree refresh).
-- `Sources/MarkdownViewer/main.swift` — `newFile(_:)` action + validateMenuItem gate.
-- `rust-core/crates/ffi/src/tests.rs` — `session_table_ffi_encodes_from_spans_not_a_clone`.
-- `Tests/ViewerUITests/HexHighlightFingerprintTests.swift` — render-path consumption pin.
-- `docs/REMOTE_PROTOCOL.md` — the realized remote protocol (TSK-655).
-
-## Open questions / blockers (owner)
-- **3 parked product decisions** (costed options on each ticket): TSK-336 hook-event
-  surfacing · TSK-338 plugins/MCP/walkthroughs consolidation · TSK-316 walkthrough mgmt.
-- **TSK-649 stage B**: per-engine Swift-twin deletion sign-off (docs/STAGE_B_DELETION_PLAN.md).
-- **Supervised MountedPanesLRU session** (TSK-598 family): the FPS strip (TSK-275) is its
-  live before/after readout; needs you watching (WV race history).
-- **The glance batch** (one relaunch, one sitting — now ~15 installed features incl. New
-  File ⌘N, bookmark Delete-key, fonts, archives, fuzzy filter, theming, FPS strip, etc.).
-- TSK-306 validation bar (carried).
-
-## Tracker (project `tasked`, agent `claude-mdv`)
-- `waiting:human`: TSK-649, TSK-336, TSK-338, TSK-316. Validated this session: 122, 123,
-  655 (+ the wishlist wave earlier). Fixed (live glance): 327, 329, 330, 333, 637, 638,
-  640, 641, 642, 259, 275, 282, 284, 311, 317, 666.
+- `rust-core/crates/core/src/dispatch.rs` — the safe-Rust method dispatch + `Method` u16 enum (TSK-580).
+- `rust-core/crates/ffi/src/lib.rs` — `mdvcore_call` envelope + `MDV_METHOD_*` + `write_wire_error`.
+- `rust-core/crates/ffi/src/handle.rs` — the Arc registry (TSK-541).
+- `rust-core/crates/core/src/session.rs` — `snapshot_window_frame`/`filtered_row_count` (TSK-559).
+- `Sources/RustCore/CoreClient.swift` — `CoreEnvelope.call`, `mdvEnvelopeCall`, `WireErrorDetail`/decode.
+- `Sources/RustCore/CoreTransport.swift` — `InProcessTransport.methodIds` (all 8 via the envelope).
 
 ## How to resume
-1. Read `docs/TASK_WORKFLOW.md`. `task_list {waiting:human}` FIRST (owner answers
-   outrank). Then continue the validation drain: `task_list {state:review}` and
-   `{state:progress}` — re-verify host-testable items against current code; close zombies.
-2. Owner-answer playbook: glance-confirmed → task_validate citing held evidence; park
-   answered → execute the chosen costed option.
-3. Gates: `bash scripts/test-headless-gate.sh` (ONE at a time) + `scripts/rust-core-gate.sh`.
-   Re-run any FoldBench/RepoFocusTracker red ISOLATED before believing it. After rust
-   wire/serve changes rebuild `/private/tmp/mdv-rust-target` mdv-serve. Install after
-   user-facing change: `bash scripts/build-app.sh debug --install`.
-4. NEVER run two gate/test sweeps concurrently — it flakes the timing suites.
+1. Read `docs/TASK_WORKFLOW.md`. `task_list {project:tasked, waiting:human}` FIRST — owner answers to
+   the parked decisions (TSK-543/302/649/316/336/338) are the highest-leverage unblocks.
+2. If owner answered TSK-543 → execute the chosen approach (slice 1 = stateful editor doc model; can
+   reuse the TSK-541 handle-registry pattern + cm_edit's existing apply logic; behind a flag, host-tested).
+3. TSK-451: needs a VM session + (ideally) a `pkill -9` allowance — implement the test-in-vm.sh cap
+   (host-test the watchdog mechanism), then re-run on VM to ID + seam the hanging test; then the VM GUI
+   lane can drain the ~20 live-validation fixed items.
+4. Else (no owner steer, no VM): the clean pool is genuinely exhausted — prefer a documented hold over
+   marginal paper cuts (§5). Gates: `bash scripts/test-headless-gate.sh` (host, ONE at a time) +
+   `bash scripts/rust-core-gate.sh`. After rust changes: `bash scripts/build-rust-core.sh` (header + .a).
