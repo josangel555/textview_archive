@@ -9169,6 +9169,22 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +401 (2026-06-13 — TSK-743 source-view per-file preview scroll; rendered case split to TSK-821)
+
+- **TSK-743 source channel → landed (commit `865fdd6`, headless gate green).** The ticket was only partially fixed
+  (prior commits covered the CM6 editor scroll). Three channels: editor (done), source NSTextView (this commit),
+  rendered WKWebView (split to **TSK-821**, the dominant case). The preview slot reuses one tab id and rebuilds the
+  `Tab` per swap, dropping `Tab.scrollTopLine` (`TabsState.openPreview` omits the carry the lazy path does). Added a
+  per-URL `previewSourceLineByURL` store (cap 64) + capture-before/restore-after in `openResolved`'s preview branch,
+  mirroring the editor channel's URL-keyed stash. New `test_previewReturn_restoresSourceScrollPerFile` drives
+  `model.sourceScrollState` (A@137 → B clean → A 137 → B 42). TEETH: disabling the restore reddened ONLY the new source
+  test (editor-channel + isolation tests stayed green). Model contract host-guarded; the visible NSTextView restore is VM.
+- **TSK-821 filed** — rendered-markdown (WKWebView) per-URL scroll: the DEFAULT markdown mode has ZERO scroll
+  persistence (only find-match `scrollIntoView` exists; a reload resets to top). Almost certainly the owner's felt case.
+  Fleet sketch attached (JS `window.scrollY` reporter → `renderedScrollByURL` store → `scrollTo` on didFinish); model
+  layer host-testable, JS round-trip + visible restore VM.
+- One gate run flaked on a perf bench under machine load; clean re-run green (CLAUDE.md known-flake class).
+
 ## LOG +400 (2026-06-13 — TSK-736 hover-lag Fix B: skip the redundant find-highlight repaint; TSK-732 scoped+deferred)
 
 - **TSK-736 (mouse-over highlight lag on a 5000-line log + Find) → Fix B landed (commit `1404c9b`, headless gate green;
