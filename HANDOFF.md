@@ -1,7 +1,10 @@
 <!-- CLAUDE-HANDOFF v1 -->
 # Handoff — minor-features + fixed-lane drain; groomed pools mostly validated  (2026-06-13)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `fdb072a` (+ a docs commit). Recent: 640 rename UI; 564 FFI copy-2; 575 re-triaged (deprioritized hygiene — casts benign); **745 new-tab landing recents (fixed, render→VM)** + the recurring ThemeStore-singleton parallel-test flake fixed.
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `fdb072a` (+ docs commits). Recent: 640 rename UI; 564 FFI copy-2; 575 re-triaged; 745 new-tab recents (fixed, render→VM) + theme-flake fix; **791 (editor-slowness / "was CM6 a mistake") spiked + PARKED — owner-decision** (keep CM6; fix priority 543>619; findings in docs/research/editor-perf-791-2026-06-13/).
+
+## ⚠️ TSK-791 is PARKED (owner decision on editor-perf direction) — the #1 user-facing item is now owner-gated
+The answer: CM6 isn't the mistake; the felt slowness = cm_apply full-doc FFI per edit batch (543, architectural), TS query-compile first-open (619), WebView mount (inherent). If the owner greenlights the **543 stateful-editor-session redesign**, that's the big typing-latency win (multi-tick: rust owns the doc mirror, Swift sends only edits). **619** (first-open TS-compile) is a smaller separate fix worth checking (its state — may already be fixed/VM-gated).
 
 ## Two process rules (both learned the hard way) + actionable pool
 1. **Pick the first viable bounded item within 2-3 board reads and START.** Gate + teeth are the safety net, not pre-analysis.

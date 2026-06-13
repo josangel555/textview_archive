@@ -9169,6 +9169,26 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +363 (2026-06-13 — TSK-791 spike: "why is the editor slow / was CM6 a mistake?" answered + parked)
+
+- **TSK-791 (owner #1-priority complaint) spiked → triaged + parked (owner-decision).** Answer (docs/research/
+  editor-perf-791-2026-06-13/FINDINGS.md), grounded in prior measurements + a fresh read of the cm_apply FFI
+  wire seam: **CM6 is NOT the mistake** — the felt slowness is 3 separable causes:
+  1. **Typing latency — cm_apply (TSK-543) is STATELESS:** the WHOLE doc crosses the FFI BOTH ways per ~200ms
+     edit batch (confirmed `cm_edit.rs apply_wire:134-143`; TSK-561 cut the rust-side copy but the bytes still
+     cross) → ~2× doc-size traffic per keystroke-batch, scaling with size. The dominant cause for large docs;
+     the real fix is a STATEFUL rust editor session (architectural, touches the migration contract).
+  2. **First-open — TSK-619's ~400ms one-time TreeSitter query-compile.**
+  3. **WebView mount — inherent to a WKWebView editor** (TSK-108/621 already mitigate remounts).
+  - Recommendation: keep CM6; fix priority 543 (typing) > 619 (first-open); run a fresh VM xctrace to quantify
+    before committing to 543's redesign ("measure don't guess"). Parked the direction decision (invest in the
+    543 stateful redesign now?) on TSK-791.
+- **Why a spike not a code fix:** 543 (the real typing fix) is an architectural redesign touching the migration
+  contract — surfacing the prioritization beats starting it blind; and "was CM6 a mistake" is an owner direction
+  call (frame-then-park, §0.5). This IS the owner-priority #1 response, not paper-cut avoidance.
+- **Process:** verified 757 = research (skipped), checked the reported lane for user-facing bugs (found 791,
+  the top priority), verified 543's scope via the wire seam before committing. Pick-fast held (no oscillation).
+
 ## LOG +362 (2026-06-13 — TSK-745 new-tab landing shows recent files + theme-flake fix)
 
 - **TSK-745 → fixed (commit fdb072a).** EmptyStateView (the empty/new-tab content) now surfaces a capped
