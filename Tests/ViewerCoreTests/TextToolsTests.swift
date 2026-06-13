@@ -140,6 +140,76 @@ final class TextToolsTests: XCTestCase {
         let missing = FileManager.default.temporaryDirectory
             .appendingPathComponent("mdv-sha-missing-\(UUID().uuidString)")
         XCTAssertThrowsError(try FileChecksum.sha256Hex(ofFileAt: missing))
+        // The multi-algo entry point must throw on a missing file too.
+        XCTAssertThrowsError(try FileChecksum.hex(ofFileAt: missing, algorithm: .crc32))
+    }
+
+    // MARK: Multi-algorithm file checksums (TSK-748)
+
+    /// Canonical published digests of the bytes "abc" across every offered
+    /// algorithm — pins each hasher against the standard test vectors, not just
+    /// against itself. (NIST/RFC for the crypto hashes; CRC-32 IEEE for "abc".)
+    func testFileChecksum_allAlgorithms_knownVectors_forABC() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-csum-\(UUID().uuidString).txt")
+        try Data("abc".utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let expected: [ChecksumAlgorithm: String] = [
+            .crc32:  "352441c2",
+            .md5:    "900150983cd24fb0d6963f7d28e17f72",
+            .sha1:   "a9993e364706816aba3e25717850c26c9cd0d89d",
+            .sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            .sha512: "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a"
+                   + "2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f",
+        ]
+        for algo in ChecksumAlgorithm.allCases {
+            XCTAssertEqual(try FileChecksum.hex(ofFileAt: url, algorithm: algo),
+                           expected[algo], "\(algo.label) digest of \"abc\"")
+        }
+    }
+
+    /// CRC-32 against the de-facto standard check value: the IEEE/zlib CRC-32 of
+    /// the ASCII string "123456789" is `0xcbf43926`. Also covers the empty-input
+    /// identity (`0x00000000`) — guards the init/final XOR bookkeeping.
+    func testFileChecksum_crc32_standardCheckVectors() throws {
+        let dir = FileManager.default.temporaryDirectory
+        let check = dir.appendingPathComponent("mdv-crc-\(UUID().uuidString).txt")
+        try Data("123456789".utf8).write(to: check)
+        defer { try? FileManager.default.removeItem(at: check) }
+        XCTAssertEqual(try FileChecksum.hex(ofFileAt: check, algorithm: .crc32), "cbf43926")
+
+        let empty = dir.appendingPathComponent("mdv-crc-\(UUID().uuidString).bin")
+        try Data().write(to: empty)
+        defer { try? FileManager.default.removeItem(at: empty) }
+        XCTAssertEqual(try FileChecksum.hex(ofFileAt: empty, algorithm: .crc32), "00000000")
+    }
+
+    /// Every algorithm must stream identically to a one-shot hash — proves the
+    /// incremental fold (and the CRC table walk) is correct across read
+    /// boundaries when a tiny `chunkSize` forces many iterations.
+    func testFileChecksum_allAlgorithms_streamIdenticalToOneShot() throws {
+        let bytes = Data((0..<5000).map { UInt8($0 % 256) })
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-csum-\(UUID().uuidString).bin")
+        try bytes.write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        for algo in ChecksumAlgorithm.allCases {
+            XCTAssertEqual(try FileChecksum.hex(ofFileAt: url, algorithm: algo, chunkSize: 7),
+                           try FileChecksum.hex(ofFileAt: url, algorithm: algo, chunkSize: 1 << 20),
+                           "\(algo.label) chunked == one-shot")
+        }
+    }
+
+    /// `.sha256` via the multi-algo entry point and the `sha256Hex` convenience
+    /// must agree — the convenience is meant to be a thin delegate.
+    func testFileChecksum_sha256ConvenienceMatchesGenericEntry() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mdv-csum-\(UUID().uuidString).bin")
+        try Data((0..<300).map { UInt8($0 % 256) }).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertEqual(try FileChecksum.sha256Hex(ofFileAt: url),
+                       try FileChecksum.hex(ofFileAt: url, algorithm: .sha256))
     }
 
     // MARK: Verb dispatcher (surface-agnostic)

@@ -68,25 +68,89 @@ public enum TextTools {
 /// Checksum" actions). Distinct from `TextTools.sha256Hex(_ text:)` because a
 /// file's bytes are hashed verbatim — a binary or non-UTF-8 file has no faithful
 /// `String` form, and large files must not be slurped whole into memory.
+/// File-checksum algorithms surfaced in the metadata panel + Copy-Checksum
+/// actions (TSK-748). MD5/SHA-1 are cryptographically WEAK but still the common
+/// "does this match the download" checksums users paste around, so we offer them
+/// (clearly labelled) alongside the strong SHA-256/512 and the non-crypto CRC-32.
+public enum ChecksumAlgorithm: String, CaseIterable, Sendable {
+    case crc32, md5, sha1, sha256, sha512
+
+    /// Human label for the UI / Copy-Checksum menu.
+    public var label: String {
+        switch self {
+        case .crc32:  return "CRC-32"
+        case .md5:    return "MD5"
+        case .sha1:   return "SHA-1"
+        case .sha256: return "SHA-256"
+        case .sha512: return "SHA-512"
+        }
+    }
+}
+
 public enum FileChecksum {
     /// Streamed lowercase-hex SHA-256 of the file's RAW bytes (64 hex chars).
-    /// Reads in bounded `chunkSize` chunks and folds them into an incremental
-    /// hasher, so peak memory stays ~`chunkSize` regardless of file size.
-    /// Throws if the file can't be opened/read (e.g. missing / unreadable).
+    /// Convenience over `hex(ofFileAt:algorithm:.sha256)` (kept for existing
+    /// callers).
     public static func sha256Hex(ofFileAt url: URL, chunkSize: Int = 1 << 20) throws -> String {
+        try hex(ofFileAt: url, algorithm: .sha256, chunkSize: chunkSize)
+    }
+
+    /// Streamed lowercase-hex checksum of the file's RAW bytes for `algorithm`.
+    /// Reads in bounded `chunkSize` chunks folded into an incremental hasher, so
+    /// peak memory stays ~`chunkSize` regardless of file size. Throws if the file
+    /// can't be opened/read. (TSK-748.)
+    public static func hex(ofFileAt url: URL, algorithm: ChecksumAlgorithm,
+                           chunkSize: Int = 1 << 20) throws -> String {
+        switch algorithm {
+        case .crc32:  return try streamCRC32(ofFileAt: url, chunkSize: chunkSize)
+        case .md5:    return try stream(Insecure.MD5(), ofFileAt: url, chunkSize: chunkSize)
+        case .sha1:   return try stream(Insecure.SHA1(), ofFileAt: url, chunkSize: chunkSize)
+        case .sha256: return try stream(SHA256(), ofFileAt: url, chunkSize: chunkSize)
+        case .sha512: return try stream(SHA512(), ofFileAt: url, chunkSize: chunkSize)
+        }
+    }
+
+    /// Fold a file's chunks through any CryptoKit `HashFunction`, hex-encoded.
+    private static func stream<H: HashFunction>(_ hasher: H, ofFileAt url: URL,
+                                                chunkSize: Int) throws -> String {
+        var h = hasher
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
-        var hasher = SHA256()
-        while true {
-            // `read(upToCount:)` returns nil at EOF on some OS versions and an
-            // empty `Data` on others — treat both as end-of-file.
-            guard let chunk = try handle.read(upToCount: chunkSize), !chunk.isEmpty else {
-                break
-            }
-            hasher.update(data: chunk)
+        // `read(upToCount:)` returns nil at EOF on some OS versions and an empty
+        // `Data` on others — treat both as end-of-file.
+        while let chunk = try handle.read(upToCount: chunkSize), !chunk.isEmpty {
+            h.update(data: chunk)
         }
-        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        return h.finalize().map { String(format: "%02x", $0) }.joined()
     }
+
+    private static func streamCRC32(ofFileAt url: URL, chunkSize: Int) throws -> String {
+        var crc = CRC32()
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        while let chunk = try handle.read(upToCount: chunkSize), !chunk.isEmpty {
+            crc.update(chunk)
+        }
+        return String(format: "%08x", crc.value)
+    }
+}
+
+/// Streaming CRC-32 (IEEE 802.3 / zlib / gzip: reflected, poly 0xEDB88320,
+/// init 0xFFFFFFFF, final XOR 0xFFFFFFFF). Hand-rolled — no zlib dep — for the
+/// non-crypto "quick integrity" checksum users compare against `crc32`/`gzip`.
+struct CRC32 {
+    private static let table: [UInt32] = (0..<256).map { i -> UInt32 in
+        var c = UInt32(i)
+        for _ in 0..<8 { c = (c & 1) != 0 ? (0xEDB8_8320 ^ (c >> 1)) : (c >> 1) }
+        return c
+    }
+    private var crc: UInt32 = 0xFFFF_FFFF
+    mutating func update(_ data: Data) {
+        for b in data {
+            crc = Self.table[Int((crc ^ UInt32(b)) & 0xFF)] ^ (crc >> 8)
+        }
+    }
+    var value: UInt32 { crc ^ 0xFFFF_FFFF }
 }
 
 /// Command-ready, surface-agnostic catalog of the Tools verbs. A future
