@@ -9169,6 +9169,31 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +384 (2026-06-13 — VM render-drain UNBLOCKED: harness now self-validates overlays; TSK-640 rename prompt VM-validated end-to-end)
+
+- **The TSK-492 lever is built + proven (commit `89d7277`).** `vm-uitest.sh run` now drives PASS/FAIL from a
+  per-scene expected-a11y-id manifest (`scene_expect`) — PASS iff every expected `mdv.*` id is present in the
+  out-of-process `<scene>.ax` dump — instead of the single terminal-tuned dense-block pixel eval that
+  false-passed every non-terminal scene. **Key proof:** the AX walk surfaces SwiftUI `accessibilityIdentifier`
+  values (24 `mdv.*` ids incl. `mdv.terminal.pane`; `mdv.lspRename.panel` on the new scene), not just AppKit
+  menu selectors — so the semantic assertion works for any a11y-id'd view. This is the core TSK-492 goal
+  (agents self-validate UI, no owner in the loop) demonstrated for real.
+- **TSK-640 RENAME prompt render VM-VALIDATED (agent-run).** Rebuilt dist on the VM with the `lsp-rename` scene
+  → `vm-uitest.sh run lsp-rename` → the "Rename Symbol" sheet composited + VISIBLE on screen (WindowServer
+  capture: title + text field + Rename/Cancel over the editor backdrop — the CLAUDE.md "visible, not in-tree"
+  bar) AND `mdv.lspRename.panel` in the AX tree → automated PASS; teeth shown (bogus expected id → FAIL exit 6).
+  Capture at `/tmp/mdv-vm-ui/lsp-rename.png`. Closes the rename half's render gap; the code-action PICKER render
+  is the ONLY remaining surface on 640 (needs its own scene + a seam — codeActionPicker is private(set)+async).
+  Ticket holds at review for that.
+- **FALSE-GREEN CAUGHT (process lesson):** the first `run lsp-rename` "PASSed" against a STALE VM dist (built
+  before the scene commit) — the old terminal pixel eval found an unrelated accent chip while the scene was
+  unknown → no prompt. Rebuild + the new a11y assertion expose it. **Always rebuild dist on the VM before
+  testing a new scene; the per-scene a11y assertion is the guard that would have failed the stale run.**
+- **Remaining TSK-492 follow-ups:** a frame-aware ax-reader (emit each view's rect) for a TARGETED
+  pixel-visibility check (today AX-presence guards "stopped rendering" + the .png is corroboration); a
+  DEBUG/harness seam for private(set)/async overlays (picker); a manifest line per overlay as each is covered.
+  Net: 641 chrome / 745 landing / 640 picker each now just need a scene + a manifest entry.
+
 ## LOG +383 (2026-06-13 — render-drain enabler: `lsp-rename` UI scene lands; harness AX/pixel-assert gap framed as the TSK-492 lever)
 
 - **TSK-640 (commit `71e4375`, stays at review).** Added the `lsp-rename` MDV_UI_SCENE to `UISceneApplier` —
