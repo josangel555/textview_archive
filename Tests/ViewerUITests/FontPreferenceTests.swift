@@ -26,6 +26,28 @@ final class FontPreferenceTests: HeadlessUITestCase {
                        sys.fontName)
     }
 
+    /// TSK-732: the CSS family fed to CM6 must name the SAME family the AppKit
+    /// View resolves through `resolvedFont`, so View and Edit can't diverge onto
+    /// different fonts. The raw picker string was shipped before — a face/
+    /// PostScript name AppKit resolves does NOT match as a CSS family.
+    func test_cssFamily_namesTheSameFamilyAsResolvedFont() {
+        // A face/PostScript name maps to its FAMILY (teeth: echoing the raw name
+        // would give "Menlo-Regular", which CSS can't match the way the View does).
+        if NSFont(name: "Menlo-Regular", size: 12) != nil {
+            XCTAssertEqual(FontPreference.cssFamily(for: "Menlo-Regular"), "Menlo",
+                           "a face/PostScript name resolves to its CSS family, matching resolvedFont")
+        }
+        // A family name equals the resolved NSFont's family.
+        XCTAssertEqual(FontPreference.cssFamily(for: "Menlo"),
+                       FontPreference.resolvedFont(name: "Menlo", size: 13).familyName)
+        // nil / empty / unresolvable → nil: CM6 keeps its monospace default (the
+        // same SF Mono the View's nil-path renders). A raw unresolvable string
+        // must NOT be shipped as a CSS family (it would mismatch the View).
+        XCTAssertNil(FontPreference.cssFamily(for: nil))
+        XCTAssertNil(FontPreference.cssFamily(for: ""))
+        XCTAssertNil(FontPreference.cssFamily(for: "No-Such-Font-XYZ"))
+    }
+
     func test_familyFilter_isFixedPitchOnly() {
         let families = FontPreference.monospaceFamilies()
         XCTAssertTrue(families.contains("Menlo"), "Menlo ships on every macOS")
@@ -97,8 +119,11 @@ final class FontPreferenceTests: HeadlessUITestCase {
             try String(contentsOf: root.appendingPathComponent(rel), encoding: .utf8)
         }
         let cv = try src("Sources/ViewerUI/ContentView.swift")
-        XCTAssertTrue(cv.contains("fontFamily: model.sourceFontName"),
-                      "the editor must receive the same preference")
+        XCTAssertTrue(cv.contains("fontFamily: FontPreference.cssFamily(for: model.sourceFontName)"),
+                      "TSK-732: the editor must receive the RESOLVED CSS family, not the raw picker string")
+        let split = try src("Sources/ViewerUI/SplitPaneView.swift")
+        XCTAssertTrue(split.contains("fontName: model.sourceFontName"),
+                      "TSK-732: the split pane must feed the same font preference (was nil → always SF Mono)")
         let editor = try src("Sources/ViewerUI/CodeMirrorEditorView.swift")
         XCTAssertTrue(editor.contains("dispatch(.setFontFamily(family)"),
                       "the coordinator must dispatch the family channel")

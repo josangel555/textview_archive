@@ -18,6 +18,23 @@ public enum FontPreference {
         return NSFont.monospacedSystemFont(ofSize: size, weight: weight)
     }
 
+    /// TSK-732: the CSS `font-family` token for `name` — the family AppKit
+    /// ACTUALLY resolves it to (via `NSFont.familyName`), so the CM6 editor
+    /// names the SAME family the AppKit views render through `resolvedFont`.
+    /// Feeding CM6 the raw picker string instead let a name AppKit resolved
+    /// diverge from what the webview's CSS matched (the reported View/Edit
+    /// mismatch). Returns nil for a nil/empty/unresolvable name, mirroring
+    /// `resolvedFont`'s system-monospace fallback (CM6 then keeps its bundled
+    /// monospace default). The webview wraps this in quotes + the shared
+    /// `"SF Mono", Menlo, monospace` stack, so a family it can't match still
+    /// degrades to the same SF Mono the AppKit nil-path uses.
+    public static func cssFamily(for name: String?) -> String? {
+        guard let name, !name.isEmpty, let f = NSFont(name: name, size: 12) else {
+            return nil
+        }
+        return f.familyName ?? name
+    }
+
     /// Fixed-pitch font FAMILY names for the picker, sorted. Probed via a
     /// representative font per family (`isFixedPitch`); proportional
     /// families never appear — offering Helvetica for a code view would

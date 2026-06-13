@@ -639,7 +639,11 @@ public struct ContentView: View {
                     language: lang,
                     isDarkTheme: model.activeTheme.name == .xcodeDark,
                     themePalette: model.activeThemeCMPalette,
-                    fontFamily: model.sourceFontName,
+                    // TSK-732: feed CM6 the RESOLVED family (what the AppKit
+                    // View renders), not the raw picker string — CSS family
+                    // matching ≠ NSFont(name:) matching, so the raw name let
+                    // View and Edit diverge onto different fonts.
+                    fontFamily: FontPreference.cssFamily(for: model.sourceFontName),
                     wordWrap: model.sourceWordWrap,
                     lineNumbers: true,
                     indentation: model.editorIndentation,

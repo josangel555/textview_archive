@@ -163,6 +163,7 @@ struct SplitPaneView: View {
                 TextDisplayView(
                     text: sourceText,
                     fontSize: 13 * zoom,
+                    fontName: model.sourceFontName,   // TSK-732: match the main View's font (was nil → always SF Mono)
                     language: lang,
                     runs: [],   // no syntax highlight in split v1 — saves a TreeSitter pass per render
                     theme: theme,   // match main pane: dark theme in dark mode, etc.
