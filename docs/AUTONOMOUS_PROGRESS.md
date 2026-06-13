@@ -3189,28 +3189,28 @@ build it, else hold.
 
 ## DECISIONS NEEDED (owner — non-blocking; I proceed on best-judgment defaults meanwhile)
 
-### CURRENT QUEUE (2026-06-12 — the loop is input-bound on exactly these)
-1. **TSK-660 bundle caps** (parked, pinged): release build 63 MB/43 MB vs
-   48/26 after the rust grammars enter the exec. (1) bump ~64/44, reclaim
-   at stage 4 · (2) dlopen'd rust-highlight dylib (exec cap intact) ·
-   (3) grammars feature-off in the app, remote-only. Rec: (2) if the exec
-   cap is principle, else (1). Release size gate FAILS until answered.
+### CURRENT QUEUE (2026-06-12 EVENING refresh — the loop is input-bound on exactly these; items 1/3/4/5 of the morning queue were answered and are landed)
+1. **Three parked product decisions** (each has costed options inline):
+   TSK-336 hook-event surfacing · TSK-338 plugins/MCP/walkthroughs
+   consolidation · TSK-316 walkthrough management shape.
 2. **TSK-649 stage B**: per-engine Swift-twin deletion sign-off
    (docs/STAGE_B_DELETION_PLAN.md; indent first as the template; the find
    ICU-channel removal is the one behavior change needing explicit OK).
-3. **TSK-643 confirm (one line)**: was the VPN client up on 2026-06-11? The
-   "unexplained host" 100.64.100.1 is your VPN tunnel's gateway.
-4. **TSK-452 repro detail**: which statusbar chip stays stale, which view
-   mode, what sequence (the known lazy-load blank is fixed + tested).
-5. **TSK-650 glance**: the mermaid fix is INSTALLED — reopen
-   docs/ARCHITECTURE_LAYERS.md; flowchart should render now.
-6. **TSK-306 validation bar**: how should preview-tab Phase 2 (SwiftUI
-   key-event routing) be validated — VM lane / wire-and-review / eyeball?
-   TSK-272 unblocks with it.
-7. **GUI glance batch** (one sitting): References menu (TSK-468), outline
-   panel (TSK-637), theme picker + import (TSK-641/642), ⌘P print panel
-   (TSK-638), fold-gutter arrows feel (TSK-466 visual), ⌥-click/⌘D feel
-   (TSK-639), mermaid visual quality (TSK-650).
+3. **Supervised MountedPanesLRU session** (TSK-598 family): five
+   independent captures indict per-switch pane teardown for MD-open lag,
+   tab-switch lag, HEX ~1s, close residue, AND resize jank. Needs you
+   watching (WV hot zone race history). The new FPS strip (TSK-275)
+   gives a live before/after readout for the session.
+4. **The glance batch** (one relaunch, one sitting): drag-to-snap rails
+   (TSK-327, at review) · theme → whole window incl. chrome (641/642) ·
+   sidebar fuzzy filter incl. collapsed-dir finds (282/666) · drag a
+   row/tab to Finder (284) · bookmark ⌘Z (330) · open a .zip (311) ·
+   Settings font picker both surfaces (259) · FPS strip under jank (275)
+   · walkthrough deeplink prompt (317) · md outline (637) · ⌘P (638) ·
+   LSP rename/code-actions (640) · References menu (TSK-468).
+5. **TSK-306 validation bar** (carried): how should preview-tab Phase 2
+   be validated — VM lane / wire-and-review / eyeball? TSK-272 unblocks
+   with it.
 
 ### Older entries (kept for context; some resolved — see notes inline)
 - **⚠️ Bundle caps vs rust grammars** (2026-06-12, `TSK-660`, **parked — pinged**) — linking the
@@ -9103,3 +9103,16 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   URLSchemeRouter — all three verbs finally have headless route tests
   (previously only the path policy was tested).
 - TSK-316 (walkthrough catalog/versioning) left for its own grooming.
+
+## LOG +314 (2026-06-12 tick — TSK-316 parked; DOCUMENTED HOLD: the loop is input-bound)
+
+- **TSK-316 parked** with the three-build decomposition (catalog /
+  versioning / history) now concrete after TSK-317's deeplinks landed.
+- **§5 HOLD declared honestly:** every remaining reported item is big
+  (dependency graph/explorer 280/319, CR agent 318, photo editor 320),
+  architectural (sessions/multi-window 264/265), or dep-gated (256) —
+  none is buildable without owner shaping, and manufacturing design
+  docs for deep-wishlist items nobody prioritized is its own paper-cut.
+  DECISIONS NEEDED refreshed to the evening truth (morning items
+  1/3/4/5 answered + landed). main is gate-green at HEAD; the board is
+  the queue.
