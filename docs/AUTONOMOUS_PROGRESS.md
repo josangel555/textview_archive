@@ -9090,3 +9090,16 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - 6 tests; teeth compile-verified (relaxed hitch bar → 2 red). Gate
   green; installed. Glance: open the observability window and scroll a
   big file — the readout should drop/red under jank.
+
+## LOG +313 (2026-06-12 tick — TSK-317: walkthrough deeplinks land behind a confirm gate)
+
+- **markdownviewer://walkthrough?path=… (ffd6869, installed):** routes
+  through the SAME S1.1 containedPath wall as open/search (teeth:
+  funnel bypassed → /etc/passwd escaped → red), and — the security
+  delta vs the other verbs — prompts before starting: a walkthrough
+  EXECUTES UI automation; a drive-by web link must not auto-drive the
+  app. The --walkthrough CLI flag stays unprompted (dev loop).
+- **Refactor rider:** verb routing extracted from the AppDelegate into
+  URLSchemeRouter — all three verbs finally have headless route tests
+  (previously only the path policy was tested).
+- TSK-316 (walkthrough catalog/versioning) left for its own grooming.
