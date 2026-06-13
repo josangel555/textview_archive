@@ -271,6 +271,16 @@ public final class SourceTextController: NSViewController {
     private var lastAttrKey: AttrKey?
     private var lastWordWrap: Bool = false
     private var lastFindKey: FindKey?
+    /// TSK-736: whether the find-highlight temp-attrs are CURRENTLY painted on
+    /// the layout manager for `lastFindKey`. Lets `applyFindHighlights` skip its
+    /// O(document) remove-all + O(matches) repaint on an apply() where nothing
+    /// find-related changed — a hover line-crossing re-bodies the source view →
+    /// `updateNSViewController` → apply(), which on a big file with Find active
+    /// was per-mouse-move temp-attr churn. Cleared when the text storage's
+    /// CHARACTERS are replaced (that wipes layout-manager temp-attrs); set true
+    /// after a repaint. The find wash is a fixed Palette colour (theme-
+    /// independent), so an attribute-only repaint needs no find repaint.
+    private var findHighlightsLive = false
     private var findMatches: [NSRange] = []
     private var currentMatchIndex: Int?
     private var lastNextNonce: Int = 0
@@ -1038,6 +1048,7 @@ public final class SourceTextController: NSViewController {
             // oversized files: no attributedString allocation.
             if textView.string != text {
                 textView.string = text
+                findHighlightsLive = false   // TSK-736: chars replaced → find temp-attrs wiped
             }
             if let storage = textView.textStorage {
                 let full = NSRange(location: 0, length: storage.length)
@@ -1053,6 +1064,7 @@ public final class SourceTextController: NSViewController {
                 text: text, runs: runs, theme: theme, baseFont: baseFont
             )
             textView.textStorage?.setAttributedString(attr)
+            findHighlightsLive = false   // TSK-736: storage replaced → find temp-attrs wiped
         }
         lastAttrKey = key
         // Refresh line count for the gutter.
@@ -1103,6 +1115,24 @@ public final class SourceTextController: NSViewController {
             return
         }
 
+        // TSK-736: if the find highlights are already painted for exactly this
+        // query/case/regex/content (`lastFindKey`) and no next/prev navigation
+        // happened, the layout manager already shows the correct wash — return
+        // BEFORE the full-range remove-all + per-match repaint below. Those run
+        // on EVERY apply(), and a mouse hover line-crossing re-bodies
+        // SourceModeView → updateNSViewController → apply(), so on a big file
+        // with Find active this was O(document)+O(matches) of temp-attr churn
+        // per mouse move (the felt lag). `findHighlightsLive` is cleared
+        // whenever the storage chars are replaced, so this can only fire when
+        // the wash is genuinely still on screen.
+        if !query.isEmpty, findHighlightsLive, lastFindKey == FindKey(
+            query: query, caseSensitive: findState.caseSensitive,
+            isRegex: findState.isRegex, content: ContentFingerprint(text)),
+           findState.nextNonce == lastNextNonce,
+           findState.prevNonce == lastPrevNonce {
+            return
+        }
+
         let full = NSRange(location: 0, length: textStorage.length)
         layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: full)
         // Find apply just wiped every backgroundColor attribute,
@@ -1116,6 +1146,7 @@ public final class SourceTextController: NSViewController {
             findMatches = []
             currentMatchIndex = nil
             lastFindKey = nil
+            findHighlightsLive = false   // remove-all above cleared the wash
             // Dedupe: only publish "" if we hadn't already.
             if let cb = onFindSummary, lastFindSummary != "" {
                 lastFindSummary = ""
@@ -1165,6 +1196,7 @@ public final class SourceTextController: NSViewController {
                 .backgroundColor, value: color, forCharacterRange: r
             )
         }
+        findHighlightsLive = true   // TSK-736: the wash is now painted for lastFindKey
         // Only auto-scroll when the active match actually changed
         // (new query, next/prev hit). Without this guard, every
         // `apply()` re-applied the highlight AND yanked the viewport
