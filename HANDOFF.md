@@ -1,7 +1,7 @@
 <!-- CLAUDE-HANDOFF v1 -->
 # Handoff — RUST-CORE Stage B (twin deletion) is the active lane; #1 indent done  (2026-06-13)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `8d71979` (+ a docs commit; no code change last tick).
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `06e0c94` (+ a docs commit). Latest tick: render-health VM pass (18/18) + `set-theme` verb landed (unblocks the 641 chrome T5 validation).
 
 ## ⭐ NEW CAPABILITY (2026-06-13): the VM live-validation drain is AGENT-RUNNABLE — proven
 The big `fixed`-lane pool (~15 items) is gated on `live-validation` (WebView/render). I proved the VM lane
@@ -18,10 +18,21 @@ ssh macOS15 'cd markdown_viewer && MDV_RUN_WEBVIEW_TESTS=1 MDV_VM_GUI_SESSION=1 
 - **Validated this way last tick: TSK-650** (mermaid render bug — host MermaidBundleLoadTests + VM
   MermaidRenderProbeTests) **and TSK-638** (Print/PDF — host PrintExportModelTests + VM PDFExportWebViewTests;
   the ⌘P modal panel is the lone un-automatable atom, acknowledged not pixel-claimed).
-- **Next drain targets** (clean host+VM guards, run the suite then validate): the full `run_webview_tests`
-  lane (13 suites) for a broad green, then 641 theming↔EditorThemeParityTests, 660 treesitter highlight,
-  666 fuzzy-filter, 640 LSP rename, 468 LSP refs, 282/283/284/300/311/329/330/333/334 (BACKLOG/PARTIAL UI —
-  check each has a real T4/WebView guard before validating; don't over-claim).
+- **WebView-clean drains are EXHAUSTED** (650/638 closed; a fresh 18/18 WebView-lane pass confirms render
+  health on current main). The remaining live-validation `fixed` items each need a DEDICATED effort, not a
+  quick re-run:
+  - **641 chrome → build a T5 chrome-pixel test (NEXT, now unblocked).** 3 of 4 theme surfaces are
+    VM-confirmed (syntax/rendered-CSS/editor via EditorThemeParityTests); only the SwiftUI CHROME pixels
+    remain (a T5 PixelTestCase, NOT WebView). The `set-theme <id>` script verb (commit 06e0c94) is the entry:
+    a T5 test launches the app, drives `set-theme xcode-dark`, screencaptures the sidebar, asserts the themed
+    color ≠ system. T5 lane is proven (screencapture TCC granted, GUI session). Mirror an existing
+    `*VisualRegressionTests` (PixelTestCase) + the `MDV_UI_SCENE` scene mechanism. Closing 641 unblocks 642.
+  - **640 LSP rename → build the interactive UI** (command + Edit-menu item + rename prompt sheet, GoToPrompt
+    pattern + a code-action picker). The engine (renameActiveEditorSymbolViaLSP / applyCodeAction) is fully
+    host-tested; only the user trigger is unbuilt. Model/command layer host-testable; the prompt render → VM.
+  - **468 → a VM T4 menu-contents check** (dead-UI removal; nothing host-assertable) — low value, defer.
+- **Latent flake (LESSONS):** theme tests share `ThemeStore.shared` under `--parallel` → rare cross-class
+  race; re-run a lone theme/gate flake before chasing.
 
 ## Mission
 Owner away until ~noon 2026-06-13; autonomous chipping. USER-FACING bugs are drained; the wishlist

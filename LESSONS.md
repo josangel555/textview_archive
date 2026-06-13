@@ -5,6 +5,17 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## Theme tests share the `ThemeStore.shared` singleton → latent `--parallel` race (2026-06-13)
+- `DocumentModel.selectedThemeID`'s didSet writes `ThemeStore.shared.selectedID` (a process-wide singleton),
+  so EVERY test that sets `model.selectedThemeID` (ChromeThemeTests, ThemeSelectionModelTests, SetThemeVerbTests,
+  and the `set-theme` verb) mutates global state. Under `swift test --parallel` (the headless gate) these classes
+  run concurrently and can read each other's transient writes → a **low-probability cross-class flake** (one gate
+  run failed; two clean re-runs). Each class set+asserts then resets to nil/restores in tearDown, so the dirty
+  window is tiny — hence rare, not constant. **If you add a theme test, follow the set→assert→restore pattern and
+  keep the body tight; on a lone gate flake, re-run before chasing** (matches the FoldBench/RepoFocusTracker
+  load-flake guidance). Durable fix (unticketed): make the ThemeStore injectable on the didSet instead of a forced
+  `.shared`, so tests use a per-instance store. See [[reference_vm_webview_drain_recipe]] for the VM lane.
+
 ## UTM VM: "flaky ssh" is memory-pressure bufferbloat, and NEVER `rm -rf .build` on it (2026-06-09)
 - **Diagnosis of the recurring "VM ssh keeps timing out".** The VM is **8 vCPU / 4 GiB RAM**. A Swift build
   (TreeSitter grammars have high peak RSS) + the ~4000-test suite pushes 4 GiB into heavy swap/compression

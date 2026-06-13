@@ -9169,6 +9169,26 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +357 (2026-06-13 — render-health VM pass + set-theme verb unblocks the TSK-641 chrome T5 validation)
+
+- **VM render-health pass (current main):** EditorThemeParityTests 2/2 + ComponentVisual 10 + FoldGutter 2 +
+  MultiCursor 2 + RenderedFindBar 2 = **18/18 green** in the WebView lane. Confirms no render regression on
+  current main and re-confirms TSK-641's CM6 editor surface (stage 3) + the 639/596/597 render paths.
+- **Drains triaged:** the WebView-clean fixed items are exhausted (650/638 closed last tick). The remaining
+  live-validation items each need a dedicated effort: **641 chrome = a T5 WindowServer-pixel test** (the
+  SwiftUI chrome surface, not WebView); **640 = the interactive LSP-rename UI** (command+menu+prompt sheet —
+  the engine is host-tested, the trigger is unbuilt); **468 = a VM T4 menu-contents check** (dead-UI removal,
+  nothing host-assertable). No quick WebView-lane wins remain.
+- **TSK-641 chrome T5 UNBLOCKED (commit 06e0c94):** added a `set-theme <id>` script verb — the headless
+  theming seam (automation equivalent of the Settings → Appearance picker; empty arg = Follow System) that
+  drives `DocumentModel.selectedThemeID`. A T5 chrome-pixel test will launch the app via this verb
+  (set-theme xcode-dark → screencapture the sidebar → assert the themed chrome color), closing 641's last
+  surface → unblocking 642. Host-tested (select-by-id + empty-arg-clears + persistence); teeth shown.
+- **Latent flake recorded (LESSONS):** the theme tests (ChromeThemeTests, ThemeSelectionModelTests, the new
+  SetThemeVerbTests) all mutate the `ThemeStore.shared` SINGLETON under `swift test --parallel` — a
+  pre-existing low-probability cross-class race (one gate run flaked, 2 clean re-runs). Candidate hardening:
+  an injectable ThemeStore on DocumentModel.selectedThemeID's didSet (filed thought, not yet ticketed).
+
 ## LOG +356 (2026-06-13 — VM render lane PROVEN agent-runnable: TSK-650 + TSK-638 validated off the fixed lane)
 
 - **The §1.5 validation drain via the VM is now an AGENT capability — proven end-to-end this tick.** The big
