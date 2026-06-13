@@ -589,6 +589,38 @@ func mdvEnvelopeCall(_ name: String, _ methodId: UInt16, body: [UInt8]) throws -
     return try CsvSession.unframe(frame)
 }
 
+/// Envelope call WITH the `aux` bulk side-channel (TSK-580 slice 3) for the
+/// raw-byte methods — hex render (~18 MB dump), hex search, indent detect. The
+/// small scalar request rides `body` (framed here, exactly like
+/// `mdvEnvelopeCall`); the frame-cap-exempt bulk input rides `aux`, borrowed
+/// zero-copy across the FFI (no `[UInt8]` copy of a multi-MiB file). Returns the
+/// RAW `out_buf` bytes UNFRAMED — the caller decides whether they are a response
+/// frame (HexSearch's `{offsets}`) or a raw payload (HexRender/IndentDetect
+/// dumps), because `dispatch::call` returns those methods' output verbatim and
+/// `MdvStatus` (Ok vs a wire status) disambiguates raw output from an error
+/// frame. Same ABI assert + WireError logging as the frame envelope.
+func mdvEnvelopeCallAux(
+    _ name: String, _ methodId: UInt16,
+    body: [UInt8], aux: UnsafeRawBufferPointer
+) throws -> [UInt8]? {
+    _ = name // observability tag (the audit point is one level up, CoreTransport.call)
+    CoreABI.assertCompatible()
+    let reqBytes = MsgPackFraming.frame(body)
+    var buf = MdvBuf(data: nil, len: 0, cap: 0)
+    // baseAddress is nil for an empty buffer; the FFI tolerates (null, 0).
+    let auxBase = aux.bindMemory(to: UInt8.self).baseAddress
+    let status = reqBytes.withUnsafeBufferPointer { p in
+        mdvcore_call(methodId, p.baseAddress, UInt(p.count), auxBase, UInt(aux.count), &buf)
+    }
+    defer { mdvcore_buf_free(&buf) }
+    guard status == MDV_STATUS_OK else {
+        CsvSession.logWireErrorIfPresent(buf)
+        throw CoreError(status: status)
+    }
+    guard let data = buf.data, buf.len > 0 else { return nil }
+    return Array(UnsafeBufferPointer(start: data, count: Int(buf.len)))
+}
+
 /// adapter can fall back to the Swift path; a rejected batch is `nil`, not a throw.
 public func mdvCoreApplyCMEdits(
     base: String,
@@ -795,25 +827,26 @@ public func mdvCoreHexRender(
     totalByteCount: Int,
     isTruncated: Bool
 ) throws -> String {
-    var buf = MdvBuf(data: nil, len: 0, cap: 0)
-    let status = bytes.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> MdvStatus in
-        // baseAddress is nil for an empty buffer; the FFI tolerates (null, 0).
-        let base = raw.bindMemory(to: UInt8.self).baseAddress
-        return mdvcore_hex_render(
-            base,
-            UInt(bytes.count),
-            UInt32(truncatingIfNeeded: width),
-            UInt64(truncatingIfNeeded: totalByteCount),
-            isTruncated,
-            &buf)
+    // TSK-580 slice 3-output close-out: route through the thin-waist envelope
+    // (`mdvcore_call`, MDV_METHOD_HEX_RENDER) instead of the dedicated
+    // `mdvcore_hex_render` symbol. The bytes ride the `aux` bulk channel
+    // (frame-cap-exempt); {width, total_byte_count, is_truncated} ride the small
+    // request frame (named map → the Rust `RenderAuxRequest`). Byte-identical:
+    // the FFI envelope_routes_hex_render_raw_bulk_output A/B test pins it, and
+    // HexRenderABTests re-verifies the whole corpus vs the Swift engine THROUGH
+    // this path.
+    let req = MsgPackValue.map([
+        (.string("width"), .uint(UInt64(UInt32(truncatingIfNeeded: width)))),
+        (.string("total_byte_count"), .uint(UInt64(truncatingIfNeeded: totalByteCount))),
+        (.string("is_truncated"), .bool(isTruncated)),
+    ]).encode()
+    let out = try bytes.withUnsafeBytes { raw in
+        try mdvEnvelopeCallAux("hex_render", UInt16(MDV_METHOD_HEX_RENDER), body: req, aux: raw)
     }
-    defer { mdvcore_buf_free(&buf) }
-    guard status == MDV_STATUS_OK else { throw CoreError(status: status) }
-    guard let data = buf.data, buf.len > 0 else {
+    guard let out, !out.isEmpty else {
         return ""   // empty file, non-truncated → empty dump (valid)
     }
-    return String(decoding: UnsafeBufferPointer(start: data, count: Int(buf.len)),
-                  as: UTF8.self)
+    return String(decoding: out, as: UTF8.self)
 }
 
 // MARK: - HEX search (migration slice #5)
@@ -831,23 +864,21 @@ public enum HexSearchKind: UInt32, Sendable {
 /// so the adapter can fall back to the Swift `HexSearchEngine`. An invalid or
 /// empty query yields `[]` (not a throw) — matching the Swift contract.
 public func mdvCoreHexSearch(data: Data, query: String, mode: HexSearchKind) throws -> [Int] {
-    let qbytes = [UInt8](query.utf8)
-    var buf = MdvBuf(data: nil, len: 0, cap: 0)
-    let status = data.withUnsafeBytes { (rawData: UnsafeRawBufferPointer) -> MdvStatus in
-        qbytes.withUnsafeBufferPointer { qp in
-            mdvcore_hex_search(
-                rawData.bindMemory(to: UInt8.self).baseAddress,
-                UInt(data.count),
-                qp.baseAddress,
-                UInt(qp.count),
-                mode.rawValue,
-                &buf)
-        }
+    // TSK-580 slice 3 close-out: route through the envelope (MDV_METHOD_HEX_SEARCH)
+    // instead of the dedicated `mdvcore_hex_search` symbol. The buffer to search
+    // rides the `aux` bulk channel (frame-cap-exempt); {query, mode} ride the
+    // small request frame (named map → the Rust `SearchAuxRequest`). Unlike the
+    // raw-output render/detect, HexSearch's response IS a `{offsets:[u32]}` frame,
+    // so unframe it. Byte-identical (FFI envelope_routes_hex_search A/B pin +
+    // HexSearchABTests corpus through this path).
+    let req = MsgPackValue.map([
+        (.string("query"), .string(query)),
+        (.string("mode"), .uint(UInt64(mode.rawValue))),
+    ]).encode()
+    let frame = try data.withUnsafeBytes { raw in
+        try mdvEnvelopeCallAux("hex_search", UInt16(MDV_METHOD_HEX_SEARCH), body: req, aux: raw)
     }
-    defer { mdvcore_buf_free(&buf) }
-    guard status == MDV_STATUS_OK else { throw CoreError(status: status) }
-    guard let bytes = buf.data, buf.len > 0 else { return [] }
-    let frame = Array(UnsafeBufferPointer(start: bytes, count: Int(buf.len)))
+    guard let frame else { return [] }
     let body = try CsvSession.unframe(frame)
     var reader = MsgPackReader(body)
     do {
@@ -866,20 +897,21 @@ public func mdvCoreHexSearch(data: Data, query: String, mode: HexSearchKind) thr
 /// Throws `CoreError` only on a bridge FAULT so the adapter can fall back to the
 /// Swift `IndentDetector`.
 public func mdvCoreIndentDetect(text: String, sampleLines: Int = 50) throws -> String {
+    // TSK-580 slice 3-output close-out: route through the envelope
+    // (MDV_METHOD_INDENT_DETECT) instead of the dedicated `mdvcore_indent_detect`
+    // symbol. The source text rides the `aux` bulk channel; {sample_lines} rides
+    // the small request frame (named map → the Rust `DetectAuxRequest`). Result
+    // is the RAW UTF-8 style string (not a frame). Byte-identical (FFI
+    // envelope_routes_indent_detect A/B pin + IndentDetectABTests corpus).
+    let req = MsgPackValue.map([
+        (.string("sample_lines"), .uint(UInt64(UInt32(truncatingIfNeeded: sampleLines)))),
+    ]).encode()
     let bytes = [UInt8](text.utf8)
-    var buf = MdvBuf(data: nil, len: 0, cap: 0)
-    let status = bytes.withUnsafeBufferPointer { p in
-        mdvcore_indent_detect(
-            p.baseAddress,
-            UInt(p.count),
-            UInt32(truncatingIfNeeded: sampleLines),
-            &buf)
+    let out = try bytes.withUnsafeBytes { raw in
+        try mdvEnvelopeCallAux("indent_detect", UInt16(MDV_METHOD_INDENT_DETECT), body: req, aux: raw)
     }
-    defer { mdvcore_buf_free(&buf) }
-    guard status == MDV_STATUS_OK else { throw CoreError(status: status) }
-    guard let data = buf.data, buf.len > 0 else { return "—" }  // unreachable: detect is never empty
-    return String(decoding: UnsafeBufferPointer(start: data, count: Int(buf.len)),
-                  as: UTF8.self)
+    guard let out, !out.isEmpty else { return "—" }  // unreachable: detect is never empty
+    return String(decoding: out, as: UTF8.self)
 }
 
 // MARK: - Fuzzy ranking (migration slice — TSK-633)
