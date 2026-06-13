@@ -79,9 +79,17 @@ was diagnosed with the wrong tool. Codified so we catch this class early:
 Tier is the **type** (`Tests/ViewerUITests/Harness/TierBaseCases.swift`):
 `HeadlessUITestCase` (T1/T1m/T2', the default) is host-safe; `LiveAppTestCase`
 (T4, spawns `dist/TextView.app`) and `PixelTestCase` (T5, WindowServer pixels)
-are heavy and VM-coupled. The heavy tiers **self-skip** when there's no built
-bundle / no GUI session, so the bare `swift test` sweep now runs to completion
-on the host — it just exercises the headless tiers and skips T4/T5.
+are heavy and VM-coupled. **The heavy tiers run ONLY under the explicit VM GUI
+lane (`MDV_VM_GUI_SESSION=1`, which `test-in-vm.sh` sets + forwards); otherwise
+they self-skip — regardless of whether a `dist/` bundle exists** (TSK-817). This
+closed a footgun: a bare `swift test` on a host that merely had a built bundle
+(e.g. just after an `/Applications` build) used to run a T4 `LiveAppTestCase`
+and **spawn a window on the owner's screen mid-work**. So the bare `swift test`
+sweep runs to completion on the host (exercises the headless tiers, skips T4/T5)
+even with a bundle present. Still: prefer the gate (below) or
+`--filter ViewerCoreTests.<...>` (pure logic, no heavy tiers) for host loops;
+NEVER a bare/broad `--filter ViewerUITests` if you're unsure (it's safe now, but
+ViewerCoreTests is the unambiguous host-safe target).
 
 - **The merge/PR gate runs the HEADLESS tiers on the host.** Use the gate
   script — it is what CI runs (`.github/workflows/pr.yml`):

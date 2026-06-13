@@ -40,15 +40,29 @@ final class LaunchHarness {
     /// this is `false` (the host-vs-VM rule means most developers run
     /// these only inside the VM).
     var isAppBuilt: Bool {
-        // Headless merge gate (MDV_HEADLESS_GATE=1): force "not built" so every
-        // T4 LiveAppTestCase suite skips even on a DEV host that has a built
-        // dist/ bundle. The gate is the headless lane by definition — heavy
-        // tiers run only in the VM/nightly lane. (CI lacks the bundle anyway;
-        // this makes the gate robust on a developer machine too, instead of
-        // tripping the TierGateObserver because the local env happened to
-        // satisfy the run conditions.)
-        if ProcessInfo.processInfo.environment["MDV_HEADLESS_GATE"] == "1" { return false }
-        return FileManager.default.isExecutableFile(atPath: appExecutable.path)
+        Self.shouldRunLiveTiers(
+            env: ProcessInfo.processInfo.environment,
+            bundleExists: FileManager.default.isExecutableFile(atPath: appExecutable.path))
+    }
+
+    /// Pure decision (host-testable, no spawn): may a heavy tier
+    /// (T4 LiveAppTestCase / T5 PixelTestCase / scenario / UAT) actually launch
+    /// `dist/TextView.app`? It may ONLY when ALL hold:
+    ///   - `MDV_HEADLESS_GATE != 1` — the gate is the headless lane by
+    ///     definition; force-skip even on a dev host with a built bundle.
+    ///   - `MDV_VM_GUI_SESSION == 1` — the EXPLICIT opt-in that `test-in-vm.sh`
+    ///     sets (and forwards) for the VM's Aqua GUI lane. **TSK-817:** without
+    ///     this, a bare `swift test` on a host that merely happened to have a
+    ///     `dist/` bundle (e.g. just after an `/Applications` build) ran a T4
+    ///     suite and SPAWNED a window on the owner's screen mid-work. Spawning
+    ///     the app is now opt-in to the GUI lane, never an accident of a present
+    ///     bundle. (The headless gate forces this false anyway via the first
+    ///     check; this second guard closes the bare-`swift test` hole.)
+    ///   - the bundle is actually present + executable.
+    static func shouldRunLiveTiers(env: [String: String], bundleExists: Bool) -> Bool {
+        if env["MDV_HEADLESS_GATE"] == "1" { return false }
+        if env["MDV_VM_GUI_SESSION"] != "1" { return false }
+        return bundleExists
     }
 
     init(label: String, file: StaticString = #filePath) {
