@@ -9169,6 +9169,23 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +396 (2026-06-13 — TSK-819: automate the root-poisoned-.build chown-back in test-in-vm.sh; recurring VM-build blocker killed)
+
+- **TSK-819 (test-in-vm.sh GUI-session lane poisons shared .build with root-owned files) → validated (commit `050dcaa`).**
+  The exact "build-app.sh guard someday" flagged in +395. The `MDV_VM_GUI_SESSION=1` path runs the inner build/test via
+  `sudo -S launchctl asuser <uid> /bin/bash`, which executes as **root** → SwiftPM writes root-owned objects into the
+  shared `.build` (TSK-502 class) → the next non-root build dies on `ModuleCache …/CMdvCore-*.pcm: Operation not
+  permitted`. Fix in `swift_test()`: after the asuser call, capture `rc`, `chown -R <console-uid> $ROOT_DIR/.build`
+  (best-effort, `2>/dev/null || true`), `return $rc`. Removes the manual `sudo chown -R vm-tester .build` step that
+  recurred all session.
+- **VM-validated with a clean A/B negative control (teeth):** (1) probe confirmed `sudo launchctl asuser 501` runs as
+  ROOT (touched file came back `root:staff`); (2) identical GUI-session `ViewerKitTests` run (touch a test source to
+  force a recompile-as-root) — **pre-fix script: 8 root-owned files** left in `.build`; **fixed script: 0** (restored to
+  vm-tester automatically). 170 tests still green via Swift 6.3. Caught + dodged my own bug: running the pre-fix copy from
+  `/tmp` made `ROOT_DIR="$SCRIPT_DIR/.."` resolve to `/` (read-only) — re-ran the control from the repo `scripts/` dir.
+- **Process:** in-flight infra item from the prior tick; finished decisively, host `bash -n` clean, `main` headless-gate
+  unaffected (VM-script-only change).
+
 ## LOG +395 (2026-06-13 — TSK-748 file-info checksum UI VM-render-validated (a11y-presence); decisive minor-feature drain after last tick's hold)
 
 - **TSK-748 (file-info multi-algo checksums + copy button) → validated (commit `bb363a0`).** Engine/model were
