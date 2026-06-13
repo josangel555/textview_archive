@@ -8999,3 +8999,20 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
 - Slice 2 (next): the archive-listing content view + open-entry-as-tab.
 - Board hygiene: dismissed a mis-created empty ticket (TSK-667, my own
   tool misfire — caught and closed in the same minute).
+
+## LOG +307 (2026-06-12 tick — TSK-311 complete: archives browse in-app)
+
+- **Slice 2 (3ab1d5f, installed):** .archive is a first-class preview
+  category — detector (incl. two-part .tar.gz suffixes), mode matrix
+  [.preview, .hex], controller routing, and ArchiveBrowserView (off-main
+  listing, sizes, truncation badge; double-click extracts over the
+  stdout pipe and opens via the onOpenSibling hook). Teeth on the
+  detector (two-part arm dropped → red).
+- **The TSK-626 staleness trap struck ON CUE:** adding a case to the
+  cross-module FileCategory enum produced PHANTOM gate failures (png
+  routed to the text loader!) from stale test objects — touching every
+  FileCategory referent cleared all of them, leaving exactly one honest
+  test update (the native-preview partition gains .archive,
+  deliberate). The first gate FAIL was the trap, not the change.
+- Held at fixed for the glance: open a .zip → listing; double-click an
+  entry → extracted + opened.
