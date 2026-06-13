@@ -9169,6 +9169,23 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +371 (2026-06-13 — TSK-812: close the WebKit DNS-prefetch reading-activity leak [VALIDATED])
+
+- **TSK-812 (commit `fad48cb`, reported→validated — a clean close).** TSK-643's investigation had *surfaced* but
+  not *closed* a residual privacy vector: WebKit auto-prefetches the DNS for link `href` HOSTS in rendered content
+  **without a click**, and the CSP (`connect-src 'none'` etc.) does NOT govern DNS prefetch (it's a DNS-layer step
+  before any connection). So viewing a markdown doc with external links leaked those hostnames — *what you're
+  reading* — to DNS, even with TSK-635's subresource default-deny in place.
+  - **Fix:** added `<meta http-equiv="x-dns-prefetch-control" content="off">` to `HTMLRenderer.renderPage`'s
+    `<head>` (the documented WebKit/Safari disable). One line; the template already had charset/CSP/viewport metas.
+  - **Self-validated** (not review) on the same basis as the TSK-635 CSP guard: the meta is the load-bearing
+    privacy fence, its presence is host-tested + **teeth-proven** (remove → red), and WebKit honoring
+    `x-dns-prefetch-control:off` is documented standard behavior (not custom render). EGRESS.md updated.
+- **Pick rationale:** broke the recent review-pile streak by deliberately seeking a **fully-headless** item that
+  closes clean. A security/privacy gap that a prior investigation surfaced-but-left-open fit perfectly — high
+  owner value (egress was an owner concern), headless, self-validatable. The §1.5 fixed-lane drain stays
+  VM/owner-gated (flagged last tick); standing blockers unchanged (Stage B 810; perf cluster supervised).
+
 ## LOG +370 (2026-06-13 — TSK-760: New File button on the empty-tab landing)
 
 - **TSK-760 (commit `592f950`, reported→review).** The new-tab landing (EmptyStateView) had Open File / Open
