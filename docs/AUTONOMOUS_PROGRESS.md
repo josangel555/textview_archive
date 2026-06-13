@@ -9169,6 +9169,29 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +351 (2026-06-13 — minor-feature wave begins: TSK-748 file-info multi-algo checksums + copy feedback)
+
+- **TSK-748 → review (2e1d345, 2c43d0a, d3a469b).** First item of the `[WISH][minor-feature]` bucket. The
+  ticket bundled three asks; (a)+(b) landed, (c) split out.
+  - **(a) multi-algo checksums — ENGINE (2e1d345, self-validatable).** Generalized `FileChecksum` from
+    SHA-256-only to a `ChecksumAlgorithm`-parameterized streamed hasher: a generic fold over any CryptoKit
+    `HashFunction` (Insecure.MD5/SHA1, SHA256, SHA512) + a hand-rolled streaming `CRC32` (IEEE/zlib poly
+    0xEDB88320, no zlib dep). `sha256Hex` stays a thin delegate. 4 new engine tests pin every algorithm
+    against PUBLISHED vectors for "abc" + the CRC-32 "123456789"→cbf43926 standard check + chunked==one-shot.
+  - **(a) cont. — MODEL + wiring (2c43d0a).** `MetadataChecksumModel` now carries a selected algorithm
+    (default SHA-256); `select(algorithm:)` drops a stale-algorithm hash to .idle; `compute()` captures and
+    guards on (url, algorithm) so a completion after EITHER switch is dropped (sibling of the file-switch
+    race). New `metadata-set-checksum-algorithm` verb + `algorithm` in the dump projection = the headless
+    seam. View gains an algorithm Picker + dynamic labels (render VM-gated).
+  - **(b) responsive copy button (d3a469b).** Copy routes through `copyHash()` with an injectable
+    `PasteboardIO`, raises a transient `justCopied` flag → button shows green "Copied!" then self-clears 1.2s
+    via `.task(id:)`; leaving .done clears the stale affordance. Host-tested with a fake pasteboard.
+  - **(c) metadata for ALL formats → split to TSK-807** (needs a FileCategory-coverage inventory spike).
+  - 13 MetadataChecksumModel host tests + 8 engine tests green; teeth on engine final-XOR, algorithm
+    passthrough, and the copy-flag paths (each mutant compiled then went red). Headless gate green (5076).
+  - **VM render checklist (owner):** picker lists 5 algos · switching clears the hash · per-algo digest
+    correct · Copy → green "Copied!" reverts ~1.2s. (Model/verb/projection are the host pixel-equivalent.)
+
 ## LOG +350 (2026-06-13 overnight — TSK-741 PTY write off-main → review; WISHLIST BUG BUCKET FULLY DRAINED)
 
 - **TSK-741 FIXED → review (8fd89a0).** PTYProcess.write ran its blocking Darwin.write drain on the caller
