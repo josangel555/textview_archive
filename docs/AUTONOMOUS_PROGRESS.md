@@ -9169,6 +9169,27 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +350 (2026-06-13 overnight — TSK-741 PTY write off-main → review; WISHLIST BUG BUCKET FULLY DRAINED)
+
+- **TSK-741 FIXED → review (8fd89a0).** PTYProcess.write ran its blocking Darwin.write drain on the caller
+  (sendInput is @MainActor), so a large paste into a slow reader (vim) parked the main thread on the full
+  kernel PTY buffer → "Not Responding". Moved the drain onto a serial writeQueue (mirrors readQueue); caller
+  returns immediately, order preserved, fd captured at call time (race-with-close → EBADF bail). Extracted a
+  sink-injected static PTYProcess.drain → 4 host tests (partial writes / hard error / EINTR retry / empty),
+  teeth demonstrated. Held at review (the off-main ANR relief is live-concurrency → VM/manual-confirm).
+- **MILESTONE: every wishlist bug (TSK-728..744) is now addressed.** Overnight tally (13 ticks):
+  - VALIDATED (8): 739 (Cmd+F toggle) · 742 (preview buffer) · 744 (preview scroll) · 729 (View-Only dirty)
+    · 737 (gutter off-by-one) · 740 (terminal in-line edits) · 735 (DEC scroll region) · 731 (emoji width).
+  - REVIEW / VM-gated (6): 734 (StatusBar crash) · 728 (Enter→sidebar) · 730 (editor keys) · 738 (footer
+    folder-gate) · 736 (hover-lag dedupe) · 741 (PTY off-main).
+  - FIXED-pending-interpretation (1): 743 (scroll "preserve" — owner A/B). Filed: 806 (split-pane sibling).
+  - 14 user-facing bugs, all teeth-tested, main green on every commit.
+- **VM review queue for the owner's noon pass (one UI/live session validates all): 734·728·730·738·736·741.**
+- Next crons: the [WISH][minor-feature] bucket (54 created items) per the chipping order — most are UI/menu
+  wiring (live-gated, headless-tested at the model layer + VM-confirmed), so expect more review-lane landings
+  than validated. Owner decisions still open: 743 A/B, spike §6 (775) + terminal-tier (781), dep approvals
+  (584/585/587). Suggest the owner clear the VM review queue + the A/B at noon before the minor-feature wave.
+
 ## LOG +349 (2026-06-13 overnight — TSK-731 terminal double-width (emoji/CJK) accounting validated)
 
 - **TSK-731 VALIDATED (58d0227).** The owner's flagged annoyance — emoji misaligning Claude Code tables.
