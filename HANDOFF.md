@@ -1,60 +1,62 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — wishlist intake done · VM unblocked · spike-autonomy directive  (2026-06-13)
+# Handoff — wishlist BUG BUCKET fully drained (14 fixes); minor-features + owner decisions next  (2026-06-13)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `213b73f`
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `41a9dca`
 
 ## Mission
-Rust-core production-readiness + Swift→Rust migration (epics TSK-538/651); USER-FACING bugs first;
-work the `tasked` board; validate across the pyramid (human not in loop); keep `main` headless-gate-green;
-land per item via rebase+ff. Read `docs/TASK_WORKFLOW.md` every firing — **now including the new §0.5**.
+Owner away until ~noon 2026-06-13; overnight autonomous chipping of the 2026-06-13 wishlist. USER-FACING
+bugs first; validate across the pyramid (human not in loop); keep `main` headless-gate-green; land per item
+via rebase+ff. Read `docs/TASK_WORKFLOW.md` every firing (esp. §0.5 spike+design autonomy + chipping order).
 
-## NEW standing directives (2026-06-13 — read these)
-- **Spike + design are AUTO-APPROVED** (TASK_WORKFLOW §0.5 / CLAUDE.md / memory
-  `feedback_spike_design_autonomy`). For any non-trivial ticket the agent runs the spike
-  (scope/what-exists/feasibility/options) AND produces the design + breakdown AUTONOMOUSLY, then
-  implements. NEVER `task_park` just because something "needs design / a decision on approach."
-  Re-surface to the owner ONLY (post-spike) for: a genuine **dep approval**, a **true
-  undifferentiated ambiguity**, or a hard **blocker**.
-- **Chipping order:** regressions → bug fixes → minor-features(no-design) → epics(spike→design→
-  breakdown→ship in slices) → very-large(file-and-forget).
+## Standing directives (2026-06-13)
+- **Spike + design AUTO-APPROVED** (TASK_WORKFLOW §0.5 / memory `feedback_spike_design_autonomy`): never
+  `task_park` just because something needs design/an-approach-decision. Re-surface ONLY a genuine dep
+  approval / true undifferentiated ambiguity / hard blocker, post-spike.
+- **Chipping order:** regressions → bugs → minor-features(no-design) → epics(spike→design→ship) → very-large.
+- **Per-tick cadence:** land 1–2 items per tick with teeth; keep `main` green; commit + log each.
 
-## Current state
-- **VM fully unblocked** (owner bumped 4→6GiB + granted Screen-Recording). Headless sweep: 3098/0/no-hang
-  (TSK-451 closed). T5 pixel lane passes in the GUI session (TSK-492 Track B done). Both lanes usable now —
-  recipes in `scripts/test-in-vm.sh test --filter ...` (headless) and `MDV_VM_GUI_SESSION=1
-  MDV_VM_SUDO_PASS=<vm-sudo-password> ... --filter <T5 suite>` (pixel). The ~25 live-validation fixed-lane items can now
-  be drained on the VM.
-- **Wishlist intake complete:** 184 lines → 136 tickets (TSK-670..TSK-805), tag `wishlist-2026-06-13`,
-  `[WISH][P-tier][bucket]` titles. Source/report in `docs/research/wishlist-2026-06-13/`. All 61 over-parked
-  items converted to `type:spike`/`ack`/waiting:agent (gates cleared).
-- **Landed+validated this session:** TSK-572 (trace atomic fast-path), TSK-570 (helper dedup + git
-  sandbox-argv single-source). Triaged: 573 (web palette, conservative no-visible-change), 575 (clippy
-  cast-truncations), 492 (UI self-validation harness — Track A nightly-wiring still to do).
+## DONE this overnight run — the WHOLE wishlist bug bucket (TSK-728..744), 14 fixes
+All teeth-tested (mutation→red→restore), headless gate green on every commit. Two validation states:
+- **VALIDATED (8, self-validated — model/pure-logic, host pixel-equivalent for the terminal cell grid):**
+  739 Cmd+F toggle · 742 preview-slot stale buffer · 744 preview scroll-leak · 729 View-Only shows dirty
+  buffer · 737 gutter last-line off-by-one · 740 terminal in-line edits DCH/ICH/ECH/IL/DL · 735 terminal
+  DEC scroll region (DECSTBM) · 731 terminal emoji/CJK double-width.
+- **REVIEW — VM-gated render/event/concurrency (6): the owner's noon VM queue:**
+  734 StatusBar crash (git off the layout path) · 728 Enter→sidebar · 730 editor keys ·
+  738 status-footer folder-gate · 736 hover-lag dedupe · 741 PTY write off-main.
+- **FIXED, awaiting owner A/B (1):** 743 scroll "preserve" — independent-scroll done; "remember-on-return"
+  needs a per-URL store (recommend confirming the interpretation). Filed: **TSK-806** (split-pane source
+  sibling of 729).
 
-## In flight (background agents — will notify)
-- **Dedup agent:** reconcile [WISH] tickets vs the pre-existing backlog, dismiss clear dups (auto-approved).
-- **3 spike agents:** TSK-775 (Rust migration plan → `docs/research/rust-migration-plan-2026-06-13/`),
-  TSK-781+779 (LSP own-vs-external + plugin/core boundary → `docs/research/lsp-and-plugin-boundary-2026-06-13/`),
-  TSK-787+788 (test-stack audit → `docs/research/test-stack-audit-2026-06-13/`). Each writes a findings/design
-  doc + advances its ticket ack→triaged, re-parking only on a real blocker.
+## Earlier this session (pre-bug-bucket)
+Owner wishlist intake via ultracode workflow (184 lines → 136 tickets, tag `wishlist-2026-06-13`,
+`[WISH][P-tier][bucket]` titles; source/report in `docs/research/wishlist-2026-06-13/`). All 61 over-parks
+converted to `spike`. VM FULLY UNBLOCKED (owner's 6GiB + Screen-Recording: headless 3098/0/no-hang →
+TSK-451 closed; T5 pixel lane works). 3 spike docs (Rust migration plan, LSP/plugin boundary, test-stack)
+under `docs/research/*-2026-06-13/`. rust-core: TSK-572/570 validated. Directives codified in TASK_WORKFLOW
+§0.5 + CLAUDE.md + LESSONS + memory.
 
 ## How to resume
-1. Read `docs/TASK_WORKFLOW.md` (esp. §0.5). Check the in-flight agents' results landed on the board +
-   their docs under `docs/research/*-2026-06-13/`.
-2. **Chip the bug bucket first:** `task_list {project:tasked, q:"WISH", state:reported}` → the `[WISH][bug]`
-   tickets (TSK-728..744) are concrete user-facing defects, no gate. Several are headless-actionable
-   (state/model bugs: 729/733/738/742/743/744; terminal 740/735 via the TUI TestBackend pixel-teeth). Fix,
-   teeth-test, gate, commit, then VM-validate the rendered ones (VM now works).
-3. Then the 54 created minor-features, then work the `spike` tickets (spike→design→implement, autonomous).
-4. Drain the ~25 live-validation `fixed` items on the now-working VM (the original reason they were stuck).
-5. Gates: `bash scripts/test-headless-gate.sh` (Swift, one at a time) · `bash scripts/rust-core-gate.sh`
-   (rust-core). After rust changes: `bash scripts/build-rust-core.sh` (header + .a). VM: rsync +
-   `test-in-vm.sh`.
+1. Read `docs/TASK_WORKFLOW.md`. `task_list {project:tasked}` for state.
+2. **The bug bucket is DONE** — do NOT re-pick 728..744. Next per the chipping order = the
+   **`[WISH][minor-feature]` bucket** (54 created items, ~TSK-745..760 + others). MOST are UI/menu wiring
+   (live-gated): land the model layer host-tested, hold the on-screen part at `review` for the VM (as the
+   6 bug-bucket review items were). Look for genuinely headless ones first (recents model, checksum engine,
+   shortcut catalog = a research doc).
+3. **Owner decisions waiting at noon** (`task_list {waiting:human}` + the items above): 743 A/B;
+   spike §6 of `docs/research/rust-migration-plan-2026-06-13/PLAN.md` (3 calls); terminal Tier-D (781);
+   dep approvals 584/585/587/399. Suggest the owner clear the VM review queue (734·728·730·738·736·741)
+   + the 743 A/B before the minor-feature wave.
+4. Gates: `bash scripts/test-headless-gate.sh` (host, one at a time) · `bash scripts/rust-core-gate.sh`.
+   VM (now working): rsync + `bash scripts/test-in-vm.sh test --filter <Suite>` (headless) /
+   `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> ... --filter <T5 suite>` (pixel).
 
-## Gotchas / lessons (also in LESSONS.md / memory)
-- An agent `task_restate` (reported→ack) CLEARS a `waiting:human` park gate — the unpark mechanism.
-- `core` is sans-IO by design (no fs/process) — load-bearing for the WASM tier; do NOT hoist IO into it.
-- VM hang was memory-pressure (6GiB fixes it), NOT a code bug. `pkill -9` deny-ruled; macOS lacks
-  `timeout`/`setsid`.
-- task_advance/restate garble: pass ONE long-text param per call; don't batch multiple board mutations with
-  long text in one tool block.
+## Gotchas / lessons (also in LESSONS.md)
+- Terminal cell grid = the source of truth the view draws → cell-level XCTest assertions are the host
+  pixel-equivalent (self-validatable, like the rust TUI TestBackend). Used for 740/735/731.
+- Render/event/concurrency behavior (AppKit key routing, SwiftUI re-render observation, PTY off-main) →
+  host-test the LOGIC, hold at `review` for VM (don't over-claim validated).
+- A conservative widening table (default-1) can't regress un-tabled inputs — how 731 stayed safe.
+- An agent `task_restate` (reported→ack) clears a `waiting:human` park; `task_record` needs `to` set or it
+  stays in place; fixed→review needs `summary` (not `note`).
+- Demonstrate teeth every fix: mutate→red (confirm the mutant COMPILED: grep `Compiling <module>`)→restore.
