@@ -9169,6 +9169,27 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +325 (2026-06-13 tick — TSK-669 closes the error-model-v2 loop: host decodes+logs WireError)
+
+- **TSK-669 (consumer for TSK-577) — FIXED (`4c7dbc1`).** TSK-577 made the FFI EMIT a rich
+  WireError frame on error; this surfaces it host-side so an FFI failure (large file / malformed
+  wire) is diagnosable instead of a bare status. Swift-only, non-breaking:
+  - `WireErrorDetail {code, message, kind}` + `CsvSession.decodeWireError(frame)` — TOTAL on the
+    error path (nil for empty / non-WireError / garbage, never throws — must not mask the real status).
+  - `callBuf` now decodes + logs the detail via `os.Logger` (subsystem RustCore/ffi) BEFORE the
+    coarse status throws. Did NOT enrich the Equatable `.wireError` case (the owner-facing API
+    change I flagged on TSK-577) — chose the non-breaking log path.
+  - **Validation:** headless gate green; 3 RustCore tests — decoder round-trips the exact frame
+    shape TSK-577's rust test proves is emitted; totality on bad frames; a wiring source-pin. Teeth:
+    broke the `kind`-from-data parse → the round-trip test red (recompiled), restored.
+  - Scoped to the session `callBuf` path (highest-frequency error path: CSV TooLarge/wire faults);
+    the stateless free-function error sites are a noted lower-frequency remainder.
+- **Board context:** the rust-core audit lane's clean high-value work is now drained — 541
+  (handle UAF), 559 (windowed snapshot), 577 (error model v2) + this consumer shipped this run.
+  Remaining open rust-core items are big cross-cutting refactors (TSK-543 stateful editor, TSK-564
+  decode-path double-copy, TSK-580 thin-waist envelope) that warrant dedicated/owner-prioritized
+  sessions, or low-value efficiency cleanups (567/570-575).
+
 ## LOG +324 (2026-06-13 tick — TSK-577 WireError channel now EMITS (error model v2, §2.5 Phase-1))
 
 - **TSK-577 (`[RUST-CORE]` the documented WireError {code,message,data} channel was never emitted)
