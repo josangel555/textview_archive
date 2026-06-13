@@ -251,6 +251,15 @@ continue", document blockers and move on):
   real bugs/perf/security, then features; the Rust TUI/web `[PORT]` lane and
   test backfill are last resorts. DON'T ship a risky blind change; if it needs
   the screen/owner, file it and move on.
+- **Spike + design are AUTO-APPROVED (owner directive 2026-06-13; full text
+  TASK_WORKFLOW §0.5).** For any non-trivial ticket the agent runs the spike
+  (scope/what-exists/feasibility/options) AND produces the design + breakdown
+  AUTONOMOUSLY, then implements — never `task_park` just because something
+  "needs design / a decision about approach". Re-surface to the owner ONLY (and
+  only after a spike frames it) for: a genuine **dependency approval**, a **true
+  undifferentiated ambiguity** (can't tell WHAT is asked), or a hard **blocker**.
+  Chipping order: regressions → bug fixes → minor-features (no design) → epics
+  (spike→design→breakdown→ship in slices) → very-large (file-and-forget).
 - **Migration policy (owner directive 2026-06-11, full text TASK_WORKFLOW §2.5):
   Swift engines with an approved Rust port take USER-FACING BUGFIXES ONLY** —
   no perf work, refactors, features, or test backfill on the Swift twin

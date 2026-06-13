@@ -9169,6 +9169,33 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +338 (2026-06-13 — owner wishlist intake + VM fully unblocked + spike-autonomy directive)
+
+Big owner-interaction session. Highlights:
+
+- **VM validation pyramid UNBLOCKED (owner bumped RAM 4→6GiB + granted Screen-Recording).**
+  Headless: full sweep 3098 tests / 0 failures / 6 skipped / 123s, NO HANG → **TSK-451's hang was
+  memory-pressure**, closed already-fixed. Pixel/T5: SourceViewVisualRegressionTests passed in the GUI
+  session (real WindowServer capture) → the recording grant works, **TSK-492 Track B done**. The ~25
+  live-validation fixed-lane items now have a real automated path. Memory updated.
+- **Owner wishlist intake (184 lines) via an ultracode workflow** (193 agents, ~7.9M tok): 136 net-new
+  tickets (73 created, 63 parked), 48 deduped onto 28 targets. Source `docs/research/wishlist-2026-06-13/
+  SOURCE.md`, report `TRIAGE.md`; every ticket tagged `wishlist-2026-06-13` + `[WISH][P-tier][bucket]`.
+- **OWNER DIRECTIVE — spike + design are AUTO-APPROVED** (codified TASK_WORKFLOW §0.5 + CLAUDE.md +
+  memory `feedback_spike_design_autonomy`). The workflow's 63 auto-parks were WRONG — "an epic is a spike
+  to run, not a question to ask." Converted all 61 (after 2 dup-dismissals) → `type:spike`/`ack`/
+  waiting:agent via a 7-subagent fan-out (an agent `task_restate` clears the waiting:human gate).
+  Re-surface to owner ONLY for genuine dep-approval / true-ambiguity / hard-blocker, post-spike.
+  Chipping order: regressions → bugs → minor-features(no-design) → epics(spike→design→breakdown) →
+  very-large(file-and-forget).
+- **Cleanups:** dismissed near-dups 674→673 (sheets/Excel), 750→749 (image-edit), 684→681 (settings).
+- **In flight (background, owner asked "reconcile dups + go through spike iterations"):** 1 dedup agent
+  (WISH vs pre-existing backlog) + 3 spike agents (TSK-775 Rust migration plan, TSK-781/779 LSP+plugin
+  boundary, TSK-787/788 test-stack audit) — each produces a findings/design doc + advances its ticket
+  ack→triaged, re-parking only on a real blocker.
+- Earlier this session (pre-wishlist): TSK-572 (trace fast-path) + TSK-570 (helper dedup) landed+validated;
+  573/575/492 triaged. `main` @ `213b73f`, headless gate green.
+
 ## LOG +337 (2026-06-13 tick — TSK-570 dedup landed+validated; greenlit pools reconciled (already drained))
 
 Board reconciliation first (the tick re-asserted the greenlit priority list, but it's STALE): TSK-635

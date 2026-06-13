@@ -19,6 +19,45 @@ ignoring the board or mis-prioritizing — re-query and re-read §3.
 
 ---
 
+## 0.5 Spike + design autonomy + chipping order (OWNER DIRECTIVE 2026-06-13)
+
+Two standing rules, set during the 2026-06-13 wishlist intake:
+
+**Spike + design are AUTO-APPROVED — never ask permission to investigate or design.**
+For any non-trivial ticket (epic, feature, research question, ambiguous ask) the
+agent runs the **SPIKE** (scope · what already exists in-repo · feasibility · concrete
+options) AND produces the **DESIGN + task breakdown**, autonomously, then implements.
+Do **NOT** `task_park` a ticket merely because it "needs design" or "needs a decision
+about approach" — that investigation IS the agent's job. Default to investigating, not
+asking. (This is why the intake's auto-parks were wrong: an epic is a spike to run, not
+a question to ask.)
+
+**Re-surface to the owner ONLY** (via `task_park`, and only AFTER a spike has framed it)
+for: (a) a genuine **dependency approval** — a new crate/library/tool; (b) a **true
+undifferentiated ambiguity** — you genuinely cannot tell WHAT is being asked (e.g. a
+bare "Music" with no other signal); or (c) a hard **blocker** the agent cannot resolve.
+A taste/branding call (app name) or a prioritization call (what to cut) still gets a
+spike that FRAMES the options first, then a crisp parked question — never a bare "what
+do you want?".
+
+**Chipping order (refines §3's rank list):**
+1. **Regressions** (re-break of once-working behavior) — first.
+2. **Bug fixes** (defects / crashes / wrong behavior) — user-facing first.
+3. **Minor features that need NO design** (toggles, menu items, wiring an
+   already-built backend, near-free parity items).
+4. **Epics** — run spike → design → breakdown → implement (all autonomous per the
+   rule above); land in slices.
+5. **Very-large / aspirational** items — file-and-forget for now (a backlog ticket,
+   no active design until the smaller lanes drain).
+
+**Intake provenance:** the 2026-06-13 wishlist source is
+`docs/research/wishlist-2026-06-13/SOURCE.md`; the triage report (counts, dedup, items)
+is `TRIAGE.md` in that dir; every filed ticket carries the `wishlist-2026-06-13` tag and
+a `[WISH][P-tier][bucket]` title prefix, and the parked ones were converted to `spike`
+type (this directive).
+
+---
+
 ## 1. Query the board (recipe)
 
 **Drive the board ONLY via the `mcp__tasked__*` MCP tools** (the server at
