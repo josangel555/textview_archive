@@ -89,6 +89,31 @@ public enum UISceneApplier {
             return "ui-scene: applied 'theme-dark' selectedThemeID=\(model.selectedThemeID ?? "nil")"
         }
 
+        // File-info checksum scene (TSK-748 render validation): the MetadataPanel
+        // (with the multi-algo checksum Picker + compute/copy buttons) renders
+        // only for a MEDIA file with `showPreviewMetadataPanel` on, so reach that
+        // state — write a tiny valid PNG, open it (→ image category), and show
+        // the panel. The VM lane then asserts mdv.metadata.checksum* are VISIBLE.
+        // The checksum ENGINE/MODEL (CRC32/MD5/SHA-*, algo-switch, copy) is
+        // host-tested; this proves the section actually paints.
+        if scene == "metadata-checksum" {
+            try? FileManager.default.createDirectory(
+                at: tabsBaseDir, withIntermediateDirectories: true)
+            let f = tabsBaseDir.appendingPathComponent("sample.png")
+            // 1×1 transparent PNG (valid, ~68 bytes) so the media branch renders.
+            if let png = Data(base64Encoded:
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==") {
+                try? png.write(to: f)
+            }
+            // Close the aqua-runner's auto-opened DESIGN.md first so the PNG
+            // becomes the SOLE, ACTIVE tab (else the markdown stays foreground
+            // and the media-preview MetadataPanel never shows).
+            while !model.tabs.tabs.isEmpty { model.closeTab(at: 0) }
+            model.open(url: f)
+            model.showPreviewMetadataPanel = true
+            return "ui-scene: applied 'metadata-checksum' tabs=\(model.tabs.tabs.count) selected=\(model.tabs.selected?.url?.lastPathComponent ?? "nil") panel=\(model.showPreviewMetadataPanel)"
+        }
+
         #if DEBUG
         // LSP code-action PICKER scene (TSK-640 render tail): present the picker
         // with canned actions over an editor backdrop so the VM harness can

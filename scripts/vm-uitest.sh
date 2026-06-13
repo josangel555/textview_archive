@@ -48,6 +48,7 @@ scene_expect() {
     lsp-rename) echo "mdv.lspRename.panel" ;;
     code-actions) echo "mdv.codeActions.panel" ;;
     folder-only) echo "mdv.statusBar mdv.emptyState.newFile mdv.emptyState.recentRow" ;;
+    metadata-checksum) echo "mdv.metadata.checksumAlgorithm" ;;
     *) echo "" ;;
   esac
 }

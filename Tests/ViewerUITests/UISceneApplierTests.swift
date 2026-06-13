@@ -160,6 +160,19 @@ final class UISceneApplierTests: XCTestCase {
         XCTAssertTrue(status.contains("xcode-dark"), "status: \(status)")
     }
 
+    func test_metadataChecksumScene_opensMediaFileAndShowsPanel() {
+        // TSK-748: the checksum UI lives in the MetadataPanel, shown only for a
+        // MEDIA file with showPreviewMetadataPanel on. This scene reaches that
+        // state so the VM lane can assert the checksum section renders. Pins the
+        // model contract.
+        let model = makeModel()
+        let status = apply("metadata-checksum", model)
+        XCTAssertFalse(model.tabs.tabs.isEmpty, "a media (.png) file tab is open")
+        XCTAssertTrue(model.showPreviewMetadataPanel, "the metadata panel is shown")
+        XCTAssertTrue(status.contains("panel=true"), "status: \(status)")
+        XCTAssertFalse(status.contains("unknown"), "recognised scene: \(status)")
+    }
+
     func test_unknownScene_isReportedNotApplied() {
         let model = makeModel()
         let status = apply("bogus-scene", model)

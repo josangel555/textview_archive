@@ -168,6 +168,12 @@ struct MetadataPanel: View {
 
             checksumStateContent
         }
+        // Group as an AX container so the child controls (the algorithm Picker,
+        // compute/copy buttons) surface to an out-of-process AX reader — a bare
+        // `.accessibilityIdentifier` on a leaf isn't promoted (the empty-state /
+        // VM-lane lesson). The VM render guard for TSK-748 depends on this.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("mdv.metadata.checksumSection")
     }
 
     @ViewBuilder
