@@ -87,6 +87,28 @@ final class DocumentModelTests: XCTestCase {
             "byteLength must match the displayed (edited) text, not the on-disk byteCount")
     }
 
+    // MARK: Status footer gate — folder-only context (TSK-738)
+
+    func test_hasOpenContext_trueForFolderOnly_whenNoFileTabSelected() throws {
+        let model = makeModel()
+        XCTAssertFalse(model.hasOpenContext, "nothing open yet")
+        let folder = tmpDir.appendingPathComponent("proj", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        model.openFolder(folder)
+        XCTAssertNil(model.currentURL,
+            "openFolder selects no file tab — the OLD `currentURL != nil` gate hid the footer (the bug)")
+        XCTAssertTrue(model.hasOpenContext,
+            "the status footer must still mount for a folder-only project (TSK-738)")
+    }
+
+    func test_hasOpenContext_trueWhenFileOpen() throws {
+        let model = makeModel()
+        let f = try writeFile("a.txt", "x")
+        model.open(url: f)
+        XCTAssertNotNil(model.currentURL)
+        XCTAssertTrue(model.hasOpenContext)
+    }
+
     // MARK: Initial state
 
     func test_initial_isEmpty() {

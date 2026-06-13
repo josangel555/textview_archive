@@ -246,11 +246,16 @@ public struct ContentView: View {
                 .layoutPriority(0)
                 if model.currentURL != nil {
                     // UX-A (#224): bottom toggle-button group (Wrap / Special
-                    // chars / Enable-JS / unified type control). Sits between
-                    // the body band and the StatusBar.
+                    // chars / Enable-JS / unified type control). These are
+                    // FILE attributes, so this bar stays file-gated.
                     BottomAttributesBar(model: model)
                         .fixedSize(horizontal: false, vertical: true)
                         .layoutPriority(1)
+                }
+                // TSK-738: the status footer shows for a file OR a folder-only
+                // project (path "—" + folder-scoped git chip), so it no longer
+                // vanishes after relaunch / opening a folder with no file picked.
+                if model.hasOpenContext {
                     StatusBar(model: model, tabCoordinator: model.tabCoordinator, sourceView: model.sourceView)
                         .fixedSize(horizontal: false, vertical: true)
                         .layoutPriority(1)

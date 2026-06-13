@@ -3386,6 +3386,14 @@ public final class DocumentModel: ObservableObject {
     public var currentURL: URL? { tabs.selected?.url }
     public var currentViewMode: ViewMode { tabs.selected?.viewMode ?? .rendered }
 
+    /// True when there's a file OR a project folder open — i.e. the status
+    /// footer has something useful to show (path/metrics for a file; the
+    /// folder-scoped git chip + "—" path for a folder-only project). TSK-738:
+    /// the footer used to gate on `currentURL != nil` only, so it vanished after
+    /// relaunch / opening a folder with no file tab selected (openFolder sets the
+    /// sidebar root but selects no tab → currentURL nil).
+    public var hasOpenContext: Bool { currentURL != nil || sidebar.rootURL != nil }
+
     /// True when the active file has a registered LSP language yet the
     /// diagnostics store holds no entry for it — i.e. no language server
     /// has analyzed it in this view. Source view never sends the
