@@ -4650,7 +4650,7 @@ public final class DocumentModel: ObservableObject {
                 if !ViewModeOptions.availableModes(
                     for: url, forcedCategory: t.categoryOverride
                 ).contains(.rendered) { return }
-            case .image, .audio, .video, .pdf, .sqlite, .binary, .unknown:
+            case .image, .audio, .video, .pdf, .sqlite, .archive, .binary, .unknown:
                 // Media / binary: `.rendered` is the leave-HEX escape
                 // hatch handled below — leave it to the preview-restore arm.
                 break
@@ -4707,7 +4707,7 @@ public final class DocumentModel: ObservableObject {
                 // we still fall through to the async text reload.
                 let cat = FileTypeDetector.category(for: url)
                 switch cat {
-                case .image, .audio, .video, .pdf, .sqlite:
+                case .image, .audio, .video, .pdf, .sqlite, .archive:
                     let state = controller.open(url: url)
                     t.state = state
                 case .markdown, .mermaid, .plainText, .code, .html:

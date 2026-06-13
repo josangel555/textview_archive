@@ -171,7 +171,7 @@ public enum ViewModeOptions {
         switch cat {
         case .markdown, .mermaid, .plainText, .code, .html:
             return true
-        case .image, .audio, .video, .pdf, .sqlite, .binary, .unknown:
+        case .image, .audio, .video, .pdf, .sqlite, .archive, .binary, .unknown:
             return false
         }
     }
@@ -183,7 +183,7 @@ public enum ViewModeOptions {
     /// HEX-only and never offer `.preview`.
     static func hasNativePreview(_ cat: FileCategory) -> Bool {
         switch cat {
-        case .image, .audio, .video, .pdf, .sqlite:
+        case .image, .audio, .video, .pdf, .sqlite, .archive:
             return true
         case .markdown, .mermaid, .plainText, .code, .html, .binary, .unknown:
             return false

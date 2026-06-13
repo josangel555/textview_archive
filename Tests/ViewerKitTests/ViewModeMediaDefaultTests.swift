@@ -156,7 +156,9 @@ final class ViewModeMediaDefaultTests: XCTestCase {
     }
 
     func test_hasNativePreview_partition() {
-        let nativePreview: Set<FileCategory> = [.image, .audio, .video, .pdf, .sqlite]
+        // .archive joined the native-preview side in TSK-311 (the entry
+        // listing renders through the .preview lens).
+        let nativePreview: Set<FileCategory> = [.image, .audio, .video, .pdf, .sqlite, .archive]
         for cat in FileCategory.allCases {
             XCTAssertEqual(ViewModeOptions.hasNativePreview(cat),
                            nativePreview.contains(cat),

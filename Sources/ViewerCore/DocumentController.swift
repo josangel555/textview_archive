@@ -105,7 +105,7 @@ public struct DocumentController: Sendable {
             forcedCategory ?? FileTypeDetector.category(for: url)
         }
         switch category {
-        case .image, .audio, .video, .pdf, .sqlite:
+        case .image, .audio, .video, .pdf, .sqlite, .archive:
             // Only declare a preview if the file actually exists +
             // is readable; otherwise route to the error path.
             if FileManager.default.isReadableFile(atPath: url.path) {

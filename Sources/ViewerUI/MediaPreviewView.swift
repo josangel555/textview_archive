@@ -59,6 +59,11 @@ public struct MediaPreviewView: View {
             case .pdf:   PDFPreview(url: url)
             case .sqlite:
                 SQLiteBrowserView(url: url, uiScale: uiScale)
+            case .archive:
+                // TSK-311: entry listing; opening an entry extracts it to a
+                // temp file and routes through the same open hook the image
+                // sibling-browser uses.
+                ArchiveBrowserView(url: url, uiScale: uiScale, onOpenEntry: onOpenSibling)
             default:
                 UnsupportedPreview(url: url, category: category, uiScale: uiScale)
             }

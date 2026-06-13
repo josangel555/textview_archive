@@ -16,6 +16,9 @@ public enum FileCategory: String, Equatable, Sendable, CaseIterable {
     case video
     case pdf
     case sqlite
+    /// Browsable archive (zip/jar/tar/tgz/tbz2 — TSK-311). Rendered via
+    /// the `.preview` lens as an entry listing; HEX stays the raw lens.
+    case archive
     case unknown
 }
 
@@ -107,6 +110,16 @@ public enum FileTypeDetector {
         if videoExtensions.contains(ext) { return .video }
         if ext == "pdf" { return .pdf }
         if sqliteExtensions.contains(ext) { return .sqlite }
+        // Archives (TSK-311). Two-part extensions (.tar.gz/.tar.bz2) don't
+        // round-trip through `pathExtension`, so match on the whole name —
+        // the same suffix set ArchiveCatalog.kind serves.
+        let name = url.lastPathComponent.lowercased()
+        if name.hasSuffix(".zip") || name.hasSuffix(".jar")
+            || name.hasSuffix(".tar") || name.hasSuffix(".tgz")
+            || name.hasSuffix(".tar.gz") || name.hasSuffix(".tbz2")
+            || name.hasSuffix(".tar.bz2") {
+            return .archive
+        }
 
         if ext.isEmpty {
             return .plainText

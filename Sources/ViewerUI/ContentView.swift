@@ -1284,6 +1284,7 @@ struct ModeBar: View {
         case .video:     return "Video"
         case .pdf:       return "PDF"
         case .sqlite:    return "SQLite"
+        case .archive:   return "Archive"
         case .binary:    return "HEX (raw bytes)"
         case .unknown:   return "Unknown"
         }
