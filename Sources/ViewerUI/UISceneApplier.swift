@@ -40,6 +40,25 @@ public enum UISceneApplier {
             return "ui-scene: applied 'landing' (empty state, no tabs)"
         }
 
+        // LSP rename PROMPT scene (TSK-640 render tail): present the rename
+        // prompt sheet over an editor backdrop so the VM harness can capture it
+        // and assert the `mdv.lspRename.*` elements are actually VISIBLE on
+        // screen (the open validation gap — the CLAUDE.md "present ≠ visible"
+        // rule). The trigger path (command → `canRenameActiveEditorSymbol`
+        // gate → present) is host-tested by `LSPGotoCommandTests`; this scene's
+        // sole job is to put the SHEET on screen, so it presents DIRECTLY rather
+        // than re-deriving the enablement gate (which would couple the capture
+        // to a live LSP server the spawned app may lack).
+        if scene == "lsp-rename" {
+            try? FileManager.default.createDirectory(
+                at: tabsBaseDir, withIntermediateDirectories: true)
+            let f = tabsBaseDir.appendingPathComponent("rename-target.swift")
+            try? "let oldName = 1\n".write(to: f, atomically: true, encoding: .utf8)
+            model.open(url: f)
+            model.isLSPRenamePromptPresented = true
+            return "ui-scene: applied 'lsp-rename' tabs=\(model.tabs.tabs.count) renamePrompt=\(model.isLSPRenamePromptPresented)"
+        }
+
         // Preview-tab scenes (TSK-306 / TSK-272): drive the ONE ephemeral preview
         // slot. `preview-promoted` then promotes it to a permanent (upright) tab.
         if parts.first == "preview" {

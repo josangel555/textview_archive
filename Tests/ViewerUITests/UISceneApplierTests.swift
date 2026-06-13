@@ -92,6 +92,21 @@ final class UISceneApplierTests: XCTestCase {
         XCTAssertFalse(model.terminalPane.isOpen, "landing leaves the terminal closed")
     }
 
+    func test_lspRenameScene_presentsThePromptOverAnEditorBackdrop() {
+        // TSK-640 render tail: the 'lsp-rename' scene must put the rename prompt
+        // sheet on screen (isLSPRenamePromptPresented) over an open editor tab,
+        // so the VM harness can capture it and assert the mdv.lspRename.* views
+        // are actually VISIBLE. A scene that silently failed to present would
+        // make the capture a false green — this pins the model-state contract.
+        let model = makeModel()
+        let status = apply("lsp-rename", model)
+        XCTAssertTrue(model.isLSPRenamePromptPresented,
+                      "the rename prompt sheet must be presented for the capture")
+        XCTAssertEqual(model.tabs.tabs.count, 1, "an editor backdrop tab is open behind the sheet")
+        XCTAssertTrue(status.contains("renamePrompt=true"), "status: \(status)")
+        XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
+    }
+
     func test_unknownScene_isReportedNotApplied() {
         let model = makeModel()
         let status = apply("bogus-scene", model)
