@@ -198,13 +198,22 @@ public final class EditorCoordinator: ObservableObject {
         // contains-check (dicts return nil for missing keys, the close
         // path doesn't care).
         tabCoordinator.addCloseHook { [weak self] id in
-            guard let self else { return }
-            self.editorCursorByTab.removeValue(forKey: id)
-            self.editorScrollByTab.removeValue(forKey: id)
-            self.pendingEditorDiagnostics.removeValue(forKey: id)
-            self.pendingEditorGutterMarkers.removeValue(forKey: id)
-            self.editorFoldRangesByTab.removeValue(forKey: id)
+            self?.resetEditorState(forTabID: id)
         }
+    }
+
+    /// Drop ALL per-tab editor UI state for `id` (cursor, scroll, pending
+    /// diagnostics + gutter markers, fold ranges). Idempotent (dicts return nil
+    /// for missing keys). Called by the close hook, and — TSK-742/743/744 — when
+    /// the ephemeral preview slot REUSES its tab id for a DIFFERENT file: that
+    /// id's editor state belongs to the previous file and must not leak into the
+    /// new one (stale scroll/cursor) the way the stale buffer leaked its content.
+    public func resetEditorState(forTabID id: UUID) {
+        editorCursorByTab.removeValue(forKey: id)
+        editorScrollByTab.removeValue(forKey: id)
+        pendingEditorDiagnostics.removeValue(forKey: id)
+        pendingEditorGutterMarkers.removeValue(forKey: id)
+        editorFoldRangesByTab.removeValue(forKey: id)
     }
 
     // MARK: - editorBuffers (forwarders to TabCoordinator)

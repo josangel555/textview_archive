@@ -157,4 +157,57 @@ final class DocumentModelPreviewTests: XCTestCase {
         XCTAssertEqual(previewTitles(model), ["c.txt"])
         XCTAssertEqual(model.tabs.tabs.count, 2, "a (permanent) + one preview slot")
     }
+
+    // MARK: - Preview-slot reuse invalidates the prior file's editor state
+    //         (TSK-742 buffer, TSK-743/744 scroll/cursor)
+
+    func test_previewSwap_reseedsEditorBufferForNewFile() throws {
+        // TSK-742: the preview slot reuses one tab id; the editor buffer is keyed
+        // by that id and `ensureEditorBuffer` is idempotent, so before the fix
+        // file B reused file A's stale buffer (editor pane kept showing A).
+        let model = makeModel()
+        let a = try writeFile("a.txt", "alpha")
+        let b = try writeFile("b.txt", "bravo")
+        model.openPreview(url: a)
+        let id = try XCTUnwrap(model.tabs.previewTabID)
+        XCTAssertEqual(model.editorBuffer(forTabID: id)?.text, "alpha", "buffer seeds from A")
+
+        model.openPreview(url: b)   // same slot, new file
+        XCTAssertEqual(model.tabs.previewTabID, id, "same preview tab id reused")
+        XCTAssertEqual(model.editorBuffer(forTabID: id)?.text, "bravo",
+                       "after the swap the editor buffer must reseed from B — not keep A's stale content")
+    }
+
+    func test_previewSwap_resetsScrollState() throws {
+        // TSK-743/744: scroll/cursor are also keyed by the reused tab id, so A's
+        // scroll leaked onto B (744) and A's position wasn't preserved per-file (743).
+        let model = makeModel()
+        let a = try writeFile("a.txt", "alpha\nbeta\ngamma\n")
+        let b = try writeFile("b.txt", "bravo")
+        model.openPreview(url: a)
+        let id = try XCTUnwrap(model.tabs.previewTabID)
+        _ = model.editorBuffer(forTabID: id)   // materialize A's editor state
+        model.recordEditorScroll(
+            CMScrollPosition(top: 500, left: 0, viewportFromLine: 40, viewportToLine: 60),
+            forTabID: id)
+        XCTAssertNotNil(model.editor.editorScrollByTab[id], "A's scroll recorded")
+
+        model.openPreview(url: b)   // swap files in the reused slot
+        XCTAssertNil(model.editor.editorScrollByTab[id],
+                     "A's scroll must NOT leak onto B — the reused id's scroll is reset on swap")
+    }
+
+    func test_previewSwap_sameFile_keepsBuffer() throws {
+        // Re-previewing the SAME file must NOT invalidate (it promotes, and the
+        // url is unchanged) — guards against over-invalidation.
+        let model = makeModel()
+        let a = try writeFile("a.txt", "alpha")
+        model.openPreview(url: a)
+        let id = try XCTUnwrap(model.tabs.previewTabID)
+        let buf = model.editorBuffer(forTabID: id)
+        XCTAssertEqual(buf?.text, "alpha")
+        model.openPreview(url: a)   // same file again → promotes, no file swap
+        XCTAssertEqual(model.editorBuffer(forTabID: id)?.text, "alpha",
+                       "same-file re-preview must keep the buffer")
+    }
 }

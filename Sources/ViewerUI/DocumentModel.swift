@@ -3748,7 +3748,26 @@ public final class DocumentModel: ObservableObject {
         } else if preview {
             // Preview slot: reuse the one ephemeral tab (or reveal an existing
             // permanent one). See `openPreview(url:)` / `TabsState.openPreview`.
+            //
+            // TSK-742/743/744: the slot REUSES one tab id when swapping files, and
+            // the editor buffer + scroll/cursor/etc. are keyed by tab id — so on a
+            // sidebar file-switch the editor pane kept the PREVIOUS file's content
+            // (742) and scroll (743/744). Capture the preview tab's identity, do
+            // the swap, then if the SAME id now shows a DIFFERENT, non-dirty file,
+            // drop its stale id-keyed editor state so the next ensureEditorBuffer
+            // reseeds the new file. (Editing promotes a preview to a permanent tab,
+            // so a dirty preview shouldn't occur; the !isDirty guard preserves
+            // edits defensively rather than discarding unsaved work.)
+            let priorPreview = tabCoordinator.tabs.tabs.first(where: { $0.isPreview })
+                .map { (id: $0.id, url: $0.url) }
             tabCoordinator.openPreview(url: resolved, state: state, viewMode: mode)
+            if let prior = priorPreview,
+               let now = tabCoordinator.tabs.tabs.first(where: { $0.id == prior.id && $0.isPreview }),
+               now.url != prior.url,
+               !(tabCoordinator.editorBuffers[prior.id]?.isDirty ?? false) {
+                tabCoordinator.discardEditorBuffer(forTabID: prior.id)
+                editor.resetEditorState(forTabID: prior.id)
+            }
         } else {
             tabCoordinator.openOrReveal(url: resolved, state: state, viewMode: mode)
         }
