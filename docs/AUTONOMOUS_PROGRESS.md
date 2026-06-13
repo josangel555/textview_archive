@@ -9169,6 +9169,25 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +342 (2026-06-13 overnight — TSK-742/743/744 preview-slot fix (one change))
+
+- **TSK-742 + 744 VALIDATED, 743 fixed (141494d).** Shared root: the ephemeral preview slot reuses ONE
+  tab id, and the editor buffer + scroll/cursor maps are keyed by that id → on a sidebar file-switch the
+  editor pane kept the previous file's content (742) and scroll (744). Fix: in DocumentModel.openResolved's
+  preview branch, capture the preview (id,url) before the swap; after openPreview, if the same id now shows
+  a DIFFERENT non-dirty file, discardEditorBuffer(id) + new editor.resetEditorState(id) (drops scroll/
+  cursor/diagnostics/fold). Dirty-guard preserves edits (editing promotes out of preview). 3 host tests
+  incl. an over-invalidation guard (same-file re-preview keeps the buffer); teeth demonstrated. Self-
+  validated 742+744 (model-state — the id-keyed buffer is the source of truth the CM6 view reads, not a
+  render-path behavior; like TSK-739).
+- **TSK-743 left at `fixed`, flagged ambiguity (per spike-autonomy):** "preserve scroll per file" reads two
+  ways — (a) independent per-file scroll [DONE — the leak is gone] or (b) REMEMBER & restore on return
+  [needs a per-URL scroll store; not done]. Not self-validated, not parked (minor, owner asleep) — flagged
+  for the noon review; clean per-URL-store follow-up if (b).
+- Overnight tally: 739 validated · 734/728/730 review (VM-gated render-path) · 742/744 validated · 743 fixed.
+- Next crons: 729 (View-Only ignores dirty buffer), 737 (gutter last-line off-by-one), 738 (footer after
+  relaunch), terminal 735/740, then 731.
+
 ## LOG +341 (2026-06-13 overnight — TSK-728 + TSK-730 editor-keys fixed (one change))
 
 - **TSK-728 (Enter→sidebar) + TSK-730 (arrows/⌘←/⌥← stolen) FIXED → review (312d8d3).** Both shared one
