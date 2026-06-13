@@ -778,6 +778,86 @@ pub unsafe extern "C" fn mdvcore_session_snapshot(
     })
 }
 
+/// Snapshot a WINDOW of the current visible rows — `[offset, offset+limit)`
+/// of the surviving (post-filter) set — into `out_buf` as a length-prefixed
+/// MessagePack frame, instead of the whole set (TSK-559). Same wire shape as
+/// [`mdvcore_session_snapshot`]; `indices` carry the absolute row ids of the
+/// window and `total_rows` is the table total. Pair with
+/// [`mdvcore_session_filtered_count`] to size the scrollbar. `offset` past the
+/// surviving end yields an empty window (valid); `limit` saturates at the end.
+/// Caller MUST call [`mdvcore_buf_free`].
+///
+/// # Safety
+/// `handle` valid & live; `out_buf` valid & writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_session_snapshot_window(
+    handle: *mut SessionHandle,
+    offset: u64,
+    limit: u64,
+    out_buf: *mut MdvBuf,
+) -> MdvStatus {
+    ffi_guard!({
+        if out_buf.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_buf validated; safe empty default for error paths.
+        unsafe { *out_buf = MdvBuf::empty() };
+
+        // TSK-541: registry lookup keeps the handle alive past a concurrent free.
+        let Some(h) = SessionHandle::lookup(handle) else {
+            return MdvStatus::NullArg;
+        };
+        h.with(|session| {
+            // u64→usize: on 64-bit this is exact; a 32-bit overflow clamps to
+            // usize::MAX, which the core then clamps to the surviving end (an
+            // empty window) — never UB.
+            let off = usize::try_from(offset).unwrap_or(usize::MAX);
+            let lim = usize::try_from(limit).unwrap_or(usize::MAX);
+            match session.snapshot_window_frame(off, lim) {
+                Ok(frame) => {
+                    // SAFETY: out_buf validated non-null above.
+                    unsafe { *out_buf = MdvBuf::from_vec(frame) };
+                    MdvStatus::Ok
+                }
+                Err(e) => wire_status(&e),
+            }
+        })
+        .unwrap_or_else(|contended_or_dead| contended_or_dead)
+    })
+}
+
+/// Write the number of rows surviving the current filter (the windowable set
+/// size) to `*out_count` (TSK-559). Cheap — counts cached indices, projects no
+/// rows. The scalar a windowed consumer needs to size its scrollbar without
+/// pulling the whole table.
+///
+/// # Safety
+/// `handle` valid & live; `out_count` valid & writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mdvcore_session_filtered_count(
+    handle: *mut SessionHandle,
+    out_count: *mut u64,
+) -> MdvStatus {
+    ffi_guard!({
+        if out_count.is_null() {
+            return MdvStatus::NullArg;
+        }
+        // SAFETY: out_count validated; safe default for error paths.
+        unsafe { *out_count = 0 };
+
+        let Some(h) = SessionHandle::lookup(handle) else {
+            return MdvStatus::NullArg;
+        };
+        h.with(|session| {
+            let n = u64::try_from(session.filtered_row_count()).unwrap_or(u64::MAX);
+            // SAFETY: out_count validated non-null above.
+            unsafe { *out_count = n };
+            MdvStatus::Ok
+        })
+        .unwrap_or_else(|contended_or_dead| contended_or_dead)
+    })
+}
+
 /// Free a session handle. Null-tolerant (matches C `free`). After this call the
 /// pointer is dangling and must not be used again.
 ///

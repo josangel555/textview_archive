@@ -54,6 +54,37 @@ fn snapshot_of(h: *mut SessionHandle) -> Snapshot {
     snap
 }
 
+/// TSK-559 — decode a windowed snapshot (length of the returned frame too, so
+/// tests can assert O(window) sizing).
+fn snapshot_window_of(h: *mut SessionHandle, offset: u64, limit: u64) -> (Snapshot, usize) {
+    let mut buf = MdvBuf::empty();
+    let st = unsafe { mdvcore_session_snapshot_window(h, offset, limit, &mut buf) };
+    assert_eq!(st, MdvStatus::Ok);
+    let frame = unsafe { buf.as_slice() }.to_vec();
+    let snap: Snapshot = mdvcore_core::wire::decode_frame(&frame).unwrap();
+    unsafe { mdvcore_buf_free(&mut buf) };
+    (snap, frame.len())
+}
+
+fn filtered_count_of(h: *mut SessionHandle) -> u64 {
+    let mut n: u64 = u64::MAX; // poison so a no-write export is caught
+    let st = unsafe { mdvcore_session_filtered_count(h, &mut n) };
+    assert_eq!(st, MdvStatus::Ok);
+    n
+}
+
+/// Build an `id,name` CSV with `n` data rows: row i = `i,rowI`.
+fn big_csv(n: usize) -> String {
+    let mut s = String::from("id,name\n");
+    for i in 0..n {
+        s.push_str(&i.to_string());
+        s.push_str(",row");
+        s.push_str(&i.to_string());
+        s.push('\n');
+    }
+    s
+}
+
 #[test]
 fn stage0_add_smoke() {
     assert_eq!(mdvcore_add(2, 3), 5);
@@ -423,6 +454,101 @@ fn poisoned_handle_returns_handle_dead_not_recovered_state() {
     // Free still works on a poisoned handle — the drop path must not require
     // the lock to be healthy.
     unsafe { mdvcore_session_free(h) };
+}
+
+// ===== TSK-559: windowed snapshot (O(window) per pull) =====
+
+#[test]
+fn snapshot_window_returns_only_the_requested_window() {
+    let csv = big_csv(100);
+    let h = open(csv.as_bytes());
+    assert_eq!(filtered_count_of(h), 100, "unfiltered → all rows survive");
+    // A 10-row window at the top.
+    let (w0, _) = snapshot_window_of(h, 0, 10);
+    assert_eq!(w0.rows.len(), 10);
+    assert_eq!(w0.indices, (0u32..10).collect::<Vec<u32>>());
+    assert_eq!(w0.total_rows, 100, "table total is unchanged by windowing");
+    assert_eq!(w0.rows[0], vec!["0".to_string(), "row0".to_string()]);
+    // A window in the middle carries the ABSOLUTE row ids.
+    let (w50, _) = snapshot_window_of(h, 50, 10);
+    assert_eq!(w50.rows.len(), 10);
+    assert_eq!(w50.indices, (50u32..60).collect::<Vec<u32>>());
+    assert_eq!(w50.rows[0], vec!["50".to_string(), "row50".to_string()]);
+    unsafe { mdvcore_session_free(h) };
+}
+
+#[test]
+fn snapshot_window_clamps_offset_and_limit() {
+    let csv = big_csv(100);
+    let h = open(csv.as_bytes());
+    // Limit overruns the end → only the remaining 5 rows.
+    let (tail, _) = snapshot_window_of(h, 95, 10);
+    assert_eq!(tail.rows.len(), 5);
+    assert_eq!(tail.indices, (95u32..100).collect::<Vec<u32>>());
+    // Offset past the end → empty window, still Ok (scrolled past the last row).
+    let (past, _) = snapshot_window_of(h, 200, 10);
+    assert!(past.rows.is_empty());
+    assert!(past.indices.is_empty());
+    assert_eq!(past.total_rows, 100, "metadata is still correct on an empty window");
+    // A huge limit saturates to the full surviving set.
+    let (all, _) = snapshot_window_of(h, 0, 100_000);
+    assert_eq!(all.rows.len(), 100);
+    unsafe { mdvcore_session_free(h) };
+}
+
+#[test]
+fn windowed_snapshot_respects_the_active_filter() {
+    let csv = big_csv(100);
+    let h = open(csv.as_bytes());
+    // Filter the NAME column (scope 1) to "row1" → row1 + row10..row19 = 11.
+    let q = b"row1";
+    assert_eq!(
+        unsafe { mdvcore_session_set_filter(h, q.as_ptr(), q.len(), 1) },
+        MdvStatus::Ok
+    );
+    assert_eq!(filtered_count_of(h), 11, "‘row1’ matches row1 + row10..19");
+    let (win, _) = snapshot_window_of(h, 0, 3);
+    assert_eq!(win.rows.len(), 3);
+    // The window pages the FILTERED set, carrying absolute data-row ids in order.
+    assert_eq!(win.indices, vec![1u32, 10, 11]);
+    assert_eq!(win.total_rows, 100, "total is the table size, not the filtered size");
+    unsafe { mdvcore_session_free(h) };
+}
+
+#[test]
+fn windowed_snapshot_is_far_smaller_than_the_full_snapshot() {
+    // TEETH for O(window): if the window projected ALL surviving rows instead
+    // of the slice, its frame would equal the full snapshot's. A 5-row window
+    // over 1000 rows must be dramatically smaller.
+    let csv = big_csv(1000);
+    let h = open(csv.as_bytes());
+    let (_, win_len) = snapshot_window_of(h, 0, 5);
+    let full_len = {
+        let mut buf = MdvBuf::empty();
+        assert_eq!(unsafe { mdvcore_session_snapshot(h, &mut buf) }, MdvStatus::Ok);
+        let len = unsafe { buf.as_slice() }.len();
+        unsafe { mdvcore_buf_free(&mut buf) };
+        len
+    };
+    assert!(
+        win_len.saturating_mul(10) < full_len,
+        "5-row window ({win_len} B) must be <<< the 1000-row full snapshot ({full_len} B)"
+    );
+    unsafe { mdvcore_session_free(h) };
+}
+
+#[test]
+fn windowed_exports_reject_null_handle() {
+    let mut buf = MdvBuf::empty();
+    assert_eq!(
+        unsafe { mdvcore_session_snapshot_window(core::ptr::null_mut(), 0, 10, &mut buf) },
+        MdvStatus::NullArg
+    );
+    let mut n: u64 = 7;
+    assert_eq!(
+        unsafe { mdvcore_session_filtered_count(core::ptr::null_mut(), &mut n) },
+        MdvStatus::NullArg
+    );
 }
 
 // ===== TSK-541: Arc-backed handle registry (free-vs-call soundness) =====

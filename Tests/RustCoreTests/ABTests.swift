@@ -151,4 +151,31 @@ final class ABTests: XCTestCase {
         XCTAssertEqual(snap.rows, expected.rows)
         XCTAssertEqual(snap.indices.map(Int.init), expected.indices)
     }
+
+    /// TSK-559 — the windowed snapshot + filtered-count bindings round-trip
+    /// through the FFI: a consumer can page the visible viewport (O(window))
+    /// and size its scrollbar from filteredCount without pulling the whole set.
+    func testSnapshotWindowAndFilteredCount() throws {
+        var csv = "id,name\n"
+        for i in 0..<100 { csv += "\(i),row\(i)\n" }
+        let session = try CsvSession(csv: csv)
+
+        XCTAssertEqual(try session.filteredCount(), 100, "unfiltered → all rows")
+        let w = try session.snapshotWindow(offset: 50, limit: 10)
+        XCTAssertEqual(w.rows.count, 10)
+        XCTAssertEqual(w.indices.map(Int.init), Array(50..<60), "absolute row ids")
+        XCTAssertEqual(w.totalRows, 100, "table total, not window size")
+        XCTAssertEqual(w.rows.first, ["50", "row50"])
+
+        // Past the end → empty window, no throw.
+        let past = try session.snapshotWindow(offset: 500, limit: 10)
+        XCTAssertTrue(past.rows.isEmpty)
+        XCTAssertEqual(past.totalRows, 100)
+
+        // The window pages the FILTERED set. "row1" matches row1 + row10..19 = 11.
+        try session.setFilter("row1")
+        XCTAssertEqual(try session.filteredCount(), 11)
+        let win = try session.snapshotWindow(offset: 0, limit: 3)
+        XCTAssertEqual(win.indices.map(Int.init), [1, 10, 11])
+    }
 }

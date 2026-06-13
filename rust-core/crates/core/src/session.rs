@@ -204,6 +204,67 @@ impl CsvSession {
         wire::encode_frame(&view)
     }
 
+    /// Encode a WINDOW of the current visible rows — `indices[offset ..
+    /// offset+limit]` — to a length-prefixed frame, instead of the whole
+    /// surviving set (TSK-559). This makes filter-as-you-type O(window) per
+    /// pull rather than O(table): the consumer pulls only the visible viewport
+    /// (± a buffer), so a 1M-row filtered table costs ~one screen of rows per
+    /// keystroke and never approaches the 16 MiB wire cap that `snapshot_frame`
+    /// hits on large files.
+    ///
+    /// The frame reuses the EXACT [`SnapshotView`] wire shape, so the existing
+    /// decoder reads it unchanged — `indices` carry the ABSOLUTE row ids of the
+    /// window (so the consumer knows which rows it got) and `total_rows` is the
+    /// table total. The one datum a window omits — the surviving (post-filter)
+    /// count needed to size a scrollbar — is served cheaply by
+    /// [`CsvSession::filtered_row_count`], so NO new wire field is required.
+    ///
+    /// Clamping: `offset` past the surviving end yields an empty window (the
+    /// consumer scrolled past the last row — valid, not an error); `limit`
+    /// saturates at the surviving end.
+    ///
+    /// # Errors
+    /// [`WireFault::Encode`] / [`WireFault::Framing`] per `encode_frame`.
+    pub fn snapshot_window_frame(
+        &mut self,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<u8>, WireFault> {
+        let _span = trace::Span::enter("session.snapshot_window_frame");
+        self.ensure_cached();
+        let all: &[u32] = self.cached.as_ref().map_or(&[], |view| view.indices.as_slice());
+        // Clamp the window into the surviving set.
+        let start = offset.min(all.len());
+        let end = start.saturating_add(limit).min(all.len());
+        // start <= end <= len by construction, so this is always Some; `.get`
+        // keeps it panic-free for the no-panic FFI lint wall (TSK-566).
+        let indices: &[u32] = all.get(start..end).unwrap_or(&[]);
+        let rows: Vec<Vec<&str>> = indices
+            .iter()
+            .filter(|&&i| (i as usize) < self.arena.row_count())
+            .map(|&i| self.arena.row(i as usize).collect())
+            .collect();
+        let view = SnapshotView {
+            header: self.arena.header_vec(),
+            indices,
+            rows,
+            total_rows: u32::try_from(self.arena.row_count()).unwrap_or(u32::MAX),
+            query: &self.query.text,
+            version: self.version,
+            truncated: self.arena.truncated(),
+        };
+        wire::encode_frame(&view)
+    }
+
+    /// The number of rows surviving the current filter (the size of the
+    /// windowable set). Cheap — counts cached indices, projects no rows.
+    /// Pairs with [`CsvSession::snapshot_window_frame`]: the consumer sizes
+    /// its scrollbar from this and pulls only the visible window.
+    pub fn filtered_row_count(&mut self) -> usize {
+        self.ensure_cached();
+        self.cached.as_ref().map_or(0, |view| view.indices.len())
+    }
+
     /// Project the visible rows for `indices` as owned strings from the
     /// arena. Out-of-range indices (which cannot occur for a cache computed
     /// against the current table) project as empty rows via the arena's

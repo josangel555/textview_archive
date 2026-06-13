@@ -245,6 +245,38 @@ public final class CsvSession {
         return try Self.decodeSnapshot(frame)
     }
 
+    /// A WINDOW of the visible-rows snapshot — rows `[offset, offset+limit)`
+    /// of the surviving (post-filter) set (TSK-559). Same shape as
+    /// `snapshot()` but O(window): a consumer pages the viewport instead of
+    /// pulling the whole filtered set, so filter-as-you-type on a large table
+    /// costs ~one screen of rows per keystroke. The returned `indices` carry
+    /// the ABSOLUTE row ids of the window; pair with `filteredCount()` to size
+    /// the scrollbar. An `offset` past the end yields an empty window.
+    public func snapshotWindow(offset: Int, limit: Int) throws -> Snapshot {
+        let h = try liveHandle()
+        var buf = MdvBuf(data: nil, len: 0, cap: 0)
+        let status = mdvcore_session_snapshot_window(
+            h, UInt64(max(0, offset)), UInt64(max(0, limit)), &buf)
+        defer { mdvcore_buf_free(&buf) }
+        try check(status)
+        let frame: [UInt8]
+        if let data = buf.data, buf.len > 0 {
+            frame = Array(UnsafeBufferPointer(start: data, count: Int(buf.len)))
+        } else {
+            frame = []
+        }
+        return try Self.decodeSnapshot(frame)
+    }
+
+    /// The number of rows surviving the current filter — the windowable set
+    /// size, for scrollbar sizing (TSK-559). Cheap: serializes no rows.
+    public func filteredCount() throws -> Int {
+        let h = try liveHandle()
+        var count: UInt64 = 0
+        try check(mdvcore_session_filtered_count(h, &count))
+        return Int(clamping: count)
+    }
+
     // MARK: - Internals
 
     private func liveHandle() throws -> OpaquePointer {
