@@ -215,6 +215,7 @@ run_webview_tests() {
     --filter ViewerUITests.ContentViewHostingTests \
     --filter ViewerUITests.DiagnosticDumpTests \
     --filter ViewerUITests.EditorThemeParityTests \
+    --filter ViewerUITests.BlameGutterWebViewTests \
     --filter ViewerUITests.FindBarTests \
     --filter ViewerUITests.FormatToggleTests \
     --filter ViewerUITests.FoldGutterWebViewTests \
