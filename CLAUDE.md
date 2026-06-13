@@ -312,6 +312,14 @@ continue", document blockers and move on):
   on the host.**
 - **Log every landed item** to `docs/AUTONOMOUS_PROGRESS.md` (the narrative that
   survives compaction) and advance the board task to `fixed` with the commit SHA.
+- **Keep `CHANGELOG.md` current (OWNER ASK 2026-06-13).** Whenever a
+  **user-facing** change ships (a feature, fix, or addition the owner can SEE or
+  FEEL in the app), add a one-line plain-language entry to the repo-root
+  `CHANGELOG.md` under the current date (Added / Fixed / Performance). It is the
+  owner's at-a-glance progress view, so write it from the USER's seat, newest
+  first. **Exclude** tests, validation, CI, refactors, and internal/infra work
+  (those stay in `AUTONOMOUS_PROGRESS.md`) — `CHANGELOG.md` is app-visible
+  changes ONLY. If a tick lands nothing user-facing, leave it untouched.
 - A perf-bench-only gate failure (e.g. `FoldBench`/`CrossFileSearchBench`
   wall-clock asserts) under machine load is flaky — re-run / confirm no
   non-bench failures before chasing it.

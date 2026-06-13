@@ -204,6 +204,11 @@ cheaper can prove the behavior (compositor/occlusion class). Disturb the human o
 - **Regression tests must have teeth:** mutation-check (break the fix → test fails → restore).
 - **Log the narrative** in `docs/AUTONOMOUS_PROGRESS.md` (survives compaction; the board is live
   state, the doc is the story).
+- **Update `CHANGELOG.md` for USER-FACING changes (owner ask, every firing).** If the item that
+  landed is something the owner can SEE or FEEL in the app (feature / fix / addition), add a
+  one-line plain-language entry to the repo-root `CHANGELOG.md` under today's date (Added / Fixed /
+  Performance), written from the user's seat, newest first. EXCLUDE tests/validation/CI/refactors/
+  infra — those stay in `AUTONOMOUS_PROGRESS.md`. A tick with no user-facing change leaves it alone.
 
 ---
 
