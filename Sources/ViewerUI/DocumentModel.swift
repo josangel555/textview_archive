@@ -1735,6 +1735,35 @@ public final class DocumentModel: ObservableObject {
         previewSourceLineByURL[url] = line
     }
 
+    /// TSK-821 (rendered channel): per-URL memory of the rendered-markdown
+    /// WKWebView's vertical scroll offset (`window.scrollY`), the third scroll
+    /// channel after the editor (CM6) and source (NSTextView) ones. The rendered
+    /// pane is the DEFAULT mode for markdown, and a `loadHTMLString` reload (file
+    /// switch / preview swap) always resets it to the top — so without this,
+    /// returning to a markdown file you'd scrolled lands at the top. The value is
+    /// reported asynchronously from the WebView (`evaluateJavaScript`), so this
+    /// is captured at the reload boundary and restored on `didFinish`. Bounded.
+    private var renderedScrollByURL: [URL: Double] = [:]
+    private static let renderedScrollCap = 64
+
+    /// Record the rendered WebView scroll offset for `url` (from the view's
+    /// async `window.scrollY` read at a reload boundary).
+    func rememberRenderedScroll(_ y: Double, for url: URL) {
+        guard y > 0 else { return }   // top is the default; don't store it
+        if renderedScrollByURL[url] == nil,
+           renderedScrollByURL.count >= Self.renderedScrollCap,
+           let victim = renderedScrollByURL.keys.first {
+            renderedScrollByURL.removeValue(forKey: victim)
+        }
+        renderedScrollByURL[url] = y
+    }
+
+    /// The remembered rendered scroll offset for `url`, if any (nil ⇒ top).
+    func renderedScrollOffset(for url: URL?) -> Double? {
+        guard let url else { return nil }
+        return renderedScrollByURL[url]
+    }
+
     // MARK: - Split view (forwarders to TabCoordinator)
     //
     // The split pane lives on `tabCoordinator` because it shares the

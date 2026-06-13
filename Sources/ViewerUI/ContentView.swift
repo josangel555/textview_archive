@@ -868,6 +868,13 @@ public struct ContentView: View {
                 Task { @MainActor in
                     model.recordPDFExportResult(nonce: nonce, ok: ok, message: message)
                 }
+            },
+            // TSK-821: per-file rendered-scroll persistence — capture this
+            // file's scrollY before it's swapped out, restore it on return.
+            fileURL: file.url,
+            restoreScrollY: model.renderedScrollOffset(for: file.url),
+            onScrollCapture: { url, y in
+                Task { @MainActor in model.rememberRenderedScroll(y, for: url) }
             }
         )
     }

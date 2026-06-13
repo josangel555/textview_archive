@@ -30,6 +30,15 @@ public struct MarkdownRenderedView: NSViewRepresentable {
     public let pdfExportURL: URL?
     /// (nonce, ok, message) reported after createPDF resolves.
     public let onPDFExportResult: ((Int, Bool, String) -> Void)?
+    /// TSK-821 (rendered scroll persistence): the file URL this pane shows
+    /// (keys the per-file scroll memory) + the bridge to the model's
+    /// `renderedScrollByURL`. `onScrollCapture` reports the OUTGOING file's
+    /// `window.scrollY` at a reload boundary; `restoreScrollY` is the stored
+    /// offset to re-apply on `didFinish` for the incoming file (nil ⇒ top).
+    /// Defaulted so the split pane (no scroll persistence) needn't pass them.
+    public let fileURL: URL?
+    public let restoreScrollY: Double?
+    public let onScrollCapture: ((URL, Double) -> Void)?
 
     public init(
         html: String,
@@ -44,7 +53,10 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         printNonce: Int = 0,
         pdfExportNonce: Int = 0,
         pdfExportURL: URL? = nil,
-        onPDFExportResult: ((Int, Bool, String) -> Void)? = nil
+        onPDFExportResult: ((Int, Bool, String) -> Void)? = nil,
+        fileURL: URL? = nil,
+        restoreScrollY: Double? = nil,
+        onScrollCapture: ((URL, Double) -> Void)? = nil
     ) {
         self.html = html
         self.baseURL = baseURL
@@ -59,6 +71,9 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         self.pdfExportNonce = pdfExportNonce
         self.pdfExportURL = pdfExportURL
         self.onPDFExportResult = onPDFExportResult
+        self.fileURL = fileURL
+        self.restoreScrollY = restoreScrollY
+        self.onScrollCapture = onScrollCapture
     }
 
     /// Shared WebContent process pool across all `MarkdownRenderedView`
@@ -195,6 +210,19 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         // a render storm + a brief blank-content flash that was being
         // perceived as "tabs vanishing".
         if coord.lastHTML != html {
+            // TSK-821: before this reload (a file switch / re-render into the
+            // MountedPanesLRU-retained WebView) resets scroll to the top,
+            // capture the OUTGOING file's scrollY so a later return restores it,
+            // and stash the INCOMING file's remembered offset for `didFinish`.
+            if let outgoing = coord.currentURL, let capture = onScrollCapture {
+                webView.evaluateJavaScript("window.scrollY") { value, _ in
+                    if let y = (value as? NSNumber)?.doubleValue, y > 0 {
+                        capture(outgoing, y)
+                    }
+                }
+            }
+            coord.currentURL = fileURL
+            coord.pendingRestoreY = restoreScrollY
             // WV-4: mark this as OUR programmatic load so the nav-policy
             // guard doesn't mistake it for an in-page script escape. A
             // `loadHTMLString(_:baseURL:)` reload surfaces in
@@ -391,6 +419,11 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         /// same content don't re-load the page (CRIT-4 fix for the
         /// "vanishing tabs" reload storm).
         var lastHTML: String?
+        /// TSK-821: the file URL currently loaded here (keys the scroll
+        /// capture) + the scroll offset to re-apply once the next load
+        /// finishes (consumed in `didFinish`; nil ⇒ leave at top).
+        var currentURL: URL?
+        var pendingRestoreY: Double?
         /// True iff the mermaid runtime + shim user scripts are
         /// currently attached to this WebView's
         /// userContentController. Set on first document containing
@@ -568,6 +601,15 @@ public struct MarkdownRenderedView: NSViewRepresentable {
             // evaluateJavaScript is API-injected and not subject to
             // CSP. The functions live on `window.__mdvFind*`.
             webView.evaluateJavaScript(Coordinator.findScript, completionHandler: nil)
+            // TSK-821: restore this file's remembered rendered scroll offset
+            // (captured at the previous reload boundary). The DOM is parsed by
+            // didFinish; `instant` so the jump doesn't animate.
+            if let y = pendingRestoreY, y > 0 {
+                pendingRestoreY = nil
+                webView.evaluateJavaScript(
+                    "window.scrollTo({top: \(y), behavior: 'instant'});",
+                    completionHandler: nil)
+            }
             // Re-run any pending find that was queued before load.
             if !lastQuery.isEmpty {
                 runFind(in: webView, backwards: false)

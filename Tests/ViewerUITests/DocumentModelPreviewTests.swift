@@ -69,6 +69,29 @@ final class DocumentModelPreviewTests: XCTestCase {
             lineCount: lineCount, topInset: topInset)
     }
 
+    func test_renderedScroll_remembersAndRestoresPerURL() throws {
+        // TSK-821 (rendered channel): the model store for per-file rendered
+        // WKWebView scroll. The view bridge (window.scrollY capture / scrollTo
+        // restore) is the VM lane; this pins the store contract the bridge uses.
+        let model = makeModel()
+        let a = try writeFile("a.md", "# A")
+        let b = try writeFile("b.md", "# B")
+
+        XCTAssertNil(model.renderedScrollOffset(for: a), "never-scrolled file → top (nil)")
+        XCTAssertNil(model.renderedScrollOffset(for: nil), "nil url → nil")
+
+        model.rememberRenderedScroll(420, for: a)
+        model.rememberRenderedScroll(90, for: b)
+        XCTAssertEqual(model.renderedScrollOffset(for: a), 420, "A restores its own offset")
+        XCTAssertEqual(model.renderedScrollOffset(for: b), 90, "B restores its own offset (isolation)")
+
+        // Top (y<=0) is the default — must NOT overwrite a remembered offset,
+        // else a no-op scroll report at the reload boundary would erase it.
+        model.rememberRenderedScroll(0, for: a)
+        XCTAssertEqual(model.renderedScrollOffset(for: a), 420,
+                       "y<=0 must not overwrite a remembered offset")
+    }
+
     func test_previewReturn_restoresSourceScrollPerFile() throws {
         // TSK-743 (source channel): the preview slot remembers each file's
         // SOURCE-view (NSTextView) top line by URL, so returning to a file you
