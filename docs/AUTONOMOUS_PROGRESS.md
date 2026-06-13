@@ -9169,6 +9169,33 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +332 (2026-06-13 tick — cleanly-autonomous rust-core pool exhausted; TSK-543 parked, direction)
+
+Confirmed (via a thorough sweep this tick) that the cleanly-autonomous high-value pool is genuinely
+exhausted. Each remaining high-value item is gated; surfaced the one new decision.
+
+- **TSK-580 (envelope): at its actionable milestone.** Slices 1/2/4/5 done (dispatch + method-id
+  registry + cross-language constants + full 8/8 stateless-seam migration). Slice 3 (aux bulk
+  channel) is BLOCKED — its only use case is hex render's ~18 MB output, and hex isn't framed/on the
+  envelope yet (raw-byte signature). The per-method-symbol cleanup is soak-gated (the symbols just
+  stopped being dispatched). Stays `progress`.
+- **Host-validation drain: exhausted.** 642/637/306 were the clean ones (validated +326). Re-checked
+  the rest this tick: TSK-468 (LSP refs button) is live-gated; TSK-626 is a build-process fix (no
+  unit test); TSK-456/457 (terminal copy/scrollback) are interaction-centric (model host-tested, but
+  the copy-to-pasteboard / scroll-wheel / right-click are the feature + are rendered → VM/glance).
+- **TSK-543 (cm_apply full-doc-per-keystroke) — PARKED (decision).** The next big perf win (typing
+  latency, the owner's #1 priority class), but a large new subsystem (stateful Rust editor doc +
+  rope/gap-buffer + incremental-edit protocol) on the LIVE typing path + needs a dep call — not
+  something to start blind. Parked with a 4-option decision (hand-roll gap-buffer vs rope dep; build
+  behind a flag vs supervised; or steer me to the VM lane / a parked decision).
+
+**STATE: every remaining high-value item is gated** — VM-gated (the ~20 live-validation fixed items
+need the VM pixel lane / owner glance), owner/dep-gated (TSK-543 parked; TSK-302/649/316/336/338
+parked), or blocked (TSK-580 slice 3 ← hex-framing). The autonomous rust-core run delivered a lot
+this session (541/559/577/669/580 + 642/637/306 validated + extensive reconciliation); the genuine
+next forward motion is now an owner call. Default if unsteered: I'll run the VM validation lane next
+tick (sanctioned UI-validation path; drains the live-gated items) rather than idle.
+
 ## LOG +331 (2026-06-13 tick — TSK-580 envelope SLICE 5: ALL 8 stateless methods on the envelope)
 
 Continued TSK-580 (approved, in-flight). Slice 5 brings the last method (highlight) into the
