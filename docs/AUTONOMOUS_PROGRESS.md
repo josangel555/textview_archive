@@ -9075,3 +9075,18 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   6 features landed+installed this wave, all at fixed for the glance;
   board otherwise owner-gated (2 parks, stage B, the supervised perf
   session). Next new work if nothing is answered: TSK-275 (FPS chip).
+
+## LOG +312 (2026-06-12 tick — TSK-275: the FPS/jank strip lands in MetricsView)
+
+- **FPS strip (e087051, installed):** MetricsView (the ticket's named
+  surface) shows fps + hitch count + nominal Hz; red on jank. The
+  design point: jank is judged against the display's NOMINAL cadence —
+  120Hz panels aren't graded against 60 — with two signals: missed
+  frames (>1.5× nominal) and sustained sub-95%-of-nominal fps (catches
+  steady 45fps that never trips the per-interval bar).
+- **Discipline:** CADisplayLink ticks 60-120Hz; stats publish on a 0.5s
+  floor (pinned) — the metrics tree never re-bodies per frame; the link
+  is view-bound (zero cost while the window is closed).
+- 6 tests; teeth compile-verified (relaxed hitch bar → 2 red). Gate
+  green; installed. Glance: open the observability window and scroll a
+  big file — the readout should drop/red under jank.
