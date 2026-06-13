@@ -9169,6 +9169,22 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +349 (2026-06-13 overnight — TSK-731 terminal double-width (emoji/CJK) accounting validated)
+
+- **TSK-731 VALIDATED (58d0227).** The owner's flagged annoyance — emoji misaligning Claude Code tables.
+  TerminalScreen.write advanced the cursor by 1 per grapheme, so a 2-cell emoji took 1 column → everything
+  after shifted left. Added TerminalScreen.displayWidth (CONSERVATIVE table: CJK-wide + emoji blocks → 2,
+  else 1 — un-tabled scalars keep the 1-cell path, NO regression), TerminalCell.isWideTrailer placeholder,
+  width-aware write (advance by width + wrap a wide glyph at the edge), line()/plainText skip trailers.
+  5 cell tests incl. the owner's table-alignment case (emoji row + ascii row align) + right-edge wrap;
+  teeth (displayWidth→1 → 11 red). All 124 existing terminal tests pass (default path preserved). Self-
+  validated (cell grid = host pixel-equivalent). Gate green (5061). Editor half is WebKit-native (out of scope).
+- Overnight tally (12 ticks): 739·742·744·729·737·740·735·731 validated · 734/728/730/738/736 review (VM) ·
+  743 fixed · 806 filed. **Only ONE wishlist bug remains: TSK-741** (PTY blocking write on the main actor →
+  ANR on large paste; concurrency — dispatch the write loop off-main; harder to host-test cleanly).
+- Next crons: TSK-741 (the last bug — concurrency, take with care), then the [WISH][minor-feature] bucket
+  (54 items) per the chipping order.
+
 ## LOG +348 (2026-06-13 overnight — TSK-736 hover-lag dedupe (fix A) → review)
 
 - **TSK-736 FIXED → review (a1da3f1).** .onContinuousHover wrote hoveredSourceLine per pointer-PIXEL, and a
