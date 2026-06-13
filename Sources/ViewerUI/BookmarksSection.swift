@@ -238,6 +238,23 @@ private struct BookmarkRow: View {
         // reads as clickable. Suppress the style's hover fill on the
         // current-file row (it already carries an accent tint).
         .buttonStyle(RowHoverButtonStyle(cornerRadius: 0, suppressesHoverFill: isCurrent))
+        // TSK-333: Delete-key removes a focused bookmark row (the
+        // context-menu "Remove Bookmark" was the only path). The removal
+        // is undoable via Edit→Undo (⌘Z, wired in TSK-330) since
+        // `removeBookmark` pushes onto BookmarksStore's undo stack — so
+        // an accidental Delete is one keystroke from recovery. `.delete`
+        // is the Mac Backspace/⌫ key.
+        .focusable()
+        .onKeyPress(.delete) {
+            model.removeBookmark(url: entry.url, line: entry.line)
+            return .handled
+        }
+        // TSK-333: Delete-key removes a focused bookmark row (the
+        // context-menu "Remove Bookmark" was the only path). The removal
+        // is undoable via Edit→Undo (⌘Z, wired in TSK-330) since
+        // `removeBookmark` pushes onto BookmarksStore's undo stack — so
+        // an accidental Delete is one keystroke from recovery. `.delete`
+        // is the Mac Backspace/⌫ key.
         .help(tooltip)
         .contextMenu {
             Button("Remove Bookmark") {

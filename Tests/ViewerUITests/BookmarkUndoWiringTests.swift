@@ -71,4 +71,42 @@ final class BookmarkUndoWiringTests: HeadlessUITestCase {
         XCTAssertTrue(main.contains("model.canUndoBookmarkRemoval"),
                       "menu enablement must track the store's undo stack")
     }
+
+    /// TSK-333: the full user round-trip Delete → remove → ⌘Z → restore,
+    /// proven at the model layer (the action a focused row's Delete key
+    /// fires, then the Undo command). The key event itself is the live
+    /// glance; this pins that the chain is sound end-to-end.
+    func test_deleteThenUndo_roundTrip_atModelLayer() {
+        let model = makeModel()
+        let url = URL(fileURLWithPath: "/tmp/BookmarkUndoWiringTests-delete.md")
+        model.bookmarksStore.add(url: url)
+        model.publishBookmarksChange()
+        // What BookmarkRow's .onKeyPress(.delete) calls:
+        model.removeBookmark(url: url, line: nil)
+        XCTAssertFalse(model.bookmarks.contains { $0.url.path == url.path },
+                       "Delete must remove the focused bookmark")
+        // What Edit→Undo (⌘Z) calls (TSK-330):
+        XCTAssertTrue(model.undoLastBookmarkRemoval())
+        XCTAssertTrue(model.bookmarks.contains { $0.url.path == url.path },
+                      "⌘Z must restore the deleted bookmark")
+    }
+
+    /// Source-wiring pin (the dead-channel idiom): the BookmarkRow must
+    /// route the Delete key to `removeBookmark` — a row that's focusable
+    /// but doesn't handle the key would be half the feature.
+    func test_bookmarkRow_wiresDeleteKeyToRemove() throws {
+        let section = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/ViewerUI/BookmarksSection.swift"),
+            encoding: .utf8)
+        XCTAssertTrue(section.contains(".onKeyPress(.delete)"),
+                      "BookmarkRow must handle the Delete key (TSK-333)")
+        XCTAssertTrue(section.contains(".focusable()"),
+                      "the row must be focusable for the key to route to it")
+        XCTAssertTrue(section.contains(
+            "model.removeBookmark(url: entry.url, line: entry.line)"),
+                      "Delete must call the (undoable) removeBookmark action")
+    }
 }
