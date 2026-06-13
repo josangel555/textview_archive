@@ -144,14 +144,27 @@ fn reserved_capability_bits_stay_off_until_their_exports_land() {
     let mask = mdvcore_capabilities();
     // SERVER-ONLY bits never appear in the in-process mask: there is no fs
     // FFI export (mdv-serve adds the bit itself when a root is served).
-    assert_eq!(mask & MDV_CAP_FS, 0, "fs is a server-only capability (TSK-654)");
-    assert_eq!(mask & MDV_CAP_GIT, 0, "git is a server-only capability (TSK-657)");
     assert_eq!(
-        mask & MDV_CAP_TRANSCRIPT_LIST, 0,
+        mask & MDV_CAP_FS,
+        0,
+        "fs is a server-only capability (TSK-654)"
+    );
+    assert_eq!(
+        mask & MDV_CAP_GIT,
+        0,
+        "git is a server-only capability (TSK-657)"
+    );
+    assert_eq!(
+        mask & MDV_CAP_TRANSCRIPT_LIST,
+        0,
         "transcript.list is a server-only capability (TSK-658)"
     );
     assert_eq!(mask & MDV_CAP_LSP_PIPE, 0, "lsp pipe is reserved (TSK-659)");
-    assert_eq!(mask & MDV_CAP_SEARCH, 0, "search is a server-only capability (TSK-656)");
+    assert_eq!(
+        mask & MDV_CAP_SEARCH,
+        0,
+        "search is a server-only capability (TSK-656)"
+    );
     for (bit, name) in [
         (MDV_CAP_CSV_SESSION, "csv"),
         (MDV_CAP_DIFF, "diff"),
@@ -164,7 +177,11 @@ fn reserved_capability_bits_stay_off_until_their_exports_land() {
         (MDV_CAP_MARKDOWN, "markdown"),
         (MDV_CAP_HIGHLIGHT, "highlight"),
     ] {
-        assert_ne!(mask & bit, 0, "shipped family '{name}' must advertise its bit");
+        assert_ne!(
+            mask & bit,
+            0,
+            "shipped family '{name}' must advertise its bit"
+        );
     }
 }
 
@@ -315,10 +332,22 @@ fn wire_status_maps_too_large_distinctly() {
     // TSK-548 stopgap: the encode-side overflow keeps its identity across the
     // boundary; every other wire fault stays the generic WireError.
     use mdvcore_core::wire::WireFault;
-    assert_eq!(wire_status(&WireFault::TooLarge("x".into())), MdvStatus::TooLarge);
-    assert_eq!(wire_status(&WireFault::Framing("x".into())), MdvStatus::WireError);
-    assert_eq!(wire_status(&WireFault::Encode("x".into())), MdvStatus::WireError);
-    assert_eq!(wire_status(&WireFault::Decode("x".into())), MdvStatus::WireError);
+    assert_eq!(
+        wire_status(&WireFault::TooLarge("x".into())),
+        MdvStatus::TooLarge
+    );
+    assert_eq!(
+        wire_status(&WireFault::Framing("x".into())),
+        MdvStatus::WireError
+    );
+    assert_eq!(
+        wire_status(&WireFault::Encode("x".into())),
+        MdvStatus::WireError
+    );
+    assert_eq!(
+        wire_status(&WireFault::Decode("x".into())),
+        MdvStatus::WireError
+    );
 }
 
 #[test]
@@ -354,7 +383,14 @@ fn hex_render_width_zero_is_empty_not_underflow() {
     let data = b"abc";
     let mut buf = MdvBuf::empty();
     let st = unsafe {
-        mdvcore_hex_render(data.as_ptr(), data.len(), 0, data.len() as u64, false, &mut buf)
+        mdvcore_hex_render(
+            data.as_ptr(),
+            data.len(),
+            0,
+            data.len() as u64,
+            false,
+            &mut buf,
+        )
     };
     assert_eq!(st, MdvStatus::Ok);
     assert_eq!(buf.len, 0);
@@ -489,7 +525,10 @@ fn snapshot_window_clamps_offset_and_limit() {
     let (past, _) = snapshot_window_of(h, 200, 10);
     assert!(past.rows.is_empty());
     assert!(past.indices.is_empty());
-    assert_eq!(past.total_rows, 100, "metadata is still correct on an empty window");
+    assert_eq!(
+        past.total_rows, 100,
+        "metadata is still correct on an empty window"
+    );
     // A huge limit saturates to the full surviving set.
     let (all, _) = snapshot_window_of(h, 0, 100_000);
     assert_eq!(all.rows.len(), 100);
@@ -511,7 +550,10 @@ fn windowed_snapshot_respects_the_active_filter() {
     assert_eq!(win.rows.len(), 3);
     // The window pages the FILTERED set, carrying absolute data-row ids in order.
     assert_eq!(win.indices, vec![1u32, 10, 11]);
-    assert_eq!(win.total_rows, 100, "total is the table size, not the filtered size");
+    assert_eq!(
+        win.total_rows, 100,
+        "total is the table size, not the filtered size"
+    );
     unsafe { mdvcore_session_free(h) };
 }
 
@@ -525,7 +567,10 @@ fn windowed_snapshot_is_far_smaller_than_the_full_snapshot() {
     let (_, win_len) = snapshot_window_of(h, 0, 5);
     let full_len = {
         let mut buf = MdvBuf::empty();
-        assert_eq!(unsafe { mdvcore_session_snapshot(h, &mut buf) }, MdvStatus::Ok);
+        assert_eq!(
+            unsafe { mdvcore_session_snapshot(h, &mut buf) },
+            MdvStatus::Ok
+        );
         let len = unsafe { buf.as_slice() }.len();
         unsafe { mdvcore_buf_free(&mut buf) };
         len
@@ -551,6 +596,81 @@ fn windowed_exports_reject_null_handle() {
     );
 }
 
+// ===== TSK-577: the rich WireError channel is actually emitted =====
+
+#[test]
+fn wire_error_frame_is_emitted_on_a_malformed_request() {
+    // A frame with a valid 4-byte LE length prefix (2) but a non-MessagePack-map
+    // body → the stateless export's decode fails → WireFault::Decode. TEETH:
+    // revert write_wire_error → wire_status (leaving out_buf empty) and the
+    // non-empty assertion below reds.
+    let req: [u8; 6] = [2, 0, 0, 0, 0xC1, 0xC1]; // 0xC1 is the reserved/never-used msgpack marker
+    let mut buf = MdvBuf::empty();
+    let st = unsafe { mdvcore_diff_parse(req.as_ptr(), req.len(), &mut buf) };
+    assert_eq!(st, MdvStatus::WireError);
+    let frame = unsafe { buf.as_slice() }.to_vec();
+    assert!(
+        !frame.is_empty(),
+        "the error path must emit a WireError frame, not leave out_buf empty"
+    );
+    let err: mdvcore_core::wire::WireError =
+        mdvcore_core::wire::decode_frame(&frame).expect("out_buf decodes as a WireError");
+    assert_eq!(
+        err.code,
+        MdvStatus::WireError as i32,
+        "code matches the C status"
+    );
+    assert!(
+        !err.message.is_empty(),
+        "the message carries diagnostic context"
+    );
+    assert!(
+        err.data.iter().any(|(k, v)| k == "kind" && !v.is_empty()),
+        "a kind tag classifies the fault: {:?}",
+        err.data
+    );
+    unsafe { mdvcore_buf_free(&mut buf) };
+}
+
+#[test]
+fn wire_error_frame_carries_the_framing_kind_on_a_bad_prefix() {
+    // A length prefix that exceeds the body → WireFault::Framing → kind=framing.
+    let req: [u8; 4] = [0xFF, 0xFF, 0xFF, 0xFF]; // declared 4 GiB, zero body
+    let mut buf = MdvBuf::empty();
+    let st = unsafe { mdvcore_diff_parse(req.as_ptr(), req.len(), &mut buf) };
+    assert_eq!(st, MdvStatus::WireError);
+    let frame = unsafe { buf.as_slice() }.to_vec();
+    let err: mdvcore_core::wire::WireError =
+        mdvcore_core::wire::decode_frame(&frame).expect("out_buf decodes as a WireError");
+    assert!(
+        err.data.iter().any(|(k, v)| k == "kind" && v == "framing"),
+        "framing fault tagged: {:?}",
+        err.data
+    );
+    unsafe { mdvcore_buf_free(&mut buf) };
+}
+
+#[test]
+fn wire_fault_kind_tags_every_variant() {
+    use mdvcore_core::wire::WireFault;
+    assert_eq!(
+        crate::wire_fault_kind(&WireFault::Encode("x".into())),
+        "encode"
+    );
+    assert_eq!(
+        crate::wire_fault_kind(&WireFault::Decode("x".into())),
+        "decode"
+    );
+    assert_eq!(
+        crate::wire_fault_kind(&WireFault::Framing("x".into())),
+        "framing"
+    );
+    assert_eq!(
+        crate::wire_fault_kind(&WireFault::TooLarge("x".into())),
+        "too_large"
+    );
+}
+
 // ===== TSK-541: Arc-backed handle registry (free-vs-call soundness) =====
 
 #[test]
@@ -559,11 +679,15 @@ fn into_raw_registers_and_free_unregisters() {
     // share the global registry). Teeth: skip the insert in `into_raw` → the
     // first assert reds; skip the remove in `free` → the second reds.
     let h = open(CSV);
-    assert!(SessionHandle::lookup(h).is_some(),
-            "open must register the token");
+    assert!(
+        SessionHandle::lookup(h).is_some(),
+        "open must register the token"
+    );
     unsafe { mdvcore_session_free(h) };
-    assert!(SessionHandle::lookup(h).is_none(),
-            "free must unregister the token");
+    assert!(
+        SessionHandle::lookup(h).is_none(),
+        "free must unregister the token"
+    );
 }
 
 #[test]
@@ -577,13 +701,18 @@ fn free_invalidates_token_but_inflight_clone_survives() {
 
     unsafe { mdvcore_session_free(h) };
 
-    assert!(SessionHandle::lookup(h).is_none(),
-            "the token is dead the instant free removes it from the registry");
+    assert!(
+        SessionHandle::lookup(h).is_none(),
+        "the token is dead the instant free removes it from the registry"
+    );
     // The clone taken BEFORE free still names a live session — the Arc deferred
     // the drop. With the old Box::from_raw this access was a use-after-free.
     let still_alive = inflight.with(|session| session.table_frame().is_ok());
-    assert_eq!(still_alive, Ok(true),
-               "the in-flight Arc clone must still serve the session after free");
+    assert_eq!(
+        still_alive,
+        Ok(true),
+        "the in-flight Arc clone must still serve the session after free"
+    );
 }
 
 #[test]
@@ -793,8 +922,14 @@ fn hex_search_misuse_matrix() {
     // null out_buf → NullArg
     assert_eq!(
         unsafe {
-            mdvcore_hex_search(data.as_ptr(), data.len(), q.as_ptr(), q.len(), 1,
-                               core::ptr::null_mut())
+            mdvcore_hex_search(
+                data.as_ptr(),
+                data.len(),
+                q.as_ptr(),
+                q.len(),
+                1,
+                core::ptr::null_mut(),
+            )
         },
         MdvStatus::NullArg
     );
@@ -806,24 +941,27 @@ fn hex_search_misuse_matrix() {
     );
     // null query with nonzero len → NullArg
     assert_eq!(
-        unsafe {
-            mdvcore_hex_search(data.as_ptr(), data.len(), core::ptr::null(), 2, 1, &mut buf)
-        },
+        unsafe { mdvcore_hex_search(data.as_ptr(), data.len(), core::ptr::null(), 2, 1, &mut buf) },
         MdvStatus::NullArg
     );
     // non-UTF-8 query → BadUtf8 (documented), not a panic in str::from_utf8
     let bad = [0xFFu8, 0xFE];
     assert_eq!(
         unsafe {
-            mdvcore_hex_search(data.as_ptr(), data.len(), bad.as_ptr(), bad.len(), 1, &mut buf)
+            mdvcore_hex_search(
+                data.as_ptr(),
+                data.len(),
+                bad.as_ptr(),
+                bad.len(),
+                1,
+                &mut buf,
+            )
         },
         MdvStatus::BadUtf8
     );
     // empty query → Ok with an (empty) offsets frame, per the docs
     assert_eq!(
-        unsafe {
-            mdvcore_hex_search(data.as_ptr(), data.len(), core::ptr::null(), 0, 0, &mut buf)
-        },
+        unsafe { mdvcore_hex_search(data.as_ptr(), data.len(), core::ptr::null(), 0, 0, &mut buf) },
         MdvStatus::Ok
     );
     unsafe { mdvcore_buf_free(&mut buf) };
@@ -831,8 +969,14 @@ fn hex_search_misuse_matrix() {
     let mut buf2 = MdvBuf::empty();
     assert_eq!(
         unsafe {
-            mdvcore_hex_search(data.as_ptr(), data.len(), q.as_ptr(), q.len(), u32::MAX,
-                               &mut buf2)
+            mdvcore_hex_search(
+                data.as_ptr(),
+                data.len(),
+                q.as_ptr(),
+                q.len(),
+                u32::MAX,
+                &mut buf2,
+            )
         },
         MdvStatus::Ok
     );

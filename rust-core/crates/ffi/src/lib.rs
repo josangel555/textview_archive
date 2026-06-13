@@ -81,6 +81,48 @@ pub fn wire_status(fault: &wire::WireFault) -> MdvStatus {
     }
 }
 
+/// A short stable "kind" tag for a wire fault, carried in `WireError.data` so
+/// the host can branch/telemetry on the failure class without string-matching
+/// the message.
+fn wire_fault_kind(fault: &wire::WireFault) -> &'static str {
+    match fault {
+        wire::WireFault::Encode(_) => "encode",
+        wire::WireFault::Decode(_) => "decode",
+        wire::WireFault::Framing(_) => "framing",
+        wire::WireFault::TooLarge(_) => "too_large",
+    }
+}
+
+/// Emit the documented rich-error channel (TSK-577): on a wire fault, encode a
+/// `WireError {code, message, data}` frame into `out_buf` so the host can
+/// decode real diagnostic context (the message + a `kind` tag) instead of only
+/// the coarse status enum. Returns the same [`wire_status`] the caller would
+/// have returned, so it is a drop-in for `Err(e) => wire_status(&e)`.
+///
+/// Backward-compatible: hosts that (today) throw on a non-OK status without
+/// reading `out_buf` see no change; the frame is there for those that opt in.
+/// On the (essentially impossible) encode failure for this tiny struct,
+/// `out_buf` keeps its empty default and the status alone is still correct.
+///
+/// # Safety
+/// `out_buf` must be non-null, valid & writable — every caller validates it and
+/// writes the `MdvBuf::empty()` default before reaching an error arm.
+#[doc(hidden)] // pub only so `ffi_frame_body!` can name it via $crate::
+pub unsafe fn write_wire_error(out_buf: *mut MdvBuf, fault: &wire::WireFault) -> MdvStatus {
+    let status = wire_status(fault);
+    let err = wire::WireError {
+        code: status as i32,
+        message: fault.to_string(),
+        data: vec![("kind".to_string(), wire_fault_kind(fault).to_string())],
+    };
+    if let Ok(frame) = wire::encode_frame(&err) {
+        // SAFETY: caller guarantees out_buf is valid & writable; from_vec moves
+        // ownership of the frame bytes into the buf for the host to free.
+        unsafe { *out_buf = MdvBuf::from_vec(frame) };
+    }
+    status
+}
+
 // ---------------------------------------------------------------------------
 // Stage 0 smoke: a trivial extern fn proving the codegen/cbindgen/link path.
 // ---------------------------------------------------------------------------
@@ -527,7 +569,10 @@ pub unsafe extern "C" fn mdvcore_hex_search(
                 unsafe { *out_buf = MdvBuf::from_vec(frame) };
                 MdvStatus::Ok
             }
-            Err(e) => wire_status(&e),
+            Err(e) => {
+                // SAFETY: out_buf validated non-null + empty-defaulted above.
+                unsafe { write_wire_error(out_buf, &e) }
+            }
         }
     })
 }
@@ -677,7 +722,10 @@ pub unsafe extern "C" fn mdvcore_session_table(
                     unsafe { *out_buf = MdvBuf::from_vec(frame) };
                     MdvStatus::Ok
                 }
-                Err(e) => wire_status(&e),
+                Err(e) => {
+                    // SAFETY: out_buf validated non-null + empty-defaulted above.
+                    unsafe { write_wire_error(out_buf, &e) }
+                }
             }
         })
         .unwrap_or_else(|contended_or_dead| contended_or_dead)
@@ -771,7 +819,10 @@ pub unsafe extern "C" fn mdvcore_session_snapshot(
                     unsafe { *out_buf = MdvBuf::from_vec(frame) };
                     MdvStatus::Ok
                 }
-                Err(e) => wire_status(&e),
+                Err(e) => {
+                    // SAFETY: out_buf validated non-null + empty-defaulted above.
+                    unsafe { write_wire_error(out_buf, &e) }
+                }
             }
         })
         .unwrap_or_else(|contended_or_dead| contended_or_dead)
@@ -819,7 +870,10 @@ pub unsafe extern "C" fn mdvcore_session_snapshot_window(
                     unsafe { *out_buf = MdvBuf::from_vec(frame) };
                     MdvStatus::Ok
                 }
-                Err(e) => wire_status(&e),
+                Err(e) => {
+                    // SAFETY: out_buf validated non-null + empty-defaulted above.
+                    unsafe { write_wire_error(out_buf, &e) }
+                }
             }
         })
         .unwrap_or_else(|contended_or_dead| contended_or_dead)

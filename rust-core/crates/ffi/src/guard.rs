@@ -92,7 +92,14 @@ macro_rules! ffi_frame_body {
                     unsafe { *$out_buf = $crate::MdvBuf::from_vec(frame) };
                     $crate::MdvStatus::Ok
                 }
-                Err(e) => $crate::wire_status(&e),
+                // TSK-577: emit the rich WireError frame into out_buf so the
+                // host gets message+kind, not just the status.
+                Err(e) => {
+                    // SAFETY: $out_buf was validated non-null and given its
+                    // empty default at the top of this macro body, before any
+                    // error arm can run; write_wire_error only writes through it.
+                    unsafe { $crate::write_wire_error($out_buf, &e) }
+                }
             }
         })
     }};
