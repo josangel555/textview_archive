@@ -41,9 +41,9 @@ use mdvcore_highlight::{Lang, Segment, TokenKind};
 /// Max bytes read into a view (parity with the TUI's preview cap). Per-mode
 /// shaping (text/hex/table) lives in the shared `mdvcore_core::view`.
 const PREVIEW_CAP: usize = 1024 * 1024;
-/// Bytes per HEX dump row — mirrors core `view::HEX_WIDTH` so a hex-search match
-/// at byte offset `o` maps to dump row `o / HEX_BYTES_PER_ROW` (TSK-206).
-const HEX_BYTES_PER_ROW: usize = 16;
+/// Bytes per HEX dump row — DERIVED from core's single source of truth (no
+/// longer a drifting literal mirror, TSK-571); offset→row math per TSK-206.
+const HEX_BYTES_PER_ROW: usize = mdvcore_core::view::HEX_WIDTH;
 
 /// Hard ceiling on the bytes consumed parsing the request line + all headers.
 /// A client that streams without a terminating blank line (or a multi-GB header

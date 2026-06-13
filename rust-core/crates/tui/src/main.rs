@@ -50,8 +50,8 @@ use mdvcore_highlight::{Lang, Segment, TokenKind};
 
 /// Bytes per hex-dump row (must match `mdvcore_core::hex::render_all`). A hex
 /// search match at byte offset `o` lands on dump row `o / HEX_BYTES_PER_ROW`.
-/// (TSK-205)
-const HEX_BYTES_PER_ROW: usize = 16;
+/// (TSK-205) DERIVED from core's single source of truth — no drift (TSK-571).
+const HEX_BYTES_PER_ROW: usize = view::HEX_WIDTH;
 
 /// Max bytes read into a preview (keeps the TUI snappy; larger files truncate).
 /// The per-mode shaping (text/hex/table caps) lives in `mdvcore_core::view`.

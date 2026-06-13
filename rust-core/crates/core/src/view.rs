@@ -11,8 +11,10 @@
 
 use crate::{csv, filter, hex, image, indent};
 
-/// Bytes per HEX row (the project-wide default).
-const HEX_WIDTH: usize = 16;
+/// Bytes per HEX row (the project-wide default). The SINGLE source of truth —
+/// front-ends (TUI/web) consume this instead of mirroring the literal, so a
+/// change here can't silently drift from their hex-offset→row math (TSK-571).
+pub const HEX_WIDTH: usize = 16;
 /// Cap on text lines kept (a pathological single-line file can't blow memory).
 const MAX_TEXT_LINES: usize = 200_000;
 /// Lines sampled for indent detection.
@@ -469,6 +471,14 @@ fn hex_lines(bytes: &[u8], total: usize, truncated: bool) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hex_width_is_the_single_source_of_truth() {
+        // TSK-571: HEX_WIDTH is now pub — the TUI/web front-ends DERIVE their
+        // bytes-per-row from this (not a mirrored literal), so this value can't
+        // drift from their offset→row math. Pins the canonical default.
+        assert_eq!(HEX_WIDTH, 16);
+    }
 
     #[test]
     fn modes_and_cycle() {
