@@ -260,4 +260,37 @@ final class HistoryStoreTests: XCTestCase {
         store.record(url: makeFile("a.md"))
         XCTAssertEqual(store.count, 1)
     }
+
+    // MARK: parentFolderLabel (TSK-763 — grey "(folder)" suffix)
+
+    private func entry(_ path: String, kind: HistoryEntry.Kind = .file) -> HistoryEntry {
+        HistoryEntry(url: URL(fileURLWithPath: path), kind: kind,
+                     lastOpenedAt: Date(timeIntervalSince1970: 0))
+    }
+
+    func test_parentFolderLabel_immediateParentName() {
+        XCTAssertEqual(entry("/Users/me/projects/notes.md").parentFolderLabel, "projects")
+        // Folder entries report THEIR containing folder too.
+        XCTAssertEqual(entry("/Users/me/projects/src", kind: .folder).parentFolderLabel, "projects")
+    }
+
+    func test_parentFolderLabel_homeAbbreviatesToTilde() {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let file = home.appendingPathComponent("notes.md")
+        XCTAssertEqual(HistoryEntry(url: file, kind: .file,
+                                    lastOpenedAt: Date(timeIntervalSince1970: 0)).parentFolderLabel,
+                       "~", "a file directly in the home dir shows ~, not the username")
+    }
+
+    func test_parentFolderLabel_fileAtRoot_showsSlash() {
+        XCTAssertEqual(entry("/notes.md").parentFolderLabel, "/")
+    }
+
+    func test_parentFolderLabel_disambiguatesSameNameDifferentFolders() {
+        // The whole point: two recents named the same get distinct suffixes.
+        XCTAssertNotEqual(entry("/a/x/readme.md").parentFolderLabel,
+                          entry("/a/y/readme.md").parentFolderLabel)
+        XCTAssertEqual(entry("/a/x/readme.md").parentFolderLabel, "x")
+        XCTAssertEqual(entry("/a/y/readme.md").parentFolderLabel, "y")
+    }
 }

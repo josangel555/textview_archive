@@ -28,6 +28,22 @@ public struct HistoryEntry: Codable, Equatable, Sendable, Identifiable {
         self.lastOpenedAt = lastOpenedAt
         self.displayName = displayName ?? url.lastPathComponent
     }
+
+    /// Name of the immediate containing folder, for the recents list's
+    /// IntelliJ-style grey "(folder)" suffix that disambiguates same-named
+    /// files (TSK-763). The home directory abbreviates to `~`; a file directly
+    /// at the filesystem root shows `/`. Returns `nil` when there's no
+    /// meaningful parent (a bare relative name), so the UI omits the brackets.
+    public var parentFolderLabel: String? {
+        let parent = url.deletingLastPathComponent()
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        if parent.standardizedFileURL == home.standardizedFileURL { return "~" }
+        let name = parent.lastPathComponent
+        // `deletingLastPathComponent()` yields "/" at the fs root (lastPath
+        // component "/") and "." for a bare relative filename.
+        if name == "." || name.isEmpty { return nil }
+        return name
+    }
 }
 
 /// Persists a list of recently opened files / folders to JSON on disk.

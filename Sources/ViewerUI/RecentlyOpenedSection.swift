@@ -77,6 +77,18 @@ private struct RecentRow: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .foregroundStyle(.primary)
+                    .layoutPriority(1)   // the name wins space over the folder hint
+                // Grey containing-folder hint (TSK-763) — disambiguates
+                // same-named recents (IntelliJ style). Omitted when there's
+                // no meaningful parent.
+                if let folder = entry.parentFolderLabel {
+                    Text(folder)
+                        .font(.system(size: model.uiSize(10)))
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                        .foregroundStyle(.tertiary)
+                        .accessibilityIdentifier("mdv.recentlyOpened.row.folder")
+                }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, model.uiSize(10))
