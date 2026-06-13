@@ -9169,6 +9169,34 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +322 (2026-06-13 tick — rust-core board reconciliation + TSK-559 triage; CSV-twin decision parked)
+
+A hygiene + triage firing (NO code shipped): the actionable code-pool was genuinely compromised —
+the open rust-core perf items are big cross-cutting contract changes, the owner-greenlit CSV
+"features" turned out already-done or purely-live-gated-twin, and the rest are low-value cleanups
+or owner/dep-gated. Per §5, did real board-advancing work instead of rushing un-validatable code:
+
+- **Dismissed TSK-568** (FFI bodies copy-pasted 6x) — ALREADY-FIXED: the unsafe prologue + the
+  byte-identical frame fns are factored into the `ffi_frame_body!` macro (guard.rs:71); every
+  stateless export is now one line (lib.rs:243/265/286/308). Demonstrative proof attached.
+- **Reconciled TSK-583** (CoreRuntime registry / DocId — "fix for TSK-541"): its SOUNDNESS core
+  (retire raw pointers via a never-reused-id registry) landed with my TSK-541 fix (df250db).
+  Commented the scope reduction; residual = the broader multi-doc CoreRuntime + DocId-as-public-ABI
+  (overlaps owner-decision TSK-589), no longer a soundness blocker.
+- **TSK-302/303 (CSV cell-nav + find) — PARKED a consolidated owner decision.** New finding: 302's
+  "Cmd-C copies whole cell" ALREADY works (cellRow has a "Copy Cell" context menu + textSelection).
+  302's only residual is arrow-key cell NAV; 303 is a find bar — both PURELY live-gated SwiftUI in
+  the virtualized ScrollView (no host-validatable surface per the pixel mandate), on a §2.5
+  port-target the Rust front-ends already cover (TSK-499). The owner greenlit "wire the 4 siblings"
+  2026-06-11, but 300 shipped + 310 was already-done + 302-copy already works — so parked TSK-302
+  with the new info + costed options (defer-to-Rust-port / build-on-twin-anyway / drop) rather than
+  push un-validatable rendered code into the running app.
+- **Triaged TSK-559** (windowed snapshot — the top open S2 perf item, §2.5 Phase-1 work) with an
+  EXECUTABLE additive design: `snapshot_window_frame(offset,limit)` + a `filtered_count` scalar,
+  reusing the existing Snapshot wire shape → NO version bump / Swift-decode change / drift churn.
+  Split: rust core+FFI+tests (host-validatable, next implementation firing) vs the live-gated CSV
+  paging consumer (follow-up). Reported→triaged, implementation-ready.
+
 ## LOG +321 (2026-06-13 tick — TSK-541 rust-core handle free-vs-call UAF closed + VALIDATED)
 
 - **TSK-541 (`[RUST-CORE][unsafe-ffi]` Handle free-vs-call race = UB) — FIXED + VALIDATED
