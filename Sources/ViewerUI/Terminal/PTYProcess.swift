@@ -40,6 +40,11 @@ public final class PTYProcess: @unchecked Sendable {
     private var readSource: DispatchSourceRead?
     private var didExit = false
     private let readQueue = DispatchQueue(label: "com.markdownviewer.pty.read")
+    /// Serial queue for the BLOCKING input drain (TSK-741). The master fd is
+    /// blocking, so a large paste into a slow reader (vim) fills the kernel PTY
+    /// buffer and Darwin.write PARKS — running it here keeps that off the
+    /// (main-actor) caller. Serial → byte order across writes is preserved.
+    private let writeQueue = DispatchQueue(label: "com.markdownviewer.pty.write")
 
     public init() {}
 
@@ -252,17 +257,35 @@ public final class PTYProcess: @unchecked Sendable {
     // MARK: - Write
 
     /// Write input bytes to the shell. No-op if the PTY is closed.
+    ///
+    /// TSK-741: the master fd is BLOCKING, so a large paste into a slow reader
+    /// (vim) fills the kernel PTY buffer and `Darwin.write` PARKS. This used to
+    /// run on the caller — `sendInput` is `@MainActor` — beachballing the app
+    /// ("Not Responding"). The drain now runs on the serial `writeQueue` so the
+    /// caller returns immediately; serial dispatch preserves byte order across
+    /// writes. The fd is captured at call time (mirrors the read source); a
+    /// write that races a close hits `EBADF` and bails.
     public func write(_ data: Data) {
         lock.lock()
         let fd = masterFD
         lock.unlock()
         guard fd >= 0 else { return }
-        data.withUnsafeBytes { raw in
-            guard let base = raw.baseAddress else { return }
+        writeQueue.async {
+            _ = Self.drain(data) { ptr, len in Darwin.write(fd, ptr, len) }
+        }
+    }
+
+    /// Drain `data` to `writeBytes` (the byte sink), handling partial writes and
+    /// `EINTR`/`EAGAIN` retry, bailing on a hard error. Returns the number of
+    /// bytes written. The sink is INJECTED (not the fd) so the loop is
+    /// unit-testable without a real PTY. (TSK-741.)
+    static func drain(_ data: Data, writeBytes: (UnsafeRawPointer, Int) -> Int) -> Int {
+        data.withUnsafeBytes { raw -> Int in
+            guard let base = raw.baseAddress else { return 0 }
             var offset = 0
             let total = raw.count
             while offset < total {
-                let n = Darwin.write(fd, base + offset, total - offset)
+                let n = writeBytes(base + offset, total - offset)
                 if n > 0 {
                     offset += n
                 } else if n < 0 && (errno == EINTR || errno == EAGAIN) {
@@ -271,6 +294,7 @@ public final class PTYProcess: @unchecked Sendable {
                     break
                 }
             }
+            return offset
         }
     }
 
