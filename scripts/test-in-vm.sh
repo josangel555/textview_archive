@@ -115,8 +115,10 @@ check_toolchain_marker() {
 # bundled Xcode toolchain is present (e.g. CI on a clean host).
 select_toolchain() {
   local newest tcid
+  # `|| true`: the no-match glob makes `ls` fail → under `set -euo pipefail` the
+  # assignment would abort (NOT the no-op the comment promises). Swallow it.
   newest=$(ls -d /Library/Developer/Toolchains/swift-6.*-RELEASE.xctoolchain 2>/dev/null \
-             | sort -V | tail -1)
+             | sort -V | tail -1 || true)
   [[ -n "$newest" && -f "$newest/Info.plist" ]] || return 0
   tcid=$(plutil -extract CFBundleIdentifier raw "$newest/Info.plist" 2>/dev/null) || return 0
   [[ -n "$tcid" ]] || return 0

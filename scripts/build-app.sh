@@ -54,8 +54,13 @@ bash "$SCRIPT_DIR/build-rust-core.sh"
 # select_toolchain() (the TSK-439 fix for the test target's same 6.1.2 skew).
 select_toolchain() {
   local newest tcid
+  # `|| true`: on the HOST the glob matches nothing, so `ls` fails → under the
+  # script's `set -euo pipefail` the pipe propagates that failure and the
+  # `newest=$(…)` assignment aborts the whole build BEFORE `swift build` (the
+  # TSK-813 select_toolchain regressed the host build this way — the VM never
+  # caught it because its glob matches). Swallow the no-match so newest="".
   newest=$(ls -d /Library/Developer/Toolchains/swift-6.*-RELEASE.xctoolchain 2>/dev/null \
-             | sort -V | tail -1)
+             | sort -V | tail -1 || true)
   [ -n "$newest" ] && [ -f "$newest/Info.plist" ] || return 0
   tcid=$(plutil -extract CFBundleIdentifier raw "$newest/Info.plist" 2>/dev/null) || return 0
   [ -n "$tcid" ] || return 0
