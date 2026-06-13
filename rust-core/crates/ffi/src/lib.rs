@@ -663,8 +663,9 @@ pub unsafe extern "C" fn mdvcore_session_table(
         // safe-to-free value.
         unsafe { *out_buf = MdvBuf::empty() };
 
-        // SAFETY: handle contract per fn docs.
-        let Some(h) = (unsafe { SessionHandle::as_ref(handle) }) else {
+        // TSK-541: registry lookup — total over any token (absent → None),
+        // and the Arc clone keeps the handle alive past a concurrent free.
+        let Some(h) = SessionHandle::lookup(handle) else {
             return MdvStatus::NullArg;
         };
         h.with(|session| {
@@ -701,8 +702,9 @@ pub unsafe extern "C" fn mdvcore_session_set_filter(
         if query.is_null() && qlen != 0 {
             return MdvStatus::NullArg;
         }
-        // SAFETY: handle contract per fn docs.
-        let Some(h) = (unsafe { SessionHandle::as_ref(handle) }) else {
+        // TSK-541: registry lookup — total over any token (absent → None),
+        // and the Arc clone keeps the handle alive past a concurrent free.
+        let Some(h) = SessionHandle::lookup(handle) else {
             return MdvStatus::NullArg;
         };
         let qbytes: &[u8] = if qlen == 0 {
@@ -752,8 +754,9 @@ pub unsafe extern "C" fn mdvcore_session_snapshot(
         // SAFETY: out_buf validated; safe empty default for error paths.
         unsafe { *out_buf = MdvBuf::empty() };
 
-        // SAFETY: handle contract per fn docs.
-        let Some(h) = (unsafe { SessionHandle::as_ref(handle) }) else {
+        // TSK-541: registry lookup — total over any token (absent → None),
+        // and the Arc clone keeps the handle alive past a concurrent free.
+        let Some(h) = SessionHandle::lookup(handle) else {
             return MdvStatus::NullArg;
         };
         h.with(|session| {
@@ -785,8 +788,10 @@ pub unsafe extern "C" fn mdvcore_session_snapshot(
 pub unsafe extern "C" fn mdvcore_session_free(handle: *mut SessionHandle) {
     // No status to return; still guard so a Drop panic can't unwind across C.
     let _ = std::panic::catch_unwind(|| {
-        // SAFETY: caller contract — exactly-once free of a live handle, or null.
-        unsafe { SessionHandle::free(handle) };
+        // TSK-541: registry remove — null-tolerant + idempotent (double free
+        // and bogus-token free are safe no-ops; a free racing a call defers
+        // the drop to the in-flight Arc).
+        SessionHandle::free(handle);
     });
 }
 

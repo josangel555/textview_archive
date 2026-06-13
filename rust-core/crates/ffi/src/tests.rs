@@ -358,7 +358,7 @@ fn single_writer_busy_is_deterministic_under_held_lock() {
 
     let holder = thread::spawn(move || {
         let h = ptr as *mut SessionHandle;
-        let handle = unsafe { SessionHandle::as_ref(h) }.unwrap();
+        let handle = SessionHandle::lookup(h).unwrap();
         let held = handle.with(|_session| {
             locked_tx.send(()).unwrap(); // signal: lock is held
             release_rx.recv().unwrap(); // park until the Busy assert ran
@@ -394,7 +394,7 @@ fn poisoned_handle_returns_handle_dead_not_recovered_state() {
     // every subsequent call on the poisoned handle is HandleDead — not Ok with
     // suspect data, not Busy.
     let h = open(CSV);
-    let handle = unsafe { SessionHandle::as_ref(h) }.unwrap();
+    let handle = SessionHandle::lookup(h).unwrap();
     let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _ = handle.with(|_session| -> MdvStatus { panic!("poison the lock") });
     }));
@@ -423,6 +423,56 @@ fn poisoned_handle_returns_handle_dead_not_recovered_state() {
     // Free still works on a poisoned handle — the drop path must not require
     // the lock to be healthy.
     unsafe { mdvcore_session_free(h) };
+}
+
+// ===== TSK-541: Arc-backed handle registry (free-vs-call soundness) =====
+
+#[test]
+fn into_raw_registers_and_free_unregisters() {
+    // Token-specific pin (deterministic under cargo's parallel tests, which
+    // share the global registry). Teeth: skip the insert in `into_raw` → the
+    // first assert reds; skip the remove in `free` → the second reds.
+    let h = open(CSV);
+    assert!(SessionHandle::lookup(h).is_some(),
+            "open must register the token");
+    unsafe { mdvcore_session_free(h) };
+    assert!(SessionHandle::lookup(h).is_none(),
+            "free must unregister the token");
+}
+
+#[test]
+fn free_invalidates_token_but_inflight_clone_survives() {
+    // The core TSK-541 guarantee, made deterministic: a call that already holds
+    // an Arc clone (mid-`with` in the real race) keeps the session alive even
+    // after `free` removed it from the registry — no UAF — while the TOKEN is
+    // immediately dead so no NEW call can reach the freed session.
+    let h = open(CSV);
+    let inflight = SessionHandle::lookup(h).expect("token is live before free");
+
+    unsafe { mdvcore_session_free(h) };
+
+    assert!(SessionHandle::lookup(h).is_none(),
+            "the token is dead the instant free removes it from the registry");
+    // The clone taken BEFORE free still names a live session — the Arc deferred
+    // the drop. With the old Box::from_raw this access was a use-after-free.
+    let still_alive = inflight.with(|session| session.table_frame().is_ok());
+    assert_eq!(still_alive, Ok(true),
+               "the in-flight Arc clone must still serve the session after free");
+}
+
+#[test]
+fn double_free_and_bogus_token_are_safe_noops() {
+    let h = open(CSV);
+    unsafe { mdvcore_session_free(h) };
+    // Second free of the same (now-dead) token: idempotent no-op, not a
+    // double-free. The old Box::from_raw twice was heap corruption.
+    unsafe { mdvcore_session_free(h) };
+    // A token never produced by into_raw is looked up, never dereferenced.
+    assert!(SessionHandle::lookup(0xDEAD_BEEF as *mut SessionHandle).is_none());
+    assert!(SessionHandle::lookup(std::ptr::null_mut()).is_none());
+    // Freeing garbage / null is a no-op too (no panic, no UB).
+    unsafe { mdvcore_session_free(0xDEAD_BEEF as *mut SessionHandle) };
+    unsafe { mdvcore_session_free(std::ptr::null_mut()) };
 }
 
 #[test]
