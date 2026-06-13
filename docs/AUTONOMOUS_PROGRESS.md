@@ -9169,6 +9169,22 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +346 (2026-06-13 overnight — TSK-735 DEC scroll region (DECSTBM) fixed + validated)
+
+- **TSK-735 VALIDATED (79237b5).** The emulator had no DEC scroll region — scroll/lineFeed moved the WHOLE
+  grid, so a full-screen app pinning its footer (vim) had the footer scroll into the body (rendered twice)
+  + stale region lines. Added scrollTop/scrollBottom margins + DECSTBM (CSI r) parse; made scrollUp/
+  scrollDown/lineFeed/IL/DL region-aware (a sub-region scroll never evicts to scrollback; only full-screen
+  main-buffer scroll does); margins reset on resize + alt enter/exit. Default-region path
+  behavior-preserving — all 105 existing terminal tests pass unchanged. 4 new DECSTBM cell tests (footer
+  pinned on SU + LF-at-region-bottom; reset); teeth demonstrated (remove the case → 7 assertions red).
+  Self-validated (cell grid = host pixel-equivalent). Gate green (5058).
+- Terminal pair (740 + 735) complete: in-line edits + scroll region. Overnight tally (9 ticks):
+  739 · 742 · 744 · 729 · 737 · 740 · 735 validated · 734/728/730 review (VM-gated) · 743 fixed · 806 filed.
+- Next crons: 738 (status footer missing after relaunch — state/binding), 731 (terminal emoji display
+  width — needs wide-char width accounting in TerminalScreen.write/cursor advance), 741 (PTY blocking
+  write off-main — dispatch the write loop off the main actor).
+
 ## LOG +345 (2026-06-13 overnight — TSK-740 terminal in-line edits (DCH/ICH/ECH/IL/DL) fixed + validated)
 
 - **TSK-740 VALIDATED (243438f).** ANSIParser.dispatchCSI parse-and-ignored the in-line edit CSI
