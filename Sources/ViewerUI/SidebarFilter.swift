@@ -69,6 +69,35 @@ enum SidebarFilter {
     }
 }
 
+/// TSK-284 (owner choice (a)): drag a file OUT of the app — sidebar rows,
+/// filter results, and tabs are drag sources carrying the REAL file
+/// reference, so a drop on Finder copies, on Mail attaches, on another
+/// editor opens.
+enum FileDragProvider {
+    /// Drag-out provider for a file on disk. `NSItemProvider(contentsOf:)`
+    /// registers the file's OWN content type plus `public.file-url` — the
+    /// representation Finder needs to copy a file. (SwiftUI's
+    /// `.draggable(URL)` exports only `public.url`, which drops as a link,
+    /// not a file.) Falls back to a bare NSURL registration if the
+    /// provider can't stat the file (e.g. it vanished mid-drag-start).
+    static func make(for url: URL) -> NSItemProvider {
+        NSItemProvider(contentsOf: url) ?? urlOnly(url)
+    }
+
+    /// Compose the file reference ONTO an existing provider (the tab strip's
+    /// reorder payload): in-app drop targets keep reading their custom
+    /// `.plainText` payload; external targets see the file.
+    static func attachFileURL(_ url: URL, to provider: NSItemProvider) {
+        provider.registerObject(url as NSURL, visibility: .all)
+    }
+
+    private static func urlOnly(_ url: URL) -> NSItemProvider {
+        let p = NSItemProvider()
+        p.registerObject(url as NSURL, visibility: .all)
+        return p
+    }
+}
+
 /// Shared matched-glyph highlighter for fuzzy results — extracted from
 /// `CommandPaletteView` (TSK-282) so the palette and the sidebar filter
 /// render matches identically. ONE highlight path, per the design doc.

@@ -95,7 +95,16 @@ struct TabBar: View {
                                 // move) between drag-start and drop, which
                                 // would move the wrong tab. The id is
                                 // resolved back to a live index at drop time.
-                                NSItemProvider(object: NSString(string: TabDragPayload.encode(tab.id)))
+                                let provider = NSItemProvider(
+                                    object: NSString(string: TabDragPayload.encode(tab.id)))
+                                // TSK-284 (a): the SAME provider also carries
+                                // the real file reference — in-app reorder
+                                // keeps reading the .plainText payload;
+                                // dragging a tab to Finder copies the file.
+                                if let url = tab.url {
+                                    FileDragProvider.attachFileURL(url, to: provider)
+                                }
+                                return provider
                             }
                             .onDrop(
                                 of: [.plainText],

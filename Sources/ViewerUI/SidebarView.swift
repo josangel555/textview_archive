@@ -1248,6 +1248,8 @@ private struct SidebarFilterRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(RowHoverButtonStyle(cornerRadius: 0))
+        // TSK-284 (a): filter results drag out like tree rows.
+        .onDrag { FileDragProvider.make(for: match.url) }
         .accessibilityIdentifier("sidebar.filterRow.\(match.display)")
     }
 }
@@ -1378,6 +1380,9 @@ private struct FileRowView: View, Equatable {
             .background(rowBackground)
         }
         .buttonStyle(.plain)
+        // TSK-284 (a): every tree row is a drag-OUT source — drop on
+        // Finder copies the file/folder, on Mail attaches, elsewhere opens.
+        .onDrag { FileDragProvider.make(for: node.url) }
         .id(node.url)  // for ScrollViewReader.scrollTo
         .help(node.url.path)
         .accessibilityElement(children: .ignore)
