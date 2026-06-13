@@ -9169,6 +9169,20 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +343 (2026-06-13 overnight — TSK-729 View-Only-shows-unsaved-edits fixed + validated)
+
+- **TSK-729 VALIDATED (f395750).** displayedText(for:) returned on-disk file.contents in every path, so
+  the View Only (.source) lens showed stale content while the editor held unsaved edits. Fix: prefer the
+  selected tab's DIRTY editor buffer text (recompute byteLength; live pretty-print + bypass the on-disk-
+  keyed format memo when in a formatted view) — mirrors the Editor/outline precedence at DocumentModel:1342.
+  Host test (clean→disk, dirty→edited + byteLength), teeth demonstrated. Self-validated (model-state — the
+  text source the view renders, like 742/739). Gate green (5043).
+- **Filed TSK-806** (sibling follow-up): the split-pane source feed (SplitPaneView:158, "split v1") still
+  reads file.contents directly — same class, secondary surface; route through displayedText. Small.
+- Overnight tally (6 ticks): 739 · 742 · 744 · 729 validated · 734/728/730 review (VM-gated) · 743 fixed.
+- Next crons: 737 (gutter last-line off-by-one — pure logic, repairs 3 symptoms), 738 (footer after
+  relaunch), terminal 735/740 (ANSI scroll-region + DCH/ICH/ECH), then 731 (terminal emoji width).
+
 ## LOG +342 (2026-06-13 overnight — TSK-742/743/744 preview-slot fix (one change))
 
 - **TSK-742 + 744 VALIDATED, 743 fixed (141494d).** Shared root: the ephemeral preview slot reuses ONE
