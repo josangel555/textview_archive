@@ -33,6 +33,15 @@ public struct TerminalScreen: Sendable, Equatable {
     public private(set) var cells: [[TerminalCell]]
     public private(set) var cursor: TerminalCursor
 
+    /// DEC scroll region (DECSTBM) margins — INCLUSIVE row indices
+    /// [scrollTop, scrollBottom]; default = the whole screen. lineFeed / scroll
+    /// / IL / DL operate within these margins. A sub-region (e.g. vim pinning
+    /// its status line) scrolls only the body and never evicts to scrollback;
+    /// only a full-screen scroll on the main buffer pushes lines to history.
+    /// Reset to the full screen on resize. (TSK-735.)
+    public private(set) var scrollTop: Int = 0
+    public private(set) var scrollBottom: Int = 0
+
     /// Lines that have scrolled off the top of the live grid, oldest
     /// first — the scrollback history the view can scroll up into.
     /// Bounded to `maxScrollback`; rows keep the width they had when
@@ -79,6 +88,8 @@ public struct TerminalScreen: Sendable, Equatable {
             count: r
         )
         self.cursor = TerminalCursor()
+        self.scrollTop = 0
+        self.scrollBottom = r - 1
     }
 
     // MARK: - Reads
@@ -124,6 +135,9 @@ public struct TerminalScreen: Sendable, Equatable {
         cols = c
         cursor.row = min(cursor.row, r - 1)
         cursor.col = min(cursor.col, c - 1)
+        // DECSTBM is reset to the full screen on resize (standard).
+        scrollTop = 0
+        scrollBottom = r - 1
     }
 
     /// Top-left-anchored grid resize, preserving as much content as fits.
@@ -180,11 +194,12 @@ public struct TerminalScreen: Sendable, Equatable {
     /// does that for us, but we still keep col here so a bare `\n` in
     /// raw output behaves like index/IND).
     public mutating func lineFeed() {
-        if cursor.row >= rows - 1 {
-            scrollUp(1)
-        } else {
+        if cursor.row == scrollBottom {
+            scrollUp(1)   // scroll within the active region (TSK-735)
+        } else if cursor.row < rows - 1 {
             cursor.row += 1
         }
+        // At the last row but below the scroll region: stay put (no scroll).
     }
 
     // MARK: - Writing
@@ -288,21 +303,25 @@ public struct TerminalScreen: Sendable, Equatable {
     /// `ESC[nL` (IL) — insert `n` blank lines at the cursor row; lines below
     /// shift down, lines pushed past the bottom are lost.
     public mutating func insertLines(_ n: Int) {
-        guard cells.indices.contains(cursor.row) else { return }
-        let count = min(max(1, n), rows - cursor.row)
+        guard cells.indices.contains(cursor.row),
+              cursor.row >= scrollTop, cursor.row <= scrollBottom else { return }
+        let bot = min(scrollBottom, rows - 1)
+        let count = min(max(1, n), bot - cursor.row + 1)
         guard count > 0 else { return }
-        cells.removeSubrange((rows - count) ..< rows)
+        cells.removeSubrange((bot - count + 1) ..< (bot + 1))
         cells.insert(contentsOf: Self.blankGrid(rows: count, cols: cols), at: cursor.row)
     }
 
     /// `ESC[nM` (DL) — delete `n` lines at the cursor row; lines below shift up,
-    /// blanks fill in at the bottom.
+    /// blanks fill in at the bottom of the scroll region. No-op outside it.
     public mutating func deleteLines(_ n: Int) {
-        guard cells.indices.contains(cursor.row) else { return }
-        let count = min(max(1, n), rows - cursor.row)
+        guard cells.indices.contains(cursor.row),
+              cursor.row >= scrollTop, cursor.row <= scrollBottom else { return }
+        let bot = min(scrollBottom, rows - 1)
+        let count = min(max(1, n), bot - cursor.row + 1)
         guard count > 0 else { return }
         cells.removeSubrange(cursor.row ..< (cursor.row + count))
-        cells.append(contentsOf: Self.blankGrid(rows: count, cols: cols))
+        cells.insert(contentsOf: Self.blankGrid(rows: count, cols: cols), at: bot - count + 1)
     }
 
     // MARK: - Scrolling
@@ -311,24 +330,27 @@ public struct TerminalScreen: Sendable, Equatable {
     /// (into `scrollback`), `n` blank lines appear at the bottom. The
     /// cursor row stays put (used by `lineFeed` on the last row).
     public mutating func scrollUp(_ n: Int) {
-        let count = min(max(0, n), rows)
+        let top = scrollTop
+        let bot = min(scrollBottom, rows - 1)
+        guard top <= bot else { return }
+        let count = min(max(0, n), bot - top + 1)
         guard count > 0 else { return }
-        // The alternate screen has NO scrollback — full-screen apps
-        // (`top`/`vim`/`less`) that scroll inside it must not push lines into
-        // the user's history (that was the perceived "constant scroll").
-        if !inAltScreen {
-            // Retain the evicted top lines as scrollback. Trim in BATCHES
-            // (only once the buffer overflows the cap by `scrollbackSlack`) —
-            // a per-line `removeFirst(1)` is an O(maxScrollback) memmove on
-            // every scrolled line, which dominates under bulk output (build
-            // logs, `cat`). Batching amortizes it to ~O(maxScrollback/slack)/line.
-            scrollback.append(contentsOf: cells[0..<count])
+        // Only a FULL-screen scroll on the MAIN buffer evicts to scrollback
+        // (normal output scrolling into history). A sub-region scroll (DECSTBM —
+        // e.g. vim's body while the footer is pinned) or the alternate screen
+        // (`top`/`vim`/`less`) discards the lines, never churning history.
+        let fullScreen = (top == 0 && bot == rows - 1)
+        if fullScreen && !inAltScreen {
+            // Retain evicted top lines, trimming in BATCHES (a per-line
+            // removeFirst is an O(maxScrollback) memmove that dominates bulk
+            // output; batching amortizes it).
+            scrollback.append(contentsOf: cells[top..<(top + count)])
             if scrollback.count > Self.maxScrollback + Self.scrollbackSlack {
                 scrollback.removeFirst(scrollback.count - Self.maxScrollback)
             }
         }
-        cells.removeFirst(count)
-        cells.append(contentsOf: Self.blankGrid(rows: count, cols: cols))
+        cells.removeSubrange(top..<(top + count))
+        cells.insert(contentsOf: Self.blankGrid(rows: count, cols: cols), at: bot - count + 1)
     }
 
     // MARK: - Alternate screen buffer (DEC 1049 / 1047 / 47)
@@ -347,6 +369,7 @@ public struct TerminalScreen: Sendable, Equatable {
         scrollback = []
         cursor = TerminalCursor()
         pen = .default
+        scrollTop = 0; scrollBottom = rows - 1   // fresh buffer → full region
     }
 
     /// Exit the alternate screen buffer, restoring the saved main grid,
@@ -362,6 +385,7 @@ public struct TerminalScreen: Sendable, Equatable {
         cursor = TerminalCursor(row: clampRow(saved.cursor.row),
                                 col: clampCol(saved.cursor.col))
         savedMain = nil
+        scrollTop = 0; scrollBottom = rows - 1   // app's region doesn't outlive it
     }
 
     // MARK: - Scrollback viewport
@@ -396,16 +420,33 @@ public struct TerminalScreen: Sendable, Equatable {
         return row + Array(repeating: .blank, count: cols - row.count)
     }
 
-    /// Scroll the entire grid down by `n` lines: bottom `n` lines fall
-    /// off, `n` blank lines appear at the top.
+    /// Scroll the active region [scrollTop, scrollBottom] DOWN by `n` lines:
+    /// the bottom `n` rows of the region fall off, `n` blank lines appear at the
+    /// top of the region. Reverse scroll never touches scrollback. (TSK-735.)
     public mutating func scrollDown(_ n: Int) {
-        let count = min(max(0, n), rows)
+        let top = scrollTop
+        let bot = min(scrollBottom, rows - 1)
+        guard top <= bot else { return }
+        let count = min(max(0, n), bot - top + 1)
         guard count > 0 else { return }
-        cells.removeLast(count)
-        cells.insert(contentsOf: Array(
-            repeating: Array(repeating: TerminalCell.blank, count: cols),
-            count: count
-        ), at: 0)
+        cells.removeSubrange((bot - count + 1) ..< (bot + 1))
+        cells.insert(contentsOf: Self.blankGrid(rows: count, cols: cols), at: top)
+    }
+
+    /// `ESC[t;b r` (DECSTBM) — set the scroll region to INCLUSIVE 0-based rows
+    /// [top, bottom]. A degenerate/inverted/whole-screen range resets to the
+    /// full screen. Homes the cursor (DEC spec). (TSK-735.)
+    public mutating func setScrollRegion(top: Int, bottom: Int) {
+        let t = max(0, top)
+        let b = min(bottom, rows - 1)
+        if t < b {
+            scrollTop = t
+            scrollBottom = b
+        } else {
+            scrollTop = 0
+            scrollBottom = rows - 1
+        }
+        cursor = TerminalCursor(row: 0, col: 0)
     }
 
     // MARK: - Helpers

@@ -304,6 +304,11 @@ public struct ANSIParser: Sendable {
         case "X": screen.eraseChars(param(params, 0, default: 1))    // ECH
         case "L": screen.insertLines(param(params, 0, default: 1))   // IL
         case "M": screen.deleteLines(param(params, 0, default: 1))   // DL
+        case "r":                                   // DECSTBM — scroll region
+            // 1-based inclusive in the sequence → 0-based for the screen.
+            screen.setScrollRegion(
+                top: param(params, 0, default: 1) - 1,
+                bottom: param(params, 1, default: screen.rows) - 1)
         case "m": applySGR(params)
         default:
             // Unrecognised final byte (cursor-save/restore/DECSTBM/etc.) —

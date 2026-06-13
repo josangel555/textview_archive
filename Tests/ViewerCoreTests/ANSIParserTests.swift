@@ -398,4 +398,47 @@ final class ANSIParserTests: XCTestCase {
         XCTAssertEqual(p.screen.line(1), "L0")
         XCTAssertEqual(p.screen.line(2), "L1")
     }
+
+    // MARK: - DEC scroll region DECSTBM (TSK-735 — vim footer pinned)
+
+    func test_DECSTBM_setsMargins_homesCursor() {
+        var p = parser(4, 10)
+        feed(&p, "\u{1b}[1;3r")        // region rows 1..3 (1-based) → 0-based [0,2]
+        XCTAssertEqual(p.screen.scrollTop, 0)
+        XCTAssertEqual(p.screen.scrollBottom, 2)
+        XCTAssertEqual(p.screen.cursor.row, 0, "DECSTBM homes the cursor")
+        XCTAssertEqual(p.screen.cursor.col, 0)
+    }
+
+    func test_DECSTBM_scrollUp_pinsFooterOutsideRegion() {
+        var p = parser(4, 10)
+        feed(&p, "\u{1b}[4;1HFOOTER")  // row 3 = the pinned footer
+        feed(&p, "\u{1b}[1;3r")        // region [0,2]; homes cursor
+        feed(&p, "b0\u{1b}[2;1Hb1\u{1b}[3;1Hb2")   // rows 0,1,2 = b0,b1,b2
+        XCTAssertEqual(p.screen.line(3), "FOOTER")
+        feed(&p, "\u{1b}[1S")          // SU 1 within the region
+        XCTAssertEqual(p.screen.line(0), "b1", "region scrolled: b1 to the top")
+        XCTAssertEqual(p.screen.line(1), "b2")
+        XCTAssertEqual(p.screen.line(2), "", "blank fills the region bottom")
+        XCTAssertEqual(p.screen.line(3), "FOOTER", "footer OUTSIDE the region stays pinned (the fix)")
+    }
+
+    func test_DECSTBM_lineFeedAtRegionBottom_scrollsRegionNotFooter() {
+        var p = parser(4, 10)
+        feed(&p, "\u{1b}[4;1HFOOTER")
+        feed(&p, "\u{1b}[1;3r")
+        feed(&p, "b0\u{1b}[2;1Hb1\u{1b}[3;1Hb2")   // cursor ends on row 2 (scrollBottom)
+        feed(&p, "\n")                 // LF at scrollBottom → scroll the region, not the grid
+        XCTAssertEqual(p.screen.line(0), "b1")
+        XCTAssertEqual(p.screen.line(2), "")
+        XCTAssertEqual(p.screen.line(3), "FOOTER", "LF inside the region never moves the footer")
+    }
+
+    func test_DECSTBM_noParams_resetsToFullScreen() {
+        var p = parser(4, 10)
+        feed(&p, "\u{1b}[1;2r")        // a region
+        feed(&p, "\u{1b}[r")           // DECSTBM with no params → reset
+        XCTAssertEqual(p.screen.scrollTop, 0)
+        XCTAssertEqual(p.screen.scrollBottom, 3, "full screen restored")
+    }
 }
