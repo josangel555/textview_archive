@@ -12,6 +12,9 @@ import ViewerCore
 public struct MetricsView: View {
 
     @ObservedObject private var projection: ObservabilityProjection
+    /// TSK-275: render-FPS / jank strip. Bounded publisher (0.5 s) — the
+    /// metrics tree never re-bodies per frame.
+    @StateObject private var frameMonitor = FrameRateMonitor()
 
     public init(projection: ObservabilityProjection) {
         self.projection = projection
@@ -19,6 +22,8 @@ public struct MetricsView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
+            fpsStrip
+            Divider()
             if grouped.isEmpty {
                 emptyState
             } else {
@@ -36,8 +41,46 @@ public struct MetricsView: View {
         }
         .frame(minWidth: 420, minHeight: 280)
         .onAppear { projection.start() }
-        .onDisappear { projection.stop() }
+        .onDisappear {
+            projection.stop()
+            frameMonitor.stop()
+        }
+        // The display link needs the HOSTING window; SwiftUI never hands
+        // it directly — the zero-size accessor grabs it on mount (the
+        // WindowKeyObserver idiom).
+        .background(FrameMonitorWindowAccessor(monitor: frameMonitor))
         .accessibilityIdentifier("mdv.metrics")
+    }
+
+    /// TSK-275: the FPS readout + jank highlight. Red whenever the
+    /// rolling window saw a missed frame or sustained sub-nominal fps —
+    /// the "<60fps" contract, judged against the display's real cadence.
+    private var fpsStrip: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "speedometer")
+                .font(.system(size: 10, weight: .semibold))
+            if let stats = frameMonitor.stats {
+                Text(String(format: "%.0f fps", stats.fps))
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(stats.isJanky ? Color.red : Color.secondary)
+                if stats.hitchCount > 0 {
+                    Text("\(stats.hitchCount) hitch\(stats.hitchCount == 1 ? "" : "es")")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.red)
+                }
+                Text(String(format: "nominal %.0f Hz", stats.nominalFPS))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+            } else {
+                Text("measuring…")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .accessibilityIdentifier("mdv.metrics.fps")
     }
 
     // MARK: - Sections
@@ -193,6 +236,29 @@ private struct MetricRow: View {
                 return String(Int64(metric.value))
             }
             return String(format: "%.2f", metric.value)
+        }
+    }
+}
+
+
+/// Zero-size accessor that hands the hosting window to the frame monitor
+/// on mount (the `WindowKeyObserver` idiom — SwiftUI exposes no window).
+private struct FrameMonitorWindowAccessor: NSViewRepresentable {
+    let monitor: FrameRateMonitor
+
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView(frame: .zero)
+        let m = monitor
+        DispatchQueue.main.async {
+            if let window = v.window { m.start(for: window) }
+        }
+        return v
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        let m = monitor
+        DispatchQueue.main.async {
+            if let window = nsView.window { m.start(for: window) }
         }
     }
 }
