@@ -134,4 +134,23 @@ class PixelTestCase: XCTestCase {
         super.setUp()
         TierGateObserver.register()
     }
+
+    /// TSK-822: the T5 pixel tier (AppleScript-driven app spawn + `screencapture`)
+    /// can ONLY function inside the explicit VM GUI lane — `launchctl asuser`
+    /// gives the spawned app a WindowServer + Screen-Recording + Automation
+    /// context. Gate the WHOLE tier on the same tested decision `LaunchHarness`
+    /// uses for the live tiers (TSK-817), so a subclass self-skips everywhere it
+    /// can't actually capture: the host merge gate, a bare host `swift test`
+    /// (which would otherwise OPEN A WINDOW on the owner's screen — the footgun
+    /// these per-test `MDV_HEADLESS_GATE`-only guards left open), AND a non-GUI
+    /// `test-in-vm.sh test` over ssh (where the capture false-fails with
+    /// AppleScript `-609` / a blank shot — the symptom that surfaced this).
+    /// Only `MDV_VM_GUI_SESSION=1` (the GUI lane) runs them.
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        guard LaunchHarness.shouldRunLiveTiers(
+            env: ProcessInfo.processInfo.environment, bundleExists: true) else {
+            throw XCTSkip("T5 pixel tier — requires the explicit VM GUI lane (MDV_VM_GUI_SESSION=1).")
+        }
+    }
 }
