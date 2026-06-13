@@ -162,6 +162,9 @@ public enum CMOutboundMessage: Equatable, Sendable {
     /// — also what a stale pre-palette bundle sees.
     case setTheme(name: String, palette: [String: String]?)
     case setFontSize(Int)
+    /// TSK-259 slice 2: the user-selected monospace family for the
+    /// editor (nil = the bundle's default stack).
+    case setFontFamily(String?)
     case setWordWrap(Bool)
     case setReadOnly(Bool)
     case setLineNumbers(Bool)
@@ -510,6 +513,11 @@ public enum CMBridgeCodec {
         case .setFontSize(let px):
             dict["type"] = "setFontSize"
             dict["px"] = px
+        case .setFontFamily(let family):
+            dict["type"] = "setFontFamily"
+            if let family {
+                dict["family"] = family
+            }
         case .setWordWrap(let enabled):
             dict["type"] = "setWordWrap"
             dict["enabled"] = enabled

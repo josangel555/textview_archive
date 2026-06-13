@@ -84,4 +84,29 @@ final class FontPreferenceTests: HeadlessUITestCase {
         XCTAssertTrue(cv.contains("fontName: model.sourceFontName"),
                       "ContentView must feed the preference (dead-channel guard)")
     }
+
+    /// Slice 2 wiring pins: the editor channel exists end-to-end —
+    /// ContentView feeds the SAME preference into the CM6 view, the
+    /// coordinator dispatches it, and the JS bundle handles the message
+    /// with the monospace-fallback stack.
+    func test_editorFontChannel_isWired_endToEnd() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        func src(_ rel: String) throws -> String {
+            try String(contentsOf: root.appendingPathComponent(rel), encoding: .utf8)
+        }
+        let cv = try src("Sources/ViewerUI/ContentView.swift")
+        XCTAssertTrue(cv.contains("fontFamily: model.sourceFontName"),
+                      "the editor must receive the same preference")
+        let editor = try src("Sources/ViewerUI/CodeMirrorEditorView.swift")
+        XCTAssertTrue(editor.contains("dispatch(.setFontFamily(family)"),
+                      "the coordinator must dispatch the family channel")
+        let html = try src("Sources/ViewerUI/Resources/codemirror/codemirror.html")
+        XCTAssertTrue(html.contains("applySetFontFamily"),
+                      "the JS bundle must handle setFontFamily")
+        XCTAssertTrue(html.contains(#""SF Mono", Menlo, monospace"#),
+                      "a custom family must fall back to the monospace stack, "
+                      + "never the browser's proportional default")
+    }
 }

@@ -614,6 +614,7 @@ public struct ContentView: View {
                     language: lang,
                     isDarkTheme: model.activeTheme.name == .xcodeDark,
                     themePalette: model.activeThemeCMPalette,
+                    fontFamily: model.sourceFontName,
                     wordWrap: model.sourceWordWrap,
                     lineNumbers: true,
                     indentation: model.editorIndentation,

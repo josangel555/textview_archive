@@ -547,11 +547,24 @@
 
   // Build an EditorView.theme(...) that just controls font-size.
   // Compartmented so a setFontSize swap doesn't fight with theme swap.
-  function fontTheme(px) {
+  function fontTheme(px, family) {
+    // TSK-259: one compartment owns size + family so the two swaps never
+    // fight. A null family keeps the bundle's default stack; a custom
+    // family always falls back to the monospace stack (a missing font on
+    // the system must not degrade to the browser's proportional default).
+    const base = { fontSize: px + "px" };
+    const scroller = { fontSize: px + "px", lineHeight: "1.45" };
+    const gutters = { fontSize: px + "px" };
+    if (family) {
+      const stack = '"' + family + '", "SF Mono", Menlo, monospace';
+      base.fontFamily = stack;
+      scroller.fontFamily = stack;
+      gutters.fontFamily = stack;
+    }
     return EditorView.theme({
-      "&": { fontSize: px + "px" },
-      ".cm-scroller": { fontSize: px + "px", lineHeight: "1.45" },
-      ".cm-gutters":  { fontSize: px + "px" },
+      "&": base,
+      ".cm-scroller": scroller,
+      ".cm-gutters":  gutters,
     });
   }
 
@@ -843,6 +856,7 @@
         case "setLanguage":        applySetLanguage(msg); break;
         case "setTheme":           applySetTheme(msg); break;
         case "setFontSize":        applySetFontSize(msg); break;
+        case "setFontFamily":      applySetFontFamily(msg); break;
         case "setWordWrap":        applySetWordWrap(msg); break;
         case "setReadOnly":        applySetReadOnly(msg); break;
         case "setLineNumbers":     applySetLineNumbers(msg); break;
@@ -1036,7 +1050,15 @@
   function applySetFontSize(msg) {
     const n = Math.max(6, Math.min(72, Number(msg.px) || 13));
     currentFontPx = n;
-    view.dispatch({ effects: fontCompartment.reconfigure(fontTheme(n)) });
+    view.dispatch({ effects: fontCompartment.reconfigure(fontTheme(n, currentFontFamily)) });
+  }
+
+  // TSK-259: the user-selected monospace family. Absent/empty family =
+  // restore the bundle default.
+  let currentFontFamily = null;
+  function applySetFontFamily(msg) {
+    currentFontFamily = (typeof msg.family === "string" && msg.family) ? msg.family : null;
+    view.dispatch({ effects: fontCompartment.reconfigure(fontTheme(currentFontPx, currentFontFamily)) });
   }
 
   function applySetWordWrap(msg) {
@@ -1254,6 +1276,7 @@
   window.redo         = function () { return redo(view); };
   window.openSearch   = function () { openSearchPanel(view); return true; };
   window.setFontSize  = function (px) { applySetFontSize({ px: px }); };
+  window.setFontFamily = function (f) { applySetFontFamily({ family: f }); };
   window.setTheme     = function (n)  { applySetTheme({ name: n }); };
   window.setLanguage  = function (l)  { applySetLanguage({ lang: l }); };
   window.setEditable  = function (y)  { applySetReadOnly({ enabled: !y }); };

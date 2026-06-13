@@ -33,6 +33,9 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
     /// nil = no theme selected → the appearance-keyed legacy pair
     /// (TSK-602 behavior, byte-identical).
     public let themePalette: [String: String]?
+    /// TSK-259 slice 2: the user-selected monospace family for the editor
+    /// (nil = the bundle default). Same preference as the source view.
+    public let fontFamily: String?
     public let wordWrap: Bool
     public let readOnly: Bool
     public let lineNumbers: Bool
@@ -105,6 +108,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         language: HighlightLanguage = .markdown,
         isDarkTheme: Bool = false,
         themePalette: [String: String]? = nil,
+        fontFamily: String? = nil,
         wordWrap: Bool = true,
         readOnly: Bool = false,
         lineNumbers: Bool = true,
@@ -140,6 +144,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         self.language = language
         self.isDarkTheme = isDarkTheme
         self.themePalette = themePalette
+        self.fontFamily = fontFamily
         self.wordWrap = wordWrap
         self.readOnly = readOnly
         self.lineNumbers = lineNumbers
@@ -265,6 +270,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         private var pendingLanguage: HighlightLanguage?
         private var pendingDark: Bool?
         private var pendingThemePalette: [String: String]?
+        private var pendingFontFamily: String??
         private var pendingWrap: Bool?
         private var pendingReadOnly: Bool?
         private var pendingLineNumbers: Bool?
@@ -295,6 +301,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
         private var lastSentLanguage: HighlightLanguage?
         private var lastSentDark: Bool?
         private var lastSentPalette: [String: String]?
+        private var lastSentFontFamily: String??
         private var lastSentWrap: Bool?
         private var lastSentReadOnly: Bool?
         private var lastSentLineNumbers: Bool?
@@ -338,6 +345,7 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             self.pendingLanguage = view.language
             self.pendingDark = view.isDarkTheme
             self.pendingThemePalette = view.themePalette
+            self.pendingFontFamily = view.fontFamily
             self.pendingWrap = view.wordWrap
             self.pendingReadOnly = view.readOnly
             self.pendingLineNumbers = view.lineNumbers
@@ -405,6 +413,13 @@ public struct CodeMirrorEditorView: NSViewRepresentable {
             if let size = pendingFontSize, size != lastSentFontSize {
                 lastSentFontSize = size
                 dispatch(.setFontSize(Int(size.rounded())), webView: webView)
+            }
+            // TSK-259: double-optional channel — `nil` (outer) = nothing
+            // pending; `.some(nil)` = explicit "bundle default" must still
+            // dispatch once so clearing the preference takes effect.
+            if let family = pendingFontFamily, family != lastSentFontFamily {
+                lastSentFontFamily = family
+                dispatch(.setFontFamily(family), webView: webView)
             }
             if let wrap = pendingWrap, wrap != lastSentWrap {
                 lastSentWrap = wrap

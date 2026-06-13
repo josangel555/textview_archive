@@ -97,6 +97,18 @@ final class CMOutboundEncodingTests: XCTestCase {
         XCTAssertEqual(d["px"] as? Int, 15)
     }
 
+    /// TSK-259 slice 2: the family rides when set; an explicit nil omits
+    /// the key (the JS side reads absent/empty as "bundle default").
+    func testEncodeSetFontFamily() {
+        let d = encodeAndParse(.setFontFamily("Monaco"))
+        XCTAssertEqual(d["type"] as? String, "setFontFamily")
+        XCTAssertEqual(d["family"] as? String, "Monaco")
+        let cleared = encodeAndParse(.setFontFamily(nil))
+        XCTAssertEqual(cleared["type"] as? String, "setFontFamily")
+        XCTAssertNil(cleared["family"],
+                     "nil family must OMIT the key — JS restores the default stack")
+    }
+
     func testEncodeSetWordWrap() {
         let d = encodeAndParse(.setWordWrap(false))
         XCTAssertEqual(d["type"] as? String, "setWordWrap")
