@@ -9169,6 +9169,30 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +323 (2026-06-13 tick — TSK-559 windowed snapshot SHIPPED (the top open S2 perf item))
+
+- **TSK-559 (`[RUST-CORE][S2][perf]` level-triggered snapshot = O(table) per filter keystroke) —
+  FIXED (`8762a58`), executing the design I triaged last firing.** Snapshot serialized ALL surviving
+  rows per pull, so filter-as-you-type was O(table) and the 16 MiB wire cap hard-failed large CSVs.
+  - **Additive, ZERO wire-format change** (the key low-risk choice — no MDV_WIRE_VERSION bump, no
+    Swift-decode-format change, no drift-gate churn):
+    - core/session.rs: `snapshot_window_frame(offset, limit)` — projects only
+      `indices[offset..offset+limit]` (panic-free `.get()` for the no-panic wall), reusing the exact
+      SnapshotView wire shape (`indices` carry the ABSOLUTE row ids); a bounded window never nears
+      the cap. `filtered_row_count()` — the surviving count, the one datum a window omits, served as
+      a cheap scalar so NO new wire field is needed.
+    - ffi/lib.rs: `mdvcore_session_snapshot_window` + `mdvcore_session_filtered_count` (via the
+      TSK-541 registry lookup; CSV_SESSION capability, no new bit). cbindgen header restaged.
+    - Swift: `CsvSession.snapshotWindow(offset:limit:)` + `filteredCount()` bindings.
+  - **Validation:** rust-core gate green on committed 8762a58; 5 new FFI tests with **teeth**
+    (mutated the window to project all indices → 4 window tests red, recompile-confirmed, restored);
+    Swift ABTests round-trip green vs the rebuilt .a. Caught + fixed an `indexing_slicing`
+    no-panic-wall trip (`&all[start..end]` → `.get(start..end)`) that plain `cargo test` missed but
+    the gate's clippy denies caught.
+  - **Consumer follow-up filed: TSK-668** — wire the CSV view to page the viewport window (the
+    live-gated UI that makes the O(window) win user-visible); the full-snapshot path stays as the
+    fallback until proven. Keeps the new API from being dead (mitigates TSK-574).
+
 ## LOG +322 (2026-06-13 tick — rust-core board reconciliation + TSK-559 triage; CSV-twin decision parked)
 
 A hygiene + triage firing (NO code shipped): the actionable code-pool was genuinely compromised —
