@@ -1,7 +1,14 @@
 <!-- CLAUDE-HANDOFF v1 -->
 # Handoff — RUST-CORE Stage B (twin deletion) is the active lane; #1 indent done  (2026-06-13)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `8a57023` (+ a docs commit). Recent ticks: render-health VM pass (18/18); `set-theme` verb (unblocks 641 chrome T5); `lsp-rename` verb + **the interactive Rename Symbol UI** (command + prompt + state machine, host-tested; render → VM).
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `90fcc06` (+ a docs commit). Recent ticks: interactive Rename Symbol UI (640); TSK-564 FFI copy-2 elimination (in-place frame decode, rust-core lane).
+
+## Pick fast — actionable pool + a process rule
+**RULE (repeated over-deliberation, worsening): pick the first viable bounded item within 2-3 board reads and START.** The gate + teeth are the safety net, not pre-analysis. Don't oscillate between candidates.
+Actionable headless items right now (groomed pools are mostly validated/heavy-tailed):
+- **rust-core perf/quality (headless, fresh lane):** TSK-543 (cm_apply full-doc-FFI per edit, S3 — bigger, hot path), TSK-575 (clippy warn-tier hygiene), TSK-564 (copy-1 buf-scope refactor = its remaining half), TSK-583 (DocId registry, remote-core enabler).
+- **wishlist minor-features (headless):** TSK-745 (new-tab recents), TSK-757 (shortcut catalog).
+- **VM/UI tails (heavy, dedicated tick):** 641 chrome T5 pixel; 640 rename-prompt VM render + code-action picker UI.
 
 ## ⚠️ The remaining fixed-lane work is user-facing UI tails — each a dedicated build tick
 The cheap drains are done. What's left needs a focused SwiftUI/T5 effort (don't expect a quick re-run drain):

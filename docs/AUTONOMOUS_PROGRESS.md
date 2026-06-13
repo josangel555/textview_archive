@@ -9169,6 +9169,25 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +360 (2026-06-13 — TSK-564 FFI copy-2 elimination: in-place frame decode for table/snapshot)
+
+- **TSK-564 (rust-core/FFI perf) copy-2 eliminated for the payload-scaling decoders (commit 90fcc06).** The
+  Swift FFI boundary double-copied each response frame: MdvBuf→[UInt8] (copy 1) then unframe's
+  `Array(frame[4...])` (copy 2). Added `MsgPackReader(_:startingAt:)` (reads the whole frame from offset 4 —
+  bytes stays 0-indexed, only the cursor starts past the prefix, so bounds + `finish()` hold) + a
+  `frameBodyStart` validator (same length check, no body copy); `decodeTable`/`decodeSnapshot` decode in place.
+  `unframe` + its tests + the body-returning free fns untouched. Host-tested (round-trip + validate/reject) +
+  teeth (offset→0 → red); headless gate green. **Fresh lane** (rust-core) after the LSP/theming streak.
+  - REMAINING (564 at progress): copy 1 (MdvBuf→frame) is structurally required by the buf's defer-free
+    lifetime — killing it needs a decode-inside-buf-scope refactor (cost/benefit call for an S4 finding).
+- **rust-core perf lane still has items:** TSK-543 (cm_apply ships full doc across FFI per edit, S3, bigger),
+  TSK-575 (clippy warn-tier hygiene), TSK-583 (DocId registry, remote-core enabler). Plus the VM/UI tails
+  (641 chrome T5, 640 rename-prompt VM render + code-action picker).
+- **Process note (self — REPEATED, worsening):** over-deliberated HARD mid-tick again (read ~6 tickets +
+  MsgPackReader internals, oscillated between candidates for ~12 calls before committing to 564). The pick
+  (bounded rust-core perf) was fine; the dithering was the waste. RULE for next tick: pick the first viable
+  bounded item within 2-3 board reads and START — the gate + teeth are the safety net, not pre-analysis.
+
 ## LOG +359 (2026-06-13 — TSK-640 interactive Rename Symbol UI: command + prompt + state machine)
 
 - **TSK-640 interactive rename UI (commit 8a57023)** — the user-facing entry to the host-tested rename engine,
