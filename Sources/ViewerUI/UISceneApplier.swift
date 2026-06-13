@@ -59,6 +59,37 @@ public enum UISceneApplier {
             return "ui-scene: applied 'lsp-rename' tabs=\(model.tabs.tabs.count) renamePrompt=\(model.isLSPRenamePromptPresented)"
         }
 
+        #if DEBUG
+        // LSP code-action PICKER scene (TSK-640 render tail): present the picker
+        // with canned actions over an editor backdrop so the VM harness can
+        // capture it + assert mdv.codeActions.* are VISIBLE. The picker's real
+        // flow is async-LSP (private(set) state, no server in the spawned app),
+        // so this uses the DEBUG harness present-seam. #if DEBUG: scenes are a
+        // debug/test affordance (the VM dist is built debug); a release build
+        // returns "unknown scene" → the a11y assertion fails loudly, never a
+        // false green.
+        if scene == "code-actions" {
+            try? FileManager.default.createDirectory(
+                at: tabsBaseDir, withIntermediateDirectories: true)
+            let f = tabsBaseDir.appendingPathComponent("codeaction-target.swift")
+            try? "let x = 1\n".write(to: f, atomically: true, encoding: .utf8)
+            model.open(url: f)
+            let noEdit = LSPTextEdit(
+                range: LSPRange(start: LSPPosition(line: 0, character: 0),
+                                end: LSPPosition(line: 0, character: 0)),
+                newText: "")
+            model._presentCodeActionsForHarness([
+                // An edit-bearing action (enabled row) + a command-only action
+                // (listed-but-disabled row) — exercises both row states.
+                LSPCodeAction(title: "Organize Imports", kind: "source.organizeImports",
+                              isPreferred: true, edit: ["file:///codeaction-target.swift": [noEdit]]),
+                LSPCodeAction(title: "Convert to async", kind: "quickfix",
+                              isPreferred: false, edit: [:]),
+            ])
+            return "ui-scene: applied 'code-actions' tabs=\(model.tabs.tabs.count) picker=presenting"
+        }
+        #endif
+
         // Preview-tab scenes (TSK-306 / TSK-272): drive the ONE ephemeral preview
         // slot. `preview-promoted` then promotes it to a permanent (upright) tab.
         if parts.first == "preview" {

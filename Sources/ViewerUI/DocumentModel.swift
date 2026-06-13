@@ -2479,6 +2479,18 @@ public final class DocumentModel: ObservableObject {
         return applied
     }
 
+    #if DEBUG
+    /// Harness-only (TSK-492/640 VM render lane): present the code-action picker
+    /// DIRECTLY with canned actions, bypassing the async LSP fetch, so a
+    /// `MDV_UI_SCENE` can put the picker on screen deterministically for a
+    /// real-pixel capture (the spawned app has no live LSP server). NOT a
+    /// product path — the real flow is `showCodeActionPicker()`. Mirrors the
+    /// `_applyRenameWorkspaceEditForTesting` DEBUG seam.
+    func _presentCodeActionsForHarness(_ actions: [LSPCodeAction]) {
+        codeActionPicker = .presenting(actions)
+    }
+    #endif
+
     /// JS posted a right-click. Build a native NSMenu and pop it at
     /// the screen point CM6 forwarded. Keeps Cmd-click + right-click
     /// → "Go to Definition" symmetric with the source-view's menu.

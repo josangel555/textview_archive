@@ -107,6 +107,25 @@ final class UISceneApplierTests: XCTestCase {
         XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
     }
 
+    #if DEBUG
+    func test_codeActionsScene_presentsThePickerOverAnEditorBackdrop() {
+        // TSK-640 render tail (sibling of lsp-rename): the 'code-actions' scene
+        // must drive the code-action picker into .presenting with canned actions
+        // over an open editor tab, so the VM harness can capture it and assert
+        // mdv.codeActions.* are VISIBLE. Pins the model-state contract; the
+        // pixel/AX capture is the VM lane.
+        let model = makeModel()
+        let status = apply("code-actions", model)
+        guard case .presenting(let actions) = model.codeActionPicker else {
+            return XCTFail("the picker must be .presenting; got \(model.codeActionPicker)")
+        }
+        XCTAssertEqual(actions.count, 2, "the two canned actions are presented")
+        XCTAssertEqual(model.tabs.tabs.count, 1, "an editor backdrop tab is open behind the picker")
+        XCTAssertTrue(status.contains("picker=presenting"), "status: \(status)")
+        XCTAssertFalse(status.contains("unknown"), "must be a recognised scene: \(status)")
+    }
+    #endif
+
     func test_unknownScene_isReportedNotApplied() {
         let model = makeModel()
         let status = apply("bogus-scene", model)

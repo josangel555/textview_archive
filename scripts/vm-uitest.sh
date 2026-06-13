@@ -46,6 +46,7 @@ REMOTE_HOME_CMD='echo $HOME'
 scene_expect() {
   case "$1" in
     lsp-rename) echo "mdv.lspRename.panel" ;;
+    code-actions) echo "mdv.codeActions.panel" ;;
     *) echo "" ;;
   esac
 }
