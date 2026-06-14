@@ -9169,6 +9169,25 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +421 (2026-06-13 — TSK-823: Navigate menu surfacing the LSP go-to commands (backend-not-surfaced spirit))
+
+Autonomous tick. Verified the named backend-not-surfaced pool is done (TSK-464/469 validated) AND that the LSP commands
+are correctly wired (cross-checked every lsp.* command's scriptVerb against its ScriptVerbDispatch case — all match; my
+suspected lsp.rename "show-lsp-rename"-vs-"lsp-rename" mismatch was WRONG, both cases exist). No dead commands. The lone
+gap: the goto commands worked via palette/keybinding but had NO menu entry points — a standard IDE Navigate menu was
+missing.
+
+**Shipped TSK-823 (commit `3c02bee`, headless gate green — 5211 tests, 0 fail, no heavy-tier leak):** a top-level
+**Navigate** menu (after View) with Go to Definition / Declaration / Type Definition / Implementation. 4 @objc actions
+dispatch the verified-working `navigateViaLSPAtCursor`; gated to editor mode via `validateMenuItem` (same gate as the CM6
+commands); `applyShortcut` picks up any user keybinding (none by default — rebind in ~/.textview/keybinding.json). Pure
+UI-wiring of existing backend — the backend-not-surfaced pattern.
+
+**Tests (host-safe):** ViewerUITests `LSPNavigateActionSafetyTests` (3 — the action's SAFETY contract: graceful false /
+no crash with no tab or no editor cursor, across all 4 kinds; a drift guard that the 4 menu kinds match the enum).
+**TEETH:** broke the no-tab guard (return true) → the safety test went RED across all kinds → restored. The menu RENDER +
+a live LSP jump are the VM/live-tail (no host coverage for NSMenu — same as every menu).
+
 ## LOG +420 (2026-06-13 — answered the owner's "how does X work" questions → docs/CAPABILITIES.md)
 
 Safe code-shippable pool drained (per +419) + owner away. Turned to the owner's own filed `[WISH][question]` tickets —
