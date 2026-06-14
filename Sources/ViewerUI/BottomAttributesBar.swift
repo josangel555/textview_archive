@@ -30,14 +30,14 @@ struct BottomAttributesBar: View {
             // lenses — hidden in rendered / preview / hex.
             if showsTextToggles {
                 Toggle("Wrap", isOn: $model.sourceWordWrap)
-                    .toggleStyle(.checkbox)
+                    .toggleStyle(.button)
                     .controlSize(.mini)
                     .font(.system(size: model.uiSize(11)))
                     .helpInfo(title: "Wrap",
                               description: "Soft-wrap long lines at the viewport edge")
                     .accessibilityIdentifier("mdv.wrapToggle")
                 Toggle("Special chars", isOn: $model.showInvisibleChars)
-                    .toggleStyle(.checkbox)
+                    .toggleStyle(.button)
                     .controlSize(.mini)
                     .font(.system(size: model.uiSize(11)))
                     .helpInfo(title: "Special characters",
@@ -56,7 +56,7 @@ struct BottomAttributesBar: View {
                     set: { model.setHTMLJavaScriptEnabled(
                         $0, forTabID: model.tabs.selected?.id ?? UUID()) }
                 ))
-                .toggleStyle(.checkbox)
+                .toggleStyle(.button)
                 .controlSize(.mini)
                 .font(.system(size: model.uiSize(11)))
                 .helpInfo(title: "Enable JavaScript",
@@ -72,7 +72,7 @@ struct BottomAttributesBar: View {
             // via PreferencesStore.previewMetadataVisible.
             if model.currentViewMode == .preview {
                 Toggle("Info", isOn: $model.showPreviewMetadataPanel)
-                    .toggleStyle(.checkbox)
+                    .toggleStyle(.button)
                     .controlSize(.mini)
                     .font(.system(size: model.uiSize(11)))
                     .helpInfo(title: "Info panel",
