@@ -18,4 +18,11 @@ enum Finder {
     static func reveal(_ url: URL) {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
+
+    /// TSK-355: open the file in its default external app (the system "Open
+    /// With" default) — e.g. a `.png` in Preview, a `.csv` in Numbers — so the
+    /// user can hand a file to another app without leaving the sidebar.
+    static func openInDefaultApp(_ url: URL) {
+        NSWorkspace.shared.open(url)
+    }
 }

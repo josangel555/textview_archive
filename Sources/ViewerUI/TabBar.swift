@@ -321,6 +321,8 @@ private struct TabContextMenu: View {
             Divider()
             Button("Copy Path") { Pasteboard.copy(url.path) }
             Button("Reveal in Finder") { Finder.reveal(url) }
+            // TSK-355: open the tab's file in its default external app.
+            Button("Open in Default App") { Finder.openInDefaultApp(url) }
             Button("Reveal in Sidebar") {
                 model.revealInSidebar(url)
             }

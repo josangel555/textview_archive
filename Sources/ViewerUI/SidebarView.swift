@@ -1086,6 +1086,8 @@ private struct FileRowContextMenu: View {
         Button("Copy Path") { Pasteboard.copy(node.url.path) }
         Button("Copy Relative Path") { Pasteboard.copy(relativePath) }
         Button("Reveal in Finder") { Finder.reveal(node.url) }
+        // TSK-355: hand the file to its default external app (Preview, Numbers, …).
+        Button("Open in Default App") { Finder.openInDefaultApp(node.url) }
         // TSK-283: rename this file/folder (also bound to F2). Collision-safe
         // via the model; the tree + bookmarks follow the move.
         Button("Rename…") { SidebarView.presentRenamePrompt(for: node.url, model: model) }
