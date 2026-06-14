@@ -26,8 +26,9 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
       `[PROFILE-GATED]` — spike found (a) is a likely NO-OP: `utf8.count`/`first`/`last` are O(1) on a native UTF-8 String;
       the ×3 cost only bites if `text` is NSString-bridged (UTF-16). Needs a profile of `text` provenance before it's worth a
       (behaviorally-invisible, untestable) commit. (b)/(c)/(d) all need profiling too. Mechanical fix recorded on the ticket.
-- [ ] **TSK-841** — Highlight wire → positional arrays + integer kind (4× smaller, 5.3× faster decode; like
+- [x] **TSK-841** — Highlight wire → positional arrays + integer kind (4× smaller, 5.3× faster decode; like
       diff-lines wire-v2). Rust+Swift wire change; hits every highlighted open + markdown fence.
+      `[validated e99ca14]` — positional `[start,len,kind]` array landed (kind stays String; integer-kind = deferred follow-up).
 - [ ] **TSK-844** — CSV open: parse straight into the arena (skip the throwaway `Vec<Vec<String>>`; 140 ms open).
 - [ ] **TSK-842** — Files ≤64 MiB read + UTF-8-decode SYNC on main (softWarnBytes cliff) → off-main `[needs trace]`
 - [ ] **TSK-839** — Attribute + fix the 30–366 ms per-nav main-thread CoreAnimation commit stall (the REAL felt

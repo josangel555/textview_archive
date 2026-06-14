@@ -53,6 +53,20 @@ and started executing the measured wins.
   read. 11 files (out-of-scope env readers — Review/Audio/LSP/RemoteCore — left alone). 2 new RustCoreSeamTests
   (getenv path reads the real env incl. the `=0` kill-switch teeth; getenv path == dict path parity); existing
   gate tests inject dicts → unaffected. Gate green.
+- **TSK-841 (`e99ca14`, validated)** — highlight wire format → positional. The Rust `Run` crossed the FFI as a
+  `{start,len,kind}` msgpack MAP (3 repeated keys/run); now a positional `[start,len,kind]` ARRAY — ~4× smaller /
+  ~5× faster decode on docs with thousands of runs (hits every highlighted open + markdown fence). Mirrors the
+  diff wire-v2 pattern (TSK-563 positional tuple structs). Custom `Serialize`/`Deserialize` on `Run` (named fields
+  kept for in-crate logic; only the wire shape changed); Swift `mdvCoreHighlightRuns` decodes the array. `kind`
+  stays a string — the integer-kind variant (needs a shared TokenKind↔u8 ABI) is a deferred follow-up. Shared by
+  the FFI AND mdv-serve (remote) — both covered. Teeth: new `wire_run_is_positional_array_not_map` decodes runs as
+  raw `(u32,u32,String)` tuples (fails on a map → catches a both-ends revert the round-trip masks) + the existing
+  Rust round-trip + Swift A/B/remote-loopback suites. No wire-version bump (msgpack payload schema isn't in the C
+  header). Gate green. CAUGHT a latent gate gap (filed TSK-855): the loopback test spawns a real mdv-serve binary
+  that NOTHING in the headless gate rebuilds, so the first gate run validated the new FFI wire against a 2-day-stale
+  serve (old map encoder) → false `typeMismatch("expected array")`. Rebuilt `mdvcore-serve` → re-gate green. Process
+  note: I committed `e99ca14` in the same step as the gate-verdict check (premature) — the code was correct, but
+  never bundle commit with the gate read.
 
 ## LOG 2026-06-10 (latest+128) — TSK-557 CSV heap-accounted cap: last SECURITY item of Phase 0
 
