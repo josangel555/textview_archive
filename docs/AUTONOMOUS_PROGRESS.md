@@ -1,5 +1,21 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — Edit ▸ Lines (in-place line ops) shipped (TSK-883, 1cba668, → review)
+
+Standard editor line ops as IN-PLACE active-file commands (the existing TSK-352 line tools are clipboard-only —
+confirmed in CommandRegistry+BuiltIn; in-place is the version every editor actually has). **Edit ▸ Lines ▸ {Sort
+Ascending, Sort Descending, Reverse, Remove Duplicates}** — grouped in a SUBMENU to curb the growing Edit-menu
+crowding (a nod to the parked TSK-751 "organize menus"). `LineOps` (pure ViewerCore) is terminator-aware: scalar
+split (so `\r\n` = one break), preserves the dominant line ending + trailing-newline presence, only reorders/
+dedupes; Remove Duplicates keeps first + preserves order. Any text file; shared `applyTextTransformToActiveFile`.
+
+Teeth: 9 pure tests (sort asc/desc, reverse, dedupe-keeps-first+order, trailing-newline preserved/absent, CRLF
+preserved incl. with trailing, empty/single, blank-line dedupe). Host gate green (5605 tests). Menu = VM tail.
+
+Run tally **18 features → `review`**. Note the Edit/View menus are now feature-dense (~20 commands) — TSK-751
+(menu organization, parked) is increasingly relevant; this firing used a submenu to mitigate. Owner still away.
+Standing unblocks unchanged (VM pass; 343/470/733). Keep shipping real features; prefer submenus to reduce clutter.
+
 ## LOG 2026-06-14 — Promote/Demote Headings shipped (TSK-882, 9ffb911, → review)
 
 Continued the §2.5-safe consumer/transform vein. **Edit ▸ Promote/Demote Headings** shifts every ATX heading
