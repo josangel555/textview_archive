@@ -61,6 +61,19 @@ if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   # does this too; the gate needs it independently for a fresh checkout / CI.
   log "build Rust core (mdvcore staticlib) — required for the RustCore static link"
   bash "$SCRIPT_DIR/build-rust-core.sh"
+  # TSK-855: RemoteTransportLoopbackTests spawns the REAL mdv-serve binary to
+  # prove the engine surface is byte-equal local-FFI vs remote. build-rust-core.sh
+  # builds ONLY the dist FFI staticlib — NOT the serve bin — so without this the
+  # suite ran against a possibly days-stale mdv-serve (false RED on a wire change
+  # that rebuilt the FFI but not serve; worse, a false PASS for a wire change that
+  # didn't break decode, silently defeating the loopback's whole point). Build it
+  # fresh into the exact debug path the test's fallback resolves. Guarded on cargo
+  # so no-toolchain hosts (the VM) keep self-skipping the loopback as before.
+  if command -v cargo >/dev/null 2>&1; then
+    log "cargo build -p mdvcore-serve — fresh loopback server (TSK-855)"
+    CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/private/tmp/mdv-rust-target}" \
+      cargo build --locked --manifest-path "$ROOT_DIR/rust-core/Cargo.toml" -p mdvcore-serve
+  fi
   log "swift build --build-tests --scratch-path .build-gate --disable-index-store (compile the gate sweep)"
   swift build --build-tests --scratch-path "$GATE_SCRATCH" --disable-index-store
 fi
