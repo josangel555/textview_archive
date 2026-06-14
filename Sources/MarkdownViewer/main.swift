@@ -1487,6 +1487,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(showDocumentStatistics(_:)), keyEquivalent: "")
         docStatsItem.target = self
         viewMenu.addItem(docStatsItem)
+        // TSK-675: export the rendered Markdown as standalone HTML (CSP-free, so
+        // it renders in a browser). Markdown files only.
+        let copyHTMLItem = NSMenuItem(title: "Copy as HTML",
+                                      action: #selector(copyAsHTML(_:)), keyEquivalent: "")
+        copyHTMLItem.target = self
+        viewMenu.addItem(copyHTMLItem)
+        let exportHTMLItem = NSMenuItem(title: "Export as HTML…",
+                                        action: #selector(exportAsHTML(_:)), keyEquivalent: "")
+        exportHTMLItem.target = self
+        viewMenu.addItem(exportHTMLItem)
 
         viewMenu.addItem(.separator())
         let formatItem = NSMenuItem(
@@ -2220,6 +2230,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         _ = model.insertTableOfContents()
     }
 
+    /// TSK-675 — copy the active Markdown rendered as standalone HTML to the clipboard.
+    @objc func copyAsHTML(_ sender: Any?) {
+        guard let html = model.htmlExportForActiveMarkdown() else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(html, forType: .string)
+    }
+
+    /// TSK-675 — export the active Markdown as a standalone .html file.
+    @objc func exportAsHTML(_ sender: Any?) {
+        guard let html = model.htmlExportForActiveMarkdown() else { return }
+        let panel = NSSavePanel()
+        panel.title = "Export as HTML"
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = model.htmlExportFilename
+        guard panel.runModal() == .OK, let dest = panel.url else { return }
+        do {
+            try Data(html.utf8).write(to: dest, options: .atomic)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Couldn't export HTML"
+            alert.informativeText = String(describing: error)
+            alert.alertStyle = .warning
+            alert.runModal()
+        }
+    }
+
     /// TSK-675 — show word/character/line counts for the active file.
     @objc func showDocumentStatistics(_ sender: Any?) {
         guard let stats = model.activeDocumentStats else { return }
@@ -2328,6 +2364,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(insertTableOfContents(_:)):
             // TSK-675: active Markdown file only.
             return model.canInsertTableOfContents
+        case #selector(copyAsHTML(_:)), #selector(exportAsHTML(_:)):
+            // TSK-675: active Markdown file only.
+            return model.canExportActiveAsHTML
         case #selector(insertSnippet(_:)):
             // TSK-705: editor mode only (inserts at the caret).
             return model.canInsertSnippet

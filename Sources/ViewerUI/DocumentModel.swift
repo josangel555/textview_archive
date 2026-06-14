@@ -4677,6 +4677,33 @@ public final class DocumentModel: ObservableObject {
         return DocumentStats.compute(text)
     }
 
+    /// True when "Copy/Export as HTML" can act — an active Markdown text file.
+    public var canExportActiveAsHTML: Bool {
+        guard let tab = tabs.selected, let url = tab.url else { return false }
+        guard ["md", "markdown", "mdown", "mkd"].contains(url.pathExtension.lowercased())
+        else { return false }
+        return activeFileText != nil
+    }
+
+    /// Render the active Markdown file to a STANDALONE HTML document (TSK-675) for
+    /// Copy/Export as HTML — CSP-free (renders in a browser), embedding the
+    /// markdown stylesheet + theme overrides. nil when no Markdown file is active.
+    public func htmlExportForActiveMarkdown() -> String? {
+        guard let tab = tabs.selected, let url = tab.url,
+              ["md", "markdown", "mdown", "mkd"].contains(url.pathExtension.lowercased()),
+              let text = activeFileText else { return nil }
+        let body = HTMLRenderer().render(text)
+        let css = MarkdownStylesheet.load() + "\n" + themedExtraStylesheet
+        return HtmlExport.standaloneDocument(
+            body: body, stylesheet: css, title: url.deletingPathExtension().lastPathComponent)
+    }
+
+    /// Default filename for "Export as HTML" (active file's stem + `.html`).
+    public var htmlExportFilename: String {
+        guard let url = tabs.selected?.url else { return "export.html" }
+        return HtmlExport.htmlFilename(for: url)
+    }
+
     /// True when "Insert Table of Contents" can act — an active Markdown text file.
     public var canInsertTableOfContents: Bool {
         guard let tab = tabs.selected, let url = tab.url else { return false }
