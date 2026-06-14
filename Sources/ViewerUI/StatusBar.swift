@@ -47,6 +47,11 @@ struct StatusBar: View {
     /// runloop inside the layout commit).
     @StateObject private var gitChipStore = GitChipStore()
 
+    /// Always-on app-footprint sampler (TSK-366). Cheap (one `task_info`
+    /// syscall, no pid-walk); owned here, started/stopped with the bar's
+    /// lifecycle so it never runs when the bar isn't shown.
+    @StateObject private var memSampler = StatusBarMemorySampler()
+
     var body: some View {
         #if DEBUG
         let _ = BodyProbe.tick("StatusBar")   // TSK-615 re-eval width probe
@@ -103,7 +108,12 @@ struct StatusBar: View {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 12) {
                     metricsGroup
+                    memoryChip
                     dateChips
+                }
+                HStack(spacing: 12) {
+                    metricsGroup
+                    memoryChip
                 }
                 metricsGroup
             }
@@ -113,7 +123,34 @@ struct StatusBar: View {
         .frame(height: model.uiSize(22))
         .background(Palette.windowBackground.opacity(0.65))
         .overlay(alignment: .top) { Divider() }
+        .onAppear { memSampler.start() }
+        .onDisappear { memSampler.stop() }
         .accessibilityIdentifier("mdv.statusBar")
+    }
+
+    /// Live app-memory chip (TSK-366) — headline is the main process's
+    /// `phys_footprint`; the per-tab content-byte proxy + WebKit-helper
+    /// pointer live in the tooltip (`StatusBarMemory`). Droppable: the
+    /// `ViewThatFits` in `body` sheds it (with the date chips) under width
+    /// pressure, so it never crowds the critical Ln/Col/Lines chips.
+    @ViewBuilder
+    private var memoryChip: some View {
+        let fmt = StatusBarMemory.format(
+            appFootprintBytes: memSampler.appFootprintBytes,
+            tabContentBytes: currentMetrics?.byteCount)
+        HStack(spacing: 3) {
+            Text("Mem")
+                .font(.system(size: model.uiSize(10), weight: .medium))
+                .foregroundStyle(.secondary)
+            Text(fmt.label)
+                .font(.system(size: model.uiSize(10), design: .monospaced))
+                .foregroundStyle(.primary)
+        }
+        .fixedSize()
+        .help(fmt.tooltip)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Memory: \(fmt.label). \(fmt.tooltip)")
+        .accessibilityIdentifier("mdv.statusBar.memory")
     }
 
     // MARK: - Git chip (UX-C, #225)
