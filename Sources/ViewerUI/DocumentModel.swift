@@ -4788,6 +4788,16 @@ public final class DocumentModel: ObservableObject {
         return dest
     }
 
+    /// True when the Markdown heading-shift commands can act — active Markdown file.
+    public var canShiftMarkdownHeadings: Bool { canInsertTableOfContents }
+
+    /// Promote (`delta < 0`, fewer `#`) / demote (`delta > 0`, more `#`) every
+    /// ATX heading in the active Markdown file. Encoding + line endings preserved.
+    @discardableResult
+    public func shiftActiveMarkdownHeadings(by delta: Int) -> Bool {
+        applyTextTransformToActiveFile { MarkdownHeadingShift.shift($0, by: delta) }
+    }
+
     /// True when "Insert Table of Contents" can act — an active Markdown text file.
     public var canInsertTableOfContents: Bool {
         guard let tab = tabs.selected, let url = tab.url else { return false }

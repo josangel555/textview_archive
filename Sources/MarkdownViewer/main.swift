@@ -1808,6 +1808,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                                  action: #selector(insertTableOfContents(_:)), keyEquivalent: "")
         tocItem.target = self
         editMenu.addItem(tocItem)
+        // Shift all ATX heading levels (restructure a Markdown doc). Markdown only.
+        let promoteItem = NSMenuItem(title: "Promote Headings",
+                                     action: #selector(promoteHeadings(_:)), keyEquivalent: "")
+        promoteItem.target = self
+        editMenu.addItem(promoteItem)
+        let demoteItem = NSMenuItem(title: "Demote Headings",
+                                    action: #selector(demoteHeadings(_:)), keyEquivalent: "")
+        demoteItem.target = self
+        editMenu.addItem(demoteItem)
         // Minify the active JSON file (compact; key order + values preserved).
         let minifyJSONItem = NSMenuItem(title: "Minify JSON",
                                         action: #selector(minifyJSON(_:)), keyEquivalent: "")
@@ -2264,6 +2273,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         _ = model.minifyActiveJSON()
     }
 
+    /// Promote (fewer #) / demote (more #) all ATX headings in the active Markdown.
+    @objc func promoteHeadings(_ sender: Any?) { _ = model.shiftActiveMarkdownHeadings(by: -1) }
+    @objc func demoteHeadings(_ sender: Any?) { _ = model.shiftActiveMarkdownHeadings(by: 1) }
+
     /// TSK-675 — report broken local links/images in the active Markdown file.
     @objc func checkLinks(_ sender: Any?) {
         guard let report = model.checkLinksInActiveMarkdown() else { return }
@@ -2458,6 +2471,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(insertTableOfContents(_:)):
             // TSK-675: active Markdown file only.
             return model.canInsertTableOfContents
+        case #selector(promoteHeadings(_:)), #selector(demoteHeadings(_:)):
+            // active Markdown file only.
+            return model.canShiftMarkdownHeadings
         case #selector(minifyJSON(_:)):
             // Active .json file only.
             return model.canMinifyActiveJSON
