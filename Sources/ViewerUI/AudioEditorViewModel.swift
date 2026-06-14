@@ -34,12 +34,28 @@ public final class AudioEditorViewModel: ObservableObject {
     @Published public private(set) var playheadFrame: Int = 0
     @Published public private(set) var isPlaying = false
 
+    /// Whether the frequency-spectrum panel is shown (TSK-533). Off by default;
+    /// while on, `spectrum` tracks the playhead.
+    @Published public private(set) var showSpectrum = false
+    /// The spectrum at the playhead, recomputed on tick/scrub while shown and
+    /// `nil` while hidden (so a stale spectrum never lingers).
+    @Published public private(set) var spectrum: SpectrumBins?
+
     private var player: AVAudioPlayer?
     private var playbackTask: Task<Void, Never>?
     private var lastColumns = 600
 
     public init(url: URL) {
         self.url = url
+    }
+
+    /// Test seam: construct with a preloaded waveform (no decode). The on-screen
+    /// Canvas render is VM-only, but the spectrum toggle's state outcome is
+    /// host-pinned through this (mirrors how the pure model carries the teeth).
+    init(url: URL, waveform: AudioWaveform) {
+        self.url = url
+        self.waveform = waveform
+        self.isLoading = false
     }
 
     // The playback clock captures `[weak self]`, so it ends on its own once the
@@ -111,6 +127,23 @@ public final class AudioEditorViewModel: ObservableObject {
         rebuild(columns: lastColumns)
     }
 
+    // MARK: - Spectrum (TSK-533)
+
+    /// Show/hide the frequency-spectrum panel, recomputing (or clearing) the
+    /// spectrum to match.
+    public func toggleSpectrum() {
+        showSpectrum.toggle()
+        recomputeSpectrum()
+    }
+
+    /// Recompute the playhead spectrum when the panel is shown; clear it when
+    /// hidden. Cheap (a single 2048-pt FFT) so it's safe to call on every
+    /// playback tick. Self-guards on `showSpectrum`, so callers in the playback
+    /// hot path should pre-check it to avoid a redundant publish.
+    public func recomputeSpectrum() {
+        spectrum = showSpectrum ? waveform?.spectrum(at: playheadFrame) : nil
+    }
+
     // MARK: - Transport
 
     public func togglePlay() { isPlaying ? pause() : play() }
@@ -147,6 +180,7 @@ public final class AudioEditorViewModel: ObservableObject {
         let frame = AudioWaveformGeometry.frame(atFraction: fraction, visible: visibleRange)
         playheadFrame = frame
         player?.currentTime = wf.time(ofFrame: frame)
+        if showSpectrum { recomputeSpectrum() }
     }
 
     private func startClock() {
@@ -154,12 +188,14 @@ public final class AudioEditorViewModel: ObservableObject {
         playbackTask = Task { @MainActor [weak self] in
             while !Task.isCancelled, let self, let p = self.player, p.isPlaying {
                 self.playheadFrame = self.waveform?.frame(atTime: p.currentTime) ?? 0
+                if self.showSpectrum { self.recomputeSpectrum() }
                 try? await Task.sleep(for: .milliseconds(33))
             }
             // Playback reached the end (isPlaying went false on its own).
             if let self, let p = self.player, !p.isPlaying, self.isPlaying {
                 self.isPlaying = false
                 self.playheadFrame = self.totalFrames
+                if self.showSpectrum { self.recomputeSpectrum() }
             }
         }
     }

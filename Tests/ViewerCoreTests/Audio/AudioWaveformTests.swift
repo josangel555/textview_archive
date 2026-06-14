@@ -178,4 +178,66 @@ final class AudioWaveformTests: XCTestCase {
         XCTAssertEqual(AudioWaveformGeometry.clampZoom(9999), AudioWaveformGeometry.maxZoom)
         XCTAssertEqual(AudioWaveformGeometry.clampZoom(3), 3)
     }
+
+    // MARK: - spectrum window (TSK-533)
+
+    /// A ramp (`samples[i] == i`) makes the window's frame indices self-evident.
+    private func rampWaveform(_ count: Int, sampleRate: Double = 8000) -> AudioWaveform {
+        AudioWaveform(samples: (0..<count).map { Float($0) }, sampleRate: sampleRate)
+    }
+
+    func test_spectrumWindow_centresOnFrame() {
+        let wf = rampWaveform(10_000)
+        let win = wf.spectrumWindow(centeredOn: 5000, fftSize: 2048)
+        XCTAssertEqual(win.count, 2048)
+        XCTAssertEqual(win.first, 3976, "window starts half an fftSize before the frame")
+        XCTAssertEqual(win[1024], 5000, "the centre sample is the requested frame")
+    }
+
+    func test_spectrumWindow_clampsAtStartAndEnd() {
+        let wf = rampWaveform(10_000)
+        let head = wf.spectrumWindow(centeredOn: 10, fftSize: 2048)
+        XCTAssertEqual(head.count, 2048)
+        XCTAssertEqual(head.first, 0, "near the start the window pins to frame 0")
+
+        let tail = wf.spectrumWindow(centeredOn: 9999, fftSize: 2048)
+        XCTAssertEqual(tail.count, 2048)
+        XCTAssertEqual(tail.last, 9999, "near the end the window pins to the last frame")
+    }
+
+    func test_spectrumWindow_shortBuffer_returnsWholeBuffer() {
+        let wf = rampWaveform(100)
+        let win = wf.spectrumWindow(centeredOn: 40, fftSize: 2048)
+        XCTAssertEqual(win.count, 100, "shorter than fftSize → the whole buffer (analyzer zero-pads)")
+        XCTAssertEqual(win.first, 0)
+        XCTAssertEqual(win.last, 99)
+    }
+
+    func test_spectrumWindow_emptyBuffer_isEmpty() {
+        let wf = AudioWaveform(samples: [], sampleRate: 8000)
+        XCTAssertTrue(wf.spectrumWindow(centeredOn: 0, fftSize: 2048).isEmpty)
+    }
+
+    func test_spectrum_sine_peaksAtTone() {
+        // A 1 kHz tone at 8 kHz → the playhead spectrum must peak at ~1 kHz,
+        // proving the window-extract + analyze compose correctly end to end.
+        let sr = 8000.0, f = 1000.0, n = 4096
+        let samples = (0..<n).map { Float(0.9) * sinf(Float(2.0 * Double.pi * f * Double($0) / sr)) }
+        let wf = AudioWaveform(samples: samples, sampleRate: sr)
+        let bins = wf.spectrum(at: 2048, fftSize: 2048)!
+        XCTAssertEqual(Double(bins.binFrequencies[bins.peakBin]), f,
+                       accuracy: bins.binResolution * 1.5)
+    }
+
+    func test_spectrum_emptyBuffer_isNil() {
+        let wf = AudioWaveform(samples: [], sampleRate: 8000)
+        XCTAssertNil(wf.spectrum(at: 0))
+    }
+
+    func test_spectrum_silence_carriesFloor() {
+        let wf = AudioWaveform(samples: [Float](repeating: 0, count: 2048), sampleRate: 8000)
+        let bins = wf.spectrum(at: 0, fftSize: 2048, floorDB: -100)!
+        XCTAssertEqual(bins.floorDB, -100, "the floor is carried on the bins for the renderer")
+        XCTAssertTrue(bins.magnitudesDB.allSatisfy { $0 == -100 }, "silence sits at the floor")
+    }
 }

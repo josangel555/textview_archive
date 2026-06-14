@@ -9,10 +9,12 @@ import ViewerCore
 /// Deliberately contains NO `NSViewRepresentable`: the waveform is SwiftUI-native
 /// `Canvas` drawing and the transport is `AVAudioPlayer` (not a view), so there
 /// is no opaque AppKit layer to occlude the SwiftUI content — the recurring
-/// sibling-blank pathology can't apply here (LESSONS.md / CLAUDE.md). The
-/// spectrum panel, draggable trim/fade handles and Save-As are follow-up
-/// sub-tasks. Pixel/interaction validation is the VM lane (no-UI-on-host); the
-/// `mdv.audioEditor.*` identifiers let that test find the waveform + controls.
+/// sibling-blank pathology can't apply here (LESSONS.md / CLAUDE.md). An
+/// optional frequency-spectrum panel (TSK-533) drops in below the waveform, fed
+/// by the host-tested `SpectrumAnalyzer`; draggable trim/fade handles and
+/// Save-As remain follow-up sub-tasks. Pixel/interaction validation is the VM
+/// lane (no-UI-on-host); the `mdv.audioEditor.*` identifiers let that test find
+/// the waveform + controls.
 struct AudioEditorView: View {
     @StateObject private var vm: AudioEditorViewModel
     /// Called when the user dismisses the editor (returns to the plain player).
@@ -29,6 +31,11 @@ struct AudioEditorView: View {
             Divider()
             waveform
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if vm.showSpectrum {
+                Divider()
+                spectrumPanel
+                    .frame(height: 130)
+            }
             Divider()
             transport
         }
@@ -133,6 +140,44 @@ struct AudioEditorView: View {
 
     private func clampUnit(_ v: Double) -> Double { Swift.min(Swift.max(v, -1), 1) }
 
+    // MARK: - spectrum (TSK-533)
+
+    private var spectrumPanel: some View {
+        ZStack {
+            Color(nsColor: .textBackgroundColor)
+            if vm.spectrum == nil {
+                Text("Spectrum appears while playing or after scrubbing")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else {
+                spectrumCanvas
+            }
+        }
+        .accessibilityIdentifier("mdv.audioEditor.spectrum")
+    }
+
+    /// Linear-frequency magnitude bars: each bin's dB (floored at
+    /// `bins.floorDB`) maps to a bar height. Drawn as a single filled `Path`
+    /// (one rect per bin) so a 1024-bin column stays cheap at the playback tick.
+    private var spectrumCanvas: some View {
+        Canvas { ctx, size in
+            guard let bins = vm.spectrum, !bins.magnitudesDB.isEmpty else { return }
+            let mags = bins.magnitudesDB
+            let floor = Double(bins.floorDB)
+            let span = max(0 - floor, 1)   // dB range, guarded against a 0 floor
+            let colW = size.width / CGFloat(mags.count)
+            var path = Path()
+            for (i, db) in mags.enumerated() {
+                let norm = Swift.min(Swift.max((Double(db) - floor) / span, 0), 1)
+                let h = CGFloat(norm) * size.height
+                let x = CGFloat(i) * colW
+                path.addRect(CGRect(x: x, y: size.height - h,
+                                    width: Swift.max(colW, 0.5), height: h))
+            }
+            ctx.fill(path, with: .color(.accentColor))
+        }
+    }
+
     // MARK: - transport
 
     private var transport: some View {
@@ -151,6 +196,16 @@ struct AudioEditorView: View {
                     .foregroundStyle(.secondary)
 
                 Spacer(minLength: 0)
+
+                Button(action: { vm.toggleSpectrum() }) {
+                    Image(systemName: "waveform.path.ecg")
+                        .frame(width: 18)
+                        .foregroundStyle(vm.showSpectrum ? Color.accentColor : .secondary)
+                }
+                .buttonStyle(.borderless)
+                .disabled(vm.isLoading || vm.loadError != nil)
+                .help(vm.showSpectrum ? "Hide frequency spectrum" : "Show frequency spectrum")
+                .accessibilityIdentifier("mdv.audioEditor.spectrumToggle")
             }
 
             HStack(spacing: 10) {

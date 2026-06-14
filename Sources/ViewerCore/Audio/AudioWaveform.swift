@@ -52,6 +52,30 @@ public struct AudioWaveform: Sendable {
         let f = Int((seconds * sampleRate).rounded())
         return Swift.min(Swift.max(f, 0), frameCount)
     }
+
+    // MARK: - Spectrum (TSK-533)
+
+    /// A window of up to `fftSize` samples centred on `frame`, clamped to the
+    /// buffer — the slice a frequency-spectrum view analyses at the playhead.
+    /// It is shorter than `fftSize` only when the whole buffer is shorter (the
+    /// analyzer zero-pads); empty when the buffer is empty.
+    public func spectrumWindow(centeredOn frame: Int, fftSize: Int = 2048) -> [Float] {
+        guard frameCount > 0, fftSize > 0 else { return [] }
+        let len = Swift.min(fftSize, frameCount)
+        let clampedFrame = Swift.min(Swift.max(frame, 0), frameCount - 1)
+        let start = Swift.min(Swift.max(clampedFrame - len / 2, 0), frameCount - len)
+        return Array(samples[start..<(start + len)])
+    }
+
+    /// The frequency spectrum centred on `frame` (the playhead): extracts the
+    /// window and runs the pure `SpectrumAnalyzer`. `nil` for an empty buffer or
+    /// an unusable sample rate.
+    public func spectrum(at frame: Int, fftSize: Int = 2048, floorDB: Float = -120) -> SpectrumBins? {
+        let window = spectrumWindow(centeredOn: frame, fftSize: fftSize)
+        guard !window.isEmpty else { return nil }
+        return SpectrumAnalyzer.analyze(window, sampleRate: sampleRate,
+                                        fftSize: fftSize, floorDB: floorDB)
+    }
 }
 
 /// Pure, host-testable mapping between the zoom/scroll state of a waveform view

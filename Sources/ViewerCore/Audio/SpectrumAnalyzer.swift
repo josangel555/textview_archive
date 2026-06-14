@@ -11,14 +11,19 @@ public struct SpectrumBins: Equatable, Sendable {
     public let binFrequencies: [Float]
     public let sampleRate: Double
     public let fftSize: Int
+    /// The dB floor silence/empty bins sit at — the bottom of the magnitude
+    /// range. Carried so a renderer can normalise `[floorDB, 0] → [0, 1]`
+    /// without hard-coding the analyzer's floor.
+    public let floorDB: Float
     /// Hz per bin — the spectral resolution.
     public var binResolution: Double { sampleRate / Double(fftSize) }
 
-    public init(magnitudesDB: [Float], binFrequencies: [Float], sampleRate: Double, fftSize: Int) {
+    public init(magnitudesDB: [Float], binFrequencies: [Float], sampleRate: Double, fftSize: Int, floorDB: Float) {
         self.magnitudesDB = magnitudesDB
         self.binFrequencies = binFrequencies
         self.sampleRate = sampleRate
         self.fftSize = fftSize
+        self.floorDB = floorDB
     }
 
     /// Index of the loudest bin (0 if empty) — the dominant frequency component.
@@ -94,6 +99,6 @@ public enum SpectrumAnalyzer {
 
         let freqs = (0..<half).map { Float(Double($0) * sampleRate / Double(n)) }
         return SpectrumBins(magnitudesDB: magsDB, binFrequencies: freqs,
-                            sampleRate: sampleRate, fftSize: n)
+                            sampleRate: sampleRate, fftSize: n, floorDB: floorDB)
     }
 }
