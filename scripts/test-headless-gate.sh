@@ -40,6 +40,16 @@ SENTINEL="${MDV_HEADLESS_GATE_SENTINEL:-${TMPDIR:-/tmp}/mdv-headless-gate-violat
 export MDV_HEADLESS_GATE_SENTINEL="$SENTINEL"
 export MDV_HEADLESS_GATE=1
 
+# TSK-846: the gate builds with --disable-index-store (index store OFF) while
+# interactive `swift build`/`swift test` default to --auto-index-store (ON).
+# The index-store flag is part of SwiftPM's build-plan hash, so sharing one
+# `.build` between the two incompatible plans forced a full ~63s test-target
+# rebuild on EVERY gate<->interactive switch (both directions) — the 63s thrash
+# dwarfed the ~14s cold saving TSK-832 bought. Giving the gate its OWN scratch
+# dir keeps the index-off speed AND leaves the owner's warm interactive `.build`
+# untouched. Costs ~2GB disk for `.build-gate` (gitignored) + one cold seed.
+GATE_SCRATCH="${MDV_GATE_SCRATCH:-$ROOT_DIR/.build-gate}"
+
 log() { printf "==> %s\n" "$*"; }
 
 # Start clean: a stale sentinel from a previous run must not fail this one.
@@ -51,17 +61,21 @@ if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   # does this too; the gate needs it independently for a fresh checkout / CI.
   log "build Rust core (mdvcore staticlib) — required for the RustCore static link"
   bash "$SCRIPT_DIR/build-rust-core.sh"
-  log "swift build --build-tests (compile the gate sweep)"
-  swift build --build-tests
+  log "swift build --build-tests --scratch-path .build-gate --disable-index-store (compile the gate sweep)"
+  swift build --build-tests --scratch-path "$GATE_SCRATCH" --disable-index-store
 fi
 
-log "MDV_HEADLESS_GATE=1 swift test --parallel --disable-index-store  (headless tiers)"
+log "MDV_HEADLESS_GATE=1 swift test --parallel --scratch-path .build-gate --disable-index-store  (headless tiers)"
 # --disable-index-store (TSK-832): the CLI gate never reads the SourceKit index
 # store, so skip emitting it — trims the build phase + ~244 MB of disk. The
 # interactive `swift build` keeps the default --auto-index-store for the IDE.
+# Pinned on BOTH the build (above) and test invocations + the shared
+# --scratch-path (TSK-846): identical flags + a dedicated scratch dir mean the
+# build phase's output is reused by `swift test` (no within-gate re-plan), and
+# the gate never invalidates the interactive `.build`.
 # Don't let a test failure abort the script before we report the tier verdict.
 set +e
-swift test --parallel --disable-index-store
+swift test --parallel --scratch-path "$GATE_SCRATCH" --disable-index-store
 TEST_RC=$?
 set -e
 
