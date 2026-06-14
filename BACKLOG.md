@@ -1,5 +1,29 @@
 # Backlog
 
+## 2026-06-14 — build/test speedup + source-perf audits (docs/research/*-2026-06-14/)
+
+**OWNER ASK — TOP NEXT ACTION:** the owner wants ways to improve **app perf / speed / latency / responsiveness
+AND test speed** — and felt the build-speedup audit "led with storage wins." Spin up **another set of UNPRIMED
+blank-slate subagents** (per `feedback_subagent_prompts` — raw question + minimal background + the MEASURE rule,
+NOT the prior findings) for exploratory perf/latency/responsiveness analysis of the APP and the TESTS. Filed as
+a tracker ticket (see Phase-2 of the handoff). Don't prime them with the existing audit findings — let them
+rediscover/extend independently; synthesize + dedupe against the prior docs yourself when they return.
+
+**Landed:** F2/F3/F4 build wins (TSK-832/833/834 validated, `5ebab1d`, ~7.7 GB reclaimed + shared rust cache);
+TSK-828 line-ruler single-pass utf16 scan (validated, `2c7368c`); the TSK-366 memory-chip re-body regression
+(`ee4c55b`).
+
+**Open audit follow-ups (don't re-file — tickets exist):**
+- **Perf, needs a profiler trace first** (MEASURE rule): TSK-826 (FFI whole-frame `MdvBuf→Array` copy at 7 sites
+  — biggest leverage, extends TSK-564), TSK-827 (TreeSitterEngine.tokenize NSString bridge per predicate),
+  TSK-829 (CrossFileSearch single-threaded → parallelize). TSK-830 (micro-bundle: Rust `kind.to_string()`→Cow,
+  HTMLRenderer class lowercasing, MsgPackReader dict rebuild) is no-profiling-needed.
+- **Build, owner/dep-gated:** TSK-831 (F1 — disable IDE background indexing, −1.7 GB, owner-decision: affects
+  jump-to-def), TSK-835 (cargo-nextest, ~30–60% off rust tests, **dep-approval**), TSK-836 (split slowest test
+  classes — needs `--xunit-output` per-class timing capture first).
+- **VM-flaky test:** `TerminalForegroundBumpTests.test_backgroundOutput_feedsParser_withoutVersionBump` — file a
+  flaky-test ticket or make the async-bump assertion timing-robust.
+
 ## 2026-06-04 — owner roadmap dump (triaged)
 
 Captured verbatim from the owner, with triage tags. **CRASH fixed this pass:**

@@ -3013,3 +3013,34 @@ Continuation of "the five constraints" above; these three close every remaining 
   that's the kill, not a real finish.
 - **Prefer the lighter VM lanes over the full `test` suite.** `quick` (filtered + WebView lane) and
   per-suite `--filter` runs are far less likely to hang than the monolithic 4220-test `test` run.
+
+### 2026-06-14 — build/test pipeline + perf audit session
+
+- **The headless-gate WRAPPER flakes on exit-code under machine load** (back-to-back full-suite runs). The
+  failures are ALWAYS the same two timing-sensitive tests — `FoldBenchTests.testCold10KLineJSONUnder250ms`
+  (wall-clock 271ms vs 250ms) and `GrandchildPipeTests…do_not_leak_fds` (fd pressure). BOTH pass in isolation
+  (`swift test --filter <suite>`). Confirmed 3+ times this session. Mitigation: iterate with targeted
+  `--filter`, run the FULL gate exactly ONCE per change, and on EXIT=1 grep the log (excluding `^\[N/M\] Testing`
+  progress lines) for the real failure before chasing it — a no-real-failure EXIT=1 is the load flake.
+- **A `@StateObject`/timer on a SwiftUI PARENT view re-bodies the WHOLE parent every tick.** TSK-366 put the
+  memory-chip's 1.5s sampler `@StateObject` directly on `StatusBar` → every tick re-bodied the entire bar (git
+  chip + all metrics) and broke `ChromeBodyEvalCountTests` (a 3.7s test window > the 1.5s tick caught a stray
+  re-body). Fix (narrow observation): extract the timed thing into its OWN child view (`StatusBarMemoryChip`)
+  that owns the `@StateObject`, single instance, so the tick re-bodies only the child. Also change-gate the
+  `@Published` (it fires on EVERY assignment, not just on change).
+- **`.build` is ~4.4 GB mostly from DUPLICATION, not compiler output.** `index-build/` (1.7 GB) is a SECOND full
+  `swift build` tree the SourceKit-LSP background indexer maintains — and it RE-CLONES every tree-sitter git
+  mirror (814 MB) already under `repositories/` (798 MB). Grammar `.pack` files are 100–200 MB each. The Rust
+  target dir was fragmented across THREE caches; now unified (TSK-833) so build + gate + bare cargo all share
+  `/private/tmp/mdv-rust-target`.
+- **`swift test --parallel` is process-per-CLASS** (not per-method, not per-target) — the gate's ~95s tail is set
+  by the single slowest class. `--disable-index-store` is a valid flag (the CLI gate never reads the index);
+  interactive `swift build` keeps `--auto-index-store` for the IDE. Web advice that's WRONG here: lld/mold are
+  SLOWER than Apple's `ld` on Apple silicon; `sccache` is net-negative for incremental local builds; there is
+  NO SwiftPM `--depth`/`--shallow` clone flag (grammars can only be trimmed via a registry/vendoring).
+- **VM lane ≈ 5 min** (rsync 6s + `test-in-vm.sh test` 288s — 3× host's 95s, all cold compile / no `.build`
+  reuse). `TerminalForegroundBumpTests.test_backgroundOutput_feedsParser_withoutVersionBump` is VM-flaky
+  (timing-sensitive async bump assertion; passes on host).
+- **`LineNumberRulerView` scanned newlines via `(text as NSString).character(at:i)` per UTF-16 unit** — an ObjC
+  message-send per char (first-scroll hitch on multi-MB logs). Always iterate the Swift `.utf16` view; offsets
+  are identical (TSK-828, `2c7368c`).
