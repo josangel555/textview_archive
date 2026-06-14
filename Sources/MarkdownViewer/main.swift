@@ -1724,6 +1724,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
         convertItem.submenu = convertMenu
         editMenu.addItem(convertItem)
+        // TSK-675: normalize the active file's line endings (LF/CRLF/CR). Tag =
+        // index into `lineEndingChoices`. Enabled for any active text file.
+        let eolItem = NSMenuItem(title: "Convert Line Endings", action: nil, keyEquivalent: "")
+        let eolMenu = NSMenu(title: "Convert Line Endings")
+        for (i, choice) in AppDelegate.lineEndingChoices.enumerated() {
+            let mi = NSMenuItem(title: choice.title,
+                                action: #selector(convertFileLineEnding(_:)), keyEquivalent: "")
+            mi.target = self
+            mi.tag = i
+            eolMenu.addItem(mi)
+        }
+        eolItem.submenu = eolMenu
+        editMenu.addItem(eolItem)
         // TSK-705: insert a built-in snippet at the caret. Tag = index into
         // SnippetLibrary.builtIns. Editor-mode only (validateMenuItem).
         let snippetItem = NSMenuItem(title: "Insert Snippet", action: nil, keyEquivalent: "")
@@ -2135,6 +2148,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         _ = model.convertActiveFileEncoding(to: choices[tag].encoding)
     }
 
+    /// TSK-675 — line-ending convention choices for the Convert Line Endings menu.
+    static let lineEndingChoices: [(title: String, ending: LineEnding)] = [
+        ("LF (Unix / macOS)", .lf),
+        ("CRLF (Windows)", .crlf),
+        ("CR (Classic Mac OS)", .cr),
+    ]
+    /// TSK-675 — normalize the active file's line endings to the chosen convention.
+    @objc func convertFileLineEnding(_ sender: Any?) {
+        let tag = (sender as? NSMenuItem)?.tag ?? 0
+        let choices = AppDelegate.lineEndingChoices
+        guard choices.indices.contains(tag) else { return }
+        _ = model.convertActiveFileLineEnding(to: choices[tag].ending)
+    }
+
     /// TSK-705 — insert the snippet (built-in or user-defined) at the menu
     /// item's tag (index into `snippetStore.all`).
     @objc func insertSnippet(_ sender: Any?) {
@@ -2215,6 +2242,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(convertFileEncoding(_:)):
             // TSK-352: any active text file.
             return model.canConvertActiveFileEncoding
+        case #selector(convertFileLineEnding(_:)):
+            // TSK-675: any active text file.
+            return model.canConvertActiveFileLineEnding
         case #selector(insertSnippet(_:)):
             // TSK-705: editor mode only (inserts at the caret).
             return model.canInsertSnippet

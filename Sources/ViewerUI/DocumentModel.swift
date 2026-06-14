@@ -4616,6 +4616,41 @@ public final class DocumentModel: ObservableObject {
     /// True when "Convert Encoding" can act — there's an active text file.
     public var canConvertActiveFileEncoding: Bool { activeTextForEncodingConvert != nil }
 
+    /// Active text + its CURRENT encoding (for line-ending conversion, which must
+    /// preserve the file's encoding — TSK-675).
+    private var activeTextWithEncoding: (text: String, tabID: UUID, url: URL, encoding: String.Encoding)? {
+        guard let tab = tabs.selected, let url = tab.url else { return nil }
+        if let buf = editor.editorBuffers[tab.id] { return (buf.text, tab.id, url, buf.encoding) }
+        if case .loaded(let f) = tab.state { return (f.contents, tab.id, url, f.encoding) }
+        return nil
+    }
+
+    /// True when "Convert Line Endings" can act — there's an active text file.
+    public var canConvertActiveFileLineEnding: Bool { activeTextWithEncoding != nil }
+
+    /// TSK-675 (robust plain-text editing) — normalize the active file's line
+    /// endings to `target` (LF/CRLF/CR), preserving its encoding and any unsaved
+    /// edits. Write-through then drop+reload (same mechanism as
+    /// `convertActiveFileEncoding`). Returns false (no change) when there's no
+    /// active text file or the file already uses `target` — the on-disk file is
+    /// left untouched in that case.
+    @discardableResult
+    public func convertActiveFileLineEnding(to target: LineEnding) -> Bool {
+        guard let ctx = activeTextWithEncoding else { return false }
+        let converted = LineEndingConverter.convert(ctx.text, to: target)
+        guard converted != ctx.text else { return false }
+        do {
+            _ = try EditorWriter.save(converted, to: ctx.url, encoding: ctx.encoding)
+        } catch {
+            Obs.shared.emit(.warn, "files",
+                            "Convert line endings failed: \(String(describing: error))")
+            return false
+        }
+        editor.discardEditorBuffer(forTabID: ctx.tabID)
+        reloadCurrentFile()
+        return true
+    }
+
     /// The active tab's current text — the editor buffer's live text if editing,
     /// else the loaded-from-disk contents; nil when no text file is active.
     /// Backs the palette's `#` in-file search (TSK-727).
