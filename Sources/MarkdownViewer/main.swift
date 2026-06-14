@@ -1611,6 +1611,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         findPrev.tag = NSTextFinder.Action.previousMatch.rawValue
         findSubmenu.addItem(findPrev)
         findSubmenuItem.submenu = findSubmenu
+        // TSK-823 follow-up — LSP editor commands (Format / Rename / Code
+        // Actions), editor-mode-gated by validateMenuItem; applyShortcut picks
+        // up any user keybinding.
+        editMenu.addItem(.separator())
+        let lspLangItems: [(String, Selector, String)] = [
+            ("Format Document", #selector(lspFormatDocument(_:)), "lsp.format"),
+            ("Rename Symbol…", #selector(lspRenameSymbol(_:)), "lsp.rename"),
+            ("Code Actions…", #selector(lspCodeActions(_:)), "lsp.codeActions"),
+        ]
+        for (title, action, id) in lspLangItems {
+            let mi = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            mi.target = self
+            editMenu.addItem(applyShortcut(id, to: mi))
+        }
+        editMenu.addItem(.separator())
         editMenu.addItem(findSubmenuItem)
         editMenuItem.submenu = editMenu
 
@@ -1949,6 +1964,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         _ = model.navigateViaLSPAtCursor(kind: .implementation)
     }
 
+    // TSK-823 follow-up — the remaining LSP editor commands (format/rename/
+    // code-actions, TSK-627/640) worked via palette/keybinding but had no menu.
+    // Each guards internally (safe no-op without an editor / language server).
+    @objc func lspFormatDocument(_ sender: Any?) {
+        _ = model.formatActiveEditorViaLSP()
+    }
+    @objc func lspRenameSymbol(_ sender: Any?) {
+        model.showLSPRenamePrompt()
+    }
+    @objc func lspCodeActions(_ sender: Any?) {
+        model.showCodeActionPicker()
+    }
+
     /// Menu validation: gray-out items that don't apply to the current
     /// state. macOS calls this every time a menu opens (and for items
     /// with key equivalents, on the keystroke too).
@@ -2007,9 +2035,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(cmFoldAll(_:)), #selector(cmUnfoldAll(_:)),
              #selector(cmGotoLine(_:)),
              #selector(lspGotoDefinition(_:)), #selector(lspGotoDeclaration(_:)),
-             #selector(lspGotoTypeDefinition(_:)), #selector(lspGotoImplementation(_:)):
-            // LSP go-to navigates at the EDITOR cursor (navigateViaLSPAtCursor),
-            // so it's editor-mode-only — gray out elsewhere.
+             #selector(lspGotoTypeDefinition(_:)), #selector(lspGotoImplementation(_:)),
+             #selector(lspFormatDocument(_:)), #selector(lspRenameSymbol(_:)),
+             #selector(lspCodeActions(_:)):
+            // LSP go-to/format/rename/code-actions operate on the EDITOR cursor/
+            // buffer, so they're editor-mode-only — gray out elsewhere.
             return hasTab && model.currentViewMode == .editor
                 && CodeMirrorEditorRegistry.shared.current() != nil
         case #selector(toggleBookmark(_:)):
