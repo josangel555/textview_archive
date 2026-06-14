@@ -1815,6 +1815,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         closeItem.target = self
         menu.addItem(closeItem)
 
+        // TSK-755: Tab operations — a discoverability section grouping the
+        // open-file tab commands in the Session menu. The keyboard shortcuts
+        // live on File (New/Close Tab) and Window (Next/Previous/Move Tab);
+        // these entries carry NO key equivalents so they never collide, and
+        // dispatch the SAME `@objc` actions via the responder chain (each
+        // `#selector` is compile-checked against this AppDelegate's methods).
+        menu.addItem(.separator())
+        let tabHeader = NSMenuItem(title: "Tab Operations", action: nil, keyEquivalent: "")
+        tabHeader.isEnabled = false
+        menu.addItem(tabHeader)
+        let tabItems: [(String, Selector)] = [
+            ("New Tab", #selector(newTab(_:))),
+            ("Close Tab", #selector(closeCurrentTab(_:))),
+            ("Next Tab", #selector(nextTab(_:))),
+            ("Previous Tab", #selector(previousTab(_:))),
+            ("Move Tab Left", #selector(moveTabLeft(_:))),
+            ("Move Tab Right", #selector(moveTabRight(_:))),
+        ]
+        for (title, selector) in tabItems {
+            let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
+
         sessionMenuItem.submenu = menu
         return sessionMenuItem
     }
