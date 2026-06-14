@@ -1,17 +1,17 @@
 <!-- CLAUDE-HANDOFF v1 -->
 # Handoff — Section-A velocity run + perf lane drained + tasked-MCP flux  (2026-06-14)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `f099daa`
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `f76eb47`
 
 ## Mission
 Autonomous 10-min loop (cron `846245af`) draining `WORK_QUEUE.md` TOP-DOWN. Owner wants VELOCITY: **batch 2-3 independent items per firing, gate ONCE, commit per-item.** USER-FACING first; [VM] menu/UI items → build + host-test the model, leave appearance at `review`.
 
 ## Current state
 - **Done + validated this session (perf lane, all on `main`):** TSK-846 (index-store gate scratch dir, `703a9bb`), TSK-848 (rust-`.a` relink-skip, `5e6c11a`), TSK-840 (parallel grammar-warm, `64d4c3d`), TSK-843 (gate `getenv` fast-path, `9c4eb01`), TSK-841 (positional highlight wire, `e99ca14`), TSK-720 (⇧⌘P palette, `b4c4c20`).
-- **Done → `review` (Section A, VM/owner glance pending):** TSK-755 (Session→Tab Operations, `25b732a`), TSK-756 (palette toolbar button, `e31bc99`), TSK-753 (View→Language Mode, `192211b`), TSK-762 (bottom-bar toggle buttons, `a1dadb5`).
+- **Done → `review` (Section A, VM/owner glance pending):** TSK-755 (Session→Tab Operations, `25b732a`), TSK-756 (palette toolbar button, `e31bc99`), TSK-753 (View→Language Mode, `192211b`), TSK-762 (bottom-bar toggle buttons, `a1dadb5`), TSK-355 (Open in Default App, sidebar+tab menus, `c84e8bf`).
 - **Also:** bundle analysis + caps bumped 72→80 / 52→60 (`759835c`); Agent B build/test-speed doc (`37d5374`); WORK_QUEUE-first SOP governance (`800e951`); filed TSK-846..852 (build) + 853 (fixed) + 854/855 (reported); spiked TSK-844/845 (triaged); 2 `/Applications` builds (debug then **release**, 71/51 MB).
 - **In flight:** NOTHING half-coded. Working tree CLEAN (except pre-existing untracked `archive/Untitled.txt`, `untitled*.md` — NOT mine, leave them). `main` headless-gate-green.
-- **Next action:** cron fires → take the next UNCHECKED Section-A items, BATCH them, gate once. Concrete candidates: **TSK-747** (new-tab other types), **TSK-718** (hot exit), **TSK-726** (project-wide replace), **TSK-707** (double-Shift palette via NSEvent monitor). SKIP the ambiguous ones (see below).
+- **Next action:** cron fires → take the next UNCHECKED Section-A items, BATCH them, gate once. Concrete candidates: **TSK-747** (new-tab other types), **TSK-718** (hot exit), **TSK-726** (project-wide replace). **TSK-707 (double-Shift palette) DEFERRED** — a naive shift-tap monitor false-fires on capital-letter typing; needs an "intervening-key resets the gate" guard + a host-tested DoubleTapGate(window:) struct (design in the git log). SKIP the ambiguous ones (751/709/746).
 
 ## Key decisions & rationale
 - **WORK_QUEUE.md is the priority SELECTOR** (drain top-down); the tasked board stays the lifecycle SYSTEM OF RECORD. Encoded in TASK_WORKFLOW.md §3 rule-0, CLAUDE.md SOP, and the cron message (owner directive 2026-06-14).
