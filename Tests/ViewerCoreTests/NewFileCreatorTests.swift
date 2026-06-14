@@ -166,4 +166,40 @@ final class NewFileCreatorTests: XCTestCase {
         let url = try NewFileCreator.create(in: dir, maxAttempts: 1)
         XCTAssertEqual(url.lastPathComponent, "Untitled.txt")
     }
+
+    // MARK: - NewFileType (TSK-747) — the "New File ▸ …" offered set.
+
+    // The offered set + order is the contract the menus rely on: `.text` must be
+    // first (it carries ⌘N in both the File-menu submenu build and the validate
+    // path), and each type maps to a sensible Untitled.<ext>.
+    func test_newFileType_allCases_orderAndBaseNames() {
+        XCTAssertEqual(NewFileType.allCases, [.text, .markdown, .csv, .json],
+                       "order is load-bearing: .text first = the ⌘N item")
+        XCTAssertEqual(NewFileType.text.baseName, "Untitled.txt")
+        XCTAssertEqual(NewFileType.markdown.baseName, "Untitled.md")
+        XCTAssertEqual(NewFileType.csv.baseName, "Untitled.csv")
+        XCTAssertEqual(NewFileType.json.baseName, "Untitled.json")
+    }
+
+    // Titles are the visible menu labels — distinct + non-empty so no two items
+    // collide and none renders blank.
+    func test_newFileType_titles_distinctAndNonEmpty() {
+        let titles = NewFileType.allCases.map(\.title)
+        XCTAssertFalse(titles.contains(where: \.isEmpty))
+        XCTAssertEqual(Set(titles).count, titles.count, "every type has a distinct label")
+    }
+
+    // End-to-end: each offered type, routed through `NewFileCreator.create` with
+    // its `baseName`, lands a file carrying that type's extension. This is the
+    // behaviour the typed menu handlers (`createNewFile(in:type:)`) depend on —
+    // a regression in the baseName→extension mapping would fail HERE on the host
+    // even though the menu render is VM-only.
+    func test_newFileType_createsFileWithExpectedExtension() throws {
+        for type in NewFileType.allCases {
+            let url = try NewFileCreator.create(in: dir, baseName: type.baseName)
+            XCTAssertEqual(url.pathExtension, (type.baseName as NSString).pathExtension,
+                           "\(type) must create a .\(url.pathExtension) file")
+            XCTAssertEqual(try Data(contentsOf: url).count, 0, "new \(type) file is empty")
+        }
+    }
 }

@@ -89,3 +89,40 @@ public enum NewFileCreator {
                 String(name[name.index(after: dot)...]))
     }
 }
+
+/// The file types offered by the "New File ▸ …" submenus (TSK-747). Each
+/// maps to a default `Untitled.<ext>` base name whose extension drives the
+/// editor's language / category detection on open. Text-based types only —
+/// a "blank image" needs format + dimension choices that belong in their own
+/// dialog (deliberately deferred; not part of this slice). The created file
+/// is empty (the user types into it), matching VS Code's "New File".
+///
+/// Pure data so the offered set + its name mapping is host-testable without a
+/// window; the menu wiring that presents it is the VM-gated render layer.
+public enum NewFileType: String, CaseIterable, Sendable {
+    case text
+    case markdown
+    case csv
+    case json
+
+    /// Menu label.
+    public var title: String {
+        switch self {
+        case .text: return "Text File"
+        case .markdown: return "Markdown File"
+        case .csv: return "CSV File"
+        case .json: return "JSON File"
+        }
+    }
+
+    /// Default non-colliding base name handed to `NewFileCreator.create`; the
+    /// extension is what the open path uses to pick the language/category.
+    public var baseName: String {
+        switch self {
+        case .text: return "Untitled.txt"
+        case .markdown: return "Untitled.md"
+        case .csv: return "Untitled.csv"
+        case .json: return "Untitled.json"
+        }
+    }
+}

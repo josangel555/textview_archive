@@ -650,6 +650,15 @@ public final class DocumentModel: ObservableObject {
         }
     }
 
+    /// TSK-747 — create a new file of a chosen `type` (txt/md/csv/json) in
+    /// `directory`. Thin convenience over `createNewFile(in:baseName:)` so the
+    /// "New File ▸ …" menus have one typed entry point; the extension drives
+    /// the editor's language detection on open.
+    @discardableResult
+    public func createNewFile(in directory: URL, type: NewFileType) -> URL? {
+        createNewFile(in: directory, baseName: type.baseName)
+    }
+
     /// TSK-760: "New text file" from the empty-tab landing. Creates an editable
     /// Untitled.txt and opens it. Unlike File→New (⌘N, which `validateMenuItem`
     /// disables when no folder is open), the landing button must ALWAYS work —
@@ -660,8 +669,16 @@ public final class DocumentModel: ObservableObject {
     /// same directory File→New would (`newFileTargetDirectory`).
     @discardableResult
     public func newTextFileForLanding() -> URL? {
+        return newFileForLanding(type: .text)
+    }
+
+    /// TSK-747 — "New file of `type`" from the empty-tab landing. Same
+    /// always-works fallback semantics as `newTextFileForLanding` (temp scratch
+    /// when no folder is open), but for any offered `NewFileType`.
+    @discardableResult
+    public func newFileForLanding(type: NewFileType) -> URL? {
         let dir = newFileTargetDirectory ?? FileManager.default.temporaryDirectory
-        return createNewFile(in: dir)
+        return createNewFile(in: dir, type: type)
     }
 
     /// Rename the file/folder at `url` to `newName` (collision-safe via

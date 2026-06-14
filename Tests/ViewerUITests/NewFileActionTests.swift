@@ -82,8 +82,10 @@ final class NewFileActionTests: HeadlessUITestCase {
         XCTAssertTrue(main.contains("model.newFileTargetDirectory != nil"),
                       "the item must disable when no folder is open")
         let sidebar = try src("Sources/ViewerUI/SidebarView.swift")
-        XCTAssertTrue(sidebar.contains("model.createNewFile(in: node.url)"),
+        // TSK-747: the right-click "New File" is now a typed submenu
+        // (txt/md/csv/json) routing through createNewFile(in:type:).
+        XCTAssertTrue(sidebar.contains("model.createNewFile(in: node.url, type: type)"),
                       "the folder context menu must offer New File (the "
-                      + "right-click entry point TSK-329 named)")
+                      + "right-click entry point TSK-329 named, TSK-747 typed)")
     }
 }

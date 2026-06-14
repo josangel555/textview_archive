@@ -801,6 +801,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         model.createNewFile(in: dir)
     }
 
+    /// File → New File ▸ {Markdown,CSV,JSON} (TSK-747). The menu item's `tag`
+    /// indexes `NewFileType.allCases`; falls back to `.text` if a tag is ever
+    /// out of range. Same target-folder + disable semantics as `newFile`.
+    @objc func newFileOfType(_ sender: Any?) {
+        guard let dir = model.newFileTargetDirectory else { return }
+        let cases = NewFileType.allCases
+        let tag = (sender as? NSMenuItem)?.tag ?? 0
+        let type = cases.indices.contains(tag) ? cases[tag] : .text
+        model.createNewFile(in: dir, type: type)
+    }
+
     @objc func closeCurrentTab(_ sender: Any?) {
         guard model.tabs.selectedIndex != nil else {
             window?.performClose(nil)
@@ -1170,15 +1181,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         applyShortcut("file.newTab", to: newTabItem)
         fileMenu.addItem(newTabItem)
 
-        // TSK-329: File → New File (⌘N). Creates an untitled file in the
-        // selected folder (or the sidebar root) and opens it. Disabled when
-        // no folder is open (validateMenuItem).
-        let newFileItem = NSMenuItem(
-            title: "New File",
-            action: #selector(newFile(_:)),
-            keyEquivalent: "n"
-        )
-        newFileItem.target = self
+        // TSK-329/747: File → New File submenu. Creates an untitled file in the
+        // selected folder (or the sidebar root) and opens it. "Text File" keeps
+        // ⌘N; the other types (Markdown/CSV/JSON) create an `Untitled.<ext>` so
+        // the editor picks the right language. Disabled when no folder is open
+        // (validateMenuItem).
+        let newFileItem = NSMenuItem(title: "New File", action: nil, keyEquivalent: "")
+        let newFileSubmenu = NSMenu(title: "New File")
+        for (i, type) in NewFileType.allCases.enumerated() {
+            let isText = (type == .text)
+            let item = NSMenuItem(
+                title: type.title,
+                // Text File reuses the existing ⌘N path; the rest route through
+                // the typed handler (tag = index into NewFileType.allCases).
+                action: isText ? #selector(newFile(_:)) : #selector(newFileOfType(_:)),
+                keyEquivalent: isText ? "n" : ""
+            )
+            item.target = self
+            item.tag = i
+            newFileSubmenu.addItem(item)
+        }
+        newFileItem.submenu = newFileSubmenu
         fileMenu.addItem(newFileItem)
 
         let openItem = NSMenuItem(
@@ -2092,8 +2115,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let hasFile = model.currentURL != nil
         let hasTab  = model.tabs.selected != nil
         switch item.action {
-        case #selector(newFile(_:)):
-            // TSK-329: needs a folder to create into (selected dir or root).
+        case #selector(newFile(_:)), #selector(newFileOfType(_:)):
+            // TSK-329/747: needs a folder to create into (selected dir or root).
             return model.newFileTargetDirectory != nil
         case #selector(printRenderedPage(_:)), #selector(exportRenderedPDF(_:)):
             return model.canPrintRenderedPage

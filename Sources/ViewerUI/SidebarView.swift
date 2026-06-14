@@ -1092,9 +1092,14 @@ private struct FileRowContextMenu: View {
         // via the model; the tree + bookmarks follow the move.
         Button("Rename…") { SidebarView.presentRenamePrompt(for: node.url, model: model) }
         if node.isDirectory {
-            // TSK-329: create a new file in this folder (the right-click →
+            // TSK-329/747: create a new file in this folder (the right-click →
             // New File entry point). Atomic + non-colliding via the model.
-            Button("New File") { model.createNewFile(in: node.url) }
+            // The submenu offers the text-based types (txt/md/csv/json).
+            Menu("New File") {
+                ForEach(NewFileType.allCases, id: \.self) { type in
+                    Button(type.title) { model.createNewFile(in: node.url, type: type) }
+                }
+            }
             Divider()
             Button("Open in Terminal") { openInTerminal(node.url) }
             // MARK: - Search in Folder (folder-context agent)
