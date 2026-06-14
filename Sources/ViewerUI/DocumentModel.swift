@@ -4720,6 +4720,14 @@ public final class DocumentModel: ObservableObject {
         return CsvConvert.toJSON(header: r.header, rows: r.rows)
     }
 
+    /// A plain-text profile (row/column counts + per-column type & numeric
+    /// min/max/mean) of the active CSV, or nil when no CSV is active.
+    public func activeCSVSummary() -> String? {
+        guard canConvertActiveCSV, let text = activeFileText else { return nil }
+        let r = CSVParser.parse(text)
+        return CsvSummary.report(header: r.header, rows: r.rows)
+    }
+
     /// True when "Minify JSON" can act — an active `.json` text file.
     public var canMinifyActiveJSON: Bool {
         guard let tab = tabs.selected, let url = tab.url else { return false }

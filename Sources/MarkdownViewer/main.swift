@@ -1521,6 +1521,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                                      action: #selector(copyCSVAsJSON(_:)), keyEquivalent: "")
         csvJSONItem.target = self
         viewMenu.addItem(csvJSONItem)
+        let csvSummaryItem = NSMenuItem(title: "CSV Summary",
+                                        action: #selector(showCSVSummary(_:)), keyEquivalent: "")
+        csvSummaryItem.target = self
+        viewMenu.addItem(csvSummaryItem)
 
         viewMenu.addItem(.separator())
         let formatItem = NSMenuItem(
@@ -2341,6 +2345,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         NSPasteboard.general.setString(json, forType: .string)
     }
 
+    /// Show a profile of the active CSV (row/column counts + per-column stats).
+    @objc func showCSVSummary(_ sender: Any?) {
+        guard let report = model.activeCSVSummary() else { return }
+        let alert = NSAlert()
+        alert.messageText = "CSV Summary"
+        alert.informativeText = report
+        alert.alertStyle = .informational
+        alert.runModal()
+    }
+
     /// Lint the active Markdown for common doc-quality issues.
     @objc func lintMarkdown(_ sender: Any?) {
         guard let issues = model.lintActiveMarkdown() else { return }
@@ -2516,7 +2530,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(checkLinks(_:)), #selector(lintMarkdown(_:)):
             // active Markdown file only.
             return model.canCheckLinks
-        case #selector(copyCSVAsMarkdownTable(_:)), #selector(copyCSVAsJSON(_:)):
+        case #selector(copyCSVAsMarkdownTable(_:)), #selector(copyCSVAsJSON(_:)),
+             #selector(showCSVSummary(_:)):
             // active .csv/.tsv file only.
             return model.canConvertActiveCSV
         case #selector(insertSnippet(_:)):

@@ -1,5 +1,23 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — View ▸ CSV Summary shipped (TSK-885, → review)
+
+Second item this firing (batched). **View ▸ CSV Summary** profiles the open `.csv`/`.tsv`: total rows/columns,
+and per column the filled/empty cell counts, a numeric/text classification (numeric = every non-empty cell parses
+as a number), and min/max/mean for numeric columns. `CsvSummary` (pure ViewerCore) is a CONSUMER of
+`CSVParser.parse` output — §2.5-safe (does NOT modify the Rust-ported CSV engine), same pattern as the shipped
+`CsvConvert`. `DocumentModel.activeCSVSummary()` reuses the existing `canConvertActiveCSV` gate + `activeFileText`;
+surfaced as an NSAlert like Lint / Document Statistics. Number parsing rejects thousands separators / currency
+(ambiguous with the delimiter) — only what Swift's `Double` accepts.
+
+Teeth: 12 pure tests (row/col counts, numeric min/max/mean, text-not-numeric, mixed-column drops the numeric flag
+but stats over parsed, empty cells counted + skipped, ragged rows, wider-than-header synthesizes "Column N", empty
+input, thousands/currency rejected, negatives/decimals, report substrings, num() trailing-zero trim). Host gate
+green. Menu/alert render = VM tail.
+
+Run tally **20 features → `review`**. §2.5-safe consumer vein still yielding. Owner away; standing unblocks
+unchanged (VM validation pass; TSK-343/470/733).
+
 ## LOG 2026-06-14 — Edit ▸ Lines: Remove Empty / Collapse Blank shipped (TSK-884, → review)
 
 Completed the Edit ▸ Lines submenu (shipped last firing, TSK-883) with the two standard blank-line ops every
