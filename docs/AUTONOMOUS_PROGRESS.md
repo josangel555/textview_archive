@@ -94,6 +94,11 @@ and started executing the measured wins.
   checkmark source) with teeth (`DocumentModelLanguageOverrideTests`: nil with no tab → tracks the detected
   language → follows an override). Menu structure is the executable's private AppKit → `review` for the VM/owner
   glance; the model accessor + override logic are host-validated. CHANGELOG updated.
+- **TSK-762 (`a1dadb5`, review)** — Section A: BottomAttributesBar's four toggles (Wrap, Special chars, Enable JS,
+  preview Info) → `.toggleStyle(.button)` (matching the Find bar) instead of `.checkbox`, so on/off reads at a
+  glance. Pure-visual — the toggle BINDINGS (model.sourceWordWrap/showInvisibleChars/…) are unchanged + already
+  host-tested; only the SwiftUI render style changed → `review` (no host test for a toggleStyle; VM/owner glance).
+  CHANGELOG (Changed).
 
 ## LOG 2026-06-10 (latest+128) — TSK-557 CSV heap-accounted cap: last SECURITY item of Phase 0
 

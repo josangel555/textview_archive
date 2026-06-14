@@ -49,7 +49,8 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
 - [ ] **TSK-751** — Organize the menu items properly (review/reorganize the menu bar) `[VM]`
 - [ ] **TSK-746** — Open dialog: show recents
 - [ ] **TSK-747** — New-tab: offer other types (blank Sheet, Image) `[VM]`
-- [ ] **TSK-762** — Wrap / special-char toggles on the details pane (toggle buttons, not checkboxes) `[VM]`
+- [x] **TSK-762** — Wrap / special-char toggles on the details pane (toggle buttons, not checkboxes) `[VM]`
+      `[review a1dadb5]` — all 4 BottomAttributesBar toggles → .toggleStyle(.button); pure-visual, VM/owner glance.
 - [ ] **TSK-707** — Command palette: double-Shift shortcut (IntelliJ-style)
 - [x] **TSK-720** — Cmd+P / Cmd+Shift+P palette bindings (VS Code parity)
       `[validated b4c4c20]` — ⇧⌘P → command palette (nav.showPalette), routing host-tested; ⌘P left for Print (Mac HIG, not VS Code's override).
