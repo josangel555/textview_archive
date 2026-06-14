@@ -4677,6 +4677,20 @@ public final class DocumentModel: ObservableObject {
         return DocumentStats.compute(text)
     }
 
+    /// TSK-675 — convert the active file's LEADING indentation between tabs and
+    /// spaces, using the editor's configured indent width. Leading whitespace
+    /// only (alignment after the first non-space is untouched); line endings +
+    /// encoding preserved.
+    @discardableResult
+    public func convertActiveFileIndentation(toSpaces: Bool) -> Bool {
+        let width = editorIndentation.size
+        return applyTextTransformToActiveFile { text in
+            toSpaces
+                ? IndentConverter.tabsToSpaces(text, width: width)
+                : IndentConverter.spacesToTabs(text, width: width)
+        }
+    }
+
     /// TSK-675 (robust plain-text editing) — normalize the active file's line
     /// endings to `target` (LF/CRLF/CR), preserving its encoding and any unsaved
     /// edits. Write-through then drop+reload (same mechanism as

@@ -1754,6 +1754,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                                      action: #selector(ensureFinalNewline(_:)), keyEquivalent: "")
         finalNLItem.target = self
         editMenu.addItem(finalNLItem)
+        // TSK-675: convert leading indentation between tabs and spaces (using the
+        // editor's indent width). Enabled for any active text file.
+        let indentItem = NSMenuItem(title: "Convert Indentation", action: nil, keyEquivalent: "")
+        let indentMenu = NSMenu(title: "Convert Indentation")
+        let toSpacesItem = NSMenuItem(title: "Tabs → Spaces",
+                                      action: #selector(convertIndentToSpaces(_:)), keyEquivalent: "")
+        toSpacesItem.target = self
+        indentMenu.addItem(toSpacesItem)
+        let toTabsItem = NSMenuItem(title: "Spaces → Tabs",
+                                    action: #selector(convertIndentToTabs(_:)), keyEquivalent: "")
+        toTabsItem.target = self
+        indentMenu.addItem(toTabsItem)
+        indentItem.submenu = indentMenu
+        editMenu.addItem(indentItem)
         // TSK-705: insert a built-in snippet at the caret. Tag = index into
         // SnippetLibrary.builtIns. Editor-mode only (validateMenuItem).
         let snippetItem = NSMenuItem(title: "Insert Snippet", action: nil, keyEquivalent: "")
@@ -2187,6 +2201,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     @objc func ensureFinalNewline(_ sender: Any?) {
         _ = model.ensureFinalNewlineInActiveFile()
     }
+    /// TSK-675 — convert the active file's leading indentation to spaces / tabs.
+    @objc func convertIndentToSpaces(_ sender: Any?) {
+        _ = model.convertActiveFileIndentation(toSpaces: true)
+    }
+    @objc func convertIndentToTabs(_ sender: Any?) {
+        _ = model.convertActiveFileIndentation(toSpaces: false)
+    }
+
     /// TSK-675 — show word/character/line counts for the active file.
     @objc func showDocumentStatistics(_ sender: Any?) {
         guard let stats = model.activeDocumentStats else { return }
@@ -2285,7 +2307,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(convertFileLineEnding(_:)):
             // TSK-675: any active text file.
             return model.canConvertActiveFileLineEnding
-        case #selector(trimTrailingWhitespace(_:)), #selector(ensureFinalNewline(_:)):
+        case #selector(trimTrailingWhitespace(_:)), #selector(ensureFinalNewline(_:)),
+             #selector(convertIndentToSpaces(_:)), #selector(convertIndentToTabs(_:)):
             // TSK-675: any active text file.
             return model.canCleanUpActiveFile
         case #selector(showDocumentStatistics(_:)):
