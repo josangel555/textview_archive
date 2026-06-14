@@ -9426,6 +9426,29 @@ intermittently reported "swift test exited 1" with ZERO failing tests; a clean d
 run gave **EXIT=0, all 5246 pass, 0 failures**. That's the documented machine-load bench/exit-code flake (CLAUDE.md)
 after ~6 back-to-back full-suite runs this turn — not a real failure. Confirmed clean before committing.
 
+## LOG +436 (2026-06-14 — landed the free build-speedup wins F2/F3/F4 from the audit; + the audit/timing deliverables)
+
+Owner asked (prior turns) for build/test timing + two deep-analysis subagents (build-speedup, source-perf).
+Both audits done + committed (docs/research/build-test-speedup-2026-06-14/ `801cc8e`, source-perf-audit-2026-06-14/
+`439d069`); 11 follow-up tickets filed (TSK-826..836). Also caught + fixed a REAL latent regression while
+processing the perf audit: TSK-366's memory-chip sampler @StateObject was re-bodying the whole StatusBar every
+1.5s (broke ChromeBodyEvalCountTests) → extracted StatusBarMemoryChip + change-gated the publish (`ee4c55b`).
+
+**This tick — landed the 3 free build wins (commit `5ebab1d`, all validated green):**
+- **F3 (TSK-833):** unified the Rust CARGO_TARGET_DIR — build-rust-core.sh + rust-core-gate.sh now default to
+  /private/tmp/mdv-rust-target (same as .cargo/config.toml), so build + gate + bare cargo share ONE cache
+  instead of three. Validated: build-rust-core 37s + rust-core-gate 30s into the shared dir, both EXIT=0.
+- **F2 (TSK-832):** test-headless-gate.sh's swift test passes --disable-index-store (the CLI gate never reads the
+  index). Gate EXIT=0 with the flag. (Honest correction: the 244MB index persists for interactive IDE builds, so
+  the realized win is the gate build-phase, not the disk the ticket estimated.)
+- **F4 (TSK-834, one-time):** reaped the orphaned csv/gate target dirs + stale 601MB .build/release.
+- **Net ~7.7 GB reclaimed**; rust caches 3→1 (3.9G). F5 was a no-op (cargo dev already defaults codegen-units=256).
+- Build-infra only → no CHANGELOG. Remaining audit tickets: F1 (TSK-831, owner-decision: IDE bg-indexing),
+  perf TSK-826..830, T1 nextest (dep-approval, TSK-835), T3 test-class split (TSK-836).
+
+**Timing answers delivered:** host clean-build 64s / headless gate 95s / rust gate 11s warm / app build 16s;
+VM lane ~5min (288s, 3x host cold-compile); .build was 4.4G (dup index tree + grammar git history + symbols).
+
 ## LOG +435 (2026-06-14 — TSK-352 slice 2: clipboard URL/HTML encode-decode + trim-trailing-whitespace)
 
 Feature tick. Extended the clipboard dev-tools suite with the encode/decode family.
