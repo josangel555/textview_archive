@@ -22,6 +22,20 @@ and started executing the measured wins.
   [.markdown]`. 3 new `TreeSitterWarmupTests` (concurrent-over-allCases parity, prioritizing warms priority+remainder,
   additive-priority); teeth demonstrated (phase-1 no-op → additive test red → restored). User-facing: faster
   first-file highlighting after launch (CHANGELOG).
+- **TSK-853 (`31affba`, fixed)** — follow-up catch on TSK-840: the launch warm heated only the Swift
+  `TreeSitterEngine`, but highlighting routes through `RustHighlightAdapter` (Rust by default), so the Swift warm
+  pre-compiled the *fallback* while the default Rust `config_cache` (TSK-545) stayed cold. Added
+  `RustHighlightAdapter.warm` — routes a one-space probe per language through `outcome`, warming whichever engine
+  the gate selects (Rust for covered grammars, Swift fallback for any uncovered); two-phase (markdown-first →
+  concurrentPerform); launch now warms via the adapter. Lands at FIXED, not self-validated: a warm is a pure
+  latency optimization, behaviorally invisible on the host — wiring + concurrency tested, the cache-population
+  teeth is the rust `configured_grammar_is_cached_not_recompiled` test + VM timing.
+- **Bundle-size analysis + cap bump (`759835c`, owner ask)** — release measured 71.9 MB / 51.8 MB exec, ~50 KB
+  from the 72/52 caps; the exec is ~½ tree-sitter grammar parse tables (~29 MB in libmdvcore_ffi.a) + ~14 MB
+  symbol table (`strip -S` only). Bumped caps 72→80 / 52→60 for headroom. Filed **TSK-854** (owner-gated): delete
+  the Swift highlight twin + the 11 Swift grammar dylibs — the ~16 MB double-carry reclaim that un-inflates the
+  caps (TSK-649's Stage-B covers the *other* engines, not highlight; likely-blocker = the fold path has no rust
+  equivalent yet).
 
 ## LOG 2026-06-10 (latest+128) — TSK-557 CSV heap-accounted cap: last SECURITY item of Phase 0
 
