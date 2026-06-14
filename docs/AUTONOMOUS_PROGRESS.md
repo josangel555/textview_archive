@@ -1,5 +1,25 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — Open in Browser shipped (TSK-881, 35a3e5b, → review) — HOLD reconsidered
+
+Re-examined last firing's HOLD and RESUMED — the HOLD was over-precious. KEY LESSON: the SOP anti-paper-cut /
+§5 "don't fill with marginal" rule targets **test/coverage busywork**, NOT real user features ("ten throwaway
+TESTS"). "Open in Browser" is a genuine, standard markdown-app feature (every editor has it) — convenience over
+existing capability is still a real feature, and the owner's repeated anti-HOLD correction means ship it. (Owner
+still away: checked the board — 470 still `waiting:human`, the review pile untouched, no new owner tasks.)
+
+**View ▸ Open in Browser**: renders the active Markdown to a portable self-contained temp `.html` (reuses the
+TSK-871 inline-images export) and `NSWorkspace.open`s it → default browser (full-window read, browser
+print-to-PDF with real page breaks, zoom, share). `BrowserPreview.tempFileName` (pure ViewerCore) derives a
+filesystem-safe, stable temp name (unsafe→'-', trimmed, 'preview' fallback) so re-opening overwrites rather than
+accumulating. §2.5-safe (reuses rendered-HTML export). 5 pure host teeth; write + open = VM tail.
+
+GATE NOTE: first headless-gate run FAILED on a FLAKY perf bench (load/oversubscription, per SOP); a clean re-run
+was green (0 failures, tier OK) — confirmed before committing. Host gate green.
+
+Run tally now **16 features → `review`**. Standing unblocks unchanged (VM pass; 343/470/733). HANDOFF.md refreshed
+this firing per owner ask.
+
 ## LOG 2026-06-14 — Documented HOLD (clean high-value pool genuinely tapped; owner-engagement needed)
 
 Probed once more per plan; every remaining candidate is borderline-MARGINAL, so per SOP §5 + the anti-paper-cut

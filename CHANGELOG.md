@@ -16,6 +16,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Bottom attributes bar uses toggle buttons** — Wrap, Special chars, Enable JS, and the preview Info toggle are now press-to-toggle buttons (matching the Find bar) instead of small checkboxes, so their on/off state reads at a glance.
 
 ### Added
+- **Open in Browser** — **View ▸ Open in Browser** opens the rendered Markdown in your default web browser (as a self-contained file with images embedded) — for a full-window read, browser print-to-PDF with proper page breaks, zoom, or quick sharing.
 - **CSV → Markdown table / JSON** — with a `.csv`/`.tsv` file open, **View ▸ Copy as Markdown Table** copies it as a padded, aligned Markdown pipe table, and **View ▸ Copy as JSON** copies it as a JSON array of objects (one per row, keyed by the header, column order preserved). Handy for dropping tabular data into a doc or a script.
 - **Lint Markdown** — **View ▸ Lint Markdown** reports common doc-quality issues in the current Markdown file: images with no alt text, headings that skip a level (e.g. H1 → H3), and duplicate heading anchors (which make `#`-links ambiguous). Each finding lists its line and rule.
 - **Minify JSON** — **Edit ▸ Minify JSON** compacts the current `.json` file onto one line, stripping whitespace while keeping your key order and exact number formatting intact (it only touches valid JSON). Complements the existing Pretty-Print.
