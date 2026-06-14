@@ -1,5 +1,29 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — snippets epic slice 5: tab-stop navigation model (TSK-705 model layer COMPLETE)
+
+Autonomous tick. Surveyed the board's reported pool (security/groomed) for a fresh host-testable vein: the
+security item TSK-309 (TOCTOU bookmark symlinks) was explicitly TEAM-DEFERRED (out-of-scope: own folders,
+non-sandboxed) + architectural → skip; the rest of reported is epics / [PARTIAL] umbrellas / [PORT]/dep-gated /
+foreign (441-445 = tasked-tool dev) / owner-gated. So continued TSK-705 with the one remaining clean
+host-testable MODEL slice:
+- **TSK-705 (`9393706`, review)** — slice 5: `SnippetSession` tab-stop navigation model (pure). Given a
+  ParsedSnippet + insertion offset → absolute caret targets in visit order ($1→$2→…→$0), advance/retreat
+  (clamped), current/isFinished; repeated index → first occurrence. Host-tested (SnippetSessionTests, 5 cases).
+  This **completes the snippets MODEL layer**: parse (1) → library (2) → insert (3) → user store (4) →
+  navigate (5), all host-tested. No CHANGELOG (the nav model isn't user-visible until the CM6 Tab-wiring).
+
+**Snippets epic: model layer is now 100% done; ALL remaining slices are pure render/VM** — the CM6 Tab-key
+interception that applies SnippetSession (intercept Tab in the editor, select the returned range, advance), and
+the snippet management UI. Both need the VM lane.
+
+**Strategic state (now firmly established after exhaustive survey):** the clean, host-testable, non-render
+feature vein across the WHOLE board is drained. Every remaining lane is render/VM ([VM] Section-C + snippets
+render slices), risky (rust-core 844 security heap-cap; 382 DocumentModel central refactor), owner-gated
+(343/358), or deferred-by-design (308/309). The ≈13-item `review` backlog awaits a VM/owner glance to reach
+`done`. DECISIONS NEEDED (unchanged, consolidated below in the slice-1 log): 343 privacy default, 358 font×zoom
+design, + a lane-steer (rust-core careful / VM-render slices / 382 profiling). HANDOFF.md refreshed this firing.
+
 ## LOG 2026-06-14 — snippets epic slice 4: user-defined JSON snippet store (TSK-705)
 
 Autonomous tick, continued TSK-705. **Slice 4 (`08d4e28`, review)** — user-defined snippets:
