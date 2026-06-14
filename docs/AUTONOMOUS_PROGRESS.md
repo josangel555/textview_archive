@@ -1,5 +1,26 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-675 slice 4 shipped: Convert Indentation (Tabs↔Spaces) (2a8b111, → review)
+
+Drained the last clean host-buildable robust-editor command from the 675 runway. Child TSK-864 → review.
+
+- **Convert Indentation** (Edit ▸ Convert Indentation ▸ {Tabs → Spaces, Spaces → Tabs}): `IndentConverter`
+  (ViewerCore, pure, scalar-walk) rewrites ONLY each line's leading-whitespace run — tabs→spaces (each tab →
+  `width` spaces) / spaces→tabs (each `width`-run → one tab, partial run kept; existing leading tabs flush pending
+  spaces then pass through) — leaving post-content alignment + line terminators (LF/CRLF/CR) byte-intact. Driven
+  through the shared `applyTextTransformToActiveFile` helper (encoding-preserving), width from `CMIndentation.size`.
+  Indent DETECTION is Rust-ported (`RustIndentAdapter`); this conversion is a new transform (not the detector twin),
+  so §2.5-clean.
+
+Teeth: 10 pure tests (leading-only, non-leading untouched, CRLF preserved, partial runs, **round-trip
+spaces↔tabs**, empty). Host gate green (5529 tests, tier OK). Menu render = VM tail.
+
+675 now has 4 slices at review (862 line-endings; 863 cleanup+stats; 864 indentation). **The clean HOST-buildable
+robust-editor command runway is ~drained** — remaining 675 work is render/CM6-coupled (line ops duplicate/move/
+delete are caret-dependent; column/block select; macro record-replay; insert/overwrite; optional auto-cleanup-on-
+save) → VM/later. So the next firings face the same VM/owner-gated frontier; the banked `review` pile (now ~6
+features + 4 675 slices) increasingly needs a VM validation pass to convert to user value.
+
 ## LOG 2026-06-14 — TSK-675 slices 2+3 shipped: Document Statistics + Whitespace cleanup (90196d2, → review)
 
 Continued draining the P0 epic's host-buildable runway (the payoff of unblocking it last firing). Batched two

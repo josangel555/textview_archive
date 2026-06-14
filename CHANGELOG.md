@@ -16,6 +16,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Bottom attributes bar uses toggle buttons** — Wrap, Special chars, Enable JS, and the preview Info toggle are now press-to-toggle buttons (matching the Find bar) instead of small checkboxes, so their on/off state reads at a glance.
 
 ### Added
+- **Convert indentation** — **Edit ▸ Convert Indentation ▸ {Tabs → Spaces / Spaces → Tabs}** rewrites the leading indentation of every line to your chosen style (using the editor's indent width), leaving mid-line alignment and line endings untouched.
 - **Trim trailing whitespace / ensure final newline** — **Edit ▸ Trim Trailing Whitespace** strips trailing spaces and tabs from every line, and **Edit ▸ Ensure Final Newline** adds a single newline at the end if it's missing. Both keep the file's existing line-ending style and encoding.
 - **Document statistics** — **View ▸ Document Statistics** shows the current file's line, word, and character counts (with and without whitespace).
 - **Convert line endings** — **Edit ▸ Convert Line Endings ▸ {LF / CRLF / CR}** rewrites the current file's line endings to Unix (LF), Windows (CRLF), or Classic-Mac (CR), keeping its text encoding and any unsaved edits. (The status bar already showed the current convention; now you can change it.)
