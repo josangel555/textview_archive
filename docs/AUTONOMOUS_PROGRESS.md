@@ -1,5 +1,31 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — rust-core cast-safety audit + deny-ratchet (TSK-575, real work — broke the HOLD)
+
+Autonomous tick. Reconsidered my repeated deferral of TSK-575's cast audit — *auditing is careful, not a rush* —
+and did it: a real security-correctness pass on the rust-core numeric casts (the lane I'd characterized but not
+worked).
+- **Audited all 11 `cast_possible_truncation`/`cast_sign_loss` sites — NO truncation bug.** Each is provably
+  safe: cm_edit (the :60-69 loop validates from/to in 0..=base_len before the splice casts), find_engine
+  (`len_utf16()` ≤2), fuzzy ×2 (filename-bounded index/position), hex (intentional documented low-32-bit
+  offset), transcript ×2 (finite + i64-range/integral checked before f64→i64), serve envelope (guarded
+  `v<0x80`). This definitively resolves the audit's over-claimed "13 cast safety bugs" (TSK-538/S3).
+- **Ratcheted both lints to DENY** with a reasoned `#[allow]` at each audited site (`6ca8d8b`). **TEETH
+  DEMONSTRATED:** a probe `i64 as usize` in core made `cargo clippy --workspace` exit 101 (`could not compile
+  mdvcore-core`) — a new unjustified cast now FAILS the gate; reverted the probe.
+- **Teeth-test caught a real gap:** the workspace deny only reaches *inheriting* crates (core). `serve` has a
+  LOCAL `[lints.clippy]` → its envelope cast wasn't ratcheted → added the deny there too (`0728a13`). core+serve
+  = all 6 current cast sites covered. `ffi`/`tui`/`web` have local lints + NO current cast sites (a future cast
+  there would warn under pedantic — documented follow-up, not silently claimed-covered).
+- Validated: `cargo clippy --workspace` clean (0 errors, 0 cast warns) + `scripts/rust-core-gate.sh` green.
+  TSK-575 → `fixed`. RESIDUAL (marginal, deferred): the ~33 non-cast pedantic style nits — the high-signal cast
+  categories are now deny-gated (a new cast is very visible/fails), so the SAFETY concern is resolved; the style
+  sweep is a separate low-value follow-on. Internal (rust-core), so no CHANGELOG.
+
+This was genuine, host-validated, teeth-bearing rust-core work — the right break from the HOLD pattern (the
+audit was deliberate, not the rushed risky change I'd been deferring). Remaining rust-core (564 FFI-perf, 844
+CSV-security) still want their own focused sessions; owner decisions (343/358) + the VM lane still outstanding.
+
 ## LOG 2026-06-14 — rust-core lane characterized (last untapped lane); HOLD confirmed
 
 Autonomous tick. Tapped the one lane I'd only surveyed, not characterized — **rust-core** (host-validatable via
