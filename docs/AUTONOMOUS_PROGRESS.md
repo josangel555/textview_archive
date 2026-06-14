@@ -1,5 +1,26 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — git-blame line-age heatmap (TSK-360)
+
+Autonomous tick, WORK_QUEUE Section-B. Checked the `fixed`-lane validation drain first — it's dominated by
+`live-validation` (VM-gated) blockers, so not host-re-validatable (that's WHY they're stuck). Per the owner's
+"build [VM] items, host-test the model, leave render at review", built the next queue [VM] item:
+- **TSK-360 (`933737b`, review)** — git-blame line-age heatmap, built ON the existing blame gutter. Pure
+  `BlameHeatmap` (per-line commit timestamp → recency 0..1 normalized over the file's own min/max → dark→light
+  blue hex). Threaded an ADDITIVE `CMGutterMarker.color` through the bridge encoder; `BlameGutterFeeder` attaches
+  it; CM6 `DiffGutterMarker.toDOM` applies it as the gutter cell's inline background. Note: that JS is a DOM
+  style INSIDE the WebView (not a SwiftUI-over-WebView sibling) → NOT the compositor-occlusion trap. Host-tested
+  (BlameHeatmapTests: recency normalization, hex endpoints/clamp/monotonic, feeder attaches per-line color);
+  on-screen tint = VM render tail. Left at `review` (the visual needs VM pixels; the JS is small/low-risk).
+
+**Queue note (continuing):** Section-A/B host-actionable feature work is nearly drained. Remaining: 358 (font-
+size — tangled with the zoom system + TSK-470, design intersection), 382 (DocumentModel memory — internal-quality
+refactor, central/risky, vague "bare bones" needs a profile-spike), plus Section-C/D ([VM]/medium/epics). The
+`fixed`-lane validation drain is VM-gated (not host-actionable). Highest-value non-render lane left is rust-core
+(SOP §2.5 ranks the ports + Phase-1 contract ABOVE Swift internal-quality, host-validatable via rust-core-gate)
+— a domain shift worth a dedicated firing. Owner decisions outstanding: TSK-343 (local-history privacy default),
+and 358's zoom-interaction design.
+
 ## LOG 2026-06-14 — encoding-convert (TSK-352 slice); TSK-343 parked (privacy default = owner call)
 
 Autonomous tick, WORK_QUEUE Section-B. Shipped one slice + parked one owner-gated item:
