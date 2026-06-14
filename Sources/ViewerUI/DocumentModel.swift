@@ -4115,6 +4115,24 @@ public final class DocumentModel: ObservableObject {
         return nil
     }
 
+    /// TSK-900: the off-main (deferred, ≥4 MiB) open resolves the view mode
+    /// WITHOUT the content hint — so an unknown-/binary-EXTENSION file gets the
+    /// hint-less `.hex` default. When the async load lands and the loader's
+    /// verdict is TEXT (`.loaded`), a tab still in `.hex` must UPGRADE to the
+    /// content-aware default (e.g. `.source`) — otherwise the picker re-derives
+    /// to offer Source while the pane stays a hex dump of a text file (the
+    /// reported desync). Non-hex tabs and non-text states are unchanged, so a
+    /// genuinely binary file (`.binary`) stays in HEX.
+    nonisolated static func deferredLoadViewModeUpgrade(
+        current: ViewMode, isLoadedText: Bool, url: URL,
+        preferred: [FileCategory: ViewMode]
+    ) -> ViewMode {
+        guard current == .hex, isLoadedText else { return current }
+        let upgraded = ViewModeOptions.defaultMode(
+            for: url, isRenderableText: true, preferred: preferred)
+        return upgraded == .hex ? current : upgraded
+    }
+
     /// How the toolbar should render itself for the current mode (which
     /// primary button is selected, whether ViewOnly reads on, whether the
     /// Format button is the active lens).
@@ -4545,6 +4563,15 @@ public final class DocumentModel: ObservableObject {
                       pendingURL == resolved else { return }
                 var t = current
                 t.state = state
+                // TSK-900: this open resolved the mode without the content hint
+                // (the bytes weren't read yet), so an unknown-/binary-extension
+                // TEXT file was parked in `.hex`. Now the verdict is in — upgrade
+                // a hex tab that decoded as text to its content-aware default,
+                // rather than dumping a text file as hex below.
+                t.viewMode = Self.deferredLoadViewModeUpgrade(
+                    current: t.viewMode,
+                    isLoadedText: Self.renderableTextHint(state) == true,
+                    url: resolved, preferred: self.preferences.viewModeDefaults)
                 self.tabCoordinator.replace(at: idx, with: t)
                 // Carry HEX mode (mirrors the sync path + materializeIfNeeded).
                 // Exclude `.preview`: a native-preview category whose default
