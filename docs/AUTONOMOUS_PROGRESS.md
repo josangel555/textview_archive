@@ -9169,6 +9169,32 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +411 (2026-06-13 — TSK-758: cross-file search File-name mode + regex (ReDoS-guarded); host-tested with teeth)
+
+Autonomous tick (owner away). No fresh user-facing bugs/regressions in the reported pool → continued the minor-feature
+lane (chipping order §0.5 bucket 3). Picked TSK-758 `[WISH][minor][minor-feature]`.
+
+**Spike (direct read):** `CrossSearchPanel` already had a `SearchMode` enum (`.text`/`.files`) + scope scaffolding but
+ONLY `.text` was engine-backed; no regex. `CrossFileSearch` (ViewerCore) is a pure folder-grep, **NOT a Rust port
+target** (find=TSK-630 is the in-document engine), so §2.5 doesn't gate it. `RegexComplexityGuard.reject` already
+exists for ReDoS.
+
+**Shipped (commit `e115782`, headless gate green — 5168 tests, 0 fail, no heavy-tier leak):**
+- `CrossFileSearch`: `Options.useRegex`; a literal-or-regex `Matcher` (built once/search); `validateRegex()`
+  (RegexComplexityGuard.reject + compile check); `searchFilenames()` (name-only walk reusing the same
+  skip-dir/symlink-loop/entry-cap guards, never reads bodies → cheap). The literal content path keeps its Substring
+  fast-path (probe Substring, allocate String only on a hit); regex path String-ifies per matching file only.
+- `DocumentModel`: `crossSearchFilenameMode` / `crossSearchUseRegex` / `crossSearchRegexError` published; runCrossSearch
+  validates the regex up front (skips the walk + surfaces the reason) and routes to `searchFilenames` vs `search`.
+- `CrossSearchPanel`: Text·File-name segmented picker + `.*` regex toggle in the header, inline regex-error hint,
+  mode-aware placeholder; `mode` now derived from the model flag; filename hits hide the "(N)" line count.
+
+**Tests (host-safe):** ViewerCoreTests `CrossFileSearchModeTests` (12 — filename case/skip-dirs/no-read,
+regex content/anchors/case/filename, validateRegex reject ReDoS+invalid, rejected→empty, literal-path-unchanged
+regression) + ViewerUITests `CrossSearchModeWiringTests` (3 — sync regex-error gate, error-clears, async text-vs-filename
+routing). **TEETH:** neutered the regex matcher → 5 regex tests RED, literal/filename/validation stayed green → restored.
+The panel pixels are the only VM-tail bit; engine + model wiring fully host-pinned. → review.
+
 ## LOG +410 (2026-06-13 — TSK-678: Keyboard Shortcuts reference page (searchable, glyph-rendered); host-tested with teeth)
 
 Second feature this tick (owner: "focus on features"). TSK-678 `[WISH][P5][minor-feature]`.
