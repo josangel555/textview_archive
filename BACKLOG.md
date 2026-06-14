@@ -1,5 +1,26 @@
 # Backlog
 
+## 2026-06-14 (late) — perf-lane tail + Section-A drain (deferred/ambiguous)
+
+Deferred from the WORK_QUEUE drain (board tickets — link, don't duplicate):
+- **TSK-844** (CSV-open arena) — SPIKED + deferred. Careful: rewires the security-hardened CSV parser to write
+  directly into the arena, which requires RE-DERIVING the TSK-557 heap cap for the arena footprint
+  (`bytes.len()+offsets.len()*8`) — the current `field.len()+CELL_HEAP_OVERHEAD` models the discarded
+  `Vec<Vec<String>>`. Full plan + the heap-cap landmine on the ticket. ~M, fresh-context.
+- **TSK-845** (micro-bundle) — PROFILE-GATED. (a) ContentFingerprint utf8.count is a likely NO-OP (O(1) on native
+  Strings — see LESSONS). (b)/(c)/(d) need profiling. Don't implement blind.
+- **TSK-854** (delete Swift highlight twin) — OWNER-GATED. THE bundle-cap reclaim (~16 MB double-carried grammars).
+  Likely blocker: the fold path (`TreeSitterEngine+Folds`) has no Rust equivalent yet.
+- **TSK-855** (stale `mdv-serve` in the loopback gate) — real CI gap; fix = build the serve bin in the gate.
+- **TSK-851/852** (ccache-for-grammars / CI `.build` cache) — owner approval / CI infra.
+- **TSK-853 follow-up** — done (launch warm → Rust path); the integer-kind variant of **TSK-841** is the remaining
+  deferred wire optimization (needs a shared TokenKind↔u8 ABI). **TSK-840** deferred: warm the opened-file language
+  + the Rust highlight config at launch.
+- **AMBIGUOUS Section-A items (need an owner UX decision, not a guess):** TSK-751 (which menu reorg?), TSK-709
+  (unify ⌘K/⌘G — ⌘G is the standard Find-Next chord), TSK-746 (recents in the Open dialog — NSOpenPanel can't host
+  custom recents; an Open Recent menu already exists). **TSK-355** is mostly DONE — "Reveal in Finder" already
+  exists (`SidebarView.swift:1088`); only "Open in external app" may be missing.
+
 ## 2026-06-14 — build/test speedup + source-perf audits (docs/research/*-2026-06-14/)
 
 **OWNER ASK — TOP NEXT ACTION:** the owner wants ways to improve **app perf / speed / latency / responsiveness

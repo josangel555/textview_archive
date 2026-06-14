@@ -5,6 +5,49 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## Build-infra: the gate↔interactive index-store thrash + the rust-`.a` always-relink (2026-06-14, TSK-846/848/855)
+- **`--disable-index-store` on the gate but NOT interactive builds = a 63s rebuild EVERY switch.** The flag is
+  part of SwiftPM's build-plan hash, so a gate run (index-off) and an IDE/interactive build (index-on, the
+  default) share one `.build` with INCOMPATIBLE plans → each switch forces a full test-target rebuild, BOTH
+  directions. FIX (TSK-846): give the gate its OWN `--scratch-path .build-gate` so it never shares incremental
+  state. (My own TSK-832 `--disable-index-store` introduced this thrash; TSK-846 corrects it.)
+- **`build-rust-core.sh` was relinking the world on EVERY run, even no-op.** The deeper cause wasn't the `.a` cp
+  mtime — it was `restage_core_header` UNCONDITIONALLY `touch`ing `Sources/RustCore/*.swift` (deliberate: the
+  `.a` is NOT a SwiftPM-tracked input, so the bridge touch is how an `.a` change reaches the relink; it guards a
+  real 2026-06-10 stale-Rust-vs-new-Swift bug). FIX (TSK-848): `cmp` the freshly-built `.a` vs staged; unchanged
+  → skip BOTH the restage and the bridge touch; changed → keep the full relink (guard intact). Proof: no-op
+  `build-rust-core.sh` → `swift build` 0.67s (was 4.85s).
+- **The loopback test spawns a STALE `mdv-serve` binary nothing rebuilds (TSK-855).** `RemoteTransportLoopbackTests`
+  spawns `/private/tmp/mdv-rust-target/debug/mdv-serve`, but the headless gate only rebuilds the dist-profile FFI
+  staticlib. So a WIRE change (e.g. TSK-841 highlight positional) is validated against a days-old serve → false
+  `typeMismatch` (or, worse, a false PASS that silently defeats the byte-equal loopback). Rebuild it
+  (`cargo build -p mdvcore-serve`) before trusting the loopback. NOTE: `runs_wire` is shared by the FFI AND
+  mdv-serve — a wire change must rebuild both.
+
+## Perf micro-opts: `utf8.count`/`first`/`last` are O(1) on a NATIVE Swift String (2026-06-14, TSK-845)
+- A perf-explore flagged "ContentFingerprint recomputes utf8.count ×3 → cache it." But Swift's String is UTF-8
+  backed since 5.0, so `utf8.count` (stored), `utf8.first`/`utf8.last` (UTF8View is BidirectionalCollection) are
+  all **O(1)** — the ×3 is negligible and the "optimization" is a NO-OP. The O(N) cost only materializes if the
+  String is NSString-bridged (UTF-16, transcodes on `.utf8`). Don't micro-opt String byte-counting without first
+  profiling that the string is actually bridged. (And such a change is behaviorally-invisible → weak test teeth.)
+
+## `⌘P` is the macOS Print chord — don't rebind it even for VS Code parity (2026-06-14, TSK-720)
+- VS Code uses ⌘P for quick-open, but it overrides the platform convention. For a NATIVE Mac app ⌘P MUST stay
+  Print (Mac HIG; reserved for the print/PDF feature). So "VS Code ⌘P/⌘⇧P parity" → bind ⇧⌘P (command palette,
+  the iconic + non-reserved one) only; leave ⌘P free. CommandDescriptor allows ONE shortcut per command.
+
+## Velocity: BATCH queue items + GATE ONCE; never bundle `git commit` with the gate-read (2026-06-14)
+- The headless gate (~2-3 min) is the per-item bottleneck. Owner ask: implement 2-3 INDEPENDENT WORK_QUEUE items,
+  run `scripts/test-headless-gate.sh` ONCE, then commit each separately. Amortizes the gate.
+- BUT: never `git add … && git commit` in the SAME Bash call as the gate-verdict grep — I committed TSK-841
+  prematurely that way and main went (briefly) red on a stale-serve false failure. Confirm the gate verdict in a
+  SEPARATE step, THEN commit.
+- **[VM] menu/UI items** (anything in `main.swift`'s menu builder or a SwiftUI view's appearance) are NOT
+  host-testable — the executable's menus aren't a test-target dep, and a `toggleStyle`/button render needs the VM.
+  Build them + host-test the MODEL action the control is wired to (`showPalette`, `setCurrentLanguage`, the
+  CommandRegistry routing), leave the appearance at `review`. `#selector(...)` references in menu code are
+  compile-guarded (won't build if the @objc method is missing) — that's the "first line of defence".
+
 ## NEVER run `swift test` against the ViewerUITests target on the host while a `dist/` bundle exists — a T4 LiveAppTestCase will SPAWN the app (window) (2026-06-13)
 - The heavy UI tiers self-skip ONLY when `isAppBuilt` is false (no `dist/` bundle) + no GUI session. They do
   NOT key on `MDV_HEADLESS_GATE`. So once you've built `dist/TextView.app` on the host (e.g. for an
