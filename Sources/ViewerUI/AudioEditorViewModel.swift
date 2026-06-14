@@ -41,6 +41,20 @@ public final class AudioEditorViewModel: ObservableObject {
     /// `nil` while hidden (so a stale spectrum never lingers).
     @Published public private(set) var spectrum: SpectrumBins?
 
+    /// The decoded multi-channel source for editing/export (TSK-534). The
+    /// displayed `waveform` is its mono reduction; edits are non-destructive
+    /// selection params applied to this only on "Save a Copy".
+    @Published public private(set) var sourceBuffer: AudioPCMBuffer?
+    /// Trim selection on the ORIGINAL timeline (frames); defaults to the whole
+    /// file. Export keeps only `[trimStartFrame, trimEndFrame)`.
+    @Published public var trimStartFrame: Int = 0
+    @Published public var trimEndFrame: Int = 0
+    /// Fade-in / fade-out durations (seconds) applied to the trimmed result.
+    @Published public var fadeInSeconds: Double = 0
+    @Published public var fadeOutSeconds: Double = 0
+    /// Fade curve shared by both fades.
+    @Published public var fadeShape: AudioEditOp.FadeShape = .equalPower
+
     private var player: AVAudioPlayer?
     private var playbackTask: Task<Void, Never>?
     private var lastColumns = 600
@@ -58,6 +72,17 @@ public final class AudioEditorViewModel: ObservableObject {
         self.isLoading = false
     }
 
+    /// Test seam: construct with a preloaded decoded source (no file decode), so
+    /// the trim/fade selection→ops + export round-trip are host-pinned. The
+    /// draggable handles that set the selection are the VM render tail.
+    init(url: URL, source: AudioPCMBuffer) {
+        self.url = url
+        self.sourceBuffer = source
+        self.waveform = AudioWaveform(samples: source.monoSamples(), sampleRate: source.sampleRate)
+        self.trimEndFrame = source.frameCount
+        self.isLoading = false
+    }
+
     // The playback clock captures `[weak self]`, so it ends on its own once the
     // view-model deallocates — no deinit cancellation needed (and a @MainActor
     // deinit touching the non-Sendable task would fight strict concurrency).
@@ -69,10 +94,16 @@ public final class AudioEditorViewModel: ObservableObject {
     public func load() async {
         let target = url
         do {
-            let wf = try await Task.detached(priority: .userInitiated) {
-                try AudioWaveform.load(contentsOf: target)
+            // Decode the full multi-channel buffer once; the mono overview is its
+            // reduction (so editing/export has the real samples, TSK-534).
+            let buffer = try await Task.detached(priority: .userInitiated) {
+                try AudioDecoder.decode(contentsOf: target)
             }.value
+            sourceBuffer = buffer
+            let wf = AudioWaveform(samples: buffer.monoSamples(), sampleRate: buffer.sampleRate)
             waveform = wf
+            trimStartFrame = 0
+            trimEndFrame = wf.frameCount
             loadError = nil
             isLoading = false
             rebuild(columns: lastColumns)
@@ -142,6 +173,50 @@ public final class AudioEditorViewModel: ObservableObject {
     /// hot path should pre-check it to avoid a redundant publish.
     public func recomputeSpectrum() {
         spectrum = showSpectrum ? waveform?.spectrum(at: playheadFrame) : nil
+    }
+
+    // MARK: - Trim / fade / export (TSK-534)
+
+    /// The ops the current selection maps to (pure, host-tested in
+    /// `AudioTrimFade`). Empty when nothing would change the audio.
+    public var editOps: [AudioEditOp] {
+        guard let src = sourceBuffer else { return [] }
+        return AudioTrimFade.ops(
+            trimStart: trimStartFrame, trimEnd: trimEndFrame, totalFrames: src.frameCount,
+            fadeInSeconds: fadeInSeconds, fadeOutSeconds: fadeOutSeconds,
+            sampleRate: src.sampleRate, shape: fadeShape)
+    }
+
+    /// True when "Save a Copy" would produce an edited file (a real trim or fade).
+    public var hasEdits: Bool { !editOps.isEmpty }
+
+    /// Trim-selection bounds as `0…1` fractions of the whole file (for the overlay).
+    public var trimStartFraction: Double {
+        guard let n = sourceBuffer?.frameCount, n > 0 else { return 0 }
+        return Double(trimStartFrame) / Double(n)
+    }
+    public var trimEndFraction: Double {
+        guard let n = sourceBuffer?.frameCount, n > 0 else { return 1 }
+        return Double(trimEndFrame) / Double(n)
+    }
+
+    public func setTrimStartToPlayhead() {
+        trimStartFrame = Swift.min(Swift.max(playheadFrame, 0), Swift.max(trimEndFrame - 1, 0))
+    }
+    public func setTrimEndToPlayhead() {
+        trimEndFrame = Swift.min(Swift.max(playheadFrame, trimStartFrame + 1), totalFrames)
+    }
+    public func resetTrim() {
+        trimStartFrame = 0
+        trimEndFrame = totalFrames
+    }
+
+    /// Export the trimmed/faded result to `dest` in `spec`'s format. Throws the
+    /// same `AudioExportError`s as `AudioExporter` (e.g. MP3 with no `ffmpeg`).
+    public func exportCopy(spec: AudioExportSpec, to dest: URL, ffmpegOverride: String? = nil) throws {
+        guard let src = sourceBuffer else { throw AudioExportError.emptyBuffer }
+        let doc = AudioDocument(source: src, ops: editOps)
+        try AudioExporter.encode(doc.rendered(), spec: spec, to: dest, ffmpegOverride: ffmpegOverride)
     }
 
     // MARK: - Transport

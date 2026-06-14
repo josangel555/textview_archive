@@ -11,10 +11,13 @@ import ViewerCore
 /// is no opaque AppKit layer to occlude the SwiftUI content — the recurring
 /// sibling-blank pathology can't apply here (LESSONS.md / CLAUDE.md). An
 /// optional frequency-spectrum panel (TSK-533) drops in below the waveform, fed
-/// by the host-tested `SpectrumAnalyzer`; draggable trim/fade handles and
-/// Save-As remain follow-up sub-tasks. Pixel/interaction validation is the VM
-/// lane (no-UI-on-host); the `mdv.audioEditor.*` identifiers let that test find
-/// the waveform + controls.
+/// by the host-tested `SpectrumAnalyzer`. A trim/fade edit bar (TSK-534) selects
+/// a trim range (Set Start/End at the playhead) + fade-in/out and exports the
+/// result via the host-tested `AudioTrimFade` → `AudioDocument` → `AudioExporter`
+/// pipeline ("Save a Copy…"); draggable handles on the waveform itself are the
+/// render-tail polish. Pixel/interaction validation is the VM lane
+/// (no-UI-on-host); the `mdv.audioEditor.*` identifiers let that test find the
+/// waveform + controls.
 struct AudioEditorView: View {
     @StateObject private var vm: AudioEditorViewModel
     /// Called when the user dismisses the editor (returns to the plain player).
@@ -36,6 +39,8 @@ struct AudioEditorView: View {
                 spectrumPanel
                     .frame(height: 130)
             }
+            Divider()
+            editBar
             Divider()
             transport
         }
@@ -83,6 +88,7 @@ struct AudioEditorView: View {
                         .fill(Palette.separator)
                         .frame(height: 1)
                     waveformCanvas
+                    trimOverlay
                     playheadCanvas
                 }
                 .contentShape(Rectangle())
@@ -175,6 +181,135 @@ struct AudioEditorView: View {
                                     width: Swift.max(colW, 0.5), height: h))
             }
             ctx.fill(path, with: .color(.accentColor))
+        }
+    }
+
+    // MARK: - trim / fade / export (TSK-534)
+
+    /// Shades the trimmed-away regions and draws the trim boundary lines, mapped
+    /// into the currently-visible window (so it stays correct when zoomed). The
+    /// handles are set via the playhead buttons; draggable handles are the VM
+    /// render-tail polish.
+    private var trimOverlay: some View {
+        Canvas { ctx, size in
+            let vis = vm.visibleRange
+            guard !vis.isEmpty else { return }
+            let s = clampUnit01(Double(vm.trimStartFrame - vis.lowerBound) / Double(vis.count))
+            let e = clampUnit01(Double(vm.trimEndFrame - vis.lowerBound) / Double(vis.count))
+            let dim = GraphicsContext.Shading.color(.black.opacity(0.35))
+            if s > 0 {
+                ctx.fill(Path(CGRect(x: 0, y: 0, width: CGFloat(s) * size.width, height: size.height)), with: dim)
+            }
+            if e < 1 {
+                ctx.fill(Path(CGRect(x: CGFloat(e) * size.width, y: 0,
+                                     width: CGFloat(1 - e) * size.width, height: size.height)), with: dim)
+            }
+            var line = Path()
+            if s > 0 {
+                line.move(to: CGPoint(x: CGFloat(s) * size.width, y: 0))
+                line.addLine(to: CGPoint(x: CGFloat(s) * size.width, y: size.height))
+            }
+            if e < 1 {
+                line.move(to: CGPoint(x: CGFloat(e) * size.width, y: 0))
+                line.addLine(to: CGPoint(x: CGFloat(e) * size.width, y: size.height))
+            }
+            ctx.stroke(line, with: .color(.accentColor), lineWidth: 1.5)
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func clampUnit01(_ v: Double) -> Double { Swift.min(Swift.max(v, 0), 1) }
+
+    @ViewBuilder private var editBar: some View {
+        if !vm.isLoading && vm.loadError == nil {
+            VStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    Text("Trim")
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .frame(width: 40, alignment: .leading)
+                    Button("Set Start") { vm.setTrimStartToPlayhead() }
+                        .accessibilityIdentifier("mdv.audioEditor.trimStart")
+                    Button("Set End") { vm.setTrimEndToPlayhead() }
+                        .accessibilityIdentifier("mdv.audioEditor.trimEnd")
+                    Button("Reset") { vm.resetTrim() }
+                        .disabled(vm.trimStartFraction == 0 && vm.trimEndFraction == 1)
+                    Text(trimSelectionLabel)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Button { saveCopy() } label: {
+                        Label("Save a Copy…", systemImage: "square.and.arrow.down")
+                    }
+                    .accessibilityIdentifier("mdv.audioEditor.saveCopy")
+                }
+                HStack(spacing: 10) {
+                    labelled("Fade In") {
+                        Slider(value: $vm.fadeInSeconds, in: 0...5)
+                            .accessibilityIdentifier("mdv.audioEditor.fadeIn")
+                    }
+                    labelled("Fade Out") {
+                        Slider(value: $vm.fadeOutSeconds, in: 0...5)
+                            .accessibilityIdentifier("mdv.audioEditor.fadeOut")
+                    }
+                    Picker("", selection: $vm.fadeShape) {
+                        Text("Equal-power").tag(AudioEditOp.FadeShape.equalPower)
+                        Text("Linear").tag(AudioEditOp.FadeShape.linear)
+                    }
+                    .labelsHidden().fixedSize()
+                    .accessibilityIdentifier("mdv.audioEditor.fadeShape")
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+        }
+    }
+
+    private var trimSelectionLabel: String {
+        guard let src = vm.sourceBuffer, src.sampleRate > 0 else { return "" }
+        let startT = Double(vm.trimStartFrame) / src.sampleRate
+        let endT = Double(vm.trimEndFrame) / src.sampleRate
+        return "\(timeString(startT))–\(timeString(endT))"
+    }
+
+    private func saveCopy() {
+        let panel = NSSavePanel()
+        panel.title = "Save a Copy"
+        panel.canCreateDirectories = true
+        let base = vm.url.deletingPathExtension().lastPathComponent
+        panel.nameFieldStringValue = "\(base)-edited.wav"
+        guard panel.runModal() == .OK, let dest = panel.url else { return }
+        let format = Self.exportFormat(for: dest.pathExtension)
+        do {
+            try vm.exportCopy(spec: AudioExportSpec(format: format), to: dest)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Couldn't save a copy"
+            alert.informativeText = Self.describeExport(error)
+            alert.alertStyle = .warning
+            alert.runModal()
+        }
+    }
+
+    private static func exportFormat(for ext: String) -> AudioExportSpec.Format {
+        switch ext.lowercased() {
+        case "aiff", "aif": return .aiff
+        case "caf": return .caf
+        case "m4a", "aac": return .aac
+        case "mp3": return .mp3
+        default: return .wav
+        }
+    }
+
+    private static func describeExport(_ error: Error) -> String {
+        switch error {
+        case AudioExportError.mp3FFmpegNotFound:
+            return "MP3 export needs ffmpeg, which wasn't found. Choose WAV, AIFF, CAF, or M4A (AAC)."
+        case AudioExportError.ffmpegFailed(let code):
+            return "ffmpeg failed (exit \(code))."
+        case AudioExportError.emptyBuffer:
+            return "There's no audio to export."
+        default:
+            return String(describing: error)
         }
     }
 
