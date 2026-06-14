@@ -2684,6 +2684,14 @@ public final class DocumentModel: ObservableObject {
         )
     }
 
+    /// The effective highlight language of the current tab — the manual
+    /// override if one is set, else auto-detected from the URL. `nil` when no
+    /// file tab is open. Drives the Language Mode menu's checkmark (TSK-753).
+    public var currentEffectiveLanguage: HighlightLanguage? {
+        guard let url = tabs.selected?.url, let id = tabs.selected?.id else { return nil }
+        return effectiveLanguage(forTabID: id, url: url)
+    }
+
     /// Set or clear the override for the current tab. Passing the
     /// auto-detected language clears the override (so a follow-up
     /// rename still does the right thing).

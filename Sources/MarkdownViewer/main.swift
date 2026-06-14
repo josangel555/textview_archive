@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     var window: NSWindow?
     private var openRecentMenu: NSMenu?
     private var sessionJumpMenu: NSMenu?
+    private var languageMenu: NSMenu?
     private var windowMenu: NSMenu?
     /// Auxiliary tool windows (WAVE 2b items 4 + 5). Retained so a second
     /// menu invocation re-focuses the existing window instead of spawning
@@ -861,7 +862,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             rebuildWindowMenu(menu)
         } else if menu === sessionJumpMenu {
             rebuildSessionJumpMenu(menu)
+        } else if menu === languageMenu {
+            rebuildLanguageMenu(menu)
         }
+    }
+
+    /// Rebuild the "Language Mode" submenu (TSK-753): every highlightable
+    /// language, sorted by display name, with a checkmark on the current tab's
+    /// effective language. Picking one sets the per-tab override; picking the
+    /// auto-detected language clears it (model.setCurrentLanguage's contract).
+    /// Disabled placeholder when no file tab is open.
+    private func rebuildLanguageMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+        guard let current = model.currentEffectiveLanguage else {
+            let none = NSMenuItem(title: "No file open", action: nil, keyEquivalent: "")
+            none.isEnabled = false
+            menu.addItem(none)
+            return
+        }
+        for lang in HighlightLanguage.supportedForDisplay {
+            let item = NSMenuItem(
+                title: lang.displayName,
+                action: #selector(setLanguageMode(_:)),
+                keyEquivalent: "")
+            item.target = self
+            item.representedObject = lang.rawValue
+            item.state = (lang == current) ? .on : .off
+            menu.addItem(item)
+        }
+    }
+
+    @objc func setLanguageMode(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let lang = HighlightLanguage(rawValue: raw) else { return }
+        model.setCurrentLanguage(lang)
     }
 
     /// Rebuild the "Jump to Session" submenu. Items 1…9 carry a
@@ -1299,6 +1333,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         sidebarItem.target = self
         applyShortcut("view.toggleSidebar", to: sidebarItem)
         viewMenu.addItem(sidebarItem)
+
+        // TSK-753: Language Mode — a dynamic submenu showing the current file's
+        // highlight language (checkmark) with every language to override to.
+        // Populated on demand via menuNeedsUpdate so it always reflects the
+        // focused tab. Items dispatch setLanguageMode → model.setCurrentLanguage.
+        viewMenu.addItem(.separator())
+        let languageItem = NSMenuItem(title: "Language Mode", action: nil, keyEquivalent: "")
+        let langMenu = NSMenu(title: "Language Mode")
+        langMenu.delegate = self
+        langMenu.autoenablesItems = false
+        languageItem.submenu = langMenu
+        self.languageMenu = langMenu
+        viewMenu.addItem(languageItem)
 
         // #226 (UX-D): the bottom terminal pane. Also reachable from the
         // left-shoulder bottom-aligned toggle button; the menu item gives

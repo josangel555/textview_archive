@@ -132,4 +132,21 @@ final class DocumentModelLanguageOverrideTests: XCTestCase {
         XCTAssertEqual(m.effectiveLanguage(forTabID: secondID, url: url), .json)
         XCTAssertEqual(m.effectiveLanguage(forTabID: firstID, url: url), .plainText)
     }
+
+    // MARK: - currentEffectiveLanguage (TSK-753 — the Language Mode menu checkmark)
+
+    func test_currentEffectiveLanguage_nilWhenNoTab_andTracksDetectThenOverride() throws {
+        let m = makeModel()
+        XCTAssertNil(m.currentEffectiveLanguage,
+                     "no tab open ⇒ nil (the menu shows a disabled 'No file open')")
+
+        let url = try writeFile("config.json", "{}")
+        m.open(url: url)
+        XCTAssertEqual(m.currentEffectiveLanguage, .json,
+                       "open .json ⇒ the Language Mode menu checkmarks JSON (auto-detected)")
+
+        m.setCurrentLanguage(.swift)
+        XCTAssertEqual(m.currentEffectiveLanguage, .swift,
+                       "after an override the checkmark follows it")
+    }
 }
