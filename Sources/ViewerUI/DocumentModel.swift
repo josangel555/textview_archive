@@ -4776,6 +4776,18 @@ public final class DocumentModel: ObservableObject {
         return HtmlExport.htmlFilename(for: url)
     }
 
+    /// Render the active Markdown to a portable (self-contained) temp `.html` and
+    /// return its URL, for "Open in Browser". nil when no Markdown is active or
+    /// the write fails.
+    public func writeActiveMarkdownPreviewHTML() -> URL? {
+        guard let url = tabs.selected?.url,
+              let html = htmlExportForActiveMarkdown(inlineImages: true) else { return nil }
+        let name = BrowserPreview.tempFileName(stem: url.deletingPathExtension().lastPathComponent)
+        let dest = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        do { try Data(html.utf8).write(to: dest, options: .atomic) } catch { return nil }
+        return dest
+    }
+
     /// True when "Insert Table of Contents" can act — an active Markdown text file.
     public var canInsertTableOfContents: Bool {
         guard let tab = tabs.selected, let url = tab.url else { return false }

@@ -1497,6 +1497,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                                         action: #selector(exportAsHTML(_:)), keyEquivalent: "")
         exportHTMLItem.target = self
         viewMenu.addItem(exportHTMLItem)
+        // Open the rendered Markdown (self-contained) in the default browser.
+        let openBrowserItem = NSMenuItem(title: "Open in Browser",
+                                         action: #selector(openInBrowser(_:)), keyEquivalent: "")
+        openBrowserItem.target = self
+        viewMenu.addItem(openBrowserItem)
         // TSK-675: report broken LOCAL links/images in the active Markdown file.
         let checkLinksItem = NSMenuItem(title: "Check Links",
                                         action: #selector(checkLinks(_:)), keyEquivalent: "")
@@ -2319,6 +2324,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         NSPasteboard.general.setString(html, forType: .string)
     }
 
+    /// Open the rendered Markdown (self-contained) in the default browser.
+    @objc func openInBrowser(_ sender: Any?) {
+        guard let url = model.writeActiveMarkdownPreviewHTML() else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     /// TSK-675 — export the active Markdown as a standalone .html file
     /// (self-contained: local images inlined so the file stays portable).
     @objc func exportAsHTML(_ sender: Any?) {
@@ -2450,7 +2461,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(minifyJSON(_:)):
             // Active .json file only.
             return model.canMinifyActiveJSON
-        case #selector(copyAsHTML(_:)), #selector(exportAsHTML(_:)):
+        case #selector(copyAsHTML(_:)), #selector(exportAsHTML(_:)), #selector(openInBrowser(_:)):
             // TSK-675: active Markdown file only.
             return model.canExportActiveAsHTML
         case #selector(checkLinks(_:)), #selector(lintMarkdown(_:)):
