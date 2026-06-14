@@ -1,5 +1,31 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-861 (UTF-16 BOM data-fidelity bug, validated) + TSK-855 (stale-serve gate fix, review) — batched, one gate
+
+Fresh firing. Two newly-filed board bugs (not in WORK_QUEUE) pre-empted the queue per rank rule 1 (user-facing
+bug) + rule 2 (test-infra correctness). Batched, gated ONCE, committed separately.
+
+- **TSK-861 [bug, user-facing, validated `e7a5649`]** — `EditorWriter.save` wrote `text.data(using: encoding)`;
+  for `.utf16LittleEndian`/`.utf16BigEndian` (the encodings `TextDecoder.decodeViaBOM` records *after stripping
+  the BOM on read*) that produces BOM-LESS bytes. On reopen a SHORT UTF-16 file fails the read side's ≥32-byte
+  BOM-less heuristic → mis-decodes as CP1252/Latin-1 (garbled) — or, with the fix disabled, `binaryFile`.
+  Reachable from the editor's own save (`EditorCoordinator:499` uses `buf.encoding`) AND CrossFileReplace; Convert
+  Encoding's "UTF-16" uses BOM-ful `.utf16` so it was already safe. Centralized fix: `EditorWriter.withByteOrderMark`
+  prepends FF FE / FE FF for the explicit-endianness cases (`.utf16`/`.unicode` already BOM-ful; UTF-8/CP1252/
+  Latin-1 untouched). 7 host tests (LE+BE short-file open→edit→save→reopen round-trip, BOM-byte check, helper
+  unit cases, UTF-8-stays-BOM-less); TEETH: disabling the re-emission makes the round-trip decode as `binaryFile`.
+  Self-validated (pure ViewerCore logic). CHANGELOG Fixed entry added.
+- **TSK-855 [CI/test-infra bug, review `96851a1`]** — `RemoteTransportLoopbackTests` spawns the real `mdv-serve`
+  to prove engine surface byte-equal local-FFI vs remote, but `build-rust-core.sh` builds ONLY the dist FFI
+  staticlib, never the serve bin — so the suite ran against a possibly days-stale `mdv-serve` (false RED on the
+  TSK-841 wire change; worse, a false PASS for a non-decode-breaking wire change, defeating the loopback's point).
+  Fix (option c): `test-headless-gate.sh` now `cargo build -p mdvcore-serve` fresh into the exact debug path the
+  test resolves, before `swift test`, guarded on `command -v cargo` (VM/no-cargo hosts keep self-skipping).
+  Verified in THIS gate run: the serve build ran + `test_engineSurface_byteEqual_localVsRemote` executed (not
+  skipped) green. Left at `review` (the gate-builds-serve behavior isn't tightly regression-guarded — a removal
+  surfaces only on a future wire change; optional follow-up: an mtime staleness assertion in the test).
+- **Gate:** single `scripts/test-headless-gate.sh` run, PASSED (5429 tests, no heavy tier), validating both.
+
 ## LOG 2026-06-14 — TSK-707 double-Shift → command palette (2nd item this firing, review)
 
 Second item this firing (owner velocity ask: don't stop at one when host-buildable work remains). Shipped the
