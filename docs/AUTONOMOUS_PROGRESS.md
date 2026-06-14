@@ -9246,6 +9246,35 @@ so the projections diverge) → restored. Self-validated to `validated` (pure-lo
 
 CHANGELOG: merged into one "Pretty-Print minified JavaScript & CSS" line (both shipped today).
 
+## LOG +425 (2026-06-13 — discharged the owner's "how does X work" question cluster + refreshed CAPABILITIES.md)
+
+Autonomous tick. Anti-tunnel re-scan of the board (after 2 formatter ticks): no host-actionable
+user-facing BUG remains (drained/validated, or VM-render-gated at `review`+live-validation), and the
+owner deprioritized the VM validation tail. The richest fully-host-closeable, owner-serving pool was the
+2026-06-13 wishlist's **how-to question cluster** — the owner literally filed "How does MCP work?",
+"How to run WebUI/TUI", "How to interact with LSP", "How to do code reviews?", "How to monitor Claude
+Code?", "How do Claude timeline/agent/transcript-search work?". These map 1:1 onto `docs/CAPABILITIES.md`
+(written last session, commit 1d65ff5, to answer these exact ticket ids) — but the board tickets were
+never resolved against it. Found + fixed that gap.
+
+**Did (commit `8ef05ad` + 6 board resolutions):**
+- **Refreshed CAPABILITIES.md §4 (LSP)** — it was STALE: said the goto-variants had "no menu yet" and
+  format/refactor were "out of scope", but TSK-823 (Navigate menu) + TSK-824 (Edit ▸ Language:
+  Format/Rename/Code-Actions) shipped last session. Now: goto Declaration/Type/Implementation = ✅ Navigate
+  menu; Format/Rename/Code-Actions = ✅ Edit menu; completion still out of scope; Find References +
+  Workspace Symbols still ⚠️ (backend exists, no results-panel UI). Footer follow-up note updated.
+- **Resolved 6 question tickets → `review`** (agent ceiling; owner confirms): TSK-802 (MCP §2), TSK-784
+  (WebUI/TUI §3), TSK-803 (LSP §4), TSK-796 (code review §5), TSK-801 (Claude monitor §6), TSK-804 (Claude
+  timeline/transcript-search §6). Each carries the full answer + its doc-section pointer in the ticket.
+- **TSK-353** (re-raised "do we have a CLI to interact with the app?") — commented the answer (existing
+  surfaces: `textview`, `--script`, `--mcp-stdio`, URL scheme, `--claude-monitor`) and clarified the
+  remaining gap (no RPC-drive of a LIVE GUI instance — that's the remote-transport epic, TSK-400 / the
+  Phase-1 CoreTransport seam, not a host-closeable item). Left at `reported`.
+
+No CHANGELOG entry — docs/board hygiene only; the underlying user-facing changes (823/824 LSP menus) were
+already logged when they shipped. No code touched → main stays headless-gate-green (last code change was
+the CSS formatter at `1d08322`, gated green).
+
 **LSP-menu lane now done.** Remaining LSP work (no UI at all, meatier): Find References + Workspace Symbols (backends
 exist, need a results panel — VM-gated). Noted for when the screen/owner is available.
 
