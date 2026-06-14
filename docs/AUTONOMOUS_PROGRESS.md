@@ -9169,6 +9169,34 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +414 (2026-06-13 — TSK-361: large-file / long-line open HANG fixed (force soft-wrap); USER-FACING BUG, priority #1)
+
+Autonomous tick. Board scan surfaced a real **user-facing bug** in the reported pool — TSK-361 "clicking large files (e.g. a
+jupyter notebook) got stuck and had to kill" — which outranks the feature lane (priority #1). Took it.
+
+**Spike (Explore agent, file:line root-cause):** a `.ipynb` is JSON text → content-sniffs as text → opens in the read-only
+source `NSTextView`. NSTextView's HORIZONTAL layout is superlinear in line WIDTH, and notebooks carry base64 image blobs as
+multi-MB SINGLE LINES → multi-second main-thread hang on `setAttributedString`/`glyphRange`. The existing guards
+(off-main >64MiB, 512KB highlight bail, 4MB md / 50MB CM6 caps, 512MB read ceiling) ALL key on TOTAL SIZE — none on LINE
+LENGTH — so a sub-64MiB long-line file loads synchronously into the hang-prone view. Gap confirmed.
+
+**Shipped (commit `f2d19d0`, headless gate green — 5192 tests, 0 fail, no heavy-tier leak):** new pure `SourceWrapPolicy`
+(ViewerCore): `hasLongLine` (early-exit scalar scan, resets at \n/\r) + `effectiveWrap(userWrap,text)` = pref OR a line
+≥ 100k chars. Wired into `SourceTextController.apply` — forces soft-wrap BEFORE the text is laid out (the wrap block
+precedes `applyAttributedString`), bounding NSTextView layout to the viewport width regardless of the user's wrap pref.
+Same O(N)-per-apply cost class as the existing `utf8.count` (early-exits on the pathological case). Content stays visible
+(wrapped) — no lockout/placeholder.
+
+**Tests (host-safe):** ViewerCoreTests `SourceWrapPolicyTests` (8 — short-lines-safe, one-long-line-detected, threshold
+inclusivity, line-break reset incl. CRLF/CR, long-line-after-short, empty/zero-threshold, effectiveWrap pref+forced).
+**TEETH:** neutered the detection → 4 long-line tests RED → restored. The FIX DECISION is host-pinned; the live "no-hang
+on open" confirmation is the VM/owner residual (force-kill repro can't be reproduced headlessly). → review.
+
+**Residual (noted on ticket):** force-wrap is a strong mitigation (bounds horizontal layout); a truly extreme single line
+(tens of MB) may still be slow on the linear scan/scroll paths — a follow-up could route those to a placeholder + HEX
+(the markdown-placeholder pattern). The `.ipynb` categorization (currently `.unknown`→source-via-sniff) is orthogonal and
+left as-is (the wrap fix is category-agnostic, covering minified JS/CSS/JSON too).
+
 ## LOG +413 (2026-06-13 — TSK-807 slice: SQLite "Database" summary in the file-info panel; host-tested with teeth)
 
 Autonomous tick. Groomed pools confirmed all-done again (635/636/554/634/630-633/642 validated); no fresh bugs. Continued
