@@ -9169,6 +9169,29 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +412 (2026-06-13 — TSK-696: `textview` CLI launcher; + dismissed TSK-724 as already-shipped after spike)
+
+Autonomous tick. **Board-triage finding:** the entire groomed pool the cron prompt still lists is DONE — SECURITY 635/636,
+RUST-CORE 554/634, engine ports 630/631/632/633, THEMING 642 are ALL `validated` (prior sessions). No fresh user-facing
+bugs/regressions. The `fixed` lane is overwhelmingly `live-validation`-blocked (the VM render tail the owner deprioritized
+this session), so not host-drainable. → continued the WISH minor-feature lane.
+
+**Board hygiene (spike-before-build):** picked TSK-724 "Recent Locations popup" but a spike found the ⌘K command palette
+(`CommandPaletteView`) ALREADY is a recent-files quick-switcher ("Search recent files…" + bookmarks∪recents, fuzzy
+filtered). Dismissed TSK-724 `already-fixed` with a code-proof artifact (noted the distinct IntelliJ line-level "Recent
+Locations" variant is a separate unbuilt feature; not built speculatively for a P8). Avoided shipping a duplicate.
+
+**Shipped TSK-696 (commit `023a1af`, headless gate green — 5176 tests, 0 fail, no heavy-tier leak):** a `code`-style CLI
+launcher. `CLILauncher` (ViewerCore) generates a `/bin/sh` wrapper that `open -a`s this bundle — files route through the
+existing `application(_:open:)` (main.swift:446), so NO launch-arg parsing was needed — and installs it 0755 into
+`/usr/local/bin`, falling back to a per-user `~/Library/Application Support/MarkdownViewer/bin` + a PATH hint when that
+isn't writable. Help menu gains "Install '`textview`' Command…".
+
+**Tests (host-safe):** ViewerCoreTests `CLILauncherTests` (8 — wrapper shape, sh-quoting spaces+apostrophes, install
+writes 0755 executable, isInstalled false→true, idempotent reinstall, createCreatingDir makes missing dirs, plain install
+throws on missing dir, fallback dir). **TEETH:** set perms to 0o644 → 5 exec-bit tests RED → restored. The menu-fires-
+selector + real `open -a` are the owner-verify bits (no pixels — owner can validate by running `textview file.md`). → review.
+
 ## LOG +411 (2026-06-13 — TSK-758: cross-file search File-name mode + regex (ReDoS-guarded); host-tested with teeth)
 
 Autonomous tick (owner away). No fresh user-facing bugs/regressions in the reported pool → continued the minor-feature
