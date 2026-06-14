@@ -1,5 +1,37 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — Triage firing: 830 closed out + 829 groomed to executable (clean host pool exhausted)
+
+Fresh firing. No owner activity / no new app regression. Scoped the remaining perf pool for another complete
+host-validatable win (like 830a last firing) and found the clean pool genuinely exhausted — so per SOP §5 I did
+not manufacture risky/marginal code; instead closed loops + groomed (real triage value):
+
+- **TSK-830(c) — analyzed, NOT WORTH IT (bundle closed).** MsgPackReader pair-array→dict "rebuild": (1) the
+  `.map([(K,V)])` enum case is SHARED with the encoder (it walks pairs to write), so a clean decode-straight-to-dict
+  needs a NEW enum case threaded through both paths; (2) the gain is marginal — the hot wire paths moved to
+  POSITIONAL arrays (TSK-841/563), so named maps are now small non-hot frames (~3-element throwaway Vec). Verdict:
+  skip. 830 fully dispositioned: (a) SHIPPED @ 6c0be50, (b) port-superseded (§2.5), (c) won't-do — stays at review.
+- **TSK-829 (parallelize CrossFileSearch) — TRIAGED with a ready-to-execute plan.** Read `search()`: the walk is a
+  STATEFUL lazy DFS (skipDescendants for dir-skip + symlink-loop guard + serial maxResults/maxEntriesScanned/cancel
+  early-breaks) — NOT naively parallelizable. Plan recorded on the ticket: Phase A serial walk → collect candidate
+  URLs (cheap filters, unchanged); Phase B parallel read+decode+match into indexed slots (matcher is thread-safe);
+  Phase C flatten in walk order + take maxResults. Results are IDENTICAL to serial (parity-testable); the only delta
+  is two-phase reads all candidates even when serial early-breaks at maxResults → MEASURE serial-vs-parallel
+  (CPU- vs disk-bound; measure-first per TSK-847's lesson) before committing. Deferred to a fresh focused session to
+  avoid a hasty concurrency refactor on a correctness-sensitive path deep in a long session.
+- **Why no shipped code:** the remaining pool is contract-sensitive rust-core (543 cm_apply full-doc-per-edit, 826
+  FFI whole-frame copy, 564 — fresh-session-careful FFI contract changes), port-superseded (827 TreeSitterEngine),
+  VM-render features needing non-trivial plumbing (727 `@` needs outline-store wiring; 769 terminal-history capture
+  is fragile from the PTY stream; 668 CSV paging is a view-data-source refactor), VM-trace perf (842/839/838), or
+  owner-gated. CROSS-FFI loopback safety is now solid (TSK-855 fix) so a fresh session CAN tackle 543/826 with the
+  byte-equal test as the net.
+
+**CRISP OWNER UNBLOCKS (the loop's user-visible output is now gated on these):**
+1. **TSK-847** A/B/C (parked) — isolate wall-clock benches / relax ceilings / stay at 12 workers.
+2. **TSK-343** (local-history snapshot-on-save default + retention) + **TSK-358** (font-size × zoom) — product decisions.
+3. **A VM validation pass** — ~16 `review` render-tail items (palette `:`/double-Shift, sticky-scroll, blame heatmap,
+   hot-exit dirty-dot, etc.) need VM pixels/interaction to reach `done`.
+
 ## LOG 2026-06-14 — TSK-830(a) highlight Cow opt SHIPPED (complete, both gates green); (b) port-superseded, (c) deferred
 
 Fresh firing. No owner activity / no new app regression. Pursued a COMPLETE, fully-host-validatable rust-core SPEED
