@@ -354,6 +354,21 @@ final class CommandRegistryTests: XCTestCase {
                      "plain ⌘P must stay free for the standard Print chord (Mac HIG)")
     }
 
+    // MARK: - Format Document binding (TSK-757)
+
+    /// ⇧⌥F formats the document (VS Code parity), routed to lsp.format without
+    /// collision; ⌘⌥F stays Find-and-Replace (distinct modifier set).
+    func test_formatDocument_shiftOptF_routesToLspFormat_noCollision() {
+        let map = CommandRegistry.builtIn.shortcutMap()
+        let shiftOptF = Shortcut(key: "f", modifiers: [.option, .shift])
+        XCTAssertEqual(CommandRegistry.builtIn.command(id: "lsp.format")?.defaultShortcut,
+                       shiftOptF)
+        XCTAssertEqual(map[shiftOptF], "lsp.format", "⇧⌥F must route to Format Document")
+        // ⌘⌥F (find.replace) must be untouched — different modifiers.
+        XCTAssertEqual(map[Shortcut(key: "f", modifiers: [.command, .option])], "find.replace",
+                       "⌘⌥F stays Find and Replace")
+    }
+
     // MARK: - Helpers
 
     private func duplicates(_ ids: [String]) -> [String] {

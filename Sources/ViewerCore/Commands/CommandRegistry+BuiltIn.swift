@@ -237,6 +237,10 @@ extension CommandRegistry {
             scriptVerb: "editor-goto-implementation"),
         CommandDescriptor(
             id: "lsp.format", title: "Format Document", category: .lsp,
+            // TSK-757: ⇧⌥F — VS Code's universal "Format Document" chord. ⌘⌥F is
+            // taken by find.replace; ⇧⌥F is free. Auto-wires the Edit-menu item
+            // via applyShortcut("lsp.format", …) in main.swift.
+            defaultShortcut: Shortcut(key: "f", modifiers: [.option, .shift]),
             scriptVerb: "editor-format"),
         CommandDescriptor(
             id: "lsp.rename", title: "Rename Symbol…", category: .lsp,
