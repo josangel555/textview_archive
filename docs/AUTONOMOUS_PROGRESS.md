@@ -1,5 +1,29 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-830(a) highlight Cow opt SHIPPED (complete, both gates green); (b) port-superseded, (c) deferred
+
+Fresh firing. No owner activity / no new app regression. Pursued a COMPLETE, fully-host-validatable rust-core SPEED
+win (vs another VM-tail slice). TSK-830 was a 3-part micro-opt bundle; the migration policy + a contract concern
+split it:
+
+- **(a) [SHIPPED @ `6c0be50`, review]** — `runs_utf16` (the highlight hot path: every file open + scroll) did
+  `kind.to_string()` per distinct run although `kind` is a `&'static str` from the `APP_CAPTURES` table. Changed
+  `Run.kind` `String → Cow<'static, str>`: produced runs are `Cow::Borrowed(kind)` (ZERO per-run alloc),
+  deserialized runs own a `String`. `Run` is highlight-crate-local (no cross-crate ripple); `Cow<str>` serializes
+  byte-identically to a string, so the wire + the Swift decoder are unchanged. Validated: 19 highlight tests (incl.
+  wire round-trip) + rust-core gate green + headless gate green — `RustHighlightAdapter` Swift decode +
+  `RemoteTransportLoopback` byteEqual (local-FFI vs remote, fresh serve via the TSK-855 fix). At `review`:
+  correctness is byte-identical + test-verified; the perf win (alloc elimination) is by-construction, not
+  separately test-guardable (reverting Cow→String leaves output identical), so not self-`validated`.
+- **(b) [port-superseded]** — `HTMLRenderer.swift`'s per-run `lowercased()` is in the markdown→HTML renderer,
+  which is the Rust PORT TARGET (TSK-631). Per migration §2.5 the Swift twin is bugfix-only — no perf work. Skip.
+- **(c) [deferred]** — `MsgPackReader` pair-array→dict rebuild. The `.map` pair-array is ALSO the encode source
+  (preserves order + non-string keys), so a naive "decode straight to dict" would break that contract. Needs
+  careful analysis; left for a focused follow-up (could be its own ticket).
+
+No CHANGELOG entry — internal allocation micro-opt with no measured user-felt delta (the ticket itself says "no
+profiling"); the felt highlight wins were TSK-840/841.
+
 ## LOG 2026-06-14 — TSK-727 slice 2 (palette : go-to-line, review-ready) + TSK-847 measured & PARKED
 
 Fresh firing. No owner activity / no new app regression. Drained from WORK_QUEUE + measured a build-perf item.
