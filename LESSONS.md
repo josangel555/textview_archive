@@ -2993,3 +2993,23 @@ Continuation of "the five constraints" above; these three close every remaining 
   (e.g. TSK-821 scroll capture/restore) is validated at the MODEL layer (host) + the JS round-trip on our actual
   rendered page in a #192 WebView-lane test. Also: WV-7 governs user-SCRIPTS (mermaid `removeAllUserScripts`), NOT
   `WKScriptMessageHandler`s or `evaluateJavaScript`-injected listeners — those are WV-7-safe.
+
+## 2026-06-13 (late) — VM run hygiene: a hung headless run holds the `.build` lock
+
+- **A non-GUI `test-in-vm.sh test` (the 4220-test single process) can HANG on the VM and HOLD the
+  SwiftPM `.build` flock indefinitely** — a later VM build (e.g. the GUI lane) then blocks at
+  `swift build` with "Another instance of SwiftPM (PID: N) is already running using '…/.build',
+  waiting until that process has finished execution…" and never proceeds. Found a `swift-test`
+  hung for **50 minutes** (vs ~75s normal) doing exactly this; it never emitted a completion (the
+  partial log it left is misleading — the headless tiers it printed as passing were real, but the
+  run never finished, hung later on a PTY/LSP/memory-pressure test — the
+  `reference_vm_plain_ssh_breaks_tests` / `reference_vm_memory_pressure_build_cache` class).
+- **RECIPE when a VM build stalls on the lock:** `ssh macOS15 'ps -p <PID> -o etime,command'` to
+  confirm it's a stale/hung `swift-test`; if so `ssh macOS15 'kill <PID>'` (it's vm-tester's own
+  process from a prior non-GUI run — `kill` not `kill -9` first; the flock releases on death and
+  the waiting build proceeds within a poll). Then check for orphaned spawned apps
+  (`ps aux | grep MarkdownViewer.app/Contents/MacOS`) and reap by tag if any. The background
+  task that launched the hung run will report "completed exit 0" the moment you kill its holder —
+  that's the kill, not a real finish.
+- **Prefer the lighter VM lanes over the full `test` suite.** `quick` (filtered + WebView lane) and
+  per-suite `--filter` runs are far less likely to hang than the monolithic 4220-test `test` run.
