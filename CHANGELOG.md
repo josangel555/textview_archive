@@ -18,6 +18,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - Editor now keeps focus on **Enter** and handles arrow / word / line navigation keys (was jumping focus to the sidebar).
 
 ### Added
+- **Pretty-Print minified JavaScript** — open a minified or one-line `.js` / `.mjs` / `.cjs` file and **Pretty-Print** (View menu / format toggle) now re-indents it into readable, block-structured code. Joins the existing JSON and XML formatting; strings, template literals, regexes and comments are left exactly as written.
 - **Format / Rename / Code Actions in the Edit menu** — the language-server **Format Document**, **Rename Symbol…**, and **Code Actions…** commands now have Edit-menu items (previously palette/keybinding-only), completing the LSP commands in the menu bar.
 - **Navigate menu** — Go to Definition / Declaration / Type Definition / Implementation are now in a top-level **Navigate** menu (previously reachable only via the command palette or a custom keybinding).
 - **Export / Import Settings** — back up your preferences (theme, font, zoom, wrap, per-type view defaults, …) to a JSON file and restore them on another machine, from the **TextView ▸ Export/Import Settings…** menu.
