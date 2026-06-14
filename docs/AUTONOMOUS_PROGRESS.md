@@ -1,5 +1,40 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — Documented HOLD (host-side pool exhausted across ALL lanes; blocked on 3 owner decisions)
+
+Per the owner's "HOLD bar is high," before holding I checked the two fallback pools I'd NOT yet examined
+(parity/theming) + reconsidered new features. Result confirms the drain — no clean, high-value, host-buildable,
+§2.5-safe work remains:
+- **Theming pool**: 641/642/815/243/244/602/573-contract all `validated`/`done`. The two open items are both
+  unfit: **TSK-573** (web hardcodes ~30 chrome colors vs core::theme) — INSPECTED: core::theme's `Role` enum is a
+  10-role *syntax/diff* palette; web needs ~20 *chrome* roles (nav/border/breadcrumb/banner/gutter/link) it
+  doesn't model → honoring the contract needs a core-API `Role` extension (×light/dark) + web rewrite = design-
+  heavy, low-value, `[PORT][WEB]` last-resort lane, NOT a clean slice. **TSK-818** (VM key-synthesis T4 lane) =
+  VM test-infra, not host-buildable.
+- **New-feature angle**: a markdown **Insert Table of Contents** would be genuinely useful + clean, BUT
+  heading/outline extraction is Rust-ported (`rust-core/crates/core/src/outline.rs`) → building it on the Swift
+  side risks §2.5 (port-target feature addition). Deferred (a Rust-side TOC over the ported outline is a separate
+  larger item).
+- Re-confirmed drained: WORK_QUEUE top (VM/owner-gated/ambiguous/large), security + rust-core pools (validated/
+  supervised-flip 649), the 675 clean command runway (4 slices shipped 862/863/864), and the host-validatable
+  `fixed` pool (853/575 validated last firing; the rest are `live-validation`/VM).
+
+No code change (HOLD keeps main gate-green). This is the genuine §5 state — NOT manufacturing marginal/last-resort/
+§2.5-risky work. **The loop is blocked on owner input; any ONE of these unblocks it:**
+
+### DECISIONS NEEDED (the loop's unblockers, ranked by leverage)
+1. **A VM validation pass** (highest leverage) — converts the large banked pile to `done` user value: ~7 host-
+   tested-model features at `review` (533 spectrum, 534 trim/fade, 358 text-size, 862 line-endings, 863
+   cleanup+stats, 864 indentation, + earlier 719/718/726/707/…) plus the many `live-validation` `fixed` items.
+   Recipe: `ssh macOS15` + `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> bash scripts/test-in-vm.sh` (+ the
+   WebView/render drain recipe). Without it, further host slices only grow an un-validated pile.
+2. **TSK-343** local-history: default ON vs opt-in + retention (PARKED, `waiting:human`) — one answer → a clean
+   build (store core already built+tested; menu system extensible).
+3. **Zoom split** (TSK-321/322/470): do you want a SEPARATE document-zoom back (for reading markdown) despite the
+   deliberate 2026-05 merge of the two zoom sliders? One answer closes/unblocks three tickets.
+4. (lower) **TSK-358 window-sizing half** — the ticket's other clause "Window sizing [left menu, text]" is
+   ambiguous: which dimension(s)? (sidebar width already has a drag handle + pref.)
+
 ## LOG 2026-06-14 — Validation-drain pass: TSK-853 + TSK-575 → validated (host-verified fresh, no code change)
 
 With the clean host-buildable FEATURE pool drained (last firing), worked the SOP fallback (rule 1.5, validation
