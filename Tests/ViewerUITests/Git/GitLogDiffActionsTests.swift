@@ -79,6 +79,43 @@ final class GitLogDiffActionsTests: XCTestCase {
         }
     }
 
+    func test_plainClick_sameCommitTwice_doesNotDuplicateTab() {
+        // TSK-907: re-clicking the same commit must FOCUS its existing diff
+        // tab, not stack a duplicate (the <sha>.diff path is deterministic).
+        let (panel, doc, log) = makePanelAndDoc()
+        let tip = log[0]
+
+        GitLogDiffActions.rowClicked(
+            sha: tip.sha, command: false, shift: false, panel: panel, doc: doc)
+        let afterFirst = doc.tabs.tabs.count
+        let firstTabID = doc.tabs.selected?.id
+
+        GitLogDiffActions.rowClicked(
+            sha: tip.sha, command: false, shift: false, panel: panel, doc: doc)
+
+        XCTAssertEqual(doc.tabs.tabs.count, afterFirst,
+            "re-clicking the same commit must not open a second tab")
+        XCTAssertEqual(doc.tabs.selected?.url?.lastPathComponent, "\(tip.sha).diff",
+            "the commit's diff tab must be the focused tab")
+        XCTAssertEqual(doc.tabs.selected?.id, firstTabID,
+            "the SAME tab must be re-focused, not a fresh one")
+        XCTAssertEqual(
+            doc.tabs.tabs.filter { $0.url?.lastPathComponent == "\(tip.sha).diff" }.count, 1,
+            "exactly one tab for the commit's diff")
+    }
+
+    func test_twoDifferentCommits_openTwoDistinctTabs() {
+        // The dedup must be per-URL: distinct commits still get distinct tabs.
+        let (panel, doc, log) = makePanelAndDoc()
+        GitLogDiffActions.rowClicked(
+            sha: log[0].sha, command: false, shift: false, panel: panel, doc: doc)
+        let afterFirst = doc.tabs.tabs.count
+        GitLogDiffActions.rowClicked(
+            sha: log[1].sha, command: false, shift: false, panel: panel, doc: doc)
+        XCTAssertEqual(doc.tabs.tabs.count, afterFirst + 1,
+            "a different commit must open its own diff tab")
+    }
+
     func test_cmdClick_buildsMultiSelection_withoutOpeningDiff() {
         let (panel, doc, log) = makePanelAndDoc()
         let before = doc.tabs.tabs.count

@@ -37,7 +37,10 @@ public enum GitLogDiffActions {
         }
     }
 
-    /// Plain click: select the row and open the commit's diff tab.
+    /// Plain click: select the row and open the commit's diff tab. Uses
+    /// `doc.open(url:)` (not `openInNewTab`) so re-clicking the SAME commit
+    /// focuses its existing diff tab instead of stacking duplicates — the
+    /// `<sha>.diff` cache path is deterministic per commit (TSK-907).
     public static func showCommit(sha: String,
                                   panel: GitPanelModel,
                                   doc: DocumentModel) {
@@ -52,7 +55,7 @@ public enum GitLogDiffActions {
             lastTrace = "showCommit(\(sha)): cache WRITE FAILED (body=\(body.count)B)"
             return
         }
-        doc.openInNewTab(out)
+        doc.open(url: out)
         lastTrace = "showCommit(\(sha)): root=\(root.lastPathComponent) "
             + "body=\(body.count)B out=\(out.path) tabs=\(doc.tabs.tabs.count)"
     }
@@ -77,7 +80,7 @@ public enum GitLogDiffActions {
             lastTrace = "cumulativeDiff: cache WRITE FAILED (body=\(body.count)B)"
             return
         }
-        doc.openInNewTab(out)
+        doc.open(url: out)
         lastTrace = "cumulativeDiff(\(range.baseRef)..\(range.tipRef)): "
             + "body=\(body.count)B out=\(out.path) tabs=\(doc.tabs.tabs.count)"
     }
