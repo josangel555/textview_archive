@@ -841,9 +841,16 @@ public final class SourceTextController: NSViewController {
         scrollView.backgroundColor = theme.background
         textView.backgroundColor = theme.background
 
-        if wordWrap != lastWordWrap {
-            applyWrap(wordWrap)
-            lastWordWrap = wordWrap
+        // TSK-361 — a pathologically long line (a `.ipynb` base64 blob, a
+        // minified bundle, a one-line JSON dump) makes NSTextView's horizontal
+        // layout superlinear and hangs the main thread on open. Force soft-wrap
+        // so layout is bounded to the viewport width, regardless of the user's
+        // wrap pref. The scan is the same O(N)-per-apply cost class as the
+        // `utf8.count` above and early-exits at the first over-long line.
+        let effectiveWrap = SourceWrapPolicy.effectiveWrap(userWrap: wordWrap, text: text)
+        if effectiveWrap != lastWordWrap {
+            applyWrap(effectiveWrap)
+            lastWordWrap = effectiveWrap
         }
         // NSLayoutManager renders dots / arrows / pilcrows when this is
         // on, in its built-in faint grey (`tertiaryLabelColor`). There is

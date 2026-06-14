@@ -10,6 +10,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ## 2026-06-13
 
 ### Fixed
+- Opening a file with very long lines (a Jupyter notebook with embedded image data, a minified bundle, a one-line JSON dump) no longer freezes the app — such files now soft-wrap automatically so the text view stays responsive instead of hanging.
 - Terminal no longer becomes unresponsive when pasting a large blob (e.g. big JSON into vim) — heavy output bursts stay smooth.
 - Split view now shows your **unsaved edits** live, instead of the last-saved text from disk.
 - Mouse-over line highlighting is no longer laggy on large (5000-line) log files while Find is active.
