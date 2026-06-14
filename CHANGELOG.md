@@ -10,6 +10,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ## 2026-06-14
 
 ### Fixed
+- **Larger unknown-type text files no longer open stuck in HEX** — a big file with an unknown/odd extension that's actually plain text now opens in the text (Source) view instead of a hex dump, matching what the view picker offers. (Small files were already fine; this was the off-main path for files over ~4 MB.)
 - **Git log: clicking the same commit no longer stacks duplicate tabs** — re-clicking a commit (or re-running a cumulative diff) now focuses the existing diff tab instead of opening another copy.
 - **Preview tabs are italic-only, not bold** — an ephemeral preview tab no longer goes bold when selected; the italic already marks it as preview.
 - **UTF-16 files no longer garble after editing** — saving a UTF-16-encoded text file (or rewriting one via project-wide replace) now keeps its byte-order mark, so a short UTF-16 file reopens correctly instead of being mis-read as Windows-1252/Latin-1 and showing garbled characters.

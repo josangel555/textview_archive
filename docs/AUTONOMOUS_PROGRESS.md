@@ -1,5 +1,25 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-900 fix: large unknown-ext TEXT file no longer stuck in HEX (→ review)
+
+Root-caused the owner's "plain-text identified but locked in HEX" bug. The SYNC open path passes the loader's
+text/binary verdict into mode resolution (TSK-332), so small unknown-extension text files open in `.source`
+correctly. But the DEFERRED off-main path (files ≥4 MiB, TSK-842 `deferReadOffMainBytes`) resolves the mode
+BEFORE reading bytes → `isRenderableText: nil` → unknown extension gets the hint-less `.hex` default. On load
+completion (`openLargeFileOffMain`), the "carry HEX" block then called `loadBinaryAsync` for a `.loaded` (TEXT!)
+file — dumping a text file as hex while the picker re-derived to offer Source (the exact desync).
+
+Fix: new pure `DocumentModel.deferredLoadViewModeUpgrade(current:isLoadedText:url:preferred:)` — a `.hex` tab that
+decoded as text upgrades to the content-aware default (`ViewModeOptions.defaultMode` with the hint); non-hex tabs
+and non-text (`.binary`/`.error`/…) states are untouched, so a genuinely binary file stays HEX. Wired into the
+off-main completion before the carry block (so a text file never reaches `loadBinaryAsync`). Safe because the
+deferred path is the plain `open(url:)` only — explicit "Open As HEX" goes through the sync forced-category path,
+never here. Teeth: 4 host tests (unknown-text→Source, binary→stays-HEX, non-hex-unchanged, never-HEX-for-text).
+
+SIBLING NOTED (not touched): the `materializeIfNeeded` carry block (DocumentModel.swift:5685) has the same shape
+but carries a PERSISTED mode (could be a user's explicit Open-As-HEX), so upgrading there risks clobbering intent
+— left as a separate follow-up if the session-restore case surfaces. Host gate green.
+
 ## LOG 2026-06-14 — Owner intake triaged (TSK-887..945) + first P1 fixes (TSK-907/902, 932 reconcile)
 
 Owner posted a ~75-item bug/improvement batch. Analyzed inline, de-duped against the (shared) board, filed

@@ -27,7 +27,7 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
 - [ ] **TSK-908** — Right-click commit very slow (menu build) `[trace]`
 
 **P1 — broken user-facing behavior (host-fixable bugs; ship model + leave render at review):**
-- [ ] **TSK-900** — Plain-text file locked in HEX, Editor can't show it (cf TSK-504 regression) — *worst: can't read the file*
+- [x] **TSK-900** — Plain-text file locked in HEX, Editor can't show it `[a64c52a → review; off-main open upgraded hex→source on text verdict, 4 teeth tests]`
 - [x] **TSK-907** — Git log: same entry opens a duplicate tab (de-dupe/focus existing) `[a1de1b7 → review; open-or-focus by URL + 2 teeth tests]`
 - [ ] **TSK-910** — Git diff: only one line selectable → multi-line selection `(537)`
 - [ ] **TSK-905** — Preview ↑/↓ broken unless tab is last (first-responder by tab position)
