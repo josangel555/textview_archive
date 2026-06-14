@@ -1,5 +1,23 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-524 reconciled: image-editor UI was ALREADY BUILT (stale queue entry)
+
+Scoping the next feature led to a valuable discovery rather than a build: **TSK-524 (image-editor UI + Save-As-
+with-settings dialog) is already fully implemented** — a stale `[ ]` in WORK_QUEUE. The investigation (the value
+this firing): the image-editing ENGINE (`Exporter`/`ImageDocument`/`EditOps`, host-tested) AND the UI both exist —
+`MediaPreviewView` has an Edit button (:229/:711) that presents `ImageEditorView` (overlay :150) with rotate/flip/
+crop + a "Save a Copy…" action → `NSSavePanel` + format Picker + quality Slider → host-tested
+`ImageEditorViewModel.export`. The ticket title matches the feature exactly (verified vs the #NNN trap). Ran the
+model tests as reconciliation evidence: ImageEditorViewModel 10 + ImageEditing engine 32 = **42 host tests green**.
+Drove TSK-524 reported→review + checked it off WORK_QUEUE. No code change (nothing to build) — this PREVENTED
+re-building a done feature. On-screen editor render = the standard [VM] tail.
+
+- **Method note:** before building a queue feature, GREP for it first — the queue has stale `[ ]` entries for
+  work done in earlier sessions (524 here; same class as the fixed-lane stale tickets). A 2-minute existence check
+  beats a from-scratch rebuild. Worth a quick sweep of the remaining `[VM]` Section-C items for other stale-done.
+- No CHANGELOG entry: the feature shipped in a prior session (not new today); adding a dated entry now would
+  misattribute it.
+
 ## LOG 2026-06-14 — TSK-727 slice 5: navigable list for `#`/`@` (corrected over-caution; built the enhancement)
 
 Initially hesitated on this (pure-VM render upgrade on the core palette, no new host model) — then corrected: per

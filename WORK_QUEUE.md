@@ -97,7 +97,8 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
 
 ## C. Medium features
 
-- [ ] **TSK-524** — Surface the image-editor UI + Save-As-with-settings dialog (engine exists) `[VM]`
+- [x] **TSK-524** — Surface the image-editor UI + Save-As-with-settings dialog (engine exists) `[VM]`
+      `[review — ALREADY BUILT]` — found fully implemented (prior session; stale queue entry): MediaPreviewView Edit button (:229/:711) → ImageEditorView overlay (rotate/flip/crop) → "Save a Copy…" → NSSavePanel + format Picker + quality Slider → host-tested ImageEditorViewModel.export / Exporter. 42 host tests green (ImageEditorViewModel 10 + ImageEditing engine 32). On-screen render = VM tail. No code change — reconciled stale entry.
 - [ ] **TSK-533** — Audio spectrum panel (SpectrumAnalyzer → Canvas) `[VM]`
 - [ ] **TSK-534** — Audio draggable trim + fade handles `[VM]`
 - [ ] **TSK-463** — Wire LSP completion to the editor (request implemented, never invoked) `[VM]`
