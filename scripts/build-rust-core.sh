@@ -79,8 +79,11 @@ if ! command -v cargo >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "==> cargo build --profile $PROFILE (CARGO_TARGET_DIR=$CARGO_TARGET_DIR)"
-cargo build --manifest-path "$RUST_DIR/Cargo.toml" --profile "$PROFILE"
+echo "==> cargo build --locked --profile $PROFILE (CARGO_TARGET_DIR=$CARGO_TARGET_DIR)"
+# --locked: the app-link staticlib is built from the committed Cargo.lock ONLY;
+# a build that would re-resolve transitive deps fails here rather than silently
+# shipping an unreviewed dependency set (TSK-783 supply-chain guard).
+cargo build --locked --manifest-path "$RUST_DIR/Cargo.toml" --profile "$PROFILE"
 
 # We stage the STATICLIB (libmdvcore_ffi.a) and let SwiftPM link it directly
 # into the MarkdownViewer executable.

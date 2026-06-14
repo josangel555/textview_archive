@@ -22,6 +22,15 @@
 #
 # Build dir lives OUTSIDE the worktree (worktree hygiene) via CARGO_TARGET_DIR,
 # matching build-rust-core.sh.
+#
+# --locked is load-bearing (TSK-783, supply-chain): the committed Cargo.lock is
+# the authoritative transitive-dependency set, and --locked makes any build that
+# WOULD mutate it FAIL instead of silently re-resolving. Direct deps are already
+# exact-pinned with default-features=false (workspace manifest), so a drift can
+# only come from a transitive sub-dep's range — exactly what this catches. Pairs
+# with deny.toml (cargo-deny: multiple-versions=deny, crates.io-only sources) run
+# via scripts/rust-supply-chain-audit.sh. A lockfile change must now be an
+# explicit, reviewable Cargo.lock diff — the owner-approval chokepoint.
 set -euo pipefail
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -35,11 +44,11 @@ if ! command -v cargo >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "==> cargo clippy --workspace --all-targets (enforces the workspace no-panic deny lints)"
-cargo clippy --manifest-path "$RUST_DIR/Cargo.toml" --workspace --all-targets
+echo "==> cargo clippy --locked --workspace --all-targets (no-panic deny lints + Cargo.lock drift guard)"
+cargo clippy --locked --manifest-path "$RUST_DIR/Cargo.toml" --workspace --all-targets
 
-echo "==> cargo test --workspace (all five crates incl. tui/web/highlight)"
-cargo test --manifest-path "$RUST_DIR/Cargo.toml" --workspace
+echo "==> cargo test --locked --workspace (all five crates incl. tui/web/highlight)"
+cargo test --locked --manifest-path "$RUST_DIR/Cargo.toml" --workspace
 
 # Header-drift check (audit TSK-539): the clippy/test runs above just re-ran
 # the ffi build script, so crates/ffi/include/mdvcore.h is freshly generated.
