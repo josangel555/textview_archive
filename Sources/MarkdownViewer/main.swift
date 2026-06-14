@@ -1711,6 +1711,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             action: #selector(alignMarkdownTables(_:)), keyEquivalent: "")
         alignTablesItem.target = self
         editMenu.addItem(alignTablesItem)
+        // TSK-352: re-save the active file in a chosen text encoding. Tag =
+        // index into `encodingChoices`. Enabled for any active text file.
+        let convertItem = NSMenuItem(title: "Convert Encoding", action: nil, keyEquivalent: "")
+        let convertMenu = NSMenu(title: "Convert Encoding")
+        for (i, choice) in AppDelegate.encodingChoices.enumerated() {
+            let mi = NSMenuItem(title: choice.title,
+                                action: #selector(convertFileEncoding(_:)), keyEquivalent: "")
+            mi.target = self
+            mi.tag = i
+            convertMenu.addItem(mi)
+        }
+        convertItem.submenu = convertMenu
+        editMenu.addItem(convertItem)
         editMenu.addItem(.separator())
         editMenu.addItem(findSubmenuItem)
         editMenuItem.submenu = editMenu
@@ -2091,6 +2104,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         _ = model.formatMarkdownTablesInActiveEditor()
     }
 
+    /// TSK-352 — the "Convert Encoding" submenu choices (title + target
+    /// encoding). Menu-item `tag` indexes this array. UTF-16 is the BOM-ful
+    /// variant so a reopen re-detects it (the explicit-endian forms are
+    /// BOM-less — see TSK-861).
+    static let encodingChoices: [(title: String, encoding: String.Encoding)] = [
+        ("UTF-8", .utf8),
+        ("UTF-16", .utf16),
+        ("Western (Windows-1252)", .windowsCP1252),
+        ("Western (ISO Latin-1)", .isoLatin1),
+    ]
+    /// TSK-352 — re-save the active file in the chosen encoding.
+    @objc func convertFileEncoding(_ sender: Any?) {
+        let tag = (sender as? NSMenuItem)?.tag ?? 0
+        let choices = AppDelegate.encodingChoices
+        guard choices.indices.contains(tag) else { return }
+        _ = model.convertActiveFileEncoding(to: choices[tag].encoding)
+    }
+
     /// Menu validation: gray-out items that don't apply to the current
     /// state. macOS calls this every time a menu opens (and for items
     /// with key equivalents, on the keystroke too).
@@ -2159,6 +2190,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(alignMarkdownTables(_:)):
             // TSK-350: only for a markdown tab with a live editor buffer.
             return model.canAlignMarkdownTables
+        case #selector(convertFileEncoding(_:)):
+            // TSK-352: any active text file.
+            return model.canConvertActiveFileEncoding
         case #selector(toggleBookmark(_:)):
             item.title = model.isCurrentTabBookmarked
                 ? "Remove Bookmark"

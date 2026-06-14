@@ -4556,6 +4556,41 @@ public final class DocumentModel: ObservableObject {
         reload(url: url, at: i)
     }
 
+    /// The active tab's current text (live editor buffer if present, else the
+    /// loaded-from-disk contents), or nil for a non-text tab. Used by
+    /// encoding-convert (TSK-352).
+    private var activeTextForEncodingConvert: (text: String, tabID: UUID, url: URL)? {
+        guard let tab = tabs.selected, let url = tab.url else { return nil }
+        if let buf = editor.editorBuffers[tab.id] { return (buf.text, tab.id, url) }
+        if case .loaded(let f) = tab.state { return (f.contents, tab.id, url) }
+        return nil
+    }
+
+    /// True when "Convert Encoding" can act — there's an active text file.
+    public var canConvertActiveFileEncoding: Bool { activeTextForEncodingConvert != nil }
+
+    /// TSK-352 — re-save the active file's current text (including any unsaved
+    /// edits) in `target` encoding, then reload so the app re-detects it.
+    /// `EditorBuffer.encoding` is immutable, so we write-through then drop +
+    /// reload the buffer (the reload re-seeds it from disk with the new
+    /// encoding). Returns false (no change) when there's no active text file or
+    /// the text isn't representable in `target` (e.g. emoji → Latin-1) — the
+    /// on-disk file is left untouched in that case.
+    @discardableResult
+    public func convertActiveFileEncoding(to target: String.Encoding) -> Bool {
+        guard let ctx = activeTextForEncodingConvert else { return false }
+        do {
+            _ = try EditorWriter.save(ctx.text, to: ctx.url, encoding: target)
+        } catch {
+            Obs.shared.emit(.warn, "files",
+                            "Convert encoding failed: \(String(describing: error))")
+            return false
+        }
+        editor.discardEditorBuffer(forTabID: ctx.tabID)
+        reloadCurrentFile()
+        return true
+    }
+
     /// CRIT-4: only reload when the currently-selected tab's URL still
     /// matches the URL the file watcher was bound to. Without this, an
     /// in-flight watcher event for a file the user just navigated away
