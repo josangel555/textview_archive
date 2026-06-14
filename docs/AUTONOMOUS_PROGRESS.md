@@ -1,5 +1,33 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — Validation-drain pass: TSK-853 + TSK-575 → validated (host-verified fresh, no code change)
+
+With the clean host-buildable FEATURE pool drained (last firing), worked the SOP fallback (rule 1.5, validation
+drain) on the `fixed` pool. Most of it is `blocker: live-validation` (VM-gated render features — not host-
+validatable); the two `blocker: none` host-testable items both re-verified GREEN on current main and validated:
+
+- **TSK-853** (perf: launch warm heats the gate-selected highlight engine, commit 31affba) → **validated**. Prior
+  firing left it at `fixed` out of caution ("timing is VM"), but the BEHAVIOR+MECHANISM are host/rust-guarded:
+  re-ran `RustHighlightAdapterTests` (10/10, incl. `test_warm_gateOn_…routesRust` + `…gateOff_warmsSwiftFallback`)
+  proving the warm routes to the gate-selected engine, and the rust-core gate's `configured_grammar_is_cached_not_
+  recompiled` proving the config is cached process-wide. Together: warm hits the right engine + that engine caches
+  the config ⇒ the cold-start compile moves off first-open. Reverting the gate-aware warm fails the host test =
+  regression guard. (Absolute ms = VM/manual, a consequence of the proven mechanism, not a separate regression
+  surface.)
+- **TSK-575** (rust-core: clippy warn-tier saturation / cast safety, commits 6ca8d8b+0728a13) → **validated** for
+  its shipped scope. All 11 cast_possible_truncation/cast_sign_loss sites audited (none truncate) and both lints
+  RATCHETED TO DENY with reasoned allows, so a new unjustified i64→usize cast now FAILS the gate — re-ran the
+  rust-core gate GREEN on current main (the enforcing guard); teeth demonstrated at fix time (probe cast → clippy
+  exit 101). RESIDUAL noted in the validation: ~33 non-cast pedantic STYLE nits remain (low-signal, deferred as a
+  separate marginal sweep per anti-paper-cut) — the high-signal/safety concern is what's validated.
+
+No code change this firing (drain = re-run evidence + board lifecycle). Main stays gate-green (rust-core gate run
+green during validation). The host-validatable `fixed` pool is now ALSO drained — the remaining `fixed`/`review`
+items are uniformly VM-gated (`live-validation`). So the frontier is now wholly VM-validation + the 3 standing
+owner decisions (VM pass; TSK-343 local-history default; zoom-split 321/322/470). Next firing has no clean
+host-buildable feature AND no host-validatable drain item left → a documented HOLD is the honest move absent an
+owner steer.
+
 ## LOG 2026-06-14 — TSK-675 slice 4 shipped: Convert Indentation (Tabs↔Spaces) (2a8b111, → review)
 
 Drained the last clean host-buildable robust-editor command from the 675 runway. Child TSK-864 → review.
