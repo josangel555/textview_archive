@@ -9169,6 +9169,41 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +419 (2026-06-13 — correction + hygiene: TSK-583 dismissed ALREADY-BUILT; 543 diagnosis corrected; safe pool drained)
+
+No code shipped — a board-state correction tick (read-before-build caught a phantom). Went to FINALLY implement TSK-583
+(the CoreRuntime/DocId registry I'd flagged for several ticks as the held high-value architectural thread)... and found it
+ALREADY EXISTS. `rust-core/crates/ffi/src/handle.rs` IS the registry: an Arc-backed global `Mutex<HashMap<usize,
+Arc<SessionHandle>>>` keyed by a monotonic NEVER-REUSED token (NEXT_TOKEN, 1-based), with `lookup` (Arc-clone, survives a
+concurrent free), idempotent `free` (registry remove), and bogus/stale/null tokens looked-up→None→status (never a raw
+deref). It was built AS the TSK-541 (validated) fix. The token is typed `*mut SessionHandle` for cbindgen ABI-stability
+(byte-identical, never dereferenced) rather than a named u64 — a cosmetic delta that fulfills 583's intent.
+
+- **TSK-583 → dismissed already-fixed** with proof: 58 mdvcore-ffi cargo tests green incl. the 3 registry tests
+  (into_raw_registers_and_free_unregisters, free_invalidates_token_but_inflight_clone_survives,
+  double_free_and_bogus_token_are_safe_noops).
+- **TSK-543 comment CORRECTED:** my prior "543 is blocked on an unbuilt 583" was WRONG. The registry exists; cm_apply is
+  STATELESS BY DESIGN, so making it stateful is a BOUNDED extension of handle.rs (register an editor doc), NOT new infra.
+  543's real gates are the migration-intent DECISION (Rust-as-applier vs local-apply) + whether the cost even bites today
+  (only on the Rust cmEdit path; Swift CMEditApplier applies locally with zero FFI, gated by the TSK-649 soak).
+
+**Board-state reality (honest §5 status):** the "high-value architectural thread" I kept holding for the owner was largely
+a phantom — 583/541 are DONE, 543 is migration-decision-gated. The groomed pools are all validated. The SAFE, clean,
+host-testable single-tick feature pool is now genuinely DRAINED (this session shipped 1 hang fix + 8 features/slices + 4
+correct already-built dismissals). Remaining actionable work is: (a) migration/owner-decision-gated (543), (b) VM-render-
+validation tail (the ~9 `review` items incl. this session's), (c) data-safety-sensitive or render-heavy features (hot exit
+718, side-by-side md 704, LSP-hover wiring 710), or (d) owner "how does X work" question tickets. Not manufacturing
+marginal work (§5).
+
+**DECISIONS NEEDED (owner):**
+1. **543 migration intent** — route editor edits through Rust (remote-core future) vs. apply locally in Swift (zero FFI,
+   the perf win)? This is the only remaining substantive rust-core call.
+2. **VM-render-validation tail** — ~9 `review` items (this session's 5 features + earlier 806/743/821/468) are
+   host-behavior-validated; their on-screen pixels need the VM GUI lane (owner-deprioritized this session). Run the VM
+   lane to drive them to validated, or accept host-validation as sufficient.
+3. **Point me at a priority** — the safe clean pool is drained; tell me what matters next (a specific feature, the VM
+   drain, or the 543 decision) and I'll go.
+
 ## LOG +418 (2026-06-13 — TSK-681: Export/Import Settings (portable JSON snapshot); host-tested with teeth)
 
 Autonomous tick. Re-weighed the architectural pick (TSK-583) — still a risky cross-language FFI ABI change with
