@@ -78,7 +78,11 @@ public enum CrossFileSearch {
     /// `make` returns `nil` when a regex query is rejected (ReDoS shape) or
     /// uncompilable, so the search yields no results; the caller surfaces the
     /// reason separately via `validateRegex`. (TSK-758)
-    struct Matcher {
+    /// `@unchecked Sendable` (TSK-829): the two closures only READ immutable
+    /// state — an `NSRegularExpression` (thread-safe for matching) or pure
+    /// `String.range(of:)` — so sharing one `Matcher` across the parallel
+    /// per-file match (`concurrentPerform`) is safe.
+    struct Matcher: @unchecked Sendable {
         let contains: (String) -> Bool
         let firstRange: (String) -> Range<String.Index>?
 
@@ -169,6 +173,53 @@ public enum CrossFileSearch {
             options: [.skipsHiddenFiles]
         ) else { return [] }
 
+        // TSK-829: read+decode+match is the CPU/IO-heavy per-file work and is
+        // independent across files. Collect candidate URLs into batches, match
+        // each batch in PARALLEL, then fold the results SERIALLY in walk order
+        // under the global `maxResults` gate — byte-identical to the old serial
+        // loop (the fold reproduces its mid-file cap break), with over-read
+        // bounded to one batch (vs reading the whole tree).
+        let batchSize = 24
+        var batch: [URL] = []
+        batch.reserveCapacity(batchSize)
+
+        // Match the pending batch in parallel; fold into `results` under the
+        // cap. Returns true once `maxResults` is reached (caller stops).
+        func flushBatch() -> Bool {
+            if !batch.isEmpty {
+                let urls = batch
+                var slots = [[Match]?](repeating: nil, count: urls.count)
+                slots.withUnsafeMutableBufferPointer { buf in
+                    guard let base = buf.baseAddress else { return }
+                    // Each iteration writes its OWN, disjoint index → race-free
+                    // with no shared mutable state; nonisolated(unsafe) lets the
+                    // base pointer cross into the @Sendable concurrentPerform body.
+                    nonisolated(unsafe) let p = base
+                    DispatchQueue.concurrentPerform(iterations: urls.count) { i in
+                        (p + i).pointee = Self.matchFile(
+                            urls[i], matcher: matcher, needle: needle, options: options)
+                    }
+                }
+                // Serial fold in walk order — reproduces the old loop's global
+                // maxResults gate exactly (stops mid-file at the cap).
+                for i in 0..<urls.count {
+                    if totalMatches >= options.maxResults { break }
+                    guard let fileMatches = slots[i] else { continue }
+                    var kept: [Match] = []
+                    for m in fileMatches {
+                        if totalMatches >= options.maxResults { break }
+                        kept.append(m)
+                        totalMatches += 1
+                    }
+                    if !kept.isEmpty {
+                        results.append(FileMatches(url: urls[i], matches: kept))
+                    }
+                }
+                batch.removeAll(keepingCapacity: true)
+            }
+            return totalMatches >= options.maxResults
+        }
+
         for case let url as URL in enumerator {
             // Bail early if we already have enough matches OR we've
             // exceeded the hard entry cap.
@@ -216,88 +267,55 @@ public enum CrossFileSearch {
             // Per-file cancellation point, before the read+decode cost.
             if isCancelled() { break }
 
-            // Read content. Decode via the shared chain (BOM → UTF-16 →
-            // UTF-8 → CP1252 → Latin-1) so cross-file search matches the
-            // same files `TextFileLoader` can open (I18N-02 / PARSE-08).
-            // Previously this decoded strict UTF-8 only and `continue`'d
-            // on anything else — a needle in a Latin-1 / CP1252 / BOM-less
-            // UTF-16 file was silently invisible to project-wide search.
-            guard let data = try? Data(contentsOf: url) else { continue }
-            guard let content = TextDecoder.decodeToString(data) else { continue }
-
-            // File-level prefilter via the compiled matcher (literal substring
-            // or regex). For literal case-insensitive we still match on the
-            // ORIGINAL string via `.caseInsensitive` — never `lowercased()`,
-            // which changes character count for ß/Σ/İ and breaks index
-            // back-mapping (S2-D). `.caseInsensitive` honours original indices.
-            let containsOpts: String.CompareOptions = options.caseSensitive
-                ? [] : [.caseInsensitive]
-            guard matcher.contains(content) else { continue }
-
-            // Compute per-line matches.
-            //
-            // Hot loop. Two perf-relevant choices here:
-            //   - Search the `Substring` directly. `Substring.range(of:)`
-            //     shares its index space with the parent `content` and
-            //     skips an allocation per non-matching line. In a typical
-            //     scan most lines DON'T match, so this avoids ~N
-            //     `String(lineSub)` allocations per file (N = line count).
-            //   - Only materialize `String(lineSub)` on a hit. We re-run
-            //     `range(of:)` once on that short String to get a
-            //     `Range<String.Index>` valid in `line` (Match.matchRange
-            //     is documented to index into `Match.line`). The double
-            //     work is bounded by match count, which is typically tiny
-            //     compared to total lines scanned.
-            //
-            // Why not `lowercased()` the haystack once? Because Unicode
-            // case-folding can change character count (German ß → "ss",
-            // Greek Σ → σ/ς, Turkish İ → "i\u{0307}") — back-mapping
-            // indices from the folded buffer to the original breaks for
-            // exactly the locales that need it (S2-D regression).
-            // `.caseInsensitive` honors the original indices natively.
-            var fileMatches: [Match] = []
-            // Split into lines handling LF, CRLF, and CR-only endings
-            // (I18N-04). Previously a bare `split(separator: "\n")` left
-            // a trailing `\r` glued onto every line of a CRLF file (so a
-            // line-anchored needle could miss, and `Match.line` carried a
-            // stray carriage return) and collapsed a classic-Mac CR-only
-            // file into one giant "line 1". `splitLines` normalizes
-            // CRLF/CR to single line breaks the way FindEngine's
-            // line/column accounting does.
-            let lines = splitLines(content)
-            for (i, lineSub) in lines.enumerated() {
-                let line: String
-                let range: Range<String.Index>?
-                if options.useRegex {
-                    // Regex needs a String (NSRange backing); build it only for
-                    // a file the prefilter already said matches.
-                    let s = String(lineSub)
-                    guard let r = matcher.firstRange(s) else { continue }
-                    line = s
-                    range = r
-                } else {
-                    // Literal fast path: probe the Substring (shares the
-                    // parent's index space — no per-line allocation), then
-                    // materialize the String only on a hit.
-                    guard lineSub.range(of: needle, options: containsOpts) != nil else {
-                        continue
-                    }
-                    line = String(lineSub)
-                    range = line.range(of: needle, options: containsOpts)
-                }
-                fileMatches.append(Match(
-                    lineNumber: i + 1,
-                    line: line,
-                    matchRange: range
-                ))
-                totalMatches += 1
-                if totalMatches >= options.maxResults { break }
-            }
-            if !fileMatches.isEmpty {
-                results.append(FileMatches(url: url, matches: fileMatches))
-            }
+            // TSK-829: defer the heavy read+decode+match to a parallel batch —
+            // collect the candidate, flush when the batch fills. Stop the walk
+            // the moment a flush reaches the cap (over-read bounded to one batch).
+            batch.append(url)
+            if batch.count >= batchSize, flushBatch() { break }
         }
+        // Match + fold the trailing partial batch.
+        _ = flushBatch()
         return results
+    }
+
+    /// Read + decode + per-line match a single file, returning ALL matches in
+    /// line order (TSK-829). The global `maxResults` gate is applied by the
+    /// caller's serial fold, NOT here — this is the parallelizable per-file
+    /// unit, sharing the exact decode chain + matching rules the serial loop
+    /// used. `nil` = unreadable / undecodable / prefilter miss / no match.
+    ///
+    /// Matching honours the original-string indices (`.caseInsensitive`, never
+    /// `lowercased()`, which changes character count for ß/Σ/İ and breaks index
+    /// back-mapping — S2-D); lines are split LF/CRLF/CR-aware via `splitLines`.
+    static func matchFile(
+        _ url: URL, matcher: Matcher, needle: String, options: Options
+    ) -> [Match]? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        guard let content = TextDecoder.decodeToString(data) else { return nil }
+        guard matcher.contains(content) else { return nil }
+
+        let containsOpts: String.CompareOptions = options.caseSensitive
+            ? [] : [.caseInsensitive]
+        var fileMatches: [Match] = []
+        let lines = splitLines(content)
+        for (i, lineSub) in lines.enumerated() {
+            let line: String
+            let range: Range<String.Index>?
+            if options.useRegex {
+                let s = String(lineSub)
+                guard let r = matcher.firstRange(s) else { continue }
+                line = s
+                range = r
+            } else {
+                guard lineSub.range(of: needle, options: containsOpts) != nil else {
+                    continue
+                }
+                line = String(lineSub)
+                range = line.range(of: needle, options: containsOpts)
+            }
+            fileMatches.append(Match(lineNumber: i + 1, line: line, matchRange: range))
+        }
+        return fileMatches.isEmpty ? nil : fileMatches
     }
 
     /// Filename search across a folder tree (TSK-758). Returns one

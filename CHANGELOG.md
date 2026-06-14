@@ -34,6 +34,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Tab operations in the Session menu** — the Session menu now has a **Tab Operations** section (New Tab, Close Tab, Next / Previous Tab, Move Tab Left / Right), so the open-file tab commands are discoverable from the menu bar, not just via keyboard shortcuts.
 
 ### Performance
+- **Faster project-wide search** — searching across files now reads and matches files **in parallel** across CPU cores instead of one at a time (a 3,000-file benchmark dropped from ~590 ms to ~125 ms), so big multi-file searches return noticeably sooner. Results are identical — same matches, same order.
 - **Faster syntax highlighting after launch** — the app now warms its language grammars in parallel across all CPU cores (instead of one at a time on a single thread), and warms Markdown first, so your first opened file gets highlighted noticeably sooner — especially right after starting the app.
 - **Snappier highlighting on large files** — the syntax-highlight data now crosses to the UI in a leaner format (~4× smaller, decodes ~5× faster), so opening or scrolling a big source file or a long Markdown doc with many code blocks renders its colors quicker.
 - **Faster large-CSV open** — the CSV parser now loads cells straight into its compact in-memory store instead of building a throwaway intermediate copy first, so opening a big spreadsheet does roughly half the memory work (no per-cell allocation churn, one fewer full copy of the data).
