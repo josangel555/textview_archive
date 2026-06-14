@@ -9303,6 +9303,39 @@ in Cargo.toml (lock unchanged) → `cargo build --locked` errored "the lock file
 --locked was passed" → restored via `git checkout`. Both tickets self-validated (host-verifiable supply-chain
 guards). No CHANGELOG (build/security infra, not user-facing). main stays gate-green.
 
+## LOG +427 (2026-06-13 — Rust migration: verify-before-build caught TSK-775 done; surfaced the 3 owner-gated decisions; TSK-820 made pickup-ready)
+
+Autonomous tick. Host-closeable user-facing pool is thin (5 substantive ticks done: formatters x2, doc cluster,
+supply-chain). Per §0.5 the high-value move was a spike on an owner-filed epic — picked TSK-775 (Rust migration
+plan). **Verify-before-build catch:** TSK-775 is ALREADY DONE — the spike completed and the plan is drafted at
+`docs/research/rust-migration-plan-2026-06-13/PLAN.md` (ticket triaged). Did NOT redo it.
+
+Key finding from the plan: the migration is a FINISHING plan — all engine ports validated + shipping Rust
+DEFAULT-ON (Stage A / TSK-649), the thin-waist envelope `mdvcore_call` is the production dispatch path, and a
+working remote `mdv-serve` carrier + CoreTransport seam exist. The biggest remaining wins are owner-gated, but
+the spike's 3 framed decisions sat buried in a `triaged` comment (the owner had only been pinged with a stale
+generic park).
+
+**Did (board only, no code):**
+- **Surfaced the 3 migration decisions** — re-parked TSK-775 (`waiting:human`, kind=decision) with crisp D1
+  (authorize Stage-B Swift-twin DELETION + soak window — the major LoC win; carve-out detail is TSK-810), D2
+  (DocId session-eviction policy, TSK-583), D3 (horizon: whole-core finish vs freeze-at-default-ON), + a
+  "Hold all, keep finishing F1-F4 autonomously" option. F1-F4 need no owner input; no new dep for F1-F4.
+- **Evaluated TSK-820** (F1 dead-symbol removal) and DEFERRED it as a careful refactor, not a quick cleanup:
+  the 11 per-method C symbols are the byte-identity reference ORACLE for the envelope A/B parity tests + 7
+  misuse matrices — removing them needs a deliberate oracle swap. Left a fully pickup-ready plan on the ticket
+  (golden-bytes for the A/B tests; consolidate the 7 per-symbol misuse matrices into ONE envelope matrix =
+  coverage improvement; remove symbols + regen header; no Swift change needed). Low §3 priority (internal-
+  quality, owner-deprioritized this session) on critical FFI infra — better deliberate than rushed.
+
+No code touched → main stays headless-gate-green. No CHANGELOG (planning/board hygiene, not user-facing).
+
+### DECISIONS NEEDED (owner-gated, surfaced on the board)
+- **TSK-775 D1/D2/D3** (parked) — authorize Stage-B Swift-twin deletion / set DocId eviction policy / confirm
+  migration horizon. Gate the migration's biggest wins (F2 deletion, F3 registry). F1-F4 proceed regardless.
+- **TSK-810** (parked) — Stage-B carve-out: hexSearch/hex Swift engines can't fully delete; fallback model?
+- **TSK-598** (parked) — does MD-open/tab-switch still FEEL laggy? (measured-resolved; owner felt-judgment).
+
 **LSP-menu lane now done.** Remaining LSP work (no UI at all, meatier): Find References + Workspace Symbols (backends
 exist, need a results panel — VM-gated). Noted for when the screen/owner is available.
 
