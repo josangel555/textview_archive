@@ -40,7 +40,8 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
 
 ## A. Quick wins — small features, host-buildable (do these first)
 
-- [ ] **TSK-755** — Session menu: a "Tab operations" section (new/close/next/prev/move) `[VM]`
+- [x] **TSK-755** — Session menu: a "Tab operations" section (new/close/next/prev/move) `[VM]`
+      `[review 25b732a]` — section added to buildSessionMenu (compile-guarded selectors); menu appearance = VM/owner gate.
 - [ ] **TSK-756** — Top-right toolbar button that opens the command palette (discoverability) `[VM]`
 - [ ] **TSK-753** — Dedicated menu item for the current file's type `[VM]`
 - [ ] **TSK-751** — Organize the menu items properly (review/reorganize the menu bar) `[VM]`

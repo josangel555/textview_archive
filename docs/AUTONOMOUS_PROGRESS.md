@@ -67,6 +67,14 @@ and started executing the measured wins.
   serve (old map encoder) → false `typeMismatch("expected array")`. Rebuilt `mdvcore-serve` → re-gate green. Process
   note: I committed `e99ca14` in the same step as the gate-verdict check (premature) — the code was correct, but
   never bundle commit with the gate read.
+- **TSK-755 (`25b732a`, review)** — Section A wishlist: a "Tab Operations" section in the Session menu (New/Close/
+  Next/Previous/Move Tab), grouping the open-file tab commands for menu-bar discoverability (shortcuts stay on
+  File/Window; these entries carry no key equivalents so they don't collide, and dispatch the same @objc actions).
+  Added to `buildSessionMenu` (main.swift). Wiring is COMPILE-guarded (each `#selector` resolves against the
+  AppDelegate methods or the build fails — the AppMenuActionsTests "first line of defence"); the menu APPEARANCE is
+  the executable's private AppKit, not host-testable → lands at `review` for the VM/owner gate (per the
+  build-it-leave-render-at-review posture). Headless gate green (main.swift isn't a test-target dep, so it confirms
+  no regression in the tested modules). First Section-A item; Section-0 cheap perf wins all shipped.
 
 ## LOG 2026-06-10 (latest+128) — TSK-557 CSV heap-accounted cap: last SECURITY item of Phase 0
 
