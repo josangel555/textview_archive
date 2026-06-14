@@ -348,6 +348,12 @@ public struct ContentView: View {
         // SessionsAppCoordinator bumps `firstPaintGoToToken`. We
         // observe the bump, consume the gate, and present the prompt.
         .background(firstPaintGoToBridge)
+        // IntelliJ-style double-Shift opens the command palette (TSK-707).
+        // App-wide local NSEvent monitor; observation-only (Shift still types).
+        .background(
+            DoubleShiftMonitor(isActive: true) { [model] in model.showPalette() }
+                .frame(width: 0, height: 0)
+        )
     }
 
     // MARK: - Body row (sidebar accordion + content + split)
