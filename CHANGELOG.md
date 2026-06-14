@@ -16,6 +16,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Bottom attributes bar uses toggle buttons** — Wrap, Special chars, Enable JS, and the preview Info toggle are now press-to-toggle buttons (matching the Find bar) instead of small checkboxes, so their on/off state reads at a glance.
 
 ### Added
+- **Minify JSON** — **Edit ▸ Minify JSON** compacts the current `.json` file onto one line, stripping whitespace while keeping your key order and exact number formatting intact (it only touches valid JSON). Complements the existing Pretty-Print.
 - **Check Links** — **View ▸ Check Links** scans the current Markdown file for broken **local** links and images: it resolves relative paths against the file's folder and reports any whose target is missing (external `http(s)` links and in-page `#anchors` are left alone). Handy for keeping docs' cross-references honest.
 - **Copy / Export as HTML** — **View ▸ Copy as HTML** puts the rendered Markdown on the clipboard as a complete HTML document, and **View ▸ Export as HTML…** saves it to a `.html` file. The exported HTML is standalone (styles inlined) and — unlike the in-app preview — has no network lockdown, so it renders normally in a browser.
 - **Insert Table of Contents** — **Edit ▸ Insert Table of Contents** (Markdown files) generates a linked, nested TOC from the document's own headings and drops it in, wrapped in `<!-- toc -->` markers. Run it again after editing headings and it updates the same block in place (no duplicates); it's inserted below any YAML front-matter.

@@ -1,5 +1,25 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — Minify JSON shipped (TSK-868, 6ce0946, → review)
+
+Brought variety after three markdown features — a fresh, clean §2.5-safe data tool. First checked the reported-bug
+pool (no actionable host-fixable user-facing bug — the q="bug" hits were infra/wish items). Then **Edit ▸ Minify
+JSON**: `Formatter.prettyPrintJSON` already expands+sorts, but there was no COMPACT direction.
+
+- `Formatter.minifyJSON` (ViewerCore): a **char-walk** that strips whitespace OUTSIDE string literals — so key
+  ORDER and exact number text (`1.50`, `1e3`) are preserved, unlike a `JSONSerialization` round-trip (which
+  reorders keys + renormalises numbers). Validates the content parses as JSON (fragments allowed) FIRST → returns
+  non-JSON unchanged (can't mangle). `DocumentModel.minifyActiveJSON()` runs it through the shared encoding-
+  preserving write-through; `.json` files only. §2.5-safe (Formatter is not a port target).
+
+Teeth: 8 pure tests (ws-strip, strings+escapes preserved, key order NOT sorted, exact number text, invalid→
+unchanged, fragment minify, idempotent). Host gate green (5561 tests). Menu = VM tail. Filed standalone (TSK-868).
+
+Note: the markdown-output/data-tool consumer vein remains productive but is thinning toward secondary value
+(this one is a JSON tool, not the owner's primary markdown path). Next firing I'll reassess whether a fresh
+high-value clean area exists or whether to consolidate/groom; the standing VM-pass + 343/470 owner asks remain
+the big unblocks for the ~12-feature `review` pile.
+
 ## LOG 2026-06-14 — Check Links shipped (TSK-867, c2cabbb, → review)
 
 Third consecutive §2.5-safe markdown feature (TOC → HTML export → Check Links), all found by probing for
