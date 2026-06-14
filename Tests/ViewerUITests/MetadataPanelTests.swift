@@ -1,4 +1,5 @@
 import XCTest
+import ImageIO
 @testable import ViewerUI
 
 /// Pure-logic coverage for `MetadataPanel` row builders. Batch B
@@ -152,5 +153,72 @@ final class MetadataPanelTests: XCTestCase {
         XCTAssertNil(value(rows, "Group"))
         XCTAssertNil(value(rows, "Hard links"))
         XCTAssertNil(value(rows, "Inode"))
+    }
+
+    // MARK: - Image EXIF/TIFF/GPS metadata (TSK-348)
+
+    func test_imageRows_coreAttributes() {
+        let props: [CFString: Any] = [
+            kCGImagePropertyPixelWidth: 1920,
+            kCGImagePropertyPixelHeight: 1080,
+            kCGImagePropertyColorModel: "RGB",
+            kCGImagePropertyDepth: 8,
+        ]
+        let rows = MetadataPanel.imageRows(props: props)
+        XCTAssertEqual(value(rows, "Dimensions"), "1920 × 1080")
+        XCTAssertEqual(value(rows, "Color model"), "RGB")
+        XCTAssertEqual(value(rows, "Bit depth"), "8")
+    }
+
+    func test_imageRows_exifTiffGps() {
+        let exif: [CFString: Any] = [
+            kCGImagePropertyExifDateTimeOriginal: "2024:05:01 12:00:00",
+            kCGImagePropertyExifLensModel: "50mm f/1.8",
+            kCGImagePropertyExifFocalLength: 50.0,
+            kCGImagePropertyExifISOSpeedRatings: [200],
+            kCGImagePropertyExifExposureTime: 1.0 / 250.0,
+            kCGImagePropertyExifFNumber: 2.8,
+        ]
+        let tiff: [CFString: Any] = [
+            kCGImagePropertyTIFFMake: "Canon",
+            kCGImagePropertyTIFFModel: "EOS R5",
+            kCGImagePropertyTIFFSoftware: "Lightroom",
+        ]
+        let gps: [CFString: Any] = [
+            kCGImagePropertyGPSLatitude: 37.7749,
+            kCGImagePropertyGPSLatitudeRef: "N",
+            kCGImagePropertyGPSLongitude: 122.4194,
+            kCGImagePropertyGPSLongitudeRef: "W",
+        ]
+        let props: [CFString: Any] = [
+            kCGImagePropertyExifDictionary: exif,
+            kCGImagePropertyTIFFDictionary: tiff,
+            kCGImagePropertyGPSDictionary: gps,
+        ]
+        let rows = MetadataPanel.imageRows(props: props)
+        XCTAssertEqual(value(rows, "Date taken"), "2024:05:01 12:00:00")
+        XCTAssertEqual(value(rows, "Lens"), "50mm f/1.8")
+        XCTAssertEqual(value(rows, "Focal length"), "50 mm")
+        XCTAssertEqual(value(rows, "ISO"), "200")
+        XCTAssertEqual(value(rows, "Exposure"), "1/250 s")
+        XCTAssertEqual(value(rows, "Aperture"), "f/2.8")
+        XCTAssertEqual(value(rows, "Camera"), "Canon EOS R5")
+        XCTAssertEqual(value(rows, "Software"), "Lightroom")
+        XCTAssertEqual(value(rows, "GPS"), "37.774900 N, 122.419400 W")
+    }
+
+    func test_imageRows_exposureZero_omittedNotDivByZero() {
+        let exif: [CFString: Any] = [kCGImagePropertyExifExposureTime: 0.0]
+        let props: [CFString: Any] = [kCGImagePropertyExifDictionary: exif]
+        XCTAssertNil(value(MetadataPanel.imageRows(props: props), "Exposure"),
+            "a 0 exposure must be skipped, never rendered as '1/inf s'")
+    }
+
+    func test_imageRows_emptyProps_yieldsNoRows() {
+        XCTAssertTrue(MetadataPanel.imageRows(props: [:]).isEmpty)
+    }
+
+    func test_gpsCoordinate_nilWhenLongitudeMissing() {
+        XCTAssertNil(MetadataPanel.gpsCoordinate([kCGImagePropertyGPSLatitude: 1.0]))
     }
 }

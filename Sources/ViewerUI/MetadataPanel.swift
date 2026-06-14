@@ -318,42 +318,74 @@ struct MetadataPanel: View {
         await Task.detached(priority: .userInitiated) {
             guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return [] }
             let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any] ?? [:]
-            var out: [Row] = []
-            if let w = props[kCGImagePropertyPixelWidth] as? Int,
-               let h = props[kCGImagePropertyPixelHeight] as? Int {
-                out.append(Row("Dimensions", "\(w) × \(h)"))
-            }
-            if let color = props[kCGImagePropertyColorModel] as? String {
-                out.append(Row("Color model", color))
-            }
-            if let depth = props[kCGImagePropertyDepth] as? Int {
-                out.append(Row("Bit depth", "\(depth)"))
-            }
-            if let dpi = props[kCGImagePropertyDPIWidth] as? Int {
-                out.append(Row("DPI", "\(dpi)"))
-            }
-            // EXIF subset
-            if let exif = props[kCGImagePropertyExifDictionary] as? [CFString: Any] {
-                if let cam = exif[kCGImagePropertyExifLensModel] as? String {
-                    out.append(Row("Lens", cam))
-                }
-                if let iso = exif[kCGImagePropertyExifISOSpeedRatings] as? [Int],
-                   let first = iso.first { out.append(Row("ISO", "\(first)")) }
-                if let exposure = exif[kCGImagePropertyExifExposureTime] as? Double {
-                    out.append(Row("Exposure", String(format: "1/%.0f s", 1.0 / exposure)))
-                }
-                if let aperture = exif[kCGImagePropertyExifFNumber] as? Double {
-                    out.append(Row("Aperture", String(format: "f/%.1f", aperture)))
-                }
-            }
-            if let tiff = props[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
-                if let make = tiff[kCGImagePropertyTIFFMake] as? String,
-                   let model = tiff[kCGImagePropertyTIFFModel] as? String {
-                    out.append(Row("Camera", "\(make) \(model)"))
-                }
-            }
-            return out
+            return imageRows(props: props)
         }.value
+    }
+
+    /// Maps a `CGImageSource` properties dict to display rows: core image
+    /// attrs + a useful EXIF / TIFF / GPS subset (TSK-348 deep metadata).
+    /// Pure (no I/O) so it is host-testable with synthetic dicts. `nonisolated`
+    /// because `imageMetadata` calls it from a detached (off-main) task.
+    nonisolated internal static func imageRows(props: [CFString: Any]) -> [Row] {
+        var out: [Row] = []
+        if let w = props[kCGImagePropertyPixelWidth] as? Int,
+           let h = props[kCGImagePropertyPixelHeight] as? Int {
+            out.append(Row("Dimensions", "\(w) × \(h)"))
+        }
+        if let color = props[kCGImagePropertyColorModel] as? String {
+            out.append(Row("Color model", color))
+        }
+        if let depth = props[kCGImagePropertyDepth] as? Int {
+            out.append(Row("Bit depth", "\(depth)"))
+        }
+        if let dpi = props[kCGImagePropertyDPIWidth] as? Int {
+            out.append(Row("DPI", "\(dpi)"))
+        }
+        if let exif = props[kCGImagePropertyExifDictionary] as? [CFString: Any] {
+            if let when = exif[kCGImagePropertyExifDateTimeOriginal] as? String, !when.isEmpty {
+                out.append(Row("Date taken", when))
+            }
+            if let lens = exif[kCGImagePropertyExifLensModel] as? String, !lens.isEmpty {
+                out.append(Row("Lens", lens))
+            }
+            if let focal = exif[kCGImagePropertyExifFocalLength] as? Double {
+                out.append(Row("Focal length", String(format: "%g mm", focal)))
+            }
+            if let iso = exif[kCGImagePropertyExifISOSpeedRatings] as? [Int],
+               let first = iso.first { out.append(Row("ISO", "\(first)")) }
+            // Guard exposure > 0 — a 0 here would divide-by-zero into "1/inf s".
+            if let exposure = exif[kCGImagePropertyExifExposureTime] as? Double, exposure > 0 {
+                out.append(Row("Exposure", String(format: "1/%.0f s", 1.0 / exposure)))
+            }
+            if let aperture = exif[kCGImagePropertyExifFNumber] as? Double {
+                out.append(Row("Aperture", String(format: "f/%.1f", aperture)))
+            }
+        }
+        if let tiff = props[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
+            if let make = tiff[kCGImagePropertyTIFFMake] as? String,
+               let model = tiff[kCGImagePropertyTIFFModel] as? String {
+                out.append(Row("Camera", "\(make) \(model)"))
+            }
+            if let software = tiff[kCGImagePropertyTIFFSoftware] as? String, !software.isEmpty {
+                out.append(Row("Software", software))
+            }
+        }
+        if let gps = props[kCGImagePropertyGPSDictionary] as? [CFString: Any],
+           let coord = gpsCoordinate(gps) {
+            out.append(Row("GPS", coord))
+        }
+        return out
+    }
+
+    /// Formats the EXIF GPS dict to `"37.774900 N, 122.419400 W"`. The dict
+    /// stores magnitudes plus N/S/E/W refs; falls back to sign when a ref is
+    /// absent. Returns nil when lat/long aren't both present. Pure.
+    nonisolated internal static func gpsCoordinate(_ gps: [CFString: Any]) -> String? {
+        guard let lat = gps[kCGImagePropertyGPSLatitude] as? Double,
+              let lon = gps[kCGImagePropertyGPSLongitude] as? Double else { return nil }
+        let latRef = (gps[kCGImagePropertyGPSLatitudeRef] as? String) ?? (lat >= 0 ? "N" : "S")
+        let lonRef = (gps[kCGImagePropertyGPSLongitudeRef] as? String) ?? (lon >= 0 ? "E" : "W")
+        return String(format: "%.6f %@, %.6f %@", abs(lat), latRef, abs(lon), lonRef)
     }
 
     private static func avMetadata(url: URL) async -> [Row] {
