@@ -9405,6 +9405,27 @@ Pattern holding: build the feature, host-test the model/behavior, ship to `revie
 VM tail. Next: 358 (window/font sizing), 755 (session-menu tab ops), 762 (wrap/invisibles toggles), 769
 (terminal UX bundle), 360 (line-age, when the CM6-render effort is warranted).
 
+## LOG +431 (2026-06-14 — TSK-769 slice: "Open Terminal Here" — terminal cd'd to the focused file's folder)
+
+Feature tick. Chipped the TSK-769 terminal-UX bundle: shipped the **open-in-pwd** slice (tab-rename slice was
+TSK-771 last tick).
+
+**Shipped (commit `6ba0697`, suite green):** a new **Open Terminal Here** Command-Palette command opens a
+terminal already cd'd to the focused file's folder instead of home. Pieces: pure `TerminalCwd` resolver
+(file→folder, folder→self, non-file→nil), `TerminalModel.initialWorkingDirectory` (seeds the first spawn;
+`start()` falls back to it then home), `TerminalPaneStore.addTab(workingDirectory:)`,
+`DocumentModel.openTerminalHere()` (adds the located tab BEFORE opening the pane so `ensureTerminal` doesn't
+also spawn a default home tab), and the `terminal.openHere` CommandDescriptor (verb `terminal-open-here`).
+Host-tested: `TerminalCwdTests` (4) + store/model behavior (3). Terminal spawn/cwd is the VM tail. → commented
+progress on TSK-769 (2 of N slices done; remaining: command history/favorites/search, colors, tab shoulder
+border, copy-trimmed). CHANGELOG updated.
+
+**Gate note (flaky):** the `CommandRegistry` scriptVerb-vocabulary guard correctly went RED on the new verb
+(added `terminal-open-here` to the known list) — a real, useful guard. After that fix, the gate WRAPPER
+intermittently reported "swift test exited 1" with ZERO failing tests; a clean direct `swift test --parallel`
+run gave **EXIT=0, all 5246 pass, 0 failures**. That's the documented machine-load bench/exit-code flake (CLAUDE.md)
+after ~6 back-to-back full-suite runs this turn — not a real failure. Confirmed clean before committing.
+
 **LSP-menu lane now done.** Remaining LSP work (no UI at all, meatier): Find References + Workspace Symbols (backends
 exist, need a results panel — VM-gated). Noted for when the screen/owner is available.
 
