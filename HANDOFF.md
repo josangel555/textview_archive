@@ -1,20 +1,23 @@
 <!-- CLAUDE-HANDOFF v1 -->
 # Handoff — markdown/data consumer-tools suite shipped; frontier owner/VM-bound  (2026-06-14)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `24d5320`
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `60a6cec`
 
 ## Mission
 Autonomous loop: drain `WORK_QUEUE.md` top-down / ship complete host-validated work (host-test the model, leave render at `review`), keep `main` headless-gate-green, commit per item, log. Owner is doc-heavy; recent value = §2.5-safe markdown/data **consumer** features.
 
 ## Current state
-- **16 features shipped this run → `review`** (host-tested model + render/menu = VM tail):
-  - 675 epic (robust plain-text editor) slices: line-endings (862), doc-stats + trim/final-newline (863), indentation (864), TOC (865). Epic `triaged`, 5 slices banked.
-  - Markdown docs/export: Copy/Export HTML (866), Check Links (867), Lint (869), self-contained HTML export (871), **Open in Browser (881)**.
-  - Data: Minify JSON (868), CSV→Markdown/JSON (870).
+- **21 features shipped this run → `review`** (host-tested model + render/menu = VM tail). Recent (newest first):
+  - Editor ▸ Lines: in-place Sort/Reverse/Remove-Duplicates (883) + Remove-Empty/Collapse-Blank (884).
+  - Markdown: Promote/Demote Headings (882).
+  - **Data interop set:** CSV→Markdown/JSON (870), **CSV Summary (885)**, **JSON→CSV (886)** — all pure §2.5-safe consumers.
+  - LSP hover (710) reconciled — ALREADY BUILT in CM6 (stale entry), → review, no code.
+  - 675 epic slices: line-endings (862), doc-stats + trim/final-newline (863), indentation (864), TOC (865).
+  - Markdown docs/export: Copy/Export HTML (866), Check Links (867), Lint (869), self-contained HTML (871), Open in Browser (881), Minify JSON (868).
   - Audio (533/534), content Text Size base×zoom incl. rendered-markdown (358).
   - Validated (host): 853 (highlight warm), 575 (clippy cast-ratchet).
 - **Tree clean** except pre-existing untracked `archive/Untitled.txt` + `untitled2.md` (NOT ours).
-- **Headless gate green** (~5586 tests). NOTE: the gate can flake on a perf bench under load — re-run before trusting a red.
+- **Headless gate green** (~5623 tests). NOTE: the gate can flake on a perf bench under load — re-run before trusting a red.
 
 ## Next action
 The clean high-value host pool is thin but the **§2.5-safe CONSUMER vein keeps yielding when probed** (don't HOLD prematurely):
