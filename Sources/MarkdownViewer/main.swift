@@ -1650,6 +1650,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         mainMenu.addItem(fileMenuItem)
         mainMenu.addItem(editMenuItem)
         mainMenu.addItem(viewMenuItem)
+        // Navigate menu — surfaces the LSP go-to commands (TSK-464 follow-up).
+        // Each dispatches the verified-working `navigateViaLSPAtCursor`;
+        // `applyShortcut` picks up any user keybinding (none by default —
+        // rebind in ~/.textview/keybinding.json).
+        let navigateMenuItem = NSMenuItem()
+        let navigateMenu = NSMenu(title: "Navigate")
+        let navItems: [(String, Selector, String)] = [
+            ("Go to Definition", #selector(lspGotoDefinition(_:)), "lsp.gotoDefinition"),
+            ("Go to Declaration", #selector(lspGotoDeclaration(_:)), "lsp.gotoDeclaration"),
+            ("Go to Type Definition", #selector(lspGotoTypeDefinition(_:)), "lsp.gotoTypeDefinition"),
+            ("Go to Implementation", #selector(lspGotoImplementation(_:)), "lsp.gotoImplementation"),
+        ]
+        for (title, action, id) in navItems {
+            let mi = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            mi.target = self
+            navigateMenu.addItem(applyShortcut(id, to: mi))
+        }
+        navigateMenuItem.submenu = navigateMenu
+        mainMenu.addItem(navigateMenuItem)
         mainMenu.addItem(sessionMenuItem)
         // WAVE 2b items 4 + 5: the Debug menu (Diagnostics +
         // Instrumentation tool windows) is built ONLY when the diagnostic
@@ -1913,6 +1932,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         alert.runModal()
     }
 
+    // TSK-464 follow-up — surface the LSP navigation commands (which already
+    // dispatch to `navigateViaLSPAtCursor`, palette/keybinding-only until now)
+    // as a discoverable Navigate menu. Each is a safe no-op (returns false)
+    // when there's no editor cursor / language server.
+    @objc func lspGotoDefinition(_ sender: Any?) {
+        _ = model.navigateViaLSPAtCursor(kind: .definition)
+    }
+    @objc func lspGotoDeclaration(_ sender: Any?) {
+        _ = model.navigateViaLSPAtCursor(kind: .declaration)
+    }
+    @objc func lspGotoTypeDefinition(_ sender: Any?) {
+        _ = model.navigateViaLSPAtCursor(kind: .typeDefinition)
+    }
+    @objc func lspGotoImplementation(_ sender: Any?) {
+        _ = model.navigateViaLSPAtCursor(kind: .implementation)
+    }
+
     /// Menu validation: gray-out items that don't apply to the current
     /// state. macOS calls this every time a menu opens (and for items
     /// with key equivalents, on the keystroke too).
@@ -1969,7 +2005,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             item.state = model.showInvisibleChars ? .on : .off
             return hasFile
         case #selector(cmFoldAll(_:)), #selector(cmUnfoldAll(_:)),
-             #selector(cmGotoLine(_:)):
+             #selector(cmGotoLine(_:)),
+             #selector(lspGotoDefinition(_:)), #selector(lspGotoDeclaration(_:)),
+             #selector(lspGotoTypeDefinition(_:)), #selector(lspGotoImplementation(_:)):
+            // LSP go-to navigates at the EDITOR cursor (navigateViaLSPAtCursor),
+            // so it's editor-mode-only — gray out elsewhere.
             return hasTab && model.currentViewMode == .editor
                 && CodeMirrorEditorRegistry.shared.current() != nil
         case #selector(toggleBookmark(_:)):
