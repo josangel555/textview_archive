@@ -13,14 +13,20 @@
 # `throw CoreError.panic` that segfaulted on stale test objects). The cure is to
 # touch the importing Swift sources so the next build relinks/recompiles.
 
-# restage_core_header NEW_HEADER CMOD_HEADER ROOT_DIR
+# restage_core_header NEW_HEADER CMOD_HEADER ROOT_DIR [STATICLIB_CHANGED]
 #
 # Detect whether NEW_HEADER differs from the currently-staged CMOD_HEADER (the
-# copy SwiftPM imports), overwrite CMOD_HEADER with NEW_HEADER, then run the
+# copy SwiftPM imports); overwrite CMOD_HEADER only when it changed, then run the
 # staleness touches:
-#   * ALWAYS touch Sources/RustCore/*.swift — the prebuilt `.a` is not a tracked
-#     build input either, so the bridge sources must relink every restage
-#     (caught 2026-06-10: an A/B test compared stale Rust against new Swift).
+#   * Touch Sources/RustCore/*.swift — the bridge sources that link the prebuilt
+#     `.a` — when the `.a` OR the header changed, so SwiftPM relinks RustCore +
+#     downstream against the fresh `.a` (the `.a` is NOT a tracked build input;
+#     caught 2026-06-10: an A/B test compared stale Rust against new Swift). The
+#     caller passes STATICLIB_CHANGED (1/0) from a cmp of the freshly built vs
+#     staged `.a`. It DEFAULTS TO 1 (always relink) when omitted — the safe,
+#     backward-compatible fallback. TSK-848: when nothing changed (no Rust, no
+#     header), this touch is SKIPPED, so a no-Rust-change gate run no longer
+#     relinks RustCore + every downstream module (~63s saved per run).
 #   * WHEN the header CHANGED, widen the touch to the TEST targets
 #     (Tests/RustCoreTests) plus every Swift file naming the header's exported
 #     surface (MDV_CAP_/MDV_WIRE_VERSION/import CMdvCore) across Sources + Tests.
@@ -29,14 +35,22 @@
 # Pure filesystem ops — no cargo — so it is host-testable with fixture dirs.
 # Echoes a "header CHANGED" marker line when (and only when) a change is detected.
 restage_core_header() {
-  local new_header="$1" cmod_header="$2" root_dir="$3"
+  local new_header="$1" cmod_header="$2" root_dir="$3" staticlib_changed="${4:-1}"
   local changed=1
   if cmp -s "$new_header" "$cmod_header" 2>/dev/null; then
     changed=0
   fi
-  cp "$new_header" "$cmod_header"
+  # Only overwrite (and re-stamp the mtime of) the SwiftPM-imported header when
+  # it actually changed — an unconditional cp recompiled CMdvCore's importers on
+  # every no-op build too (TSK-848).
+  if [[ "$changed" == "1" ]]; then
+    cp "$new_header" "$cmod_header"
+  fi
 
-  find "$root_dir/Sources/RustCore" -name '*.swift' -exec touch {} + 2>/dev/null || true
+  # Relink the bridge sources only when the `.a` or the header actually changed.
+  if [[ "$changed" == "1" || "$staticlib_changed" == "1" ]]; then
+    find "$root_dir/Sources/RustCore" -name '*.swift' -exec touch {} + 2>/dev/null || true
+  fi
 
   if [[ "$changed" == "1" ]]; then
     echo "==> header CHANGED — touching header-referencing targets (TSK-626)"

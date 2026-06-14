@@ -66,11 +66,11 @@ final class RustCoreHeaderRestageTests: XCTestCase {
     }
 
     @discardableResult
-    private func runRestage(new: String, staged: String) throws -> String {
+    private func runRestage(new: String, staged: String, staticlibChanged: Int = 1) throws -> String {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/bash")
         p.arguments = ["-c",
-            "source '\(Self.lib.path)'; restage_core_header '\(f(new).path)' '\(f(staged).path)' '\(root.path)'"]
+            "source '\(Self.lib.path)'; restage_core_header '\(f(new).path)' '\(f(staged).path)' '\(root.path)' \(staticlibChanged)"]
         let pipe = Pipe()
         p.standardOutput = pipe
         p.standardError = pipe
@@ -123,6 +123,46 @@ final class RustCoreHeaderRestageTests: XCTestCase {
         XCTAssertFalse(try wasTouched("Sources/Other/Referent.swift"),
                        "an unchanged header must NOT touch referents")
         XCTAssertTrue(try wasTouched("Sources/RustCore/Bridge.swift"),
-                      "bridge sources relink unconditionally (the prebuilt .a isn't a tracked input)")
+                      "bridge sources relink because the .a changed (staticlibChanged defaults to 1 here)")
+    }
+
+    // TSK-848 — the bridge-source touch (which propagates an untracked-`.a`
+    // change into the relink) is now gated on the `.a` actually changing, so a
+    // no-Rust-change gate run no longer relinks RustCore + all downstream (~63s).
+
+    func test_headerUnchanged_staticlibUnchanged_skipsBridgeTouch() throws {
+        // The no-op build: nothing changed (no header, no .a) ⇒ NOTHING is
+        // touched. This is the saved ~63s — without it every gate run that ran
+        // build-rust-core.sh relinked the world.
+        try "identical\n".write(to: f("staged.h"), atomically: true, encoding: .utf8)
+        try "identical\n".write(to: f("new.h"), atomically: true, encoding: .utf8)
+        try markStale(["Sources/RustCore/Bridge.swift",
+                       "Tests/RustCoreTests/BridgeTests.swift"])
+
+        let out = try runRestage(new: "new.h", staged: "staged.h", staticlibChanged: 0)
+
+        XCTAssertFalse(out.contains("header CHANGED"))
+        XCTAssertFalse(try wasTouched("Sources/RustCore/Bridge.swift"),
+                       "no .a change + no header change ⇒ bridge NOT touched (the no-op win)")
+        XCTAssertFalse(try wasTouched("Tests/RustCoreTests/BridgeTests.swift"),
+                       "still no widened touch")
+    }
+
+    func test_staticlibChanged_headerUnchanged_relinksBridge() throws {
+        // The CORRECTNESS guard (the 2026-06-10 stale-link bug): an impl-only
+        // Rust change rebuilds the .a but not the header, so the bridge MUST
+        // still relink or SwiftPM links stale Rust against new Swift.
+        try "identical\n".write(to: f("staged.h"), atomically: true, encoding: .utf8)
+        try "identical\n".write(to: f("new.h"), atomically: true, encoding: .utf8)
+        try markStale(["Sources/RustCore/Bridge.swift",
+                       "Tests/RustCoreTests/BridgeTests.swift"])
+
+        let out = try runRestage(new: "new.h", staged: "staged.h", staticlibChanged: 1)
+
+        XCTAssertFalse(out.contains("header CHANGED"))
+        XCTAssertTrue(try wasTouched("Sources/RustCore/Bridge.swift"),
+                      "a .a change MUST relink the bridge even when the header is unchanged")
+        XCTAssertFalse(try wasTouched("Tests/RustCoreTests/BridgeTests.swift"),
+                       "an unchanged header still doesn't widen to the test targets")
     }
 }

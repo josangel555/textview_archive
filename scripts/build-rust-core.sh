@@ -129,7 +129,21 @@ mkdir -p "$LINK_DIR"
 # `-lmdvcore_ffi` would prefer it (and reintroduce the team-ID load failure), so
 # remove it.
 rm -f "$LINK_DIR/libmdvcore_ffi.dylib"
-cp "$STATICLIB" "$LINK_DIR/libmdvcore_ffi.a"
+
+# TSK-848: restage the .a ONLY when its CONTENT changed. An unconditional `cp`
+# re-stamped the mtime every run; combined with the bridge-source touch in
+# restage_core_header (the `.a` is not a SwiftPM-tracked input, so the touch is
+# how an `.a` change reaches the relink) that relinked RustCore + every
+# downstream module (~63s) on EVERY gate run that didn't touch Rust. cmp the
+# freshly built `.a` against the staged copy and pass the verdict downstream:
+# unchanged → preserve the staged mtime AND skip the bridge touch (the no-op
+# win); changed → restage + force the relink (the 2026-06-10 stale-link guard).
+STATICLIB_CHANGED=1
+if [[ -f "$LINK_DIR/libmdvcore_ffi.a" ]] && cmp -s "$STATICLIB" "$LINK_DIR/libmdvcore_ffi.a"; then
+  STATICLIB_CHANGED=0
+else
+  cp "$STATICLIB" "$LINK_DIR/libmdvcore_ffi.a"
+fi
 cp "$HEADER_SRC" "$LINK_DIR/mdvcore.h"
 
 # Stage the SwiftPM-imported header + run the staleness touches (TSK-626):
@@ -138,7 +152,7 @@ cp "$HEADER_SRC" "$LINK_DIR/mdvcore.h"
 # widen the touch to the TEST targets + header-surface referents so stale test
 # objects against a re-laid-out ABI can't SIGSEGV-as-FFI-bug. See the function's
 # header in scripts/lib/restage-header.sh; pinned by RustCoreHeaderRestageTests.
-restage_core_header "$HEADER_SRC" "$CMOD_DIR/mdvcore.h" "$ROOT_DIR"
+restage_core_header "$HEADER_SRC" "$CMOD_DIR/mdvcore.h" "$ROOT_DIR" "$STATICLIB_CHANGED"
 
 echo "==> staged:"
 echo "    $LINK_DIR/libmdvcore_ffi.a   ($(/usr/bin/du -h "$LINK_DIR/libmdvcore_ffi.a" | awk '{print $1}'))"
