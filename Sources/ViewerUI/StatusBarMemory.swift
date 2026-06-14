@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import ViewerCore
 
 /// Status-bar memory readout (TSK-366).
@@ -71,6 +72,50 @@ final class StatusBarMemorySampler: ObservableObject {
     }
 
     private func sampleNow() {
-        appFootprintBytes = ProcessMemory.appFootprintBytes()
+        ingest(ProcessMemory.appFootprintBytes())
+    }
+
+    /// Change-gated publish. `@Published` fires `objectWillChange` on EVERY
+    /// assignment (it is not Equatable-gated), so re-writing the same byte count
+    /// every 1.5 s would re-body the whole StatusBar even when memory is flat —
+    /// a forever-idle re-render (perf audit 2026-06-14, finding #4). Skip the
+    /// write when unchanged. Internal so a host test can drive it without a timer.
+    func ingest(_ value: UInt64?) {
+        guard value != appFootprintBytes else { return }
+        appFootprintBytes = value
+    }
+}
+
+/// The status-bar memory chip as its OWN view (TSK-366 fix / perf audit #4).
+/// Owning the `@StateObject` sampler HERE means the 1.5s tick re-bodies only
+/// this chip — never the whole `StatusBar` (its git chip + every metric). That
+/// restores the narrow-observation invariant `ChromeBodyEvalCountTests` pins
+/// (StatusBar must not re-body for reasons orthogonal to its own data flow).
+/// `tabContentBytes` + `fontSize` are passed in, so the chip doesn't observe
+/// the model — the parent re-creates it (cheaply) when those change.
+struct StatusBarMemoryChip: View {
+    let tabContentBytes: Int?
+    let fontSize: CGFloat
+    @StateObject private var sampler = StatusBarMemorySampler()
+
+    var body: some View {
+        let fmt = StatusBarMemory.format(
+            appFootprintBytes: sampler.appFootprintBytes,
+            tabContentBytes: tabContentBytes)
+        HStack(spacing: 3) {
+            Text("Mem")
+                .font(.system(size: fontSize, weight: .medium))
+                .foregroundStyle(.secondary)
+            Text(fmt.label)
+                .font(.system(size: fontSize, design: .monospaced))
+                .foregroundStyle(.primary)
+        }
+        .fixedSize()
+        .help(fmt.tooltip)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Memory: \(fmt.label). \(fmt.tooltip)")
+        .accessibilityIdentifier("mdv.statusBar.memory")
+        .onAppear { sampler.start() }
+        .onDisappear { sampler.stop() }
     }
 }

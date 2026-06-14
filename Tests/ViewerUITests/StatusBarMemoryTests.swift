@@ -1,4 +1,5 @@
 import XCTest
+import Combine
 @testable import ViewerUI
 
 /// Host tests for the status-bar memory formatter (TSK-366). Pure logic, no
@@ -6,6 +7,22 @@ import XCTest
 /// (headline = app footprint, per-tab = an honest byte proxy, never a
 /// fabricated 0) is pinned here so a regression fails the host gate.
 final class StatusBarMemoryTests: XCTestCase {
+
+    /// The sampler must publish ONLY when the footprint changes — re-writing
+    /// the same value every 1.5s would re-body the StatusBar at idle forever
+    /// (perf audit 2026-06-14 #4). TEETH: drop the change-gate and this fires 4.
+    @MainActor
+    func test_sampler_publishesOnlyOnChange() {
+        let sampler = StatusBarMemorySampler()
+        var fires = 0
+        let sub = sampler.objectWillChange.sink { _ in fires += 1 }
+        defer { sub.cancel() }
+        sampler.ingest(100)   // nil → 100 : change → publish
+        sampler.ingest(100)   // 100 → 100 : no change → silent
+        sampler.ingest(200)   // 100 → 200 : change → publish
+        sampler.ingest(200)   // 200 → 200 : no change → silent
+        XCTAssertEqual(fires, 2, "publishes once per distinct value, not once per sample")
+    }
 
     func test_label_isAppFootprintMiB() {
         let bytes: UInt64 = 142 * 1024 * 1024
