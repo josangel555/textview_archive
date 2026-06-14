@@ -107,6 +107,18 @@ struct CrossSearchPanel: View {
                 .accessibilityLabel("Use regular expression")
                 .accessibilityValue(model.crossSearchUseRegex ? "On" : "Off")
                 .accessibilityIdentifier("mdv.unifiedSearch.regexToggle")
+                // TSK-726 — disclose the project-wide replace row. Disabled in
+                // filename mode (nothing to replace inside file contents).
+                Toggle(isOn: $model.crossSearchReplaceVisible) {
+                    Image(systemName: "arrow.2.squarepath")
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .toggleStyle(.button)
+                .controlSize(.small)
+                .disabled(model.crossSearchFilenameMode)
+                .help("Show replace")
+                .accessibilityLabel("Show replace")
+                .accessibilityIdentifier("mdv.crossSearch.replaceToggle")
                 if model.crossSearchIsRunning {
                     ProgressView().controlSize(.small)
                 }
@@ -123,6 +135,12 @@ struct CrossSearchPanel: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
+
+            // TSK-726 — project-wide replace row, disclosed by the toggle above.
+            if model.crossSearchReplaceVisible && !model.crossSearchFilenameMode {
+                Divider()
+                replaceRow
+            }
 
             modeRow
 
@@ -184,6 +202,40 @@ struct CrossSearchPanel: View {
         .onChange(of: model.crossSearchUseRegex) { _, _ in runSearch() }
         .onChange(of: scope) { _, _ in runSearch() }
         .accessibilityIdentifier("mdv.crossSearchPanel")
+    }
+
+    // MARK: - Replace row (TSK-726)
+
+    /// Project-wide replace: a replacement field + "Replace All" over the files
+    /// currently listed in the results. The rewrite preserves each file's
+    /// encoding / permissions and is atomic + symlink-safe (engine side). Only
+    /// shown in content-search mode.
+    private var replaceRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.2.squarepath")
+                .foregroundStyle(.secondary)
+            TextField("Replace with…", text: $model.crossSearchReplacement)
+                .textFieldStyle(.plain)
+                .font(.system(size: 15))
+                .onSubmit { model.runCrossFileReplace() }
+                .accessibilityIdentifier("mdv.crossSearch.replaceField")
+            if let status = model.crossSearchReplaceStatus {
+                Text(status)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .accessibilityIdentifier("mdv.crossSearch.replaceStatus")
+            }
+            Button("Replace All") { model.runCrossFileReplace() }
+                .controlSize(.small)
+                .disabled(model.crossSearchResults.isEmpty
+                          || model.crossSearchQuery.isEmpty
+                          || model.crossSearchIsRunning)
+                .help("Replace every match across all listed files")
+                .accessibilityIdentifier("mdv.crossSearch.replaceAll")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
     }
 
     // MARK: - Scope picker (search-scope agent)

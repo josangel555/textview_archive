@@ -1511,6 +1511,13 @@ public final class DocumentModel: ObservableObject {
     /// pattern — surfaced as a hint in the panel; the search is skipped.
     @Published public var crossSearchRegexError: String? = nil
 
+    // TSK-726 — project-wide REPLACE (cross-file search was read-only). The
+    // replacement string, the panel's replace-row disclosure, and the one-line
+    // result of the last replace ("Replaced 12 in 3 files" / an error summary).
+    @Published public var crossSearchReplacement: String = ""
+    @Published public var crossSearchReplaceVisible: Bool = false
+    @Published public var crossSearchReplaceStatus: String? = nil
+
     /// One-shot hand-off used by callers that want the unified search
     /// panel to open with a pre-set scope (e.g. the sidebar folder-row
     /// "Search in Folder" context-menu item). Consumed by the panel's
@@ -1599,6 +1606,58 @@ public final class DocumentModel: ObservableObject {
                 self.crossSearchIsRunning = false
             }
         }
+    }
+
+    /// TSK-726 — apply `crossSearchReplacement` across every file in the current
+    /// cross-search results (the user reviewed the matches, now rewrites them).
+    /// Runs `CrossFileReplace.apply` off-main (it re-reads + atomically
+    /// rewrites files preserving encoding / permissions / symlinks), then posts
+    /// a one-line status and clears the stale results so the panel doesn't show
+    /// matches that no longer exist. The open-tab side (an editor showing a
+    /// rewritten file) is handled by the existing disk-watcher staleness path;
+    /// a DIRTY buffer is never clobbered (the engine writes disk, not buffers).
+    /// No-op in filename-search mode (nothing to replace inside file contents).
+    public func runCrossFileReplace() {
+        guard !crossSearchFilenameMode else { return }
+        let files = crossSearchResults.map(\.url)
+        let q = crossSearchQuery
+        guard !files.isEmpty, !q.isEmpty else { return }
+        let replacement = crossSearchReplacement
+        let caseSensitive = crossSearchCaseSensitive
+        let useRegex = crossSearchUseRegex
+        crossSearchIsRunning = true
+        crossSearchReplaceStatus = nil
+        crossSearchGeneration &+= 1  // invalidate any in-flight search
+        DispatchQueue.global(qos: .userInitiated).async { [weak self, files, q] in
+            let outcomes = CrossFileReplace.apply(
+                toFiles: files, query: q, replacement: replacement,
+                caseSensitive: caseSensitive, useRegex: useRegex)
+            let summary = CrossFileReplace.Summary(outcomes: outcomes)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.crossSearchReplaceStatus = DocumentModel.replaceStatusText(summary)
+                self.crossSearchResults = []   // matches are stale post-rewrite
+                self.crossSearchIsRunning = false
+            }
+        }
+    }
+
+    /// Pure one-line summary of a project-wide replace, for the panel status.
+    /// Pluralized; appends a failure tail when some files couldn't be written.
+    static func replaceStatusText(_ summary: CrossFileReplace.Summary) -> String {
+        let occ = summary.totalReplacements
+        let files = summary.filesChanged
+        let base: String
+        if occ == 0 {
+            base = "No occurrences replaced"
+        } else {
+            let o = occ == 1 ? "1 occurrence" : "\(occ) occurrences"
+            let f = files == 1 ? "1 file" : "\(files) files"
+            base = "Replaced \(o) in \(f)"
+        }
+        guard !summary.failures.isEmpty else { return base }
+        let n = summary.failures.count
+        return "\(base) · \(n) file\(n == 1 ? "" : "s") failed"
     }
 
     // MARK: Find — three modes, one coordinator (Quality #E + J, 2026-05-25)

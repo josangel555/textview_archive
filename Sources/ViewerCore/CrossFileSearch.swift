@@ -17,12 +17,23 @@ public enum CrossFileSearch {
         public let lineNumber: Int       // 1-based
         public let line: String          // full line content (no trailing newline)
         public let matchRange: Range<String.Index>?
+
+        public init(lineNumber: Int, line: String, matchRange: Range<String.Index>?) {
+            self.lineNumber = lineNumber
+            self.line = line
+            self.matchRange = matchRange
+        }
     }
 
     public struct FileMatches: Equatable, Sendable, Identifiable {
         public var id: String { url.path }
         public let url: URL
         public let matches: [Match]
+
+        public init(url: URL, matches: [Match]) {
+            self.url = url
+            self.matches = matches
+        }
     }
 
     public struct Options: Sendable {
