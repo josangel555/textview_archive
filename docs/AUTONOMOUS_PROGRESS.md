@@ -75,6 +75,11 @@ and started executing the measured wins.
   the executable's private AppKit, not host-testable → lands at `review` for the VM/owner gate (per the
   build-it-leave-render-at-review posture). Headless gate green (main.swift isn't a test-target dep, so it confirms
   no regression in the tested modules). First Section-A item; Section-0 cheap perf wins all shipped.
+- **TSK-756 (`e31bc99`, review)** — Section A: a command-palette button (⌘ glyph) at the far top-right of
+  ContentToolbar → `model.showPalette()` (the existing palette-open path). ContentToolbar is in ViewerUI (gate-
+  compiled, unlike main.swift); the button's render/click is the VM tier, but ContentToolbarPaletteButtonTests pins
+  the wired MODEL action (showPalette → isPalettePresented true; dismiss → false) so the palette-open path is
+  host-regression-guarded. Lands at `review` for the button's on-screen-presence VM/owner glance. CHANGELOG updated.
 
 ## LOG 2026-06-10 (latest+128) — TSK-557 CSV heap-accounted cap: last SECURITY item of Phase 0
 
