@@ -1,5 +1,25 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — Owner intake triaged (TSK-887..945) + first P1 fixes (TSK-907/902, 932 reconcile)
+
+Owner posted a ~75-item bug/improvement batch. Analyzed inline, de-duped against the (shared) board, filed
+**59 new tickets TSK-887..945** (`[INTAKE-0614]` prefix; parents git→537, split→714, csv→711, agent→687,
+cli→353), linked re-reports onto existing tickets (791 editor-slow, 698 JQ-console, 769 terminal-pwd), and
+wrote a prioritized P0–P3 map to `WORK_QUEUE.md` (commit 70c146e). Cron paused then re-enabled at owner request.
+
+Then drained the top of the new P1 lane (host-fixable bugs):
+- **TSK-907 — Git log duplicate tab (FIX).** `GitLogDiffActions.showCommit`/`showCumulativeDiff` called
+  `doc.openInNewTab(out)` with a deterministic `<sha>.diff` cache path, so re-clicking the same commit stacked a
+  duplicate. Switched to `doc.open(url:)` (open-or-focus-by-URL) → re-click focuses the existing tab. Teeth: 2 new
+  host tests (same-commit-twice → 1 tab + same tab id; two commits → 2 tabs) on the real-fixture-repo suite.
+- **TSK-902 — Preview tab italic-not-bold (FIX, [VM] render tail).** Selected preview tabs were both italic AND
+  semibold. New pure `TabTitleStyle.isBold/isItalic` rule (preview ⇒ italic-only, never bold) host-tested (4
+  tests); `TabBar` wired to it. Pixel = VM tail.
+- **TSK-932 — Unsaved blue dot: RECONCILED, already built.** TabBar.swift:390 renders a Color.accentColor dot on
+  `tab.isDirty` (a11y id mdv.tab.dirtyDot); isDirty model host-tested. → review, no code.
+
+Host gate green. 907 is fully host-validated; 902 model host-tested + render at review.
+
 ## LOG 2026-06-14 — JSON → CSV shipped (TSK-886, → review) + TSK-710 hover reconciled (already built)
 
 Two items this firing (batched, gated once).

@@ -10,6 +10,8 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 ## 2026-06-14
 
 ### Fixed
+- **Git log: clicking the same commit no longer stacks duplicate tabs** — re-clicking a commit (or re-running a cumulative diff) now focuses the existing diff tab instead of opening another copy.
+- **Preview tabs are italic-only, not bold** — an ephemeral preview tab no longer goes bold when selected; the italic already marks it as preview.
 - **UTF-16 files no longer garble after editing** — saving a UTF-16-encoded text file (or rewriting one via project-wide replace) now keeps its byte-order mark, so a short UTF-16 file reopens correctly instead of being mis-read as Windows-1252/Latin-1 and showing garbled characters.
 
 ### Changed

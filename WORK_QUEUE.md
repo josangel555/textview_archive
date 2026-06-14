@@ -28,7 +28,7 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
 
 **P1 — broken user-facing behavior (host-fixable bugs; ship model + leave render at review):**
 - [ ] **TSK-900** — Plain-text file locked in HEX, Editor can't show it (cf TSK-504 regression) — *worst: can't read the file*
-- [ ] **TSK-907** — Git log: same entry opens a duplicate tab (de-dupe/focus existing)
+- [x] **TSK-907** — Git log: same entry opens a duplicate tab (de-dupe/focus existing) `[a1de1b7 → review; open-or-focus by URL + 2 teeth tests]`
 - [ ] **TSK-910** — Git diff: only one line selectable → multi-line selection `(537)`
 - [ ] **TSK-905** — Preview ↑/↓ broken unless tab is last (first-responder by tab position)
 - [ ] **TSK-906** — Palette dismiss loses editor focus (restore prior first-responder)
@@ -37,7 +37,7 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
 - [ ] **TSK-921 / 922** — Split: can't close pane / open-split slow+doesn't appear `(714)`
 - [ ] **TSK-914** — "Open in Terminal" opens macOS Terminal.app, not the in-app terminal
 - [ ] **TSK-919 / 920** — File-nav: sub-folder self-drag trap / drag-to-Terminal should paste path
-- [ ] **TSK-902** — Preview tab title italic not bold
+- [x] **TSK-902** — Preview tab title italic not bold `[30f672c → review; TabTitleStyle host-tested, pixel=VM]`
 - [ ] **TSK-903** — Rendered MD doesn't check/strike GFM `[x]` task items
 - [ ] **TSK-912** — Code-review comments: how to add + where listed (discoverability/missing UI) `(537)`
 - [ ] **TSK-929** — External rename → tab shows "file not found"; should follow the rename `(fs.watch TSK-662)`
@@ -46,7 +46,7 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
 - [ ] **TSK-898 / 899** — Render|Editor|HEX segmented button group + mode shortcuts
 - [ ] **TSK-913** — File-nav right-click → Rename
 - [ ] **TSK-915 / 916** — File tree auto-refresh on disk change + "Reload from disk" action
-- [ ] **TSK-932** — Unsaved blue dot on modified tab (verify vs TSK-718)
+- [x] **TSK-932** — Unsaved blue dot on modified tab `[review — ALREADY BUILT: TabBar accent dirty-dot on tab.isDirty]`
 - [ ] **TSK-936 / 937 / 938** — Toggle-View-only shortcut · Focus Terminal/Nav/Git/File · Esc→current tab
 - [ ] **TSK-918** — Remove max-width cap on horizontal panel resize (cf TSK-440)
 - [ ] **TSK-925 / 924** — CSV: sort by column header · multi-cell select + copy/paste `(711)`
