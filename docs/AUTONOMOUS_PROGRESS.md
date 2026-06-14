@@ -1,5 +1,32 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — ⇧⌥F Format + shortcut audit (TSK-757); markdown table align (TSK-350)
+
+Autonomous tick, WORK_QUEUE Section-A/B drain. Two host-testable items, one gate:
+- **TSK-757 (`664a8d1`, review)** — keyboard-shortcut audit + gap-fill. Bound **⇧⌥F → Format Document**
+  (lsp.format) — VS Code's universal chord; ⌘⌥F was Find-and-Replace, ⇧⌥F free; auto-wires the Edit-menu
+  item via the registry's applyShortcut. Wrote `docs/KEYBOARD_SHORTCUTS_AUDIT.md` (full catalog vs macOS/VS
+  Code/Xcode). Conservative on gap-fill: divergent/conflicting candidates (Go-to-Def F12-vs-⌃⌘J, rename
+  F2-already-sidebar-rename, code-actions ⌘.-is-Mac-Cancel, sidebar ⌘B-vs-existing-⌃⌘S) flagged in the doc
+  for an owner pick, NOT imposed. Host-tested via shortcutMap.
+- **TSK-350 (`8449333`, review)** — markdown pipe-table alignment. Pure `Formatter.prettyPrintMarkdown`
+  (column pad, :--/:-:/--: alignment, escaped-pipe + fenced-code aware) surfaced as an in-place **Align
+  Markdown Tables** Edit-menu command (rewrites the active editor buffer). Host-tested (FormatterTests +
+  MarkdownTableFormatModelTests).
+
+**Design wall caught by the gate (important):** my first cut added `.md` to `Formatter.SupportedFormat.detect`.
+The gate failed `FormatToggleTests.test_markdownFile_doesNotSupportFormatToggle` — `detect` gates the format
+VIEW lens (`.formatted`) + the Format toggle, and **markdown deliberately has NO format mode** (its lenses are
+Rendered/Source). There's a DUAL gate: `Formatter.detect` → `supportsFormatToggle`; a SEPARATE
+`ViewMode.formatterExtensions` → the `.formatted` mode — md is intentionally in neither, and they must agree
+(else the Format button toggles to a `.formatted` mode absent from the picker). So the view-lens path is
+correctly closed for md; I reworked to surface alignment as an in-place COMMAND instead (detect stays md-free).
+Lesson: a change to `Formatter.detect` is a VIEW-MODE change, not just a formatter change — check the dual gate.
+
+**TSK-350 spike finding:** the other `detect()` absences (.jsonl/.svg/.scss/.less/.jsx/.ts) are DELIBERATE,
+documented exclusions (the lexers can't safely model them) — so there's no further clean detect()-gap; new
+format types (YAML/TOML/SQL) would each be a from-scratch dependency-free formatter (own ticket if wanted).
+
 ## LOG 2026-06-14 — sticky-scroll model (TSK-719); 708 deferred (render-coupled command)
 
 Autonomous tick, WORK_QUEUE Section-A drain. Scoped the next unchecked items with two unprimed Explore

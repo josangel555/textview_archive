@@ -71,7 +71,8 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
 - [x] **TSK-759** — Drag to reorder tabs `[VM]`
       `[review — already shipped]` — TabBar .onDrag/.onDrop → reorder (resolves by tab ID at drop time) → moveTab; payload+moveTab host-tested. No code change; board reconciled from `reported`.
 - [ ] **TSK-766** — Editor: git-diff text style match Edit/View `[VM]`
-- [ ] **TSK-757** — Catalog every keyboard shortcut + compare with Mac apps (audit → gap-fill bindings)
+- [x] **TSK-757** — Catalog every keyboard shortcut + compare with Mac apps (audit → gap-fill bindings)
+      `[review 664a8d1]` — audit doc (docs/KEYBOARD_SHORTCUTS_AUDIT.md) + bound ⇧⌥F → Format Document (VS Code standard); divergent/conflicting candidates flagged for owner pick (not imposed). Registry binding host-tested.
 - [x] **TSK-355** — "Open in" — Reveal in Finder / Open in external app
       `[review c84e8bf]` — Reveal-in-Finder already existed; added Open-in-Default-App (NSWorkspace.open) to sidebar + tab menus. (board reconcile pending — MCP was down)
 
@@ -80,7 +81,8 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
 - [ ] **TSK-769** — Terminal UX bundle: remaining slices (command history + favorites + search, colors, tab shoulder border). `[slice]` done: open-in-pwd, tab-rename, copy-trimmed.
 - [ ] **TSK-348** — Deep metadata: remaining (richer PDF + AV/video fields; XMP). `[slice]` done: FS perms/owner/inode, image EXIF/GPS.
 - [ ] **TSK-352** — NotePad++ tools: remaining (column/block select, macro record/replay, encoding convert). `[slice]` done: 15 clipboard transform tools.
-- [ ] **TSK-350** — Formatting: any remaining formatter gaps. `[slice]` done: JSON/XML/JS/CSS pretty-print.
+- [x] **TSK-350** — Formatting: any remaining formatter gaps. `[slice]` done: JSON/XML/JS/CSS pretty-print.
+      `[review 8449333]` — added markdown table alignment as an in-place **Align Markdown Tables** Edit-menu command (md has no format VIEW lens by design — FormatToggleTests). Spike finding: the other detect() absences (.jsonl/.svg/.scss/.less/.jsx/.ts) are DELIBERATE exclusions — no further clean gaps; new types (YAML/TOML/SQL) = separate from-scratch tickets if wanted.
 - [ ] **TSK-343** — History, Revert (revert a file to a previous saved version)
 - [ ] **TSK-358** — Absolute content font-size picker in settings (today only the zoom multiplier) + window-size control
 - [ ] **TSK-360** — Source-view line-age coloring (git-blame DarkBlue→LightBlue heatmap) `[VM, CM6-render]`

@@ -5,6 +5,17 @@ adjacent to the items below. The mistakes that produced these entries
 each cost real hours; the entries exist so they don't cost the next
 hours.
 
+## `Formatter.SupportedFormat.detect` is a VIEW-MODE change, not just a formatter change (2026-06-14, TSK-350)
+- Adding an extension to `Formatter.SupportedFormat.detect` does TWO things, not one: it gates the Pretty-Print
+  COMMAND/`supportsFormatToggle` (DocumentModel reads `detect(url) != nil`) AND, paired with a SEPARATE list
+  `ViewMode.formatterExtensions`, the `.formatted` VIEW LENS. The two gates MUST agree or the Format toggle
+  switches to a `.formatted` mode absent from `availableModes` (the "Picker bound to a value not in its tag
+  list" bug). **Markdown is deliberately in NEITHER** — its lenses are Rendered/Source, and
+  `FormatToggleTests.test_markdownFile_doesNotSupportFormatToggle` guards that. So adding `.md` to `detect`
+  fails that test (correctly). To offer markdown formatting, surface it as an IN-PLACE editor command
+  (`formatMarkdownTablesInActiveEditor` → rewrite the buffer), keeping `detect` md-free. The other `detect`
+  absences (`.jsonl/.svg/.scss/.less/.jsx/.ts`) are likewise DELIBERATE, documented exclusions — not gaps.
+
 ## Build-infra: the gate↔interactive index-store thrash + the rust-`.a` always-relink (2026-06-14, TSK-846/848/855)
 - **`--disable-index-store` on the gate but NOT interactive builds = a 63s rebuild EVERY switch.** The flag is
   part of SwiftPM's build-plan hash, so a gate run (index-off) and an IDE/interactive build (index-on, the
