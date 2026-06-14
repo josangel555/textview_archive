@@ -356,16 +356,21 @@
     blame:    "cm-blame-marker",
   };
   class DiffGutterMarker extends GutterMarker {
-    constructor(kind, tooltip) {
+    constructor(kind, tooltip, color) {
       super();
       this.kind = kind;
       this.tooltip = tooltip || null;
+      this.color = color || null;   // TSK-360: per-line blame heatmap tint
     }
-    eq(other) { return other.kind === this.kind && other.tooltip === this.tooltip; }
+    eq(other) {
+      return other.kind === this.kind && other.tooltip === this.tooltip
+          && other.color === this.color;
+    }
     toDOM() {
       const el = document.createElement("span");
       el.className = GUTTER_KIND_TO_CSS[this.kind] || "cm-diff-unknown";
       if (this.tooltip) el.title = this.tooltip;
+      if (this.color) el.style.background = this.color;  // line-age heatmap
       el.textContent = "";
       return el;
     }
@@ -406,7 +411,7 @@
       if (lineNum < 1 || lineNum > view.state.doc.lines) continue;
       const kind = String(m.kind || "");
       if (!(kind in GUTTER_KIND_TO_CSS)) continue;
-      map.set(lineNum, new DiffGutterMarker(kind, m.tooltip || null));
+      map.set(lineNum, new DiffGutterMarker(kind, m.tooltip || null, m.color || null));
     }
     view.dispatch({ effects: setGutterMarkersEffect.of(map) });
   }

@@ -14,13 +14,17 @@ public enum BlameGutterFeeder {
     public static func markers(
         from blame: [GitClient.BlameLine], now: Date = Date()
     ) -> [CMGutterMarker] {
-        blame
+        // TSK-360: per-line age heat color (dark→light blue by recency across
+        // the file's own history), applied as the gutter cell's background.
+        let heat = BlameHeatmap.colors(from: blame)
+        return blame
             .sorted { $0.line < $1.line }
             .map { entry in
                 CMGutterMarker(
                     line: entry.line,
                     kind: "blame",
-                    tooltip: tooltip(for: entry, now: now))
+                    tooltip: tooltip(for: entry, now: now),
+                    color: heat[entry.line])
             }
     }
 

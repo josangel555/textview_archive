@@ -93,8 +93,11 @@ public struct CMGutterMarker: Equatable, Sendable, Hashable {
     public let line: Int
     public let kind: String
     public let tooltip: String?
-    public init(line: Int, kind: String, tooltip: String? = nil) {
-        self.line = line; self.kind = kind; self.tooltip = tooltip
+    /// Optional per-line background tint (`#rrggbb`), TSK-360 — the blame
+    /// line-age heatmap. nil = use the kind's default CSS treatment.
+    public let color: String?
+    public init(line: Int, kind: String, tooltip: String? = nil, color: String? = nil) {
+        self.line = line; self.kind = kind; self.tooltip = tooltip; self.color = color
     }
 }
 
@@ -616,6 +619,7 @@ public enum CMBridgeCodec {
             dict["markers"] = markers.map { m -> [String: Any] in
                 var o: [String: Any] = ["line": m.line, "kind": m.kind]
                 if let t = m.tooltip { o["tooltip"] = t }
+                if let c = m.color { o["color"] = c }   // TSK-360 heatmap tint
                 return o
             }
         case .setIndentGuides(let enabled):
