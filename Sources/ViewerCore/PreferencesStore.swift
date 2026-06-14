@@ -17,6 +17,7 @@ public final class PreferencesStore: @unchecked Sendable {
         static let sidebarVisible = "MarkdownViewer.sidebarVisible"
         static let lastFolder = "MarkdownViewer.lastFolderPath"
         static let zoom = "MarkdownViewer.zoom"
+        static let contentFontSize = "MarkdownViewer.contentFontSize"
         static let sourceWordWrap = "MarkdownViewer.sourceWordWrap"
         static let showInvisibleChars = "MarkdownViewer.showInvisibleChars"
         static let editorIndentGuides = "MarkdownViewer.editorIndentGuides"
@@ -176,6 +177,28 @@ public final class PreferencesStore: @unchecked Sendable {
             // Drop the legacy key the first time we write the unified
             // value, so subsequent reads don't keep resurrecting it.
             defaults.removeObject(forKey: Key.legacyUIScale)
+        }
+    }
+
+    // MARK: Content text size (absolute base, TSK-358)
+
+    /// The absolute base point size for editor/source CONTENT text. The on-screen
+    /// size is this × `zoom` (`ContentFontSizing.effective`) — so the zoom slider
+    /// stays a multiplier and this sets the un-zoomed baseline. `13` matches the
+    /// historical hard-coded content base, so an un-set pref is behaviour-neutral.
+    public static let minContentFontSize: Double = 8
+    public static let maxContentFontSize: Double = 32
+    public static let defaultContentFontSize: Double = 13
+
+    public var contentFontSize: Double {
+        get {
+            let raw = defaults.object(forKey: Key.contentFontSize) as? Double
+                ?? Self.defaultContentFontSize
+            return min(max(raw, Self.minContentFontSize), Self.maxContentFontSize)
+        }
+        set {
+            let clamped = min(max(newValue, Self.minContentFontSize), Self.maxContentFontSize)
+            defaults.set(clamped, forKey: Key.contentFontSize)
         }
     }
 

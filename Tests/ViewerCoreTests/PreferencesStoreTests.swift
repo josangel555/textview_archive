@@ -51,6 +51,28 @@ final class PreferencesStoreTests: XCTestCase {
         XCTAssertEqual(store.sidebarWidth, PreferencesStore.minSidebarWidth)
     }
 
+    // MARK: Content font size (TSK-358)
+
+    func test_contentFontSize_defaultsTo13() {
+        let store = PreferencesStore(defaults: defaults)
+        XCTAssertEqual(store.contentFontSize, PreferencesStore.defaultContentFontSize)
+        XCTAssertEqual(store.contentFontSize, 13)
+    }
+
+    func test_contentFontSize_roundTrips() {
+        let store = PreferencesStore(defaults: defaults)
+        store.contentFontSize = 18
+        XCTAssertEqual(PreferencesStore(defaults: defaults).contentFontSize, 18)
+    }
+
+    func test_contentFontSize_clampsOutOfRange() {
+        let store = PreferencesStore(defaults: defaults)
+        store.contentFontSize = 999
+        XCTAssertEqual(store.contentFontSize, PreferencesStore.maxContentFontSize)
+        store.contentFontSize = 1
+        XCTAssertEqual(store.contentFontSize, PreferencesStore.minContentFontSize)
+    }
+
     /// A tampered/legacy `_last.json` could carry a stored width outside
     /// `[160, 480]`. The getter must clamp it on read so the picker /
     /// layout never sees an out-of-range width.

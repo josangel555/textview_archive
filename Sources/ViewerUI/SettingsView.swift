@@ -212,6 +212,24 @@ public struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 44, alignment: .leading)
             }
+            // Absolute base size for editor/source content text (TSK-358); the
+            // on-screen size is this × Zoom, so Zoom stays a multiplier.
+            row("Text Size") {
+                Slider(
+                    value: $model.contentFontSize,
+                    in: PreferencesStore.minContentFontSize...PreferencesStore.maxContentFontSize,
+                    step: 1
+                )
+                .frame(width: 180)
+                .accessibilityIdentifier("mdv.settings.contentFontSize")
+                Text("\(Int(model.contentFontSize)) pt")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 44, alignment: .leading)
+            }
+            Text("Text Size sets the editor/source base size; Zoom multiplies it (and the UI chrome).")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
         }
     }
 

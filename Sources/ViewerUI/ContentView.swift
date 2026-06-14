@@ -642,7 +642,7 @@ public struct ContentView: View {
                 }
                 CodeMirrorEditorView(
                     text: buf?.text ?? file.contents,
-                    fontSize: 13 * model.zoom,
+                    fontSize: model.effectiveContentFontSize,
                     language: lang,
                     isDarkTheme: model.activeTheme.name == .xcodeDark,
                     themePalette: model.activeThemeCMPalette,
@@ -936,7 +936,7 @@ struct SourceModeView: View {
             HStack(spacing: 0) {
                 SourceGutterView(
                     state: sourceView.sourceScrollState,
-                    fontSize: 13 * model.zoom,
+                    fontSize: model.effectiveContentFontSize,
                     theme: model.activeTheme,
                     diffMarks: model.sourceDiffMarks,
                     bookmarkedLines: model.bookmarkedLines(for: file.url)
@@ -944,7 +944,7 @@ struct SourceModeView: View {
                 ZStack(alignment: .topLeading) {
                     TextDisplayView(
                         text: displayed,
-                        fontSize: 13 * model.zoom,
+                        fontSize: model.effectiveContentFontSize,
                         fontName: model.sourceFontName,
                         language: lang,
                         runs: runs,

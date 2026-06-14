@@ -153,6 +153,14 @@ public final class DocumentModel: ObservableObject {
         didSet { preferences.zoom = zoom }
     }
 
+    /// Absolute base point size for editor/source CONTENT text (TSK-358). The
+    /// on-screen content size is `effectiveContentFontSize` = this × `zoom`, so
+    /// the zoom slider remains a multiplier and this sets the un-zoomed baseline.
+    /// Persisted via PreferencesStore; default 13 = the historical content base.
+    @Published public var contentFontSize: Double {
+        didSet { preferences.contentFontSize = contentFontSize }
+    }
+
     /// Source-view word-wrap toggle. When true, lines wrap at the
     /// viewport edge; when false (default), long lines scroll
     /// horizontally — the conventional code-viewer behavior. Persisted
@@ -210,6 +218,13 @@ public final class DocumentModel: ObservableObject {
     /// have to keep two sliders in sync. Migration of legacy
     /// `uiScale` defaults is handled in `PreferencesStore.zoom`.
     public func uiSize(_ base: CGFloat) -> CGFloat { base * CGFloat(zoom) }
+
+    /// On-screen point size for editor/source CONTENT text (TSK-358):
+    /// `contentFontSize` (absolute base) × `zoom`. The editor (CM6), source text,
+    /// and source gutter all bind to this so they stay in lock-step.
+    public var effectiveContentFontSize: CGFloat {
+        ContentFontSizing.effective(baseSize: contentFontSize, zoom: zoom)
+    }
 
     /// High-frequency source-view view-local state (live scroll offset,
     /// caret/selection, scroll-to-line request). A sibling channel like
@@ -387,6 +402,7 @@ public final class DocumentModel: ObservableObject {
         self.bookmarks = bookmarks.all()
         self.sidebarWidth = preferences.sidebarWidth
         self.zoom = preferences.zoom
+        self.contentFontSize = preferences.contentFontSize
         self.sourceWordWrap = preferences.sourceWordWrap
         self.showPreviewMetadataPanel = preferences.previewMetadataVisible
         self.showInvisibleChars = preferences.showInvisibleChars
