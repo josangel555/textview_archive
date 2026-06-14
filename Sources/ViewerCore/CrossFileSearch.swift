@@ -29,6 +29,10 @@ public enum CrossFileSearch {
         public var maxFileBytes: Int
         public var maxResults: Int
         public var caseSensitive: Bool
+        /// TSK-758 — interpret `query` as a regular expression instead of a
+        /// literal substring. ReDoS-guarded (`validateRegex`); an
+        /// invalid/rejected pattern yields no results.
+        public var useRegex: Bool
         public var skipDirNames: Set<String>
         /// Hard cap on total filesystem entries visited (incl. dirs).
         /// Backstop against a maliciously deep symlink loop where each
@@ -41,6 +45,7 @@ public enum CrossFileSearch {
             maxFileBytes: Int = 2 * 1024 * 1024,
             maxResults: Int = 500,
             caseSensitive: Bool = false,
+            useRegex: Bool = false,
             skipDirNames: Set<String> = [
                 ".git", ".hg", ".svn", "node_modules", ".build", ".swiftpm",
                 "DerivedData", "Pods", ".venv", "venv", "__pycache__",
@@ -51,8 +56,61 @@ public enum CrossFileSearch {
             self.maxFileBytes = maxFileBytes
             self.maxResults = maxResults
             self.caseSensitive = caseSensitive
+            self.useRegex = useRegex
             self.skipDirNames = skipDirNames
             self.maxEntriesScanned = maxEntriesScanned
+        }
+    }
+
+    /// A compiled matcher — literal substring or regex, with the case flag
+    /// baked in — built once per search and reused for every line/filename.
+    /// `make` returns `nil` when a regex query is rejected (ReDoS shape) or
+    /// uncompilable, so the search yields no results; the caller surfaces the
+    /// reason separately via `validateRegex`. (TSK-758)
+    struct Matcher {
+        let contains: (String) -> Bool
+        let firstRange: (String) -> Range<String.Index>?
+
+        static func make(query: String, caseSensitive: Bool, useRegex: Bool) -> Matcher? {
+            if useRegex {
+                guard validateRegex(query, caseSensitive: caseSensitive) == nil else { return nil }
+                var ropts: NSRegularExpression.Options = []
+                if !caseSensitive { ropts.insert(.caseInsensitive) }
+                guard let re = try? NSRegularExpression(pattern: query, options: ropts) else {
+                    return nil
+                }
+                return Matcher(
+                    contains: { s in
+                        re.firstMatch(in: s, range: NSRange(s.startIndex..<s.endIndex, in: s)) != nil
+                    },
+                    firstRange: { s in
+                        guard let m = re.firstMatch(
+                            in: s, range: NSRange(s.startIndex..<s.endIndex, in: s)),
+                            let r = Range(m.range, in: s) else { return nil }
+                        return r
+                    })
+            }
+            let copts: String.CompareOptions = caseSensitive ? [] : [.caseInsensitive]
+            return Matcher(
+                contains: { $0.range(of: query, options: copts) != nil },
+                firstRange: { $0.range(of: query, options: copts) })
+        }
+    }
+
+    /// Pre-validate a regex query for cross-file search (TSK-758). Returns a
+    /// human-readable reason when the pattern should be rejected — a known
+    /// ReDoS shape (`RegexComplexityGuard.reject`) or an uncompilable pattern
+    /// — else `nil`. Lets the UI show "invalid pattern" without running a walk.
+    public static func validateRegex(_ pattern: String, caseSensitive: Bool = false) -> String? {
+        guard !pattern.isEmpty else { return nil }
+        if let reason = RegexComplexityGuard.reject(pattern) { return reason }
+        var ropts: NSRegularExpression.Options = []
+        if !caseSensitive { ropts.insert(.caseInsensitive) }
+        do {
+            _ = try NSRegularExpression(pattern: pattern, options: ropts)
+            return nil
+        } catch {
+            return "invalid regular expression"
         }
     }
 
@@ -79,6 +137,10 @@ public enum CrossFileSearch {
         // sites (preserves original indices for multi-scalar-change
         // lowercasers like ß / Σ / İ — S2-D).
         let needle = query
+        // Compiled once. `nil` ⇒ a rejected/invalid regex (TSK-758) ⇒ no results.
+        guard let matcher = Matcher.make(
+            query: needle, caseSensitive: options.caseSensitive, useRegex: options.useRegex
+        ) else { return [] }
 
         var results: [FileMatches] = []
         var totalMatches = 0
@@ -152,20 +214,14 @@ public enum CrossFileSearch {
             guard let data = try? Data(contentsOf: url) else { continue }
             guard let content = TextDecoder.decodeToString(data) else { continue }
 
-            // Search.
-            // For case-insensitive, use `range(of:options:)` directly
-            // on the original string — `String.lowercased()` can
-            // change character count (German ß → "ss", Greek Σ →
-            // σ/ς, Turkish İ → "i\u{0307}"), which previously broke
-            // ordinal-distance back-mapping and dropped the visual
-            // highlight for exactly the locales most likely to need
-            // it (S2-D). `.caseInsensitive` honours the original
-            // indices natively.
+            // File-level prefilter via the compiled matcher (literal substring
+            // or regex). For literal case-insensitive we still match on the
+            // ORIGINAL string via `.caseInsensitive` — never `lowercased()`,
+            // which changes character count for ß/Σ/İ and breaks index
+            // back-mapping (S2-D). `.caseInsensitive` honours original indices.
             let containsOpts: String.CompareOptions = options.caseSensitive
                 ? [] : [.caseInsensitive]
-            guard content.range(of: needle, options: containsOpts) != nil else {
-                continue
-            }
+            guard matcher.contains(content) else { continue }
 
             // Compute per-line matches.
             //
@@ -199,11 +255,25 @@ public enum CrossFileSearch {
             // line/column accounting does.
             let lines = splitLines(content)
             for (i, lineSub) in lines.enumerated() {
-                guard lineSub.range(of: needle, options: containsOpts) != nil else {
-                    continue
+                let line: String
+                let range: Range<String.Index>?
+                if options.useRegex {
+                    // Regex needs a String (NSRange backing); build it only for
+                    // a file the prefilter already said matches.
+                    let s = String(lineSub)
+                    guard let r = matcher.firstRange(s) else { continue }
+                    line = s
+                    range = r
+                } else {
+                    // Literal fast path: probe the Substring (shares the
+                    // parent's index space — no per-line allocation), then
+                    // materialize the String only on a hit.
+                    guard lineSub.range(of: needle, options: containsOpts) != nil else {
+                        continue
+                    }
+                    line = String(lineSub)
+                    range = line.range(of: needle, options: containsOpts)
                 }
-                let line = String(lineSub)
-                let range = line.range(of: needle, options: containsOpts)
                 fileMatches.append(Match(
                     lineNumber: i + 1,
                     line: line,
@@ -214,6 +284,68 @@ public enum CrossFileSearch {
             }
             if !fileMatches.isEmpty {
                 results.append(FileMatches(url: url, matches: fileMatches))
+            }
+        }
+        return results
+    }
+
+    /// Filename search across a folder tree (TSK-758). Returns one
+    /// `FileMatches` per regular file whose NAME matches `query` — the file
+    /// itself is the hit, so `matches` is empty (no line content is read).
+    /// Same walk, skip-dirs, symlink-loop guard, and caps as `search`, but it
+    /// never opens file bodies, so it's cheap over large trees.
+    public static func searchFilenames(
+        root: URL,
+        query: String,
+        options: Options = Options(),
+        isCancelled: () -> Bool = { false }
+    ) -> [FileMatches] {
+        guard !query.isEmpty else { return [] }
+        guard let matcher = Matcher.make(
+            query: query, caseSensitive: options.caseSensitive, useRegex: options.useRegex
+        ) else { return [] }
+
+        var results: [FileMatches] = []
+        var entriesScanned = 0
+        var visitedDirs: Set<String> = []
+
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+
+        for case let url as URL in enumerator {
+            if results.count >= options.maxResults { break }
+            entriesScanned += 1
+            if entriesScanned > options.maxEntriesScanned { break }
+            if entriesScanned % cancelCheckStride == 0, isCancelled() { break }
+
+            let lastComponent = url.lastPathComponent
+            if options.skipDirNames.contains(lastComponent) {
+                let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?
+                    .isDirectory ?? false
+                if isDir { enumerator.skipDescendants() }
+                continue
+            }
+
+            let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?
+                .isDirectory ?? false
+            if isDirectory {
+                let canonical = url.resolvingSymlinksInPath().standardizedFileURL.path
+                if visitedDirs.contains(canonical) {
+                    enumerator.skipDescendants()
+                    continue
+                }
+                visitedDirs.insert(canonical)
+                continue  // directories themselves are not filename results
+            }
+
+            guard (try? url.resourceValues(forKeys: [.isRegularFileKey]))?
+                .isRegularFile == true else { continue }
+            if matcher.contains(lastComponent) {
+                results.append(FileMatches(url: url, matches: []))
             }
         }
         return results

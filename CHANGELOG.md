@@ -17,6 +17,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - Editor now keeps focus on **Enter** and handles arrow / word / line navigation keys (was jumping focus to the sidebar).
 
 ### Added
+- **Search by file name + regex** — the search panel (⌘⇧F) now has a **Text · File name** toggle and a regex (`.*`) toggle, so you can find files by name, or match file contents/names with a regular expression (bad patterns are flagged inline).
 - **Keyboard Shortcuts reference** — Help → Keyboard Shortcuts opens a searchable, grouped list of every shortcut in the app (and reflects any custom keybindings you've set).
 - **Set a default view per file type** — pin "always open Markdown as Source" (instead of Rendered), "CSV as Source" (instead of Table), and so on, from the file-type menu (bottom-right). Stops you re-clicking "Editor" on every open.
 - **Per-file scroll memory when previewing** — return to a file and it's right where you left off, in both the source view and rendered markdown.

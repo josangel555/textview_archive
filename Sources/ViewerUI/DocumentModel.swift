@@ -1481,6 +1481,15 @@ public final class DocumentModel: ObservableObject {
     @Published public var crossSearchResults: [CrossFileSearch.FileMatches] = []
     @Published public var crossSearchIsRunning: Bool = false
     @Published public var crossSearchCaseSensitive: Bool = false
+    /// TSK-758 — search file NAMES across the folder instead of file CONTENTS.
+    /// false = text grep (default), true = filename match. Sticky across opens.
+    @Published public var crossSearchFilenameMode: Bool = false
+    /// TSK-758 — treat the query as a regular expression (ReDoS-guarded via
+    /// `CrossFileSearch.validateRegex`). Sticky across opens.
+    @Published public var crossSearchUseRegex: Bool = false
+    /// Non-nil when regex mode is on and the query is a rejected/invalid
+    /// pattern — surfaced as a hint in the panel; the search is skipped.
+    @Published public var crossSearchRegexError: String? = nil
 
     /// One-shot hand-off used by callers that want the unified search
     /// panel to open with a pre-set scope (e.g. the sidebar folder-row
@@ -1516,6 +1525,7 @@ public final class DocumentModel: ObservableObject {
         crossSearchResults = []
         crossSearchIsRunning = false
         crossSearchPresetScope = nil
+        crossSearchRegexError = nil
         crossSearchGeneration &+= 1  // invalidate any in-flight search
     }
 
@@ -1537,16 +1547,32 @@ public final class DocumentModel: ObservableObject {
         guard !q.isEmpty else {
             crossSearchResults = []
             crossSearchIsRunning = false
+            crossSearchRegexError = nil
             crossSearchGeneration &+= 1  // cancel any in-flight search
             return
         }
+        // TSK-758 — regex mode: reject ReDoS/invalid patterns up front so the
+        // panel can show why instead of silently returning "No matches".
+        if crossSearchUseRegex,
+           let reason = CrossFileSearch.validateRegex(q, caseSensitive: crossSearchCaseSensitive) {
+            crossSearchRegexError = reason
+            crossSearchResults = []
+            crossSearchIsRunning = false
+            crossSearchGeneration &+= 1
+            return
+        }
+        crossSearchRegexError = nil
+        let filenameMode = crossSearchFilenameMode
         var opts = CrossFileSearch.Options()
         opts.caseSensitive = crossSearchCaseSensitive
+        opts.useRegex = crossSearchUseRegex
         crossSearchIsRunning = true
         crossSearchGeneration &+= 1
         let gen = crossSearchGeneration
         DispatchQueue.global(qos: .userInitiated).async { [weak self, opts, q] in
-            let results = CrossFileSearch.search(root: root, query: q, options: opts)
+            let results = filenameMode
+                ? CrossFileSearch.searchFilenames(root: root, query: q, options: opts)
+                : CrossFileSearch.search(root: root, query: q, options: opts)
             DispatchQueue.main.async {
                 guard let self, self.crossSearchGeneration == gen else { return }
                 self.crossSearchResults = results

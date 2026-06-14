@@ -66,10 +66,13 @@ struct CrossSearchPanel: View {
         }
     }
 
-    /// Active mode. Default `.text` matches the panel's pre-existing
-    /// behavior. Kept in `@State` so the scope row re-renders when
-    /// future mode-toggle UI lands above.
-    @State private var mode: SearchMode = .text
+    /// Active mode, derived from the model's Text|FileName toggle (TSK-758).
+    /// Both `.text` and `.files` require a folder scope, so the scope row
+    /// behaves identically; the reserved single-file modes (jq/css/xpath)
+    /// aren't reachable from the toggle yet.
+    private var mode: SearchMode {
+        model.crossSearchFilenameMode ? .files : .text
+    }
 
     /// Currently-selected scope. Defaults to the active file when one
     /// is open, else the active folder. `onAppear` reconciles this.
@@ -80,7 +83,9 @@ struct CrossSearchPanel: View {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                TextField("Search across folder…", text: $model.crossSearchQuery)
+                TextField(model.crossSearchFilenameMode
+                          ? "Search file names…" : "Search across folder…",
+                          text: $model.crossSearchQuery)
                     .textFieldStyle(.plain)
                     .font(.system(size: 16))
                     .focused($fieldFocused)
@@ -93,6 +98,15 @@ struct CrossSearchPanel: View {
                 .help("Match case")
                 .accessibilityLabel("Match case")
                 .accessibilityValue(model.crossSearchCaseSensitive ? "On" : "Off")
+                Toggle(isOn: $model.crossSearchUseRegex) {
+                    Text(".*").font(.system(size: 11, weight: .medium, design: .monospaced))
+                }
+                .toggleStyle(.button)
+                .controlSize(.small)
+                .help("Use regular expression")
+                .accessibilityLabel("Use regular expression")
+                .accessibilityValue(model.crossSearchUseRegex ? "On" : "Off")
+                .accessibilityIdentifier("mdv.unifiedSearch.regexToggle")
                 if model.crossSearchIsRunning {
                     ProgressView().controlSize(.small)
                 }
@@ -109,6 +123,8 @@ struct CrossSearchPanel: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
+
+            modeRow
 
             Divider()
 
@@ -164,6 +180,8 @@ struct CrossSearchPanel: View {
         }
         .onChange(of: model.crossSearchQuery) { _, _ in runSearch() }
         .onChange(of: model.crossSearchCaseSensitive) { _, _ in runSearch() }
+        .onChange(of: model.crossSearchFilenameMode) { _, _ in runSearch() }
+        .onChange(of: model.crossSearchUseRegex) { _, _ in runSearch() }
         .onChange(of: scope) { _, _ in runSearch() }
         .accessibilityIdentifier("mdv.crossSearchPanel")
     }
@@ -206,6 +224,33 @@ struct CrossSearchPanel: View {
         } else {
             scope = .activeFile
         }
+    }
+
+    /// Text | FileName mode picker + the regex-error hint (TSK-758).
+    private var modeRow: some View {
+        HStack(spacing: 8) {
+            Picker("", selection: $model.crossSearchFilenameMode) {
+                Text("Text").tag(false)
+                Text("File name").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .help("Search file contents, or file names")
+            .accessibilityIdentifier("mdv.unifiedSearch.modePicker")
+
+            if let err = model.crossSearchRegexError {
+                Label(err, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .accessibilityIdentifier("mdv.unifiedSearch.regexError")
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 4)
     }
 
     private var scopeRow: some View {
@@ -370,9 +415,13 @@ private struct CrossSearchFileGroupView: View {
                         .foregroundStyle(.secondary)
                     Text(group.url.lastPathComponent)
                         .font(.system(.body, design: .default).weight(.medium))
-                    Text("(\(group.matches.count))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    // Filename-mode hits carry no line matches (TSK-758) — the
+                    // file itself is the result, so the "(N)" count is hidden.
+                    if !group.matches.isEmpty {
+                        Text("(\(group.matches.count))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     Spacer()
                     Text(group.url.deletingLastPathComponent().path)
                         .font(.caption)
