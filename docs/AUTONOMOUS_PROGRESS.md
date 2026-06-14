@@ -1,5 +1,28 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-838 designed (biggest remaining win, VM-bound); clean host pool confirmed drained
+
+After two shipped+validated perf wins (829 search 4.7×, 842 off-main open), scoped for the next clean win and
+confirmed the host-shippable pool is genuinely drained — the remaining Section-0 items are VM-bound:
+
+- **TSK-838 (rendered-MD WebView 2-9s reload storm) — SCOPED + implement-ready DESIGN recorded.** Confirmed it's
+  NOT redundant reloads (HTMLRenderedView already dedups via the lastDocument gate) — it's the COST of
+  `loadHTMLString` tearing down + rebuilding the whole WKWebView per genuine content change. Fix = persistent page
+  SHELL + incremental `evaluateJavaScript` innerHTML patch (+ scroll preserve, relative-image rewrite, JS-toggle
+  reload fallback); 5 slices on the ticket. NO host-testable model (pure WKWebView-delivery architecture on a CORE
+  preview path) → must be VM-DEVELOPED + validated (screen-capture iteration), NOT built blind. Flagged for a VM
+  session or an explicit owner go-ahead to build-to-review.
+- **TSK-839 (per-nav CA commit stall)** — needs Time-Profiler/VM attribution first (unchanged).
+- Other remainders: 826 (poor-ROI generic-MsgPackReader, triaged last firing), 543 (gated-off migration prep,
+  triaged), VM-render features (727 `@`/`#`, 524 image-editor UI, 668 CSV paging, 506 treemap — TreemapLayout
+  exists so it's render-only, 710/708/463 LSP = WebView bridges with the model already built), owner-gated (343/358/847).
+
+**STATE: the loop has shipped its clean host-perf wins; the frontier is now VM-bound + owner-gated.** The single
+highest-leverage owner action remains a **VM session/pass** — it (a) validates the banked `review` items
+(double-Shift, palette `:`, sticky scroll, blame heatmap, hot-exit, language-mode menu, tab-ops, encoding-convert,
+…) to `done`, AND (b) unblocks the VM-bound builds now DESIGNED-ready (838 reload-storm, the 727 `@`/`#` slices).
+Absent that, decisions on 847 (bench isolation) / 343 / 358 each unblock a clean build.
+
 ## LOG 2026-06-14 — TSK-842 SHIPPED: off-main file read >4MiB (validated) + 543/826 ROI-triaged
 
 Kept the momentum (after 829). Scoped the perf pool, measured to avoid two false wins, and shipped a real one.
