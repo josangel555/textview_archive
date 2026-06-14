@@ -4666,6 +4666,14 @@ public final class DocumentModel: ObservableObject {
     public func removeDuplicateActiveFileLines() -> Bool {
         applyTextTransformToActiveFile(LineOps.removeDuplicates)
     }
+    @discardableResult
+    public func removeEmptyActiveFileLines() -> Bool {
+        applyTextTransformToActiveFile(LineOps.removeEmptyLines)
+    }
+    @discardableResult
+    public func collapseBlankActiveFileLines() -> Bool {
+        applyTextTransformToActiveFile(LineOps.collapseBlankLines)
+    }
 
     /// TSK-675 — strip trailing spaces/tabs from every line (line endings + all
     /// other content preserved).

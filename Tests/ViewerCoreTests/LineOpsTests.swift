@@ -45,4 +45,32 @@ final class LineOpsTests: XCTestCase {
     func test_removeDuplicates_blankLinesAlsoDeduped() {
         XCTAssertEqual(LineOps.removeDuplicates("a\n\nb\n\n"), "a\n\nb\n")
     }
+
+    func test_removeEmptyLines_dropsBlankAndWhitespaceOnly() {
+        XCTAssertEqual(LineOps.removeEmptyLines("a\n\nb\n   \nc"), "a\nb\nc")
+    }
+
+    func test_removeEmptyLines_preservesTrailing_andEnding() {
+        XCTAssertEqual(LineOps.removeEmptyLines("a\r\n\r\nb\r\n"), "a\r\nb\r\n")
+    }
+
+    func test_removeEmptyLines_keepsLeadingWhitespaceOnContentLines() {
+        XCTAssertEqual(LineOps.removeEmptyLines("  a\n\n\tb"), "  a\n\tb")
+    }
+
+    func test_collapseBlankLines_runsCollapseToOne() {
+        XCTAssertEqual(LineOps.collapseBlankLines("a\n\n\n\nb"), "a\n\nb")
+    }
+
+    func test_collapseBlankLines_whitespaceOnlyCountsAsBlank() {
+        XCTAssertEqual(LineOps.collapseBlankLines("a\n\n   \n\nb"), "a\n\nb")
+    }
+
+    func test_collapseBlankLines_singleBlankUntouched_andCRLF() {
+        XCTAssertEqual(LineOps.collapseBlankLines("a\r\n\r\nb"), "a\r\n\r\nb")
+    }
+
+    func test_collapseBlankLines_leadingBlanksCollapse_trailingPreserved() {
+        XCTAssertEqual(LineOps.collapseBlankLines("\n\na\n\n\n"), "\na\n\n")
+    }
 }

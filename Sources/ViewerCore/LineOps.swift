@@ -24,6 +24,28 @@ public enum LineOps {
         }
     }
 
+    /// Remove blank lines — lines that are empty or whitespace-only.
+    public static func removeEmptyLines(_ text: String) -> String {
+        transform(text) { lines in
+            lines.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        }
+    }
+
+    /// Collapse runs of 2+ consecutive blank lines down to a single blank line.
+    public static func collapseBlankLines(_ text: String) -> String {
+        transform(text) { lines in
+            var out: [String] = []
+            var prevBlank = false
+            for line in lines {
+                let blank = line.trimmingCharacters(in: .whitespaces).isEmpty
+                if blank && prevBlank { continue }
+                out.append(line)
+                prevBlank = blank
+            }
+            return out
+        }
+    }
+
     // MARK: - helpers
 
     private static func transform(_ text: String, _ op: ([String]) -> [String]) -> String {

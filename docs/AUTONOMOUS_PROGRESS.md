@@ -1,5 +1,23 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — Edit ▸ Lines: Remove Empty / Collapse Blank shipped (TSK-884, → review)
+
+Completed the Edit ▸ Lines submenu (shipped last firing, TSK-883) with the two standard blank-line ops every
+editor has: **Remove Empty Lines** (drop empty + whitespace-only lines) and **Collapse Blank Lines** (runs of 2+
+blank lines → one). Added to `LineOps` (pure ViewerCore) reusing the existing terminator-aware `transform`/`split`
+seam, so both inherit the CRLF-grapheme-safe scalar split + dominant-ending + trailing-newline preservation for
+free. `DocumentModel.removeEmptyActiveFileLines()` / `collapseBlankActiveFileLines()` ride the shared
+`applyTextTransformToActiveFile` write-through (encoding preserved). Submenu now: Sort↑/Sort↓/Reverse/Remove
+Duplicates · — · Remove Empty Lines / Collapse Blank Lines (separator groups reorder/dedupe from blank-squeeze).
+Any active text file; `validateMenuItem` gated on `canCleanUpActiveFile`. No new menu clutter (same submenu).
+
+Teeth: 7 new pure tests (remove-empty drops blank + whitespace-only, keeps leading ws on content lines, CRLF +
+trailing preserved; collapse runs→1, whitespace-only counts as blank, single blank untouched, CRLF preserved,
+leading-blanks collapse + trailing preserved) → 16 LineOps tests total, all pass. Host gate green. Menu = VM tail.
+
+Run tally **19 features → `review`**. §2.5-safe (pure transform, not the ported engines). Owner still away;
+standing unblocks unchanged (VM validation pass; TSK-343/470/733). Submenu kept tidy — TSK-751 still relevant.
+
 ## LOG 2026-06-14 — Edit ▸ Lines (in-place line ops) shipped (TSK-883, 1cba668, → review)
 
 Standard editor line ops as IN-PLACE active-file commands (the existing TSK-352 line tools are clipboard-only —

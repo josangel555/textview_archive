@@ -1820,13 +1820,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // Whole-file line operations on the active text file (in place).
         let linesItem = NSMenuItem(title: "Lines", action: nil, keyEquivalent: "")
         let linesMenu = NSMenu(title: "Lines")
-        let lineActions: [(String, Selector)] = [
+        let lineActions: [(String, Selector)?] = [
             ("Sort Ascending (A→Z)", #selector(sortLinesAsc(_:))),
             ("Sort Descending (Z→A)", #selector(sortLinesDesc(_:))),
             ("Reverse", #selector(reverseLines(_:))),
             ("Remove Duplicates", #selector(removeDuplicateLines(_:))),
+            nil,
+            ("Remove Empty Lines", #selector(removeEmptyLines(_:))),
+            ("Collapse Blank Lines", #selector(collapseBlankLines(_:))),
         ]
-        for (title, action) in lineActions {
+        for entry in lineActions {
+            guard let (title, action) = entry else {
+                linesMenu.addItem(.separator()); continue
+            }
             let mi = NSMenuItem(title: title, action: action, keyEquivalent: "")
             mi.target = self
             linesMenu.addItem(mi)
@@ -2298,6 +2304,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     @objc func sortLinesDesc(_ sender: Any?) { _ = model.sortActiveFileLines(ascending: false) }
     @objc func reverseLines(_ sender: Any?) { _ = model.reverseActiveFileLines() }
     @objc func removeDuplicateLines(_ sender: Any?) { _ = model.removeDuplicateActiveFileLines() }
+    @objc func removeEmptyLines(_ sender: Any?) { _ = model.removeEmptyActiveFileLines() }
+    @objc func collapseBlankLines(_ sender: Any?) { _ = model.collapseBlankActiveFileLines() }
 
     /// TSK-675 — report broken local links/images in the active Markdown file.
     @objc func checkLinks(_ sender: Any?) {
@@ -2486,7 +2494,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(trimTrailingWhitespace(_:)), #selector(ensureFinalNewline(_:)),
              #selector(convertIndentToSpaces(_:)), #selector(convertIndentToTabs(_:)),
              #selector(sortLinesAsc(_:)), #selector(sortLinesDesc(_:)),
-             #selector(reverseLines(_:)), #selector(removeDuplicateLines(_:)):
+             #selector(reverseLines(_:)), #selector(removeDuplicateLines(_:)),
+             #selector(removeEmptyLines(_:)), #selector(collapseBlankLines(_:)):
             // TSK-675: any active text file.
             return model.canCleanUpActiveFile
         case #selector(showDocumentStatistics(_:)):
