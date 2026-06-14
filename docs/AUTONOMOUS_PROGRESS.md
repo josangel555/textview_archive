@@ -9387,6 +9387,24 @@ Ln/Col/Lines chips. Pure formatter host-tested (`StatusBarMemoryTests`, 6 cases)
 sizing, 755 session-menu tab ops, 762 wrap/invisibles toggles, terminal UX 769/771, …) — build + host-test +
 ship to review. The HOLD is OVER.
 
+## LOG +430 (2026-06-13/14 — TSK-771: rename terminal tabs via right-click)
+
+Feature tick (HOLD is over — building the wishlist). Considered TSK-360 (source line-age heatmap) but its render
+is CM6/WebView-bound (BlameGutterFeeder feeds CM6 markers; coloring it means touching the JS bundle = heavier VM
+territory) — deferred it for a native, bounded pick.
+
+**Shipped TSK-771 (commit `e7fde8a`, headless gate green — 5232 tests):** terminal tabs were labelled by number
+only. Added a per-tab custom-name map to `TerminalPaneStore` (`customNames` + `renameTab` / `tabLabel` /
+`tabTitle`): a name overrides the bare number in the chip + the "Terminal N" tooltip; blank/whitespace clears
+back to default; names are session-only and dropped when a tab closes (no leak; last-close clears all). UI:
+right-click a tab → "Rename…" (alert prompt) / "Reset Name"; the chip shows the name and truncates long ones.
+Rename MODEL host-tested (`TerminalPaneStoreTests` +7); context-menu + chip render are the VM tail. → TSK-771 at
+`review`. CHANGELOG updated.
+
+Pattern holding: build the feature, host-test the model/behavior, ship to `review`, leave the pixel check to the
+VM tail. Next: 358 (window/font sizing), 755 (session-menu tab ops), 762 (wrap/invisibles toggles), 769
+(terminal UX bundle), 360 (line-age, when the CM6-render effort is warranted).
+
 **LSP-menu lane now done.** Remaining LSP work (no UI at all, meatier): Find References + Workspace Symbols (backends
 exist, need a results panel — VM-gated). Noted for when the screen/owner is available.
 
