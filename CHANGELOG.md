@@ -18,6 +18,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - Editor now keeps focus on **Enter** and handles arrow / word / line navigation keys (was jumping focus to the sidebar).
 
 ### Added
+- **Audio tags in file info** — music files now show their **Title / Artist / Album / Year** in the file-info panel, alongside the existing duration / sample-rate / channels.
 - **Archive file info** — opening a `.zip` / `.jar` / `.tar` now shows a summary in the file-info panel: format, file & folder counts, and total uncompressed size.
 - **Database file info** — opening a SQLite database now shows a summary in the file-info panel: table / view / index counts, total rows, text encoding, and page size.
 - **`textview` command-line launcher** — Help → Install '`textview`' Command installs a `textview` shell command so you can open files from a terminal (`textview file.md`), like VS Code's `code`.

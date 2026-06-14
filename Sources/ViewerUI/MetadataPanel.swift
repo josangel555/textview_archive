@@ -349,6 +349,19 @@ struct MetadataPanel: View {
                     }
                 }
             }
+            // Common tags (Title / Artist / Album / Year) — TSK-807. AVMetadata's
+            // common-key space normalizes ID3 / iTunes / Vorbis into shared keys;
+            // the pure ordering/omission/year logic is host-tested in
+            // `AudioMetadataRows`.
+            if let common = try? await asset.load(.commonMetadata) {
+                var pairs: [(key: String, value: String?)] = []
+                for item in common {
+                    guard let key = item.commonKey?.rawValue else { continue }
+                    let value = (try? await item.load(.stringValue)) ?? nil
+                    pairs.append((key, value))
+                }
+                out.append(contentsOf: AudioMetadataRows.build(common: pairs).map { Row($0.label, $0.value) })
+            }
             return out
         }.value
     }
