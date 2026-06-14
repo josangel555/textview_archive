@@ -9169,6 +9169,31 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +413 (2026-06-13 — TSK-807 slice: SQLite "Database" summary in the file-info panel; host-tested with teeth)
+
+Autonomous tick. Groomed pools confirmed all-done again (635/636/554/634/630-633/642 validated); no fresh bugs. Continued
+the WISH feature lane. Picked TSK-807 (file-info metadata coverage) over project-wide replace (TSK-726) — the latter
+MUTATES many user files and needs a preview/undo design before it's data-safe to ship (deferred, noted below).
+
+**Spike:** `MetadataPanel` covers filesystem (all), Image (dimensions/EXIF/TIFF), Audio/Video (duration/rate/channels/fps),
+PDF (pages/title/author) — but the `.sqlite` "Database" section was EMPTY (typeLabel exists, `loadTypeMetadata` returned
+[]). Biggest clear gap + host-testable (a temp `.sqlite` + the read-only `SQLiteReader`).
+
+**Shipped (commit `87435a5`, headless gate green — 5184 tests, 0 fail, no heavy-tier leak):** `SQLiteFileInfo.summaryRows`
+(ViewerCore) reads object counts (tables/views/indexes/triggers, zero rows omitted), total rows across user tables, and
+encoding + page-size PRAGMAs via the read-only `SQLiteReader`; wired into `MetadataPanel.loadTypeMetadata` `.sqlite`
+(off-main). A non-DB / misdetected `.sqlite` degrades to NO rows (guards on the first real read — SQLite opens lazily, so
+`tableNames()` is the real validity probe, not `open`).
+
+**Tests (host-safe):** ViewerCoreTests `SQLiteFileInfoTests` (4 — real fixture DB via `/usr/bin/sqlite3`: object counts +
+total rows, zero-trigger omission, encoding/page-size shape, non-DB→empty). **TEETH:** zeroed the row-count aggregation →
+Total-rows assertion RED → restored. The panel render is the VM-tail; the extractor is fully host-pinned.
+
+**TSK-807 remaining gaps (still open, → BACKLOG):** audio common-metadata tags (Title/Artist/Album/Year/Genre via
+AVMetadata — un-host-testable like the existing AVAsset extractors), `.archive` entry count + total uncompressed size
+(ArchiveCatalog). **Deferred (data-safety): TSK-726 project-wide REPLACE** needs a per-match preview + cross-file undo
+before it's safe to write to many files — a design slice, not a quick win.
+
 ## LOG +412 (2026-06-13 — TSK-696: `textview` CLI launcher; + dismissed TSK-724 as already-shipped after spike)
 
 Autonomous tick. **Board-triage finding:** the entire groomed pool the cron prompt still lists is DONE — SECURITY 635/636,
