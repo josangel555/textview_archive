@@ -3098,3 +3098,25 @@ Continuation of "the five constraints" above; these three close every remaining 
 - **`LineNumberRulerView` scanned newlines via `(text as NSString).character(at:i)` per UTF-16 unit** — an ObjC
   message-send per char (first-scroll hitch on multi-MB logs). Always iterate the Swift `.utf16` view; offsets
   are identical (TSK-828, `2c7368c`).
+
+## 2026-06-14 — autonomous-loop scoping lessons (the markdown docs-tools burst)
+
+- **§2.5 (port-targeted Swift engines = bugfix-only) restricts MODIFYING the engine, NOT building a new CONSUMER
+  of its output.** A whole feature suite landed safely as consumers of existing engines: TOC (consumes
+  `MarkdownOutline.headings`), Copy/Export/Open-in-Browser HTML (consume `HTMLRenderer.render`), Check Links / Lint
+  (focused parsers like `MarkdownOutline`), CSV→Markdown/JSON (consume `CSVParser.parse`), Minify JSON (Formatter,
+  not ported). I once WRONGLY deferred a TOC on §2.5 grounds — over-application caused a premature HOLD. Litmus:
+  am I editing the ported engine, or reading its output into a new file? The latter is always fine.
+- **The anti-paper-cut / §5 "don't fill the gap with marginal work" rule targets TEST/coverage busywork
+  ("ten throwaway tests"), NOT real user features.** A convenience feature (e.g. Open-in-Browser = export+open in
+  one click) is a genuine feature even if it wraps existing capability — every editor has it. I over-applied
+  "marginal" to real features and HELD twice when I should have shipped. Test: "would a reasonable user call this a
+  feature?" — if yes, it's not the marginal work the rule forbids.
+- **Shared write-through seam for active-file Edit transforms:** `DocumentModel.applyTextTransformToActiveFile
+  { text in ... }` (encoding-preserving write + drop/reload, the Convert-Encoding mechanism) backs every text
+  transform command (line-endings, trim/final-newline, indentation, TOC insert, Minify JSON). New text-edit
+  commands should reuse it, not re-implement the save path.
+- **The host headless gate can FLAKE on a perf bench under load/oversubscription** (FoldBench/HotPathPerf
+  wall-clock asserts — documented in TASK_WORKFLOW). A single red `swift test --parallel` is not a regression by
+  itself: re-run once and confirm the SAME non-bench failure before chasing it. (Seen 2026-06-14: gate red once,
+  clean on immediate re-run, EXIT=0.)
