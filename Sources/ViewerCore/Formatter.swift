@@ -92,6 +92,38 @@ public enum Formatter {
 
     // MARK: - JSON
 
+    /// Minify JSON: strip insignificant whitespace OUTSIDE string literals,
+    /// leaving everything else byte-for-byte — so key ORDER and exact number
+    /// text (`1.50`, `1e3`) are preserved (a `JSONSerialization` round-trip would
+    /// reorder keys and renormalise numbers). Only minifies content that PARSES
+    /// as JSON; anything else is returned unchanged (so it can't mangle non-JSON).
+    public static func minifyJSON(_ content: String) -> String {
+        guard let data = content.data(using: .utf8),
+              (try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])) != nil
+        else { return content }
+
+        var out = String()
+        out.reserveCapacity(content.count)
+        var inString = false
+        var escaped = false
+        for ch in content {
+            if inString {
+                out.append(ch)
+                if escaped { escaped = false }
+                else if ch == "\\" { escaped = true }
+                else if ch == "\"" { inString = false }
+            } else if ch == "\"" {
+                inString = true
+                out.append(ch)
+            } else if ch == " " || ch == "\t" || ch == "\n" || ch == "\r" {
+                continue   // insignificant whitespace between tokens
+            } else {
+                out.append(ch)
+            }
+        }
+        return out
+    }
+
     private static func prettyPrintJSON(_ content: String) -> String {
         guard let data = content.data(using: .utf8) else { return content }
         guard let obj = try? JSONSerialization.jsonObject(

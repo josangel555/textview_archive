@@ -1789,6 +1789,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                                  action: #selector(insertTableOfContents(_:)), keyEquivalent: "")
         tocItem.target = self
         editMenu.addItem(tocItem)
+        // Minify the active JSON file (compact; key order + values preserved).
+        let minifyJSONItem = NSMenuItem(title: "Minify JSON",
+                                        action: #selector(minifyJSON(_:)), keyEquivalent: "")
+        minifyJSONItem.target = self
+        editMenu.addItem(minifyJSONItem)
         // TSK-705: insert a built-in snippet at the caret. Tag = index into
         // SnippetLibrary.builtIns. Editor-mode only (validateMenuItem).
         let snippetItem = NSMenuItem(title: "Insert Snippet", action: nil, keyEquivalent: "")
@@ -2235,6 +2240,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         _ = model.insertTableOfContents()
     }
 
+    /// Compact the active JSON file (whitespace-strip; order + values preserved).
+    @objc func minifyJSON(_ sender: Any?) {
+        _ = model.minifyActiveJSON()
+    }
+
     /// TSK-675 — report broken local links/images in the active Markdown file.
     @objc func checkLinks(_ sender: Any?) {
         guard let report = model.checkLinksInActiveMarkdown() else { return }
@@ -2389,6 +2399,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(insertTableOfContents(_:)):
             // TSK-675: active Markdown file only.
             return model.canInsertTableOfContents
+        case #selector(minifyJSON(_:)):
+            // Active .json file only.
+            return model.canMinifyActiveJSON
         case #selector(copyAsHTML(_:)), #selector(exportAsHTML(_:)):
             // TSK-675: active Markdown file only.
             return model.canExportActiveAsHTML

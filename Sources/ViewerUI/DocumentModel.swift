@@ -4677,6 +4677,19 @@ public final class DocumentModel: ObservableObject {
         return DocumentStats.compute(text)
     }
 
+    /// True when "Minify JSON" can act — an active `.json` text file.
+    public var canMinifyActiveJSON: Bool {
+        guard let tab = tabs.selected, let url = tab.url else { return false }
+        return url.pathExtension.lowercased() == "json" && activeTextWithEncoding != nil
+    }
+
+    /// TSK — compact the active JSON file (whitespace-strip, order + values
+    /// preserved). No-op on invalid JSON. Encoding/line-endings preserved.
+    @discardableResult
+    public func minifyActiveJSON() -> Bool {
+        applyTextTransformToActiveFile(Formatter.minifyJSON)
+    }
+
     /// Result of "Check Links": how many links were examined + the broken ones.
     public struct LinkCheckReport: Sendable { public let total: Int; public let broken: [MarkdownLink] }
 
