@@ -9169,6 +9169,30 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +416 (2026-06-13 — diagnosis + hygiene tick: TSK-543 architectural blocker diagnosed; TSK-672 (Git P1) dismissed already-built)
+
+No code shipped this tick — an honest diagnosis + board-hygiene firing (the safe single-tick pool has thinned; the
+high-value remaining work is architectural rust-core that needs a deliberate multi-tick effort + an owner decision, not a
+blind solo change).
+
+**TSK-543 spike (cm_apply FFI full-doc traffic) → architecturally blocked, diagnosis recorded on the ticket:**
+cm_apply is STATELESS — request `{base:<whole doc>, edits}`, response `{text:<whole applied doc>}`; the full doc crosses
+BOTH ways because Rust has no retained doc (needs base up) and Swift consumes the returned text as the canonical
+EditorBuffer doc (needs it down). Eliminating the UP traffic requires a STATEFUL Rust doc-by-session = **TSK-583**
+(CoreRuntime registry + DocId), which is unbuilt → 543 DEPENDS on 583. Also: the cost only materializes on the Rust
+cmEdit path (the Swift CMEditApplier applies LOCALLY with zero FFI; governed by the TSK-649 default-ON soak), and a
+"skip-FFI local apply" alternative is an owner/migration decision (Rust-as-applier vs perf). Not implemented blind.
+**Sequence for a future tick: TSK-583 (stateful CoreRuntime/DocId) → then 543.**
+
+**TSK-672 `[WISH][P1] Git stuff (diff, log, status, blame)` → dismissed already-fixed (proof attached):** all four ship
+today — DiffView (per-hunk colored), GitLogTab (topological graph + message search), GitStatusTab, blame
+(FileHistory + blame gutter + GitBlameParseTests), plus Stash/Remotes/Worktrees tabs. 43 git host tests pass fresh on
+main. A generic wishlist item fully covered; re-file a specific gap if wanted.
+
+**DECISION NEEDED (owner, surfaced):** the editor-perf win (TSK-543) is gated on whether to build the stateful
+CoreRuntime/DocId foundation (TSK-583, the remote-core enabler) and on the Rust-cmEdit-vs-local-apply migration intent.
+That's the next high-value rust-core thread when it's worth a multi-tick deliberate effort.
+
 ## LOG +415 (2026-06-13 — TSK-807 slice 2: Archive file-info summary; + dismissed TSK-481 as already-fixed after verifying its tests)
 
 Autonomous tick. Bug hunt: scanned the reported pool for user-facing bugs. Picked TSK-481 (plugin subprocess timeout
