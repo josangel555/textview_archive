@@ -45,6 +45,14 @@ and started executing the measured wins.
   (correctness preserved). Proof: no-op `build-rust-core.sh` → `.a` mtime unchanged → `swift build` 0.67s no-op
   (was 4.85s recompiling RustCore). Unit teeth both ways (no-op skips / `.a`-change relinks) in
   RustCoreHeaderRestageTests; gate green.
+- **TSK-843 (`9c4eb01`, validated)** — `RustCoreGates.isEnabled` (+ the whole FFI-gate chain: RustCoreFallback,
+  RustCSVGate, 8 Rust*Adapters) defaulted `environment: [String:String] = ProcessInfo.processInfo.environment`,
+  materializing the ENTIRE process environ (~19 µs) on every routed find/markdown/highlight/keystroke. Changed
+  the default to `[String:String]? = nil`; nil (production) now reads ONLY the one `MDV_RUST_<CAP>` var via
+  `getenv` (no dict alloc), an explicit dict (the test seam) is honored unchanged. UserDefaults stays a live
+  read. 11 files (out-of-scope env readers — Review/Audio/LSP/RemoteCore — left alone). 2 new RustCoreSeamTests
+  (getenv path reads the real env incl. the `=0` kill-switch teeth; getenv path == dict path parity); existing
+  gate tests inject dicts → unaffected. Gate green.
 
 ## LOG 2026-06-10 (latest+128) — TSK-557 CSV heap-accounted cap: last SECURITY item of Phase 0
 

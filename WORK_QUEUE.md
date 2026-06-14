@@ -19,8 +19,9 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
 - [x] **TSK-840** — Parallelize launch grammar-warm (231 ms serial on one thread) + warm the opened file's
       language + markdown FIRST; warm the *Rust* highlight path too. **Cleanest S-effort win.**
       `[validated 64d4c3d]` — parallelize + markdown-first done; opened-file-lang + Rust-path warm deferred (see ticket).
-- [ ] **TSK-843** — Cache the per-call gate decision — `ProcessInfo.environment` allocates the whole environ
-      (~19 µs) on every routed FFI call. Cheap.
+- [x] **TSK-843** — Cache the per-call gate decision — `ProcessInfo.environment` allocates the whole environ
+      (~19 µs) on every routed FFI call. Cheap. `[validated 9c4eb01]` — `getenv` fast-path across the 11-file
+      gate chain; dict test-seam preserved.
 - [ ] **TSK-845** — Micro-bundle: `ContentFingerprint` utf8.count ×3/apply (cache), MsgPackReader always-builds-tree, lazy-tab materialize.
 - [ ] **TSK-841** — Highlight wire → positional arrays + integer kind (4× smaller, 5.3× faster decode; like
       diff-lines wire-v2). Rust+Swift wire change; hits every highlighted open + markdown fence.
