@@ -64,7 +64,8 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
 - [ ] **TSK-759** — Drag to reorder tabs `[VM]`
 - [ ] **TSK-766** — Editor: git-diff text style match Edit/View `[VM]`
 - [ ] **TSK-757** — Catalog every keyboard shortcut + compare with Mac apps (audit → gap-fill bindings)
-- [ ] **TSK-355** — "Open in" — Reveal in Finder / Open in external app
+- [x] **TSK-355** — "Open in" — Reveal in Finder / Open in external app
+      `[review c84e8bf]` — Reveal-in-Finder already existed; added Open-in-Default-App (NSWorkspace.open) to sidebar + tab menus. (board reconcile pending — MCP was down)
 
 ## B. [PARTIAL] slice continuations (chip the remaining gaps)
 

@@ -99,6 +99,11 @@ and started executing the measured wins.
   glance. Pure-visual — the toggle BINDINGS (model.sourceWordWrap/showInvisibleChars/…) are unchanged + already
   host-tested; only the SwiftUI render style changed → `review` (no host test for a toggleStyle; VM/owner glance).
   CHANGELOG (Changed).
+- **TSK-355 (`c84e8bf`, review)** — Section A: "Open in Default App" added to the sidebar AND tab context menus
+  (Reveal-in-Finder already existed) via a new `Finder.openInDefaultApp` → `NSWorkspace.shared.open`. Pure
+  [VM]/action (NSWorkspace side-effect — no host assertion); compile-confirmed, gate green. 707 (double-Shift
+  palette) DEFERRED — a naive shift-tap monitor false-fires on capital-letter typing without an intervening-key
+  reset; needs fresh context. (tasked MCP was DOWN this firing → board reconcile pending; WORK_QUEUE + log only.)
 
 ## LOG 2026-06-10 (latest+128) — TSK-557 CSV heap-accounted cap: last SECURITY item of Phase 0
 
