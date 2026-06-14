@@ -210,6 +210,12 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "nav.showPalette", title: "Quick Open (Command Palette)",
             category: .navigation,
+            // TSK-720: ⇧⌘P opens the command palette — the iconic VS Code
+            // binding. (⌘K still opens it via view.quickOpen.) We deliberately
+            // do NOT bind ⌘P — that's the macOS-standard Print chord (Mac HIG;
+            // reserved for print/PDF, TSK-638), unlike VS Code which overrides
+            // it. So VS Code users get ⇧⌘P; ⌘P stays Print.
+            defaultShortcut: Shortcut(key: "p", modifiers: [.command, .shift]),
             scriptVerb: "show-palette"),
         CommandDescriptor(
             id: "nav.crossSearch", title: "Search Across Files", category: .navigation,

@@ -337,6 +337,23 @@ final class CommandRegistryTests: XCTestCase {
         XCTAssertEqual(map[Shortcut(key: "]", modifiers: [.command, .option])], "tabs.moveRight")
     }
 
+    // MARK: - Command-palette VS Code parity (TSK-720)
+
+    /// ⇧⌘P opens the command palette (VS Code parity), routed to nav.showPalette
+    /// without collision; ⌘K still routes the palette via view.quickOpen; plain
+    /// ⌘P is left UNBOUND, reserved for the macOS-standard Print chord (Mac HIG).
+    func test_commandPalette_shiftCmdP_routesToShowPalette_andPlainCmdPStaysFree() {
+        let map = CommandRegistry.builtIn.shortcutMap()
+        let shiftCmdP = Shortcut(key: "p", modifiers: [.command, .shift])
+        XCTAssertEqual(CommandRegistry.builtIn.command(id: "nav.showPalette")?.defaultShortcut,
+                       shiftCmdP)
+        XCTAssertEqual(map[shiftCmdP], "nav.showPalette", "⇧⌘P must open the command palette")
+        XCTAssertEqual(map[Shortcut(key: "k", modifiers: [.command])], "view.quickOpen",
+                       "⌘K must still open the palette (existing binding preserved)")
+        XCTAssertNil(map[Shortcut(key: "p", modifiers: [.command])],
+                     "plain ⌘P must stay free for the standard Print chord (Mac HIG)")
+    }
+
     // MARK: - Helpers
 
     private func duplicates(_ ids: [String]) -> [String] {
