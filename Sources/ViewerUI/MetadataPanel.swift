@@ -259,6 +259,7 @@ struct MetadataPanel: View {
         case .video: return "Video"
         case .pdf:   return "PDF"
         case .sqlite: return "Database"
+        case .archive: return "Archive"
         case .binary: return "Binary"
         default: return "Metadata"
         }
@@ -271,6 +272,7 @@ struct MetadataPanel: View {
         case .audio, .video: new = await Self.avMetadata(url: url)
         case .pdf:    new = Self.pdfMetadata(url: url)
         case .sqlite: new = await Self.sqliteMetadata(url: url)
+        case .archive: new = await Self.archiveMetadata(url: url)
         default:      new = []
         }
         await MainActor.run { self.rows = new }
@@ -356,6 +358,14 @@ struct MetadataPanel: View {
     private static func sqliteMetadata(url: URL) async -> [Row] {
         await Task.detached(priority: .userInitiated) {
             SQLiteFileInfo.summaryRows(for: url).map { Row($0.label, $0.value) }
+        }.value
+    }
+
+    /// Archive "Archive" section (TSK-807) — format + file/folder counts +
+    /// uncompressed size, read off-main via the pure `ArchiveFileInfo`.
+    private static func archiveMetadata(url: URL) async -> [Row] {
+        await Task.detached(priority: .userInitiated) {
+            ArchiveFileInfo.summaryRows(for: url).map { Row($0.label, $0.value) }
         }.value
     }
 
