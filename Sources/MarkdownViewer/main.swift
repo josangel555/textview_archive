@@ -1507,6 +1507,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                                   action: #selector(lintMarkdown(_:)), keyEquivalent: "")
         lintItem.target = self
         viewMenu.addItem(lintItem)
+        // CSV → clipboard conversions (active .csv/.tsv only).
+        let csvMDItem = NSMenuItem(title: "Copy as Markdown Table",
+                                   action: #selector(copyCSVAsMarkdownTable(_:)), keyEquivalent: "")
+        csvMDItem.target = self
+        viewMenu.addItem(csvMDItem)
+        let csvJSONItem = NSMenuItem(title: "Copy as JSON",
+                                     action: #selector(copyCSVAsJSON(_:)), keyEquivalent: "")
+        csvJSONItem.target = self
+        viewMenu.addItem(csvJSONItem)
 
         viewMenu.addItem(.separator())
         let formatItem = NSMenuItem(
@@ -2270,6 +2279,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         alert.runModal()
     }
 
+    /// Copy the active CSV as a Markdown pipe table.
+    @objc func copyCSVAsMarkdownTable(_ sender: Any?) {
+        guard let md = model.activeCSVAsMarkdownTable() else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(md, forType: .string)
+    }
+
+    /// Copy the active CSV as a JSON array of objects.
+    @objc func copyCSVAsJSON(_ sender: Any?) {
+        guard let json = model.activeCSVAsJSON() else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(json, forType: .string)
+    }
+
     /// Lint the active Markdown for common doc-quality issues.
     @objc func lintMarkdown(_ sender: Any?) {
         guard let issues = model.lintActiveMarkdown() else { return }
@@ -2432,6 +2455,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(checkLinks(_:)), #selector(lintMarkdown(_:)):
             // active Markdown file only.
             return model.canCheckLinks
+        case #selector(copyCSVAsMarkdownTable(_:)), #selector(copyCSVAsJSON(_:)):
+            // active .csv/.tsv file only.
+            return model.canConvertActiveCSV
         case #selector(insertSnippet(_:)):
             // TSK-705: editor mode only (inserts at the caret).
             return model.canInsertSnippet

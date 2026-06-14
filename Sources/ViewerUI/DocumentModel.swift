@@ -4677,6 +4677,26 @@ public final class DocumentModel: ObservableObject {
         return DocumentStats.compute(text)
     }
 
+    /// True when the CSV conversions can act — an active `.csv`/`.tsv` text file.
+    public var canConvertActiveCSV: Bool {
+        guard let tab = tabs.selected, let url = tab.url else { return false }
+        return ["csv", "tsv"].contains(url.pathExtension.lowercased()) && activeFileText != nil
+    }
+
+    /// The active CSV rendered as a Markdown pipe table, or nil when no CSV is active.
+    public func activeCSVAsMarkdownTable() -> String? {
+        guard canConvertActiveCSV, let text = activeFileText else { return nil }
+        let r = CSVParser.parse(text)
+        return CsvConvert.toMarkdownTable(header: r.header, rows: r.rows)
+    }
+
+    /// The active CSV rendered as a JSON array of objects, or nil when no CSV is active.
+    public func activeCSVAsJSON() -> String? {
+        guard canConvertActiveCSV, let text = activeFileText else { return nil }
+        let r = CSVParser.parse(text)
+        return CsvConvert.toJSON(header: r.header, rows: r.rows)
+    }
+
     /// True when "Minify JSON" can act — an active `.json` text file.
     public var canMinifyActiveJSON: Bool {
         guard let tab = tabs.selected, let url = tab.url else { return false }
