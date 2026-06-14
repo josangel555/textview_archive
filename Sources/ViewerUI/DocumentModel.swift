@@ -4677,6 +4677,28 @@ public final class DocumentModel: ObservableObject {
         return DocumentStats.compute(text)
     }
 
+    /// Result of "Check Links": how many links were examined + the broken ones.
+    public struct LinkCheckReport: Sendable { public let total: Int; public let broken: [MarkdownLink] }
+
+    /// True when "Check Links" can act — an active Markdown text file.
+    public var canCheckLinks: Bool { canExportActiveAsHTML }
+
+    /// TSK-675 — find broken LOCAL links/images in the active Markdown file
+    /// (relative paths resolved against the file's directory; external links and
+    /// in-page anchors are not checked). nil when no Markdown file is active.
+    public func checkLinksInActiveMarkdown() -> LinkCheckReport? {
+        guard let tab = tabs.selected, let url = tab.url,
+              ["md", "markdown", "mdown", "mkd"].contains(url.pathExtension.lowercased()),
+              let text = activeFileText else { return nil }
+        let baseDir = url.deletingLastPathComponent()
+        let broken = MarkdownLinks.brokenLocalLinks(in: text) { path in
+            let decoded = path.removingPercentEncoding ?? path
+            let resolved = baseDir.appendingPathComponent(decoded).standardizedFileURL
+            return FileManager.default.fileExists(atPath: resolved.path)
+        }
+        return LinkCheckReport(total: MarkdownLinks.extract(text).count, broken: broken)
+    }
+
     /// True when "Copy/Export as HTML" can act — an active Markdown text file.
     public var canExportActiveAsHTML: Bool {
         guard let tab = tabs.selected, let url = tab.url else { return false }

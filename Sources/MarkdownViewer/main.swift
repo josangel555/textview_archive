@@ -1497,6 +1497,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                                         action: #selector(exportAsHTML(_:)), keyEquivalent: "")
         exportHTMLItem.target = self
         viewMenu.addItem(exportHTMLItem)
+        // TSK-675: report broken LOCAL links/images in the active Markdown file.
+        let checkLinksItem = NSMenuItem(title: "Check Links",
+                                        action: #selector(checkLinks(_:)), keyEquivalent: "")
+        checkLinksItem.target = self
+        viewMenu.addItem(checkLinksItem)
 
         viewMenu.addItem(.separator())
         let formatItem = NSMenuItem(
@@ -2230,6 +2235,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         _ = model.insertTableOfContents()
     }
 
+    /// TSK-675 — report broken local links/images in the active Markdown file.
+    @objc func checkLinks(_ sender: Any?) {
+        guard let report = model.checkLinksInActiveMarkdown() else { return }
+        let alert = NSAlert()
+        if report.broken.isEmpty {
+            alert.messageText = "All links OK"
+            alert.informativeText =
+                "Checked \(report.total) link\(report.total == 1 ? "" : "s") — no broken local links or images."
+            alert.alertStyle = .informational
+        } else {
+            alert.messageText = "\(report.broken.count) of \(report.total) link(s) broken"
+            let shown = report.broken.prefix(25)
+                .map { "• line \($0.line): \($0.target)" }
+                .joined(separator: "\n")
+            alert.informativeText = shown + (report.broken.count > 25 ? "\n…" : "")
+            alert.alertStyle = .warning
+        }
+        alert.runModal()
+    }
+
     /// TSK-675 — copy the active Markdown rendered as standalone HTML to the clipboard.
     @objc func copyAsHTML(_ sender: Any?) {
         guard let html = model.htmlExportForActiveMarkdown() else { return }
@@ -2367,6 +2392,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(copyAsHTML(_:)), #selector(exportAsHTML(_:)):
             // TSK-675: active Markdown file only.
             return model.canExportActiveAsHTML
+        case #selector(checkLinks(_:)):
+            // TSK-675: active Markdown file only.
+            return model.canCheckLinks
         case #selector(insertSnippet(_:)):
             // TSK-705: editor mode only (inserts at the caret).
             return model.canInsertSnippet
