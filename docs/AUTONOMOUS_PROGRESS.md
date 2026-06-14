@@ -9336,6 +9336,32 @@ No code touched → main stays headless-gate-green. No CHANGELOG (planning/board
 - **TSK-810** (parked) — Stage-B carve-out: hexSearch/hex Swift engines can't fully delete; fallback model?
 - **TSK-598** (parked) — does MD-open/tab-switch still FEEL laggy? (measured-resolved; owner felt-judgment).
 
+## LOG +428 (2026-06-13 — DOCUMENTED HOLD: host-closeable user-facing pool drained; remaining work is owner-gated or owner-deprioritized)
+
+Autonomous tick → **§5 documented HOLD** (honest no-op; main stays gate-green). After 6 substantive ticks
+(formatters JS+CSS, how-to question cluster, supply-chain --locked guard, migration-decision surfacing), a
+fresh full re-scan confirms the host-closeable, owner-non-deprioritized, user-facing pool is EMPTY:
+- **All groomed pools validated** (re-verified on the board this tick, not trusted from boilerplate):
+  SECURITY 635/636/643/812 · RUST-CORE 554/580/628/634 · PARITY 637/638/639/640 · THEMING 641/642. The cron's
+  "groomed pools" list is fully stale.
+- **User-facing bugs:** drained/validated, or VM-render-gated at `review`+live-validation (owner deprioritized
+  the VM validation tail this session).
+- **Reported lane** = TSK-818 (VM key-synth lane — VM), TSK-811 (View-as redesign — VM UI), TSK-586 (rust-core
+  golden corpus + differential fuzzing — P3, fuzzing dep-gated), the how-to questions (resolved +425), and
+  wishlist `[WISH][minor]` UI features (terminal rename / drag-tabs / etc. — all VM-render/interaction-gated).
+- **Genuinely host-closeable remaining:** only internal-quality refactors — TSK-820 (dead-symbol removal, fully
+  pickup-ready plan on the ticket) and TSK-586 (golden corpus). The owner EXPLICITLY deprioritized internal/
+  validation work this session ("focus on bug fixes, feature requests"); per §5, forcing one of these would be
+  filling the gap with low-value work the owner steered away from. Not done.
+
+**Unblock options for the owner (any one re-opens throughput):**
+1. Authorize the migration decisions (TSK-775 D1/D2/D3) → I execute F2 Swift-twin deletion (big LoC win) + F3.
+2. Un-deprioritize the VM render/interaction lane → I drain the ~11 `review`-lane UI bug/feature validations.
+3. Un-deprioritize internal rust-core finishing → I execute TSK-820 (dead-symbol removal) + TSK-586 per their plans.
+4. File any fresh user-facing bug/feature → it jumps the queue (USER-FACING first).
+
+Until then: HOLD. No code churn, no manufactured tests. main gate-green at `9f1b8e4`.
+
 **LSP-menu lane now done.** Remaining LSP work (no UI at all, meatier): Find References + Workspace Symbols (backends
 exist, need a results panel — VM-gated). Noted for when the screen/owner is available.
 
