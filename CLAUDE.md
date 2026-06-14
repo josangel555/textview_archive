@@ -253,12 +253,19 @@ continue", document blockers and move on):
   RETIRED — never recreate or spoof them. The board is **shared across
   projects** — grep this repo before acting on a task; skip foreign
   `agent:forge`/`sess-forge-*` tasks.
-- **Priority (owner directive 2026-06-10): USER-FACING bug fixes first** —
-  bugs the owner hits in the running app (open/view/edit/navigation/render
-  glitches, perf the user feels) outrank internal-quality work. Then other
-  real bugs/perf/security, then features; the Rust TUI/web `[PORT]` lane and
-  test backfill are last resorts. DON'T ship a risky blind change; if it needs
-  the screen/owner, file it and move on.
+- **PRIORITY (owner directive 2026-06-14): DRAIN `WORK_QUEUE.md` top-down.**
+  `WORK_QUEUE.md` (repo root) is the owner-curated next-~50 features/bugs,
+  already ordered by priority (Section 0 Perf → A Quick wins → B `[PARTIAL]`
+  slices → C Medium → D Epics; E = owner-input-needed, skip). Each firing: pick
+  the next UNCHECKED item, drive its `TSK-###` on the board to at least
+  `review`/`validated`, then check it off `[x]` in `WORK_QUEUE.md` with the
+  commit SHA. The board stays the SYSTEM OF RECORD for lifecycle; `WORK_QUEUE.md`
+  is the priority SELECTOR. USER-FACING value still wins ties (it's baked into
+  the ordering: app bugs/perf the owner feels over internal-quality work). When
+  an item is owner-blocked, `task_park` it + take the next unchecked one. When
+  `WORK_QUEUE.md` is fully drained, fall back to the board's groomed pools
+  (security/rust-core/parity/theming), then the `fixed`-lane validation drain.
+  DON'T ship a risky blind change; if it needs the screen/owner, file it and move on.
 - **Spike + design are AUTO-APPROVED (owner directive 2026-06-13; full text
   TASK_WORKFLOW §0.5).** For any non-trivial ticket the agent runs the spike
   (scope/what-exists/feasibility/options) AND produces the design + breakdown
