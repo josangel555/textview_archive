@@ -1,5 +1,35 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — snippets epic slice 1: expansion parser (TSK-705)
+
+Autonomous tick. The clean user-facing Swift feature queue is drained; surveyed the alternatives this firing:
+- **Swift Section-B**: 358 (font-size) is NOT a clean single-model item — the font/zoom system is diffuse
+  (markdown-CSS / source-NSFont / CM6, each its own path) + tangles with TSK-470; 382 (DocumentModel memory)
+  is a central/risky refactor needing a profiling spike.
+- **`fixed`-lane validation drain**: dominated by `live-validation` (VM-gated) blockers → not host-actionable.
+- **rust-core triaged pool**: TSK-844 (CSV arena perf) is a security-relevant heap-cap re-derivation (the
+  TSK-557 OOM cap) — a landmine I should NOT rush deep in a long session (a wrong cap = OOM vuln or false
+  rejects); warrants a fresh focused session. TSK-573 (web palette) is the [PORT][WEB] last-resort lane.
+
+Per the owner's strong "build, don't HOLD" directive (don't idle on a thin queue), built a SAFE, host-testable
+foundation slice of a Section-C epic instead of rushing a risky item or holding:
+- **TSK-705 (`667f8ba`, progress — epic slice 1)** — pure snippet-expansion parser. `SnippetExpansion.parse`
+  → `ParsedSnippet` (segments, plainText, tab-stop visit order with `$0` last, UTF-16 stop offsets for caret
+  placement). TextMate/LSP syntax (`$1`, `${1:default}`, `$0`, escapes). Host-tested (11 cases). Design +
+  5-slice breakdown on the ticket; slices 2-3 (store + Insert-Snippet command) are the next host-testable
+  steps, 4-5 (tab-stop nav + UI) the VM tail. Foundation only — not user-visible yet, so NOT checked off in
+  WORK_QUEUE + no CHANGELOG line.
+
+## DECISIONS NEEDED (consolidated — would each unblock a clean firing)
+- **TSK-343** (local file-history/revert): enable snapshot-on-save by default (VS Code-style) or opt-in? +
+  retention defaults? Store is built+tested; only the privacy default blocks the wiring.
+- **TSK-358** (absolute font-size): how should an absolute content font-size interact with the zoom
+  multiplier (base × zoom?) — and does it wait for TSK-470 (zoom-split)? Design intersection.
+- **Lane steer**: the clean Swift feature queue is drained. Highest-value non-render lane is rust-core
+  (§2.5-ranked, host-validatable) but its actionable items are risky (844 security-cap) or last-resort (573) —
+  a dedicated/fresh session is the right home. Want me to (a) take rust-core 844 carefully next, (b) continue
+  the snippets epic slices, (c) tackle 382 memory with a profiling spike, or (d) something else?
+
 ## LOG 2026-06-14 — git-blame line-age heatmap (TSK-360)
 
 Autonomous tick, WORK_QUEUE Section-B. Checked the `fixed`-lane validation drain first — it's dominated by

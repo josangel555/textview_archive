@@ -104,7 +104,8 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
 - [ ] **TSK-280** — Dependency graph view
 - [ ] **TSK-319** — Dependency Package explorer
 - [ ] **TSK-318** — Ask the agent questions about a Code Review (CR Q&A)
-- [ ] **TSK-705** — Snippets
+- [~] **TSK-705** — Snippets
+      `[epic: slice 1 @ 667f8ba, progress]` — pure snippet-expansion parser (TextMate/LSP `${1:default}`/`$0` syntax → segments/plainText/tab-stop order/UTF-16 offsets) host-tested. Slices left: store+built-ins, Insert-Snippet command (host-testable), tab-stop nav + management UI (VM). NOT checked — feature not user-shipped yet.
 - [ ] **TSK-727** — Unified "Goto Anything" (one box, @/: operators)
 - [ ] **TSK-677** — Unify search types (Global search / Recents / Command search)
 
