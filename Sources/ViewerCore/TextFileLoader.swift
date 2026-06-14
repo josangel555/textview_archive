@@ -134,6 +134,17 @@ public struct TextFileLoader: Sendable {
     /// overlay work. See `readableMaxBytes` doc for the full rationale.
     public let softWarnBytes: Int
 
+    /// Size above which the file-open path reads + decodes OFF the main thread
+    /// (TSK-842). Distinct from `softWarnBytes` (the `isLargeReadOnly` overlay
+    /// watermark): a SYNC read on main of a cold / iCloud-stubbed file blocks
+    /// the UI for the disk-read / cloud-DOWNLOAD duration, so the defer
+    /// threshold is far lower than the 64 MiB overlay watermark. The read+decode
+    /// itself is cheap (~8 ms for a warm 64 MB file, measured), so this targets
+    /// READ-stall risk, not decode cost — keep small files (almost all
+    /// < 4 MiB) instant-sync (no `.loading` flash); defer anything larger.
+    /// Injectable so tests can drive deferral with a small file.
+    public let deferReadOffMainBytes: Int
+
     /// Back-compat alias for the prior single `maxBytes` knob — maps to
     /// the hard read ceiling so existing callers / tests that pass
     /// `TextFileLoader(maxBytes:)` keep working unchanged.
@@ -141,10 +152,12 @@ public struct TextFileLoader: Sendable {
 
     public init(
         readableMaxBytes: Int = 512 * 1024 * 1024,
-        softWarnBytes: Int = 64 * 1024 * 1024
+        softWarnBytes: Int = 64 * 1024 * 1024,
+        deferReadOffMainBytes: Int = 4 * 1024 * 1024
     ) {
         self.readableMaxBytes = readableMaxBytes
         self.softWarnBytes = softWarnBytes
+        self.deferReadOffMainBytes = deferReadOffMainBytes
     }
 
     /// Back-compat initializer mirroring the prior `init(maxBytes:)`.
@@ -154,6 +167,7 @@ public struct TextFileLoader: Sendable {
     public init(maxBytes: Int) {
         self.readableMaxBytes = maxBytes
         self.softWarnBytes = min(64 * 1024 * 1024, maxBytes)
+        self.deferReadOffMainBytes = min(4 * 1024 * 1024, maxBytes)
     }
 
     /// Load `url` as text. `forceText` (WAVE 2b item 6 — "Open As… text /

@@ -4439,17 +4439,29 @@ public final class DocumentModel: ObservableObject {
     /// a native-preview category (image/audio/video/pdf/sqlite) — those
     /// never read bytes into Swift memory, so the sync path is already
     /// cheap and routing them through `.loading` would just add a flash.
-    private func shouldDeferOpenOffMain(_ resolved: URL) -> Bool {
-        switch FileTypeDetector.category(for: resolved) {
+    /// Pure routing decision (host-testable seam for TSK-842): native-preview
+    /// categories never take the text-load path, so they never defer; otherwise
+    /// defer iff the file is larger than `threshold` (the loader's
+    /// `deferReadOffMainBytes`). Lowered from the 64 MiB `softWarnBytes` cliff
+    /// so a SYNC read on main of a cold / iCloud-stubbed file no longer freezes
+    /// the UI.
+    static func shouldDeferOpen(category: FileCategory, bytes: Int, threshold: Int) -> Bool {
+        switch category {
         case .image, .audio, .video, .pdf, .sqlite:
             return false
         default:
-            break
+            return bytes > threshold
         }
+    }
+
+    private func shouldDeferOpenOffMain(_ resolved: URL) -> Bool {
         guard let bytes = (try? FileManager.default
             .attributesOfItem(atPath: resolved.path)[.size]) as? Int
         else { return false }
-        return bytes > controller.loader.softWarnBytes
+        return Self.shouldDeferOpen(
+            category: FileTypeDetector.category(for: resolved),
+            bytes: bytes,
+            threshold: controller.loader.deferReadOffMainBytes)
     }
 
     /// True when `resolved` is a native-preview category
