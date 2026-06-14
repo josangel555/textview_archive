@@ -55,7 +55,11 @@ case "$PROFILE" in
     ;;
 esac
 
-export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/private/tmp/claude-$(id -u)/mdv-rust-csv-target}"
+# Shared target dir (TSK-833): build-rust-core, rust-core-gate, AND bare cargo
+# (via .cargo/config.toml) all default to ONE cache, so the gate-after-build is
+# warm (shared proc-macro/build-script artifacts) and disk isn't fragmented
+# across three 3.5 GB copies. Still outside the iCloud-synced worktree.
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/private/tmp/mdv-rust-target}"
 
 if ! command -v cargo >/dev/null 2>&1; then
   # No Rust toolchain on this host. The UTM test VM is exactly this case: it has

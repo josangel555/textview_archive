@@ -37,7 +37,9 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 ROOT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 RUST_DIR="$ROOT_DIR/rust-core"
 
-export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/private/tmp/claude-$(id -u)/mdv-rust-gate-target}"
+# Shared target dir (TSK-833) — same cache as build-rust-core.sh + bare cargo
+# (.cargo/config.toml), so build→gate is warm and disk isn't fragmented.
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/private/tmp/mdv-rust-target}"
 
 if ! command -v cargo >/dev/null 2>&1; then
   echo "Error: cargo not found on PATH. Install the Rust toolchain (rustup)." >&2

@@ -55,10 +55,13 @@ if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   swift build --build-tests
 fi
 
-log "MDV_HEADLESS_GATE=1 swift test --parallel  (headless tiers)"
+log "MDV_HEADLESS_GATE=1 swift test --parallel --disable-index-store  (headless tiers)"
+# --disable-index-store (TSK-832): the CLI gate never reads the SourceKit index
+# store, so skip emitting it — trims the build phase + ~244 MB of disk. The
+# interactive `swift build` keeps the default --auto-index-store for the IDE.
 # Don't let a test failure abort the script before we report the tier verdict.
 set +e
-swift test --parallel
+swift test --parallel --disable-index-store
 TEST_RC=$?
 set -e
 
