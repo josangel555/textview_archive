@@ -4741,6 +4741,13 @@ public final class DocumentModel: ObservableObject {
         applyTextTransformToActiveFile(Formatter.minifyJSON)
     }
 
+    /// The active JSON rendered as CSV (array-of-objects → table), or nil when no
+    /// JSON is active OR the content isn't a JSON array of objects.
+    public func activeJSONAsCSV() -> String? {
+        guard canMinifyActiveJSON, let text = activeFileText else { return nil }
+        return JsonConvert.toCSV(text)
+    }
+
     /// Result of "Check Links": how many links were examined + the broken ones.
     public struct LinkCheckReport: Sendable { public let total: Int; public let broken: [MarkdownLink] }
 

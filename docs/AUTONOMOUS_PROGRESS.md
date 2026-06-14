@@ -1,5 +1,31 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — JSON → CSV shipped (TSK-886, → review) + TSK-710 hover reconciled (already built)
+
+Two items this firing (batched, gated once).
+
+**TSK-886 — View ▸ Copy as CSV (JSON→CSV).** Completes the CSV↔JSON interop set (CSV→Markdown/JSON shipped
+TSK-870; this is the inverse). With a `.json` array-of-objects open, copies it as CSV. `JsonConvert.toCSV` (pure
+ViewerCore, Foundation `JSONSerialization` — not a project engine, §2.5-safe) → columns = sorted union of all
+object keys; cells = strings verbatim, numbers compact (ints sans decimal), bools true/false, null/missing empty,
+nested objects/arrays as compact sorted-key JSON; RFC-4180 field quoting; LF rows. Returns nil (→ informative
+alert) for non-array / array-of-non-objects / mixed / empty-array / keyless-objects / invalid JSON.
+`DocumentModel.activeJSONAsCSV()` reuses the `canMinifyActiveJSON` gate + `activeFileText`; View-menu item next to
+the CSV converters, gated alongside Minify JSON. Teeth: 14 pure tests (basic, key-union+missing-cells, int/float
+formatting, bool/null, comma/quote/newline quoting, nested-JSON cell, header-quoting, all 6 reject paths, and a
+CSV→JSON→CSV round-trip). Host gate green. Menu/alert render = VM tail.
+
+**TSK-710 — Hover symbol info (LSP textDocument/hover): reconciled, ALREADY BUILT (no code).** Stale queue entry —
+hover is shipped in the CM6 editor: `codemirror.js` `hoverTooltip` → `CodeMirrorEditorView` posts `CMHoverRequest`
+→ `DocumentModel.respondToEditorHover` (LSPLanguageRegistry gate) → `lspPool.hover` → `sendEditorHoverResponse` →
+CM6 tooltip. The unwired `LSPHoverAttachment` NSTextView path is a separate PoC, not needed. Proof:
+`CodeMirrorBundleTests` (hoverTooltip export + requestHover/hoverResponse/cm-tooltip-hover-lsp/buildHoverExtension
+bridge strings) + `LSPUATTests` (bridge host live). Column-correctness/popover geometry = VM/manual tail. Driven
+board → review; checked off WORK_QUEUE.
+
+Run tally **21 features → `review`** (+1 reconcile). §2.5-safe consumer vein still yielding. Owner away; standing
+unblocks unchanged (VM validation pass; TSK-343/470/733).
+
 ## LOG 2026-06-14 — View ▸ CSV Summary shipped (TSK-885, → review)
 
 Second item this firing (batched). **View ▸ CSV Summary** profiles the open `.csv`/`.tsv`: total rows/columns,

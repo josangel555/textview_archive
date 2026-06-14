@@ -1525,6 +1525,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                                         action: #selector(showCSVSummary(_:)), keyEquivalent: "")
         csvSummaryItem.target = self
         viewMenu.addItem(csvSummaryItem)
+        // JSON → CSV (active .json whose top level is an array of objects).
+        let jsonCSVItem = NSMenuItem(title: "Copy as CSV",
+                                     action: #selector(copyJSONAsCSV(_:)), keyEquivalent: "")
+        jsonCSVItem.target = self
+        viewMenu.addItem(jsonCSVItem)
 
         viewMenu.addItem(.separator())
         let formatItem = NSMenuItem(
@@ -2345,6 +2350,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         NSPasteboard.general.setString(json, forType: .string)
     }
 
+    /// Copy the active JSON (array of objects) as CSV.
+    @objc func copyJSONAsCSV(_ sender: Any?) {
+        guard model.canMinifyActiveJSON else { return }
+        guard let csv = model.activeJSONAsCSV() else {
+            let alert = NSAlert()
+            alert.messageText = "Can't convert to CSV"
+            alert.informativeText = "Copy as CSV needs a JSON file whose top level is an array of objects, e.g. [{\"a\":1},{\"a\":2}]."
+            alert.alertStyle = .warning
+            alert.runModal()
+            return
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(csv, forType: .string)
+    }
+
     /// Show a profile of the active CSV (row/column counts + per-column stats).
     @objc func showCSVSummary(_ sender: Any?) {
         guard let report = model.activeCSVSummary() else { return }
@@ -2521,7 +2541,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(promoteHeadings(_:)), #selector(demoteHeadings(_:)):
             // active Markdown file only.
             return model.canShiftMarkdownHeadings
-        case #selector(minifyJSON(_:)):
+        case #selector(minifyJSON(_:)), #selector(copyJSONAsCSV(_:)):
             // Active .json file only.
             return model.canMinifyActiveJSON
         case #selector(copyAsHTML(_:)), #selector(exportAsHTML(_:)), #selector(openInBrowser(_:)):
