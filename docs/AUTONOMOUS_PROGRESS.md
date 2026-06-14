@@ -9169,6 +9169,25 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +420 (2026-06-13 — answered the owner's "how does X work" questions → docs/CAPABILITIES.md)
+
+Safe code-shippable pool drained (per +419) + owner away. Turned to the owner's own filed `[WISH][question]` tickets —
+real, owner-requested, answerable without the owner present. Investigated via 2 Explore agents (cited) and synthesized a
+concise USER-facing guide: **docs/CAPABILITIES.md** (no user-facing how-to existed; the docs/ design docs are builder-level).
+
+Answered: MCP automation (TSK-802 — `--mcp-stdio`, the 10 tools, a corrected stdin/stdout JSON-RPC example), TUI/Web
+front-ends (TSK-784 — `cargo run -p mdvcore-tui` / `-p mdvcore-web --port 8765`; verified package names + default port),
+LSP (TSK-803 — hover/goto-def/outline/diagnostics work; goto-variants/references/workspace-symbols are backend-not-
+surfaced), code review (TSK-796 — start/comment/export/storage), Claude-Code monitoring (TSK-801/804 — sidebar panel +
+`--claude-monitor` window + transcript search). Commented each ticket with the answer + doc pointer.
+
+**By-product (real follow-up candidates surfaced):** the LSP goto-Declaration/Type/Implementation commands exist but are
+palette-only (no menu/shortcut); Find References + Workspace Symbols have backends but no UI (TSK-463-class
+"backend-not-surfaced"); code-review stage-3 (multi-line ranges, comments rail) still landing. These are concrete
+user-facing wins for when the screen/owner is available.
+
+No CHANGELOG entry (docs, not an app change). No code touched → main unchanged + gate-green.
+
 ## LOG +419 (2026-06-13 — correction + hygiene: TSK-583 dismissed ALREADY-BUILT; 543 diagnosis corrected; safe pool drained)
 
 No code shipped — a board-state correction tick (read-before-build caught a phantom). Went to FINALLY implement TSK-583
