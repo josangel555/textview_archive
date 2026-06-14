@@ -1,5 +1,20 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — Promote/Demote Headings shipped (TSK-882, 9ffb911, → review)
+
+Continued the §2.5-safe consumer/transform vein. **Edit ▸ Promote/Demote Headings** shifts every ATX heading
+level (doc restructuring: nest under a parent, merge, flatten). `MarkdownHeadingShift.shift` (pure ViewerCore)
+rewrites the `#`-run per heading line, clamped 1–6, fence-aware, preserving leading whitespace + title + line
+terminators (LF/CRLF/CR via the established (content,term) split); setext + non-headings (`#nospace`, `#######`)
+untouched. Driven by the shared `applyTextTransformToActiveFile` write-through; Markdown only. §2.5-safe (a
+consumer-style transform, not the ported markdown→HTML engine).
+
+Teeth: 10 pure tests (demote/promote, clamp at H1/H6, non-heading untouched, fenced-code skip, CRLF preserved,
+leading-ws+title kept, zero-delta no-op, demote↔promote round-trip). Host gate green (5596 tests). Menu = VM tail.
+
+Run tally **17 features → `review`**. Standing unblocks unchanged (VM pass; 343/470/733). Owner still away
+(no board engagement). Keep shipping real consumer/transform features; HOLD only when genuinely nothing real remains.
+
 ## LOG 2026-06-14 — Open in Browser shipped (TSK-881, 35a3e5b, → review) — HOLD reconsidered
 
 Re-examined last firing's HOLD and RESUMED — the HOLD was over-precious. KEY LESSON: the SOP anti-paper-cut /
