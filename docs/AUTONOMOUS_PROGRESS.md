@@ -1,5 +1,28 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — Stale-done sweep of the remaining [VM] Section-C items + strategic queue state
+
+Applied last firing's lesson (grep before building). Existence-swept the remaining Section-C `[VM]` items to find
+other stale-done (like 524) AND to map which are genuinely unbuilt. Result:
+- **No more stale-done.** 524 was the only one. The rest are genuinely UNBUILT (verified):
+  - **533** (audio spectrum panel): `SpectrumAnalyzer` (pure FFT→bins, host-tested) EXISTS, but the panel is NOT
+    built — `AudioEditorView`'s own doc lists "spectrum panel, trim/fade handles, Save-As" as follow-ups. Building
+    it needs raw-sample retention/plumbing (the viewModel keeps PEAKS, not the float buffer) + a real-time-vs-static
+    decision + a Canvas. Not a clean leaf; niche value.
+  - **534** (audio trim/fade handles): same — follow-up to the existing waveform `AudioEditorView`. Unbuilt.
+  - **463** (LSP completion): request exists; CM6 invocation is a WebView bridge. Unbuilt/novel.
+  - **470** (zoom split), **506** (treemap Canvas), **280** (dep graph), **319** (dep explorer): no implementation
+    — genuinely unbuilt, each a novel view / Canvas / system-refactor.
+
+- **STRATEGIC FINDING (for the owner):** the WORK_QUEUE's HIGH-VALUE work is largely SHIPPED — Section 0 perf
+  (840/841/843/844/829/842), Section A quick-wins (the menu/palette/toolbar/hot-exit/etc. slices), the unified
+  palette (727, 5 slices), and the image editor (524, found-done). What REMAINS unchecked is mostly: (a) the
+  VM-validation backlog (~16 `review` items needing VM pixels → done), (b) VM-bound perf (838 designed, 839 needs a
+  trace), and (c) the lower-value Section-C/D niche/novel tail (audio editing 533/534, CSV paging 668, LSP-bridge
+  710/708/463, dep views 280/319, treemap 506, zoom-split 470) — each a novel-render / big-rewrite / system-refactor
+  with no clean pure-model + leaf-render shape. So "drain the queue" now means a VM session + careful niche/novel
+  builds, NOT more quick wins. No code this firing — the sweep prevented re-building done work + mapped the real tail.
+
 ## LOG 2026-06-14 — TSK-524 reconciled: image-editor UI was ALREADY BUILT (stale queue entry)
 
 Scoping the next feature led to a valuable discovery rather than a build: **TSK-524 (image-editor UI + Save-As-
