@@ -32,7 +32,7 @@ public enum RustMarkdownAdapter {
     public static func outcome(
         _ markdown: String,
         defaults: UserDefaults = .standard,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String]? = nil
     ) -> CoreOutcome<String> {
         RustCoreFallback.run(
             .markdown, defaults: defaults, environment: environment,

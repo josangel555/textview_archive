@@ -29,7 +29,7 @@ public enum RustCSVGate {
     /// CSV call sites / Settings view use.
     public static func isEnabled(
         defaults: UserDefaults = .standard,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String]? = nil
     ) -> Bool {
         RustCoreGates.isEnabled(.csv, defaults: defaults, environment: environment)
     }

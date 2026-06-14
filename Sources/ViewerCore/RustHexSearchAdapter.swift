@@ -22,7 +22,7 @@ public enum RustHexSearchAdapter {
         mode: HexSearchMode,
         in data: Data,
         defaults: UserDefaults = .standard,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String]? = nil
     ) -> CoreOutcome<[Int]> {
         RustCoreFallback.run(
             .hexSearch, defaults: defaults, environment: environment,

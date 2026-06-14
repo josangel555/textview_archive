@@ -34,7 +34,7 @@ public enum RustTranscriptAdapter {
         redacting: Bool,
         maxEvents: Int? = nil,
         defaults: UserDefaults = .standard,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String]? = nil
     ) -> CoreOutcome<[ClaudeEvent]> {
         let swiftParser = maxEvents.map { ClaudeLogParser(maxEvents: $0) } ?? ClaudeLogParser()
         return RustCoreFallback.run(

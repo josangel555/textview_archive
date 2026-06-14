@@ -34,7 +34,7 @@ public enum RustHighlightAdapter {
         _ text: String,
         language: HighlightLanguage,
         defaults: UserDefaults = .standard,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String]? = nil
     ) -> CoreOutcome<[HighlightRun]> {
         RustCoreFallback.run(
             .highlight, defaults: defaults, environment: environment,
@@ -82,7 +82,7 @@ public enum RustHighlightAdapter {
         _ languages: [HighlightLanguage],
         prioritizing first: [HighlightLanguage] = [],
         defaults: UserDefaults = .standard,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String]? = nil
     ) {
         let probe = " "
         var prioritized = Set<HighlightLanguage>()

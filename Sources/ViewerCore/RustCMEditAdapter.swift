@@ -22,7 +22,7 @@ public enum RustCMEditAdapter {
         _ edits: [CMEdit],
         to base: String,
         defaults: UserDefaults = .standard,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String]? = nil
     ) -> CoreOutcome<String?> {
         RustCoreFallback.run(
             .cmEdit, defaults: defaults, environment: environment,

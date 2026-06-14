@@ -32,7 +32,7 @@ public enum RustFuzzyAdapter {
         query: String,
         by key: (T) -> String,
         defaults: UserDefaults = .standard,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String]? = nil
     ) -> CoreOutcome<[(item: T, match: FuzzyMatcher.Match)]> {
         // Empty query: every item, score 0, in input order — identical on
         // both engines by contract; skip the bridge round trip entirely.

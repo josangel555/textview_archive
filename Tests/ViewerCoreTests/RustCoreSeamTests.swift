@@ -93,6 +93,36 @@ final class RustCoreSeamTests: XCTestCase {
         }
     }
 
+    // MARK: getenv fast-path (TSK-843)
+
+    func test_gate_nilEnvironment_readsProcessEnvViaGetenv() {
+        // TSK-843: nil environment (the production hot path) reads the ONE env
+        // var via getenv instead of materializing the whole environ. Safe here:
+        // `swift test` is process-per-class, so set/unset is isolated, and the
+        // other gate tests inject explicit dicts (never read the real env).
+        setenv("MDV_RUST_CSV", "0", 1)
+        XCTAssertFalse(RustCoreGates.isEnabled(.csv, defaults: defaults, environment: nil),
+                       "nil-env must read the real MDV_RUST_CSV=0 via getenv (kill switch)")
+        setenv("MDV_RUST_CSV", "1", 1)
+        XCTAssertTrue(RustCoreGates.isEnabled(.csv, defaults: defaults, environment: nil),
+                      "nil-env must read MDV_RUST_CSV=1 via getenv")
+        unsetenv("MDV_RUST_CSV")
+        XCTAssertTrue(RustCoreGates.isEnabled(.csv, defaults: defaults, environment: nil),
+                      "unset env → falls through to the shipped default (csv ON)")
+    }
+
+    func test_gate_nilEnvironment_matchesInjectedDict() {
+        // The getenv fast-path and the injected-dict path must agree for the
+        // same env state — the whole point is a behavior-preserving alloc
+        // removal, not a behavior change.
+        setenv("MDV_RUST_FUZZY", "0", 1)
+        defer { unsetenv("MDV_RUST_FUZZY") }
+        XCTAssertEqual(
+            RustCoreGates.isEnabled(.fuzzy, defaults: defaults, environment: nil),
+            RustCoreGates.isEnabled(.fuzzy, defaults: defaults, environment: ["MDV_RUST_FUZZY": "0"]),
+            "getenv path must match the dict path")
+    }
+
     // MARK: Fallback contract
 
     // Uses `.csv` as the sample gated capability — `.diff`/`.indent` retired to

@@ -42,7 +42,7 @@ public enum RustCoreFallback {
     public static func run<T: Sendable>(
         _ capability: RustCoreCapability,
         defaults: UserDefaults = .standard,
-        environment: [String: String] = ProcessInfo.processInfo.environment,
+        environment: [String: String]? = nil,
         rust: () throws -> T,
         swift: () -> T
     ) -> CoreOutcome<T> {

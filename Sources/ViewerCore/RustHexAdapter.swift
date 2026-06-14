@@ -22,7 +22,7 @@ public enum RustHexAdapter {
         file: BinaryFile,
         width: Int,
         defaults: UserDefaults = .standard,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String]? = nil
     ) -> CoreOutcome<String> {
         RustCoreFallback.run(
             .hex, defaults: defaults, environment: environment,

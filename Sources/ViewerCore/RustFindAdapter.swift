@@ -33,7 +33,7 @@ public enum RustFindAdapter {
         in text: String,
         query: FindQuery,
         defaults: UserDefaults = .standard,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String]? = nil
     ) -> CoreOutcome<[FindMatch]> {
         RustCoreFallback.run(
             .find, defaults: defaults, environment: environment,

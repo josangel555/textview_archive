@@ -101,9 +101,19 @@ public enum RustCoreGates {
     public static func isEnabled(
         _ capability: RustCoreCapability,
         defaults: UserDefaults = .standard,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String]? = nil
     ) -> Bool {
-        if let raw = environment[capability.envVar] {
+        // TSK-843: `nil` (the production hot path) reads ONLY this capability's
+        // env var via getenv — avoiding the ~19 µs full-environ dict that
+        // `ProcessInfo.processInfo.environment` materialized on EVERY routed FFI
+        // call. An explicit dict (the test seam) is honored exactly as before.
+        let raw: String?
+        if let environment {
+            raw = environment[capability.envVar]
+        } else {
+            raw = envValue(capability.envVar)
+        }
+        if let raw {
             return raw == "1" || raw.lowercased() == "true"
         }
         // `object(forKey:)` distinguishes "never touched" from an explicit
@@ -113,5 +123,16 @@ public enum RustCoreGates {
             return defaults.bool(forKey: capability.defaultsKey)
         }
         return capability.defaultEnabled
+    }
+
+    /// Read ONE environment variable without materializing the whole environ.
+    /// `ProcessInfo.processInfo.environment` allocates a dict of EVERY variable
+    /// (~19 µs measured) — wasteful when the gate needs exactly one. `getenv` is
+    /// a libc lookup; the environment is fixed for the process lifetime, so no
+    /// caching is needed. Production (nil-environment) callers take this path;
+    /// tests inject an explicit dict to simulate env states.
+    private static func envValue(_ name: String) -> String? {
+        guard let c = getenv(name) else { return nil }
+        return String(cString: c)
     }
 }
