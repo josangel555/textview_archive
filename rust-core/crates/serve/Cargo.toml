@@ -35,5 +35,10 @@ expect_used = "deny"
 indexing_slicing = "deny"
 string_slice = "deny"
 panic = "deny"
+# TSK-575: mirror the workspace cast deny-ratchet (this crate has LOCAL lints —
+# it does not inherit the workspace set). The one cast site (envelope push_uint,
+# guarded v<0x80) carries a reasoned #[allow]; a new unjustified cast fails here.
+cast_possible_truncation = "deny"
+cast_sign_loss = "deny"
 module_name_repetitions = "allow"
 allow_attributes_without_reason = "warn"
