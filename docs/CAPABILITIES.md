@@ -94,20 +94,22 @@ connections, 15 s socket timeout, HTML-escapes everything, no auth (localhost).
 
 ## 4. LSP — what you can see & do (answers TSK-803)
 
-Phase 1 ships **sourcekit-lsp** (Swift) as a **viewer** — navigation + info, no
-editing assists (completion/format/refactor are intentionally out of scope).
+Phase 1 ships **sourcekit-lsp** (Swift): navigation + info, **plus Format
+Document / Rename Symbol / Code Actions** (now surfaced in the **Edit ▸
+Language** section). Code **completion** remains out of scope for now.
 sourcekit-lsp is found via the Swift toolchain automatically; if the **Outline**
 populates for an open code file, the server is working.
 
 | Capability | Trigger | Status |
 |---|---|---|
 | **Hover** (type + docs) | Pause the mouse over an identifier ~300 ms | ✅ |
-| **Go to Definition** | **⌘-click** an identifier (or `lsp.gotoDefinition` in the palette) | ✅ |
+| **Go to Definition** | **⌘-click**, **Navigate** menu, or `lsp.gotoDefinition` in the palette | ✅ |
+| **Go to Declaration / Type / Implementation** | **Navigate** menu (or `⌘K` → `lsp.goto…`) — wired 2026-06-13 | ✅ |
 | **Document Outline** | Auto-fills the sidebar Outline panel for code files | ✅ |
 | **Diagnostics / Problems** | Auto: gutter underlines + a sidebar Problems list | ✅ |
-| **Go to Declaration / Type / Implementation** | Command palette (`⌘K` → `lsp.goto…`) — no menu/shortcut yet | ⚠️ |
-| **Find References** | backend exists, no UI wired (use ⌘⇧F cross-search meanwhile) | ⚠️ |
-| **Workspace Symbols** | backend exists, no UI wired | ⚠️ |
+| **Format Document / Rename Symbol / Code Actions** | **Edit ▸ Language** section (or the palette) — wired 2026-06-13 | ✅ |
+| **Find References** | backend exists, no results-panel UI yet (use ⌘⇧F cross-search meanwhile) | ⚠️ |
+| **Workspace Symbols** | backend exists, no results-panel UI yet | ⚠️ |
 
 All LSP commands are rebindable in `~/.textview/keybinding.json`
 (`{"lsp.gotoDefinition":"cmd+alt+d", …}`). See the full shortcut list under
@@ -150,6 +152,8 @@ Read-only views over `~/.claude` transcripts. **Everything is redacted**
 ---
 
 *Maintained as the answer to the 2026-06-13 "how does X work" wishlist questions.
-"⚠️ backend not surfaced" items are real follow-up candidates (wire the LSP
-goto-variants / references / workspace-symbols to menus; finish code-review
-stage 3).*
+Update 2026-06-13: the LSP goto-variants now have a **Navigate** menu and
+Format/Rename/Code-Actions an **Edit ▸ Language** section (TSK-823/824). The
+remaining "⚠️ backend not surfaced" items are real follow-up candidates (a
+results panel for LSP **Find References** / **Workspace Symbols**; finish
+code-review stage 3).*
