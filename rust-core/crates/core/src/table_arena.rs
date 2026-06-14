@@ -84,6 +84,32 @@ impl TableArena {
         }
     }
 
+    /// Construct directly from already-normalized arena parts — the
+    /// `csv::parse_arena` fast path (TSK-844), which writes cell bytes straight
+    /// into `bytes` and never materializes a `Vec<Vec<String>>`.
+    ///
+    /// INVARIANT (caller-guaranteed): `offsets` is the fencepost array for
+    /// `cols * (row_count + 1)` cells laid out header-first then body row-major
+    /// — i.e. `offsets.len() == cols * (row_count + 1) + 1` — or `vec![0]` for
+    /// an empty table. Cell boundaries must be char boundaries in `bytes`.
+    pub(crate) fn from_csv_parts(
+        delimiter: String,
+        truncated: bool,
+        cols: usize,
+        row_count: usize,
+        bytes: String,
+        offsets: Vec<usize>,
+    ) -> Self {
+        Self {
+            delimiter,
+            truncated,
+            cols,
+            row_count,
+            bytes,
+            offsets,
+        }
+    }
+
     /// The detected (or supplied) delimiter.
     #[must_use]
     pub fn delimiter(&self) -> &str {

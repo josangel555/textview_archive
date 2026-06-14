@@ -21,6 +21,7 @@
 //! collapse to worry about. Input must be valid UTF-8 (the FFI layer validates
 //! the incoming bytes and returns `BadUtf8` otherwise).
 
+use crate::table_arena::TableArena;
 use crate::trace::{self, Level};
 use crate::wire::Table;
 
@@ -133,25 +134,70 @@ fn bump(c: char, tabs: &mut usize, commas: &mut usize, semis: &mut usize, pipes:
     }
 }
 
-/// Parse with auto-detected delimiter and default limits.
+/// Parse with auto-detected delimiter and default limits, into the wire DTO.
 #[must_use]
 pub fn parse(text: &str) -> Table {
     parse_with(text, detect_delimiter(text), Limits::default())
 }
 
-/// Parse with an explicit delimiter and explicit limits.
+/// Parse with auto-detected delimiter and default limits, STRAIGHT into the
+/// arena store (TSK-844). Skips the throwaway `Vec<Vec<String>>` — the
+/// session-open hot path — so a 1M-cell CSV no longer allocates ~2M `String`s
+/// only to copy their bytes into the arena and free them. Shares the single
+/// [`tokenize`] grammar with [`parse`], so cap behaviour is byte-identical.
 #[must_use]
+pub fn parse_arena(text: &str) -> TableArena {
+    parse_arena_with(text, detect_delimiter(text), Limits::default())
+}
+
+/// Parse with an explicit delimiter and explicit limits, STRAIGHT into the
+/// arena (the [`parse_arena`] twin of [`parse_with`]). Shares the single
+/// [`tokenize`] grammar, so the resource caps fire byte-identically to the Vec
+/// path.
+#[must_use]
+pub fn parse_arena_with(text: &str, delimiter: char, limits: Limits) -> TableArena {
+    let _span = trace::Span::enter("csv.parse_arena");
+    let mut sink = ArenaSink::new();
+    let truncated = tokenize(text, delimiter, limits, &mut sink);
+    sink.finish(delimiter, truncated)
+}
+
+/// Parse with an explicit delimiter and explicit limits, into the wire DTO.
+#[must_use]
+pub fn parse_with(text: &str, delimiter: char, limits: Limits) -> Table {
+    let _span = trace::Span::enter("csv.parse");
+    let mut sink = VecSink::default();
+    let truncated = tokenize(text, delimiter, limits, &mut sink);
+    sink.finish(delimiter, truncated)
+}
+
+/// Receives committed cells + row boundaries from the shared CSV [`tokenize`]
+/// grammar. The two implementations differ ONLY in where a committed cell
+/// lands: [`VecSink`] moves each field into the wire `Vec<Vec<String>>` (the
+/// DTO the TUI/web table View needs), while [`ArenaSink`] copies it straight
+/// into a contiguous arena buffer using a REUSED field scratch — no per-cell
+/// `String`. Every resource-cap decision stays in [`tokenize`], so both sinks
+/// observe byte-identical cap behaviour by construction.
+trait CsvSink {
+    /// Cells already committed in the in-progress row (drives the per-row cap).
+    fn cur_row_cells(&self) -> usize;
+    /// Commit `field` as the next cell of the current row, resetting `field`
+    /// (the tokenizer reuses the buffer for the next cell).
+    fn commit_field(&mut self, field: &mut String);
+    /// Close the current row.
+    fn end_row(&mut self);
+}
+
+/// Drive `sink` over `text`. Returns whether any resource cap fired
+/// (`truncated`). This is the single home of the CSV grammar + cap accounting;
+/// [`parse_with`] and [`parse_arena`] differ only in the sink they hand it.
 #[allow(
     clippy::too_many_lines,
     reason = "single tokenizer loop; splitting hurts clarity"
 )]
-pub fn parse_with(text: &str, delimiter: char, limits: Limits) -> Table {
-    let _span = trace::Span::enter("csv.parse");
-
-    let mut rows: Vec<Vec<String>> = Vec::new();
+fn tokenize<S: CsvSink>(text: &str, delimiter: char, limits: Limits, sink: &mut S) -> bool {
     let mut field = String::new();
     let mut field_chars = 0usize; // tracked separately to avoid O(n) char counts
-    let mut row: Vec<String> = Vec::new();
     let mut in_quotes = false;
 
     let mut truncated = false;
@@ -239,9 +285,9 @@ pub fn parse_with(text: &str, delimiter: char, limits: Limits) -> Table {
     // Commit current field into the row honoring the per-row cell cap.
     macro_rules! commit_field {
         () => {{
-            if row.len() < limits.max_cells_per_row {
+            if sink.cur_row_cells() < limits.max_cells_per_row {
                 estimated_heap += field.len() + CELL_HEAP_OVERHEAD;
-                row.push(core::mem::take(&mut field));
+                sink.commit_field(&mut field);
             } else {
                 truncated = true;
                 field.clear();
@@ -351,7 +397,7 @@ pub fn parse_with(text: &str, delimiter: char, limits: Limits) -> Table {
             commit_field!();
             total_cells += 1;
             estimated_heap += ROW_HEAP_OVERHEAD;
-            rows.push(core::mem::take(&mut row));
+            sink.end_row();
             i += 1;
             continue;
         }
@@ -362,7 +408,7 @@ pub fn parse_with(text: &str, delimiter: char, limits: Limits) -> Table {
         commit_field!();
         total_cells += 1;
         estimated_heap += ROW_HEAP_OVERHEAD;
-        rows.push(core::mem::take(&mut row));
+        sink.end_row();
         i += 1;
         // Swallow a following LF so CRLF doesn't make an empty row.
         if bytes.get(i) == Some(&b'\n') {
@@ -376,66 +422,207 @@ pub fn parse_with(text: &str, delimiter: char, limits: Limits) -> Table {
     // Flush trailing field / row. We inline the row-cap check here rather than
     // reuse `commit_field!` so the macro's per-field reset (field_chars /
     // field_capped) — dead at end-of-input — doesn't trip `unused_assignments`.
-    if !field.is_empty() || !row.is_empty() {
-        if row.len() < limits.max_cells_per_row {
-            row.push(core::mem::take(&mut field));
+    if !field.is_empty() || sink.cur_row_cells() > 0 {
+        if sink.cur_row_cells() < limits.max_cells_per_row {
+            sink.commit_field(&mut field);
         } else {
             truncated = true;
         }
-        rows.push(core::mem::take(&mut row));
+        sink.end_row();
     }
 
-    // Drop a terminal all-empty row caused by a trailing newline.
-    if rows
-        .last()
-        .is_some_and(|last| last.len() == 1 && last.first().is_some_and(String::is_empty))
-    {
-        rows.pop();
-    }
+    truncated
+}
 
-    let delim_str = delimiter.to_string();
-    if rows.is_empty() {
-        trace::event(Level::Info, "csv.parse.empty", vec![]);
-        return Table {
+/// Builds the wire `Vec<Vec<String>>` DTO — the path [`parse`]/[`parse_with`]
+/// feed (TUI/web table View). Each committed cell is MOVED out of the
+/// tokenizer's field scratch, identical to the pre-TSK-844 behaviour.
+#[derive(Default)]
+struct VecSink {
+    rows: Vec<Vec<String>>,
+    row: Vec<String>,
+}
+
+impl CsvSink for VecSink {
+    fn cur_row_cells(&self) -> usize {
+        self.row.len()
+    }
+    fn commit_field(&mut self, field: &mut String) {
+        self.row.push(core::mem::take(field));
+    }
+    fn end_row(&mut self) {
+        self.rows.push(core::mem::take(&mut self.row));
+    }
+}
+
+impl VecSink {
+    /// Header-extract + body column normalization + terminal-empty-row drop —
+    /// the exact post-parse step the pre-TSK-844 `parse_with` did inline.
+    fn finish(self, delimiter: char, truncated: bool) -> Table {
+        let mut rows = self.rows;
+        // Drop a terminal all-empty row caused by a trailing newline.
+        if rows
+            .last()
+            .is_some_and(|last| last.len() == 1 && last.first().is_some_and(String::is_empty))
+        {
+            rows.pop();
+        }
+
+        let delim_str = delimiter.to_string();
+        if rows.is_empty() {
+            trace::event(Level::Info, "csv.parse.empty", vec![]);
+            return Table {
+                delimiter: delim_str,
+                header: Vec::new(),
+                rows: Vec::new(),
+                truncated,
+            };
+        }
+
+        // First row is the header; normalize body column counts both ways.
+        let header = rows.remove(0);
+        let cols = header.len();
+        let body: Vec<Vec<String>> = rows
+            .into_iter()
+            .map(|mut r| {
+                if r.len() > cols {
+                    r.truncate(cols);
+                } else if r.len() < cols {
+                    r.resize(cols, String::new());
+                }
+                r
+            })
+            .collect();
+
+        if trace::sink_installed() {
+            trace::event(
+                Level::Info,
+                "csv.parse.done",
+                vec![
+                    ("cols", cols.to_string()),
+                    ("rows", body.len().to_string()),
+                    ("truncated", truncated.to_string()),
+                ],
+            );
+        }
+
+        Table {
             delimiter: delim_str,
-            header: Vec::new(),
-            rows: Vec::new(),
+            header,
+            rows: body,
             truncated,
-        };
+        }
+    }
+}
+
+/// Writes committed cells STRAIGHT into a contiguous arena buffer (TSK-844).
+/// The field scratch is reused (`field.clear()`), so no per-cell `String` is
+/// allocated; `offsets` is a fencepost array (`offsets[k]..offsets[k+1]` is
+/// global cell `k`) in commit order, and `row_lens` records each row's cell
+/// count so [`ArenaSink::finish`] can normalize to header arity.
+struct ArenaSink {
+    bytes: String,
+    /// Fencepost offsets into `bytes`, one per committed cell + a leading `0`.
+    offsets: Vec<usize>,
+    /// Cell count of every committed row, in order (header first).
+    row_lens: Vec<usize>,
+    cur_row_len: usize,
+}
+
+impl ArenaSink {
+    fn new() -> Self {
+        Self {
+            bytes: String::new(),
+            offsets: vec![0],
+            row_lens: Vec::new(),
+            cur_row_len: 0,
+        }
     }
 
-    // First row is the header; normalize body column counts both ways.
-    let header = rows.remove(0);
-    let cols = header.len();
-    let body: Vec<Vec<String>> = rows
-        .into_iter()
-        .map(|mut r| {
-            if r.len() > cols {
-                r.truncate(cols);
-            } else if r.len() < cols {
-                r.resize(cols, String::new());
+    /// Terminal-empty-row drop + header-arity normalization, then build the
+    /// arena. Mirrors `VecSink::finish` + `TableArena::from_table`'s
+    /// normalization exactly (refereed by the `parse_arena` parity tests).
+    fn finish(mut self, delimiter: char, truncated: bool) -> TableArena {
+        // Drop a terminal all-empty row (exactly one empty cell), same rule as
+        // the Vec path. Its single cell is the last fencepost pair.
+        if self.row_lens.last().copied() == Some(1) {
+            let last_empty = matches!(
+                (self.offsets.iter().nth_back(1), self.offsets.last()),
+                (Some(&s), Some(&e)) if s == e
+            );
+            if last_empty {
+                self.row_lens.pop();
+                self.offsets.pop();
             }
-            r
-        })
-        .collect();
+        }
 
-    if trace::sink_installed() {
-        trace::event(
-            Level::Info,
-            "csv.parse.done",
-            vec![
-                ("cols", cols.to_string()),
-                ("rows", body.len().to_string()),
-                ("truncated", truncated.to_string()),
-            ],
-        );
+        let delim_str = delimiter.to_string();
+        let Some(&cols) = self.row_lens.first() else {
+            // No rows at all → empty arena (matches from_table of an empty Table).
+            return TableArena::from_csv_parts(delim_str, truncated, 0, 0, String::new(), vec![0]);
+        };
+        let row_count = self.row_lens.len() - 1;
+
+        // Fast path: every body row already has exactly `cols` cells, so the
+        // as-built (contiguous, header-first, row-major) buffer IS the arena
+        // layout — zero extra byte copies.
+        if self.row_lens.iter().skip(1).all(|&l| l == cols) {
+            return TableArena::from_csv_parts(
+                delim_str,
+                truncated,
+                cols,
+                row_count,
+                self.bytes,
+                self.offsets,
+            );
+        }
+
+        // Ragged path (rare): re-lay-out body rows to header arity — short rows
+        // pad with empty cells, long rows truncate — copying spans once.
+        let mut new_bytes = String::with_capacity(self.bytes.len());
+        let mut new_offsets = Vec::with_capacity(cols.saturating_mul(row_count + 1) + 1);
+        new_offsets.push(0);
+        // Cumulative cell-start index per row: row r occupies as-built global
+        // cells cum[r]..cum[r+1].
+        let mut cum = Vec::with_capacity(self.row_lens.len() + 1);
+        cum.push(0usize);
+        for &l in &self.row_lens {
+            cum.push(cum.last().copied().unwrap_or(0) + l);
+        }
+        for (r, &row_len) in self.row_lens.iter().enumerate() {
+            let row_start = cum.get(r).copied().unwrap_or(0);
+            // Header (r==0) keeps its own length (== cols by definition); body
+            // rows are normalized to cols.
+            let want = if r == 0 { row_len } else { cols };
+            for c in 0..want {
+                if c < row_len {
+                    let k = row_start + c;
+                    let span = match (self.offsets.get(k), self.offsets.get(k + 1)) {
+                        (Some(&s), Some(&e)) => self.bytes.get(s..e).unwrap_or(""),
+                        _ => "",
+                    };
+                    new_bytes.push_str(span);
+                }
+                new_offsets.push(new_bytes.len());
+            }
+        }
+        TableArena::from_csv_parts(delim_str, truncated, cols, row_count, new_bytes, new_offsets)
     }
+}
 
-    Table {
-        delimiter: delim_str,
-        header,
-        rows: body,
-        truncated,
+impl CsvSink for ArenaSink {
+    fn cur_row_cells(&self) -> usize {
+        self.cur_row_len
+    }
+    fn commit_field(&mut self, field: &mut String) {
+        self.bytes.push_str(field);
+        self.offsets.push(self.bytes.len());
+        field.clear();
+        self.cur_row_len += 1;
+    }
+    fn end_row(&mut self) {
+        self.row_lens.push(self.cur_row_len);
+        self.cur_row_len = 0;
     }
 }
 
@@ -646,5 +833,148 @@ mod tests {
         // field, and the comma splits. The cell is a single `"`.
         let t = parse("h1,h2\n\"\"\"\",x\n");
         assert_eq!(t.rows, vec![vec!["\"", "x"]]);
+    }
+
+    // --- TSK-844: parse_arena parity with the Vec path -----------------------
+    // The arena parser shares the SINGLE tokenizer with `parse`, differing only
+    // in where committed cells land. These pin that the two paths can never
+    // diverge — on the logical table OR on resource-cap behaviour.
+
+    /// The whole corpus the unit tests above exercise, plus a couple of shapes
+    /// that stress the arena's terminal-drop / ragged / fast-path branches.
+    fn parity_corpus() -> Vec<&'static str> {
+        vec![
+            "",
+            "\n",
+            "\n\n",
+            "a,b,c\n1,2,3\n4,5,6\n",
+            "a,b,c\n1,2,3\n4,5,6", // no trailing newline
+            "a\tb,c\td\n1\t2,3\t4\n",
+            "a;b;c\n1;2;3\n",
+            "a|b|c\n1|2|3\n",
+            "a,b\n\"x,y\",z\n",
+            "a,b\n\"line1\nline2\",z\n",
+            "a,b\n\"she said \"\"hi\"\"\",z\n",
+            "\"a,b,c\";x;y\n1;2;3\n",
+            "a,b\r\n1,2\r\n3,4\r\n",
+            "a,b\r1,2\r3,4\r",
+            "a,b,c\n1,2,3,4\n5,6\n",   // ragged: long then short
+            "a,b\n1,2",
+            "a,b,c\n",                 // header only
+            "a,b\n\n",                 // trailing blank line → terminal drop
+            "name,emoji\nJosé,🎉\n",
+            "h1,h2\na\"b,c\n",
+            "h1,h2\n\"ab\"cd,e\n",
+            "h1,h2\n\"\"\"\",x\n",
+            "x,y,z\n1,2\n3\n4,5,6,7,8\n", // every row a different arity
+            ",,,\n,,,\n",                 // all-empty cells
+        ]
+    }
+
+    #[test]
+    fn parse_arena_logical_table_matches_parse() {
+        for text in parity_corpus() {
+            let via_vec = parse(text);
+            let arena = parse_arena(text);
+            assert_eq!(
+                arena.to_table(),
+                via_vec,
+                "parse_arena diverged from parse on {text:?}"
+            );
+            assert_eq!(
+                arena.truncated(),
+                via_vec.truncated,
+                "truncated flag diverged on {text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_arena_equals_from_table_for_wellformed() {
+        // For non-ragged input the arena is built with ZERO extra byte copies,
+        // so it must be STRUCTURALLY identical (bytes + offsets) to the arena
+        // that `from_table` would build from the Vec path — not merely equal
+        // after projection. (Ragged input legitimately differs in dead bytes;
+        // the logical-table test above covers those.)
+        let wellformed = [
+            "a,b,c\n1,2,3\n4,5,6\n",
+            "a,b\r\n1,2\r\n3,4\r\n",
+            "name,emoji\nJosé,🎉\n",
+            "a,b,c\n",
+            "",
+            ",,,\n,,,\n",
+        ];
+        for text in wellformed {
+            let direct = parse_arena(text);
+            let via_from_table = crate::table_arena::TableArena::from_table(parse(text));
+            assert_eq!(
+                direct, via_from_table,
+                "direct arena must be byte-identical to from_table on {text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_arena_cap_parity() {
+        // Every resource cap must fire identically across the two paths. Each
+        // case is (text, delimiter, limits) — assert logical table + truncated
+        // agree with `parse_with`.
+        let cases: Vec<(&str, char, Limits)> = vec![
+            ("h\nabcdefghij\n", ',', Limits { max_cell_chars: 5, ..Limits::default() }),
+            ("abcdefghij\n", ',', Limits { max_input_scalars: 4, ..Limits::default() }),
+            ("a,b,c\n1,2,3\n4,5,6\n", ',', Limits { max_total_cells: 2, ..Limits::default() }),
+            ("h\n\"abcdefghij\n", ',', Limits { max_cell_chars: 5, ..Limits::default() }),
+            ("a,b,c,d\n1,2,3,4\n", ',', Limits { max_cells_per_row: 2, ..Limits::default() }),
+            (
+                "a,b\n1,2\n3,4\n5,6\n",
+                ',',
+                Limits { max_estimated_heap_bytes: 64, ..Limits::default() },
+            ),
+        ];
+        for (text, delim, limits) in cases {
+            let via_vec = parse_with(text, delim, limits);
+            let arena = parse_arena_with(text, delim, limits);
+            assert_eq!(
+                arena.to_table(),
+                via_vec,
+                "cap parity (table) failed on {text:?} with {limits:?}"
+            );
+            assert_eq!(
+                arena.truncated(),
+                via_vec.truncated,
+                "cap parity (truncated) failed on {text:?} with {limits:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_arena_newline_flood_heap_cap_parity() {
+        // The TSK-557 heap-flood shape: both paths must stop at the same row
+        // count under the same cap.
+        let flood = "\n".repeat(10_000);
+        let limits = Limits { max_estimated_heap_bytes: 16 * 1024, ..Limits::default() };
+        let via_vec = parse_with(&flood, ',', limits);
+        let arena = parse_arena_with(&flood, ',', limits);
+        assert!(arena.truncated());
+        assert_eq!(arena.to_table(), via_vec, "heap-cap flood diverged");
+        assert_eq!(arena.row_count(), via_vec.rows.len());
+    }
+
+    #[test]
+    fn parse_arena_large_table_parity() {
+        // A synthetic ~5k-row, 6-col table — the shape the perf win targets.
+        // Parity here proves the hot path is correct at scale, not just on the
+        // tiny golden cases.
+        use core::fmt::Write as _;
+        let mut text = String::from("c0,c1,c2,c3,c4,c5\n");
+        for r in 0..5_000 {
+            let _ = writeln!(text, "{r},val{r},x,y,z,{}", r * 2);
+        }
+        let via_vec = parse(&text);
+        let arena = parse_arena(&text);
+        assert_eq!(arena.row_count(), 5_000);
+        assert_eq!(arena.to_table(), via_vec, "large-table parity failed");
+        // And the fast path produced a byte-identical arena.
+        assert_eq!(arena, crate::table_arena::TableArena::from_table(via_vec));
     }
 }

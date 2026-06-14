@@ -60,15 +60,22 @@ impl CsvSession {
         let text = core::str::from_utf8(bytes).map_err(|e| OpenError::BadUtf8 {
             valid_up_to: e.valid_up_to(),
         })?;
-        let table = crate::csv::parse(text);
+        // Parse STRAIGHT into the arena (TSK-844) — no throwaway
+        // `Vec<Vec<String>>`, no per-cell `String`, no second byte copy.
+        let arena = crate::csv::parse_arena(text);
         if trace::sink_installed() {
             trace::event(
                 Level::Info,
                 "session.opened",
-                vec![("rows", table.rows.len().to_string())],
+                vec![("rows", arena.row_count().to_string())],
             );
         }
-        Ok(Self::from_table(table))
+        Ok(Self {
+            arena,
+            query: Query::empty(),
+            version: 1,
+            cached: None,
+        })
     }
 
     /// Open a session from an already-parsed table (used in tests / when the
