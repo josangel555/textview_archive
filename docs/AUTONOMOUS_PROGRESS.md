@@ -1,5 +1,34 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-844 CSV-arena perf SHIPPED (parse straight into the arena; broke the "fresh-session-careful" HOLD)
+
+Autonomous tick. Treated this post-compaction session AS the "fresh focused session" the handoff wanted for the
+rust-core careful work, and shipped the top unchecked Section-0 (Perf, HIGH) item — owner wants SPEED. **Important
+correction:** the prior log called 844 a "security heap-cap (re-derivation)". It's NOT — 844 is a pure **perf
+double-allocation** fix. The heap cap is the pre-existing TSK-557 guard, which the new path PRESERVES untouched.
+
+- **What it was:** `CsvSession::open` built a `Vec<Vec<String>>` (one heap `String`/cell via `mem::take`), then
+  `TableArena::from_table` copied every cell's bytes into the contiguous arena and freed the Vec. For a 1M-cell
+  file: ~2M allocations + a full second byte-copy. (Ticket measured 140 ms open.)
+- **Fix (commit `3d75f39`):** refactored the SINGLE CSV tokenizer to drive a `CsvSink` trait. `VecSink` keeps the
+  wire `Vec<Vec<String>>` DTO path (TUI/web table View, `csv::parse`); new `ArenaSink` writes cell bytes STRAIGHT
+  into the arena buffer with a **reused** field scratch (`field.clear()` not `mem::take`) — no per-cell `String`,
+  no second copy. `CsvSession::open` → `csv::parse_arena`. Fast path: when rows are at header arity the as-built
+  buffer IS the arena (zero extra copies); ragged rows take a one-copy normalization pass.
+- **Correctness by construction:** ALL resource-cap accounting (cell-chars/…-marker, input-scalars, total-cells,
+  cells-per-row, estimated-heap) stays in the shared tokenizer, so both sinks see byte-identical caps.
+- **Refereed:** 5 parity tests (logical-table over the golden corpus incl ragged/CRLF/quoted/unicode/terminal-
+  drop; byte-identical arena for well-formed; cap parity ×5; heap-flood cap parity; 5k-row scale) + the 23 golden
+  csv tests = 28/28 green. **TEETH:** disabling `ArenaSink` terminal-drop made the parity guard FAIL (diverged on
+  `\n` + heap-flood); restored → green. FFI surface unchanged (header-drift clean), wire output byte-identical.
+- **Validated:** `scripts/rust-core-gate.sh` green on the committed commit (build + workspace tests + clippy
+  deny-lints + header-drift). TSK-844 → `validated` (agent self-validation: pure host-testable parser logic with
+  teeth-demonstrated regression tests). CHANGELOG Performance entry added.
+
+**Rust-core lane status update:** 575 cast-safety DONE; **844 CSV-arena DONE (this firing)**; 564 FFI double-copy
+= ~12-site fresh-session refactor still scoped/pending; 573 web last-resort. Strategic state otherwise unchanged
+(Swift queue drained, snippets model done, 382 needs a VM profile, owner 343/358 + the VM review lane outstanding).
+
 ## LOG 2026-06-14 — TSK-564 (FFI double-copy) scoped: remaining = a ~12-site fresh-session refactor
 
 Autonomous tick. Investigated TSK-564 (the next rust-core item) the same way as the cast audit. Finding (now on

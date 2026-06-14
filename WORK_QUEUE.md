@@ -29,7 +29,8 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
 - [x] **TSK-841** — Highlight wire → positional arrays + integer kind (4× smaller, 5.3× faster decode; like
       diff-lines wire-v2). Rust+Swift wire change; hits every highlighted open + markdown fence.
       `[validated e99ca14]` — positional `[start,len,kind]` array landed (kind stays String; integer-kind = deferred follow-up).
-- [ ] **TSK-844** — CSV open: parse straight into the arena (skip the throwaway `Vec<Vec<String>>`; 140 ms open).
+- [x] **TSK-844** — CSV open: parse straight into the arena (skip the throwaway `Vec<Vec<String>>`; 140 ms open).
+      `[validated 3d75f39]` — single CSV tokenizer now drives a `CsvSink` trait: `VecSink` keeps the wire DTO path, new `ArenaSink` writes cells straight into the arena buffer with a reused field scratch (no per-cell `String`, no second byte-copy). All caps stay in the shared tokenizer (byte-identical by construction); parity tests + teeth referee. rust-core gate green.
 - [ ] **TSK-842** — Files ≤64 MiB read + UTF-8-decode SYNC on main (softWarnBytes cliff) → off-main `[needs trace]`
 - [ ] **TSK-839** — Attribute + fix the 30–366 ms per-nav main-thread CoreAnimation commit stall (the REAL felt
       'nav slow' root; 598/591/266 fixed the model, not the compositor) `[Time-Profiler attribution first]`
