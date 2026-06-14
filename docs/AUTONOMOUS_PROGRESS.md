@@ -36,6 +36,15 @@ and started executing the measured wins.
   the Swift highlight twin + the 11 Swift grammar dylibs — the ~16 MB double-carry reclaim that un-inflates the
   caps (TSK-649's Stage-B covers the *other* engines, not highlight; likely-blocker = the fold path has no rust
   equivalent yet).
+- **TSK-848 (`5e6c11a`, fixed)** — the no-Rust-change gate relinked the world (~63s). Root cause (verified, deeper
+  than the ticket assumed): `build-rust-core.sh`'s unconditional `cp` of `libmdvcore_ffi.a` bumped its mtime AND
+  `restage_core_header` ALWAYS `touch`ed `Sources/RustCore/*.swift` — a deliberate guard (the `.a` is not a
+  SwiftPM-tracked input, so the touch is how an `.a` change reaches the relink; protects the 2026-06-10
+  stale-Rust-vs-new-Swift bug) — so EVERY run relinked RustCore + all downstream. Fix: `cmp` the freshly built
+  `.a` vs staged; unchanged → preserve mtime + SKIP the bridge touch (no-op win), changed → restage + relink
+  (correctness preserved). Proof: no-op `build-rust-core.sh` → `.a` mtime unchanged → `swift build` 0.67s no-op
+  (was 4.85s recompiling RustCore). Unit teeth both ways (no-op skips / `.a`-change relinks) in
+  RustCoreHeaderRestageTests; gate green.
 
 ## LOG 2026-06-10 (latest+128) — TSK-557 CSV heap-accounted cap: last SECURITY item of Phase 0
 
