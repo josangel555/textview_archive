@@ -9169,6 +9169,36 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +409 (2026-06-13 — TSK-671: per-file-type default view mode (owner P0 feature); host-tested with teeth)
+
+**Owner steer this tick:** "focus on bug fixes, feature requests" (validation tail parked). The host-actionable
+user-facing BUG pool is drained (591/592/598 = perf cluster on owner re-feel; rest validated/wontdo), so the lane is
+the `[WISH]` feature wave. Picked TSK-671 `[WISH][P0][minor-feature]` (plain-text viewing).
+
+**Spike finding (Explore agent):** plain-text VIEWING already exists three ways (Source mode on every text file; bottom
+Language→"Plain Text" kills highlighting; "Open As→Plain Text" forces any file — even binary — into text). The gap is
+discoverability/DEFAULTS, not existence. Surfaced to owner → owner picked **per-type default mode** (so .md stops
+forcing Rendered and .csv stops forcing Table on every open — the "click Editor every time" annoyance, BACKLOG gap #5).
+
+**Shipped (commit `a9777e6`, headless gate green — 5139 tests, 0 fail, no heavy-tier leak):**
+- `ViewModeOptions.defaultMode(…, preferred: [FileCategory: ViewMode])` (ViewerKit) — layers a per-category override on
+  the built-in default (refactored into `builtinDefaultMode`), AVAILABILITY-GATED: a pinned mode the file doesn't offer
+  (e.g. `.table` pinned on `.plainText` hit by a `.txt`) degrades to the built-in so picker↔pane never desync.
+- `PreferencesStore.viewModeDefaults` (ViewerCore) — primitives-only `[categoryRaw: modeRaw]` persistence; stale/renamed
+  enum keys/values drop out on read (no crash, no invalid pin); empty map removes the key.
+- `DocumentModel.{defaultViewMode(for:),setDefaultViewMode(_:for:)}` + threaded `preferred:` into the fresh-open paths
+  (`resolveOpenMode`, `openMultiple`). Open-As/restore/automation stay built-in (explicit lens choices unaffected).
+- UI: a **"Default view for <Type>"** section in the bottom type-control menu (BottomAttributesBar) — sits beside the
+  existing Open-As/Language sections, lists the file's available modes with the active default checked; picking the
+  built-in clears the override. `ModeBar.{modeLabel,categoryShortLabel}` statics for consistent wording.
+
+**Tests (3 tiers, host-safe):** ViewerKitTests `ViewModeDefaultOverrideTests` (9 — honor/availability-gate/degrade/forced),
+ViewerCoreTests `PreferencesStoreViewModeDefaultsTests` (6 — round-trip/clear/stale-degrade), ViewerUITests
+`DefaultViewModePerTypeTests` (5 — .md→Source / .csv→Source land via real `open()`; no-pin control; persistence).
+**TEETH demonstrated:** neutered the override → exactly the 6 honored-override + wiring tests went RED (rendered/table ≠
+source), controls stayed green → restored. The on-screen menu RENDER (stock SwiftUI Section/Button) is the only VM-tail
+bit — behavior + action closures are host-pinned, so a logic regression fails on the host gate. → review.
+
 ## LOG +408 (2026-06-13 — VM GUI-lane render validation PASSED CLEAN; unblocked a hung VM run holding the .build lock)
 
 - **VM GUI-lane validation (`test-in-vm.sh quick`, MDV_VM_GUI_SESSION=1, current main) → clean.** 3367 tests / 8 skipped
