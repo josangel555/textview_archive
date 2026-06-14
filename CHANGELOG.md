@@ -16,6 +16,8 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Bottom attributes bar uses toggle buttons** — Wrap, Special chars, Enable JS, and the preview Info toggle are now press-to-toggle buttons (matching the Find bar) instead of small checkboxes, so their on/off state reads at a glance.
 
 ### Added
+- **Trim trailing whitespace / ensure final newline** — **Edit ▸ Trim Trailing Whitespace** strips trailing spaces and tabs from every line, and **Edit ▸ Ensure Final Newline** adds a single newline at the end if it's missing. Both keep the file's existing line-ending style and encoding.
+- **Document statistics** — **View ▸ Document Statistics** shows the current file's line, word, and character counts (with and without whitespace).
 - **Convert line endings** — **Edit ▸ Convert Line Endings ▸ {LF / CRLF / CR}** rewrites the current file's line endings to Unix (LF), Windows (CRLF), or Classic-Mac (CR), keeping its text encoding and any unsaved edits. (The status bar already showed the current convention; now you can change it.)
 - **Text size setting** — Settings → Appearance has a new **Text Size** slider that sets the base font size for content: the editor, the source view, **and the rendered-Markdown view** (8–32 pt). The Zoom control still multiplies on top, so Text Size sets your baseline and Zoom scales everything (content + UI) from there.
 - **Trim & fade audio, save a copy** — the audio editor can now trim a clip (set the start/end at the playhead) and add fade-in/fade-out (equal-power or linear), then **Save a Copy…** of the trimmed/faded result as WAV, AIFF, CAF, or M4A/AAC (MP3 too if ffmpeg is installed). The original file is never modified.

@@ -1,5 +1,28 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-675 slices 2+3 shipped: Document Statistics + Whitespace cleanup (90196d2, → review)
+
+Continued draining the P0 epic's host-buildable runway (the payoff of unblocking it last firing). Batched two
+independent slices, gated once, child TSK-863 → review:
+
+- **Trim Trailing Whitespace + Ensure Final Newline** (Edit menu): `TextCleanup` (ViewerCore, pure, scalar-walk) —
+  KEY distinction from the existing `TextTools.trimTrailingWhitespace` (a TSK-352 *clipboard* tool that rejoins
+  with `\n`, CRLF-lossy): the file commands PRESERVE each line's terminator byte-for-byte (converting line endings
+  as a side effect of "trim whitespace" would be silent data loss). `DocumentModel` applies them via a new shared
+  `applyTextTransformToActiveFile` helper (encoding-preserving write-through + drop/reload, the Convert-Encoding
+  mechanism; reusable for future text commands). `ensureFinalNewline` matches the file's dominant ending.
+- **Document Statistics** (View ▸ Document Statistics → info alert): `DocumentStats.compute` — CRLF-aware line
+  count (trailing newline not double-counted, `\r\n` = one break), whitespace-collapsed word count, grapheme-correct
+  characters (`café 🌟` = 6) + a no-whitespace count. Menu→`NSAlert` on demand (no per-keystroke cost).
+
+Teeth: 16 pure tests (9 TextCleanup incl. CRLF/lone-CR terminator preservation + blank-line handling; 7
+DocumentStats incl. line-count edge cases + multibyte). Host gate green (5519 tests, tier OK). Menus + alert = VM tail.
+
+675 now has 3 slices shipped (862 line-endings; 863 cleanup+stats). REMAINING is render-coupled CM6 (line ops:
+duplicate/move/delete; column/block select; macro record-replay; insert/overwrite; optional auto-cleanup-on-save) —
+VM/later. Commit note: both slices interleave in DocumentModel/main, so they landed as one gated commit (90196d2)
+rather than two (clean per-hunk split needs interactive staging).
+
 ## LOG 2026-06-14 — TSK-675 (P0 epic) spiked + first slice shipped: Convert Line Endings (f472ad6, → review)
 
 Broke the "everything's VM/owner-blocked" run by advancing the **highest-priority epic**. Confirmed first that the
