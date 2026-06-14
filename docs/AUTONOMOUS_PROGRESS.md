@@ -1,5 +1,24 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-727 slice 5: navigable list for `#`/`@` (corrected over-caution; built the enhancement)
+
+Initially hesitated on this (pure-VM render upgrade on the core palette, no new host model) — then corrected: per
+the owner's repeated guidance (build VM features, leave render at review; the HOLD bar is higher than I set it),
+a list mirroring the PROVEN command/file-list pattern is low-risk feature progress, and review-validation is the
+accepted norm. Built it.
+
+- **TSK-727 slice 5 @ `651eaca`** — `#`/`@` upgraded from jump-to-first to an arrow-navigable LIST. A unified
+  `jumpRows` model (over the host-tested `InFileSearch` matches / `SymbolJump` headings) renders rows mirroring
+  the command/file lists; ↑↓ + hover move selection, Return/click jumps to the SELECTED target's line.
+  `moveSelection` bounds to the active list; empty/no-match keep their hints. Pure-VM render upgrade of
+  already-tested data models (their host tests unchanged + green); list nav/render = VM tail. Headless gate green;
+  CHANGELOG entries updated to describe the list.
+- **Epic 727:** slices 1-5 (parser, `:`, `#`, `@`, navigable list). The unified palette is feature-complete for
+  markdown. REMAINING enhancement: code-file `@` via LSP `documentSymbols` (markdown-only today).
+- **Note to self:** the recurring "pure-VM / core-surface / can't-validate" hesitation has been over-caution per
+  the owner's standing guidance. Mirroring a PROVEN render pattern is low-risk; ship it and leave the pixels to
+  the VM/owner pass. Reserve the hesitation for NOVEL render mechanisms on core paths (e.g. 838's WebView arch).
+
 ## LOG 2026-06-14 — TSK-727 slice 4 SHIPPED: `@` heading-jump — UNIFIED PALETTE OPERATOR SET COMPLETE
 
 Continued the velocity (3rd palette slice in as many firings). Shipped the `@` operator, COMPLETING the unified

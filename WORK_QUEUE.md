@@ -111,7 +111,7 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
 - [~] **TSK-705** — Snippets
       `[epic: slices 1-5 @ 667f8ba/8de8b2c/08d4e28/9393706, review]` — parser + built-ins + Insert command + user JSON store + tab-stop navigation MODEL (SnippetSession). MODEL LAYER COMPLETE + host-tested (parse→insert→store→navigate). Remaining = pure render/VM: CM6 Tab-key wiring (apply SnippetSession) + management UI. Still `[~]`.
 - [~] **TSK-727** — Unified "Goto Anything" (one box, @/: operators)
-      `[epic: slices 1-4 @ a4022b9/283d894/55129eb/224b7b9, CORE COMPLETE, progress]` — the unified operator set is DELIVERED: bare→files, `>`→commands, `:`→go-to-line, `#`→in-file text (`InFileSearch`), `@`→Markdown-heading jump (`SymbolJump`). All four operator models pure + host-tested (34 host tests + teeth); palette routes them via the hint-+jump pattern; gate green. Remaining = ENHANCEMENTS (split to new tickets if wanted): code-file `@` via LSP symbols (markdown-only today); navigable `#`/`@` match LISTS (current = jump-to-best). Palette operator visuals = VM validation tail.
+      `[epic: slices 1-5 @ a4022b9/283d894/55129eb/224b7b9/651eaca, CORE COMPLETE, progress]` — unified operator set DELIVERED: bare→files, `>`→commands, `:`→go-to-line, `#`→in-file text (`InFileSearch`), `@`→Markdown-heading jump (`SymbolJump`), and `#`/`@` now render an arrow-navigable LIST (slice 5). Operator models pure + host-tested (34 host tests + teeth); gate green. Remaining = ENHANCEMENT: code-file `@` via LSP `documentSymbols` (markdown-only today). Palette visuals/nav = VM validation tail.
 - [ ] **TSK-677** — Unify search types (Global search / Recents / Command search)
 
 ## D. Bigger features / epics (slice them; P0–P2 first)
