@@ -33,13 +33,26 @@ public struct TabSnapshot: Codable, Equatable, Sendable {
     /// key likewise decodes to `nil`. `nil` / `<= 0` ⇒ "don't restore".
     public let scrollTopLine: Int?
 
+    /// Hot exit (TSK-718): the unsaved editor-buffer text for this tab at the
+    /// last snapshot boundary, so a relaunch restores in-flight edits the user
+    /// never saved (VS Code-style hot exit). `nil` = the buffer was clean (no
+    /// unsaved content) — nothing to restore, the file reloads from disk.
+    ///
+    /// **Additive-optional** (downgrade-safe): an older reader without the key
+    /// decodes to `nil` (no restore); a newer file with no key likewise → `nil`.
+    /// Capped at `DocumentModel.hotExitMaxBytes` on the capture side so a huge
+    /// unsaved buffer can't bloat the per-session JSON.
+    public let unsavedText: String?
+
     public init(path: String, viewMode: String,
                 categoryOverride: String? = nil,
-                scrollTopLine: Int? = nil) {
+                scrollTopLine: Int? = nil,
+                unsavedText: String? = nil) {
         self.path = path
         self.viewMode = viewMode
         self.categoryOverride = categoryOverride
         self.scrollTopLine = scrollTopLine
+        self.unsavedText = unsavedText
     }
 }
 

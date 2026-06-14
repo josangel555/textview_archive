@@ -84,6 +84,18 @@ public struct Tab: Sendable, Identifiable {
     /// metadata, not display state.
     public var scrollTopLine: Int?
 
+    /// Hot-exit (TSK-718): the unsaved editor-buffer text for this tab, captured
+    /// so a relaunch can restore in-flight edits the user never saved (like
+    /// VS Code's hot exit). Persisted per-file as `TabSnapshot.unsavedText`;
+    /// `nil` when the buffer is clean (no unsaved edits to restore).
+    ///
+    /// HOT-PATH NOTE: captured LAZILY at the autosave / detach / quit snapshot
+    /// boundary (`DocumentModel.captureUnsavedTextForAllTabs`), NEVER per
+    /// keystroke. EXCLUDED from `Tab`'s Equatable (same rationale as
+    /// `scrollTopLine`): it's persistence-only metadata, not tab-strip display
+    /// state — comparing it would churn the SwiftUI diff on every capture.
+    public var unsavedText: String?
+
     /// True for an ephemeral "preview" tab (VSCode-style): single-click /
     /// arrow-nav in the sidebar reuses the one preview slot instead of
     /// spawning a tab per file; an explicit commit (double-click / Enter /
@@ -104,6 +116,7 @@ public struct Tab: Sendable, Identifiable {
         diskState: DiskState = .fresh,
         categoryOverride: FileCategory? = nil,
         scrollTopLine: Int? = nil,
+        unsavedText: String? = nil,
         isPreview: Bool = false
     ) {
         self.id = id
@@ -114,6 +127,7 @@ public struct Tab: Sendable, Identifiable {
         self.diskState = diskState
         self.categoryOverride = categoryOverride
         self.scrollTopLine = scrollTopLine
+        self.unsavedText = unsavedText
         self.isPreview = isPreview
     }
 
@@ -173,7 +187,9 @@ extension Tab: Equatable {
         // `scrollTopLine` is intentionally NOT compared (UX-K, #231): it's
         // persistence-only scroll metadata captured at focus-loss/close
         // boundaries. Comparing it would make a scroll capture re-trigger
-        // tab-strip diffs — the exact hot-path republish we avoid.
+        // tab-strip diffs — the exact hot-path republish we avoid. The same
+        // applies to `unsavedText` (TSK-718 hot exit) — captured at the
+        // snapshot boundary, persistence-only, not display state.
         // Compare state by case-only, not by payload. Payload changes
         // are reflected by other model state (e.g. loadState, watcher
         // reload nonce); state-payload-equality isn't a property

@@ -324,6 +324,9 @@ public final class SessionsAppCoordinator: ObservableObject {
             // UX-K (#231): final scroll capture before the authoritative quit
             // write so the user's last position is on disk.
             active.model.captureScrollForActiveTab()
+            // TSK-718 hot exit: capture unsaved buffers so a quit restores
+            // in-flight edits on relaunch.
+            active.model.captureUnsavedTextForAllTabs()
             let snap = active.makeSnapshot()
             lastPersistedContent[active.id] = snap
             core.replaceSnapshot(id: active.id, with: snap)
@@ -433,6 +436,9 @@ public final class SessionsAppCoordinator: ObservableObject {
         // (and termination / detach below) — never per scroll tick — so the
         // hot path stays clean while a crash still recovers the last position.
         active.model.captureScrollForActiveTab()
+        // TSK-718 hot exit: capture unsaved buffer text so an autosave write
+        // (which includes the crash-recovery path) persists in-flight edits.
+        active.model.captureUnsavedTextForAllTabs()
         let snap = active.makeSnapshot()
         if let prev = lastPersistedContent[id],
            prev.hasSamePersistedContent(as: snap) {
@@ -605,6 +611,9 @@ public final class SessionsAppCoordinator: ObservableObject {
             // session's authoritative detach-time snapshot, so switching back
             // restores where the user left off.
             active.model.captureScrollForActiveTab()
+            // TSK-718 hot exit: capture unsaved buffers on detach so switching
+            // sessions (and back) preserves in-flight edits.
+            active.model.captureUnsavedTextForAllTabs()
             let snap = active.makeSnapshot()
             owner.lastPersistedContent[active.id] = snap
             owner.core.replaceSnapshot(id: active.id, with: snap)

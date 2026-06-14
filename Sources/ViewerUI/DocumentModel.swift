@@ -1821,6 +1821,59 @@ public final class DocumentModel: ObservableObject {
         scrollSource(toLine: line)
     }
 
+    /// TSK-718 hot exit: cap on persisted unsaved text per tab. Beyond this the
+    /// unsaved content is NOT captured (the file reloads from disk on relaunch)
+    /// — a guard so a huge in-flight edit can't bloat the per-session JSON.
+    /// 1 MiB covers any realistic hand-edit.
+    public static let hotExitMaxBytes = 1 << 20  // 1 MiB
+
+    /// TSK-718 hot exit: stamp each tab's unsaved editor-buffer text onto its
+    /// `Tab.unsavedText` so the next `makeSnapshot` persists it (and a relaunch
+    /// restores the in-flight edits, VS Code-style). A clean buffer — or one
+    /// whose text exceeds `hotExitMaxBytes` — clears the field. Runs at the
+    /// autosave / detach / quit snapshot boundary alongside
+    /// `captureScrollForActiveTab`, NEVER per keystroke.
+    ///
+    /// Iterates ALL tabs, not just the active one: a BACKGROUND tab can be
+    /// dirty (edit tab A, switch to B — A's buffer stays dirty in memory).
+    /// Reads only buffers that ALREADY exist (`editorBuffers[id]`, no seeding):
+    /// a never-edited tab has no buffer, so there's nothing to capture and we
+    /// don't materialize its full text just to snapshot.
+    public func captureUnsavedTextForAllTabs() {
+        for index in tabs.tabs.indices {
+            let tab = tabs.tabs[index]
+            var captured: String? = nil
+            if let buf = editor.editorBuffers[tab.id], buf.isDirty,
+               buf.text.utf8.count <= Self.hotExitMaxBytes {
+                captured = buf.text
+            }
+            guard tab.unsavedText != captured else { continue }
+            var t = tab
+            t.unsavedText = captured
+            tabCoordinator.replace(at: index, with: t)
+        }
+    }
+
+    /// TSK-718 hot exit: re-inject persisted unsaved buffer text into a tab that
+    /// just materialized from a session restore. Seeds the editor buffer from
+    /// the freshly-read file (the on-disk baseline for the dirty diff), then
+    /// overlays the restored unsaved text so the buffer comes back DIRTY with
+    /// the user's in-flight edits and the TabBar dot reappears. No-op unless the
+    /// tab loaded as `.loaded` text and carries a non-empty `unsavedText`.
+    /// Returns whether it restored anything (test hook).
+    @discardableResult
+    func restoreUnsavedTextIfNeeded(forTabAt index: Int) -> Bool {
+        guard tabs.tabs.indices.contains(index) else { return false }
+        let tab = tabs.tabs[index]
+        guard let unsaved = tab.unsavedText, !unsaved.isEmpty,
+              case .loaded(let file) = tab.state else { return false }
+        // Seed the baseline from disk, then overlay — `updateEditorText`
+        // recomputes `isDirty` (unsaved vs disk) and mirrors it onto the Tab.
+        editor.ensureEditorBuffer(for: file, tabID: tab.id)
+        editor.updateEditorText(unsaved, forTabID: tab.id)
+        return true
+    }
+
     /// TSK-743 (source channel): per-URL memory of the source-view (NSTextView)
     /// top line for the ONE ephemeral preview slot. The slot reuses a single tab
     /// id across files and rebuilds the `Tab` on each swap — dropping
@@ -4985,7 +5038,8 @@ public final class DocumentModel: ObservableObject {
     /// doesn't read 15 files at launch — only the focused one.
     public func appendLazyTab(url: URL, viewMode: ViewMode,
                               categoryOverride: FileCategory? = nil,
-                              scrollTopLine: Int? = nil) {
+                              scrollTopLine: Int? = nil,
+                              unsavedText: String? = nil) {
         let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
         // Dedup invariant (matches `TabsState.openOrReveal`): never create a
         // SECOND tab for a file that's already open. `appendLazyTab` was the
@@ -5022,7 +5076,11 @@ public final class DocumentModel: ObservableObject {
             // UX-K (#231): carry the persisted per-file scroll position onto
             // the lazy tab so `restoreScroll` can re-apply it once the tab
             // materializes into focus.
-            scrollTopLine: scrollTopLine))
+            scrollTopLine: scrollTopLine,
+            // TSK-718 hot exit: carry the persisted unsaved buffer text so
+            // `materializeIfNeeded` can overlay it into the editor buffer once
+            // the file has been read from disk (giving the dirty baseline).
+            unsavedText: unsavedText))
     }
 
     /// Open many URLs at once. Files are appended as lazy tabs (state
@@ -5137,6 +5195,12 @@ public final class DocumentModel: ObservableObject {
                 if self.tabs.selectedIndex == idx {
                     self.restoreScroll(forTabAt: idx)
                 }
+                // TSK-718 hot exit: the file is now read (buffer baseline
+                // available) — overlay any persisted unsaved edits so the tab
+                // comes back dirty with the user's in-flight content. Runs for
+                // background materializes too (each restored tab gets its edits
+                // back when it first loads, not only the focused one).
+                self.restoreUnsavedTextIfNeeded(forTabAt: idx)
                 // LOADBUG (2026-06-01): PERF #1 severed the
                 // `tabCoordinator.objectWillChange` → `DocumentModel.
                 // objectWillChange` forwarding, so `replace` alone fires the

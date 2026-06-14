@@ -206,7 +206,11 @@ public final class SessionState: ObservableObject {
                 // UX-K (#231): persist the per-file scroll position. Stamped
                 // onto the live tab by `DocumentModel.captureScroll` at
                 // focus-loss / close boundaries. nil → key omitted.
-                scrollTopLine: t.scrollTopLine))
+                scrollTopLine: t.scrollTopLine,
+                // TSK-718 hot exit: persist unsaved buffer text. Stamped onto
+                // the live tab by `captureUnsavedTextForAllTabs` at the
+                // snapshot boundary; nil when clean → key omitted.
+                unsavedText: t.unsavedText))
         }
         let remapped: Int? = selectedIndex.flatMap { liveToOut[$0] }
         return (out, remapped)
@@ -326,6 +330,15 @@ public final class SessionState: ObservableObject {
             },
             uniquingKeysWith: { first, _ in first }
         )
+        // TSK-718 hot exit: path → persisted unsaved buffer text. Same shape as
+        // the maps above. An empty string is dropped (no edits to restore).
+        let unsavedByPath: [String: String] = Dictionary(
+            snapshot.openTabs.compactMap { snap -> (String, String)? in
+                guard let text = snap.unsavedText, !text.isEmpty else { return nil }
+                return (snap.path, text)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
         for t in restoreTabs {
             let url = URL(fileURLWithPath: t.path)
             guard FileManager.default.fileExists(atPath: url.path) else {
@@ -336,7 +349,8 @@ public final class SessionState: ObservableObject {
                 ?? ViewModeOptions.defaultMode(for: url, forcedCategory: override)
             model.appendLazyTab(url: url, viewMode: mode,
                                 categoryOverride: override,
-                                scrollTopLine: scrollByPath[t.path])
+                                scrollTopLine: scrollByPath[t.path],
+                                unsavedText: unsavedByPath[t.path])
         }
         // Restore the per-session sidebar expansion AFTER `setRoot`
         // (which wipes `expanded` down to just the root). We expand the
