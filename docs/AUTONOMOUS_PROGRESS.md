@@ -1,5 +1,33 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — sticky-scroll model (TSK-719); 708 deferred (render-coupled command)
+
+Autonomous tick, WORK_QUEUE Section-A drain. Scoped the next unchecked items with two unprimed Explore
+agents (LSP hover/preview-def; sticky-scroll scope data). Shipped **TSK-719 (`cf9ac7c`, review)**:
+- Pure `StickyScrollHeaders` (ViewerCore): enclosing scope-header chain (outermost→innermost) for the
+  viewport top line from the document's fold regions — `.function/.type/.element` for code, `.heading`
+  for markdown (one unified path; the app already produces `.heading` folds). Filters out non-scope kinds
+  (object/array/comment/string/fence), excludes a header already on screen, caps at maxDepth keeping the
+  outermost breadcrumb, resolves each header's text in one bounded CRLF-grapheme-safe pass.
+- Wiring: store the line-based `[FoldRegion]` per tab in `EditorCoordinator` (alongside the existing
+  CM6-offset form), recompute a published `DocumentModel.stickyScrollHeaders` on scroll/fold/mode change.
+- Host-tested: 14 helper tests + 3 model-glue tests. The pinned-bar **overlay renders over the CM6
+  WebView** — the compositor-occlusion danger zone (LESSONS) needing `compositingGroup`/`zIndex` + VM
+  pixel validation — so it's deliberately the VM render tail, NOT built blind. No CHANGELOG entry yet
+  (model-only; not user-visible until the overlay ships).
+
+**Gate caught a real bug** before commit: Swift merges `\r\n` into a SINGLE `Character` grapheme cluster,
+so my `text[i] == "\n"` line scan never fired on CRLF files (returned the whole file as line 1). Fixed to
+`Character.isNewline` (covers `\n`, `\r\n`, lone `\r`, Unicode separators). Re-gated green, then committed.
+
+**Why one item this firing (not the cron's 2-3):** the other next-queue items are render-coupled in a way
+that makes them poor *host-only* batch-mates — TSK-708 (preview definition) needs a popover over the CM6
+WebView to not be a visibly-broken ⌘Y (unlike 719, whose overlay absence just means "no bar yet"); TSK-710
+(hover) is model-complete already, the gap is a CM6 JS dwell trigger (render, not host-testable); TSK-766 is
+render-only. Shipping one well-tested model slice beat cramming a render-coupled command into the same gate.
+TSK-708/710 want a VM-render firing (or the overlay/popover built with the compositingGroup treatment + VM
+pixel validation).
+
 ## LOG 2026-06-14 — Section-A batch: hot exit + project-wide replace + typed New File (TSK-718/726/747)
 
 Owner re-confirmed the goal: drain the board, batch >1 item/firing, gate once, commit per-item, park only on a

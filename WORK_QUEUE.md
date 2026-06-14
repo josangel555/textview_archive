@@ -61,7 +61,8 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
       `[PARKED→owner]` — "unify" ambiguous + overlaps TSK-727/677; ⌘G is the standard Find-Next chord (risky to rebind). Asked for intended behavior / whether it's a dup.
 - [ ] **TSK-710** — Hover symbol info on identifiers (LSP textDocument/hover) `[VM]`
 - [ ] **TSK-708** — Preview definition (IntelliJ Quick Definition / Cmd+Y) `[VM]`
-- [ ] **TSK-719** — Sticky scroll (pin the enclosing scope header) `[VM]`
+- [x] **TSK-719** — Sticky scroll (pin the enclosing scope header) `[VM]`
+      `[review cf9ac7c]` — pure StickyScrollHeaders (enclosing chain from fold regions; code+markdown) + DocumentModel recompute on scroll; helper+glue host-tested. Pinned-bar overlay over the CM6 WebView = VM render tail (compositor zone, not built blind).
 - [x] **TSK-718** — Hot exit (restore unsaved buffers on relaunch)
       `[review 8ba2a2f]` — additive-optional TabSnapshot.unsavedText (1 MiB cap) captured at snapshot boundaries + overlaid on materialize → tab reopens dirty; round-trip/capture/restore host-tested, dirty-dot render = VM tail.
 - [x] **TSK-726** — Project-wide replace (cross-file search is read-only today)
