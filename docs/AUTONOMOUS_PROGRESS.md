@@ -1,5 +1,22 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — snippets epic slice 4: user-defined JSON snippet store (TSK-705)
+
+Autonomous tick, continued TSK-705. **Slice 4 (`08d4e28`, review)** — user-defined snippets:
+- `SnippetStore` (ViewerCore) persists user snippets as JSON (AppSupport/MarkdownViewer/snippets.json), merged
+  over `SnippetLibrary.builtIns` — a user snippet whose `id` matches a built-in OVERRIDES it (user wins), others
+  append. Mirrors BookmarksStore (JSONFileStore, off-main coalesced writes). `Snippet` is now Codable.
+- Wired into `DocumentModel.snippetStore` (injectable init param, like `bookmarks`); the Edit ▸ Insert Snippet
+  menu now lists `snippetStore.all` (built-ins + user). Usable via file editing ahead of a management UI (the
+  VS Code model). CHANGELOG documents the file location + format.
+- Host-tested (SnippetStoreTests, 7 cases: built-ins-only default, user append, id-override, add/remove
+  persistence round-trips, malformed→built-ins). Snippets epic slices done: 1 parser, 2 library, 3 insert, 4
+  store. Remaining: tab-stop cursor navigation (editor/CM6 VM) + management UI (render). Stays `[~]`/review.
+
+(Strategic state + DECISIONS NEEDED unchanged: clean Swift feature queue drained; rust-core 844 = security-cap
+landmine for a fresh session; owner decisions 343/358 + a lane-steer still outstanding. The snippets epic is the
+current "build, don't HOLD" vein — its host-testable model slices are now exhausted; what's left is render/VM.)
+
 ## LOG 2026-06-14 — snippets epic slices 2-3: library + Insert Snippet (TSK-705, now usable)
 
 Autonomous tick, continued the TSK-705 snippets epic (no owner lane-steer arrived; per "build, don't HOLD",

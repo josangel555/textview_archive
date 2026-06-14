@@ -105,7 +105,7 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
 - [ ] **TSK-319** — Dependency Package explorer
 - [ ] **TSK-318** — Ask the agent questions about a Code Review (CR Q&A)
 - [~] **TSK-705** — Snippets
-      `[epic: slices 1-3 @ 667f8ba/8de8b2c, review]` — parser + SnippetLibrary built-ins + Edit ▸ Insert Snippet command (inserts expanded text at the caret). Minimally USABLE; host-tested (parser/library/insert-action). Remaining: tab-stop cursor navigation (editor/VM) + user-defined snippets + management UI. Still `[~]` (epic not fully done).
+      `[epic: slices 1-4 @ 667f8ba/8de8b2c/08d4e28, review]` — parser + built-ins + Edit ▸ Insert Snippet command + user-defined JSON store (snippets.json, merged over built-ins, user id wins). USABLE (insert built-in or custom snippets); host-tested (parser/library/insert/store). Remaining: tab-stop cursor navigation (editor/CM6 VM) + management UI. Still `[~]` (epic not fully done).
 - [ ] **TSK-727** — Unified "Goto Anything" (one box, @/: operators)
 - [ ] **TSK-677** — Unify search types (Global search / Recents / Command search)
 
