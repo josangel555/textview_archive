@@ -62,7 +62,8 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
       `[validated b4c4c20]` — ⇧⌘P → command palette (nav.showPalette), routing host-tested; ⌘P left for Print (Mac HIG, not VS Code's override).
 - [~] **TSK-709** — Unify Cmd+K and Cmd+G (palette/goto)
       `[PARKED→owner]` — "unify" ambiguous + overlaps TSK-727/677; ⌘G is the standard Find-Next chord (risky to rebind). Asked for intended behavior / whether it's a dup.
-- [ ] **TSK-710** — Hover symbol info on identifiers (LSP textDocument/hover) `[VM]`
+- [x] **TSK-710** — Hover symbol info on identifiers (LSP textDocument/hover) `[VM]`
+      `[review — ALREADY BUILT]` — hover is shipped in the CM6 editor (stale entry): codemirror.js `hoverTooltip` → `CodeMirrorEditorView` posts `CMHoverRequest` → `DocumentModel.respondToEditorHover` → `lspPool.hover` → `sendEditorHoverResponse`. The unwired `LSPHoverAttachment` NSTextView path is a separate PoC. Proof: `CodeMirrorBundleTests` (hoverTooltip export + bridge strings) + `LSPUATTests`. Column-correctness/popover geometry = VM/manual tail. No code change.
 - [ ] **TSK-708** — Preview definition (IntelliJ Quick Definition / Cmd+Y) `[VM]`
 - [x] **TSK-719** — Sticky scroll (pin the enclosing scope header) `[VM]`
       `[review cf9ac7c]` — pure StickyScrollHeaders (enclosing chain from fold regions; code+markdown) + DocumentModel recompute on scroll; helper+glue host-tested. Pinned-bar overlay over the CM6 WebView = VM render tail (compositor zone, not built blind).
