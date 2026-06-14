@@ -1,5 +1,24 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — snippets epic slices 2-3: library + Insert Snippet (TSK-705, now usable)
+
+Autonomous tick, continued the TSK-705 snippets epic (no owner lane-steer arrived; per "build, don't HOLD",
+kept shipping host-testable slices). **TSK-705 (`8de8b2c`, review)** — slices 2-3 on the slice-1 parser:
+- `SnippetLibrary.builtIns` — 5 markdown/code starters (table, code fence, link, collapsible `<details>`, TODO).
+- `DocumentModel.insertSnippet(_:)` (+ `canInsertSnippet`) — editor-mode-gated, posts the snippet's expanded
+  plain text to the caret via the existing `editorInsertRequest`. Host-testable at the request level (the CM6
+  caret application is the render tail).
+- Edit ▸ **Insert Snippet** submenu (tag→builtIn), mirroring the Convert-Encoding submenu.
+- Host-tested: SnippetLibraryTests (unique ids/names, all parse, md.link/fence expansion) + SnippetInsertModel
+  Tests (editor-mode posts expanded text; no-op off editor mode). The feature is now minimally USABLE (insert a
+  built-in snippet); CHANGELOG line added.
+- **Remaining slices** (left for follow-on / a VM firing): tab-stop cursor NAVIGATION (jump $1→$2→$0, uses
+  `ParsedSnippet.stops()` UTF-16 offsets — editor/CM6) + user-defined snippets + persistence + management UI.
+  TSK-705 stays `[~]` / board `review` (epic not fully done).
+
+(Strategic state + DECISIONS NEEDED unchanged from the prior log: clean Swift feature queue is drained;
+rust-core 844 is a security-cap landmine for a fresh session; owner decisions 343/358 + a lane-steer outstanding.)
+
 ## LOG 2026-06-14 — snippets epic slice 1: expansion parser (TSK-705)
 
 Autonomous tick. The clean user-facing Swift feature queue is drained; surveyed the alternatives this firing:
