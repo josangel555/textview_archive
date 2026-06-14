@@ -9426,6 +9426,21 @@ intermittently reported "swift test exited 1" with ZERO failing tests; a clean d
 run gave **EXIT=0, all 5246 pass, 0 failures**. That's the documented machine-load bench/exit-code flake (CLAUDE.md)
 after ~6 back-to-back full-suite runs this turn — not a real failure. Confirmed clean before committing.
 
+## LOG +435 (2026-06-14 — TSK-352 slice 2: clipboard URL/HTML encode-decode + trim-trailing-whitespace)
+
+Feature tick. Extended the clipboard dev-tools suite with the encode/decode family.
+
+**Shipped (commit `f7e2e1f`, gate green EXIT=0):** five more pure `TextTools` transforms — URL Encode
+(RFC 3986 unreserved-only; space→%20) / URL Decode, HTML Encode (5 chars, & first) / HTML Decode (named +
+numeric `&#dd;`/`&#xhh;`; unknown entities untouched), Trim Trailing Whitespace (per line). Same pattern
+(TextToolVerb → CommandDescriptor + scriptVerb → ScriptVerbDispatch → TextToolRunner). **Fully host-validated,
+no VM tail.** Host tests TextToolsTests +6 (encode/decode round-trips, HTML named+numeric, malformed-decode→nil,
+apply routing); the count guard (10→15) + scriptVerb vocab guard both fired correctly. Clipboard suite is now
+15 palette tools. → commented TSK-352 (umbrella open for non-clipboard NotePad++ staples). CHANGELOG updated.
+
+Process note: ran the full gate ONCE this tick (targeted `--filter` for iteration) → EXIT=0 clean, no load
+flake (the mitigation from +434 worked).
+
 ## LOG +434 (2026-06-14 — TSK-352 slice: clipboard line/case transform tools)
 
 Feature tick (diversified off metadata). Shipped six NotePad++/Sublime-style clipboard transforms as
