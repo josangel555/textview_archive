@@ -22,7 +22,10 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
 - [x] **TSK-843** — Cache the per-call gate decision — `ProcessInfo.environment` allocates the whole environ
       (~19 µs) on every routed FFI call. Cheap. `[validated 9c4eb01]` — `getenv` fast-path across the 11-file
       gate chain; dict test-seam preserved.
-- [ ] **TSK-845** — Micro-bundle: `ContentFingerprint` utf8.count ×3/apply (cache), MsgPackReader always-builds-tree, lazy-tab materialize.
+- [~] **TSK-845** — Micro-bundle: `ContentFingerprint` utf8.count ×3/apply (cache), MsgPackReader always-builds-tree, lazy-tab materialize.
+      `[PROFILE-GATED]` — spike found (a) is a likely NO-OP: `utf8.count`/`first`/`last` are O(1) on a native UTF-8 String;
+      the ×3 cost only bites if `text` is NSString-bridged (UTF-16). Needs a profile of `text` provenance before it's worth a
+      (behaviorally-invisible, untestable) commit. (b)/(c)/(d) all need profiling too. Mechanical fix recorded on the ticket.
 - [ ] **TSK-841** — Highlight wire → positional arrays + integer kind (4× smaller, 5.3× faster decode; like
       diff-lines wire-v2). Rust+Swift wire change; hits every highlighted open + markdown fence.
 - [ ] **TSK-844** — CSV open: parse straight into the arena (skip the throwaway `Vec<Vec<String>>`; 140 ms open).
