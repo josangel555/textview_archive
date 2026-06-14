@@ -7,6 +7,11 @@ This file is the at-a-glance "what's new" view of the app's progress.
 
 Newest first. Each entry is one plain-language line — what changed, from your seat.
 
+## 2026-06-14
+
+### Performance
+- **Faster syntax highlighting after launch** — the app now warms its language grammars in parallel across all CPU cores (instead of one at a time on a single thread), and warms Markdown first, so your first opened file gets highlighted noticeably sooner — especially right after starting the app.
+
 ## 2026-06-13
 
 ### Fixed

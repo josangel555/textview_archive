@@ -1,5 +1,28 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — perf-explore landed: build-thrash fix (TSK-846) + parallel launch grammar-warm (TSK-840)
+
+Unprimed perf-explorer fleet (TSK-837) completed; processed the test/build wall-clock agent's findings
+and started executing the measured wins.
+- **Agent B doc committed** (`37d5374`): `docs/research/perf-latency-explore-2026-06-14/test-build-speed.md`
+  — the gate is two phases (Swift build ~78s cold / ~3s warm; run ~72–85s, I/O-/fork-bound not CPU-bound);
+  filed **7 tickets TSK-846…852** (index thrash, workers, rust-`.a` mtime, subprocess-tail sleeps/sharding,
+  shared fixtures, ccache-for-grammars [dep], CI cache [owner]).
+- **TSK-846 (validated, `703a9bb`)** — the gate's `--disable-index-store` (TSK-832) differs from interactive
+  builds' default index-ON, and the flag is in SwiftPM's build-plan hash → the shared `.build` thrashed a full
+  ~63s test-target rebuild on EVERY gate↔interactive switch. Fix: dedicated `--scratch-path .build-gate`
+  (gitignored) for both gate phases + `--disable-index-store` on the build phase too (was test-only — a latent
+  within-gate re-plan). Teeth: gate PASSED into `.build-gate`; interactive `.build` test-target mtime stayed at
+  baseline; post-gate `swift build` = 3.88s warm, not 63s. (Honest note: TSK-846 corrects a side effect of my
+  own TSK-832 — commented on 832.)
+- **TSK-840 (`64d4c3d`)** — `TreeSitterEngine.warm(_:prioritizing:)` is now two-phase: priority
+  languages (markdown — the synchronous main-actor fence path) compile first/serially, the rest CONCURRENTLY via
+  `DispatchQueue.concurrentPerform` across cores (both `bundle(for:)` and `GrammarLoader.load` are concurrency-safe
+  by design), collapsing the measured ~231ms serial warm to ≈ceil(N/cores). Launch site warms `prioritizing:
+  [.markdown]`. 3 new `TreeSitterWarmupTests` (concurrent-over-allCases parity, prioritizing warms priority+remainder,
+  additive-priority); teeth demonstrated (phase-1 no-op → additive test red → restored). User-facing: faster
+  first-file highlighting after launch (CHANGELOG).
+
 ## LOG 2026-06-10 (latest+128) — TSK-557 CSV heap-accounted cap: last SECURITY item of Phase 0
 
 Commit `575d148`: `Limits.max_estimated_heap_bytes` (default 256 MiB) accounted in the tokenizer
