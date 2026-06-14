@@ -6,10 +6,14 @@ public struct MarkdownLink: Equatable, Sendable {
     public let target: String
     public let line: Int
     public let isImage: Bool
-    public init(target: String, line: Int, isImage: Bool) {
+    /// The `[...]` label (link text / image alt). Defaulted so existing call
+    /// sites that don't need it stay source-compatible.
+    public let text: String
+    public init(target: String, line: Int, isImage: Bool, text: String = "") {
         self.target = target
         self.line = line
         self.isImage = isImage
+        self.text = text
     }
 }
 
@@ -140,7 +144,8 @@ public enum MarkdownLinks {
 
             let cleaned = dropTitle(target.trimmingCharacters(in: .whitespaces))
             if !cleaned.isEmpty {
-                out.append(MarkdownLink(target: cleaned, line: lineNo, isImage: isImage))
+                let label = String(chars[(i + 1)..<j])   // the [...] text / image alt
+                out.append(MarkdownLink(target: cleaned, line: lineNo, isImage: isImage, text: label))
             }
             i = k + 1
         }

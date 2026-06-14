@@ -9,8 +9,8 @@ final class MarkdownLinksTests: XCTestCase {
     func test_extract_inlineLinkAndImage() {
         let links = MarkdownLinks.extract("see [docs](guide.md) and ![logo](img/logo.png)")
         XCTAssertEqual(links.count, 2)
-        XCTAssertEqual(links[0], MarkdownLink(target: "guide.md", line: 1, isImage: false))
-        XCTAssertEqual(links[1], MarkdownLink(target: "img/logo.png", line: 1, isImage: true))
+        XCTAssertEqual(links[0], MarkdownLink(target: "guide.md", line: 1, isImage: false, text: "docs"))
+        XCTAssertEqual(links[1], MarkdownLink(target: "img/logo.png", line: 1, isImage: true, text: "logo"))
     }
 
     func test_extract_dropsTitle() {

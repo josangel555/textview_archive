@@ -1502,6 +1502,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                                         action: #selector(checkLinks(_:)), keyEquivalent: "")
         checkLinksItem.target = self
         viewMenu.addItem(checkLinksItem)
+        // Markdown doc-quality lint (missing alt, heading skips, dup anchors).
+        let lintItem = NSMenuItem(title: "Lint Markdown",
+                                  action: #selector(lintMarkdown(_:)), keyEquivalent: "")
+        lintItem.target = self
+        viewMenu.addItem(lintItem)
 
         viewMenu.addItem(.separator())
         let formatItem = NSMenuItem(
@@ -2265,6 +2270,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         alert.runModal()
     }
 
+    /// Lint the active Markdown for common doc-quality issues.
+    @objc func lintMarkdown(_ sender: Any?) {
+        guard let issues = model.lintActiveMarkdown() else { return }
+        let alert = NSAlert()
+        if issues.isEmpty {
+            alert.messageText = "No lint issues"
+            alert.informativeText = "No missing image alt text, heading-level skips, or duplicate anchors found."
+            alert.alertStyle = .informational
+        } else {
+            alert.messageText = "\(issues.count) lint issue\(issues.count == 1 ? "" : "s")"
+            let shown = issues.prefix(25)
+                .map { "• line \($0.line) [\($0.rule)]: \($0.message)" }
+                .joined(separator: "\n")
+            alert.informativeText = shown + (issues.count > 25 ? "\n…" : "")
+            alert.alertStyle = .warning
+        }
+        alert.runModal()
+    }
+
     /// TSK-675 — copy the active Markdown rendered as standalone HTML to the clipboard.
     @objc func copyAsHTML(_ sender: Any?) {
         guard let html = model.htmlExportForActiveMarkdown() else { return }
@@ -2405,8 +2429,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(copyAsHTML(_:)), #selector(exportAsHTML(_:)):
             // TSK-675: active Markdown file only.
             return model.canExportActiveAsHTML
-        case #selector(checkLinks(_:)):
-            // TSK-675: active Markdown file only.
+        case #selector(checkLinks(_:)), #selector(lintMarkdown(_:)):
+            // active Markdown file only.
             return model.canCheckLinks
         case #selector(insertSnippet(_:)):
             // TSK-705: editor mode only (inserts at the caret).

@@ -4693,8 +4693,15 @@ public final class DocumentModel: ObservableObject {
     /// Result of "Check Links": how many links were examined + the broken ones.
     public struct LinkCheckReport: Sendable { public let total: Int; public let broken: [MarkdownLink] }
 
-    /// True when "Check Links" can act — an active Markdown text file.
+    /// True when "Check Links" / "Lint Markdown" can act — an active Markdown file.
     public var canCheckLinks: Bool { canExportActiveAsHTML }
+
+    /// Lint the active Markdown for common doc-quality issues (missing image alt,
+    /// heading-level skips, duplicate anchors). nil when no Markdown is active.
+    public func lintActiveMarkdown() -> [MarkdownLintIssue]? {
+        guard canExportActiveAsHTML, let text = activeFileText else { return nil }
+        return MarkdownLint.lint(text)
+    }
 
     /// TSK-675 — find broken LOCAL links/images in the active Markdown file
     /// (relative paths resolved against the file's directory; external links and
