@@ -9185,6 +9185,40 @@ without a rename-able context (canRenameActiveEditorSymbol guard); code-action p
 (canRequestCodeActions guard)). **TEETH:** neutered the rename guard (`|| true`) → the rename-guard test went RED →
 restored. Menu render + live LSP round-trips are the VM/live-tail.
 
+## LOG +423 (2026-06-13 — TSK-357: Format minified JS — dependency-free lexical re-indenter)
+
+Autonomous tick. Host-actionable user-facing **feature** pick (owner redirect: bug fixes + feature
+requests over the VM validation tail). Closed the named gap in TSK-357: JSON+XML pretty-print already
+shipped; JS was explicitly deferred "pending a third-party parser". Added JS support to `Formatter`
+WITHOUT any dependency.
+
+**Shipped TSK-357 (commit `bbbc858`, headless gate green — 5219 tests, 0 fail, no heavy-tier leak):**
+`Formatter.prettyPrintJS` — a lexical-state machine (no AST, no parser) that restores block structure
+by inserting newlines + indentation around `{` `}` and statement-ending `;`, while tracking string /
+template (incl. `${…}` interpolation) / line+block comment / regex context. Regex-vs-division uses the
+standard preceding-token heuristic. **Safety invariant:** it only ever rewrites whitespace OUTSIDE
+literals — every other byte is preserved in order — so it can never alter code meaning; Pretty-Print is
+a display-only transform (`DocumentModel.displayedText`) regardless, so zero data-loss risk. Auto-wired:
+`SupportedFormat.detect` gains js/mjs/cjs (jsx/ts excluded — unmodelled syntax), so the existing
+Pretty-Print command (`view.prettyPrint`), menu (`main.swift:1407`), format toggle and `supportsFormatToggle`
+gate light up for `.js` with no call-site changes.
+
+**Tests (host-safe, ViewerCoreTests.FormatterTests, +13):** a differential `jsSignificantContent`
+invariant — an INDEPENDENT lexer must agree byte-for-byte between input and formatted output (catches
+char drop/reorder); verbatim literal-preservation (regex-with-braces, string-with-braces, block comment,
+template stay intact); idempotence over an 18-case corpus; regex-after-`return`; js/mjs/cjs detection +
+jsx/ts exclusion. **TEETH:** broke regex detection (treat every `/` as division) → `literalsArePreservedVerbatim`
++ `regexAfterReturn` went RED (a `{` inside `/a{2,3}/` mis-read as a block injects a newline into the
+regex) → restored. NOTE: the differential invariant alone did NOT catch this (both independent lexers bail
+on the newline-in-regex identically, so their stripped projections still matched) — which is exactly why
+the explicit verbatim-substring tests exist as the dedicated literal-corruption guard.
+
+Self-validated to `validated` (output-/behavior-pinned host tests with demonstrated teeth; pure-logic
+engine behavior, no render path). Also recorded a precise partial-completion + deferral note on **TSK-564**
+(FFI double-copy, S4): zero-copy infra exists + used on the CSV-handle paths; eliminating copy #2 on the 8
+envelope methods needs a deliberate `CoreTransport` seam contract change (body `[UInt8]?` → zero-copy
+`ArraySlice` view) that belongs with the remote-carrier work, not a solo S4 rush.
+
 **LSP-menu lane now done.** Remaining LSP work (no UI at all, meatier): Find References + Workspace Symbols (backends
 exist, need a results panel — VM-gated). Noted for when the screen/owner is available.
 
