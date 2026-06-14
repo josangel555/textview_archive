@@ -9169,6 +9169,29 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +415 (2026-06-13 — TSK-807 slice 2: Archive file-info summary; + dismissed TSK-481 as already-fixed after verifying its tests)
+
+Autonomous tick. Bug hunt: scanned the reported pool for user-facing bugs. Picked TSK-481 (plugin subprocess timeout
+"kills only target pid — grandchild can leak fds/threads") — but a spike found it's ALREADY FIXED + regression-tested:
+PluginSubprocessHost isolates the child in its own process group (setpgid) + killpg's the whole group on timeout, then a
+bounded 500ms reader-join FORCE-CLOSES the read handles so an escaped/re-parented grandchild can't block the readers
+(fds/threads reclaimed). `GrandchildPipeTests` (3 tests incl. an fd-count-across-5-calls leak check) PASS fresh on main →
+dismissed `already-fixed` with the passing-checks artifact (board hygiene, like TSK-724).
+
+**Shipped TSK-807 slice 2 (commit `c691e39`, headless gate green — 5196 tests, 0 fail, no heavy-tier leak):** `ArchiveFileInfo.summaryRows`
+(ViewerCore) reuses the read-only `ArchiveCatalog` listing (system unzip/tar, no deps) to fill the empty Archive section
+of the file-info panel — Format (Zip/Tar/Tar.gz/Tar.bz2), file + folder counts (+ a `+` when the listing was capped),
+total uncompressed size where reported (zip). Wired into `MetadataPanel.loadTypeMetadata` `.archive` (off-main);
+non-archive degrades to no rows.
+
+**Tests (host-safe):** ViewerCoreTests `ArchiveFileInfoTests` (4 — real zip fixture via `/usr/bin/zip`: format + file/folder
+counts, uncompressed size, .jar=zip, non-archive→empty). **TEETH:** flipped the file/dir filter → count + size tests RED → restored.
+
+**TSK-807 status:** both HOST-TESTABLE gaps now done (SQLite slice +413, Archive slice +415). Lone residual = audio
+common-metadata tags (Title/Artist/Album/Year/Genre via AVMetadata) — un-host-testable like the existing AVAsset
+extractors, so not added speculatively; left at progress with the residual noted on the ticket. Image/PDF/AV-stats coverage
+was already solid.
+
 ## LOG +414 (2026-06-13 — TSK-361: large-file / long-line open HANG fixed (force soft-wrap); USER-FACING BUG, priority #1)
 
 Autonomous tick. Board scan surfaced a real **user-facing bug** in the reported pool — TSK-361 "clicking large files (e.g. a
