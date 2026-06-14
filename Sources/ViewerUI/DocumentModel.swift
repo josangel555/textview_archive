@@ -4649,8 +4649,23 @@ public final class DocumentModel: ObservableObject {
         return true
     }
 
-    /// True when the whitespace-cleanup commands can act — an active text file.
+    /// True when the whitespace-cleanup / line-op commands can act — active text file.
     public var canCleanUpActiveFile: Bool { activeTextWithEncoding != nil }
+
+    /// Edit ▸ Lines: sort / reverse / dedupe the whole active file in place
+    /// (terminator + trailing-newline preserved). Encoding preserved.
+    @discardableResult
+    public func sortActiveFileLines(ascending: Bool) -> Bool {
+        applyTextTransformToActiveFile { LineOps.sort($0, ascending: ascending) }
+    }
+    @discardableResult
+    public func reverseActiveFileLines() -> Bool {
+        applyTextTransformToActiveFile(LineOps.reverse)
+    }
+    @discardableResult
+    public func removeDuplicateActiveFileLines() -> Bool {
+        applyTextTransformToActiveFile(LineOps.removeDuplicates)
+    }
 
     /// TSK-675 — strip trailing spaces/tabs from every line (line endings + all
     /// other content preserved).

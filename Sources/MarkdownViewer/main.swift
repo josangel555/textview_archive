@@ -1817,6 +1817,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                                     action: #selector(demoteHeadings(_:)), keyEquivalent: "")
         demoteItem.target = self
         editMenu.addItem(demoteItem)
+        // Whole-file line operations on the active text file (in place).
+        let linesItem = NSMenuItem(title: "Lines", action: nil, keyEquivalent: "")
+        let linesMenu = NSMenu(title: "Lines")
+        let lineActions: [(String, Selector)] = [
+            ("Sort Ascending (A→Z)", #selector(sortLinesAsc(_:))),
+            ("Sort Descending (Z→A)", #selector(sortLinesDesc(_:))),
+            ("Reverse", #selector(reverseLines(_:))),
+            ("Remove Duplicates", #selector(removeDuplicateLines(_:))),
+        ]
+        for (title, action) in lineActions {
+            let mi = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            mi.target = self
+            linesMenu.addItem(mi)
+        }
+        linesItem.submenu = linesMenu
+        editMenu.addItem(linesItem)
         // Minify the active JSON file (compact; key order + values preserved).
         let minifyJSONItem = NSMenuItem(title: "Minify JSON",
                                         action: #selector(minifyJSON(_:)), keyEquivalent: "")
@@ -2277,6 +2293,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     @objc func promoteHeadings(_ sender: Any?) { _ = model.shiftActiveMarkdownHeadings(by: -1) }
     @objc func demoteHeadings(_ sender: Any?) { _ = model.shiftActiveMarkdownHeadings(by: 1) }
 
+    /// Edit ▸ Lines — whole-file line operations on the active text file.
+    @objc func sortLinesAsc(_ sender: Any?) { _ = model.sortActiveFileLines(ascending: true) }
+    @objc func sortLinesDesc(_ sender: Any?) { _ = model.sortActiveFileLines(ascending: false) }
+    @objc func reverseLines(_ sender: Any?) { _ = model.reverseActiveFileLines() }
+    @objc func removeDuplicateLines(_ sender: Any?) { _ = model.removeDuplicateActiveFileLines() }
+
     /// TSK-675 — report broken local links/images in the active Markdown file.
     @objc func checkLinks(_ sender: Any?) {
         guard let report = model.checkLinksInActiveMarkdown() else { return }
@@ -2462,7 +2484,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             // TSK-675: any active text file.
             return model.canConvertActiveFileLineEnding
         case #selector(trimTrailingWhitespace(_:)), #selector(ensureFinalNewline(_:)),
-             #selector(convertIndentToSpaces(_:)), #selector(convertIndentToTabs(_:)):
+             #selector(convertIndentToSpaces(_:)), #selector(convertIndentToTabs(_:)),
+             #selector(sortLinesAsc(_:)), #selector(sortLinesDesc(_:)),
+             #selector(reverseLines(_:)), #selector(removeDuplicateLines(_:)):
             // TSK-675: any active text file.
             return model.canCleanUpActiveFile
         case #selector(showDocumentStatistics(_:)):
