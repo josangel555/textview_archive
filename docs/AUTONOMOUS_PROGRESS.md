@@ -9219,6 +9219,33 @@ engine behavior, no render path). Also recorded a precise partial-completion + d
 envelope methods needs a deliberate `CoreTransport` seam contract change (body `[UInt8]?` → zero-copy
 `ArraySlice` view) that belongs with the remote-carrier work, not a solo S4 rush.
 
+## LOG +424 (2026-06-13 — TSK-825: Format minified CSS — sibling of the JS re-indenter)
+
+Autonomous tick. Owner feature-focus continued; the named cron pools (SECURITY 635/636, PARITY
+637-640, the bug batch) are all `validated` — the boilerplate naming them is stale; open bugs are
+VM-render-gated (`review`+live-validation) or owner-gated (598 re-feel, 733/791 questions), so the
+highest-value HOST-actionable user-facing win was the CSS formatter I teed up last tick (TSK-825).
+Not §2.5-gated — Formatter is a standalone display utility, not a port-target engine.
+
+**Shipped TSK-825 (commit `3576817`, headless gate green — 5219 tests, 0 fail, no heavy-tier leak):**
+`Formatter.prettyPrintCSS` — a FOCUSED CSS lexer (string + `/* */` block comment only; CSS has no
+regex/template/line-comments, and a bare `/` is a value char as in `url(http://…)` / `font:12px/1.4`)
+re-indenting around `{` `}` declaration-`;` and top-level selector-list `,` (commas inside `()`/`rgb()`
+and inside a rule body stay inline). Same safety invariant as JS — only whitespace OUTSIDE literals is
+rewritten. Auto-wired via `SupportedFormat.detect(css)` into the existing Pretty-Print command/menu/
+toggle; `.scss`/`.less` excluded (their `//` line comments + nesting aren't modelled).
+
+**Tests (host-safe, ViewerCoreTests.FormatterTests, +8 → 29 total):** a differential
+`cssSignificantContent` invariant (independent CSS lexer agrees byte-for-byte input vs output across a
+12-case corpus incl. `url(http://…)`, `12px/1.4`, `rgb(1,2,3)`, strings/comments with structural chars,
+`@media` nesting, `:nth-child()`); verbatim literal-preservation (string/comment/url); idempotence;
+detection (css → .css, scss/less → nil). **TEETH:** disabled comment lexing → BOTH the verbatim guard
+AND the differential invariant went RED (unlike the JS regex case, where only the verbatim guard fired —
+here `significant` correctly re-lexes the torn comment in the output and preserves the injected newlines,
+so the projections diverge) → restored. Self-validated to `validated` (pure-logic, host-tested, teeth).
+
+CHANGELOG: merged into one "Pretty-Print minified JavaScript & CSS" line (both shipped today).
+
 **LSP-menu lane now done.** Remaining LSP work (no UI at all, meatier): Find References + Workspace Symbols (backends
 exist, need a results panel — VM-gated). Noted for when the screen/owner is available.
 
