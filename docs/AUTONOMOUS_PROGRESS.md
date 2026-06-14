@@ -1,5 +1,37 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-358 absolute content text-size (base × zoom) SHIPPED (6a045e0, → review)
+
+The committed-next item from last firing. Resolves the long-standing "is it font-size OR zoom?" — it's **both**:
+a new absolute base size sets the un-zoomed baseline; the existing unified `zoom` slider multiplies it (and the
+UI chrome) on top.
+
+What shipped (commit `6a045e0`):
+- **Pref** (`PreferencesStore`): `contentFontSize` (clamped 8–32pt, default **13** = the historical hard-coded
+  content base, so an un-set pref is **behaviour-neutral**). Mirrors the `zoom` getter/setter clamp pattern.
+- **Pure model** (`ContentFontSizing.effective(baseSize:zoom:)`, ViewerCore): isolates the base×zoom multiply so
+  the interaction has host teeth (the owner-flagged concern).
+- **Wiring** (`DocumentModel`): `@Published contentFontSize` (write-through to prefs) + `effectiveContentFontSize`
+  (= base × zoom). The three content sites in `ContentView` (CM6 editor, source `TextDisplayView`, source
+  `SourceGutterView` — all formerly `13 * model.zoom`) now bind to it, so they stay in lock-step. HEX's
+  `12 * model.zoom` byte-grid base is left alone (distinct monospace-grid concern).
+- **Settings UI**: a "Text Size" slider in Appearance under the Zoom slider, + a one-line explainer.
+
+Teeth: 3 `ContentFontSizingTests` (base×zoom incl. behaviour-neutral default + zoom<1) + 3 `PreferencesStore`
+tests (default 13, round-trip, clamp 8–32). Host headless gate green (5492 tests, tier enforcement OK). The
+Settings slider appearance + on-screen content font change (CM6/source) = the VM render tail.
+
+`[PARTIAL]` ticket: the FONT-SIZE half is done → `review`; the **window-sizing** half (the ticket's other
+clause, "Window sizing [left menu, text]") remains a separate follow-up slice (left at `[~]` in WORK_QUEUE).
+
+Batch note: shipped one contained complete feature. Evaluated pairing a 2nd this firing but the remaining
+top-down tail each carries real same-firing risk/size — **343** (history/revert) touches the critical save path
++ a menu system not yet mapped; **769** is a multi-part VM terminal bundle; **470** (zoom split) would REVERSE
+the owner's deliberate 2026-05 collapse of the two zoom sliders (owner-decision territory, not an autonomous
+reversal). So 358 ships clean; 343 is teed up for its own focused firing (its `LocalHistoryStore` core is built
++ tested — remaining = best-effort capture-on-save wiring + a `prepareRevert`-style revert action + a History
+menu mirroring the Convert-Encoding pattern).
+
 ## LOG 2026-06-14 — TSK-534 audio trim/fade + Save-a-Copy SHIPPED (dc17ac8, → review)
 
 Third "backend already built" discovery in a row (after 524 image-editor + 533 spectrum analyzer): the audio

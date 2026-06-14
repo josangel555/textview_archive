@@ -89,7 +89,8 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
 - [x] **TSK-350** — Formatting: any remaining formatter gaps. `[slice]` done: JSON/XML/JS/CSS pretty-print.
       `[review 8449333]` — added markdown table alignment as an in-place **Align Markdown Tables** Edit-menu command (md has no format VIEW lens by design — FormatToggleTests). Spike finding: the other detect() absences (.jsonl/.svg/.scss/.less/.jsx/.ts) are DELIBERATE exclusions — no further clean gaps; new types (YAML/TOML/SQL) = separate from-scratch tickets if wanted.
 - [ ] **TSK-343** — History, Revert (revert a file to a previous saved version)
-- [ ] **TSK-358** — Absolute content font-size picker in settings (today only the zoom multiplier) + window-size control
+- [~] **TSK-358** — Absolute content font-size picker in settings (today only the zoom multiplier) + window-size control
+      `[review 6a045e0]` — FONT-SIZE slice shipped: Settings → Appearance "Text Size" slider (8–32pt) sets an absolute content base; on-screen = base × zoom (ContentFontSizing.effective). PreferencesStore.contentFontSize (clamped, default 13 = historical → behaviour-neutral); editor/source/gutter bind to DocumentModel.effectiveContentFontSize. base×zoom + prefs-clamp host-tested; slider/font render = VM tail. REMAINING: the "window sizing" half (separate slice).
 - [x] **TSK-360** — Source-view line-age coloring (git-blame DarkBlue→LightBlue heatmap) `[VM, CM6-render]`
       `[review 933737b]` — pure BlameHeatmap (timestamps→dark/light-blue gradient, normalized over the file's history) tints the blame gutter via an additive CMGutterMarker.color + a small CM6 toDOM background. Model/feeder/encode host-tested; on-screen tint = VM render tail.
 - [~] **TSK-382** — Squeeze DocumentModel memory footprint to bare bones
