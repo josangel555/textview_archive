@@ -2278,6 +2278,20 @@ public final class DocumentModel: ObservableObject {
         editor.insertIntoEditor(DateTimeStamp.string(for: Date()))
     }
 
+    /// True when a snippet can be inserted — the active tab is in editor mode.
+    public var canInsertSnippet: Bool { currentViewMode == .editor }
+
+    /// TSK-705 (slice 3) — insert `snippet`'s expanded text at the active
+    /// editor caret. For now this inserts the plain text (placeholder defaults
+    /// filled); tab-stop cursor navigation (using `ParsedSnippet.stops()`) is a
+    /// later editor/VM slice. No-op (returns false) unless in editor mode.
+    @discardableResult
+    public func insertSnippet(_ snippet: Snippet) -> Bool {
+        guard currentViewMode == .editor else { return false }
+        editor.insertIntoEditor(snippet.parsed.plainText)
+        return true
+    }
+
     /// Forwarder. New code should bind `$editor.editorIndentation`.
     public var editorIndentation: CMIndentation {
         get { editor.editorIndentation }

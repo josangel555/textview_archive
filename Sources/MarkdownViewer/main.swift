@@ -1724,6 +1724,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
         convertItem.submenu = convertMenu
         editMenu.addItem(convertItem)
+        // TSK-705: insert a built-in snippet at the caret. Tag = index into
+        // SnippetLibrary.builtIns. Editor-mode only (validateMenuItem).
+        let snippetItem = NSMenuItem(title: "Insert Snippet", action: nil, keyEquivalent: "")
+        let snippetMenu = NSMenu(title: "Insert Snippet")
+        for (i, snip) in SnippetLibrary.builtIns.enumerated() {
+            let mi = NSMenuItem(title: snip.name,
+                                action: #selector(insertSnippet(_:)), keyEquivalent: "")
+            mi.target = self
+            mi.tag = i
+            snippetMenu.addItem(mi)
+        }
+        snippetItem.submenu = snippetMenu
+        editMenu.addItem(snippetItem)
         editMenu.addItem(.separator())
         editMenu.addItem(findSubmenuItem)
         editMenuItem.submenu = editMenu
@@ -2122,6 +2135,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         _ = model.convertActiveFileEncoding(to: choices[tag].encoding)
     }
 
+    /// TSK-705 — insert the built-in snippet at the menu item's tag.
+    @objc func insertSnippet(_ sender: Any?) {
+        let tag = (sender as? NSMenuItem)?.tag ?? -1
+        let snips = SnippetLibrary.builtIns
+        guard snips.indices.contains(tag) else { return }
+        _ = model.insertSnippet(snips[tag])
+    }
+
     /// Menu validation: gray-out items that don't apply to the current
     /// state. macOS calls this every time a menu opens (and for items
     /// with key equivalents, on the keystroke too).
@@ -2193,6 +2214,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(convertFileEncoding(_:)):
             // TSK-352: any active text file.
             return model.canConvertActiveFileEncoding
+        case #selector(insertSnippet(_:)):
+            // TSK-705: editor mode only (inserts at the caret).
+            return model.canInsertSnippet
         case #selector(toggleBookmark(_:)):
             item.title = model.isCurrentTabBookmarked
                 ? "Remove Bookmark"
