@@ -56,7 +56,11 @@ APP_DIR="$ROOT_DIR/dist/TextView.app"
 # parity grammars (python/bash/yaml/html/css/go/ruby/md/xml/sql) — release
 # measured 70 MB bundle / 50 MB exec with the Swift grammars still
 # double-carried. Stage 4 deletion reclaims; owner revisits hard caps then.
-BUDGET_MB="${BUDGET_MB:-${1:-72}}"
+# 72 -> 80 (2026-06-14, owner ask "up the headroom a bit for upcoming tasks"):
+# release measured 71.9 MB / 51.8 MB exec — only ~50 KB / ~160 KB under the
+# 72/52 caps, i.e. one feature from red. +8 MB headroom for upcoming work; the
+# real reclaim is still Stage 4 (delete the double-carried Swift grammars).
+BUDGET_MB="${BUDGET_MB:-${1:-80}}"
 # Per-exec check defaults to 26 MB. The eager keeplist (JSON, Swift,
 # Markdown) + everything-else-Swift-and-resources fits in ~11 MB
 # release. The CodeMirror 6 editor (Swift wrapper + JS bridge code)
@@ -81,7 +85,11 @@ BUDGET_MB="${BUDGET_MB:-${1:-72}}"
 # grammar objects are exec-resident (static link), unlike the Swift lazy
 # grammar dylibs they will replace.
 # 44 -> 52 (2026-06-12): stage-3 grammar objects (same blanket as above).
-EXEC_BUDGET_MB="${EXEC_BUDGET_MB:-52}"
+# 52 -> 60 (2026-06-14, owner ask "up the headroom a bit"): release exec
+# measured 51.8 MB (~160 KB under the 52 cap). +8 MB headroom for upcoming
+# work. Most of the exec is tree-sitter grammar parse tables (~29 MB of the
+# rust archive) double-carried with the Swift dylibs — Stage 4 is the reclaim.
+EXEC_BUDGET_MB="${EXEC_BUDGET_MB:-60}"
 BUDGET_BYTES=$(( BUDGET_MB * 1024 * 1024 ))
 EXEC_BUDGET_BYTES=$(( EXEC_BUDGET_MB * 1024 * 1024 ))
 
