@@ -270,6 +270,7 @@ struct MetadataPanel: View {
         case .image:  new = await Self.imageMetadata(url: url)
         case .audio, .video: new = await Self.avMetadata(url: url)
         case .pdf:    new = Self.pdfMetadata(url: url)
+        case .sqlite: new = await Self.sqliteMetadata(url: url)
         default:      new = []
         }
         await MainActor.run { self.rows = new }
@@ -347,6 +348,14 @@ struct MetadataPanel: View {
                 }
             }
             return out
+        }.value
+    }
+
+    /// SQLite "Database" section (TSK-807) — object counts + total rows +
+    /// encoding/page-size, read off-main via the pure `SQLiteFileInfo`.
+    private static func sqliteMetadata(url: URL) async -> [Row] {
+        await Task.detached(priority: .userInitiated) {
+            SQLiteFileInfo.summaryRows(for: url).map { Row($0.label, $0.value) }
         }.value
     }
 
