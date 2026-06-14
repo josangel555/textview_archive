@@ -378,13 +378,18 @@ struct TabBarItem: View {
                     Text(tab.title)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                        // Bold current tab so the active document is
-                        // obvious at a glance.
-                        .font(.system(size: 12 * scale, weight: isSelected ? .semibold : .regular))
+                        // Bold the active document so it's obvious at a glance —
+                        // but NOT a preview tab (TSK-902: preview = "just
+                        // italics, not bold"). Rule in the host-tested
+                        // `TabTitleStyle`.
+                        .font(.system(size: 12 * scale,
+                                      weight: TabTitleStyle.isBold(
+                                        isSelected: isSelected, isPreview: tab.isPreview)
+                                        ? .semibold : .regular))
                         // Italic for an ephemeral preview tab (VSCode
                         // convention — TSK-306 Phase 3). Promote (double-click /
                         // Enter / edit) clears `isPreview` → upright.
-                        .italic(tab.isPreview)
+                        .italic(TabTitleStyle.isItalic(isPreview: tab.isPreview))
                         .foregroundStyle(isSelected ? Color.primary : Color.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if tab.isDirty {
