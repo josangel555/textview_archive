@@ -1,5 +1,35 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — documented HOLD (§5): host-actionable pool confirmed exhausted across ALL lanes
+
+Autonomous tick. Checked the one untapped fallback lane — the **fixed-lane validation drain (rule 1.5)** — and
+confirmed it's also not cleanly actionable: the host-testable `blocker:none` candidate **TSK-272** (sidebar
+arrow→preview) is DELIBERATELY held at `fixed` (its residual is SwiftUI key-routing sharing TSK-306's PARKED
+owner-decision on the validation bar; its model tests were already re-verified fresh 7/7 + held in the
+2026-06-10 drain pass). Validating it would double-count the shared core + pre-empt the parked decision. The
+rest of the fixed lane is `live-validation` (VM) — the prior drain passes already separated host-verifiable from
+VM-gated there.
+
+**Conclusion (exhaustive survey now complete across every lane):** the clean, safe, host-actionable, non-render
+work is GENUINELY drained — WORK_QUEUE (Section A/B done; 358 diffuse+470-tangled, 382 central-refactor),
+snippets epic (MODEL 100% done, only CM6 render + UI left), security (309 deferred-by-design), rust-core (844 =
+a *security* heap-cap re-derivation for a fresh focused session; 573 web last-resort), reported pool (epics /
+[PARTIAL] umbrellas / [PORT]/dep-gated / foreign 441-445 / owner-gated), and the fixed-lane drain (gated /
+already-handled). So this firing is a **documented HOLD** per SOP §5 — main stays headless-gate-green
+(`343ea6f`); NOT manufacturing marginal slices.
+
+**The owner's input is now the bottleneck (all captured + parked):**
+- **TSK-343** (parked, waiting:human) — local-history snapshot-on-save: default-on vs opt-in + retention.
+- **TSK-358** — absolute font-size × zoom interaction (intersects TSK-470 zoom-split; sequencing decision).
+- **Lane steer** — (a) rust-core 844 carefully (fresh session), (b) snippets CM6 Tab-wiring + Section-C `[VM]`
+  render on the VM, (c) 382 memory profiling-spike.
+- **≈13-item `review` backlog** → a VM/owner glance moves them to `done`.
+
+A fresh session reads `HANDOFF.md` (refreshed last firing) → `docs/AUTONOMOUS_PROGRESS.md` (these top logs) to
+resume on the high-value lanes the moment the owner steers. Pure `[VM]`/render-blind builds (e.g. snippet
+Tab-interception) are deliberately NOT done unsupervised — Tab is load-bearing in the editor; a blind CM6 change
+is the kind of risky-unvalidatable edit the SOP says to avoid.
+
 ## LOG 2026-06-14 — snippets epic slice 5: tab-stop navigation model (TSK-705 model layer COMPLETE)
 
 Autonomous tick. Surveyed the board's reported pool (security/groomed) for a fresh host-testable vein: the
