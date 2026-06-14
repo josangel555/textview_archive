@@ -120,7 +120,8 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
 
 ## D. Bigger features / epics (slice them; P0–P2 first)
 
-- [ ] **TSK-675** — Text Edit: plain-text editing [P0 epic — spike → slices]
+- [~] **TSK-675** — Text Edit: plain-text editing [P0 epic — spike → slices]
+      `[spike done + slice 1 @ f472ad6, triaged]` — owner scope: full robust plain-text editor on the existing CM6 stack. SPIKE: most foundations already exist (CM6 edit+undo, EditorWriter atomic save + encoding/BOM + dirty, line-ending detection, find/replace + project-replace, go-to-line, Convert Encoding, hot-exit, snippets). SLICE 1 SHIPPED — **Convert Line Endings** (LF/CRLF/CR), child TSK-862, pure converter host-tested. NEXT clean host-buildable slices: (2) Document statistics (word/char/line count), (3) trim-trailing-whitespace + ensure-final-newline on save. Render-coupled slices (column select, macro, insert/overwrite) = VM/later.
 - [ ] **TSK-670** — PDF reader: view/open PDFs in-app [P2 epic]
 - [ ] **TSK-264** — Sessions optional (run without the session system)
 - [ ] **TSK-265** — Multi-window session support

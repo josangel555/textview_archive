@@ -1,5 +1,33 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-675 (P0 epic) spiked + first slice shipped: Convert Line Endings (f472ad6, → review)
+
+Broke the "everything's VM/owner-blocked" run by advancing the **highest-priority epic**. Confirmed first that the
+groomed fallback pools are drained: the **security** and **rust-core** pools are nearly all `validated`/`done`
+(remaining = owner-gated 649 flip / 399 dep, umbrellas); 309 (bookmark-symlink TOCTOU) is deliberately
+deferred-as-out-of-scope (own folder, non-sandboxed). So I pulled WORK_QUEUE Section D's #1, **TSK-675 "Text Edit:
+plain-text editing [P0]"** — and found the owner had ALREADY answered its parked scope question (seq 5459: "full.
+we already have CM6 based editor. but need the editing features should be robust plain text editor"). So it was
+unblocked, not owner-gated.
+
+SPIKE (auto-approved §0.5): surveyed the editing surface — most foundations already exist (CM6 edit + native undo,
+`EditorWriter` atomic save + encoding/UTF-16 BOM + dirty-state, `LineEndingDetector` status-bar LF/CRLF, indent
+detection/settings, in-file + cross-file + project-wide replace, go-to-line, Convert Encoding, hot-exit, snippets).
+Filed the breakdown on 675 (→ triaged): the robustness slices, several overlapping TSK-351/352. Cleanest
+host-buildable gaps: (1) Convert Line Endings, (2) document statistics, (3) trim-trailing/ensure-final-newline.
+
+SLICE 1 SHIPPED (commit `f472ad6`, child **TSK-862** → review): the app DETECTED line endings but couldn't
+convert them. New `LineEndingConverter.convert` (pure, **scalar-walk** so the `\r\n` grapheme splits correctly —
+the recurring CRLF trap) normalizes every `\r\n`/`\r`/`\n` to a target terminator WITHOUT appending one (content
+untouched, only break bytes). `DocumentModel.convertActiveFileLineEnding(to:)` write-throughs in the file's
+**current encoding** then drop+reloads (same mechanism as Convert Encoding); `Edit ▸ Convert Line Endings ▸
+{LF/CRLF/CR}` + `validateMenuItem` enablement mirror the shipped Convert-Encoding submenu (low blind-risk). 9 pure
+converter teeth (mixed→LF, CRLF no-double-count, idempotent, no-trailing-added, multi-byte passthrough). Host gate
+green (5503 tests). Menu render = VM tail.
+
+NEXT: 675 slices 2 (document statistics — pure model + status-bar/panel) + 3 (trim-trailing-whitespace +
+ensure-final-newline on save — pure transforms + a save hook) are clean host-buildable pulls for the next firing(s).
+
 ## LOG 2026-06-14 — TSK-358 rendered-markdown half: Text Size now scales the rendered view too (2ad2518, → review)
 
 Continued 358 to cover the rendered-markdown content type (the prior firing did editor/source/gutter). Spent the
