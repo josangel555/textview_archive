@@ -1,5 +1,36 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — 829 design FINALIZED (naive plan proven net-negative) + validation-drain checked; ESCALATING (3rd exhausted-pool firing)
+
+No owner activity / no regression. Re-scoped for a shippable win; confirmed the clean host pool is exhausted.
+
+- **TSK-829 (parallel cross-file search) — design CORRECTED + finalized on the ticket.** Reading the code killed
+  the prior naive two-phase plan: `Options.maxResults` defaults to **500** and the serial walk HALTS once hit, so
+  a common-term search would go from "stop after a few files" to "read up to 50k candidates" — NET-NEGATIVE. The
+  correct, byte-identical-result design (recorded): batched serial walk → `concurrentPerform` match per batch
+  (per-index slots via `withUnsafeMutableBufferPointer` = race-free; `Matcher: @unchecked Sendable`) → **serial
+  fold in walk order applying the maxResults gate** (reproduces the serial mid-file break exactly), over-read
+  bounded to one batch. ~120 LOC + Swift-6 concurrency annotations + a measurement (TSK-847 discipline). DEFERRED
+  to a fresh focused context — a correctness-sensitive concurrency refactor on the search path shouldn't be rushed
+  in a depleted session; the ticket comment is implement-ready.
+- **Validation drain checked (rule 1.5):** the `blocker:none` fixed items don't yield a host-validatable close —
+  TSK-853 (launch-warm) is correct at fixed (the main.swift launch wiring is VM/manual timing; only the adapter
+  method is host-tested); TSK-575's cast-safety is done + the saturation residual (~150 warn-tier pedantic nits)
+  is genuinely low-value (the project tolerates pedantic=warn); TSK-830(c) closed not-worth-it last firing.
+
+**ESCALATION — the loop has now hit an exhausted clean-win pool 3 firings running.** Per SOP §5 + the anti-paper-cut
+rule, I'm surfacing rather than manufacturing marginal work. The loop's user-visible output is gated; ONE owner
+action unblocks the most:
+- **Fastest unblock — a VM validation pass:** ~16 `review` render-tail items (palette `:`+double-Shift, sticky
+  scroll, blame heatmap, hot-exit dirty-dot, language-mode menu, tab-ops, new-file submenu, encoding-convert, …)
+  are built + host-model-tested and only need VM pixels/interaction to reach `done`. This converts the most banked
+  work to shipped with no new design.
+- **Owner decisions (each unblocks a clean build):** TSK-847 A/B/C (bench isolation vs ceiling-relax vs stay-12);
+  TSK-343 (local-history snapshot default + retention); TSK-358 (font-size × zoom).
+- **Otherwise:** the remaining build work is careful/large — 829 concurrency (design ready), 543/826/564 FFI
+  contract perf (fresh-session), or VM-render feature plumbing (727 `@`/`#`, 668 CSV paging, 524 image-editor UI).
+  These need dedicated focused sessions, not quick-win firings.
+
 ## LOG 2026-06-14 — Triage firing: 830 closed out + 829 groomed to executable (clean host pool exhausted)
 
 Fresh firing. No owner activity / no new app regression. Scoped the remaining perf pool for another complete
