@@ -224,6 +224,24 @@ public enum EditorWriter {
     /// decision is made against the same inode we then write next to —
     /// closing the stat-then-write gap of the prior `attributesOfItem`
     /// approach.
+    /// Prepend the byte-order mark for explicit-endianness UTF-16 (TSK-861).
+    /// `data(using: .utf16LittleEndian/.utf16BigEndian)` is BOM-less, but the
+    /// read path (`TextDecoder.decodeViaBOM`) relies on the BOM to re-detect
+    /// the encoding — and its BOM-less UTF-16 fallback needs ≥32 bytes + an
+    /// 80% NUL-parity signal, which short files fail. `.utf16`/`.unicode`
+    /// already carry a BOM, and every other encoding takes none, so only the
+    /// two explicit-endianness cases need the marker added.
+    static func withByteOrderMark(_ data: Data, encoding: String.Encoding) -> Data {
+        switch encoding {
+        case .utf16LittleEndian:
+            return Data([0xFF, 0xFE]) + data
+        case .utf16BigEndian:
+            return Data([0xFE, 0xFF]) + data
+        default:
+            return data
+        }
+    }
+
     @discardableResult
     public static func save(
         _ text: String,
@@ -231,9 +249,17 @@ public enum EditorWriter {
         encoding: String.Encoding = .utf8,
         allowSymlink: Bool = false
     ) throws -> (mtime: Date?, size: Int?) {
-        guard let data = text.data(using: encoding) else {
+        guard let body = text.data(using: encoding) else {
             throw EditorWriteError.encodingFailed(encoding)
         }
+        // TSK-861: re-emit the byte-order mark for explicit-endianness UTF-16.
+        // `TextDecoder` strips the BOM on read and records `.utf16LittleEndian`
+        // / `.utf16BigEndian`, but `data(using:)` for those encodings produces
+        // BOM-LESS bytes — so a re-saved UTF-16 file loses its BOM, and a SHORT
+        // file (below the read side's ≥32-byte BOM-less UTF-16 heuristic) then
+        // mis-decodes as CP1252/Latin-1 on reopen (garbled). `.utf16`/`.unicode`
+        // already include a BOM; UTF-8 / CP1252 / Latin-1 take none.
+        let data = Self.withByteOrderMark(body, encoding: encoding)
         guard url.isFileURL else {
             throw EditorWriteError.writeFailed("not a file URL: \(url)")
         }

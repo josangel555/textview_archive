@@ -9,6 +9,9 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 
 ## 2026-06-14
 
+### Fixed
+- **UTF-16 files no longer garble after editing** — saving a UTF-16-encoded text file (or rewriting one via project-wide replace) now keeps its byte-order mark, so a short UTF-16 file reopens correctly instead of being mis-read as Windows-1252/Latin-1 and showing garbled characters.
+
 ### Changed
 - **Bottom attributes bar uses toggle buttons** — Wrap, Special chars, Enable JS, and the preview Info toggle are now press-to-toggle buttons (matching the Find bar) instead of small checkboxes, so their on/off state reads at a glance.
 
