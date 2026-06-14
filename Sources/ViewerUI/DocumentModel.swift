@@ -294,6 +294,9 @@ public final class DocumentModel: ObservableObject {
     /// the global recents list.
     public let goToPathHistory: GoToPathHistoryStore
     public let bookmarksStore: BookmarksStore
+    /// User-defined snippets merged over the built-ins (TSK-705). Read by the
+    /// Insert-Snippet menu + `insertSnippet`.
+    public let snippetStore: SnippetStore
     private let preferences: PreferencesStore
     /// The app's preference store, exposed for the Settings export/import menu
     /// actions (TSK-681) which serialize/apply a `SettingsSnapshot`.
@@ -354,6 +357,7 @@ public final class DocumentModel: ObservableObject {
             storeURL: GoToPathHistoryStore.defaultStoreURL()
         ),
         bookmarks: BookmarksStore = BookmarksStore(storeURL: BookmarksStore.defaultStoreURL()),
+        snippets: SnippetStore = SnippetStore(storeURL: SnippetStore.defaultStoreURL()),
         sidebar: SidebarModel = SidebarModel(),
         preferences: PreferencesStore = PreferencesStore(),
         // Injectable for tests (TSK-627: fake-server registry e2e). The
@@ -365,6 +369,7 @@ public final class DocumentModel: ObservableObject {
         self.history = history
         self.goToPathHistory = goToPathHistory
         self.bookmarksStore = bookmarks
+        self.snippetStore = snippets
         self.sidebar = sidebar
         self.preferences = preferences
         // Shoulder-rail layout shares the SAME defaults instance the

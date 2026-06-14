@@ -1728,7 +1728,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // SnippetLibrary.builtIns. Editor-mode only (validateMenuItem).
         let snippetItem = NSMenuItem(title: "Insert Snippet", action: nil, keyEquivalent: "")
         let snippetMenu = NSMenu(title: "Insert Snippet")
-        for (i, snip) in SnippetLibrary.builtIns.enumerated() {
+        for (i, snip) in model.snippetStore.all.enumerated() {
             let mi = NSMenuItem(title: snip.name,
                                 action: #selector(insertSnippet(_:)), keyEquivalent: "")
             mi.target = self
@@ -2135,10 +2135,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         _ = model.convertActiveFileEncoding(to: choices[tag].encoding)
     }
 
-    /// TSK-705 — insert the built-in snippet at the menu item's tag.
+    /// TSK-705 — insert the snippet (built-in or user-defined) at the menu
+    /// item's tag (index into `snippetStore.all`).
     @objc func insertSnippet(_ sender: Any?) {
         let tag = (sender as? NSMenuItem)?.tag ?? -1
-        let snips = SnippetLibrary.builtIns
+        let snips = model.snippetStore.all
         guard snips.indices.contains(tag) else { return }
         _ = model.insertSnippet(snips[tag])
     }

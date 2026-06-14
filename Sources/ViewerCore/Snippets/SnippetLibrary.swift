@@ -2,7 +2,7 @@ import Foundation
 
 /// One reusable snippet (TSK-705, slice 2). `body` uses the snippet syntax
 /// parsed by `SnippetExpansion`; `name` is the menu/palette label.
-public struct Snippet: Equatable, Sendable, Identifiable {
+public struct Snippet: Codable, Equatable, Sendable, Identifiable {
     public let id: String
     public let name: String
     public let body: String
