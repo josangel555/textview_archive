@@ -1,17 +1,18 @@
 <!-- CLAUDE-HANDOFF v1 -->
-# Handoff — to changelog + session wrap  (2026-06-13)
+# Handoff — VM render-lane validated; readback  (2026-06-13)
 
-**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `2cb1197`
+**Session:** claude-mdv (autonomous loop)  ·  **cwd:** `/Users/me/Documents/workspaces/claude/markdown_viewer`  ·  **branch/SHA:** `main` @ `bd2bbd0`
 
 ## Mission
 Autonomous loop: drive the `tasked` board (http://localhost:8787/) toward Done, user-facing bug fixes first. Keep `main` headless-gate-green; commit per item; log to `docs/AUTONOMOUS_PROGRESS.md`; **NEW: keep `CHANGELOG.md` updated with user-facing changes each tick.**
 
 ## Current state
 - **Done this session (gate-green on main):** TSK-741 (terminal large-paste ANR) ✅validated · TSK-736 (hover-highlight lag) ✅validated · TSK-619 (first-open TS-compile off-main) ✅validated · TSK-822 (T5 tier-gate) ✅validated · TSK-806 (split shows unsaved edits) fixed/VM · TSK-743 (source preview scroll) fixed/VM · TSK-821 (rendered-markdown preview scroll) fixed/VM. Plus the 580 FFI-envelope close-out (validated) + 819 VM .build chown.
-- **Owner asks (this turn): DONE.** Added `CHANGELOG.md` (user-facing progress view) + the keep-updated discipline in `CLAUDE.md` (SOP) + `docs/TASK_WORKFLOW.md` §4 (per-firing reminder). Committed `2cb1197`.
-- **In flight:** nothing half-done. (Was about to build a TSK-821 WebView-lane test — NOT started, just researched; see BACKLOG.)
-- **Host-actionable user-facing pool is DRAINED.** Remaining = the VM render/interaction validation tail + the parked perf re-feel (below).
-- **Next action:** owner asked to `/compact` after this handoff. On resume, the cleanest next work is the TSK-821 `PaneScrollRestoreWebViewTests` (#192-gated; round-trip primitives on our rendered page) OR awaiting the owner's TSK-598 perf re-feel.
+- **Since the prior handoff:** TSK-821 `PaneScrollRestoreWebViewTests` BUILT (`6306505`, #192-gated, wired into both lanes) → 821 at **review**. **VM GUI-lane validation PASSED CLEAN** (`test-in-vm.sh quick`, MDV_VM_GUI_SESSION=1): 3367 tests / 0 failures / 8 skipped + the WebView lane ran the 821 test on the VM (0 failures) + the visual-regression suites ran cleanly in the GUI lane (TSK-822 gate confirmed). Session render changes are VM-regression-free. Also: killed a hung 50-min `swift-test` (PID 24812) holding the VM `.build` lock (lesson in LESSONS.md + `bd2bbd0`).
+- **Owner asks DONE:** `CHANGELOG.md` + keep-updated discipline (prior handoff). The new owner ask "readback recent docs" handled in-turn.
+- **In flight:** nothing half-done.
+- **Host-actionable user-facing pool is DRAINED.** Remaining = the VM render/interaction validation tail (BACKLOG 2026-06-13) + the parked TSK-598 perf re-feel.
+- **Next action:** await the owner's TSK-598 perf re-feel, OR pick up the VM render/interaction validation tail (806 AX-read, 763/789 a11y scenes, 734 no-crash smoke). Don't manufacture paper cuts (§5). The TUI/web `[PORT]` lane (TSK-573 etc.) is the last-resort pool if everything else is gated.
 
 ## Key decisions & rationale
 - **"Output-identical work-reduction optimizations are self-validatable on the host."** Used to validate TSK-741/736 from review (same pixels, fewer cycles; visual-regression modes host-tested). Don't reflexively hold these for VM.

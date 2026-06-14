@@ -9169,6 +9169,19 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +408 (2026-06-13 — VM GUI-lane render validation PASSED CLEAN; unblocked a hung VM run holding the .build lock)
+
+- **VM GUI-lane validation (`test-in-vm.sh quick`, MDV_VM_GUI_SESSION=1, current main) → clean.** 3367 tests / 8 skipped
+  / **0 failures** (118s) + the WebView lane ran `PaneScrollRestoreWebViewTests` (and all #192 suites) on the VM with 0
+  failures, AND the visual-regression suites ran cleanly **in the GUI lane** (0 failures) — confirming TSK-822's gate
+  (clean in-lane, self-skip out-of-lane) and that this session's render changes (806 split, 821 rendered-scroll) are
+  VM-regression-free. TSK-821's round-trip mechanism is now VM-confirmed (still at review for the un-unit-drivable
+  view-bridge wiring). This is the owner's standing render-lane validation for the session's substantive changes.
+- **Unblocked the VM first.** The run stalled at `swift build` on the SwiftPM `.build` lock, held by a `swift-test`
+  from my headless run 2 ticks ago that had **hung for 50 minutes** (it never completed — the partial log I triaged
+  earlier was from before the hang). Killed PID 24812 → lock freed → the GUI-lane run proceeded. Recipe + the
+  "prefer lighter VM lanes over the monolithic 4220-test run" lesson in LESSONS.md (`bd2bbd0`).
+
 ## LOG +407 (2026-06-13 — TSK-821 VM-lane coverage: PaneScrollRestoreWebViewTests → review; CHANGELOG discipline added)
 
 - **TSK-821 (rendered-markdown per-file scroll) → review (commit `6306505`, headless gate green).** Added
