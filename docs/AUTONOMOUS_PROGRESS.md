@@ -1,5 +1,31 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-727 slice 1 (GotoQueryParser, progress) + a thin-host-pool signal for the owner
+
+Fresh firing. No owner activity, no new app regression (the `bug`-query pool is build-perf/test-infra only). Drained
+WORK_QUEUE top-down; **scoped the top unchecked items and found the host-shippable tail is thin** (signal below).
+
+- **TSK-727 [epic, slice 1 @ `a4022b9`, progress]** — built the pure `GotoQueryParser` (ViewerCore): a total
+  `String -> GotoQuery` classifier routing the palette input by leading operator (bare→files, `>`→command,
+  `@`→symbol, `:`→line[:col], `#`→text), with `:line:col` parsing (positive-int, first-colon split). Generalizes
+  CommandPaletteView's ad-hoc `hasPrefix(">")` and adds the @/:/# operators. 17 host tests + teeth (mutating the
+  `>` branch fails `testCommandOperator`); headless gate green. NOT user-visible yet → no CHANGELOG. Remaining
+  slices (render/VM): wire CommandPaletteView to consume the parser + surface symbol list (`@`, from the outline),
+  go-to-line (`:`, via `scrollSource(toLine:)`), in-file text (`#`). Epic stays `progress`.
+
+- **SIGNAL for the owner — the WORK_QUEUE host-shippable tail is thin.** Scoped the top unchecked items this
+  firing: **Section 0 perf** (842/839/838) all need a VM trace/profile first (`[needs trace]` / `[Time-Profiler]`
+  / `[architectural]`) — not host-shippable. **Section A** 710 (LSP hover) + 708 (preview-def) are **WebView-bridge
+  only** — the model layer (LSPClient.hover, LSPMarkdownRenderer, LSPPositionConverter, full NSTextView hover) is
+  ALREADY built+tested; the gap is CM6/WKWebView integration (VM, no new host model). 766 = pure CM6 styling (VM).
+  704 = layout-heavy (VM). **Section B** 769 = terminal command-history (net-new + PTY-capture-coupled); 343/358
+  owner-gated. **Section C** 668 (CSV windowed paging) = a substantial view-data-source refactor; 727 = this. So the
+  loop is increasingly producing **foundation models that need a VM/UI slice to become user-visible** — exactly the
+  pattern the owner endorsed ("build the model, leave render at review"), but the review/VM backlog is now ~16 items.
+  The highest-leverage unblock remains a **VM validation pass** (drain the render-tail backlog → done) and/or owner
+  steer on 343/358. Did NOT manufacture a risky second item (build-perf 850 spans many files needing per-class
+  immutability judgment; 847 num-workers is a measure-don't-guess; both deferred over a forced batch).
+
 ## LOG 2026-06-14 — TSK-861 (UTF-16 BOM data-fidelity bug, validated) + TSK-855 (stale-serve gate fix, review) — batched, one gate
 
 Fresh firing. Two newly-filed board bugs (not in WORK_QUEUE) pre-empted the queue per rank rule 1 (user-facing

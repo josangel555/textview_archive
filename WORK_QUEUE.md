@@ -109,7 +109,8 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
 - [ ] **TSK-318** — Ask the agent questions about a Code Review (CR Q&A)
 - [~] **TSK-705** — Snippets
       `[epic: slices 1-5 @ 667f8ba/8de8b2c/08d4e28/9393706, review]` — parser + built-ins + Insert command + user JSON store + tab-stop navigation MODEL (SnippetSession). MODEL LAYER COMPLETE + host-tested (parse→insert→store→navigate). Remaining = pure render/VM: CM6 Tab-key wiring (apply SnippetSession) + management UI. Still `[~]`.
-- [ ] **TSK-727** — Unified "Goto Anything" (one box, @/: operators)
+- [~] **TSK-727** — Unified "Goto Anything" (one box, @/: operators)
+      `[epic: slice 1 @ a4022b9, progress]` — pure `GotoQueryParser` model (ViewerCore): classifies the palette input by leading operator — bare→files, `>`→command (existing), `@`→symbol, `:`→line[:col], `#`→text — with `:line:col` parsing. 17 host tests + teeth; gate green. Remaining (render/VM): wire CommandPaletteView to consume it + surface the new modes (symbol list / go-to-line / in-file text).
 - [ ] **TSK-677** — Unify search types (Global search / Recents / Command search)
 
 ## D. Bigger features / epics (slice them; P0–P2 first)
