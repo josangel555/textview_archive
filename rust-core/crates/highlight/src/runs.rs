@@ -103,11 +103,40 @@ fn app_capture_names() -> &'static [&'static str] {
 /// One highlighted run in the HOST's text model: `start`/`len` are UTF-16
 /// code-unit offsets into the source, `kind` is a Swift `TokenKind` rawValue.
 /// Runs are non-overlapping and in source order.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// WIRE FORMAT (TSK-841): a POSITIONAL 3-element array `[start, len, kind]`,
+/// NOT a `{start,len,kind}` map. A map repeats the three keys (~14 bytes) per
+/// run; the array drops them — 4× smaller / ~5× faster decode on a document
+/// with thousands of runs. The named fields are kept for in-crate logic; only
+/// the (de)serialized shape is positional, mirroring the diff wire-v2 tuple
+/// structs (TSK-563). The Swift decoder (`mdvCoreHighlightRuns`) reads the same
+/// array. `kind` stays a string here — the integer-kind variant is a separate
+/// follow-up (needs a shared `TokenKind`↔u8 ABI + forward-compat).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Run {
     pub start: usize,
     pub len: usize,
     pub kind: String,
+}
+
+impl Serialize for Run {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeTuple;
+        let mut t = serializer.serialize_tuple(3)?;
+        t.serialize_element(&self.start)?;
+        t.serialize_element(&self.len)?;
+        t.serialize_element(&self.kind)?;
+        t.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Run {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // Tuple deserialize accepts ONLY a sequence — a regression to the old
+        // named-map shape fails the decode (the positional contract has teeth).
+        let (start, len, kind) = <(usize, usize, String)>::deserialize(deserializer)?;
+        Ok(Run { start, len, kind })
+    }
 }
 
 /// Wire request: `{text, lang}` where `lang` is the host's
@@ -312,6 +341,31 @@ mod tests {
         assert!(resp.supported);
         assert!(!resp.runs.is_empty());
         assert!(resp.runs.iter().any(|r| r.kind == "keyword"));
+    }
+
+    /// TSK-841: pin the POSITIONAL wire format independently of `Run`'s own
+    /// Deserialize. Decoding each run as a raw `(u32,u32,String)` tuple succeeds
+    /// ONLY if it was encoded as a `[start,len,kind]` ARRAY; a regression to the
+    /// `{start,len,kind}` MAP fails the tuple decode here (the round-trip test
+    /// alone can't catch a both-ends revert).
+    #[test]
+    fn wire_run_is_positional_array_not_map() {
+        #[derive(Deserialize)]
+        struct RawResp {
+            supported: bool,
+            runs: Vec<(u32, u32, String)>,
+        }
+        let frame = mdvcore_core::wire::encode_frame(&RunsRequest {
+            text: "fn main() {}".into(),
+            lang: "rust".into(),
+        })
+        .expect("encode");
+        let out = runs_wire(&frame).expect("runs_wire");
+        let resp: RawResp =
+            mdvcore_core::wire::decode_frame(&out).expect("runs must decode as positional tuples");
+        assert!(resp.supported);
+        assert!(!resp.runs.is_empty(), "expected runs for rust");
+        assert!(resp.runs.iter().any(|(_, _, k)| k == "keyword"));
     }
 
     #[test]

@@ -1042,11 +1042,17 @@ public func mdvCoreHighlightRuns(text: String, lang: String) throws -> [CoreHigh
         guard case .bool(true) = map["supported"] ?? .bool(false) else { return nil }
         guard let runs = map["runs"] else { throw CoreError.decode("missing 'runs'") }
         return try runs.arrayValue().map { el in
-            let m = try el.mapValue()
+            // TSK-841: each run is a POSITIONAL [start, len, kind] array (was a
+            // {start,len,kind} map) — 4× smaller / ~5× faster decode. The Rust
+            // encoder (`runs.rs` Run::serialize) emits the matching tuple.
+            let a = try el.arrayValue()
+            guard a.count >= 3 else {
+                throw CoreError.decode("highlight run wire arity \(a.count) < 3")
+            }
             return CoreHighlightRun(
-                start: Int(try m.require("start").u64Value()),
-                len: Int(try m.require("len").u64Value()),
-                kind: try m.require("kind").stringValue()
+                start: Int(try a[0].u64Value()),
+                len: Int(try a[1].u64Value()),
+                kind: try a[2].stringValue()
             )
         }
     } catch let e as MsgPackError {
