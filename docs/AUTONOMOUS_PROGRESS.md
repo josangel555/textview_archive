@@ -1,5 +1,40 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — Section-A batch: hot exit + project-wide replace + typed New File (TSK-718/726/747)
+
+Owner re-confirmed the goal: drain the board, batch >1 item/firing, gate once, commit per-item, park only on a
+genuine owner-block. Reconciled the board first (tasked MCP back up): advanced **TSK-355 → review** (shipped
+`c84e8bf` while MCP was down). Cron `846245af` confirmed active. Then drained three Section-A items as one
+batch, **one headless-gate run** (green), committed per-item:
+- **TSK-747 (`5ed9d51`, review)** — New File now offers a type. `NewFileType` (txt/md/csv/json; title+baseName)
+  in ViewerCore + `createNewFile(in:type:)`/`newFileForLanding(type:)`; sidebar folder context menu + File menu
+  became typed submenus (Text File keeps ⌘N) + `@objc newFileOfType(tag→type)`. Host tests: baseName→extension
+  mapping + end-to-end create (NewFileCreatorTests); wiring pin updated (NewFileActionTests). Empty files
+  (VS Code-style); blank-image deferred (needs a format/size dialog). Menu render = VM tail.
+- **TSK-726 (`3b5724b`, review)** — project-wide replace; ⌘⇧F search was read-only. New `CrossFileReplace` engine:
+  pure `replacedText` (literal + regex with `$1` groups + `.anchorsMatchLines` to match search's per-line
+  semantics) + side-effecting `apply` (re-reads each file, decodes via `TextDecoder.decode` to preserve the
+  detected encoding, writes back atomically + symlink-safe via `EditorWriter.save`; skips no-match/binary/
+  oversized/symlink). `DocumentModel.runCrossFileReplace` (off-main, clears stale results, status text) +
+  `replaceStatusText`; Replace row + toggle in `CrossSearchPanel`. Made `CrossFileSearch.Match`/`FileMatches`
+  inits public (cross-module construction). Engine + model host-tested exhaustively (CrossFileReplaceTests,
+  CrossFileReplaceModelTests incl. Latin-1 preservation + symlink refusal). Panel render = VM tail.
+- **TSK-718 (`8ba2a2f`, review)** — hot exit. Additive-optional `TabSnapshot.unsavedText` (+ `Tab` mirror,
+  excluded from Equatable like `scrollTopLine`; 1 MiB cap). `captureUnsavedTextForAllTabs` at the
+  autosave/detach/quit boundaries (all dirty tabs, reads only existing buffers — no seeding);
+  `restoreUnsavedTextIfNeeded` overlay in `materializeIfNeeded`; `appendLazyTab` carries it; `hydrate` builds the
+  path→text map. Autosave equality guard fires on edit (openTabs compared). Round-trip/capture/restore/cap
+  host-tested (TabSnapshotUnsavedTextPersistenceTests, HotExitTests). On-screen dirty dot = VM tail.
+
+Gate discipline: gate failed twice first (caught by the single run, NOT after committing) — (1) `CrossFileSearch.
+FileMatches` init was internal → made public; (2) `NewFileActionTests` pinned the old `Button("New File")` string →
+updated for the typed submenu. Third run green (tier enforcement OK, 0 failures), THEN committed. No wire/Rust
+change this batch.
+
+BACKLOG note filed: `EditorWriter.save` writes BOM-less UTF-16 for a UTF-16 file (existing editor behavior; not
+introduced here) — a short UTF-16 file replaced via TSK-726 could mis-decode on reopen. Shared fix (benefits the
+editor too); out of scope for 726.
+
 ## LOG 2026-06-14 — perf-explore landed: build-thrash fix (TSK-846) + parallel launch grammar-warm (TSK-840)
 
 Unprimed perf-explorer fleet (TSK-837) completed; processed the test/build wall-clock agent's findings

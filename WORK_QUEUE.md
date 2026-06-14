@@ -48,7 +48,8 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
       `[review 192211b]` — View → Language Mode (current language checkmarked + override submenu); model accessor host-tested, menu = VM gate.
 - [ ] **TSK-751** — Organize the menu items properly (review/reorganize the menu bar) `[VM]`
 - [ ] **TSK-746** — Open dialog: show recents
-- [ ] **TSK-747** — New-tab: offer other types (blank Sheet, Image) `[VM]`
+- [x] **TSK-747** — New-tab: offer other types (blank Sheet, Image) `[VM]`
+      `[review 5ed9d51]` — NewFileType (txt/md/csv/json) + typed New File submenus (sidebar + File menu); model+mapping host-tested, menu render = VM gate. Blank-image deferred (needs format/size dialog).
 - [x] **TSK-762** — Wrap / special-char toggles on the details pane (toggle buttons, not checkboxes) `[VM]`
       `[review a1dadb5]` — all 4 BottomAttributesBar toggles → .toggleStyle(.button); pure-visual, VM/owner glance.
 - [ ] **TSK-707** — Command palette: double-Shift shortcut (IntelliJ-style)
@@ -58,8 +59,10 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
 - [ ] **TSK-710** — Hover symbol info on identifiers (LSP textDocument/hover) `[VM]`
 - [ ] **TSK-708** — Preview definition (IntelliJ Quick Definition / Cmd+Y) `[VM]`
 - [ ] **TSK-719** — Sticky scroll (pin the enclosing scope header) `[VM]`
-- [ ] **TSK-718** — Hot exit (restore unsaved buffers on relaunch)
-- [ ] **TSK-726** — Project-wide replace (cross-file search is read-only today)
+- [x] **TSK-718** — Hot exit (restore unsaved buffers on relaunch)
+      `[review 8ba2a2f]` — additive-optional TabSnapshot.unsavedText (1 MiB cap) captured at snapshot boundaries + overlaid on materialize → tab reopens dirty; round-trip/capture/restore host-tested, dirty-dot render = VM tail.
+- [x] **TSK-726** — Project-wide replace (cross-file search is read-only today)
+      `[review 3b5724b]` — CrossFileReplace engine (encoding-faithful, atomic, symlink-safe) + Replace row in ⌘⇧F panel; literal+regex, engine+model host-tested, panel render = VM tail.
 - [ ] **TSK-704** — Markdown side-by-side editor + live preview `[VM]`
 - [ ] **TSK-759** — Drag to reorder tabs `[VM]`
 - [ ] **TSK-766** — Editor: git-diff text style match Edit/View `[VM]`

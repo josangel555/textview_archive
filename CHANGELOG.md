@@ -13,6 +13,9 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Bottom attributes bar uses toggle buttons** — Wrap, Special chars, Enable JS, and the preview Info toggle are now press-to-toggle buttons (matching the Find bar) instead of small checkboxes, so their on/off state reads at a glance.
 
 ### Added
+- **Project-wide replace** — the search panel (⌘⇧F) is no longer read-only: click the replace toggle, type a replacement, and **Replace All** rewrites every match across all the listed files at once (literal or regex with `$1` groups). Each file is rewritten safely — its text encoding is preserved, the write is atomic, and symlinks aren't clobbered.
+- **Hot exit (restore unsaved edits)** — quit with unsaved changes in a tab and they come back on relaunch: the tab reopens with your in-flight edits intact and marked unsaved, instead of reloading the last-saved version from disk (like VS Code).
+- **New File offers a type** — the **New File** menu (File menu and right-click a folder in the sidebar) is now a submenu — create a blank **Text**, **Markdown**, **CSV**, or **JSON** file, so it opens with the right syntax highlighting. (Plain Text File keeps ⌘N.)
 - **Open in Default App** — right-click a file in the sidebar or a tab → **Open in Default App** to hand it to its system default app (a `.png` to Preview, a `.csv` to Numbers, …), alongside the existing Reveal in Finder.
 - **Language Mode menu** — **View → Language Mode** shows the current file's syntax language (checkmarked) and lets you switch it for the active tab — handy when a file's extension doesn't match its contents (e.g. force a `.txt` of JSON to highlight as JSON). Picking the file's natural language clears the override.
 - **⇧⌘P opens the command palette** — the VS Code shortcut now works (alongside the existing ⌘K), so it's there in your muscle memory. (Plain ⌘P stays the standard macOS Print shortcut.)

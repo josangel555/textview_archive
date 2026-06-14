@@ -2,6 +2,11 @@
 
 ## 2026-06-14 (late) — perf-lane tail + Section-A drain (deferred/ambiguous)
 
+Surfaced during the Section-A drain (board tickets — link, don't duplicate):
+- **TSK-861** (UTF-16 BOM fidelity) — `EditorWriter.save` writes BOM-less UTF-16; a short UTF-16 file edited+saved
+  (editor OR the new TSK-726 project-wide replace) mis-decodes on reopen (falls to CP1252/Latin-1). Existing editor
+  behavior, not introduced by 726; shared fix. Host-testable (EditorWriter + TextDecoder, ViewerCore).
+
 Deferred from the WORK_QUEUE drain (board tickets — link, don't duplicate):
 - **TSK-844** (CSV-open arena) — SPIKED + deferred. Careful: rewires the security-hardened CSV parser to write
   directly into the arena, which requires RE-DERIVING the TSK-557 heap cap for the arena footprint
