@@ -39,11 +39,16 @@ public struct MarkdownRenderedView: NSViewRepresentable {
     public let fileURL: URL?
     public let restoreScrollY: Double?
     public let onScrollCapture: ((URL, Double) -> Void)?
+    /// Rendered-markdown content scale (TSK-358): `markdown.css` multiplies its
+    /// intrinsic px by `var(--mdv-content-scale)`; 1.0 = neutral. Applied live
+    /// via JS (no reload), mirroring `pageZoom`, so the render cache is untouched.
+    public let contentScale: Double
 
     public init(
         html: String,
         baseURL: URL? = nil,
         zoom: Double = 1.0,
+        contentScale: Double = 1.0,
         findQuery: String = "",
         findCaseSensitive: Bool = false,
         findNextNonce: Int = 0,
@@ -61,6 +66,7 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         self.html = html
         self.baseURL = baseURL
         self.zoom = zoom
+        self.contentScale = contentScale
         self.findQuery = findQuery
         self.findCaseSensitive = findCaseSensitive
         self.findNextNonce = findNextNonce
@@ -83,6 +89,16 @@ public struct MarkdownRenderedView: NSViewRepresentable {
     /// switches that rebuild the view destroy and re-spawn that
     /// process; reusing the pool keeps it warm.
     private static let sharedProcessPool = WKProcessPool()
+
+    /// Push the content-scale to the page's `--mdv-content-scale` CSS var (TSK-358)
+    /// — live, no reload (mirrors `pageZoom`), so the render cache is untouched.
+    /// `markdown.css` reads it via `calc(15px * var(--mdv-content-scale, 1))`.
+    static func applyContentScale(_ scale: Double, to webView: WKWebView) {
+        let v = String(format: "%.4f", scale)
+        webView.evaluateJavaScript(
+            "document.documentElement.style.setProperty('--mdv-content-scale', '\(v)')",
+            completionHandler: nil)
+    }
 
     public func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -242,6 +258,12 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         }
         if abs(webView.pageZoom - CGFloat(zoom)) > 0.001 {
             webView.pageZoom = CGFloat(zoom)
+        }
+        // TSK-358: live content-scale push (no reload), mirroring pageZoom.
+        coord.contentScale = contentScale
+        if abs(coord.lastAppliedScale - contentScale) > 0.0001 {
+            coord.lastAppliedScale = contentScale
+            Self.applyContentScale(contentScale, to: webView)
         }
         // Find-bar wiring.
         let c = context.coordinator
@@ -424,6 +446,11 @@ public struct MarkdownRenderedView: NSViewRepresentable {
         /// finishes (consumed in `didFinish`; nil ⇒ leave at top).
         var currentURL: URL?
         var pendingRestoreY: Double?
+        /// TSK-358: the live content-scale (mirrors zoom tracking). Stored so
+        /// `didFinish` can re-apply the `--mdv-content-scale` CSS var after a
+        /// reload resets the DOM; `lastAppliedScale` debounces the live push.
+        var contentScale: Double = 1
+        var lastAppliedScale: Double = 1
         /// True iff the mermaid runtime + shim user scripts are
         /// currently attached to this WebView's
         /// userContentController. Set on first document containing
@@ -601,6 +628,11 @@ public struct MarkdownRenderedView: NSViewRepresentable {
             // evaluateJavaScript is API-injected and not subject to
             // CSP. The functions live on `window.__mdvFind*`.
             webView.evaluateJavaScript(Coordinator.findScript, completionHandler: nil)
+            // TSK-358: a reload reset the DOM, so re-apply the content-scale var
+            // (skip the neutral default — markdown.css's var() fallback covers 1).
+            if abs(contentScale - 1) > 0.0001 {
+                MarkdownRenderedView.applyContentScale(contentScale, to: webView)
+            }
             // TSK-821: restore this file's remembered rendered scroll offset
             // (captured at the previous reload boundary). The DOM is parsed by
             // didFinish; `instant` so the jump doesn't animate.

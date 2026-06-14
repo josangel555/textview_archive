@@ -855,6 +855,7 @@ public struct ContentView: View {
             html: html,
             baseURL: file.url.deletingLastPathComponent(),
             zoom: model.zoom,
+            contentScale: ContentFontSizing.markdownScale(contentFontSize: model.contentFontSize),
             findQuery: isActive ? model.renderedFindQuery : "",
             findCaseSensitive: model.renderedFindCaseSensitive,
             findNextNonce: model.renderedFindNextRequest,

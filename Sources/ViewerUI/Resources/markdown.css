@@ -29,7 +29,10 @@ body {
        can size the window to whatever line length they want. */
     margin: 0;
     padding: 24px 32px 64px;
-    font-size: 15px;
+    /* Base content size scaled by the app's "Text Size" setting (TSK-358):
+       --mdv-content-scale is set live via JS from ContentFontSizing.markdownScale
+       (1.0 = default → 15px, behaviour-neutral). pageZoom multiplies on top. */
+    font-size: calc(15px * var(--mdv-content-scale, 1));
 }
 
 h1, h2, h3, h4, h5, h6 {
