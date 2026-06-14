@@ -1,5 +1,28 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — Self-contained HTML export shipped (TSK-871, 4251369, → review)
+
+Pivoted to rule 1 (bugs) first: no actionable host-fixable bug — **733** (save-prompt on session switch) is
+correctly PARKED with a genuine A/B UX decision (preserve dirty buffers silently vs keep the save-safety prompt;
+A is a real behavior change, owner's call); **791** is the perf-subagent lane. Verified **506 (treemap)** is NOT
+already-done — `FolderStatsView` has no `TreemapLayout`/`Canvas` (it's a stats list), so the treemap render is a
+genuine VM gap (left). So no bug + queue top still VM/owner-gated.
+
+Then completed a real feature rather than a marginal one: **self-contained HTML export** (completes TSK-866).
+`View ▸ Export as HTML…` now produces a PORTABLE file — `HtmlExport.inlineLocalImages` (pure, injected file reader
+→ host-testable) rewrites each `src="X"` whose X is a local path into a base64 `data:<mime>;base64,…` URI (MIME by
+extension), so the saved `.html` survives being moved away from its image folder (relative refs would break).
+External/data/protocol-relative refs + unreadable paths are left untouched. `Copy as HTML` stays non-inlined
+(transient / target usually has the images). §2.5-safe (a post-processor of rendered HTML, not an engine change).
+
+Teeth: 5 new pure tests (local→data URI, external/data/missing untouched, multiple images, isLocalImageRef,
+MIME by extension). Host gate green (5581 tests). Menu + save-panel = VM tail. Filed TSK-871 (references 866).
+
+HONEST STATE: the clean high-value host pool is genuinely at its edge — this firing's win was COMPLETING an
+existing feature (portability) rather than a fresh area; the next fresh consumer features are marginal-for-this-
+owner (checksum, more lint rules, etc.). Next firing: one more probe, else groom/HOLD — not marginal manufacturing.
+Standing unblocks: VM pass (the ~15-feature `review` pile), 343/470/733 owner decisions.
+
 ## LOG 2026-06-14 — CSV → Markdown table / JSON shipped (TSK-870, 6ca616f, → review)
 
 Found a FRESH §2.5-safe consumer feature (the probe-once-before-HOLD plan worked again): bridge CSV (a supported
