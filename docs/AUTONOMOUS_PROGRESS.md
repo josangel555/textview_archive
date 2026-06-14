@@ -1,5 +1,40 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-534 audio trim/fade + Save-a-Copy SHIPPED (dc17ac8, → review)
+
+Third "backend already built" discovery in a row (after 524 image-editor + 533 spectrum analyzer): the audio
+EDIT backend is **fully built + host-tested** — `AudioDocument` (source + replayable ops) + `AudioEditOp`
+(.trim/.fade/.gain/.normalize, apply/rendered/undo) + `AudioExporter.encode(buffer,spec,to:)` +
+`AudioPCMBuffer`. So 534 = the VM/UI layer over a proven model (same shape as 524 was).
+
+What shipped (commit `dc17ac8`):
+- **Pure policy** (`AudioTrimFade`, ViewerCore, host-tested): maps the editor SELECTION (trim range + fade-in/out
+  seconds + shape) → the ordered `[AudioEditOp]` the document replays. Trim emitted ONLY for a true subrange
+  (untouched selection = faithful copy, no op); fades convert secs→frames via the sample rate, cap to the clip,
+  and address the **trimmed** buffer's frame space (ops compose: trim first). Clamps inverted/oversize ranges.
+- **VM** (`AudioEditorViewModel`): `load()` now decodes the full `AudioPCMBuffer` once (mono overview is its
+  reduction); holds `trimStartFrame`/`trimEndFrame`/`fadeIn|OutSeconds`/`fadeShape`; `setTrim*ToPlayhead`,
+  `resetTrim`, `editOps`, `hasEdits`, `trim*Fraction`, and `exportCopy(spec:to:)` = encode
+  `AudioDocument(source, editOps).rendered()`. Added an `init(url:source:)` test seam.
+- **View** (`AudioEditorView`): an edit bar (Set Start / Set End / Reset, fade-in & fade-out sliders, shape
+  Picker, **Save a Copy…** → `NSSavePanel` mapping the chosen extension → format, with an `NSAlert` on the
+  no-ffmpeg/MP3 path) + a trim-region overlay shaded into the visible window. SwiftUI `Canvas` + AppKit panels,
+  no `NSViewRepresentable` → no occlusion risk.
+
+Teeth: 8 pure `AudioTrimFade` tests (incl. end-to-end render trims+fades a real buffer) + 5 VM tests
+(export-round-trip: the exported WAV **decodes back to the trimmed frame count**; fade-only keeps length +
+starts silent; resetTrim; playhead clamp), via the preloaded-source seam. Host headless gate green (5489 tests,
+tier enforcement OK). Draggable waveform handles + the edit-bar/overlay appearance = the VM render tail
+(extend `AudioEditorVisualRegressionTests` T5).
+
+Batch note: shipped ONE complete feature this firing. 534 turned out to be a full UI-over-built-backend feature
+(not a quick win). The next queue item with a clean host model, 358 (absolute content font-size = base × zoom),
+touches the CENTRAL editor/source font path at 3 `13 * model.zoom` call sites + a settings-UI surface — rushing
+it alongside 534 risked the central render path, so it gets its own careful firing. The remaining queue tail is
+uniformly meaty render-coupled UI-over-built-backends (463/710/708 LSP bridges, 668 CSV paging, 506 treemap,
+343 history/revert — its store core is built, the save-path wiring + UI remain) or owner-policy-touched
+(343 retention, 358 font×zoom) — so "drain top-down" now means one complete render-tail feature per firing.
+
 ## LOG 2026-06-14 — TSK-533 audio frequency-spectrum panel SHIPPED (fb2ada6, → review)
 
 Built the first item off last firing's mapped niche tail, and **corrected last firing's own blocker**:

@@ -16,6 +16,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Bottom attributes bar uses toggle buttons** — Wrap, Special chars, Enable JS, and the preview Info toggle are now press-to-toggle buttons (matching the Find bar) instead of small checkboxes, so their on/off state reads at a glance.
 
 ### Added
+- **Trim & fade audio, save a copy** — the audio editor can now trim a clip (set the start/end at the playhead) and add fade-in/fade-out (equal-power or linear), then **Save a Copy…** of the trimmed/faded result as WAV, AIFF, CAF, or M4A/AAC (MP3 too if ffmpeg is installed). The original file is never modified.
 - **Frequency spectrum in the audio editor** — the audio editor now has a spectrum toggle (the ECG-waveform button next to the time readout); turn it on to see a live frequency-spectrum panel below the waveform that tracks the playhead as the track plays or you scrub.
 - **`@` jump-to-heading from the command palette** — in a Markdown file, type `@` then part of a heading (e.g. `@install`) to get a list of matching headings; arrow-pick one and press Return to jump to it. Completes the unified "Goto Anything" palette: files, `>` commands, `:` line, `#` in-file text, `@` headings.
 - **`#` search-in-file from the command palette** — type `#` then some text (e.g. `#TODO`) in the palette to get a navigable list of matching lines in the current file; arrow-pick one and press Return to jump to it. (Part of the unified "Goto Anything" palette, alongside `:` line and `>` commands.)
