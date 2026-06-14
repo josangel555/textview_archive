@@ -21,7 +21,7 @@ struct CommandPaletteView: View {
 
     /// Unified palette routing (TSK-727): one classifier maps the leading
     /// operator to a mode — `>` command, `:` go-to-line, `#` in-file text
-    /// search, bare → files. (`@` symbol jump is the remaining slice.)
+    /// search, `@` Markdown-heading jump, bare → files.
     private var parsed: GotoQuery { GotoQueryParser.parse(query) }
     /// `true` when the user is in command mode (query starts with `>`).
     private var isCommandMode: Bool { parsed.mode == .command }
@@ -29,6 +29,8 @@ struct CommandPaletteView: View {
     private var isLineMode: Bool { parsed.mode == .line }
     /// `true` when the user is searching the active file's text (`#term`).
     private var isInFileSearchMode: Bool { parsed.mode == .text }
+    /// `true` when the user is jumping to a markdown heading (`@term`).
+    private var isSymbolMode: Bool { parsed.mode == .symbol }
     /// The command-mode query with the leading `>` stripped + trimmed.
     private var commandQuery: String {
         parsed.term.trimmingCharacters(in: .whitespaces)
@@ -42,7 +44,7 @@ struct CommandPaletteView: View {
             HStack(spacing: 8) {
                 Image(systemName: paletteIcon)
                     .foregroundStyle(.secondary)
-                TextField("Search recent files… (› commands · : line · # in file)", text: $query)
+                TextField("Search recent files… (› cmds · : line · # in file · @ heading)", text: $query)
                     .textFieldStyle(.plain)
                     .font(.system(size: 16))
                     .focused($fieldFocused)
@@ -69,6 +71,8 @@ struct CommandPaletteView: View {
                 lineModeHint
             } else if isInFileSearchMode {
                 inFileSearchHint
+            } else if isSymbolMode {
+                symbolHint
             } else if filtered.isEmpty {
                 emptyState
             } else {
@@ -118,7 +122,7 @@ struct CommandPaletteView: View {
             if footerActionable {
                 Divider()
                 HStack(spacing: 12) {
-                    if !isLineMode && !isInFileSearchMode {
+                    if !isLineMode && !isInFileSearchMode && !isSymbolMode {
                         Text("↑↓ navigate").font(.caption2).foregroundStyle(.secondary)
                     }
                     Text(footerActionLabel)
@@ -164,6 +168,10 @@ struct CommandPaletteView: View {
     /// hint count + the Return-jumps-to-first-match action.
     @State private var inFileMatches: [InFileMatch] = []
 
+    /// Markdown heading matches for the `@` symbol-jump (TSK-727). Drives the
+    /// hint count + the Return-jumps-to-best-heading action.
+    @State private var symbolMatches: [MarkdownHeading] = []
+
     /// Show bookmarks at the top of the palette (in store order),
     /// followed by recents that aren't already shown as bookmarks. The
     /// fuzzy filter applies to both. PaletteRow renders the
@@ -183,6 +191,7 @@ struct CommandPaletteView: View {
         if isCommandMode { return "command" }
         if isLineMode { return "number" }
         if isInFileSearchMode { return "doc.text.magnifyingglass" }
+        if isSymbolMode { return "list.bullet" }
         return "magnifyingglass"
     }
 
@@ -190,6 +199,7 @@ struct CommandPaletteView: View {
     private var footerActionable: Bool {
         if isLineMode { return parsed.line != nil }
         if isInFileSearchMode { return !inFileMatches.isEmpty }
+        if isSymbolMode { return !symbolMatches.isEmpty }
         if isCommandMode { return !filteredCommands.isEmpty }
         return !filtered.isEmpty
     }
@@ -197,6 +207,7 @@ struct CommandPaletteView: View {
     private var footerActionLabel: String {
         if isLineMode { return "↵ go to line" }
         if isInFileSearchMode { return "↵ jump to match" }
+        if isSymbolMode { return "↵ jump to heading" }
         if isCommandMode { return "↵ run" }
         return "↵ open"
     }
@@ -210,6 +221,13 @@ struct CommandPaletteView: View {
         if isInFileSearchMode {
             if let first = inFileMatches.first {
                 model.scrollSource(toLine: first.lineNumber)
+            }
+            model.dismissPalette()
+            return
+        }
+        if isSymbolMode {
+            if let first = symbolMatches.first {
+                model.scrollSource(toLine: first.line)
             }
             model.dismissPalette()
             return
@@ -260,35 +278,58 @@ struct CommandPaletteView: View {
         .frame(maxWidth: .infinity)
     }
 
+    @ViewBuilder private var symbolHint: some View {
+        VStack(spacing: 6) {
+            Spacer().frame(height: 24)
+            Image(systemName: "list.bullet")
+                .font(.system(size: 22)).foregroundStyle(.secondary)
+            if model.currentCategory != .markdown {
+                Text("Headings are available in Markdown files")
+                    .foregroundStyle(.secondary).font(.callout)
+            } else if parsed.term.trimmingCharacters(in: .whitespaces).isEmpty {
+                Text("Jump to a heading…").foregroundStyle(.secondary).font(.callout)
+            } else if let first = symbolMatches.first {
+                Text("\(symbolMatches.count) heading\(symbolMatches.count == 1 ? "" : "s") — ↵ goes to “\(first.title)”")
+                    .font(.callout)
+            } else {
+                Text("No matching heading").foregroundStyle(.secondary).font(.callout)
+            }
+            Spacer().frame(height: 24)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     private func recomputeFiltered() {
+        // Reset every mode-specific result store; the active branch repopulates
+        // its own. (TSK-727: modes are `>` command, `:` line [hint-only], `#`
+        // in-file, `@` heading, bare → files.)
+        filtered = []
+        filteredCommands = []
+        inFileMatches = []
+        symbolMatches = []
         if isInFileSearchMode {
-            // In-file (`#`) search over the active file's text — no file/command
-            // list; the hint shows the count + the first match's line.
             inFileMatches = InFileSearch.matches(
                 in: model.activeFileText ?? "", query: parsed.term)
-            filtered = []
-            filteredCommands = []
+        } else if isSymbolMode {
+            // `@` jumps to a Markdown heading; headings() on a code file would
+            // mis-read `#` comments as ATX headings, so gate to Markdown.
+            if model.currentCategory == .markdown {
+                symbolMatches = SymbolJump.rank(
+                    headings: MarkdownOutline.headings(in: model.activeFileText ?? ""),
+                    query: parsed.term)
+            }
         } else if isLineMode {
-            // Line mode shows a single "go to line" hint — no list to filter.
-            filtered = []
-            filteredCommands = []
-            inFileMatches = []
+            // Hint-only — nothing to populate.
         } else if isCommandMode {
-            // Command mode (UX-M / #232): list EVERY registered command,
-            // fuzzy-filtered on the post-`>` query. Empty query lists all.
-            // Routed through the `.fuzzy` gate (TSK-646): Rust core when
-            // on, the Swift FuzzyMatcher otherwise.
+            // Command mode (UX-M / #232): every registered command, fuzzy-
+            // filtered on the post-`>` query (routed through the `.fuzzy` gate).
             filteredCommands = RustFuzzyAdapter.filterWithMatches(
                 model.commandRegistry.commands, query: commandQuery
             ) { $0.title }
-            filtered = []
-            inFileMatches = []
         } else {
             filtered = RustFuzzyAdapter.filterWithMatches(merged(), query: query) {
                 $0.displayName
             }
-            filteredCommands = []
-            inFileMatches = []
         }
     }
 

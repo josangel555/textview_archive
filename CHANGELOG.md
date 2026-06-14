@@ -16,6 +16,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Bottom attributes bar uses toggle buttons** — Wrap, Special chars, Enable JS, and the preview Info toggle are now press-to-toggle buttons (matching the Find bar) instead of small checkboxes, so their on/off state reads at a glance.
 
 ### Added
+- **`@` jump-to-heading from the command palette** — in a Markdown file, type `@` then part of a heading (e.g. `@install`) and press Return to jump to it. Completes the unified "Goto Anything" palette: files, `>` commands, `:` line, `#` in-file text, `@` headings.
 - **`#` search-in-file from the command palette** — type `#` then some text (e.g. `#TODO`) in the palette to see how many lines in the current file contain it and press Return to jump to the first. (Part of the unified "Goto Anything" palette, alongside `:` line and `>` commands.)
 - **`:` go-to-line in the command palette** — type a colon and a line number in the palette (e.g. `:42`) and press Return to jump straight to that line in the current file, alongside `>` for commands. (Part of unifying the palette into one "Goto Anything" box.)
 - **Double-tap Shift opens the command palette** — press **⇧ Shift twice quickly** (IntelliJ "Search Everywhere" style) to pop the command palette, alongside ⇧⌘P / ⌘K. Tapping Shift while typing (e.g. for capital letters) doesn't trigger it — only two clean Shift presses with nothing in between.
