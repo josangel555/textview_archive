@@ -295,6 +295,9 @@ public final class DocumentModel: ObservableObject {
     public let goToPathHistory: GoToPathHistoryStore
     public let bookmarksStore: BookmarksStore
     private let preferences: PreferencesStore
+    /// The app's preference store, exposed for the Settings export/import menu
+    /// actions (TSK-681) which serialize/apply a `SettingsSnapshot`.
+    public var preferencesStore: PreferencesStore { preferences }
     private var fileWatcher: FileWatcher?
     private var watchedURL: URL?
 

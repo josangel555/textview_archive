@@ -1082,6 +1082,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         )
         settingsItem.target = self
         appMenu.addItem(settingsItem)
+        // TSK-681 — export / import the user preferences as a portable JSON file.
+        let exportItem = NSMenuItem(
+            title: "Export Settings…", action: #selector(exportSettings(_:)), keyEquivalent: "")
+        exportItem.target = self
+        appMenu.addItem(exportItem)
+        let importItem = NSMenuItem(
+            title: "Import Settings…", action: #selector(importSettings(_:)), keyEquivalent: "")
+        importItem.target = self
+        appMenu.addItem(importItem)
         appMenu.addItem(.separator())
         appMenu.addItem(NSMenuItem(
             title: "Hide TextView",
@@ -1854,6 +1863,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private let settingsWindowController = SettingsWindowController()
     @objc func showSettings(_ sender: Any?) {
         settingsWindowController.show(model: model)
+    }
+
+    /// TSK-681 — export the user preferences to a portable JSON file.
+    @objc func exportSettings(_ sender: Any?) {
+        let panel = NSSavePanel()
+        panel.title = "Export Settings"
+        panel.nameFieldStringValue = "TextView Settings.json"
+        panel.allowedContentTypes = [.json]
+        panel.isExtensionHidden = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(model.preferencesStore.exportSettings())
+            try data.write(to: url, options: .atomic)
+        } catch {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Couldn’t Export Settings"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
+    }
+
+    /// TSK-681 — import preferences from a previously-exported JSON file.
+    @objc func importSettings(_ sender: Any?) {
+        let panel = NSOpenPanel()
+        panel.title = "Import Settings"
+        panel.allowedContentTypes = [.json]
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let alert = NSAlert()
+        do {
+            let data = try Data(contentsOf: url)
+            let snapshot = try JSONDecoder().decode(SettingsSnapshot.self, from: data)
+            model.preferencesStore.applySettings(snapshot)
+            alert.messageText = "Settings Imported"
+            alert.informativeText = "Your preferences were imported. Some changes take "
+                + "effect the next time you open a file or relaunch TextView."
+        } catch {
+            alert.alertStyle = .warning
+            alert.messageText = "Couldn’t Import Settings"
+            alert.informativeText = "This file isn’t a valid TextView settings export.\n\n"
+                + error.localizedDescription
+        }
+        alert.runModal()
     }
 
     /// Menu validation: gray-out items that don't apply to the current

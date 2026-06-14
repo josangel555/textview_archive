@@ -291,4 +291,81 @@ public final class PreferencesStore: @unchecked Sendable {
             }
         }
     }
+
+    // MARK: Settings export / import (TSK-681)
+
+    /// Current version of the exported settings format.
+    public static let settingsSnapshotVersion = 1
+
+    /// A portable snapshot of the USER-FACING preferences for export/import.
+    /// Deliberately excludes machine-specific state (window frame, last folder,
+    /// sidebar width) so a snapshot transfers cleanly between machines.
+    public func exportSettings() -> SettingsSnapshot {
+        var s = SettingsSnapshot(version: Self.settingsSnapshotVersion)
+        s.zoom = zoom
+        s.sourceWordWrap = sourceWordWrap
+        s.sourceFontName = sourceFontName
+        s.showInvisibleChars = showInvisibleChars
+        s.editorIndentGuides = editorIndentGuides
+        s.themeOverride = themeOverrideRaw
+        s.hexBytesPerRow = hexBytesPerRow
+        s.audioFFmpegPath = audioFFmpegPath
+        s.previewMetadataVisible = previewMetadataVisible
+        s.sidebarVisible = sidebarVisible
+        let vmd = viewModeDefaults
+        if !vmd.isEmpty {
+            var raw: [String: String] = [:]
+            for (category, mode) in vmd { raw[category.rawValue] = mode.rawValue }
+            s.viewModeDefaults = raw
+        }
+        return s
+    }
+
+    /// Apply an imported snapshot. Only the fields the snapshot CARRIES are
+    /// written (every field is optional), so an older/partial export applies
+    /// what it has and leaves the rest untouched. Clamping/validation runs
+    /// through the same typed accessors as any other write.
+    public func applySettings(_ s: SettingsSnapshot) {
+        if let v = s.zoom { zoom = v }
+        if let v = s.sourceWordWrap { sourceWordWrap = v }
+        if let v = s.sourceFontName { sourceFontName = v }
+        if let v = s.showInvisibleChars { showInvisibleChars = v }
+        if let v = s.editorIndentGuides { editorIndentGuides = v }
+        if let v = s.themeOverride { themeOverrideRaw = v }
+        if let v = s.hexBytesPerRow { hexBytesPerRow = v }
+        if let v = s.audioFFmpegPath { audioFFmpegPath = v }
+        if let v = s.previewMetadataVisible { previewMetadataVisible = v }
+        if let v = s.sidebarVisible { sidebarVisible = v }
+        if let raw = s.viewModeDefaults {
+            var map: [FileCategory: ViewMode] = [:]
+            for (k, v) in raw {
+                if let category = FileCategory(rawValue: k), let mode = ViewMode(rawValue: v) {
+                    map[category] = mode
+                }
+            }
+            viewModeDefaults = map
+        }
+    }
+}
+
+/// A portable, versioned snapshot of the user-facing preferences (TSK-681).
+/// All fields optional so a partial / older snapshot applies only what it
+/// carries (forward + backward compatible). Codable → JSON for export/import.
+public struct SettingsSnapshot: Codable, Equatable {
+    public var version: Int
+    public var zoom: Double?
+    public var sourceWordWrap: Bool?
+    public var sourceFontName: String?
+    public var showInvisibleChars: Bool?
+    public var editorIndentGuides: Bool?
+    public var themeOverride: String?
+    public var hexBytesPerRow: Int?
+    public var audioFFmpegPath: String?
+    public var previewMetadataVisible: Bool?
+    public var sidebarVisible: Bool?
+    public var viewModeDefaults: [String: String]?
+
+    public init(version: Int = PreferencesStore.settingsSnapshotVersion) {
+        self.version = version
+    }
 }
