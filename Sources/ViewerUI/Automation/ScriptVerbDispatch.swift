@@ -449,6 +449,12 @@ public enum ScriptVerb {
         case "tools.sha256":        Self.runTextTool(.sha256)
         case "tools.base64Encode":  Self.runTextTool(.base64Encode)
         case "tools.base64Decode":  Self.runTextTool(.base64Decode)
+        case "tools.sortLinesAsc":  Self.runTextTool(.sortLinesAsc)
+        case "tools.sortLinesDesc": Self.runTextTool(.sortLinesDesc)
+        case "tools.uniqueLines":   Self.runTextTool(.uniqueLines)
+        case "tools.reverseLines":  Self.runTextTool(.reverseLines)
+        case "tools.upperCase":     Self.runTextTool(.upperCase)
+        case "tools.lowerCase":     Self.runTextTool(.lowerCase)
         case "tools.fileChecksum":
             // SHA-256 of the CURRENT FILE → clipboard. Hash OFF-MAIN (a large
             // file's disk read must not block the UI — cf. TSK-214); the

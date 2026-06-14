@@ -74,6 +74,9 @@ final class CommandRegistryTests: XCTestCase {
             "session-close-active", "folder-stats", "emit-test-log",
             "tools.uuid", "tools.sha256", "tools.base64Encode", "tools.base64Decode",
             "tools.fileChecksum",
+            // line/case transforms (TSK-352)
+            "tools.sortLinesAsc", "tools.sortLinesDesc", "tools.uniqueLines",
+            "tools.reverseLines", "tools.upperCase", "tools.lowerCase",
             "reload", "toggle-split", "swap-split", "move-tab-left", "move-tab-right",
             "show-git-panel", "toggle-line-bookmark", "git-file-history",
             // LSP go-to commands (TSK-464)

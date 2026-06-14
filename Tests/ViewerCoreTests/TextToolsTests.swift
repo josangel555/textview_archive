@@ -229,7 +229,7 @@ final class TextToolsTests: XCTestCase {
     }
 
     func testVerb_metadata() {
-        XCTAssertEqual(TextToolVerb.allCases.count, 4)
+        XCTAssertEqual(TextToolVerb.allCases.count, 10)
         // rawValues are unique, non-empty, and "tools."-namespaced (used as scriptVerb).
         let raws = TextToolVerb.allCases.map(\.rawValue)
         XCTAssertEqual(Set(raws).count, raws.count)
@@ -239,5 +239,38 @@ final class TextToolsTests: XCTestCase {
         }
         XCTAssertFalse(TextToolVerb.generateUUID.transformsInput)
         XCTAssertTrue(TextToolVerb.sha256.transformsInput)
+    }
+
+    // MARK: Line / case transforms (TSK-352)
+
+    func testSortLines_ascendingAndDescending() {
+        XCTAssertEqual(TextTools.sortLines("banana\napple\ncherry"), "apple\nbanana\ncherry")
+        XCTAssertEqual(TextTools.sortLines("banana\napple\ncherry", ascending: false),
+                       "cherry\nbanana\napple")
+    }
+
+    func testUniqueLines_keepsFirstOccurrence_preservesOrder() {
+        XCTAssertEqual(TextTools.uniqueLines("a\nb\na\nc\nb\na"), "a\nb\nc")
+    }
+
+    func testReverseLines() {
+        XCTAssertEqual(TextTools.reverseLines("one\ntwo\nthree"), "three\ntwo\none")
+    }
+
+    /// `\r\n` is ONE separator; empty lines survive; output normalises to `\n`.
+    func testLineTransforms_handleCRLF_andKeepEmptyLines() {
+        XCTAssertEqual(TextTools.reverseLines("a\r\n\r\nb"), "b\n\na")
+        XCTAssertEqual(TextTools.uniqueLines("x\r\nx\r\ny"), "x\ny")
+    }
+
+    func testApply_lineAndCaseTransforms() {
+        XCTAssertEqual(TextTools.apply(.sortLinesAsc, to: "b\na"), "a\nb")
+        XCTAssertEqual(TextTools.apply(.sortLinesDesc, to: "a\nb"), "b\na")
+        XCTAssertEqual(TextTools.apply(.uniqueLines, to: "a\na\nb"), "a\nb")
+        XCTAssertEqual(TextTools.apply(.reverseLines, to: "a\nb"), "b\na")
+        XCTAssertEqual(TextTools.apply(.upperCase, to: "aBc"), "ABC")
+        XCTAssertEqual(TextTools.apply(.lowerCase, to: "aBc"), "abc")
+        // A transform with nil input degrades to "" (never crashes).
+        XCTAssertEqual(TextTools.apply(.sortLinesAsc, to: nil), "")
     }
 }

@@ -62,6 +62,35 @@ public enum TextTools {
     public static func sha256Hex(_ text: String) -> String {
         sha256Hex(Data(text.utf8))
     }
+
+    // MARK: - Line transforms (TSK-352 NotePad++/Sublime-style clipboard tools)
+
+    /// Split into lines, treating `\n`, `\r\n` and `\r` each as ONE separator
+    /// (Swift's `Character.isNewline` collapses `\r\n` to one grapheme), and
+    /// KEEPING empty lines (so a blank line survives a round trip). Line
+    /// transforms rejoin with `\n` — normalising line endings as a side effect,
+    /// which is the conventional clipboard-tool behaviour.
+    static func splitLines(_ s: String) -> [String] {
+        s.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).map(String.init)
+    }
+
+    /// Sort lines lexicographically (Unicode scalar order — deterministic across
+    /// locales). `ascending: false` reverses to Z→A.
+    public static func sortLines(_ s: String, ascending: Bool = true) -> String {
+        let sorted = splitLines(s).sorted()
+        return (ascending ? sorted : sorted.reversed()).joined(separator: "\n")
+    }
+
+    /// Drop duplicate lines, keeping the FIRST occurrence and preserving order.
+    public static func uniqueLines(_ s: String) -> String {
+        var seen = Set<String>()
+        return splitLines(s).filter { seen.insert($0).inserted }.joined(separator: "\n")
+    }
+
+    /// Reverse the order of the lines.
+    public static func reverseLines(_ s: String) -> String {
+        splitLines(s).reversed().joined(separator: "\n")
+    }
 }
 
 /// File-level SHA-256 checksums (surfaced in the metadata panel / "Copy
@@ -160,18 +189,30 @@ struct CRC32 {
 /// NOT commit to a particular UX. `rawValue` doubles as the canonical
 /// `scriptVerb` for `CommandDescriptor`.
 public enum TextToolVerb: String, CaseIterable, Sendable {
-    case generateUUID = "tools.uuid"
-    case sha256       = "tools.sha256"
-    case base64Encode = "tools.base64Encode"
-    case base64Decode = "tools.base64Decode"
+    case generateUUID  = "tools.uuid"
+    case sha256        = "tools.sha256"
+    case base64Encode  = "tools.base64Encode"
+    case base64Decode  = "tools.base64Decode"
+    case sortLinesAsc  = "tools.sortLinesAsc"
+    case sortLinesDesc = "tools.sortLinesDesc"
+    case uniqueLines   = "tools.uniqueLines"
+    case reverseLines  = "tools.reverseLines"
+    case upperCase     = "tools.upperCase"
+    case lowerCase     = "tools.lowerCase"
 
     /// Human-readable command title (palette / menu label).
     public var title: String {
         switch self {
-        case .generateUUID: return "Generate UUID"
-        case .sha256:       return "SHA-256 (hex)"
-        case .base64Encode: return "Base64 Encode"
-        case .base64Decode: return "Base64 Decode"
+        case .generateUUID:  return "Generate UUID"
+        case .sha256:        return "SHA-256 (hex)"
+        case .base64Encode:  return "Base64 Encode"
+        case .base64Decode:  return "Base64 Decode"
+        case .sortLinesAsc:  return "Sort Lines (A→Z)"
+        case .sortLinesDesc: return "Sort Lines (Z→A)"
+        case .uniqueLines:   return "Remove Duplicate Lines"
+        case .reverseLines:  return "Reverse Lines"
+        case .upperCase:     return "UPPERCASE"
+        case .lowerCase:     return "lowercase"
         }
     }
 
@@ -188,10 +229,16 @@ public extension TextTools {
     /// transforms stay in one tested place regardless of how they're invoked.
     static func apply(_ verb: TextToolVerb, to input: String?) -> String? {
         switch verb {
-        case .generateUUID: return uuid()
-        case .sha256:       return sha256Hex(input ?? "")
-        case .base64Encode: return base64Encode(input ?? "")
-        case .base64Decode: return input.flatMap(base64Decode)
+        case .generateUUID:  return uuid()
+        case .sha256:        return sha256Hex(input ?? "")
+        case .base64Encode:  return base64Encode(input ?? "")
+        case .base64Decode:  return input.flatMap(base64Decode)
+        case .sortLinesAsc:  return sortLines(input ?? "", ascending: true)
+        case .sortLinesDesc: return sortLines(input ?? "", ascending: false)
+        case .uniqueLines:   return uniqueLines(input ?? "")
+        case .reverseLines:  return reverseLines(input ?? "")
+        case .upperCase:     return (input ?? "").uppercased()
+        case .lowerCase:     return (input ?? "").lowercased()
         }
     }
 }

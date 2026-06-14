@@ -321,6 +321,25 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "tools.base64Decode", title: "Base64 Decode Clipboard", category: .edit,
             scriptVerb: "tools.base64Decode"),
+        // Line/case transforms on the clipboard (TSK-352).
+        CommandDescriptor(
+            id: "tools.sortLinesAsc", title: "Sort Clipboard Lines (A→Z)", category: .edit,
+            scriptVerb: "tools.sortLinesAsc"),
+        CommandDescriptor(
+            id: "tools.sortLinesDesc", title: "Sort Clipboard Lines (Z→A)", category: .edit,
+            scriptVerb: "tools.sortLinesDesc"),
+        CommandDescriptor(
+            id: "tools.uniqueLines", title: "Remove Duplicate Lines (Clipboard)", category: .edit,
+            scriptVerb: "tools.uniqueLines"),
+        CommandDescriptor(
+            id: "tools.reverseLines", title: "Reverse Clipboard Lines", category: .edit,
+            scriptVerb: "tools.reverseLines"),
+        CommandDescriptor(
+            id: "tools.upperCase", title: "UPPERCASE Clipboard", category: .edit,
+            scriptVerb: "tools.upperCase"),
+        CommandDescriptor(
+            id: "tools.lowerCase", title: "lowercase Clipboard", category: .edit,
+            scriptVerb: "tools.lowerCase"),
         CommandDescriptor(
             id: "tools.fileChecksum", title: "Copy SHA-256 of Current File", category: .edit,
             scriptVerb: "tools.fileChecksum"),
