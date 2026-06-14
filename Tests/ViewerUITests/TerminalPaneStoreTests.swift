@@ -406,4 +406,31 @@ final class TerminalPaneStoreTests: XCTestCase {
         store.closeTab(tab.id)         // last tab → pane closes, names cleared
         XCTAssertTrue(store.customNames.isEmpty)
     }
+
+    // MARK: - Open Terminal Here (TSK-769)
+
+    func test_addTab_withWorkingDirectory_seedsModelInitialCwd() {
+        let store = TerminalPaneStore(defaults: defaults)
+        let cwd = URL(fileURLWithPath: "/tmp/work", isDirectory: true)
+        store.addTab(workingDirectory: cwd)
+        XCTAssertEqual(store.tabs.last?.model.initialWorkingDirectory, cwd)
+    }
+
+    func test_addTab_noWorkingDirectory_leavesInitialCwdNil() {
+        let store = TerminalPaneStore(defaults: defaults)
+        store.addTab()
+        XCTAssertNil(store.tabs.last?.model.initialWorkingDirectory)
+    }
+
+    func test_openTerminalHere_noFocusedFile_opensPaneWithExactlyOneTab() {
+        let model = makeModel()
+        XCTAssertFalse(model.terminalPane.isOpen)
+        model.openTerminalHere()       // no focused file → home fallback
+        XCTAssertTrue(model.terminalPane.isOpen, "opens the terminal pane")
+        // The load-bearing assertion: addTab BEFORE setOpen, so ensureTerminal
+        // doesn't ALSO spawn a default home tab (would be 2).
+        XCTAssertEqual(model.terminalPane.tabs.count, 1, "exactly one tab, no extra default")
+        XCTAssertNil(model.terminalPane.tabs.last?.model.initialWorkingDirectory,
+            "no focused file → nil cwd (the shell falls back to home)")
+    }
 }

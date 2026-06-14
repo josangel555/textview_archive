@@ -3661,6 +3661,16 @@ public final class DocumentModel: ObservableObject {
     public var currentURL: URL? { tabs.selected?.url }
     public var currentViewMode: ViewMode { tabs.selected?.viewMode ?? .rendered }
 
+    /// Open a terminal tab `cd`'d to the focused file's folder (TSK-769
+    /// "Open Terminal Here"). Adds the located tab BEFORE opening the pane so
+    /// `setOpen`'s `ensureTerminal` doesn't also spawn a default home tab.
+    /// With no focused file the new terminal falls back to the shell's home.
+    public func openTerminalHere() {
+        let cwd = TerminalCwd.workingDirectory(forFocusedFile: currentURL)
+        terminalPane.addTab(workingDirectory: cwd)
+        terminalPane.setOpen(true)
+    }
+
     /// True when there's a file OR a project folder open — i.e. the status
     /// footer has something useful to show (path/metrics for a file; the
     /// folder-scoped git chip + "—" path for a folder-only project). TSK-738:

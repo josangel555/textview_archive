@@ -115,6 +115,9 @@ extension CommandRegistry {
             defaultShortcut: Shortcut(key: "f", modifiers: [.command, .option]),
             scriptVerb: "toggle-format"),
         CommandDescriptor(
+            id: "terminal.openHere", title: "Open Terminal Here", category: .navigation,
+            scriptVerb: "terminal-open-here"),
+        CommandDescriptor(
             id: "view.applyJQ", title: "Apply jq Filter…", category: .view,
             defaultShortcut: Shortcut(key: "j", modifiers: [.command, .option]),
             scriptVerb: nil),

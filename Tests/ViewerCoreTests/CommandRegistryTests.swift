@@ -84,6 +84,8 @@ final class CommandRegistryTests: XCTestCase {
             "show-lsp-rename", "show-code-actions",
             // git blame gutter toggle (TSK-814)
             "toggle-blame",
+            // open a terminal in the focused file's folder (TSK-769)
+            "terminal-open-here",
         ]
         for cmd in CommandRegistry.builtIn.commands {
             guard let verb = cmd.scriptVerb else { continue }

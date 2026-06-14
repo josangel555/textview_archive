@@ -123,6 +123,11 @@ public final class TerminalModel: ObservableObject {
     private var throttle = FrameThrottle()
     private static let coalesceInterval: TimeInterval = 1.0 / 60.0
 
+    /// cwd for the FIRST spawn when `start()` is called without an explicit
+    /// directory (TSK-769 "Open Terminal Here"). Set at tab creation; the
+    /// mount-time `start()` reads it. `nil` → falls back to home.
+    public var initialWorkingDirectory: URL?
+
     public init(rows: Int = 24, cols: Int = 80) {
         let r = max(1, rows)
         let c = max(1, cols)
@@ -158,7 +163,9 @@ public final class TerminalModel: ObservableObject {
         _ = pty.start(
             rows: UInt16(clamping: rows),
             cols: UInt16(clamping: cols),
-            workingDirectory: workingDirectory ?? FileManager.default.homeDirectoryForCurrentUser
+            workingDirectory: workingDirectory
+                ?? initialWorkingDirectory
+                ?? FileManager.default.homeDirectoryForCurrentUser
         )
     }
 

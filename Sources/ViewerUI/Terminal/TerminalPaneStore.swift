@@ -154,9 +154,12 @@ public final class TerminalPaneStore: ObservableObject {
     // MARK: - Tabs
 
     /// Add a new shell tab and select it. The model spawns its shell when
-    /// the representable mounts.
-    public func addTab() {
-        let tab = TerminalTab(number: nextNumber, model: TerminalModel())
+    /// the representable mounts; `workingDirectory` (TSK-769) seeds that first
+    /// spawn's cwd (nil → the shell's default home).
+    public func addTab(workingDirectory: URL? = nil) {
+        let model = TerminalModel()
+        model.initialWorkingDirectory = workingDirectory
+        let tab = TerminalTab(number: nextNumber, model: model)
         nextNumber += 1
         tabs.append(tab)
         selectedTabID = tab.id

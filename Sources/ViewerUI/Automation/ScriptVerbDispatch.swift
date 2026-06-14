@@ -106,6 +106,7 @@ public enum ScriptVerb {
         // / tabs.moveRight previously had no script verb — menu/⌘⌥[ ⌘⌥]-only).
         case "move-tab-left":   model.moveCurrentTabLeft()
         case "move-tab-right":  model.moveCurrentTabRight()
+        case "terminal-open-here": model.openTerminalHere()
         case "show-palette":    model.showPalette()
         case "dismiss-palette": model.dismissPalette()
         case "show-goto":       model.showGoToPath()
