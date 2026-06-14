@@ -184,6 +184,87 @@ final class FormatterTests: XCTestCase {
         XCTAssertTrue(out.contains("\n"), "formatted JS should be multi-line")
     }
 
+    // MARK: - CSS (minified re-indent)
+
+    private func assertCSSPreservesSignificant(
+        _ input: String, file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let out = Formatter.prettyPrint(input, as: .css)
+        XCTAssertEqual(
+            Formatter.cssSignificantContent(input),
+            Formatter.cssSignificantContent(out),
+            "significant content changed\nIN:  \(input)\nOUT:\n\(out)",
+            file: file, line: line
+        )
+    }
+
+    private static let cssCorpus: [String] = [
+        "a{color:red}",
+        "a,b,c{margin:0}",
+        ".x{font:12px/1.4 serif;color:#fff}",            // `/` is a value char, not a comment
+        "@media (min-width:600px){.y{display:flex}}",     // nested rules
+        ".z{background:url(http://example.com/a.png) no-repeat}", // `//` inside url is NOT a comment
+        "p{content:\"{};\"}",                              // string with structural chars
+        "/* {brace}; not css */a{top:0}",                 // block comment with structural chars
+        "div{color:rgb(1,2,3);margin:1px 2px 3px 4px}",   // commas in rgb() + value-list spaces
+        ".a:hover,.b:focus{color:blue}",                  // pseudo-classes + selector list
+        ":root{--main-color:#333;--gap:8px}",             // custom properties
+        "a{background:url('x;y{z}')}",                     // string inside url() with structural chars
+        ".n:nth-child(2n+1){opacity:.5}",                 // () in selector
+    ]
+
+    func test_css_preservesSignificantContent_corpus() {
+        for src in Self.cssCorpus { assertCSSPreservesSignificant(src) }
+    }
+
+    func test_css_minified_isReindented() {
+        let input = "a{color:red;margin:0}.b{display:none}"
+        let out = Formatter.prettyPrint(input, as: .css)
+        XCTAssertTrue(out.contains("\n"), "Re-indented CSS should have newlines.\n\(out)")
+        XCTAssertTrue(out.contains("  "), "Re-indented CSS should be indented.\n\(out)")
+        XCTAssertNotEqual(out, input)
+    }
+
+    func test_css_isIdempotent() {
+        for src in Self.cssCorpus {
+            let once = Formatter.prettyPrint(src, as: .css)
+            let twice = Formatter.prettyPrint(once, as: .css)
+            XCTAssertEqual(once, twice, "Not idempotent for: \(src)\nonce:\n\(once)")
+        }
+    }
+
+    func test_css_literalsArePreservedVerbatim() {
+        XCTAssertTrue(Formatter.prettyPrint("p{content:\"{a};{b}\"}", as: .css).contains("\"{a};{b}\""),
+                      "string with braces/semicolons must stay intact")
+        XCTAssertTrue(Formatter.prettyPrint("/* {x}; */a{top:0}", as: .css).contains("/* {x}; */"),
+                      "block comment must stay intact")
+        XCTAssertTrue(Formatter.prettyPrint("a{background:url(http://h/x.png)}", as: .css).contains("url(http://h/x.png)"),
+                      "url() with // must not be split as a comment")
+    }
+
+    func test_css_emptyInput_returnsUnchanged() {
+        XCTAssertEqual(Formatter.prettyPrint("", as: .css), "")
+    }
+
+    func test_css_detect_extensions() {
+        XCTAssertEqual(Formatter.SupportedFormat.detect(URL(fileURLWithPath: "a.css")), .css)
+        XCTAssertEqual(Formatter.SupportedFormat.detect(URL(fileURLWithPath: "/x/Site.CSS")), .css)
+    }
+
+    func test_css_detect_scssAndLess_areNotFormattable() {
+        // SCSS/LESS add `//` line comments + nesting the plain-CSS lexer
+        // doesn't model — must not offer a Format affordance that mis-reads them.
+        XCTAssertNil(Formatter.SupportedFormat.detect(URL(fileURLWithPath: "a.scss")))
+        XCTAssertNil(Formatter.SupportedFormat.detect(URL(fileURLWithPath: "a.less")))
+    }
+
+    func test_css_prettyPrintIfFormattable_wiredForCSSURL() {
+        let (out, ok) = Formatter.prettyPrintIfFormattable(
+            "a{color:red}", url: URL(fileURLWithPath: "x.css"))
+        XCTAssertTrue(ok, "a .css URL should format")
+        XCTAssertTrue(out.contains("\n"), "formatted CSS should be multi-line")
+    }
+
     // MARK: - SupportedFormat detection
 
     func test_detect_json_extensions() {

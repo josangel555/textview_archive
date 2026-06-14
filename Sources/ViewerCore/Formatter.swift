@@ -2,20 +2,21 @@ import Foundation
 
 /// Pretty-printing for structured text formats.
 ///
-/// Supported: JSON, XML, JS. Future: YAML, TOML, CSS (CSS would slot into
-/// the same brace re-indenter as JS).
+/// Supported: JSON, XML, JS, CSS. Future: YAML, TOML.
 ///
 /// Each format degrades gracefully — if parsing fails, the original
 /// content is returned (so a malformed JSON file doesn't become empty).
-/// JS uses a dependency-free lexical re-indenter (see `prettyPrintJS`) that
-/// only ever rewrites whitespace OUTSIDE string/template/comment/regex
-/// literals, so it can never alter code meaning.
+/// JS and CSS use dependency-free lexical re-indenters (see `prettyPrintJS`
+/// / `prettyPrintCSS`) that only ever rewrite whitespace OUTSIDE
+/// string/comment (and, for JS, template/regex) literals, so they can never
+/// alter code meaning.
 public enum Formatter {
 
     public enum SupportedFormat: String, CaseIterable, Sendable {
         case json
         case xml
         case js
+        case css
 
         /// Detect a supported format from a URL's path extension.
         ///
@@ -41,6 +42,12 @@ public enum Formatter {
                 // type annotations) isn't modelled by the brace re-indenter,
                 // so offering Format there would mis-indent without warning.
                 return .js
+            case "css":
+                // Minified CSS → structural re-indent. `.scss`/`.less` are
+                // deliberately absent: they add `//` line comments (and nesting
+                // syntax) the plain-CSS lexer doesn't model, so a `;` or `{`
+                // inside a `//` comment would be mis-read.
+                return .css
             default:
                 return nil
             }
@@ -55,6 +62,7 @@ public enum Formatter {
         case .json: return prettyPrintJSON(content)
         case .xml:  return prettyPrintXML(content)
         case .js:   return prettyPrintJS(content)
+        case .css:  return prettyPrintCSS(content)
         }
     }
 
@@ -581,6 +589,163 @@ public enum Formatter {
             }
             if c == ")" || c == "]" { emitCode(c); sawValue(c); i += 1; continue }
             emitCode(c); sawCode(c); i += 1
+        }
+        return String(out)
+    }
+
+    // MARK: - CSS
+
+    /// A dependency-free re-indenter for minified CSS — a simpler sibling of
+    /// `prettyPrintJS`. CSS has no regex, no template literals and no line
+    /// comments, so the only lexical state to track is string (`"…"` / `'…'`)
+    /// and block comment (`/* … */`); a bare `/` is just a value character
+    /// (`font: 12px/1.4`, `url(http://…)`), NOT a comment unless followed by
+    /// `*`. It re-indents around `{`, `}`, declaration-ending `;` and
+    /// top-level selector-list `,` (commas inside `()` value lists / `rgb(…)`
+    /// and inside a rule body are left inline).
+    ///
+    /// Same correctness guarantee as the JS twin: only whitespace OUTSIDE
+    /// string/comment literals is rewritten, so it can never change meaning.
+    /// `.scss`/`.less` are excluded at `detect` (their `//` line comments and
+    /// nesting aren't modelled). Pinned by the `cssSignificantContent`
+    /// differential test.
+    private static func prettyPrintCSS(_ content: String) -> String {
+        let chars = Array(content)
+        let n = chars.count
+        guard n > 0 else { return content }
+
+        var out = ""
+        out.reserveCapacity(n + n / 4)
+        var indent = 0
+        var atLineStart = true
+        var pendingSpace = false
+        var parenDepth = 0
+        var braceDepth = 0
+
+        func flush() {
+            if atLineStart {
+                for _ in 0..<max(0, indent) { out += jsIndentUnit }
+                atLineStart = false
+                pendingSpace = false
+            } else if pendingSpace {
+                out.append(" ")
+                pendingSpace = false
+            }
+        }
+        func emit(_ c: Character) { flush(); out.append(c) }
+        func emitVerbatim(_ s: String) { flush(); out += s }
+        func newline() {
+            pendingSpace = false
+            if !atLineStart { out.append("\n"); atLineStart = true }
+        }
+
+        var i = 0
+        while i < n {
+            let c = chars[i]
+            if c == " " || c == "\t" || c == "\n" || c == "\r" {
+                if !atLineStart { pendingSpace = true }
+                i += 1; continue
+            }
+            // Block comment.
+            if c == "/", i + 1 < n, chars[i + 1] == "*" {
+                var j = i + 2; var lit = "/*"
+                while j < n {
+                    if chars[j] == "*", j + 1 < n, chars[j + 1] == "/" { lit += "*/"; j += 2; break }
+                    lit.append(chars[j]); j += 1
+                }
+                emitVerbatim(lit); i = j; continue
+            }
+            // String literal.
+            if c == "\"" || c == "'" {
+                let q = c; var j = i + 1; var lit = String(c)
+                while j < n {
+                    let s = chars[j]; lit.append(s)
+                    if s == "\\", j + 1 < n { lit.append(chars[j + 1]); j += 2; continue }
+                    if s == q { j += 1; break }
+                    j += 1
+                }
+                emitVerbatim(lit); i = j; continue
+            }
+            // Block open.
+            if c == "{" {
+                emit("{"); braceDepth += 1; indent += 1; newline(); i += 1; continue
+            }
+            // Block close.
+            if c == "}" {
+                indent -= 1; braceDepth = max(0, braceDepth - 1)
+                newline(); emit("}"); newline()
+                i += 1; continue
+            }
+            // Declaration end.
+            if c == ";" {
+                emit(";")
+                if parenDepth == 0 { newline() }
+                i += 1; continue
+            }
+            // Selector-list comma (only between top-level selectors).
+            if c == "," {
+                emit(",")
+                if braceDepth == 0, parenDepth == 0 { newline() }
+                i += 1; continue
+            }
+            if c == "(" { emit("("); parenDepth += 1; i += 1; continue }
+            if c == ")" { emit(")"); parenDepth = max(0, parenDepth - 1); i += 1; continue }
+            emit(c); i += 1
+        }
+        while out.hasSuffix("\n") { out.removeLast() }
+        return out
+    }
+
+    /// Independent CSS lexer for tests — projects a source down to its
+    /// significant content (everything except whitespace OUTSIDE string /
+    /// block-comment literals, with such whitespace collapsed to a single
+    /// space only between two identifier characters). `prettyPrintCSS` must
+    /// preserve this projection exactly.
+    static func cssSignificantContent(_ content: String) -> String {
+        let chars = Array(content)
+        let n = chars.count
+        var out: [Character] = []
+        out.reserveCapacity(n)
+
+        func isW(_ c: Character) -> Bool {
+            c == "_" || c == "-" || c.isLetter || c.isNumber
+        }
+        var prevWasWord = false
+        var pendingSpace = false
+        func emitCode(_ c: Character) {
+            let w = isW(c)
+            if pendingSpace { if prevWasWord && w { out.append(" ") }; pendingSpace = false }
+            out.append(c); prevWasWord = w
+        }
+        func emitVerbatim(_ s: [Character]) {
+            pendingSpace = false
+            out += s
+            prevWasWord = false
+        }
+
+        var i = 0
+        while i < n {
+            let c = chars[i]
+            if c == " " || c == "\t" || c == "\n" || c == "\r" { pendingSpace = true; i += 1; continue }
+            if c == "/", i + 1 < n, chars[i + 1] == "*" {
+                var j = i + 2; var lit: [Character] = ["/", "*"]
+                while j < n {
+                    if chars[j] == "*", j + 1 < n, chars[j + 1] == "/" { lit += ["*", "/"]; j += 2; break }
+                    lit.append(chars[j]); j += 1
+                }
+                emitVerbatim(lit); i = j; continue
+            }
+            if c == "\"" || c == "'" {
+                let q = c; var j = i + 1; var lit: [Character] = [c]
+                while j < n {
+                    let s = chars[j]; lit.append(s)
+                    if s == "\\", j + 1 < n { lit.append(chars[j + 1]); j += 2; continue }
+                    if s == q { j += 1; break }
+                    j += 1
+                }
+                emitVerbatim(lit); i = j; continue
+            }
+            emitCode(c); i += 1
         }
         return String(out)
     }
