@@ -9275,6 +9275,34 @@ No CHANGELOG entry — docs/board hygiene only; the underlying user-facing chang
 already logged when they shipped. No code touched → main stays headless-gate-green (last code change was
 the CSS formatter at `1d08322`, gated green).
 
+## LOG +426 (2026-06-13 — TSK-783/785: rust-core supply-chain — enforce --locked (fail-on-drift) + verify minimal dep tree)
+
+Autonomous tick. Picked the SECURITY/supply-chain lane (ranks above features in §3; a core owner value).
+The cron-named RUST-CORE tickets (554/628/634) are all `validated` — stale boilerplate — but two wishlist
+supply-chain items were live + host-actionable: TSK-783 (lock + fail-on-drift + approval gate) and TSK-785
+(disable optional transitive deps).
+
+**Found + fixed the real gap (commit `0a0154e`):** rust-core deps are already strongly hardened — exact
+pins (`=x.y.z`), `default-features=false` on every direct dep, committed `Cargo.lock`, a tightened
+`deny.toml` (crates.io-only sources, `multiple-versions=deny`), and `rust-supply-chain-audit.sh` (cargo-deny
++ cargo-audit). BUT neither `scripts/rust-core-gate.sh` (clippy/test) nor `scripts/build-rust-core.sh` (the
+app-link `cargo build`) passed **`--locked`** — so a build could silently re-resolve transitive deps and
+ship an unreviewed tree. Added `--locked` to all three invocations. Now any build that would mutate
+`Cargo.lock` FAILS; a lockfile change must be an explicit, reviewable diff = the owner-approval chokepoint.
+(Also discovered `.github/workflows/` is EMPTY — there is no CI; the gate scripts ARE the gate, run by the
+agent/owner. CLAUDE.md still references pr.yml/nightly-vm.yml that don't exist on disk.)
+
+**TSK-785 = verified already-satisfied (audit):** every direct dep is either `default-features=false`
+(serde [derive,alloc], regex-lite [std,string; zero transitive deps], pulldown-cmark [bare; drops
+html/simd/getopts], cbindgen) OR has no optional deps (rmp-serde 1.3.0 — no `[features]`, no optional
+deps; default-features moot). `cargo tree` confirms the merge-gate tree (core+ffi+serve) is minimal. The
+new `--locked` guard + `deny.toml multiple-versions=deny` regression-guard against silent growth.
+
+**Validation:** rust-core gate GREEN under `--locked`. **TEETH:** perturbed `regex-lite =0.1.8 → =0.1.6`
+in Cargo.toml (lock unchanged) → `cargo build --locked` errored "the lock file needs to be updated but
+--locked was passed" → restored via `git checkout`. Both tickets self-validated (host-verifiable supply-chain
+guards). No CHANGELOG (build/security infra, not user-facing). main stays gate-green.
+
 **LSP-menu lane now done.** Remaining LSP work (no UI at all, meatier): Find References + Workspace Symbols (backends
 exist, need a results panel — VM-gated). Noted for when the screen/owner is available.
 
