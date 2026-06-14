@@ -1,5 +1,37 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-533 audio frequency-spectrum panel SHIPPED (fb2ada6, → review)
+
+Built the first item off last firing's mapped niche tail, and **corrected last firing's own blocker**:
+the prior sweep called 533 "not a clean leaf — the viewModel keeps PEAKS, not the float buffer." That was
+wrong — `AudioWaveform.samples` holds the **full** deinterleaved mono buffer ("Held in full" — kept exactly
+so the view can re-reduce per zoom without re-decoding). So the FFT can read `samples` directly; 533 *was* a
+clean additive leaf.
+
+What shipped (commit `fb2ada6`):
+- **Pure model** (`AudioWaveform`, host-tested): `spectrumWindow(centeredOn:fftSize:)` extracts a playhead-
+  centred, buffer-clamped window (clamps at both edges; whole buffer when shorter than the FFT; empty when
+  empty); `spectrum(at:)` runs the existing host-tested `SpectrumAnalyzer`. `SpectrumBins` now carries
+  `floorDB` so the renderer normalises `[floorDB,0]→[0,1]` without a magic constant (only `analyze`
+  constructs it; tests use `analyze()`, so no breakage).
+- **View model** (`AudioEditorViewModel`): `showSpectrum` toggle + a playhead-tracking `spectrum`, recomputed
+  on the playback tick / scrub **while shown** (a 2048-pt FFT is cheap; gated so a hidden panel does no work)
+  and cleared when hidden. Added a `init(url:waveform:)` test seam.
+- **View** (`AudioEditorView`): a spectrum toggle button (`mdv.audioEditor.spectrumToggle`) + a linear-
+  frequency `spectrumCanvas` panel (`mdv.audioEditor.spectrum`) that drops in below the waveform. Pure SwiftUI
+  `Canvas` like the waveform — no `NSViewRepresentable`, so the sibling-blank occlusion class can't apply.
+
+Teeth: 8 new pure tests (window centring via a ramp buffer where `samples[i]==i`, start/end clamp, short/empty
+buffer, sine→peak-bin composition, floorDB carry) + 4 new VM tests (toggle on→spectrum present, off→cleared,
+scrub-recompute gated on `showSpectrum`). Host headless gate green (5484 tests, tier enforcement OK). On-screen
+Canvas render is the VM tail (extend `AudioEditorVisualRegressionTests` T5 to cover the spectrum band).
+
+Batch note: shipped ONE complete item this firing rather than forcing a marginal second. The remaining queue tail
+is render-only (766 git-diff style / 506 treemap — no host model → blind = the risky-change the owner warned off),
+owner-gated (343/358), or VM-heavy investigations (668 CSV paging, 463/710/708 LSP bridges, 839 trace, 838 arch) —
+none a clean fold-in. 534 (trim/fade) is now more attractive: `AudioExporter`/`AudioDocument` exist, so trim/fade
+could feed a real "Save a Copy" → a complete feature next firing.
+
 ## LOG 2026-06-14 — Stale-done sweep of the remaining [VM] Section-C items + strategic queue state
 
 Applied last firing's lesson (grep before building). Existence-swept the remaining Section-C `[VM]` items to find

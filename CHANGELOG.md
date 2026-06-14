@@ -16,6 +16,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Bottom attributes bar uses toggle buttons** — Wrap, Special chars, Enable JS, and the preview Info toggle are now press-to-toggle buttons (matching the Find bar) instead of small checkboxes, so their on/off state reads at a glance.
 
 ### Added
+- **Frequency spectrum in the audio editor** — the audio editor now has a spectrum toggle (the ECG-waveform button next to the time readout); turn it on to see a live frequency-spectrum panel below the waveform that tracks the playhead as the track plays or you scrub.
 - **`@` jump-to-heading from the command palette** — in a Markdown file, type `@` then part of a heading (e.g. `@install`) to get a list of matching headings; arrow-pick one and press Return to jump to it. Completes the unified "Goto Anything" palette: files, `>` commands, `:` line, `#` in-file text, `@` headings.
 - **`#` search-in-file from the command palette** — type `#` then some text (e.g. `#TODO`) in the palette to get a navigable list of matching lines in the current file; arrow-pick one and press Return to jump to it. (Part of the unified "Goto Anything" palette, alongside `:` line and `>` commands.)
 - **`:` go-to-line in the command palette** — type a colon and a line number in the palette (e.g. `:42`) and press Return to jump straight to that line in the current file, alongside `>` for commands. (Part of unifying the palette into one "Goto Anything" box.)
