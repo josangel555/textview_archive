@@ -9426,6 +9426,20 @@ intermittently reported "swift test exited 1" with ZERO failing tests; a clean d
 run gave **EXIT=0, all 5246 pass, 0 failures**. That's the documented machine-load bench/exit-code flake (CLAUDE.md)
 after ~6 back-to-back full-suite runs this turn — not a real failure. Confirmed clean before committing.
 
+## LOG +432 (2026-06-14 — TSK-348 slice: deep filesystem metadata in the file-info panel)
+
+Feature tick (diversified off terminal). Concrete slice of the broad "Deep metadata" umbrella:
+`MetadataPanel.filesystemRows` now surfaces POSIX **permissions** (octal + ls-style symbolic via a host-tested
+`posixModeString`), **owner/group**, **inode**, and **hard-link count** (only when >1 — "1" is noise on every
+file). All were already in the `attributesOfItem` dict, just unsurfaced — no extra FS calls. Commit `3168b77`;
+suite confirmed green (EXIT=0, gate-wrapper exit-1 was the same machine-load flake as +431).
+
+Host tests (MetadataPanelTests +5): `posixModeString` octal/symbolic/high-bit-mask; `filesystemRows`
+present + omitted-when-absent/empty. **A test caught a real design bug:** my first guard showed "Hard links: 1"
+for every file (noise); the omitted-when-1 test went red → fixed to `>1`. Commented progress on TSK-348 (FS
+facet done; full EXIF/XMP + more formats remain). CHANGELOG updated. → row MODEL host-pinned; panel render is
+the VM tail.
+
 **LSP-menu lane now done.** Remaining LSP work (no UI at all, meatier): Find References + Workspace Symbols (backends
 exist, need a results panel — VM-gated). Noted for when the screen/owner is available.
 
