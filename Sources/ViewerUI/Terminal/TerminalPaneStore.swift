@@ -40,6 +40,11 @@ public final class TerminalPaneStore: ObservableObject {
     /// The selected tab's id, or nil when the pane has no tabs.
     @Published public private(set) var selectedTabID: UUID?
 
+    /// Per-tab user-chosen names (TSK-771). Session-only: a tab (and its
+    /// shell) doesn't survive relaunch, so its name doesn't either. Keyed by
+    /// tab id; the entry is dropped when the tab closes so the map can't leak.
+    @Published public private(set) var customNames: [UUID: String] = [:]
+
     /// Where the tab strip sits relative to the terminal surface (TSK-488).
     /// Default `.left`; persisted in `TerminalPaneLayout`.
     @Published public private(set) var tabPosition: TerminalTabPosition
@@ -158,6 +163,33 @@ public final class TerminalPaneStore: ObservableObject {
         syncForeground()
     }
 
+    /// Rename a tab (TSK-771). A whitespace-only / empty name CLEARS the
+    /// custom name (reverting to the default "Terminal N"). No-op for an
+    /// unknown id or when the value is unchanged (so the strip doesn't
+    /// republish on a no-op rename).
+    public func renameTab(_ id: UUID, to name: String) {
+        guard tabs.contains(where: { $0.id == id }) else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            guard customNames[id] != nil else { return }
+            customNames[id] = nil
+        } else {
+            guard customNames[id] != trimmed else { return }
+            customNames[id] = trimmed
+        }
+    }
+
+    /// The short chip label: the custom name if set, else the bare tab number.
+    public func tabLabel(for tab: TerminalTab) -> String {
+        customNames[tab.id] ?? "\(tab.number)"
+    }
+
+    /// The full title (tooltip / accessibility): the custom name if set, else
+    /// the default "Terminal N".
+    public func tabTitle(for tab: TerminalTab) -> String {
+        customNames[tab.id] ?? "Terminal \(tab.number)"
+    }
+
     /// Select an existing tab by id (no-op for an unknown id).
     public func selectTab(_ id: UUID) {
         guard selectedTabID != id, tabs.contains(where: { $0.id == id }) else { return }
@@ -182,9 +214,11 @@ public final class TerminalPaneStore: ObservableObject {
         guard let idx = tabs.firstIndex(where: { $0.id == id }) else { return }
         let tab = tabs.remove(at: idx)
         tab.model.stop()
+        customNames[id] = nil        // drop the closed tab's name (TSK-771)
         if tabs.isEmpty {
             selectedTabID = nil
             nextNumber = 1            // fresh numbering next time it opens
+            customNames.removeAll()   // no tabs → no names
             setOpen(false)            // last tab closed → close the pane
             return
         }

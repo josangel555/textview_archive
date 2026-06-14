@@ -80,6 +80,11 @@ struct TerminalPaneView: View {
     @ObservedObject var store: TerminalPaneStore
     let fontSize: CGFloat
 
+    /// TSK-771 rename prompt: the tab being renamed (drives the per-chip
+    /// alert) + its editable text.
+    @State private var renamingTabID: UUID?
+    @State private var renameText: String = ""
+
     var body: some View {
         // Strip placement (TSK-488): left (default) / top / right. The strip
         // runs vertically for left/right, horizontally for top.
@@ -211,8 +216,10 @@ struct TerminalPaneView: View {
         return HStack(spacing: 4) {
             Image(systemName: "terminal")
                 .font(.system(size: fontSize * 0.72, weight: .semibold))
-            Text("\(tab.number)")
+            Text(store.tabLabel(for: tab))
                 .font(.system(size: fontSize * 0.92, weight: .bold, design: .monospaced))
+                .lineLimit(1)
+                .truncationMode(.tail)
             // Close affordance — only the selected tab shows it inline to
             // keep the strip tidy; any tab can be closed once selected.
             if selected && store.tabs.count > 1 {
@@ -242,8 +249,34 @@ struct TerminalPaneView: View {
         )
         .contentShape(Rectangle())
         .onTapGesture { store.selectTab(tab.id) }
-        .help("Terminal \(tab.number)")
+        .help(store.tabTitle(for: tab))
         .accessibilityIdentifier("mdv.terminal.tab.\(tab.number)")
+        // TSK-771: right-click → Rename / Reset. The model lives on the store
+        // (host-tested); this is just the trigger.
+        .contextMenu {
+            Button("Rename…") {
+                renameText = store.customNames[tab.id] ?? ""
+                renamingTabID = tab.id
+            }
+            if store.customNames[tab.id] != nil {
+                Button("Reset Name") { store.renameTab(tab.id, to: "") }
+            }
+        }
+        // Bound per-chip so exactly the renamed tab presents (only one id
+        // matches) — no shared single-alert plumbing needed.
+        .alert("Rename Terminal Tab", isPresented: Binding(
+            get: { renamingTabID == tab.id },
+            set: { if !$0 { renamingTabID = nil } }
+        )) {
+            TextField("Name", text: $renameText)
+            Button("Rename") {
+                store.renameTab(tab.id, to: renameText)
+                renamingTabID = nil
+            }
+            Button("Cancel", role: .cancel) { renamingTabID = nil }
+        } message: {
+            Text("Name this terminal, or leave blank to reset to “Terminal \(tab.number)”.")
+        }
     }
 
     private func exitedOverlay(_ model: TerminalModel) -> some View {

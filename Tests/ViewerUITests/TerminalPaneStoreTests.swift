@@ -342,4 +342,68 @@ final class TerminalPaneStoreTests: XCTestCase {
         await Task.yield()
         XCTAssertEqual(count, 0, "setOpen with the same value must be a no-op")
     }
+
+    // MARK: - Tab rename (TSK-771)
+
+    func test_renameTab_setsCustomLabelAndTitle() {
+        let store = TerminalPaneStore(defaults: defaults)
+        store.addTab()
+        let tab = store.tabs[0]
+        // Default before any rename: bare number in the chip, "Terminal N" title.
+        XCTAssertEqual(store.tabLabel(for: tab), "\(tab.number)")
+        XCTAssertEqual(store.tabTitle(for: tab), "Terminal \(tab.number)")
+
+        store.renameTab(tab.id, to: "build")
+        XCTAssertEqual(store.tabLabel(for: tab), "build")
+        XCTAssertEqual(store.tabTitle(for: tab), "build")
+        XCTAssertEqual(store.customNames[tab.id], "build")
+    }
+
+    func test_renameTab_trimsSurroundingWhitespace() {
+        let store = TerminalPaneStore(defaults: defaults)
+        store.addTab()
+        let tab = store.tabs[0]
+        store.renameTab(tab.id, to: "  logs  ")
+        XCTAssertEqual(store.tabLabel(for: tab), "logs")
+    }
+
+    func test_renameTab_emptyOrBlank_clearsBackToDefault() {
+        let store = TerminalPaneStore(defaults: defaults)
+        store.addTab()
+        let tab = store.tabs[0]
+        store.renameTab(tab.id, to: "x")
+        XCTAssertEqual(store.customNames[tab.id], "x")
+        store.renameTab(tab.id, to: "   ")   // blank → clear
+        XCTAssertNil(store.customNames[tab.id])
+        XCTAssertEqual(store.tabLabel(for: tab), "\(tab.number)")
+        XCTAssertEqual(store.tabTitle(for: tab), "Terminal \(tab.number)")
+    }
+
+    func test_renameTab_unknownID_isNoOp() {
+        let store = TerminalPaneStore(defaults: defaults)
+        store.addTab()
+        store.renameTab(UUID(), to: "nope")
+        XCTAssertTrue(store.customNames.isEmpty, "an unknown id must not create a name entry")
+    }
+
+    func test_closeTab_dropsOnlyItsOwnName() {
+        let store = TerminalPaneStore(defaults: defaults)
+        store.addTab()  // number 1
+        store.addTab()  // number 2
+        let t1 = store.tabs[0], t2 = store.tabs[1]
+        store.renameTab(t1.id, to: "one")
+        store.renameTab(t2.id, to: "two")
+        store.closeTab(t1.id)
+        XCTAssertNil(store.customNames[t1.id], "the closed tab's name is dropped (no leak)")
+        XCTAssertEqual(store.customNames[t2.id], "two", "the surviving tab keeps its name")
+    }
+
+    func test_closingLastTab_clearsAllNames() {
+        let store = TerminalPaneStore(defaults: defaults)
+        store.setOpen(true)            // ensures one tab
+        let tab = store.tabs[0]
+        store.renameTab(tab.id, to: "solo")
+        store.closeTab(tab.id)         // last tab → pane closes, names cleared
+        XCTAssertTrue(store.customNames.isEmpty)
+    }
 }
