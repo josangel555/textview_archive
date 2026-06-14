@@ -70,9 +70,9 @@ struct CommandPaletteView: View {
             } else if isLineMode {
                 lineModeHint
             } else if isInFileSearchMode {
-                inFileSearchHint
+                if jumpRows.isEmpty { inFileSearchHint } else { jumpList }
             } else if isSymbolMode {
-                symbolHint
+                if jumpRows.isEmpty { symbolHint } else { jumpList }
             } else if filtered.isEmpty {
                 emptyState
             } else {
@@ -122,7 +122,9 @@ struct CommandPaletteView: View {
             if footerActionable {
                 Divider()
                 HStack(spacing: 12) {
-                    if !isLineMode && !isInFileSearchMode && !isSymbolMode {
+                    // All modes except the single-target line jump are now
+                    // arrow-navigable (`#`/`@` show a list).
+                    if !isLineMode {
                         Text("↑↓ navigate").font(.caption2).foregroundStyle(.secondary)
                     }
                     Text(footerActionLabel)
@@ -172,6 +174,32 @@ struct CommandPaletteView: View {
     /// hint count + the Return-jumps-to-best-heading action.
     @State private var symbolMatches: [MarkdownHeading] = []
 
+    /// One navigable jump target (TSK-727 slice 5): unifies `#` in-file matches
+    /// and `@` headings into a single arrow-navigable list with a jump line.
+    private struct JumpRow: Identifiable {
+        let id: Int
+        let primary: String
+        let secondary: String
+        let line: Int
+    }
+
+    /// The navigable rows for the active `#`/`@` mode (empty otherwise).
+    private var jumpRows: [JumpRow] {
+        if isInFileSearchMode {
+            return inFileMatches.enumerated().map {
+                JumpRow(id: $0.offset, primary: $0.element.line.isEmpty ? " " : $0.element.line,
+                        secondary: "line \($0.element.lineNumber)", line: $0.element.lineNumber)
+            }
+        }
+        if isSymbolMode {
+            return symbolMatches.enumerated().map {
+                JumpRow(id: $0.offset, primary: $0.element.title,
+                        secondary: "H\($0.element.level)", line: $0.element.line)
+            }
+        }
+        return []
+    }
+
     /// Show bookmarks at the top of the palette (in store order),
     /// followed by recents that aren't already shown as bookmarks. The
     /// fuzzy filter applies to both. PaletteRow renders the
@@ -218,18 +246,10 @@ struct CommandPaletteView: View {
     private func submit() {
         // In-file search (`#`) jumps to the first match (the parser's
         // submitAction can't compute matches — it has no file text).
-        if isInFileSearchMode {
-            if let first = inFileMatches.first {
-                model.scrollSource(toLine: first.lineNumber)
-            }
-            model.dismissPalette()
-            return
-        }
-        if isSymbolMode {
-            if let first = symbolMatches.first {
-                model.scrollSource(toLine: first.line)
-            }
-            model.dismissPalette()
+        if isInFileSearchMode || isSymbolMode {
+            // Jump to the SELECTED row (Return after arrow-navigating); falls
+            // back to dismiss when there are no matches.
+            jumpToSelectedRow()
             return
         }
         switch parsed.submitAction {
@@ -265,11 +285,9 @@ struct CommandPaletteView: View {
             Spacer().frame(height: 24)
             Image(systemName: "doc.text.magnifyingglass")
                 .font(.system(size: 22)).foregroundStyle(.secondary)
+            // Shown only when there are no matches (matches render as `jumpList`).
             if parsed.term.trimmingCharacters(in: .whitespaces).isEmpty {
                 Text("Search this file…").foregroundStyle(.secondary).font(.callout)
-            } else if let first = inFileMatches.first {
-                Text("\(inFileMatches.count) match\(inFileMatches.count == 1 ? "" : "es") — ↵ goes to line \(first.lineNumber)")
-                    .font(.callout)
             } else {
                 Text("No matches in this file").foregroundStyle(.secondary).font(.callout)
             }
@@ -283,20 +301,61 @@ struct CommandPaletteView: View {
             Spacer().frame(height: 24)
             Image(systemName: "list.bullet")
                 .font(.system(size: 22)).foregroundStyle(.secondary)
+            // Shown only when there are no headings (matches render as `jumpList`).
             if model.currentCategory != .markdown {
                 Text("Headings are available in Markdown files")
                     .foregroundStyle(.secondary).font(.callout)
             } else if parsed.term.trimmingCharacters(in: .whitespaces).isEmpty {
                 Text("Jump to a heading…").foregroundStyle(.secondary).font(.callout)
-            } else if let first = symbolMatches.first {
-                Text("\(symbolMatches.count) heading\(symbolMatches.count == 1 ? "" : "s") — ↵ goes to “\(first.title)”")
-                    .font(.callout)
             } else {
                 Text("No matching heading").foregroundStyle(.secondary).font(.callout)
             }
             Spacer().frame(height: 24)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// Arrow-navigable list of `#`/`@` jump targets (TSK-727 slice 5). Mirrors
+    /// the command/file lists: ↑↓ + hover move `selectedIndex`, Return / click
+    /// jumps to the selected target's line.
+    @ViewBuilder private var jumpList: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(jumpRows.enumerated()), id: \.element.id) { index, row in
+                        HStack(spacing: 8) {
+                            Text(row.primary).lineLimit(1).truncationMode(.tail)
+                            Spacer(minLength: 8)
+                            Text(row.secondary).font(.caption).foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 14).padding(.vertical, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(index == selectedIndex
+                            ? Color.accentColor.opacity(0.15) : Color.clear)
+                        .contentShape(Rectangle())
+                        .onHover { if $0 { selectedIndex = index } }
+                        .onTapGesture { selectedIndex = index; jumpToSelectedRow() }
+                        .id(index)
+                    }
+                }
+            }
+            .frame(maxHeight: 360)
+            .onChange(of: selectedIndex) { _, new in
+                guard scrollOnSelectionChange else { return }
+                scrollOnSelectionChange = false
+                withAnimation(MotionGate.animation(.linear(duration: 0.05),
+                                                   reduceMotion: reduceMotion)) {
+                    proxy.scrollTo(new, anchor: .center)
+                }
+            }
+        }
+    }
+
+    private func jumpToSelectedRow() {
+        if jumpRows.indices.contains(selectedIndex) {
+            model.scrollSource(toLine: jumpRows[selectedIndex].line)
+        }
+        model.dismissPalette()
     }
 
     private func recomputeFiltered() {
@@ -403,7 +462,14 @@ struct CommandPaletteView: View {
     }
 
     private func moveSelection(_ delta: Int) {
-        let count = isCommandMode ? filteredCommands.count : filtered.count
+        let count: Int
+        if isInFileSearchMode || isSymbolMode {
+            count = jumpRows.count
+        } else if isCommandMode {
+            count = filteredCommands.count
+        } else {
+            count = filtered.count
+        }
         guard count > 0 else { return }
         scrollOnSelectionChange = true   // keyboard nav scrolls; hover does not
         selectedIndex = (selectedIndex + delta + count) % count
