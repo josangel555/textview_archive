@@ -1,5 +1,24 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-727 slice 4 SHIPPED: `@` heading-jump — UNIFIED PALETTE OPERATOR SET COMPLETE
+
+Continued the velocity (3rd palette slice in as many firings). Shipped the `@` operator, COMPLETING the unified
+Goto-Anything operator set (the epic's titled `@`/`:` ask).
+
+- **TSK-727 slice 4 @ `224b7b9`** — the `@` operator jumps to a Markdown heading: `@term` fuzzy-ranks the active
+  file's headings + Return jumps to the best match's line. Pure `SymbolJump.rank` model (ViewerCore, host-tested):
+  fuzzy-rank `MarkdownOutline.headings` by title via the shared `RustFuzzyAdapter`; gated to
+  `currentCategory == .markdown` so a code file's `#` comments aren't mis-parsed as ATX headings. Palette `@`-mode
+  hint + submit→`scrollSource(toLine:)`, mirroring `:` / `#`. 5 host tests; gate green; CHANGELOG added.
+- **UNIFIED PALETTE COMPLETE:** the operator set is now bare→files, `>`→commands, `:`→go-to-line, `#`→in-file
+  text, `@`→headings — four pure host-tested models (`GotoQueryParser`/`InFileSearch`/`SymbolJump` + the `:`
+  routing), 34 host tests total. The epic's CORE ask is delivered (slices 1-4). REMAINING = enhancements (split to
+  new tickets if wanted): code-file `@` via LSP `documentSymbols`; navigable `#`/`@` match LISTS (current is
+  jump-to-best, mirroring `:`, to avoid blind cross-mode arrow-nav surgery). Palette operator VISUALS = VM tail.
+- **Pattern that worked across 3 firings:** each operator = a pure host-tested model + a leaf hint/jump render
+  mirroring the validated `:` pattern → shippable, low-blind-risk, model-validated, render-at-review. This is the
+  sustainable way to drain the [VM]-feature queue without the VM.
+
 ## LOG 2026-06-14 — TSK-727 slice 3 SHIPPED: `#` in-file search operator (honored the "build a VM feature" commitment)
 
 Per last firing's handoff commitment (build a VM feature to-review, not another design/escalate firing). Shipped the
