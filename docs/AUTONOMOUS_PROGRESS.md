@@ -9169,6 +9169,25 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +422 (2026-06-13 — TSK-824: Edit-menu Format/Rename/Code-Actions — completes LSP-commands-in-menus)
+
+Autonomous tick — continued last tick's batch. The remaining 3 LSP commands (format/rename/code-actions, all
+verified-working via TSK-627/640: dispatch to formatActiveEditorViaLSP / showLSPRenamePrompt / showCodeActionPicker, each
+internally guarded) had no menu items. Added a Language section to the Edit menu.
+
+**Shipped TSK-824 (commit `5624847`, headless gate green — 5214 tests, 0 fail, no heavy-tier leak):** Edit ▸ Format
+Document / Rename Symbol… / Code Actions… — 3 @objc actions, editor-mode-gated via `validateMenuItem` (same case as the
+goto/CM6 commands), `applyShortcut` picks up user keybindings. With TSK-823 (Navigate menu, +421) this surfaces ALL 7 LSP
+commands in the menu bar — the LSP-commands-in-menus gap is now CLOSED.
+
+**Tests (host-safe):** ViewerUITests `LSPEditActionSafetyTests` (3 — format graceful false; rename prompt NOT presented
+without a rename-able context (canRenameActiveEditorSymbol guard); code-action picker stays .hidden without context
+(canRequestCodeActions guard)). **TEETH:** neutered the rename guard (`|| true`) → the rename-guard test went RED →
+restored. Menu render + live LSP round-trips are the VM/live-tail.
+
+**LSP-menu lane now done.** Remaining LSP work (no UI at all, meatier): Find References + Workspace Symbols (backends
+exist, need a results panel — VM-gated). Noted for when the screen/owner is available.
+
 ## LOG +421 (2026-06-13 — TSK-823: Navigate menu surfacing the LSP go-to commands (backend-not-surfaced spirit))
 
 Autonomous tick. Verified the named backend-not-surfaced pool is done (TSK-464/469 validated) AND that the LSP commands
