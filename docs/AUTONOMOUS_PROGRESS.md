@@ -1,5 +1,27 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-829 SHIPPED: parallel cross-file search, 4.7× (validated) — broke the defer pattern
+
+Committed to building the SPEED win this firing (after 3 design/triage firings). Implemented the finalized design
+with the TSK-847 measurement discipline.
+
+- **TSK-829 [perf, VALIDATED @ `a3ca530`]** — cross-file search (`CrossFileSearch.search`) now matches files in
+  PARALLEL. The serial walk (dir-skip + symlink-loop guard + caps + cancellation) is unchanged and collects
+  candidate URLs into batches of 24; each batch is matched via `DispatchQueue.concurrentPerform` into per-index
+  slots (`withUnsafeMutableBufferPointer` + `nonisolated(unsafe)` base pointer — disjoint writes, race-free; the
+  heavy read+decode+match moved into a new `matchFile`; `Matcher` is `@unchecked Sendable` — its closures only read
+  a thread-safe `NSRegularExpression` / pure `String.range`); then folded SERIALLY in walk order under the global
+  `maxResults` gate (reproduces the old loop's mid-file cap break exactly). Over-read bounded to one batch — the
+  key to NOT regressing common-term searches (the `maxResults=500` early-break the naive two-phase would have
+  defeated, per last firing's finding).
+- **MEASURED 4.7×** (TSK-847 discipline): serial baseline 585.7 ms → parallel 123.7 ms on a 3000-file × 40-line
+  synthetic corpus, IDENTICAL 21000 matches both. Env-gated bench (no flaky wall-clock gate assert).
+- **Validated:** correctness is regression-guarded — a concurrency bug would produce wrong/missing/misordered
+  results and fail the +3 new parity tests (mid-file cap, line order, all-50-files-found) AND the existing
+  CrossFileSearch/CrossSearch suites (the broad parity guard) — and the design is race-free BY CONSTRUCTION
+  (concurrentPerform is a barrier; disjoint per-index writes; serial fold). Headless gate green. CHANGELOG entry
+  added (Performance — user-felt search latency).
+
 ## LOG 2026-06-14 — 829 design FINALIZED (naive plan proven net-negative) + validation-drain checked; ESCALATING (3rd exhausted-pool firing)
 
 No owner activity / no regression. Re-scoped for a shippable win; confirmed the clean host pool is exhausted.
