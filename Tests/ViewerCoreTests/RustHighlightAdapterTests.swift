@@ -111,6 +111,42 @@ final class RustHighlightAdapterTests: XCTestCase {
         XCTAssertNotEqual(kind, .function)
     }
 
+    // TSK-853 — the launch warm routes through the adapter so it heats the
+    // gate-SELECTED engine (Rust by default), not just the Swift fallback.
+    // These pin the WIRING + concurrency safety of the warm path. The actual
+    // config-cache population is a pure latency property — behaviorally
+    // invisible on the host (a no-op warm yields identical tokenize output) —
+    // so its teeth lives in the rust `config_cache` test
+    // (`configured_grammar_is_cached_not_recompiled`) + VM/manual timing.
+
+    func test_warm_gateOn_concurrentAllLanguages_isSafe_andStillRoutesRust() {
+        // phase-2 concurrentPerform fires concurrent Rust-FFI + Swift-engine
+        // calls across every language — must not crash/deadlock (the real
+        // concurrency teeth: a non-thread-safe warm reddens here).
+        RustHighlightAdapter.warm(
+            HighlightLanguage.allCases, prioritizing: [.markdown], environment: gateOn)
+        for (lang, src): (HighlightLanguage, String) in [
+            (.swift, "let x = 1"), (.rust, "fn f() {}"), (.python, "def f():\n    return 1\n"),
+        ] {
+            let out = RustHighlightAdapter.outcome(src, language: lang, environment: gateOn)
+            XCTAssertEqual(out.source, .rust, "\(lang) still routes rust after warm")
+            XCTAssertFalse(out.value.isEmpty)
+        }
+    }
+
+    func test_warm_gateOff_warmsSwiftFallbackEngine() {
+        // Under the off-switch the warm routes to the Swift fallback and
+        // compiles its Query (bundle). (Partial teeth: TreeSitterEngine.shared
+        // is process-global, so a peer test may have pre-warmed these — the
+        // assertion pins the contract that the warm reaches the Swift path.)
+        RustHighlightAdapter.warm(
+            [.json], prioritizing: [.swift], environment: ["MDV_RUST_HIGHLIGHT": "0"])
+        XCTAssertTrue(TreeSitterEngine.shared.isWarm(.swift),
+            "gate-off warm must compile the Swift config (priority phase)")
+        XCTAssertTrue(TreeSitterEngine.shared.isWarm(.json),
+            "gate-off warm must compile the Swift config (concurrent phase)")
+    }
+
     func test_explicitToggleOff_beatsEnvAbsence_andDoesNotLeak() {
         // Adapter honors the same precedence stack as every other slice.
         let suite = "rust-highlight-\(UUID())"

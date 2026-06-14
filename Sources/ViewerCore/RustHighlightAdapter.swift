@@ -59,4 +59,41 @@ public enum RustHighlightAdapter {
             swift: { TreeSitterEngine.shared.tokenize(text, language: language) }
         )
     }
+
+    /// Pre-compile the per-language highlight config on the engine the gate
+    /// will ACTUALLY route to, off the user's first-open critical path. The
+    /// launch warm used to heat only the Swift `TreeSitterEngine` (TSK-840),
+    /// but highlighting routes through this adapter — Rust by default — so the
+    /// Swift warm pre-compiled the *fallback* while the default Rust config
+    /// (the TSK-545 `config_cache`) stayed cold. Routing the warm through
+    /// `outcome` fixes that: each language warms whichever engine the gate
+    /// selects — Rust for a covered grammar (compiles `HighlightConfiguration`),
+    /// the routine Swift fallback for any the core build lacks (compiles the
+    /// `Query`). (TSK-853.)
+    ///
+    /// Two-phase, mirroring `TreeSitterEngine.warm` (TSK-840): `prioritizing`
+    /// languages — markdown drives the rendered-MD fence path, which tokenizes
+    /// on the main actor — compile first/serially; the rest compile
+    /// concurrently across cores (`config_cache` builds outside its lock, and
+    /// the Swift path is per-language-locked, so distinct languages parallelise).
+    /// A one-space probe clears `tokenize`'s plainText/max-byte guards and
+    /// reaches the config compile on both engines while emitting ~no runs.
+    public static func warm(
+        _ languages: [HighlightLanguage],
+        prioritizing first: [HighlightLanguage] = [],
+        defaults: UserDefaults = .standard,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) {
+        let probe = " "
+        var prioritized = Set<HighlightLanguage>()
+        for lang in first where lang != .plainText {
+            _ = outcome(probe, language: lang, defaults: defaults, environment: environment)
+            prioritized.insert(lang)
+        }
+        let rest = languages.filter { $0 != .plainText && !prioritized.contains($0) }
+        guard !rest.isEmpty else { return }
+        DispatchQueue.concurrentPerform(iterations: rest.count) { i in
+            _ = outcome(probe, language: rest[i], defaults: defaults, environment: environment)
+        }
+    }
 }

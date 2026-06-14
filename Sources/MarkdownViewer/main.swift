@@ -124,9 +124,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // TSK-840: warm markdown FIRST (the rendered-MD fence path
         // tokenizes it synchronously on the main actor), then the rest
         // CONCURRENTLY across cores instead of serially on one thread.
+        // TSK-853: warm via the ADAPTER so we heat the engine the gate
+        // actually routes to (Rust by default — its config_cache), not
+        // just the Swift fallback. Per-language fallback still warms the
+        // Swift Query for any grammar the core build doesn't cover.
         Task.detached(priority: .utility) {
-            TreeSitterEngine.shared.warm(HighlightLanguage.allCases,
-                                         prioritizing: [.markdown])
+            RustHighlightAdapter.warm(HighlightLanguage.allCases,
+                                      prioritizing: [.markdown])
         }
 
         // CRITICAL: use NSHostingController.view (not a bare NSHostingView
