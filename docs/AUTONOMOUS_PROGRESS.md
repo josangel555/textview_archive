@@ -86,6 +86,14 @@ and started executing the measured wins.
   `shortcutMap()` (the new test asserts ⇧⌘P routes to nav.showPalette, ⌘K still routes view.quickOpen, and ⌘P
   stays NIL/free) — a collision would lose one entry in the map and redden. Reaches `validated` (registry routing
   is pure logic; the keypress→open dispatch is the existing generic path). CHANGELOG updated.
+- **TSK-753 (`192211b`, review)** — Section A: a **Language Mode** submenu (View menu) showing the current file's
+  highlight language (checkmarked) with every language to override to (`model.setCurrentLanguage`; picking the
+  natural language clears the override). Dynamic-submenu pattern (mirrors the session-jump menu — `menuNeedsUpdate`
+  → `rebuildLanguageMenu`, items carry the language rawValue in `representedObject`, populated from
+  `HighlightLanguage.supportedForDisplay`). Added a host-testable `DocumentModel.currentEffectiveLanguage` (the
+  checkmark source) with teeth (`DocumentModelLanguageOverrideTests`: nil with no tab → tracks the detected
+  language → follows an override). Menu structure is the executable's private AppKit → `review` for the VM/owner
+  glance; the model accessor + override logic are host-validated. CHANGELOG updated.
 
 ## LOG 2026-06-10 (latest+128) — TSK-557 CSV heap-accounted cap: last SECURITY item of Phase 0
 

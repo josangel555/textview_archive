@@ -44,7 +44,8 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
       `[review 25b732a]` — section added to buildSessionMenu (compile-guarded selectors); menu appearance = VM/owner gate.
 - [x] **TSK-756** — Top-right toolbar button that opens the command palette (discoverability) `[VM]`
       `[review e31bc99]` — ⌘ button in ContentToolbar → model.showPalette(); action host-tested, button render = VM gate.
-- [ ] **TSK-753** — Dedicated menu item for the current file's type `[VM]`
+- [x] **TSK-753** — Dedicated menu item for the current file's type `[VM]`
+      `[review 192211b]` — View → Language Mode (current language checkmarked + override submenu); model accessor host-tested, menu = VM gate.
 - [ ] **TSK-751** — Organize the menu items properly (review/reorganize the menu bar) `[VM]`
 - [ ] **TSK-746** — Open dialog: show recents
 - [ ] **TSK-747** — New-tab: offer other types (blank Sheet, Image) `[VM]`
