@@ -121,8 +121,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         // Warming every grammar at utility priority finishes well
         // before a human reaches their first file; a racing open only
         // waits out the remainder of the one compile it needs.
+        // TSK-840: warm markdown FIRST (the rendered-MD fence path
+        // tokenizes it synchronously on the main actor), then the rest
+        // CONCURRENTLY across cores instead of serially on one thread.
         Task.detached(priority: .utility) {
-            TreeSitterEngine.shared.warm(HighlightLanguage.allCases)
+            TreeSitterEngine.shared.warm(HighlightLanguage.allCases,
+                                         prioritizing: [.markdown])
         }
 
         // CRITICAL: use NSHostingController.view (not a bare NSHostingView

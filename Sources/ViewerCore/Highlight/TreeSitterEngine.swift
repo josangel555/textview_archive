@@ -259,9 +259,34 @@ public final class TreeSitterEngine: @unchecked Sendable {
     /// concurrent first-touch path already runs, and a racing real
     /// caller simply blocks on the per-language compile lock for the
     /// remainder of the in-flight compile instead of paying it all.
-    public func warm(_ languages: [HighlightLanguage]) {
-        for lang in languages where lang != .plainText {
+    ///
+    /// TSK-840 — two phases. `prioritizing` languages compile FIRST and
+    /// in order: these are the ones a racing first open needs
+    /// synchronously (markdown drives the rendered-MD fence path, which
+    /// tokenizes on the main actor; the opened file's language), so a
+    /// first open blocks on at most those, not the whole batch. The
+    /// remainder then compile CONCURRENTLY across cores — `bundle(for:)`
+    /// is thread-safe (the outer lock guards only the dict + per-language
+    /// lock fetch; a per-language `NSLock` serializes each slow compile;
+    /// distinct languages compile independently — see its doc), and
+    /// `GrammarLoader.load` is built for concurrent first-touch — so a
+    /// concurrent sweep collapses the ~Nx serial wall (≈231ms on one
+    /// thread, measured) to ≈ceil(N/cores). `concurrentPerform` blocks
+    /// its caller, which is fine: the launch site is a detached utility
+    /// task whose only job is this warm.
+    public func warm(_ languages: [HighlightLanguage],
+                     prioritizing first: [HighlightLanguage] = []) {
+        // Phase 1: the synchronously-needed languages, serially, in order.
+        var prioritized = Set<HighlightLanguage>()
+        for lang in first where lang != .plainText {
             _ = bundle(for: lang)
+            prioritized.insert(lang)
+        }
+        // Phase 2: everything else, concurrently across cores.
+        let rest = languages.filter { $0 != .plainText && !prioritized.contains($0) }
+        guard !rest.isEmpty else { return }
+        DispatchQueue.concurrentPerform(iterations: rest.count) { i in
+            _ = bundle(for: rest[i])
         }
     }
 

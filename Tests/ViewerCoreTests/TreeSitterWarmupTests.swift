@@ -43,4 +43,49 @@ final class TreeSitterWarmupTests: XCTestCase {
             "a background warm must be visible to subsequent callers")
         XCTAssertFalse(engine.tokenize("# h\n`x`", language: .markdown).isEmpty)
     }
+
+    // TSK-840 — the launch warm became two-phase + concurrent. These pin the
+    // contract (the wall-clock win itself is machine-load-flaky, so unasserted).
+
+    /// The concurrent phase-2 sweep (the default `prioritizing: []` path over
+    /// many languages) must leave EXACTLY the cache a serial warm would: every
+    /// statically-linked keeplist grammar warm and serving real tokenization,
+    /// with no dropped/duplicated bundle from the parallel `bundle(for:)` race.
+    /// (Lazy grammars may be unavailable in the host test env — isWarm stays
+    /// false for those by design, which is not a failure; we assert on the
+    /// always-present keeplist: swift/json/markdown.)
+    func test_warm_concurrentPhase_warmsAllKeeplist_noRace() {
+        let engine = TreeSitterEngine()
+        engine.warm(HighlightLanguage.allCases)   // phase-2 concurrent over all
+        XCTAssertTrue(engine.isWarm(.json), "concurrent warm must compile json")
+        XCTAssertTrue(engine.isWarm(.swift), "concurrent warm must compile swift")
+        XCTAssertTrue(engine.isWarm(.markdown), "concurrent warm must compile markdown")
+        // Each warmed bundle must serve real tokenization, not a sentinel.
+        XCTAssertFalse(engine.tokenize(#"{"k":1}"#, language: .json).isEmpty)
+        XCTAssertFalse(engine.tokenize("let x = 1", language: .swift).isEmpty)
+    }
+
+    /// `prioritizing:` languages compile in phase 1 (serial, before the
+    /// concurrent phase 2) and must be warm when the call returns — alongside
+    /// the phase-2 remainder. A first open racing the warm thus blocks on at
+    /// most the priority compiles.
+    func test_warm_prioritizing_warmsPriorityAndRemainder() {
+        let engine = TreeSitterEngine()
+        engine.warm(HighlightLanguage.allCases, prioritizing: [.markdown, .json])
+        XCTAssertTrue(engine.isWarm(.markdown), "priority language must be warm")
+        XCTAssertTrue(engine.isWarm(.json), "priority language must be warm")
+        XCTAssertTrue(engine.isWarm(.swift), "phase-2 remainder must also be warm")
+    }
+
+    /// A priority language NOT in the `languages` list is still warmed (phase 1
+    /// is additive), and plainText is skipped in both phases.
+    func test_warm_prioritizing_isAdditive_andSkipsPlainText() {
+        let engine = TreeSitterEngine()
+        engine.warm([.json], prioritizing: [.markdown, .plainText])
+        XCTAssertTrue(engine.isWarm(.markdown),
+            "a priority language outside `languages` must still warm")
+        XCTAssertTrue(engine.isWarm(.json))
+        XCTAssertFalse(engine.isWarm(.plainText),
+            "plainText has no grammar — skipped in the priority phase too")
+    }
 }
