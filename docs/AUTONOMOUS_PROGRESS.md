@@ -9426,6 +9426,25 @@ intermittently reported "swift test exited 1" with ZERO failing tests; a clean d
 run gave **EXIT=0, all 5246 pass, 0 failures**. That's the documented machine-load bench/exit-code flake (CLAUDE.md)
 after ~6 back-to-back full-suite runs this turn — not a real failure. Confirmed clean before committing.
 
+## LOG +434 (2026-06-14 — TSK-352 slice: clipboard line/case transform tools)
+
+Feature tick (diversified off metadata). Shipped six NotePad++/Sublime-style clipboard transforms as
+Command-Palette tools: Sort Lines (A→Z / Z→A), Remove Duplicate Lines, Reverse Lines, UPPERCASE, lowercase.
+
+**Shipped (commit `71d5d5a`):** pure transforms in `TextTools` (line split treats \n/\r\n/\r as one separator,
+keeps empty lines, rejoins \n; sort = deterministic Unicode-scalar order; unique = keep-first), wired the SAME
+way as the existing UUID/Base64/SHA tools — `TextToolVerb` + `CommandDescriptor` + `ScriptVerbDispatch` →
+`TextToolRunner` (clipboard IO, host-tested via a `PasteboardIO` mock). **This slice is FULLY host-validated —
+no VM tail** (operates on the clipboard, not the rendered editor). Host tests: TextToolsTests +6
+(sort/unique/reverse/CRLF/apply-routing); the `allCases.count` guard correctly forced 4→10; the scriptVerb
+vocabulary guard correctly forced registering the 6 new `tools.*` verbs. → commented TSK-352 (slice done;
+umbrella stays open for column-select/macros/etc.). CHANGELOG updated.
+
+**Gate note:** EXIT=1 from TWO documented load flakes — `FoldBench testCold10KLineJSON` (271ms vs 250ms) and
+`GrandchildPipe` fd-leak (fd pressure) — BOTH pass in isolation (96ms; clean). My change is pure text transforms
+(no benches/pipes/fds). 3rd tick the gate flaked under machine load from back-to-back full-suite runs; confirmed
+clean before committing. (Mitigation going forward: lean on targeted `--filter` + ONE gate run, not repeats.)
+
 ## LOG +433 (2026-06-14 — TSK-348 slice 2: expanded image EXIF/TIFF/GPS metadata + a latent bug fix)
 
 Feature tick. Verify-before-build caught that the TSK-769 **copy-trimmed** slice is ALREADY done
