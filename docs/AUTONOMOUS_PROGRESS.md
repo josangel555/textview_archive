@@ -1,5 +1,32 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — Documented HOLD (clean high-value pool genuinely tapped; owner-engagement needed)
+
+Probed once more per plan; every remaining candidate is borderline-MARGINAL, so per SOP §5 + the anti-paper-cut
+rule the honest move is a HOLD (not manufacturing feature #16). Candidates evaluated + why each is marginal/blocked:
+- **Open Rendered in Browser** — a one-click convenience wrapper over capabilities that ALREADY exist (in-app
+  rendered view + PDF export + the now-self-contained HTML export → "export then open"). Convenience-only.
+- **File checksum** — standard utility but ~zero new host substance (hashing util exists), niche.
+- **Copy code as highlighted HTML** — clever pipeline-reuse but fiddly (fence-length/lang) + niche-for-this-owner.
+- **More MarkdownLint rules** — incremental on a feature shipped last firing.
+- **506 treemap** — genuine VM render-gap (verified: FolderStatsView is a list, no Canvas/TreemapLayout render).
+- **733 / 791** — owner-decision (parked A/B) / perf-subagent lane.
+No actionable host-fixable user-facing bug; WORK_QUEUE top remains VM/owner-gated.
+
+This run shipped **15 features → `review`** (675 ×5: 862-865; markdown docs-tools/export 866/867/869/871; data
+868/870; audio 533/534; settings 358) + validated 853/575. All host-tested-model + render/menu at `review`. No
+code this firing (HOLD keeps main gate-green at 5581 tests). HANDOFF.md is current (refreshed this run).
+
+### DECISIONS NEEDED (the loop's unblockers — ranked)
+1. **A VM validation pass** — converts the ~15-feature `review` pile → `done` user value (highest leverage).
+   `ssh macOS15` + `MDV_VM_GUI_SESSION=1 MDV_VM_SUDO_PASS=<vm-sudo-password> bash scripts/test-in-vm.sh`.
+2. **TSK-343** local-history default (ON vs opt-in + retention) — PARKED.
+3. **TSK-470** zoom-split — PARKED (Text Size may already cover it → close 470/321/322).
+4. **TSK-733** session-switch save: (A) preserve dirty buffers silently vs (B) keep the save prompt — PARKED.
+
+I'll resume high-value shipping the moment any of these lands (or you point me at a specific build). Until then I'm
+holding rather than burning tokens on marginal features.
+
 ## LOG 2026-06-14 — Self-contained HTML export shipped (TSK-871, 4251369, → review)
 
 Pivoted to rule 1 (bugs) first: no actionable host-fixable bug — **733** (save-prompt on session switch) is
