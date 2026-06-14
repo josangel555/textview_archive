@@ -1,5 +1,23 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-727 slice 3 SHIPPED: `#` in-file search operator (honored the "build a VM feature" commitment)
+
+Per last firing's handoff commitment (build a VM feature to-review, not another design/escalate firing). Shipped the
+Goto-Anything `#` operator (slice 3 of the 727 epic).
+
+- **TSK-727 slice 3 @ `55129eb`** — the palette `#` operator searches the ACTIVE file's text: `#term` shows the
+  match count + jumps to the first match's line on Return (mirrors the shipped `:` operator). Pure `InFileSearch`
+  model (ViewerCore): case-insensitive literal scan via **`enumerateLines`** (LF/CRLF/CR-aware 1-based line numbers
+  — deliberately NOT `split("\n")`, which hits the `\r\n`-is-one-Swift-grapheme trap and would mis-number CRLF
+  files → wrong jump). `DocumentModel.activeFileText` accessor (editor-buffer live text or `.loaded` contents).
+  8 host tests (incl. the CRLF test that CAUGHT the grapheme trap mid-dev → fixed split→enumerateLines = de-facto
+  teeth). Palette `#`-mode hint + jump = VM render tail. Headless gate green. CHANGELOG added.
+- **Epic 727 status:** slices 1 (parser) + 2 (`:` line) + 3 (`#` in-file) done; REMAINING = `@` symbol-jump (needs
+  the active file's outline surfaced to the palette — moderate plumbing) + optionally a navigable `#` match LIST
+  (current is jump-to-first, like `:`; the list needs cross-mode arrow-nav surgery — deferred as a follow-up).
+- **Method note:** chose the low-risk `#`-jump-to-first (mirrors the validated `:` hint pattern) over a blind
+  navigable-list build — host-tested the model, leaf-render at review. The full list + `@` are the next slices.
+
 ## LOG 2026-06-14 — TSK-838 designed (biggest remaining win, VM-bound); clean host pool confirmed drained
 
 After two shipped+validated perf wins (829 search 4.7×, 842 off-main open), scoped for the next clean win and
