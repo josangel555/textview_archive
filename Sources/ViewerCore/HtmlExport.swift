@@ -44,4 +44,64 @@ public enum HtmlExport {
          .replacingOccurrences(of: "<", with: "&lt;")
          .replacingOccurrences(of: ">", with: "&gt;")
     }
+
+    /// Make `html` self-contained by inlining LOCAL image references as
+    /// `data:` URIs, so an exported file stays portable when moved away from its
+    /// images. Each `src="X"` whose `X` is a local path (not http/https/data/
+    /// protocol-relative/anchor) is passed to `readData`; on a hit it becomes
+    /// `data:<mime>;base64,…` (MIME from `X`'s extension). Misses/external refs
+    /// are left untouched. Pure — `readData` is injected, so it's host-testable.
+    /// (Operates on the controlled rendered-Markdown HTML, where `src="…"` only
+    /// occurs on `<img>` — the sanitizer/CSP forbids other src-bearing tags.)
+    public static func inlineLocalImages(_ html: String, readData: (String) -> Data?) -> String {
+        let marker = "src=\""
+        var out = ""
+        out.reserveCapacity(html.count)
+        var idx = html.startIndex
+        while let r = html.range(of: marker, range: idx..<html.endIndex) {
+            out += html[idx..<r.upperBound]                 // through `src="`
+            guard let close = html.range(of: "\"", range: r.upperBound..<html.endIndex) else {
+                idx = r.upperBound; break
+            }
+            let src = String(html[r.upperBound..<close.lowerBound])
+            if isLocalImageRef(src), let data = readData(src),
+               let mime = mimeType(forPathExtension: (src as NSString).pathExtension) {
+                out += "data:\(mime);base64,\(data.base64EncodedString())"
+            } else {
+                out += src                                  // leave as-is
+            }
+            out += "\""
+            idx = close.upperBound
+        }
+        out += html[idx..<html.endIndex]
+        return out
+    }
+
+    /// True for a path we should try to inline (not external / data / anchor).
+    static func isLocalImageRef(_ src: String) -> Bool {
+        if src.isEmpty || src.hasPrefix("#") || src.hasPrefix("//") || src.hasPrefix("data:") {
+            return false
+        }
+        if let colon = src.firstIndex(of: ":") {
+            let scheme = src[src.startIndex..<colon]
+            if !scheme.isEmpty, scheme.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "+" || $0 == "-" || $0 == "." }),
+               !scheme.contains("/") {
+                return false   // http:, https:, file:, …
+            }
+        }
+        return true
+    }
+
+    static func mimeType(forPathExtension ext: String) -> String? {
+        switch ext.lowercased() {
+        case "png": return "image/png"
+        case "jpg", "jpeg": return "image/jpeg"
+        case "gif": return "image/gif"
+        case "svg": return "image/svg+xml"
+        case "webp": return "image/webp"
+        case "bmp": return "image/bmp"
+        case "heic": return "image/heic"
+        default: return nil
+        }
+    }
 }

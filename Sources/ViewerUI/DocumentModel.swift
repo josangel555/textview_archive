@@ -4750,14 +4750,24 @@ public final class DocumentModel: ObservableObject {
     /// Render the active Markdown file to a STANDALONE HTML document (TSK-675) for
     /// Copy/Export as HTML — CSP-free (renders in a browser), embedding the
     /// markdown stylesheet + theme overrides. nil when no Markdown file is active.
-    public func htmlExportForActiveMarkdown() -> String? {
+    public func htmlExportForActiveMarkdown(inlineImages: Bool = false) -> String? {
         guard let tab = tabs.selected, let url = tab.url,
               ["md", "markdown", "mdown", "mkd"].contains(url.pathExtension.lowercased()),
               let text = activeFileText else { return nil }
         let body = HTMLRenderer().render(text)
         let css = MarkdownStylesheet.load() + "\n" + themedExtraStylesheet
-        return HtmlExport.standaloneDocument(
+        var html = HtmlExport.standaloneDocument(
             body: body, stylesheet: css, title: url.deletingPathExtension().lastPathComponent)
+        if inlineImages {
+            // Make a saved file portable: inline local images as data: URIs.
+            let baseDir = url.deletingLastPathComponent()
+            html = HtmlExport.inlineLocalImages(html) { src in
+                let decoded = src.removingPercentEncoding ?? src
+                let imgURL = baseDir.appendingPathComponent(decoded).standardizedFileURL
+                return try? Data(contentsOf: imgURL)
+            }
+        }
+        return html
     }
 
     /// Default filename for "Export as HTML" (active file's stem + `.html`).

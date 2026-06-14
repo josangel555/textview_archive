@@ -2319,9 +2319,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         NSPasteboard.general.setString(html, forType: .string)
     }
 
-    /// TSK-675 — export the active Markdown as a standalone .html file.
+    /// TSK-675 — export the active Markdown as a standalone .html file
+    /// (self-contained: local images inlined so the file stays portable).
     @objc func exportAsHTML(_ sender: Any?) {
-        guard let html = model.htmlExportForActiveMarkdown() else { return }
+        guard let html = model.htmlExportForActiveMarkdown(inlineImages: true) else { return }
         let panel = NSSavePanel()
         panel.title = "Export as HTML"
         panel.canCreateDirectories = true
