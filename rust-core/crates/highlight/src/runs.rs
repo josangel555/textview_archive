@@ -19,6 +19,7 @@
 //! tracked as TSK-410 is structurally absent on this path (pinned in tests).
 
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use tree_sitter_highlight::{HighlightEvent, Highlighter};
 
 use crate::Lang;
@@ -116,7 +117,11 @@ fn app_capture_names() -> &'static [&'static str] {
 pub struct Run {
     pub start: usize,
     pub len: usize,
-    pub kind: String,
+    /// The app `TokenKind` rawValue. `Cow<'static, str>` (TSK-830): runs
+    /// produced by [`runs_utf16`] borrow the `&'static str` capture name
+    /// (no per-run allocation on the highlight hot path); deserialized runs
+    /// own a `String`. Serializes identically to a plain string either way.
+    pub kind: Cow<'static, str>,
 }
 
 impl Serialize for Run {
@@ -135,7 +140,7 @@ impl<'de> Deserialize<'de> for Run {
         // Tuple deserialize accepts ONLY a sequence — a regression to the old
         // named-map shape fails the decode (the positional contract has teeth).
         let (start, len, kind) = <(usize, usize, String)>::deserialize(deserializer)?;
-        Ok(Run { start, len, kind })
+        Ok(Run { start, len, kind: Cow::Owned(kind) })
     }
 }
 
@@ -214,7 +219,7 @@ pub fn runs_utf16(src: &str, lang: Lang) -> Vec<Run> {
                             _ => runs.push(Run {
                                 start: cur_u16,
                                 len: body_u16,
-                                kind: kind.to_string(),
+                                kind: Cow::Borrowed(kind),
                             }),
                         }
                     }
@@ -261,7 +266,7 @@ mod tests {
         let u16_at = u16(&src[..byte_at]);
         runs.iter()
             .find(|r| r.start <= u16_at && u16_at < r.start + r.len)
-            .map(|r| r.kind.clone())
+            .map(|r| r.kind.clone().into_owned())
     }
 
     #[test]
