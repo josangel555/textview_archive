@@ -1,5 +1,28 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — Lint Markdown shipped (TSK-869, 0c7f8cf, → review) + reassessed the pool
+
+Reassessment firing (per last log's note). Verified more of the "drained?" claim by checking items I'd dismissed:
+**506 treemap** is already built (`FolderStatsView` + `TreemapLayout` + SidebarModel treemap refs — overlaps the
+`fixed` TSK-334), and **Copy Path / Copy Relative Path** already exist (SidebarView:1086-7, TabBar:322). No
+actionable host-fixable user-facing bug in the reported pool. So the clean pool is genuinely thin — but I found one
+SUBSTANTIVE, higher-value clean feature that builds coherently on the markdown work: a **doc-quality linter**.
+
+**View ▸ Lint Markdown** (`MarkdownLint`, pure ViewerCore — a CONSUMER of the focused `MarkdownLinks`/
+`MarkdownOutline` parsers, §2.5-safe): 3 rules — `image-alt` (image with empty alt), `heading-skip` (a heading
+jumping >1 level deeper, e.g. H1→H3; going BACK is fine), `dup-anchor` (two headings → same GitHub slug → ambiguous
+`#`-links/TOC). Findings sorted by line → NSAlert. Also extended `MarkdownLink` with the `[...]` label text
+(defaulted, source-compatible) for the image-alt rule. 6 lint teeth + the existing MarkdownLinks tests updated (the
+label-text addition caught them = de-facto teeth). Host gate green (5567 tests). Menu + alert = VM tail.
+
+Markdown docs-tools suite shipped this run: TOC (865), HTML export (866), Check Links (867), Lint (869) +
+Minify-JSON (868). A coherent "docs quality + output" capability set, all host-tested-model + render-at-review.
+
+HONEST STATE: the clean high-value host pool is now genuinely tapped (markdown output/quality vein included). The
+~13-feature `review` pile awaits the standing owner unblocks — a VM validation pass (highest leverage), TSK-343
+(local-history, parked), TSK-470 (zoom-split, parked). Next firing: if no fresh high-value clean area surfaces,
+the honest move is grooming/HOLD rather than manufacturing marginal features (the bar the owner set).
+
 ## LOG 2026-06-14 — Minify JSON shipped (TSK-868, 6ce0946, → review)
 
 Brought variety after three markdown features — a fresh, clean §2.5-safe data tool. First checked the reported-bug
