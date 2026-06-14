@@ -62,6 +62,9 @@ fn escape_literal(pattern: &str) -> String {
 /// Search `text` for `pattern`. `Err(reason)` = the pattern does not compile
 /// (invalid syntax, or an ICU-only construct regex-lite rejects); the host
 /// maps it to `FindError.invalidRegex` / falls back to the Swift engine.
+#[allow(clippy::cast_possible_truncation,
+        reason = "TSK-575: the only cast is ch.len_utf16() (always 1 or 2) added to a u32 \
+                  position — never truncates")]
 pub fn search(
     text: &str,
     pattern: &str,

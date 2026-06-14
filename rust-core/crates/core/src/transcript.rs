@@ -345,6 +345,9 @@ fn summarize_tool_result(raw: Option<&JsonValue>) -> String {
 // Timestamps — RFC 3339 (the ISO8601DateFormatter internet-date-time subset)
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::cast_possible_truncation,
+        reason = "TSK-575: ms is checked finite + within (-9e18..=9e18) (< i64 range) \
+                  immediately before the cast")]
 fn parse_timestamp_ms(v: &JsonValue) -> Option<i64> {
     match v {
         JsonValue::Str(s) => rfc3339_to_epoch_ms(s),
@@ -552,6 +555,9 @@ fn write_json_string(s: &str, out: &mut String) {
 /// `NSNumber`-description-shaped double rendering: integral finite doubles
 /// print without a fraction (`2000.0` → `"2000"`), others via Rust's shortest
 /// round-trip formatting (matches Foundation on the common cases).
+#[allow(clippy::cast_possible_truncation,
+        reason = "TSK-575: f is checked finite + integral (fract()==0) + |f|<9e15 (< i64::MAX) \
+                  before the cast")]
 fn format_double(f: f64) -> String {
     if f.is_finite() && f.fract() == 0.0 && f.abs() < 9.0e15 {
         format!("{}", f as i64)

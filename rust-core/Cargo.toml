@@ -86,6 +86,12 @@ indexing_slicing = "deny"
 # arithmetic_side_effects is a dedicated sweep, recorded on the ticket.
 string_slice = "deny"
 panic = "deny"
+# TSK-575: ratchet the i64/usize/f64 truncation + sign-loss casts to DENY so a
+# NEW unjustified numeric cast fails the gate. The existing 11 sites were
+# audited safe (guarded in-range / ≤2 / intentional-low-bits / range-checked)
+# and carry reasoned `#[allow]`s; a future cast must add its own justification.
+cast_possible_truncation = "deny"
+cast_sign_loss = "deny"
 # Hygiene.
 module_name_repetitions = "allow"
 allow_attributes_without_reason = "warn"

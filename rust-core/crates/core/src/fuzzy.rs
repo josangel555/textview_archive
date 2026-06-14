@@ -45,6 +45,9 @@ fn is_boundary(ch: char) -> bool {
 /// Score `query` against `target`. `None` = no match. Mirrors the Swift
 /// `FuzzyMatcher.match(_:against:)` exactly (see the scoring table above).
 #[must_use]
+#[allow(clippy::cast_possible_truncation,
+        reason = "TSK-575: ti is a char position within a fuzzy candidate (filename/path) — \
+                  bounded far below u32::MAX")]
 pub fn match_query(query: &str, target: &str) -> Option<Match> {
     if query.is_empty() {
         return Some(Match { score: 0, indices: Vec::new() });
@@ -97,6 +100,9 @@ pub fn match_query(query: &str, target: &str) -> Option<Match> {
 /// contract — unstable ties made the palette flicker). Returns
 /// `(candidate_index, match)` pairs.
 #[must_use]
+#[allow(clippy::cast_possible_truncation,
+        reason = "TSK-575: i is a candidate index; the candidate count (file list) is \
+                  bounded far below u32::MAX")]
 pub fn rank<'a, I>(query: &str, candidates: I) -> Vec<(u32, Match)>
 where
     I: IntoIterator<Item = &'a str>,

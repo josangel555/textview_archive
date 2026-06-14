@@ -44,6 +44,10 @@ impl CmEdit {
 /// to what CM6 produces from the same batch — the parity contract the A/B test
 /// pins against the Swift `CMEditApplier`.
 #[must_use] 
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss,
+        reason = "TSK-575: the :60-69 loop validates every from/to is in 0..=base_len, \
+                  non-negative + well-ordered, before these splice casts; base_units.get \
+                  also bounds-checks — provably no truncation or sign loss")]
 pub fn apply(base: &str, edits: &[CmEdit]) -> Option<String> {
     if edits.is_empty() {
         return Some(base.to_owned());

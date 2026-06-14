@@ -66,6 +66,9 @@ pub const MAX_HEX_WIDTH: u32 = 512;
 /// `byte_count` is `bytes.len()` (post-truncation); `total_byte_count` is the
 /// pre-truncation file size used only in the `is_truncated` header.
 #[must_use]
+#[allow(clippy::cast_possible_truncation,
+        reason = "TSK-575: intentional low-32-bit offset display (matches Swift's fixed \
+                  8-nibble hex-offset loop) — truncation is the documented behaviour")]
 pub fn render_all(
     bytes: &[u8],
     width: usize,

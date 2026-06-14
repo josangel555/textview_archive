@@ -44,6 +44,8 @@ fn push_fixstr(out: &mut Vec<u8>, s: &str) {
     out.extend_from_slice(bytes.get(..bytes.len().min(255)).unwrap_or_default());
 }
 
+#[allow(clippy::cast_possible_truncation,
+        reason = "TSK-575: the `v as u8` is guarded by `v < 0x80` — fits u8")]
 fn push_uint(out: &mut Vec<u8>, v: u64) {
     if v < 0x80 {
         out.push(v as u8);
