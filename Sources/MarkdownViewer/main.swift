@@ -1768,6 +1768,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         indentMenu.addItem(toTabsItem)
         indentItem.submenu = indentMenu
         editMenu.addItem(indentItem)
+        // TSK-675: insert/refresh a Markdown table of contents from the file's
+        // headings (idempotent via <!-- toc --> markers). Markdown files only.
+        let tocItem = NSMenuItem(title: "Insert Table of Contents",
+                                 action: #selector(insertTableOfContents(_:)), keyEquivalent: "")
+        tocItem.target = self
+        editMenu.addItem(tocItem)
         // TSK-705: insert a built-in snippet at the caret. Tag = index into
         // SnippetLibrary.builtIns. Editor-mode only (validateMenuItem).
         let snippetItem = NSMenuItem(title: "Insert Snippet", action: nil, keyEquivalent: "")
@@ -2209,6 +2215,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         _ = model.convertActiveFileIndentation(toSpaces: false)
     }
 
+    /// TSK-675 — insert/refresh a Markdown table of contents in the active file.
+    @objc func insertTableOfContents(_ sender: Any?) {
+        _ = model.insertTableOfContents()
+    }
+
     /// TSK-675 — show word/character/line counts for the active file.
     @objc func showDocumentStatistics(_ sender: Any?) {
         guard let stats = model.activeDocumentStats else { return }
@@ -2314,6 +2325,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(showDocumentStatistics(_:)):
             // TSK-675: any active text file.
             return model.activeDocumentStats != nil
+        case #selector(insertTableOfContents(_:)):
+            // TSK-675: active Markdown file only.
+            return model.canInsertTableOfContents
         case #selector(insertSnippet(_:)):
             // TSK-705: editor mode only (inserts at the caret).
             return model.canInsertSnippet

@@ -4677,6 +4677,24 @@ public final class DocumentModel: ObservableObject {
         return DocumentStats.compute(text)
     }
 
+    /// True when "Insert Table of Contents" can act — an active Markdown text file.
+    public var canInsertTableOfContents: Bool {
+        guard let tab = tabs.selected, let url = tab.url else { return false }
+        guard ["md", "markdown", "mdown", "mkd"].contains(url.pathExtension.lowercased())
+        else { return false }
+        return activeTextWithEncoding != nil
+    }
+
+    /// TSK-675 — insert/refresh a Markdown table of contents (from the file's own
+    /// headings) wrapped in `<!-- toc -->` markers, so a re-run regenerates in
+    /// place. Encoding + line endings preserved via the shared write-through.
+    @discardableResult
+    public func insertTableOfContents() -> Bool {
+        applyTextTransformToActiveFile { text in
+            MarkdownTOC.insert(into: text, headings: MarkdownOutline.headings(in: text))
+        }
+    }
+
     /// TSK-675 — convert the active file's LEADING indentation between tabs and
     /// spaces, using the editor's configured indent width. Leading whitespace
     /// only (alignment after the first non-space is untouched); line endings +
