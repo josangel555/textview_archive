@@ -13,6 +13,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Bottom attributes bar uses toggle buttons** — Wrap, Special chars, Enable JS, and the preview Info toggle are now press-to-toggle buttons (matching the Find bar) instead of small checkboxes, so their on/off state reads at a glance.
 
 ### Added
+- **Convert Encoding** — **Edit ▸ Convert Encoding** re-saves the current file in a chosen text encoding (**UTF-8, UTF-16, Windows-1252, or Western/Latin-1**), including any unsaved edits. If the text can't be represented in the target encoding (e.g. an emoji → Latin-1), the conversion is refused and the file is left untouched.
 - **Richer PDF & media file-info** — opening a PDF now shows its **Subject, Keywords, Creator, Created/Modified dates, page size, and encrypted status** (alongside the existing pages/title/author); audio & video files now show their **codec** (H.264, HEVC, AAC, …) next to dimensions/sample-rate.
 - **Align Markdown Tables** — a new **Edit ▸ Align Markdown Tables** command tidies the GFM pipe tables in the file you're editing: columns are padded to line up, and `:--` / `:-:` / `--:` alignment markers are respected (code fences and escaped `\|` are left alone). Markdown's own modes (Rendered / Source) are unchanged.
 - **⇧⌥F formats the document** — the VS Code "Format Document" shortcut now works (runs the language server's formatter on the current file), alongside the existing Edit-menu item.

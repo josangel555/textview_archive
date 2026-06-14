@@ -1,5 +1,23 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — encoding-convert (TSK-352 slice); TSK-343 parked (privacy default = owner call)
+
+Autonomous tick, WORK_QUEUE Section-B. Shipped one slice + parked one owner-gated item:
+- **TSK-352 (`0686526`, review)** — the **encoding-convert** slice of the NotePad++ umbrella. Edit ▸ Convert
+  Encoding ▸ {UTF-8/UTF-16/Windows-1252/Latin-1} re-saves the active file's current text (incl. unsaved edits)
+  in the target encoding. `EditorBuffer.encoding` is immutable, so: write-through (EditorWriter.save with the
+  target) → discard the buffer → reload (re-detects the new encoding from disk). Non-representable conversions
+  (emoji→Latin-1) are refused, file untouched. Host-tested (EncodingConvertTests: UTF-8→UTF-16 disk+text+buffer-
+  encoding, unsaved-edits-preserved, non-representable-refused, no-tab guard). Left at `review` not `validated`
+  — it's a multi-slice [PARTIAL] umbrella (column/block select + macro record/replay remain, both editor-render-
+  coupled). The Convert-Encoding submenu render is the VM tail.
+- **TSK-343 PARKED (waiting:human)** — local file-history/revert. `LocalHistoryStore` (the snapshot/list/restore
+  engine) is already built + host-tested, but UNWIRED, and its own doc explicitly flags that the save-wiring +
+  retention/PRIVACY policy "needs an owner call" — wiring snapshot-on-save persists a copy of every saved version
+  of every edited file to disk (bounded/local, VS Code-style, but a privacy-DEFAULT decision). Surfaced a framed
+  decision (default-on-vs-opt-in + retention) rather than guess; the mechanism is ready to build once answered.
+  This is a genuine product/privacy default (SOP rule 5), NOT a HOLD-to-avoid-work — I shipped 352 this firing.
+
 ## LOG 2026-06-14 — richer PDF + media-codec file-info (TSK-348, validated)
 
 Autonomous tick, WORK_QUEUE Section-B drain. Shipped **TSK-348 (`575c1c5`, VALIDATED)** — deep-metadata
