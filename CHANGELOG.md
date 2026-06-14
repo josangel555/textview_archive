@@ -46,5 +46,6 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - Recents tool-window shows each file's **containing folder in grey** so same-named files are distinguishable.
 
 ### Performance
+- Faster first scroll of very large log/source files — the line-number gutter now finds line breaks in one pass instead of a per-character bridged lookup (no more millions of message-sends on a multi-MB file).
 - First open of a source file no longer hitches — the one-time syntax-highlight grammar compile (~400 ms) now happens off the main thread / warmed at launch.
 - Faster tab switching — open panes are kept mounted, so switching back no longer reloads the page.

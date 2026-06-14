@@ -111,17 +111,25 @@ public final class LineNumberRulerView: NSRulerView {
 
     private func ensureCacheBuilt(text: String) {
         guard newlineOffsets == nil else { return }
-        let ns = text as NSString
+        newlineOffsets = Self.newlineUTF16Offsets(in: text)
+    }
+
+    /// UTF-16 offsets of every `\n` in `text`. Iterates the Swift `utf16` view
+    /// ONCE (TSK-828): the previous version called `(text as NSString)
+    /// .character(at: i)` per index — an Objective-C message-send PER UTF-16
+    /// unit, which hitched the first scroll of a multi-MB log. The Swift view
+    /// yields units with no per-index bridging. Offsets are identical (both are
+    /// UTF-16 indices), so the binary-search line lookups are unchanged.
+    /// `static`/`internal` so it's host-testable without an NSRulerView.
+    static func newlineUTF16Offsets(in text: String) -> [Int] {
         var offsets: [Int] = []
-        offsets.reserveCapacity(max(ns.length / 50, 16))
+        offsets.reserveCapacity(256)
         var i = 0
-        while i < ns.length {
-            if ns.character(at: i) == 0x0A {
-                offsets.append(i)
-            }
+        for unit in text.utf16 {
+            if unit == 0x0A { offsets.append(i) }
             i += 1
         }
-        newlineOffsets = offsets
+        return offsets
     }
 
     /// 1-based line number for a UTF-16 character index. Computed by binary-
