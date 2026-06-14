@@ -9426,6 +9426,21 @@ intermittently reported "swift test exited 1" with ZERO failing tests; a clean d
 run gave **EXIT=0, all 5246 pass, 0 failures**. That's the documented machine-load bench/exit-code flake (CLAUDE.md)
 after ~6 back-to-back full-suite runs this turn — not a real failure. Confirmed clean before committing.
 
+## LOG +433 (2026-06-14 — TSK-348 slice 2: expanded image EXIF/TIFF/GPS metadata + a latent bug fix)
+
+Feature tick. Verify-before-build caught that the TSK-769 **copy-trimmed** slice is ALREADY done
+(`TerminalSelection.selectedText` already trims trailing spaces per line) — noted on the board, pivoted.
+
+**Shipped (commit `4e1d4ad`, suite green EXIT=0):** refactored the inline image-metadata extraction into a pure
+`nonisolated imageRows(props:)` + `gpsCoordinate(_:)` (host-testable with synthetic dicts), and EXPANDED the
+EXIF/TIFF/GPS fields: date taken, focal length, software, and GPS coordinates (lat/long + N/S/E/W refs) on top
+of the existing lens/ISO/exposure/aperture/camera. **Fixed a latent bug** while refactoring: the old
+`1.0/exposure` was unguarded — a 0 exposure would render "1/inf s"; now skipped (test pins it). Host tests
+(MetadataPanelTests +5): imageRows core/exif-tiff-gps/exposure-0/empty + gpsCoordinate nil-when-incomplete.
+→ commented TSK-348 (FS + image-EXIF facets done; XMP + richer AV/PDF remain). CHANGELOG updated. Panel render
+is the VM tail. (Build hiccup: imageRows was @MainActor-isolated but called from a detached task → marked
+`nonisolated`, which also makes the host test cleaner.)
+
 ## LOG +432 (2026-06-14 — TSK-348 slice: deep filesystem metadata in the file-info panel)
 
 Feature tick (diversified off terminal). Concrete slice of the broad "Deep metadata" umbrella:
