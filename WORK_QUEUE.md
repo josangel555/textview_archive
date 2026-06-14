@@ -11,6 +11,69 @@ Mark `[x]` when shipped (commit + board → at least `review`).
 
 ---
 
+## ★ Intake 2026-06-14 (owner batch — analyzed, de-duped, triaged → TSK-887..945)
+
+Fresh owner bug/improvement batch. 59 new tickets filed (`[INTAKE-0614]` prefix); dupes linked onto
+existing tickets, not re-filed (see "De-duped" note at the bottom). Ranked below; **felt-perf + broken
+user-facing behavior first** (SOP rule 1). These pre-empt the older sections once worked. Parents set:
+git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
+
+**P0 — user-felt latency (owner reports lag everywhere — fix first; most need a VM/Instruments trace):**
+- [ ] **TSK-892** — File-nav hover is slow (constant friction; find per-hover compute) `[trace]`
+- [ ] **TSK-887** — Command palette typing laggy `[trace]`
+- [ ] **TSK-888** — Global search typing + result-scroll laggy `[trace]`
+- [ ] **TSK-890 / 891 / 895** — CM6 editor feel: drag-select slow / Page-Up janky / h-scrollbar flicker on type (MD≫Swift; ties TSK-791) `[trace]`
+- [ ] **TSK-889** — ~699KB JSON open laggy (warm path; distinct from TSK-842 cold/iCloud) `[trace]`
+- [ ] **TSK-908** — Right-click commit very slow (menu build) `[trace]`
+
+**P1 — broken user-facing behavior (host-fixable bugs; ship model + leave render at review):**
+- [ ] **TSK-900** — Plain-text file locked in HEX, Editor can't show it (cf TSK-504 regression) — *worst: can't read the file*
+- [ ] **TSK-907** — Git log: same entry opens a duplicate tab (de-dupe/focus existing)
+- [ ] **TSK-910** — Git diff: only one line selectable → multi-line selection `(537)`
+- [ ] **TSK-905** — Preview ↑/↓ broken unless tab is last (first-responder by tab position)
+- [ ] **TSK-906** — Palette dismiss loses editor focus (restore prior first-responder)
+- [ ] **TSK-893 / 894 / 896** — Editor: cursor pointer↔I-beam flip / current-line highlight stuck after drag / hovered-row offset
+- [ ] **TSK-917** — Gutter selectable + cursor-icon confusion (hand/pointer/I-beam)
+- [ ] **TSK-921 / 922** — Split: can't close pane / open-split slow+doesn't appear `(714)`
+- [ ] **TSK-914** — "Open in Terminal" opens macOS Terminal.app, not the in-app terminal
+- [ ] **TSK-919 / 920** — File-nav: sub-folder self-drag trap / drag-to-Terminal should paste path
+- [ ] **TSK-902** — Preview tab title italic not bold
+- [ ] **TSK-903** — Rendered MD doesn't check/strike GFM `[x]` task items
+- [ ] **TSK-912** — Code-review comments: how to add + where listed (discoverability/missing UI) `(537)`
+- [ ] **TSK-929** — External rename → tab shows "file not found"; should follow the rename `(fs.watch TSK-662)`
+
+**P2 — quick-win features / UX (host-buildable, [VM] render at review):**
+- [ ] **TSK-898 / 899** — Render|Editor|HEX segmented button group + mode shortcuts
+- [ ] **TSK-913** — File-nav right-click → Rename
+- [ ] **TSK-915 / 916** — File tree auto-refresh on disk change + "Reload from disk" action
+- [ ] **TSK-932** — Unsaved blue dot on modified tab (verify vs TSK-718)
+- [ ] **TSK-936 / 937 / 938** — Toggle-View-only shortcut · Focus Terminal/Nav/Git/File · Esc→current tab
+- [ ] **TSK-918** — Remove max-width cap on horizontal panel resize (cf TSK-440)
+- [ ] **TSK-925 / 924** — CSV: sort by column header · multi-cell select + copy/paste `(711)`
+- [ ] **TSK-911 / 909** — Commit-diff summary header (uses TSK-514 DiffStat) · Reviews submenu `(537)`
+- [ ] **TSK-933 / 934** — Footer filename as breadcrumb · breadcrumb right-click = file-nav menu
+- [ ] **TSK-928** — Rename URL scheme markdownviewer:// → textview://
+- [ ] **TSK-935** — New Tab → Paste / virtual-paste clipboard to a scratch buffer
+- [ ] **TSK-931** — Rename a session (menu + right-click tab)
+- [ ] **TSK-904** — "Format JSON" discoverability (question; Pretty-Print/Minify already exist)
+- [ ] **TSK-901** — Auto-detect content type (CSV/JSON/language) for unknown/misnamed files
+
+**P3 — bigger / design-first / epics:**
+- [ ] **TSK-926 / 927** — CLI: open file/folder in TextView · pipe stdin → tab `(353)`
+- [ ] **TSK-930** — Named saved sessions (save/list/delete + tool-window state) `[design]`
+- [ ] **TSK-939** — Parity audit: Feature × View-only × Editor × Cmd-K × Menu (+ deprecate own Viewer?) `[audit]`
+- [ ] **TSK-897** — Editor missing many languages' highlighting (reopen TSK-362) `[triage]`
+- [ ] **TSK-940..945** — Agent integration: review/approve agent diffs · line-ref-to-agent · LSP/diag sharing · browser MCP · security audits `(687, epic→slices)`
+
+**De-duped (owner re-reports linked onto existing tickets — NOT re-filed):**
+- Slow to type CM6/MD + MD selection slow → **TSK-791** (commented; symptoms split to 890/891/895)
+- Console / JS-manipulation of JSON → **TSK-698** (JQ-style script window epic; owner wants the design — auto-approved)
+- Open-in-Terminal PWD → **TSK-769** (open-in-pwd; re-verify) — distinct from TSK-914
+- Multi-file refactoring engine → **TSK-697** (Agent Services suite — Refactor)
+- Feature parity View-only vs Editor (highlighting) → **TSK-602** (validated); broader parity → TSK-939
+
+---
+
 ## 0. Perf — user-felt latency (HIGH priority; from the 2026-06-14 perf-explore, measured)
 
 These are what makes the app *feel* slow (measured on the VM with signpost + CA-stall traces — NOT the model,
