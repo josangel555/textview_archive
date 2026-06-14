@@ -46,8 +46,10 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
       `[review e31bc99]` — ⌘ button in ContentToolbar → model.showPalette(); action host-tested, button render = VM gate.
 - [x] **TSK-753** — Dedicated menu item for the current file's type `[VM]`
       `[review 192211b]` — View → Language Mode (current language checkmarked + override submenu); model accessor host-tested, menu = VM gate.
-- [ ] **TSK-751** — Organize the menu items properly (review/reorganize the menu bar) `[VM]`
-- [ ] **TSK-746** — Open dialog: show recents
+- [~] **TSK-751** — Organize the menu items properly (review/reorganize the menu bar) `[VM]`
+      `[PARKED→owner]` — "properly" undefined; a speculative reorg churns muscle memory. Asked which specific menus/items feel wrong; will execute to that.
+- [~] **TSK-746** — Open dialog: show recents
+      `[LOW-VALUE]` — NSOpenPanel can't cleanly host the app's custom recents (only an accessoryView hack); File → Open Recent already exists. Deferred unless owner wants the in-panel variant.
 - [x] **TSK-747** — New-tab: offer other types (blank Sheet, Image) `[VM]`
       `[review 5ed9d51]` — NewFileType (txt/md/csv/json) + typed New File submenus (sidebar + File menu); model+mapping host-tested, menu render = VM gate. Blank-image deferred (needs format/size dialog).
 - [x] **TSK-762** — Wrap / special-char toggles on the details pane (toggle buttons, not checkboxes) `[VM]`
@@ -55,7 +57,8 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
 - [ ] **TSK-707** — Command palette: double-Shift shortcut (IntelliJ-style)
 - [x] **TSK-720** — Cmd+P / Cmd+Shift+P palette bindings (VS Code parity)
       `[validated b4c4c20]` — ⇧⌘P → command palette (nav.showPalette), routing host-tested; ⌘P left for Print (Mac HIG, not VS Code's override).
-- [ ] **TSK-709** — Unify Cmd+K and Cmd+G (palette/goto)
+- [~] **TSK-709** — Unify Cmd+K and Cmd+G (palette/goto)
+      `[PARKED→owner]` — "unify" ambiguous + overlaps TSK-727/677; ⌘G is the standard Find-Next chord (risky to rebind). Asked for intended behavior / whether it's a dup.
 - [ ] **TSK-710** — Hover symbol info on identifiers (LSP textDocument/hover) `[VM]`
 - [ ] **TSK-708** — Preview definition (IntelliJ Quick Definition / Cmd+Y) `[VM]`
 - [ ] **TSK-719** — Sticky scroll (pin the enclosing scope header) `[VM]`
@@ -64,7 +67,8 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
 - [x] **TSK-726** — Project-wide replace (cross-file search is read-only today)
       `[review 3b5724b]` — CrossFileReplace engine (encoding-faithful, atomic, symlink-safe) + Replace row in ⌘⇧F panel; literal+regex, engine+model host-tested, panel render = VM tail.
 - [ ] **TSK-704** — Markdown side-by-side editor + live preview `[VM]`
-- [ ] **TSK-759** — Drag to reorder tabs `[VM]`
+- [x] **TSK-759** — Drag to reorder tabs `[VM]`
+      `[review — already shipped]` — TabBar .onDrag/.onDrop → reorder (resolves by tab ID at drop time) → moveTab; payload+moveTab host-tested. No code change; board reconciled from `reported`.
 - [ ] **TSK-766** — Editor: git-diff text style match Edit/View `[VM]`
 - [ ] **TSK-757** — Catalog every keyboard shortcut + compare with Mac apps (audit → gap-fill bindings)
 - [x] **TSK-355** — "Open in" — Reveal in Finder / Open in external app
