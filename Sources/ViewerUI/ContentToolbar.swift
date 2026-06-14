@@ -38,6 +38,7 @@ struct ContentToolbar: View {
                 .layoutPriority(-1)   // breadcrumb yields width first
             Spacer(minLength: 8)
             ViewModeControlView(model: model)
+            CommandPaletteButton(model: model)   // TSK-756: far top-right
         }
         .frame(height: model.uiSize(22))
         .accessibilityIdentifier("mdv.contentToolbar")
@@ -132,6 +133,30 @@ private struct PathBreadcrumbView: View {
         .helpInfo(title: "Earlier path segments",
                   description: "Folders above this point in the file's path")
         .accessibilityIdentifier("mdv.breadcrumb.overflow")
+    }
+}
+
+// MARK: - Command palette button (FAR RIGHT)
+
+/// TSK-756: a discoverability affordance for the command palette. Tapping the
+/// far-right ⌘ button opens the same palette the keybinding/menu item does
+/// (`model.showPalette()` → `isPalettePresented`), so the feature is reachable
+/// without knowing the shortcut.
+private struct CommandPaletteButton: View {
+    @ObservedObject var model: DocumentModel
+
+    var body: some View {
+        Button {
+            model.showPalette()
+        } label: {
+            Image(systemName: "command")
+                .font(.system(size: model.uiSize(12), weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(IconHoverButtonStyle(cornerRadius: model.uiSize(4)))
+        .helpInfo(title: "Command Palette",
+                  description: "Open the command palette — search and run any command.")
+        .accessibilityIdentifier("mdv.commandPaletteButton")
     }
 }
 
