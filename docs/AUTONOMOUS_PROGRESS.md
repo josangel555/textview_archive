@@ -1,5 +1,29 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-675 slice 5: Insert Table of Contents (d07a815, → review) — CORRECTS the prior HOLD
+
+Re-challenged last firing's HOLD (the owner's bar is high) and found it was partly OVER-CAUTIOUS: I'd deferred a
+markdown "Insert Table of Contents" on §2.5 grounds because `outline.rs` is Rust-ported. But a TOC generator is a
+**CONSUMER of a heading list**, not a modification of the ported markdown→HTML engine or the outline parser — it's
+migration-safe (survives any future outline port; just swap the heading source). LESSON: §2.5 forbids building
+FEATURES INTO the Swift port-target engines, NOT building new consumers of their output. Don't over-apply it.
+
+Shipped (commit d07a815, child TSK-865 → review):
+- **MarkdownTOC** (pure, ViewerCore) consumes `MarkdownOutline.headings`: GitHub-style anchor slugs (lowercase,
+  punctuation dropped, spaces→hyphens, `-1`/`-2` dedup), a level-nested bullet list indented from the shallowest
+  heading present, `[`/`]` escaped in link text. `insert(into:headings:)` is IDEMPOTENT via `<!-- toc -->` /
+  `<!-- /toc -->` markers (re-run regenerates the block in place, never stacks) and inserts after a leading YAML
+  front-matter block when present. `DocumentModel.insertTableOfContents()` runs it through the shared
+  encoding-preserving write-through; `Edit ▸ Insert Table of Contents` is gated to Markdown files.
+
+Teeth: 12 pure tests (slug rules incl. unicode, level nesting, slug dedup, bracket escaping, idempotent marker
+replace, front-matter insertion, refresh-after-heading-change, no-headings no-op). Host gate green (5541 tests).
+Menu render = VM tail. 675 now has 5 slices at review (862/863/864/865).
+
+Standing owner decisions still surfaced (343 local-history parked; 470 zoom-split parked; a VM pass is the big
+unblock for the banked `review` pile). But the TOC find shows the host pool wasn't as bone-dry as I'd concluded —
+I'll keep probing for §2.5-safe consumer/feature work before any future HOLD.
+
 ## LOG 2026-06-14 — Documented HOLD (host-side pool exhausted across ALL lanes; blocked on 3 owner decisions)
 
 Per the owner's "HOLD bar is high," before holding I checked the two fallback pools I'd NOT yet examined
