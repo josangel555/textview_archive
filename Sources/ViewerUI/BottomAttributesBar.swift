@@ -131,6 +131,7 @@ private struct TypeControlMenu: View {
     var body: some View {
         Menu {
             openAsSection
+            defaultViewSection
             if showsLanguageSection {
                 Divider()
                 languageSection
@@ -199,6 +200,45 @@ private struct TypeControlMenu: View {
                         Text(ModeBar.categoryLabel(cat))
                         if model.tabs.selected?.categoryOverride == cat {
                             Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: Default-view section (per-category default mode, TSK-671)
+
+    /// Lets the user pin "always open THIS kind of file in THIS mode" — e.g.
+    /// Markdown → Source instead of the built-in Rendered, CSV → Source instead
+    /// of Table. Persisted (`PreferencesStore.viewModeDefaults`) and applied to
+    /// FUTURE opens of the category (open tabs keep their mode). The category is
+    /// the file's effective one (an Open-As override wins). Shown only when the
+    /// file offers more than one mode — a HEX-only binary has nothing to pick.
+    @ViewBuilder
+    private var defaultViewSection: some View {
+        let override = model.tabs.selected?.categoryOverride
+        let cat = override ?? FileTypeDetector.category(for: url)
+        let modes = ViewModeOptions.availableModes(for: url, forcedCategory: override)
+        if modes.count > 1 {
+            let builtin = ViewModeOptions.defaultMode(for: url, forcedCategory: override)
+            let pinned = model.defaultViewMode(for: cat)
+            Section("Default view for \(ModeBar.categoryShortLabel(cat))") {
+                Button(action: { model.setDefaultViewMode(nil, for: cat) }) {
+                    HStack {
+                        Text("Auto (\(ModeBar.modeLabel(builtin)))")
+                        if pinned == nil { Image(systemName: "checkmark") }
+                    }
+                }
+                ForEach(modes, id: \.self) { mode in
+                    Button(action: {
+                        // Pinning the built-in choice clears the override (Auto)
+                        // rather than persisting a redundant entry.
+                        model.setDefaultViewMode(mode == builtin ? nil : mode, for: cat)
+                    }) {
+                        HStack {
+                            Text(ModeBar.modeLabel(mode))
+                            if pinned == mode { Image(systemName: "checkmark") }
                         }
                     }
                 }

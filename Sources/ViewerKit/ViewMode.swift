@@ -132,6 +132,32 @@ public enum ViewModeOptions {
     /// binary / unknown-non-text files still default to HEX.
     public static func defaultMode(
         for url: URL?, forcedCategory: FileCategory? = nil,
+        isRenderableText: Bool? = nil,
+        preferred: [FileCategory: ViewMode] = [:]
+    ) -> ViewMode {
+        let builtin = builtinDefaultMode(
+            for: url, forcedCategory: forcedCategory, isRenderableText: isRenderableText)
+        // TSK-671 — per-file-category default override. The user can pin a
+        // category to a non-built-in default (e.g. always open Markdown as
+        // Source instead of Rendered, CSV as Source instead of Table). Honored
+        // ONLY when the pinned mode is in this file's `availableModes`: a stale
+        // or cross-type pref (e.g. `.table` pinned on `.plainText`, hit by a
+        // `.txt` with no Table mode) degrades to the built-in default rather
+        // than desyncing the picker from the pane. Applies to FRESH opens; an
+        // already-open tab keeps its mode.
+        guard let url, !preferred.isEmpty else { return builtin }
+        let cat = forcedCategory ?? FileTypeDetector.category(for: url)
+        guard let pinned = preferred[cat], pinned != builtin else { return builtin }
+        let avail = availableModes(
+            for: url, forcedCategory: forcedCategory, isRenderableText: isRenderableText)
+        return avail.contains(pinned) ? pinned : builtin
+    }
+
+    /// The built-in (extension/category-derived) default mode, before any user
+    /// per-category override (TSK-671). Kept separate so `defaultMode` layers
+    /// the override on top while this stays the pure baseline.
+    private static func builtinDefaultMode(
+        for url: URL?, forcedCategory: FileCategory? = nil,
         isRenderableText: Bool? = nil
     ) -> ViewMode {
         guard let url else { return .source }

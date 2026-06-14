@@ -1336,13 +1336,31 @@ struct ModeBar: View {
         }
     }
 
-    private var showsSourceToggles: Bool {
-        model.currentViewMode == .source || model.currentViewMode == .formatted
+    /// Bare type name (no "(rendered)" / "/CSV" qualifiers) — used where the
+    /// category is the SUBJECT of a label ("Default view for Markdown"), not an
+    /// Open-As lens choice. (TSK-671)
+    static func categoryShortLabel(_ cat: FileCategory) -> String {
+        switch cat {
+        case .markdown:  return "Markdown"
+        case .mermaid:   return "Mermaid"
+        case .plainText: return "Plain Text"
+        case .code:      return "Source code"
+        case .html:      return "HTML"
+        case .image:     return "Image"
+        case .audio:     return "Audio"
+        case .video:     return "Video"
+        case .pdf:       return "PDF"
+        case .sqlite:    return "SQLite"
+        case .archive:   return "Archive"
+        case .binary:    return "Binary"
+        case .unknown:   return "Unknown"
+        }
     }
 
-    /// Short label for each view mode. The picker is tight, so we
-    /// keep these to a single word.
-    private func label(for mode: ViewMode) -> String {
+    /// Short label for a view mode (single word). Static so menus outside the
+    /// ModeBar (the BottomAttributesBar "Default view" section, TSK-671) share
+    /// the exact wording.
+    static func modeLabel(_ mode: ViewMode) -> String {
         switch mode {
         case .rendered:  return "Rendered"
         case .source:    return "Source"
@@ -1354,6 +1372,14 @@ struct ModeBar: View {
         case .hex:       return "HEX"
         }
     }
+
+    private var showsSourceToggles: Bool {
+        model.currentViewMode == .source || model.currentViewMode == .formatted
+    }
+
+    /// Short label for each view mode. The picker is tight, so we
+    /// keep these to a single word.
+    private func label(for mode: ViewMode) -> String { Self.modeLabel(mode) }
 
     /// Shown when source mode is active. Honors per-tab override so
     /// the chip reflects what's actually being highlighted, not the

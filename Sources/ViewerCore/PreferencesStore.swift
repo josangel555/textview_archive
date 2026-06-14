@@ -1,4 +1,5 @@
 import Foundation
+import ViewerKit
 
 /// Thin wrapper around `UserDefaults` for our small set of persisted prefs.
 /// Pure data → easy to unit-test with a custom `UserDefaults(suiteName:)`.
@@ -34,6 +35,9 @@ public final class PreferencesStore: @unchecked Sendable {
         /// Preview mode's metadata side panel visibility (TSK-608).
         static let previewMetadataVisible = "MarkdownViewer.previewMetadataVisible"
         static let sourceFontName = "MarkdownViewer.sourceFontName"
+        /// Per-file-category default view-mode overrides (TSK-671). A
+        /// primitives-only `[categoryRaw: modeRaw]` dict.
+        static let viewModeDefaults = "MarkdownViewer.viewModeDefaults"
     }
 
     /// Defaults to the pristine-aware store (TSK-618): `.standard`
@@ -215,6 +219,59 @@ public final class PreferencesStore: @unchecked Sendable {
                 defaults.removeObject(forKey: Key.audioFFmpegPath)
             }
         }
+    }
+
+    // MARK: Per-category default view mode (TSK-671)
+
+    /// User overrides for the DEFAULT view mode of a file category — e.g. pin
+    /// Markdown to open in Source instead of the built-in Rendered, or CSV in
+    /// Source instead of Table. Empty (the default) ⇒ every category uses its
+    /// built-in default. Consulted only on FRESH opens (`resolveOpenMode`), so
+    /// already-open tabs are unaffected, and only HONORED when the pinned mode
+    /// is actually available for the file (`ViewModeOptions.defaultMode`).
+    ///
+    /// Persisted as a primitives-only `[categoryRaw: modeRaw]` dictionary, like
+    /// `themeOverrideRaw`: a renamed/removed enum case (or any tampered value)
+    /// can't crash or pin an invalid mode — unknown keys/values are simply
+    /// dropped on read. An empty map removes the key entirely.
+    public var viewModeDefaults: [FileCategory: ViewMode] {
+        get {
+            guard let raw = defaults.dictionary(forKey: Key.viewModeDefaults)
+                as? [String: String] else { return [:] }
+            var out: [FileCategory: ViewMode] = [:]
+            for (key, value) in raw {
+                if let cat = FileCategory(rawValue: key),
+                   let mode = ViewMode(rawValue: value) {
+                    out[cat] = mode
+                }
+            }
+            return out
+        }
+        set {
+            if newValue.isEmpty {
+                defaults.removeObject(forKey: Key.viewModeDefaults)
+            } else {
+                var raw: [String: String] = [:]
+                for (cat, mode) in newValue { raw[cat.rawValue] = mode.rawValue }
+                defaults.set(raw, forKey: Key.viewModeDefaults)
+            }
+        }
+    }
+
+    /// The pinned default mode for `category`, or `nil` for the built-in default.
+    public func viewModeDefault(for category: FileCategory) -> ViewMode? {
+        viewModeDefaults[category]
+    }
+
+    /// Pin (`mode`) or clear (`nil`) the default mode for `category`.
+    public func setViewModeDefault(_ mode: ViewMode?, for category: FileCategory) {
+        var map = viewModeDefaults
+        if let mode {
+            map[category] = mode
+        } else {
+            map.removeValue(forKey: category)
+        }
+        viewModeDefaults = map
     }
 
     // MARK: Last open folder

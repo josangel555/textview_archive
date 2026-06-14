@@ -3745,6 +3745,21 @@ public final class DocumentModel: ObservableObject {
         updateDerived()
     }
 
+    /// The user's pinned default view mode for `category` (TSK-671), or `nil`
+    /// when that category uses its built-in default. Read by the bottom
+    /// type-control menu's "Default view" section.
+    public func defaultViewMode(for category: FileCategory) -> ViewMode? {
+        preferences.viewModeDefault(for: category)
+    }
+
+    /// Pin (`mode`) or clear (`nil`) the default view mode for `category`.
+    /// Affects FUTURE opens of that category — open tabs keep their mode.
+    /// Publishes so the menu's checkmark moves immediately on selection.
+    public func setDefaultViewMode(_ mode: ViewMode?, for category: FileCategory) {
+        preferences.setViewModeDefault(mode, for: category)
+        objectWillChange.send()
+    }
+
     /// Best-effort magic-byte category sniff for the "Open As…" auto-hint.
     /// Reads only the file's header — cheap, never the whole file. Returns
     /// `nil` when nothing recognizable matches (then the menu just uses
@@ -4121,7 +4136,8 @@ public final class DocumentModel: ObservableObject {
         _ resolved: URL, forceNewTab: Bool, isRenderableText: Bool?
     ) -> ViewMode {
         let initialMode = ViewModeOptions.defaultMode(
-            for: resolved, isRenderableText: isRenderableText)
+            for: resolved, isRenderableText: isRenderableText,
+            preferred: preferences.viewModeDefaults)
         if forceNewTab { return initialMode }
         // If the active tab has a non-default mode the user explicitly picked
         // (e.g. HEX, Format), carry it. Otherwise use the new file's default.
@@ -4923,7 +4939,8 @@ public final class DocumentModel: ObservableObject {
         // watcher-bound, focused).
         for url in files.dropLast() {
             let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
-            let mode = ViewModeOptions.defaultMode(for: resolved)
+            let mode = ViewModeOptions.defaultMode(
+                for: resolved, preferred: preferences.viewModeDefaults)
             appendLazyTab(url: resolved, viewMode: mode)
         }
         if let lastFile = files.last {
