@@ -1,5 +1,24 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-564 (FFI double-copy) scoped: remaining = a ~12-site fresh-session refactor
+
+Autonomous tick. Investigated TSK-564 (the next rust-core item) the same way as the cast audit. Finding (now on
+the ticket): the zero-copy infra EXISTS (`frameBodyStart` + `MsgPackReader(frame, startingAt:)`) and is applied
+to the big paths (decodeTable/decodeSnapshot). The remaining copy#2 is in the GENERIC helpers (`mdvFrameCall`/
+`mdvEnvelopeCall`) which return the unframed body — feeding ~12 `MsgPackReader(body)` decode sites. Eliminating
+it generically = a SYSTEMATIC ~12-site FFI-decode-boundary refactor (helpers return the raw frame; each decoder
+switches to the proven `startingAt:` pattern) — correctness-sensitive, done all-at-once with the full RustCore
+FFI/loopback suite = a fresh focused session, NOT a deep-session piecemeal pass. The one individually-convertible
+site (hex_search) is a COLD path with a negligible payload — piecemeal churn, skipped (§5); the value is the HOT
+paths (highlight/diff) which go through the generic helpers. Left at progress with the scoping; no code.
+
+**Net rust-core lane status (now fully scoped):** 575 cast-safety = DONE (prior firing, validated + teeth).
+564 = infra done on big paths; remaining = ~12-site fresh-session refactor (scoped). 844 CSV-arena = security
+heap-cap (fresh session). 573 = web last-resort. So the clean, do-NOW, deep-session-safe rust-core work is
+drained too — 575 was the last clean ship; 564/844 are fresh-session-careful. Strategic state otherwise
+unchanged (Swift queue drained, snippets model done, 382 needs a VM profile, owner 343/358 + the VM lane
+outstanding). HANDOFF.md current.
+
 ## LOG 2026-06-14 — rust-core cast-safety audit + deny-ratchet (TSK-575, real work — broke the HOLD)
 
 Autonomous tick. Reconsidered my repeated deferral of TSK-575's cast audit — *auditing is careful, not a rush* —
