@@ -17,6 +17,20 @@ public enum GotoMode: String, Equatable, Sendable, CaseIterable {
     case text
 }
 
+/// What the palette should DO when the user presses Return on a query —
+/// the pure routing decision (TSK-727), so the view's submit dispatch is
+/// host-tested rather than re-deriving the rules inline.
+public enum PaletteSubmitAction: Equatable, Sendable {
+    /// Jump to a 1-based line in the active editor (`:42`).
+    case goToLine(Int)
+    /// Run the selected registered command (`>`).
+    case runCommand
+    /// Open the selected file result (bare query).
+    case openFile
+    /// Nothing actionable yet (e.g. a bare `:` with no number) — dismiss.
+    case none
+}
+
 /// A parsed palette query: the routed `mode`, the residual `term` after the
 /// operator, and (for `.line`) the parsed 1-based `line`/`column`.
 public struct GotoQuery: Equatable, Sendable {
@@ -36,6 +50,22 @@ public struct GotoQuery: Equatable, Sendable {
         self.term = term
         self.line = line
         self.column = column
+    }
+
+    /// The action the palette fires on Return. `.line` with a valid number →
+    /// `.goToLine`; a bare/invalid `:` → `.none` (dismiss, nothing to jump to).
+    /// `.command` → `.runCommand`. Everything else (`.files`, and the not-yet-
+    /// surfaced `.symbol`/`.text`) → `.openFile`, preserving today's behaviour
+    /// until those modes get their own result handling.
+    public var submitAction: PaletteSubmitAction {
+        switch mode {
+        case .line:
+            return line.map(PaletteSubmitAction.goToLine) ?? .none
+        case .command:
+            return .runCommand
+        case .files, .symbol, .text:
+            return .openFile
+        }
     }
 }
 

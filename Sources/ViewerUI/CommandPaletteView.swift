@@ -19,11 +19,17 @@ struct CommandPaletteView: View {
     @State private var filteredCommands: [(item: CommandDescriptor, match: FuzzyMatcher.Match)] = []
     @FocusState private var fieldFocused: Bool
 
+    /// Unified palette routing (TSK-727): one classifier maps the leading
+    /// operator to a mode — `>` command, `:` go-to-line, bare → files. The
+    /// `@`/`#` operators are parsed but not yet surfaced (future slices).
+    private var parsed: GotoQuery { GotoQueryParser.parse(query) }
     /// `true` when the user is in command mode (query starts with `>`).
-    private var isCommandMode: Bool { query.hasPrefix(">") }
-    /// The query with the leading `>` (and a following space) stripped.
+    private var isCommandMode: Bool { parsed.mode == .command }
+    /// `true` when the user is entering a `:line[:col]` jump.
+    private var isLineMode: Bool { parsed.mode == .line }
+    /// The command-mode query with the leading `>` stripped + trimmed.
     private var commandQuery: String {
-        String(query.dropFirst()).trimmingCharacters(in: .whitespaces)
+        parsed.term.trimmingCharacters(in: .whitespaces)
     }
     /// A11Y-06: honor the system Reduce Motion setting. When set, the
     /// scroll-to-selection animation is suppressed (instant jump).
@@ -32,13 +38,13 @@ struct CommandPaletteView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Image(systemName: isCommandMode ? "command" : "magnifyingglass")
+                Image(systemName: paletteIcon)
                     .foregroundStyle(.secondary)
-                TextField("Search recent files… (› for commands)", text: $query)
+                TextField("Search recent files… (› commands · : line)", text: $query)
                     .textFieldStyle(.plain)
                     .font(.system(size: 16))
                     .focused($fieldFocused)
-                    .onSubmit { isCommandMode ? runSelectedCommand() : openSelected() }
+                    .onSubmit { submit() }
                     .onChange(of: query) { _, _ in
                         recomputeFiltered()
                         selectedIndex = 0
@@ -57,6 +63,8 @@ struct CommandPaletteView: View {
 
             if isCommandMode {
                 commandList
+            } else if isLineMode {
+                lineModeHint
             } else if filtered.isEmpty {
                 emptyState
             } else {
@@ -103,11 +111,14 @@ struct CommandPaletteView: View {
                 }
             }
             // Keyboard-shortcut hint footer (U-tier).
-            if isCommandMode ? !filteredCommands.isEmpty : !filtered.isEmpty {
+            if isLineMode ? (parsed.line != nil)
+                : (isCommandMode ? !filteredCommands.isEmpty : !filtered.isEmpty) {
                 Divider()
                 HStack(spacing: 12) {
-                    Text("↑↓ navigate").font(.caption2).foregroundStyle(.secondary)
-                    Text(isCommandMode ? "↵ run" : "↵ open")
+                    if !isLineMode {
+                        Text("↑↓ navigate").font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Text(isLineMode ? "↵ go to line" : (isCommandMode ? "↵ run" : "↵ open"))
                         .font(.caption2).foregroundStyle(.secondary)
                     Text("esc cancel").font(.caption2).foregroundStyle(.secondary)
                     Spacer()
@@ -161,8 +172,50 @@ struct CommandPaletteView: View {
         return bookmarkAsEntries + extraRecents
     }
 
+    private var paletteIcon: String {
+        if isCommandMode { return "command" }
+        if isLineMode { return "number" }
+        return "magnifyingglass"
+    }
+
+    /// Dispatch the parsed query's submit action (TSK-727). The routing rules
+    /// (`GotoQuery.submitAction`) are host-tested in ViewerCore; this is only
+    /// the thin view-side dispatch into the model.
+    private func submit() {
+        switch parsed.submitAction {
+        case .goToLine(let line):
+            model.scrollSource(toLine: line)
+            model.dismissPalette()
+        case .runCommand:
+            runSelectedCommand()
+        case .openFile:
+            openSelected()
+        case .none:
+            model.dismissPalette()
+        }
+    }
+
+    @ViewBuilder private var lineModeHint: some View {
+        VStack(spacing: 6) {
+            Spacer().frame(height: 24)
+            Image(systemName: "number")
+                .font(.system(size: 22)).foregroundStyle(.secondary)
+            if let line = parsed.line {
+                Text("Go to line \(line)").font(.callout)
+            } else {
+                Text("Type a line number").foregroundStyle(.secondary).font(.callout)
+            }
+            Spacer().frame(height: 24)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     private func recomputeFiltered() {
-        if isCommandMode {
+        if isLineMode {
+            // Line mode shows a single "go to line" hint — no list to filter.
+            filtered = []
+            filteredCommands = []
+        } else if isCommandMode {
             // Command mode (UX-M / #232): list EVERY registered command,
             // fuzzy-filtered on the post-`>` query. Empty query lists all.
             // Routed through the `.fuzzy` gate (TSK-646): Rust core when

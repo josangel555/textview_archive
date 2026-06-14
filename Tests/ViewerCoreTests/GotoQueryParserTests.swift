@@ -111,6 +111,30 @@ final class GotoQueryParserTests: XCTestCase {
         XCTAssertEqual(q.term, "my method")
     }
 
+    // MARK: - submitAction routing (palette Return dispatch)
+
+    func testSubmitActionGoToLine() {
+        XCTAssertEqual(GotoQueryParser.parse(":42").submitAction, .goToLine(42))
+        XCTAssertEqual(GotoQueryParser.parse(":42:10").submitAction, .goToLine(42))
+    }
+
+    func testSubmitActionBareColonIsNone() {
+        XCTAssertEqual(GotoQueryParser.parse(":").submitAction, .none)
+        XCTAssertEqual(GotoQueryParser.parse(":abc").submitAction, .none)
+        XCTAssertEqual(GotoQueryParser.parse(":0").submitAction, .none)
+    }
+
+    func testSubmitActionCommand() {
+        XCTAssertEqual(GotoQueryParser.parse(">build").submitAction, .runCommand)
+    }
+
+    func testSubmitActionFilesAndUnsurfacedModesOpenFile() {
+        XCTAssertEqual(GotoQueryParser.parse("readme").submitAction, .openFile)
+        // @ / # are parsed but not yet surfaced → fall back to file open.
+        XCTAssertEqual(GotoQueryParser.parse("@sym").submitAction, .openFile)
+        XCTAssertEqual(GotoQueryParser.parse("#text").submitAction, .openFile)
+    }
+
     func testEveryModeReachable() {
         // Guard: the operator table covers every GotoMode (a new mode without a
         // parse path would fail this).
