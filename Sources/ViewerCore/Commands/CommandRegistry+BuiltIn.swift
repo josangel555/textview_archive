@@ -340,6 +340,22 @@ extension CommandRegistry {
         CommandDescriptor(
             id: "tools.lowerCase", title: "lowercase Clipboard", category: .edit,
             scriptVerb: "tools.lowerCase"),
+        // Encode/decode + whitespace transforms on the clipboard (TSK-352).
+        CommandDescriptor(
+            id: "tools.trimTrailing", title: "Trim Trailing Whitespace (Clipboard)", category: .edit,
+            scriptVerb: "tools.trimTrailing"),
+        CommandDescriptor(
+            id: "tools.urlEncode", title: "URL Encode Clipboard", category: .edit,
+            scriptVerb: "tools.urlEncode"),
+        CommandDescriptor(
+            id: "tools.urlDecode", title: "URL Decode Clipboard", category: .edit,
+            scriptVerb: "tools.urlDecode"),
+        CommandDescriptor(
+            id: "tools.htmlEncode", title: "HTML Encode Clipboard", category: .edit,
+            scriptVerb: "tools.htmlEncode"),
+        CommandDescriptor(
+            id: "tools.htmlDecode", title: "HTML Decode Clipboard", category: .edit,
+            scriptVerb: "tools.htmlDecode"),
         CommandDescriptor(
             id: "tools.fileChecksum", title: "Copy SHA-256 of Current File", category: .edit,
             scriptVerb: "tools.fileChecksum"),

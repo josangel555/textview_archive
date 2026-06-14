@@ -91,6 +91,82 @@ public enum TextTools {
     public static func reverseLines(_ s: String) -> String {
         splitLines(s).reversed().joined(separator: "\n")
     }
+
+    /// Strip trailing spaces/tabs from every line (newlines preserved; output
+    /// rejoined with `\n`).
+    public static func trimTrailingWhitespace(_ s: String) -> String {
+        splitLines(s).map { line -> String in
+            var l = Substring(line)
+            while let c = l.last, c == " " || c == "\t" { l = l.dropLast() }
+            return String(l)
+        }.joined(separator: "\n")
+    }
+
+    // MARK: - Encode / decode (clipboard dev tools, TSK-352)
+
+    /// Percent-encode for a URL: everything except the RFC 3986 *unreserved*
+    /// set (`A–Z a–z 0–9 - . _ ~`) is escaped — so a space becomes `%20`,
+    /// not `+`. Returns the input unchanged in the (practically impossible)
+    /// event Foundation can't encode it.
+    public static func urlEncode(_ s: String) -> String {
+        let unreserved = CharacterSet(
+            charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+        return s.addingPercentEncoding(withAllowedCharacters: unreserved) ?? s
+    }
+
+    /// Decode percent-escapes. Returns `nil` on a malformed escape sequence.
+    public static func urlDecode(_ s: String) -> String? {
+        s.removingPercentEncoding
+    }
+
+    /// Escape the five HTML-significant characters (`&` first, so it doesn't
+    /// double-encode the ones below).
+    public static func htmlEncode(_ s: String) -> String {
+        var out = s.replacingOccurrences(of: "&", with: "&amp;")
+        out = out.replacingOccurrences(of: "<", with: "&lt;")
+        out = out.replacingOccurrences(of: ">", with: "&gt;")
+        out = out.replacingOccurrences(of: "\"", with: "&quot;")
+        out = out.replacingOccurrences(of: "'", with: "&#39;")
+        return out
+    }
+
+    /// Decode HTML entities: the common named ones (`&amp; &lt; &gt; &quot;
+    /// &apos; &#39;`) plus numeric `&#dd;` / `&#xhh;`. The exact inverse of
+    /// `htmlEncode` for any text it produced; unknown entities are left as-is.
+    public static func htmlDecode(_ s: String) -> String {
+        var result = ""
+        var i = s.startIndex
+        while i < s.endIndex {
+            if s[i] == "&",
+               let semi = s[i...].firstIndex(of: ";"),
+               s.distance(from: i, to: semi) <= 12,
+               let decoded = decodeHTMLEntity(String(s[s.index(after: i)..<semi])) {
+                result.append(decoded)
+                i = s.index(after: semi)
+                continue
+            }
+            result.append(s[i])
+            i = s.index(after: i)
+        }
+        return result
+    }
+
+    private static func decodeHTMLEntity(_ e: String) -> Character? {
+        switch e {
+        case "amp":          return "&"
+        case "lt":           return "<"
+        case "gt":           return ">"
+        case "quot":         return "\""
+        case "apos", "#39":  return "'"
+        default:
+            if e.hasPrefix("#x") || e.hasPrefix("#X"),
+               let code = UInt32(e.dropFirst(2), radix: 16),
+               let sc = Unicode.Scalar(code) { return Character(sc) }
+            if e.hasPrefix("#"), let code = UInt32(e.dropFirst()),
+               let sc = Unicode.Scalar(code) { return Character(sc) }
+            return nil
+        }
+    }
 }
 
 /// File-level SHA-256 checksums (surfaced in the metadata panel / "Copy
@@ -199,6 +275,11 @@ public enum TextToolVerb: String, CaseIterable, Sendable {
     case reverseLines  = "tools.reverseLines"
     case upperCase     = "tools.upperCase"
     case lowerCase     = "tools.lowerCase"
+    case trimTrailing  = "tools.trimTrailing"
+    case urlEncode     = "tools.urlEncode"
+    case urlDecode     = "tools.urlDecode"
+    case htmlEncode    = "tools.htmlEncode"
+    case htmlDecode    = "tools.htmlDecode"
 
     /// Human-readable command title (palette / menu label).
     public var title: String {
@@ -213,6 +294,11 @@ public enum TextToolVerb: String, CaseIterable, Sendable {
         case .reverseLines:  return "Reverse Lines"
         case .upperCase:     return "UPPERCASE"
         case .lowerCase:     return "lowercase"
+        case .trimTrailing:  return "Trim Trailing Whitespace"
+        case .urlEncode:     return "URL Encode"
+        case .urlDecode:     return "URL Decode"
+        case .htmlEncode:    return "HTML Encode"
+        case .htmlDecode:    return "HTML Decode"
         }
     }
 
@@ -239,6 +325,11 @@ public extension TextTools {
         case .reverseLines:  return reverseLines(input ?? "")
         case .upperCase:     return (input ?? "").uppercased()
         case .lowerCase:     return (input ?? "").lowercased()
+        case .trimTrailing:  return trimTrailingWhitespace(input ?? "")
+        case .urlEncode:     return urlEncode(input ?? "")
+        case .urlDecode:     return input.flatMap(urlDecode)
+        case .htmlEncode:    return htmlEncode(input ?? "")
+        case .htmlDecode:    return htmlDecode(input ?? "")
         }
     }
 }

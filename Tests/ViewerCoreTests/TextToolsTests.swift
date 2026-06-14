@@ -229,7 +229,7 @@ final class TextToolsTests: XCTestCase {
     }
 
     func testVerb_metadata() {
-        XCTAssertEqual(TextToolVerb.allCases.count, 10)
+        XCTAssertEqual(TextToolVerb.allCases.count, 15)
         // rawValues are unique, non-empty, and "tools."-namespaced (used as scriptVerb).
         let raws = TextToolVerb.allCases.map(\.rawValue)
         XCTAssertEqual(Set(raws).count, raws.count)
@@ -272,5 +272,45 @@ final class TextToolsTests: XCTestCase {
         XCTAssertEqual(TextTools.apply(.lowerCase, to: "aBc"), "abc")
         // A transform with nil input degrades to "" (never crashes).
         XCTAssertEqual(TextTools.apply(.sortLinesAsc, to: nil), "")
+    }
+
+    // MARK: Encode / decode + whitespace (TSK-352)
+
+    func testTrimTrailingWhitespace_perLine() {
+        XCTAssertEqual(TextTools.trimTrailingWhitespace("a  \nb\t\n c "), "a\nb\n c")
+    }
+
+    func testURLEncode_escapesSpacesAndReserved_keepsUnreserved() {
+        XCTAssertEqual(TextTools.urlEncode("a b&c=d/e"), "a%20b%26c%3Dd%2Fe")
+        XCTAssertEqual(TextTools.urlEncode("safe-._~AZ09"), "safe-._~AZ09")
+    }
+
+    func testURLDecode_roundTrips() {
+        XCTAssertEqual(TextTools.urlDecode("a%20b%26c"), "a b&c")
+        XCTAssertEqual(TextTools.urlDecode(TextTools.urlEncode("héllo world!")), "héllo world!")
+    }
+
+    func testHTMLEncode_escapesTheFive_ampFirst() {
+        XCTAssertEqual(TextTools.htmlEncode("a<b>&\"'"), "a&lt;b&gt;&amp;&quot;&#39;")
+    }
+
+    func testHTMLDecode_namedAndNumeric_andRoundTrip() {
+        XCTAssertEqual(TextTools.htmlDecode("a&lt;b&gt;&amp;&quot;&#39;"), "a<b>&\"'")
+        XCTAssertEqual(TextTools.htmlDecode("&#65;&#x42;&apos;"), "AB'")
+        // Round-trip identity for any text htmlEncode produced.
+        let s = "if (a < b && c > \"d's\") {}"
+        XCTAssertEqual(TextTools.htmlDecode(TextTools.htmlEncode(s)), s)
+        // An unknown entity is left untouched (not dropped).
+        XCTAssertEqual(TextTools.htmlDecode("x&nope;y"), "x&nope;y")
+    }
+
+    func testApply_encodeDecodeRouting() {
+        XCTAssertEqual(TextTools.apply(.trimTrailing, to: "a \nb"), "a\nb")
+        XCTAssertEqual(TextTools.apply(.urlEncode, to: "a b"), "a%20b")
+        XCTAssertEqual(TextTools.apply(.urlDecode, to: "a%20b"), "a b")
+        XCTAssertEqual(TextTools.apply(.htmlEncode, to: "<x>"), "&lt;x&gt;")
+        XCTAssertEqual(TextTools.apply(.htmlDecode, to: "&lt;x&gt;"), "<x>")
+        // urlDecode of a malformed escape → nil (the runner surfaces "not valid input").
+        XCTAssertNil(TextTools.apply(.urlDecode, to: "%zz"))
     }
 }

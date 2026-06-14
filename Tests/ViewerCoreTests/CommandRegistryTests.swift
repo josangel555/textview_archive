@@ -77,6 +77,9 @@ final class CommandRegistryTests: XCTestCase {
             // line/case transforms (TSK-352)
             "tools.sortLinesAsc", "tools.sortLinesDesc", "tools.uniqueLines",
             "tools.reverseLines", "tools.upperCase", "tools.lowerCase",
+            // encode/decode + whitespace (TSK-352)
+            "tools.trimTrailing", "tools.urlEncode", "tools.urlDecode",
+            "tools.htmlEncode", "tools.htmlDecode",
             "reload", "toggle-split", "swap-split", "move-tab-left", "move-tab-right",
             "show-git-panel", "toggle-line-bookmark", "git-file-history",
             // LSP go-to commands (TSK-464)
