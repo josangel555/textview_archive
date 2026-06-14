@@ -1,5 +1,28 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — CSV → Markdown table / JSON shipped (TSK-870, 6ca616f, → review)
+
+Found a FRESH §2.5-safe consumer feature (the probe-once-before-HOLD plan worked again): bridge CSV (a supported
+format) into the markdown-doc + data workflows. Confirmed feasibility first — CSV tabs are `.loaded(TextFile)` fed
+`file.contents` (ContentView:610 `CSVTableView(text: file.contents …)`), so `activeFileText` reaches the CSV
+source; `CSVParser.parse(text) -> {header, rows}` is clean.
+
+**View ▸ Copy as Markdown Table / Copy as JSON** (active `.csv`/`.tsv`). `CsvConvert` (pure ViewerCore) is a
+CONSUMER of `CSVParser.parse` (not a modification of the Rust-ported CSV engine → §2.5-safe):
+- `toMarkdownTable`: padded, aligned GFM pipe table; `|` escaped, cell newlines collapsed to space; short rows
+  padded to the header width.
+- `toJSON`: pretty array of objects keyed by the header with **column order preserved** (manual emit — a
+  JSONSerialization round-trip would reorder keys) + a correct `jsonEscape` (quotes/backslash/tab/control); values
+  kept as STRINGS (CSV is untyped → lossless, no leading-zero/precision surprises). Short rows fill "".
+
+Teeth: 9 pure tests (md alignment/pipe-escape/newline-collapse/short-row/empty; json column-order, value escaping,
+short-row fill, empty-header, **and a JSONSerialization round-trip proving the emitted JSON parses + values
+survive**). Host gate green (5576 tests). Menu + clipboard = VM tail.
+
+Run tally: 14 features shipped to `review` this session (675 ×5: 862-865; markdown docs-tools 866/867/869; data
+868/870; audio 533/534; settings 358) + 853/575 validated. The clean consumer-feature vein keeps yielding when
+probed; standing unblocks for the pile remain a VM pass + 343/470.
+
 ## LOG 2026-06-14 — Lint Markdown shipped (TSK-869, 0c7f8cf, → review) + reassessed the pool
 
 Reassessment firing (per last log's note). Verified more of the "drained?" claim by checking items I'd dismissed:
