@@ -1,5 +1,28 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-727 slice 2 (palette : go-to-line, review-ready) + TSK-847 measured & PARKED
+
+Fresh firing. No owner activity / no new app regression. Drained from WORK_QUEUE + measured a build-perf item.
+
+- **TSK-847 [build-perf] — MEASURED then PARKED (owner decision).** Bumping the headless gate to `--num-workers 18`
+  IS ~12% faster (test phase 71.1s→62.4s on a 12-core host, shared build) but went RED: `FoldBenchTests`'
+  250ms wall-clock assert blew to 330ms under the heavier CPU contention (sentinel confirmed a real failure, not
+  a tier violation). The parallel host gate has MANY tight single-thread wall-clock benches (FoldBench 250ms + a
+  5ms warm assert, HotPathPerfRegression 5/10/50ms, …) that oversubscription destabilizes — CLAUDE.md already
+  flags them as load-flaky. So the naive bump trades 12% for a flakier gate (net-negative). The fix is a
+  coverage/architecture call (where do single-thread throughput benches belong under an oversubscribed gate?),
+  so I `task_park`ed 847 with the measurement + 3 framed options (A: isolate benches into a serial/dedicated lane;
+  B: relax the load-sensitive ceilings keeping cliff-guard + printed timing; C: stay at 12). No code changed —
+  measure-don't-guess prevented shipping a flakier gate.
+
+- **TSK-727 [epic] slice 2 @ `283d894`** — made last firing's `GotoQueryParser` LIVE: the command palette now
+  routes through the unified classifier (ad-hoc `hasPrefix(">")` replaced) and surfaces the **`:` go-to-line**
+  operator — `:42` shows a go-to-line hint and Return jumps via `model.scrollSource(toLine:)`. Added host-tested
+  `GotoQuery.submitAction` (`:N`→goToLine, bare-colon/`:abc`/`:0`→none, `>`→runCommand, files/@/#→openFile) so the
+  view's submit dispatch is pinned in ViewerCore, not re-derived in the View. 21 host tests (parser + routing) +
+  teeth; headless gate green; CHANGELOG entry added. The palette's line-mode VISUAL/interaction is the VM render
+  tail; `@`/`#` are parsed but their result UIs are future slices. Epic stays `progress`.
+
 ## LOG 2026-06-14 — TSK-727 slice 1 (GotoQueryParser, progress) + a thin-host-pool signal for the owner
 
 Fresh firing. No owner activity, no new app regression (the `bug`-query pool is build-perf/test-infra only). Drained

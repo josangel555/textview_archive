@@ -110,7 +110,7 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
 - [~] **TSK-705** — Snippets
       `[epic: slices 1-5 @ 667f8ba/8de8b2c/08d4e28/9393706, review]` — parser + built-ins + Insert command + user JSON store + tab-stop navigation MODEL (SnippetSession). MODEL LAYER COMPLETE + host-tested (parse→insert→store→navigate). Remaining = pure render/VM: CM6 Tab-key wiring (apply SnippetSession) + management UI. Still `[~]`.
 - [~] **TSK-727** — Unified "Goto Anything" (one box, @/: operators)
-      `[epic: slice 1 @ a4022b9, progress]` — pure `GotoQueryParser` model (ViewerCore): classifies the palette input by leading operator — bare→files, `>`→command (existing), `@`→symbol, `:`→line[:col], `#`→text — with `:line:col` parsing. 17 host tests + teeth; gate green. Remaining (render/VM): wire CommandPaletteView to consume it + surface the new modes (symbol list / go-to-line / in-file text).
+      `[epic: slices 1-2 @ a4022b9/283d894, progress]` — slice 1: pure `GotoQueryParser` (ViewerCore) classifies the input by leading operator (`>`/`@`/`:`/`#`/bare) + `:line:col` parsing. slice 2: palette CONSUMES it (ad-hoc `>` detection replaced) + surfaces the **`:` go-to-line** operator (`:42`→hint→Return→`scrollSource(toLine:)`) via host-tested `GotoQuery.submitAction`. 21 host tests + teeth; gate green. Remaining (render/VM): `@` symbol-jump + `#` in-file-text result UIs (parsed, not yet surfaced).
 - [ ] **TSK-677** — Unify search types (Global search / Recents / Command search)
 
 ## D. Bigger features / epics (slice them; P0–P2 first)
