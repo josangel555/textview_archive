@@ -1,5 +1,23 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-382 triaged (DocumentModel memory: no host-visible leak; needs a VM profile)
+
+Autonomous tick. Rather than re-HOLD, investigated the one remaining non-render host-candidate, **TSK-382**
+(squeeze DocumentModel memory), for a concrete leak. Finding (now on the ticket, advanced reported→triaged):
+- Heavy per-tab caches (highlightCaches, renderedHTMLCache+order, hostedViews, lspDiagnostics,
+  htmlJavaScriptOptIn) are ALL dropped on close via the central `purgeCaches(forURL:tabID:)` that every close
+  path calls. `hexDirtyBytes` (large) is cleaned on `.discard`/`.save`, and a tab holding it is always `isDirty`
+  (writer pairs stash+setDirty; clearing dirty removes bytes at :3158) → every hex-dirty close cleans it. **No
+  current leak.** The only unbounded URL-keyed dicts (preview/rendered scroll memory) are tiny + intentional.
+- So 382 has **no host-visible structural win**; a real squeeze needs a **VM memory-profile** (perf harness is
+  VM-only; measure-don't-guess) to find the actual large consumers. Triaged as such. (Considered centralizing
+  the scattered `.discard`-gated hexDirtyBytes cleanup into purgeCaches as defensive DRY — but no current leak,
+  so deferred as non-bug churn rather than manufactured.)
+
+Genuine triage progress (the lane goal: determine what it needs) — not a HOLD, not marginal churn. Broader
+strategic state unchanged from the logs below (host-actionable feature/fix vein exhausted; owner input / a fresh
+rust-core session / the VM lane are the high-value moves). No code this firing — correctly so: no real bug.
+
 ## LOG 2026-06-14 — documented HOLD (§5): host-actionable pool confirmed exhausted across ALL lanes
 
 Autonomous tick. Checked the one untapped fallback lane — the **fixed-lane validation drain (rule 1.5)** — and

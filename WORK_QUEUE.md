@@ -89,7 +89,8 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
 - [ ] **TSK-358** — Absolute content font-size picker in settings (today only the zoom multiplier) + window-size control
 - [x] **TSK-360** — Source-view line-age coloring (git-blame DarkBlue→LightBlue heatmap) `[VM, CM6-render]`
       `[review 933737b]` — pure BlameHeatmap (timestamps→dark/light-blue gradient, normalized over the file's history) tints the blame gutter via an additive CMGutterMarker.color + a small CM6 toDOM background. Model/feeder/encode host-tested; on-screen tint = VM render tail.
-- [ ] **TSK-382** — Squeeze DocumentModel memory footprint to bare bones
+- [~] **TSK-382** — Squeeze DocumentModel memory footprint to bare bones
+      `[triaged — needs VM profile]` — investigated: NO host-visible structural leak (heavy per-tab caches all dropped via the central purgeCaches; hexDirtyBytes cleaned on every dirty-close path; URL-scroll dicts tiny/intentional). A real squeeze needs a VM memory-profile to find the actual large consumers (measure-don't-guess) — VM-gated, not a host structural fix.
 
 ## C. Medium features
 
