@@ -1623,6 +1623,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             title: "Keyboard Shortcuts",
             action: #selector(showKeyboardShortcuts(_:)),
             keyEquivalent: ""))
+        // TSK-696 — install the `textview` command-line launcher on PATH.
+        helpMenu.addItem(NSMenuItem(
+            title: "Install '\(CLILauncher.commandName)' Command…",
+            action: #selector(installCLITool(_:)),
+            keyEquivalent: ""))
         helpMenuItem.submenu = helpMenu
         NSApp.helpMenu = helpMenu
 
@@ -2071,6 +2076,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         keyboardShortcutsWindow = win
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Install the `textview` command-line launcher (TSK-696). Prefers
+    /// `/usr/local/bin` (on the default PATH); if that isn't writable, falls
+    /// back to a per-user dir and tells the user the one PATH step. The wrapper
+    /// just `open -a`s this bundle, so files route through `application(_:open:)`.
+    @objc func installCLITool(_ sender: Any?) {
+        let appPath = Bundle.main.bundlePath
+        let alert = NSAlert()
+        do {
+            let preferred = CLILauncher.preferredBinDir
+            if FileManager.default.isWritableFile(atPath: preferred.path) {
+                let dest = try CLILauncher.install(appPath: appPath, into: preferred)
+                alert.messageText = "Command-Line Tool Installed"
+                alert.informativeText = "Installed ‘\(CLILauncher.commandName)’ at \(dest.path).\n\n"
+                    + "Run ‘\(CLILauncher.commandName) <file>’ from a terminal to open files in TextView."
+            } else {
+                let fallback = CLILauncher.fallbackBinDir()
+                let dest = try CLILauncher.installCreatingDir(appPath: appPath, into: fallback)
+                alert.messageText = "Command-Line Tool Installed"
+                alert.informativeText =
+                    "/usr/local/bin isn’t writable, so ‘\(CLILauncher.commandName)’ was installed at:\n"
+                    + "\(dest.path)\n\nAdd its folder to your PATH:\n"
+                    + "  export PATH=\"\(fallback.path):$PATH\"\n\n"
+                    + "…or copy it with admin rights:\n  sudo cp \(dest.path) /usr/local/bin/"
+            }
+        } catch {
+            alert.alertStyle = .warning
+            alert.messageText = "Couldn’t Install Command-Line Tool"
+            alert.informativeText = error.localizedDescription
+        }
+        alert.runModal()
     }
 
     /// Shared builder for the auxiliary tool windows. `isReleasedWhenClosed
