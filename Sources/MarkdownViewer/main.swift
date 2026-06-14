@@ -1703,6 +1703,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             mi.target = self
             editMenu.addItem(applyShortcut(id, to: mi))
         }
+        // TSK-350: align markdown pipe tables in the active editor (in place —
+        // markdown has no format VIEW lens by design). Enabled only for a
+        // markdown tab with an editor buffer (validateMenuItem).
+        let alignTablesItem = NSMenuItem(
+            title: "Align Markdown Tables",
+            action: #selector(alignMarkdownTables(_:)), keyEquivalent: "")
+        alignTablesItem.target = self
+        editMenu.addItem(alignTablesItem)
         editMenu.addItem(.separator())
         editMenu.addItem(findSubmenuItem)
         editMenuItem.submenu = editMenu
@@ -2078,6 +2086,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     @objc func lspCodeActions(_ sender: Any?) {
         model.showCodeActionPicker()
     }
+    /// TSK-350 — align markdown pipe tables in the active editor (in place).
+    @objc func alignMarkdownTables(_ sender: Any?) {
+        _ = model.formatMarkdownTablesInActiveEditor()
+    }
 
     /// Menu validation: gray-out items that don't apply to the current
     /// state. macOS calls this every time a menu opens (and for items
@@ -2144,6 +2156,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             // buffer, so they're editor-mode-only — gray out elsewhere.
             return hasTab && model.currentViewMode == .editor
                 && CodeMirrorEditorRegistry.shared.current() != nil
+        case #selector(alignMarkdownTables(_:)):
+            // TSK-350: only for a markdown tab with a live editor buffer.
+            return model.canAlignMarkdownTables
         case #selector(toggleBookmark(_:)):
             item.title = model.isCurrentTabBookmarked
                 ? "Remove Bookmark"

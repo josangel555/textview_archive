@@ -17,6 +17,10 @@ public enum Formatter {
         case xml
         case js
         case css
+        /// Markdown pipe-table alignment. NOT produced by `detect` (markdown has
+        /// no format view lens by design) — invoked explicitly by the in-place
+        /// "Align Markdown Tables" editor command (TSK-350).
+        case markdown
 
         /// Detect a supported format from a URL's path extension.
         ///
@@ -48,6 +52,12 @@ public enum Formatter {
                 // syntax) the plain-CSS lexer doesn't model, so a `;` or `{`
                 // inside a `//` comment would be mis-read.
                 return .css
+            // NB: `.md` is intentionally NOT detected here. `detect` gates the
+            // format VIEW LENS (`.formatted`) + the Format toggle, and markdown
+            // deliberately has no format mode (its lenses are Rendered/Source —
+            // FormatToggleTests). Markdown table alignment (`.markdown` /
+            // `prettyPrintMarkdown`) is surfaced as an IN-PLACE editor command
+            // instead (TSK-350), so it never adds a `.formatted` lens.
             default:
                 return nil
             }
@@ -63,6 +73,7 @@ public enum Formatter {
         case .xml:  return prettyPrintXML(content)
         case .js:   return prettyPrintJS(content)
         case .css:  return prettyPrintCSS(content)
+        case .markdown: return prettyPrintMarkdown(content)
         }
     }
 
@@ -748,5 +759,176 @@ public enum Formatter {
             emitCode(c); i += 1
         }
         return String(out)
+    }
+
+    // MARK: - Markdown (TSK-350)
+
+    /// Re-align GFM pipe tables in `content`; everything else is returned
+    /// byte-for-byte. Conservative on purpose — markdown prose has no single
+    /// "correct" reflow, but a ragged pipe table is unambiguous to align:
+    ///
+    ///   - Only a header row immediately followed by a valid delimiter row
+    ///     (`---`, `:--`, `:-:`, `--:`) starts a table; body rows continue
+    ///     until a non-pipe / blank line.
+    ///   - Column widths = the widest cell per column (min 3, so delimiters stay
+    ///     valid); per-column alignment is read from the delimiter colons and
+    ///     re-emitted (left `:--`, center `:-:`, right `--:`, none `---`).
+    ///   - Escaped pipes (`\|`) inside a cell are NOT separators.
+    ///   - Fenced code blocks (``` / ~~~) are skipped wholesale — a `|` inside a
+    ///     fence is code, not a table.
+    static func prettyPrintMarkdown(_ content: String) -> String {
+        var lines = content.components(separatedBy: "\n")
+        var i = 0
+        var inFence = false
+        var fence = ""
+        while i < lines.count {
+            let trimmed = lines[i].trimmingCharacters(in: .whitespaces)
+            if inFence {
+                if trimmed.hasPrefix(fence) { inFence = false }
+                i += 1; continue
+            }
+            if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") {
+                inFence = true
+                fence = String(trimmed.prefix(3))
+                i += 1; continue
+            }
+            // A table = a pipe row directly followed by a delimiter row.
+            if i + 1 < lines.count,
+               mdIsTableRow(lines[i]), mdIsDelimiterRow(lines[i + 1]) {
+                var end = i + 2
+                while end < lines.count, mdIsTableRow(lines[end]) { end += 1 }
+                let aligned = mdAlignTable(Array(lines[i..<end]))
+                lines.replaceSubrange(i..<end, with: aligned)
+                i += aligned.count
+                continue
+            }
+            i += 1
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// A line that carries at least one UNescaped `|` (a table-row candidate).
+    static func mdIsTableRow(_ line: String) -> Bool {
+        let t = line.trimmingCharacters(in: .whitespaces)
+        guard !t.isEmpty else { return false }
+        var prev: Character = " "
+        for c in t {
+            if c == "|" && prev != "\\" { return true }
+            prev = c
+        }
+        return false
+    }
+
+    /// Every cell matches `:?-+:?` (a GFM delimiter row).
+    static func mdIsDelimiterRow(_ line: String) -> Bool {
+        let cells = mdSplitCells(line)
+        guard !cells.isEmpty else { return false }
+        for cell in cells {
+            let c = cell.trimmingCharacters(in: .whitespaces)
+            guard !c.isEmpty else { return false }
+            var body = Substring(c)
+            if body.first == ":" { body = body.dropFirst() }
+            if body.last == ":" { body = body.dropLast() }
+            guard !body.isEmpty, body.allSatisfy({ $0 == "-" }) else { return false }
+        }
+        return true
+    }
+
+    private enum MDAlign { case none, left, center, right }
+
+    /// Split a pipe row into trimmed cells, honoring `\|` escapes and dropping
+    /// the empty cells produced by an optional leading/trailing `|`.
+    static func mdSplitCells(_ line: String) -> [String] {
+        let t = line.trimmingCharacters(in: .whitespaces)
+        var cells: [String] = []
+        var cur = ""
+        var prev: Character = " "
+        for c in t {
+            if c == "|" && prev != "\\" {
+                cells.append(cur)
+                cur = ""
+            } else {
+                cur.append(c)
+            }
+            prev = c
+        }
+        cells.append(cur)
+        // Drop the leading/trailing empties from outer pipes.
+        if let first = cells.first, first.trimmingCharacters(in: .whitespaces).isEmpty {
+            cells.removeFirst()
+        }
+        if let last = cells.last, last.trimmingCharacters(in: .whitespaces).isEmpty {
+            cells.removeLast()
+        }
+        return cells.map { $0.trimmingCharacters(in: .whitespaces) }
+    }
+
+    private static func mdAlign(of delimiterCell: String) -> MDAlign {
+        let c = delimiterCell.trimmingCharacters(in: .whitespaces)
+        let l = c.hasPrefix(":"), r = c.hasSuffix(":")
+        if l && r { return .center }
+        if r { return .right }
+        if l { return .left }
+        return .none
+    }
+
+    private static func mdPad(_ s: String, to width: Int, _ align: MDAlign) -> String {
+        let pad = max(0, width - s.count)
+        switch align {
+        case .right:  return String(repeating: " ", count: pad) + s
+        case .center: let l = pad / 2; return String(repeating: " ", count: l) + s
+                                         + String(repeating: " ", count: pad - l)
+        case .none, .left: return s + String(repeating: " ", count: pad)
+        }
+    }
+
+    private static func mdDelimiter(width: Int, _ align: MDAlign) -> String {
+        let w = max(width, 3)
+        switch align {
+        case .none:   return String(repeating: "-", count: w)
+        case .left:   return ":" + String(repeating: "-", count: w - 1)
+        case .right:  return String(repeating: "-", count: w - 1) + ":"
+        case .center: return ":" + String(repeating: "-", count: w - 2) + ":"
+        }
+    }
+
+    /// Re-emit a confirmed table block (header, delimiter, body…) with padded,
+    /// aligned columns. Column count is fixed by the header; short rows get
+    /// empty cells, long rows keep their overflow cells (GFM-ish, lossless).
+    static func mdAlignTable(_ block: [String]) -> [String] {
+        guard block.count >= 2 else { return block }
+        let header = mdSplitCells(block[0])
+        let delims = mdSplitCells(block[1])
+        let bodyRows = block[2...].map { mdSplitCells($0) }
+        let colCount = max(header.count, delims.count)
+
+        var aligns = [MDAlign](repeating: .none, count: colCount)
+        for (i, d) in delims.enumerated() where i < colCount { aligns[i] = mdAlign(of: d) }
+
+        // Column widths: widest content cell per column (header + body), min 3.
+        var widths = [Int](repeating: 3, count: colCount)
+        func measure(_ cells: [String]) {
+            for (i, c) in cells.enumerated() where i < colCount {
+                widths[i] = max(widths[i], c.count)
+            }
+        }
+        measure(header)
+        for r in bodyRows { measure(r) }
+
+        func render(_ cells: [String]) -> String {
+            var out = "|"
+            for col in 0..<colCount {
+                let cell = col < cells.count ? cells[col] : ""
+                out += " " + mdPad(cell, to: widths[col], aligns[col]) + " |"
+            }
+            return out
+        }
+
+        var result = [render(header)]
+        var delimRow = "|"
+        for col in 0..<colCount { delimRow += " " + mdDelimiter(width: widths[col], aligns[col]) + " |" }
+        result.append(delimRow)
+        for r in bodyRows { result.append(render(r)) }
+        return result
     }
 }

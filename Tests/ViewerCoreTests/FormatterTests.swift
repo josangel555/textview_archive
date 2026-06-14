@@ -311,6 +311,8 @@ final class FormatterTests: XCTestCase {
     }
 
     func test_detect_unsupported() {
+        // .md is intentionally NOT detect-formattable (no format view lens by
+        // design — TSK-350 surfaces md table alignment as an in-place command).
         XCTAssertNil(Formatter.SupportedFormat.detect(URL(fileURLWithPath: "a.md")))
         XCTAssertNil(Formatter.SupportedFormat.detect(URL(fileURLWithPath: "a.txt")))
         XCTAssertNil(Formatter.SupportedFormat.detect(URL(fileURLWithPath: "a.swift")))
@@ -326,5 +328,90 @@ final class FormatterTests: XCTestCase {
             "plain text", url: URL(fileURLWithPath: "a.txt"))
         XCTAssertFalse(ok2)
         XCTAssertEqual(out2, "plain text")
+    }
+
+    // MARK: - Markdown tables (TSK-350)
+    // The pure formatter (invoked by the in-place "Align Markdown Tables"
+    // command); md is deliberately NOT detect-wired, so it's called with
+    // `as: .markdown` explicitly.
+
+    func test_markdown_alignsRaggedPipeTable() {
+        let input = """
+        | Name | Age |
+        |---|---|
+        | Alice | 30 |
+        | Bob | 1 |
+        """
+        let expected = """
+        | Name  | Age |
+        | ----- | --- |
+        | Alice | 30  |
+        | Bob   | 1   |
+        """
+        XCTAssertEqual(Formatter.prettyPrint(input, as: .markdown), expected)
+    }
+
+    func test_markdown_honorsColumnAlignmentColons() {
+        let input = """
+        | L | C | R |
+        |:--|:-:|--:|
+        | a | b | c |
+        """
+        let expected = """
+        | L   |  C  |   R |
+        | :-- | :-: | --: |
+        | a   |  b  |   c |
+        """
+        XCTAssertEqual(Formatter.prettyPrint(input, as: .markdown), expected)
+    }
+
+    func test_markdown_skipsTablesInsideCodeFence() {
+        let input = """
+        ```
+        | not | a table |
+        |---|---|
+        ```
+        """
+        XCTAssertEqual(Formatter.prettyPrint(input, as: .markdown), input,
+                       "a pipe table inside a fence is code, not a table")
+    }
+
+    func test_markdown_respectsEscapedPipeInCell() {
+        let input = """
+        | A | B |
+        |---|---|
+        | x \\| y | z |
+        """
+        let out = Formatter.prettyPrint(input, as: .markdown)
+        XCTAssertTrue(out.contains("x \\| y"), "escaped pipe stays in-cell")
+        let headerPipes = out.split(separator: "\n").first!.filter { $0 == "|" }.count
+        XCTAssertEqual(headerPipes, 3, "still a 2-column table (3 outer pipes)")
+    }
+
+    func test_markdown_leavesProseUntouched() {
+        let input = "# Title\n\nSome *prose* with a | pipe but no table.\n\n- a\n- b\n"
+        XCTAssertEqual(Formatter.prettyPrint(input, as: .markdown), input,
+                       "a stray pipe with no delimiter row is not a table")
+    }
+
+    func test_markdown_shortRowPaddedToColumnCount() {
+        let input = """
+        | A | B | C |
+        |---|---|---|
+        | 1 |
+        """
+        let lastRow = Formatter.prettyPrint(input, as: .markdown).split(separator: "\n").last!
+        XCTAssertEqual(lastRow.filter { $0 == "|" }.count, 4,
+                       "a short row is padded to the header's column count")
+    }
+
+    func test_markdown_idempotent() {
+        let once = Formatter.prettyPrint("""
+        | a | bb | ccc |
+        |:-|:-:|-:|
+        | 1 | 2 | 3 |
+        """, as: .markdown)
+        XCTAssertEqual(Formatter.prettyPrint(once, as: .markdown), once,
+                       "aligning an already-aligned table is a no-op")
     }
 }
