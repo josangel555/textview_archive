@@ -9169,6 +9169,30 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +410 (2026-06-13 — TSK-678: Keyboard Shortcuts reference page (searchable, glyph-rendered); host-tested with teeth)
+
+Second feature this tick (owner: "focus on features"). TSK-678 `[WISH][P5][minor-feature]`.
+
+**Spike (Explore agent):** shortcuts are defined in 5 places, but there's ONE enumerable source of truth —
+`CommandRegistry.builtIn.commands` (80+ `CommandDescriptor`: id/title/category/`defaultShortcut`), a pure value, folded
+with the user's `~/.textview/keybinding.json` via `applying(overrides:)`. The Help menu + a retained-NSWindow opener
+(`showDiagnosticWindow`/`makeToolWindow`) are the established UI pattern.
+
+**Shipped (commit `27848fb`, headless gate green — 5153 tests, 0 fail, no heavy-tier leak):**
+- `Shortcut.glyphString` (ViewerCore) — pure macOS-glyph render (⌃⌥⇧⌘ HIG order + symbolic-key glyphs ⏎⎋⇥⌫←→↑↓␣⇞⇟);
+  `displayString` stays the config form.
+- `KeyboardShortcutsCatalog` (ViewerCore) — groups BOUND commands by `CommandCategory` (declaration order), excludes
+  Debug by default, exposes a pure `filtered(query)` (matches title OR keystroke via glyph+config searchKey).
+- `KeyboardShortcutsView` (ViewerUI) — searchable grouped list (pinned section headers), title left / glyph right.
+- main.swift: Help → **Keyboard Shortcuts** item + `showKeyboardShortcuts` opener (reads `model.commandRegistry` = the
+  effective registry incl. user overrides), retained window mirroring the tool-window pattern. No key equiv of its own
+  (kept out of the binding space).
+
+**Tests (host-safe):** ViewerCoreTests `ShortcutGlyphStringTests` (5 — HIG order, symbolic glyphs, parse→glyph) +
+`KeyboardShortcutsCatalogTests` (9 — bound-only, category order, debug-exclusion, title/keystroke filter, builtIn
+sanity). **TEETH:** flipped the glyph modifier order → 7 tests RED (⌘⇧R≠⇧⌘R + the glyph-search filter missed) → restored.
+The window RENDER is the only VM-tail bit (stock SwiftUI list); the catalog it shows is fully host-pinned. → review.
+
 ## LOG +409 (2026-06-13 — TSK-671: per-file-type default view mode (owner P0 feature); host-tested with teeth)
 
 **Owner steer this tick:** "focus on bug fixes, feature requests" (validation tail parked). The host-actionable
