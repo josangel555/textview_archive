@@ -80,6 +80,12 @@ and started executing the measured wins.
   compiled, unlike main.swift); the button's render/click is the VM tier, but ContentToolbarPaletteButtonTests pins
   the wired MODEL action (showPalette → isPalettePresented true; dismiss → false) so the palette-open path is
   host-regression-guarded. Lands at `review` for the button's on-screen-presence VM/owner glance. CHANGELOG updated.
+- **TSK-720 (`b4c4c20`, validated)** — Section A VS-Code-parity: bound the unbound `nav.showPalette` command to ⇧⌘P
+  (CommandRegistry+BuiltIn). HIG catch — deliberately did NOT bind plain ⌘P (it's the macOS Print chord, reserved
+  for TSK-638), unlike VS Code which overrides it; ⌘K still opens the palette. Host-validated with teeth via
+  `shortcutMap()` (the new test asserts ⇧⌘P routes to nav.showPalette, ⌘K still routes view.quickOpen, and ⌘P
+  stays NIL/free) — a collision would lose one entry in the map and redden. Reaches `validated` (registry routing
+  is pure logic; the keypress→open dispatch is the existing generic path). CHANGELOG updated.
 
 ## LOG 2026-06-10 (latest+128) — TSK-557 CSV heap-accounted cap: last SECURITY item of Phase 0
 

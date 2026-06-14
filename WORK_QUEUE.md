@@ -50,7 +50,8 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
 - [ ] **TSK-747** — New-tab: offer other types (blank Sheet, Image) `[VM]`
 - [ ] **TSK-762** — Wrap / special-char toggles on the details pane (toggle buttons, not checkboxes) `[VM]`
 - [ ] **TSK-707** — Command palette: double-Shift shortcut (IntelliJ-style)
-- [ ] **TSK-720** — Cmd+P / Cmd+Shift+P palette bindings (VS Code parity)
+- [x] **TSK-720** — Cmd+P / Cmd+Shift+P palette bindings (VS Code parity)
+      `[validated b4c4c20]` — ⇧⌘P → command palette (nav.showPalette), routing host-tested; ⌘P left for Print (Mac HIG, not VS Code's override).
 - [ ] **TSK-709** — Unify Cmd+K and Cmd+G (palette/goto)
 - [ ] **TSK-710** — Hover symbol info on identifiers (LSP textDocument/hover) `[VM]`
 - [ ] **TSK-708** — Preview definition (IntelliJ Quick Definition / Cmd+Y) `[VM]`
