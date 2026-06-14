@@ -147,4 +147,39 @@ public struct Shortcut: Sendable, Hashable {
     public var displayString: String {
         (modifiers.tokens() + [key]).joined(separator: "+")
     }
+
+    /// macOS menu-glyph rendering for a human-facing list — e.g. `⇧⌘R`,
+    /// `⌥⌘[`, `⌃⇥`, `⌘=`. Modifiers in Apple HIG order (⌃⌥⇧⌘); the base key
+    /// uppercased, with the symbolic keys mapped to their standard glyphs.
+    /// (`displayString` stays the config-file form; this is the Keyboard
+    /// Shortcuts help page form. TSK-678.) Pure — no AppKit.
+    public var glyphString: String {
+        var out = ""
+        if modifiers.contains(.control) { out += "⌃" }
+        if modifiers.contains(.option)  { out += "⌥" }
+        if modifiers.contains(.shift)   { out += "⇧" }
+        if modifiers.contains(.command) { out += "⌘" }
+        out += Self.keyGlyph(key)
+        return out
+    }
+
+    private static func keyGlyph(_ key: String) -> String {
+        switch key {
+        case "left":     return "←"
+        case "right":    return "→"
+        case "up":       return "↑"
+        case "down":     return "↓"
+        case "tab":      return "⇥"
+        case "space":    return "␣"
+        case "escape":   return "⎋"
+        case "return":   return "⏎"
+        case "delete":   return "⌫"
+        case "backslash": return "\\"
+        case "home":     return "↖"
+        case "end":      return "↘"
+        case "pageup":   return "⇞"
+        case "pagedown": return "⇟"
+        default:         return key.uppercased()
+        }
+    }
 }

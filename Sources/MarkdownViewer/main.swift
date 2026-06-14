@@ -29,6 +29,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     /// close/reopen.
     private var diagnosticWindow: NSWindow?
     private var instrumentationWindow: NSWindow?
+    /// The Keyboard Shortcuts help window (TSK-678). Retained like the tool
+    /// windows above so Help → Keyboard Shortcuts re-focuses rather than
+    /// spawning a duplicate.
+    private var keyboardShortcutsWindow: NSWindow?
     /// The process-wide observability ring buffer (WAVE 2b item 5).
     /// Installed into `Obs` at launch so emitters across ViewerCore land
     /// in it; the same instance backs the instrumentation tool window's
@@ -1611,6 +1615,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             keyEquivalent: "?"
         )
         helpMenu.addItem(helpItem)
+        // TSK-678 — Keyboard Shortcuts reference page (every bound shortcut,
+        // grouped + searchable). No key equivalent of its own (kept out of the
+        // registry's binding space); reachable from the Help menu.
+        helpMenu.addItem(NSMenuItem.separator())
+        helpMenu.addItem(NSMenuItem(
+            title: "Keyboard Shortcuts",
+            action: #selector(showKeyboardShortcuts(_:)),
+            keyEquivalent: ""))
         helpMenuItem.submenu = helpMenu
         NSApp.helpMenu = helpMenu
 
@@ -2036,6 +2048,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             autosave: "InstrumentationWindow", controller: host
         )
         instrumentationWindow = win
+        win.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Open (or re-focus) the Keyboard Shortcuts help window (TSK-678) — every
+    /// bound shortcut from the effective `CommandRegistry` (built-in defaults +
+    /// the user's `keybinding.json` overrides), grouped + searchable. Always
+    /// available (no diagnostic gate); it's a user-facing help page.
+    @objc func showKeyboardShortcuts(_ sender: Any?) {
+        if let win = keyboardShortcutsWindow {
+            win.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let host = NSHostingController(
+            rootView: KeyboardShortcutsView(registry: model.commandRegistry))
+        let win = makeToolWindow(
+            title: "Keyboard Shortcuts", contentSize: NSSize(width: 460, height: 600),
+            autosave: "KeyboardShortcutsWindow", controller: host
+        )
+        keyboardShortcutsWindow = win
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
