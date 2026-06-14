@@ -1481,6 +1481,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         viewMenu.addItem(zoomReset)
 
         viewMenu.addItem(.separator())
+        // TSK-675: word/character/line counts for the active text file.
+        let docStatsItem = NSMenuItem(
+            title: "Document Statistics",
+            action: #selector(showDocumentStatistics(_:)), keyEquivalent: "")
+        docStatsItem.target = self
+        viewMenu.addItem(docStatsItem)
+
+        viewMenu.addItem(.separator())
         let formatItem = NSMenuItem(
             title: "Pretty-Print",
             action: #selector(toggleFormat(_:)),
@@ -1737,6 +1745,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
         eolItem.submenu = eolMenu
         editMenu.addItem(eolItem)
+        // TSK-675: whitespace cleanup on the active file (line endings preserved).
+        let trimWSItem = NSMenuItem(title: "Trim Trailing Whitespace",
+                                    action: #selector(trimTrailingWhitespace(_:)), keyEquivalent: "")
+        trimWSItem.target = self
+        editMenu.addItem(trimWSItem)
+        let finalNLItem = NSMenuItem(title: "Ensure Final Newline",
+                                     action: #selector(ensureFinalNewline(_:)), keyEquivalent: "")
+        finalNLItem.target = self
+        editMenu.addItem(finalNLItem)
         // TSK-705: insert a built-in snippet at the caret. Tag = index into
         // SnippetLibrary.builtIns. Editor-mode only (validateMenuItem).
         let snippetItem = NSMenuItem(title: "Insert Snippet", action: nil, keyEquivalent: "")
@@ -2162,6 +2179,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         _ = model.convertActiveFileLineEnding(to: choices[tag].ending)
     }
 
+    /// TSK-675 — strip trailing spaces/tabs from every line of the active file.
+    @objc func trimTrailingWhitespace(_ sender: Any?) {
+        _ = model.trimTrailingWhitespaceInActiveFile()
+    }
+    /// TSK-675 — ensure the active file ends with a final newline.
+    @objc func ensureFinalNewline(_ sender: Any?) {
+        _ = model.ensureFinalNewlineInActiveFile()
+    }
+    /// TSK-675 — show word/character/line counts for the active file.
+    @objc func showDocumentStatistics(_ sender: Any?) {
+        guard let stats = model.activeDocumentStats else { return }
+        let alert = NSAlert()
+        alert.messageText = "Document Statistics"
+        alert.informativeText = """
+        Lines: \(stats.lines)
+        Words: \(stats.words)
+        Characters: \(stats.characters)
+        Characters (no whitespace): \(stats.charactersNoWhitespace)
+        """
+        alert.alertStyle = .informational
+        alert.runModal()
+    }
+
     /// TSK-705 — insert the snippet (built-in or user-defined) at the menu
     /// item's tag (index into `snippetStore.all`).
     @objc func insertSnippet(_ sender: Any?) {
@@ -2245,6 +2285,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case #selector(convertFileLineEnding(_:)):
             // TSK-675: any active text file.
             return model.canConvertActiveFileLineEnding
+        case #selector(trimTrailingWhitespace(_:)), #selector(ensureFinalNewline(_:)):
+            // TSK-675: any active text file.
+            return model.canCleanUpActiveFile
+        case #selector(showDocumentStatistics(_:)):
+            // TSK-675: any active text file.
+            return model.activeDocumentStats != nil
         case #selector(insertSnippet(_:)):
             // TSK-705: editor mode only (inserts at the caret).
             return model.canInsertSnippet

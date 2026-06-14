@@ -4628,6 +4628,55 @@ public final class DocumentModel: ObservableObject {
     /// True when "Convert Line Endings" can act — there's an active text file.
     public var canConvertActiveFileLineEnding: Bool { activeTextWithEncoding != nil }
 
+    /// Apply a pure text transform to the active file (preserving encoding +
+    /// folding in unsaved edits): transform → write-through → drop+reload. A
+    /// no-op (returns false) when there's no active text file or the transform
+    /// changes nothing. Shared by the whitespace-cleanup commands (TSK-675).
+    @discardableResult
+    private func applyTextTransformToActiveFile(_ transform: (String) -> String) -> Bool {
+        guard let ctx = activeTextWithEncoding else { return false }
+        let result = transform(ctx.text)
+        guard result != ctx.text else { return false }
+        do {
+            _ = try EditorWriter.save(result, to: ctx.url, encoding: ctx.encoding)
+        } catch {
+            Obs.shared.emit(.warn, "files",
+                            "Text cleanup failed: \(String(describing: error))")
+            return false
+        }
+        editor.discardEditorBuffer(forTabID: ctx.tabID)
+        reloadCurrentFile()
+        return true
+    }
+
+    /// True when the whitespace-cleanup commands can act — an active text file.
+    public var canCleanUpActiveFile: Bool { activeTextWithEncoding != nil }
+
+    /// TSK-675 — strip trailing spaces/tabs from every line (line endings + all
+    /// other content preserved).
+    @discardableResult
+    public func trimTrailingWhitespaceInActiveFile() -> Bool {
+        applyTextTransformToActiveFile(TextCleanup.trimTrailingWhitespace)
+    }
+
+    /// TSK-675 — ensure the file ends with exactly one newline, matching its own
+    /// dominant line-ending convention (LF for mixed/none).
+    @discardableResult
+    public func ensureFinalNewlineInActiveFile() -> Bool {
+        applyTextTransformToActiveFile { text in
+            let detected = LineEndingDetector.detect(in: text)
+            let ending: LineEnding = (detected == .crlf || detected == .cr) ? detected : .lf
+            return TextCleanup.ensureFinalNewline(text, using: ending)
+        }
+    }
+
+    /// TSK-675 — word/character/line counts for the active text file, or nil when
+    /// no text file is active (drives the Document Statistics command).
+    public var activeDocumentStats: DocumentStats? {
+        guard let text = activeFileText else { return nil }
+        return DocumentStats.compute(text)
+    }
+
     /// TSK-675 (robust plain-text editing) — normalize the active file's line
     /// endings to `target` (LF/CRLF/CR), preserving its encoding and any unsaved
     /// edits. Write-through then drop+reload (same mechanism as
