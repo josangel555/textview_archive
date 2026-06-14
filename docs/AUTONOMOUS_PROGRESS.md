@@ -1,5 +1,25 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — Check Links shipped (TSK-867, c2cabbb, → review)
+
+Third consecutive §2.5-safe markdown feature (TOC → HTML export → Check Links), all found by probing for
+consumer/output features rather than HOLDing. **View ▸ Check Links** reports broken LOCAL links/images in the
+active Markdown — a real docs-maintenance win (the owner writes a lot of markdown docs with cross-references).
+
+- **MarkdownLinks** (pure, ViewerCore): `extract` finds inline `[text](url)` + image `![alt](url)` links via a
+  line-walk that skips fenced code, handles nested brackets (link text) + nested parens (URL) + backslash escapes,
+  and drops the optional `"title"`. `kind(of:)` classifies external (scheme/`//`) / anchor (`#`) / relative.
+  `brokenLocalLinks(in:exists:)` returns relative links whose target (with any `#fragment` stripped) fails the
+  INJECTED `exists` closure — so the whole checker is host-testable with no real filesystem. A focused parser like
+  `MarkdownOutline` (not the ported markdown→HTML engine) → §2.5-safe.
+- **DocumentModel.checkLinksInActiveMarkdown()** resolves relative targets (percent-decoded) against the file's
+  directory + `FileManager.fileExists`; returns total + broken. `Edit`… actually `View ▸ Check Links` → NSAlert
+  ("All links OK / N of M broken" + the broken list with line numbers).
+
+v1 limits (documented): reference-style links + links inside inline-code spans aren't parsed. Teeth: 8 pure tests
+(extract incl. fenced-skip + nested + title-drop, kind classification, broken-relative-only via injected exists,
+#fragment strip). Host gate green (5553 tests). Menu + alert = VM tail. Filed standalone (TSK-867).
+
 ## LOG 2026-06-14 — Copy/Export as HTML shipped (TSK-866, 5c95a23, → review)
 
 Kept applying the "§2.5-safe CONSUMER features still exist" lesson — shipped a high-value, commonly-wanted
