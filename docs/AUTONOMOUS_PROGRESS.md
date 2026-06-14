@@ -1,5 +1,28 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — Copy/Export as HTML shipped (TSK-866, 5c95a23, → review)
+
+Kept applying the "§2.5-safe CONSUMER features still exist" lesson — shipped a high-value, commonly-wanted
+markdown export. **View ▸ Copy as HTML / Export as HTML…** renders the active Markdown to a STANDALONE HTML
+document.
+
+Key insight (gives it real host teeth): `HTMLRenderer.renderPage` (the in-app WKWebView page) carries a strict
+no-network **CSP** — correct for the sandboxed viewer, but it would BLOCK external images/fonts when the user
+opens the exported file in a browser. So export needs a DIFFERENT assembly: new pure `HtmlExport.standaloneDocument`
+(ViewerCore) wraps `HTMLRenderer.render(text)` (the body) + the bundled stylesheet + theme overrides into a
+complete `<!DOCTYPE html>` doc **without** the CSP. `DocumentModel.htmlExportForActiveMarkdown()` self-assembles
+(HTMLRenderer() + MarkdownStylesheet.load() + themedExtraStylesheet — no ContentView coupling). Copy → NSPasteboard;
+Export → NSSavePanel (default `<stem>.html`). Markdown files only.
+
+§2.5: a CONSUMER (calls the Rust-routed `render`, builds a new wrapper) — not an engine modification. Safe.
+
+Teeth: 4 pure `HtmlExportTests` — body/stylesheet/charset embedded, `<title>` HTML-escaped, **NO
+Content-Security-Policy** (pins the load-bearing export-vs-in-app distinction; a regression routing export through
+the CSP'd page fails), filename `.ext` swap. Host gate green (5545 tests). Menu + clipboard/save-panel = VM tail.
+Filed standalone (TSK-866) — it's a markdown-app export, not part of the 675 editor epic.
+
+This + last firing's TOC confirm the lesson: keep probing for §2.5-safe consumer/output features before any HOLD.
+
 ## LOG 2026-06-14 — TSK-675 slice 5: Insert Table of Contents (d07a815, → review) — CORRECTS the prior HOLD
 
 Re-challenged last firing's HOLD (the owner's bar is high) and found it was partly OVER-CAUTIOUS: I'd deferred a

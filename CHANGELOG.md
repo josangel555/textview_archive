@@ -16,6 +16,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **Bottom attributes bar uses toggle buttons** — Wrap, Special chars, Enable JS, and the preview Info toggle are now press-to-toggle buttons (matching the Find bar) instead of small checkboxes, so their on/off state reads at a glance.
 
 ### Added
+- **Copy / Export as HTML** — **View ▸ Copy as HTML** puts the rendered Markdown on the clipboard as a complete HTML document, and **View ▸ Export as HTML…** saves it to a `.html` file. The exported HTML is standalone (styles inlined) and — unlike the in-app preview — has no network lockdown, so it renders normally in a browser.
 - **Insert Table of Contents** — **Edit ▸ Insert Table of Contents** (Markdown files) generates a linked, nested TOC from the document's own headings and drops it in, wrapped in `<!-- toc -->` markers. Run it again after editing headings and it updates the same block in place (no duplicates); it's inserted below any YAML front-matter.
 - **Convert indentation** — **Edit ▸ Convert Indentation ▸ {Tabs → Spaces / Spaces → Tabs}** rewrites the leading indentation of every line to your chosen style (using the editor's indent width), leaving mid-line alignment and line endings untouched.
 - **Trim trailing whitespace / ensure final newline** — **Edit ▸ Trim Trailing Whitespace** strips trailing spaces and tabs from every line, and **Edit ▸ Ensure Final Newline** adds a single newline at the end if it's missing. Both keep the file's existing line-ending style and encoding.
