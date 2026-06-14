@@ -102,4 +102,55 @@ final class MetadataPanelTests: XCTestCase {
         let r = MetadataPanel.Row("Width", "1920")
         XCTAssertEqual(r.id, "Width")
     }
+
+    // MARK: - Deep filesystem metadata (TSK-348)
+
+    private func value(_ rows: [MetadataPanel.Row], _ label: String) -> String? {
+        rows.first(where: { $0.label == label })?.value
+    }
+
+    func test_posixModeString_octalAndSymbolic() {
+        XCTAssertEqual(MetadataPanel.posixModeString(0o644), "644 rw-r--r--")
+        XCTAssertEqual(MetadataPanel.posixModeString(0o755), "755 rwxr-xr-x")
+        XCTAssertEqual(MetadataPanel.posixModeString(0o600), "600 rw-------")
+        XCTAssertEqual(MetadataPanel.posixModeString(0o777), "777 rwxrwxrwx")
+        XCTAssertEqual(MetadataPanel.posixModeString(0o000), "0 ---------")
+    }
+
+    func test_posixModeString_masksHighBits() {
+        // setuid/type bits above 0o777 must not leak into the perm string.
+        XCTAssertEqual(MetadataPanel.posixModeString(0o104644), "644 rw-r--r--")
+    }
+
+    func test_filesystemRows_surfacesDeepFSMetadata() {
+        let url = URL(fileURLWithPath: "/tmp/x.txt")
+        let rows = MetadataPanel.filesystemRows(url: url, attrs: [
+            .posixPermissions: 0o640,
+            .ownerAccountName: "jos",
+            .groupOwnerAccountName: "staff",
+            .referenceCount: 2,
+            .systemFileNumber: 123456,
+        ])
+        XCTAssertEqual(value(rows, "Permissions"), "640 rw-r-----")
+        XCTAssertEqual(value(rows, "Owner"), "jos")
+        XCTAssertEqual(value(rows, "Group"), "staff")
+        XCTAssertEqual(value(rows, "Hard links"), "2")
+        XCTAssertEqual(value(rows, "Inode"), "123456")
+    }
+
+    func test_filesystemRows_omitsDeepFSMetadata_whenAbsentOrEmpty() {
+        let url = URL(fileURLWithPath: "/tmp/x.txt")
+        // Sparse dict + empty owner/group + single link → none of the deep
+        // rows should appear (no blank "Owner:" / no "Hard links: 1" noise).
+        let rows = MetadataPanel.filesystemRows(url: url, attrs: [
+            .ownerAccountName: "",
+            .groupOwnerAccountName: "",
+            .referenceCount: 1,
+        ])
+        XCTAssertNil(value(rows, "Permissions"))
+        XCTAssertNil(value(rows, "Owner"))
+        XCTAssertNil(value(rows, "Group"))
+        XCTAssertNil(value(rows, "Hard links"))
+        XCTAssertNil(value(rows, "Inode"))
+    }
 }

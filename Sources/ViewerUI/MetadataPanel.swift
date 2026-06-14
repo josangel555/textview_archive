@@ -244,10 +244,46 @@ struct MetadataPanel: View {
         if let created = attrs[.creationDate] as? Date {
             out.append(Row("Created", DisplayDateFormatter.string(from: created)))
         }
+        // Deep filesystem metadata (TSK-348) — all already present in the
+        // `attributesOfItem` dict; surfaced here. Each guarded so a sparse
+        // dict (or a synthetic test fixture) only emits what it carries.
+        if let mode = attrs[.posixPermissions] as? Int {
+            out.append(Row("Permissions", posixModeString(mode)))
+        }
+        if let owner = attrs[.ownerAccountName] as? String, !owner.isEmpty {
+            out.append(Row("Owner", owner))
+        }
+        if let group = attrs[.groupOwnerAccountName] as? String, !group.isEmpty {
+            out.append(Row("Group", group))
+        }
+        // Only when there's MORE than one hard link — "Hard links: 1" is the
+        // normal case and would be noise on every file.
+        if let links = attrs[.referenceCount] as? Int, links > 1 {
+            out.append(Row("Hard links", "\(links)"))
+        }
+        if let inode = attrs[.systemFileNumber] as? Int {
+            out.append(Row("Inode", "\(inode)"))
+        }
         if let utType = UTType(filenameExtension: url.pathExtension) {
             out.append(Row("UTI", utType.identifier))
         }
         return out
+    }
+
+    /// POSIX permission bits → `"644 rw-r--r--"` (octal + symbolic), the
+    /// `ls -l` style. Masks to the low 9 permission bits (type/setuid bits
+    /// dropped). Pure — host-tested.
+    internal static func posixModeString(_ mode: Int) -> String {
+        let perms = mode & 0o777
+        func rwx(_ bits: Int) -> String {
+            (bits & 0b100 != 0 ? "r" : "-")
+                + (bits & 0b010 != 0 ? "w" : "-")
+                + (bits & 0b001 != 0 ? "x" : "-")
+        }
+        let symbolic = rwx((perms >> 6) & 0b111)
+            + rwx((perms >> 3) & 0b111)
+            + rwx(perms & 0b111)
+        return "\(String(perms, radix: 8)) \(symbolic)"
     }
 
     // MARK: - Type-specific (lazy)
