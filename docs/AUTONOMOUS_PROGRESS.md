@@ -1,5 +1,34 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — rust-core lane characterized (last untapped lane); HOLD confirmed
+
+Autonomous tick. Tapped the one lane I'd only surveyed, not characterized — **rust-core** (host-validatable via
+`rust-core-gate.sh`; host has Rust). Ran `cargo clippy` + read the zombie `progress` items. Findings:
+- **TSK-564** ([S4][perf] Swift FFI boundary double-copies every response frame: MdvBuf→Array then
+  `Array(frame[4...])`). Real perf win, but it's frame-decode at the FFI boundary — correctness-critical;
+  a wrong slice corrupts every response. Fresh focused session, not a deep-session rush. (Zombie lease; reclaimable.)
+- **TSK-575** ([S3] clippy warn-tier saturation). `cargo clippy` shows ~48 pedantic warns (not 167); DENY tier
+  already clean. Its REAL value is auditing the **13 `cast_possible_truncation` (i64→usize)** sites for a genuine
+  truncation/overflow bug + a cast-category deny-ratchet (teeth). A prior re-triage found the headline cm_edit.rs
+  casts are GUARDED (validated in-range) — but a careful per-site audit of the other 12 for an *unguarded*
+  (attacker-reachable) cast is a security-correctness pass that warrants a fresh session, not a rushed pass. The
+  remaining ~33 single-instance style nits are marginal (§5: don't fill the gap with them). + 2 confirmed
+  false-positive extension checks (image.rs:77, serve/watch.rs:168).
+- **TSK-844** (CSV-arena perf) = the security heap-cap re-derivation (already flagged for a fresh session).
+  **TSK-573** (web palette) = [PORT][WEB] last-resort.
+
+**Conclusion:** every rust-core item is careful-fresh-session (564 / 575-cast-audit / 844) or marginal/
+last-resort (575-noise / 573). Combined with the earlier exhaustive survey (Swift queue drained, snippets model
+done, 382 needs a VM profile, security 309 deferred-by-design, fixed-lane VM-gated, reported = epics/render/
+foreign/owner-gated), **there is no clean, safe, high-value, host-validatable unit appropriate for unsupervised
+deep-session execution.** Documented HOLD (SOP §5); main stays gate-green (`6ff2182`). No code — correctly: the
+only real-value rust-core work is correctness-critical and belongs in a fresh, focused session.
+
+**Recommendation to the owner:** the autonomous loop has genuinely drained the clean work; further 10-min firings
+now produce only triage-churn. Highest-value next steps are yours: (1) answer **343** (local-history default) /
+**358** (font×zoom); (2) take **rust-core 564 / 575-cast-audit / 844** in a fresh focused session; (3) clear the
+≈13-item `review` backlog + run **382**'s VM memory-profile on the VM lane. `HANDOFF.md` is current for any of these.
+
 ## LOG 2026-06-14 — TSK-382 triaged (DocumentModel memory: no host-visible leak; needs a VM profile)
 
 Autonomous tick. Rather than re-HOLD, investigated the one remaining non-render host-candidate, **TSK-382**
