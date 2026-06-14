@@ -4600,6 +4600,16 @@ public final class DocumentModel: ObservableObject {
     /// True when "Convert Encoding" can act — there's an active text file.
     public var canConvertActiveFileEncoding: Bool { activeTextForEncodingConvert != nil }
 
+    /// The active tab's current text — the editor buffer's live text if editing,
+    /// else the loaded-from-disk contents; nil when no text file is active.
+    /// Backs the palette's `#` in-file search (TSK-727).
+    public var activeFileText: String? {
+        guard let tab = tabs.selected else { return nil }
+        if let buf = editor.editorBuffers[tab.id] { return buf.text }
+        if case .loaded(let f) = tab.state { return f.contents }
+        return nil
+    }
+
     /// TSK-352 — re-save the active file's current text (including any unsaved
     /// edits) in `target` encoding, then reload so the app re-detects it.
     /// `EditorBuffer.encoding` is immutable, so we write-through then drop +

@@ -20,13 +20,15 @@ struct CommandPaletteView: View {
     @FocusState private var fieldFocused: Bool
 
     /// Unified palette routing (TSK-727): one classifier maps the leading
-    /// operator to a mode — `>` command, `:` go-to-line, bare → files. The
-    /// `@`/`#` operators are parsed but not yet surfaced (future slices).
+    /// operator to a mode — `>` command, `:` go-to-line, `#` in-file text
+    /// search, bare → files. (`@` symbol jump is the remaining slice.)
     private var parsed: GotoQuery { GotoQueryParser.parse(query) }
     /// `true` when the user is in command mode (query starts with `>`).
     private var isCommandMode: Bool { parsed.mode == .command }
     /// `true` when the user is entering a `:line[:col]` jump.
     private var isLineMode: Bool { parsed.mode == .line }
+    /// `true` when the user is searching the active file's text (`#term`).
+    private var isInFileSearchMode: Bool { parsed.mode == .text }
     /// The command-mode query with the leading `>` stripped + trimmed.
     private var commandQuery: String {
         parsed.term.trimmingCharacters(in: .whitespaces)
@@ -40,7 +42,7 @@ struct CommandPaletteView: View {
             HStack(spacing: 8) {
                 Image(systemName: paletteIcon)
                     .foregroundStyle(.secondary)
-                TextField("Search recent files… (› commands · : line)", text: $query)
+                TextField("Search recent files… (› commands · : line · # in file)", text: $query)
                     .textFieldStyle(.plain)
                     .font(.system(size: 16))
                     .focused($fieldFocused)
@@ -65,6 +67,8 @@ struct CommandPaletteView: View {
                 commandList
             } else if isLineMode {
                 lineModeHint
+            } else if isInFileSearchMode {
+                inFileSearchHint
             } else if filtered.isEmpty {
                 emptyState
             } else {
@@ -111,14 +115,13 @@ struct CommandPaletteView: View {
                 }
             }
             // Keyboard-shortcut hint footer (U-tier).
-            if isLineMode ? (parsed.line != nil)
-                : (isCommandMode ? !filteredCommands.isEmpty : !filtered.isEmpty) {
+            if footerActionable {
                 Divider()
                 HStack(spacing: 12) {
-                    if !isLineMode {
+                    if !isLineMode && !isInFileSearchMode {
                         Text("↑↓ navigate").font(.caption2).foregroundStyle(.secondary)
                     }
-                    Text(isLineMode ? "↵ go to line" : (isCommandMode ? "↵ run" : "↵ open"))
+                    Text(footerActionLabel)
                         .font(.caption2).foregroundStyle(.secondary)
                     Text("esc cancel").font(.caption2).foregroundStyle(.secondary)
                     Spacer()
@@ -157,6 +160,10 @@ struct CommandPaletteView: View {
     /// changes (rare).
     @State private var bookmarkURLSet: Set<URL> = []
 
+    /// In-file (`#`) search matches for the active file (TSK-727). Drives the
+    /// hint count + the Return-jumps-to-first-match action.
+    @State private var inFileMatches: [InFileMatch] = []
+
     /// Show bookmarks at the top of the palette (in store order),
     /// followed by recents that aren't already shown as bookmarks. The
     /// fuzzy filter applies to both. PaletteRow renders the
@@ -175,13 +182,38 @@ struct CommandPaletteView: View {
     private var paletteIcon: String {
         if isCommandMode { return "command" }
         if isLineMode { return "number" }
+        if isInFileSearchMode { return "doc.text.magnifyingglass" }
         return "magnifyingglass"
+    }
+
+    /// Whether the footer has an actionable Return for the current mode.
+    private var footerActionable: Bool {
+        if isLineMode { return parsed.line != nil }
+        if isInFileSearchMode { return !inFileMatches.isEmpty }
+        if isCommandMode { return !filteredCommands.isEmpty }
+        return !filtered.isEmpty
+    }
+
+    private var footerActionLabel: String {
+        if isLineMode { return "↵ go to line" }
+        if isInFileSearchMode { return "↵ jump to match" }
+        if isCommandMode { return "↵ run" }
+        return "↵ open"
     }
 
     /// Dispatch the parsed query's submit action (TSK-727). The routing rules
     /// (`GotoQuery.submitAction`) are host-tested in ViewerCore; this is only
     /// the thin view-side dispatch into the model.
     private func submit() {
+        // In-file search (`#`) jumps to the first match (the parser's
+        // submitAction can't compute matches — it has no file text).
+        if isInFileSearchMode {
+            if let first = inFileMatches.first {
+                model.scrollSource(toLine: first.lineNumber)
+            }
+            model.dismissPalette()
+            return
+        }
         switch parsed.submitAction {
         case .goToLine(let line):
             model.scrollSource(toLine: line)
@@ -210,11 +242,37 @@ struct CommandPaletteView: View {
         .frame(maxWidth: .infinity)
     }
 
+    @ViewBuilder private var inFileSearchHint: some View {
+        VStack(spacing: 6) {
+            Spacer().frame(height: 24)
+            Image(systemName: "doc.text.magnifyingglass")
+                .font(.system(size: 22)).foregroundStyle(.secondary)
+            if parsed.term.trimmingCharacters(in: .whitespaces).isEmpty {
+                Text("Search this file…").foregroundStyle(.secondary).font(.callout)
+            } else if let first = inFileMatches.first {
+                Text("\(inFileMatches.count) match\(inFileMatches.count == 1 ? "" : "es") — ↵ goes to line \(first.lineNumber)")
+                    .font(.callout)
+            } else {
+                Text("No matches in this file").foregroundStyle(.secondary).font(.callout)
+            }
+            Spacer().frame(height: 24)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     private func recomputeFiltered() {
-        if isLineMode {
+        if isInFileSearchMode {
+            // In-file (`#`) search over the active file's text — no file/command
+            // list; the hint shows the count + the first match's line.
+            inFileMatches = InFileSearch.matches(
+                in: model.activeFileText ?? "", query: parsed.term)
+            filtered = []
+            filteredCommands = []
+        } else if isLineMode {
             // Line mode shows a single "go to line" hint — no list to filter.
             filtered = []
             filteredCommands = []
+            inFileMatches = []
         } else if isCommandMode {
             // Command mode (UX-M / #232): list EVERY registered command,
             // fuzzy-filtered on the post-`>` query. Empty query lists all.
@@ -224,11 +282,13 @@ struct CommandPaletteView: View {
                 model.commandRegistry.commands, query: commandQuery
             ) { $0.title }
             filtered = []
+            inFileMatches = []
         } else {
             filtered = RustFuzzyAdapter.filterWithMatches(merged(), query: query) {
                 $0.displayName
             }
             filteredCommands = []
+            inFileMatches = []
         }
     }
 
