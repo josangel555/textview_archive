@@ -9169,6 +9169,27 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +417 (2026-06-13 — TSK-807 slice 3: audio Title/Artist/Album/Year tags; closes the file-info gap set → review)
+
+Autonomous tick. Considered the high-value architectural pick (TSK-583 CoreRuntime/DocId registry) but: TSK-541 (the urgent
+free-vs-call UB) is ALREADY validated, so 583's safety urgency is gone — it's now an invasive FFI refactor whose payoff
+(unblocking 543) is migration-decision-gated. Per last tick's flag, that's a deliberate multi-tick + owner-aware effort,
+NOT a rushed solo slice. So instead closed the in-flight TSK-807 with its last gap.
+
+**Shipped TSK-807 slice 3 (commit `d26aa26`, headless gate green — 5202 tests, 0 fail, no heavy-tier leak):** audio common
+tags. New pure `AudioMetadataRows` (ViewerCore) maps AVMetadata common keys → ordered Title/Artist/Album/Year rows (empties
+omitted, repeated-key first-wins, creationDate → 4-digit year); `MetadataPanel.avMetadata` extracts the common-metadata
+pairs (AVAsset, off-main) and feeds it. Music files now show their tags alongside duration/sample-rate/channels.
+
+**Tests (host-safe):** ViewerCoreTests `AudioMetadataRowsTests` (6 — key→label mapping in fixed order, empty/nil/unknown-key
+omission, creationDate→year, repeated-key first-wins, empty input, yearOnly helper). **TEETH:** neutered the year extraction
+→ 2 year tests RED → restored. The AVAsset read is the un-host-tested boundary (same as the existing AV stat extractors);
+the row-building logic is host-pinned.
+
+**TSK-807 now COMPLETE across the gap set:** image (EXIF/TIFF, pre-existing), audio (stats + NEW tags), video (stats),
+PDF (pages/title/author), SQLite (slice 1, +413), archive (slice 2, +415), audio tags (slice 3, +417). Binary→HEX-only,
+text→source-view (no panel). → review (the panel render is the VM-tail; all extractors' pure logic is host-tested).
+
 ## LOG +416 (2026-06-13 — diagnosis + hygiene tick: TSK-543 architectural blocker diagnosed; TSK-672 (Git P1) dismissed already-built)
 
 No code shipped this tick — an honest diagnosis + board-hygiene firing (the safe single-tick pool has thinned; the
