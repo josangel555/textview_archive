@@ -55,7 +55,8 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
       `[review 5ed9d51]` — NewFileType (txt/md/csv/json) + typed New File submenus (sidebar + File menu); model+mapping host-tested, menu render = VM gate. Blank-image deferred (needs format/size dialog).
 - [x] **TSK-762** — Wrap / special-char toggles on the details pane (toggle buttons, not checkboxes) `[VM]`
       `[review a1dadb5]` — all 4 BottomAttributesBar toggles → .toggleStyle(.button); pure-visual, VM/owner glance.
-- [ ] **TSK-707** — Command palette: double-Shift shortcut (IntelliJ-style)
+- [x] **TSK-707** — Command palette: double-Shift shortcut (IntelliJ-style)
+      `[review da10ae9]` — pure `DoubleTapModifierDetector` (ViewerCore, 10 host tests) + flag→event classifier (`DoubleShiftMonitor.detectorEvent`, 8 host tests) + a `flagsChanged` NSEvent monitor mounted app-wide in ContentView → `model.showPalette()`. The otherKey-reset rule stops typing-capitals from firing. Live gesture firing = VM/owner glance.
 - [x] **TSK-720** — Cmd+P / Cmd+Shift+P palette bindings (VS Code parity)
       `[validated b4c4c20]` — ⇧⌘P → command palette (nav.showPalette), routing host-tested; ⌘P left for Print (Mac HIG, not VS Code's override).
 - [~] **TSK-709** — Unify Cmd+K and Cmd+G (palette/goto)

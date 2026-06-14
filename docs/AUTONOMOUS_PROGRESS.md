@@ -1,5 +1,22 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-707 double-Shift → command palette (2nd item this firing, review)
+
+Second item this firing (owner velocity ask: don't stop at one when host-buildable work remains). Shipped the
+IntelliJ-style **double-tap Shift opens the command palette** (Section-A, the last clean host-buildable A item).
+- **Split for host-coverage:** a pure `DoubleTapModifierDetector` (ViewerCore) — a state machine fed
+  `modifierDown/modifierUp/reset` transitions that fires on a clean down→up→down within an interval — plus a pure
+  `DoubleShiftMonitor.detectorEvent` classifier (ViewerUI) mapping raw `NSEvent.ModifierFlags` transitions to
+  detector events. The **reset-on-any-other-key** rule is the anti-false-fire guard: typing a capital (Shift+letter)
+  sees the letter as a `reset`, so it never reaches a second clean tap.
+- **Wiring:** an app-wide `flagsChanged` local NSEvent monitor (mirrors `SidebarKeyMonitor`'s representable +
+  pure-decision pattern), mounted via `.background(DoubleShiftMonitor…)` in ContentView, calls
+  `model.showPalette()` on fire. Observation-only (returns the event) so Shift still types normally.
+- **Host-tested (teeth):** 10 detector tests + 8 classifier tests (fire/no-fire, interval boundary, ⌘-chord +
+  caps-lock handling, triple-tap-fires-once, end-to-end stream). Headless gate green (5422 tests, no heavy tier).
+  Commit `da10ae9`. → `review` (blocker: live-validation) — the live gesture firing + palette appearing is the
+  VM/owner glance; only the pure logic is host-coverable.
+
 ## LOG 2026-06-14 — TSK-844 CSV-arena perf SHIPPED (parse straight into the arena; broke the "fresh-session-careful" HOLD)
 
 Autonomous tick. Treated this post-compaction session AS the "fresh focused session" the handoff wanted for the
