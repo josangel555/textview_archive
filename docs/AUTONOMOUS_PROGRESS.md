@@ -9169,6 +9169,28 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +418 (2026-06-13 — TSK-681: Export/Import Settings (portable JSON snapshot); host-tested with teeth)
+
+Autonomous tick. Re-weighed the architectural pick (TSK-583) — still a risky cross-language FFI ABI change with
+decision-gated payoff (541, the urgent UB, is already fixed), so held for a deliberate owner-aware effort. Picked the
+clean, safe, host-testable TSK-681 (canonical; its dup TSK-684 was already dismissed).
+
+**Shipped (commit `65437e3`, headless gate green — 5208 tests, 0 fail, no heavy-tier leak):** Export/Import Settings.
+New versioned `SettingsSnapshot` (Codable, all-optional fields) + `PreferencesStore.exportSettings()/applySettings()`
+capture the USER-facing prefs (zoom, wrap, font, theme, invisibles, indent-guides, hex-width, ffmpeg path, preview-meta,
+sidebar, per-type view defaults), EXCLUDING machine-specific state (window frame, last folder, sidebar width). The app
+menu gains Export/Import Settings… (NSSave/OpenPanel + JSON). An older/partial snapshot applies only the fields it
+carries; stale enum keys in viewModeDefaults drop on apply.
+
+**Tests (host-safe):** ViewerCoreTests `SettingsSnapshotTests` (6 — export captures prefs + version, JSON round-trip,
+cross-store apply, partial apply leaves absent fields untouched, stale-key drop, empty-viewModeDefaults omission).
+**TEETH:** neutered the zoom apply → 2 apply tests RED → restored. The menu render + live-resync are the residuals
+(imported prefs take effect on next open/relaunch — the snapshot core is host-pinned). → review.
+
+**Residual (noted on ticket):** the "~/.textview settings LOCATION" half (relocating persistence from UserDefaults to a
+file) is a separate, invasive migration — out of scope here (keybinding.json already lives at ~/.textview as the
+precedent). Import live-resync (push prefs into the running DocumentModel without relaunch) is a follow-up nicety.
+
 ## LOG +417 (2026-06-13 — TSK-807 slice 3: audio Title/Artist/Album/Year tags; closes the file-info gap set → review)
 
 Autonomous tick. Considered the high-value architectural pick (TSK-583 CoreRuntime/DocId registry) but: TSK-541 (the urgent
