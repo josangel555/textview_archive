@@ -150,6 +150,12 @@ public final class EditorCoordinator: ObservableObject {
     /// editor's fold gutter for that tab.
     @Published public internal(set) var editorFoldRangesByTab: [UUID: [CMFoldRange]] = [:]
 
+    /// Per-tab LINE-based fold regions (TSK-719 sticky scroll). Same producer
+    /// as `editorFoldRangesByTab` (`refreshEditorFolds`), kept alongside the
+    /// CM6-offset form because sticky scroll reasons in 1-based lines, not
+    /// UTF-16 offsets. Cleared on tab close / preview-slot reuse like the rest.
+    @Published public internal(set) var editorFoldRegionsByTab: [UUID: [FoldRegion]] = [:]
+
     // MARK: - Test seams
 
     /// Override the dirty-close NSAlert with a test-driven response.
@@ -225,6 +231,7 @@ public final class EditorCoordinator: ObservableObject {
         pendingEditorDiagnostics.removeValue(forKey: id)
         pendingEditorGutterMarkers.removeValue(forKey: id)
         editorFoldRangesByTab.removeValue(forKey: id)
+        editorFoldRegionsByTab.removeValue(forKey: id)
     }
 
     /// TSK-743: remember `id`'s current editor scroll/cursor under `url` (the
@@ -399,6 +406,15 @@ public final class EditorCoordinator: ObservableObject {
         guard tabsSnapshot().contains(where: { $0.id == id }) else { return }
         if editorFoldRangesByTab[id] != ranges {
             editorFoldRangesByTab[id] = ranges
+        }
+    }
+
+    /// TSK-719 — store the line-based fold regions for sticky scroll, kept in
+    /// step with `setEditorFoldRanges`. Empty array clears.
+    public func setEditorFoldRegions(_ regions: [FoldRegion], forTabID id: UUID) {
+        guard tabsSnapshot().contains(where: { $0.id == id }) else { return }
+        if editorFoldRegionsByTab[id] != regions {
+            editorFoldRegionsByTab[id] = regions
         }
     }
 

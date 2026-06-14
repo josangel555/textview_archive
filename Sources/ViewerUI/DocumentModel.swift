@@ -1440,6 +1440,7 @@ public final class DocumentModel: ObservableObject {
               let url = tab.url
         else {
             editorFoldsTask = nil
+            recomputeStickyScrollHeaders()  // TSK-719: clear when not in editor
             return
         }
         let tid = tab.id
@@ -1451,21 +1452,57 @@ public final class DocumentModel: ObservableObject {
         let text = editor.editorBuffer(forTabID: tid)?.text ?? Self.loadedText(of: tab)
         guard let text, !text.isEmpty else {
             editor.setEditorFoldRanges([], forTabID: tid)
+            editor.setEditorFoldRegions([], forTabID: tid)
+            recomputeStickyScrollHeaders()
             editorFoldsTask = nil
             return
         }
         editorFoldsTask = Task { [weak self] in
             // `computeFolds` runs the parse on a detached task internally;
             // do the (O(n) converter) mapping off-main too so the main
-            // actor only sees the final assignment.
-            let folds = await Task.detached(priority: .userInitiated) { () -> [CMFoldRange] in
+            // actor only sees the final assignment. Keep the line-based
+            // `regions` too — sticky scroll (TSK-719) reasons in lines.
+            let result = await Task.detached(priority: .userInitiated)
+                { () -> (regions: [FoldRegion], cm: [CMFoldRange]) in
                 let regions = await TreeSitterEngine.shared.computeFolds(text: text, language: lang)
-                return SyntaxFoldRangeMapping.cmFoldRanges(from: regions, documentText: text)
+                let cm = SyntaxFoldRangeMapping.cmFoldRanges(from: regions, documentText: text)
+                return (regions, cm)
             }.value
             if Task.isCancelled { return }
             guard let self, self.tabs.selected?.id == tid else { return }
-            self.editor.setEditorFoldRanges(folds, forTabID: tid)
+            self.editor.setEditorFoldRanges(result.cm, forTabID: tid)
+            self.editor.setEditorFoldRegions(result.regions, forTabID: tid)
+            self.recomputeStickyScrollHeaders()
         }
+    }
+
+    /// TSK-719 — the enclosing scope headers pinned at the top of the editor
+    /// viewport ("sticky scroll"), outermost → innermost. Recomputed (cheaply)
+    /// whenever the selected tab's scroll position or fold regions change.
+    /// Empty unless the selected tab is in `.editor` mode. The pinned bar that
+    /// renders this is the VM render tail; this published model is host-tested.
+    @Published public private(set) var stickyScrollHeaders: [StickyScrollHeaders.Header] = []
+
+    /// Recompute `stickyScrollHeaders` from the selected tab's fold regions, its
+    /// editor scroll top line, and its current buffer text. Cheap (a bounded
+    /// line scan for only the pinned lines); safe to call on every scroll tick.
+    public func recomputeStickyScrollHeaders() {
+        guard let tab = tabs.selected, tab.viewMode == .editor, let url = tab.url else {
+            if !stickyScrollHeaders.isEmpty { stickyScrollHeaders = [] }
+            return
+        }
+        let tid = tab.id
+        let regions = editor.editorFoldRegionsByTab[tid] ?? []
+        let top = editor.editorScrollByTab[tid]?.viewportFromLine ?? 1
+        let text = editor.editorBuffer(forTabID: tid)?.text ?? Self.loadedText(of: tab)
+        guard let text, !regions.isEmpty else {
+            _ = url  // (url kept for symmetry with refreshEditorFolds guards)
+            if !stickyScrollHeaders.isEmpty { stickyScrollHeaders = [] }
+            return
+        }
+        let headers = StickyScrollHeaders.headers(
+            foldRegions: regions, viewportTopLine: top, documentText: text)
+        if headers != stickyScrollHeaders { stickyScrollHeaders = headers }
     }
 
     /// The loaded-from-disk text of a tab, or nil if it isn't in the
@@ -2263,6 +2300,9 @@ public final class DocumentModel: ObservableObject {
 
     public func recordEditorScroll(_ pos: CMScrollPosition, forTabID id: UUID) {
         editor.recordEditorScroll(pos, forTabID: id)
+        // TSK-719: the pinned sticky-scroll headers depend on the top-visible
+        // line — refresh them when the selected tab scrolls.
+        if tabs.selected?.id == id { recomputeStickyScrollHeaders() }
     }
 
     /// Forwarder. See `EditorCoordinator.setEditorDiagnostics`.
