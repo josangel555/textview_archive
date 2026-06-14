@@ -9169,6 +9169,21 @@ CM6 render (466). Owner queue grows by the TSK-322 zoom-split decision.
   PASSED with zero non-bench failures. (Reinforces: never run two gates
   at once; the bench asserts are load-sensitive by design.)
 
+## LOG +407 (2026-06-13 — TSK-821 VM-lane coverage: PaneScrollRestoreWebViewTests → review; CHANGELOG discipline added)
+
+- **TSK-821 (rendered-markdown per-file scroll) → review (commit `6306505`, headless gate green).** Added
+  `PaneScrollRestoreWebViewTests` (#192-gated, wired into `test-in-vm.sh run_webview_tests` + `nightly-vm.yml`) — proves
+  the round-trip MECHANISM on our ACTUAL rendered page: scrollable + `scrollY` reflects a `scrollTo` (capture), reload →
+  top (the bug), `scrollTo({behavior:'instant'})` (the exact restore JS) re-applies the offset. Proven both ways on the
+  host (bare = self-skip; armed `MDV_RUN_WEBVIEW_TESTS=1` = real pass 0.74s, in-process offscreen WKWebView). Coverage now:
+  store host-tested with teeth + the JS round-trip (host-armed + VM lane). Residual (why review, not validated): the
+  `MarkdownRenderedView` view-bridge wiring can't be unit-driven (`NSViewRepresentable.Context` not constructible) — the
+  end-to-end file-switch→capture→return→visible-restore is the VM/owner-glance tail.
+- **Owner ask (prior turn): CHANGELOG.md** added (user-facing app changes only) + the keep-updated discipline in
+  `CLAUDE.md` (SOP) and `TASK_WORKFLOW.md` §4 (per-firing reminder). This tick's work is test-infra → no CHANGELOG entry.
+- **Handoff done** prior turn (`HANDOFF.md`, LESSONS/BACKLOG/memory updated). Host-actionable user-facing pool drained;
+  remaining = VM render/interaction tail (BACKLOG 2026-06-13) + parked TSK-598 perf re-feel.
+
 ## LOG +406 (2026-06-13 — TSK-822: gate the T5 pixel tier on MDV_VM_GUI_SESSION → validated; closes a VM-lane false-fail + a host footgun)
 
 - **TSK-822 (visual-regression suites false-fail in the non-GUI VM lane) → validated (commit `1bf47cb`, headless gate green).**
