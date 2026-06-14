@@ -31,7 +31,8 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
       `[validated e99ca14]` — positional `[start,len,kind]` array landed (kind stays String; integer-kind = deferred follow-up).
 - [x] **TSK-844** — CSV open: parse straight into the arena (skip the throwaway `Vec<Vec<String>>`; 140 ms open).
       `[validated 3d75f39]` — single CSV tokenizer now drives a `CsvSink` trait: `VecSink` keeps the wire DTO path, new `ArenaSink` writes cells straight into the arena buffer with a reused field scratch (no per-cell `String`, no second byte-copy). All caps stay in the shared tokenizer (byte-identical by construction); parity tests + teeth referee. rust-core gate green.
-- [ ] **TSK-842** — Files ≤64 MiB read + UTF-8-decode SYNC on main (softWarnBytes cliff) → off-main `[needs trace]`
+- [x] **TSK-842** — Files ≤64 MiB read + UTF-8-decode SYNC on main (softWarnBytes cliff) → off-main `[needs trace]`
+      `[validated a9103b3]` — measured: warm read+decode is fast (~8ms/64MB), so the real risk is a SYNC read on main of a COLD/iCloud-stubbed file (the repo is iCloud-hosted → a not-downloaded file blocks main on the download). Split the defer threshold from the isLargeReadOnly watermark: new `TextFileLoader.deferReadOffMainBytes` (default **4 MiB**, was the 64 MiB cliff) routes moderate+ files through the existing off-main path; small files stay instant-sync. Pure `shouldDeferOpen` routing seam host-tested + teeth.
 - [ ] **TSK-839** — Attribute + fix the 30–366 ms per-nav main-thread CoreAnimation commit stall (the REAL felt
       'nav slow' root; 598/591/266 fixed the model, not the compositor) `[Time-Profiler attribution first]`
 - [ ] **TSK-838** — Rendered-MD WebView: persistent page + DOM-patch instead of full `loadHTMLString` reload

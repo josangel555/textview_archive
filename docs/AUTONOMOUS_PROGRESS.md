@@ -1,5 +1,29 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-842 SHIPPED: off-main file read >4MiB (validated) + 543/826 ROI-triaged
+
+Kept the momentum (after 829). Scoped the perf pool, measured to avoid two false wins, and shipped a real one.
+
+- **TSK-842 [perf, Section 0, VALIDATED @ `a9103b3`]** — `openResolved` deferred the read+decode off-main only
+  above `softWarnBytes` (64 MiB), so files ≤64 MiB read SYNC on main. MEASURED warm read+decode is cheap (256KB
+  0.19ms → 64MB 8.17ms), so the premise of a decode stall is weak for warm reads — but a SYNC read on main of a
+  COLD or iCloud-stubbed file blocks the UI for the disk-read / cloud-DOWNLOAD (the repo lives on iCloud-synced
+  `~/Documents`). Split the defer threshold from the isLargeReadOnly watermark: new injectable
+  `TextFileLoader.deferReadOffMainBytes` (default **4 MiB**) routes moderate+ files through the EXISTING
+  identity-guarded off-main path; small files stay instant-sync (no `.loading` flash). Extracted
+  `DocumentModel.shouldDeferOpen` (pure routing seam). Host-tested (routing + teeth; the off-main path itself was
+  already covered by LargeFileOpenTests, updated to inject the new threshold); headless gate green. Self-validated
+  (routing+load correctness host-tested; felt no-freeze is by-construction + VM). CHANGELOG + WORK_QUEUE Section 0
+  checked off.
+- **TSK-543 [triaged-correction]** — the "cm_apply ships full doc per edit" FFI cost is NOT current: the rust
+  cm_apply path runs only behind the `.cmEdit` gate (DEFAULT-OFF); the live path is the Swift `CMEditApplier`
+  (port-target twin, bugfix-only §2.5). It's migration prep for after the TSK-649 flip; the OUT can be a
+  range-delta (bounded) but the IN-side full-`base` needs a STATEFUL rust cm-session (the big half). Deprioritized.
+- **TSK-826 [triaged-defer]** — eliminating the FFI receive-side `Array(UnsafeBufferPointer)` copy needs
+  generalizing `MsgPackReader` (`private let bytes: [UInt8]`, indexed/sliced throughout) to a pointer backing —
+  invasive generic refactor for a NEGLIGIBLE small-frame / niche once-per-big-CSV-open copy. Poor ROI; defer
+  unless a profile shows the receive copy on a hot path.
+
 ## LOG 2026-06-14 — TSK-829 SHIPPED: parallel cross-file search, 4.7× (validated) — broke the defer pattern
 
 Committed to building the SPEED win this firing (after 3 design/triage firings). Implemented the finalized design
