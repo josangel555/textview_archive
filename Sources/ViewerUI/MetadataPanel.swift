@@ -404,6 +404,11 @@ struct MetadataPanel: View {
                 if let frameRate = try? await video.load(.nominalFrameRate) {
                     out.append(Row("Frame rate", String(format: "%.2f fps", frameRate)))
                 }
+                // TSK-348: video codec from the format description's FourCC.
+                if let fds = try? await video.load(.formatDescriptions), let d = fds.first {
+                    out.append(Row("Video codec",
+                                   MediaCodecName.display(fourCC: CMFormatDescriptionGetMediaSubType(d))))
+                }
             }
             if let audio = tracks.first(where: { $0.mediaType == .audio }) {
                 if let formatDescs = try? await audio.load(.formatDescriptions),
@@ -415,6 +420,9 @@ struct MetadataPanel: View {
                     if let channels = asbd?.pointee.mChannelsPerFrame {
                         out.append(Row("Channels", "\(channels)"))
                     }
+                    // TSK-348: audio codec from the format description's FourCC.
+                    out.append(Row("Audio codec",
+                                   MediaCodecName.display(fourCC: CMFormatDescriptionGetMediaSubType(desc))))
                 }
             }
             // Common tags (Title / Artist / Album / Year) — TSK-807. AVMetadata's
@@ -450,21 +458,71 @@ struct MetadataPanel: View {
         }.value
     }
 
-    private static func pdfMetadata(url: URL) -> [Row] {
+    /// Extracted PDF metadata, decoupled from PDFKit so the row-building is
+    /// pure + host-testable (TSK-348). Empty/absent fields are `nil`.
+    struct PDFInfo: Equatable {
+        var pageCount: Int = 0
+        var title: String?
+        var author: String?
+        var subject: String?
+        var creator: String?
+        var producer: String?
+        var keywords: String?
+        var created: Date?
+        var modified: Date?
+        var isEncrypted: Bool = false
+        var pageSize: String?       // e.g. "612 × 792 pt" (page 1 media box)
+    }
+
+    nonisolated internal static func pdfMetadata(url: URL) -> [Row] {
         guard let doc = PDFDocument(url: url) else { return [] }
-        var out: [Row] = []
-        out.append(Row("Pages", "\(doc.pageCount)"))
+        var info = PDFInfo()
+        info.pageCount = doc.pageCount
+        info.isEncrypted = doc.isEncrypted
         if let attrs = doc.documentAttributes {
-            if let title = attrs[PDFDocumentAttribute.titleAttribute] as? String, !title.isEmpty {
-                out.append(Row("Title", title))
+            func str(_ key: PDFDocumentAttribute) -> String? {
+                guard let s = attrs[key] as? String, !s.isEmpty else { return nil }
+                return s
             }
-            if let author = attrs[PDFDocumentAttribute.authorAttribute] as? String, !author.isEmpty {
-                out.append(Row("Author", author))
+            info.title    = str(.titleAttribute)
+            info.author   = str(.authorAttribute)
+            info.subject  = str(.subjectAttribute)
+            info.creator  = str(.creatorAttribute)
+            info.producer = str(.producerAttribute)
+            // Keywords may be a single String or an array of strings.
+            if let kw = attrs[PDFDocumentAttribute.keywordsAttribute] as? String, !kw.isEmpty {
+                info.keywords = kw
+            } else if let arr = attrs[PDFDocumentAttribute.keywordsAttribute] as? [String],
+                      !arr.isEmpty {
+                info.keywords = arr.joined(separator: ", ")
             }
-            if let producer = attrs[PDFDocumentAttribute.producerAttribute] as? String {
-                out.append(Row("Producer", producer))
+            info.created  = attrs[PDFDocumentAttribute.creationDateAttribute] as? Date
+            info.modified = attrs[PDFDocumentAttribute.modificationDateAttribute] as? Date
+        }
+        if let page = doc.page(at: 0) {
+            let b = page.bounds(for: .mediaBox)
+            if b.width > 0, b.height > 0 {
+                info.pageSize = "\(Int(b.width.rounded())) × \(Int(b.height.rounded())) pt"
             }
         }
+        return pdfRows(info)
+    }
+
+    /// Pure mapping of `PDFInfo` → display rows (TSK-348). Page count always
+    /// shows; the rest are omitted when absent. Host-testable with a synthetic
+    /// `PDFInfo` (no PDFKit / file IO). `nonisolated` — called off-main.
+    nonisolated internal static func pdfRows(_ info: PDFInfo) -> [Row] {
+        var out: [Row] = [Row("Pages", "\(info.pageCount)")]
+        if let v = info.title    { out.append(Row("Title", v)) }
+        if let v = info.author   { out.append(Row("Author", v)) }
+        if let v = info.subject  { out.append(Row("Subject", v)) }
+        if let v = info.keywords { out.append(Row("Keywords", v)) }
+        if let v = info.pageSize { out.append(Row("Page Size", v)) }
+        if let d = info.created  { out.append(Row("Created", DisplayDateFormatter.string(from: d))) }
+        if let d = info.modified { out.append(Row("Modified", DisplayDateFormatter.string(from: d))) }
+        if let v = info.creator  { out.append(Row("Creator", v)) }
+        if let v = info.producer { out.append(Row("Producer", v)) }
+        if info.isEncrypted { out.append(Row("Encrypted", "Yes")) }
         return out
     }
 

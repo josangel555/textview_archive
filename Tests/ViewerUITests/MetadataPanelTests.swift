@@ -1,5 +1,6 @@
 import XCTest
 import ImageIO
+import CoreGraphics
 @testable import ViewerUI
 
 /// Pure-logic coverage for `MetadataPanel` row builders. Batch B
@@ -220,5 +221,65 @@ final class MetadataPanelTests: XCTestCase {
 
     func test_gpsCoordinate_nilWhenLongitudeMissing() {
         XCTAssertNil(MetadataPanel.gpsCoordinate([kCGImagePropertyGPSLatitude: 1.0]))
+    }
+
+    // MARK: - PDF metadata (TSK-348)
+
+    func test_pdfRows_fullInfo_orderedAndLabeled() {
+        let created = Date(timeIntervalSince1970: 1_700_000_000)
+        var info = MetadataPanel.PDFInfo()
+        info.pageCount = 12
+        info.title = "Spec"; info.author = "Jos"; info.subject = "Design"
+        info.creator = "TextView"; info.producer = "PDFKit"; info.keywords = "a, b"
+        info.created = created; info.pageSize = "612 × 792 pt"; info.isEncrypted = true
+        let rows = MetadataPanel.pdfRows(info)
+        XCTAssertEqual(value(rows, "Pages"), "12")
+        XCTAssertEqual(value(rows, "Title"), "Spec")
+        XCTAssertEqual(value(rows, "Author"), "Jos")
+        XCTAssertEqual(value(rows, "Subject"), "Design")
+        XCTAssertEqual(value(rows, "Keywords"), "a, b")
+        XCTAssertEqual(value(rows, "Page Size"), "612 × 792 pt")
+        XCTAssertEqual(value(rows, "Creator"), "TextView")
+        XCTAssertEqual(value(rows, "Producer"), "PDFKit")
+        XCTAssertEqual(value(rows, "Encrypted"), "Yes")
+        XCTAssertNotNil(value(rows, "Created"))
+        // Pages is always the first row.
+        XCTAssertEqual(rows.first?.label, "Pages")
+    }
+
+    func test_pdfRows_minimal_onlyPages() {
+        var info = MetadataPanel.PDFInfo()
+        info.pageCount = 3
+        let rows = MetadataPanel.pdfRows(info)
+        XCTAssertEqual(rows.map(\.label), ["Pages"], "absent fields are omitted")
+    }
+
+    func test_pdfRows_notEncrypted_omitsEncryptedRow() {
+        var info = MetadataPanel.PDFInfo()
+        info.pageCount = 1
+        info.isEncrypted = false
+        XCTAssertNil(value(MetadataPanel.pdfRows(info), "Encrypted"))
+    }
+
+    /// End-to-end extraction: generate a real PDF (CoreGraphics PDF context with
+    /// Title/Author + a 200×300 page) and assert pdfMetadata reads it back.
+    func test_pdfMetadata_extractsFromRealPDF() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pdfmeta-\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        var box = CGRect(x: 0, y: 0, width: 200, height: 300)
+        let docInfo: [CFString: Any] = [
+            kCGPDFContextTitle: "MyDoc", kCGPDFContextAuthor: "Tester",
+        ]
+        let ctx = try XCTUnwrap(CGContext(tmp as CFURL, mediaBox: &box, docInfo as CFDictionary))
+        ctx.beginPDFPage(nil)
+        ctx.endPDFPage()
+        ctx.closePDF()
+
+        let rows = MetadataPanel.pdfMetadata(url: tmp)
+        XCTAssertEqual(value(rows, "Pages"), "1")
+        XCTAssertEqual(value(rows, "Page Size"), "200 × 300 pt")
+        XCTAssertEqual(value(rows, "Title"), "MyDoc")
+        XCTAssertEqual(value(rows, "Author"), "Tester")
     }
 }
