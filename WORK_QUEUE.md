@@ -79,7 +79,8 @@ which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win fi
 ## B. [PARTIAL] slice continuations (chip the remaining gaps)
 
 - [ ] **TSK-769** — Terminal UX bundle: remaining slices (command history + favorites + search, colors, tab shoulder border). `[slice]` done: open-in-pwd, tab-rename, copy-trimmed.
-- [ ] **TSK-348** — Deep metadata: remaining (richer PDF + AV/video fields; XMP). `[slice]` done: FS perms/owner/inode, image EXIF/GPS.
+- [x] **TSK-348** — Deep metadata: remaining (richer PDF + AV/video fields; XMP). `[slice]` done: FS perms/owner/inode, image EXIF/GPS.
+      `[validated 575c1c5]` — PDF: +Subject/Keywords/Creator/Created/Modified/Page-Size/Encrypted; AV: +Video/Audio codec (FourCC→name). Pure host-tested builders (pdfRows + MediaCodecName) + real-PDF fixture test; panel auto-renders (no new UI). XMP still remaining (separate parse).
 - [ ] **TSK-352** — NotePad++ tools: remaining (column/block select, macro record/replay, encoding convert). `[slice]` done: 15 clipboard transform tools.
 - [x] **TSK-350** — Formatting: any remaining formatter gaps. `[slice]` done: JSON/XML/JS/CSS pretty-print.
       `[review 8449333]` — added markdown table alignment as an in-place **Align Markdown Tables** Edit-menu command (md has no format VIEW lens by design — FormatToggleTests). Spike finding: the other detect() absences (.jsonl/.svg/.scss/.less/.jsx/.ts) are DELIBERATE exclusions — no further clean gaps; new types (YAML/TOML/SQL) = separate from-scratch tickets if wanted.

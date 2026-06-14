@@ -1,5 +1,27 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — richer PDF + media-codec file-info (TSK-348, validated)
+
+Autonomous tick, WORK_QUEUE Section-B drain. Shipped **TSK-348 (`575c1c5`, VALIDATED)** — deep-metadata
+enrichment, fully host-tested + self-validated (a data/model change to the existing model-driven file-info
+panel — no new render path, so host-validatable):
+- **PDF**: `pdfMetadata` was Pages/Title/Author/Producer → now also Subject/Keywords/Creator/Created/Modified/
+  Page-Size/Encrypted. Refactored into a pure `pdfRows(PDFInfo) -> [Row]` (host-tested with synthetic info)
+  behind thin PDFKit extraction; a CoreGraphics-generated real PDF fixture test proves the extraction
+  (Pages/Page-Size/Title/Author).
+- **AV**: added Video codec + Audio codec rows from the track FourCC, via a new pure
+  `MediaCodecName.display(fourCC:)` (avc1→H.264, hvc1→HEVC, mp4a→AAC, …; unknown→trimmed tag; big-endian
+  decode) — host-tested; thin AVFoundation glue (`CMFormatDescriptionGetMediaSubType`).
+- The `MetadataPanel` renders model rows via `ForEach`, so the new rows surface with NO UI change. Self-
+  validated via task_validate (checks artifact: the passing MetadataPanelTests + MediaCodecNameTests + gate).
+- XMP remains (a separate metadata parse); AV bitrate likewise deferred.
+
+**Queue note:** the host-actionable WORK_QUEUE surface is thinning — most remaining Section-A/B/C items are
+render-coupled `[VM]` (358 settings, 360 CM6, 524/533/534/463/470/495/506/668), owner-privacy-gated (343 local
+history — LocalHistoryStore exists but its retention/privacy + save-wiring needs an owner call), or buffer-
+surgery/complexity (352 encoding-convert needs EditorBuffer.encoding to become mutable). Did one deepened,
+fully-validated ticket this firing rather than force a messy second; flagged the thinning for the next pass.
+
 ## LOG 2026-06-14 — ⇧⌥F Format + shortcut audit (TSK-757); markdown table align (TSK-350)
 
 Autonomous tick, WORK_QUEUE Section-A/B drain. Two host-testable items, one gate:
