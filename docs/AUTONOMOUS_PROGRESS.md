@@ -1,5 +1,37 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-358 rendered-markdown half: Text Size now scales the rendered view too (2ad2518, → review)
+
+Continued 358 to cover the rendered-markdown content type (the prior firing did editor/source/gutter). Spent the
+firing's front half mapping the queue frontier — and found the top-down host pool genuinely blocked this tick:
+- **343** (History/Revert): **owner-gated** — already PARKED with a live `waiting:human` decision (local-history
+  default ON vs opt-in + retention). Its `LocalHistoryStore` core is built+tested; the menu system (main.swift
+  NSMenu, Convert-Encoding submenu at :1716) is cleanly extensible — so it's a clean build the MOMENT the owner
+  answers. Did NOT override the live gate.
+- **769** (terminal bundle): the terminal is a real **PTY** (`PTYProcess`) — the shell owns history; "command
+  history/favorites" would mean fragile PTY-stream command reconstruction (render/PTY-coupled, no clean host model).
+- **668** (CSV windowed paging): `snapshotWindow`/`filteredCount` operate on a Rust **session** the CSV table
+  doesn't use today (it parses via the Swift `CSVParser`, all rows in memory) — a large session-lifecycle
+  integration, not a firing-sized win.
+- **321/322/470** (separate window/document zoom): the owner deliberately MERGED the two zoom sliders in 2026-05;
+  these ask to split them back — conflicting signals = an owner-decision cluster, not an autonomous reversal.
+- rust-core P1 contract (579) is already **validated**; the `fixed`/`review` validation-drain pool is VM-render-coupled.
+
+So I completed the one genuinely clean, in-scope, behaviour-neutral host build available: extend Text Size to the
+rendered-markdown view (commit `2ad2518`). Mechanism (cache-safe by design): `markdown.css` body is now
+`calc(15px * var(--mdv-content-scale, 1))`; `ContentFontSizing.markdownScale(contentFontSize:) = base/13` (host-
+tested: default→1.0 neutral, 26→2.0, 32→32/13); the view pushes the var LIVE via `evaluateJavaScript` in
+`updateNSView` + re-applies in `didFinish` (mirrors the existing `pageZoom` live-update) — so the markdown HTML/
+render-cache + its memo are UNTOUCHED (no render-storm / 838 risk). Default users see no change (var fallback = 1
+→ 15px). pageZoom multiplies on top. Host gate green (5494 tests). On-screen reflow = VM render tail.
+
+DECISIONS NEEDED (the unblockers, precisely mapped this firing): (1) **A VM validation pass** — the single
+highest-leverage owner action; drains the banked `review` pool (533/534/358 + preview-tab 272/306 + …) → `done`.
+(2) **TSK-343** local-history default ON vs opt-in + retention (already parked). (3) **Zoom split** (321/322/470):
+want a separate document-zoom back despite the 2026-05 merge? One answer closes/unblocks three tickets.
+(4) **358 window-sizing half**: the ticket's other clause ("Window sizing [left menu, text]") is ambiguous —
+which dimension(s)? sidebar width already has a drag handle + pref.
+
 ## LOG 2026-06-14 — TSK-358 absolute content text-size (base × zoom) SHIPPED (6a045e0, → review)
 
 The committed-next item from last firing. Resolves the long-standing "is it font-size OR zoom?" — it's **both**:
