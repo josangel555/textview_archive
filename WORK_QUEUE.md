@@ -11,6 +11,27 @@ Mark `[x]` when shipped (commit + board → at least `review`).
 
 ---
 
+## 0. Perf — user-felt latency (HIGH priority; from the 2026-06-14 perf-explore, measured)
+
+These are what makes the app *feel* slow (measured on the VM with signpost + CA-stall traces — NOT the model,
+which is fast at ≤12 ms; the editor/CM6 is fine). Ordered cheapest-felt-win first.
+
+- [ ] **TSK-840** — Parallelize launch grammar-warm (231 ms serial on one thread) + warm the opened file's
+      language + markdown FIRST; warm the *Rust* highlight path too. **Cleanest S-effort win.**
+- [ ] **TSK-843** — Cache the per-call gate decision — `ProcessInfo.environment` allocates the whole environ
+      (~19 µs) on every routed FFI call. Cheap.
+- [ ] **TSK-845** — Micro-bundle: `ContentFingerprint` utf8.count ×3/apply (cache), MsgPackReader always-builds-tree, lazy-tab materialize.
+- [ ] **TSK-841** — Highlight wire → positional arrays + integer kind (4× smaller, 5.3× faster decode; like
+      diff-lines wire-v2). Rust+Swift wire change; hits every highlighted open + markdown fence.
+- [ ] **TSK-844** — CSV open: parse straight into the arena (skip the throwaway `Vec<Vec<String>>`; 140 ms open).
+- [ ] **TSK-842** — Files ≤64 MiB read + UTF-8-decode SYNC on main (softWarnBytes cliff) → off-main `[needs trace]`
+- [ ] **TSK-839** — Attribute + fix the 30–366 ms per-nav main-thread CoreAnimation commit stall (the REAL felt
+      'nav slow' root; 598/591/266 fixed the model, not the compositor) `[Time-Profiler attribution first]`
+- [ ] **TSK-838** — Rendered-MD WebView: persistent page + DOM-patch instead of full `loadHTMLString` reload
+      (2–9 s reload storm; quantifies TSK-624) `[architectural — spike + slices]`
+
+---
+
 ## A. Quick wins — small features, host-buildable (do these first)
 
 - [ ] **TSK-755** — Session menu: a "Tab operations" section (new/close/next/prev/move) `[VM]`
