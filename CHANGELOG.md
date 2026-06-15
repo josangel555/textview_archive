@@ -13,6 +13,7 @@ Newest first. Each entry is one plain-language line — what changed, from your 
 - **The sidebar can be dragged much wider** — the old fixed ~480 px resize cap is gone; the file/tool sidebar now resizes freely up to the window width (always leaving room for the content area). Useful for deep folder trees and long file names.
 
 ### Added
+- **More commands in the command palette** — **Wrap Long Lines**, **Show Invisibles**, and the Edit text-transforms (**Remove Empty Lines**, **Collapse Blank Lines**, **Trim Trailing Whitespace**, **Ensure Final Newline**, **Minify JSON**, **Insert Table of Contents**, **Insert Date and Time**) are now searchable + runnable from the ⌘K / ⇧⌘P palette, not just the menus.
 - **Find References in the menu + command palette** — **Navigate ▸ Find References** (and the `>Find References` palette command) lists every reference to the symbol at the editor cursor in the LSP navigation panel. Previously this was only on the source-view right-click.
 - **Refresh / Reload from Disk in the file tree** — right-click a folder → **Refresh** force re-reads it (and its open sub-folders) from disk, for cases the automatic watcher can miss (network/iCloud mounts). Right-click an open file → **Reload from Disk** re-reads it into its tab.
 - **Right-click the footer breadcrumb** — right-clicking a segment of the status-bar path now offers the same actions as the file tree (Reveal in Sidebar / Reveal in Finder / Copy Path, plus Open Folder + Open in Terminal for folders, Open in Default App for the file).

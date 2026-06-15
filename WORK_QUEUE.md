@@ -72,7 +72,7 @@ git→TSK-537, split→TSK-714, csv→TSK-711, agent→TSK-687, cli→TSK-353.
   - [ ] **TSK-948** — Source code folding dead-wired (B10)
   - [x] **TSK-949** — Find&Replace (⌥⌘F) not greyed outside editor (B6) `[review; ee78398 — canFindAndReplace gate (editor-only), 3 teeth; greyed-item render=VM]`
   - [x] **TSK-950** — LSP Find-References no menu/palette (B7) `[review 842d5fe — findReferencesAtCursor → Navigate ▸ Find References + lsp.findReferences palette cmd, 6 teeth; live-LSP+panel render=VM]`
-  - [ ] **TSK-951** — palette-parity umbrella (B1+B2, ~40 menu-only cmds)
+  - [~] **TSK-951** — palette-parity umbrella (B1+B2, ~40 menu-only cmds) `[review c36f1b9 — SPIKE: most already wired (audit stale); shipped slice = 2 view toggles + 7 menu-only edit transforms → palette, 13 teeth. Tail (foldAll/unfoldAll model method, undo/redo first-responder, param converters) deferred]`
 - [ ] **TSK-897** — Editor missing many languages' highlighting (reopen TSK-362) `[triage]`
 - [ ] **TSK-940..945** — Agent integration: review/approve agent diffs · line-ref-to-agent · LSP/diag sharing · browser MCP · security audits `(687, epic→slices)`
 

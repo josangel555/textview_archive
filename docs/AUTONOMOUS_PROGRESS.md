@@ -1,5 +1,29 @@
 # Autonomous run — progress tracker (2026-06-04)
 
+## LOG 2026-06-14 — TSK-951 palette-parity slice (view toggles + edit transforms) (→ review)
+
+Worked the palette-parity umbrella (audit B1+B2). SPIKE finding: the audit's "~18 nil-verb + ~25
+menu-only" was STALE — most registry commands already carry scriptVerbs (several wired in recent
+ticks), and most remaining nil-verb commands are intentional (NSOpenPanel / prompt / first-responder
+coupled: file.open, view.goToLine, view.applyJQ, edit.undo/redo, find.find/replace-as-mode-router).
+The genuine, cleanly-fixable gaps: 2 nil-verb VIEW toggles with pure model methods + the menu-only
+EDIT text-transforms (no registry entry at all → invisible to the palette).
+
+Shipped (one coherent slice): palette commands for **view.toggleWordWrap** (toggle-word-wrap →
+toggleSourceWordWrap), **view.toggleInvisibles** (toggle-invisibles → toggleShowInvisibleChars), and
+seven menu-only Edit transforms — **edit.removeEmptyLines / collapseBlankLines / trimTrailingWhitespace
+/ ensureFinalNewline / minifyJSON / insertTOC / insertDate** (each → an existing host-tested active-file
+model method, no-op when inapplicable). Registry CommandDescriptors + ScriptVerbDispatch cases +
+known-vocabulary entries. `invokeCommand` already routes scriptVerb → ScriptVerb.apply, so these are
+now palette-invokable (no longer dimmed/absent); the menu @objc paths are unchanged.
+
+Teeth: 13 host tests — `CommandRegistryTests.test_paletteParity_*` (9 commands carry verbs + are
+paletteInvokable) + `PaletteEditTransformVerbTests` (6: remove-empty/trim/minify actually mutate the
+active file through ScriptVerb.apply; all 9 verbs recognized; the 2 toggles flip model state). The
+gate's vocabulary guard (test_scriptVerbs_areKnownVocabulary) referees registry↔dispatcher drift.
+Headless gate green. Remaining TSK-951 (foldAll/unfoldAll → need a model method; line-ending/indentation
+→ param-coupled; undo/redo → first-responder) left for a follow-on. Slice → review.
+
 ## LOG 2026-06-14 — TSK-926/927 CLI (reconcile+teeth) + TSK-950 Find-References menu/palette (→ review)
 
 Batched a CLI reconcile with the next parity-audit gap.
